@@ -277,8 +277,10 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 :root:not([data-gallery="grid"]) .collage-cell .tile-caption{position:absolute;bottom:0;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:3px;height:var(--collage-caption);padding:6px 4px 0;background:var(--paper);z-index:3}
 :root:not([data-gallery="grid"]) .collage-cell .tile-label{position:static;max-width:100%;font-size:16px;line-height:1.15;white-space:nowrap;overflow:hidden}
 :root:not([data-gallery="grid"]) .collage-cell .tile-glyph{min-width:0;overflow:hidden;text-overflow:ellipsis}
-:root:not([data-gallery="grid"]) .collage-cell .tile-footer{position:static;justify-content:center;max-width:100%;gap:0;font-size:10px;line-height:1.2;color:var(--muted)}
+:root:not([data-gallery="grid"]) .collage-cell .tile-footer{position:static;justify-content:center;max-width:100%;overflow:hidden;gap:0;font-size:10px;line-height:1.2;color:var(--muted)}
 :root:not([data-gallery="grid"]) .collage-cell .tile-footer>span+span:not(.tile-arrow)::before{content:"·";margin:0 4px;color:var(--faint)}
+/* A phone hides the production, so what follows it when it leads the line takes no dot. */
+@media(max-width:700px){:root:not([data-gallery="grid"]) .collage-cell .tile-footer>.tile-production:first-child+span::before{content:none}}
 :root:not([data-gallery="grid"]) .collage-cell .tile-arrow{display:none}
 :root:not([data-gallery="grid"]) .collage-cell:focus-visible{z-index:1;outline-offset:-3px}
 :root:not([data-gallery="grid"]) .glyph-grid.collage .visual-grid-heading{background:none}

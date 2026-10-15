@@ -914,12 +914,12 @@
   .tile-production{font-family:"GenZui Sans",system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* The copy's year, the tile's one date: in the footer's small type, its digits all one width. */
   .tile-year{flex-shrink:0;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-  .tile-production{flex-shrink:0;white-space:nowrap}
-  /* The work's title takes what room is left and ends in an ellipsis; on a phone a wide range does too,
-     and a square tile there keeps its room for the years. */
-  @media(max-width:700px){.tile-year{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}:global(:root[data-gallery="grid"]) .tile-footer:has(.tile-year) .tile-work{display:none}}
+  /* Short of room, the work's title gives way first and the production after it, each to an ellipsis;
+     on a phone a wide range does too, and a square tile there keeps its room for the years. */
+  .tile-production{flex:0 1 auto;min-width:0}
   .tile-withheld{flex-shrink:0;white-space:nowrap}
-  .tile-work{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tile-work{flex:0 1000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  @media(max-width:700px){.tile-year{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}:global(:root[data-gallery="grid"]) .tile-footer:has(.tile-year) .tile-work{display:none}}
   @media(max-width:700px){.tile-production{display:none}}
   .glyph-tile.decided-checked{background:var(--good-light)}
   .glyph-tile.decided-flagged{background:var(--wrong-light)}
