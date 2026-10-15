@@ -644,3 +644,12 @@ def test_a_private_use_character_names_no_character() -> None:
     assert eonhae.names_a_character("天")
     assert eonhae.names_a_character("ᄒᆞ")
     assert not eonhae.names_a_character("\ue839")
+
+
+def test_text_rights_credit_both_pinned_wikisource_texts() -> None:
+    rights = eonhae.text_rights("ha")
+
+    assert rights.licence.value == "CC-BY-SA-4.0"
+    assert "老乞大/卷下" in rights.attribution and "oldid 2551541" in rights.attribution
+    assert "노걸대언해" in rights.attribution and f"oldid {eonhae.KO_REVID}" in rights.attribution
+    assert rights.evidence == eonhae.WIKISOURCE_TERMS

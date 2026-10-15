@@ -209,7 +209,9 @@ def main() -> int:
         ko_lines = eonhae.ko_lines(ko_source, volume)
         ko_phrases = eonhae.ko_phrases(ko_source, volume)
         zh_chars = eonhae.zh_stream(zh_source)
-        document = document_for(documents, volume, args.document)
+        document = document_for(documents, volume, args.document).model_copy(
+            update={"text_rights": eonhae.text_rights(volume)}
+        )
         out_documents[document.id] = document
         pages = sorted((p for p in all_pages if p.document_id == document.id), key=lambda p: p.seq)
         if requested_pages is not None:
