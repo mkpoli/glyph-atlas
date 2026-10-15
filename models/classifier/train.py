@@ -54,6 +54,8 @@ from glyph_atlas import classify, tables
 
 ROOT = Path(__file__).resolve().parents[2]
 
+#: The `document_id` prefix of a crop rendered from a font (build_hangul.py), not cut from a scan.
+RENDERED_PREFIX = "syn:"
 #: The class the sampler and the metrics treat as an abstention rather than an identification.
 OTHER = "other"
 
@@ -79,6 +81,7 @@ class Data:
     labels: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int32))
     code_points: list[str] = field(default_factory=list)
     productions: list[str] = field(default_factory=list)
+    rendered: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=bool))
 
     def __len__(self) -> int:
         return int(self.labels.shape[0])
@@ -115,6 +118,7 @@ class Data:
             labels=self.labels[chosen],
             code_points=[self.code_points[index] for index in chosen] if self.code_points else [],
             productions=[self.productions[index] for index in chosen] if self.productions else [],
+            rendered=self.rendered[chosen] if len(self.rendered) else self.rendered,
         )
 
     def concat(self, other: Data) -> Data:
@@ -128,6 +132,7 @@ class Data:
             labels=np.concatenate([self.labels, other.labels]),
             code_points=self.code_points + other.code_points,
             productions=self.productions + other.productions,
+            rendered=np.concatenate([self.rendered, other.rendered]),
         )
 
 
@@ -152,6 +157,7 @@ def read_manifest(path: Path, classes: list[str], *, keep: bool = True) -> Data:
     labels: list[int] = []
     code_points: list[str] = []
     productions: list[str] = []
+    rendered: list[bool] = []
     shared: dict[str, str] = {}
     for batch in tables.scan(path, Crop):
         for record in batch:
@@ -159,6 +165,7 @@ def read_manifest(path: Path, classes: list[str], *, keep: bool = True) -> Data:
             pieces.append(crop)
             lengths.append(len(crop))
             labels.append(index.get(record.label, other))
+            rendered.append(record.document_id.startswith(RENDERED_PREFIX))
             if keep:
                 code_points.append(shared.setdefault(record.code_point, record.code_point))
                 productions.append(shared.setdefault(record.production, record.production))
@@ -172,6 +179,7 @@ def read_manifest(path: Path, classes: list[str], *, keep: bool = True) -> Data:
         labels=np.asarray(labels, dtype=np.int32),
         code_points=code_points,
         productions=productions,
+        rendered=np.asarray(rendered, dtype=bool),
     )
 
 
@@ -234,11 +242,24 @@ def loader_for(
     )
 
 
-def balanced_sampler(data: Data, *, seed: int) -> Any:
-    """A sampler that draws every class as often as every other, with replacement."""
+def balanced_sampler(data: Data, *, seed: int, rendered_share: float | None = None) -> Any:
+    """A sampler that draws every class as often as every other, with replacement.
+
+    With `rendered_share`, crops rendered from fonts take that share of the draws and scanned crops
+    the rest, each balanced by class within itself. Rendered classes would otherwise take draws from
+    the scanned ones in proportion to their number.
+    """
     labels = data.labels
-    counts = np.bincount(labels, minlength=len(data.classes)).astype(np.float64)
-    weights = 1.0 / np.maximum(counts[labels], 1.0)
+    weights = np.zeros(len(labels), dtype=np.float64)
+    rendered = data.rendered if len(data.rendered) == len(labels) else np.zeros(len(labels), dtype=bool)
+    if rendered_share is not None and rendered.any() and (~rendered).any():
+        groups = [(~rendered, 1.0 - rendered_share), (rendered, rendered_share)]
+    else:
+        groups = [(np.ones(len(labels), dtype=bool), None)]
+    for chosen, share in groups:
+        counts = np.bincount(labels[chosen], minlength=len(data.classes)).astype(np.float64)
+        group = 1.0 / np.maximum(counts[labels[chosen]], 1.0)
+        weights[chosen] = group * (share / group.sum()) if share is not None else group
     generator = torch.Generator()
     generator.manual_seed(seed)
     return torch.utils.data.WeightedRandomSampler(
@@ -735,7 +756,8 @@ def main() -> None:
     }
     sample = args.sample
     steps_per_epoch = math.ceil(len(train_data) * (sample if sample is not None else 1.0) / batch_size)
-    sampler = balanced_sampler(train_data, seed=seed)
+    share = training.get("rendered_share")
+    sampler = balanced_sampler(train_data, seed=seed, rendered_share=None if share is None else float(share))
     if sample is not None:
         sampler.num_samples = int(len(train_data) * sample)
     train_loader = loader_for(
