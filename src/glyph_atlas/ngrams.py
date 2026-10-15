@@ -230,7 +230,7 @@ def in_reading_order(glyphs: Iterable[Glyph], horizontal: Container[str] = froze
         ordered = (sorted(detections, key=lambda d: d.centre) if line in horizontal
                    else align.reading_order(detections))
         rank = {Place(d.box.x, d.box.y, d.box.w, d.box.h): i for i, d in enumerate(ordered)}
-        by_seq = sorted(found, key=lambda glyph: (glyph.seq is None, glyph.seq or 0))
+        by_seq = sorted(found, key=lambda glyph: (glyph.seq is None, glyph.seq or 0, rank[glyph.box]))
         follows = all(g.seq is not None for g in found) and all(
             rank[a.box] <= rank[b.box] for a, b in pairwise(by_seq))
         place = {box: i + (_unheld_before(box, found, held[line]) if follows else 0) for box, i in rank.items()}
