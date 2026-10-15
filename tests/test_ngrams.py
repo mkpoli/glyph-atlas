@@ -69,6 +69,17 @@ def test_a_trigram_needs_both_neighbours_near():
     assert ("L1:0", "L1:1", "L1:2") in ids(adjacent_ngrams([unit(0, y=0), unit(1, y=57), unit(2, y=114)]))
 
 
+def test_a_line_spaced_wider_than_its_boxes_reaches_by_its_usual_step():
+    # 諺解 text: each 36-pixel character has its reading under it, so neighbours stand 100 pixels apart.
+    spaced = [unit(seq, y=seq * 100) for seq in range(4)]
+    assert ("L1:0", "L1:1", "L1:2") in ids(adjacent_ngrams(spaced))
+    # Twice the usual step is a character no unit covers.
+    gap = [*spaced, unit(4, y=500)]
+    assert ("L1:3", "L1:4") not in ids(adjacent_ngrams(gap))
+    # Under three steps, a line has no usual step to go by.
+    assert adjacent_ngrams([unit(0, y=0), unit(1, y=100), unit(2, y=200)]) == []
+
+
 def test_a_run_is_written_the_way_its_line_is():
     across = [Unit(id=f"H:{i}", line_id="H", seq=i, box=Box(x=i * 40, y=0, w=36, h=36)) for i in range(3)]
     runs = adjacent_ngrams([*across, unit(0), unit(1)], horizontal={"H"})

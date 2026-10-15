@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import statistics
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Container, Iterable, Iterator, Mapping
@@ -49,18 +51,33 @@ class Glyph(NamedTuple):
 
 
 # Two neighbours in `seq` order whose centres lie further apart than this many of the larger box's
-# longer side have ink between them that no unit covers, most often a character the detector missed.
+# longer side, or of the line's usual step, have ink between them that no unit covers, most often a
+# character the detector missed.
 REACH = 1.6
+#: Steps between neighbours a line needs before its usual step counts, so that one long step cannot
+#: vouch for itself.
+STEPS = 3
 
 
 def _centre(unit: Unit | Glyph) -> tuple[float, float]:
     return unit.box.x + unit.box.w / 2, unit.box.y + unit.box.h / 2
 
 
-def _near(a: Unit | Glyph, b: Unit | Glyph) -> bool:
-    (ax, ay), (bx, by) = _centre(a), _centre(b)
-    reach = REACH * max(a.box.w, a.box.h, b.box.w, b.box.h)
-    return (ax - bx) ** 2 + (ay - by) ** 2 <= reach ** 2
+def _distance(a: Unit | Glyph, b: Unit | Glyph) -> float:
+    return math.dist(_centre(a), _centre(b))
+
+
+def _step(held: Mapping[int, Unit | Glyph]) -> float:
+    """The median distance between neighbours on a line, or 0 when it has fewer than `STEPS` steps.
+
+    A line whose characters stand apart, as a 諺解 text line does with a reading printed under each
+    character, steps further than its boxes are long."""
+    steps = [_distance(unit, held[seq + 1]) for seq, unit in held.items() if seq + 1 in held]
+    return statistics.median(steps) if len(steps) >= STEPS else 0.0
+
+
+def _near(a: Unit | Glyph, b: Unit | Glyph, step: float = 0.0) -> bool:
+    return _distance(a, b) <= REACH * max(a.box.w, a.box.h, b.box.w, b.box.h, step)
 
 
 def _down_the_column(a: Unit | Glyph, b: Unit | Glyph) -> bool:
@@ -77,7 +94,8 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
 
     Each unit's `seq` is the one before it plus one: a position with no unit, or with two, breaks the
     run there. A gap, an unreadable unit, a mark or an unsegmented run is never part of one, and neither
-    is a unit without a box. Two neighbours too far apart on the page break the run as well.
+    is a unit without a box. Two neighbours too far apart on the page break the run as well: further than
+`REACH` times the longer side of their boxes or the line's median step between neighbours.
 
     A line in `blocks` holds several columns read one after another, as a CODH block does: it steps
     from the foot of one column to the head of the next, and with small characters that step can fall
@@ -94,9 +112,11 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
         held = {seq: found[0] for seq, found in positions.items() if len(found) == 1
                 and found[0].kind == UnitKind.CHAR and found[0].granularity == "char" and found[0].box}
         wraps = line in blocks
+        step = _step(held)
         for seq, unit in sorted(held.items()):
             run = [unit]
-            while (len(run) < max(SIZES) and (following := held.get(seq + len(run))) and _near(run[-1], following)
+            while (len(run) < max(SIZES) and (following := held.get(seq + len(run)))
+                   and _near(run[-1], following, step)
                    and (not wraps or _down_the_column(run[-1], following))):
                 run.append(following)
             ngrams += [Run(tuple(u.id for u in run[:size]), line not in horizontal) for size in SIZES if len(run) >= size]
