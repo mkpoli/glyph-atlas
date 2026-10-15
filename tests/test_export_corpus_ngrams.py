@@ -45,6 +45,11 @@ def test_a_line_numbered_in_box_order_keeps_its_gaps():
     assert adjacent_ngrams(placed) == []
 
 
+def test_a_space_the_aligner_kept_without_a_box_does_not_break_a_run():
+    spaced = [glyph("a", 1, 0), Glyph("L:space", "L", 2, "char", "char", None, True), glyph("c", 3, 40)]
+    assert [run.units for run in adjacent_ngrams(in_reading_order(spaced))] == [("L:a", "L:c")]
+
+
 def test_glyphs_sharing_a_box_share_its_place_and_a_glyph_without_one_has_none():
     shared = [glyph("a", 0, 0), glyph("b", 1, 40), glyph("c", 2, 40), glyph("d", 3, 80),
               Glyph("L:e", "L", 4, "char", "char", None, True)]
