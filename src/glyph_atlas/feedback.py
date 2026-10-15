@@ -148,6 +148,7 @@ def source_corpus_of(unit_id: str | None) -> str | None:
         "hng-kiridashi:": "hng-kiridashi",
         "gl:": "glossary-headwords",
         "krm:": "hdic-krm",
+        "eo:": "nogeoldae-eonhae",
         "ktb:": "hdic-ktb",
         "tsj:": "hdic-tsj",
     }.get(unit_id.split(":", 1)[0] + ":")
