@@ -48,6 +48,7 @@ UNIT_ID_PREFIXES = {
     "hng-kiridashi:": "hng-kiridashi",
     "gl:": "glossary-headwords",
     "krm:": "hdic-krm",
+    "eo:": "nogeoldae-eonhae",
     "ktb:": "hdic-ktb",
     "tsj:": "hdic-tsj",
 }
