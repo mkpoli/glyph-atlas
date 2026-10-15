@@ -161,6 +161,7 @@
   "explore.occurrencesOf.other": "{character}의 用例 {count}件",
   "explore.grapheme.forms.other": "字形 {count}種",
   "explore.graphemes": "字素",
+  "explore.graphemes.failed": "字素의 集計 結果를 불러오지 못했습니다.",
   "explore.order.fewest": "적은 順",
   "explore.order.most": "많은 順",
   "explore.pairs": "文字 雙",

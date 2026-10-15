@@ -172,6 +172,7 @@
   "explore.grapheme.forms.one": "{count} form",
   "explore.grapheme.forms.other": "{count} forms",
   "explore.graphemes": "Graphemes",
+  "explore.graphemes.failed": "Grapheme counts could not be loaded.",
   "explore.order.fewest": "Fewest first",
   "explore.order.most": "Most first",
   "explore.pairs": "Pairs",
