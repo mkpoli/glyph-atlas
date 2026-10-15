@@ -9,10 +9,12 @@
   import { runAddress } from '../lib/ngrams.js'
 
   let { run, style = '' } = $props()
+  // The image's box, so the page around the run fills it as a crop fills its own.
+  let width = $state(0), height = $state(0)
 </script>
 
 {#if run.text}<a class="glyph-tile run-tile collage-cell" {style} href={localize(runAddress(run.text))} aria-label={`${run.text} · ${t('run.occurrences', { count: run.n })}`}>
-  <span class="run-tile-image" aria-hidden="true">{#if run.crops}<RunImage crops={run.crops} page={run.page} vertical={run.vertical} />{:else}<span class="run-tile-text">{run.text}</span>{/if}</span>
+  <span class="run-tile-image" aria-hidden="true" bind:clientWidth={width} bind:clientHeight={height}>{#if run.crops}<RunImage crops={run.crops} page={run.page} vertical={run.vertical} fill={width && height ? height / width : null} />{:else}<span class="run-tile-text">{run.text}</span>{/if}</span>
   <span class="tile-caption">
     <span class="tile-label"><span class="tile-glyph"><ScriptText text={run.text} titled={false} /></span></span>
     <span class="tile-footer"><span>{t('run.occurrences', { count: run.n })}</span><span class="tile-arrow">↗</span></span>
