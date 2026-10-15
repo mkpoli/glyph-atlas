@@ -1079,6 +1079,17 @@ try {
   await db.prepare("DELETE FROM unit_ngrams WHERE first LIKE 'ghost%'").run()
   assert.equal((await runOf(pairText + pairText, '&document=hk%3Aother')).total, 0, 'a book holds only its own runs')
   assert.equal((await runOf('申候')).total, 0, 'pairs whose crops are not live are not shown')
+  {
+    const timed = () => mf.dispatchFetch(base + '/atlas/runs?' + new URLSearchParams({ text: pairText, limit: '37' })).then(r => r.headers.get('server-timing') ?? '')
+    const steps = header => header.split(', ').map(part => part.split(';')[0])
+    const miss = await timed()
+    assert.deepEqual(steps(miss).filter(s => ['version', 'cache-miss', 'graphemes', 'rows', 'records', 'reads', 'total'].includes(s)),
+      ['version', 'cache-miss', 'graphemes', 'rows', 'records', 'reads', 'total'], `a run read afresh times its steps: ${miss}`)
+    assert.ok(/^(\w[\w-]*;dur=\d+)(, \w[\w-]*;dur=\d+)*$/.test(miss), `the timings are a Server-Timing header: ${miss}`)
+    let hit = ''
+    for (let i = 0; i < 20 && !hit.includes('cache-hit'); i++) { await new Promise(r => setTimeout(r, 50)); hit = await timed() }
+    assert.deepEqual(steps(hit), ['version', 'cache-hit', 'total'], `a run the edge keeps times its version and cache: ${hit}`)
+  }
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(firstLabel))).status, 422, 'a run is two characters or more')
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('一二三四五六七八九'))).status, 422, 'a run is eight characters or fewer')
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent(pairText) + '&offset=2000')).status, 404, 'a run does not page past its cap')
