@@ -501,8 +501,8 @@ const FACETS_TTL = 3600;
 // publication writes `family` from the same rule (`atlas.grapheme_of`).
 export const graphemeOf = (label: string, family: string | null) => family || cp(label) || null;
 type Facet = { label: string; family: string | null; document: string | null; title: string | null; state: string; n: number };
-async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, stored: D1PreparedStatement, marked: D1PreparedStatement) {
-  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement) {
+  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Facet[];
   const [counted, marks] = await env.DB.batch<Facet>([stored, marked]);
@@ -569,10 +569,11 @@ export async function graphemeMembers(env: Env, key: string): Promise<string[]> 
 // The crops a listing starts from: local ones, those a round may deal, in the material asked for.
 // A round and its reference strips name their grapheme's characters, and read each through
 // `unit_character`: the review filter is kept off its index (`+`), which would otherwise drive the
-// query over every crop that can be dealt.
-export function listingFilter(review: boolean, production: string, characters: string[] | null) {
+// query over every crop that can be dealt. Browsing leaves withheld crops out the same way unless
+// `withheld` asks for them.
+export function listingFilter(review: boolean, production: string, characters: string[] | null, withheld = false) {
   const [materials, materialValues] = material(production, 'production');
-  const where = ["origin='local'", ...(review ? [characters === null ? 'quiz=1' : '+quiz=1'] : []), materials];
+  const where = ["origin='local'", ...(review ? [characters === null ? 'quiz=1' : '+quiz=1'] : withheld ? [] : ['+quiz=1']), materials];
   const values: (string | number)[] = [...materialValues];
   if (characters !== null) { where.push('character IN (SELECT value FROM json_each(?))'); values.push(JSON.stringify(characters)) }
   return { where, values };
@@ -976,7 +977,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const grapheme = graphemeKey(q.get('grapheme'));
   const scoped = review && grapheme !== null;
   const members = scoped ? await graphemeMembers(env, grapheme) : null;
-  const { where, values } = listingFilter(review, production, members);
+  // The Flagged view shows every crop waiting for a person, withheld or not.
+  const flaggedView = ['flagged', 'attention'].includes(q.get('state') ?? '');
+  const withheld = flaggedView || q.get('withheld') === 'show';
+  const { where, values } = listingFilter(review, production, members, withheld);
   const [materials, materialValues] = material(production, 'production');
   const queries = facetsQueries(review, reviewer, where, scoped, since);
   const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
@@ -988,7 +992,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     published = results.pop()!;
     groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
   } else {
-    groups = await browseFacets(env, ctx, url, production, stored!, marked!);
+    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!);
     if (skipped) groups = moved(groups, (await skipped.all<Facet>()).results);
   }
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
@@ -1038,9 +1042,13 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // The Flagged view hides crops already looked at in the inspector by default; `reported=show`
   // (the default for every other caller) leaves them in. `reportedCountWhere` is captured before the
   // hide filter, so the count is of what is hidden, not what remains.
-  const flaggedView = ['flagged', 'attention'].includes(q.get('state') ?? '');
   const reportedCountWhere = flaggedView ? [...where, REVIEWED_IN_INSPECTOR] : null;
   if (flaggedView && q.get('reported') === 'hide') { where.push(`NOT ${REVIEWED_IN_INSPECTOR}`); tally = null }
+  // How many withheld crops browsing left out, from `unit_counts`, which keys them by character, family
+  // and book but not by script: with a script chosen the number is not known.
+  const hiddenCount = !review && !withheld && !(q.get('group') && q.get('group') !== 'all') && (!q.get('state') || q.get('state') === 'all')
+    ? withheldCountQuery(materials, { character: character ?? (q.get('q') ? literal(q.get('q')!) : null), document, family: grapheme && !scoped ? grapheme : null })
+    : null;
   // A grapheme's round deals its named and then its untouched corpus glyphs after its local crops.
   // Corpus glyphs belong to no work of the collection, so a round narrowed to one work deals none.
   const dealt = scoped && !character && !document && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
@@ -1061,18 +1069,28 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const rotated = !review && !flaggedView && !character && !q.get('q');
   const start = seed % SHUFFLE_RANGE;
   const side = (test: '>=' | '<') => `SELECT ${columns} FROM units WHERE ${where.join(' AND ')} AND shuffle${test}? ORDER BY shuffle,rowid LIMIT ? OFFSET ?`;
+  // Past the crops from the seed's point up, the listing wraps round to those below it, and needs how
+  // many lie above. The page that reaches the end knows; the client hands it back on later pages
+  // (`above`), and a page past it reads only the crops below: skipping those above would read each of
+  // them once withheld ones are left out, as would counting them.
+  const told = rotated && q.get('above') !== null ? integer(q, 'above', 0) : null;
+  const below = told !== null && offset >= told;
   const results = await env.DB.batch([
     ...(tally ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
-    rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
+    below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
+      : rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
       : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
+    ...(hiddenCount ? [env.DB.prepare(hiddenCount.sql).bind(...materialValues, ...hiddenCount.values)] : []),
   ]);
-  const count = tally ? null : results.shift()!, [window, reportedCount] = results;
+  const count = tally ? null : results.shift()!, window = results.shift()!;
+  const reportedCount = reportedCountWhere ? results.shift()! : null, hiddenCounted = hiddenCount ? results.shift()! : null;
   const listed = tally ? groups.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
     : (count!.results[0] as { n: number }).n;
   const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
-  if (rotated && rows.length < limit) {
-    const above = rows.length ? offset + rows.length : (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
+  let above: number | null = below ? told : null;
+  if (rotated && !below && rows.length < limit) {
+    above = rows.length ? offset + rows.length : told ?? (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
       .bind(...values, start).first<{ n: number }>())!.n;
     const wrapped = await env.DB.prepare(side('<')).bind(...values, start, limit - rows.length, Math.max(offset - above, 0)).all();
     rows.push(...wrapped.results as typeof rows);
@@ -1101,7 +1119,14 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
     documents: [...documents.values()].sort((a,b) => b.total-a.total || (a.title ?? '').localeCompare(b.title ?? '') || a.id.localeCompare(b.id)),
     reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
+    withheld_count: hiddenCounted ? (hiddenCounted.results[0] as { n: number }).n : null, above,
     items: await withDating(env, items) };
+}
+// The withheld crops in this material, of a character, a book or a family where one is named.
+export function withheldCountQuery(materials: string, named: { character: string | null; document: string | null; family: string | null }) {
+  const keys = (['character', 'document', 'family'] as const).filter(key => named[key] !== null);
+  return { sql: `SELECT coalesce(sum(n),0) AS n FROM unit_counts WHERE origin='local' AND quiz=0 AND ${materials}${keys.map(key => ` AND ${key}=?`).join('')}`,
+    values: keys.map(key => named[key]!) };
 }
 // Untouched assigned corpus glyphs per character in this material, of every character or of a grapheme's.
 export function corpusCountQuery(production: string, characters: string[] | null = null) {
@@ -1499,7 +1524,10 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, card?: Aw
   }
   if (q.get('state') && q.get('state') !== 'all') { filters.push('state=?'); extra.push(q.get('state')!) }
   const tail = filters.map(f => ' AND ' + f).join('');
-  const styled = group === null ? tail : tail + ' AND style_order=?', styledExtra = group === null ? extra : [...extra, group];
+  // Withheld crops are left out unless asked for; `withheld` says how many were, or null where counting
+  // them would read every crop of the character.
+  const hidden = q.get('withheld') !== 'show', shown = hidden ? WITHHELD_HIDDEN : '';
+  const styled = (group === null ? tail : tail + ' AND style_order=?') + shown, styledExtra = group === null ? extra : [...extra, group];
   if (q.get('scope') === 'variants' || q.get('expand') === 'variants') {
     widenedPage(offset);
     const chars = await writtenVariants(env, data.char);
@@ -1510,9 +1538,9 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, card?: Aw
     const counted = (count.results[0] as { n: number }).n, total = Math.min(counted, WIDENED_CAP);
     return { ...data.candidates, query: data.code_point, code_point: data.code_point,
       total, capped: counted > WIDENED_CAP, available: rows.results.length, items: await withDating(env, await withForms(env, (rows.results as UnitRow[]).map(compact))),
-      counts: { total, exact: total, exact_total: total }, style_groups: STYLE_NAMES, scope: 'variants', status: 'ok' };
+      counts: { total, exact: total, exact_total: total }, style_groups: STYLE_NAMES, scope: 'variants', withheld: null, status: 'ok' };
   }
-  let counted: D1PreparedStatement, listed: D1PreparedStatement;
+  let counted: D1PreparedStatement, listed: D1PreparedStatement, withheld: D1PreparedStatement | null = null;
   const dated = yearOptions(q, (status, message) => { throw new Problem(status, message) });
   if (dated) {
     // Placed or narrowed by date: each crop joins its book's date by key, and the page is sorted here.
@@ -1523,7 +1551,7 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, card?: Aw
       ? 'u.id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)' : 'u.origin=? AND u.character=?'}`;
     const keys = grapheme ? [origin, family, origin, data.char] : [origin, data.char];
     // The counts take a grapheme's two disjoint branches apart, each along its own index, as `graphemeCountsQuery` does.
-    const arm = (where: string) => `SELECT u.style_order AS s,count(*) AS n FROM units u${datingJoin('u.document', dated.axis)} WHERE ${where}${tail}${cond} GROUP BY 1`;
+    const arm = (where: string) => `SELECT u.style_order AS s,count(*) AS n FROM units u${datingJoin('u.document', dated.axis)} WHERE ${where}${tail}${shown}${cond} GROUP BY 1`;
     counted = grapheme
       ? env.DB.prepare(`SELECT s,sum(n) AS n FROM (${arm('u.origin=? AND u.family=?')} UNION ALL ${arm('u.origin=? AND u.character=? AND u.family IS NOT ?')}) GROUP BY 1`)
         .bind(origin, family, ...extra, ...years, origin, data.char, family, ...extra, ...years)
@@ -1537,17 +1565,21 @@ async function occurrences(env: Env, code: string, q: URLSearchParams, card?: Aw
     // an OR across the two columns would read every crop of the origin instead.
     const family = data.grapheme?.code_point || data.code_point;
     counted = env.DB.prepare(graphemeCountsQuery(tail)).bind(origin, family, ...extra, origin, data.char, family, ...extra);
+    if (hidden) withheld = env.DB.prepare(withheldCountsQuery(true, tail)).bind(origin, family, ...extra, origin, data.char, family, ...extra);
     listed = env.DB.prepare(graphemeCropsQuery(styled)).bind(origin, family, ...styledExtra, origin, data.char, family, ...styledExtra, limit, offset);
   } else {
     counted = env.DB.prepare(`SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND character=?${tail} GROUP BY 1`)
       .bind(origin, data.char, ...extra);
+    if (hidden) withheld = env.DB.prepare(withheldCountsQuery(false, tail)).bind(origin, data.char, ...extra);
     listed = env.DB.prepare(characterCropsQuery(styled)).bind(origin, data.char, ...styledExtra, limit, offset);
   }
-  const [count, rows] = await env.DB.batch([counted, listed]);
-  const { styles, total } = styleCounts(count.results as { s: number; n: number }[], group);
+  const [count, rows, left] = await env.DB.batch([counted, listed, ...(withheld ? [withheld] : [])]);
+  const out = (left?.results ?? []) as { s: number; n: number }[];
+  const { styles, total } = styleCounts(lessWithheld(count.results as { s: number; n: number }[], out), group);
   return { ...data.candidates, query: data.code_point, code_point: data.code_point,
     total, available: rows.results.length, items: await withDating(env, await withForms(env, (rows.results as UnitRow[]).map(compact))),
     counts:{ total, exact:total, exact_total:total }, styles, style_groups: STYLE_NAMES, scope:q.get('scope') || 'character', status:'ok',
+    withheld: left ? styleCounts(out, group).total : null,
     ...(dated ? { order: dated.order, axis: dated.axis, years: dated.years } : {}) };
 }
 // A page of crops placed by date: their rows and sort keys, then the rows themselves, in that order.
@@ -1565,24 +1597,25 @@ async function axisVersion(env: Env): Promise<string> {
 }
 // How many of a character's crops, or its grapheme's, each decade holds by its book's date, the
 // collection's and the corpus's apart, with the undated as decade null. Every visitor gets the same
-// answer, so the edge keeps one copy per catalogue, corpus count and dates version.
-export const localDecadesQuery = (grapheme: boolean, axis: YearOptions['axis']) =>
+// answer, so the edge keeps one copy per catalogue, corpus count and dates version. Withheld crops
+// are left out unless `withheld` asks for them, as in the gallery the decades sit beside.
+export const localDecadesQuery = (grapheme: boolean, axis: YearOptions['axis'], withheld = false) =>
   `SELECT ${decadeColumn} AS decade,count(*) AS n FROM units u${datingJoin('u.document', axis)} WHERE ${grapheme
     ? 'u.id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)'
-    : 'u.origin=? AND u.character=?'} GROUP BY 1 ORDER BY 1`;
+    : 'u.origin=? AND u.character=?'}${withheld ? '' : ' AND +u.quiz=1'} GROUP BY 1 ORDER BY 1`;
 export const corpusDecadesQuery = (grapheme: boolean, axis: YearOptions['axis']) =>
   `SELECT ${decadeColumn} AS decade,count(*) AS n FROM (${corpusSelection(grapheme ? 'family' : 'character', 1)}) x${datingJoin('x.document', axis)} GROUP BY 1 ORDER BY 1`;
 async function decades(env: Env, ctx: ExecutionContext, url: URL) {
   const q = url.searchParams, { data } = await known(env, q.get('code_point') || '');
   const axis = q.get('axis') === 'composed' ? 'composed' : 'witness', grapheme = q.get('scope') === 'grapheme';
-  const family = data.grapheme?.code_point || data.code_point;
+  const family = data.grapheme?.code_point || data.code_point, withheld = q.get('withheld') === 'show';
   const version = await axisVersion(env);
-  const key = new Request(`${url.origin}/layers/decades?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}`);
+  const key = new Request(`${url.origin}/layers/decades?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}&w=${withheld}`);
   const cached = await caches.default.match(key);
   if (cached) return cached.json();
   const selected = grapheme ? family : data.char;
   const [local, corpus] = await env.DB.batch([
-    env.DB.prepare(localDecadesQuery(grapheme, axis)).bind(...(grapheme ? ['local', family, 'local', data.char] : ['local', data.char])),
+    env.DB.prepare(localDecadesQuery(grapheme, axis, withheld)).bind(...(grapheme ? ['local', family, 'local', data.char] : ['local', data.char])),
     env.DB.prepare(corpusDecadesQuery(grapheme, axis)).bind(selected, selected),
   ]);
   const rows = (r: D1Result) => (r.results as { decade: number | null; n: number }[]).map(row => [row.decade, row.n]);
@@ -1595,7 +1628,7 @@ async function decades(env: Env, ctx: ExecutionContext, url: URL) {
 // placed by its book's date on `axis`, and the crops may be narrowed to a style group, a kind of
 // production (`handwritten`, `printed`, `inscribed` and what is under it) or some of the grapheme's
 // characters (a script's). The answer is the same for every visitor, so the edge keeps it by the
-// stamps the decades are kept by (`axisVersion`).
+// stamps the decades are kept by (`axisVersion`). Withheld crops are left out unless `withheld` asks for them.
 const CHRONOLOGY_MAX = 240;
 export type ChronologyFilter = { style: number | null; production: string | null; chars: string[] };
 function chronologyFilter(q: URLSearchParams): ChronologyFilter {
@@ -1640,17 +1673,17 @@ export const corpusRowsQuery = (n: number) => `SELECT c.*,u.data AS overlay,u.wr
 async function chronology(env: Env, ctx: ExecutionContext, url: URL) {
   const q = url.searchParams, { data } = await known(env, q.get('code_point') || '');
   const axis = q.get('axis') === 'composed' ? 'composed' : 'witness', grapheme = q.get('scope') === 'grapheme';
-  const per = Math.max(1, integer(q, 'per', 6, 12)), filter = chronologyFilter(q);
+  const per = Math.max(1, integer(q, 'per', 6, 12)), filter = chronologyFilter(q), withheld = q.get('withheld') === 'show';
   const family = data.grapheme?.code_point || data.code_point, selected = grapheme ? family : data.char;
   const version = await axisVersion(env);
   const key = new Request(`${url.origin}/layers/chronology?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}&p=${per}`
-    + `&f=${encodeURIComponent(JSON.stringify(filter))}`);
+    + `&f=${encodeURIComponent(JSON.stringify(filter))}&w=${withheld}`);
   const cached = await caches.default.match(key);
   if (cached) return cached.json();
   const local = chronologyConditions(filter, { style: 'u.style_order', production: 'u.production', character: 'u.character' });
   const corpus = chronologyConditions(filter, { style: 's', production: 'production', character: 'ch' });
   const [own, glyphs] = await env.DB.batch([
-    env.DB.prepare(localChronologyQuery(grapheme, axis, local.sql))
+    env.DB.prepare(localChronologyQuery(grapheme, axis, local.sql + (withheld ? '' : ' AND +u.quiz=1')))
       .bind(...(grapheme ? ['local', family, 'local', data.char] : ['local', data.char]), ...local.values, per),
     env.DB.prepare(corpusChronologyQuery(grapheme, axis, corpus.sql)).bind(selected, selected, ...corpus.values, per),
   ]);
@@ -1705,6 +1738,21 @@ async function chronology(env: Env, ctx: ExecutionContext, url: URL) {
 export const graphemeCountsQuery = (extra = '') => `SELECT s,sum(n) AS n FROM (
   SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND family=?${extra} GROUP BY 1
   UNION ALL SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND character=? AND family IS NOT ?${extra} GROUP BY 1) GROUP BY 1`;
+// The withheld crops among a character's or a grapheme's, by style, each branch along its partial index
+// (0077): what a gallery takes off the counts above when it leaves them out.
+export const withheldCountsQuery = (grapheme: boolean, extra = '') => grapheme ? `SELECT s,sum(n) AS n FROM (
+  SELECT style_order AS s,count(*) AS n FROM units INDEXED BY unit_family_withheld WHERE origin=? AND family=? AND quiz=0${extra} GROUP BY 1
+  UNION ALL SELECT style_order AS s,count(*) AS n FROM units INDEXED BY unit_character_withheld
+    WHERE origin=? AND character=? AND family IS NOT ? AND quiz=0${extra} GROUP BY 1) GROUP BY 1`
+  : `SELECT style_order AS s,count(*) AS n FROM units INDEXED BY unit_character_withheld WHERE origin=? AND character=? AND quiz=0${extra} GROUP BY 1`;
+// A crop the alignment repair withheld is kept and tagged, and a gallery leaves it out unless asked
+// (`withheld=show`). The listing skips it on the rows it reads; `+` keeps the condition off `unit_review`.
+const WITHHELD_HIDDEN = ' AND +quiz=1';
+// Counts by style less the withheld ones among them.
+export function lessWithheld(rows: { s: number; n: number }[], withheld: { s: number; n: number }[]) {
+  const taken = new Map(withheld.map(row => [row.s, row.n]));
+  return rows.map(row => ({ s: row.s, n: row.n - (taken.get(row.s) ?? 0) })).filter(row => row.n > 0);
+}
 // A character's crops, and a grapheme's, in style order (`STYLE_ORDER`) then id; `extra` is further
 // conditions on the crop.
 export const characterCropsQuery = (extra = '') => `SELECT * FROM units WHERE origin=? AND character=?${extra} ORDER BY style_order,id LIMIT ? OFFSET ?`;

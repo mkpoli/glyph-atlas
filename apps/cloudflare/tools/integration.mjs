@@ -837,11 +837,12 @@ try {
     }
   }
   // Placed by date, the grapheme's counts take the same crops and styles as the undated ones.
-  for (const filter of ['', '&state=flagged', '&visual_group=g']) {
-    const undated = await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=1${filter}`)
-    const placed = await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&order=year&limit=1${filter}`)
-    assert.ok(undated.total >= 1, filter)
-    assert.deepEqual([placed.total, placed.styles], [undated.total, undated.styles], filter)
+  // These crops are withheld (`quiz=0`): left out, both ways count none; shown, both count them alike.
+  for (const filter of ['', '&state=flagged', '&visual_group=g']) for (const withheld of ['', '&withheld=show']) {
+    const undated = await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=1${filter}${withheld}`)
+    const placed = await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&order=year&limit=1${filter}${withheld}`)
+    if (withheld) assert.ok(undated.total >= 1, filter)
+    assert.deepEqual([placed.total, placed.styles], [undated.total, undated.styles], filter + withheld)
   }
   await db.prepare("DELETE FROM units WHERE id IN ('count-null','count-other','count-own')").run()
   await db.prepare("DELETE FROM units WHERE id='apart-crop'").run()
@@ -1635,15 +1636,23 @@ try {
   assert.ok(!(await call('/atlas?state=attention&limit=96')).items.some(i => i.id === 'retired-kept'), 'nor in Needs fixing')
   // Browse starts from a point the seed picks and wraps round, so every page run deals each crop once.
   await db.prepare('UPDATE units SET shuffle=rowid*1000').run()
-  const everyLocal = (await db.prepare("SELECT id FROM units WHERE origin='local'").all()).results.map(r => r.id).sort()
-  for (const seed of [0, 5500, 12345, 268435455, 268440000]) {
+  // Withheld crops are left out unless asked for. A page run that hands back `above`, as the client does,
+  // deals the same crops as one that has it counted each time.
+  const localIds = async where => (await db.prepare(`SELECT id FROM units WHERE origin='local'${where}`).all()).results.map(r => r.id).sort()
+  const [everyLocal, everyDealable] = [await localIds(''), await localIds(' AND quiz=1')]
+  assert.ok(everyDealable.length < everyLocal.length, 'some fixture crop is withheld')
+  for (const [mode, expected] of [['&withheld=show', everyLocal], ['', everyDealable], ['&hint', everyDealable]]) for (const seed of [0, 5500, 12345, 268435455, 268440000]) {
     const dealt = []
-    for (let offset = 0, total = Infinity; offset < total;) {
-      const page = await call(`/atlas?seed=${seed}&offset=${offset}&limit=7`)
-      dealt.push(...page.items.map(i => i.id)); total = page.total; offset = page.next_offset
+    for (let offset = 0, total = Infinity, above = null; offset < total;) {
+      const hint = mode === '&hint' && above !== null ? `&above=${above}` : ''
+      const page = await call(`/atlas?seed=${seed}&offset=${offset}&limit=7${mode === '&hint' ? '' : mode}${hint}`)
+      dealt.push(...page.items.map(i => i.id)); total = page.total; offset = page.next_offset; above = page.above ?? above
     }
-    assert.deepEqual(dealt.slice().sort(), everyLocal, `seed ${seed} deals every crop once`)
+    assert.deepEqual(dealt.slice().sort(), expected, `seed ${seed}${mode} deals every crop once`)
   }
+  const leftOut = await call('/atlas?limit=1'), withAll = await call('/atlas?limit=1&withheld=show')
+  assert.equal(leftOut.withheld_count, everyLocal.length - everyDealable.length, 'browsing says how many withheld crops it left out')
+  assert.equal(withAll.total - leftOut.total, leftOut.withheld_count, 'and its total leaves exactly those out')
   const dealtFrom = async seed => (await call(`/atlas?seed=${seed}&limit=96`)).items.map(i => i.id)
   const [fromZero, later] = [await dealtFrom(0), await dealtFrom(5500)]
   assert.notEqual(fromZero[0], later[0], 'another seed starts elsewhere')
@@ -1652,13 +1661,27 @@ try {
   for (const [id, character, family] of [['fam-a', '假', 'U+4EEE'], ['fam-b', '仮', null], ['fam-c', '仮', 'U+4EEE'], ['fam-other', '何', 'U+4F55']]) {
     const d = { id, label: character, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
     await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', character, family, null,
-      'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
+      'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   const inGrapheme = async query => { const found = await call('/layers/occurrences?code_point=U%2B4EEE' + query); return [found.total, found.items.map(i => i.id).filter(id => id.startsWith('fam-'))] }
   const localCount = async where => (await db.prepare(`SELECT count(*) AS n FROM units WHERE origin='local' AND ${where}`).first()).n
-  const [graphemeTotal, characterTotal] = [await localCount("(family='U+4EEE' OR character='仮')"), await localCount("character='仮'")]
+  // A withheld crop of the grapheme is left out of its gallery and counted apart, unless asked for.
+  { const d = { id: 'fam-withheld', label: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(d.id, 'local', '仮', 'U+4EEE', null,
+      'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run() }
+  const [graphemeTotal, characterTotal] = [await localCount("(family='U+4EEE' OR character='仮') AND quiz=1"), await localCount("character='仮' AND quiz=1")]
+  const [graphemeWithheld, characterWithheld] = [await localCount("(family='U+4EEE' OR character='仮') AND quiz=0"), await localCount("character='仮' AND quiz=0")]
   assert.deepEqual(await inGrapheme('&scope=grapheme&limit=200'), [graphemeTotal, ['fam-a', 'fam-b', 'fam-c']], 'a grapheme lists its family and its character')
   assert.deepEqual(await inGrapheme('&limit=200'), [characterTotal, ['fam-b', 'fam-c']], 'a character lists its own crops')
+  assert.deepEqual(await inGrapheme('&scope=grapheme&limit=200&withheld=show'), [graphemeTotal + graphemeWithheld, ['fam-a', 'fam-b', 'fam-c', 'fam-withheld']], 'and its withheld ones when asked')
+  for (const [scope, withheld] of [['&scope=grapheme', graphemeWithheld], ['', characterWithheld]])
+    assert.equal((await call('/layers/occurrences?code_point=U%2B4EEE&limit=1' + scope)).withheld, withheld, `the gallery${scope} says how many it left out`)
+  // Each count reads its partial index alone.
+  for (const [sql, bound] of [[worker.withheldCountsQuery(false), ['local', '仮']], [worker.withheldCountsQuery(true), ['local', 'U+4EEE', 'local', '仮', 'U+4EEE']]]) {
+    const counted = (await db.prepare('EXPLAIN QUERY PLAN ' + sql).bind(...bound).all()).results.map(r => r.detail)
+    assert.ok(counted.every(d => !/^SCAN units\b/.test(d) && !/unit_(character|family)_style/.test(d)), counted.join('; '))
+    assert.ok(counted.some(d => /USING (COVERING )?INDEX unit_character_withheld/.test(d)), counted.join('; '))
+  }
   const ordered = (await call('/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=200')).items.map(i => i.id)
   assert.deepEqual(ordered, ordered.slice().sort(), 'in id order')
   assert.equal((await call(`/layers/occurrences?code_point=U%2B4EEE&scope=grapheme&limit=1&offset=${ordered.indexOf('fam-b')}`)).items[0].id, 'fam-b', 'and pages through them')
@@ -1667,7 +1690,7 @@ try {
   for (const [id, style] of [['sty-a', 'regular'], ['sty-b', 'cursive'], ['sty-c', 'unassessed'], ['sty-d', 'running'], ['sty-e', 'ming']]) {
     const d = { id, label: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
     await db.prepare(`INSERT INTO units(${CROP_COLUMNS},style) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', '仮', 'U+4EEE', null,
-      'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null, style).run()
+      'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null, style).run()
   }
   const styled = async query => { const found = await call('/layers/occurrences?code_point=U%2B4EEE&limit=200' + query); return { found, ids: found.items.map(i => i.id).filter(id => id.startsWith('sty-')) } }
   for (const scope of ['', '&scope=grapheme']) {
@@ -1697,10 +1720,10 @@ try {
   for (const [id, character] of [['find-kana', 'と'], ['find-ligature', '𪜈'], ['find-other', 'も']]) {
     const d = { id, label: character, state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
     await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, 'local', character, null, null,
-      'handwritten', 'kana', 'pending', 0, 0, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
+      'handwritten', 'kana', 'pending', 0, 1, 1, 1, JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
   }
   const searched = async term => { const found = await call(`/atlas?q=${encodeURIComponent(term)}&limit=96`); return [found.total, found.items.map(i => i.id).filter(id => id.startsWith('find-')).sort()] }
-  const matching = async term => (await db.prepare("SELECT count(*) AS n FROM units WHERE origin='local' AND character=?").bind(term).first()).n
+  const matching = async term => (await db.prepare("SELECT count(*) AS n FROM units WHERE origin='local' AND character=? AND quiz=1").bind(term).first()).n
   assert.deepEqual(await searched('𪜈'), [await matching('𪜈'), ['find-ligature']], 'a search matches the written character')
   assert.deepEqual(await searched('とも'), [0, []], 'typed kana reach a character through the alias index, not the crop search')
   // A picked character within a script: the script still filters.
@@ -1715,19 +1738,20 @@ try {
   const checkedBefore = await checkedKa()
   await db.batch([db.prepare("UPDATE units SET state='checked' WHERE id='fam-b' AND state<>'checked'"), stamp('second refresh')])
   assert.equal(await checkedKa(), checkedBefore + 1, 'a refresh shows in the browse counts')
-  // A browse listing filtered by character, book or state alone takes its total from those counts.
+  // A browse listing filtered by character, book or state alone takes its total from those counts,
+  // withheld crops left out.
   await db.batch([db.prepare("UPDATE units SET document='hk:tally' WHERE id IN ('fam-b','fam-c')"), stamp('third refresh')])
   for (const [query, where] of [['', '1=1'], ['character=仮', "character='仮'"], ['document=hk:tally', "document='hk:tally'"],
     ['state=checked', "state='checked'"], ['character=仮&document=hk:tally&state=pending', "character='仮' AND document='hk:tally' AND state='pending'"]])
-    assert.equal((await call(`/atlas?${encodeURI(query)}&limit=1`)).total, await localCount(where), `browse ${query || 'everything'} totals what it lists`)
+    assert.equal((await call(`/atlas?${encodeURI(query)}&limit=1`)).total, await localCount(`${where} AND quiz=1`), `browse ${query || 'everything'} totals what it lists`)
   // A crop written without a stamp is not in those counts yet: the listing did not count the table.
   const listedBefore = (await call('/atlas?limit=1')).total, pickedBefore = (await call(`/atlas?${encodeURI('character=仮')}&limit=1`)).total
   const unstamped = { id: 'unstamped', label: '仮', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten' }
   await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind('unstamped', 'local', '仮', null, null,
-    'handwritten', 'kanji', 'pending', 0, 0, 1, 1, JSON.stringify(unstamped), JSON.stringify({ character: unstamped }), '{}', '{}', null).run()
+    'handwritten', 'kanji', 'pending', 0, 1, 1, 1, JSON.stringify(unstamped), JSON.stringify({ character: unstamped }), '{}', '{}', null).run()
   assert.equal((await call('/atlas?limit=1')).total, listedBefore, 'an unfiltered browse page does not count the table')
   assert.equal((await call(`/atlas?${encodeURI('character=仮')}&limit=1`)).total, pickedBefore, 'nor does one filtered by character')
-  assert.equal((await call('/atlas?group=kanji&limit=1')).total, await localCount("category='kanji'"), 'a listing its counts cannot answer is counted')
+  assert.equal((await call('/atlas?group=kanji&limit=1')).total, await localCount("category='kanji' AND quiz=1"), 'a listing its counts cannot answer is counted')
   await stamp('fourth refresh').run()
   assert.equal((await call('/atlas?limit=1')).total, listedBefore + 1, 'and the next stamp brings the crop in')
   // A corpus glyph's suggestions are asked for by its source revision, which it has in place of a page hash.
