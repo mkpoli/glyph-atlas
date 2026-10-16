@@ -15,10 +15,11 @@ it back; nothing else on the unit changes. A crop that shows a neighbour's label
 was measured and is not reliable enough.
 
 Only the repair's own doubt is lifted. A unit a person reviewed, one named in `protect`, one whose note
-records a report or a crop issue, and one a source contests is never released.
+records a report or a crop issue, one a source contests, and one whose label another pass changed
+away from its text is never released.
 
 Measured on 2026-10-16 (docs/reports/withheld-release.md): of 38.5k withheld crops on the site, the pass
-releases 21,942 `hk:` crops. Of the 44 releases whose crop has a site verdict, 43 matched it; the other
+releases 21,898 `hk:` crops. Of the 44 releases whose crop has a site verdict, 43 matched it; the other
 was a merged crop, which the report rule now leaves to a person. Of 48 random releases among unreviewed
 crops, 46 were plainly right by eye, 1 uncertain and none wrong.
 """

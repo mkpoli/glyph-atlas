@@ -34,8 +34,9 @@ keeps the note it replaced under `before`; `--undo` puts that note back.
 
 Never released: a crop a person reviewed (the store's events and the ids the site holds reviews for), a
 crop whose review state is neither `machine` nor `rejected`, a note that records a person's report, a
-crop issue or a merged box, and a note whose status is not `uncertain` (the `ar:` crops ainu-records
-contests, stacks of two characters).
+crop issue or a merged box, a note whose status is not `uncertain` (the `ar:` crops ainu-records
+contests, stacks of two characters), and a crop whose label another pass changed away from its text:
+the classifier reads each place against its text, so that read says nothing about the label.
 
 ## Measured
 
@@ -43,14 +44,15 @@ On the dataset, with the site's reviews of 2026-10-16 (1,394 events, 505 `ar:`/`
 
 | | units |
 | --- | ---: |
-| withheld and read | 36,428 |
-| released | 21,938 |
-| kept withheld: the crop does not show its own label with 0.9 | 14,490 |
+| withheld and read | 35,957 |
+| released | 21,898 |
+| kept withheld: the crop does not show its own label with 0.9 | 14,059 |
 | skipped: a report, crop issue or contest | 1,484 |
+| skipped: a label changed away from its text | 471 |
 | skipped: reviewed | 223 |
 | skipped: a side under 10 pixels | 25 |
 
-All 21,938 are published `hk:` crops; 16,736 published crops stay withheld.
+All 21,898 are published `hk:` crops; 16,776 published crops stay withheld.
 
 **Against the site's verdicts.** 44 released crops have a verdict on the site. 43 agree with their
 label: 42 confirmed, and one corrected to せ, which is the crop's label (its text reads セ). The other
@@ -62,7 +64,7 @@ written characters, no fragments.
 
 ## What is not covered
 
-- The 16,736 crops still withheld. Their crop shows its own label with less than 0.9, or a neighbour's
+- The 16,776 crops still withheld. Their crop shows its own label with less than 0.9, or a neighbour's
   label better. A neighbour's label is not adopted: of 26 such relabels drawn at random, about 17
   showed the neighbour's character, and the rest were fragments or other characters (ヲ→ノ, い→と).
 - The 1,272 `ar:` boxes with no character in their text. They hold strokes, dots and parts of
