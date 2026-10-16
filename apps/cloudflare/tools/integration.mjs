@@ -1161,6 +1161,8 @@ try {
     assert.deepEqual([whole.total, whole.more, whole.hands], [2000, true, { hand: 1100, unknown: 1000, type: 0 }], 'a run past the cap in no one group is past it as a whole')
     const one = await cap('&hand=hand')
     assert.deepEqual([one.total, one.more], [1100, false], 'a group counts its own')
+    const other = await cap('&hand=unknown')
+    assert.deepEqual([other.total, other.more], [1000, false], 'whichever group is chosen')
     await db.batch([db.prepare("DELETE FROM unit_ngrams WHERE first LIKE 'cap:%'"), db.prepare("DELETE FROM corpus_units WHERE id LIKE 'cap:%'")])
   }
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('ナリ') + '&hand=bold')).status, 422, 'only the groups narrow')
