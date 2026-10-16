@@ -102,11 +102,11 @@ export const decadeColumn = `CASE WHEN ${YEAR_KEY} IS NULL THEN NULL ELSE (${YEA
 // The collection's dates in numbers: how many crops and works are dated, by hundred years and by
 // decade of the year a work's copy is dated from, and by what the date dates. A work is a document; the
 // collection's crops are counted from `unit_counts` and the corpus glyphs from
-// `corpus_document_counts` (0054), so no request reads a crop. The answer is kept at the edge by the
+// `corpus_documents` (0054, 0075), so no request reads a crop. The answer is kept at the edge by the
 // stamps those counts and the dates are written with.
 export const dateStatsQuery = () => `SELECT x.document,x.n,d.kind,d.start,d.end,coalesce(c.start,c.end) AS composed
   FROM (SELECT document,sum(n) AS n FROM unit_counts WHERE origin='local' AND document<>'' GROUP BY document
-        UNION ALL SELECT document,n FROM corpus_document_counts) x
+        UNION ALL SELECT document,n FROM corpus_documents) x
   LEFT JOIN document_dating d ON d.document=x.document AND d.axis='witness'
   LEFT JOIN document_dating c ON c.document=x.document AND c.axis='composed'`;
 type Tally = { crops: number; works: number };

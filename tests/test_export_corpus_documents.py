@@ -24,22 +24,30 @@ def test_the_statements_fill_each_glyph_once_and_repeat_safely():
         ("a:1", "A"), ("a:2", "A"), ("b:1", "B"), ("z:9", None)]
 
 
-def test_each_documents_glyphs_are_counted():
+DOCUMENTS = "CREATE TABLE corpus_documents(document TEXT PRIMARY KEY, n INTEGER NOT NULL, title TEXT)"
+
+
+def test_each_documents_glyphs_are_counted_and_named():
     db = sqlite3.connect(":memory:")
-    db.execute("CREATE TABLE corpus_document_counts(document TEXT PRIMARY KEY, n INTEGER NOT NULL)")
-    db.execute("INSERT INTO corpus_document_counts VALUES('gone', 9)")
-    db.executescript("".join(export.counts([("a:1", "A"), ("a:2", "A"), ("b:1", "B")])))
-    assert db.execute("SELECT document,n FROM corpus_document_counts ORDER BY 1").fetchall() == [("A", 2), ("B", 1)]
+    db.execute(DOCUMENTS)
+    db.execute("INSERT INTO corpus_documents VALUES('gone', 9, 'Gone')")
+    db.executescript("".join(export.counts([("a:1", "A"), ("a:2", "A"), ("b:1", "B")], {"A": "Book A's", "Z": "Unpublished"})))
+    assert db.execute("SELECT document,n,title FROM corpus_documents ORDER BY 1").fetchall() == [("A", 2, "Book A's"), ("B", 1, None)]
 
 
-def test_a_corpus_publication_counts_the_documents_it_publishes():
-    from cloudflare_schema import document_count_statements
+def test_a_corpus_publication_counts_and_names_the_documents_it_publishes():
+    from cloudflare_schema import document_statements
 
     export_db = sqlite3.connect(":memory:")
     export_db.execute("CREATE TABLE corpus_units(id TEXT PRIMARY KEY, document TEXT)")
-    export_db.executemany("INSERT INTO corpus_units VALUES(?,?)", [("a:1", "A"), ("a:2", "A"), ("x:1", None), ("b:1", "B's")])
+    export_db.execute(DOCUMENTS)
+    export_db.executemany("INSERT INTO corpus_units VALUES(?,?)", [("a:1", "A"), ("a:2", "A"), ("x:1", None), ("b:1", "B's"), ("c:1", "C")])
+    # The export knows the titles of what it read, including documents it holds no glyph of.
+    export_db.executemany("INSERT INTO corpus_documents VALUES(?,0,?)", [("A", "New A"), ("B's", "B's book"), ("unheld", "Unheld")])
     site = sqlite3.connect(":memory:")
-    site.execute("CREATE TABLE corpus_document_counts(document TEXT PRIMARY KEY, n INTEGER NOT NULL)")
-    site.execute("INSERT INTO corpus_document_counts VALUES('A', 9), ('other', 3)")
-    site.executescript("\n".join(document_count_statements(export_db)))
-    assert site.execute("SELECT document,n FROM corpus_document_counts ORDER BY 1").fetchall() == [("A", 2), ("B's", 1), ("other", 3)]
+    site.execute(DOCUMENTS)
+    site.execute("INSERT INTO corpus_documents VALUES('A', 9, 'Old A'), ('C', 1, 'Kept C'), ('other', 3, 'Other')")
+    site.executescript("\n".join(document_statements(export_db)))
+    # A title the export does not know keeps the site's; a document the export holds no glyph of is not written.
+    assert site.execute("SELECT document,n,title FROM corpus_documents ORDER BY 1").fetchall() == [
+        ("A", 2, "New A"), ("B's", 1, "B's book"), ("C", 1, "Kept C"), ("other", 3, "Other")]

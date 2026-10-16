@@ -17,7 +17,7 @@ from collections import Counter
 from pathlib import Path
 
 import pyarrow.dataset as ds
-from export_cloudflare_corpus import unit_corpora
+from export_cloudflare_corpus import corpus_titles, unit_corpora
 
 from glyph_atlas import withdrawn
 from glyph_atlas.review.ledger import sql_literal as q
@@ -57,12 +57,12 @@ def statements(runs: list[tuple[str, str, str]]) -> list[str]:
             f"AND document IS NOT {q(document)};\n" for first, last, document in runs]
 
 
-def counts(found: list[tuple[str, str]]) -> list[str]:
-    """The statements that write each document's glyph count, replacing the earlier ones."""
+def counts(found: list[tuple[str, str]], titles: dict[str, str]) -> list[str]:
+    """The statements that write each document's glyph count and title, replacing the earlier ones."""
     per = Counter(document for _, document in found)
-    rows = [f"({q(document)},{n})" for document, n in sorted(per.items())]
-    return ["DELETE FROM corpus_document_counts;\n"] + [
-        f"INSERT OR REPLACE INTO corpus_document_counts(document,n) VALUES{','.join(rows[i:i + 200])};\n" for i in range(0, len(rows), 200)]
+    rows = [f"({q(document)},{n},{q(titles[document]) if document in titles else 'NULL'})" for document, n in sorted(per.items())]
+    return ["DELETE FROM corpus_documents;\n"] + [
+        f"INSERT INTO corpus_documents(document,n,title) VALUES{','.join(rows[i:i + 200])};\n" for i in range(0, len(rows), 200)]
 
 
 APPLY = """#!/usr/bin/env bash
@@ -71,8 +71,8 @@ set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$(git -C "$here" rev-parse --show-toplevel)/apps/cloudflare"
 q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
-[ "$(q "SELECT (SELECT count(*) FROM pragma_table_info('corpus_units') WHERE name='document')+(SELECT count(*) FROM sqlite_master WHERE name='corpus_document_counts') AS n")" = '{{"n":2}}' ] \\
-  || {{ echo "apply migrations 0053 and 0054 first" >&2; exit 1; }}
+[ "$(q "SELECT (SELECT count(*) FROM pragma_table_info('corpus_units') WHERE name='document')+(SELECT count(*) FROM sqlite_master WHERE name='corpus_documents') AS n")" = '{{"n":2}}' ] \\
+  || {{ echo "apply migrations 0053, 0054 and 0075 first" >&2; exit 1; }}
 for part in "$here"/sql/part-*.sql; do
   done=0
   for try in 1 2 3 4; do
@@ -89,7 +89,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
-    found = pairs(unit_corpora())
+    corpora = unit_corpora()
+    found = pairs(corpora)
     runs = ranges(found)
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "sql").mkdir(exist_ok=True)
@@ -97,7 +98,7 @@ def main() -> None:
         old.unlink()
     # The last part writes how many glyphs each document has (0054) and stamps `corpus_documents_at`,
     # which the Worker keeps its date counts by.
-    found_statements = statements(runs) + counts(found) + [
+    found_statements = statements(runs) + counts(found, corpus_titles(corpora)) + [
         "INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_documents_at',json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n"]
     parts = []
     for i in range(0, len(found_statements), PER_PART):
