@@ -50,11 +50,11 @@ class Glyph(NamedTuple):
 
 
 # Two neighbours in `seq` order whose centres lie further apart than this many of the larger box's
-# longer side, scaled by the line's spacing (`_spacing`), have ink between them that no unit covers,
-# most often a character the detector missed.
+# longer side, or of the line's usual step (`Spacing`), have ink between them that no unit covers, most
+# often a character the detector missed.
 REACH = 1.6
-#: Steps between neighbours a line needs before its spacing counts, so that one long step cannot vouch
-#: for itself.
+#: Steps between neighbours a line needs before its usual step counts, so that one long step cannot
+#: vouch for itself.
 STEPS = 3
 
 
@@ -66,25 +66,36 @@ def _side(a: Unit | Glyph, b: Unit | Glyph) -> float:
     return max(a.box.w, a.box.h, b.box.w, b.box.h)
 
 
-def _gap(a: Unit | Glyph, b: Unit | Glyph) -> float:
-    """How far apart two neighbours stand, in the longer side of their boxes."""
-    return math.dist(_centre(a), _centre(b)) / max(_side(a, b), 1)
+def _distance(a: Unit | Glyph, b: Unit | Glyph) -> float:
+    return math.dist(_centre(a), _centre(b))
 
 
-def _spacing(steps: Iterable[float]) -> float:
-    """A line's spacing: the lower quartile of its neighbours' gaps (`_gap`), and never under 1; 1 when
-    it has fewer than `STEPS`.
+class Spacing(NamedTuple):
+    """A line's usual step between neighbours, in pixels and in the longer side of their boxes.
 
     A line whose characters stand apart, as a 諺解 text line does with a reading printed under each
-    character, steps further than its boxes are long. The lower quartile stays at the short steps while
-    a quarter of them are: a missed character lengthens a step and cannot set it. A line where most
-    neighbours stand a missed character apart looks like a widely spaced one, and is read as one."""
-    gaps = sorted(steps)
-    return max(1.0, gaps[(len(gaps) - 1) // 4]) if len(gaps) >= STEPS else 1.0
+    character, steps further than its boxes are long. Each measure is the lower quartile of the line's
+    steps, which stays at the short steps while a quarter of them are: a missed character lengthens a
+    step and cannot set it. A step reaches past its boxes only as far as both measures allow, so that
+    small characters set apart lend no reach to large ones and large ones none to small. A line where
+    most neighbours stand a missed character apart looks like a widely spaced one, and is read as one."""
+    pixels: float = 0.0
+    sides: float = 1.0
+
+    @classmethod
+    def of(cls, pairs: Iterable[tuple[Unit | Glyph, Unit | Glyph]]) -> Spacing:
+        found = [(_distance(a, b), _distance(a, b) / max(_side(a, b), 1)) for a, b in pairs]
+        if len(found) < STEPS:
+            return cls()
+        quartile = (len(found) - 1) // 4
+        return cls(sorted(p for p, _ in found)[quartile], max(1.0, sorted(s for _, s in found)[quartile]))
+
+    def reach(self, side: float) -> float:
+        return REACH * max(side, min(self.pixels, side * self.sides))
 
 
-def _near(a: Unit | Glyph, b: Unit | Glyph, spacing: float = 1.0) -> bool:
-    return _gap(a, b) <= REACH * spacing
+def _near(a: Unit | Glyph, b: Unit | Glyph, spacing: Spacing) -> bool:
+    return _distance(a, b) <= spacing.reach(_side(a, b))
 
 
 def _down_the_column(a: Unit | Glyph, b: Unit | Glyph) -> bool:
@@ -102,7 +113,7 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
     Each unit's `seq` is the one before it plus one: a position with no unit, or with two, breaks the
     run there. A gap, an unreadable unit, a mark or an unsegmented run is never part of one, and neither
     is a unit without a box. Two neighbours too far apart on the page break the run as well: further than
-    `REACH` times the longer side of their boxes, scaled by the line's spacing (`_spacing`).
+    `REACH` times the longer side of their boxes or the line's usual step (`Spacing`).
 
     A line in `blocks` holds several columns read one after another, as a CODH block does: it steps
     from the foot of one column to the head of the next, and with small characters that step can fall
@@ -120,8 +131,8 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
                 and found[0].kind == UnitKind.CHAR and found[0].granularity == "char" and found[0].box}
         wraps = line in blocks
         # A block's step from the foot of one column to the head of the next is no part of its spacing.
-        spacing = _spacing(_gap(unit, following) for seq, unit in held.items()
-                           if (following := held.get(seq + 1)) and (not wraps or _down_the_column(unit, following)))
+        spacing = Spacing.of((unit, following) for seq, unit in held.items()
+                             if (following := held.get(seq + 1)) and (not wraps or _down_the_column(unit, following)))
         for seq, unit in sorted(held.items()):
             run = [unit]
             while (len(run) < max(SIZES) and (following := held.get(seq + len(run)))

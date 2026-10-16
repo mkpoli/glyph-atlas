@@ -100,6 +100,10 @@ def test_a_line_spacing_is_its_own_and_counts_in_box_sizes():
              enumerate([(0, 0, 100), (0, 100, 100), (0, 200, 100), (0, 300, 100), (0, 400, 100), (40, 540, 20),
                         (40, 580, 20)])]
     assert ("M:5", "M:6") not in ids(adjacent_ngrams(sized))
+    # Large glyphs after small ones set apart: a gap the small ones' pitch calls a missed glyph breaks.
+    pitched = [Unit(id=f"P:{seq}", line_id="P", seq=seq, box=Box(x=40 - w // 2, y=y - w // 2, w=w, h=w))
+               for seq, (y, w) in enumerate([(20, 20), (60, 20), (100, 20), (140, 20), (180, 20), (220, 36), (300, 36)])]
+    assert ("P:5", "P:6") not in ids(adjacent_ngrams(pitched))
     # A block's wraps are no part of its spacing.
     block = [Unit(id=f"W:{seq}", line_id="W", seq=seq, box=Box(x=x, y=y, w=36, h=36)) for seq, (x, y) in
              enumerate([(500, 0), (500, 40), (400, 0), (300, 0), (200, 0), (100, 0), (100, 80)])]
