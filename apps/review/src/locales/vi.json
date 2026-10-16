@@ -679,7 +679,6 @@
   "visualGroups.label": "Nhóm theo hình dạng",
   "ziLink.aria": "Tra {char} trên zi.tools",
   "ziLink.text": "zi.tools ↗",
-  "cropTitle.characterLink": "Mọi vùng cắt của {char}",
   "meta.character.description": "Các vùng cắt chữ {character} ({codePoint}) từ bản chép tay và sách in xưa, mỗi vùng cắt kèm nguồn và điều khoản sử dụng.",
   "written.detail": "Viết là {form}",
   "signIn.open": "Đăng nhập",

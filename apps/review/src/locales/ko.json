@@ -669,7 +669,6 @@
   "visualGroups.label": "시각적 그룹",
   "ziLink.aria": "zi.tools에서 {char} 찾아보기",
   "ziLink.text": "zi.tools ↗",
-  "cropTitle.characterLink": "{char}의 모든 글자 이미지 보기",
   "meta.character.description": "옛 필사본과 판본에서 잘라 낸 {character}({codePoint}) 글자 이미지입니다. 글자마다 출처와 이용 조건을 함께 보여 줍니다.",
   "handFilter.label": "글자 제작 방식",
   "handFilter.all": "전체",
