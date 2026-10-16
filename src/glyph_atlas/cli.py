@@ -567,6 +567,29 @@ def review_shift_repair(
     typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
 
 
+@review_app.command("withheld-release")
+def review_withheld_release(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose withheld crops are checked")],
+    out: Annotated[Path, typer.Option(help="report of every proposed release")],
+    apply: Annotated[bool, typer.Option("--apply/--dry-run", help="record the releases in the dataset's journal")] = False,
+    undo: Annotated[bool, typer.Option(help="put back the notes this pass released instead (with --apply; a dry run "
+                                       "counts them)")] = False,
+    protect: Annotated[Path | None, typer.Option(help="file of unit ids never released, one per line (reviewed on the site)")] = None,
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    min_p: Annotated[float, typer.Option(help="least probability a released crop shows its own label with")] = 0.9,
+) -> None:
+    """Release withheld crops whose kept box shows the character they are filed under (needs CUDA)."""
+    from .review import withheld_release
+
+    if undo:
+        result = withheld_release.undo(directory, apply=apply)
+    else:
+        ids = protect.read_text().split() if protect else ()
+        result = withheld_release.run(directory, checkpoint=checkpoint, apply=apply, protect=ids, min_p=min_p)
+    withheld_release.write(result, out)
+    typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
+
+
 @review_app.command("ocr-repair")
 def review_ocr_repair(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose OCR-labelled crops are checked")],
