@@ -1,7 +1,8 @@
 <script>
   // Where a crop's image comes from and on what terms, in one quiet line: the work, its holder and
-  // licence, when its copy was made, who gave the label, and the record that states the rights.
-  import { t } from '../lib/i18n.svelte.js'
+  // licence, when its copy was made, who gave the label, the page it was cut from, and the record that
+  // states the rights.
+  import { t, localize } from '../lib/i18n.svelte.js'
   import { licenceName, holderName, sourceLinks } from '../lib/licence.js'
   import DateMark from './DateMark.svelte'
   // `omit` is a link the view offers on its own, which the line then leaves out.
@@ -13,12 +14,15 @@
     : [item.source, holderName(item.attribution || item.holder), licenceName(item.licence)]).filter(Boolean))
   const credit = $derived(corpus && item.text_attribution ? t('corpus.labelCredit', { credit: item.text_attribution }) : null)
   const linked = $derived(sourceLinks(item, corpus))
-  const links = $derived([linked.record, linked.honkoku].filter(link => link && link.href !== omit))
+  // The page view of the page a local crop was cut from, with the crop marked on it.
+  const page = $derived(!corpus && item.page_id && item.id ? { href: localize('/pages/' + encodeURIComponent(item.page_id) + '?crop=' + encodeURIComponent(item.id)),
+    label: item.page_number ? t('tile.page', { page: item.page_number }) : t('nav.pages'), internal: true } : null)
+  const links = $derived([page, linked.record, linked.honkoku].filter(link => link && link.href !== omit))
 </script>
 
 {#if shown.length || item.dating || credit || links.length}
   <!-- Each part stays whole and the line breaks only after a separator; a part longer than the line wraps inside itself. -->
-  <p class="source-credit">{#each shown as part, i}{#if i}{SEPARATOR}{/if}<span class="part">{part}</span>{/each}{#if item.dating}{#if shown.length}{SEPARATOR}{/if}<DateMark {item} />{/if}{#if credit}{#if shown.length || item.dating}{SEPARATOR}{/if}<span class="part">{credit}</span>{/if}{#each links as link, i}{#if i || shown.length || item.dating || credit}{SEPARATOR}{/if}<a class="part" href={link.href} target="_blank" rel="noreferrer">{link.label}</a>{/each}</p>
+  <p class="source-credit">{#each shown as part, i}{#if i}{SEPARATOR}{/if}<span class="part">{part}</span>{/each}{#if item.dating}{#if shown.length}{SEPARATOR}{/if}<DateMark {item} />{/if}{#if credit}{#if shown.length || item.dating}{SEPARATOR}{/if}<span class="part">{credit}</span>{/if}{#each links as link, i}{#if i || shown.length || item.dating || credit}{SEPARATOR}{/if}<a class="part" href={link.href} target={link.internal ? undefined : '_blank'} rel={link.internal ? undefined : 'noreferrer'}>{link.label}</a>{/each}</p>
 {/if}
 
 <style>
