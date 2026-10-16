@@ -1505,8 +1505,23 @@ async function suggest(env: Env, q: URLSearchParams) {
     const items = codes.filter(code => byCode.has(code)).map(code => ({ ...parse(byCode.get(code)!), rank: 7 }));
     return { query: term, match_kind: 'components', items, total: items.length, more: more ? 1 : 0, status: 'ok', corpus: { ready: true } };
   }
-  return { query: term, items: rows.results.slice(0,limit).map(r => ({...parse(r.data), rank:r.rank})),
-    total: rows.results.length, more: Math.max(0,rows.results.length-limit), status:'ok',corpus:{ready:true} };
+  const found = rows.results.map(r => ({ ...parse(r.data), rank: r.rank }));
+  found.push(...await searchVariants(env, literal(term), found, limit));
+  return { query: term, items: found.slice(0,limit), total: found.length, more: Math.max(0,found.length-limit), status:'ok',corpus:{ready:true} };
+}
+// The 異体字 of a one-character query, after what the query names: a reader who types 鯡 is shown 𩹉.
+// Pairs a gallery widens to come first, then the rest, each most attested first, as the card lists them.
+export const searchVariantsQuery = () => `SELECT c.data FROM (
+    SELECT other,max(widens) AS w,count(DISTINCT source) AS n FROM (
+      SELECT b AS other,widens,source FROM character_variants WHERE a=?
+      UNION ALL SELECT a AS other,widens,source FROM character_variants WHERE b=?)
+    WHERE other<>? GROUP BY other) v
+  JOIN characters c ON c.character=v.other ORDER BY v.w DESC,v.n DESC,v.other LIMIT ?`;
+async function searchVariants(env: Env, char: string, found: Json[], limit: number) {
+  if ([...char].length !== 1) return [];
+  const listed = new Set(found.map(item => item.char));
+  const rows = (await env.DB.prepare(searchVariantsQuery()).bind(char, char, char, limit + 1).all<{ data: string }>()).results;
+  return rows.map(r => parse(r.data)).filter(item => !listed.has(item.char)).map(item => ({ ...item, rank: 6, variant_of: char }));
 }
 // A caller that has already looked the character up passes its card, so a request reads it once.
 async function occurrences(env: Env, code: string, q: URLSearchParams, card?: Awaited<ReturnType<typeof known>>) {

@@ -243,6 +243,7 @@
         <b class="candidate-char"><ReferenceGlyph char={item.char} code_point={item.code_point} script={item.script} size="sm" /></b>
         <span class="candidate-reading">{#if item.reading && !codePoints}<ScriptText text={item.reading} />{:else}{item.code_point}{/if}</span>
         {#if item.kind === 'ligature'}<span class="tag">{t('search.ligature')}</span>{/if}
+        {#if item.variant_of}<span class="tag">{t('chips.relation.variant')}</span>{/if}
       </span>
       <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if item.grapheme?.character_count > 1}<span> · <ScriptText text={item.grapheme.label} /></span>{/if}</span>
     </span>

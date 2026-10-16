@@ -761,6 +761,7 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
     literal = identity_text(term)
     counts = layer.per_character
     ranked: dict[str, tuple[int, str]] = {}
+    variant_of: dict[str, str] = {}
 
     def keep(code_point: str | None, rank: int, reason: str) -> None:
         if not code_point or refs.character(code_point) is None:
@@ -808,6 +809,12 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
             keep(code_point, 5, f"a form of {literal}")
         for code_point in rest:
             keep(code_point, 6, f"a form of {literal}")
+        # The 異体字 of the character, as its card lists them: a reader who types 鯡 is shown 𩹉.
+        widened, related = variant_pairs(literal)
+        for entry in widened + related:
+            if entry["code_point"] not in ranked:
+                variant_of[entry["code_point"]] = literal
+            keep(entry["code_point"], 6, f"a variant of {literal}")
 
     ordered = sorted(ranked.items(), key=lambda item: (item[1][0], -counts.get(item[0], 0), item[0]))
     if not ranked:
@@ -828,6 +835,8 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
                         else "han" if str(row.script) == "han"
                         else "hangul" if str(row.script) == "hangul"
                         else "gugyeol" if str(row.script) == "gugyeol" else "kana")
+        if code_point in variant_of:
+            item["variant_of"] = variant_of[code_point]
         item["candidates"] = {**candidate_summary(
             row.char, live=live.get(row.char), local=counts.get(code_point, 0)),
             **({"status": fault} if fault else {})}
