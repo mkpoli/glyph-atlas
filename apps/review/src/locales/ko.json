@@ -658,6 +658,8 @@
   "tile.countForm": "자형 {form}: {count}건, 자형 {total}개 중 {rank}위",
   "tile.countGrapheme": "자소 {grapheme}: 자형 {forms}개에 {count}건, 자소 {total}개 중 {rank}위. 이 자형의 비율은 {share}",
   "tile.countScope": "필터와 관계없이 소장 자료와 말뭉치를 합한 수",
+  "tile.rankForm": "자형 {form}: {total}개 중 {rank}위",
+  "tile.rankGrapheme": "자소 {grapheme}: {total}개 중 {rank}위, 자형 {forms}개 중 이 자형 {share}",
   "tile.countShare": "{percent}%",
   "tile.countShareBelow": "<{percent}%",
   "tile.countShareAbove": ">{percent}%",
