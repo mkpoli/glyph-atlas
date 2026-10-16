@@ -62,13 +62,16 @@ def test_each_page_holding_a_crop_lists_its_crops_in_reading_order_and_its_neigh
         "attribution": "Holder", "rights_url": "https://x.org/rights", "previous": "doc:0", "next": None, "crops": None}
 
 
-def test_a_republished_page_keeps_the_crops_another_dataset_put_on_it(scripts):
+def test_a_republished_page_keeps_the_crops_and_neighbours_another_dataset_put_on_it(scripts):
     _, schema = scripts
     db = sqlite3.connect(":memory:")
     db.executescript(SCHEMA)
-    db.execute(schema.page_upsert("hk:p", "hk:d", json.dumps({"title": "it's", "crops": ["a", "b"]})))
-    db.execute(schema.page_upsert("hk:p", "hk:d", json.dumps({"title": "new", "crops": ["c", "a"]})))
-    assert json.loads(db.execute("SELECT data FROM pages").fetchone()[0]) == {"title": "new", "crops": ["c", "a", "b"]}
+    page = lambda title, crops, previous, following: json.dumps(
+        {"title": title, "previous": previous, "next": following, "crops": crops})
+    db.execute(schema.page_upsert("hk:p", "hk:d", page("it's", ["a", "b"], "hk:o", "hk:q")))
+    db.execute(schema.page_upsert("hk:p", "hk:d", page("new", ["c", "a"], None, "hk:r")))
+    assert json.loads(db.execute("SELECT data FROM pages").fetchone()[0]) == {
+        "title": "new", "previous": "hk:o", "next": "hk:r", "crops": ["c", "a", "b"]}
     before = db.total_changes
-    db.execute(schema.page_upsert("hk:p", "hk:d", json.dumps({"title": "new", "crops": ["c", "a", "b"]})))
+    db.execute(schema.page_upsert("hk:p", "hk:d", page("new", ["c", "a", "b"], "hk:o", "hk:r")))
     assert db.total_changes == before
