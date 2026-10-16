@@ -567,6 +567,24 @@ def review_shift_repair(
     typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
 
 
+@review_app.command("ocr-repair")
+def review_ocr_repair(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose OCR-labelled crops are checked")],
+    out: Annotated[Path, typer.Option(help="report of every proposed relabel")],
+    pages: Annotated[Path, typer.Option(help="page transcriptions (page_texts.parquet of the ainu-records import)")] = Path(
+        "work/ainu-records/page_texts.parquet"),
+    apply: Annotated[bool, typer.Option(help="record the relabels in the dataset's journal")] = False,
+    protect: Annotated[Path | None, typer.Option(help="file of unit ids never relabelled, one per line (reviewed on the site)")] = None,
+) -> None:
+    """Relabel crops whose OCR reading the page's transcription corrects."""
+    from .review import ocr_repair
+
+    ids = protect.read_text().split() if protect else ()
+    result = ocr_repair.run(directory, pages=pages, apply=apply, protect=ids)
+    ocr_repair.write(result, out)
+    typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
+
+
 @review_app.command("consensus-relabel")
 def review_consensus_relabel(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose crops are checked")],
