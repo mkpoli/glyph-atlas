@@ -4,6 +4,9 @@
  * them with its first byte as text and counts, twenty-four at a time, and reads no run's occurrences
  * (`/atlas/runs`) to draw them, so nothing below them moves once the page is up. Its Graphemes tab
  * lists the most frequent graphemes the same way, and a further page of the gallery leaves it as it is.
+ * The homepage's gallery holds a few runs among its crops (`RunTile`), one occurrence read each, in
+ * places the page holds from its first render, so no crop moves when they arrive; a character's page
+ * reads none.
  *
  * Against a running page server, such as `vite preview` with ATLAS_REVIEW_API=https://glyphatlas.org:
  *   bun apps/review/tools/run-strip-check.mjs --server http://127.0.0.1:4173 [--character /en/character/U+3082]
@@ -18,7 +21,11 @@ const CHARACTER = value('--character', '/en/character/U+3082')
 const service = await boot(config)
 let browser, failures = 0
 const check = (ok, message) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${message}`); if (!ok) failures += 1 }
-const boxes = `(() => [...document.querySelectorAll('.run-strip li, .glyph-grid')].map(el => { const r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top + scrollY), Math.round(r.width), Math.round(r.height)].join(',') }))()`
+// The strip's chips and the gallery by their order, and the crops shown by their id.
+const boxes = `(() => Object.fromEntries([...document.querySelectorAll('.run-strip li, .glyph-grid, .glyph-grid [data-unit], .glyph-grid [data-corpus]')].map((el, i) => { const r = el.getBoundingClientRect(); return [el.dataset.unit ?? el.dataset.corpus ?? i, [Math.round(r.left), Math.round(r.top + scrollY), Math.round(r.width), Math.round(r.height)].join(',')] })))()`
+// The boxes that were there at first and are not where they were; tiles may have joined since.
+const moved = (before, after) => Object.entries(before).filter(([key, box]) => after[key] !== box).map(([key, box]) => `${key}: ${box} → ${after[key] ?? 'gone'}`)
+const RUN_TILES = 6
 
 try {
   browser = await Browser.launch({ width: 1440, height: 1000 })
@@ -32,8 +39,15 @@ try {
       await browser.goto(service.base + path, { waitFor: 'document.querySelector(".run-strip .run-chips a") !== null', timeout: 60000 })
       const before = await browser.evaluate(boxes)
       await new Promise(r => setTimeout(r, 3000))
-      check(JSON.stringify(before) === JSON.stringify(await browser.evaluate(boxes)), `${name} ${path}: the strip and gallery keep their place`)
-      check(runReads === 0, `${name} ${path}: no run's occurrences are read for the strip (${runReads})`)
+      // The homepage's runs have all come in (or gone) before the places are compared.
+      if (path === '/en') await browser.waitFor('document.querySelector(".glyph-grid .glyph-skeleton") === null', 30000)
+      const shifted = moved(before, await browser.evaluate(boxes))
+      check(!shifted.length, `${name} ${path}: the strip, gallery and crops keep their place${shifted.length ? ` (${shifted.length} moved, first ${shifted[0]})` : ''}`)
+      if (path === '/en') {
+        const tiles = await browser.evaluate(`[...document.querySelectorAll('.glyph-grid .run-tile')].map(a => new URL(a.href).pathname)`)
+        check(tiles.length > 0 && tiles.length <= RUN_TILES && tiles.every(href => href.includes('/sequence/')), `${name}: the gallery holds up to ${RUN_TILES} runs, each opening its page (${tiles.length})`)
+        check(runReads <= RUN_TILES, `${name} ${path}: one occurrence read for each run in the gallery (${runReads})`)
+      } else check(runReads === 0, `${name} ${path}: no run's occurrences are read (${runReads})`)
       check(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), `${name} ${path}: no sideways scroll`)
       if (path === '/en') {
         const chips = () => browser.evaluate('document.querySelectorAll(".run-chips li a").length')
