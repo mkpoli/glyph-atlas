@@ -815,6 +815,14 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
         for char in han_components.search(literal):
             keep(refs.to_code_point(char), 7, "built from " + " ".join(sorted(wanted, key=literal.find)))
         ordered = list(ranked.items())
+    # The 異体字 of a character the table holds, after everything above and in the card's order (most
+    # attested first): a reader who types 鯡 is shown 𩹉. Related pairs are not variants and stay out.
+    variant_of: dict[str, str] = {}
+    if len(literal) == 1 and refs.to_code_point(literal) in ranked:
+        for entry in variant_pairs(literal)[0]:
+            if entry["code_point"] not in ranked and refs.character(entry["code_point"]) is not None:
+                variant_of[entry["code_point"]] = literal
+                ordered.append((entry["code_point"], (6, f"a variant of {literal}")))
     window = ordered[:max(limit, 1)]
     live, fault = corpus_source.safe(corpus_source.counts,
                                      [refs.to_char(code_point) for code_point, _ in window])
@@ -828,6 +836,8 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
                         else "han" if str(row.script) == "han"
                         else "hangul" if str(row.script) == "hangul"
                         else "gugyeol" if str(row.script) == "gugyeol" else "kana")
+        if code_point in variant_of:
+            item["variant_of"] = variant_of[code_point]
         item["candidates"] = {**candidate_summary(
             row.char, live=live.get(row.char), local=counts.get(code_point, 0)),
             **({"status": fault} if fault else {})}

@@ -887,3 +887,14 @@ def test_a_corrected_character_keeps_the_transcription(dataset):
     assert stored.unicode == "U+308A" and stored.text_source == source
     fields = [event.field for event in Store(dataset).events() if event.target_id == target]
     assert "text_source" not in fields and "reading" not in fields
+
+
+def test_suggest_offers_the_variants_of_one_character(dataset):
+    """鯡 leads to 𩹉 and 𩹉 back to 鯡, after the character itself and marked as its variant."""
+    api = client(dataset)
+    for asked, variant in (("鯡", "𩹉"), ("𩹉", "鯡")):
+        items = api.get("/layers/suggest", params={"q": asked}).json()["items"]
+        assert items[0]["char"] == asked
+        row = next(row for row in items if row["char"] == variant)
+        assert row["variant_of"] == asked and row["rank"] == 6
+        assert "variant_of" not in items[0]
