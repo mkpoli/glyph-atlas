@@ -15,6 +15,7 @@ from cloudflare_schema import (
     category_of,
     corpus_upsert,
     document_statements,
+    page_upsert,
     schema,
 )
 from export_cloudflare import UNIT_COLUMNS, encoded
@@ -92,6 +93,10 @@ def seal(catalogue: Path, corpus: Path, output: Path, published: dict[str, tuple
         # By name: `table_info` leaves out generated columns (`style_order`), which take no value.
         columns = ",".join(row[1] for row in db.execute(f"PRAGMA table_info({table})"))
         db.execute(f"INSERT INTO {table}({columns}) SELECT {columns} FROM local_source.{table}")
+    # The pages the sealed crops were cut from (0078); an export made before them has none.
+    if db.execute("SELECT 1 FROM local_source.sqlite_master WHERE name='pages'").fetchone():
+        db.execute("INSERT INTO pages SELECT * FROM local_source.pages WHERE id IN "
+                   "(SELECT json_extract(data,'$.page_id') FROM units WHERE origin='local')")
     # The ledger rows the export copied (`ledger.copy_published`); the site keeps them as they are. An
     # export made before the ledger has none.
     for table in (*ledger.FORM_TABLES, *ledger.TABLES):
@@ -215,6 +220,10 @@ def seal(catalogue: Path, corpus: Path, output: Path, published: dict[str, tuple
             statement = corpus_upsert(row)
             max_statement = max(max_statement, len(statement.encode()))
             sql.write(statement + "\n")
+        for row in db.execute("SELECT id,document,data FROM pages ORDER BY id"):
+            statement = page_upsert(*row)
+            max_statement = max(max_statement, len(statement.encode()))
+            sql.write(statement + "\n")
         # After the units, since a run is recorded only once all of its crops are on the site. The
         # publication's units lose the runs an earlier one recorded for them first.
         ngrams = [Run(tuple(i for i in ids if i), bool(vertical)) for *ids, vertical in db.execute(
@@ -235,7 +244,7 @@ def seal(catalogue: Path, corpus: Path, output: Path, published: dict[str, tuple
         for statement in document_statements(db):
             sql.write(statement + "\n")
     counts = {table: db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-              for table in ("units", "characters", "corpus_units", "media")}
+              for table in ("units", "characters", "corpus_units", "media", "pages")}
     counts["unit_ngrams"] = len(ngrams)
     counts["assertions"] = db.execute("SELECT count(*) FROM assertions").fetchone()[0]
     counts["assertion_actions"] = db.execute("SELECT count(*) FROM assertion_actions").fetchone()[0]

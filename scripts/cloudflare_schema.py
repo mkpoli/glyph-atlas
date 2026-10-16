@@ -89,6 +89,22 @@ def corpus_upsert(values) -> str:
             " WHERE b.id=excluded.id AND b.character IS excluded.character AND b.family IS excluded.family)));")
 
 
+#: A page's crops once a publication rewrites its row: the publication's own, in its order, then those an
+#: earlier one recorded there, which another dataset may hold (hk: pages are cut in more than one).
+PAGE_CROPS = ("(SELECT json_group_array(value) FROM (SELECT value FROM json_each(excluded.data,'$.crops')"
+              " UNION ALL SELECT value FROM json_each(pages.data,'$.crops')"
+              " WHERE value NOT IN (SELECT value FROM json_each(excluded.data,'$.crops'))))")
+
+
+def page_upsert(identity: str, document: str, data: str) -> str:
+    """One published page (0078) as D1 SQL, keeping the crops an earlier publication put on it. A row
+    already as published is left alone, since D1 bills a rewrite to the same value."""
+    quoted = ",".join("'" + v.replace("'", "''") + "'" for v in (identity, document, data))
+    merged = f"json_set(excluded.data,'$.crops',json({PAGE_CROPS}))"
+    return (f"INSERT INTO pages(id,document,data) VALUES({quoted}) "
+            f"ON CONFLICT(id) DO UPDATE SET document=excluded.document,data={merged} WHERE pages.data IS NOT {merged};")
+
+
 def document_statements(db) -> list[str]:
     """Each document a corpus publication holds, with its glyph count and title (0054, 0075), replacing the
     count D1 has. A document is published whole by one export, so its count here is its count on the site;

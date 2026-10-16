@@ -169,6 +169,55 @@ def page_fields(page) -> dict:
     return {"page_number": page.seq + 1 if page else None, "page_index": page.seq if page else None}
 
 
+#: The tail of a IIIF Image API request (region, size, rotation, quality and format), which leaves the
+#: service it was made of.
+IIIF_REQUEST = re.compile(r"/(?:full|square|\d+,\d+,\d+,\d+|pct:[\d.,]+)/[^/]+/!?[\d.]+/(?:default|color|gray|bitonal|native)\.\w+$")
+
+
+def image_service(url: str | None) -> str | None:
+    """The IIIF image service a page's image is served by: the base of the request it names, or the
+    image itself when it names a service. None for an image no IIIF service serves."""
+    if not url:
+        return None
+    base = IIIF_REQUEST.sub("", url.removesuffix("/info.json"))
+    return base if base != url or "iiif" in url.lower() else None
+
+
+def page_record(page, doc, crops, previous, following) -> dict:
+    """A page as the page view shows it (0078): its book, number and size in the page pixels boxes are
+    given in, its IIIF image service, its credit, the pages before and after it that hold crops, and
+    the ids of its crops in reading order."""
+    rights = doc.image_rights if doc else None
+    return {"id": page.id, "document": page.document_id, "title": doc.title if doc else None,
+            "page_number": page.seq + 1, "width": page.width, "height": page.height,
+            "service": image_service(page.image), "canvas": page.canvas,
+            "holder": doc.holder if doc else None, "licence": str(rights.licence) if rights else None,
+            "attribution": rights.attribution if rights else None, "rights_url": rights.evidence if rights else None,
+            "previous": previous, "next": following, "crops": crops}
+
+
+def page_rows(db, published, units, pages, documents):
+    """Rewrite `pages` from the ids of the crops `published`: a page appears once one of its crops does,
+    and its neighbours are the pages of its book that do too."""
+    held = defaultdict(list)
+    for identity in published:
+        unit = units.get(identity)
+        if unit is not None and unit.page_id in pages:
+            held[unit.page_id].append(unit)
+    books = defaultdict(list)
+    for page_id in held:
+        books[pages[page_id].document_id].append(pages[page_id])
+    db.execute("DELETE FROM pages")
+    for document_id, own in books.items():
+        own.sort(key=lambda page: (page.seq, page.id))
+        for i, page in enumerate(own):
+            crops = [u.id for u in sorted(held[page.id], key=lambda u: (u.line_id or "", u.seq if u.seq is not None else -1, u.id))]
+            record = page_record(page, documents.get(document_id), crops,
+                                 own[i - 1].id if i else None, own[i + 1].id if i + 1 < len(own) else None)
+            db.execute("INSERT INTO pages VALUES (?,?,?)", (page.id, document_id, encoded(record)))
+    db.commit()
+
+
 def export(dataset: Path, output: Path, *, resume=False):
     output.mkdir(parents=True, exist_ok=resume)
     frozen = output / "source"
@@ -279,6 +328,7 @@ def export(dataset: Path, output: Path, *, resume=False):
             if i % 500 == 0:
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
+        page_rows(db, [i for i, in db.execute("SELECT id FROM units WHERE origin='local'")], units, pages, documents)
         # The claims made here, and those an action here names, go to the site's ledger, but none about a
         # crop of a withdrawn document; the site resolves their slots once they are there (`seal_cloudflare`).
         gone = withdrawn.documents()
