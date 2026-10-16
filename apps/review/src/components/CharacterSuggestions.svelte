@@ -4,9 +4,11 @@
   import ZiLink from './ZiLink.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import { isSingle, offersSuggestions } from '../lib/issues.js'
+  import { similar } from '../lib/client.js'
+  import { lookAlikeLabels } from '../lib/lookAlikes.js'
   import { t } from '../lib/i18n.svelte.js'
-  // What a wrong or joined crop holds: the characters the recognisers suggest, and any other picked
-  // from the character search. A joined crop's characters are picked one after another, or typed as a
+  // What a wrong or joined crop holds: the characters the recognisers suggest, for a wrong one the
+  // characters its look-alikes are filed under, and any other picked from the character search. A joined crop's characters are picked one after another, or typed as a
   // run and taken with Enter.
   let { result = null, loading = false, contextResult = undefined, contextLoading = false,
     targetId = '', issue, label, value = null, noneSelected = false, choose, disabled = false,
@@ -25,6 +27,14 @@
     query = ''
     choose(picked + run, false)
   }
+  // Look-alikes are read only once the crop is called a wrong character.
+  let alike = $state({ id: null, result: null })
+  $effect(() => {
+    if (issue !== 'character' || !targetId || alike.id === targetId) return
+    const id = targetId
+    similar(id).then(result => { if (targetId === id) alike = { id, result } }, () => {})
+  })
+  const lookAlikes = $derived(issue === 'character' && alike.id === targetId ? lookAlikeLabels(alike.result, label) : [])
   let order = [], previousKey = null
   $effect(() => {
     const key = targetId + ':' + (joined ? 'multiple' : 'single')
@@ -40,7 +50,8 @@
     // Keep their positions, while making a newly recognized printed mark visible.
     const visible = order.slice(0, 6)
     const symbols = incoming.filter(c => c.basis === 'symbol-parts').map(c => c.text)
-    candidates = [...visible, ...symbols.filter(text => !visible.includes(text))]
+    const shown = [...visible, ...symbols.filter(text => !visible.includes(text))]
+    candidates = [...shown, ...lookAlikes.filter(text => !shown.includes(text))]
   })
 </script>
 
