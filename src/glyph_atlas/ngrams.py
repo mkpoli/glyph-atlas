@@ -50,11 +50,11 @@ class Glyph(NamedTuple):
 
 
 # Two neighbours in `seq` order whose centres lie further apart than this many of the larger box's
-# longer side, or of the line's usual step (`_step`), have ink between them that no unit covers, most often a
-# character the detector missed.
+# longer side, scaled by the line's spacing (`_spacing`), have ink between them that no unit covers,
+# most often a character the detector missed.
 REACH = 1.6
-#: Steps between neighbours a line needs before its usual step counts, so that one long step cannot
-#: vouch for itself.
+#: Steps between neighbours a line needs before its spacing counts, so that one long step cannot vouch
+#: for itself.
 STEPS = 3
 
 
@@ -62,23 +62,29 @@ def _centre(unit: Unit | Glyph) -> tuple[float, float]:
     return unit.box.x + unit.box.w / 2, unit.box.y + unit.box.h / 2
 
 
-def _distance(a: Unit | Glyph, b: Unit | Glyph) -> float:
-    return math.dist(_centre(a), _centre(b))
+def _side(a: Unit | Glyph, b: Unit | Glyph) -> float:
+    return max(a.box.w, a.box.h, b.box.w, b.box.h)
 
 
-def _step(held: Mapping[int, Unit | Glyph]) -> float:
-    """The line's usual step between neighbours: the lower quartile of its steps, or 0 when it has
-    fewer than `STEPS`.
+def _gap(a: Unit | Glyph, b: Unit | Glyph) -> float:
+    """How far apart two neighbours stand, in the longer side of their boxes."""
+    return math.dist(_centre(a), _centre(b)) / max(_side(a, b), 1)
+
+
+def _spacing(steps: Iterable[float]) -> float:
+    """A line's spacing: the lower quartile of its neighbours' gaps (`_gap`), and never under 1; 1 when
+    it has fewer than `STEPS`.
 
     A line whose characters stand apart, as a 諺解 text line does with a reading printed under each
     character, steps further than its boxes are long. The lower quartile stays at the short steps while
-    a quarter of them are: column wraps and missed characters lengthen the others and never set it."""
-    steps = sorted(_distance(unit, held[seq + 1]) for seq, unit in held.items() if seq + 1 in held)
-    return steps[(len(steps) - 1) // 4] if len(steps) >= STEPS else 0.0
+    a quarter of them are: a missed character lengthens a step and cannot set it. A line where most
+    neighbours stand a missed character apart looks like a widely spaced one, and is read as one."""
+    gaps = sorted(steps)
+    return max(1.0, gaps[(len(gaps) - 1) // 4]) if len(gaps) >= STEPS else 1.0
 
 
-def _near(a: Unit | Glyph, b: Unit | Glyph, step: float = 0.0) -> bool:
-    return _distance(a, b) <= REACH * max(a.box.w, a.box.h, b.box.w, b.box.h, step)
+def _near(a: Unit | Glyph, b: Unit | Glyph, spacing: float = 1.0) -> bool:
+    return _gap(a, b) <= REACH * spacing
 
 
 def _down_the_column(a: Unit | Glyph, b: Unit | Glyph) -> bool:
@@ -96,7 +102,7 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
     Each unit's `seq` is the one before it plus one: a position with no unit, or with two, breaks the
     run there. A gap, an unreadable unit, a mark or an unsegmented run is never part of one, and neither
     is a unit without a box. Two neighbours too far apart on the page break the run as well: further than
-    `REACH` times the longer side of their boxes or the line's usual step between neighbours (`_step`).
+    `REACH` times the longer side of their boxes, scaled by the line's spacing (`_spacing`).
 
     A line in `blocks` holds several columns read one after another, as a CODH block does: it steps
     from the foot of one column to the head of the next, and with small characters that step can fall
@@ -113,11 +119,13 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
         held = {seq: found[0] for seq, found in positions.items() if len(found) == 1
                 and found[0].kind == UnitKind.CHAR and found[0].granularity == "char" and found[0].box}
         wraps = line in blocks
-        step = _step(held)
+        # A block's step from the foot of one column to the head of the next is no part of its spacing.
+        spacing = _spacing(_gap(unit, following) for seq, unit in held.items()
+                           if (following := held.get(seq + 1)) and (not wraps or _down_the_column(unit, following)))
         for seq, unit in sorted(held.items()):
             run = [unit]
             while (len(run) < max(SIZES) and (following := held.get(seq + len(run)))
-                   and _near(run[-1], following, step)
+                   and _near(run[-1], following, spacing)
                    and (not wraps or _down_the_column(run[-1], following))):
                 run.append(following)
             ngrams += [Run(tuple(u.id for u in run[:size]), line not in horizontal) for size in SIZES if len(run) >= size]

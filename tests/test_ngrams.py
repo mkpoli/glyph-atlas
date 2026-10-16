@@ -91,6 +91,21 @@ def test_long_steps_do_not_set_a_line_usual_step():
     assert ids(adjacent_ngrams(block, blocks={"B"})) == [("B:0", "B:1"), ("B:2", "B:3")]
 
 
+def test_a_line_spacing_is_its_own_and_counts_in_box_sizes():
+    # Five steps, one of them across a missed character: the short ones still set the spacing.
+    missed = [unit(0, y=0), unit(1, y=40), unit(2, y=120), unit(3, y=160), unit(4, y=200), unit(5, y=240)]
+    assert ("L1:1", "L1:2") not in ids(adjacent_ngrams(missed))
+    # Small glyphs after large ones: a gap of two small glyphs breaks, whatever the large ones step.
+    sized = [Unit(id=f"M:{seq}", line_id="M", seq=seq, box=Box(x=x, y=y, w=w, h=w)) for seq, (x, y, w) in
+             enumerate([(0, 0, 100), (0, 100, 100), (0, 200, 100), (0, 300, 100), (0, 400, 100), (40, 540, 20),
+                        (40, 580, 20)])]
+    assert ("M:5", "M:6") not in ids(adjacent_ngrams(sized))
+    # A block's wraps are no part of its spacing.
+    block = [Unit(id=f"W:{seq}", line_id="W", seq=seq, box=Box(x=x, y=y, w=36, h=36)) for seq, (x, y) in
+             enumerate([(500, 0), (500, 40), (400, 0), (300, 0), (200, 0), (100, 0), (100, 80)])]
+    assert ids(adjacent_ngrams(block, blocks={"W"})) == [("W:0", "W:1")]
+
+
 def test_a_run_is_written_the_way_its_line_is():
     across = [Unit(id=f"H:{i}", line_id="H", seq=i, box=Box(x=i * 40, y=0, w=36, h=36)) for i in range(3)]
     runs = adjacent_ngrams([*across, unit(0), unit(1)], horizontal={"H"})
