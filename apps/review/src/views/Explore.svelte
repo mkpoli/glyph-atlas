@@ -900,6 +900,8 @@
   {#if picked}
   {:else if !query && (items.length || homeCorpus.length || sampleFault)}
     <p class="find-count" role="status">{#if items.length}{t('explore.count.here', { count: items.length })}{/if}{#if homeCorpus.length}{#if items.length}<span class="separator">·</span> {/if}{t('explore.count.fromCorpus', { count: homeCorpus.length })}{/if}{#if sampleFault}{#if items.length || homeCorpus.length}<span class="separator">·</span> {/if}<span class="corpus-fault" role="status">{sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}{@render withheldToggle(items.length || homeCorpus.length || sampleFault)}{#if loading}<span class="find-pending"> …</span>{/if}</p>
+  {:else if !query && withheldCount}
+    <p class="find-count" role="status">{@render withheldToggle(false)}</p>
   {:else if query && settled}
     <p class="find-count" role="status">{around('explore.occurrencesOf', 'character', { count: settled.total })[0]}<b>{@render term()}</b>{around('explore.occurrencesOf', 'character', { count: settled.total })[1]}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {/if}

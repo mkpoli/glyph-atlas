@@ -1069,9 +1069,16 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const rotated = !review && !flaggedView && !character && !q.get('q');
   const start = seed % SHUFFLE_RANGE;
   const side = (test: '>=' | '<') => `SELECT ${columns} FROM units WHERE ${where.join(' AND ')} AND shuffle${test}? ORDER BY shuffle,rowid LIMIT ? OFFSET ?`;
+  // Past the crops from the seed's point up, the listing wraps round to those below it, and needs how
+  // many lie above. The page that reaches the end knows; the client hands it back on later pages
+  // (`above`), and a page past it reads only the crops below: skipping those above would read each of
+  // them once withheld ones are left out, as would counting them.
+  const told = rotated && q.get('above') !== null ? integer(q, 'above', 0) : null;
+  const below = told !== null && offset >= told;
   const results = await env.DB.batch([
     ...(tally ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
-    rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
+    below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
+      : rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
       : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
     ...(hiddenCount ? [env.DB.prepare(hiddenCount.sql).bind(...materialValues, ...hiddenCount.values)] : []),
@@ -1081,12 +1088,8 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const listed = tally ? groups.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
     : (count!.results[0] as { n: number }).n;
   const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
-  // Past the crops from the seed's point up, the listing wraps round to those below it, and needs how
-  // many lie above. The page that reaches the end knows; the client hands it back on later pages
-  // (`above`), since counting it reads every crop above the point once withheld ones are left out.
-  let above: number | null = null;
-  if (rotated && rows.length < limit) {
-    const told = q.get('above') === null ? null : integer(q, 'above', 0);
+  let above: number | null = below ? told : null;
+  if (rotated && !below && rows.length < limit) {
     above = rows.length ? offset + rows.length : told ?? (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
       .bind(...values, start).first<{ n: number }>())!.n;
     const wrapped = await env.DB.prepare(side('<')).bind(...values, start, limit - rows.length, Math.max(offset - above, 0)).all();
