@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import math
+import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from pathlib import Path
@@ -101,6 +102,10 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
             skipped["protected"] += 1
         elif not releasable(note):
             skipped["reported"] += 1
+        elif unicodedata.normalize("NFC", label) != unicodedata.normalize("NFC", text):
+            # The classifier is read against the text at each place, and another pass changed this
+            # unit's label away from its text, so its read says nothing about the label it has now.
+            skipped["relabelled"] += 1
         elif min(unit.box.w, unit.box.h) < MIN_SIDE:
             skipped["small"] += 1
         else:
@@ -128,7 +133,9 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
         items.append(item)
         if not apply:
             continue
-        evidence = {"kind": "withheld-release", "method": METHOD, "automated": True, "p": p, "min_p": min_p,
+        # The revision makes each release its own request: a release made again after an undo is recorded.
+        evidence = {"kind": "withheld-release", "method": METHOD, "automated": True, "revision": revision,
+                    "p": p, "min_p": min_p,
                     "shown": [None if math.isnan(x) else round(x, 4) for x in read.tolist()], "offsets": list(OFFSETS)}
         released = release_note(note, p)
         try:
@@ -158,7 +165,7 @@ def undo(dataset: Path, *, apply: bool = False) -> dict:
         if not apply:
             counts["to restore"] += 1
             continue
-        evidence = {"kind": "withheld-release-undo", "method": METHOD, "automated": True}
+        evidence = {"kind": "withheld-release-undo", "method": METHOD, "automated": True, "revision": revision}
         try:
             _changes(store, unit, {"meta": {**unit.meta, "alignment_repair": restored_note(note)}}, evidence,
                      base_revision=revision)

@@ -115,6 +115,33 @@ def test_a_reviewed_unit_is_never_released(dataset: Path, monkeypatch):
     assert result["skipped"]["protected"] == 1
 
 
+def test_a_release_and_undo_made_again_are_recorded_again(dataset: Path, monkeypatch):
+    from glyph_atlas.review.atlas import repair_withheld
+    from glyph_atlas.review.store import Store
+
+    reads = {f"{LINE}:u{i}": shows(0) for i in range(4)}
+    monkeypatch.setattr(shift_repair, "_shown", lambda store, blocks, checkpoint, **_: reads)
+    for _ in range(2):
+        assert wr.run(dataset, checkpoint=Path("unused"), apply=True)["counts"] == {"released": 2}
+        assert not repair_withheld(Store(dataset).unit_snapshot(f"{LINE}:u0")[0][0])
+        assert wr.undo(dataset, apply=True)["counts"] == {"restored": 2}
+        assert repair_withheld(Store(dataset).unit_snapshot(f"{LINE}:u0")[0][0])
+
+
+def test_a_relabelled_unit_is_not_released_on_its_texts_read(dataset: Path, monkeypatch):
+    from glyph_atlas.review.refine import _changes
+    from glyph_atlas.review.store import Store
+
+    store = Store(dataset)
+    unit, revision = store.unit_snapshot(f"{LINE}:u0")[0]
+    _changes(store, unit, {"unicode": "U+30BF"}, {"kind": "test"}, base_revision=revision)
+    reads = {f"{LINE}:u{i}": shows(0) for i in range(4)}
+    monkeypatch.setattr(shift_repair, "_shown", lambda store, blocks, checkpoint, **_: reads)
+    result = wr.run(dataset, checkpoint=Path("unused"))
+    assert [item["unit_id"] for item in result["items"]] == [f"{LINE}:u1"]
+    assert result["skipped"]["relabelled"] == 1
+
+
 def test_a_run_that_reads_no_crop_fails(dataset: Path, monkeypatch):
     monkeypatch.setattr(shift_repair, "_shown", lambda store, blocks, checkpoint, **_: {})
     with pytest.raises(RuntimeError, match="could be read"):
