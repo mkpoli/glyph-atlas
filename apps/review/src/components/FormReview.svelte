@@ -127,7 +127,7 @@
       <div class="review-forms" aria-label={t('forms.review.nameRest')}>
         <small>{t('forms.review.nameRest')}</small>
         {#each palette as form, i (form.char)}
-          <button class="review-form" disabled={busy || loading} onclick={() => save(form.char)} title={form.described ? t('form.ids.named', { ids: form.char }) : form.name ?? form.code_point}>
+          <button class="review-form" disabled={busy || loading} onclick={() => save(form.char)} title={form.described ? form.char : form.name ?? form.code_point}>
             {#if form.described}<FormText text={form.char} />{:else}<ReferenceGlyph char={form.char} code_point={form.code_point} script={form.script} />{/if}
             {#if i < 10}<kbd>{'1234567890'[i]}</kbd>{/if}
           </button>
