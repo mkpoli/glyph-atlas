@@ -89,6 +89,7 @@ export async function characterGallery(codePoint, { scope = null, visual = '', s
     local: found.items.map(item => ({ ...item, origin: 'collection' })),
     total: found.counts.total,
     available: found.counts.exact_total,
+    withheld: found.withheld ?? null,
     corpus,
     corpusTotal: leads.glyphs ?? 0,
     corpusFault: leads.fault ?? null,

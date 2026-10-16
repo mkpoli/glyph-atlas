@@ -63,6 +63,19 @@
     remember('atlas.showReported', showReported)
     offset = 0; load()
   }
+  // Crops the alignment repair withheld are left out of browsing unless asked for; the choice is
+  // remembered too. The Flagged view always shows them.
+  let showWithheld = $state(stored('atlas.showWithheld', false))
+  function toggleWithheld() {
+    showWithheld = !showWithheld
+    remember('atlas.showWithheld', showWithheld)
+    offset = 0; load()
+  }
+  const withheldParam = () => !flagged && showWithheld ? 'show' : null
+  // How many withheld crops the view leaves out: a picked character's from its gallery, else the listing's.
+  const withheldCount = $derived(picked ? localWithheld : data?.withheld_count ?? null)
+  // A picked character's withheld crops its gallery left out, or null when not counted.
+  let localWithheld = $state(untrack(() => gallery)?.withheld ?? null)
   // A picked character has a gallery of its own: the occurrences this collection holds and the
   // located glyphs the corpus index knows about. They are separate lists with separate paging —
   // different services page them — and they are merged for display only.
@@ -340,8 +353,9 @@
         if (!append) { local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; localStyles = null; corpusStyles = null; corpusAnswered = false }
         // Local records page by their own count, and they are shown before the corpus is asked:
         // a corpus that cannot answer must not hide the records this collection does hold.
-        const found = await occurrences(picked.code_point, { expand, limit: 60, offset: append ? local.length : 0, style: style || undefined, ...dateParams() })
+        const found = await occurrences(picked.code_point, { expand, limit: 60, offset: append ? local.length : 0, style: style || undefined, withheld: withheldParam(), ...dateParams() })
         if (closed || id !== requestId) return
+        localWithheld = found.withheld ?? null
         const rows = found.items.map(item => ({ ...item, origin: 'collection' }))
         // A new list is drawn from its start; a further page goes before the corpus glyphs shown after
         // the collection's own crops, so the tiles from the end of those crops on are drawn again.
@@ -378,13 +392,15 @@
       catalogueRequest = new AbortController()
       // The corpus half is requested alongside the crops, and deduplicated against them once both are in.
       const sampled = append ? null : requestSample()
+      // A further page hands back how many crops lie above the seed's point once a page has found it.
       const result = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
-        reported: flagged ? (showReported ? 'show' : 'hide') : null, seed, offset, limit: 60 }, { signal: catalogueRequest.signal, priority: 'low' })
+        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), above: append ? data?.above : null, seed, offset, limit: 60 },
+        { signal: catalogueRequest.signal, priority: 'low' })
       if (closed || id !== requestId) return
       if (!append && (openEmptyGrapheme(result) || openSplit(result))) return
       // A further page keeps the counts by character and work it came with: they answer the same filters,
       // and replacing them redraws the work menu and regathers thousands of graphemes for every page.
-      data = append && data ? { ...result, categories: data.categories, documents: data.documents } : result
+      data = append && data ? { ...result, categories: data.categories, documents: data.documents, above: result.above ?? data.above } : result
       reach = append ? Math.min(reach, items.length) : 0
       items = append ? [...items, ...result.items] : result.items
       if (!append) await showSample(id, sampled, result.items)
@@ -396,11 +412,11 @@
   // The decades of the gallery on show, for the period filter; they depend on the character and scope only.
   let decadesFor = ''
   function loadDecades(code, scope) {
-    const key = `${code} ${scope}`
+    const key = `${code} ${scope} ${showWithheld}`
     if (scope === 'variants') { decadeCounts = null; decadesFor = ''; return }
     if (key === decadesFor) return
     decadesFor = key; decadeCounts = null
-    decades(code, { scope: scope === 'grapheme' ? 'grapheme' : 'character' })
+    decades(code, { scope: scope === 'grapheme' ? 'grapheme' : 'character', withheld: showWithheld ? 'show' : null })
       .then(found => { if (!closed && decadesFor === key) decadeCounts = [...found.local, ...found.corpus] })
       .catch(() => { if (decadesFor === key) decadesFor = '' })
   }
@@ -612,8 +628,9 @@
       keepPlace(id, () => { if (picked) local = local.flatMap(replace); else items = items.flatMap(replace) })
       runsChanged()
       const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
-        reported: flagged ? (showReported ? 'show' : 'hide') : null, limit: 1 })
-      if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available, reported_count: summary.reported_count }
+        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 })
+      if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
+        reported_count: summary.reported_count, withheld_count: summary.withheld_count }
     } catch (e) { if (!closed) error = e.message }
   }
   // Several tiles can be given one written character at once, as when the same misreading repeats.
@@ -788,7 +805,7 @@
     }
   }
   onMount(() => { layout = storedLayout() })
-  onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) || openSplit(first.result) : false; if (!collection) readCollection(); if (!first && !opened) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) || openSplit(first.result) : false; if (!collection) readCollection(); if (!first && !opened || showWithheld && !flagged) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(readCollection, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
   // The first run is the widening the page opened with, already loaded.
@@ -798,6 +815,8 @@
 
 <svelte:window onkeydown={selectionKeys} />
 
+<!-- After a listing's count: the withheld crops it leaves out, and the way to show or hide them. -->
+{#snippet withheldToggle(after)}{#if !flagged && (showWithheld || withheldCount)}{#if after}<span class="separator">·</span> {/if}<button class="quiet-link" onclick={toggleWithheld} title={t('explore.withheld.about')}>{showWithheld ? t('explore.withheld.hide') : t('explore.withheld.show', { count: withheldCount })}</button>{/if}{/snippet}
 <!-- A crop's label in its script's colour; an unassigned crop says so instead. -->
 {#snippet tileLabel(item)}{#if isUnassigned(item)}{shownLabel(item)}{:else}<ScriptText text={item.label} />{/if}{/snippet}
 <!-- The collage centres the label below the image with one line of what the crop is: withheld, its
@@ -870,6 +889,7 @@
       {#if editable.length}<span class="separator">·</span> {t('explore.count.here', { count: editable.length })}{/if}
       {#if corpusOnly.length}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: corpusOnly.length })}{/if}
       {#if corpusFault}<span class="separator">·</span> <span class="corpus-fault" role="status">{t('explore.samplesUnavailable')}</span> <button class="quiet-link" onclick={() => load()}>{t('common.retry')}</button>{/if}
+      {@render withheldToggle(true)}
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
   {/if}
@@ -879,7 +899,7 @@
       tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}{/if}
   {#if picked}
   {:else if !query && (items.length || homeCorpus.length || sampleFault)}
-    <p class="find-count" role="status">{#if items.length}{t('explore.count.here', { count: items.length })}{/if}{#if homeCorpus.length}{#if items.length}<span class="separator">·</span> {/if}{t('explore.count.fromCorpus', { count: homeCorpus.length })}{/if}{#if sampleFault}{#if items.length || homeCorpus.length}<span class="separator">·</span> {/if}<span class="corpus-fault" role="status">{sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}{#if loading}<span class="find-pending"> …</span>{/if}</p>
+    <p class="find-count" role="status">{#if items.length}{t('explore.count.here', { count: items.length })}{/if}{#if homeCorpus.length}{#if items.length}<span class="separator">·</span> {/if}{t('explore.count.fromCorpus', { count: homeCorpus.length })}{/if}{#if sampleFault}{#if items.length || homeCorpus.length}<span class="separator">·</span> {/if}<span class="corpus-fault" role="status">{sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}{@render withheldToggle(items.length || homeCorpus.length || sampleFault)}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {:else if query && settled}
     <p class="find-count" role="status">{around('explore.occurrencesOf', 'character', { count: settled.total })[0]}<b>{@render term()}</b>{around('explore.occurrencesOf', 'character', { count: settled.total })[1]}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {/if}
