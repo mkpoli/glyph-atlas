@@ -1,5 +1,5 @@
 <script>
-  import { onMount, tick } from 'svelte'
+  import { onMount, tick, untrack } from 'svelte'
   import DrawnBoxDialog from '../components/DrawnBoxDialog.svelte'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
   import SourceCredit from '../components/SourceCredit.svelte'
@@ -151,8 +151,13 @@
   $effect(() => {
     const id = pageId
     closed = false
-    if (id && initial?.id === id) { data = initial; drawing = false; tick().then(() => { if (!closed) { fit(); centreFocus() } }) }
+    if (id && initial?.id === id) { generation++; data = initial; drawing = false; tick().then(() => { if (!closed) { fit(); centreFocus() } }) }
     else if (id) { data = null; drawing = false; loadPage(id) } else { data = null; loadList() }
+  })
+  // Another crop of the same page opens on it without reloading the page.
+  $effect(() => {
+    focus
+    untrack(() => { if (data?.id === pageId) centreFocus() })
   })
   onMount(() => {
     const resized = () => { if (data) fit() }
