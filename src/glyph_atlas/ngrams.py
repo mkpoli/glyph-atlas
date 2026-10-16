@@ -77,8 +77,9 @@ class Spacing(NamedTuple):
     character, steps further than its boxes are long. Each measure is the lower quartile of the line's
     steps, which stays at the short steps while a quarter of them are: a missed character lengthens a
     step and cannot set it. A step reaches past its boxes only as far as both measures allow, so that
-    small characters set apart lend no reach to large ones and large ones none to small. A line where
-    most neighbours stand a missed character apart looks like a widely spaced one, and is read as one."""
+    small characters set apart lend no reach to large ones and large ones none to small. A character
+    missed where the gap it leaves is no longer than the line's usual step cannot be told from the
+    line's own spacing, and its neighbours join."""
     pixels: float = 0.0
     sides: float = 1.0
 
