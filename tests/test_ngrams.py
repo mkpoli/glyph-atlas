@@ -69,6 +69,50 @@ def test_a_trigram_needs_both_neighbours_near():
     assert ("L1:0", "L1:1", "L1:2") in ids(adjacent_ngrams([unit(0, y=0), unit(1, y=57), unit(2, y=114)]))
 
 
+def test_a_line_spaced_wider_than_its_boxes_reaches_by_its_usual_step():
+    # 諺解 text: each 36-pixel character has its reading under it, so neighbours stand 100 pixels apart.
+    spaced = [unit(seq, y=seq * 100) for seq in range(4)]
+    assert ("L1:0", "L1:1", "L1:2") in ids(adjacent_ngrams(spaced))
+    # Twice the usual step is a character no unit covers.
+    gap = [*spaced, unit(4, y=500)]
+    assert ("L1:3", "L1:4") not in ids(adjacent_ngrams(gap))
+    # Under three steps, a line has no usual step to go by.
+    assert adjacent_ngrams([unit(0, y=0), unit(1, y=100), unit(2, y=200)]) == []
+
+
+def test_long_steps_do_not_set_a_line_usual_step():
+    # Packed at 40 pixels, with a character missed after 1 and after 2: those two steps are 80 long.
+    missed = [unit(0, y=0), unit(1, y=40), unit(2, y=120), unit(3, y=200)]
+    assert ids(adjacent_ngrams(missed)) == [("L1:0", "L1:1")]
+    # A CODH block wraps to the next column's head after every two characters; its short steps keep
+    # the reach, and a character missed inside a column still breaks the run.
+    block = [Unit(id=f"B:{seq}", line_id="B", seq=seq, box=Box(x=x, y=y, w=36, h=36))
+             for seq, (x, y) in enumerate([(400, 0), (400, 40), (300, 0), (300, 40), (200, 0), (200, 120)])]
+    assert ids(adjacent_ngrams(block, blocks={"B"})) == [("B:0", "B:1"), ("B:2", "B:3")]
+
+
+def test_a_line_spacing_is_its_own_and_counts_in_box_sizes():
+    # Five steps, one of them across a missed character: the short ones still set the spacing.
+    missed = [unit(0, y=0), unit(1, y=40), unit(2, y=120), unit(3, y=160), unit(4, y=200), unit(5, y=240)]
+    assert ("L1:1", "L1:2") not in ids(adjacent_ngrams(missed))
+    # Small glyphs after large ones: a gap of two small glyphs breaks, whatever the large ones step.
+    sized = [Unit(id=f"M:{seq}", line_id="M", seq=seq, box=Box(x=x, y=y, w=w, h=w)) for seq, (x, y, w) in
+             enumerate([(0, 0, 100), (0, 100, 100), (0, 200, 100), (0, 300, 100), (0, 400, 100), (40, 540, 20),
+                        (40, 580, 20)])]
+    assert ("M:5", "M:6") not in ids(adjacent_ngrams(sized))
+    # Large glyphs after small ones set apart: a gap the small ones' pitch calls a missed glyph breaks.
+    pitched = [Unit(id=f"P:{seq}", line_id="P", seq=seq, box=Box(x=40 - w // 2, y=y - w // 2, w=w, h=w))
+               for seq, (y, w) in enumerate([(20, 20), (60, 20), (100, 20), (140, 20), (180, 20), (220, 36), (300, 36)])]
+    assert ("P:5", "P:6") not in ids(adjacent_ngrams(pitched))
+    # A block reaches by its boxes alone: neither its wraps nor a widely spaced column lend reach.
+    block = [Unit(id=f"W:{seq}", line_id="W", seq=seq, box=Box(x=x, y=y, w=36, h=36)) for seq, (x, y) in
+             enumerate([(500, 0), (500, 40), (400, 0), (300, 0), (200, 0), (100, 0), (100, 80)])]
+    assert ids(adjacent_ngrams(block, blocks={"W"})) == [("W:0", "W:1")]
+    columns = [Unit(id=f"C:{seq}", line_id="C", seq=seq, box=Box(x=x, y=y, w=36, h=36)) for seq, (x, y) in
+               enumerate([(100, 0), (100, 100), (100, 200), (100, 300), (0, 0), (0, 40), (0, 120)])]
+    assert ids(adjacent_ngrams(columns, blocks={"C"})) == [("C:4", "C:5")]
+
+
 def test_a_run_is_written_the_way_its_line_is():
     across = [Unit(id=f"H:{i}", line_id="H", seq=i, box=Box(x=i * 40, y=0, w=36, h=36)) for i in range(3)]
     runs = adjacent_ngrams([*across, unit(0), unit(1)], horizontal={"H"})

@@ -676,6 +676,8 @@
   "tile.countForm": "字形{form}：{count}例，在{total}個字形中居第{rank}",
   "tile.countGrapheme": "字種{grapheme}：{forms}個字形共{count}例，在{total}個字種中居第{rank}；此字形佔{share}",
   "tile.countScope": "合計館藏與語料庫，不受篩選影響",
+  "tile.rankForm": "字形{form}：{total}個中第{rank}",
+  "tile.rankGrapheme": "字種{grapheme}：{total}個中第{rank}，{forms}個字形中此形佔{share}",
   "tile.countShare": "{percent}%",
   "tile.countShareBelow": "<{percent}%",
   "tile.countShareAbove": ">{percent}%",
