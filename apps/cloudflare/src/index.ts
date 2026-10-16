@@ -2,6 +2,7 @@
 import { ROUND_MAX } from './rounds';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
 import { similarCrops } from './similar';
+import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
 import { formsFor, setForm, withForms } from './cropForms';
@@ -2336,6 +2337,11 @@ const routes = {
       if(versions){let id:string;try{id=decodeURIComponent(versions[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
         return json(await cropVersions(env,id))}
       if(path==='/atlas/similar/model')return json(await modelInfo(env));
+      if(path.startsWith('/atlas/ids/')){
+        const drawing=await drawingFile(env,path.slice('/atlas/ids/'.length),request,ctx);
+        if(!drawing)throw new Problem(404,'No drawing of this sequence.');
+        return drawing;
+      }
       if(path.startsWith('/atlas/similar/files/')){
         const file=await modelFile(env,path.slice('/atlas/similar/files/'.length),request,ctx);
         if(!file)throw new Problem(404,'No such model file.');

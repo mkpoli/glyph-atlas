@@ -818,7 +818,6 @@
   "form.ids.swaps": "{part}の代わりに",
   "form.ids.split": "{part}を部品に分ける",
   "form.ids.tag": "IDS",
-  "form.ids.named": "{ids}：IDSで表した字形",
   "form.ids.problem.character": "⿰や⿱などの演算子から始めてください。",
   "form.ids.problem.component": "部品は漢字・部首・筆画・カタカナで書きます。",
   "form.ids.problem.missing": "演算子の部品が足りません。",
