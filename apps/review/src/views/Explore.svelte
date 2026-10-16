@@ -129,16 +129,18 @@
   // corpus's together, whatever the filters: a tile reads its form's count and its grapheme's.
   // The catalogue's own array, which a further page keeps, so paging does not gather them again.
   const wholeCategories = $derived(data?.categories ?? [])
+  // Counts show once both halves are in, or the corpus's has failed; without the catalogue's they
+  // would undercount.
   const tileCounts = $derived.by(() => {
-    if (!corpusCounts) return null
+    if (!wholeCategories.length || (!corpusCounts && !corpusCountsFailed)) return null
     const forms = new Map(), groups = new Map(), keys = new Map()
     const add = (label, key, n) => { forms.set(label, (forms.get(label) ?? 0) + n); groups.set(key, (groups.get(key) ?? 0) + n); keys.set(label, key) }
     for (const c of wholeCategories) add(c.label, c.grapheme ?? c.label, c.total)
-    for (const [label, key, n] of corpusCounts) add(label, key, n)
+    for (const [label, key, n] of corpusCounts ?? []) add(label, key, n)
     return { forms, groups, keys }
   })
-  /** `5 (10)`: the glyphs of the tile's form, then of its grapheme where that holds more. A collection
-   *  crop names no grapheme, so its form's is read from the counts. */
+  /** `5 (10)`: the glyphs of the tile's form, then of its grapheme where that holds more. A crop that
+   *  names no grapheme takes its form's from the counts. */
   function tileCount(item) {
     if (!tileCounts || isUnassigned(item)) return ''
     const form = tileCounts.forms.get(item.label), all = tileCounts.groups.get(item.grapheme?.code_point ?? item.grapheme ?? tileCounts.keys.get(item.label))
@@ -986,7 +988,7 @@
   /* Short of room, the work's title gives way first and the production after it, each to an ellipsis;
      on a phone a wide range does too, and a square tile there keeps its room for the years. */
   .tile-production{flex:0 1 auto;min-width:0}
-  .tile-withheld{flex-shrink:0;white-space:nowrap}
+  .tile-withheld,.tile-count{flex-shrink:0;white-space:nowrap}
   .tile-work{flex:0 1000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   @media(max-width:700px){.tile-year{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}:global(:root[data-gallery="grid"]) .tile-footer:has(.tile-year) .tile-work{display:none}}
   @media(max-width:700px){.tile-production{display:none}}
