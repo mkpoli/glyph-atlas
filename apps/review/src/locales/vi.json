@@ -669,7 +669,7 @@
   "tile.countGrapheme": "Tự vị {grapheme}: {count} lần qua {forms} tự dạng, hạng {rank} trong {total} tự vị; tự dạng này chiếm {share}",
   "tile.countScope": "Tính cả bộ sưu tập và kho ngữ liệu, không theo bộ lọc",
   "tile.rankForm": "Tự dạng {form}: hạng {rank} trong {total}",
-  "tile.rankGrapheme": "Tự vị {grapheme}: hạng {rank} trong {total}, {forms} tự dạng, tự dạng này chiếm {share}",
+  "tile.rankGrapheme": "Tự vị {grapheme}: hạng {rank} trong {total}; trong {forms} tự dạng, tự dạng này chiếm {share}",
   "tile.countShare": "{percent}%",
   "tile.countShareBelow": "<{percent}%",
   "tile.countShareAbove": ">{percent}%",

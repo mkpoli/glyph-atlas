@@ -708,7 +708,7 @@
   "tile.countGrapheme": "Grapheme {grapheme}: {count} glyphs in {forms} forms, no. {rank} of {total} graphemes; this form makes up {share}",
   "tile.countScope": "Counted over the collection and the corpus together, whatever the filters",
   "tile.rankForm": "Form {form}: no. {rank} of {total}",
-  "tile.rankGrapheme": "Grapheme {grapheme}: no. {rank} of {total}; {share} of its {forms} forms",
+  "tile.rankGrapheme": "Grapheme {grapheme}: no. {rank} of {total}; {forms} forms, this one {share} of its glyphs",
   "tile.countShare": "{percent}%",
   "tile.countShareBelow": "under {percent}%",
   "tile.countShareAbove": "over {percent}%",

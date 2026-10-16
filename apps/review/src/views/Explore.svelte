@@ -186,20 +186,23 @@
     return { text: all > form ? t('tile.countWithin', { count: form, all }) : t('tile.count', { count: form }), lines, ranks }
   }
   $effect(() => { if (!flagged) untrack(loadCorpusCounts) })
-  // The hover panel's details, less what the caption under it shows: its production, and the copy's
-  // date where the caption gives its year, leaving the date of composition. The work's line keeps the
-  // work only where the caption cuts its title short (`markCut`), and the page either way.
+  // The hover panel's details, less what the caption under it shows whole. A line the caption also
+  // gives comes as `{ cut, whole, short }`: the panel shows `whole` where the caption cuts its `cut`
+  // part short or hides it (`markCut`), and `short`, what the line adds, where it shows it whole: the
+  // work's page, the copy's date of composition beside its year, nothing beside its production.
   function panelDetails(item) {
     const production = productionLabel(item), dating = datingLine(item), composed = item.dating?.composed
     const work = workTitle(item), page = item.page_number ? t('tile.page', { page: item.page_number }) : null
-    const rest = tileDate(item) ? composed ? eventLabel('composed', composed) : null : dating
-    return cropDetails(item).filter(line => line !== production).map(line => line === dating ? rest
-      : work && line === [work, page].filter(Boolean).join(' · ') ? { whole: line, page } : line).filter(Boolean)
+    return cropDetails(item).map(line => line === production ? { cut: 'production', whole: line, short: null }
+      : line === dating && tileDate(item) ? { cut: 'year', whole: line, short: composed ? eventLabel('composed', composed) : null }
+      : work && line === [work, page].filter(Boolean).join(' · ') ? { cut: 'work', whole: line, short: page } : line)
   }
-  /** Marks a tile whose caption cuts its work's title short, or hides it, so its hover panel names it. */
+  /** Marks each part of a tile's caption that is cut short or hidden, so its hover panel gives it whole. */
   function markCut(tile) {
-    const work = tile.querySelector('.tile-work')
-    tile.toggleAttribute('data-work-cut', !!work && (!work.offsetParent || work.scrollWidth > work.clientWidth + 1))
+    for (const part of ['work', 'year', 'production']) {
+      const shown = tile.querySelector('.tile-' + part)
+      tile.toggleAttribute('data-cut-' + part, !!shown && (!shown.offsetParent || shown.scrollWidth > shown.clientWidth + 1))
+    }
   }
   // Tiles count corpus glyphs only while choosing one opens its gallery: with a work or a script group
   // chosen, a tile narrows the collection's listing instead, and corpus glyphs belong to neither.
@@ -942,7 +945,7 @@
   </span>
 {/snippet}
 <!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
-{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if selectable(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.whole}<span class="panel-work"><ScriptLine line={line.whole} /></span>{#if line.page}<span class="panel-page">{line.page}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}><span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span><span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.whole}<span class="panel-work"><ScriptLine line={line.whole} /></span>{#if line.page}<span class="panel-page">{line.page}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{/if}{/snippet}
+{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if selectable(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}><span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span><span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{/if}{/snippet}
 <!-- The search term in its scripts' colours, and the code points `readable` adds to it. -->
 {#snippet term()}<ScriptText text={query} />{readable.slice(query.length)}{/snippet}
 
@@ -1053,7 +1056,9 @@
      on a phone a wide range does too, and a square tile there keeps its room for the years. */
   .tile-production{flex:0 1 auto;min-width:0}
   .tile-withheld,.tile-count{flex-shrink:0;white-space:nowrap}
-  .glyph-tile:not([data-work-cut]) .panel-work,.glyph-tile[data-work-cut] .panel-page{display:none}
+  .glyph-tile:not([data-cut-work]) .panel-whole[data-part="work"],:global(.glyph-tile[data-cut-work]) .panel-short[data-part="work"],
+  .glyph-tile:not([data-cut-year]) .panel-whole[data-part="year"],:global(.glyph-tile[data-cut-year]) .panel-short[data-part="year"],
+  .glyph-tile:not([data-cut-production]) .panel-whole[data-part="production"]{display:none}
   .tile-work{flex:0 1000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   @media(max-width:700px){.tile-year{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}:global(:root[data-gallery="grid"]) .tile-footer:has(.tile-year) .tile-work{display:none}}
   @media(max-width:700px){.tile-production{display:none}}

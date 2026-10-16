@@ -275,7 +275,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
    No hover zoom: the edges of a written stroke must stay in view. */
 .tile-caption{display:contents}
 :root:not([data-gallery="grid"]) .collage-cell .glyph-image{transform:none}
-:root:not([data-gallery="grid"]) .collage-cell .tile-details{bottom:var(--collage-caption);padding-bottom:10px}.collage-cell .tile-caption{position:absolute;bottom:0;left:0;right:0;display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,max-content);grid-template-rows:auto auto;column-gap:6px;row-gap:1px;align-items:baseline;align-content:start;height:var(--collage-caption);padding:5px 1px 0;text-align:start;background:var(--paper);z-index:3}
+:root:not([data-gallery="grid"]) .collage-cell .tile-details{bottom:var(--collage-caption);padding-bottom:10px}:root:not([data-gallery="grid"]) .collage-cell .tile-caption{position:absolute;bottom:0;left:0;right:0;display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,max-content);grid-template-rows:auto auto;column-gap:6px;row-gap:1px;align-items:baseline;align-content:start;height:var(--collage-caption);padding:5px 1px 0;text-align:start;background:var(--paper);z-index:3}
 /* The footer's parts take the caption's cells: the years face the character, the production the work.
    The character keeps its width; short of room, the years end in an ellipsis first. */
 :root:not([data-gallery="grid"]) .collage-cell .tile-footer{display:contents;font-family:inherit}

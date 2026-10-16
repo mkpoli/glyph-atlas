@@ -670,7 +670,7 @@
   "tile.countGrapheme": "字位{grapheme}：{count}吝過{forms}字樣，項{rank}𥪝{total}字位；字樣呢佔{share}",
   "tile.countScope": "併哿部搜集吧庫語料，空蹺部𤀓",
   "tile.rankForm": "字樣{form}：項{rank}𥪝{total}",
-  "tile.rankGrapheme": "字位{grapheme}：項{rank}𥪝{total}，{forms}字樣，字樣呢佔{share}",
+  "tile.rankGrapheme": "字位{grapheme}：項{rank}𥪝{total}；𥪝{forms}字樣，字樣呢佔{share}",
   "tile.countShare": "{percent}%",
   "tile.countShareBelow": "<{percent}%",
   "tile.countShareAbove": ">{percent}%",
