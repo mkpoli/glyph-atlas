@@ -953,7 +953,8 @@ try {
     assert.ok(probe.some(d => new RegExp(`USING COVERING INDEX (${index}|${document ? 'unit_ngram_graphemes_source' : index})\\b`).test(d)), probe.join('; '))
     for (let size = 2; size <= 8; size++) for (let anchor = 0; anchor <= Math.max(0, size - 3); anchor++) for (const style of [false, true]) {
       const links = worker.runFrom(size, anchor).links.map(() => 'ナリ'), bound = [...links, ...scope, Math.min(size, 3), 'ナリ', ...(style ? [0] : [])]
-      for (const shape of [{ sql: worker.runOccurrencesQuery(size, anchor, document, style), values: [] }, { sql: worker.runCountQuery(size, anchor, document, style), values: [] }]) {
+      // A run is counted a group at a time.
+      for (const shape of [{ sql: worker.runOccurrencesQuery(size, anchor, document, style), values: [] }, ...(style ? [{ sql: worker.runCountQuery(size, anchor, document), values: [] }] : [])]) {
         const args = shape.sql.includes('OFFSET') ? [...bound, 48, 0] : bound
         // A book's count asks for no order, and the index that places a run by book (0059) serves it as well.
         occurrenceServed(await plan(shape, args), document && !shape.sql.includes('OFFSET') ? `(?:${index}|unit_ngram_graphemes_source)` : index)
@@ -983,10 +984,10 @@ try {
     const bound = [size, 'ナリ', 'ナリ', ...(style ? [0] : [])]
     for (const [shape, args, index] of [
       [{ sql: worker.runOccurrencesQuery(size, 0, false, style, 'hand', true), values: [] }, [...bound, 48, 0], 'unit_ngram_graphemes'],
-      [{ sql: worker.runCountQuery(size, 0, false, style, true), values: [] }, bound, '(?:unit_ngram_graphemes|unit_ngram_graphemes_source)'],
+      ...(style ? [[{ sql: worker.runCountQuery(size, 0, false, true), values: [] }, bound, '(?:unit_ngram_graphemes|unit_ngram_graphemes_source)']] : []),
       [{ sql: worker.runOccurrencesQuery(size, 0, false, style, 'source', true), values: [] }, [...bound, 48, 0], 'unit_ngram_graphemes_source'],
       [{ sql: worker.runOccurrencesQuery(size, 0, true, style, 'hand', true), values: [] }, ['hk:doc', ...bound, 48, 0], 'unit_ngram_graphemes_work'],
-      [{ sql: worker.runCountQuery(size, 0, true, style, true), values: [] }, ['hk:doc', ...bound], '(?:unit_ngram_graphemes_work|unit_ngram_graphemes_source)'],
+      ...(style ? [[{ sql: worker.runCountQuery(size, 0, true, true), values: [] }, ['hk:doc', ...bound], '(?:unit_ngram_graphemes_work|unit_ngram_graphemes_source)']] : []),
     ]) occurrenceServed(await plan(shape, args), index)
   }
   const formsPlan = await plan({ sql: worker.runFormsQuery(false), values: [] }, [2, 'ナリ'])
@@ -1146,6 +1147,22 @@ try {
   assert.deepEqual(firstsOf(await narrowed('&document=hk%3Aa&hand=hand')), ['o-early', 'o-late'], 'a book and a group together')
   assert.deepEqual(firstsOf(await narrowed('&sort=source')), ['o-early', 'o-late', 'o-plain', 'o-print'], 'by book, then by crop')
   assert.deepEqual(firstsOf(await narrowed('&sort=source&hand=hand')), ['o-early', 'o-late'])
+  {
+    // The groups are counted apart, each stopping past 2000, and the run is their sum: 1100 handwritten and
+    // 1000 unknown pass the cap together though neither does alone.
+    await db.batch([
+      db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<2100)
+        SELECT 'cap:'||i,NULL,NULL,NULL,i,'cap-pack',0,10,CASE WHEN i BETWEEN 1 AND 1100 THEN 'handwritten' ELSE 'unknown' END,0 FROM n`),
+      db.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document) WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<2100)
+        SELECT 'cap:'||i,2,'cap:0',NULL,'ゑゐ',NULL FROM n`)])
+    const cap = async query => { await db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at',?)").bind('cap' + ++version).run()
+      return runOf('ゑゐ', '&limit=1' + query) }
+    const whole = await cap('')
+    assert.deepEqual([whole.total, whole.more, whole.hands], [2000, true, { hand: 1100, unknown: 1000, type: 0 }], 'a run past the cap in no one group is past it as a whole')
+    const one = await cap('&hand=hand')
+    assert.deepEqual([one.total, one.more], [1100, false], 'a group counts its own')
+    await db.batch([db.prepare("DELETE FROM unit_ngrams WHERE first LIKE 'cap:%'"), db.prepare("DELETE FROM corpus_units WHERE id LIKE 'cap:%'")])
+  }
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('ナリ') + '&hand=bold')).status, 422, 'only the groups narrow')
   assert.equal((await mf.dispatchFetch(base + '/atlas/runs?text=' + encodeURIComponent('ナリ') + '&sort=style')).status, 422, 'only the group and the book place a run')
   // Near runs: the shorter runs inside a trigram, the trigrams a pair begins, and the runs that begin alike.
