@@ -1509,18 +1509,20 @@ async function suggest(env: Env, q: URLSearchParams) {
   found.push(...await searchVariants(env, literal(term), found, limit));
   return { query: term, items: found.slice(0,limit), total: found.length, more: Math.max(0,found.length-limit), status:'ok',corpus:{ready:true} };
 }
-// The 異体字 of a one-character query, after what the query names: a reader who types 鯡 is shown 𩹉.
-// Pairs a gallery widens to come first, then the rest, each most attested first, as the card lists them.
+// The 異体字 of a one-character query the table holds, after what the query names: a reader who types
+// 鯡 is shown 𩹉. Only the pairs the card lists as variants (a widening edge, none that keeps the pair
+// apart), most attested first; a character the table lacks is never answered with one of its variants.
 export const searchVariantsQuery = () => `SELECT c.data FROM (
-    SELECT other,max(widens) AS w,count(DISTINCT source) AS n FROM (
-      SELECT b AS other,widens,source FROM character_variants WHERE a=?
-      UNION ALL SELECT a AS other,widens,source FROM character_variants WHERE b=?)
-    WHERE other<>? GROUP BY other) v
-  JOIN characters c ON c.character=v.other ORDER BY v.w DESC,v.n DESC,v.other LIMIT ?`;
+    SELECT other,count(DISTINCT source) AS n FROM (
+      SELECT b AS other,relation,widens,source FROM character_variants WHERE a=?
+      UNION ALL SELECT a AS other,relation,widens,source FROM character_variants WHERE b=?)
+    WHERE other<>? GROUP BY other HAVING max(widens)=1 AND max(relation IN ('simplified'))=0) v
+  JOIN characters c ON c.character=v.other ORDER BY v.n DESC,v.other LIMIT ?`;
 async function searchVariants(env: Env, char: string, found: Json[], limit: number) {
-  if ([...char].length !== 1) return [];
+  // A list already past the limit shows no variant; the query would only move the count.
+  if ([...char].length !== 1 || found.length > limit || !found.some(item => item.char === char)) return [];
   const listed = new Set(found.map(item => item.char));
-  const rows = (await env.DB.prepare(searchVariantsQuery()).bind(char, char, char, limit + 1).all<{ data: string }>()).results;
+  const rows = (await env.DB.prepare(searchVariantsQuery()).bind(char, char, char, limit + listed.size + 1).all<{ data: string }>()).results;
   return rows.map(r => parse(r.data)).filter(item => !listed.has(item.char)).map(item => ({ ...item, rank: 6, variant_of: char }));
 }
 // A caller that has already looked the character up passes its card, so a request reads it once.
