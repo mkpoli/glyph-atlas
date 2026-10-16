@@ -55,6 +55,11 @@ def test_a_released_note_is_put_back_exactly():
     assert wr.restored_note(released) == before
 
 
+def test_a_note_with_its_own_before_is_put_back_exactly():
+    before = {**note(), "before": {"status": "contested"}}
+    assert wr.restored_note(wr.release_note(before, 0.97)) == before
+
+
 PAGE, LINE = "hk:d:1", "hk:d:1:L1"
 
 

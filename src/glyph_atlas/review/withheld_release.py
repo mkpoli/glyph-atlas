@@ -61,7 +61,7 @@ def release_note(note: dict, p: float) -> dict:
                "verified": False, "method": METHOD,
                "reason": f"the crop shows its own character with probability {p:.2f}, more than the characters "
                          f"written beside it"}
-    return {**note, **changed, "before": {key: note[key] for key in changed if key in note}}
+    return {**note, **changed, "before": {key: note[key] for key in (*changed, "before") if key in note}}
 
 
 def restored_note(note: dict) -> dict:
