@@ -5,6 +5,8 @@
   import { t } from '../lib/i18n.svelte.js'
   let { value = '' } = $props()
   let copied = $state(false), timer
+  // Stepping to another crop shows another value, which nobody has copied yet.
+  $effect(() => { void value; copied = false; clearTimeout(timer) })
   async function copy(event) {
     event.stopPropagation()
     try { await navigator.clipboard.writeText(value) } catch { return }
@@ -16,8 +18,8 @@
   <button type="button" class="copy-value" class:copied aria-label={t('copyValue.aria', { value })} title={copied ? t('copyId.copied') : t('copyValue.aria', { value })} onclick={copy}>
     {#if copied}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" /></svg>
     {:else}<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" /><path d="M10.5 3.5v-.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" /></svg>{/if}
-    <span class="copy-status" role="status">{copied ? t('copyId.copied') : ''}</span>
   </button>
+  <span class="copy-status" role="status">{copied ? t('copyId.copied') : ''}</span>
 {/if}
 
 <style>
