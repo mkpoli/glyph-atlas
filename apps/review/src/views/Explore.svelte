@@ -147,11 +147,16 @@
   const tileCounts = $derived.by(() => {
     if (!wholeCategories.length || (!corpusCounts && !corpusCountsFailed)) return null
     const forms = new Map(), groups = new Map(), keys = new Map()
-    const add = (label, key, n) => { forms.set(label, (forms.get(label) ?? 0) + n); groups.set(key, (groups.get(key) ?? 0) + n); keys.set(label, key) }
+    // A form one source files under another grapheme than the other (扵 under 於, or under its own)
+    // counts among the forms of each.
+    const shapes = new Map()
+    const add = (label, key, n) => {
+      forms.set(label, (forms.get(label) ?? 0) + n); groups.set(key, (groups.get(key) ?? 0) + n); keys.set(label, key)
+      if (!shapes.has(key)) shapes.set(key, new Set())
+      shapes.get(key).add(label)
+    }
     for (const c of wholeCategories) add(c.label, c.grapheme ?? c.label, c.total)
     for (const [label, key, n] of corpusCounts ?? []) add(label, key, n)
-    const shapes = new Map()
-    for (const key of keys.values()) shapes.set(key, (shapes.get(key) ?? 0) + 1)
     return { forms, groups, keys, shapes, formRank: ranking(forms.values()), groupRank: ranking(groups.values()) }
   })
   /** Each count's place among `counts`, most first; equal counts share a place. */
@@ -172,7 +177,7 @@
     if (all > form) {
       const percent = form / all * 100
       const share = percent < 1 ? t('tile.countShareBelow', { percent: 1 }) : percent > 99 ? t('tile.countShareAbove', { percent: 99 }) : t('tile.countShare', { percent: Math.round(percent) })
-      lines.push(t('tile.countGrapheme', { grapheme: graphemeChar(item) || charOf(key), count: all, forms: tileCounts.shapes.get(key),
+      lines.push(t('tile.countGrapheme', { grapheme: graphemeChar(item) || charOf(key), count: all, forms: tileCounts.shapes.get(key).size,
         rank: tileCounts.groupRank.of(all), total: tileCounts.groupRank.total, share }))
     }
     return { text: all > form ? t('tile.countWithin', { count: form, all }) : t('tile.count', { count: form }), lines }
