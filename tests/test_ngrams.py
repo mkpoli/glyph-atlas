@@ -80,6 +80,17 @@ def test_a_line_spaced_wider_than_its_boxes_reaches_by_its_usual_step():
     assert adjacent_ngrams([unit(0, y=0), unit(1, y=100), unit(2, y=200)]) == []
 
 
+def test_long_steps_do_not_set_a_line_usual_step():
+    # Packed at 40 pixels, with a character missed after 1 and after 2: those two steps are 80 long.
+    missed = [unit(0, y=0), unit(1, y=40), unit(2, y=120), unit(3, y=200)]
+    assert ids(adjacent_ngrams(missed)) == [("L1:0", "L1:1")]
+    # A CODH block wraps to the next column's head after every two characters; its short steps keep
+    # the reach, and a character missed inside a column still breaks the run.
+    block = [Unit(id=f"B:{seq}", line_id="B", seq=seq, box=Box(x=x, y=y, w=36, h=36))
+             for seq, (x, y) in enumerate([(400, 0), (400, 40), (300, 0), (300, 40), (200, 0), (200, 120)])]
+    assert ids(adjacent_ngrams(block, blocks={"B"})) == [("B:0", "B:1"), ("B:2", "B:3")]
+
+
 def test_a_run_is_written_the_way_its_line_is():
     across = [Unit(id=f"H:{i}", line_id="H", seq=i, box=Box(x=i * 40, y=0, w=36, h=36)) for i in range(3)]
     runs = adjacent_ngrams([*across, unit(0), unit(1)], horizontal={"H"})

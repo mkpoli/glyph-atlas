@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import statistics
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Container, Iterable, Iterator, Mapping
@@ -51,7 +50,7 @@ class Glyph(NamedTuple):
 
 
 # Two neighbours in `seq` order whose centres lie further apart than this many of the larger box's
-# longer side, or of the line's usual step, have ink between them that no unit covers, most often a
+# longer side, or of the line's usual step (`_step`), have ink between them that no unit covers, most often a
 # character the detector missed.
 REACH = 1.6
 #: Steps between neighbours a line needs before its usual step counts, so that one long step cannot
@@ -68,12 +67,14 @@ def _distance(a: Unit | Glyph, b: Unit | Glyph) -> float:
 
 
 def _step(held: Mapping[int, Unit | Glyph]) -> float:
-    """The median distance between neighbours on a line, or 0 when it has fewer than `STEPS` steps.
+    """The line's usual step between neighbours: the lower quartile of its steps, or 0 when it has
+    fewer than `STEPS`.
 
     A line whose characters stand apart, as a 諺解 text line does with a reading printed under each
-    character, steps further than its boxes are long."""
-    steps = [_distance(unit, held[seq + 1]) for seq, unit in held.items() if seq + 1 in held]
-    return statistics.median(steps) if len(steps) >= STEPS else 0.0
+    character, steps further than its boxes are long. The lower quartile stays at the short steps while
+    a quarter of them are: column wraps and missed characters lengthen the others and never set it."""
+    steps = sorted(_distance(unit, held[seq + 1]) for seq, unit in held.items() if seq + 1 in held)
+    return steps[(len(steps) - 1) // 4] if len(steps) >= STEPS else 0.0
 
 
 def _near(a: Unit | Glyph, b: Unit | Glyph, step: float = 0.0) -> bool:
@@ -95,7 +96,7 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
     Each unit's `seq` is the one before it plus one: a position with no unit, or with two, breaks the
     run there. A gap, an unreadable unit, a mark or an unsegmented run is never part of one, and neither
     is a unit without a box. Two neighbours too far apart on the page break the run as well: further than
-`REACH` times the longer side of their boxes or the line's median step between neighbours.
+    `REACH` times the longer side of their boxes or the line's usual step between neighbours (`_step`).
 
     A line in `blocks` holds several columns read one after another, as a CODH block does: it steps
     from the foot of one column to the head of the next, and with small characters that step can fall
