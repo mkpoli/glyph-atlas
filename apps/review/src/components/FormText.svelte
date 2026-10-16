@@ -19,7 +19,7 @@
       const url = `/atlas/${key}`, image = new Image()
       image.onload = () => { if (current) drawing = url }
       image.src = url
-    })
+    }, () => {})
     return () => { current = false }
   })
 </script>
