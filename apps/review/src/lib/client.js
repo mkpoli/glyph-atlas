@@ -115,7 +115,19 @@ export const catalogue = ({ purpose = 'browse', ...params } = {}, options = {}) 
 export const character = (id, options) => request('/atlas/characters/' + encodeURIComponent(id), undefined, options)
 /** A crop's neighbours on its line, four either side in reading order: `{ items: [{ id, offset, label, image, revision, image_sha256, state }] }`, empty when it has none. */
 export const line = (id, options) => request('/atlas/characters/' + encodeURIComponent(id) + '/line', undefined, options)
-export const similar = (id, options) => request('/atlas/characters/' + encodeURIComponent(id) + '/similar', undefined, options)
+// A crop's look-alikes are read once by the similar-crops section and the suggestions together; a
+// write may relabel any of them, so it empties the cache.
+const similarAsked = new Map()
+afterWrite(() => similarAsked.clear())
+export function similar(id) {
+  if (!similarAsked.has(id)) {
+    const asked = request('/atlas/characters/' + encodeURIComponent(id) + '/similar')
+    asked.catch(() => { if (similarAsked.get(id) === asked) similarAsked.delete(id) })
+    similarAsked.set(id, asked)
+    if (similarAsked.size > 50) similarAsked.delete(similarAsked.keys().next().value)
+  }
+  return similarAsked.get(id)
+}
 export const history = (params = {}, options = {}) =>
   request('/atlas/history?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)), undefined, options)
 export const corpusCharacter = (id, options) => request('/atlas/corpus/character?' + new URLSearchParams({ id }), undefined, options)
