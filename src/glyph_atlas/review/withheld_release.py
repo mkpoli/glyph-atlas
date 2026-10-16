@@ -77,6 +77,8 @@ RELEASED_KEYS = frozenset(release_note({}, 1.0)) - {"before"}
 def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterable[str] = (),
         min_p: float = MIN_P) -> dict:
     """Propose, and with `apply` record, the release of every withheld unit of `dataset` its box supports."""
+    if not 0.0 <= min_p <= 1.0:
+        raise ValueError(f"min_p is a probability, between 0 and 1; got {min_p}")
     from .atlas import written_identity
     from .refine import _changes
     from .shift_repair import _shown

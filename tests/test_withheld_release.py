@@ -60,6 +60,11 @@ def test_a_note_with_its_own_before_is_put_back_exactly():
     assert wr.restored_note(wr.release_note(before, 0.97)) == before
 
 
+def test_a_threshold_outside_zero_to_one_is_refused(tmp_path):
+    with pytest.raises(ValueError):
+        wr.run(tmp_path, checkpoint=tmp_path / "best.pt", min_p=-1)
+
+
 PAGE, LINE = "hk:d:1", "hk:d:1:L1"
 
 
