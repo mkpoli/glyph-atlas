@@ -744,9 +744,11 @@ export function runOccurrencesQuery(size: number, anchor: number, document: bool
     ${runFrom(size, anchor).from} WHERE ${runWhere(document, size, hand, form)}
     ORDER BY ${sort === 'source' && !document ? 'a.document,a.first' : 'a.hand_order,a.shuffle,a.first'} LIMIT ? OFFSET ?`;
 }
-export function runCountQuery(size: number, anchor: number, document: boolean, hand = false, form = false) {
+// A run is counted a group at a time, each count stopping past RUN_COUNT_MAX: the whole run is their sum,
+// which passes RUN_COUNT_MAX exactly when the run does.
+export function runCountQuery(size: number, anchor: number, document: boolean, form = false) {
   return `SELECT count(*) AS n, sum(v) AS vertical FROM (SELECT a.vertical AS v ${runFrom(size, anchor).from}
-    WHERE ${runWhere(document, size, hand, form)} LIMIT ${RUN_COUNT_MAX + 1})`;
+    WHERE ${runWhere(document, size, true, form)} LIMIT ${RUN_COUNT_MAX + 1})`;
 }
 /** The books a run is in, with their occurrences (counted among the first RUN_COUNT_MAX) and one crop of each to name them by. */
 export function runWorksQuery(size: number, anchor: number, form = false) {
@@ -839,15 +841,14 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL, timing:
   const bound = [...links.map(i => span(i, 2)), ...scope, Math.min(size, 3), span(anchor, Math.min(size, 3)), ...written];
   const styled = (n: number) => [...bound, n];
   const occurrences = env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document), group !== null, sort, Boolean(form))).bind(...(group === null ? bound : styled(group)), limit, offset);
-  // The first page also counts the run, as a whole or in its group, and each group, names its books, and
-  // lists the written forms a run of two or three gathers, whichever form is chosen.
+  // The first page also counts each group, which counts the run as a whole or in the group chosen, names
+  // its books, and lists the written forms a run of two or three gathers, whichever form is chosen.
   const first = offset ? [] : [
-    env.DB.prepare(runCountQuery(size, anchor, Boolean(document), group !== null, Boolean(form))).bind(...(group === null ? bound : styled(group))),
-    ...HAND_NAMES.map(name => env.DB.prepare(runCountQuery(size, anchor, Boolean(document), true, Boolean(form))).bind(...styled(HAND_ORDER[name]))),
+    ...HAND_NAMES.map(name => env.DB.prepare(runCountQuery(size, anchor, Boolean(document), Boolean(form))).bind(...styled(HAND_ORDER[name]))),
     env.DB.prepare(runWorksQuery(size, anchor, Boolean(form))).bind(...links.map(i => span(i, 2)), Math.min(size, 3), span(anchor, Math.min(size, 3)), ...written),
     size <= 3 ? env.DB.prepare(runFormsQuery(Boolean(document))).bind(...scope, size, span(0, size)) : env.DB.prepare('SELECT 1 WHERE 0'),
   ];
-  const [page, count, ...rest] = await env.DB.batch([occurrences, ...first]) as D1Result<any>[];
+  const [page, ...rest] = await env.DB.batch([occurrences, ...first]) as D1Result<any>[];
   timing.step('rows');
   const found = page.results as RunRow[];
   // The crops of one run stand on one page, so they share their document's dates. The books' titles are
@@ -868,10 +869,12 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL, timing:
     return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {} })),
       vertical: Boolean(row.vertical), page: runPage(crops), honkoku_url: honkoku };
   });
-  const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
+  const hands = rest.map(result => result.results[0] as { n: number; vertical: number | null });
+  const chosen = group === null ? hands : hands.slice(group, group + 1);
+  const counted = hands.length ? { n: chosen.reduce((sum, h) => sum + h.n, 0), vertical: chosen.reduce((sum, h) => sum + (h.vertical ?? 0), 0) } : undefined;
   const body = { text: value, size, document, form, hand: group === null ? 'all' : HAND_NAMES[group], sort, next_offset: offset + found.length, items,
     ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n,
-      hands: Object.fromEntries(HAND_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), hand_groups: HAND_NAMES, works, forms }) };
+      hands: Object.fromEntries(HAND_NAMES.map((name, i) => [name, Math.min(hands[i].n, RUN_COUNT_MAX)])), hand_groups: HAND_NAMES, works, forms }) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
