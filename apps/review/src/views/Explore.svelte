@@ -138,6 +138,46 @@
     try { const found = await request('/atlas/corpus/characters'); if (!closed) corpusCounts = found.items }
     catch { if (!closed) corpusCountsFailed = true }
   }
+  // How many glyphs the site holds of each written form and of each grapheme, the collection's and the
+  // corpus's together, whatever the filters: a tile reads its form's count and its grapheme's.
+  // The catalogue's own array, which a further page keeps, so paging does not gather them again.
+  const wholeCategories = $derived(data?.categories ?? [])
+  // Counts show once both halves are in, or the corpus's has failed; without the catalogue's they
+  // would undercount.
+  const tileCounts = $derived.by(() => {
+    if (!wholeCategories.length || (!corpusCounts && !corpusCountsFailed)) return null
+    const forms = new Map(), groups = new Map(), keys = new Map()
+    const add = (label, key, n) => { forms.set(label, (forms.get(label) ?? 0) + n); groups.set(key, (groups.get(key) ?? 0) + n); keys.set(label, key) }
+    for (const c of wholeCategories) add(c.label, c.grapheme ?? c.label, c.total)
+    for (const [label, key, n] of corpusCounts ?? []) add(label, key, n)
+    const shapes = new Map()
+    for (const key of keys.values()) shapes.set(key, (shapes.get(key) ?? 0) + 1)
+    return { forms, groups, keys, shapes, formRank: ranking(forms.values()), groupRank: ranking(groups.values()) }
+  })
+  /** Each count's place among `counts`, most first; equal counts share a place. */
+  function ranking(counts) {
+    const sorted = [...counts].sort((a, b) => b - a), first = new Map()
+    sorted.forEach((n, i) => { if (!first.has(n)) first.set(n, i + 1) })
+    return { of: n => first.get(n), total: sorted.length }
+  }
+  /** A tile's count: its form's glyphs, then its grapheme's where that holds more (`text`), and what
+   *  they are with their places among all forms and graphemes (`lines`). A crop that names no grapheme
+   *  takes its form's from the counts. */
+  function tileCount(item) {
+    if (!tileCounts || isUnassigned(item)) return null
+    const key = item.grapheme?.code_point ?? item.grapheme ?? tileCounts.keys.get(item.label)
+    const form = tileCounts.forms.get(item.label), all = tileCounts.groups.get(key)
+    if (!form) return null
+    const lines = [t('tile.countForm', { form: item.label, count: form, rank: tileCounts.formRank.of(form), total: tileCounts.formRank.total })]
+    if (all > form) {
+      const percent = form / all * 100
+      const share = percent < 1 ? t('tile.countShareBelow', { percent: 1 }) : percent > 99 ? t('tile.countShareAbove', { percent: 99 }) : t('tile.countShare', { percent: Math.round(percent) })
+      lines.push(t('tile.countGrapheme', { grapheme: graphemeChar(item) || charOf(key), count: all, forms: tileCounts.shapes.get(key),
+        rank: tileCounts.groupRank.of(all), total: tileCounts.groupRank.total, share }))
+    }
+    return { text: all > form ? t('tile.countWithin', { count: form, all }) : t('tile.count', { count: form }), lines }
+  }
+  $effect(() => { if (!flagged) untrack(loadCorpusCounts) })
   // Tiles count corpus glyphs only while choosing one opens its gallery: with a work or a script group
   // chosen, a tile narrows the collection's listing instead, and corpus glyphs belong to neither.
   const countsCorpus = $derived(!flagged && !work && filter === 'all')
@@ -517,14 +557,16 @@
     scatteredFor = key; scattered = []
     const random = seeded(key ^ 0x5bd1e995)
     try {
-      const pool = (await Promise.all(['pair', 'trigram'].map(kind => frequent(kind)))).flatMap(items => items.slice(0, KEPT))
+      // Each run keeps its place among its kind's counts, which its tile names.
+      const pool = (await Promise.all(['pair', 'trigram'].map(kind => frequent(kind).then(items => { const place = ranking(items.map(run => run.n))
+        return items.slice(0, KEPT).map(run => ({ ...run, kind, rank: place.of(run.n) })) })))).flat()
       const chosen = Array.from({ length: Math.min(RUN_TILES, pool.length) }, () => pool.splice(Math.floor(random() * pool.length), 1)[0])
       const found = await Promise.all(Array.from({ length: RUN_TILES }, (_, k) => {
         const run = chosen[k]
         if (!run) return null
         const offset = run.n > 1 ? 1 + Math.floor(random() * Math.min(RUN_DEPTH, run.n - 1)) : 0
         // A run whose occurrence cannot be read keeps its place as its text.
-        const named = { text: run.text, n: run.n }
+        const named = { text: run.text, n: run.n, kind: run.kind, rank: run.rank }
         return runOccurrences(run.text, { offset, limit: 1 }).then(page => ({ ...page?.items?.[0], ...named }), () => named)
       }))
       if (!closed && scatteredFor === key) scattered = found
@@ -873,11 +915,11 @@
 {#snippet tileCaption(item)}
   <span class="tile-caption">
     <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}</span>
-    <span class="tile-footer">{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
+    <span class="tile-footer">{#if tileCount(item)}{@const count = tileCount(item)}<span class="tile-count" title={[...count.lines, t('tile.countScope')].join('\n')}>{count.text}</span>{/if}{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 {/snippet}
 <!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
-{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if selectable(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}><span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span><span class="tile-details">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{/if}{/snippet}
+{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if selectable(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.lines ?? [] as line}<span class="tile-rank">{line}</span>{/each}{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}><span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span><span class="tile-details">{#each tileCount(item)?.lines ?? [] as line}<span class="tile-rank">{line}</span>{/each}{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{/if}{/snippet}
 <!-- The search term in its scripts' colours, and the code points `readable` adds to it. -->
 {#snippet term()}<ScriptText text={query} />{readable.slice(query.length)}{/snippet}
 
@@ -987,7 +1029,7 @@
   /* Short of room, the work's title gives way first and the production after it, each to an ellipsis;
      on a phone a wide range does too, and a square tile there keeps its room for the years. */
   .tile-production{flex:0 1 auto;min-width:0}
-  .tile-withheld{flex-shrink:0;white-space:nowrap}
+  .tile-withheld,.tile-count{flex-shrink:0;white-space:nowrap}
   .tile-work{flex:0 1000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   @media(max-width:700px){.tile-year{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}:global(:root[data-gallery="grid"]) .tile-footer:has(.tile-year) .tile-work{display:none}}
   @media(max-width:700px){.tile-production{display:none}}
