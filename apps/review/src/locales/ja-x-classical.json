@@ -679,6 +679,8 @@
   "tile.countForm": "字體{form}：{count}例、{total}字體中第{rank}位",
   "tile.countGrapheme": "字種{grapheme}：{forms}字體ニ{count}例、{total}字種中第{rank}位。此ノ字體ハ其ノ{share}ヲ占ム",
   "tile.countScope": "絞込ニ拘ラズ、蒐集ト集成トヲ合セテ數フ",
+  "tile.rankForm": "字體{form}：{total}中第{rank}位",
+  "tile.rankGrapheme": "字種{grapheme}：{total}中第{rank}位、{forms}字體中此ノ字體{share}",
   "tile.countShare": "{percent}%",
   "tile.countShareBelow": "{percent}%ニ滿タズ",
   "tile.countShareAbove": "{percent}%ヲ超ユ",
