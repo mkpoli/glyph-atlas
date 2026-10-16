@@ -125,6 +125,27 @@
     try { const found = await request('/atlas/corpus/characters'); if (!closed) corpusCounts = found.items }
     catch { if (!closed) corpusCountsFailed = true }
   }
+  // How many glyphs the site holds of each written form and of each grapheme, the collection's and the
+  // corpus's together, whatever the filters: a tile reads its form's count and its grapheme's.
+  // The catalogue's own array, which a further page keeps, so paging does not gather them again.
+  const wholeCategories = $derived(data?.categories ?? [])
+  const tileCounts = $derived.by(() => {
+    if (!corpusCounts) return null
+    const forms = new Map(), groups = new Map(), keys = new Map()
+    const add = (label, key, n) => { forms.set(label, (forms.get(label) ?? 0) + n); groups.set(key, (groups.get(key) ?? 0) + n); keys.set(label, key) }
+    for (const c of wholeCategories) add(c.label, c.grapheme ?? c.label, c.total)
+    for (const [label, key, n] of corpusCounts) add(label, key, n)
+    return { forms, groups, keys }
+  })
+  /** `5 (10)`: the glyphs of the tile's form, then of its grapheme where that holds more. A collection
+   *  crop names no grapheme, so its form's is read from the counts. */
+  function tileCount(item) {
+    if (!tileCounts || isUnassigned(item)) return ''
+    const form = tileCounts.forms.get(item.label), all = tileCounts.groups.get(item.grapheme?.code_point ?? item.grapheme ?? tileCounts.keys.get(item.label))
+    if (!form) return ''
+    return all && all > form ? `${number(form)} (${number(all)})` : number(form)
+  }
+  $effect(() => { if (!flagged) untrack(loadCorpusCounts) })
   // Tiles count corpus glyphs only while choosing one opens its gallery: with a work or a script group
   // chosen, a tile narrows the collection's listing instead, and corpus glyphs belong to neither.
   const countsCorpus = $derived(!flagged && !work && filter === 'all')
@@ -854,7 +875,7 @@
 {#snippet tileCaption(item)}
   <span class="tile-caption">
     <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}</span>
-    <span class="tile-footer">{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
+    <span class="tile-footer">{#if tileCount(item)}<span class="tile-count">{tileCount(item)}</span>{/if}{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 {/snippet}
 <!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
