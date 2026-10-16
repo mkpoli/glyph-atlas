@@ -51,3 +51,17 @@ def test_a_corpus_publication_counts_and_names_the_documents_it_publishes():
     # A title the export does not know keeps the site's; a document the export holds no glyph of is not written.
     assert site.execute("SELECT document,n,title FROM corpus_documents ORDER BY 1").fetchall() == [
         ("A", 2, "New A"), ("B's", 1, "B's book"), ("C", 1, "Kept C"), ("other", 3, "Other")]
+
+
+def test_an_export_made_before_titles_keeps_the_sites():
+    from cloudflare_schema import document_statements
+
+    export_db = sqlite3.connect(":memory:")
+    export_db.execute("CREATE TABLE corpus_units(id TEXT PRIMARY KEY, document TEXT)")
+    export_db.execute("CREATE TABLE corpus_document_counts(document TEXT PRIMARY KEY, n INTEGER NOT NULL)")
+    export_db.executemany("INSERT INTO corpus_units VALUES(?,?)", [("a:1", "A"), ("b:1", "B")])
+    site = sqlite3.connect(":memory:")
+    site.execute(DOCUMENTS)
+    site.execute("INSERT INTO corpus_documents VALUES('A', 9, 'Kept A')")
+    site.executescript("\n".join(document_statements(export_db)))
+    assert site.execute("SELECT document,n,title FROM corpus_documents ORDER BY 1").fetchall() == [("A", 1, "Kept A"), ("B", 1, None)]

@@ -95,8 +95,11 @@ def document_statements(db) -> list[str]:
     a title the export does not know (`corpus_documents` empty, an export made before 0075) keeps D1's."""
     def literal(value):
         return "NULL" if value is None else "'" + str(value).replace("'", "''") + "'"
+    titled = db.execute("SELECT 1 FROM sqlite_master WHERE name='corpus_documents'").fetchone()
+    column = "d.title" if titled else "NULL"
+    joined = " LEFT JOIN corpus_documents d ON d.document=u.document" if titled else ""
     rows = [f"({literal(document)},{n},{literal(title)})" for document, n, title in db.execute(
-        "SELECT u.document,count(*),d.title FROM corpus_units u LEFT JOIN corpus_documents d ON d.document=u.document"
+        f"SELECT u.document,count(*),{column} FROM corpus_units u{joined}"
         " WHERE u.document IS NOT NULL GROUP BY u.document ORDER BY u.document")]
     return [f"INSERT INTO corpus_documents(document,n,title) VALUES{','.join(rows[i:i + 200])}"
             " ON CONFLICT(document) DO UPDATE SET n=excluded.n,title=coalesce(excluded.title,corpus_documents.title);"
