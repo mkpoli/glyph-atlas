@@ -49,6 +49,7 @@ UNIT_ID_PREFIXES = {
     "gl:": "glossary-headwords",
     "krm:": "hdic-krm",
     "eo:": "nogeoldae-eonhae",
+    "ks:": "wikisource-ko-glyphs",
     "ktb:": "hdic-ktb",
     "tsj:": "hdic-tsj",
 }
