@@ -696,6 +696,7 @@
   "visualGroups.label": "以形分群",
   "ziLink.aria": "於zi.tools查{char}",
   "ziLink.text": "zi.tools ↗",
+  "cropTitle.characterLink": "觀{char}諸字",
   "meta.character.description": "古寫本、刻本所截「{character}」（{codePoint}）之字，各附其出處與用約。",
   "written.detail": "作{form}",
   "signIn.open": "登入",

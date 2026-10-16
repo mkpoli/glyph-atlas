@@ -690,6 +690,7 @@
   "visualGroups.label": "形群",
   "ziLink.aria": "zi.toolsニ於テ{char}ヲ引ク",
   "ziLink.text": "zi.tools ↗",
+  "cropTitle.characterLink": "{char}ノ截リ出セル畫像ヲ悉ク見ル",
   "meta.character.description": "古寫本及ビ版本ヨリ截リ出セル「{character}」（{codePoint}）ノ畫像。一字每ニ出典、利用ノ條件ヲ附ス。",
   "written.detail": "字形：{form}",
   "signIn.open": "登入",

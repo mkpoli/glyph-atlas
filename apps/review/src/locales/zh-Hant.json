@@ -687,6 +687,7 @@
   "visualGroups.label": "視覺分組",
   "ziLink.aria": "在zi.tools查詢{char}",
   "ziLink.text": "zi.tools ↗",
+  "cropTitle.characterLink": "查看{char}的全部裁切影像",
   "quiz.selectHint": "每個裁切應只含一個完整的「{grapheme}」或其圖塊上標明的字樣。請選取含多餘的字、裁切錯誤或是其他字的裁切。",
   "progress.worksCollected": "已收集{completed}/{total}部文獻",
   "progress.worksFound": "已發現{total}部文獻 · 仍在持續發現",

@@ -720,6 +720,7 @@
   "visualGroups.label": "Visual groups",
   "ziLink.aria": "Look up {char} on zi.tools",
   "ziLink.text": "zi.tools ↗",
+  "cropTitle.characterLink": "All crops of {char}",
   "meta.character.description": "Crops of {character} ({codePoint}) from historical manuscripts and printed books, each with its source and terms of use.",
   "written.detail": "Written {form}",
   "signIn.open": "Sign in",
