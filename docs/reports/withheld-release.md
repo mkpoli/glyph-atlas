@@ -40,7 +40,7 @@ the classifier reads each place against its text, so that read says nothing abou
 
 ## Measured
 
-On the dataset, with the site's reviews of 2026-10-16 (1,394 events, 505 `ar:`/`hk:` crops protected):
+On the dataset, with the site's reviews of 2026-10-16 (1,394 events on 505 `ar:`/`hk:` crops, 223 of them withheld):
 
 | | units |
 | --- | ---: |
@@ -51,6 +51,7 @@ On the dataset, with the site's reviews of 2026-10-16 (1,394 events, 505 `ar:`/`
 | skipped: a label changed away from its text | 471 |
 | skipped: reviewed | 223 |
 | skipped: a side under 10 pixels | 25 |
+| not read: iteration marks, ligatures, punctuation and voicing marks | 514 |
 
 All 21,898 are published `hk:` crops; 16,776 published crops stay withheld.
 
