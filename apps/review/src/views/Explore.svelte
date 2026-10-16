@@ -157,13 +157,13 @@
     if (!form) return null
     const lines = [t('tile.countForm', { form: item.label, count: form, rank: tileCounts.formRank.of(form), total: tileCounts.formRank.total })]
     if (all > form) {
-      const share = Math.round(form / all * 100)
-      lines.push(t('tile.countGrapheme', { grapheme: graphemeChar(item) || codePointText(key), count: all, forms: tileCounts.shapes.get(key),
-        rank: tileCounts.groupRank.of(all), total: tileCounts.groupRank.total, share: share ? `${number(share)}%` : `<${number(1)}%` }))
+      const percent = form / all * 100
+      const share = percent < 1 ? t('tile.countShareBelow', { percent: 1 }) : percent > 99 ? t('tile.countShareAbove', { percent: 99 }) : t('tile.countShare', { percent: Math.round(percent) })
+      lines.push(t('tile.countGrapheme', { grapheme: graphemeChar(item) || charOf(key), count: all, forms: tileCounts.shapes.get(key),
+        rank: tileCounts.groupRank.of(all), total: tileCounts.groupRank.total, share }))
     }
     return { text: all > form ? t('tile.countWithin', { count: form, all }) : t('tile.count', { count: form }), lines }
   }
-  const codePointText = key => String(key ?? '').replace(/U\+([0-9A-F]+) ?/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
   $effect(() => { if (!flagged) untrack(loadCorpusCounts) })
   // Tiles count corpus glyphs only while choosing one opens its gallery: with a work or a script group
   // chosen, a tile narrows the collection's listing instead, and corpus glyphs belong to neither.
