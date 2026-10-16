@@ -2,7 +2,8 @@
 
 One run does what a retrain needs, in order:
 
-1. `build_combined.py` writes the manifests and the class list (skip with `--skip-manifests`).
+1. `build_combined.py` writes the manifests and the class list (skip with `--skip-manifests`); with
+   `--extra`, it adds another manifest set, such as the hangul renders of `build_hangul.py`.
 2. `train.py` trains into `work/classifier-runs/<stamp>/`.
 3. `export_onnx.py` exports it with a parity check, beside its class list.
 4. `models/benchmark/bench.py` reads `codh-test`, `hilab-test` and `atlas-reviewed` with the
@@ -18,6 +19,7 @@ so the run ends by naming those steps; it does not publish anything.
 
     python models/classifier/retrain.py                    # train, measure, report
     python models/classifier/retrain.py --install          # and install when the gate passes
+    python models/classifier/retrain.py --extra work/classifier-hangul --install
     python models/classifier/retrain.py --candidate work/classifier-runs/<stamp> --install
 """
 from __future__ import annotations
@@ -55,10 +57,10 @@ def step(*arguments: str | Path, log: Path | None = None) -> None:
                        stdout=handle, stderr=subprocess.STDOUT)
 
 
-def train(stamp: str, *, skip_manifests: bool, epochs: int | None) -> Path:
+def train(stamp: str, *, skip_manifests: bool, epochs: int | None, extra: Path | None = None) -> Path:
     run = ROOT / "work/classifier-runs" / stamp
     if not skip_manifests:
-        step("models/classifier/build_combined.py")
+        step("models/classifier/build_combined.py", *(["--extra", extra] if extra else []))
     step("models/classifier/train.py", "--config", CONFIG, "--out", run,
          *(["--epochs", str(epochs)] if epochs else []), log=run / "train.log")
     step("models/classifier/export_onnx.py", "--config", CONFIG, "--checkpoint", run / "best.pt",
@@ -157,11 +159,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--candidate", type=Path, help="a finished run to measure instead of training one")
     parser.add_argument("--skip-manifests", action="store_true")
+    parser.add_argument("--extra", type=Path, help="another manifest set for build_combined.py")
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--install", action="store_true", help="install the candidate when the gate passes")
     args = parser.parse_args()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    candidate = args.candidate or train(stamp, skip_manifests=args.skip_manifests, epochs=args.epochs)
+    if args.extra and (args.skip_manifests or args.candidate):
+        parser.error("--extra builds the manifests, so it cannot be used with --skip-manifests or --candidate")
+    candidate = args.candidate or train(stamp, skip_manifests=args.skip_manifests, epochs=args.epochs,
+                                        extra=args.extra)
     if not (candidate / "classes.json").exists():
         raise SystemExit(f"{candidate} has no classes.json beside its export; the served list would be read instead")
     result = gate(measure(candidate))

@@ -846,7 +846,6 @@
   "form.ids.swaps": "In place of {part}",
   "form.ids.split": "Split {part} into its parts",
   "form.ids.tag": "IDS",
-  "form.ids.named": "{ids}: a form named by its ideographic description sequence",
   "form.ids.problem.character": "Start with an operator such as ⿰ or ⿱.",
   "form.ids.problem.component": "A part must be an ideograph, a radical, a stroke or a katakana letter.",
   "form.ids.problem.missing": "An operator is still missing a part.",

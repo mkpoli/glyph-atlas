@@ -44,7 +44,8 @@ validates, Batang tests. A face that cannot draw a syllable as one block is not 
 validation and test hold fewer classes than training. The output is
 `work/classifier-hangul/{train,val,test}.parquet`. `build_combined.py --extra work/classifier-hangul`
 adds it to the combined manifests; it also writes the class list, so give it `--out` and `--classes`
-outside the served ones until a retrain is meant to take hangul (`retrain.py` passes no `--extra`).
+outside the served ones until a retrain is meant to take hangul; `retrain.py --extra work/classifier-hangul`
+is that retrain.
 
 Measured on 41 hangul crops of 老乞大諺解 read by eye, a model trained four epochs on these renders
 alone reads 26 at top-1 and 31 in the top five; restricted to the syllables of the right phrase, which

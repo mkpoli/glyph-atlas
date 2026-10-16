@@ -805,7 +805,6 @@
   "form.ids.swaps": "{part} 代身",
   "form.ids.split": "{part}을(를) 構成 要素로 나누기",
   "form.ids.tag": "IDS",
-  "form.ids.named": "{ids}: IDS로 나타낸 字形",
   "form.ids.problem.character": "⿰, ⿱ 같은 演算子로 始作하세요.",
   "form.ids.problem.component": "構成 要素는 漢字·部首·劃·가타카나로 씁니다.",
   "form.ids.problem.missing": "演算子에 構成 要素가 모자랍니다.",

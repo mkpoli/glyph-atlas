@@ -415,8 +415,8 @@
           <div class="palette-forms">
             {#each palette as form, i (form.char)}
               {#if form.described}
-                <button class="form-choice described" disabled={busy || !target} onclick={() => apply(form.char)} title={t('form.ids.named', { ids: form.char })}>
-                  <span class="form-description"><FormText text={form.char} /></span>
+                <button class="form-choice described" disabled={busy || !target} onclick={() => apply(form.char)} title={form.char}>
+                  <span class="form-description"><FormText text={form.char} stacked /></span>
                   {#if i < 10}<kbd>{'1234567890'[i]}</kbd>{/if}
                 </button>
               {:else}
