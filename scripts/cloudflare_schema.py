@@ -89,12 +89,20 @@ def corpus_upsert(values) -> str:
             " WHERE b.id=excluded.id AND b.character IS excluded.character AND b.family IS excluded.family)));")
 
 
-def document_count_statements(db) -> list[str]:
-    """The glyph count of each document a corpus publication holds (0054), replacing the one D1 has.
-    A document is published whole by one export, so its count here is its count on the site."""
-    rows = [f"('{document.replace("'", "''")}',{n})" for document, n in db.execute(
-        "SELECT document,count(*) FROM corpus_units WHERE document IS NOT NULL GROUP BY document ORDER BY document")]
-    return [f"INSERT OR REPLACE INTO corpus_document_counts(document,n) VALUES{','.join(rows[i:i + 200])};"
+def document_statements(db) -> list[str]:
+    """Each document a corpus publication holds, with its glyph count and title (0054, 0075), replacing the
+    count D1 has. A document is published whole by one export, so its count here is its count on the site;
+    a title the export does not know (`corpus_documents` empty, an export made before 0075) keeps D1's."""
+    def literal(value):
+        return "NULL" if value is None else "'" + str(value).replace("'", "''") + "'"
+    titled = db.execute("SELECT 1 FROM sqlite_master WHERE name='corpus_documents'").fetchone()
+    column = "d.title" if titled else "NULL"
+    joined = " LEFT JOIN corpus_documents d ON d.document=u.document" if titled else ""
+    rows = [f"({literal(document)},{n},{literal(title)})" for document, n, title in db.execute(
+        f"SELECT u.document,count(*),{column} FROM corpus_units u{joined}"
+        " WHERE u.document IS NOT NULL GROUP BY u.document ORDER BY u.document")]
+    return [f"INSERT INTO corpus_documents(document,n,title) VALUES{','.join(rows[i:i + 200])}"
+            " ON CONFLICT(document) DO UPDATE SET n=excluded.n,title=coalesce(excluded.title,corpus_documents.title);"
             for i in range(0, len(rows), 200)]
 
 

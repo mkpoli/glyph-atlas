@@ -14,7 +14,7 @@ from cloudflare_schema import (
     CORPUS_REFRESH,
     category_of,
     corpus_upsert,
-    document_count_statements,
+    document_statements,
     schema,
 )
 from export_cloudflare import UNIT_COLUMNS, encoded
@@ -106,6 +106,10 @@ def seal(catalogue: Path, corpus: Path, output: Path, published: dict[str, tuple
     if any(row[1] == "document" for row in db.execute("PRAGMA corpus_source.table_info(corpus_units)")):
         columns += ",document"
     db.execute(f"INSERT INTO corpus_units({columns}) SELECT {columns} FROM corpus_source.corpus_units")
+    # The titles of the documents the export read (0075), which `document_statements` writes with their
+    # counts; an export made before them names none, and the site keeps its own.
+    if db.execute("SELECT 1 FROM corpus_source.sqlite_master WHERE name='corpus_documents'").fetchone():
+        db.execute("INSERT INTO corpus_documents(document,n,title) SELECT document,n,title FROM corpus_source.corpus_documents")
     # An export made while a corpus was still published as corpus glyphs holds rows the site now
     # publishes as its own crops, under the same ids; they are not sealed again.
     from export_cloudflare_corpus import drop_locally_published, locally_published_ids
@@ -228,7 +232,7 @@ def seal(catalogue: Path, corpus: Path, output: Path, published: dict[str, tuple
             sql.write(statement)
         # Counted in D1 from the rows it now holds, which may include rows earlier publications left.
         sql.write(CORPUS_REFRESH + "\n")
-        for statement in document_count_statements(db):
+        for statement in document_statements(db):
             sql.write(statement + "\n")
     counts = {table: db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
               for table in ("units", "characters", "corpus_units", "media")}

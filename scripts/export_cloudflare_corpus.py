@@ -144,6 +144,20 @@ def unit_corpora(names=None):
     return [corpus for corpus in found if corpus.name in names]
 
 
+def corpus_titles(corpora) -> dict[str, str]:
+    """The title of each document `corpora` hold, by document id, from their `documents` tables."""
+    titles: dict[str, str] = {}
+    for corpus in corpora:
+        paths = corpus.parquet_files("documents")
+        if not paths:
+            continue
+        table = ds.dataset([str(p) for p in paths], format="parquet").to_table(columns=["id", "title"])
+        for document, title in zip(table.column("id").to_pylist(), table.column("title").to_pylist(), strict=True):
+            if document and title:
+                titles[document] = title
+    return titles
+
+
 def line_orientation(corpus) -> dict[str, bool]:
     """Each line's `vertical` flag, from the corpus's lines table, or nothing when it has none."""
     paths = corpus.parquet_files("lines")
@@ -218,6 +232,9 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
     db.commit()
     drop_locally_published(db, locally_published_ids())
     drop_withdrawn(db)
+    # The titles of the documents exported, which the publication writes with their counts (0075).
+    db.executemany("INSERT INTO corpus_documents(document,n,title) VALUES(?,0,?) ON CONFLICT(document) DO UPDATE SET title=excluded.title",
+                   sorted(corpus_titles(found).items()))
     db.commit()
     existing = held(db, skip)
     counts = Counter(json.loads((output / "progress.json").read_text()) if (output / "progress.json").exists() else {})

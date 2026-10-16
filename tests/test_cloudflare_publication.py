@@ -132,3 +132,14 @@ def test_the_ledger_rows_an_export_carries_are_sealed_insert_only_and_their_slot
             "the forms the claims name are published with them"
         status, supporting, crop = db.execute("SELECT status,supporting,crop_version FROM current_claims").fetchone()
         assert (status, json.loads(supporting), crop) == ("disputed", [], version), "the site's own claim counts too"
+
+
+def test_a_sealed_publication_names_the_documents_its_corpus_export_read(publication):
+    module, local, corpus, output = publication
+    with sqlite3.connect(corpus / "corpus.sqlite") as db:
+        db.execute("UPDATE corpus_units SET document='doc:a' WHERE id='corpus-one'")
+        db.executemany("INSERT INTO corpus_documents(document,n,title) VALUES(?,0,?)", [("doc:a", "Book A"), ("doc:unheld", "Unheld")])
+    module.seal(local, corpus, output)
+    with database(":memory:") as db:
+        db.executescript((output / "catalogue.sql").read_text())
+        assert db.execute("SELECT document,n,title FROM corpus_documents").fetchall() == [("doc:a", 1, "Book A")]

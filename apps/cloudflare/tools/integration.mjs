@@ -760,7 +760,7 @@ try {
   }
   // The collection's dates in numbers, from the cached counts: the dated crop's book in its hundred
   // years, decade and kind, a corpus book with no date among the undated works.
-  await db.prepare("INSERT INTO corpus_document_counts(document,n) VALUES('doc:corpus-undated',4)").run()
+  await db.prepare("INSERT INTO corpus_documents(document,n) VALUES('doc:corpus-undated',4)").run()
   const dateNumbers = await call('/atlas/dates/stats')
   assert.ok(dateNumbers.hundreds.some(([start, crops, works]) => start === 1700 && crops === 1 && works === 1), JSON.stringify(dateNumbers))
   assert.ok(dateNumbers.decades.some(([start]) => start === 1790))
@@ -1250,8 +1250,13 @@ try {
     await db.prepare("UPDATE corpus_units SET production='printed' WHERE id='hl:run:0'").run()
     await refreshed('corpus-runs-styled')
     const handRun = await runOf('申上', '&hand=hand')
-    assert.deepEqual([handRun.total, handRun.hands.hand, handRun.works], [1, 1, [{ id: 'hl:book', title: 'A corpus book', count: 1 }]],
-      'a corpus run is narrowed by group, and its book named from its glyph\'s record')
+    assert.deepEqual([handRun.total, handRun.hands.hand, handRun.works], [1, 1, [{ id: 'hl:book', title: null, count: 1 }]],
+      'a corpus run is narrowed by group, and a book its publication has not named is listed unnamed')
+    // A corpus book is named by its publication's title (0075), not by a glyph's record.
+    await db.prepare("INSERT INTO corpus_documents(document,n,title) VALUES('hl:book',2,'A corpus book')").run()
+    await refreshed('corpus-runs-named')
+    assert.deepEqual((await runOf('申上', '&hand=hand')).works, [{ id: 'hl:book', title: 'A corpus book', count: 1 }], 'and named once it has')
+    await db.prepare("DELETE FROM corpus_documents WHERE document='hl:book'").run()
     // An occurrence whose record cannot be read is left off its page, which still pages on past it.
     await db.batch([
       db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES('hl:gone:0','申',NULL,NULL,5,'no-such-pack',0,10,'unknown',0),('hl:gone:1','上',NULL,NULL,5,'no-such-pack',10,10,'unknown',0)`),
