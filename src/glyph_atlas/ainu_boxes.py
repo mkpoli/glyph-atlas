@@ -5,6 +5,11 @@ ledger (`data/editorial/character-crop-repairs/*.json`) with the rectangle befor
 `ar:` unit still holding the rectangle before is moved to the one after; any other box is someone's
 later decision and stays. A unit a person reviewed is never moved, nor one whose box would leave its
 page. The label is untouched: ainu-records' repairs change only where the crop is cut.
+
+Only ledgers marked `"status": "applied"` count: a ledger the repair script has just proposed is
+not yet part of ainu-records. Later ledgers can repair a box an earlier one produced, so a unit
+follows the chain from whatever box it holds. Reviews made on the site reach this store only when
+they are imported, so import them before applying; a crop recut first would refuse them.
 """
 from __future__ import annotations
 
@@ -15,17 +20,29 @@ from pathlib import Path
 METHOD = "ainu-records-crop-repair-v1"
 
 
-def repairs(ledgers: Path) -> dict[tuple[str, str], tuple[list[int], list[int], str]]:
-    """(copy key, occurrence id) → (box before, box after, policy) for every repair in `ledgers`."""
-    found = {}
+def repairs(ledgers: Path) -> dict[tuple[str, str], list[tuple[list[int], list[int], str]]]:
+    """(copy key, occurrence id) → its (box before, box after, policy) repairs, oldest first."""
+    found: dict[tuple[str, str], list] = {}
     for path in sorted(ledgers.glob("*.json")) if ledgers.is_dir() else [ledgers]:
         ledger = json.loads(path.read_text(encoding="utf-8"))
+        if ledger.get("status") != "applied":
+            continue
         for batch in ledger.get("batches", []):
             for change in batch.get("changes", []):
-                # Later ledgers repair what earlier ones left; the last word on an occurrence stands.
-                found[(batch["unit"], change["after"]["id"])] = (
-                    list(change["before"]["box"]), list(change["after"]["box"]), ledger.get("policy", ""))
+                found.setdefault((batch["unit"], change["after"]["id"]), []).append(
+                    (list(change["before"]["box"]), list(change["after"]["box"]), ledger.get("policy", "")))
     return found
+
+
+def resolve(box: list[int], chain: list[tuple[list[int], list[int], str]]) -> tuple[list[int], str] | None:
+    """The box the repairs lead to from `box`, and the last policy applied; None if none applies."""
+    current, policy = box, None
+    for _ in chain:
+        step = next(((after, rule) for before, after, rule in chain if before == current), None)
+        if step is None or step[0] == current:
+            break
+        current, policy = step
+    return (current, policy) if policy is not None else None
 
 
 def run(dataset: Path, ledgers: Path, *, apply: bool = False) -> dict:
@@ -39,18 +56,18 @@ def run(dataset: Path, ledgers: Path, *, apply: bool = False) -> dict:
     pages = store.pages()
     counts, items = Counter(), []
     for unit, revision in store.unit_snapshot():
+        if not unit.id.startswith("ar:"):
+            continue
         place = (unit.meta or {}).get("ainu_records") or {}
-        repair = found.get((place.get("key"), place.get("id")))
-        if repair is None or not unit.active or unit.box is None:
+        chain = found.get((place.get("key"), place.get("id")))
+        if chain is None or not unit.active or unit.box is None:
             continue
-        before, after, policy = repair
         box = [unit.box.x, unit.box.y, unit.box.w, unit.box.h]
-        if box == after:
-            counts["already repaired"] += 1
+        target = resolve(box, chain)
+        if target is None:
+            counts["already repaired" if box == chain[-1][1] else "box changed since"] += 1
             continue
-        if box != before:
-            counts["box changed since"] += 1
-            continue
+        (after, policy), before = target, box
         if unit.id in reviewed or str(unit.review) != "machine":
             counts["reviewed"] += 1
             continue
@@ -62,8 +79,10 @@ def run(dataset: Path, ledgers: Path, *, apply: bool = False) -> dict:
         item = {"unit_id": unit.id, "before": before, "after": after, "policy": policy, "status": "proposed"}
         if apply:
             evidence = {"kind": "upstream-crop-repair", "method": METHOD, "automated": True, "source": "ainu-records",
-                        "occurrence": f"{place['key']}#{place['id']}", "policy": policy, "before": before, "after": after}
+                        "occurrence": f"{place['key']}#{place['id']}", "policy": policy, "before": before, "after": after,
+                        "base_revision": revision}
             try:
+                # The revision is in the evidence, so a crop moved back since an earlier run is recut again.
                 _changes(store, unit, {"box": {"x": x, "y": y, "w": w, "h": h}}, evidence, base_revision=revision)
                 item["status"] = "recut"
             except Conflict:

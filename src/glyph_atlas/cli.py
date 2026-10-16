@@ -988,7 +988,10 @@ def ainu_boxes(
     out: Annotated[Path, typer.Option(help="write the proposals here")] = Path("out/ainu-boxes.json"),
     apply: Annotated[bool, typer.Option(help="record the new boxes in the review store")] = False,
 ) -> None:
-    """Recut each `ar:` crop that ainu-records repaired and nobody has reviewed since."""
+    """Recut each `ar:` crop that ainu-records repaired and nobody has reviewed since.
+
+    Import the site's reviews first: a crop recut before its review arrives would refuse it.
+    """
     from . import ainu_boxes as boxes
 
     result = boxes.run(directory, ledgers, apply=apply)
