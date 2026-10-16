@@ -130,9 +130,9 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
         held = {seq: found[0] for seq, found in positions.items() if len(found) == 1
                 and found[0].kind == UnitKind.CHAR and found[0].granularity == "char" and found[0].box}
         wraps = line in blocks
-        # A block's step from the foot of one column to the head of the next is no part of its spacing.
-        spacing = Spacing.of((unit, following) for seq, unit in held.items()
-                             if (following := held.get(seq + 1)) and (not wraps or _down_the_column(unit, following)))
+        # A block's columns may each be spaced their own way, so a block reaches by its boxes alone.
+        spacing = Spacing() if wraps else Spacing.of(
+            (unit, following) for seq, unit in held.items() if (following := held.get(seq + 1)))
         for seq, unit in sorted(held.items()):
             run = [unit]
             while (len(run) < max(SIZES) and (following := held.get(seq + len(run)))

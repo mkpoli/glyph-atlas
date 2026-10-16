@@ -104,10 +104,13 @@ def test_a_line_spacing_is_its_own_and_counts_in_box_sizes():
     pitched = [Unit(id=f"P:{seq}", line_id="P", seq=seq, box=Box(x=40 - w // 2, y=y - w // 2, w=w, h=w))
                for seq, (y, w) in enumerate([(20, 20), (60, 20), (100, 20), (140, 20), (180, 20), (220, 36), (300, 36)])]
     assert ("P:5", "P:6") not in ids(adjacent_ngrams(pitched))
-    # A block's wraps are no part of its spacing.
+    # A block reaches by its boxes alone: neither its wraps nor a widely spaced column lend reach.
     block = [Unit(id=f"W:{seq}", line_id="W", seq=seq, box=Box(x=x, y=y, w=36, h=36)) for seq, (x, y) in
              enumerate([(500, 0), (500, 40), (400, 0), (300, 0), (200, 0), (100, 0), (100, 80)])]
     assert ids(adjacent_ngrams(block, blocks={"W"})) == [("W:0", "W:1")]
+    columns = [Unit(id=f"C:{seq}", line_id="C", seq=seq, box=Box(x=x, y=y, w=36, h=36)) for seq, (x, y) in
+               enumerate([(100, 0), (100, 100), (100, 200), (100, 300), (0, 0), (0, 40), (0, 120)])]
+    assert ids(adjacent_ngrams(columns, blocks={"C"})) == [("C:4", "C:5")]
 
 
 def test_a_run_is_written_the_way_its_line_is():
