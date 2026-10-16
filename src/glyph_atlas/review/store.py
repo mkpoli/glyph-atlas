@@ -57,6 +57,7 @@ from ..schema import (
     UnitKind,
 )
 from . import crop_forms, ledger
+from .request_cache import file_stamp
 
 STORE_NAME = "review.sqlite"
 LOG_NAME = "reviews.jsonl"
@@ -172,19 +173,6 @@ CREATE TABLE IF NOT EXISTS imported_records (
     PRIMARY KEY (table_name, id)
 );
 """
-
-
-def _stamp(path: Path) -> tuple[int, int] | None:
-    """A file's modification time and size, or None when it is absent.
-
-    SQLite removes the `-wal` file when the last connection closes, which another process can do at
-    any moment, so the file is read once and its absence is a state, never an error.
-    """
-    try:
-        found = path.stat()
-    except FileNotFoundError:
-        return None
-    return found.st_mtime_ns, found.st_size
 
 
 class StoreError(RuntimeError):
@@ -1241,7 +1229,7 @@ class Store:
         """Notice a background publisher without requiring a server restart."""
         with self._lock:
             files = (self.path, Path(str(self.path) + "-wal"))
-            stamp = tuple(_stamp(path) for path in files)
+            stamp = tuple(file_stamp(path) for path in files)
             if stamp == self._imports_stamp:
                 return
             with self._connection() as conn:
