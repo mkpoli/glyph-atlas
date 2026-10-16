@@ -34,10 +34,23 @@ def test_a_shifted_crop_takes_the_correction_of_the_place_its_label_came_from():
     assert got == {"u5": ("鯡", "程"), "u6": ("運", "鯡")}
 
 
-def test_a_protected_or_relabelled_crop_keeps_its_label():
+def test_a_protected_or_relabelled_crop_is_left_alone():
     blocks = {("k", 48, "ocr9"): [crop(6, "緋", identity="kept"), crop(4, "雨")]}
-    got = {p["unit_id"]: p["character"] for p in propose(blocks, {"p": PAGE}, {"kept"})[0]}
-    assert got == {"u4": "雨"}
+    assert propose(blocks, {"p": PAGE}, {"kept"})[0] == []
+
+
+def test_ocr_punctuation_is_not_aligned_with_a_ruby_base():
+    page = letters("《振り仮名：アツテカニ｜捧》。ハリキテケワ")
+    assert corrections("アツテカニ。ハリキテケワ", page) == {}
+
+
+def test_an_equal_match_close_by_counts_as_another_place():
+    assert corrections("千両百匁程", "千弐百匁程千七百匁程") == {}
+
+
+def test_a_page_without_text_is_counted():
+    blocks = {("k", 48, "ocr9"): [crop(6, "緋")]}
+    assert propose(blocks, {"p": ""}, set())[1]["no transcription"] == 1
 
 
 def test_the_method_is_named():

@@ -43,6 +43,7 @@ from typing import Any
 
 import numpy as np
 
+from .ocr_repair import METHOD as OCR_METHOD
 from .shift_repair import METHOD as SHIFT_METHOD
 from .shift_repair import _shown, place
 
@@ -284,7 +285,7 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
             else:
                 held.add(unit.id)
         relabel = meta.get("feedback_identity") or {}
-        if relabel.get("method") in (SHIFT_METHOD, METHOD) and relabel.get("offset") is not None:
+        if relabel.get("method") in (SHIFT_METHOD, METHOD, OCR_METHOD) and relabel.get("offset") is not None:
             offsets[unit.id] = int(relabel["offset"])
         units[unit.id] = (unit, revision)
         blocks[found[0]].append((unit.id, found[1], text, label))
