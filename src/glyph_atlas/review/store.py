@@ -174,6 +174,19 @@ CREATE TABLE IF NOT EXISTS imported_records (
 """
 
 
+def _stamp(path: Path) -> tuple[int, int] | None:
+    """A file's modification time and size, or None when it is absent.
+
+    SQLite removes the `-wal` file when the last connection closes, which another process can do at
+    any moment, so the file is read once and its absence is a state, never an error.
+    """
+    try:
+        found = path.stat()
+    except FileNotFoundError:
+        return None
+    return found.st_mtime_ns, found.st_size
+
+
 class StoreError(RuntimeError):
     """A review the store will not record."""
 
@@ -1228,8 +1241,7 @@ class Store:
         """Notice a background publisher without requiring a server restart."""
         with self._lock:
             files = (self.path, Path(str(self.path) + "-wal"))
-            stamp = tuple((path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else None
-                          for path in files)
+            stamp = tuple(_stamp(path) for path in files)
             if stamp == self._imports_stamp:
                 return
             with self._connection() as conn:
