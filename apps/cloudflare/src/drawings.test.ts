@@ -15,8 +15,10 @@ describe('drawingFile', () => {
     expect(response.headers.get('content-type')).toBe('image/svg+xml');
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
   });
-  it('answers nothing for a sequence no drawing is made of, or a name that is not a key', async () => {
-    expect(await drawingFile(env, `${'cd'.repeat(32)}.svg`)).toBeNull();
+  it('answers a sequence not drawn yet as missing for a while, and nothing for a name that is not a key', async () => {
+    const missing = (await drawingFile(env, `${'cd'.repeat(32)}.svg`))!;
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get('cache-control')).toBe('public, max-age=300');
     for (const bad of ['../x.svg', 'AB.svg', `${'ab'.repeat(32)}.png`, `ids/${name}`]) expect(await drawingFile(env, bad)).toBeNull();
   });
 });
