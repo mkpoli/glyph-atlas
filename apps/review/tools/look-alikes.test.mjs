@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { lookAlikeLabels } from '../src/lib/lookAlikes.js'
+import { arrange } from '../src/lib/suggestionOrder.js'
 
 const crop = (id, label, score, extra = {}) => ({ id, label, score, ...extra })
 
@@ -19,5 +20,21 @@ describe("a crop's look-alikes", () => {
   it('are none for a crop without lists', () => {
     expect(lookAlikeLabels(null, '鋤')).toEqual([])
     expect(lookAlikeLabels({ revision: null, similar: [], filed_differently: [] }, '鋤')).toEqual([])
+  })
+})
+
+describe('suggestion buttons', () => {
+  it('stay where they are when a later answer arrives', () => {
+    const first = arrange([], [], [], ['鯛', 'ノ'])
+    expect(first.shown).toEqual(['鯛', 'ノ'])
+    const later = arrange(first.order, ['鮓', '鰤', '翺'], [], ['鯛', 'ノ'])
+    expect(later.shown).toEqual(['鯛', 'ノ', '鮓', '鰤', '翺'])
+  })
+  it('show the first six recognised texts, every printed mark and every look-alike', () => {
+    const texts = ['一', '二', '三', '四', '五', '六', '七', '※']
+    expect(arrange([], texts, ['※'], ['鯛']).shown).toEqual(['一', '二', '三', '四', '五', '六', '※', '鯛'])
+  })
+  it('drop a text no answer holds any more', () => {
+    expect(arrange(['鯛', '鮓'], ['鮓'], [], []).shown).toEqual(['鮓'])
   })
 })

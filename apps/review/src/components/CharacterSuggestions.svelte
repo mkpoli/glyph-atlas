@@ -6,6 +6,7 @@
   import { isSingle, offersSuggestions } from '../lib/issues.js'
   import { similar } from '../lib/client.js'
   import { lookAlikeLabels } from '../lib/lookAlikes.js'
+  import { arrange } from '../lib/suggestionOrder.js'
   import { t } from '../lib/i18n.svelte.js'
   // What a wrong or joined crop holds: the characters the recognisers suggest, for a wrong one the
   // characters its look-alikes are filed under, and any other picked from the character search. A joined crop's characters are picked one after another, or typed as a
@@ -44,14 +45,10 @@
     scripts = Object.fromEntries(incoming.filter(c => c.script).map(c => [c.text, c.script]))
     if (key !== previousKey) order = []
     previousKey = key
-    // Keep buttons in their arrival order while independent requests finish.
-    order = [...order.filter(text => texts.has(text)), ...[...texts].filter(text => !order.includes(text))]
-    // A fast context response may fill all six slots before image OCR finishes.
-    // Keep their positions, while making a newly recognized printed mark visible.
-    const visible = order.slice(0, 6)
     const symbols = incoming.filter(c => c.basis === 'symbol-parts').map(c => c.text)
-    const shown = [...visible, ...symbols.filter(text => !visible.includes(text))]
-    candidates = [...shown, ...lookAlikes.filter(text => !shown.includes(text))]
+    const arranged = arrange(order, [...texts], symbols, lookAlikes)
+    order = arranged.order
+    candidates = arranged.shown
   })
 </script>
 
