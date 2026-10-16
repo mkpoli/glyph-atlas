@@ -2,6 +2,7 @@
   // The character a crop is written as, in its script's colour, and the script named beside it. The
   // character leads to its own page, with every crop of it.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import CopyValue from './CopyValue.svelte'
   import { scriptInfo } from '../lib/identity.js'
   import { hasCharacterPage, isSingle, pointOf } from '../lib/issues.js'
   import { characterAddress } from '../lib/gallery.js'
@@ -18,10 +19,12 @@
   const href = $derived(hasCharacterPage(char) ? localize(characterAddress(pointOf(char))) : null)
 </script>
 
-<h2 class="crop-title">{#if href}<a class="character-link" {href} aria-label={t('chips.showCharacter', { char })}><ReferenceGlyph {char} script={key} {size} /></a>{:else}<ReferenceGlyph {char} script={key} {size} />{/if}<small class="script-name">{name}</small></h2>
+<h2 class="crop-title"><span class="title-glyph copyable">{#if href}<a class="character-link" {href} aria-label={t('chips.showCharacter', { char })}><ReferenceGlyph {char} script={key} {size} /></a>{:else}<ReferenceGlyph {char} script={key} {size} />{/if}<CopyValue value={char} /></span><small class="script-name">{name}</small></h2>
 
 <style>
   .crop-title{display:inline-flex;align-items:baseline;gap:10px}
+  .title-glyph{position:relative}
+  .title-glyph :global(.copy-value){position:absolute;top:2px;right:-26px}
   .crop-title :global(.reference-glyph){font-size:42px;line-height:1.3}
   .character-link{color:inherit;text-decoration:none;border-radius:6px}
   .character-link:hover,.character-link:focus-visible{background:color-mix(in srgb, var(--accent) 12%, transparent)}

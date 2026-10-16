@@ -337,6 +337,7 @@
   "history.onlyMine.aria": "Show only my own edits",
   "history.row.inspect": "Open {label}",
   "copyId.copy": "Copy ID",
+  "copyValue.aria": "Copy {value}",
   "copyId.copied": "Copied",
   "cite.open": "Cite",
   "cite.heading.crop": "Cite this crop",

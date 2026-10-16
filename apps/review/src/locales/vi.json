@@ -317,6 +317,7 @@
   "history.reviewer.you": "bạn",
   "history.row.inspect": "Mở {label}",
   "copyId.copy": "Sao chép ID",
+  "copyValue.aria": "Sao chép {value}",
   "copyId.copied": "Đã sao chép",
   "cite.open": "Trích dẫn",
   "cite.heading.crop": "Trích dẫn vùng cắt này",

@@ -318,6 +318,7 @@
   "history.reviewer.you": "伴",
   "history.row.inspect": "𨷑{label}",
   "copyId.copy": "抄劄ID",
+  "copyValue.aria": "抄劄{value}",
   "copyId.copied": "㐌抄劄",
   "cite.open": "摘引",
   "cite.heading.crop": "摘引塳割呢",
