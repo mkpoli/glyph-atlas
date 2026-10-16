@@ -31,6 +31,10 @@ def test_a_crop_is_released_only_when_it_shows_its_own_label_best():
     beside = shows(0, 0.92)
     beside[OFFSETS.index(1)] = 0.95
     assert not wr.decide(beside.tolist())
+    # A neighbour written with the same character (いい) reads exactly as the crop does.
+    twin = shows(0)
+    twin[OFFSETS.index(1)] = twin[OFFSETS.index(0)]
+    assert wr.decide(twin.tolist())
     # A label the classifier has no class for says nothing either way.
     unknown = shows(0)
     unknown[OFFSETS.index(-1)] = float("nan")

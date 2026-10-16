@@ -51,6 +51,7 @@ def releasable(note: dict) -> bool:
 
 def decide(shown: list[float], min_p: float = MIN_P) -> bool:
     """Whether a crop read as `shown` (one probability per offset of `OFFSETS`) shows its own label."""
+    # A neighbour written with the same character reads exactly as the crop does, so a tie releases.
     own = shown[OFFSETS.index(0)]
     return own >= min_p and all(own >= p for p in shown if not math.isnan(p))
 
