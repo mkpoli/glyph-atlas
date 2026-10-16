@@ -321,6 +321,7 @@
   "history.onlyMine.aria": "自分の編集だけを表示",
   "history.row.inspect": "{label}を開く",
   "copyId.copy": "IDをコピー",
+  "copyValue.aria": "{value}をコピー",
   "copyId.copied": "コピーしました",
   "cite.open": "引用",
   "cite.heading.crop": "この切り出しを引用",

@@ -325,6 +325,7 @@
   "history.reviewer.you": "本人",
   "history.row.inspect": "{label} 열기",
   "copyId.copy": "ID 複寫",
+  "copyValue.aria": "{value} 複寫",
   "copyId.copied": "複寫됨",
   "cite.open": "引用",
   "cite.heading.crop": "이 크롭 引用하기",

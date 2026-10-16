@@ -5,6 +5,7 @@
   // saves; choosing the form the crop already has drops it again.
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
+  import CopyValue from './CopyValue.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
   import { listForms, formOf } from '../lib/cropForms.js'
@@ -70,8 +71,10 @@
 <svelte:window onkeydown={keydown} />
 
 <div class="crop-form" bind:this={root}>
-  <div class="form-row">
-    <FormChips forms={bar} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose} />
+  <div class="form-row copyable">
+    <FormChips forms={bar} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose}>
+      {#if !others}<CopyValue value={chosen ?? current} />{/if}
+    </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+⌕'}</button>
   </div>
   {#if picking}
@@ -102,6 +105,7 @@
 <style>
   .crop-form{display:flex;flex-direction:column;gap:10px;margin:0 0 16px}
   .form-row{display:flex;gap:6px;align-items:flex-start}
+  .form-row :global(.copy-value){align-self:center}
   .crop-form :global(.form-chips){flex:1 1 0}
   .form-add{flex:none;min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
   .form-add[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}

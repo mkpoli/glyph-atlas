@@ -321,6 +321,7 @@
   "history.onlyMine.aria": "己ノ編輯ノミヲ示ス",
   "history.row.inspect": "{label}ヲ開ク",
   "copyId.copy": "IDヲ寫ス",
+  "copyValue.aria": "{value}ヲ寫ス",
   "copyId.copied": "寫シ取レリ",
   "cite.open": "引用",
   "cite.heading.crop": "此截片ヲ引ク",

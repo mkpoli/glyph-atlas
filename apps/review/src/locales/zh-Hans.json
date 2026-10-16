@@ -328,6 +328,7 @@
   "history.reviewer.you": "你",
   "history.row.inspect": "打开{label}",
   "copyId.copy": "复制ID",
+  "copyValue.aria": "复制{value}",
   "copyId.copied": "已复制",
   "cite.open": "引用",
   "cite.heading.crop": "引用此裁切",

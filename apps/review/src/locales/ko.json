@@ -325,6 +325,7 @@
   "history.reviewer.you": "본인",
   "history.row.inspect": "{label} 열기",
   "copyId.copy": "ID 복사",
+  "copyValue.aria": "{value} 복사",
   "copyId.copied": "복사됨",
   "cite.open": "인용",
   "cite.heading.crop": "이 크롭 인용하기",

@@ -327,6 +327,7 @@
   "history.reviewer.you": "己",
   "history.row.inspect": "開{label}",
   "copyId.copy": "抄ID",
+  "copyValue.aria": "抄{value}",
   "copyId.copied": "已抄",
   "cite.open": "引",
   "cite.heading.crop": "引此截",
