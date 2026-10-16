@@ -56,6 +56,9 @@ training:
   # every class is drawn as often as every other, so a class with 20 crops is not drowned by one
   # with 22,000; the sampler weight of a crop is 1 / (crops of its class in train)
   sampler: class_balanced
+  # crops rendered from fonts (build_hangul.py) take this share of the draws, balanced by class among
+  # themselves, so adding their classes leaves the scanned classes' draws almost as they were
+  rendered_share: 0.1
   # scans differ in contrast and exposure and a character keeps its shape under both; a character
   # mirrored or rotated is a different character, so neither is used
   augment: brightness_contrast

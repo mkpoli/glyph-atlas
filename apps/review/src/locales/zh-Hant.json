@@ -821,7 +821,6 @@
   "form.ids.swaps": "替換{part}",
   "form.ids.split": "把{part}拆成部件",
   "form.ids.tag": "IDS",
-  "form.ids.named": "{ids}：以IDS表示的字形",
   "form.ids.problem.character": "請以⿰、⿱等結構符開頭。",
   "form.ids.problem.component": "部件須為漢字、部首、筆畫或片假名。",
   "form.ids.problem.missing": "結構符還缺部件。",

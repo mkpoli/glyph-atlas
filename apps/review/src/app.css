@@ -259,9 +259,9 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .glyph-grid.collage{container-type:inline-size}
 /* A tile's place is its own: the numbers are not passed down to what it holds. */
 @property --cell-a{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c2{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y2{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n2{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c3{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y3{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n3{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c4{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y4{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n4{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c5{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y5{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n5{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c6{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y6{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n6{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c7{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y7{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n7{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c8{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y8{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n8{syntax:"<number>";inherits:false;initial-value:0}@property --collage-h2{syntax:"*";inherits:false}@property --collage-h3{syntax:"*";inherits:false}@property --collage-h4{syntax:"*";inherits:false}@property --collage-h5{syntax:"*";inherits:false}@property --collage-h6{syntax:"*";inherits:false}@property --collage-h7{syntax:"*";inherits:false}@property --collage-h8{syntax:"*";inherits:false}@property --collage-h{syntax:"*";inherits:false}
-.collage-block{--collage-cols:2;--collage-gap:4px;--collage-caption:26px;--collage-h:var(--collage-h2);--collage-colw:calc((100cqw - (var(--collage-cols) - 1) * var(--collage-gap)) / var(--collage-cols));--collage-iw:var(--collage-colw);--collage-step:calc(var(--collage-caption) + var(--collage-gap))}
+.collage-block{--collage-cols:2;--collage-gap:8px;--collage-caption:40px;--collage-h:var(--collage-h2);--collage-colw:calc((100cqw - (var(--collage-cols) - 1) * var(--collage-gap)) / var(--collage-cols));--collage-iw:var(--collage-colw);--collage-step:calc(var(--collage-caption) + var(--collage-gap))}
 .collage-cell{--cell-c:var(--cell-c2);--cell-y:var(--cell-y2);--cell-n:var(--cell-n2)}
-@container (min-width:480px){.collage-block{--collage-cols:3;--collage-h:var(--collage-h3)}.collage-cell{--cell-c:var(--cell-c3);--cell-y:var(--cell-y3);--cell-n:var(--cell-n3)}}
+@container (min-width:480px){.collage-block{--collage-cols:3;--collage-gap:12px;--collage-caption:44px;--collage-h:var(--collage-h3)}.collage-cell{--cell-c:var(--cell-c3);--cell-y:var(--cell-y3);--cell-n:var(--cell-n3)}}
 @container (min-width:680px){.collage-block{--collage-cols:4;--collage-h:var(--collage-h4)}.collage-cell{--cell-c:var(--cell-c4);--cell-y:var(--cell-y4);--cell-n:var(--cell-n4)}}
 @container (min-width:880px){.collage-block{--collage-cols:5;--collage-h:var(--collage-h5)}.collage-cell{--cell-c:var(--cell-c5);--cell-y:var(--cell-y5);--cell-n:var(--cell-n5)}}
 @container (min-width:1080px){.collage-block{--collage-cols:6;--collage-h:var(--collage-h6)}.collage-cell{--cell-c:var(--cell-c6);--cell-y:var(--cell-y6);--cell-n:var(--cell-n6)}}
@@ -270,14 +270,25 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 :root:not([data-gallery="grid"]) .glyph-grid.collage{display:block;background:none;border:0}
 :root:not([data-gallery="grid"]) .collage-block{position:relative;height:var(--collage-h)}
 :root:not([data-gallery="grid"]) .collage-cell{position:absolute;left:calc(var(--cell-c) * (var(--collage-colw) + var(--collage-gap)));top:calc(var(--cell-y) * var(--collage-iw) + var(--cell-n) * var(--collage-step));width:var(--collage-colw);height:calc(var(--cell-a) * var(--collage-iw) + var(--collage-caption));min-height:0;padding:0 0 var(--collage-caption);border-radius:0}
-/* A single caption keeps the label, date and status visible without framing the image.
+/* Below the image, two rows on the image's edges: the character and its years, then the work and how
+   the copy was produced, each in the type its role takes.
    No hover zoom: the edges of a written stroke must stay in view. */
 .tile-caption{display:contents}
 :root:not([data-gallery="grid"]) .collage-cell .glyph-image{transform:none}
-:root:not([data-gallery="grid"]) .collage-cell .tile-caption{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:center;gap:6px;height:var(--collage-caption);padding:0 3px;background:var(--paper);z-index:3}
-:root:not([data-gallery="grid"]) .collage-cell .tile-label{position:static;min-width:0;max-width:45%;font-size:14px;line-height:1.2;white-space:nowrap;overflow:hidden}
+:root:not([data-gallery="grid"]) .collage-cell .tile-caption{position:absolute;bottom:0;left:0;right:0;display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,max-content);grid-template-rows:auto auto;column-gap:6px;row-gap:1px;align-items:baseline;align-content:start;height:var(--collage-caption);padding:5px 1px 0;text-align:start;background:var(--paper);z-index:3}
+/* The footer's parts take the caption's cells: the years face the character, the production the work.
+   The character keeps its width; short of room, the years end in an ellipsis first. */
+:root:not([data-gallery="grid"]) .collage-cell .tile-footer{display:contents;font-family:inherit}
+:root:not([data-gallery="grid"]) .collage-cell .tile-label{position:static;grid-area:1/1;font-size:17px;line-height:1.15;white-space:nowrap;overflow:hidden}
 :root:not([data-gallery="grid"]) .collage-cell .tile-glyph{min-width:0;overflow:hidden;text-overflow:ellipsis}
-:root:not([data-gallery="grid"]) .collage-cell .tile-footer{position:static;flex:1;min-width:0;gap:5px;line-height:1.2}
+:root:not([data-gallery="grid"]) .collage-cell .tile-withheld{grid-area:1/3;font-family:inherit;font-size:10px;color:var(--uncertain)}
+:root:not([data-gallery="grid"]) .collage-cell .tile-year{grid-area:1/4;justify-self:end;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;font-family:inherit;font-size:11px;font-weight:500;color:var(--ink)}
+:root:not([data-gallery="grid"]) .collage-cell .tile-work{grid-area:2/1/3/4;font-family:inherit;font-size:11px;line-height:1.3;color:var(--muted)}
+:root:not([data-gallery="grid"]) .collage-cell .tile-production{grid-area:2/4;justify-self:end;max-width:7em;font-family:inherit;font-size:10px;line-height:1.3;color:var(--faint)}
+:root:not([data-gallery="grid"]) .collage-cell .tile-caption:not(:has(.tile-production)) .tile-work{grid-column:1/-1}
+:root:not([data-gallery="grid"]) .collage-cell .tile-caption:not(:has(.tile-year)) .tile-withheld{grid-column:4;justify-self:end}
+@media(max-width:700px){:root:not([data-gallery="grid"]) .collage-cell .tile-work{grid-column:1/-1}}
+:root:not([data-gallery="grid"]) .collage-cell .tile-arrow{display:none}
 :root:not([data-gallery="grid"]) .collage-cell:focus-visible{z-index:1;outline-offset:-3px}
 :root:not([data-gallery="grid"]) .glyph-grid.collage .visual-grid-heading{background:none}
 :root[data-gallery="grid"] .collage-block{display:contents}

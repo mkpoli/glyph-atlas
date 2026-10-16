@@ -136,8 +136,6 @@ export function formatNumber(value) {
   return hanzi() && Number.isFinite(n) && Math.abs(n) < 1e16 ? hanziNumber(n) : n.toLocaleString(base())
 }
 
-/** A running number on a tile: 01, 02 … in digits, 一, 二 … in Chinese numerals. */
-export const formatSerial = value => hanzi() ? formatNumber(value) : String(value).padStart(2, '0')
 
 /**
  * A time of day by the twelve double hours, each split into 初 and 正, then 刻 of fifteen minutes and

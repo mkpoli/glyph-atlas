@@ -659,6 +659,8 @@ class TestShape:
         assert source_corpus_of("krm:F00001:0") == "hdic-krm"
         assert source_corpus_of("ktb:1_016_A51:seal") == "hdic-ktb"
         assert source_corpus_of("tsj:s0104a601:0") == "hdic-tsj"
+        assert source_corpus_of("eo:0123456789abcdef0123") == "nogeoldae-eonhae"
+        assert source_corpus_of("ks:0123456789abcdef0123") == "wikisource-ko-glyphs"
         assert source_corpus_of("nonsense") is None
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Container, Iterable, Iterator, Mapping
+from itertools import pairwise
 from typing import Any, NamedTuple
 
 from .schema import Unit, UnitKind
@@ -207,12 +208,19 @@ def in_reading_order(glyphs: Iterable[Glyph], horizontal: Container[str] = froze
     box, so the boxes, not the numbers, say which glyphs follow each other. A vertical line is read
     as `align.reading_order` reads one, a horizontal one left to right. Glyphs sharing a box share
     its place, which no run passes through, and a glyph without a box has no place.
+
+    On a line whose numbers already follow its boxes, a number that no unit of the line holds at all
+    is a character the transcription has and no unit stands for, so it still breaks a run; a number
+    held by a glyph without a box (a space the aligner kept) does not.
     """
     from . import align
     from .schema import Box
 
     lines: dict[str, list[Glyph]] = defaultdict(list)
+    held: dict[str, set[int]] = defaultdict(set)
     for glyph in glyphs:
+        if glyph.line_id and glyph.seq is not None:
+            held[glyph.line_id].add(glyph.seq)
         if glyph.line_id and glyph.box:
             lines[glyph.line_id].append(glyph)
     placed = []
@@ -222,8 +230,20 @@ def in_reading_order(glyphs: Iterable[Glyph], horizontal: Container[str] = froze
         ordered = (sorted(detections, key=lambda d: d.centre) if line in horizontal
                    else align.reading_order(detections))
         rank = {Place(d.box.x, d.box.y, d.box.w, d.box.h): i for i, d in enumerate(ordered)}
-        placed += [glyph._replace(seq=rank[glyph.box]) for glyph in found]
+        by_seq = sorted(found, key=lambda glyph: (glyph.seq is None, glyph.seq or 0, rank[glyph.box]))
+        follows = all(g.seq is not None for g in found) and all(
+            rank[a.box] <= rank[b.box] for a, b in pairwise(by_seq))
+        place = {box: i + (_unheld_before(box, found, held[line]) if follows else 0) for box, i in rank.items()}
+        placed += [glyph._replace(seq=place[glyph.box]) for glyph in found]
     return placed
+
+
+def _unheld_before(box: Place, found: list[Glyph], held: set[int]) -> int:
+    """How many numbers no unit of the line holds, below the lowest number on `box`."""
+    numbers = [g.seq for g in found if g.box == box and g.seq is not None]
+    if not numbers or not held:
+        return 0
+    return sum(1 for n in range(min(held), min(numbers)) if n not in held)
 
 
 #: A corpus glyph's character as the site holds it: the one a round or review gave it (its `units` row)

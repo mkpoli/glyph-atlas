@@ -48,6 +48,8 @@ UNIT_ID_PREFIXES = {
     "hng-kiridashi:": "hng-kiridashi",
     "gl:": "glossary-headwords",
     "krm:": "hdic-krm",
+    "eo:": "nogeoldae-eonhae",
+    "ks:": "wikisource-ko-glyphs",
     "ktb:": "hdic-ktb",
     "tsj:": "hdic-tsj",
 }

@@ -140,6 +140,8 @@ ID_FAMILIES = {
     "hdic-krm": "hdic-krm",
     "hdic-ktb": "hdic-ktb",
     "hdic-tsj": "hdic-tsj",
+    "nogeoldae-eonhae": "nogeoldae-eonhae",
+    "wikisource-ko-glyphs": "wikisource-ko-glyphs",
 }
 
 #: Known corpora, with the rights and shape a caller needs before showing a result.
@@ -201,6 +203,16 @@ KNOWN: tuple[dict[str, Any], ...] = (
         "name": "hdic-tsj",
         "note": "天治本新撰字鏡 headwords on the NDL 六合館 edition (1916), labelled from HDIC's TSJ database "
                 "(scripts/cut_hdic_headwords.py).",
+    },
+    {
+        "name": "nogeoldae-eonhae",
+        "note": "老乞大諺解: 13.2k hanja and 1.8k 언해 hangul boxes on National Library of Korea pages, labelled from "
+                "zh.wikisource's 老乞大 and ko.wikisource's 노걸대언해 (scripts/cut_eonhae.py).",
+    },
+    {
+        "name": "wikisource-ko-glyphs",
+        "note": "Hanja and hangul boxes on ko.wikisource's transcribed scans of 諺解 and other Korean books, "
+                "labelled from each page's transcription (scripts/cut_ko_scans.py).",
     },
 )
 

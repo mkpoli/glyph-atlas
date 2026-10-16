@@ -921,6 +921,8 @@ class TestLookupIsRoutedNotBudgeted:
         assert UNIT_ID_PREFIXES["krm:"] == "hdic-krm"
         assert UNIT_ID_PREFIXES["ktb:"] == "hdic-ktb"
         assert UNIT_ID_PREFIXES["tsj:"] == "hdic-tsj"
+        assert UNIT_ID_PREFIXES["eo:"] == "nogeoldae-eonhae"
+        assert UNIT_ID_PREFIXES["ks:"] == "wikisource-ko-glyphs"
 
     def test_an_unfamiliar_prefix_still_looks_everywhere(self, viewer):
         api, _, _ = viewer

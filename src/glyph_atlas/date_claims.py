@@ -43,7 +43,8 @@ CORPORA = {
     "hilab": "hi-lab-kuzushiji", "hng": "hng-basic-data", "hng-kiridashi": "hng-kiridashi-data",
     "hdic-krm": "hdic-krm", "hdic-ktb": "hdic-ktb", "hdic-tsj": "hdic-tsj", "khs": "khs",
     "hangeul-museum": "hangeul-museum", "nlk-sayeogwon": "nlk", "glossary-headwords": "nlk",
-    "wikisource-zh-scans": "wikisource", "wikisource-ko-scans": "wikisource", "hunminjeongeum": "wikisource",
+    "nogeoldae-eonhae": "nlk",
+    "wikisource-zh-scans": "wikisource", "wikisource-ko-scans": "wikisource", "wikisource-ko-glyphs": "wikisource", "hunminjeongeum": "wikisource",
     "hunminjeongeum-hanja": "wikisource", "hunminjeongeum-cells": "wikisource", "ndl-1014828": "ndl-1014828",
     "ndl-minhon": "ndl-minhon-ocr",
 }
@@ -51,7 +52,7 @@ CORPORA = {
 #: 国家遺産庁, 国立한글박물관, 国立中央図書館). The holder's manifest describes the reproduction the images come
 #: from, a facsimile among them, so it is not read for these.
 OWN_DATING = frozenset({"hng", "hng-kiridashi", "hdic-krm", "hdic-ktb", "hdic-tsj", "khs", "hangeul-museum",
-                        "nlk-sayeogwon", "glossary-headwords"})
+                        "nlk-sayeogwon", "glossary-headwords", "nogeoldae-eonhae"})
 #: Origins whose dates may be written in the Japanese calendar.
 JAPANESE_ORIGINS = frozenset({"japan", "unknown", None})
 #: An importer's `dating.kind` as a claim's kind and scope.

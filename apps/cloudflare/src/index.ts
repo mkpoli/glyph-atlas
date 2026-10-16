@@ -2,6 +2,7 @@
 import { ROUND_MAX } from './rounds';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
 import { similarCrops } from './similar';
+import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
 import { formsFor, setForm, withForms } from './cropForms';
@@ -743,9 +744,11 @@ export function runOccurrencesQuery(size: number, anchor: number, document: bool
     ${runFrom(size, anchor).from} WHERE ${runWhere(document, size, hand, form)}
     ORDER BY ${sort === 'source' && !document ? 'a.document,a.first' : 'a.hand_order,a.shuffle,a.first'} LIMIT ? OFFSET ?`;
 }
-export function runCountQuery(size: number, anchor: number, document: boolean, hand = false, form = false) {
+// A run is counted a group at a time, each count stopping past RUN_COUNT_MAX: the whole run is their sum,
+// which passes RUN_COUNT_MAX exactly when the run does.
+export function runCountQuery(size: number, anchor: number, document: boolean, form = false) {
   return `SELECT count(*) AS n, sum(v) AS vertical FROM (SELECT a.vertical AS v ${runFrom(size, anchor).from}
-    WHERE ${runWhere(document, size, hand, form)} LIMIT ${RUN_COUNT_MAX + 1})`;
+    WHERE ${runWhere(document, size, true, form)} LIMIT ${RUN_COUNT_MAX + 1})`;
 }
 /** The books a run is in, with their occurrences (counted among the first RUN_COUNT_MAX) and one crop of each to name them by. */
 export function runWorksQuery(size: number, anchor: number, form = false) {
@@ -786,7 +789,21 @@ export const runFormsQuery = (document: boolean) => document
 export function runProbeQuery(document: boolean) {
   return `SELECT count(*) AS n FROM (SELECT 1 FROM unit_ngrams WHERE ${document ? 'document=? AND ' : ''}size=3 AND graphemes=? LIMIT ${RUN_PROBE_MAX})`;
 }
-async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
+// How long each step of an answer took, as a `Server-Timing` header: a step's time runs from the previous
+// step's end (`step`), or from the start for steps that run side by side (`beside`). A Worker's clock moves
+// only across I/O, which is what the steps wait on.
+export class Timing {
+  private start = Date.now();
+  private last = this.start;
+  private steps: [string, number][] = [];
+  step(name: string) { const now = Date.now(); this.steps.push([name, now - this.last]); this.last = now; }
+  beside<T>(name: string, work: Promise<T>): Promise<T> {
+    const from = Date.now();
+    return work.finally(() => { this.steps.push([name, Date.now() - from]); });
+  }
+  header() { return [...this.steps, ['total', Date.now() - this.start] as [string, number]].map(([name, ms]) => `${name};dur=${ms}`).join(', '); }
+}
+async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL, timing: Timing) {
   const q = url.searchParams;
   const value = text(q.get('text'), 96, 'text', true)!;
   const parts = runCharacters(value);
@@ -802,10 +819,14 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
   // A page ends where the count does.
   if (offset >= RUN_COUNT_MAX) throw new Problem(404, 'A run does not page this far.');
   const limit = Math.min(integer(q, 'limit', Math.min(48, most), most), RUN_COUNT_MAX - offset);
-  const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', form: form ?? '', hand: String(group ?? ''), sort, limit: String(limit), offset: String(offset), v: await catalogueVersion(env) })}`);
+  const version = await catalogueVersion(env);
+  timing.step('version');
+  const key = new Request(`${url.origin}/atlas/runs?${new URLSearchParams({ text: value, document: document ?? '', form: form ?? '', hand: String(group ?? ''), sort, limit: String(limit), offset: String(offset), v: version })}`);
   const cached = await caches.default.match(key);
+  timing.step(cached ? 'cache-hit' : 'cache-miss');
   if (cached) return await cached.json() as Json;
   const size = parts.length, scope = document ? [document] : [], folded = await runGraphemes(env, parts);
+  timing.step('graphemes');
   const span = (from: number, length: number) => folded.slice(from, from + length).join('');
   let anchor = 0;
   if (size > 3) {
@@ -813,29 +834,31 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
       env.DB.prepare(runProbeQuery(Boolean(document))).bind(...scope, span(i, 3)))) as D1Result<{ n: number }>[];
     const counts = probes.map(probe => probe.results[0].n);
     anchor = counts.indexOf(Math.min(...counts));
+    timing.step('probe');
   }
   const { links } = runFrom(size, anchor);
   const written = form ? [form] : [];
   const bound = [...links.map(i => span(i, 2)), ...scope, Math.min(size, 3), span(anchor, Math.min(size, 3)), ...written];
   const styled = (n: number) => [...bound, n];
   const occurrences = env.DB.prepare(runOccurrencesQuery(size, anchor, Boolean(document), group !== null, sort, Boolean(form))).bind(...(group === null ? bound : styled(group)), limit, offset);
-  // The first page also counts the run, as a whole or in its group, and each group, names its books, and
-  // lists the written forms a run of two or three gathers, whichever form is chosen.
+  // The first page also counts each group, which counts the run as a whole or in the group chosen, names
+  // its books, and lists the written forms a run of two or three gathers, whichever form is chosen.
   const first = offset ? [] : [
-    env.DB.prepare(runCountQuery(size, anchor, Boolean(document), group !== null, Boolean(form))).bind(...(group === null ? bound : styled(group))),
-    ...HAND_NAMES.map(name => env.DB.prepare(runCountQuery(size, anchor, Boolean(document), true, Boolean(form))).bind(...styled(HAND_ORDER[name]))),
+    ...HAND_NAMES.map(name => env.DB.prepare(runCountQuery(size, anchor, Boolean(document), Boolean(form))).bind(...styled(HAND_ORDER[name]))),
     env.DB.prepare(runWorksQuery(size, anchor, Boolean(form))).bind(...links.map(i => span(i, 2)), Math.min(size, 3), span(anchor, Math.min(size, 3)), ...written),
     size <= 3 ? env.DB.prepare(runFormsQuery(Boolean(document))).bind(...scope, size, span(0, size)) : env.DB.prepare('SELECT 1 WHERE 0'),
   ];
-  const [page, count, ...rest] = await env.DB.batch([occurrences, ...first]) as D1Result<any>[];
+  const [page, ...rest] = await env.DB.batch([occurrences, ...first]) as D1Result<any>[];
+  timing.step('rows');
   const found = page.results as RunRow[];
   // The crops of one run stand on one page, so they share their document's dates. The books' titles are
   // read beside the page's records rather than after them.
   // The forms are the batch's last statement and the books the one before it.
   const listed = rest.length ? rest.pop()!.results as { text: string; n: number }[] : null, forms = size <= 3 ? listed : null;
   const books = rest.length ? rest.pop()!.results as { document: string; n: number; sample: string }[] : null;
-  const [dating, records, works] = await Promise.all([datingOf(env, found.map(row => row.document)), runRecords(env, found, size),
-    books ? runWorks(env, books) : null]);
+  const [dating, records, works] = await Promise.all([timing.beside('dating', datingOf(env, found.map(row => row.document))),
+    timing.beside('records', runRecords(env, found, size)), books ? timing.beside('works', runWorks(env, books)) : null]);
+  timing.step('reads');
   const items = found.flatMap((row, r) => {
     const crops = records[r];
     if (!crops) return [];
@@ -846,10 +869,12 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL) {
     return { crops: crops.map(c => ({ ...listing(c), crop_box: c.crop_box ?? null, dating: dated ?? {} })),
       vertical: Boolean(row.vertical), page: runPage(crops), honkoku_url: honkoku };
   });
-  const counted = count?.results[0] as { n: number; vertical: number | null } | undefined;
+  const hands = rest.map(result => result.results[0] as { n: number; vertical: number | null });
+  const chosen = group === null ? hands : hands.slice(group, group + 1);
+  const counted = hands.length ? { n: chosen.reduce((sum, h) => sum + h.n, 0), vertical: chosen.reduce((sum, h) => sum + (h.vertical ?? 0), 0) } : undefined;
   const body = { text: value, size, document, form, hand: group === null ? 'all' : HAND_NAMES[group], sort, next_offset: offset + found.length, items,
     ...(counted && { total: Math.min(counted.n, RUN_COUNT_MAX), more: counted.n > RUN_COUNT_MAX, vertical: 2 * (counted.vertical ?? 0) >= counted.n,
-      hands: Object.fromEntries(HAND_NAMES.map((name, i) => [name, Math.min((rest[i].results[0] as { n: number }).n, RUN_COUNT_MAX)])), hand_groups: HAND_NAMES, works, forms }) };
+      hands: Object.fromEntries(HAND_NAMES.map((name, i) => [name, Math.min(hands[i].n, RUN_COUNT_MAX)])), hand_groups: HAND_NAMES, works, forms }) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
@@ -2289,7 +2314,7 @@ const routes = {
       const counted=path.match(/^\/atlas\/ngrams\/(\d+)$/);
       if(counted)return json(await ngrams(env,ctx,url,ngramSize(counted[1])));
       if(path==='/atlas/runs/related')return json(await runRelated(env,ctx,url));
-      if(path==='/atlas/runs')return json(await runOccurrences(env,ctx,url));
+      if(path==='/atlas/runs'){const timing=new Timing();const body=await runOccurrences(env,ctx,url,timing);return json(body,200,{'server-timing':timing.header()});}
       if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
       if(path==='/atlas/corpus/character')return json(await inspected(env,await unit(env,q.get('id')||'')));
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
@@ -2315,6 +2340,11 @@ const routes = {
       if(versions){let id:string;try{id=decodeURIComponent(versions[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
         return json(await cropVersions(env,id))}
       if(path==='/atlas/similar/model')return json(await modelInfo(env));
+      if(path.startsWith('/atlas/ids/')){
+        const drawing=await drawingFile(env,path.slice('/atlas/ids/'.length),request,ctx);
+        if(!drawing)throw new Problem(404,'No drawing of this sequence.');
+        return drawing;
+      }
       if(path.startsWith('/atlas/similar/files/')){
         const file=await modelFile(env,path.slice('/atlas/similar/files/'.length),request,ctx);
         if(!file)throw new Problem(404,'No such model file.');
