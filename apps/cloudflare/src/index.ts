@@ -878,21 +878,17 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL, timing:
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
-// A book's name is its crops' source title, read from one of its crops by key: a crop's row, or a corpus
-// glyph's published record (`source.title`, read with the others by `corpusRecords`).
+// A book's name is its crops' source title, read from one of its crops by key, or the title its corpus
+// publication gave the document (`corpus_documents`, 0075): both in one batch, by primary key.
 async function runWorks(env: Env, rows: { document: string; n: number; sample: string }[]) {
   if (!rows.length) return [];
-  const marks = rows.map(() => '?').join(',');
-  const titles = await env.DB.prepare(`SELECT id,json_extract(data,'$.source') AS title FROM units WHERE id IN (${marks})`)
-    .bind(...rows.map(row => row.sample)).all<{ id: string; title: string | null }>();
-  const named = new Map(titles.results.map(row => [row.id, typeof row.title === 'string' && row.title.startsWith('{') ? parse(row.title).title ?? null : row.title]));
-  const unnamed = rows.filter(row => !named.has(row.sample)).map(row => row.sample);
-  if (unnamed.length) {
-    const pointers = (await env.DB.prepare(`SELECT * FROM corpus_units WHERE id IN (${unnamed.map(() => '?').join(',')})`).bind(...unnamed).all<CorpusRow>()).results;
-    const records = await corpusRecords(env, pointers);
-    for (const pointer of pointers) named.set(pointer.id, records.get(recordKey(pointer))?.source?.title ?? null);
-  }
-  return rows.map(row => ({ id: row.document, title: named.get(row.sample) ?? null, count: row.n }));
+  const [crops, documents] = await env.DB.batch([
+    env.DB.prepare(`SELECT id,json_extract(data,'$.source') AS title FROM units WHERE id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(rows.map(row => row.sample))),
+    env.DB.prepare(`SELECT document,title FROM corpus_documents WHERE document IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(rows.map(row => row.document))),
+  ]) as [D1Result<{ id: string; title: string | null }>, D1Result<{ document: string; title: string | null }>];
+  const named = new Map(crops.results.map(row => [row.id, typeof row.title === 'string' && row.title.startsWith('{') ? parse(row.title).title ?? null : row.title]));
+  const published = new Map(documents.results.map(row => [row.document, row.title]));
+  return rows.map(row => ({ id: row.document, title: named.get(row.sample) ?? published.get(row.document) ?? null, count: row.n }));
 }
 // The runs near one, to move between them: the shorter runs a trigram or four holds, the trigrams a pair
 // begins, and the runs of the same length that begin with the same characters (a pair's first, a
