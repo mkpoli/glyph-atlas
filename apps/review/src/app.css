@@ -167,7 +167,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .character-dialog .inspector>.inspector-page{grid-column:1;grid-row:3}
 .character-dialog .inspector>.inspector-right{grid-column:2;grid-row:3}
 .character-dialog .inspector-figure .crop-viewport{height:560px}
-.character-dialog .inspector-figure{min-height:642px}.character-dialog .context-text{height:72px;overflow:hidden}.character-dialog .context-text p{max-height:3.6em}
+.character-dialog .context-text{height:72px;overflow:hidden}.character-dialog .context-text p{max-height:3.6em}
 .character-dialog .inspector-title{margin-top:0}
 .character-dialog .inspector-savebar{background:var(--overlay-page);flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;padding:14px max(4.4vw,calc((100vw - 1440px)/2 + 4.4vw))}
 .character-dialog .inspector-savebar .primary{width:auto;min-width:300px}
@@ -176,9 +176,9 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 }
 .options-menu button[aria-pressed="true"]{color:var(--accent);font-weight:500}
 .options-menu button[aria-pressed="true"]::after{content:" ✓"}
-/* Every block of the inspector keeps its size from crop to crop: the crop alone in a box of one size,
-   the page around it in another further down, so stepping changes only the pixels inside them. On a
-   narrow screen the columns dissolve into one, the decision before the page. */
+/* The crop keeps its size from crop to crop: the crop alone in a box of one size, the page around it
+   in another further down, so stepping changes only the pixels inside them. On a narrow screen the
+   columns dissolve into one, the page above the decision. */
 .inspector-figure .crop-viewport{height:340px}
 .inspector-figure.shimmer{height:340px;border-radius:12px}
 /* The dialog keeps room for its scrollbar, so content growing never narrows the page view and reframes it. */
@@ -194,8 +194,10 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
    it never pushes the decision down. */
 .credit-beside{display:none;margin-top:10px}.credit-after{margin-top:24px}
 .inspector-header{justify-content:flex-end;min-height:48px}
-.character-dialog .inspector-figure{min-height:422px}
-@media(min-width:1000px){.character-dialog .inspector-figure{min-height:642px}}
+/* Beside the decision, the crop's column is as tall as what it holds, so a crop without a transcription
+   has no blank under it. Above the decision, on a narrow screen, it keeps a transcription's room, so
+   stepping between crops never moves the buttons. */
+@media(max-width:999px){.character-dialog .inspector-figure{min-height:422px}}
 @media(min-width:1000px){.credit-beside{display:block}.credit-after{display:none}}
 .inspector-savebar .save-character{min-height:52px}
 /* The decision this page already saved for the crop on show: pressing it moves on without saving again. */
