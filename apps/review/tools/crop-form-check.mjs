@@ -159,15 +159,19 @@ try {
 
   // A character BabelStone describes by region offers each regional shape among its variants, named by
   // its regions: 所 as ⿰戶斤 (GHTKPV) and ⿰戸斤 (J).
-  const third = Object.entries(units(config.directory)).find(([id, unit]) => unit.active && unit.unicode === 'U+3042' && id !== first && id !== second)?.[0]
-  assert(third, 'the fixture has a third crop written as あ')
-  const renamed = await browser.evaluate(`(async () => {
-    const crop = await (await fetch('/atlas/characters/' + encodeURIComponent(${JSON.stringify(third)}))).json()
-    const response = await fetch('/layers/units/' + encodeURIComponent(${JSON.stringify(third)}), { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: crypto.randomUUID(), client_id: 'crop-form-check', revision: crop.revision, image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character: '所' }) })
-    return response.status
+  // Another crop written as あ, one with an image to name, is renamed 所.
+  const others = Object.entries(units(config.directory)).filter(([id, unit]) => unit.active && unit.unicode === 'U+3042' && id !== first && id !== second).map(([id]) => id)
+  const [third, renamed] = await browser.evaluate(`(async () => {
+    for (const id of ${JSON.stringify(others)}) {
+      const crop = await (await fetch('/atlas/characters/' + encodeURIComponent(id))).json()
+      if (!crop.image_sha256) continue
+      const response = await fetch('/layers/units/' + encodeURIComponent(id), { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: crypto.randomUUID(), client_id: 'crop-form-check', revision: crop.revision, image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character: '所' }) })
+      return [id, response.status + ' ' + await response.text()]
+    }
+    return [null, 'no other crop written as あ has an image']
   })()`)
-  assert(renamed < 300, `the crop could not be renamed to 所: ${renamed}`)
+  assert(third && renamed.startsWith('2'), `no crop could be renamed to 所: ${renamed}`)
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(third)}`, { waitFor: ready, timeout: 90000 })
   await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
   const options = `[...document.querySelectorAll('dialog[open] .form-picker .form-section')].find(s => s.querySelector('.form-section-title').textContent === 'Variants')?.querySelectorAll('.form-option')`
