@@ -983,6 +983,27 @@ def ainu_derive(
         typer.echo(f"{name:<14} {value:>10}")
 
 
+@ainu_app.command("boxes")
+def ainu_boxes(
+    directory: Annotated[Path, typer.Argument(help="atlas dataset directory holding the Ainu records' units")],
+    ledgers: Annotated[Path, typer.Argument(help="ainu-records' crop repair ledgers: data/editorial/character-crop-repairs, or one ledger")],
+    out: Annotated[Path, typer.Option(help="write the proposals here")] = Path("out/ainu-boxes.json"),
+    apply: Annotated[bool, typer.Option(help="record the new boxes in the review store")] = False,
+) -> None:
+    """Recut each `ar:` crop that ainu-records repaired and nobody has reviewed since.
+
+    Import the site's reviews first: a crop recut before its review arrives would refuse it.
+    """
+    from . import ainu_boxes as boxes
+
+    result = boxes.run(directory, ledgers, apply=apply)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    for name, value in sorted(result["counts"].items()):
+        typer.echo(f"{name:<20} {value:>8}")
+    typer.echo(f"-> {out}")
+
+
 @ainu_app.command("merge")
 def ainu_merge(
     atlas: Annotated[Path, typer.Argument(help="atlas dataset directory holding the Ainu records' units")],
