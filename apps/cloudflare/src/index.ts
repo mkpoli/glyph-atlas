@@ -501,8 +501,8 @@ const FACETS_TTL = 3600;
 // publication writes `family` from the same rule (`atlas.grapheme_of`).
 export const graphemeOf = (label: string, family: string | null) => family || cp(label) || null;
 type Facet = { label: string; family: string | null; document: string | null; title: string | null; state: string; n: number };
-async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement) {
-  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement, version: Promise<string>) {
+  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(await version)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Facet[];
   const [counted, marks] = await env.DB.batch<Facet>([stored, marked]);
@@ -1013,13 +1013,16 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   let groups: Facet[], published: D1Result<{ label: string; n: number }> | null = null;
+  // Asked once a request: the facets and the withheld total share it.
+  let version: Promise<string> | null = null;
+  const catalogueOnce = () => version ??= catalogueVersion(env);
   if (review) {
     const corpus = corpusCountQuery(production, members);
     const results = await env.DB.batch<any>([...[stored, marked, skipped].filter(s => s !== null), env.DB.prepare(corpus.sql).bind(...corpus.values)]);
     published = results.pop()!;
     groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
   } else {
-    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!);
+    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, catalogueOnce());
     if (skipped) groups = moved(groups, (await skipped.all<Facet>()).results);
   }
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
@@ -1105,7 +1108,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // Unnarrowed, every visitor asks for the same total, which sums the whole of `unit_counts`; the edge
   // keeps one per catalogue version and material.
   const totalKey = hiddenCount && !hiddenCount.values.length ? new Request(`${url.origin}/atlas/withheld-total?production=${
-    encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueVersion(env))}`) : null;
+    encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueOnce())}`) : null;
   const cachedTotal = totalKey ? await caches.default.match(totalKey).then(hit => hit ? hit.json() as Promise<number> : null) : null;
   const counting = cachedTotal === null ? hiddenCount : null;
   const results = await env.DB.batch([
