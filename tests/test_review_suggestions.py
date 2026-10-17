@@ -67,6 +67,13 @@ def test_normalized_classifier_groups_probability_without_exact_vote():
     assert all(candidate["verified"] is False for candidate in family)
 
 
+def test_a_curated_old_form_stays_a_candidate_without_a_class_of_its_own():
+    from glyph_atlas.review.suggestions import classifier_results
+
+    candidates, _ = classifier_results(("U+5B66", "OTHER"), [.98, .02])
+    assert {candidate["text"] for candidate in candidates if candidate["family"] == "U+5B66"} == {"学", "學"}
+
+
 def test_sequence_vote_remains_independent_of_normalized_classifier():
     from types import SimpleNamespace
 
