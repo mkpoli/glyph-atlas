@@ -49,3 +49,10 @@ def test_collect_reads_a_presentation_3_manifest_and_keeps_its_statement(tmp_pat
     assert (doc.image_rights.licence, doc.image_rights.holder_terms) == (Licence.PUBLIC_DOMAIN, Licence.RESTRICTED)
     assert doc.meta["holder_statement"] == statement and doc.image_rights.attribution == "British Library, EAP"
     assert (page.image, page.width, page.height) == ("https://example.org/1.jp2", 1612, 2466)
+
+
+def test_text_takes_one_language_and_a_tagged_value():
+    assert subject.text({"ja": ["和書"], "en": ["Japanese book"]}) == "和書"
+    assert subject.text({"@value": "Foo", "@language": "en"}) == "Foo"
+    assert subject.text([{"@value": "a"}, "b"]) == "a; b"
+    assert (subject.unquoted('"Sutra"'), subject.unquoted('"Foo" bar')) == ("Sutra", '"Foo" bar')

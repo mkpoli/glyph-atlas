@@ -14,14 +14,21 @@ from .honkoku_data import canvas_page, canvases, fetch_manifest
 
 
 def text(value) -> str | None:
-    """A IIIF label or value as one string: a v2 string or list, or a v3 language map, first language first."""
+    """A IIIF label or value as one string: a v2 string, list or tagged value, or a v3 language map's first language."""
     if isinstance(value, str):
         return value.strip() or None
     if isinstance(value, list):
         return "; ".join(found for item in value if (found := text(item))) or None
     if isinstance(value, dict):
-        return "; ".join(found for values in value.values() if (found := text(values))) or None
+        if "@value" in value:  # a v2 language-tagged value
+            return text(value["@value"])
+        return next((found for values in value.values() if (found := text(values))), None)
     return None
+
+
+def unquoted(title: str) -> str:
+    """A title without the double quotes EAP's labels wrap the whole catalogue title in."""
+    return title[1:-1] if len(title) > 1 and title[0] == title[-1] == '"' else title
 
 
 def collect(source: Path, out: Path, *, cache: Path | None = None) -> dict:
@@ -41,8 +48,7 @@ def collect(source: Path, out: Path, *, cache: Path | None = None) -> dict:
         licence = (Licence.PDM if meta.get("Access Restrictions") == "PDM"
                    else Licence(config["image_licence"]) if statement and config.get("image_licence") else Licence.UNKNOWN)
         document = Document(
-            # EAP's labels wrap the catalogue title in double quotes.
-            id=book["id"], title=(text(manifest.get("label")) or book["title"]).removeprefix('"').removesuffix('"'),
+            id=book["id"], title=unquoted(text(manifest.get("label")) or book["title"]),
             holder=config["holder"],
             source_refs={"iiif-manifest": book["manifest"], "catalogue": book["source_url"]},
             image_rights=Rights(licence=licence, holder=config["holder"],
