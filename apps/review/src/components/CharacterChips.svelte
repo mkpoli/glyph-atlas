@@ -183,17 +183,19 @@
 
 <style>
   .character-layers{padding:20px 0;border-bottom:1px solid var(--line);display:grid;gap:12px}
-  .layer-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-  .layer-label{font-size:11px;color:var(--muted);min-width:76px}
+  /* A label sits on the first line of chips, however many lines a row wraps to. */
+  .layer-row{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .layer-label{font-size:11px;color:var(--muted);min-width:76px;line-height:43px}
   .layer-legend{padding-left:92px}
   @media(max-width:600px){.layer-legend{padding-left:0}}
   .family{align-self:flex-start;padding:8px 14px;background:transparent}
   .character-members{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;flex:1}
-  .character-members > .variant{align-items:center;min-height:43px;box-sizing:border-box}
+  .variant-chips > .variant, .character-members > .variant{min-height:43px;box-sizing:border-box;align-items:center}
   .member-choice{display:flex;flex-direction:column;align-items:center;gap:4px}
   .member{display:flex;align-items:center;gap:10px;padding:8px 12px;background:transparent}
   .active{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
-  .forms-row{font-size:12px;color:var(--muted)}
+  .forms-row{font-size:12px;color:var(--muted);align-items:center}
+  .forms-row .layer-label{line-height:normal}
   .forms-row small{margin-left:auto}
   .forms-link{color:var(--accent);text-decoration:none}.forms-link:hover{text-decoration:underline}
   .forms-row :global(.cite-link){border:0;background:none;padding:0;font-size:inherit;color:var(--accent)}.forms-row :global(.cite-link:hover){text-decoration:underline}
