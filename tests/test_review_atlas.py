@@ -158,6 +158,7 @@ def test_an_unread_box_is_in_the_collection_and_out_of_the_queue(dataset):
     tangut = client.get('/atlas', params={'group': 'tangut'}).json()
     assert [(i['id'], i['label']) for i in tangut['items']] == [('tangut-box', '')]
     assert 'tangut-box' not in {i['id'] for i in client.get('/atlas', params={'purpose': 'review', 'limit': 96}).json()['items']}
+    assert client.get('/atlas', params={'grapheme': 'U+3042'}).json()['total'] == 12
 
 
 

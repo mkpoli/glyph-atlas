@@ -321,7 +321,7 @@ def export(dataset: Path, output: Path, *, resume=False):
             db.execute(f"INSERT OR REPLACE INTO units({UNIT_COLUMNS}) VALUES ({','.join('?' * (UNIT_COLUMNS.count(',') + 1))})", (
                 item["id"], "local", item["label"], family, None,
                 item["production"], atlas.character_group(unit), item["state"], item["revision"],
-                int(not atlas.unread(unit) and not atlas.repair_withheld(unit)), atlas.review_priority(unit),
+                int(not atlas.repair_withheld(unit)), atlas.review_priority(unit),
                 int(hashlib.sha256(item["id"].encode()).hexdigest()[:7], 16),
                 encoded(detail), encoded(snapshot), encoded(context), encoded(visual), doc.id,
                 style.style_of(unit, page, doc)))

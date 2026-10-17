@@ -990,7 +990,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         searched = matches(records, q) if q else records
         families = {name: grapheme_of(name) for name in categories}
         selected = [(u, rev) for u, rev in searched if (character is None or shown(u) == character)
-                    and (grapheme is None or families[shown(u)] == grapheme)
+                    and (grapheme is None or families.get(shown(u)) == grapheme)
                     and (document is None or books[u.id] == document)
                     and (group == "all" or character_group(u) == group)
                     and (state == "all" or states[u.id] == state
