@@ -60,6 +60,7 @@
   "chips.showCharacter": "显示{char}字",
   "chips.variants": "异体字",
   "chips.related": "相关字",
+  "chips.shared": "兼用",
   "chips.alsoOwn": "也是别字",
   "chips.alsoWritten": "也写作{char}",
   "chips.derived": "推导",

@@ -43,7 +43,13 @@
     for (const r of v.relations) by.set(r.relation, new Set([...(by.get(r.relation) ?? []), r.source]))
     return [...by].map(([relation, sources]) => ({ relation, name: relationName(relation), sources: [...sources] }))
   }
-  const relationTitle = v => `${v.char} ${v.code_point}\n` + relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`).join('\n')
+  const relationTitle = v => [`${v.char} ${v.code_point}`, ...(shares(v) ? [shareLabel(v)] : []),
+    ...relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`)].join('\n')
+  // A chip names one relation, the most specific a pair has; its title lists them all with their sources.
+  const RELATION_RANK = ['simplified', 'shinjitai', 'regional', 'shuowen', 'reduction', 'compatibility', 'z',
+    'variant', 'equivalent', 'specialized-semantic', 'overlap', 'semantic', 'borrowed', 'substitute', 'non-cognate', 'spoofing']
+  const rank = relation => (RELATION_RANK.indexOf(relation) + RELATION_RANK.length + 1) % (RELATION_RANK.length + 1)
+  const mainRelation = v => relationsOf(v).sort((a, b) => rank(a.relation) - rank(b.relation))[0]?.name ?? ''
   // A derived chip's evidence, after the word that marks it: each route it came by, each substitution
   // as made with its count of contexts and the pairs behind it with their sources.
   const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + (v.routes ?? []).map(route => route.map(s =>
@@ -96,7 +102,7 @@
         <span class="layer-label">{t('chips.variants')}</span>
         <div class="variant-chips">
           {#each written as v (v.code_point)}
-            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if shares(v)}<small class="share">{shareLabel(v)}</small>{/if}<small>{#if !v.widens}{relationsOf(v).map(r => r.name).join(' · ')}{#if crops(v)} · {/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if shares(v)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !v.widens}{mainRelation(v)}{#if crops(v)} · {/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
           {/each}
           {#if variants.derived.length}
             <details class="derived">
@@ -120,7 +126,7 @@
         <span class="layer-label">{t('chips.related')}</span>
         <div class="variant-chips">
           {#each related as v (v.code_point)}
-            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{relationsOf(v).map(r => r.name).join(' · ')}{#if crops(v)} · {formatNumber(crops(v))}{/if}</small></a>
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{mainRelation(v)}{#if crops(v)} · {formatNumber(crops(v))}{/if}</small></a>
           {/each}
         </div>
       </div>

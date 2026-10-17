@@ -57,6 +57,7 @@
   "chips.showCharacter": "Hiện chữ {char}",
   "chips.variants": "Dị thể",
   "chips.related": "Liên quan",
+  "chips.shared": "dùng cả hai",
   "chips.alsoOwn": "cũng là chữ riêng",
   "chips.alsoWritten": "cũng viết {char}",
   "chips.derived": "Phái sinh",
