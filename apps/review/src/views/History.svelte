@@ -12,7 +12,8 @@
   let { inspect } = $props()
   let items = $state([]), loading = $state(true), loadingMore = $state(false), error = $state('')
   let cursor = $state(null), hasMore = $state(true)
-  let onlyMine = $state(stored('atlas.history.onlyMine', false))
+  // Read from this browser once the page runs in it, so the page rendered on the server matches.
+  let onlyMine = $state(false)
   let characterFilter = $state('')
   let requestId = 0, closed = false, filterTimer
   // True while the load-more row is on screen or close to it: scrolling down loads the next page.
@@ -92,7 +93,7 @@
   }
   function when(at) { try { return formatDateTime(at) } catch { return at } }
   $effect(() => { if (nearEnd && hasMore && !error && !loading && !loadingMore) load(true) })
-  onMount(() => { load(); return () => { closed = true; clearTimeout(filterTimer) } })
+  onMount(() => { onlyMine = stored('atlas.history.onlyMine', false); load(); return () => { closed = true; clearTimeout(filterTimer) } })
 </script>
 
 <!-- A row's character in its script's colour, or a note that it has none. -->
