@@ -130,6 +130,13 @@ def router(media, corpus_root: Path) -> APIRouter:
                        key=lambda f: -f["count"])
         return {"revision": data["revision"], "items": items}
 
+    @api.get("/atlas/forms/codes")
+    def codes() -> dict[str, Any]:
+        data = forms.clusters()
+        if data["revision"] is None:
+            raise HTTPException(404, "No clustering yet: run `atlas forms cluster`.")
+        return {"items": sorted(data["families"])}
+
     @api.get("/atlas/forms/families/{code_point}")
     def family(code_point: str, order: Literal["shape", "size"] = "shape") -> dict[str, Any]:
         data = forms.clusters()

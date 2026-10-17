@@ -13,13 +13,16 @@
   import { characterAddress, graphemeAddress } from '../lib/gallery.js'
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
+  import { familyCodeSet } from '../lib/forms.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
   // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
   // widening to variants has no address of its own to cite.
   const entry = $derived(card?.code_point && expand !== 'variants' ? characterEntry(expand === 'grapheme' ? 'grapheme' : 'form', card) : null)
   // The Forms family this character is clustered in, by its grapheme or its own code point; none, no link.
-  const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && page.data.forms?.includes(code)))
+  let clustered = $state(null)
+  $effect(() => { if (page.data.forms) familyCodeSet().then(codes => { clustered = codes }) })
+  const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && clustered?.has(code)))
   // The 異体字 graph: the variants a gallery widens to, characters related otherwise, and the
   // derived tier — forms up to two component substitutions may write this character as, folded
   // after the attested variants, each with a mark, no gallery widening to them.
