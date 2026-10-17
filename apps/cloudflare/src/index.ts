@@ -2294,8 +2294,9 @@ async function flagCorpus(env:Env,input:Json){
   out.flagged=out.flagged.filter(id=>written.has(id));
   return {...out,rows_written:results.reduce((n,r)=>n+(r.meta.rows_written??0),0)};
 }
-// The corpus glyphs waiting for a person, the earliest flagged first: `unit_state` holds them in rowid
-// order, so a page reads its own rows and sorts nothing, however many wait.
+// The corpus glyphs waiting for a person, in the order their rows were written (a row a round made earlier
+// keeps its place when it is flagged later): `unit_state` holds them in rowid order, so a page reads its own
+// rows and sorts nothing, however many wait.
 export const flaggedCorpusQuery=()=>"SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY rowid LIMIT 96";
 // The journal ids of one reviewer: a user's, or one id from before accounts that nobody holds.
 export function reviewerActors(input:Json):[string,string[]]{
