@@ -13,7 +13,7 @@
 #   unihan: Unihan_IRGSources.txt kIRG_JSource J0 (JIS X 0208) of Unicode 18.0.0, for the representative and for which reductions need a second source
 # role: merge joins a and b; corroborates is the second source a reduction between two JIS X 0208 characters needs.
 # columns: head, a, b, relation, source, role, detail
-# families: 4773 (269 curated), characters: 15035, rows: 10853
+# families: 4770 (269 curated), characters: 15029, rows: 10848
 head	a	b	relation	source	role	detail
 U+34B9	㒹	㒹	compatibility	unicode-ucd	merge	34B9
 U+34BB	㒻	㒻	compatibility	unicode-ucd	merge	34BB
@@ -471,11 +471,7 @@ U+5014	𩋎	倔	reduction	mj-shrink-map	merge	MJ053151: 法務省戸籍法関連
 U+5019	𠊱	候	reduction	mj-shrink-map	merge	MJ030673: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5019	𠋫	候	reduction	mj-shrink-map	merge	MJ030705: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+501A	𠋣	倚	reduction	mj-shrink-map	merge	MJ030700: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+501E	勍	倞	reduction	mj-shrink-map	merge	MJ007681: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+501E	𠡽	勍	reduction	mj-shrink-map	merge	MJ031538: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+501F	徣	借	reduction	mj-shrink-map	merge	MJ011328: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+5021	娼	倡	reduction	mj-shrink-map	merge	MJ009751: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+5021	倡	娼	variant	cjkvi-variants	corroborates	娼→倡 hydzd/variant
 U+5022	偼	倢	reduction	mj-shrink-map	merge	MJ006960: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5022	𠌿	倢	reduction	mj-shrink-map	merge	MJ030760: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5024	値	值	z	unihan	merge	値→值 kZVariant | 值→値 kZVariant
@@ -885,6 +881,8 @@ U+52C7	𭄫	勇	reduction	mj-shrink-map	merge	MJ057068: 法務省戸籍法関連
 U+52C9	勉	勉	compatibility	unicode-ucd	merge	52C9
 U+52C9	勉	勉	compatibility	unicode-ucd	merge	52C9
 U+52C9	𠢖	勉	reduction	mj-shrink-map	merge	MJ031556: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+52CD	勍	倞	reduction	mj-shrink-map	merge	MJ007681: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+52CD	𠡽	勍	reduction	mj-shrink-map	merge	MJ031538: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+52D2	勒	勒	compatibility	unicode-ucd	merge	52D2
 U+52D2	𩩸	勒	reduction	mj-shrink-map	merge	MJ054588: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+52D5	𨔝	動	reduction	mj-shrink-map	merge	MJ050933: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -1928,6 +1926,7 @@ U+5983	𡝑	妃	reduction	mj-shrink-map	merge	MJ033624: 法務省戸籍法関連
 U+5983	𡝞	妃	reduction	mj-shrink-map	merge	MJ033633: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+598A	𡜟	妊	reduction	mj-shrink-map	merge	MJ033591: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5996	𡝩	妖	reduction	mj-shrink-map	merge	MJ033643: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+599B	妛	𡚴	reduction	mj-shrink-map	merge	MJ009587: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+599D	娤	妝	reduction	mj-shrink-map	merge	MJ009728: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+599D	𤖩	妝	reduction	mj-shrink-map	merge	MJ040341: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+59A3	𡚧	妣	reduction	mj-shrink-map	merge	MJ033532: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -1954,8 +1953,6 @@ U+59EA	㜼	姪	reduction	mj-shrink-map	merge	MJ000722: 法務省戸籍法関連�
 U+59EA	𡥺	姪	reduction	mj-shrink-map	merge	MJ033898: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+59EB	㚦	姫	reduction	mj-shrink-map	merge	MJ000588: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+59EC	姬	姬	compatibility	unicode-ucd	merge	59EC
-U+59EE	嫦	姮	reduction	mj-shrink-map	merge	MJ009938: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+59EE	𫰟	姮	reduction	mj-shrink-map	merge	MJ057297: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+59F8	蔅	姸	reduction	mj-shrink-map	merge	MJ022649: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+59FB	𡜭	姻	reduction	mj-shrink-map	merge	MJ033603: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+59FB	𤯠	姻	reduction	mj-shrink-map	merge	MJ041312: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -1968,6 +1965,8 @@ U+5A2F	娛	娯	z	unihan	merge	娛→娯 kZVariant | 娯→娛 kZVariant
 U+5A2F	娛	娛	compatibility	unicode-ucd	merge	5A1B
 U+5A2F	娛	娯	itaiji	mj-kanji	merge	X0213 包摂
 U+5A2F	娛	娯	reduction	mj-shrink-map	merge	MJ009717: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+5A3C	娼	倡	reduction	mj-shrink-map	merge	MJ009751: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+5A3C	倡	娼	variant	cjkvi-variants	corroborates	娼→倡 hydzd/variant
 U+5A40	妸	婀	reduction	mj-shrink-map	merge	MJ009615: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5A41	㺏	婁	reduction	mj-shrink-map	merge	MJ002458: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5A41	𡇔	婁	reduction	mj-shrink-map	merge	MJ032846: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -2016,6 +2015,8 @@ U+5ACB	嬝	嫋	reduction	mj-shrink-map	merge	MJ009994: 法務省戸籍法関連�
 U+5AD6	𡤚	嫖	reduction	mj-shrink-map	merge	MJ033844: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5AE1	𡡿	嫡	reduction	mj-shrink-map	merge	MJ033757: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5AE5	𡞤	嫥	reduction	mj-shrink-map	merge	MJ033661: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+5AE6	嫦	姮	reduction	mj-shrink-map	merge	MJ009938: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+5AE6	𫰟	姮	reduction	mj-shrink-map	merge	MJ057297: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5AE9	𤯦	嫩	reduction	mj-shrink-map	merge	MJ041316: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5AE9	𤯯	嫩	reduction	mj-shrink-map	merge	MJ041319: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5AE9	𦠫	嫩	reduction	mj-shrink-map	merge	MJ045780: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -2593,6 +2594,9 @@ U+5E40	㡠	幀	reduction	mj-shrink-map	merge	MJ000994: 法務省戸籍法関連�
 U+5E44	楃	幄	reduction	mj-shrink-map	merge	MJ014173: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5E44	𧛐	幄	reduction	mj-shrink-map	merge	MJ048317: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5E45	䋹	幅	reduction	mj-shrink-map	merge	MJ003563: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+5E47	㿶	幫	reduction	mj-shrink-map	merge	MJ002774: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+5E47	幇	幫	reduction	mj-shrink-map	merge	MJ010882: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+5E47	幚	幫	reduction	mj-shrink-map	merge	MJ010904: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5E4C	縨	幌	reduction	mj-shrink-map	merge	MJ020340: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5E54	㡢	㡢	compatibility	unicode-ucd	merge	3862
 U+5E54	㡢	幔	reduction	mj-shrink-map	merge	MJ000996: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -2608,9 +2612,6 @@ U+5E63	幣	幤	variant	wikidata	corroborates	Q109742099; P248 Q10427532 | Q55414
 U+5E63	幣	幤	equivalent	yitizi	corroborates	ytenx/JihThex.csv
 U+5E63	𧸁	幣	reduction	mj-shrink-map	merge	MJ049725: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5E69	幩	幩	compatibility	unicode-ucd	merge	5E69
-U+5E6B	㿶	幫	reduction	mj-shrink-map	merge	MJ002774: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+5E6B	幇	幫	reduction	mj-shrink-map	merge	MJ010882: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+5E6B	幚	幫	reduction	mj-shrink-map	merge	MJ010904: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5E6C	𢃖	幬	reduction	mj-shrink-map	merge	MJ035080: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5E6C	𢄛	幬	reduction	mj-shrink-map	merge	MJ035132: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5E6C	𢅂	幬	reduction	mj-shrink-map	merge	MJ035161: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -2896,10 +2897,6 @@ U+5FAE	𢕧	微	reduction	mj-shrink-map	merge	MJ035916: 法務省戸籍法関連
 U+5FAE	𣁋	微	reduction	mj-shrink-map	merge	MJ037446: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5FAE	𧗬	微	reduction	mj-shrink-map	merge	MJ048146: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5FAE	𭗒	微	reduction	mj-shrink-map	merge	MJ057389: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+5FAF	蹊	徯	reduction	mj-shrink-map	merge	MJ025396: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+5FAF	𠌜	徯	reduction	mj-shrink-map	merge	MJ030734: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+5FAF	𢓽	徯	reduction	mj-shrink-map	merge	MJ035843: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+5FAF	𤲺	蹊	reduction	mj-shrink-map	merge	MJ041448: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5FB3	德	徳	reduction	mj-shrink-map	merge	MJ011356: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5FB3	恴	德	reduction	mj-shrink-map	merge	MJ011560: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5FB3	𨗌	德	reduction	mj-shrink-map	merge	MJ051063: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -3515,9 +3512,6 @@ U+64D0	𢸃	擐	reduction	mj-shrink-map	merge	MJ037110: 法務省戸籍法関連
 U+64D8	孹	擘	reduction	mj-shrink-map	merge	MJ010096: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+64D8	𢹐	擘	reduction	mj-shrink-map	merge	MJ037137: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+64E0	𡬚	擠	reduction	mj-shrink-map	merge	MJ034151: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+64E5	㩜	擥	reduction	mj-shrink-map	merge	MJ001470: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+64E5	攬	擥	reduction	mj-shrink-map	merge	MJ012936: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+64E5	𢱯	擥	reduction	mj-shrink-map	merge	MJ036935: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+64F7	㩪	擷	reduction	mj-shrink-map	merge	MJ001483: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+64F7	𨘓	擷	reduction	mj-shrink-map	merge	MJ051112: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+64F7	𪆋	擷	reduction	mj-shrink-map	merge	MJ055757: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -3528,17 +3522,20 @@ U+6500	𡴂	攀	reduction	mj-shrink-map	merge	MJ034439: 法務省戸籍法関連
 U+6500	𢸅	攀	reduction	mj-shrink-map	merge	MJ037112: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6500	𣝴	攀	reduction	mj-shrink-map	merge	MJ038369: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6500	𭬑	攀	reduction	mj-shrink-map	merge	MJ057840: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+6505	攅	攢	reduction	mj-shrink-map	merge	MJ012894: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6518	𢺖	攘	reduction	mj-shrink-map	merge	MJ037169: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6518	𣀮	攘	reduction	mj-shrink-map	merge	MJ037435: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+651C	㩗	攜	reduction	mj-shrink-map	merge	MJ001466: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+651C	㩦	攜	reduction	mj-shrink-map	merge	MJ001479: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+651C	擕	攜	reduction	mj-shrink-map	merge	MJ012830: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+6522	攅	攢	reduction	mj-shrink-map	merge	MJ012894: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6523	䏈	攣	reduction	mj-shrink-map	merge	MJ003760: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6523	𠣈	攣	reduction	mj-shrink-map	merge	MJ031596: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6524	擹	攤	reduction	mj-shrink-map	merge	MJ012879: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6524	𢺋	攤	reduction	mj-shrink-map	merge	MJ037165: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+652B	㸕	攫	reduction	mj-shrink-map	merge	MJ002340: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+652C	㩜	擥	reduction	mj-shrink-map	merge	MJ001470: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+652C	攬	擥	reduction	mj-shrink-map	merge	MJ012936: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+652C	𢱯	擥	reduction	mj-shrink-map	merge	MJ036935: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+652F	𠦙	支	reduction	mj-shrink-map	merge	MJ031748: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+652F	𢺶	支	reduction	mj-shrink-map	merge	MJ037184: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+652F	𣏃	𣏃	compatibility	unicode-ucd	merge	233C3
@@ -4030,7 +4027,6 @@ U+6840	𭪖	桀	reduction	mj-shrink-map	merge	MJ057738: 法務省戸籍法関連
 U+6840	𭪴	桀	reduction	mj-shrink-map	merge	MJ057754: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6840	𭫒	桀	reduction	mj-shrink-map	merge	MJ057786: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6843	𣑯	桃	reduction	mj-shrink-map	merge	MJ057727: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+6845	梔	桅	reduction	mj-shrink-map	merge	MJ013979: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6848	桉	案	reduction	mj-shrink-map	merge	MJ013895: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6851	𠭌	桑	reduction	mj-shrink-map	merge	MJ032045: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6851	𠭨	桑	reduction	mj-shrink-map	merge	MJ032068: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -4059,6 +4055,7 @@ U+6885	梅	梅	compatibility	unicode-ucd	merge	6885
 U+688E	梎	梎	compatibility	unicode-ucd	merge	688E
 U+6890	㯇	梐	reduction	mj-shrink-map	merge	MJ001808: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6893	榟	梓	reduction	mj-shrink-map	merge	MJ014280: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+6894	梔	桅	reduction	mj-shrink-map	merge	MJ013979: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+689F	䲷	梟	reduction	mj-shrink-map	merge	MJ006044: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+689F	鴵	梟	reduction	mj-shrink-map	merge	MJ029499: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+689F	𩾒	梟	reduction	mj-shrink-map	merge	MJ055397: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -4155,6 +4152,8 @@ U+69D8	樣	様	reduction	mj-shrink-map	merge	MJ014446: 法務省戸籍法関連�
 U+69D8	檨	檨	compatibility	unicode-ucd	merge	6AA8
 U+69D8	檨	樣	reduction	mj-shrink-map	merge	MJ057832: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+69D8	𪮲	樣	reduction	mj-shrink-map	merge	MJ057572: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+69DE	㰍	櫳	reduction	mj-shrink-map	merge	MJ001870: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+69DE	槞	櫳	reduction	mj-shrink-map	merge	MJ014360: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+69EA	槪	槪	compatibility	unicode-ucd	merge	69EA
 U+69ED	㰗	槭	reduction	mj-shrink-map	merge	MJ001881: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+69F2	𣘳	槲	reduction	mj-shrink-map	merge	MJ038221: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -4239,8 +4238,6 @@ U+6AE8	𥽜	櫨	reduction	mj-shrink-map	merge	MJ044368: 法務省戸籍法関連
 U+6AEA	櫪	𭬒	itaiji	mj-kanji	merge	X0213 包摂
 U+6AF1	𣡌	櫱	reduction	mj-shrink-map	merge	MJ038468: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6AF2	𣛿	櫲	reduction	mj-shrink-map	merge	MJ038306: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+6AF3	㰍	櫳	reduction	mj-shrink-map	merge	MJ001870: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+6AF3	槞	櫳	reduction	mj-shrink-map	merge	MJ014360: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6AFA	欞	櫺	reduction	mj-shrink-map	merge	MJ014744: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6AFA	𣠄	櫺	reduction	mj-shrink-map	merge	MJ038438: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6B04	欄	欄	compatibility	unicode-ucd	merge	6B04
@@ -4602,6 +4599,8 @@ U+6D8E	𣵿	涎	reduction	mj-shrink-map	merge	MJ039338: 法務省戸籍法関連
 U+6D8E	𣹺	涎	reduction	mj-shrink-map	merge	MJ039481: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6D99	泪	涙	reduction	mj-shrink-map	merge	MJ015238: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6D99	泪	涙	variant	cjkvi-variants	corroborates	涙→泪 jisx0212/variant | 涙→泪 jisx0213/variant
+U+6D9C	涜	瀆	reduction	mj-shrink-map	merge	MJ015411: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+6D9C	𤄴	瀆	reduction	mj-shrink-map	merge	MJ039799: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6DAA	𣷧	涪	reduction	mj-shrink-map	merge	MJ039392: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6DAC	𣷟	涬	reduction	mj-shrink-map	merge	MJ039385: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6DAC	𣸖	涬	reduction	mj-shrink-map	merge	MJ039428: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -4866,8 +4865,6 @@ U+6FFC	𤃸	濼	reduction	mj-shrink-map	merge	MJ039769: 法務省戸籍法関連
 U+6FFE	濾	濾	compatibility	unicode-ucd	merge	6FFE
 U+6FFE	𤄦	濾	reduction	mj-shrink-map	merge	MJ039793: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7001	𤂡	瀁	reduction	mj-shrink-map	merge	MJ039725: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+7006	涜	瀆	reduction	mj-shrink-map	merge	MJ015411: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+7006	𤄴	瀆	reduction	mj-shrink-map	merge	MJ039799: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7009	㾝	瀉	reduction	mj-shrink-map	merge	MJ002690: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+700F	嚠	瀏	reduction	mj-shrink-map	merge	MJ008749: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+700F	嚠	瀏	variant	cjkvi-variants	corroborates	瀏→嚠 twedu/variant
@@ -5260,6 +5257,9 @@ U+732E	𤟜	獻	reduction	mj-shrink-map	merge	MJ040747: 法務省戸籍法関連
 U+732E	𤡎	獻	reduction	mj-shrink-map	merge	MJ040827: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+732E	𭸣	獻	reduction	mj-shrink-map	merge	MJ058034: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+732E	𭸮	獻	reduction	mj-shrink-map	merge	MJ058036: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+732F	猯	貒	reduction	mj-shrink-map	merge	MJ017014: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+732F	𧳩	貒	reduction	mj-shrink-map	merge	MJ049539: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+732F	𧳲	貒	reduction	mj-shrink-map	merge	MJ049546: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7331	狨	猱	reduction	mj-shrink-map	merge	MJ016948: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7334	㺅	猴	reduction	mj-shrink-map	merge	MJ002450: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+733F	𤠔	𤠔	compatibility	unicode-ucd	merge	24814
@@ -5540,9 +5540,9 @@ U+7566	𤳬	畦	reduction	mj-shrink-map	merge	MJ041480: 法務省戸籍法関連
 U+7569	𫞫	畩	reduction	mj-shrink-map	merge	MJ058095: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+756A	僠	番	reduction	mj-shrink-map	merge	MJ007086: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+756A	𢇪	番	reduction	mj-shrink-map	merge	MJ035279: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+756C	畭	畬	reduction	mj-shrink-map	merge	MJ017703: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+756C	畲	畬	reduction	mj-shrink-map	merge	MJ017709: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+756C	𡌆	畬	reduction	mj-shrink-map	merge	MJ033035: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+756D	畭	畬	reduction	mj-shrink-map	merge	MJ017703: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+756D	畲	畬	reduction	mj-shrink-map	merge	MJ017709: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+756D	𡌆	畬	reduction	mj-shrink-map	merge	MJ033035: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7570	異	異	compatibility	unicode-ucd	merge	7570
 U+7570	異	異	compatibility	unicode-ucd	merge	7570
 U+7570	𠔱	異	reduction	mj-shrink-map	merge	MJ031018: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -5974,6 +5974,12 @@ U+7832	礟	礮	reduction	mj-shrink-map	merge	MJ018711: 法務省戸籍法関連�
 U+7832	礮	砲	reduction	mj-shrink-map	merge	MJ018728: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7832	𥔰	礮	reduction	mj-shrink-map	merge	MJ042860: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7834	𡲠	破	reduction	mj-shrink-map	merge	MJ034390: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+783F	砿	礦	reduction	mj-shrink-map	merge	MJ018479: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+783F	礦	砿	shinjitai	cjkvi-variants	corroborates	砿󠄀→礦󠄀 jp-old-style
+U+783F	砿	礦	variant	cjkvi-variants	corroborates	礦→砿 jisx0212/variant | 礦→砿 jisx0213/variant
+U+783F	砿	礦	variant	wikidata	corroborates	Q109755441; P248 Q115296982; P282 Q1147857 | Q109755699; P248 Q115296982; P282 Q1055887
+U+783F	砿	礦	equivalent	yitizi	corroborates	ytenx/JihThex.csv
+U+783F	𥒩	礦	reduction	mj-shrink-map	merge	MJ042787: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7845	𥒐	硅	reduction	mj-shrink-map	merge	MJ042771: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7847	𥐼	硇	reduction	mj-shrink-map	merge	MJ042720: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7847	𥑚	硇	reduction	mj-shrink-map	merge	MJ042742: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -6026,12 +6032,6 @@ U+7901	𭶗	礁	reduction	mj-shrink-map	merge	MJ058197: 法務省戸籍法関連
 U+7919	硋	礙	reduction	mj-shrink-map	merge	MJ018490: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7921	礡	礴	z	cjkvi-variants	merge	礡→礴 cjkvi/duplicate
 U+7925	㘋	礥	reduction	mj-shrink-map	merge	MJ000451: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+7926	砿	礦	reduction	mj-shrink-map	merge	MJ018479: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+7926	礦	砿	shinjitai	cjkvi-variants	corroborates	砿󠄀→礦󠄀 jp-old-style
-U+7926	砿	礦	variant	cjkvi-variants	corroborates	礦→砿 jisx0212/variant | 礦→砿 jisx0213/variant
-U+7926	砿	礦	variant	wikidata	corroborates	Q109755441; P248 Q115296982; P282 Q1147857 | Q109755699; P248 Q115296982; P282 Q1055887
-U+7926	砿	礦	equivalent	yitizi	corroborates	ytenx/JihThex.csv
-U+7926	𥒩	礦	reduction	mj-shrink-map	merge	MJ042787: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+792A	礪	礪	compatibility	unicode-ucd	merge	792A
 U+792B	𥕴	礫	reduction	mj-shrink-map	merge	MJ042893: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7930	𥕆	礰	reduction	mj-shrink-map	merge	MJ042870: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -6358,6 +6358,11 @@ U+7B6E	𥰫	筮	reduction	mj-shrink-map	merge	MJ043855: 法務省戸籍法関連
 U+7B6E	𥷂	筮	reduction	mj-shrink-map	merge	MJ044114: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7B6E	𥷣	筮	reduction	mj-shrink-map	merge	MJ044137: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7B70	𥯭	筰	reduction	mj-shrink-map	merge	MJ043815: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7B86	箆	篦	reduction	mj-shrink-map	merge	MJ019508: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7B86	箆	篦	variant	cjkvi-variants	corroborates	箆→篦 jisx0212/variant | 箆→篦 jisx0213/variant | 篦→箆 hydzd/variant | 篦→箆 twedu/variant
+U+7B86	箆	篦	variant	wikidata	corroborates	Q109756423; P248 Q10427532 | Q109756541; P248 Q10427532
+U+7B86	箆	篦	equivalent	yitizi	corroborates	yitizi.txt 箆篦
+U+7B86	𫞾	箆	reduction	mj-shrink-map	merge	MJ058271: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7B8D	笟	箍	reduction	mj-shrink-map	merge	MJ019405: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7B91	𥵳	箑	reduction	mj-shrink-map	merge	MJ044062: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7B95	𠀠	箕	reduction	mj-shrink-map	merge	MJ030333: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -6406,11 +6411,6 @@ U+7BDD	𥲙	篝	reduction	mj-shrink-map	merge	MJ043920: 法務省戸籍法関連
 U+7BDD	𥵡	篝	reduction	mj-shrink-map	merge	MJ044044: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7BE0	𥭸	篠	reduction	mj-shrink-map	merge	MJ043751: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7BE4	䈞	篤	reduction	mj-shrink-map	merge	MJ003336: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+7BE6	箆	篦	reduction	mj-shrink-map	merge	MJ019508: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+7BE6	箆	篦	variant	cjkvi-variants	corroborates	箆→篦 jisx0212/variant | 箆→篦 jisx0213/variant | 篦→箆 hydzd/variant | 篦→箆 twedu/variant
-U+7BE6	箆	篦	variant	wikidata	corroborates	Q109756423; P248 Q10427532 | Q109756541; P248 Q10427532
-U+7BE6	箆	篦	equivalent	yitizi	corroborates	yitizi.txt 箆篦
-U+7BE6	𫞾	箆	reduction	mj-shrink-map	merge	MJ058271: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7BE9	籭	篩	reduction	mj-shrink-map	merge	MJ019786: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7BEA	䶵	篪	reduction	mj-shrink-map	merge	MJ006293: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7BEA	竾	篪	reduction	mj-shrink-map	merge	MJ019371: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -6462,6 +6462,12 @@ U+7C64	籖	籤	equivalent	yitizi	corroborates	ytenx/JihThex.csv
 U+7C6F	籝	籯	reduction	mj-shrink-map	merge	MJ019761: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7C6F	𥯰	籯	reduction	mj-shrink-map	merge	MJ043818: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7C73	𡭝	米	reduction	mj-shrink-map	merge	MJ034197: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7C75	籵	蹯	reduction	mj-shrink-map	merge	MJ019796: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7C75	𣫯	蹯	reduction	mj-shrink-map	merge	MJ038962: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7C75	𨁢	蹯	reduction	mj-shrink-map	merge	MJ050125: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7C75	𨅴	蹯	reduction	mj-shrink-map	merge	MJ050286: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7C75	𨆌	蹯	reduction	mj-shrink-map	merge	MJ050300: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7C75	𩕈	蹯	reduction	mj-shrink-map	merge	MJ068091: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7C79	𥹡	籹	reduction	mj-shrink-map	merge	MJ044218: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7C7B	类	类	compatibility	unicode-ucd	merge	7C7B
 U+7C83	粊	粃	reduction	mj-shrink-map	merge	MJ019821: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -6502,6 +6508,9 @@ U+7CBC	𥳞	粼	reduction	mj-shrink-map	merge	MJ043972: 法務省戸籍法関連
 U+7CBC	𥷖	粼	reduction	mj-shrink-map	merge	MJ044125: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7CBE	精	精	compatibility	unicode-ucd	merge	7CBE
 U+7CBE	䊒	精	reduction	mj-shrink-map	merge	MJ003455: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7CC2	糂	糝	reduction	mj-shrink-map	merge	MJ019880: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7CC2	糣	糣	compatibility	unicode-ucd	merge	7CE3
+U+7CC2	糣	糂	reduction	mj-shrink-map	merge	MJ019924: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7CC8	𥚩	糈	reduction	mj-shrink-map	merge	MJ043031: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7CC8	𥺳	糈	reduction	mj-shrink-map	merge	MJ044258: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7CC8	𥺸	糈	reduction	mj-shrink-map	merge	MJ044262: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -6520,9 +6529,6 @@ U+7CD7	𥽃	糗	reduction	mj-shrink-map	merge	MJ044354: 法務省戸籍法関連
 U+7CDC	䭧	糜	reduction	mj-shrink-map	merge	MJ005732: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7CDC	𢌑	糜	reduction	mj-shrink-map	merge	MJ035465: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7CDC	𪎖	糜	reduction	mj-shrink-map	merge	MJ056134: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+7CDD	糂	糝	reduction	mj-shrink-map	merge	MJ019880: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+7CDD	糣	糣	compatibility	unicode-ucd	merge	7CE3
-U+7CDD	糣	糂	reduction	mj-shrink-map	merge	MJ019924: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7CDE	𡐢	糞	reduction	mj-shrink-map	merge	MJ033170: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7CDE	𤲲	糞	reduction	mj-shrink-map	merge	MJ041442: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7CDE	𥻎	糞	reduction	mj-shrink-map	merge	MJ044277: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -6790,13 +6796,13 @@ U+7E83	緕	纃	reduction	mj-shrink-map	merge	MJ020238: 法務省戸籍法関連�
 U+7E83	緕	纃	variant	cjkvi-variants	corroborates	緕→纃 jisx0213/variant | 纃→緕 jisx0212/variant
 U+7E83	緕	纃	variant	wikidata	corroborates	Q109757117; P248 Q1639000 | Q109757339; P248 Q1639000
 U+7E86	𦄿	纆	reduction	mj-shrink-map	merge	MJ044642: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+7E89	纉	纘	reduction	mj-shrink-map	merge	MJ020468: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7E8F	纒	纏	reduction	mj-shrink-map	merge	MJ020478: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7E8F	纏	纒	variant	cjkvi-variants	corroborates	纏→纒 hydzd/variant | 纏→纒 jisx0212/variant | 纏→纒 jisx0213/variant | 纏→纒 twedu/variant
 U+7E8F	纏	纒	variant	hng-basic-data	corroborates	09064
 U+7E8F	纏	纒	variant	wikidata	corroborates	Q109757359; P248 Q10427532 | Q109757362; P248 Q10427532
 U+7E8F	纏	纒	equivalent	yitizi	corroborates	ytenx/JihThex.csv
 U+7E91	𮉗	纑	reduction	mj-shrink-map	merge	MJ058331: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+7E98	纉	纘	reduction	mj-shrink-map	merge	MJ020468: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7E9A	𮉟	纚	reduction	mj-shrink-map	merge	MJ058333: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7E9B	𢃶	纛	reduction	mj-shrink-map	merge	MJ035106: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7E9B	𦇨	纛	reduction	mj-shrink-map	merge	MJ044750: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -7759,8 +7765,6 @@ U+8602	𧄜	蘂	reduction	mj-shrink-map	merge	MJ047281: 法務省戸籍法関連
 U+8604	䕤	蘄	reduction	mj-shrink-map	merge	MJ004204: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8604	鄿	蘄	reduction	mj-shrink-map	merge	MJ026422: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8606	蘆	蘆	compatibility	unicode-ucd	merge	8606
-U+860A	藴	蘊	itaiji	mj-kanji	merge	X0213 包摂
-U+860A	藴	蘊	reduction	mj-shrink-map	merge	MJ023113: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+860B	薲	蘋	reduction	mj-shrink-map	merge	MJ022991: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8613	蘓	𧁨	itaiji	mj-kanji	merge	X0213 包摂
 U+8616	𪌊	蘖	reduction	mj-shrink-map	merge	MJ056022: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -8463,13 +8467,13 @@ U+8B83	讃	讚	variant	wikidata	corroborates	Q109762876; P248 Q10427532 | Q10976
 U+8B83	讃	讚	equivalent	yitizi	corroborates	ytenx/JihThex.csv
 U+8B8B	𧮩	讋	reduction	mj-shrink-map	merge	MJ049268: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8B8C	𧮃	讌	reduction	mj-shrink-map	merge	MJ049236: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8B8E	讐	讎	reduction	mj-shrink-map	merge	MJ024849: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8B8E	讎	讐	variant	cjkvi-variants	corroborates	讎→讐 hydzd/variant | 讎→讐 twedu/variant | 讐→讎 jisx0212/variant | 讐→讎 jisx0213/variant
-U+8B8E	讎	讐	variant	wikidata	corroborates	Q109762888; P248 Q10427532 | Q109762890; P248 Q10427532
-U+8B8E	𠵁	讎	reduction	mj-shrink-map	merge	MJ032332: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8B8E	𢛇	讎	reduction	mj-shrink-map	merge	MJ036130: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8B8E	𢢧	讎	reduction	mj-shrink-map	merge	MJ036415: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8B8E	𩀕	讎	reduction	mj-shrink-map	merge	MJ052640: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8B90	讐	讎	reduction	mj-shrink-map	merge	MJ024849: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8B90	讎	讐	variant	cjkvi-variants	corroborates	讎→讐 hydzd/variant | 讎→讐 twedu/variant | 讐→讎 jisx0212/variant | 讐→讎 jisx0213/variant
+U+8B90	讎	讐	variant	wikidata	corroborates	Q109762888; P248 Q10427532 | Q109762890; P248 Q10427532
+U+8B90	𠵁	讎	reduction	mj-shrink-map	merge	MJ032332: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8B90	𢛇	讎	reduction	mj-shrink-map	merge	MJ036130: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8B90	𢢧	讎	reduction	mj-shrink-map	merge	MJ036415: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8B90	𩀕	讎	reduction	mj-shrink-map	merge	MJ052640: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8B92	䜛	讒	reduction	mj-shrink-map	merge	MJ004650: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8B94	𧮐	讔	reduction	mj-shrink-map	merge	MJ049247: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8B95	譋	讕	reduction	mj-shrink-map	merge	MJ024757: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -8547,9 +8551,6 @@ U+8C8C	𧳖	貌	reduction	mj-shrink-map	merge	MJ049524: 法務省戸籍法関連
 U+8C8C	𭽇	貌	reduction	mj-shrink-map	merge	MJ058136: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8C8C	𮙪	貌	reduction	mj-shrink-map	merge	MJ058782: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8C8D	𧴔	貍	reduction	mj-shrink-map	merge	MJ049571: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8C92	猯	貒	reduction	mj-shrink-map	merge	MJ017014: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8C92	𧳩	貒	reduction	mj-shrink-map	merge	MJ049539: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8C92	𧳲	貒	reduction	mj-shrink-map	merge	MJ049546: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8C94	豼	貔	reduction	mj-shrink-map	merge	MJ024959: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8C94	豼	貔	variant	cjkvi-variants	corroborates	豼→貔 jisx0213/variant | 貔→豼 hydzd/variant | 貔→豼 jisx0212/variant | 貔→豼 twedu/variant
 U+8C94	豼	貔	variant	wikidata	corroborates	Q109763195; P248 Q10427532 | Q109763235; P248 Q10427532
@@ -8745,6 +8746,10 @@ U+8E44	𨄪	蹄	reduction	mj-shrink-map	merge	MJ050242: 法務省戸籍法関連
 U+8E47	𨇥	蹇	reduction	mj-shrink-map	merge	MJ050348: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8E48	𨂆	蹈	reduction	mj-shrink-map	merge	MJ050145: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8E49	𨇏	蹉	reduction	mj-shrink-map	merge	MJ050336: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8E4A	蹊	徯	reduction	mj-shrink-map	merge	MJ025396: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8E4A	𠌜	徯	reduction	mj-shrink-map	merge	MJ030734: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8E4A	𢓽	徯	reduction	mj-shrink-map	merge	MJ035843: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8E4A	𤲺	蹊	reduction	mj-shrink-map	merge	MJ041448: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8E4B	𨆚	蹋	reduction	mj-shrink-map	merge	MJ050307: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8E4C	𦭫	蹌	reduction	mj-shrink-map	merge	MJ046352: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8E50	𨇋	蹐	reduction	mj-shrink-map	merge	MJ050334: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -8757,12 +8762,6 @@ U+8E62	豴	蹢	reduction	mj-shrink-map	merge	MJ024949: 法務省戸籍法関連�
 U+8E63	跘	蹣	reduction	mj-shrink-map	merge	MJ025280: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8E63	𨃟	蹣	reduction	mj-shrink-map	merge	MJ050198: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8E64	踨	蹤	reduction	mj-shrink-map	merge	MJ025360: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8E6F	籵	蹯	reduction	mj-shrink-map	merge	MJ019796: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8E6F	𣫯	蹯	reduction	mj-shrink-map	merge	MJ038962: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8E6F	𨁢	蹯	reduction	mj-shrink-map	merge	MJ050125: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8E6F	𨅴	蹯	reduction	mj-shrink-map	merge	MJ050286: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8E6F	𨆌	蹯	reduction	mj-shrink-map	merge	MJ050300: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8E6F	𩕈	蹯	reduction	mj-shrink-map	merge	MJ068091: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8E72	𣦝	蹲	reduction	mj-shrink-map	merge	MJ038715: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8E72	𨀛	蹲	reduction	mj-shrink-map	merge	MJ050071: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8E74	𨉌	蹴	reduction	mj-shrink-map	merge	MJ050415: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -8865,7 +8864,6 @@ U+8F36	輏	輶	reduction	mj-shrink-map	merge	MJ025619: 法務省戸籍法関連�
 U+8F38	輸	輸	compatibility	unicode-ucd	merge	8F38
 U+8F38	輸	輸	compatibility	unicode-ucd	merge	8F38
 U+8F3B	輻	輻	compatibility	unicode-ucd	merge	8F3B
-U+8F3C	輼	轀	itaiji	mj-kanji	merge	X0213 包摂
 U+8F3F	轝	輿	reduction	mj-shrink-map	merge	MJ025713: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8F42	𨍔	轂	reduction	mj-shrink-map	merge	MJ050598: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8F44	𩏓	轄	reduction	mj-shrink-map	merge	MJ053350: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -9234,8 +9232,6 @@ U+9190	𨠂	醐	reduction	mj-shrink-map	merge	MJ051493: 法務省戸籍法関連
 U+9190	𨡷	醐	reduction	mj-shrink-map	merge	MJ051562: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9199	醙	醙	compatibility	unicode-ucd	merge	9199
 U+919C	魗	醜	reduction	mj-shrink-map	merge	MJ029043: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+919E	醖	醞	itaiji	mj-kanji	merge	X0213 包摂
-U+919E	醖	醞	reduction	mj-shrink-map	merge	MJ026519: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+91AA	𮡄	醪	reduction	mj-shrink-map	merge	MJ058890: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+91AC	醤	醬	reduction	mj-shrink-map	merge	MJ026535: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+91AC	𤖕	醬	reduction	mj-shrink-map	merge	MJ040322: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -9637,6 +9633,7 @@ U+96B0	𨻋	隰	reduction	mj-shrink-map	merge	MJ052401: 法務省戸籍法関連
 U+96B0	𨻸	隰	reduction	mj-shrink-map	merge	MJ052427: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+96B0	𨻽	隰	reduction	mj-shrink-map	merge	MJ052432: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+96B0	𨻿	隰	reduction	mj-shrink-map	merge	MJ052434: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+96B2	隲	騭	reduction	mj-shrink-map	merge	MJ027700: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+96B7	隷	隸	z	unihan	merge	隷→隸 kZVariant | 隸→隷 kZVariant
 U+96B7	隸	隸	compatibility	unicode-ucd	merge	96B8
 U+96B7	隷	隷	compatibility	unicode-ucd	merge	96B7
@@ -10149,7 +10146,6 @@ U+9A13	驗	験	reduction	mj-shrink-map	merge	MJ028818: 法務省戸籍法関連�
 U+9A16	𩤝	騖	reduction	mj-shrink-map	merge	MJ054375: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9A20	𩤢	騠	reduction	mj-shrink-map	merge	MJ054380: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9A2B	䮿	騫	reduction	mj-shrink-map	merge	MJ005821: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+9A2D	隲	騭	reduction	mj-shrink-map	merge	MJ027700: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9A2E	𩣒	騮	reduction	mj-shrink-map	merge	MJ054324: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9A2E	𩥖	騮	reduction	mj-shrink-map	merge	MJ054419: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9A30	䠮	騰	reduction	mj-shrink-map	merge	MJ004909: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -10413,9 +10409,9 @@ U+9CF6	䳒	鳶	reduction	mj-shrink-map	merge	MJ006073: 法務省戸籍法関連�
 U+9CF6	䳣	鳶	reduction	mj-shrink-map	merge	MJ006090: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9CF6	𪃘	鳶	reduction	mj-shrink-map	merge	MJ055641: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9CFD	鳽	鳽	compatibility	unicode-ucd	merge	9CFD
-U+9D02	鴃	鴂	reduction	mj-shrink-map	merge	MJ029443: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+9D02	𨾕	鴂	reduction	mj-shrink-map	merge	MJ052525: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+9D02	𪁠	鴂	reduction	mj-shrink-map	merge	MJ055545: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+9D03	鴃	鴂	reduction	mj-shrink-map	merge	MJ029443: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+9D03	𨾕	鴂	reduction	mj-shrink-map	merge	MJ052525: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+9D03	𪁠	鴂	reduction	mj-shrink-map	merge	MJ055545: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9D06	䧵	鴆	reduction	mj-shrink-map	merge	MJ005341: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9D06	䲴	鴆	reduction	mj-shrink-map	merge	MJ006042: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9D06	𩾺	鴆	reduction	mj-shrink-map	merge	MJ055427: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -10571,6 +10567,10 @@ U+9E7F	𢉖	鹿	reduction	mj-shrink-map	merge	MJ035353: 法務省戸籍法関連
 U+9E7F	𮭱	鹿	reduction	mj-shrink-map	merge	MJ059252: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9E80	𪊛	麀	reduction	mj-shrink-map	merge	MJ055938: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9E80	𪋎	麀	reduction	mj-shrink-map	merge	MJ055974: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+9E81	麁	麤	reduction	mj-shrink-map	merge	MJ029781: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+9E81	麄	麤	reduction	mj-shrink-map	merge	MJ029785: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+9E81	𡔙	麤	reduction	mj-shrink-map	merge	MJ033279: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+9E81	𫝖	麁	reduction	mj-shrink-map	merge	MJ057113: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9E92	𪊔	麒	reduction	mj-shrink-map	merge	MJ055931: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9E93	㯟	麓	reduction	mj-shrink-map	merge	MJ001830: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9E93	𣝹	麓	reduction	mj-shrink-map	merge	MJ038372: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -10589,10 +10589,6 @@ U+9E9D	𪋧	麝	reduction	mj-shrink-map	merge	MJ055993: 法務省戸籍法関連
 U+9E9F	麟	麟	compatibility	unicode-ucd	merge	9E9F
 U+9E9F	𪋲	麟	reduction	mj-shrink-map	merge	MJ056001: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9E9F	𪋷	麟	reduction	mj-shrink-map	merge	MJ056004: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+9EA4	麁	麤	reduction	mj-shrink-map	merge	MJ029781: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+9EA4	麄	麤	reduction	mj-shrink-map	merge	MJ029785: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+9EA4	𡔙	麤	reduction	mj-shrink-map	merge	MJ033279: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+9EA4	𫝖	麁	reduction	mj-shrink-map	merge	MJ057113: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9EA6	麥	麦	reduction	mj-shrink-map	merge	MJ029824: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9EA8	𪍉	麨	reduction	mj-shrink-map	merge	MJ056073: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+9EA8	𪍑	麨	reduction	mj-shrink-map	merge	MJ056080: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -10774,7 +10770,6 @@ U+20B63	𠭣	𠭣	compatibility	unicode-ucd	merge	20B63
 U+21018	𡀘	𡀼	z	cjkvi-variants	merge	𡀘→𡀼 cjkvi/duplicate
 U+214E4	𡓤	𡓤	compatibility	unicode-ucd	merge	214E4
 U+216A8	𡚨	𡚨	compatibility	unicode-ucd	merge	216A8
-U+216B4	妛	𡚴	reduction	mj-shrink-map	merge	MJ009587: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+216EA	𡛪	𡛪	compatibility	unicode-ucd	merge	216EA
 U+21B18	𡬘	𡬘	compatibility	unicode-ucd	merge	21B18
 U+21D0B	𡴋	𡴋	compatibility	unicode-ucd	merge	21D0B

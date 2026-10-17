@@ -38,11 +38,12 @@ Edges are applied in a fixed order (compatibility and `z` first, then 包摂, th
 kind by code point), so the build gives the same families on every run.
 
 The head of a family is its curated representative when `graphemes.yaml` names the family; otherwise
-the 正字 the family's directed edges point at (the member that is a reduction or decomposition
-target and is reduced to nothing else); among several, or none, the JIS X 0208 member, then a
-unified ideograph over a compatibility one, then the lowest code point. The 正字 is the character a
-source names as the one the others are written for; JIS X 0208 is the repertoire a Japanese reader
-knows; the code point is only there to make the choice total.
+the member a Japanese reader knows best (`familiarity`: a 常用漢字, then a 人名用漢字, then JIS X
+0208 level 1, then level 2), the 正字 the family's directed edges point at (the member that is a
+reduction or decomposition target and is reduced to nothing else) first among several; with none of
+those, that 正字; then a unified ideograph over a compatibility one, then the lowest code point. So
+群 heads the family 羣 joins, and 村 the family of 邨. The 正字 is the character a source names as
+the one the others are written for; the code point is only there to make the choice total.
 """
 
 from __future__ import annotations
@@ -166,13 +167,15 @@ def families(
     jis0208: set[str],
     curated: Mapping[str, list[str]] | None = None,
     refused: list[tuple[str, Edge]] | None = None,
+    familiarity: Mapping[str, int] | None = None,
 ) -> list[Family]:
     """Every family of more than one character, curated ones included, in head code point order.
 
     `curated` maps a head character to the members `graphemes.yaml` states for it, head first. A
     curated family keeps its head and may take in further members by a shape edge; two curated
     families are never joined. `refused`, when given, collects the merges a rule turned down — as
-    (reason, edge) pairs in edge order — for the build's summary.
+    (reason, edge) pairs in edge order — for the build's summary. `familiarity` ranks the characters
+    a Japanese reader knows, lowest first, for the head.
     """
     edges, corroboration, blocked = candidate_edges(
         variants, equivalents, ideographs, default_figure, jis0208)
@@ -223,14 +226,18 @@ def families(
     found = {id(family): family for family in group.values() if len(family.members) > 1}
     for family in found.values():
         if not family.curated:
-            family.head = head_of(family, jis0208)
+            family.head = head_of(family, familiarity or {})
     return sorted(found.values(), key=lambda family: ord(family.head))
 
 
-def head_of(family: Family, jis0208: set[str]) -> str:
+def head_of(family: Family, familiarity: Mapping[str, int]) -> str:
     """The representative of a derived family (see the module docstring)."""
     directed = [edge for edge in family.edges if edge.relation in DIRECTED and edge.role == "merge"]
     sources = {edge.a for edge in directed}
     sinks = {edge.b for edge in directed} - sources
-    pool = sinks or family.members
-    return min(pool, key=lambda char: (char not in jis0208, _canonical(char) != char, ord(char)))
+    known = {char for char in family.members if char in familiarity}
+    if known:
+        best = min(familiarity[char] for char in known)
+        known = {char for char in known if familiarity[char] == best}
+    pool = (known & sinks) or known or sinks or family.members
+    return min(pool, key=lambda char: (_canonical(char) != char, ord(char)))

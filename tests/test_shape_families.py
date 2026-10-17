@@ -22,7 +22,8 @@ def edge(a: str, b: str, relation: str, source: str = "wikidata", detail: str = 
 def grouped(variants, *, equivalents=(), figures=None, jis=(), curated=None, ideographs=None):
     """The families as {head: sorted members}."""
     chars = {char for row in [*variants, *equivalents] for char in (row["a"], row["b"])}
-    found = families(variants, equivalents, ideographs or chars, figures or {}, set(jis), curated)
+    found = families(variants, equivalents, ideographs or chars, figures or {}, set(jis), curated,
+                     familiarity={char: 2 for char in jis})
     return {family.head: "".join(sorted(family.members)) for family in found}
 
 
@@ -178,3 +179,9 @@ def test_every_source_a_family_cites_has_a_source_record():
     for head, family in refs._grapheme_families().items():
         for entry in family["evidence"]:
             assert entry["title"] and str(entry["url"]).startswith("https://"), (head, entry["id"])
+
+
+def test_the_head_is_the_character_a_japanese_reader_knows_best():
+    rows = [edge("羣", "群", "z", "unihan", "z")]
+    found = families(rows, [], {"羣", "群"}, {}, set(), familiarity={"群": 0, "羣": 3})
+    assert [family.head for family in found] == ["群"]

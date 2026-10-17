@@ -434,6 +434,7 @@ def write_release(directory: Path) -> Path:
     with zipfile.ZipFile(directory / "Unihan.zip", "w") as archive:
         archive.writestr("Unihan_IRGSources.txt", "# Unihan_IRGSources.txt\nU+5CF6\tkIRG_JSource\tJ0-4567\n"
                          "U+5D8B\tkIRG_JSource\tJ0-5068\nU+5B50\tkIRG_JSource\tJ0-3B52\n")
+        archive.writestr("Unihan_OtherMappings.txt", "# Unihan_OtherMappings.txt\nU+5CF6\tkJoyoKanji\t2010\n")
     return directory
 
 
