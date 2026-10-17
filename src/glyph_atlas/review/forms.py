@@ -151,6 +151,15 @@ def router(media, corpus_root: Path) -> APIRouter:
             # shows how many of its glyphs already have one, and which form most of them have.
             assigned = Counter(decided[identity]["form"] for identity in members
                                if (decided.get(identity) or {}).get("form"))
+            # Up to twelve glyphs of each form other than the cluster's own (its form, else the one
+            # most of its glyphs have), most typical first.
+            home = (named.get(cluster["id"]) or {}).get("form") or (assigned.most_common(1)[0][0] if assigned else None)
+            strays: dict[str, list[str]] = {}
+            if not (named.get(cluster["id"]) or {}).get("issue"):
+                for identity in members:
+                    decision = decided.get(identity) or {}
+                    if decision.get("form") and decision["form"] != home and not decision.get("issue"):
+                        strays.setdefault(decision["form"], []).append(identity)
             clusters.append({**{k: cluster[k] for k in ("id", "label", "count", "coherence")},
                              **{key: (named.get(cluster["id"]) or {}).get(key) for key in ("form", "issue")},
                              "exceptions": own,
@@ -167,7 +176,10 @@ def router(media, corpus_root: Path) -> APIRouter:
                              # glyph of another form is most often among them.
                              "unusual": [{"id": identity, "image": image(identity)} for identity in
                                          islice((identity for identity in reversed(members[12:])
-                                                 if not (decided.get(identity) or {}).get("issue")), 12)]})
+                                                 if not (decided.get(identity) or {}).get("issue")), 12)],
+                             "strays": [{"form": form, "count": assigned[form],
+                                         "glyphs": [{"id": identity, "image": image(identity)} for identity in glyphs_of[:12]]}
+                                        for form, glyphs_of in sorted(strays.items(), key=lambda kv: (-assigned[kv[0]], kv[0]))]})
         # How many of the family's glyphs each form names; the descriptions among them, which the
         # palette offers after the encoded forms. Both most used first.
         usage = Counter(form for cluster in found["clusters"] for identity in data["members"][cluster["id"]]

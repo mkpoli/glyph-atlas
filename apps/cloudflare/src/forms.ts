@@ -48,6 +48,14 @@ async function families(env: Env) {
 export const leastTypicalQuery = () => `SELECT u.cluster,u.id,u.image,u.rank FROM form_clusters c JOIN form_units u ON u.rowid IN
   (SELECT rowid FROM form_units WHERE cluster=c.id AND clustered=1 AND rank>=12 AND issue IS NULL ORDER BY rank DESC LIMIT 12) WHERE c.family=?`;
 
+// Up to twelve glyphs of each cluster named with a form other than the cluster's own, most typical
+// first: the cluster's form, else the one most of its glyphs have. `?` is a JSON list of
+// [cluster, form] pairs; each walks its cluster along form_unit_cluster.
+export const straysQuery = () => `SELECT cluster,form,id,image FROM (SELECT u.cluster,u.form,u.id,u.image,
+  row_number() OVER (PARTITION BY u.cluster,u.form ORDER BY u.rank) AS n
+  FROM json_each(?) g CROSS JOIN form_units u ON u.cluster=g.value->>'$[0]' AND u.clustered=1 AND u.form<>g.value->>'$[1]' AND u.issue IS NULL)
+  WHERE n<=12`;
+
 /** Whether a form is written as a well-formed ideographic description sequence. */
 export const isDescription = (value: string) => isSequence(value) && formProblem(value) === null;
 
@@ -97,17 +105,33 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
   // How many of the family's glyphs each form names, most used first.
   const usage = new Map<string, number>();
   for (const t of tallies.results as Json[]) if (t.form) usage.set(t.form, (usage.get(t.form) ?? 0) + t.n);
+  const own = new Map((clusters.results as Json[]).map(c => {
+    const forms = byCluster.get(c.id)?.forms;
+    const [majority, majorityCount] = (forms ? [...forms].sort((a, b) => b[1] - a[1])[0] : null) ?? [null, 0];
+    return [c.id, { majority, majorityCount, form: c.form ?? majority }];
+  }));
+  // A cluster's glyphs named otherwise, by form; a cluster reported as a whole has none.
+  const pairs = (clusters.results as Json[]).filter(c => !c.issue && own.get(c.id)!.form
+    && [...byCluster.get(c.id)!.forms.keys()].some(form => form !== own.get(c.id)!.form)).map(c => [c.id, own.get(c.id)!.form]);
+  const strayRows = pairs.length ? (await env.DB.prepare(straysQuery()).bind(JSON.stringify(pairs)).all<Json>()).results : [];
+  const strays = new Map<string, Map<string, Json[]>>();
+  for (const r of strayRows) {
+    const forms = strays.get(r.cluster) ?? new Map<string, Json[]>();
+    forms.set(r.form, [...forms.get(r.form) ?? [], { id: r.id, image: r.image }]);
+    strays.set(r.cluster, forms);
+  }
   return { revision: found!.revision, code_point: found!.code_point, char: found!.char, label: found!.label,
     count: found!.count, clusters: found!.cluster_count, assigned: found!.assigned, rejected: found!.rejected, order,
     forms: JSON.parse(found!.forms),
     described: mostUsed(described),
     usage: mostUsed(usage),
     items: (clusters.results as Json[]).map(c => {
-      const t = byCluster.get(c.id);
-      const [majority, majorityCount] = (t ? [...t.forms].sort((a, b) => b[1] - a[1])[0] : null) ?? [null, 0];
+      const t = byCluster.get(c.id), { majority, majorityCount } = own.get(c.id)!;
       return { id: c.id, label: c.label, count: c.count, coherence: c.coherence, form: c.form, issue: c.issue,
         exceptions: t?.own ?? 0, assigned: t?.assigned ?? 0, rejected: t?.rejected ?? 0, majority, majority_count: majorityCount, representatives: JSON.parse(c.representatives),
-        unusual: leastTypical.get(c.id) ?? [] };
+        unusual: leastTypical.get(c.id) ?? [],
+        strays: [...strays.get(c.id) ?? []].map(([form, glyphs]) => ({ form, count: t!.forms.get(form) ?? 0, glyphs }))
+          .sort((a, b) => b.count - a.count || (a.form < b.form ? -1 : 1)) };
     }) };
 }
 
