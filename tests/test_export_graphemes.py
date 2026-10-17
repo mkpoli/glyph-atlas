@@ -106,6 +106,14 @@ def test_a_family_that_only_moves_its_head_is_still_a_change(module, tmp_path, m
     assert module.changed(previous) == ["U+0041", "U+0042"]
 
 
+def test_a_character_the_earlier_table_lacked_is_a_change(module, tmp_path, monkeypatch):
+    path = tmp_path / "before.tsv"
+    path.write_text("code_point\tgrapheme\nU+0041\tU+0041\n", encoding="utf-8")
+    previous = module.previous_families(path)
+    monkeypatch.setattr(module.refs, "graphemes", lambda: {"U+0041": ["U+0041"], "U+17000": ["U+17000"]})
+    assert module.changed(previous) == ["U+17000"]
+
+
 def insert_forms(db):
     db.execute("INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision) "
                "VALUES('U+2E7C3','𮟃','x',0,0,'{}',0,'r'),('U+9084','還','y',0,0,'{}',0,'r')")

@@ -92,7 +92,8 @@ def changed(previous: dict[str, tuple[str, frozenset[str]]]) -> list[str]:
     """The code points whose head or family is not the one the earlier table gave them.
 
     The head matters besides the membership: a family that moves to another representative keeps
-    every member but `data.grapheme` and `units.family` still name the old one.
+    every member but `data.grapheme` and `units.family` still name the old one. A code point the
+    earlier table did not have is new to the site and changed whatever its family.
     """
     now_head: dict[str, str] = {}
     now_set: dict[str, frozenset[str]] = {}
@@ -103,7 +104,7 @@ def changed(previous: dict[str, tuple[str, frozenset[str]]]) -> list[str]:
             now_set[point] = members
     return sorted(
         (point for point in now_set
-         if previous.get(point, (point, frozenset({point}))) != (now_head[point], now_set[point])),
+         if previous.get(point) != (now_head[point], now_set[point])),
         key=lambda point: [int(part.removeprefix("U+"), 16) for part in point.split()])
 
 
