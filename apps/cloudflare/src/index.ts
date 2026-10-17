@@ -1092,7 +1092,8 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
   const reviewedLast = flaggedView ? `${REVIEWED_IN_INSPECTOR},` : '';
-  const columns = `*,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order,${SUSPECT} AS suspect`;
+  // What a tile shows (`compact`): the record without the review snapshot, context and model votes.
+  const columns = `id,origin,data,document,style,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order,${SUSPECT} AS suspect`;
   // Browse deals crops in `shuffle` order from a point the seed picks, and wraps round past the
   // highest: an index serves that order, where a seed-scrambled order sorts every row on each visit.
   // A named character is found through `unit_character` instead, and its few crops sort in memory.
