@@ -29,8 +29,10 @@ export function listForms(char) {
   if (!cards.has(char)) {
     // A sequence the table has no card for (ツ + U+309A) offers itself alone.
     const card = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error))
-    // Only a Han character has regional shapes; a sequence, or a failed read, has none to add.
-    const described = HAN.test(char) ? readStructure(char).then(found => found.shapes ?? [], () => []) : Promise.resolve([])
+    // Only a Han character has regional shapes. A failed read leaves them out of this answer, which is
+    // not kept, and the card's forms still come.
+    let partial = false
+    const described = HAN.test(char) ? readStructure(char).then(found => found.shapes ?? [], () => { partial = true; return [] }) : Promise.resolve([])
     const loaded = Promise.all([card, described]).then(([card, regional]) => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
       const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions }))
@@ -41,7 +43,7 @@ export function listForms(char) {
       return { members, variants: fresh(variants), derived: fresh(derived) }
     })
     // A failed read is asked again next time rather than kept.
-    cards.set(char, loaded.catch(error => { cards.delete(char); throw error }))
+    cards.set(char, loaded.then(found => (partial && cards.delete(char), found), error => { cards.delete(char); throw error }))
   }
   return cards.get(char)
 }
