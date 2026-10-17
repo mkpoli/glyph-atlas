@@ -29,6 +29,8 @@ store's journal, with the evidence that chose it.
 from __future__ import annotations
 
 import json
+import math
+import tempfile
 import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable
@@ -40,6 +42,10 @@ METHOD = "ocr-transcription-v1"
 #: The relabels that record where a crop's label came from as an `offset` from its own position.
 SHIFT_METHODS = {"block-shift-v1", "block-boundary-v1", METHOD}
 UNREAD = "□▢"
+#: How many characters on each side of a kana the script of its neighbours is counted over.
+KANA_WINDOW = 10
+#: The least probability a form is given, so that one the classifier reads as impossible still counts.
+FLOOR = 1e-4
 MATCH, MISMATCH, GAP = 2, -1, -2
 MIN_MATCHES = 3
 MAX_RUN = 3
@@ -98,6 +104,11 @@ def corrections(block: str, page: str) -> dict[int, str]:
 
     Punctuation the OCR read has no counterpart among the page's letters and takes no part.
     """
+    return {i: page[j] for i, j in placed(block, page).items()}
+
+
+def placed(block: str, page: str) -> dict[int, int]:
+    """The block's positions the transcription corrects, with the page index of its character there."""
     kept = [i for i, c in enumerate(block) if readable(c)]
     text = "".join(block[i] for i in kept)
     if len(text) < MIN_MATCHES:
@@ -116,9 +127,59 @@ def corrections(block: str, page: str) -> dict[int, str]:
         while end < len(pairs) and not same[end] and None not in pairs[end]:
             end += 1
         if k > 0 and same[k - 1] and end < len(pairs) and same[end] and end - k <= MAX_RUN:
-            found.update({kept[i]: page[j] for i, j in pairs[k:end]})
+            found.update({kept[i]: j for i, j in pairs[k:end]})
         k = end
     return found
+
+
+def form_pair(written: str, transcribed: str) -> str | None:
+    """How a transcription that writes `transcribed` where the ink was read as `written` may only have
+    normalised it: `kana` for the other kana of one reading (は and ハ), `variant` for a 異体字 (嶋 and 島)."""
+    from .. import refs
+
+    if not written or not transcribed or written == transcribed:
+        return None
+    if refs.to_hiragana(written) == refs.to_hiragana(transcribed):
+        return "kana"
+    try:
+        if transcribed in {other for other, _ in refs.variants(written)}:
+            return "variant"
+    except (KeyError, ValueError):
+        pass
+    return None
+
+
+def normalises(old: str, new: str) -> bool:
+    """Whether `new` is the form a transcription normalises `old` to: its 新字体 (國 to 国, 廣 to 広), or
+    the common form the MJ table reduces it to where nothing reduces the other way (嶋 to 島, 髙 to 高)."""
+    from .. import refs
+
+    edges = [edge for edge in refs.variant_edges_of(old) if edge["written"] and {edge["a"], edge["b"]} == {old, new}]
+    toward = {edge["relation"] for edge in edges if edge["a"] == old}
+    back = {edge["relation"] for edge in edges if edge["a"] == new}
+    return "shinjitai" in toward or ("reduction" in toward and "reduction" not in back)
+
+
+def kana_script(character: str) -> str | None:
+    code = ord(character)
+    return "katakana" if 0x30A1 <= code <= 0x30FA else "hiragana" if 0x3041 <= code <= 0x3096 else None
+
+
+def prior(written: str, transcribed: str, around: str) -> float:
+    """The log odds the transcription's kana has over the written one from the script of the kana
+    around it: katakana is rare in hiragana text and the other way round. Nothing for a 異体字."""
+    if form_pair(written, transcribed) != "kana":
+        return 0.0
+    count = Counter(kana_script(c) for c in around)
+    return math.log((count[kana_script(transcribed)] + 1) / (count[kana_script(written)] + 1))
+
+
+def keeps_written(p_written: float | None, p_transcribed: float | None, odds: float) -> bool:
+    """Whether a normalising correction keeps the written form: unless the ink looks more like the
+    transcription's form, with the kana around it counted in, the form the OCR read stays."""
+    if p_written is not None and p_transcribed is not None:
+        odds += math.log((p_transcribed + FLOOR) / (p_written + FLOOR))
+    return odds <= 0
 
 
 def propose(blocks: dict[tuple, list[dict]], pages: dict[str, str], protected: set[str]) -> tuple[list[dict], Counter]:
@@ -136,21 +197,30 @@ def propose(blocks: dict[tuple, list[dict]], pages: dict[str, str], protected: s
             counts["no transcription"] += 1
             continue
         context = unicodedata.normalize("NFC", crops[0]["context"] or "")
-        fixed = corrections(context, page)
+        where = placed(context, page)
+        fixed = {i: page[j] for i, j in where.items()}
         counts["corrected" if fixed else "unchanged"] += 1
         for crop in crops:
             source = crop["position"] + crop["offset"]
             if crop["id"] in protected or not 0 <= source < len(context) or crop["label"] != context[source]:
                 continue
             target, text = fixed.get(source, crop["label"]), fixed.get(crop["position"], crop["text"])
-            if target != crop["label"] or text != crop["text"]:
-                proposals.append({"unit_id": crop["id"], "before": crop["label"], "character": target,
-                                  "text_before": crop["text"], "text": text, "offset": crop["offset"],
-                                  "block": list(key), "context": context})
+            if target == crop["label"] and text == crop["text"]:
+                continue
+            item = {"unit_id": crop["id"], "before": crop["label"], "character": target, "text_before": crop["text"],
+                    "text": text, "offset": crop["offset"], "block": list(key), "context": context}
+            if form := form_pair(crop["label"], target):
+                j = where[source]
+                item |= {"form": form, "prior": round(prior(crop["label"], target, page[max(0, j - KANA_WINDOW):j]
+                                                            + page[j + 1:j + 1 + KANA_WINDOW]), 4)}
+            if crop["text"] and form_pair(crop["text"], text):
+                item["text_form"] = True
+            proposals.append(item)
     return proposals, counts
 
 
-def run(dataset: Path, *, pages: Path, apply: bool = False, protect: Iterable[str] = ()) -> dict:
+def run(dataset: Path, *, pages: Path, checkpoint: Path | None = None, apply: bool = False,
+        protect: Iterable[str] = ()) -> dict:
     """Propose, and with `apply` record, the relabels of every OCR block of `dataset`."""
     import pyarrow.parquet as pq
 
@@ -180,6 +250,15 @@ def run(dataset: Path, *, pages: Path, apply: bool = False, protect: Iterable[st
             {"id": unit.id, "page_id": unit.page_id, "context": record.get("context"), "position": int(record["position"]),
              "offset": offset, "label": written_identity(unit), "text": unit.text_source})
     proposals, counts = propose(blocks, texts, protected)
+    settle(store, proposals, checkpoint)
+    # A correction that keeps the written form is reported, with what decided it, and changes nothing.
+    changed = [item for item in proposals if item["character"] != item["before"] or item["text"] != item["text_before"]]
+    moved = {id(item) for item in changed}
+    kept = [item | {"status": "kept written form"} for item in proposals if item.get("written") and id(item) not in moved]
+    proposals = changed
+    counts["kept written form"] = len(kept)
+    # A kana decided without its ink: the classifier has no class for one of the forms, or the crop was not cut.
+    counts |= Counter(f"kana ink {item['ink']}" for item in kept + proposals if item.get("ink") not in (None, "read"))
     for item in proposals:
         unit, revision = units[item["unit_id"]]
         item["status"] = "proposed"
@@ -200,7 +279,89 @@ def run(dataset: Path, *, pages: Path, apply: bool = False, protect: Iterable[st
         item["status"] = "relabelled"
     counts.update(item["status"] for item in proposals)
     counts["relabels"] = sum(1 for item in proposals if item["character"] != item["before"])
-    return {"method": METHOD, "blocks": len(blocks), "crops": len(units), "counts": dict(counts), "items": proposals}
+    return {"method": METHOD, "blocks": len(blocks), "crops": len(units), "counts": dict(counts), "items": proposals,
+            "kept": kept}
+
+
+def ink(page, box, services: dict, *, client=None):
+    """The crop at `box` of `page`, cut by the page's Image API service at full resolution: these pages
+    are not held locally, and a region request is a few kilobytes."""
+    import io
+
+    from PIL import Image
+
+    from .. import images, net
+
+    service = images.service_of(page.image or "") if page is not None else None
+    if service is None or box is None or not page.width:
+        return None
+    if service not in services:
+        try:
+            services[service] = images.info(service, client=client)
+        except Exception:  # a service that does not describe itself is not asked again
+            services[service] = None
+            raise
+    described = services[service]
+    if described is None:
+        raise OSError(f"{service} gave no description")
+    scale = described["width"] / page.width
+    region = ",".join(str(round(v * scale)) for v in (box.x, box.y, box.w, box.h))
+    size = images._size_keyword(described["version"])
+    with tempfile.TemporaryDirectory(prefix="ocr-repair-") as scratch:
+        path = net.download(f"{service}/{region}/{size}/0/default.jpg", Path(scratch) / "crop", expected="image",
+                            client=client)
+        with Image.open(io.BytesIO(Path(path).read_bytes())) as picture:
+            return picture.convert("L")
+
+
+def settle(store, proposals: list[dict], checkpoint: Path | None) -> None:
+    """Decide each normalising correction in place, a 異体字 by the way it normalises and a kana by the
+    ink and the kana around it: one that keeps the written form keeps its label, and its text where the
+    same reading gave both."""
+    # The classifier learnt 異体字 from transcriptions that normalise them, and reads 嶋 ink as 島, so a
+    # 異体字 is settled by which way the table normalises it: a transcription that writes the normalised
+    # form of what the OCR read has normalised it, and one that writes the older form has copied the ink.
+    for item in proposals:
+        if item.get("form") == "variant" and not normalises(item["character"], item["before"]):
+            item |= {"character": item["before"], "written": True}
+    pending = [item for item in proposals if item.get("form") == "kana"]
+    shown: dict[str, tuple[float | None, float | None]] = {}
+    if pending and checkpoint is not None:
+        import numpy as np
+
+        from .. import refs
+        from ..classify import preprocess
+        from ..form_clusters import Encoder
+
+        encoder = Encoder(checkpoint)
+        index = {name: i for i, name in enumerate(encoder.classes)}
+        services: dict = {}
+        for item in pending:
+            found = [index.get(refs.to_code_point(c)) for c in (item["before"], item["character"])]
+            if None in found:
+                item["ink"] = "no class"
+                continue
+            unit = store.unit(item["unit_id"])
+            try:
+                picture = ink(store.page(unit.page_id), unit.box, services)
+            except Exception:  # noqa: BLE001 - a crop the service cannot cut is decided by its context
+                picture = None
+            if picture is None:
+                item["ink"] = "unread"
+                continue
+            row = encoder.classify(np.asarray(preprocess(picture, size=encoder.size), dtype=np.uint8)[None])[1][0]
+            item["ink"] = "read"
+            shown[item["unit_id"]] = tuple(float(row[i]) for i in found)
+    for item in proposals:
+        if item.get("form") == "kana":
+            p_written, p_transcribed = shown.get(item["unit_id"], (None, None))
+            item |= {"p_written": p_written, "p_transcribed": p_transcribed}
+            if keeps_written(p_written, p_transcribed, item["prior"]):
+                item |= {"character": item["before"], "written": True}
+        # The text at the crop's own place follows its label when one reading gave both, and otherwise
+        # keeps the written form, since only its own place's ink was read.
+        if item.get("text_form") and (item["offset"] or item.get("written") or not item.get("form")):
+            item["text"] = item["text_before"]
 
 
 def write(result: dict, out: Path) -> None:
