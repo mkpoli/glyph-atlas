@@ -83,13 +83,13 @@ Edges are applied in a fixed order (compatibility and `z` first, then 包摂, th
 kind by code point), so the build gives the same families on every run.
 
 The head of a family is its curated representative when `graphemes.yaml` names the family; otherwise
-the member a Japanese reader knows best (`familiarity`: a 常用漢字, then a 人名用漢字, then JIS X
-0208 level 1, then level 2), the 正字 the family's directed edges point at (the
-member that is a reduction or decomposition target and is reduced to nothing else) first among
-several; with none of those, that 正字; then a unified ideograph over a compatibility one, then the
-lowest code point. So 群 heads the family 羣 joins, and 村 the family of 邨. The 正字 is the
-character a source names as the one the others are written for; the code point is only there to
-make the choice total.
+the member a reader knows best (`familiarity`: a 常用漢字, then a 人名用漢字, then JIS X 0208 level
+1, then level 2, then GB 2312, then CNS 11643 plane 1), the 正字 the family's directed edges point at
+(the member that is a reduction or decomposition target and is reduced to nothing else) first among
+several; with none of those, that 正字; then a unified ideograph over a compatibility one, one of the
+main block over the extensions, then the lowest code point. So 群 heads the family 羣 joins, 村 the
+family of 邨, and 氯 the family of 㲶. The 正字 is the character a source names as the one the others
+are written for; the code point is only there to make the choice total.
 """
 
 from __future__ import annotations
@@ -241,7 +241,7 @@ def families(
     families are never joined. `refused`, when given, collects the merges a rule turned down — as
     (reason, edge) pairs in edge order — for the build's summary. `gb2312` and `cns1` are the GB 2312
     and CNS 11643 plane 1 repertoires (rule 6 of the 異寫字 pass), `familiarity` ranks the characters
-    a Japanese reader knows, lowest first, for the head.
+    a reader knows, lowest first, for the head.
     """
     variants = list(variants)
     edges, corroboration, blocked = candidate_edges(
@@ -416,4 +416,4 @@ def head_of(family: Family, familiarity: Mapping[str, int]) -> str:
         best = min(familiarity[char] for char in known)
         known = {char for char in known if familiarity[char] == best}
     pool = (known & sinks) or known or sinks or family.members
-    return min(pool, key=lambda char: (_canonical(char) != char, ord(char)))
+    return min(pool, key=lambda char: (_canonical(char) != char, not 0x4E00 <= ord(char) <= 0x9FFF, ord(char)))
