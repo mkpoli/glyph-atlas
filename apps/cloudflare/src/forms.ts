@@ -4,6 +4,7 @@
 // `corpus_units.character` follows it for search and counts shortly after (`followCorpus`).
 import { withDating } from './dating';
 import { formProblem, isSequence } from './representation';
+import { refiled } from './category';
 type Json = Record<string, any>;
 export type FormTools = {
   fail: (status: number, message: string, extra?: Record<string, unknown>) => never;
@@ -285,12 +286,20 @@ async function drain(env: Env, held: { until: number }) {
       env.DB.prepare(`INSERT INTO corpus_characters(character,production,n,named) SELECT character,production,count(*),0 ${unnamed}
         GROUP BY character,production ON CONFLICT(character,production) DO UPDATE SET n=n+excluded.n`),
       env.DB.prepare('DELETE FROM corpus_characters WHERE n=0'),
+      // The gallery copies of the glyphs moved, read before they leave the list, to refile below.
+      env.DB.prepare(`SELECT g.id,g.category,c.character FROM corpus_gallery g JOIN corpus_units c ON c.id=g.id
+        WHERE g.id IN (${following})`),
       env.DB.prepare(`DELETE FROM corpus_follow WHERE id IN (${following})`),
     ]);
     // The grapheme browser's corpus counts are cached on this stamp; it is written once the counts
     // have changed, so a request in between caches the new counts under the old key at worst.
     if (results[2].meta.changes || results[4].meta.changes)
       await env.DB.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_counts_at',?)").bind(JSON.stringify(new Date().toISOString())).run();
+    // A glyph moved to another script is dealt to that script's group. Should this fail, the gallery
+    // refill after the next publication files the copies (`scripts/fill_corpus_gallery.py`).
+    const moves = refiled(results.at(-2)!.results as { id: string; category: string | null; character: string | null }[]);
+    if (moves.length) await env.DB.batch(moves.map(move => env.DB.prepare(move.sql).bind(...move.values)))
+      .catch(error => console.error('gallery refile', error));
     if (!results[0].meta.changes) return;
     held.until = until;
     if (results.at(-1)!.meta.changes < FOLLOW_BATCH) return;

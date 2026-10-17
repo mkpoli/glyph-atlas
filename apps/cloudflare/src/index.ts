@@ -6,7 +6,7 @@ import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
 import { formsFor, setForm, withForms } from './cropForms';
-import { formProblem, isSequence } from './representation';
+import { categoryOf, idsCharacter, isGugyeol } from './category';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { ranking } from './ranking';
@@ -40,12 +40,6 @@ const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Respon
 });
 const parse = (value: string): Json => JSON.parse(value);
 const unavailable = { status: 'unavailable', candidates: [] };
-// A label's category is its first character's script, as the migrations and publication scripts compute it.
-// 구결자 have no Unicode script property, so they are tested by their Hanyang private-use range.
-const isGugyeol=(value:string)=>{const c=value.codePointAt(0)??-1;return c>=0xF67E&&c<=0xF77C};
-// A well-formed ideographic description sequence describes one Han character Unicode lacks.
-const idsCharacter = (value: string) => isSequence(value) && formProblem(value) === null;
-export const categoryOf=(value:string)=>{const first=[...value][0]??'';if(idsCharacter(value))return 'kanji';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':/\p{Script=Hangul}/u.test(first)?'hangul':isGugyeol(first)?'gugyeol':'other'};
 const cp = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 const toneMark = (char: string) => [0x302E, 0x302F].includes(char.codePointAt(0)!);
 const choseong = (char: string) => {
@@ -1226,17 +1220,26 @@ async function corpusRound(env: Env, characters: string[], production: string, s
 // from the packs took one R2 request each. Packs are content-addressed, so a copy is current exactly
 // while `corpus_units` still names the object and offset it came from; `scripts/fill_corpus_gallery.py`
 // copies the rest after a publication. A glyph a review has named shows its `units` row.
+// A script group deals the copies of its category (0079). The scripts the corpus holds few glyphs of
+// are copied whole (WHOLE_GROUPS), so their seed's point falls anywhere in the shuffle range, and the
+// unchosen gallery keeps to the sample below SAMPLE_RANGE, where every script is copied alike.
 const SAMPLE_RANGE = 4194304;
-export const gallerySampleQuery = (side: '>=' | '<') => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
+const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol'];
+export const gallerySampleQuery = (side: '>=' | '<', grouped = false) => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
   FROM corpus_gallery s JOIN corpus_units c ON c.id=s.id AND c.object=s.object AND c.offset=s.offset
   LEFT JOIN units u ON u.id=s.id LEFT JOIN form_units f ON f.id=s.id
-  WHERE s.shuffle${side}? ORDER BY s.shuffle LIMIT ?`;
+  WHERE ${grouped ? 's.category=?' : `s.shuffle<${SAMPLE_RANGE}`} AND s.shuffle${side}? ORDER BY s.shuffle LIMIT ?`;
 async function gallery(env: Env, q: URLSearchParams) {
-  const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % SAMPLE_RANGE;
+  const group = q.get('group') && q.get('group') !== 'all' ? q.get('group')! : null;
+  if (group && !GALLERY_GROUPS.includes(group)) throw new Problem(400, 'Invalid group.');
+  const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % (group && WHOLE_GROUPS.includes(group) ? SHUFFLE_RANGE : SAMPLE_RANGE);
   type Row = UnitForm & { data: string; current: string | null };
-  const rows = (await env.DB.prepare(gallerySampleQuery('>=')).bind(start, limit).all<Row>()).results;
-  if (rows.length < limit) rows.push(...(await env.DB.prepare(gallerySampleQuery('<')).bind(start, limit - rows.length).all<Row>()).results);
-  const items = await withForms(env, rows.map(r => r.current ? parse(r.current) : formed(parse(r.data), r.id ? r : null, formTools)));
+  const read = (side: '>=' | '<', n: number) => env.DB.prepare(gallerySampleQuery(side, !!group)).bind(...(group ? [group] : []), start, n).all<Row>();
+  const rows = (await read('>=', limit)).results;
+  if (rows.length < limit) rows.push(...(await read('<', limit - rows.length)).results);
+  // A review may have moved a glyph to another script since its copy was filed.
+  const items = (await withForms(env, rows.map(r => r.current ? parse(r.current) : formed(parse(r.data), r.id ? r : null, formTools))))
+    .filter(item => !group || categoryOf(String(item.label ?? '')) === group);
   return { status: 'ok', available: items.length, items: await withDating(env, items) };
 }
 function chunks<T>(list: T[], size: number): T[][] {

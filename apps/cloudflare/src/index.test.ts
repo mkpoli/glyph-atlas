@@ -1,5 +1,6 @@
+import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
-import { canonical, samePixels, literal, hira, single, validRound, categoryOf, describedCard, jamoCard, jamoSyllable,
+import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
   encodeCursor, decodeCursor, historyItem, historyQuery, moved, substitutionKey } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';

@@ -26,7 +26,8 @@ export const character = (codePoint, expand = 'none', options) => get('/layers/c
 export const occurrences = (codePoint, params = {}, options) => get('/layers/occurrences', { code_point: codePoint, ...params }, options)
 export const graphemes = (params = {}) => get('/layers/graphemes', params)
 export const ligatures = () => get('/layers/ligatures')
-export const gallery = (limit = 24, seed = 0, options) => get('/layers/gallery', { limit, seed }, options)
+/** Copies of corpus glyphs from a seed's point of their shuffle, of one script group or of every one ('all'). */
+export const gallery = (limit = 24, seed = 0, group = 'all', options) => get('/layers/gallery', { limit, seed, group: group === 'all' ? '' : group }, options)
 export const candidates = (codePoint, limit = 24, offset = 0, params = {}, options) => get('/layers/candidates', { code_point: codePoint, limit, offset: offset || '', ...params }, options)
 export const decades = (codePoint, params = {}, options) => get('/layers/decades', { code_point: codePoint, ...params }, options)
 export const layerSummary = () => get('/layers/summary')

@@ -113,7 +113,8 @@
     // A shallow rewrite leaves `page.url` as it was loaded, so the address bar is what is compared.
     if (location.pathname + location.search !== target) replaceState(target, page.state)
   }
-  // The unfiltered homepage shows the collection's own rows and then a bounded corpus sample. The
+  // The unfiltered homepage, or one narrowed to a script group, shows the collection's own rows and then
+  // a bounded corpus sample of the same group. The
   // sample is normalised by the same adapter and deduplicated against what is already on the page.
   let sample = $state(first ? sampleRows(first.sample, first.result.items) : []), sampleFault = $state(first?.sample ? (first.sample.status === 'ok' ? null : first.sample.status) : null)
   let collection = $state(asked?.collection ?? null)
@@ -498,8 +499,8 @@
   }
   /** The homepage's corpus half: bounded, deduplicated against the local rows, never a scan. */
   function requestSample() {
-    const bare = !query && !picked && filter === 'all' && !grapheme && !work
-    const pending = flagged ? request('/atlas/corpus/reviews?state=flagged') : bare ? layerGallery(60, seed) : null
+    const sampled = !query && !picked && !grapheme && !work
+    const pending = flagged ? request('/atlas/corpus/reviews?state=flagged') : sampled ? layerGallery(60, seed, filter) : null
     // Settled here, so a failure waits for `showSample` instead of surfacing as unhandled.
     return pending?.then(page => ({ page }), error => ({ error })) ?? null
   }

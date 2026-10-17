@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { categoryOf } from '../src/category.ts'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 
 const bundleDir = await mkdtemp(join(tmpdir(), 'atlas-worker-'))
@@ -108,9 +109,17 @@ try {
   // The gallery deals copies of the published records; one copied from a pack a later publication
   // replaced no longer matches its row, and is not dealt.
   const stale = { ...corpus, id: 'codh:stale', label: '古' }
-  await db.batch([db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind(corpus.id, 1, 'fixture', 0, raw),
+  await db.batch([db.prepare('INSERT INTO corpus_gallery(id,shuffle,object,offset,data,category) VALUES(?,?,?,?,?,?)').bind(corpus.id, 1, 'fixture', 0, raw, 'kanji'),
     db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(stale.id, null, 'U+53E4', null, 2, 'newer-pack', 0, 10, 'unknown', 0),
-    db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind(stale.id, 2, 'older-pack', 0, JSON.stringify(stale))])
+    db.prepare('INSERT INTO corpus_gallery(id,shuffle,object,offset,data,category) VALUES(?,?,?,?,?,?)').bind(stale.id, 2, 'older-pack', 0, JSON.stringify(stale), 'kanji')])
+  // A script the corpus holds few glyphs of is copied whole: its copies above the homepage's sample
+  // range are dealt to its own group alone.
+  const hangulGlyph = { ...corpus, id: 'eo:hangul', label: '그', source_label: '그', grapheme: 'U+ADF8', visual_group: null }
+  const hangulRaw = JSON.stringify(hangulGlyph)
+  await bucket.put('hangul-pack', hangulRaw)
+  await db.batch([db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(hangulGlyph.id, '그', 'U+ADF8', null, 5000000, 'hangul-pack', 0, new TextEncoder().encode(hangulRaw).length, 'unknown', 0),
+    db.prepare('INSERT INTO corpus_gallery(id,shuffle,object,offset,data,category) VALUES(?,?,?,?,?,?)').bind(hangulGlyph.id, 5000000, 'hangul-pack', 0, hangulRaw, 'hangul'),
+    db.prepare("INSERT INTO corpus_characters VALUES('그','unknown',1,0)")])
   // Miniflare hands the Worker its own loopback address, so the page origin a browser would send is
   // that address; a fixed `http://localhost` fails the Worker's same-origin check on every POST.
   const base = new URL(await mf.ready).origin
@@ -170,6 +179,11 @@ try {
   const galleried = (await call('/layers/gallery')).items
   assert.equal(galleried[0].label, '假', 'gallery uses current reviews')
   assert.ok(!galleried.some(item => item.id === stale.id), 'a copy of a replaced record is not dealt')
+  assert.ok(!galleried.some(item => item.id === hangulGlyph.id), 'the homepage deals only the sample range')
+  assert.deepEqual((await call('/layers/gallery?group=hangul&seed=7')).items.map(item => item.id), [hangulGlyph.id], 'a script group deals its whole copies')
+  assert.deepEqual((await call('/layers/gallery?group=kanji')).items.map(item => item.id), [corpus.id], 'a group deals none of another script')
+  assert.deepEqual((await call('/layers/gallery?group=kanji&seed=200000000')).items.map(item => item.id), [corpus.id], 'a sampled group seeds within the sample')
+  await call('/layers/gallery?group=latin', undefined, 400)
   const exported = await call('/atlas/reviews.json')
   assert.equal(exported.reviews.filter(r => r.current).length, 1)
   assert.equal(exported.reviews.find(r => r.origin === 'corpus').source_update.proposed_character, '假')
@@ -1427,7 +1441,7 @@ try {
     if (c >= 0xD800 && c <= 0xDFFF) continue
     const sql = within(kana, c) ? 'kana' : within(han, c) ? 'kanji' : within(hangul, c) ? 'hangul'
       : within(gugyeolRange, c) ? 'gugyeol' : 'other'
-    if (worker.categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${worker.categoryOf(String.fromCodePoint(c))} vs ${sql}`)
+    if (categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${categoryOf(String.fromCodePoint(c))} vs ${sql}`)
   }
   // A context widened in place survives a review and its undo.
   const framed = { id: 'framed', label: 'カ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
@@ -1489,7 +1503,7 @@ try {
   const plain = JSON.stringify({ ...corpus, id: 'codh:plain' })
   await bucket.put('plain', plain)
   await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind('codh:plain', '假', 'U+4EEE', null, 2, 'plain', 0, new TextEncoder().encode(plain).length, 'unknown', 0).run()
-  await db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind('codh:plain', 2, 'plain', 0, plain).run()
+  await db.prepare('INSERT INTO corpus_gallery(id,shuffle,object,offset,data,category) VALUES(?,?,?,?,?,?)').bind('codh:plain', 2, 'plain', 0, plain, 'kanji').run()
   // Published as a corpus publication publishes it: counted, and the count stamped.
   await db.batch([db.prepare("INSERT INTO corpus_characters VALUES('假','unknown',1,0) ON CONFLICT DO UPDATE SET n=n+1"),
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('corpus_counts_at','\"forms-fixture\"')")])
@@ -1519,6 +1533,11 @@ try {
   const leastTypical = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.leastTypicalQuery()).bind('U+4EEE').all()).results.map(r => r.detail)
   assert.ok(leastTypical.some(d => /SEARCH form_units USING INDEX form_unit_cluster \(cluster=\? AND rank>\?\)/.test(d)), leastTypical.join('; '))
   assert.ok(!leastTypical.some(d => /^SCAN|TEMP B-TREE/.test(d)), leastTypical.join('; '))
+  // A script group's gallery page is one stretch of its category's index, as the homepage's is of shuffle.
+  for (const grouped of [false, true]) {
+    const plan = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.gallerySampleQuery('>=', grouped)).bind(...(grouped ? ['hangul'] : []), 0, 60).all()).results.map(r => r.detail)
+    assert.ok(plan.some(d => (grouped ? /corpus_gallery_category \(category=\? AND shuffle>\?\)/ : /corpus_gallery_order \(shuffle>\? AND shuffle<\?\)/).test(d)), plan.join('; '))
+  }
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '仮')
   await counted()
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).identity_basis, 'form_cluster')
