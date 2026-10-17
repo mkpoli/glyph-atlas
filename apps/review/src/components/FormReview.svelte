@@ -156,7 +156,7 @@
 
 <style>
   .form-review{margin-top:16px}
-  .review-bar{position:sticky;top:0;z-index:3;background:var(--overlay-page);backdrop-filter:blur(12px);padding:12px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+  .review-bar{position:sticky;top:0;z-index:3;background:var(--overlay-page);padding:12px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
   .review-heading{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
   .review-heading h3{font-size:16px;font-weight:500}.review-heading small{font-size:11px;color:var(--muted);font-weight:400;margin-left:6px}
   .review-progress{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
