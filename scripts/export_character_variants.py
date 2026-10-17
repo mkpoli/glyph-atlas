@@ -2,6 +2,7 @@
 parts D1 can import.
 
     python scripts/export_character_variants.py OUT
+    python scripts/export_character_variants.py --words OUT
 
 D1 imports each `--file` as one transaction: a part that fails leaves the database as it was. The
 graph is too large for one statement, so its parts fill staging tables (`character_variants_next`,
@@ -23,7 +24,9 @@ character's descriptions, which the form picker's IDS editor starts from; it is 
 after `character_derived`.
 `words` and `word_spellings` are the hand tables of decision 0004, read through `refs.words` and
 `refs.word_spellings`, which joins each 振り仮名 row to its counts; a character card shows them
-beside its variants.
+beside its variants. `--words` writes those two tables alone, as one part that replaces them, cites
+their sources and bumps the listing version, so a new word reaches the site without rewriting the
+graph.
 
 OUT/sql/part-NNN.sql are the parts in order and OUT/apply.sh imports them, retrying a refused part,
 and checks the counts it expects. The full export (`export_cloudflare.py`) fills the same tables
@@ -173,6 +176,16 @@ def ranged_parts(table: str, key: str, columns: tuple[str, ...], rows, budget: i
     return parts
 
 
+def word_statements() -> list[str]:
+    """One transaction that replaces `words` and `word_spellings`, cites their sources and bumps the
+    listing version. The tables hold a few hundred rows, so they need no staging."""
+    return ["DELETE FROM words;\n", *insert_rows("words", WORD_COLUMNS, word_rows()),
+            "DELETE FROM word_spellings;\n", *insert_rows("word_spellings", SPELLING_COLUMNS, spelling_rows()),
+            "INSERT INTO metadata(key,value) VALUES('word_sources'," + quote(word_citations())
+            + ") ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n",
+            VERSION_BUMP]
+
+
 def statements() -> list[list[str]]:
     """The staging fill, in statements under D1's statement limit, then the swap, then each ranged part
     of `character_derived` as a group of its own."""
@@ -273,6 +286,35 @@ def write_parts(out: Path, groups: list[list[str]]) -> list[Path]:
     return paths
 
 
+def write_word_part(out: Path) -> list[Path]:
+    """The words-only export: one part."""
+    directory = out / "sql"
+    directory.mkdir(parents=True, exist_ok=True)
+    for old in directory.glob("*.sql"):
+        old.unlink()
+    path = directory / "part-001.sql"
+    path.write_text("".join(word_statements()), encoding="utf-8")
+    return [path]
+
+
+WORDS_APPLY = """#!/usr/bin/env bash
+# Replace the site's words and word_spellings with this export, in one D1 transaction, and check the
+# counts. Safe to rerun.
+set -uo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+cd ~/projects/Philology/glyph-atlas/apps/cloudflare
+count="SELECT (SELECT count(*) FROM words) AS words, (SELECT count(*) FROM word_spellings) AS spellings"
+q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
+echo "before: $(q "$count")"
+echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ); undo: bunx wrangler d1 time-travel restore glyph-atlas --timestamp=<that time>"
+../../scripts/d1_import.sh "$here/sql/part-001.sql" || {{ echo "part-001.sql did not apply; nothing of it is in the database." >&2; exit 1; }}
+after=$(q "$count")
+echo "after: $after"
+[ "$after" = '{expected}' ] || {{ echo 'expected {expected}' >&2; exit 1; }}
+echo "done"
+"""
+
+
 APPLY = """#!/usr/bin/env bash
 # Replace the site's variant and word tables (character_variants, component_variants, words,
 # word_spellings) with this export, then character_derived and han_ids range by range. Each part is
@@ -301,12 +343,19 @@ echo "done"
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("output", type=Path)
-    out = parser.parse_args().output
-    groups = statements()
-    paths = write_parts(out, groups)
-    want = expected()
+    parser.add_argument("--words", action="store_true", help="write words and word_spellings alone")
+    arguments = parser.parse_args()
+    out = arguments.output
+    if arguments.words:
+        paths = write_word_part(out)
+        want = {"words": len(word_rows()), "spellings": len(spelling_rows())}
+        script = WORDS_APPLY
+    else:
+        paths = write_parts(out, statements())
+        want = expected()
+        script = APPLY
     apply = out / "apply.sh"
-    apply.write_text(APPLY.format(expected=json.dumps(want, separators=(",", ":"))), encoding="utf-8")
+    apply.write_text(script.format(expected=json.dumps(want, separators=(",", ":"))), encoding="utf-8")
     apply.chmod(0o755)
     print(json.dumps({**want, "parts": [str(p.relative_to(out)) for p in paths]}))
 

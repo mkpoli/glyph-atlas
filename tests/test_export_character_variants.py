@@ -14,3 +14,31 @@ def test_a_collection_catalogue_is_filled_without_deriving_forms(monkeypatch):
     variants.fill(db, derived=False)
     assert db.execute("SELECT count(*) FROM character_derived").fetchone()[0] == 0
     assert db.execute("SELECT count(*) FROM character_variants").fetchone()[0] > 0
+
+
+def test_the_words_part_replaces_the_word_tables_alone(monkeypatch, tmp_path):
+    import json
+    import sqlite3
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
+    import export_character_variants as variants
+    from cloudflare_schema import schema
+
+    monkeypatch.setattr(variants, "derived_rows", lambda: (_ for _ in ()).throw(AssertionError("derived forms computed")))
+    db = sqlite3.connect(":memory:")
+    schema(db)
+    db.execute("INSERT INTO words(id,language,reading,class) VALUES('ja/古い/名詞','ja','ふるい','名詞')")
+    db.executescript("".join(variants.word_statements()))
+    assert db.execute("SELECT count(*) FROM words").fetchone()[0] == len(variants.word_rows())
+    assert db.execute("SELECT count(*) FROM words WHERE id='ja/古い/名詞'").fetchone()[0] == 0
+    assert db.execute("SELECT count(*) FROM word_spellings").fetchone()[0] == len(variants.spelling_rows())
+    assert db.execute("SELECT count(*) FROM character_variants").fetchone()[0] == 0
+    keys = {key for (key,) in db.execute("SELECT key FROM metadata")}
+    assert {"word_sources", "units_refreshed_at"} <= keys
+    monkeypatch.setattr(sys, "argv", ["export_character_variants.py", "--words", str(tmp_path)])
+    variants.main()
+    assert [path.name for path in (tmp_path / "sql").iterdir()] == ["part-001.sql"]
+    expected = {"words": len(variants.word_rows()), "spellings": len(variants.spelling_rows())}
+    assert json.dumps(expected, separators=(",", ":")) in (tmp_path / "apply.sh").read_text()
