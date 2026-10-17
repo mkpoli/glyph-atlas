@@ -46,8 +46,8 @@ def test_the_swap_moves_the_characters_crops_and_glyphs_of_a_family(module):
     for sql in swap:
         if sql.startswith(("UPDATE units", "UPDATE corpus_units")):
             plan = " ".join(row[-1] for row in db.execute("EXPLAIN QUERY PLAN " + sql))
-            assert "SCAN units" not in plan and "SCAN corpus_units" not in plan, plan
-    db.executescript("".join(swap))
+            assert "SCAN" not in plan, plan
+        db.executescript(sql)
     assert db.execute("SELECT family FROM units ORDER BY id").fetchall() == [("U+9084",), ("U+9084",)]
     corpus = json.loads(db.execute("SELECT data FROM units WHERE id='c1'").fetchone()[0])
     assert corpus == {"grapheme": "U+9084", "family_members": members}

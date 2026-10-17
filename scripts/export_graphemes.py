@@ -230,6 +230,9 @@ def statements(rows: dict[str, tuple[dict, dict]]) -> list[list[str]]:
     # A character the site lacks is inserted, with the aliases a publication gives it; a rerun finds it.
     # A plain INSERT: a row that collides with another's text fails the part rather than going missing.
     swap: list[str] = [
+        # The moves join crops to the staging table by character; without this index each crop scans
+        # all of it (about 52k rows), and D1 drops the import.
+        f"CREATE INDEX IF NOT EXISTS {STAGING}_character ON {STAGING}(character);\n",
         (f"INSERT INTO characters(code_point,character,name,data,detail)"
          f" SELECT code_point,character,name,data,detail FROM {STAGING} n"
          " WHERE NOT EXISTS (SELECT 1 FROM characters c WHERE c.code_point=n.code_point);\n"),
