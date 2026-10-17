@@ -67,6 +67,9 @@ REQUEST_SUFFIX = re.compile(rf"/{REGION}/{SIZE}/{ROTATION}/{QUALITY}\.{FORMAT}$"
 INFO_SUFFIX = re.compile(r"/info\.json$", re.IGNORECASE)
 #: Path segments that mark an Image API service, so that a bare service URL is not read as a file.
 IIIF_MARKERS = ("iiif", "image-api", "imageapi")
+#: A whole image sent at most this share of the width `info.json` states is read as capped by a limit
+#: the server does not state; one a few pixels short is a rounding of the stated size and kept.
+SILENT_CAP = 0.95
 
 
 class ImageError(RuntimeError):
@@ -274,12 +277,14 @@ def fetch(
                                                   sleeper=sleeper)
                     served = _image_size(capped)
                     if (described["width"] == wanted and not _capped(described, wanted)
+                            and served[0] <= SILENT_CAP * wanted
                             and abs(served[0] * described["height"] - served[1] * described["width"])
                             <= 0.01 * served[1] * described["width"]):
                         # A server that caps without saying so (EAP sends 1,200 px of a 2,027 px scan,
-                        # and shrinks larger regions too) sends the whole image scaled down; its long
-                        # side is taken as the limit the regions keep to.
-                        described = {**described, "limits": {"maxWidth": max(served), "maxHeight": max(served)}}
+                        # and shrinks larger regions too) sends the whole image scaled down. The size
+                        # it sent is within whatever it limits, width, height or area, so regions no
+                        # wider and no taller than that come back whole.
+                        described = {**described, "limits": {"maxWidth": served[0], "maxHeight": served[1]}}
                     if described["width"] == wanted and _capped(described, wanted):
                         target, _ = _store(cache, stitch(), ".jpg")
                         seen = {}
