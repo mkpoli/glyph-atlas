@@ -6,6 +6,7 @@
   import SourceCredit from './SourceCredit.svelte'
   import CropForm from './CropForm.svelte'
   import CropTitle from './CropTitle.svelte'
+  import ReviewState from './ReviewState.svelte'
   import FormChips from './FormChips.svelte'
   import { setForm } from '../lib/cropForms.js'
   import AdvanceSwitch from './AdvanceSwitch.svelte'
@@ -127,7 +128,7 @@
       </div>
       <div class="inspector-right">
         <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}</div>
-        <div class="inspector-title">{#if data.identity_status !== 'unassigned'}<CropTitle char={data.written_character ?? data.label} script={data.script} />{:else}<h2 class="unassigned-title copyable">{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span><CopyValue value={graphemeChar(data)} />{/if}</h2>{/if}{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}{#if data.needs_segmentation || ['checked', 'flagged', 'stale'].includes(data.state)}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.needs_segmentation ? t('corpus.state.needsSplitting') : data.state === 'checked' ? t('corpus.state.checkedHere') : data.state === 'flagged' ? t('state.flagged') : t('corpus.state.sourceChanged')}</span>{/if}</div>
+        <div class="inspector-title">{#if data.identity_status !== 'unassigned'}<CropTitle char={data.written_character ?? data.label} script={data.script} />{:else}<h2 class="unassigned-title copyable">{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span><CopyValue value={graphemeChar(data)} />{/if}</h2>{/if}{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}{#if data.needs_segmentation}<ReviewState tone="waiting" text={t('corpus.state.needsSplitting')} />{:else if data.state === 'checked'}<ReviewState tone="checked" text={t('corpus.state.checkedHere')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'stale'}<ReviewState tone="waiting" text={t('corpus.state.sourceChanged')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
         <!-- What the source itself labelled the glyph, shown when it is not what the crop now reads. -->
         {#if data.needs_segmentation || data.identity_status === 'unassigned' || (data.written_character ?? data.label) !== data.source_label}<p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: sourceName })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if data.identity_status !== 'unassigned' && (data.written_character ?? data.label) !== data.source_label}<span> → <b lang="ja">{data.written_character ?? data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>{/if}
         {#if data.identity_status === 'unassigned'}

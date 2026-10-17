@@ -671,6 +671,7 @@
   "state.checked": "Checked",
   "state.flagged": "Needs fixing",
   "state.hard": "Hard to read: two reviewers skipped it",
+  "state.unchecked": "Not checked yet",
   "style.basis.document": "from its document",
   "style.basis.document_confirmed": "from its document, confirmed",
   "style.basis.page": "from its page",

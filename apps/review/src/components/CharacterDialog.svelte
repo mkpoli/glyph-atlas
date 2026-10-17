@@ -5,6 +5,7 @@
   import StyleField from './StyleField.svelte'
   import CropForm from './CropForm.svelte'
   import CropTitle from './CropTitle.svelte'
+  import ReviewState from './ReviewState.svelte'
   import { setForm } from '../lib/cropForms.js'
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
@@ -333,7 +334,7 @@
       </div>
       <div class="inspector-right">
         <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={styled} /></div>
-        <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<span class="state-pill">{t('character.crop.pending')}</span>{:else if data.state === 'checked' || data.state === 'flagged'}<span class="state-pill" class:flagged={data.state === 'flagged'}>{data.state === 'checked' ? t('state.checked') : t('state.flagged')}</span>{/if}</div>
+        <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<ReviewState tone="waiting" text={t('character.crop.pending')} />{:else if data.state === 'checked'}<ReviewState tone="checked" text={t('state.checked')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'hard'}<ReviewState tone="waiting" text={t('state.hard')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
         {#if !onVerdict && (issue === 'character' || issue === 'crop')}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
         {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
         <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}

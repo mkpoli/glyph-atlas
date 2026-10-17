@@ -648,6 +648,7 @@
   "state.checked": "확인됨",
   "state.flagged": "수정 필요",
   "state.hard": "판독 어려움: 검토자 두 명이 건너뜀",
+  "state.unchecked": "미확인",
   "suggestions.finding": "제안 찾는 중…",
   "suggestions.heading": "제안",
   "suggestions.label": "제안",

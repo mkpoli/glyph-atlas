@@ -704,6 +704,7 @@
   "quiz.reference.confirmed": "已确认",
   "quiz.reference.seen": "已查看",
   "state.hard": "难读：两位审阅者已跳过",
+  "state.unchecked": "未核对",
   "meta.character.description": "从历史写本与刻本中裁切的“{character}”（{codePoint}）图像，每字附有来源与使用条款。",
   "written.detail": "字形：{form}",
   "signIn.open": "登录",

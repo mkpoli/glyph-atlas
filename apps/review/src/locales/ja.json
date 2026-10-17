@@ -697,6 +697,7 @@
   "quiz.reference.confirmed": "確認済み",
   "quiz.reference.seen": "閲覧済み",
   "state.hard": "難読：2人のレビュアーがスキップ",
+  "state.unchecked": "未確認",
   "meta.character.description": "写本や版本から切り出した「{character}」（{codePoint}）の画像。一字ごとに出典と利用条件を示します。",
   "written.detail": "字形：{form}",
   "signIn.open": "サインイン",

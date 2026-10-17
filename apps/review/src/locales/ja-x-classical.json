@@ -644,6 +644,7 @@
   "state.checked": "確認濟",
   "state.flagged": "要訂正",
   "state.hard": "難讀：二人ノ校閱者保留セリ",
+  "state.unchecked": "未確認",
   "style.basis.document": "書より",
   "style.basis.document_confirmed": "書より（確認済）",
   "style.basis.page": "頁より",

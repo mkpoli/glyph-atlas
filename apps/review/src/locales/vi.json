@@ -633,6 +633,7 @@
   "state.checked": "Đã duyệt",
   "state.flagged": "Cần sửa",
   "state.hard": "Khó đọc: hai người duyệt đã bỏ qua",
+  "state.unchecked": "Chưa duyệt",
   "style.basis.document": "theo tài liệu",
   "style.basis.document_confirmed": "theo tài liệu, đã xác nhận",
   "style.basis.page": "theo trang",
