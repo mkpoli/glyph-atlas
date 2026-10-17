@@ -33,11 +33,13 @@ def test_the_card_lists_written_variants_apart_from_related_characters(monkeypat
     assert first["sources"] == ["cjkvi-variants", "mj-shrink-map", "wikidata"]
     assert (first["count"], first["corpus_count"]) == (2, 3)
     assert {r["relation"] for r in card["related"][0]["relations"]} == {"borrowed"}
+    assert all(row["written"] for row in card["items"]) and not any(row["written"] for row in card["related"])
     assert card["sources"]["wikidata"].startswith("Wikidata, property P5475")
 
 
 def test_a_simplified_pair_is_kept_apart_from_the_widening():
     items, related = characters.variant_pairs("干")
+    assert all(row["written"] for row in related if row["char"] in "乾幹"), "a simplification is written, though apart"
     assert {"乾", "幹"} <= {row["char"] for row in related}, "four sources give them as simplifications"
     assert not {"乾", "幹"} & {row["char"] for row in items}
     items, _ = characters.variant_pairs("刻")
