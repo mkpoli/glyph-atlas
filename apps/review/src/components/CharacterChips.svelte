@@ -10,7 +10,7 @@
   import { countsLabel } from '../lib/layers.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
-  import { characterAddress } from '../lib/gallery.js'
+  import { characterAddress, graphemeAddress } from '../lib/gallery.js'
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
@@ -53,7 +53,12 @@
   // widens to first, then those written for this one in some senses or as a simplification of several),
   // and the characters related otherwise (a loan, a homograph, a fallback reduction). A card cached
   // before rows carried `written` lists every unwidening pair as related, as it did.
-  const own = $derived(new Set(members.map(member => member.code_point)))
+  // A reduced form of several characters is shown with the graphemes it writes, not again as a variant:
+  // the forms that write this grapheme besides its members (後: 后), and the graphemes this form writes
+  // besides its own (后: 後). A card cached before the writers existed has neither.
+  const writers = $derived(variants.writers ?? [])
+  const writes = $derived(variants.writes ?? [])
+  const own = $derived(new Set([...members, ...writers, ...writes].map(member => member.code_point)))
   const written = $derived([...variants.items, ...variants.related.filter(v => v.written)].filter(v => !own.has(v.code_point)))
   const related = $derived(variants.related.filter(v => !v.written && !own.has(v.code_point)))
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
@@ -84,6 +89,28 @@
         {/each}
       </div>
     </div>
+    {#if writers.length}
+      <div class="layer-row">
+        <span class="layer-label">{t('chips.writers')}</span>
+        <div class="variant-chips">
+          {#each writers as v (v.code_point)}
+            <a class="variant" href={localize(characterAddress(v.code_point))}><ScriptText text={v.char} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}</a>
+          {/each}
+          <small class="row-hint">{t('chips.writersHint')}</small>
+        </div>
+      </div>
+    {/if}
+    {#if writes.length}
+      <div class="layer-row">
+        <span class="layer-label">{t('chips.writes')}</span>
+        <div class="variant-chips">
+          {#each writes as v (v.code_point)}
+            <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))}><ScriptText text={v.char} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}</a>
+          {/each}
+          <small class="row-hint">{t('chips.writesHint', { char: card.char })}</small>
+        </div>
+      </div>
+    {/if}
     {#if written.length || variants.derived.length}
       <div class="layer-row">
         <span class="layer-label">{t('chips.variants')}</span>
@@ -196,6 +223,7 @@
   .derived summary small{font-variant-numeric:tabular-nums}
   .derived[open] summary{margin-bottom:6px}
   .variant small{font-size:11px;color:var(--muted)}
+  .row-hint{align-self:center;font-size:11px;color:var(--muted)}
   .word-reading{font-size:15px;align-self:center;margin-right:4px}
   .variant .code{font-family:"GenZui Sans",ui-monospace,monospace;font-size:10px}
   .include-variants{justify-self:start;margin-left:92px}
