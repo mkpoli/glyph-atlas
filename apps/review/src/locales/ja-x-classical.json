@@ -57,6 +57,8 @@
   "chips.showCharacter": "字{char}ヲ示ス",
   "chips.variants": "異體字",
   "chips.related": "關聯字",
+  "chips.alsoOwn": "別字ヲモ兼ヌ",
+  "chips.alsoWritten": "{char}トモ書ク",
   "chips.derived": "導出",
   "chips.relation.variant": "異體字",
   "chips.relation.equivalent": "全等異體",

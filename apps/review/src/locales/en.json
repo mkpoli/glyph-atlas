@@ -61,6 +61,8 @@
   "chips.showCharacter": "Show character {char}",
   "chips.variants": "Variants",
   "chips.related": "Related",
+  "chips.alsoOwn": "also its own character",
+  "chips.alsoWritten": "also written {char}",
   "chips.derived": "Derived",
   "chips.relation.variant": "Variant",
   "chips.relation.equivalent": "Interchangeable",

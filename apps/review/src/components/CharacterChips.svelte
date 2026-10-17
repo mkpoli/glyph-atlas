@@ -53,9 +53,16 @@
   // widens to first, then those written for this one in some senses or as a simplification of several),
   // and the characters related otherwise (a loan, a homograph, a fallback reduction). A card cached
   // before rows carried `written` lists every unwidening pair as related, as it did.
+  // A reduced form of several characters is a 異体字 with a label: a form that writes this grapheme and
+  // a character of its own (後: 后), or a grapheme this form writes too (后: 後). A card cached before
+  // the writers existed has neither.
+  const writers = $derived(new Set((variants.writers ?? []).map(v => v.code_point)))
+  const writes = $derived(new Set((variants.writes ?? []).map(v => v.code_point)))
+  const shares = v => writers.has(v.code_point) || writes.has(v.code_point)
+  const shareLabel = v => writers.has(v.code_point) ? t('chips.alsoOwn') : t('chips.alsoWritten', { char: card.char })
   const own = $derived(new Set(members.map(member => member.code_point)))
-  const written = $derived([...variants.items, ...variants.related.filter(v => v.written)].filter(v => !own.has(v.code_point)))
-  const related = $derived(variants.related.filter(v => !v.written && !own.has(v.code_point)))
+  const written = $derived([...variants.items, ...variants.related.filter(v => v.written || shares(v))].filter(v => !own.has(v.code_point)))
+  const related = $derived(variants.related.filter(v => !v.written && !shares(v) && !own.has(v.code_point)))
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
   // for it: characters that write the same word, kept out of the variant tiers and the widening. A card
   // cached before the word tables existed has no `words`; it reads as none.
@@ -89,7 +96,7 @@
         <span class="layer-label">{t('chips.variants')}</span>
         <div class="variant-chips">
           {#each written as v (v.code_point)}
-            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{#if !v.widens}{relationsOf(v).map(r => r.name).join(' · ')}{#if crops(v)} · {/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if shares(v)}<small class="share">{shareLabel(v)}</small>{/if}<small>{#if !v.widens}{relationsOf(v).map(r => r.name).join(' · ')}{#if crops(v)} · {/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
           {/each}
           {#if variants.derived.length}
             <details class="derived">
@@ -196,6 +203,7 @@
   .derived summary small{font-variant-numeric:tabular-nums}
   .derived[open] summary{margin-bottom:6px}
   .variant small{font-size:11px;color:var(--muted)}
+  .variant small.share{color:var(--accent)}
   .word-reading{font-size:15px;align-self:center;margin-right:4px}
   .variant .code{font-family:"GenZui Sans",ui-monospace,monospace;font-size:10px}
   .include-variants{justify-self:start;margin-left:92px}

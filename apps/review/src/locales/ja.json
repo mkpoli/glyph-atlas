@@ -57,6 +57,8 @@
   "chips.showCharacter": "文字{char}を表示",
   "chips.variants": "異体字",
   "chips.related": "関連字",
+  "chips.alsoOwn": "別字でもある",
+  "chips.alsoWritten": "{char}とも書く",
   "chips.derived": "導出",
   "chips.relation.variant": "異体字",
   "chips.relation.equivalent": "全等異体",

@@ -57,6 +57,8 @@
   "chips.showCharacter": "{char} 표시",
   "chips.variants": "이체자",
   "chips.related": "관련 글자",
+  "chips.alsoOwn": "다른 글자이기도 함",
+  "chips.alsoWritten": "{char}로도 씀",
   "chips.derived": "파생",
   "chips.relation.variant": "이체자",
   "chips.relation.equivalent": "전등 이체",
