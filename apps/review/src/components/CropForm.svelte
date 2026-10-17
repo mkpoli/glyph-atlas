@@ -32,7 +32,7 @@
   const bar = $derived.by(() => {
     const chips = listed.members.filter(member => !others || member.char !== current).slice(0, BAR)
     const has = char => chips.some(chip => chip.char === char)
-    if (current && !others && !has(current)) chips.push({ char: current, script: '' })
+    if (current && !others && !has(current)) chips.push({ char: current, script: '', lang: listed.variants.find(v => v.char === current)?.lang ?? '' })
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
