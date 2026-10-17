@@ -1,4 +1,4 @@
-import { runOccurrences, runRelated, sortParam } from '$lib/ngrams.js'
+import { RUN_FIRST, runOccurrences, runRelated, sortParam } from '$lib/ngrams.js'
 import { handParam } from '$lib/hand.js'
 
 // A run's first page of occurrences and the runs near it, rendered with the page; one that cannot be
@@ -9,7 +9,7 @@ export async function load({ fetch, params, url }) {
   const hand = handParam(url.searchParams.get('hand') ?? '')
   const sort = sortParam(url.searchParams.get('sort') ?? '')
   const [first, related] = await Promise.all([
-    runOccurrences(params.text, { work, form, hand, sort }, { fetch }).catch(() => null),
+    runOccurrences(params.text, { work, form, hand, sort, limit: RUN_FIRST }, { fetch }).catch(() => null),
     runRelated(params.text, { fetch }).catch(() => null),
   ])
   return { text: params.text, work, form, hand, sort, first, related }

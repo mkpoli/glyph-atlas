@@ -19,7 +19,7 @@
   import HandFilter from './HandFilter.svelte'
   import FormFilter from './FormFilter.svelte'
   import WorkFilter from './WorkFilter.svelte'
-  import { runAddress, runOccurrences } from '../lib/ngrams.js'
+  import { RUN_FIRST, runAddress, runOccurrences } from '../lib/ngrams.js'
   import { tileDate } from '../lib/dating.js'
   import { characterAddress, collectionAddress } from '../lib/gallery.js'
   import { runText } from '../lib/runs.js'
@@ -43,7 +43,7 @@
     const id = ++requestId
     loading = true; error = ''
     try {
-      const page = await runOccurrences(text, { work, form, hand, sort, offset: append ? offset : 0 })
+      const page = await runOccurrences(text, append ? { work, form, hand, sort, offset } : { work, form, hand, sort, limit: RUN_FIRST })
       if (id !== requestId) return
       items = append ? [...items, ...page.items] : page.items
       // Only the first page carries the count.
