@@ -39,8 +39,8 @@ installed fonts rarely draw.
   `NotoSerifTangut-v2.170.zip`, SHA-256 `741ef7bca66790c51c5f2efea3c291f5a82cc2e3992d9413a020aec26dbd75b1`.
   `scripts/build_tangut_font.py` fetches it, checks the hash, and writes the files and
   `src/tangut-font.css`.
-- Files: the script legend's sample 𗀀 U+17000 alone (648 B), then the other characters in files of 256
-  consecutive code points (up to 52 KB each, 1.1 MB in all), each named by its content hash. A page
+- Files: the script legend's sample 𗀀 U+17000 alone (648 B), then the other characters in code point
+  order, about 256 to a file (up to 53 KB each, 1.1 MB in all), each named by its content hash. A page
   downloads only the files for the Tangut characters it shows.
 - Coverage, read from the font's cmap: 6,146 characters, the iteration mark U+16FE0, U+17000–U+187F7
   of the Tangut block and U+18D00–U+18D08 of Tangut Supplement. The ideographs Unicode 17.0 and 18.0
