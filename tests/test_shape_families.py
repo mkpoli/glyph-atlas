@@ -287,3 +287,11 @@ def test_two_curated_families_never_meet_through_a_family_both_join():
     found = grouped(rows, curated={"甲": ["甲", "乙"], "丁": ["丁", "戊"]})
     assert found == {"丁": "丁丙戊", "甲": "乙甲"}
 
+
+def test_with_no_ranked_member_the_head_is_of_the_main_block():
+    """氯 is GB 2312; with no rank at all, 喎 of the main block heads over 㖞 of Extension A."""
+    rows = [edge("㲶", "氯", "z", "unihan", "z")]
+    assert [f.head for f in families(rows, [], {"㲶", "氯"}, {}, set(), familiarity={"氯": 4})] == ["氯"]
+    rows = [edge("㖞", "喎", "z", "unihan", "z")]
+    assert [f.head for f in families(rows, [], {"㖞", "喎"}, {}, set())] == ["喎"]
+
