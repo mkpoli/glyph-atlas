@@ -900,6 +900,9 @@ def graphemes() -> dict[str, list[str]]:
 
 #: The relation of a kanji family joined by shape-variant edges (`glyph_atlas.shape_families`).
 SHAPE_VARIANT = "shape-variant"
+#: The role of a family's edge to a reduced form outside it that writes several characters, this one
+#: among them (`shape_families.WRITES`).
+WRITES = "writes"
 
 
 @cache
@@ -928,10 +931,20 @@ def _grapheme_families() -> dict[str, dict]:
         stated = [to_code_point(char) for char in family["members"]] if family else [head]
         attested: dict[str, set[str]] = {}
         for row in edges.get(head, ()):
-            for end in ("a", "b"):
-                attested.setdefault(to_code_point(row[end]), set()).add(row["source"])
+            if row["role"] != WRITES:
+                for end in ("a", "b"):
+                    attested.setdefault(to_code_point(row[end]), set()).add(row["source"])
         members = stated + sorted(set(attested) - set(stated),
                                   key=lambda point: (-len(attested[point]), _point_order(point)))
+        if not attested and not family:
+            members = [head]
+        writing: dict[str, set[str]] = {}
+        for row in edges.get(head, ()):
+            if row["role"] == WRITES:
+                for end in ("a", "b"):
+                    if to_code_point(row[end]) not in members:
+                        writing.setdefault(to_code_point(row[end]), set()).add(row["source"])
+        writers = sorted(writing, key=lambda point: (-len(writing[point]), _point_order(point)))
         if set(members) != set(graphemes().get(head, [])):
             raise ValueError(f"family {head} disagrees with characters.tsv; rebuild the character table")
         evidence = [{"id": key, **document["sources"][key]} for key in family["sources"]] if family else []
@@ -945,6 +958,7 @@ def _grapheme_families() -> dict[str, dict]:
         families[head] = {
             "members": members,
             "stated": stated if family else [],
+            "writers": writers,
             "relation": family["relation"] if family else SHAPE_VARIANT,
             "evidence": evidence,
         }
@@ -986,10 +1000,26 @@ def _grapheme_info(head: str) -> dict:
         "code_point": head, "char": row.char, "name": row.name, "script": str(row.script),
         "label": " = ".join(member["char"] for member in members),
         "members": members, "character_count": len(members),
+        "writers": [{"code_point": point, "char": to_char(point)} for point in (stated or {}).get("writers", [])],
         "relation": stated["relation"] if stated else "kana-family" if len(members) > 1 else "self",
         "evidence": stated["evidence"] if stated else [],
         "url": f"/layers/graphemes/{head}",
     }
+
+
+@cache
+def _written_by() -> dict[str, tuple[str, ...]]:
+    found: dict[str, list[str]] = {}
+    for head, family in _grapheme_families().items():
+        for point in family["writers"]:
+            found.setdefault(point, []).append(head)
+    return {point: tuple(sorted(heads, key=_point_order)) for point, heads in found.items()}
+
+
+def also_writes(code_point: str) -> tuple[str, ...]:
+    """The graphemes besides its own that a form writing several characters writes, by head: 后
+    writes 後 too, 闲 writes 閑 and 閒. A form that writes one character writes none."""
+    return _written_by().get(code_point, ())
 
 
 def curated_members(code_point: str) -> tuple[str, ...]:

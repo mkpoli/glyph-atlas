@@ -64,6 +64,14 @@ group to the one family it is tied to when
    and 菓, 辟 and 避 stay apart, as do 余 and 馀;
 7. two curated families are never joined, nor brought together through a family both join.
 
+A reduced form left out because it writes several characters is still recorded as a writer of each
+family it writes (`Family.writers`, rows of role `writes`): a simplified, 新字体, regional or 隸定
+form that the sources reduce two characters or more to, in two families or more, counting its own
+when OpenCC's STCharacters lists it as its own traditional too. 闲 writes 閑 and 閒, 弁 writes 辨,
+辯 and 瓣, 后 writes 後 as well as 后. A crop of such a form belongs to one of them by its text. A
+plain variant row says which character a form is a variant of, not which of the two is reduced, so
+寸 writes nothing here.
+
 The pass looks at the groups as the first pass left them and joins them all at once, so a chain
 cannot carry a family on: 閑 is tied to 閒 alone, but once joined the pair would be tied to 間 alone,
 and 閑 and 間 are not one character. Several groups may join one family; each is checked again, as
@@ -116,6 +124,8 @@ from . import refs
 
 #: Relations of the 異体字 graph that keep a pair in separate families.
 DIFFERENT = frozenset({"borrowed", "substitute", "non-cognate", "spoofing"})
+#: Of those, the relations of two characters that only look or sound alike, which no form writes both of.
+UNLIKE = frozenset({"non-cognate", "spoofing"})
 BLOCKING = refs.KEPT_APART | refs.NOT_WIDENED | DIFFERENT
 #: Relations that state one character written whole in another shape: a 異寫字 joins its family by
 #: one of these.
@@ -132,6 +142,8 @@ JAPANESE_TABLES = ("koseki/", "joyo/", "jinmei1/", "jinmei2/", "hyogai/")
 ENCODED_TWICE = frozenset({"z", "compatibility"})
 #: The claim of an OpenCC row whose simplified form STCharacters lists among its own traditional forms.
 STANDALONE = "STCharacters (also itself)"
+#: The role of an edge to a form outside a family that writes it among other characters.
+WRITES = "writes"
 #: cjkvi tables whose rows only say two characters are related (関連字, 原規格分離).
 RELATED_ONLY = frozenset({"cjkvi/variant", "jisx0212/variant", "jisx0213/variant", "ucs-scs/variant"})
 #: Relations another source uses for the same character in another shape; they corroborate a
@@ -164,6 +176,9 @@ class Family:
     members: set[str]
     edges: list[Edge] = field(default_factory=list)
     curated: bool = False
+    #: The characters of other families that also write this one, each with the edges that say so
+    #: (role `writes`): 后 writes 後 as well as 后, and 闲 writes 閑 and 閒.
+    writers: dict[str, list[Edge]] = field(default_factory=dict)
 
 
 def _canonical(char: str) -> str:
@@ -247,7 +262,8 @@ def families(
     cns1: set[str] | None = None,
     familiarity: Mapping[str, int] | None = None,
 ) -> list[Family]:
-    """Every family of more than one character, curated ones included, in head code point order.
+    """Every family of more than one character or with a writer, curated ones included, in head code
+    point order.
 
     `curated` maps a head character to the members `graphemes.yaml` states for it, head first. A
     curated family keeps its head and may take in further members by a shape edge; two curated
@@ -304,7 +320,7 @@ def families(
         for char in keep.members:
             group[char] = keep
     _join_yixiezi(variants, ideographs, {"jis": jis0208, "gb": gb2312 or set(), "cns": cns1 or set()}, group, refuse)
-    found = {id(family): family for family in group.values() if len(family.members) > 1}
+    found = {id(family): family for family in group.values() if len(family.members) > 1 or family.writers}
     for family in found.values():
         if not family.curated:
             family.head = head_of(family, familiarity or {})
@@ -347,9 +363,12 @@ def _join_yixiezi(
 
     ties: dict[int, set[int]] = {}
     whole: dict[frozenset[int], list[Edge]] = {}
+    # Each reduced form's statements of the characters it is written for, a merger's too (后 for 後).
+    reduced: dict[str, list[Edge]] = {}
     apart: set[frozenset[int]] = set()
     merged: set[frozenset[int]] = set()
     different: dict[str, set[str]] = {}
+    unlike: dict[str, set[str]] = {}
     for row in variants:
         a, b, relation = row["a"], row["b"], row["relation"]
         if a not in ideographs or b not in ideographs or _canonical(a) == _canonical(b):
@@ -363,6 +382,9 @@ def _join_yixiezi(
             apart.add(pair)
             different.setdefault(a, set()).add(b)
             different.setdefault(b, set()).add(a)
+        if relation in UNLIKE:
+            unlike.setdefault(a, set()).add(b)
+            unlike.setdefault(b, set()).add(a)
         if relation == "simplified" and b in standalone:
             merged.add(pair)
         if relation not in refs.WRITTEN_FOR or not any(
@@ -372,6 +394,8 @@ def _join_yixiezi(
         ties.setdefault(id(right), set()).add(id(left))
         if _whole(row, standalone):
             whole.setdefault(pair, []).append(Edge(a, b, relation, row["source"], row["detail"]))
+        if relation in REDUCED_FORM and _whole(row, set()):
+            reduced.setdefault(b, []).append(Edge(a, b, relation, row["source"], row["detail"], WRITES))
     joins = []
     for key in sorted(ties, key=lambda key: ord(min(units[key].members, key=ord))):
         if len(ties[key]) != 1:
@@ -417,6 +441,36 @@ def _join_yixiezi(
         keep.edges += gone.edges + edges
         for char in keep.members:
             group[char] = keep
+    _add_writers(reduced, unlike, standalone, group)
+
+
+def _add_writers(
+    reduced: dict[str, list[Edge]], unlike: dict[str, set[str]], standalone: set[str],
+    group: dict[str, Family],
+) -> None:
+    """Record each reduced form that writes several characters as a writer of each family it writes.
+
+    A simplified, 新字体, regional or 隸定 form is written for the characters the sources reduce to
+    it. When those lie in two families or more, counting its own when it also writes itself
+    (`STANDALONE`), it writes each, and each family it lies outside of lists it as a writer: 闲 writes
+    閑 and 閒, 弁 writes 辨, 辯 and 瓣, 后 writes 後 as well as 后. A form that writes one family only
+    is in it, or is a variant of it that the 異寫字 pass keeps apart for another reason. A loan or a
+    substitute still writes the character (后 is also 後's loan); a non-cognate homograph or a
+    look-alike (`UNLIKE`) writes nothing.
+    """
+    for writer, edges in sorted(reduced.items(), key=lambda item: ord(item[0])):
+        own = group[writer]
+        by_family: dict[int, tuple[Family, list[Edge]]] = {}
+        for edge in edges:
+            if edge.a in unlike.get(writer, set()):
+                continue
+            target = group[edge.a]
+            by_family.setdefault(id(target), (target, []))[1].append(edge)
+        if len(by_family | ({id(own): None} if writer in standalone else {})) < 2:
+            continue
+        for target, found in by_family.values():
+            if target is not own:
+                target.writers[writer] = sorted(found, key=lambda edge: (ord(edge.a), edge.source, edge.relation))
 
 
 #: The ranks of `familiarity` a Japanese reader knows (常用, 人名用, JIS X 0208 levels 1 and 2), the

@@ -1174,8 +1174,9 @@ def write_families(families: list[shape_families.Family], target: Path, vocab: P
     The counts describe the rows below: a curated family no edge joins (two 新旧字体 pairs) is
     part of the build but carries no row here, so it is not counted.
     """
-    rows = [(family, edge) for family in families for edge in family.edges]
-    emitted = [family for family in families if family.edges]
+    rows = [(family, edge) for family in families
+            for edge in [*family.edges, *(edge for _, edges in sorted(family.writers.items()) for edge in edges)]]
+    emitted = [family for family in families if family.edges or family.writers]
     used = sorted({edge.source for _, edge in rows} | {"unihan"})
     lines = [
         "# Kanji grapheme families: the edges that join each family; see src/glyph_atlas/shape_families.py.",
@@ -1200,10 +1201,12 @@ def write_families(families: list[shape_families.Family], target: Path, vocab: P
         (f"#   unihan: Unihan_IRGSources.txt kIRG_JSource J0 (JIS X 0208) of Unicode {RELEASE}, "
          "for the representative and for which reductions need a second source"),
         ("# role: merge joins a and b; corroborates is the second source a reduction between two "
-         "JIS X 0208 characters needs."),
+         "JIS X 0208 characters needs; writes says the end outside the family, a form that writes "
+         "several characters, writes this one too."),
         "# columns: " + ", ".join(FAMILY_FIELDS),
         (f"# families: {len(emitted)} ({sum(1 for family in emitted if family.curated)} curated), "
-         f"characters: {sum(len(family.members) for family in emitted)}, rows: {len(rows)}"),
+         f"characters: {sum(len(family.members) for family in emitted)}, "
+         f"writers: {sum(len(family.writers) for family in emitted)}, rows: {len(rows)}"),
         "\t".join(FAMILY_FIELDS),
     ]
     lines += ["\t".join((code_point(ord(family.head)), edge.a, edge.b, edge.relation, edge.source,
