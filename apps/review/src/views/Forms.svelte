@@ -245,9 +245,12 @@
     await apply(target.majority)
     try { if (wasOpen && !error && isOpen(current.items[active] ?? {})) await show(active) } catch (e) { error = e.message }
   }
+  // The next cluster with glyphs still to name, after `from` and then from the top: one can sit in a
+  // form's panel below the open ones.
   function nextOpen(from) {
     const after = current.items.findIndex((c, i) => i > from && isOpen(c))
-    return after >= 0 ? after : Math.min(from + 1, current.items.length - 1)
+    const first = after >= 0 ? after : current.items.findIndex(isOpen)
+    return first >= 0 ? first : Math.min(from + 1, current.items.length - 1)
   }
   async function reviewed({ reported, issue, mixed, form, count }) {
     notice = [mixed ? t('forms.notice.mixed', { count: 1 }) : '',
