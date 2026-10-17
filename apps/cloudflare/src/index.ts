@@ -1549,36 +1549,38 @@ async function suggest(env: Env, q: URLSearchParams) {
     return { query: term, match_kind: 'components', items, total: items.length, more: more ? 1 : 0, status: 'ok', corpus: { ready: true } };
   }
   const found = rows.results.map(r => ({ ...parse(r.data), rank: r.rank }));
-  found.push(...await readingKanji(env, term, found, limit));
+  const { cards, unread } = await readingKanji(env, term, found, limit);
+  found.push(...cards);
   found.push(...await searchVariants(env, literal(term), found, limit));
-  return { query: term, items: found.slice(0,limit), total: found.length, more: Math.max(0,found.length-limit), status:'ok',corpus:{ready:true} };
+  const total = found.length + unread;
+  return { query: term, items: found.slice(0,limit), total, more: Math.max(0,total-limit), status:'ok',corpus:{ready:true} };
 }
 // The kanji a kana query is a Japanese reading of (scripts/build_kanji_readings.py), after the kana it
-// names: とき finds 𛄤, then 時 and 刻. The readings are a static asset, read once an isolate.
-let kanjiReadings: Promise<Record<string, string[]>> | null = null;
-function readingTable(env: Env) {
-  kanjiReadings ??= env.ASSETS.fetch('https://assets.invalid/refs/kanji-readings.json')
-    .then(response => { if (!response.ok) throw new Error(`kanji readings: ${response.status}`); return response.json<{ readings: Record<string, string[]> }>() })
-    .then(document => document.readings)
-    .catch(error => { kanjiReadings = null; throw error });
+// names: とき finds 𛄤, then 時 and 刻. The table lists a reading's kanji most attested first, so a
+// list reads only the rows it shows. The readings are a static asset, kept once an isolate has read them.
+let kanjiReadings: Record<string, string[]> | null = null;
+async function readingTable(env: Env) {
+  if (kanjiReadings) return kanjiReadings;
+  const response = await env.ASSETS.fetch('https://assets.invalid/refs/kanji-readings.json');
+  if (!response.ok) throw new Error(`kanji readings: ${response.status}`);
+  kanjiReadings = (await response.json<{ readings: Record<string, string[]> }>()).readings;
   return kanjiReadings;
 }
 const KANA_TERM = /^[\p{Script=Hiragana}\p{Script=Katakana}ー]+$/u;
-// A reading's first READING_WINDOW kanji in the table's order (常用 first) are the ones a list shows, the
-// most attested first; the window is the search box's longest list, so a longer list extends a shorter.
-const READING_WINDOW = 48;
-export function rankReadingKanji(window: string[], cards: Json[]) {
-  const place = new Map(window.map((char, index) => [char, index]));
-  return cards.sort((a, b) => (b.occurrence_count ?? 0) - (a.occurrence_count ?? 0) || place.get(a.char)! - place.get(b.char)!);
-}
-async function readingKanji(env: Env, term: string, found: Json[], limit: number) {
-  if (!KANA_TERM.test(term) || found.length > limit) return [];
+async function readingKanji(env: Env, term: string, found: Json[], limit: number): Promise<{ cards: (Json & { rank: number })[]; unread: number }> {
+  if (!KANA_TERM.test(term)) return { cards: [], unread: 0 };
+  let table: Record<string, string[]>;
+  // A search without the readings still answers with the kana it names.
+  try { table = await readingTable(env) } catch (error) { console.error(error); return { cards: [], unread: 0 } }
   const listed = new Set(found.map(item => item.char));
-  const window = ((await readingTable(env))[hira(term)] ?? []).filter(char => !listed.has(char)).slice(0, READING_WINDOW);
-  if (!window.length) return [];
-  const rows = (await env.DB.prepare(`SELECT data FROM characters WHERE code_point IN (${window.map(() => '?').join(',')})`)
-    .bind(...window.map(cp)).all<{ data: string }>()).results;
-  return rankReadingKanji(window, rows.map(r => parse(r.data))).map(item => ({ ...item, rank: 5 }));
+  const all = (table[hira(term)] ?? []).filter(char => !listed.has(char));
+  const wanted = all.slice(0, Math.max(0, limit + 1 - found.length));
+  if (!wanted.length) return { cards: [], unread: all.length };
+  const rows = (await env.DB.prepare(`SELECT code_point,data FROM characters WHERE code_point IN (${wanted.map(() => '?').join(',')})`)
+    .bind(...wanted.map(cp)).all<{ code_point: string; data: string }>()).results;
+  const byCode = new Map(rows.map(r => [r.code_point, r.data]));
+  const cards = wanted.filter(char => byCode.has(cp(char))).map(char => ({ ...parse(byCode.get(cp(char))!), rank: 5 }));
+  return { cards, unread: all.length - wanted.length };
 }
 // The 異体字 of a one-character query the table holds, after what the query names: a reader who types
 // 鯡 is shown 𩹉. Only the pairs the card lists as variants (a widening edge, none that keeps the pair
