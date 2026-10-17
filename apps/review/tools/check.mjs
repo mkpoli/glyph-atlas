@@ -115,8 +115,9 @@ await step('a crop page and a character page state their citation as JSON-LD', a
   assert(crop.url.startsWith(`${service.base}/crop/${unitId}?v=`), `the crop page cites ${crop.url}`)
   const { payload } = await request(`/atlas/characters/${encodeURIComponent(unitId)}`)
   const codePoint = 'U+' + payload.label.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
-  const character = linked(await (await fetch(`${service.base}/en/character/${codePoint}?scope=exact`)).text())
-  equal([character?.['@type'], character?.termCode, character?.url], ['DefinedTerm', codePoint, `${service.base}/character/${codePoint}?scope=exact`], 'the character page')
+  const page = await fetch(`${service.base}/en/character/${codePoint}?scope=exact`), html = await page.text(), character = linked(html)
+  equal([character?.['@type'], character?.termCode, character?.url], ['DefinedTerm', codePoint, `${service.base}/character/${codePoint}?scope=exact`],
+    `the character page (${page.status}${character ? '' : ': ' + (/<h1[^>]*>(.*?)<\/h1>/s.exec(html)?.[1] ?? html.slice(0, 200)).replace(/<[^>]+>/g, '').trim()})`)
   return `${crop.url}; ${character.url}`
 })
 
