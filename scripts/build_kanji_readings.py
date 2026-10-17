@@ -5,14 +5,16 @@ A reader who types とき is shown 時 and 刻 as well as the kana 𛄤. The rea
 behind the field give them, okurigana included (きざむ). Both are keyed here in hiragana, the form the
 search box normalises a query to, so ジ and じ find the same kanji.
 
-Within one reading the kanji a Japanese reader knows best come first: 常用漢字 (`kJoyoKanji`), then
-人名用漢字 (`kJinmeiyoKanji`), then the rest of JIS X 0208 (`kIRG_JSource` J0), then the others, each
-group in code point order. The order of a kanji's own readings in `kJapanese` says nothing of how
-common each is (以 lists おもう first), so it is not used. The site takes a reading's first 48 kanji in
-this order and shows them most attested first.
+Within one reading the kanji the corpus attests most come first (`n_occurrences` of the corpus
+index, `work/corpus-index/chars.parquet`), so the site reads only the kanji a list shows: こう lists
+高, 行 and 考 before the hundreds of rarer kanji read こう. Kanji the corpus attests equally (most
+of them never) follow the order a Japanese reader knows them in: 常用漢字 (`kJoyoKanji`), then 人名用漢字
+(`kJinmeiyoKanji`), then the rest of JIS X 0208 (`kIRG_JSource` J0), then the others, then code point.
+The order of a kanji's own readings in `kJapanese` says nothing of how common each is (以 lists おもう
+first), so it is not used. Rebuild after the corpus grows much; the readings themselves change only
+with a Unicode release.
 
-The file is a static asset: the readings change with a Unicode release and nothing else, so the site
-reads them from the asset rather than from its database.
+The file is a static asset, so the readings cost the site's database no rows.
 
     uv run python scripts/build_kanji_readings.py
 """
@@ -58,8 +60,16 @@ def tier(char: str, mappings: dict[str, dict[str, str]], sources: dict[str, dict
     return 3
 
 
-def readings(path: Path) -> dict[str, list[str]]:
-    """Each hiragana reading and the kanji that read so, best known first."""
+def corpus_counts(path: Path) -> dict[str, int]:
+    """How often the corpus index counts each character."""
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(path, columns=["char", "n_occurrences"]).to_pydict()
+    return dict(zip(table["char"], table["n_occurrences"], strict=True))
+
+
+def readings(path: Path, counts: dict[str, int]) -> dict[str, list[str]]:
+    """Each hiragana reading and the kanji that read so, most attested first."""
     with zipfile.ZipFile(path) as archive:
         japanese = fields(archive, "Unihan_Readings.txt", {"kJapanese"})["kJapanese"]
         mappings = fields(archive, "Unihan_OtherMappings.txt", {"kJoyoKanji", "kJinmeiyoKanji"})
@@ -68,7 +78,7 @@ def readings(path: Path) -> dict[str, list[str]]:
     for char, value in japanese.items():
         for reading in value.split():
             keyed[to_hiragana(reading)].add(char)
-    return {reading: sorted(chars, key=lambda char: (tier(char, mappings, sources), ord(char)))
+    return {reading: sorted(chars, key=lambda char: (-counts.get(char, 0), tier(char, mappings, sources), ord(char)))
             for reading, chars in sorted(keyed.items())}
 
 
@@ -76,12 +86,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--cache", type=Path, default=ROOT / "cache")
     parser.add_argument("--out", type=Path, default=TARGET)
+    parser.add_argument("--counts", type=Path, default=ROOT / "work" / "corpus-index" / "chars.parquet")
     parser.add_argument("--refresh", action="store_true", help="download again even when cached")
     args = parser.parse_args(argv)
     path = download(UNIHAN_URL, args.cache / "variants" / UNICODE_VERSION / "Unihan.zip",
                     expected="zip", refresh=args.refresh, timeout=300)
     source = yaml.safe_load(SOURCE.read_text(encoding="utf-8"))
-    table = readings(path)
+    table = readings(path, corpus_counts(args.counts))
     document = {
         "source": {
             "name": "Unicode Han Database (Unihan)",
@@ -91,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
             "licence": source["licence"],
             "attribution": source["attribution"],
         },
-        "order": "常用漢字, 人名用漢字, JIS X 0208, others; code point order within each",
+        "order": "corpus occurrences (most first), then 常用漢字, 人名用漢字, JIS X 0208, others, then code point",
         "readings": table,
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
