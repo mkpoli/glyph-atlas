@@ -1224,7 +1224,7 @@ async function corpusRound(env: Env, characters: string[], production: string, s
 // are copied whole (WHOLE_GROUPS), so their seed's point falls anywhere in the shuffle range, and the
 // unchosen gallery keeps to the sample below SAMPLE_RANGE, where every script is copied alike.
 const SAMPLE_RANGE = 4194304;
-const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol'];
+const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol', 'tangut'];
 export const gallerySampleQuery = (side: '>=' | '<', grouped = false) => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
   FROM corpus_gallery s JOIN corpus_units c ON c.id=s.id AND c.object=s.object AND c.offset=s.offset
   LEFT JOIN units u ON u.id=s.id LEFT JOIN form_units f ON f.id=s.id
@@ -2105,7 +2105,7 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     const resolved=!kept&&(answer.verdict==='match'||Boolean(answer.issue==='character'&&written));
     const family=written?(await lookup(written))?.data.grapheme?.code_point:null;
     const next:Json={...current,revision:current.revision+1,state:resolved?'checked':'flagged',
-      ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':/\p{Script=Hangul}/u.test(written)?'hangul':isGugyeol(written)?'gugyeol':'symbol'}:{}),
+      ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':/\p{Script=Hangul}/u.test(written)?'hangul':/\p{Script=Tangut}/u.test(written)?'tangut':isGugyeol(written)?'gugyeol':'symbol'}:{}),
       ...(written?{grapheme:family||cp(written),visual_group:null,category:categoryOf(written)}:{}),
       issue:resolved?null:kept??answer.issue,
       // A redrawn box is the crop's until the next publication cuts it; the image shown is still the old cut.

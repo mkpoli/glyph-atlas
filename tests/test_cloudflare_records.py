@@ -184,8 +184,8 @@ def test_the_migration_and_the_publication_scripts_agree_on_a_label_category(scr
     expected = [(c, cloudflare_schema.category_of(chr(c))) for c in range(0x110000)
                 if not 0xD800 <= c <= 0xDFFF and cloudflare_schema.category_of(chr(c)) in ("kana", "kanji")]
     assert rows == expected
-    assert [cloudflare_schema.category_of(v) for v in ("ア", "𛀁", "仮", "々", "〆", "A", "")] == \
-        ["kana", "kana", "kanji", "kanji", "other", "other", "other"]
+    assert [cloudflare_schema.category_of(v) for v in ("ア", "𛀁", "仮", "々", "〆", "𗀀", "\U00018B00", "A", "")] == \
+        ["kana", "kana", "kanji", "kanji", "other", "tangut", "other", "other", "other"]
 
 
 def test_a_well_formed_description_sequence_is_kanji(scripts):

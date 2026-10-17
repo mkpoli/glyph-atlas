@@ -7,7 +7,7 @@
   // whether a font loaded, not whether it has the glyph, so coverage is stated here from the two
   // files' own cmaps.
   let { char = '', code_point = '', size = 'md', showCodePoint = false, script = '' } = $props()
-  const family = '"Kureedo Kata", "GenZui Sans", system-ui, sans-serif'
+  const family = '"Kureedo Kata", "GenZui Sans", "Noto Serif Tangut", system-ui, sans-serif'
   // Read from `fonts/KureedoKata-Regular.woff2` and `fonts/GenZuiSans-Kana.woff2`.
   const bundled = [[0x3000, 0x303f], [0x3099, 0x309c], [0x30a1, 0x30fe], [0x31f0, 0x31ff],
                    [0x1aff0, 0x1aff3], [0x1aff5, 0x1affb], [0x1affd, 0x1affe], [0x1b000, 0x1b128],

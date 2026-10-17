@@ -57,6 +57,9 @@ HANGUL = ((0x1100, 0x11FF), (0x302E, 0x302F), (0x3131, 0x318E), (0x3200, 0x321E)
           (0xAC00, 0xD7A3), (0xD7B0, 0xD7C6), (0xD7CB, 0xD7FB), (0xFFA0, 0xFFBE), (0xFFC2, 0xFFC7), (0xFFCA, 0xFFCF),
           (0xFFD2, 0xFFD7), (0xFFDA, 0xFFDC))
 GUGYEOL = ((0xF67E, 0xF77C),)
+# Tangut has a Unicode script property of its own (Scripts.txt), which `categoryOf` tests; no row
+# written before it was a category held a Tangut label, so no migration names it.
+TANGUT = ((0x16FE0, 0x16FE0), (0x17000, 0x18AFF), (0x18D00, 0x18D20), (0x18D80, 0x18DF2))
 
 
 # A published corpus row, in the order `corpus_upsert` takes it.
@@ -136,6 +139,8 @@ def category_of(label: str | None) -> str:
         return "kanji"
     if any(a <= point <= b for a, b in HANGUL):
         return "hangul"
+    if any(a <= point <= b for a, b in TANGUT):
+        return "tangut"
     return "gugyeol" if any(a <= point <= b for a, b in GUGYEOL) else "other"
 
 

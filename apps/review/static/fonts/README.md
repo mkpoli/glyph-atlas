@@ -31,6 +31,19 @@ installed fonts rarely draw.
   the hentaigana, U+1B11F and the Unicode 18.0 digraphs U+1B123–U+1B128, and the kana ligatures
   𪜈 U+2A708, 𬻿 U+2CEFF, 𬼀 U+2CF00 and 𬼂 U+2CF02.
 
+`NotoSerifTangut-Tangut.woff2` draws the Tangut labels.
+
+- Family: `Noto Serif Tangut`, version 2.170, © 2022 The Noto Project Authors
+  (<https://github.com/notofonts/tangut>), under the SIL Open Font License 1.1 as `NotoSerifTangut-OFL.txt`.
+- Source: `NotoSerifTangut/unhinted/ttf/NotoSerifTangut-Regular.ttf` from the release asset
+  `NotoSerifTangut-v2.170.zip`, SHA-256 `741ef7bca66790c51c5f2efea3c291f5a82cc2e3992d9413a020aec26dbd75b1`,
+  cut with `pyftsubset NotoSerifTangut-Regular.ttf --unicodes=U+16FE0,U+17000-187FF,U+18D00-18D7F
+  --layout-features='*' --flavor=woff2`.
+- Coverage, read from the subset's cmap: 6,146 characters, the iteration mark U+16FE0, U+17000–U+187F7
+  of the Tangut block and U+18D00–U+18D08 of Tangut Supplement. The ideographs Unicode 17.0 and 18.0
+  added (U+187F8–U+187FF, U+18D09–U+18D20) fall back to the reader's own fonts. The component blocks
+  are left out: no label is a component.
+
 ## Handwriting fallbacks for the review target
 
 The review round's target character is drawn in one hand: Kureedo Kata, then Klee One, then

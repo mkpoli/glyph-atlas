@@ -7,6 +7,7 @@
   --script-kanji: light-dark(#80521a, #dcb16e);
   --script-hangul: light-dark(#9c2f3f, #f596a5);
   --script-gugyeol: light-dark(#4a7a1f, #aad477);
+  --script-tangut: light-dark(#5b45a8, #b9a8f4);
   --script-symbol: light-dark(#74406a, #d5a0cd);
   --script-latin: light-dark(#665f12, #cfc56c);
   --script-unknown: light-dark(#53515b, #aaa6b6);
@@ -16,6 +17,7 @@
 .script-char[data-script="kanji"] { color: var(--script-kanji); }
 .script-char[data-script="hangul"] { color: var(--script-hangul); }
 .script-char[data-script="gugyeol"] { color: var(--script-gugyeol); }
+.script-char[data-script="tangut"] { color: var(--script-tangut); }
 .script-char[data-script="symbol"] { color: var(--script-symbol); }
 .script-char[data-script="latin"] { color: var(--script-latin); }
 .script-char[data-script="unknown"], .script-char[data-script="mixed"] { color: var(--script-unknown); }

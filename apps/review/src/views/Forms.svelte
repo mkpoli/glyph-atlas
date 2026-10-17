@@ -604,13 +604,13 @@
   .family-list li:not(.family-skeleton){height:50px}
   .family-list button{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto 3px;align-content:center;gap:4px 10px;width:100%;height:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 6px;text-align:left}
   .family-list button.current{background:var(--accent-light)}
-  .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
+  .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans","Noto Serif Tangut",sans-serif}
   .family-meta{display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums}
   .family-meta small{font-size:10px;color:var(--muted)}
   .family-progress{display:flex;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}.family-progress i.rejected{background:var(--wrong);opacity:.55}
   .family-title{display:flex;align-items:baseline;gap:18px;border-bottom:1px solid var(--line);padding-bottom:12px}
   .family-link{color:inherit;text-decoration:none}.family-link:hover{color:var(--accent)}
-  .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
+  .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans","Noto Serif Tangut",sans-serif}
   .family-title p{font-size:12px;color:var(--muted)}
   .history-actions{margin-left:auto;display:flex;gap:4px}.history-actions button{font-size:11px;padding:6px 10px}.family-title strong{color:var(--ink);font-weight:500}
   .form-palette{position:sticky;top:0;z-index:3;background:var(--overlay-page);padding:14px 0;border-bottom:1px solid var(--line)}
@@ -618,10 +618,10 @@
   .palette-forms{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch}
   .form-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:66px;padding:8px 8px 6px;background:var(--surface)}
   .form-choice:not(:disabled):hover{border-color:var(--accent);background:var(--accent-hover)}
-  .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
+  .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans","Noto Serif Tangut",sans-serif}
   .form-choice small{font-size:8px;color:var(--muted);font-family:"GenZui Sans",ui-monospace,monospace}
   .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:var(--faint);font-family:"GenZui Sans",ui-monospace,monospace}
-  .form-choice.described{justify-content:center;font-size:22px;line-height:1.2;padding:8px 12px;font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans",serif}
+  .form-choice.described{justify-content:center;font-size:22px;line-height:1.2;padding:8px 12px;font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
   .form-choice.form-compose{justify-content:center;font-size:12px;color:var(--muted);border-style:dashed}
   .form-choice.form-compose[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
   .palette-composer{margin-top:12px;max-width:560px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
@@ -633,12 +633,12 @@
   .form-cluster.picked{border-color:var(--accent);background:light-dark(#f3f1ff, rgb(156 146 255 / 10%))}
   .form-usage{list-style:none;margin:0;padding:12px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 28px}
   .form-usage li{display:grid;grid-template-columns:30px minmax(0,1fr) auto 3.2em;align-items:center;gap:10px;font-size:12px;font-variant-numeric:tabular-nums}
-  .usage-form{font-size:20px;line-height:1.2;text-align:center;font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans",sans-serif}
+  .usage-form{font-size:20px;line-height:1.2;text-align:center;font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans","Noto Serif Tangut",sans-serif}
   .usage-bar{height:8px;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:0 4px 4px 0}
   .usage-count{color:var(--ink)}.usage-share{color:var(--muted);text-align:right}
   .form-group{margin-top:22px}
   .form-group header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-  .group-form{font-size:26px;line-height:1.2;color:var(--accent);font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans",sans-serif}
+  .group-form{font-size:26px;line-height:1.2;color:var(--accent);font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans","Noto Serif Tangut",sans-serif}
   .group-source{font-size:13px;color:var(--muted)}.group-meta{font-size:11px;color:var(--muted);margin-left:auto}
   .form-group .cluster-issue{margin-left:0}
   .cluster-grid.compact{grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr));gap:0;border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
@@ -682,7 +682,7 @@
   .member-flag{position:absolute;top:3px;right:5px;font-size:12px;color:var(--wrong)}
   .correct-char{display:flex;gap:4px}.correct-char input{width:64px;padding:6px 8px;font-size:14px}.correct-char button{font-size:11px;padding:6px 9px}
   .member-year{position:absolute;bottom:3px;left:5px;font-size:9px;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none}
-  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans",system-ui,sans-serif}
+  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans","Noto Serif Tangut",system-ui,sans-serif}
   @media(max-width:900px){.forms-layout{grid-template-columns:1fr}.family-list{position:static;max-height:260px}.cluster-grid{grid-template-columns:1fr}}
   @media(max-width:700px){.forms{padding:16px 16px 40px}.form-choice{min-width:54px}.palette-other{flex-direction:row;margin-left:0;width:100%}}
 </style>

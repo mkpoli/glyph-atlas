@@ -23,7 +23,7 @@
 <style>
   .form-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}
   .form-chip{display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;font-size:22px;line-height:1.2;
-    font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans",serif}
+    font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
   .form-chip:not(:disabled):hover{border-color:var(--accent)}
   .form-chip.current{border-color:var(--line-strong)}
   .form-chip.chosen{border:2px solid var(--accent);padding:3px 9px;background:var(--accent-light)}

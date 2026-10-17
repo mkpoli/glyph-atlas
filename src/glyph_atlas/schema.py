@@ -288,7 +288,7 @@ class Script(StrEnum):
     `han` is Unicode's name for the script of the kanji and is what `data/vocab/characters.tsv`
     holds. `hangul` is the Korean alphabet, its jamo and its precomposed syllables alike. `gugyeol`
     is a 구결자, which Unicode leaves unencoded and the character layer holds at its code point in
-    the Hanyang private-use convention.
+    the Hanyang private-use convention. `tangut` is the script of the Western Xia, Unicode's Tangut.
     """
 
     HIRAGANA = "hiragana"
@@ -297,6 +297,7 @@ class Script(StrEnum):
     HAN = "han"
     HANGUL = "hangul"
     GUGYEOL = "gugyeol"
+    TANGUT = "tangut"
     SYMBOL = "symbol"
     LATIN = "latin"
     UNKNOWN = "unknown"

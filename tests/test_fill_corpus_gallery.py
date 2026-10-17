@@ -29,13 +29,13 @@ def corpus(rows):
     return db
 
 
-def test_missing_copies_the_sample_and_every_hangul_and_gugyeol_glyph():
+def test_missing_copies_the_sample_and_every_hangul_gugyeol_and_tangut_glyph():
     fill = load()
     high = fill.SAMPLE_RANGE + 1
     db = corpus([("low", "仮", 5), ("kanji", "仮", high), ("syllable", "그", high), ("old", "ᄲᅢ", high),
-                 ("gugyeol", "", high), ("past", "퟼", high)])
+                 ("gugyeol", "", high), ("past", "퟼", high), ("tangut", "𗀀", high), ("khitan", "𘬀", high)])
     found = {row[0] for row in db.execute(fill.MISSING)}
-    assert found == {"low", "syllable", "old", "gugyeol"}
+    assert found == {"low", "syllable", "old", "gugyeol", "tangut"}
     db.execute("INSERT INTO corpus_gallery VALUES('syllable',?,'pack',0,'{}','hangul')", (high,))
     assert "syllable" not in {row[0] for row in db.execute(fill.MISSING)}
 

@@ -13,7 +13,7 @@
   const point = $derived(isSingle(char) ? [...char][0]?.codePointAt(0) ?? 0 : 0)
   const hentaigana = $derived(point >= 0x1B002 && point <= 0x1B11E)
   const own = $derived(scriptInfo(char).key)
-  const KNOWN = ['hiragana', 'katakana', 'kanji', 'hangul', 'gugyeol', 'symbol', 'mixed', 'unknown']
+  const KNOWN = ['hiragana', 'katakana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'symbol', 'mixed', 'unknown']
   const key = $derived(own !== 'unknown' ? own : KNOWN.includes(scriptInfo(char, script).key) ? scriptInfo(char, script).key : 'unknown')
   const name = $derived(hentaigana ? t('script.hentaigana') : t(`script.${key}`))
   const href = $derived(hasCharacterPage(char) ? localize(characterAddress(pointOf(char))) : null)

@@ -201,6 +201,14 @@ def _ligature_row(ligature) -> dict[str, Any]:
             "evidence": ligature.evidence}
 
 
+def kind_of(character: Character) -> str:
+    """What a character is to the interface: a ligature, or the script it is written in, kana by default."""
+    if character.ligature:
+        return "ligature"
+    script = str(character.script)
+    return script if script in ("han", "hangul", "gugyeol", "tangut") else "kana"
+
+
 def _row(character: Character, counts: dict[str, int], *, reason: str | None = None) -> dict[str, Any]:
     """One character as a compact row: what it is, and how much ink the corpus has of it."""
     row: dict[str, Any] = {
@@ -832,10 +840,7 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
         row = refs.character(code_point)
         item = _row(row, counts, reason=reason)
         item["rank"] = rank
-        item["kind"] = ("ligature" if row.ligature
-                        else "han" if str(row.script) == "han"
-                        else "hangul" if str(row.script) == "hangul"
-                        else "gugyeol" if str(row.script) == "gugyeol" else "kana")
+        item["kind"] = kind_of(row)
         if code_point in variant_of:
             item["variant_of"] = variant_of[code_point]
         item["candidates"] = {**candidate_summary(
