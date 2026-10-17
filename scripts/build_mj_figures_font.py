@@ -52,7 +52,7 @@ def figures():
     points with more than one, from mj-kanji.tsv (columns mj, code_point, implemented_code_point, ivs)."""
     found = defaultdict(list)
     for line in TABLE.read_text(encoding='utf-8').splitlines():
-        if line.startswith('#') or line.startswith('mj\t'):
+        if line.startswith(('#', 'mj\t')):
             continue
         mj, point, implemented, ivs = line.split('\t')
         # A figure registered on several bases (MJ059399 on U+2B9E4 and U+535A) is offered on its own;
