@@ -51,8 +51,8 @@ group to the one family it is tied to when
 3. no source calls the two a variant in some senses only (`specialized-semantic`) or relates them
    as different characters (`DIFFERENT`);
 4. a simplified form OpenCC's STCharacters also lists as its own traditional (`STANDALONE`: 云 for
-   雲 and 云, 后 for 後 and 后) is the merger of two characters, and its simplification joins
-   nothing;
+   雲 and 云, 后 for 後 and 后) is the merger of two characters, and the pair stays apart whatever
+   else relates it: 衚 is also a plain variant of 胡 in one table, and stays apart;
 5. a group joins the simplified, 新字体, regional or 隸定 form of its own character only when that
    form is tied to nothing else: 閑 is tied to 闲 alone, and 闲 is also the simplified 閒;
 6. where it would put two characters one national standard holds as two (JIS X 0208, GB 2312,
@@ -62,11 +62,14 @@ group to the one family it is tied to when
    Chinese standards keep their pairs as two, so a GB 2312 or CNS pair joins only as one character
    encoded twice (`z`, compatibility). 躰 and 體, 邉 and 邊 join on the 戸籍統一文字; 咲 and 笑, 果
    and 菓, 辟 and 避 stay apart, as do 余 and 馀;
-7. two curated families are never joined.
+7. two curated families are never joined, nor brought together through a family both join.
 
 The pass looks at the groups as the first pass left them and joins them all at once, so a chain
 cannot carry a family on: 閑 is tied to 閒 alone, but once joined the pair would be tied to 間 alone,
-and 閑 and 間 are not one character.
+and 閑 and 間 are not one character. Several groups may join one family; each is checked again, as
+it joins, against everything the family has taken in so far, so two of them a source keeps apart
+(卥 and 𠧧, non-cognate) or two of one standard (踩 and 踹, GB 2312, both tied to 跴) never meet
+there.
 
 The word 異寫字 for a variant that differs in writing only, set against the broader 異體字, follows
 字統网 (zi.tools, https://zi.tools/, read 2026-10-17), whose variant graph also links a variant to
@@ -332,6 +335,8 @@ def _join_yixiezi(
     ties: dict[int, set[int]] = {}
     whole: dict[frozenset[int], list[Edge]] = {}
     apart: set[frozenset[int]] = set()
+    merged: set[frozenset[int]] = set()
+    different: dict[str, set[str]] = {}
     for row in variants:
         a, b, relation = row["a"], row["b"], row["relation"]
         if a not in ideographs or b not in ideographs or _canonical(a) == _canonical(b):
@@ -343,6 +348,10 @@ def _join_yixiezi(
         pair = frozenset((id(left), id(right)))
         if relation in SPLIT or relation in DIFFERENT:
             apart.add(pair)
+            different.setdefault(a, set()).add(b)
+            different.setdefault(b, set()).add(a)
+        if relation == "simplified" and b in standalone:
+            merged.add(pair)
         if relation not in refs.WRITTEN_FOR or not any(
                 refs._counts(relation, claim) for claim in row["detail"].split(" | ")):
             continue
@@ -362,6 +371,8 @@ def _join_yixiezi(
         full = all(edge.relation in REDUCED_FORM and edge.a in units[key].members for edge in edges)
         if pair in apart:
             refuse("a variant in some senses only, or a different character", edges[0])
+        elif pair in merged:
+            refuse("a simplified form that also writes itself", edges[0])
         elif full and ties[other] != {key}:
             refuse("the full form of a reduced form that writes another character too", edges[0])
         elif any(units[key].members & standard and units[other].members & standard
@@ -370,11 +381,23 @@ def _join_yixiezi(
         elif units[key].curated and units[other].curated:
             refuse("two curated families", edges[0])
         else:
-            joins.append((units[key], units[other], edges))
-    for gone, keep, edges in joins:
-        gone, keep = group[min(gone.members, key=ord)], group[min(keep.members, key=ord)]
+            joins.append((frozenset(units[key].members), frozenset(units[other].members), edges))
+    for leaf, target, edges in joins:
+        gone, keep = group[min(leaf, key=ord)], group[min(target, key=ord)]
         if gone is keep:
             continue  # two groups tied to each other only, joined from the other side already
+        if any(different.get(char, set()) & keep.members for char in gone.members):
+            refuse("a pair the relations keep apart, through the family", edges[0])
+            continue
+        if gone.curated and keep.curated:
+            refuse("two curated families, through the family", edges[0])
+            continue
+        # The pairs this join makes; its edges speak only for the leaf and its target as they were.
+        if any(not (x in leaf and y in target)
+               for standard in standards.values()
+               for x in gone.members & standard for y in keep.members & standard):
+            refuse("two characters of one standard, through the family", edges[0])
+            continue
         if gone.curated:
             gone, keep = keep, gone
         keep.members |= gone.members
