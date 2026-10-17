@@ -1150,26 +1150,30 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueOnce())}`) : null;
   const cachedTotal = totalKey ? await caches.default.match(totalKey).then(hit => hit ? hit.json() as Promise<number> : null) : null;
   const counting = cachedTotal === null ? hiddenCount : null;
-  const results = await env.DB.batch([
-    ...(tally ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
-    below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
+  // `limit=0` asks for the counts alone, as a round does to choose its character: the listing is neither
+  // counted nor read, and a round's count of every crop it could deal reads each of them.
+  const listing = limit > 0;
+  const statements = [
+    ...(tally || !listing ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
+    ...(!listing ? [] : [below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
       : rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
-      : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${irregularLast}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
+      : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${irregularLast}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset)]),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
     ...(counting ? [env.DB.prepare(counting.sql).bind(...materialValues, ...counting.values)] : []),
     ...(irregularCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${irregularCountWhere.join(' AND ')}`).bind(...values)] : []),
-  ]);
-  const count = tally ? null : results.shift()!, window = results.shift()!;
+  ];
+  const results = statements.length ? await env.DB.batch(statements) : [];
+  const count = tally || !listing ? null : results.shift()!, window = listing ? results.shift()! : null;
   const reportedCount = reportedCountWhere ? results.shift()! : null, hiddenCounted = counting ? results.shift()! : null;
   const irregularCount = irregularCountWhere ? results.shift()! : null;
   const withheldCount = cachedTotal ?? (hiddenCounted ? (hiddenCounted.results[0] as { n: number }).n : null);
   if (totalKey && cachedTotal === null && withheldCount !== null)
     ctx.waitUntil(caches.default.put(totalKey, Response.json(withheldCount, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   const listed = tally ? groups.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
-    : (count!.results[0] as { n: number }).n;
-  const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null; irregular?: number | null })[];
+    : count ? (count.results[0] as { n: number }).n : null;
+  const rows = (window?.results ?? []) as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null; irregular?: number | null })[];
   let above: number | null = below ? told : null;
-  if (rotated && !below && rows.length < limit) {
+  if (listing && rotated && !below && rows.length < limit) {
     above = rows.length ? offset + rows.length : told ?? (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
       .bind(...values, start).first<{ n: number }>())!.n;
     const wrapped = await env.DB.prepare(side('<')).bind(...values, start, limit - rows.length, Math.max(offset - above, 0)).all();
@@ -1182,10 +1186,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // Positions run through the `units` rows and then the untouched corpus glyphs. A glyph its record
   // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
   // glyphs run out `total` is what was there to deal.
-  let total = listed, next = offset + items.length;
+  let total: number | null = listed, next = offset + items.length;
   const unnamed = dealt ? members!.reduce((n, member) => n + (corpus.get(member) || 0), 0) : 0;
-  if (dealt && unnamed) {
-    total += unnamed;
+  if (dealt && unnamed && listed !== null) {
+    total = listed + unnamed;
     if (items.length < limit) {
       const round = await corpusRound(env, members!, production, seed, Math.max(offset - listed, 0), limit - items.length);
       // A glyph is one crop whichever list deals it, even should its published row read as untouched.
