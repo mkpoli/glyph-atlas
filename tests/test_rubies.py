@@ -41,6 +41,21 @@ def test_struck_text_is_not_part_of_the_base():
     assert _marks("《振り仮名：《見せ消ち：許｜計》｜ばかり》")[0][0] == "計"
 
 
+def test_a_correction_inside_a_reading_stays_in_the_reading():
+    assert _marks("《振り仮名：相｜ア《見せ消ち：ノ｜ヒ》》") == [("相", "振り仮名", {"right": "アヒ"}, "mono")]
+    assert _marks("《振り仮名：恵｜《見せ消ち：カ｜メグ》》") == [("恵", "振り仮名", {"right": "メグ"}, "mono")]
+    # A struck damage mark is not read either.
+    assert _marks("《振り仮名：朝｜ア《見せ消ち：■｜サ》》") == [("朝", "振り仮名", {"right": "アサ"}, "mono")]
+
+
+def test_a_bar_inside_a_nested_bracket_does_not_start_a_field():
+    assert _marks("《振り仮名：【a｜b】〓字｜かな｜〓い》")[0][2] == {"right": "かな", "left": "〓い"}
+
+
+def test_a_variation_selector_belongs_to_its_character():
+    assert _marks("《振り仮名：葛\U000E0100｜かづら》")[0][3] == "mono"
+
+
 def test_link_gives_each_reading_the_units_of_its_base():
     line = _line("西夷地の《振り仮名：鯡漁図｜ヘロキコイキ｜ニシントリ》")
     found = rubies.link(line, _units("西夷地の鯡漁図"))

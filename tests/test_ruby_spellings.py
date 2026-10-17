@@ -37,6 +37,8 @@ def test_rubies_give_the_whole_base_and_the_right_hand_reading():
     assert ruby_spellings.rubies("㗊（シウ　　ヨツコ　）") == [("㗊", "シウ　　ヨツコ　")]
     # A left-hand reading is not read.
     assert ruby_spellings.rubies("斗（と｜ばかり）") == [("斗", "と")]
+    # A damage mark in the left-hand field stays there.
+    assert ruby_spellings.rubies("計（か｜〓い）") == [("計", "か")]
     # A nested ruby counts for both.
     assert ruby_spellings.rubies("《振り仮名：孿（ふた）胎｜サンタイ》") == [("孿胎", "サンタイ"), ("孿", "ふた")]
     assert ruby_spellings.rubies("ばかり") == []

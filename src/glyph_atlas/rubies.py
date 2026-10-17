@@ -57,7 +57,9 @@ class Mark:
 
     @property
     def span(self) -> str:
-        return "mono" if len(self.base) == 1 else "group"
+        """`mono` for one written character, counting a variation selector or a combining mark with it."""
+        written = sum(1 for char in self.base if not _attached(char))
+        return "mono" if written == 1 else "group"
 
     @property
     def bounds(self) -> tuple[int | None, int | None]:
@@ -77,52 +79,80 @@ def marks(text: str) -> list[Mark]:
         return []
     found = {element.id: Mark(element.id, _source(text, element)) for element in elements}
     fields = {element.id: _fields(text, element) for element in elements}
+    struck = _struck(text, parsed)
     for char in parsed.chars:
         mine = [node for node in char.path if node in found]
-        if not mine:
+        if not mine or char.start in struck:
             continue
+        # A construct inside a field gives its characters a role of their own (the corrected
+        # text of a 見せ消ち is `inserted`), so the field is found by where the character stands.
         inner = mine[-1]
-        side = SIDES.get(char.role)
-        if side is None and char.role in DAMAGE_ROLES:
-            side = _field_at(fields[inner], char.start)
+        side = SIDES.get(char.role) or _field_at(fields[inner], char.start)
         if side is not None:
             readings = found[inner].readings
             readings[side] = readings.get(side, "") + char.text
         elif char.role in BASE_ROLES:
             for ruby in mine:
-                found[ruby].base += char.text
-                found[ruby].base_offsets.append(char.start)
+                if _field_at(fields[ruby], char.start) is None:
+                    found[ruby].base += char.text
+                    found[ruby].base_offsets.append(char.start)
     return [found[element.id] for element in elements]
+
+
+def _attached(char: str) -> bool:
+    point = ord(char)
+    return bool(unicodedata.combining(char)) or 0xFE00 <= point <= 0xFE0F or 0xE0100 <= point <= 0xE01EF
 
 
 def _source(text: str, element: koji.Element) -> str:
     """The markup a ruby came from: the bracket's name, or `legacy` for `base（reading）`."""
     if element.attrs.get("form") == "legacy":
         return "legacy"
+    return _label(text, element)
+
+
+def _label(text: str, element: koji.Element) -> str:
     inner = text[element.start + 1:element.end]
     return next(name for name in koji.BRACKET_KINDS if inner.startswith((f"{name}：", f"{name}:")))
+
+
+def _bars(text: str, element: koji.Element) -> tuple[int, list[int]]:
+    """Where the body of a `《name：…》` element begins, and its `｜` outside the brackets nested in it."""
+    depth, bars = 0, []
+    body = element.start + 1 + len(_label(text, element)) + 1
+    for at in range(body, element.end - 1):
+        char = text[at]
+        if char in koji._OPENERS:
+            depth += 1
+        elif char in koji._CLOSERS:
+            depth -= 1
+        elif char in "｜|" and depth == 0:
+            bars.append(at)
+    return body, bars
+
+
+def _struck(text: str, parsed: koji.Parsed) -> set[int]:
+    """The offsets a 見せ消ち strikes out: its first field, damage marks included."""
+    struck: set[int] = set()
+    for element in koji.walk(parsed.nodes):
+        if element.kind == "misekechi" and element.attrs.get("form") == "bracket":
+            body, bars = _bars(text, element)
+            struck.update(range(body, bars[0] if bars else element.end - 1))
+    return struck
 
 
 def _fields(text: str, element: koji.Element) -> list[tuple[int, str]]:
     """Where the right and left reading fields of a ruby begin in the raw line.
 
     In `base（right｜left）` the fields follow the `（`, which a base never holds. In
-    `《振り仮名：base｜right｜left》` each follows a `｜` outside the constructs nested in the base.
+    `《振り仮名：base｜right｜left》` each follows a `｜` outside the constructs nested in the base,
+    counted over the brackets koji nests.
     """
     if element.attrs.get("form") == "legacy":
         start = text.index("（", element.start) + 1
         bounds = [start] + [at + 1 for at in range(start, element.end) if text[at] in "｜|"]
     else:
-        depth, bounds = 0, []
-        colon = min(at for at in (text.find("：", element.start), text.find(":", element.start)) if at >= 0)
-        for at in range(colon + 1, element.end):
-            char = text[at]
-            if char in "《（":
-                depth += 1
-            elif char in "》）":
-                depth -= 1
-            elif char in "｜|" and depth == 0:
-                bounds.append(at + 1)
+        bounds = [bar + 1 for bar in _bars(text, element)[1]]
     return list(zip(bounds, ("right", "left"), strict=False))
 
 
