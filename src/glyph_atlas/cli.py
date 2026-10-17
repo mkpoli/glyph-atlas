@@ -542,28 +542,6 @@ def review_catalogue_suspects(
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 
-@review_app.command("irregular")
-def review_irregular(
-    catalogues: Annotated[list[Path], typer.Argument(help="publication catalogue.sqlite files, later ones winning")],
-    target: Annotated[Path, typer.Option(help="file the marks are written to")],
-) -> None:
-    """Mark the local crops whose box is far narrower or wider than their character's other crops."""
-    from .review import irregular
-
-    typer.echo(json.dumps(irregular.compute(catalogues, target), ensure_ascii=False))
-
-
-@review_app.command("irregular-sql")
-def review_irregular_sql(
-    marks: Annotated[Path, typer.Argument(help="marks file from `atlas review irregular`")],
-    out: Annotated[Path, typer.Argument(help="D1 SQL that replaces unit_irregular (migration 0080)")],
-) -> None:
-    """Write D1 SQL that replaces the hosted irregular marks; run it with `wrangler d1 execute --remote --file`."""
-    from .review import irregular
-
-    typer.echo(json.dumps({"unit_irregular": irregular.sql(marks, out)}))
-
-
 @review_app.command("shift-repair")
 def review_shift_repair(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose blocks are checked")],
