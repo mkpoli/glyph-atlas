@@ -64,6 +64,10 @@ group to the one family it is tied to when
    and 菓, 辟 and 避 stay apart, as do 余 and 馀;
 7. two curated families are never joined, nor brought together through a family both join.
 
+A form with no character of its own, no reading or definition, that neither pass puts in a family
+stands for each family the sources state it a whole variant of (role `stands-for`): 𠮮 stands for 后
+and for 𠯑, and has no grapheme of its own.
+
 A reduced form left out because it writes several characters is still recorded as a writer of each
 family it writes (`Family.writers`, rows of role `writes`): a simplified, 新字体, regional or 隸定
 form that the sources reduce two characters or more to, in two families or more, counting its own
@@ -144,6 +148,8 @@ ENCODED_TWICE = frozenset({"z", "compatibility"})
 STANDALONE = "STCharacters (also itself)"
 #: The role of an edge to a form outside a family that writes it among other characters.
 WRITES = "writes"
+#: The role of an edge by which a form with no character of its own stands for a family (`_add_stand_ins`).
+STANDS_FOR = "stands-for"
 #: cjkvi tables whose rows only say two characters are related (関連字, 原規格分離).
 RELATED_ONLY = frozenset({"cjkvi/variant", "jisx0212/variant", "jisx0213/variant", "ucs-scs/variant"})
 #: Relations another source uses for the same character in another shape; they corroborate a
@@ -177,7 +183,8 @@ class Family:
     edges: list[Edge] = field(default_factory=list)
     curated: bool = False
     #: The characters of other families that also write this one, each with the edges that say so
-    #: (role `writes`): 后 writes 後 as well as 后, and 闲 writes 閑 and 閒.
+    #: (role `writes`): 后 writes 後 as well as 后, and 闲 writes 閑 and 閒. A form with no character
+    #: of its own stands for each family it is a variant of (role `stands-for`): 𠮮 for 后 and 𠯑.
     writers: dict[str, list[Edge]] = field(default_factory=dict)
 
 
@@ -261,6 +268,7 @@ def families(
     gb2312: set[str] | None = None,
     cns1: set[str] | None = None,
     familiarity: Mapping[str, int] | None = None,
+    readings: set[str] | None = None,
 ) -> list[Family]:
     """Every family of more than one character or with a writer, curated ones included, in head code
     point order.
@@ -270,7 +278,9 @@ def families(
     families are never joined. `refused`, when given, collects the merges a rule turned down — as
     (reason, edge) pairs in edge order — for the build's summary. `gb2312` and `cns1` are the GB 2312
     and CNS 11643 plane 1 repertoires (rule 6 of the 異寫字 pass), `familiarity` ranks the characters
-    a reader knows, lowest first, for the head.
+    a reader knows, lowest first, for the head. `readings` holds the ideographs that are characters of
+    their own, with a reading or a definition; any other one a family takes in no shape stands for
+    the families it is a variant of (`_add_stand_ins`). Without it, none does.
     """
     variants = list(variants)
     edges, corroboration, blocked = candidate_edges(
@@ -319,7 +329,8 @@ def families(
         keep.edges += gone.edges + [edge] + seconds
         for char in keep.members:
             group[char] = keep
-    _join_yixiezi(variants, ideographs, {"jis": jis0208, "gb": gb2312 or set(), "cns": cns1 or set()}, group, refuse)
+    _join_yixiezi(variants, ideographs, {"jis": jis0208, "gb": gb2312 or set(), "cns": cns1 or set()}, group, refuse,
+                  readings)
     found = {id(family): family for family in group.values() if len(family.members) > 1 or family.writers}
     for family in found.values():
         if not family.curated:
@@ -349,7 +360,7 @@ def _stated_by(standard: str, edge: Edge) -> bool:
 
 def _join_yixiezi(
     variants: list[Mapping[str, str]], ideographs: set[str], standards: tuple[set[str], ...],
-    group: dict[str, Family], refuse,
+    group: dict[str, Family], refuse, readings: set[str] | None = None,
 ) -> None:
     """The 異寫字 pass (see the module docstring): join each group tied to one family only."""
     standalone = {row["b"] for row in variants if row["relation"] == "simplified" and row["source"] == "opencc"
@@ -369,6 +380,8 @@ def _join_yixiezi(
     merged: set[frozenset[int]] = set()
     different: dict[str, set[str]] = {}
     unlike: dict[str, set[str]] = {}
+    # Each character's statements of the whole of another (`_whole`), for the forms that stand for one.
+    stated: dict[str, list[Edge]] = {}
     for row in variants:
         a, b, relation = row["a"], row["b"], row["relation"]
         if a not in ideographs or b not in ideographs or _canonical(a) == _canonical(b):
@@ -397,6 +410,8 @@ def _join_yixiezi(
         ties.setdefault(id(right), set()).add(id(left))
         if _whole(row, standalone):
             whole.setdefault(pair, []).append(Edge(a, b, relation, row["source"], row["detail"]))
+            for char in (a, b):
+                stated.setdefault(char, []).append(Edge(a, b, relation, row["source"], row["detail"], STANDS_FOR))
     joins = []
     for key in sorted(ties, key=lambda key: ord(min(units[key].members, key=ord))):
         if len(ties[key]) != 1:
@@ -443,6 +458,8 @@ def _join_yixiezi(
         for char in keep.members:
             group[char] = keep
     _add_writers(reduced, unlike, standalone, group)
+    if readings is not None:
+        _add_stand_ins(stated, unlike, readings, group)
 
 
 def _add_writers(
@@ -471,6 +488,33 @@ def _add_writers(
         for target, found in by_family.values():
             if target is not own:
                 target.writers[writer] = sorted(found, key=lambda edge: (ord(edge.a), edge.source, edge.relation))
+
+
+def _add_stand_ins(
+    stated: dict[str, list[Edge]], unlike: dict[str, set[str]], readings: set[str], group: dict[str, Family],
+) -> None:
+    """Record each form with no character of its own as standing for the families it is a variant of.
+
+    An ideograph with no reading or definition (not in `readings`) is a way of writing other
+    characters. When neither pass has put it in a family, each family the sources state it a whole
+    variant of (`_whole`) lists it, by the edges that say so: 𠮮 stands for 后 and for 𠯑, and so has
+    no grapheme of its own. A reduced form already writing families keeps that role, and a non-cognate
+    homograph or a look-alike (`UNLIKE`) stands for nothing.
+    """
+    writing = {writer for family in group.values() for writer in family.writers}
+    for form, edges in sorted(stated.items(), key=lambda item: ord(item[0])):
+        own = group.get(form)
+        if form in readings or form in writing or (own is not None and len(own.members) > 1):
+            continue
+        by_family: dict[int, tuple[Family, list[Edge]]] = {}
+        for edge in edges:
+            other = edge.b if edge.a == form else edge.a
+            target = group.get(other)
+            if target is not None and target is not own and other not in unlike.get(form, set()) \
+                    and not unlike.get(form, set()) & target.members:
+                by_family.setdefault(id(target), (target, []))[1].append(edge)
+        for target, found in by_family.values():
+            target.writers[form] = sorted(found, key=lambda edge: (ord(edge.a), ord(edge.b), edge.source, edge.relation))
 
 
 #: The ranks of `familiarity` a Japanese reader knows (常用, 人名用, JIS X 0208 levels 1 and 2), the
