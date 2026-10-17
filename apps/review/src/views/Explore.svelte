@@ -78,14 +78,6 @@
   const withheldCount = $derived(picked ? localWithheld : data?.withheld_count ?? null)
   // A picked character's withheld crops its gallery left out, or null when not counted.
   let localWithheld = $state(untrack(() => gallery)?.withheld ?? null)
-  // Crops whose box is unlike their character's other crops wait there too, after the flagged ones,
-  // until a review decides them; the reader may hide them, and the choice is remembered.
-  let showIrregular = $state(stored('atlas.showIrregular', true))
-  function toggleIrregular() {
-    showIrregular = !showIrregular
-    remember('atlas.showIrregular', showIrregular)
-    offset = 0; load()
-  }
   // A picked character has a gallery of its own: the occurrences this collection holds and the
   // located glyphs the corpus index knows about. They are separate lists with separate paging —
   // different services page them — and they are merged for display only.
@@ -131,7 +123,7 @@
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
   // Unfiltered, the catalogue's own list: a further page keeps it, and so leaves everything gathered from it alone.
-  const categories = $derived(flagged ? (data?.categories ?? []).filter(c => fixingCount(c)) : data?.categories ?? [])
+  const categories = $derived(flagged ? (data?.categories ?? []).filter(c => c.flagged || c.hard) : data?.categories ?? [])
   /** A grapheme key (`U+4EEE`, or a label's own code points) as the text it names. */
   const charOf = key => keyText(key) ?? key
   // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
@@ -233,7 +225,7 @@
     for (const c of categories) {
       if (!inGroup(c.label)) continue
       const group = groupFor(c.grapheme ?? c.label)
-      const count = flagged ? fixingCount(c) : c.total
+      const count = flagged ? c.flagged + c.hard : c.total
       group.members.push({ label: c.label, count }); group.count += count; group.local += count
     }
     if (countsCorpus) for (const [label, key, n] of corpusCounts ?? []) {
@@ -270,8 +262,8 @@
   /** The grapheme a corpus row is filed under, as the catalogue files a label. */
   const codesOf = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
   const rowGrapheme = row => row.grapheme?.code_point ?? row.grapheme ?? codesOf(row.label ?? '')
-  const works = $derived((data?.documents ?? []).filter(w => !flagged || fixingCount(w))
-    .map(w => ({ ...w, count: flagged ? fixingCount(w) : w.total })))
+  const works = $derived((data?.documents ?? []).filter(w => !flagged || w.flagged || w.hard)
+    .map(w => ({ ...w, count: flagged ? w.flagged + w.hard : w.total })))
   /** The label a tile shows. `identity.js` names an unassigned crop and a group without a label in
    * English, because it also runs outside the interface; the interface says it in the reader's language. */
   const shownLabel = item => isUnassigned(item) ? t('corpus.unassigned') : item.label
@@ -281,17 +273,6 @@
     : group.label === 'Similar forms' ? t('explore.similarForms') : group.label
   /** Whether a crop still waits for a person: flagged, or hard to read after two reviewers skipped it. */
   const waiting = state => state === 'flagged' || state === 'hard'
-  /** A character's or a book's crops in Needs fixing: flagged, hard, and the irregular ones when shown. */
-  const fixingCount = group => group.flagged + group.hard + (showIrregular ? group.irregular ?? 0 : 0)
-  /** A crop read again keeps its irregular mark while no review has decided it and its label and box are the ones measured. */
-  function carried(item, now) {
-    const same = item.irregular && now.label === item.label && ['x', 'y', 'w', 'h'].every(k => now.box?.[k] === item.box?.[k])
-    return same && ['pending', 'seen', 'skipped'].includes(now.state) ? { ...now, irregular: item.irregular } : now
-  }
-  /** What is unusual about an irregular crop's box: narrower or wider than its character usually is. */
-  const irregularReason = ({ shape }) => t(shape < 0 ? 'explore.irregular.narrow' : 'explore.irregular.wide')
-  /** Whether a crop belongs in Needs fixing: waiting for a person, or irregular and undecided. */
-  const fixing = item => waiting(item.state) || (showIrregular && Boolean(item.irregular))
   /** One state per tile: checked, flagged or hard get a corner badge and outline; withheld and plain a dot.
    * Needs fixing lists only crops waiting for a person, so there they carry no mark of it. */
   function tileState(item) {
@@ -499,7 +480,7 @@
       const sampled = append ? null : requestSample()
       // A further page hands back how many crops lie above the seed's point once a page has found it.
       const result = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
-        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), irregular: flagged ? (showIrregular ? 'show' : 'hide') : null, above: append ? data?.above : null, seed, offset, limit: 60 },
+        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), above: append ? data?.above : null, seed, offset, limit: 60 },
         { signal: catalogueRequest.signal, priority: 'low' })
       if (closed || id !== requestId) return
       if (!append && (openEmptyGrapheme(result) || openSplit(result))) return
@@ -767,17 +748,13 @@
       const updated = await character(id)
       // The tile that was just saved is in one of two lists: the character's gallery, or the
       // collection's own rows. Updating the wrong one leaves the tile showing its old state.
-      const replace = item => {
-        if (item.id !== id) return [item]
-        const now = carried(item, updated)
-        return (flagged && !fixing(now)) || !fitsGallery(now) ? [] : [now]
-      }
+      const replace = item => item.id !== id ? [item] : (flagged && !waiting(updated.state)) || !fitsGallery(updated) ? [] : [updated]
       keepPlace(id, () => { if (picked) local = local.flatMap(replace); else items = items.flatMap(replace) })
       runsChanged()
       const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
-        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), irregular: flagged ? (showIrregular ? 'show' : 'hide') : null, limit: 1 })
+        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 })
       if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
-        reported_count: summary.reported_count, withheld_count: summary.withheld_count, irregular_count: summary.irregular_count }
+        reported_count: summary.reported_count, withheld_count: summary.withheld_count }
     } catch (e) { if (!closed) error = e.message }
   }
   // Several tiles can be given one written character at once, as when the same misreading repeats.
@@ -828,8 +805,8 @@
     await Promise.all(ids.map(async id => {
       const tile = display.find(item => item.id === id)
       try {
-        const now = tile?.origin === 'corpus' ? { ...tile, ...(await request('/atlas/corpus/character?id=' + encodeURIComponent(id))) } : carried(tile ?? {}, await character(id))
-        change[id] = (flagged && !fixing(now)) || !fitsGallery(now) ? null : now
+        const now = tile?.origin === 'corpus' ? { ...tile, ...(await request('/atlas/corpus/character?id=' + encodeURIComponent(id))) } : await character(id)
+        change[id] = (flagged && !waiting(now.state)) || !fitsGallery(now) ? null : now
       } catch { change[id] = null }
     }))
     patch(change)
@@ -974,7 +951,7 @@
 {#snippet tileCaption(item)}
   <span class="tile-caption">
     <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}</span>
-    <span class="tile-footer">{#if flagged && item.irregular && !waiting(item.state)}<span class="tile-irregular">{irregularReason(item.irregular)}</span>{/if}{#if tileCount(item)}{@const count = tileCount(item)}<span class="tile-count" title={[...count.lines, t('tile.countScope')].join('\n')}>{count.text}</span>{/if}{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
+    <span class="tile-footer">{#if tileCount(item)}{@const count = tileCount(item)}<span class="tile-count" title={[...count.lines, t('tile.countScope')].join('\n')}>{count.text}</span>{/if}{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 {/snippet}
 <!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
@@ -1021,7 +998,6 @@
     <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
     {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
     {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
-    {#if flagged && data?.irregular_count}<button class="quiet-link" onclick={toggleIrregular}>{showIrregular ? t('explore.flagged.hideIrregular') : t('explore.flagged.showIrregular', { count: data.irregular_count })}</button>{/if}
     <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
   </div>
   {#if imaging}<ImageSearch given={imaging} onclose={() => imaging = null} {inspect} />{/if}
@@ -1085,7 +1061,6 @@
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
   .tile-production{font-family:"GenZui Sans",system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* The copy's year, the tile's one date: in the footer's small type, its digits all one width. */
-  .tile-irregular{flex-shrink:0;white-space:nowrap;color:var(--wrong)}
   .tile-year{flex-shrink:0;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
   /* Short of room, the work's title gives way first and the production after it, each to an ellipsis;
      on a phone a wide range does too, and a square tile there keeps its room for the years. */
