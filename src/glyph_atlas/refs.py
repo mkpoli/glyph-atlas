@@ -913,7 +913,9 @@ def _grapheme_families() -> dict[str, dict]:
     grapheme-families.tsv, each with its members and the evidence it rests on.
 
     A curated family may hold more members than graphemes.yaml names, each joined by an edge of
-    the tsv; every member of a family must be one of the two, or the table is stale.
+    the tsv; every member of a family must be one of the two, or the table is stale. The members
+    the tsv joins follow the stated ones, most attested first (the sources whose edges reach them),
+    then by code point: 时 before 㫭 and 峕 in the family of 時.
     """
     path = VOCAB / "graphemes.yaml"
     document = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.exists() else {}
@@ -924,8 +926,12 @@ def _grapheme_families() -> dict[str, dict]:
     for head in [*document.get("families", {}), *(head for head in edges if head not in document.get("families", {}))]:
         family = document.get("families", {}).get(head)
         stated = [to_code_point(char) for char in family["members"]] if family else [head]
-        joined = {to_code_point(row[end]) for row in edges.get(head, ()) for end in ("a", "b")}
-        members = stated + sorted(joined - set(stated), key=_point_order)
+        attested: dict[str, set[str]] = {}
+        for row in edges.get(head, ()):
+            for end in ("a", "b"):
+                attested.setdefault(to_code_point(row[end]), set()).add(row["source"])
+        members = stated + sorted(set(attested) - set(stated),
+                                  key=lambda point: (-len(attested[point]), _point_order(point)))
         if set(members) != set(graphemes().get(head, [])):
             raise ValueError(f"family {head} disagrees with characters.tsv; rebuild the character table")
         evidence = [{"id": key, **document["sources"][key]} for key in family["sources"]] if family else []
