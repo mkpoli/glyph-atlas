@@ -29,15 +29,19 @@ export async function figuresOf(char) {
 }
 
 const faces = new Map()
-/** Load the font file that draws the sequences on `text`'s base character. */
-export async function drawFigure(text) {
-  const file = await fileOf(text)
-  if (!file || faces.has(file[0])) return
-  const [name, first, last] = file
-  const hex = code => code.toString(16).toUpperCase()
-  const face = new FontFace(FAMILY, `url(/fonts/mj/${name}.woff2) format("woff2")`,
-    { display: 'swap', unicodeRange: `U+${hex(first)}-${hex(last)}, U+E0100-E01EF` })
-  faces.set(name, face)
-  document.fonts.add(face)
-  await face.load().catch(() => { faces.delete(name); document.fonts.delete(face) })
+/** Load the font file that draws the sequences on `text`'s base character; rejects when it cannot be
+ *  loaded, and the next call tries again. */
+export function drawFigure(text) {
+  return fileOf(text).then(file => {
+    if (!file) throw new Error(`no font draws ${text}`)
+    const [name, first, last] = file
+    if (!faces.has(name)) {
+      const hex = code => code.toString(16).toUpperCase()
+      const face = new FontFace(FAMILY, `url(/fonts/mj/${name}.woff2) format("woff2")`,
+        { display: 'swap', unicodeRange: `U+${hex(first)}-${hex(last)}, U+E0100-E01EF` })
+      document.fonts.add(face)
+      faces.set(name, face.load().catch(error => { faces.delete(name); document.fonts.delete(face); throw error }))
+    }
+    return faces.get(name)
+  })
 }
