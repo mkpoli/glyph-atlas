@@ -86,8 +86,10 @@ function build(env: Env, origin: string) {
       user: {
         create: {
           // A sign-in that gives no name (a code by mail) is called `anon-…`; nobody new is named like
-          // an old reviewer id, since a new user holds none.
-          before: async user => ({ data: { ...user, name: user.name && !LEGACY_REVIEWER.test(user.name) ? user.name : generatedName() } }),
+          // an old reviewer id, since a new user holds none. A picture comes from a connected account
+          // or the avatar route, never from the body of a sign-in by mail.
+          before: async (user, ctx) => ({ data: { ...user, name: user.name && !LEGACY_REVIEWER.test(user.name) ? user.name : generatedName(),
+            ...(ctx?.path === '/sign-in/email-otp' ? { image: null } : {}) } }),
           // A user writes under their own id first.
           after: async user => {
             await env.DB.prepare("INSERT OR IGNORE INTO actors(actor,user_id,via,at) VALUES(?,?,'account',?)")
