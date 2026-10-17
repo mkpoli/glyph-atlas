@@ -4,11 +4,14 @@ import { request } from './client.js'
 // without one the path answers 404 and the view stays hidden. The families' code points, or null.
 export async function familyCodes(send = fetch) {
   try {
-    const response = await send('/atlas/forms/families', { method: 'GET' })
+    const response = await send('/atlas/forms/codes', { method: 'GET' })
     if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) return null
-    return (await response.json()).items.map(item => item.code_point)
+    return (await response.json()).items
   } catch { return null }
 }
+// The same code points in a browser, asked once a visit: a character card links to its forms with them.
+let known = null
+export const familyCodeSet = () => known ??= familyCodes().then(codes => new Set(codes ?? []))
 export const families = options => request('/atlas/forms/families', undefined, options)
 export const family = (codePoint, order = 'shape', options) =>
   request('/atlas/forms/families/' + encodeURIComponent(codePoint) + '?' + new URLSearchParams({ order }), undefined, options)

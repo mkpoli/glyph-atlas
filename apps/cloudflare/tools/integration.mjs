@@ -1531,6 +1531,10 @@ try {
   }
   await counted()
   assert.equal((await call('/atlas/forms/families')).items[0].code_point, 'U+4EEE')
+  // A page links a character to its forms from the code points alone.
+  const codes = await mf.dispatchFetch(base + '/atlas/forms/codes')
+  assert.deepEqual([(await codes.json()).items, codes.headers.get('cache-control')],
+    [(await call('/atlas/forms/families')).items.map(f => f.code_point).sort(), 'public, max-age=300'], 'the codes are the families\' code points')
   await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: 'あ' }, 422)
   const named = await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: '仮' })
   assert.equal(named.count, 2)

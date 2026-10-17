@@ -67,7 +67,9 @@ function build(env: Env, origin: string) {
     },
     advanced: {
       ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
-      database: { generateId: () => crypto.randomUUID() },
+      // The auth tables come from the migrations. Checking them reads every table's columns once per
+      // isolate, which made schema checks the most frequent statement on the database.
+      database: { generateId: () => crypto.randomUUID(), validateSchema: false },
     },
     rateLimit: { enabled: true, storage: 'database', window: 60, max: 60, customRules: {
       // A code costs a mail; an address gets three a minute and a guess at a code ten.
