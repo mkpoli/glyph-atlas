@@ -43,6 +43,9 @@ try {
   await browser.writeAs('crop-form-check')
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
+  // A cold service builds a character's card, derived variants and all, slower than the page waits
+  // for it; the cards the check opens are built first.
+  for (const point of ['U+3042', 'U+6240']) await fetch(`${service.base}/layers/characters/${encodeURIComponent(point)}?expand=none`)
   const open = async id => {
     await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
     await browser.waitFor(`${chips}.length > 1`, 30000)
@@ -153,6 +156,34 @@ try {
   assert(JSON.stringify(claimed(second)) === JSON.stringify(['⿰⿱匕失⿱コ疋']), `the description was not claimed: ${claimed(second)}`)
   assert(units(config.directory)[second].unicode === 'U+3042', 'a description changed the crop\'s character')
   console.log('PASS a form written as a description is composed, checked and claimed')
+
+  // A character the IVD registers several figures for offers each sequence among its variants, named
+  // by its MJ figure and drawn in MJ Figures: 所 as 所󠄂 (MJ012120) and 所󠄃 (MJ012119).
+  // Another crop written as あ, one with an image to name, is renamed 所.
+  const others = Object.entries(units(config.directory)).filter(([id, unit]) => unit.active && unit.unicode === 'U+3042' && id !== first && id !== second).map(([id]) => id)
+  const [third, renamed] = await browser.evaluate(`(async () => {
+    for (const id of ${JSON.stringify(others)}) {
+      const crop = await (await fetch('/atlas/characters/' + encodeURIComponent(id))).json()
+      if (!crop.image_sha256) continue
+      const response = await fetch('/layers/units/' + encodeURIComponent(id), { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: crypto.randomUUID(), client_id: 'crop-form-check', revision: crop.revision, image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character: '所' }) })
+      return [id, response.status + ' ' + await response.text()]
+    }
+    return [null, 'no other crop written as あ has an image']
+  })()`)
+  assert(third && renamed.startsWith('2'), `no crop could be renamed to 所: ${renamed}`)
+  await browser.goto(`${service.base}/en/crop/${encodeURIComponent(third)}`, { waitFor: ready, timeout: 90000 })
+  await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
+  const options = `[...document.querySelectorAll('dialog[open] .form-picker .form-section')].find(s => s.querySelector('.form-section-title').textContent === 'Variants')?.querySelectorAll('.form-option')`
+  await browser.waitFor(`(${options})?.length > 1`, 20000)
+  const figures = await browser.evaluate(`[...${options}].slice(0, 2).map(o => o.title)`)
+  assert(figures[0] === 'U+6240 U+E0102\nMJ012120' && figures[1] === 'U+6240 U+E0103\nMJ012119', `the registered figures do not lead the variants: ${JSON.stringify(figures)}`)
+  await browser.waitFor(`[...document.fonts].some(f => f.family.replaceAll('"', '') === 'MJ Figures' && f.status === 'loaded')`, 20000)
+  await browser.screenshot(join(screenshots, 'form-picker-figures-light.png'))
+  await browser.setColorScheme('dark')
+  await browser.screenshot(join(screenshots, 'form-picker-figures-dark.png'))
+  await browser.setColorScheme('light')
+  console.log('PASS a character\'s registered figures lead its variants, drawn in MJ Figures')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop form')
