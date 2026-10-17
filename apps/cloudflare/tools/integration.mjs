@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { categoryOf } from '../src/category.ts'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 
 const bundleDir = await mkdtemp(join(tmpdir(), 'atlas-worker-'))
@@ -1440,7 +1441,7 @@ try {
     if (c >= 0xD800 && c <= 0xDFFF) continue
     const sql = within(kana, c) ? 'kana' : within(han, c) ? 'kanji' : within(hangul, c) ? 'hangul'
       : within(gugyeolRange, c) ? 'gugyeol' : 'other'
-    if (worker.categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${worker.categoryOf(String.fromCodePoint(c))} vs ${sql}`)
+    if (categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${categoryOf(String.fromCodePoint(c))} vs ${sql}`)
   }
   // A context widened in place survives a review and its undo.
   const framed = { id: 'framed', label: 'カ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
