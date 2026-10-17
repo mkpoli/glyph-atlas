@@ -84,8 +84,9 @@ def test_a_kept_written_form_keeps_its_label_and_text():
 
 
 def test_a_transcription_that_keeps_the_older_form_is_followed():
-    assert ocr_repair.normalises("國", "国") and ocr_repair.normalises("邊", "辺")
-    assert not ocr_repair.normalises("辺", "邊") and not ocr_repair.normalises("嶋", "島")
+    assert ocr_repair.normalises("國", "国") and ocr_repair.normalises("邊", "辺") and ocr_repair.normalises("嶋", "島")
+    assert not ocr_repair.normalises("辺", "邊") and not ocr_repair.normalises("島", "嶋")
+    assert not ocr_repair.normalises("時", "时") and not ocr_repair.normalises("煙", "烟")
     items = [{"unit_id": "u", "before": "国", "character": "國", "text_before": "国", "text": "國", "offset": 0,
               "form": "variant", "prior": 0.0, "text_form": True}]
     ocr_repair.settle(None, items, None)

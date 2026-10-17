@@ -149,13 +149,15 @@ def form_pair(written: str, transcribed: str) -> str | None:
     return None
 
 
-#: Relations of the 異体字 table that run from a form to the one a transcription normalises it to.
 def normalises(old: str, new: str) -> bool:
-    """Whether `new` is the 新字体 a transcription normalises `old` to (國 to 国, 廣 to 広)."""
+    """Whether `new` is the form a transcription normalises `old` to: its 新字体 (國 to 国, 廣 to 広), or
+    the common form the MJ table reduces it to where nothing reduces the other way (嶋 to 島, 髙 to 高)."""
     from .. import refs
 
-    return any(edge["a"] == old and edge["b"] == new and edge["written"] and edge["relation"] == "shinjitai"
-               for edge in refs.variant_edges_of(old))
+    edges = [edge for edge in refs.variant_edges_of(old) if edge["written"] and {edge["a"], edge["b"]} == {old, new}]
+    toward = {edge["relation"] for edge in edges if edge["a"] == old}
+    back = {edge["relation"] for edge in edges if edge["a"] == new}
+    return "shinjitai" in toward or ("reduction" in toward and "reduction" not in back)
 
 
 def kana_script(character: str) -> str | None:
