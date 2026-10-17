@@ -119,7 +119,7 @@ def compute(catalogues: list[Path], target: Path) -> dict[str, Any]:
 def sql(marks_file: Path, out: Path) -> int:
     """D1 SQL that replaces `unit_irregular` with the marks of `marks_file` and starts a new catalogue version."""
     found = json.loads(Path(marks_file).read_text())["marks"]
-    quoted = lambda value: "'{}'".format(value.replace("'", "''"))  # noqa: E731
+    quoted = lambda value: "'{}'".format(value.replace("'", "''"))
     lines = ["DELETE FROM unit_irregular;"]
     for identity, mark in sorted(found.items()):
         values = [mark["box"].get(k) for k in "xywh"] + [mark["shape"]]
