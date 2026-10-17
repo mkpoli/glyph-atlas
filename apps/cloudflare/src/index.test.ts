@@ -1,7 +1,7 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
 import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
-  encodeCursor, decodeCursor, historyItem, historyQuery, moved, substitutionKey, flagRequest } from './index';
+  encodeCursor, decodeCursor, historyItem, historyQuery, moved, substitutionKey, flagRequest, listingFilter } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';
 
@@ -242,5 +242,13 @@ describe('corpus flags', () => {
     for (const input of [{ glyphs: [glyph] }, { finding: 'x', glyphs: [] }, { finding: 'x', glyphs: [glyph, glyph] },
       { finding: 'x', glyphs: [{ id: 'hl:a:1' }] }, { finding: 'x', glyphs: Array.from({ length: 97 }, (_, i) => ({ id: `g${i}`, character: 'と' })) }])
       expect(() => flagRequest(input)).toThrow();
+  });
+});
+
+describe('unread crops', () => {
+  it('are browsed and never dealt in a round', () => {
+    expect(listingFilter(true, 'all', null).where).toContain("character<>''");
+    expect(listingFilter(false, 'all', null).where).not.toContain("character<>''");
+    expect(listingFilter(false, 'all', null).where).toContain('+quiz=1');
   });
 });

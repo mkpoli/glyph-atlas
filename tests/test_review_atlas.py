@@ -136,6 +136,32 @@ def test_character_group_follows_the_script_of_the_first_character():
                       'A': 'other'}
 
 
+def test_an_unread_unit_is_grouped_by_the_script_it_was_filed_under():
+    assert atlas_module.character_group(Unit(id='box', script='tangut')) == 'tangut'
+    assert atlas_module.character_group(Unit(id='box', script='han')) == 'kanji'
+    assert atlas_module.character_group(Unit(id='box')) == 'other'
+
+
+def test_an_unread_box_is_in_the_collection_and_out_of_the_queue(dataset):
+    """A proposed box waits for a reader: it is a crop to look at, and no character's to quiz on."""
+    units = list(tables.read(dataset / 'units.parquet', Unit))
+    units.extend([Unit(id='tangut-box', document_id='d', page_id=PAGE, script='tangut', method='detect',
+                       box=Box(x=20, y=20, w=65, h=100)),
+                  Unit(id='unfiled-box', document_id='d', page_id=PAGE, method='detect',
+                       box=Box(x=110, y=20, w=65, h=100))])
+    tables.write(dataset / 'units.parquet', units, Unit)
+    client = TestClient(create_app(dataset))
+    browse = client.get('/atlas', params={'limit': 96}).json()
+    assert browse['available'] == 17, "a box filed under no script is left out"
+    assert {c['label'] for c in browse['categories']} == {'あ', 'シ'}, "an unread box is no character's"
+    assert [b['total'] for b in browse['documents']] == [17]
+    tangut = client.get('/atlas', params={'group': 'tangut'}).json()
+    assert [(i['id'], i['label']) for i in tangut['items']] == [('tangut-box', '')]
+    assert 'tangut-box' not in {i['id'] for i in client.get('/atlas', params={'purpose': 'review', 'limit': 96}).json()['items']}
+    assert client.get('/atlas', params={'grapheme': 'U+3042'}).json()['total'] == 12
+
+
+
 def test_catalogue_filters_gugyeol_as_its_own_group(dataset):
     units = list(tables.read(dataset / 'units.parquet', Unit))
     units.extend(Unit(id=f'gugyeol-{char}', document_id='d', page_id=PAGE, text_source=char, script='gugyeol',

@@ -176,6 +176,20 @@ def test_site_character_correction_imports_as_reviewed(store, round_review):
     assert "reading" not in {event.field for event in store.events()}
 
 
+def test_a_character_named_on_the_site_for_an_unread_box_imports(tmp_path, monkeypatch):
+    store = make_store(tmp_path, monkeypatch)
+    tables.write(store.directory / "units.parquet", [Unit(id="u", document_id="d", page_id="p", script="tangut",
+                 method="detect", box=Box(x=10, y=10, w=30, h=40))], Unit)
+    store = Store(store.directory)
+    publication = baseline(store)
+    publication["character"].update(label="", reading="")
+    record, _ = remote(publication, character="\U00017000")
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"imported": 1}
+    unit = store.unit("u")
+    assert (unit.unicode, unit.script, unit.review) == ("U+17000", "tangut", "reviewed")
+
+
 @pytest.mark.parametrize("round_review", [False, "answer"])
 def test_a_review_saved_with_the_recorded_reading_words_still_imports(store, round_review):
     record, _ = remote(baseline(store), issue="reading", character="ナ", round_review=round_review,
