@@ -16,6 +16,7 @@ apps/review/src/fallback-fonts.css.
 """
 import argparse
 import hashlib
+import io
 import re
 import urllib.request
 from pathlib import Path
@@ -110,8 +111,11 @@ def main():
             options = subset.Options(); options.flavor = 'woff2'; options.hinting = False
             options.layout_features = ['vert', 'vrt2']   # upright forms in vertical text
             sub = subset.Subsetter(options=options); sub.populate(unicodes=codes); sub.subset(font)
-            name = f'{spec["key"]}-{i // CHUNK:02d}.woff2'
-            font.save(OUT / name)
+            buffer = io.BytesIO(); subset.save_font(font, buffer, options); cut = buffer.getvalue()
+            # Named by content, so a browser may keep a file for good: a rebuild that moves a
+            # character to another file gives that file a new name. `save_font` writes the flavor.
+            name = f'{spec["key"]}-{hashlib.sha256(cut).hexdigest()[:12]}.woff2'
+            (OUT / name).write_bytes(cut)
             faces.append(f'@font-face {{\n  font-family: "{spec["family"]}";\n  src: url("/fonts/fallback/{name}") format("woff2");\n'
                          f'  font-display: swap;\n  unicode-range: {ranges(codes)};\n}}\n')
         report.append(f'{spec["family"]} {spec["release"]} ({hashlib.sha256(data).hexdigest()[:12]}): {len(mine)} characters')
