@@ -281,3 +281,9 @@ def test_a_simplified_form_that_writes_itself_stays_apart_whatever_else_relates_
             edge("衚", "胡", "variant", "cjkvi-variants", "胡→衚 hydzd/variant")]
     assert grouped(rows) == {}
 
+
+def test_two_curated_families_never_meet_through_a_family_both_join():
+    rows = [edge("乙", "丙", "variant"), edge("戊", "丙", "variant")]
+    found = grouped(rows, curated={"甲": ["甲", "乙"], "丁": ["丁", "戊"]})
+    assert found == {"丁": "丁丙戊", "甲": "乙甲"}
+

@@ -62,7 +62,7 @@ group to the one family it is tied to when
    Chinese standards keep their pairs as two, so a GB 2312 or CNS pair joins only as one character
    encoded twice (`z`, compatibility). 躰 and 體, 邉 and 邊 join on the 戸籍統一文字; 咲 and 笑, 果
    and 菓, 辟 and 避 stay apart, as do 余 and 馀;
-7. two curated families are never joined.
+7. two curated families are never joined, nor brought together through a family both join.
 
 The pass looks at the groups as the first pass left them and joins them all at once, so a chain
 cannot carry a family on: 閑 is tied to 閒 alone, but once joined the pair would be tied to 間 alone,
@@ -388,6 +388,9 @@ def _join_yixiezi(
             continue  # two groups tied to each other only, joined from the other side already
         if any(different.get(char, set()) & keep.members for char in gone.members):
             refuse("a pair the relations keep apart, through the family", edges[0])
+            continue
+        if gone.curated and keep.curated:
+            refuse("two curated families, through the family", edges[0])
             continue
         # The pairs this join makes; its edges speak only for the leaf and its target as they were.
         if any(not (x in leaf and y in target)
