@@ -57,7 +57,7 @@ def test_the_graph_swaps_in_once_and_the_derived_rows_land_range_by_range(tmp_pa
     # The whole derived tier takes minutes; a few rows of it stand in, in parts of one or two rows.
     rows = (("寰", '[["⿱宂睘",[[["宀","宂"]]]]]'), ("還", '[["⿺廴睘",[[["廴","辶"]]]]]'),
             ("鬱", '[["⿳木缶⿰木鬯",[[["林","木"]]]]]'))
-    ids = (("寰", '["⿱宀睘"]'), ("還", '["⿺辶睘"]'))
+    ids = (("寰", '["⿱宀睘"]', '[{"text":"⿱宀睘","regions":"G"},{"text":"⿱宂睘","regions":"J"}]'), ("還", '["⿺辶睘"]', None))
     monkeypatch.setattr(export, "derived_rows", lambda: rows)
     monkeypatch.setattr(export, "ids_rows", lambda: ids)
     monkeypatch.setattr(export, "DERIVED_PART_BYTES", 60)
@@ -107,7 +107,7 @@ def test_the_graph_swaps_in_once_and_the_derived_rows_land_range_by_range(tmp_pa
     for path in [*parts[1:], *parts]:
         db.executescript(path.read_text(encoding="utf-8"))
     assert db.execute("SELECT a, forms FROM character_derived ORDER BY a").fetchall() == list(rows)
-    assert db.execute("SELECT char, sequences FROM han_ids ORDER BY char").fetchall() == list(ids)
+    assert db.execute("SELECT char, sequences, shapes FROM han_ids ORDER BY char").fetchall() == list(ids)
     assert db.execute("SELECT count(*) FROM character_derived").fetchone() == (len(rows),)
     assert db.execute("SELECT value FROM metadata WHERE key='units_refreshed_at'").fetchone() != version
     apply = export.APPLY.format(expected="{}")

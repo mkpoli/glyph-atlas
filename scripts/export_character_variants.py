@@ -57,7 +57,7 @@ DERIVED_COLUMNS = ("a", "forms")
 DERIVED_PART_BYTES = 2 * 1024 * 1024
 SUBSTITUTION_COLUMNS = ("a", "b", "count", "pairs")
 WORDS_STAGING = "words_next"
-IDS_COLUMNS = ("char", "sequences")
+IDS_COLUMNS = ("char", "sequences", "shapes")
 WORD_COLUMNS = ("id", "language", "reading", "class")
 SPELLINGS_STAGING = "word_spellings_next"
 WRITER_COLUMNS = ("writer", "grapheme")
@@ -114,9 +114,11 @@ def word_citations() -> str:
 
 
 @cache
-def ids_rows() -> tuple[tuple[str, str], ...]:
-    """`han_ids`: each character's descriptions the IDS editor starts from (`refs.ids_sequences`)."""
-    return tuple((char, json.dumps(found, ensure_ascii=False, separators=(",", ":")))
+def ids_rows() -> tuple[tuple[str, str, str | None], ...]:
+    """`han_ids`: each character's descriptions the IDS editor starts from (`refs.ids_sequences`), and
+    its regional shapes when it has several (`refs.regional_shapes`, else NULL)."""
+    dump = lambda value: json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return tuple((char, dump(found), dump(shapes) if (shapes := refs.regional_shapes(char)) else None)
                  for char in sorted(han_components._sequences()) if (found := refs.ids_sequences(char)))
 
 
@@ -267,7 +269,7 @@ def fill(db: sqlite3.Connection, *, derived: bool = True) -> None:
         db.executemany(f"INSERT OR REPLACE INTO character_derived({','.join(DERIVED_COLUMNS)}) VALUES (?,?)",
                        derived_rows())
         db.execute("DELETE FROM han_ids")
-        db.executemany("INSERT INTO han_ids(char,sequences) VALUES (?,?)", ids_rows())
+        db.executemany("INSERT INTO han_ids(char,sequences,shapes) VALUES (?,?,?)", ids_rows())
     db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('variant_sources',?)", (citations(),))
     db.execute("DELETE FROM grapheme_writers")
     db.executemany("INSERT INTO grapheme_writers(writer,grapheme) VALUES (?,?)", writer_rows())

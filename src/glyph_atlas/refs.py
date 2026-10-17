@@ -391,6 +391,28 @@ def ids_sequences(char: str) -> list[str]:
     return found
 
 
+#: BabelStone's source letters for a glyph some region or body uses, in the file's order. `X` (another
+#: analysis of a glyph already described), `Z` (a plausible form no source uses) and `UCS2003` (an old
+#: code-chart glyph) name none.
+SOURCE_REGIONS = "GHMTJKPVUSB"
+
+
+def regional_shapes(char: str) -> list[dict[str, str]]:
+    """The shapes BabelStone gives `char` by source, as `{"text", "regions"}` (所 as ⿰戶斤 in GHTKPV
+    and ⿰戸斤 in J), when its descriptions name more than one; empty otherwise. Only source letters
+    count (`SOURCE_REGIONS`), read as `han_component_variants.regions` reads a tag: 主's ⿱亠土 (X)
+    analyses the ⿱丶王 every source writes, and 亼's ⿱人一 (Z) is no source's glyph."""
+    usable = ids_sequences(char)
+    found: dict[str, set[str]] = {}
+    for sequence in han_components._sequences().get(char, ()):
+        text = han_component_variants.REGION.sub("", sequence)
+        named = han_component_variants.regions(sequence) & set(SOURCE_REGIONS)
+        if named and text in usable:
+            found.setdefault(text, set()).update(named)
+    return [{"text": text, "regions": "".join(r for r in SOURCE_REGIONS if r in named)}
+            for text, named in found.items()] if len(found) > 1 else []
+
+
 def substitutes(component: str) -> list[dict[str, Any]]:
     """What may stand in `component`'s place: each substitution of han-component-variants.tsv naming
     it, as `{"char", "count"}`, most contexts first, at most `SUBSTITUTES_SHOWN`."""
@@ -401,12 +423,12 @@ def substitutes(component: str) -> list[dict[str, Any]]:
 
 
 def structure(char: str) -> dict[str, Any]:
-    """What the IDS editor starts from for `char`: its descriptions, and the substitutes of every
-    component they name, as the Worker's `/layers/structure` answers."""
+    """What the IDS editor starts from for `char`: its descriptions, its regional shapes, and the
+    substitutes of every component they name, as the Worker's `/layers/structure` answers."""
     sequences = ids_sequences(char)
     parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
                     if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})
-    return {"char": char, "sequences": sequences,
+    return {"char": char, "sequences": sequences, "shapes": regional_shapes(char),
             "substitutes": {part: found for part in parts if (found := substitutes(part))}}
 
 
