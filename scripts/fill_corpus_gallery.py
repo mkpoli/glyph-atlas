@@ -5,9 +5,11 @@
 """Write the SQL that brings D1's `corpus_gallery` up to date with the published corpus.
 
 The homepage gallery deals copies of the records of the corpus glyphs whose `shuffle` falls below
-2^22 (migration 0020). This reads which of those D1 lacks a current copy of, reads each record's bytes
-from its R2 pack with a ranged S3 request, and writes SQL parts under D1's import size that remove
-copies whose record has since been republished and insert the missing ones. `publish_cloudflare.sh`
+2^22 (migration 0020), and of every glyph of a script the corpus holds few of (`WHOLE`), each with
+its category (0079), so a script group deals its own. This reads which of those D1 lacks a current
+copy of, reads each record's bytes from its R2 pack with a ranged S3 request, and writes SQL parts
+under D1's import size that remove copies whose record has since been republished, insert the missing
+ones and give a category to copies made before there was one. `publish_cloudflare.sh`
 runs it and applies the parts after every publication; by hand:
 
     uv run scripts/fill_corpus_gallery.py gallery
@@ -21,6 +23,7 @@ import argparse
 import json
 import sqlite3
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -29,7 +32,11 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-CLOUDFLARE = Path(__file__).resolve().parents[1] / "apps/cloudflare"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts")]
+from cloudflare_schema import GUGYEOL, HANGUL, category_of
+
+CLOUDFLARE = ROOT / "apps/cloudflare"
 # Matches `SAMPLE_RANGE` in the Worker and the cut migration 0020 describes.
 SAMPLE_RANGE = 2**22
 # D1 refuses a statement over 100 KB; parts stay under the import size `seal_cloudflare_records.py` uses.
@@ -37,16 +44,42 @@ STATEMENT_BYTES = 100_000
 PART_BYTES = 90 * 1024**2
 # A read that fails mid-stream is not retried by botocore itself.
 READ_ATTEMPTS = 4
-MISSING = f"""SELECT c.id,c.shuffle,c.object,c.offset,c.size FROM corpus_units c WHERE c.shuffle<{SAMPLE_RANGE}
-  AND NOT EXISTS (SELECT 1 FROM corpus_gallery g WHERE g.id=c.id AND g.object=c.object AND g.offset=c.offset)"""
+# Scripts whose every corpus glyph has a copy, by the code point ranges their characters start in:
+# each range is one stretch of the `corpus_character` index.
+WHOLE = {"hangul": HANGUL, "gugyeol": GUGYEOL}
+WANTED = " UNION ".join(
+    [f"SELECT id,shuffle,object,offset,size,character FROM corpus_units WHERE shuffle<{SAMPLE_RANGE}"]
+    + [f"SELECT id,shuffle,object,offset,size,character FROM corpus_units WHERE character>=char({a}) AND character<char({b + 1})"
+       for ranges in WHOLE.values() for a, b in ranges])
+MISSING = f"""SELECT c.id,c.shuffle,c.object,c.offset,c.size,c.character FROM ({WANTED}) c
+  WHERE NOT EXISTS (SELECT 1 FROM corpus_gallery g WHERE g.id=c.id AND g.object=c.object AND g.offset=c.offset)"""
+UNSORTED = """SELECT g.id,c.character FROM corpus_gallery g JOIN corpus_units c
+  ON c.id=g.id AND c.object=g.object AND c.offset=g.offset WHERE g.category IS NULL"""
 STALE = """DELETE FROM corpus_gallery WHERE NOT EXISTS (SELECT 1 FROM corpus_units c
   WHERE c.id=corpus_gallery.id AND c.object=corpus_gallery.object AND c.offset=corpus_gallery.offset);"""
 
 
-def missing() -> list[dict]:
-    out = subprocess.run(["bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", MISSING],
+def remote(sql: str) -> list[dict]:
+    out = subprocess.run(["bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", sql],
                          cwd=CLOUDFLARE, check=True, capture_output=True, text=True).stdout
     return json.loads(out)[0]["results"]
+
+
+def categorised(rows: list[dict], quote) -> list[str]:
+    """Statements that give each copy in `rows` its category, one per category and run of ids."""
+    ids: dict[str, list[str]] = {}
+    for row in rows:
+        ids.setdefault(category_of(row["character"]), []).append(quote.execute("SELECT quote(?)", (row["id"],)).fetchone()[0])
+    statements = []
+    for category, quoted in ids.items():
+        head, run = f"UPDATE corpus_gallery SET category='{category}' WHERE id IN (", []
+        for value in quoted:
+            if run and len(head) + sum(len(v) + 1 for v in run) + len(value) + 3 > STATEMENT_BYTES:
+                statements.append(head + ",".join(run) + ");")
+                run = []
+            run.append(value)
+        statements.append(head + ",".join(run) + ");")
+    return statements
 
 
 def bucket_client(remote: str, jobs: int):
@@ -83,16 +116,16 @@ def main():
     parser.add_argument("--bucket", default="glyph-atlas")
     parser.add_argument("--jobs", type=int, default=64, help="simultaneous R2 reads")
     args = parser.parse_args()
-    rows = missing()
+    rows, unsorted = remote(MISSING), remote(UNSORTED)
     s3 = bucket_client(args.remote, args.jobs)
     with ThreadPoolExecutor(args.jobs) as pool:
         records = list(pool.map(lambda row: record(s3, args.bucket, row), rows))
     quote = sqlite3.connect(":memory:")
-    statements = [STALE]
+    statements = [STALE, *categorised(unsorted, quote)]
     for row, text in zip(rows, records):
         values = quote.execute("SELECT quote(?),quote(?),quote(?)", (row["id"], row["object"], text)).fetchone()
-        statement = (f"INSERT OR REPLACE INTO corpus_gallery VALUES({values[0]},{row['shuffle']},{values[1]},"
-                     f"{row['offset']},{values[2]});")
+        statement = (f"INSERT OR REPLACE INTO corpus_gallery(id,shuffle,object,offset,data,category) VALUES({values[0]},"
+                     f"{row['shuffle']},{values[1]},{row['offset']},{values[2]},'{category_of(row['character'])}');")
         if len(statement.encode()) > STATEMENT_BYTES:
             raise ValueError(f"{row['id']}: its record makes a statement over D1's 100 KB limit")
         statements.append(statement)
@@ -106,7 +139,7 @@ def main():
         size += len(statement.encode()) + 1
     for index, part in enumerate(parts, 1):
         (args.output / f"{index:03}.sql").write_text("\n".join(part) + "\n")
-    print(f"{len(rows)} records written to {len(parts)} parts in {args.output}")
+    print(f"{len(rows)} records and {len(unsorted)} categories written to {len(parts)} parts in {args.output}")
 
 
 if __name__ == "__main__":
