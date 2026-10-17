@@ -391,19 +391,26 @@ def ids_sequences(char: str) -> list[str]:
     return found
 
 
+#: BabelStone's source letters for a glyph some region or body uses, in the file's order. `X` (another
+#: analysis of a glyph already described), `Z` (a plausible form no source uses) and `UCS2003` (an old
+#: code-chart glyph) name none.
+SOURCE_REGIONS = "GHMTJKPVUSB"
+
+
 def regional_shapes(char: str) -> list[dict[str, str]]:
-    """The shapes BabelStone gives `char` by region, as `{"text", "regions"}` (所 as ⿰戶斤 in GHTKPV
-    and ⿰戸斤 in J), when its descriptions name more than one; empty otherwise. An `(X)` sequence is
-    another analysis of a shape some region already has (主's ⿱亠土 beside ⿱丶王), so it names none."""
+    """The shapes BabelStone gives `char` by source, as `{"text", "regions"}` (所 as ⿰戶斤 in GHTKPV
+    and ⿰戸斤 in J), when its descriptions name more than one; empty otherwise. Only source letters
+    count (`SOURCE_REGIONS`), read as `han_component_variants.regions` reads a tag: 主's ⿱亠土 (X)
+    analyses the ⿱丶王 every source writes, and 亼's ⿱人一 (Z) is no source's glyph."""
     usable = ids_sequences(char)
-    found: dict[str, str] = {}
+    found: dict[str, set[str]] = {}
     for sequence in han_components._sequences().get(char, ()):
-        tagged = re.search(r"\(([^)]*)\)$", sequence)
-        regions = tagged.group(1).replace("X", "") if tagged else ""
-        text = sequence[:tagged.start()] if tagged else sequence
-        if regions and text in usable:
-            found[text] = found.get(text, "") + "".join(r for r in regions if r not in found.get(text, ""))
-    return [{"text": text, "regions": regions} for text, regions in found.items()] if len(found) > 1 else []
+        text = han_component_variants.REGION.sub("", sequence)
+        named = han_component_variants.regions(sequence) & set(SOURCE_REGIONS)
+        if named and text in usable:
+            found.setdefault(text, set()).update(named)
+    return [{"text": text, "regions": "".join(r for r in SOURCE_REGIONS if r in named)}
+            for text, named in found.items()] if len(found) > 1 else []
 
 
 def substitutes(component: str) -> list[dict[str, Any]]:

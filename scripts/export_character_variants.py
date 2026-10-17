@@ -108,7 +108,7 @@ def word_citations() -> str:
 
 
 @cache
-def ids_rows() -> tuple[tuple[str, str], ...]:
+def ids_rows() -> tuple[tuple[str, str, str | None], ...]:
     """`han_ids`: each character's descriptions the IDS editor starts from (`refs.ids_sequences`), and
     its regional shapes when it has several (`refs.regional_shapes`, else NULL)."""
     dump = lambda value: json.dumps(value, ensure_ascii=False, separators=(",", ":"))
