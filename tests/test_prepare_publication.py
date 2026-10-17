@@ -243,3 +243,45 @@ def test_a_media_chunk_that_does_not_come_back_is_read_in_halves(monkeypatch):
     monkeypatch.setattr(prepare, "d1", lambda sql, tries=4: (_ for _ in ()).throw(subprocess.CalledProcessError(1, "wrangler")))
     with pytest.raises(SystemExit, match=f"could not read the site's media rows for {keys[0]}"):
         prepare.read_media(keys)
+
+
+def test_listed_units_are_read_by_key_and_published_alone(tmp_path, monkeypatch):
+    # ar:2 was cut again; ar:3 is new to the site but not listed, so it waits for a full publication.
+    export = resumed_export(tmp_path, {"ar:1": A, "ar:2": B, "ar:3": C})
+    with sqlite3.connect(export / "catalogue.sqlite") as db:
+        rows = {r[0]: r for r in db.execute("SELECT id, origin, revision, quiz, data, style FROM units")}
+    live = {i: dict(zip(("id", "origin", "revision", "quiz", "data", "style"), rows[i], strict=True)) | {"reviewed": 0}
+            for i in ("ar:1", "ar:2")}
+    live["ar:2"] |= {"data": live["ar:2"]["data"].replace(B, A), "revision": 0}
+    live_media = {A: ("packs/" + "1" * 64 + ".bin", 40, 5), C: ("packs/" + "2" * 64 + ".bin", 0, 5)}
+    asked = []
+
+    def d1(sql, tries=4):
+        if sql.startswith("SELECT key, object"):
+            return [{"key": k, "object": o, "offset": f, "size": n} for k, (o, f, n) in live_media.items() if f"'{k}'" in sql]
+        asked.append(re.search(r"WHERE u.id IN \((.*)\)$", sql).group(1))
+        return [row for i, row in live.items() if f"'{i}'" in sql]
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(prepare, "d1", d1)
+    (tmp_path / "ids.txt").write_text("ar:2\n")
+    monkeypatch.setattr("sys.argv", ["prepare", str(export), str(tmp_path / "out"), "--prefix", "ar:", "--ids", str(tmp_path / "ids.txt")])
+    prepare.main()
+    assert asked == ["'ar:2'"], "only the listed unit is read, by key"
+    sealed = tmp_path / "out" / "sealed"
+    manifest = json.loads((sealed / "publication.json").read_text())
+    sql = "".join((sealed / p).read_text() for p in manifest["sql"])
+    assert "ar:2" in sql and "'ar:3'" not in sql and "unit_ngrams" not in sql
+
+
+def test_live_rows_by_key_are_read_in_halves_when_a_chunk_fails(monkeypatch):
+    import subprocess
+
+    ids = [f"ar:{n}" for n in range(10)]
+    def d1(sql, tries=4):
+        found = [i for i in ids if f"'{i}'" in sql]
+        if len(found) > 2:
+            raise subprocess.CalledProcessError(1, "wrangler")
+        return [{"id": i} for i in found]
+    monkeypatch.setattr(prepare, "d1", d1)
+    monkeypatch.setattr(prepare, "LIVE_CHUNK", 5)
+    assert sorted(row["id"] for row in prepare.read_ids(ids)) == sorted(ids)
