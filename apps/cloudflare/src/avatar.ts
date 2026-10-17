@@ -22,9 +22,10 @@ export async function gravatar(email: string): Promise<string | null> {
   return found?.ok ? url : null;
 }
 
-const uploadedKey = (image: string | null) => {
+/** The stored key of `user`'s own upload that `image` names, and null for anything else. */
+const uploadedKey = (image: string | null, user: string) => {
   const match = image?.match(AVATAR_PATH);
-  return match ? `avatars/${match[1]}/${match[2]}.webp` : null;
+  return match && match[1] === user ? `avatars/${match[1]}/${match[2]}.webp` : null;
 };
 
 /** Set the reader's picture from `source`, the uploaded bytes coming in `request` for `upload`. */
@@ -57,8 +58,8 @@ export async function setAvatar(env: Env, me: Viewer, source: string, request: R
   } else return { status: 422, body: { detail: 'Unknown picture source.' } };
   await env.DB.prepare('UPDATE "user" SET image=?,updatedAt=? WHERE id=?').bind(image, new Date().toISOString(), me.id).run();
   // An upload the reader has moved on from is removed.
-  const old = uploadedKey(row.image);
-  if (old && old !== uploadedKey(image)) await env.MEDIA.delete(old);
+  const old = uploadedKey(row.image, me.id);
+  if (old && old !== uploadedKey(image, me.id)) await env.MEDIA.delete(old);
   return { status: 200, body: { image } };
 }
 

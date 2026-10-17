@@ -37,6 +37,14 @@ describe('a reader\'s picture', () => {
     expect(image()).toBeNull();
     expect(stored.size).toBe(0);
   });
+  it('never removes an upload of another reader', async () => {
+    const { db, env, me, stored } = setup();
+    const theirs = 'avatars/00000000-0000-0000-0000-000000000002/0123456789abcdef.webp';
+    stored.set(theirs, webp());
+    db.exec(`UPDATE "user" SET image='/api/avatars/00000000-0000-0000-0000-000000000002/0123456789abcdef.webp'`);
+    expect((await setAvatar(env, me, 'initial', post('{}'))).status).toBe(200);
+    expect(stored.has(theirs)).toBe(true);
+  });
   it('comes from a connected Google account, when it has a picture', async () => {
     const { db, env, me, image } = setup();
     expect((await setAvatar(env, me, 'google', post('{}'))).status).toBe(404);
