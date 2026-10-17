@@ -44,7 +44,7 @@ SHIFT_METHODS = {"block-shift-v1", "block-boundary-v1", METHOD}
 UNREAD = "□▢"
 #: How many characters on each side of a kana the script of its neighbours is counted over.
 KANA_WINDOW = 10
-#: The least probability a form is given, so that one the classifier never names still counts.
+#: The least probability a form is given, so that one the classifier reads as impossible still counts.
 FLOOR = 1e-4
 MATCH, MISMATCH, GAP = 2, -1, -2
 MIN_MATCHES = 3
@@ -257,6 +257,8 @@ def run(dataset: Path, *, pages: Path, checkpoint: Path | None = None, apply: bo
     kept = [item | {"status": "kept written form"} for item in proposals if item.get("written") and id(item) not in moved]
     proposals = changed
     counts["kept written form"] = len(kept)
+    # A kana decided without its ink: the classifier has no class for one of the forms, or the crop was not cut.
+    counts |= Counter(f"kana ink {item['ink']}" for item in kept + proposals if item.get("ink") not in (None, "read"))
     for item in proposals:
         unit, revision = units[item["unit_id"]]
         item["status"] = "proposed"
@@ -294,8 +296,14 @@ def ink(page, box, services: dict, *, client=None):
     if service is None or box is None or not page.width:
         return None
     if service not in services:
-        services[service] = images.info(service, client=client)
+        try:
+            services[service] = images.info(service, client=client)
+        except Exception:  # a service that does not describe itself is not asked again
+            services[service] = None
+            raise
     described = services[service]
+    if described is None:
+        raise OSError(f"{service} gave no description")
     scale = described["width"] / page.width
     region = ",".join(str(round(v * scale)) for v in (box.x, box.y, box.w, box.h))
     size = images._size_keyword(described["version"])
@@ -329,16 +337,21 @@ def settle(store, proposals: list[dict], checkpoint: Path | None) -> None:
         index = {name: i for i, name in enumerate(encoder.classes)}
         services: dict = {}
         for item in pending:
+            found = [index.get(refs.to_code_point(c)) for c in (item["before"], item["character"])]
+            if None in found:
+                item["ink"] = "no class"
+                continue
             unit = store.unit(item["unit_id"])
             try:
                 picture = ink(store.page(unit.page_id), unit.box, services)
-            except Exception:  # noqa: BLE001 - a crop the service cannot cut is read as unknown
+            except Exception:  # noqa: BLE001 - a crop the service cannot cut is decided by its context
                 picture = None
             if picture is None:
+                item["ink"] = "unread"
                 continue
             row = encoder.classify(np.asarray(preprocess(picture, size=encoder.size), dtype=np.uint8)[None])[1][0]
-            found = [index.get(refs.to_code_point(c)) for c in (item["before"], item["character"])]
-            shown[item["unit_id"]] = tuple(None if i is None else float(row[i]) for i in found)
+            item["ink"] = "read"
+            shown[item["unit_id"]] = tuple(float(row[i]) for i in found)
     for item in proposals:
         if item.get("form") == "kana":
             p_written, p_transcribed = shown.get(item["unit_id"], (None, None))
