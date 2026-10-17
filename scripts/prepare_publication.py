@@ -1,7 +1,7 @@
 """Turn an `export_cloudflare.py` output into a publication `publish_cloudflare.sh` can upload and apply.
 
     python scripts/prepare_publication.py EXPORT OUTPUT --prefix ar: --prefix hk: \\
-        [--live LIVE.jsonl] [--extra retire.sql ...] [--status]
+        [--live LIVE.jsonl | --ids IDS.txt] [--extra retire.sql ...] [--status]
 
 1. The export's catalogue is copied, and every image row is checked against the pack it points into.
    An export stopped mid-write leaves rows past the end of its last pack; the crops using them are
@@ -25,6 +25,11 @@
    with `--status` the collection status row, and last the row the Worker keys its cached listings
    on (`units_refreshed_at`), so they change once the rest has. Each part stays under D1's upload size and every
    statement under its statement limit; `publication.json` lists the parts.
+
+With `--ids`, a file of unit ids one per line, only those units are published: their live rows are read
+by primary key, a hundred at a time, and the SQL holds their image rows, rows and pages. Runs are left
+alone, since a relabel or a recut moves no crop within its line and a run's text follows its crops' rows
+on the site.
 
 Nothing is uploaded or written to D1 here: reading the live units and images is the only request.
 """
@@ -60,9 +65,12 @@ PART_BYTES = 45 * 1024 * 1024
 STATEMENT_BYTES = 95 * 1024
 MEDIA_KEY = re.compile(r'^INSERT OR (?:REPLACE|IGNORE) INTO "media"[^(]*\(\'([0-9a-f]+)\'')
 UNIT_ID = re.compile(r'^INSERT OR IGNORE INTO "units"[^(]*\(\'((?:[^\']|\'\')*)\'')
+PAGE_ID = re.compile(r"^INSERT INTO pages\(id,document,data\) VALUES\('((?:[^']|'')*)'")
 ID_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"
 #: Image keys read from D1 per request: 65 bytes each, under D1's statement limit.
 MEDIA_CHUNK = 1000
+#: Units read by primary key in one request.
+LIVE_CHUNK = 100
 
 
 def key_of(url) -> str:
@@ -174,6 +182,27 @@ def read_range(low: str, high: str, depth: int = 0) -> list[dict]:
     # from a bare prefix (`ex:` to `ex:1`) holds only ids continuing it with `0`.
     parts = sorted({low, high} | {low + c for c in ID_CHARS if low < low + c < high})
     return [row for a, b in itertools.pairwise(parts) for row in read_range(a, b, depth + 1)]
+
+
+def read_ids(ids: list[str]) -> list[dict]:
+    """The live rows of `ids`, each looked up by primary key; a chunk that does not come back is read
+    again in halves."""
+    quote = lambda value: "'" + value.replace("'", "''") + "'"
+
+    def read(chunk: list[str], depth: int = 0) -> list[dict]:
+        sql = ("SELECT u.id, u.origin, u.revision, u.quiz, u.data, u.style, "
+               "EXISTS(SELECT 1 FROM events e WHERE e.target=u.id) AS reviewed "
+               f"FROM units u WHERE u.id IN ({','.join(map(quote, chunk))})")
+        try:
+            return d1(sql, tries=2)
+        except subprocess.CalledProcessError:
+            if len(chunk) == 1 or depth >= 6:
+                raise SystemExit(f"could not read live units {chunk[0]}..{chunk[-1]}") from None
+        half = len(chunk) // 2
+        return read(chunk[:half], depth + 1) + read(chunk[half:], depth + 1)
+    chunks = [ids[i:i + LIVE_CHUNK] for i in range(0, len(ids), LIVE_CHUNK)]
+    with ThreadPoolExecutor(2) as pool:
+        return [row for rows in pool.map(read, chunks) for row in rows]
 
 
 def read_live(prefixes: list[str]) -> list[dict]:
@@ -319,6 +348,7 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--prefix", action="append", default=[], help="unit id prefix to publish, e.g. ar:")
     parser.add_argument("--live", type=Path, help="live units as JSON lines, instead of reading D1")
+    parser.add_argument("--ids", type=Path, help="publish only these unit ids, one per line, read by primary key")
     parser.add_argument("--extra", type=Path, action="append", default=[], help="SQL file applied after the refresh")
     parser.add_argument("--status", action="store_true", help="also write the collection status row")
     args = parser.parse_args()
@@ -355,8 +385,11 @@ def main() -> None:
                          + ", ".join(gone[:5]) + (", ..." if len(gone) > 5 else ""))
     seal(out, corpus, sealed, published)
 
-    live_rows = ([json.loads(line) for line in args.live.read_text().splitlines() if line.strip()] if args.live
-                 else read_live(args.prefix))
+    listed = sorted(set(args.ids.read_text().split())) if args.ids else None
+    if args.live:
+        live_rows = [json.loads(line) for line in args.live.read_text().splitlines() if line.strip()]
+    else:
+        live_rows = read_ids(listed) if listed is not None else read_live(args.prefix)
     live = {row["id"]: row for row in live_rows}
     (out / "live.jsonl").write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in live_rows))
     updates, counts, held, touched = plan_refresh(sealed / "atlas.sqlite", live)
@@ -366,6 +399,8 @@ def main() -> None:
     # every other image row and pack is already on the site from an earlier publication.
     atlas = sqlite3.connect(sealed / "atlas.sqlite")
     fresh = {i for i, in atlas.execute("SELECT id FROM units")} - live.keys()
+    if listed is not None:
+        fresh &= set(listed)
     overlapping = live_overlaps(atlas, fresh, live_rows)
     fresh -= set(overlapping)
     (out / "overlapping.json").write_text(json.dumps(overlapping, indent=1))
@@ -376,6 +411,10 @@ def main() -> None:
     wanted.discard("")
     objects = {obj for key, obj in atlas.execute("SELECT key, object FROM media") if key in wanted}
     media, units, pages, ngrams, claims = split_sealed((sealed / "catalogue.sql").read_text(encoding="utf-8"), wanted, fresh)
+    if listed is not None:
+        mine = {json.loads(data).get("page_id") for i, data in atlas.execute("SELECT id, data FROM units") if i in fresh or i in touched}
+        pages = [line for line in pages if PAGE_ID.match(line).group(1).replace("''", "'") in mine]
+        ngrams = []
     extras = [statements(path.read_text(encoding="utf-8")) for path in args.extra]
     # The version row goes last, so the Worker's cached listings change only once every row has.
     # The ledger after the crops: a claim's slot is resolved against the crop's version on the site.
