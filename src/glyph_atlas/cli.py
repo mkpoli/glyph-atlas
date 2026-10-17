@@ -741,6 +741,67 @@ def review_propose_marks(
         typer.echo(f"{'retired':<40} {totals['retired']:>4}")
 
 
+@review_app.command("propose-characters")
+def review_propose_characters(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose pages are searched")],
+    page: Annotated[list[str] | None, typer.Option("--page", help="page id; repeat for several")] = None,
+    document: Annotated[list[str] | None, typer.Option("--document", help="document id; repeat for several")] = None,
+    script: Annotated[str, typer.Option(help="script the proposed characters are filed under, e.g. tangut")] = "unknown",
+    onnx: Annotated[Path | None, typer.Option(help="detector export")] = None,
+    score: Annotated[float, typer.Option(help="detector score cutoff")] = 0.02,
+    nms: Annotated[float, typer.Option(help="IoU above which a lower-scoring box is suppressed")] = 0.2,
+) -> None:
+    """Propose the character boxes of page photos that have no transcription, for reviewers to read.
+
+    Searches every page with a cached photo, or the pages named and the pages of the documents named.
+    A page already searched by this version of the proposer is left as it is."""
+    from PIL import Image
+
+    from . import character_proposals
+    from .detect import Detector
+    from .review.characters import page_digest
+    from .review.server import cached_image
+    from .review.store import Store
+    from .schema import Script
+
+    try:
+        filed = Script(script)
+    except ValueError as error:
+        raise typer.BadParameter(f"no script {script!r}") from error
+    model = onnx or Path("models/detector/artifacts/detector.onnx")
+    version = character_proposals.proposer(model, score=score, nms=nms)
+    detector = Detector(model, score=score, nms=nms)
+    store = Store(directory)
+    pages = sorted(store.pages().values(), key=lambda record: (record.document_id, record.seq, record.id))
+    missing = set(page or ()) - {record.id for record in pages}
+    if missing:
+        raise typer.BadParameter(f"no page {', '.join(sorted(missing))}")
+    if page or document:
+        pages = [record for record in pages
+                 if record.id in set(page or ()) or record.document_id in set(document or ())]
+    totals = {"created": 0, "retired": 0}
+    for record in pages:
+        digest = page_digest(record)
+        path = cached_image(digest) if digest else None
+        if path is None or not record.width or not record.height:
+            typer.echo(f"{record.id:<40} no cached photo")
+            continue
+        with Image.open(path) as image:
+            proposals = character_proposals.propose(image.convert("RGB"), detector)
+            size = image.size
+        result = store.propose_units(record.id, proposals, version, image_size=size, script=filed)
+        if result["skipped"]:
+            typer.echo(f"{record.id:<40} already proposed by {version}")
+            continue
+        typer.echo(f"{record.id:<40} {len(proposals):>4} boxes {len(result['created']):>4} recorded "
+                   f"{len(result['retired']):>4} retired")
+        totals["created"] += len(result["created"])
+        totals["retired"] += len(result["retired"])
+    typer.echo(f"{'recorded':<40} {totals['created']:>4}")
+    if totals["retired"]:
+        typer.echo(f"{'retired':<40} {totals['retired']:>4}")
+
+
 @review_app.command("replay")
 def review_replay(directory: Annotated[Path, typer.Argument(help="dataset directory to rebuild")]) -> None:
     """Rebuild the review state from the tables and the log and check that it matches."""
