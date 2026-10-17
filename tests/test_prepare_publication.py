@@ -274,7 +274,7 @@ def test_listed_units_are_read_by_key_and_published_alone(tmp_path, monkeypatch)
     assert json.loads((tmp_path / "out" / "not-live.json").read_text()) == ["ar:3"]
 
 
-def test_a_listed_publication_records_anew_the_runs_around_its_units(tmp_path):
+def test_a_listed_publication_records_anew_the_runs_on_its_units_lines(tmp_path):
     catalogue = tmp_path / "catalogue.sqlite"
     with sqlite3.connect(catalogue) as db:
         db.execute("CREATE TABLE unit_ngrams(size, first, second, third, vertical)")
@@ -283,10 +283,10 @@ def test_a_listed_publication_records_anew_the_runs_around_its_units(tmp_path):
     atlas = sqlite3.connect(":memory:")
     atlas.execute("CREATE TABLE units(id, origin, data)")
     atlas.executemany("INSERT INTO units VALUES(?, 'local', ?)", [
-        (f"hk:{n}", json.dumps({"line_id": "L1" if n < 7 else "L2", "seq": n})) for n in range(1, 9)])
+        (f"hk:{n}", json.dumps({"line_id": "L1" if n < 7 else "L2"})) for n in range(1, 9)])
     sql = "".join(prepare.listed_runs(catalogue, atlas, {"hk:3"}))
     removed = re.findall(r"DELETE FROM unit_ngrams WHERE first IN \(([^)]*)\)", sql)
-    assert removed == ["'hk:1','hk:2','hk:3'"], "the runs from two crops before through the unit"
+    assert removed == ["'hk:1','hk:2','hk:3','hk:4','hk:5','hk:6'"], "every run on the unit's line"
     assert "'hk:3','hk:4'" in sql and "hk:7" not in sql
 
 

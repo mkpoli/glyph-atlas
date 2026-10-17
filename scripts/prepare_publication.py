@@ -28,8 +28,8 @@
 
 With `--ids`, a file of unit ids one per line, only those of them the site already holds are refreshed:
 their live rows are read by primary key, a hundred at a time, and the SQL holds their image rows, rows,
-pages and the runs that start on their lines up to two crops before them. A listed unit the site does
-not hold waits for a full publication (OUTPUT/not-live.json), and so does the ledger.
+pages and every run on their lines. A listed unit the site does not hold waits for a full publication
+(OUTPUT/not-live.json), and so does the ledger.
 
 Nothing is uploaded or written to D1 here: reading the live units and images is the only request.
 """
@@ -207,22 +207,21 @@ def read_ids(ids: list[str]) -> list[dict]:
 
 
 def listed_runs(catalogue: Path, atlas: sqlite3.Connection, touched: set[str]) -> list[str]:
-    """The run statements of a listed publication: the runs starting at each touched unit, at the two crops
-    before it on its line, and at any crop whose run now passes through it, removed first as
-    `ngram_statements` does, so a recut that joins or breaks a run leaves none stale."""
+    """The run statements of a listed publication: every run starting on a touched unit's line, removed
+    first as `ngram_statements` does. A line's runs depend on the spacing of all its crops, so a relabel or
+    a recut can join or break a pair anywhere on it; rebuilding the whole line leaves none stale."""
     with sqlite3.connect(catalogue) as db:
         if not db.execute("SELECT 1 FROM sqlite_master WHERE name='unit_ngrams'").fetchone():
             return []
         runs = [Run(tuple(i for i in ids if i), bool(vertical)) for *ids, vertical in
                 db.execute("SELECT first,second,third,vertical FROM unit_ngrams ORDER BY first,size")]
-    places = {}
+    lines = {}
     for ident, origin, data in atlas.execute("SELECT id, origin, data FROM units"):
-        record = json.loads(data)
-        if origin == "local" and record.get("line_id") is not None and record.get("seq") is not None:
-            places[ident] = (record["line_id"], record["seq"])
-    firsts = set(touched) | {run.units[0] for run in runs if touched & set(run.units)}
-    near = {places[i] for i in touched if i in places}
-    firsts |= {i for i, (line, seq) in places.items() if any(line == l and s - 2 <= seq < s for l, s in near)}
+        if origin == "local" and (line := json.loads(data).get("line_id")) is not None:
+            lines[ident] = line
+    near = {lines[i] for i in touched if i in lines}
+    firsts = set(touched) | {i for i, line in lines.items() if line in near}
+    firsts |= {run.units[0] for run in runs if touched & set(run.units)}
     return [statement + "\n" for statement in ngram_statements(sorted(firsts), [run for run in runs if run.units[0] in firsts])]
 
 
@@ -410,7 +409,8 @@ def main() -> None:
     if args.live:
         live_rows = [json.loads(line) for line in args.live.read_text().splitlines() if line.strip()]
         if listed is not None:
-            live_rows = [row for row in live_rows if row["id"] in set(listed)]
+            wanted = set(listed)
+            live_rows = [row for row in live_rows if row["id"] in wanted]
     else:
         live_rows = read_ids(listed) if listed is not None else read_live(args.prefix)
     live = {row["id"]: row for row in live_rows}
