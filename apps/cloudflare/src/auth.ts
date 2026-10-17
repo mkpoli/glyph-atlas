@@ -95,8 +95,11 @@ function build(env: Env, origin: string) {
           },
         },
         update: {
-          // A name shaped like an old reviewer id is only for the user who holds that id.
           before: async (user, ctx) => {
+            // A picture is chosen through `/api/account/avatar`, which checks where it comes from; one
+            // sent here could name any address, or another reader's upload.
+            if (ctx?.path === '/update-user' && user.image !== undefined) throw new APIError('BAD_REQUEST', { message: 'Choose a picture from the account page.' });
+            // A name shaped like an old reviewer id is only for the user who holds that id.
             if (typeof user.name !== 'string' || !LEGACY_REVIEWER.test(user.name)) return;
             const id = ctx?.context.session?.user.id;
             const held = id && await env.DB.prepare('SELECT 1 FROM actors WHERE actor=? AND user_id=?').bind(user.name, id).first();

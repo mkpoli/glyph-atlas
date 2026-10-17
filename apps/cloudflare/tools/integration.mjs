@@ -144,6 +144,12 @@ try {
     assert.equal(response.status, status, path + ' ' + JSON.stringify(json))
     return json
   }
+  // A picture is set through the account's avatar route only; the auth API takes a name and refuses a picture.
+  const profile = async body => (await mf.dispatchFetch(base + '/api/auth/update-user', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: base, cookie: (await user('integration')).cookie }, body: JSON.stringify(body) })).status
+  assert.equal(await profile({ image: 'https://example.org/tracker.png' }), 400, 'a picture address sent to the auth API is refused')
+  assert.equal(await profile({ name: 'Integration' }), 200, 'a name is taken')
+  assert.equal((await db.prepare('SELECT image FROM "user" WHERE id=?').bind((await user('integration')).id).first()).image, null, 'and the picture is left alone')
   const decision = { id: 'one', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'merged', correction: 'アイ' }
   const round = { id: crypto.randomUUID(), grapheme: 'U+3042', answers: [decision] }
   assert.deepEqual(await call('/atlas/rounds', round, 401, null), { detail: 'Sign in to save.' }, 'an anonymous save is refused')
