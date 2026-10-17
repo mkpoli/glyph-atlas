@@ -27,3 +27,25 @@ def test_collect_full_volume_without_fabricated_text(tmp_path, monkeypatch):
     manifest["metadata"] = []
     subject.collect(source, out)
     assert next(iter(tables.read(out / "documents.parquet", Document))).image_rights.holder_terms == Licence.UNKNOWN
+
+
+def test_collect_reads_a_presentation_3_manifest_and_keeps_its_statement(tmp_path, monkeypatch):
+    source = tmp_path / "source.yaml"
+    source.write_text("id: eap\nname: Tangut\nholder: IOM RAS\nurl: https://example.org/eap\nimage_licence: restricted\n"
+                      "attribution: British Library, EAP\nbooks:\n  - id: eap140:1-52\n    title: Sutra\n"
+                      "    manifest: https://example.org/manifest\n    source_url: https://example.org/52\n")
+    statement = "Except as otherwise permitted under your national copyright law this material may not be copied"
+    manifest = {"label": {"en": ['"Sutra, Tang.334/233"']},
+                "requiredStatement": {"label": {"en": ["Attribution"]}, "value": {"en": [statement]}},
+                "metadata": [{"label": {"en": ["Language"]}, "value": {"en": ["Tangut"]}}],
+                "items": [{"id": "canvas:1", "type": "Canvas", "width": 1612, "height": 2466, "items": [{"type": "AnnotationPage",
+                    "items": [{"type": "Annotation", "body": {"type": "Image", "id": "https://example.org/1.jp2/full/full/0/default.jpg",
+                        "service": [{"id": "https://example.org/1.jp2", "@type": "ImageService2"}]}}]}]}]}
+    monkeypatch.setattr(subject, "fetch_manifest", lambda *a, **k: manifest)
+    subject.collect(source, tmp_path / "out")
+    doc = next(iter(tables.read(tmp_path / "out" / "documents.parquet", Document)))
+    page = next(iter(tables.read(tmp_path / "out" / "pages.parquet", Page)))
+    assert doc.title == "Sutra, Tang.334/233" and doc.meta["catalogue"] == {"Language": "Tangut"}
+    assert (doc.image_rights.licence, doc.image_rights.holder_terms) == (Licence.PUBLIC_DOMAIN, Licence.RESTRICTED)
+    assert doc.meta["holder_statement"] == statement and doc.image_rights.attribution == "British Library, EAP"
+    assert (page.image, page.width, page.height) == ("https://example.org/1.jp2", 1612, 2466)

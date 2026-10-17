@@ -13,6 +13,17 @@ from ..schema import Document, Licence, Page, Rights
 from .honkoku_data import canvas_page, canvases, fetch_manifest
 
 
+def text(value) -> str | None:
+    """A IIIF label or value as one string: a v2 string or list, or a v3 language map, first language first."""
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, list):
+        return "; ".join(found for item in value if (found := text(item))) or None
+    if isinstance(value, dict):
+        return "; ".join(found for values in value.values() if (found := text(values))) or None
+    return None
+
+
 def collect(source: Path, out: Path, *, cache: Path | None = None) -> dict:
     config = yaml.safe_load(source.read_text(encoding="utf-8"))
     out.mkdir(parents=True, exist_ok=True)
@@ -23,16 +34,22 @@ def collect(source: Path, out: Path, *, cache: Path | None = None) -> dict:
         except net.DownloadError as error:
             unavailable.append({"id": book["id"], "title": book["title"], "error": str(error)})
             continue
-        meta = {str(v.get("label")): v.get("value") for v in manifest.get("metadata", [])}
-        licence = Licence.PDM if meta.get("Access Restrictions") == "PDM" else Licence.UNKNOWN
+        meta = {text(v.get("label")): text(v.get("value")) for v in manifest.get("metadata", [])}
+        # A holder's statement is either the v2 `Access Restrictions` field or a v3 `requiredStatement`;
+        # a collection whose manifests state a restriction in words says which licence that is.
+        statement = text((manifest.get("requiredStatement") or {}).get("value"))
+        licence = (Licence.PDM if meta.get("Access Restrictions") == "PDM"
+                   else Licence(config["image_licence"]) if statement and config.get("image_licence") else Licence.UNKNOWN)
         document = Document(
-            id=book["id"], title=str(manifest.get("label") or book["title"]),
+            # EAP's labels wrap the catalogue title in double quotes.
+            id=book["id"], title=(text(manifest.get("label")) or book["title"]).removeprefix('"').removesuffix('"'),
             holder=config["holder"],
             source_refs={"iiif-manifest": book["manifest"], "catalogue": book["source_url"]},
             image_rights=Rights(licence=licence, holder=config["holder"],
-                                attribution=str(manifest.get("attribution") or config["holder"]),
+                                attribution=text(manifest.get("attribution")) or config.get("attribution") or config["holder"],
                                 evidence=book["manifest"]),
             meta={"collection": config["id"], "catalogue": meta,
+                  **({"holder_statement": statement} if statement else {}),
                   "manifest_sha256": hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest(),
                   "extraction_status": "pending"},
         )
