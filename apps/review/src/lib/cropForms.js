@@ -1,5 +1,6 @@
 import { request, character as readCrop, corpusCharacter } from './client.js'
 import { character as readCard } from './layers.js'
+import { figuresOf } from './mjFigures.js'
 
 /**
  * What a crop is written as, read and set through the calls the interface uses and nothing else:
@@ -19,16 +20,21 @@ const derivedEntry = item => ({ ...entry(item), code_point: item.code_point ?? n
 const cards = new Map()
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then the
- * variants the sources attest for `char` and the derived ones. A character the layer does not know
- * offers itself alone.
+ * variants: the figures the IVD registers for `char` when it registers more than one (所󠄂 and 所󠄃),
+ * each named by its MJ figure, and the variants the sources attest; then the derived ones. A character
+ * the layer does not know offers itself alone.
  */
 export function listForms(char) {
   if (!char) return Promise.resolve({ members: [], variants: [], derived: [] })
   if (!cards.has(char)) {
     // A sequence the table has no card for (ツ + U+309A) offers itself alone.
-    const loaded = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error)).then(card => {
+    const card = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error))
+    // A failed read of the figures leaves them out; the card's forms still come.
+    const registered = figuresOf(char).catch(() => [])
+    const loaded = Promise.all([card, registered]).then(([card, figures]) => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
-      const variants = [...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)
+      const variants = [...figures.map(figure => ({ ...entry(figure), mj: figure.mj })),
+        ...[...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)]
       const derived = (card?.variants?.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))
       const fresh = list => list.filter(item => !seen.has(item.char) && seen.add(item.char))

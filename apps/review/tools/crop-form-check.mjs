@@ -157,6 +157,30 @@ try {
   assert(units(config.directory)[second].unicode === 'U+3042', 'a description changed the crop\'s character')
   console.log('PASS a form written as a description is composed, checked and claimed')
 
+  // A character the IVD registers several figures for offers each sequence among its variants, named
+  // by its MJ figure and drawn in MJ Figures: 所 as 所󠄂 (MJ012120) and 所󠄃 (MJ012119).
+  const third = Object.entries(units(config.directory)).find(([id, unit]) => unit.active && unit.unicode === 'U+3042' && id !== first && id !== second)?.[0]
+  assert(third, 'the fixture has a third crop written as あ')
+  const renamed = await browser.evaluate(`(async () => {
+    const crop = await (await fetch('/atlas/characters/' + encodeURIComponent(${JSON.stringify(third)}))).json()
+    const response = await fetch('/layers/units/' + encodeURIComponent(${JSON.stringify(third)}), { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: crypto.randomUUID(), revision: crop.revision, image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character: '所' }) })
+    return response.status
+  })()`)
+  assert(renamed < 300, `the crop could not be renamed to 所: ${renamed}`)
+  await browser.goto(`${service.base}/en/crop/${encodeURIComponent(third)}`, { waitFor: ready, timeout: 90000 })
+  await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
+  const options = `[...document.querySelectorAll('dialog[open] .form-picker .form-section')].find(s => s.querySelector('.form-section-title').textContent === 'Variants')?.querySelectorAll('.form-option')`
+  await browser.waitFor(`(${options})?.length > 1`, 20000)
+  const figures = await browser.evaluate(`[...${options}].slice(0, 2).map(o => o.title)`)
+  assert(figures[0] === 'U+6240 U+E0102\nMJ012120' && figures[1] === 'U+6240 U+E0103\nMJ012119', `the registered figures do not lead the variants: ${JSON.stringify(figures)}`)
+  await browser.waitFor(`[...document.fonts].some(f => f.family.replaceAll('"', '') === 'MJ Figures' && f.status === 'loaded')`, 20000)
+  await browser.screenshot(join(screenshots, 'form-picker-figures-light.png'))
+  await browser.setColorScheme('dark')
+  await browser.screenshot(join(screenshots, 'form-picker-figures-dark.png'))
+  await browser.setColorScheme('light')
+  console.log('PASS a character\'s registered figures lead its variants, drawn in MJ Figures')
+
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop form')
 } finally {
