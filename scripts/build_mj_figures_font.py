@@ -55,11 +55,12 @@ def figures():
         if line.startswith('#') or line.startswith('mj\t'):
             continue
         mj, point, implemented, ivs = line.split('\t')
-        # A figure registered on several bases (MJ059399 on U+2B9E4 and U+535A) is offered on its own.
+        # A figure registered on several bases (MJ059399 on U+2B9E4 and U+535A) is offered on its own;
+        # it is the default when the font draws it for its base alone (MJ030260 is drawn for U+FA40).
         for sequence in ivs.split(';') if point and ivs else ():
             base, selector = sequence.split('_')
             if f'U+{base}' == point:
-                found[int(base, 16)].append((chr(int(base, 16)) + chr(int(selector, 16)), mj, bool(implemented)))
+                found[int(base, 16)].append((chr(int(base, 16)) + chr(int(selector, 16)), mj, implemented == point))
     return {code: sorted(rows) for code, rows in sorted(found.items()) if len(rows) > 1}
 
 
@@ -92,6 +93,7 @@ def main():
         selectors = {ord(text[-1]) for code in part for text, _, _ in wanted[code]}
         sub = subset.Subsetter(options=options); sub.populate(unicodes=[*part, *selectors]); sub.subset(font)
         rename(font)
+        font.flavor = 'woff2'   # the option only says what to load; the saved font takes its own
         name = f'mj-figures-{i // CHUNK:02d}.woff2'
         font.save(OUT / name)
         (OUT / name.replace('.woff2', '.json')).write_text(json.dumps(
