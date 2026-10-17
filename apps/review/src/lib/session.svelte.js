@@ -88,6 +88,8 @@ async function claimLegacy() {
 export const ensureSignedIn = options => current?.ensure(options)
 /** Settles once the page knows who is signed in. */
 export const sessionStarted = () => current?.started
+/** Whether this browser still holds a reviewer id from before accounts, which `start` claims. */
+export const holdsLegacyReviewer = () => stored(LEGACY, null) !== null
 /** Who is signed in, as far as the page knows, without starting a session. */
 export const signedInUser = () => current?.state.user ?? null
 
