@@ -589,7 +589,9 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     may write the character as, no gallery widening to them. Every edge keeps its relation, source and
     claims; `sources` cites each source used, and a card with a derived row cites `derived-ids` too.
     `writes` are the graphemes besides its own that `char`, a reduced form of several characters,
-    writes (后: 後), and `writers` the forms of that kind that write its grapheme (後: 后).
+    writes (后: 後), and `writers` the forms of that kind that write its grapheme (後: 后), each `shared`
+    when it writes something else too. `own` is
+    false for a form with no character of its own, whose 字種 are the graphemes it writes (𠮮: 后, 𠯑).
     """
     widening, other = variant_pairs(char)
     shown = [*widening[:VARIANTS_SHOWN], *other[:VARIANTS_SHOWN]]
@@ -612,7 +614,10 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     return {"items": [r for r in rows if r["widens"]], "related": [r for r in rows if not r["widens"]],
             "derived": predictions, "total": len(widening) + len(other),
             "writes": [{"code_point": head, "char": refs.to_char(head)} for head in refs.also_writes(point)],
-            "writers": list((refs.grapheme_info(point) or {}).get("writers", [])),
+            "writers": [{**writer, "shared": refs.own_grapheme(writer["code_point"])
+                         or len(refs.also_writes(writer["code_point"])) > 1}
+                        for writer in (refs.grapheme_info(point) or {}).get("writers", [])],
+            "own": refs.own_grapheme(point),
             "sources": {source: cited.get(source, source) for source in sorted(used)}}
 
 

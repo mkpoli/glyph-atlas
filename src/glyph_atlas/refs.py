@@ -903,6 +903,9 @@ SHAPE_VARIANT = "shape-variant"
 #: The role of a family's edge to a reduced form outside it that writes several characters, this one
 #: among them (`shape_families.WRITES`).
 WRITES = "writes"
+#: The role of a row by which a form with no character of its own stands for a family
+#: (`shape_families.STANDS_FOR`): such a form has no grapheme of its own.
+STANDS_FOR = "stands-for"
 
 
 @cache
@@ -931,7 +934,7 @@ def _grapheme_families() -> dict[str, dict]:
         stated = [to_code_point(char) for char in family["members"]] if family else [head]
         attested: dict[str, set[str]] = {}
         for row in edges.get(head, ()):
-            if row["role"] != WRITES:
+            if row["role"] not in (WRITES, STANDS_FOR):
                 for end in ("a", "b"):
                     attested.setdefault(to_code_point(row[end]), set()).add(row["source"])
         members = stated + sorted(set(attested) - set(stated),
@@ -940,7 +943,7 @@ def _grapheme_families() -> dict[str, dict]:
             members = [head]
         writing: dict[str, set[str]] = {}
         for row in edges.get(head, ()):
-            if row["role"] == WRITES:
+            if row["role"] in (WRITES, STANDS_FOR):
                 for end in ("a", "b"):
                     if to_code_point(row[end]) not in members:
                         writing.setdefault(to_code_point(row[end]), set()).add(row["source"])
@@ -1014,6 +1017,22 @@ def _written_by() -> dict[str, tuple[str, ...]]:
         for point in family["writers"]:
             found.setdefault(point, []).append(head)
     return {point: tuple(sorted(heads, key=_point_order)) for point, heads in found.items()}
+
+
+@cache
+def _stand_ins() -> frozenset[str]:
+    return frozenset(to_code_point(row["b"] if to_code_point(row["a"]) in _members_of(row["head"]) else row["a"])
+                     for row in _read_tsv(FAMILIES_TSV) if row["role"] == STANDS_FOR)
+
+
+def _members_of(head: str) -> list[str]:
+    return _grapheme_families()[head]["members"]
+
+
+def own_grapheme(code_point: str) -> bool:
+    """Whether a character is a grapheme of its own: false for a form with no reading or definition
+    that stands for other characters' graphemes (𠮮 for 后 and 𠯑)."""
+    return code_point not in _stand_ins()
 
 
 def also_writes(code_point: str) -> tuple[str, ...]:

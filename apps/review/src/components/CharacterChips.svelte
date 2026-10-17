@@ -46,7 +46,7 @@
     for (const r of v.relations) by.set(r.relation, new Set([...(by.get(r.relation) ?? []), r.source]))
     return [...by].map(([relation, sources]) => ({ relation, name: relationName(relation), sources: [...sources] }))
   }
-  const relationTitle = v => [`${v.char} ${v.code_point}`, ...(writers.has(v.code_point) ? [shareLabel(v)] : []),
+  const relationTitle = v => [`${v.char} ${v.code_point}`, ...(sharedWriters.has(v.code_point) ? [shareLabel(v)] : []),
     ...relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`)].join('\n')
   // A chip names one relation, the most specific a pair has; its title lists them all with their sources.
   const RELATION_RANK = ['simplified', 'shinjitai', 'regional', 'shuowen', 'reduction', 'compatibility', 'z',
@@ -65,8 +65,15 @@
   // carried `written` lists every unwidening pair as related; one cached before the writers has neither.
   const grapheme = $derived(card?.grapheme ?? card)
   const writers = $derived(new Set((variants.writers ?? []).map(v => v.code_point)))
+  // A form standing for this grapheme alone (聞: 𦔴) is one of its 字体, with no tag. A card cached
+  // before writers carried `shared` tags every writer, as they all were.
+  const sharedWriters = $derived(new Set((variants.writers ?? []).filter(v => v.shared !== false).map(v => v.code_point)))
   const writes = $derived(variants.writes ?? [])
-  const shareLabel = v => writers.has(v.code_point) ? t('chips.alsoOwn') : t('chips.alsoWritten', { char: card.char })
+  // A form with no character of its own (𠮮) has the graphemes it writes as its 字種, and not itself;
+  // the 兼用 tag marks each of several.
+  const selfGrapheme = $derived(variants.own !== false || !writes.length)
+  const shared = $derived(writes.length + (selfGrapheme ? 1 : 0) > 1)
+  const shareLabel = v => writers.has(v.code_point) ? t('chips.alsoOther') : t('chips.alsoWritten', { char: card.char })
   const own = $derived(new Set([...members, ...writes].map(member => member.code_point)))
   const written = $derived([...variants.items, ...variants.related.filter(v => v.written || writers.has(v.code_point))]
     .filter(v => !own.has(v.code_point)).sort((a, b) => writers.has(b.code_point) - writers.has(a.code_point)))
@@ -88,9 +95,9 @@
     <div class="layer-row">
       <span class="layer-label">{t('chips.grapheme')}</span>
       <div class="variant-chips">
-        <a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char))}><ScriptText text={grapheme.char} lang="zh" titled={false} /></a>
+        {#if selfGrapheme}<a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char))}><ScriptText text={grapheme.char} lang="zh" titled={false} /></a>{/if}
         {#each writes as v (v.code_point)}
-          <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={shareLabel(v)}><ScriptText text={v.char} lang="zh" titled={false} /><small class="share">{t('chips.shared')}</small></a>
+          <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={shareLabel(v)}><ScriptText text={v.char} lang="zh" titled={false} />{#if shared}<small class="share">{t('chips.shared')}</small>{/if}</a>
         {/each}
       </div>
     </div>
@@ -107,7 +114,7 @@
           </button>{#if member.code_point === card.code_point}<ZiLink character={member.char} compact />{/if}</div>
         {/each}
         {#each written as v (v.code_point)}
-          <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if writers.has(v.code_point)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !v.widens}{mainRelation(v)}{#if crops(v)} · {/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
+          <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if sharedWriters.has(v.code_point)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !v.widens}{mainRelation(v)}{#if crops(v)} · {/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
         {/each}
         {#if variants.derived.length}
           <details class="derived">

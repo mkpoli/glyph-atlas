@@ -22,4 +22,15 @@ describe('the graphemes a reduced form writes', () => {
     expect(String(db.query(`EXPLAIN QUERY PLAN ${writersQuery()}`).all('後').map((r: any) => r.detail))).toContain('grapheme_writer_grapheme');
     db.close();
   });
+
+  it('marks a form with no character of its own, and a writer that writes one grapheme only', () => {
+    const db = migrated();
+    const row = db.prepare('INSERT INTO grapheme_writers(writer,grapheme,own) VALUES(?,?,?)');
+    for (const [writer, grapheme, own] of [['后', '後', 1], ['𠮮', '后', 0], ['𠮮', '𠯑', 0], ['𦔴', '聞', 0]] as const) row.run(writer, grapheme, own);
+    expect(db.query(writesQuery()).all('𠮮')).toEqual([{ char: '后', own: 0 }, { char: '𠯑', own: 0 }]);
+    expect(db.query(writersQuery()).all('后')).toEqual([{ char: '𠮮', shared: 1 }]);
+    expect(db.query(writersQuery()).all('後')).toEqual([{ char: '后', shared: 1 }]);
+    expect(db.query(writersQuery()).all('聞')).toEqual([{ char: '𦔴', shared: 0 }]);
+    db.close();
+  });
 });
