@@ -252,8 +252,10 @@ def run(dataset: Path, *, pages: Path, checkpoint: Path | None = None, apply: bo
     proposals, counts = propose(blocks, texts, protected)
     settle(store, proposals, checkpoint)
     # A correction that keeps the written form is reported, with what decided it, and changes nothing.
-    kept = [item | {"status": "kept written form"} for item in proposals if item.get("written")]
-    proposals = [item for item in proposals if item["character"] != item["before"] or item["text"] != item["text_before"]]
+    changed = [item for item in proposals if item["character"] != item["before"] or item["text"] != item["text_before"]]
+    moved = {id(item) for item in changed}
+    kept = [item | {"status": "kept written form"} for item in proposals if item.get("written") and id(item) not in moved]
+    proposals = changed
     counts["kept written form"] = len(kept)
     for item in proposals:
         unit, revision = units[item["unit_id"]]
