@@ -123,14 +123,14 @@
   @keyframes arrive{from{transform:scale(.4) rotate(calc(var(--r) / 3));opacity:0}to{transform:none;opacity:1}}
   .caption{min-height:28px;margin-top:14px;font-size:12px;line-height:1.7;color:var(--muted)}
   .caption a{display:inline-block;margin:0 3px;padding:0 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);
-    font-family:"Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans",serif;font-size:14px;line-height:1.6}
+    font-family:"Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif;font-size:14px;line-height:1.6}
   .caption a:hover{border-color:var(--line-strong)}
 
   h1{font-size:clamp(26px,3.2vw,36px);line-height:1.25;font-weight:500;letter-spacing:-.02em;text-wrap:balance;word-break:auto-phrase}
   .body{margin-top:14px;font-size:15px;line-height:1.7;color:var(--muted);max-width:44ch;text-wrap:pretty;word-break:auto-phrase}
   .suggestion{margin-top:24px;display:flex;align-items:center;gap:16px;max-width:420px;padding:12px 18px 12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
   .suggestion:hover{border-color:var(--line-strong)}
-  .suggested{font-family:"Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans",serif;font-size:28px;line-height:1.2;min-width:0;overflow-wrap:anywhere}
+  .suggested{font-family:"Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif;font-size:28px;line-height:1.2;min-width:0;overflow-wrap:anywhere}
   .suggestion .suggested.id{font-family:inherit;font-size:13px}
   .suggestion-label{font-size:13px;color:var(--muted);margin-left:auto;white-space:nowrap}
   .arrow{color:var(--muted)}

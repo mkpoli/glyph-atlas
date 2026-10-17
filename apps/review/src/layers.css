@@ -23,6 +23,14 @@
   unicode-range: U+3000-303F, U+3099-309C, U+30A1-30FE, U+31F0-31FF, U+1B127-1B128, U+2A708;
 }
 
+@font-face {
+  font-family: "Noto Serif Tangut";
+  src: url("/fonts/NotoSerifTangut-Tangut.woff2") format("woff2");
+  font-display: swap;
+  /* The Tangut ideographs and the iteration mark; few installed fonts draw any of them. */
+  unicode-range: U+16FE0, U+17000-187F7, U+18D00-18D08;
+}
+
 .reference-glyph { display: inline-block; line-height: 1.1; white-space: nowrap; }
 .reference-glyph.sm { font-size: 1.05rem; }
 .reference-glyph.md { font-size: 1.4rem; }
@@ -62,7 +70,7 @@
 .layer-name { margin: 0 0 8px; font-size: .82rem; color: var(--ink-soft); }
 .layer-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; font-size: .9rem; }
 .fact.confusable { color: var(--ink-soft); }
-.inline-glyph { font-family: "Kureedo Kata", "GenZui Sans", system-ui, sans-serif; font-size: 1.2rem;
+.inline-glyph { font-family: "Kureedo Kata", "GenZui Sans", "Noto Serif Tangut", system-ui, sans-serif; font-size: 1.2rem;
   background: none; border: 0; border-bottom: 1px dotted currentColor; cursor: pointer; padding: 0 2px; }
 .inline-glyph.big { font-size: 1.7rem; }
 .layer-close { margin-inline-start: auto; }
@@ -139,7 +147,7 @@
 .corpus-holder small { color: var(--ink-soft); }
 .corpus-open { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px;
   min-height: 96px; padding: 10px; font-size: .78rem; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
-.corpus-open b { font-family: "Kureedo Kata", "GenZui Sans", system-ui, sans-serif; font-size: 1.6rem; }
+.corpus-open b { font-family: "Kureedo Kata", "GenZui Sans", "Noto Serif Tangut", system-ui, sans-serif; font-size: 1.6rem; }
 .corpus-open small { color: var(--ink-soft); }
 .candidate-more { display: block; width: 100%; padding: 8px 10px; margin-top: 2px; background: none; border: 0;
   border-top: 1px solid var(--line); font-size: .82rem; cursor: pointer; color: var(--ink-soft); }
