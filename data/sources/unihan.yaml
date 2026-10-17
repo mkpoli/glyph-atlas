@@ -14,5 +14,6 @@ format:
   fields_read: [kSemanticVariant, kSpecializedSemanticVariant, kZVariant, kSimplifiedVariant, kTraditionalVariant, kJapaneseNewVariant, kJapaneseOldVariant, kSpoofingVariant]
 notes:
   - Source tags after `<` name the dictionary behind a semantic variant (kMatthews, kMeyerWempe, kFenn, kLau, kHanYu …); they are kept in the detail column.
+  - scripts/build_kanji_readings.py reads kJapanese (Unihan_Readings.txt), kJoyoKanji and kJinmeiyoKanji (Unihan_OtherMappings.txt) and kIRG_JSource (Unihan_IRGSources.txt) for the readings the search box finds kanji by.
   - Coverage is uneven. U+509A 傚 has no variant row at all, although Wikidata and HNG relate it to 效.
   - Reciprocal rows are usual but not guaranteed; kTraditionalVariant and kSimplifiedVariant may name the character itself, which the build drops.
