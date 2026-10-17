@@ -498,7 +498,8 @@ def _add_stand_ins(
     An ideograph with no reading or definition (not in `readings`) is a way of writing other
     characters. When neither pass has put it in a family, each family the sources state it a whole
     variant of (`_whole`) lists it, by the edges that say so: 𠮮 stands for 后 and for 𠯑, and so has
-    no grapheme of its own. A reduced form already writing families keeps that role, and a non-cognate
+    no grapheme of its own. It stands only for a family that holds a character of its own, never for
+    another such form. A reduced form already writing families keeps that role, and a non-cognate
     homograph or a look-alike (`UNLIKE`) stands for nothing.
     """
     writing = {writer for family in group.values() for writer in family.writers}
@@ -510,7 +511,7 @@ def _add_stand_ins(
         for edge in edges:
             other = edge.b if edge.a == form else edge.a
             target = group.get(other)
-            if target is not None and target is not own and other not in unlike.get(form, set()) \
+            if target is not None and target is not own and target.members & readings \
                     and not unlike.get(form, set()) & target.members:
                 by_family.setdefault(id(target), (target, []))[1].append(edge)
         for target, found in by_family.values():

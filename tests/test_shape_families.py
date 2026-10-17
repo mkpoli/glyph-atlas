@@ -407,6 +407,11 @@ def test_a_form_with_no_character_of_its_own_stands_for_each_it_is_a_variant_of(
     assert {family.head: "".join(family.writers) for family in found if family.writers} == {"后": "𠮮", "後": "后", "𠯑": "𠮮"}
     assert {edge.role for family in found for edge in family.writers.get("𠮮", [])} == {STANDS_FOR}
     assert not [family for family in families(rows, (), chars, {}, set()) if "𠮮" in family.writers], "no readings, none"
+    pair = [edge("甲", "乙", "variant"), edge("甲", "丙", "variant"), edge("乙", "丁", "variant"),
+            edge("丙", "戊", "variant"), edge("丁", "己", "variant")]
+    found = families(pair, (), set("甲乙丙丁戊己"), {}, set(), readings=set("丙丁戊己"))
+    assert {family.head: "".join(family.writers) for family in found if family.writers} == {"丙": "甲", "丁": "乙"}, \
+        "two forms with no character of their own never stand for each other"
 
 
 def test_the_site_gives_a_stand_in_the_graphemes_it_stands_for():

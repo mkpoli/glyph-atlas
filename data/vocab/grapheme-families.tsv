@@ -13,7 +13,7 @@
 #   unihan: Unihan_IRGSources.txt kIRG_JSource J0 (JIS X 0208) of Unicode 18.0.0, for the representative and for which reductions need a second source; Unihan_Readings.txt, for the forms with no reading or definition of their own
 # role: merge joins a and b; corroborates is the second source a reduction between two JIS X 0208 characters needs; writes says the end outside the family, a form that writes several characters, writes this one too; stands-for says the end outside the family, a form with no reading or definition of its own, stands for this one.
 # columns: head, a, b, relation, source, role, detail
-# families: 16681 (270 curated), characters: 53207, writers: 2114, rows: 65009
+# families: 16609 (270 curated), characters: 53135, writers: 2034, rows: 64905
 head	a	b	relation	source	role	detail
 U+3401	㐁	𠀬	variant	cjkvi-variants	merge	㐁→𠀬 hydzd/variant | 㐁→𠀬 koseki/variant | 㐁→𠀬 twedu/variant
 U+3401	㐁	𠀬	variant	wikidata	merge	Q109781829; P248 Q10427532 | Q109797207; P248 Q10427532
@@ -56691,8 +56691,6 @@ U+2001F	𠀟	𣎺	variant	wikidata	merge	Q109797194; P248 Q55686705 | Q109821156
 U+2003D	𠀽	𢼆	variant	wikidata	merge	Q109797225; P248 Q55686705 | Q109819428; P248 Q55686705
 U+2003D	𢼆	𭸁	variant	wikidata	merge	Q109819428; P248 Q837315 | Q109960544; P248 Q837315
 U+20041	𠁁	𬻞	variant	wikidata	merge	Q109797229; P248 Q65229515 | Q109955667; P248 Q65229515
-U+20043	𠁃	𥤔	variant	cjkvi-variants	stands-for	𠁃→𥤔 koseki/variant | 𥤔→𠁃 koseki/variant
-U+20043	𠁃	𥤔	variant	wikidata	stands-for	Q109797231; P248 Q10427532 | Q109842347; P248 Q10427532
 U+20054	𠁔	𫷘	simplified	unihan	stands-for	𠁔→𫷘 kSimplifiedVariant | 𫷘→𠁔 kTraditionalVariant
 U+2005E	𠀾	𠁞	variant	wikidata	merge	Q109797226; P248 Q63443408 | Q109797258; P248 Q63443408
 U+2005E	𠁞	𠀾	simplified	cjkvi-variants	merge	𠀾→𠁞 cjkvi/traditional | 𠁞→𠀾 cjkvi/simplified
@@ -56749,12 +56747,10 @@ U+202AD	𠊭	𢜩	variant	wikidata	merge	Q109797930; P248 Q10427532 | Q109816631
 U+202B2	𠊲	𬾔	variant	wikidata	merge	Q109797935; P248 Q837315 | Q109955920; P248 Q837315
 U+202E9	𠋩	𮰁	variant	wikidata	merge	Q109797994; P248 Q10427532 | Q122603610; P248 Q10427532
 U+202F7	𠋷	𬾓	variant	wikidata	merge	Q109798008; P248 Q137916925 | Q109955919; P248 Q137916925
-U+20301	𠌁	𠌋	variant	wikidata	stands-for	Q109798028; P248 Q10427532 | Q109798038; P248 Q10427532
 U+20302	𠌂	伞	simplified	cjkvi-variants	writes	𠌂→伞 cjkvi/simplified
 U+20305	𠌅	𦰿	variant	wikidata	merge	Q109798032; P248 Q10427532 | Q109847702; P248 Q10427532
 U+20309	𠌉	𦴐	variant	cjkvi-variants	merge	𠌉→𦴐 koseki/variant | 𠌉→𦴐 twedu/variant
 U+20309	𠌉	𦴐	variant	wikidata	merge	Q109798036; P248 Q10427532 | Q109847939; P248 Q10427532
-U+2030B	𠌁	𠌋	variant	wikidata	stands-for	Q109798028; P248 Q10427532 | Q109798038; P248 Q10427532
 U+2031E	𠌞	𫣋	variant	wikidata	merge	Q109798059; P248 Q850590 | Q109944684; P248 Q850590
 U+20325	𠆿	𠌥	variant	wikidata	merge	Q109797678; P248 Q63443408; P282 Q178528 | Q109798066; P248 Q63443408; P282 Q185614
 U+20325	𠌥	𠆿	simplified	cjkvi-variants	merge	𠆿→𠌥 cjkvi/traditional | 𠌥→𠆿 cjkvi/simplified
@@ -57312,7 +57308,6 @@ U+21372	𡍲	𡐪	variant	cjkvi-variants	merge	𡍲→𡐪 koseki/variant
 U+2138D	𡎍	𡏚	variant	wikidata	merge	Q109808126; P248 Q55686705 | Q109808288; P248 Q55686705
 U+213A0	𡎠	𬨸	variant	wikidata	merge	Q109808178; P248 Q137660091; P282 Q109378423 | Q109953862; P248 Q137660091; P282 Q109378423
 U+213B7	𡎷	𣪝	variant	wikidata	stands-for	Q109808231; P248 Q55686705 | Q109823542; P248 Q55686705
-U+213C8	𡏈	𢫒	variant	cjkvi-variants	stands-for	𡏈→𢫒 koseki/variant | 𢫒→𡏈 koseki/variant
 U+213CB	𡏋	𫭝	variant	wikidata	merge	Q109808258; P248 Q137285673 | Q109945834; P248 Q137285673
 U+213CB	𡏋	𰊉	variant	wikidata	merge	Q109808258; P248 Q139006076 | Q109972713; P248 Q139006076
 U+213F1	𡏱	𥛧	variant	wikidata	merge	Q109808337; P248 Q55686705 | Q109841706; P248 Q55686705
@@ -57495,8 +57490,6 @@ U+2198E	𡦎	𢟪	variant	cjkvi-variants	merge	𢟪→𡦎 hydzd/variant
 U+219A2	𡦢	𮙬	variant	wikidata	merge	Q109811107; P248 Q837315 | Q109965363; P248 Q837315
 U+219B3	𡦳	𡦴	variant	cjkvi-variants	stands-for	𡦳→𡦴 hydzd/variant
 U+219B5	𡦵	𬋽	variant	wikidata	merge	Q109811130; P248 Q137120432 | Q109950886; P248 Q137120432
-U+219B5	𡦲	𡦵	variant	wikidata	stands-for	Q109811126; P248 Q10427532 | Q109811130; P248 Q10427532
-U+219B5	𡦴	𡦵	variant	wikidata	stands-for	Q109811129; P248 Q10427532 | Q109811130; P248 Q10427532
 U+219C1	𡧁	𱚏	variant	wikidata	merge	Q109811144; P248 Q63443408; P282 Q178528 | Q117447251; P248 Q63443408; P282 Q185614
 U+219C2	𡧂	𡧍	variant	cjkvi-variants	merge	𡧍→𡧂 twedu/variant
 U+219C2	𡧂	𡧍	variant	wikidata	merge	Q109811145; P248 Q10427532 | Q109811160; P248 Q10427532
@@ -57787,9 +57780,7 @@ U+22223	𢈣	𢊕	variant	wikidata	merge	Q109814845; P248 Q10427532 | Q109815046
 U+22223	𢈳	𢊕	variant	cjkvi-variants	merge	𢊕→𢈳 hydzd/variant
 U+22223	𢉛	𢊕	variant	cjkvi-variants	merge	𢊕→𢉛 hydzd/variant | 𢊕→𢉛 koseki/variant | 𢊕→𢉛 twedu/variant
 U+22223	𢉛	𢊕	variant	wikidata	merge	Q109814968; P248 Q10427532 | Q109815046; P248 Q10427532
-U+22229	𢈩	𢉇	variant	cjkvi-variants	stands-for	𢈩→𢉇 hydzd/variant
 U+2223B	𢈻	𭙨	variant	wikidata	merge	Q109814882; P248 Q137916925 | Q109958151; P248 Q137916925
-U+22247	𢈩	𢉇	variant	cjkvi-variants	stands-for	𢈩→𢉇 hydzd/variant
 U+2224E	𢉎	𢈧	simplified	cjkvi-variants	merge	𢈧→𢉎 cjkvi/traditional | 𢉎→𢈧 cjkvi/simplified
 U+2225D	𢉝	𭚁	variant	wikidata	merge	Q109814971; P248 Q837315 | Q109958179; P248 Q837315
 U+2227F	𢉿	𰏲	simplified	unihan	merge	𢉿→𰏲 kSimplifiedVariant | 𰏲→𢉿 kTraditionalVariant
@@ -58049,7 +58040,6 @@ U+22AA6	𢫷	𭡔	variant	wikidata	merge	Q109818079; P248 Q137916925 | Q10995875
 U+22AB1	𢪱	𰓖	variant	wikidata	merge	Q109817966; P248 Q137660091; P282 Q109378423 | Q109975918; P248 Q137660091; P282 Q109378423
 U+22ABC	𢪼	𢫤	variant	cjkvi-variants	merge	𢪼→𢫤 twedu/variant
 U+22ABC	𢪼	𢫤	variant	wikidata	merge	Q109817982; P248 Q10427532 | Q109818052; P248 Q10427532
-U+22AD2	𡏈	𢫒	variant	cjkvi-variants	stands-for	𡏈→𢫒 koseki/variant | 𢫒→𡏈 koseki/variant
 U+22AF1	𢫱	𢯼	variant	cjkvi-variants	merge	𢯼→𢫱 twedu/variant
 U+22AF1	𢫱	𢯼	variant	wikidata	merge	Q109818073; P248 Q10427532 | Q109818440; P248 Q10427532
 U+22AFF	𢫿	𪡘	variant	wikidata	merge	Q109818088; P248 Q137120432 | Q109889660; P248 Q137120432
@@ -58160,7 +58150,6 @@ U+22DC3	𢷃	𫽔	simplified	unihan	merge	𢷃→𫽔 kSimplifiedVariant | 𫽔�
 U+22DC3	𢷃	𫽔	variant	wikidata	merge	Q109819023; P248 Q63443408; P282 Q185614 | Q109949426; P248 Q63443408; P282 Q178528
 U+22DD6	𢷖	𢹴	variant	cjkvi-variants	merge	𢷖→𢹴 hydzd/variant | 𢷖→𢹴 koseki/variant | 𢷖→𢹴 twedu/variant
 U+22DD6	𢷖	𢹴	variant	wikidata	merge	Q109819046; P248 Q10427532 | Q109819246; P248 Q10427532
-U+22DDE	𢷞	𭢕	simplified	unihan	stands-for	𢷞→𭢕 kSimplifiedVariant | 𭢕→𢷞 kTraditionalVariant
 U+22DEC	𢷬	捣	simplified	cjkvi-variants	writes	𢷬→捣 cjkvi/simplified
 U+22DEE	𢫊	𢷮	variant	wikidata	merge	Q109818000; P248 Q55686705; P282 Q178528 | Q109819074; P248 Q55686705; P282 Q185614
 U+22DEE	𢷮	𢫊	simplified	cjkvi-variants	merge	𢫊→𢷮 cjkvi/traditional | 𢷮→𢫊 cjkvi/simplified
@@ -58367,7 +58356,6 @@ U+23281	𣊁	𰖢	variant	wikidata	merge	Q109820690; P248 Q10427532 | Q109976263
 U+2328E	𣊎	𮦉	variant	wikidata	merge	Q109820707; P248 Q137660091; P282 Q109378423 | Q109966323; P248 Q137660091; P282 Q109378423
 U+23298	𣊘	𬵅	variant	wikidata	merge	Q109820724; P248 Q137120432 | Q109954969; P248 Q137120432
 U+232AB	𣊫	𣊭	z	cjkvi-variants	merge	𣊫→𣊭 cjkvi/duplicate
-U+232AF	𣊯	𭥓	simplified	unihan	stands-for	𣊯→𭥓 kSimplifiedVariant | 𭥓→𣊯 kTraditionalVariant
 U+232B8	𣊸	𣊸	compatibility	unicode-ucd	merge	232B8
 U+232BF	𣊿	𬩕	variant	wikidata	merge	Q109820778; P248 Q137660091; P282 Q109378423 | Q109953898; P248 Q137660091; P282 Q109378423
 U+232C1	𣋁	𦦣	variant	wikidata	merge	Q109820783; P248 Q10427532 | Q109846941; P248 Q10427532
@@ -58754,7 +58742,6 @@ U+23EE9	𣻩	𤁰	variant	wikidata	merge	Q109825160; P248 Q10427532 | Q109831317
 U+23EE9	𤁰	𤂥	variant	cjkvi-variants	merge	𤁰→𤂥 hydzd/variant | 𤁰→𤂥 koseki/variant | 𤁰→𤂥 twedu/variant
 U+23EE9	𤁰	𤂥	variant	wikidata	merge	Q109831317; P248 Q10427532 | Q109831383; P248 Q10427532
 U+23EF5	𣻵	𣽺	variant	wikidata	merge	Q109825173; P248 Q130335703 | Q109825346; P248 Q130335703
-U+23F0A	𣼊	𭰗	simplified	unihan	stands-for	𣼊→𭰗 kSimplifiedVariant | 𭰗→𣼊 kTraditionalVariant
 U+23F29	𣼩	𰛺	simplified	unihan	merge	𣼩→𰛺 kSimplifiedVariant | 𰛺→𣼩 kTraditionalVariant
 U+23F29	𣼩	𰛺	variant	wikidata	merge	Q109825250; P248 Q137660091; P282 Q185614 Q109378423 | Q109976755; P248 Q137660091; P282 Q178528 Q109378423
 U+23F2B	𣼫	𣾻	variant	wikidata	merge	Q109825252; P248 Q137660091; P282 Q109378423 | Q109825495; P248 Q137660091; P282 Q109378423
@@ -58781,7 +58768,6 @@ U+23FC9	𣿉	𣶫	simplified	unihan	merge	𣶫→𣿉 kTraditionalVariant | 𣿉
 U+23FC9	𣿉	𣶫	simplified	yitizi	merge	ytenx/JihThex.csv
 U+23FE2	𣿢	𤁥	variant	cjkvi-variants	merge	𤁥→𣿢 hydzd/variant
 U+23FE5	𣿥	𣿧	variant	wikidata	merge	Q109825629; P248 Q1138917 | Q109825635; P248 Q1138917
-U+24006	𤀆	𤅏	variant	cjkvi-variants	stands-for	𤅏→𤀆 koseki/variant
 U+24013	𤀓	𭊛	variant	wikidata	merge	Q109831200; P248 Q137660091; P282 Q109378423 | Q109956992; P248 Q137660091; P282 Q109378423
 U+24024	𤀤	𤂳	variant	cjkvi-variants	merge	𤀤→𤂳 hydzd/variant | 𤀤→𤂳 twedu/variant
 U+24024	𤀤	𤂳	variant	wikidata	merge	Q109831225; P248 Q10427532 | Q109831401; P248 Q10427532
@@ -58836,7 +58822,6 @@ U+24137	𤄷	𪶒	simplified	opencc	merge	STCharacters | TSCharacters (self firs
 U+24137	𤄷	𪶒	simplified	unihan	merge	𤄷→𪶒 kSimplifiedVariant | 𪶒→𤄷 kTraditionalVariant
 U+24137	𤄷	𪶒	variant	wikidata	merge	Q109831576; P248 Q131782202; P282 Q185614 | Q109896442; P248 Q131782202; P282 Q178528
 U+24138	𤄸	𤄼	variant	wikidata	merge	Q109831577; P248 Q55686705 | Q109831583; P248 Q55686705
-U+2414F	𤀆	𤅏	variant	cjkvi-variants	stands-for	𤅏→𤀆 koseki/variant
 U+24159	𤅙	𬇬	simplified	cjkvi-variants	merge	𤅙→𬇬 cjkvi/simplified | 𬇬→𤅙 cjkvi/traditional
 U+24159	𤅙	𬇬	simplified	unihan	merge	𤅙→𬇬 kSimplifiedVariant | 𬇬→𤅙 kTraditionalVariant
 U+24159	𤅙	𬇬	variant	wikidata	merge	Q109831619; P248 Q63443408; P282 Q185614 | Q109950466; P248 Q63443408; P282 Q178528
@@ -59268,8 +59253,6 @@ U+24C8E	𤲖	𰣏	variant	wikidata	merge	Q109838496; P248 Q55686705 | Q109977658
 U+24C92	𤲒	𤲒	compatibility	unicode-ucd	merge	24C92
 U+24C93	𤲓	𭻔	simplified	unihan	merge	𤲓→𭻔 kSimplifiedVariant | 𭻔→𤲓 kTraditionalVariant
 U+24C93	𤲓	𭻔	variant	wikidata	merge	Q109838492; P248 Q63443408; P282 Q185614 | Q109960868; P248 Q63443408; P282 Q178528
-U+24CA4	𤲤	𤲦	variant	cjkvi-variants	stands-for	𤲤→𤲦 koseki/variant | 𤲦→𤲤 koseki/variant
-U+24CA6	𤲤	𤲦	variant	cjkvi-variants	stands-for	𤲤→𤲦 koseki/variant | 𤲦→𤲤 koseki/variant
 U+24CC3	𤳃	𤳤	variant	wikidata	merge	Q109838548; P248 Q55686705 | Q109838586; P248 Q55686705
 U+24CD0	𤳐	𤳯	variant	cjkvi-variants	merge	𤳯→𤳐 hydzd/variant
 U+24CD0	𤳐	𤳯	variant	wikidata	merge	Q109838565; P248 Q55686705 | Q109838598; P248 Q55686705
@@ -59543,8 +59526,6 @@ U+25431	𥐱	𥑀	variant	wikidata	merge	Q109840806; P248 Q130335703 | Q10984082
 U+25470	𥑰	𥒹	variant	wikidata	stands-for	Q109840878; P248 Q130335703 | Q109840973; P248 Q130335703
 U+2547E	𥑾	𥓈	variant	cjkvi-variants	merge	𥓈→𥑾 hydzd/variant
 U+2547E	𥑾	𥓈	variant	wikidata	merge	Q109840896; P248 Q10427532 | Q109840991; P248 Q10427532
-U+254BF	𥒿	𬒪	variant	wikidata	stands-for	Q109840980; P248 Q55686705; P282 Q178528 | Q109951594; P248 Q55686705; P282 Q185614
-U+254BF	𬒪	𥒿	simplified	cjkvi-variants	stands-for	𥒿→𬒪 cjkvi/traditional | 𬒪→𥒿 cjkvi/simplified
 U+254C2	𥓂	𰧂	variant	wikidata	merge	Q109840984; P248 Q137916925 | Q109977955; P248 Q137916925
 U+254DD	𥓝	𬒃	simplified	cjkvi-variants	merge	𥓝→𬒃 cjkvi/simplified | 𬒃→𥓝 cjkvi/traditional
 U+254EB	𥓫	𥓬	variant	cjkvi-variants	merge	𥓬→𥓫 hydzd/variant
@@ -59645,7 +59626,6 @@ U+25730	𥜰	𫀌	simplified	unihan	merge	𥜰→𫀌 kSimplifiedVariant | 𫀌�
 U+25730	𥜰	𫀌	variant	wikidata	merge	Q109841790; P248 Q63443408; P282 Q185614 | Q109899111; P248 Q63443408; P282 Q178528
 U+2573E	𥜾	𫶩	variant	wikidata	merge	Q109841805; P248 Q10427532 | Q109946731; P248 Q10427532
 U+2573E	𥜾	𰆇	variant	wikidata	merge	Q109841805; P248 Q10427532 | Q109972358; P248 Q10427532
-U+2573E	𠨄	𥜾	variant	wikidata	stands-for	Q109799895; P248 Q55686705 | Q109841805; P248 Q55686705
 U+2573F	𥜿	𥝇	variant	cjkvi-variants	stands-for	𥜿→𥝇 koseki/variant
 U+25742	𥝂	𥝉	variant	cjkvi-variants	merge	𥝂→𥝉 hydzd/variant
 U+25742	𥝂	𥝉	variant	wikidata	merge	Q109841809; P248 Q55686705 | Q109841816; P248 Q55686705
@@ -59709,11 +59689,8 @@ U+258C2	𥣂	𮃍	variant	wikidata	merge	Q109842250; P248 Q137916925 | Q10996253
 U+258EB	𥣫	𬖫	variant	wikidata	merge	Q109842294; P248 Q137660091; P282 Q109378423 | Q109951940; P248 Q137660091; P282 Q109378423
 U+258EC	𥣬	𥤐	variant	cjkvi-variants	merge	𥣬→𥤐 hydzd/variant
 U+258EC	𥣬	𥤐	variant	wikidata	merge	Q109842296; P248 Q55686705 | Q109842343; P248 Q55686705
-U+258FB	𥣻	𦼖	simplified	unihan	stands-for	𥣻→𦼖 kSimplifiedVariant | 𦼖→𥣻 kTraditionalVariant
 U+25905	𥣾	𥤅	variant	cjkvi-variants	stands-for	𥣾→𥤅 twedu/variant
 U+25905	𥣾	𥤅	variant	wikidata	stands-for	Q109842315; P248 Q10427532 | Q109842332; P248 Q10427532
-U+25914	𠁃	𥤔	variant	cjkvi-variants	stands-for	𠁃→𥤔 koseki/variant | 𥤔→𠁃 koseki/variant
-U+25914	𠁃	𥤔	variant	wikidata	stands-for	Q109797231; P248 Q10427532 | Q109842347; P248 Q10427532
 U+25937	𥤷	𥥍	variant	cjkvi-variants	merge	𥥍→𥤷 koseki/variant | 𥥍→𥤷 twedu/variant
 U+25937	𥤷	𥥍	variant	wikidata	merge	Q109842384; P248 Q10427532 | Q109842408; P248 Q10427532
 U+25937	𥥍	𥥦	variant	cjkvi-variants	merge	𥥍→𥥦 hydzd/variant
@@ -60497,7 +60474,6 @@ U+26EC5	𦻅	𦼩	variant	cjkvi-variants	merge	𦻅→𦼩 hydzd/variant | 𦻅�
 U+26EC5	𦻅	𦼩	variant	wikidata	merge	Q109848427; P248 Q10427532 | Q109848547; P248 Q10427532
 U+26F0B	𦼋	𦽎	variant	cjkvi-variants	merge	𦽎→𦼋 koseki/variant | 𦽎→𦼋 twedu/variant
 U+26F0B	𦼋	𦽎	variant	wikidata	merge	Q109848513; P248 Q10427532 | Q109848585; P248 Q10427532
-U+26F16	𥣻	𦼖	simplified	unihan	stands-for	𥣻→𦼖 kSimplifiedVariant | 𦼖→𥣻 kTraditionalVariant
 U+26F19	𦼙	𧀠	variant	cjkvi-variants	merge	𧀠→𦼙 hydzd/variant | 𧀠→𦼙 koseki/variant | 𧀠→𦼙 twedu/variant
 U+26F19	𦼙	𧀠	variant	wikidata	merge	Q109848529; P248 Q10427532 | Q109848821; P248 Q10427532
 U+26F24	𦼤	𧀨	variant	cjkvi-variants	merge	𧀨→𦼤 hydzd/variant | 𧀨→𦼤 koseki/variant | 𧀨→𦼤 twedu/variant
@@ -60550,7 +60526,6 @@ U+27092	𧂒	𧄝	variant	wikidata	merge	Q109848944; P248 Q10427532 | Q109849115
 U+270A3	𧂣	𫈅	simplified	cjkvi-variants	merge	𧂣→𫈅 cjkvi/pseudo-simplified | 𫈅→𧂣 cjkvi/traditional
 U+270D2	𧃒	𧃒	compatibility	unicode-ucd	merge	270D2
 U+270D3	𧃓	𧄛	variant	cjkvi-variants	merge	𧄛→𧃓 koseki/variant
-U+270FC	𧃼	𩁰	variant	cjkvi-variants	stands-for	𩁰→𧃼 koseki/variant
 U+270FD	𧃽	𰱊	simplified	unihan	merge	𧃽→𰱊 kSimplifiedVariant | 𰱊→𧃽 kTraditionalVariant
 U+270FD	𧃽	𰱊	variant	wikidata	merge	Q109849072; P248 Q63443408; P282 Q185614 | Q109978774; P248 Q63443408; P282 Q178528
 U+27108	𧄈	𬟖	variant	wikidata	merge	Q109849089; P248 Q137660091; P282 Q109378423 | Q109952875; P248 Q137660091; P282 Q109378423
@@ -61209,7 +61184,6 @@ U+27E39	𧸹	𧸿	variant	cjkvi-variants	merge	𧸿→𧸹 koseki/variant | 𧸿
 U+27E39	𧸹	𧸿	variant	wikidata	merge	Q109866340; P248 Q10427532 | Q109866349; P248 Q10427532
 U+27E3E	𧸾	𧹁	variant	wikidata	merge	Q109866348; P248 Q55686705 | Q109866354; P248 Q55686705
 U+27E45	𧹅	𬥣	variant	wikidata	merge	Q109866359; P248 Q137660091; P282 Q109378423 | Q109953528; P248 Q137660091; P282 Q109378423
-U+27E47	𧹇	𨲴	variant	cjkvi-variants	stands-for	𧹇→𨲴 koseki/variant
 U+27E48	𧹈	𪥠	simplified	opencc	merge	STCharacters | TSCharacters (self first)
 U+27E48	𧹈	𪥠	simplified	unihan	merge	𧹈→𪥠 kSimplifiedVariant | 𪥠→𧹈 kTraditionalVariant
 U+27E48	𧹈	𪥠	variant	wikidata	merge	Q109866365; P248 Q63443408; P282 Q185614 | Q109890545; P248 Q63443408; P282 Q178528
@@ -61299,9 +61273,6 @@ U+27FF3	𧿳	𬩉	variant	wikidata	merge	Q109866955; P248 Q137660091; P282 Q1093
 U+28005	𨀅	𨁹	variant	wikidata	merge	Q109866981; P248 Q55686705 | Q109867114; P248 Q55686705
 U+28027	𨀧	𰸧	variant	wikidata	merge	Q109867020; P248 Q10427532 | Q109979339; P248 Q10427532
 U+28028	𨀨	𫏎	variant	wikidata	merge	Q109867021; P248 Q10427532 | Q109900435; P248 Q10427532
-U+28031	𨄣	𨀱	simplified	opencc	stands-for	STCharacters | TSCharacters (self first)
-U+28031	𨄣	𨀱	simplified	unihan	stands-for	𨀱→𨄣 kTraditionalVariant | 𨄣→𨀱 kSimplifiedVariant
-U+28031	𨄣	𨀱	simplified	yitizi	stands-for	ytenx/JihThex.csv
 U+28040	𠐃	𨁀	variant	cjkvi-variants	stands-for	𨁀→𠐃 hydzd/variant
 U+28042	𨁂	𬦯	simplified	cjkvi-variants	merge	𨁂→𬦯 cjkvi/simplified | 𬦯→𨁂 cjkvi/traditional
 U+28042	𨁂	𬦯	simplified	unihan	merge	𨁂→𬦯 kSimplifiedVariant | 𬦯→𨁂 kTraditionalVariant
@@ -61334,9 +61305,6 @@ U+28109	𨄉	𰸎	simplified	unihan	merge	𨄉→𰸎 kSimplifiedVariant | 𰸎�
 U+28109	𨄉	𰸎	variant	wikidata	merge	Q109867286; P248 Q131782202; P282 Q185614 | Q109979310; P248 Q131782202; P282 Q178528
 U+28112	𨄒	𨅎	variant	cjkvi-variants	merge	𨅎→𨄒 hydzd/variant | 𨅎→𨄒 twedu/variant
 U+28112	𨄒	𨅎	variant	wikidata	merge	Q109867296; P248 Q10427532 | Q109867367; P248 Q10427532
-U+28123	𨄣	𨀱	simplified	opencc	stands-for	STCharacters | TSCharacters (self first)
-U+28123	𨄣	𨀱	simplified	unihan	stands-for	𨀱→𨄣 kTraditionalVariant | 𨄣→𨀱 kSimplifiedVariant
-U+28123	𨄣	𨀱	simplified	yitizi	stands-for	ytenx/JihThex.csv
 U+28130	𨄰	𬦵	simplified	cjkvi-variants	merge	𨄰→𬦵 cjkvi/simplified | 𬦵→𨄰 cjkvi/traditional
 U+28130	𨄰	𬦵	simplified	unihan	merge	𨄰→𬦵 kSimplifiedVariant | 𬦵→𨄰 kTraditionalVariant
 U+28130	𨄰	𬦵	variant	wikidata	merge	Q109867330; P248 Q131782202; P282 Q185614 | Q109953632; P248 Q131782202; P282 Q178528
@@ -62075,7 +62043,6 @@ U+28CB3	𨲳	𫔖	simplified	cjkvi-variants	merge	𨲳→𫔖 cjkvi/simplified |
 U+28CB3	𨲳	𫔖	simplified	opencc	merge	STCharacters | TSCharacters (self first)
 U+28CB3	𨲳	𫔖	simplified	unihan	merge	𨲳→𫔖 kSimplifiedVariant | 𫔖→𨲳 kTraditionalVariant
 U+28CB3	𨲳	𫔖	variant	wikidata	merge	Q109871252; P248 Q63443408; P282 Q185614 | Q109900979; P248 Q63443408; P282 Q178528
-U+28CB4	𧹇	𨲴	variant	cjkvi-variants	stands-for	𧹇→𨲴 koseki/variant
 U+28CB9	𨲹	𩯰	variant	wikidata	merge	Q109871259; P248 Q55686705 | Q109879906; P248 Q55686705
 U+28CB9	𩬂	𩯰	variant	cjkvi-variants	merge	𩯰→𩬂 hydzd/variant | 𩯰→𩬂 koseki/variant
 U+28CB9	𩬂	𩯰	variant	wikidata	merge	Q109879260; P248 Q10427532 | Q109879906; P248 Q10427532
@@ -62255,13 +62222,9 @@ U+28F0A	𨼊	𨽬	variant	cjkvi-variants	merge	𨼊→𨽬 hydzd/variant | 𨼊�
 U+28F0A	𨼊	𨽬	variant	wikidata	merge	Q109871986; P248 Q10427532 | Q109872102; P248 Q10427532
 U+28F0B	𨼋	𱀭	variant	wikidata	merge	Q109871987; P248 Q10427532 | Q109979967; P248 Q10427532
 U+28F10	𨼐	𱀱	variant	wikidata	merge	Q109871992; P248 Q10427532 | Q109979971; P248 Q10427532
-U+28F33	𨼳	𫔽	simplified	cjkvi-variants	stands-for	𨼳→𫔽 cjkvi/simplified | 𫔽→𨼳 cjkvi/traditional
-U+28F33	𨼳	𫔽	simplified	opencc	stands-for	STCharacters | TSCharacters (self first)
-U+28F33	𨼳	𫔽	simplified	unihan	stands-for	𨼳→𫔽 kSimplifiedVariant | 𫔽→𨼳 kTraditionalVariant
 U+28F4D	𨽍	𨽤	variant	cjkvi-variants	merge	𨽍→𨽤 hydzd/variant
 U+28F4D	𨽍	𨽤	variant	wikidata	merge	Q109872065; P248 Q55686705 | Q109872093; P248 Q55686705
 U+28F7B	𨽻	隶	simplified	cjkvi-variants	writes	𨽻→隶 cjkvi/simplified
-U+28F84	𨾄	𪒸	variant	cjkvi-variants	stands-for	𨾄→𪒸 koseki/variant | 𪒸→𨾄 koseki/variant
 U+28F85	𨾅	𩾔	variant	cjkvi-variants	merge	𨾅→𩾔 koseki/variant | 𩾔→𨾅 hydzd/variant | 𩾔→𨾅 koseki/variant | 𩾔→𨾅 twedu/variant
 U+28F85	𨾅	𩾔	variant	wikidata	merge	Q109872133; P248 Q10427532 | Q109882768; P248 Q10427532
 U+28F9D	𨾝	𩾿	variant	cjkvi-variants	merge	𩾿→𨾝 hydzd/variant | 𩾿→𨾝 koseki/variant | 𩾿→𨾝 twedu/variant
@@ -62302,7 +62265,6 @@ U+2905E	𩁞	𪇭	variant	wikidata	merge	Q109872378; P248 Q10427532 | Q109883738
 U+29061	𩁡	𪇗	variant	cjkvi-variants	merge	𪇗→𩁡 hydzd/variant | 𪇗→𩁡 koseki/variant | 𪇗→𩁡 twedu/variant
 U+29061	𩁡	𪇗	variant	wikidata	merge	Q109872382; P248 Q10427532 | Q109883713; P248 Q10427532
 U+29061	𪇗	𱈿	variant	wikidata	merge	Q109883713; P248 Q55686705 | Q109980553; P248 Q55686705
-U+29070	𧃼	𩁰	variant	cjkvi-variants	stands-for	𩁰→𧃼 koseki/variant
 U+29076	𩁶	𬴕	variant	wikidata	merge	Q109872406 | Q109954913
 U+2907A	𩁺	𩆷	variant	cjkvi-variants	merge	𩆷→𩁺 hydzd/variant | 𩆷→𩁺 koseki/variant | 𩆷→𩁺 twedu/variant
 U+2907A	𩁺	𩆷	variant	wikidata	merge	Q109872410; P248 Q10427532 | Q109872857; P248 Q10427532
@@ -62654,7 +62616,6 @@ U+295D8	𩗘	𩘂	variant	cjkvi-variants	merge	𩗘→𩘂 hydzd/variant
 U+295D8	𩗘	𩘂	variant	wikidata	merge	Q109874232; P248 Q10427532 | Q109874297; P248 Q10427532
 U+295DB	𩗛	𱃛	simplified	unihan	merge	𩗛→𱃛 kSimplifiedVariant | 𱃛→𩗛 kTraditionalVariant
 U+295DB	𩗛	𱃛	variant	wikidata	merge	Q109874238; P248 Q131782202; P282 Q185614 | Q109980156; P248 Q131782202; P282 Q178528
-U+295DF	𩗟	𩘶	variant	cjkvi-variants	stands-for	𩗟→𩘶 twedu/variant
 U+295E1	𩗡	𩙧	simplified	unihan	writes	𩗡→𩙧 kSimplifiedVariant | 𩙧→𩗡 kTraditionalVariant
 U+295E7	𩗧	𱃂	variant	wikidata	merge	Q109874253; P248 Q55686705 | Q109980130; P248 Q55686705
 U+295E9	𩗩	𮷻	simplified	unihan	merge	𩗩→𮷻 kSimplifiedVariant | 𮷻→𩗩 kTraditionalVariant
@@ -62691,7 +62652,6 @@ U+29623	𩘣	𬲃	variant	wikidata	merge	Q109874335; P248 Q137660091; P282 Q1093
 U+2962A	𩘪	𬲄	variant	wikidata	merge	Q109874342; P248 Q137660091; P282 Q109378423 | Q109954725; P248 Q137660091; P282 Q109378423
 U+2962E	𩘮	𱃋	variant	wikidata	merge	Q109874346; P248 Q10427532 | Q109980139; P248 Q10427532
 U+29632	𩘲	𬷣	variant	wikidata	merge	Q109874351; P248 Q136643781 | Q109955156; P248 Q136643781
-U+29636	𩗟	𩘶	variant	cjkvi-variants	stands-for	𩗟→𩘶 twedu/variant
 U+29639	𩘰	𩘹	variant	cjkvi-variants	merge	𩘹→𩘰 hydzd/variant | 𩘹→𩘰 twedu/variant
 U+29639	𩘰	𩘹	variant	wikidata	merge	Q109874348; P248 Q10427532 | Q109874359; P248 Q10427532
 U+29639	𩘹	𩙨	simplified	cjkvi-variants	merge	𩘹→𩙨 cjkvi/simplified | 𩙨→𩘹 cjkvi/traditional
@@ -62812,7 +62772,6 @@ U+29735	𩜵	𩠊	variant	wikidata	merge	Q109874670; P248 Q131782202; P282 Q1856
 U+29735	𩜵	𩠊	simplified	yitizi	merge	ytenx/JihThex.csv
 U+29736	𩜶	𱄁	simplified	unihan	merge	𩜶→𱄁 kSimplifiedVariant | 𱄁→𩜶 kTraditionalVariant
 U+29736	𩜶	𱄁	variant	wikidata	merge	Q109874671; P248 Q55686705; P282 Q185614 | Q109980196; P248 Q55686705; P282 Q178528
-U+29743	𩝃	𫯉	variant	wikidata	stands-for	Q109874686; P248 Q137120432 | Q109945993; P248 Q137120432
 U+29751	𩝑	𬳇	simplified	cjkvi-variants	merge	𩝑→𬳇 cjkvi/simplified | 𬳇→𩝑 cjkvi/traditional
 U+29751	𩝑	𬳇	simplified	unihan	merge	𩝑→𬳇 kSimplifiedVariant | 𬳇→𩝑 kTraditionalVariant
 U+29751	𩝑	𬳇	variant	wikidata	merge	Q109874702; P248 Q131782202; P282 Q185614 | Q109954804; P248 Q131782202; P282 Q178528
@@ -62977,10 +62936,6 @@ U+298BE	𩢾	𩧮	variant	wikidata	merge	Q109878300; P248 Q55686705; P282 Q18561
 U+298BE	𩢾	𩧮	simplified	yitizi	merge	ytenx/JihThex.csv
 U+298C3	𩣃	𩤘	variant	cjkvi-variants	merge	𩤘→𩣃 koseki/variant | 𩤘→𩣃 twedu/variant
 U+298C3	𩣃	𩤘	variant	wikidata	merge	Q109878305; P248 Q10427532 | Q109878413; P248 Q10427532
-U+298C7	𩣇	𩣈	variant	cjkvi-variants	stands-for	𩣇→𩣈 twedu/variant
-U+298C7	𩣇	𩣈	variant	wikidata	stands-for	Q109878309; P248 Q10427532 | Q109878312; P248 Q10427532
-U+298C8	𩣇	𩣈	variant	cjkvi-variants	stands-for	𩣇→𩣈 twedu/variant
-U+298C8	𩣇	𩣈	variant	wikidata	stands-for	Q109878309; P248 Q10427532 | Q109878312; P248 Q10427532
 U+298CA	䮅	𩣊	variant	cjkvi-variants	merge	𩣊→䮅 twedu/variant
 U+298CA	䮅	𩣊	variant	wikidata	merge	Q109794729; P248 Q10427532 | Q109878314; P248 Q10427532
 U+298CA	𩣊	𱅍	simplified	unihan	merge	𩣊→𱅍 kSimplifiedVariant | 𱅍→𩣊 kTraditionalVariant
@@ -63118,7 +63073,6 @@ U+299CB	𩧋	𩧞	variant	cjkvi-variants	stands-for	𩧋→𩧞 hydzd/variant
 U+299D0	𩧐	𬴎	simplified	cjkvi-variants	merge	𩧐→𬴎 cjkvi/simplified | 𬴎→𩧐 cjkvi/traditional
 U+299D0	𩧐	𬴎	simplified	unihan	merge	𩧐→𬴎 kSimplifiedVariant | 𬴎→𩧐 kTraditionalVariant
 U+299D0	𩧐	𬴎	variant	wikidata	merge	Q109878655; P248 Q55686705; P282 Q185614 | Q109954906; P248 Q55686705; P282 Q178528
-U+29A02	𲋼	𩨂	simplified	unihan	stands-for	𩨂→𲋼 kTraditionalVariant | 𲋼→𩨂 kSimplifiedVariant
 U+29A15	𩨕	𩨠	variant	cjkvi-variants	merge	𩨠→𩨕 hydzd/variant | 𩨠→𩨕 koseki/variant | 𩨠→𩨕 twedu/variant
 U+29A15	𩨕	𩨠	variant	wikidata	merge	Q109878749; P248 Q10427532 | Q109878764; P248 Q10427532
 U+29A2C	𩨬	𩩌	variant	cjkvi-variants	merge	𩨬→𩩌 koseki/variant | 𩩌→𩨬 koseki/variant
@@ -63336,8 +63290,6 @@ U+29DB1	𩶱	𩽽	simplified	opencc	merge	STCharacters | TSCharacters (self firs
 U+29DB1	𩶱	𩽽	simplified	unihan	merge	𩶱→𩽽 kSimplifiedVariant | 𩽽→𩶱 kTraditionalVariant
 U+29DB1	𩶱	𩽽	variant	wikidata	merge	Q109881714; P248 Q55686705; P282 Q185614 | Q109882739; P248 Q55686705; P282 Q178528
 U+29DB1	𩶱	𩽽	simplified	yitizi	merge	ytenx/JihThex.csv
-U+29DB6	𩶶	𩷮	variant	cjkvi-variants	stands-for	𩶶→𩷮 twedu/variant
-U+29DB6	𩶶	𩷮	variant	wikidata	stands-for	Q109881730; P248 Q10427532 | Q109881896; P248 Q10427532
 U+29DC4	𩷄	𩷭	variant	wikidata	merge	Q109881777; P248 Q55686705 | Q109881893; P248 Q55686705
 U+29DD2	𩷒	𬶒	simplified	cjkvi-variants	merge	𩷒→𬶒 cjkvi/simplified | 𬶒→𩷒 cjkvi/traditional
 U+29DD2	𩷒	𬶒	simplified	unihan	merge	𩷒→𬶒 kSimplifiedVariant | 𬶒→𩷒 kTraditionalVariant
@@ -63355,8 +63307,6 @@ U+29DD6	𩷖	𱆱	variant	wikidata	merge	Q109881827; P248 Q10427532 | Q109980388
 U+29DD7	𩷗	𩷬	variant	cjkvi-variants	merge	𩷗→𩷬 hydzd/variant | 𩷗→𩷬 koseki/variant | 𩷗→𩷬 twedu/variant
 U+29DD7	𩷗	𩷬	variant	wikidata	merge	Q109881831; P248 Q10427532 | Q109881891; P248 Q10427532
 U+29DDF	𩷟	𩾉	variant	wikidata	merge	Q109881851; P248 Q130335703 | Q109882752; P248 Q130335703
-U+29DEE	𩶶	𩷮	variant	cjkvi-variants	stands-for	𩶶→𩷮 twedu/variant
-U+29DEE	𩶶	𩷮	variant	wikidata	stands-for	Q109881730; P248 Q10427532 | Q109881896; P248 Q10427532
 U+29DF0	𩷰	𩾄	simplified	cjkvi-variants	merge	𩷰→𩾄 cjkvi/simplified | 𩾄→𩷰 cjkvi/traditional
 U+29DF0	𩷰	𩾄	simplified	opencc	merge	STCharacters | TSCharacters (self first)
 U+29DF0	𩷰	𩾄	simplified	unihan	merge	𩷰→𩾄 kSimplifiedVariant | 𩾄→𩷰 kTraditionalVariant
@@ -63803,7 +63753,6 @@ U+2A208	𪈈	𪈐	variant	cjkvi-variants	merge	𪈈→𪈐 cjkvi/variant | 𪈈�
 U+2A208	𪈈	𪈐	variant	wikidata	merge	Q109883870; P248 Q10427532 | Q109883885; P248 Q10427532
 U+2A20C	𪈌	𮭞	variant	wikidata	merge	Q109883877; P248 Q837315 | Q109966928; P248 Q837315
 U+2A20E	𪈎	𪈎	compatibility	unicode-ucd	merge	2A20E
-U+2A20F	𪈏	𱊴	simplified	unihan	stands-for	𪈏→𱊴 kSimplifiedVariant | 𱊴→𪈏 kTraditionalVariant
 U+2A214	𪈔	𱊉	simplified	unihan	merge	𪈔→𱊉 kSimplifiedVariant | 𱊉→𪈔 kTraditionalVariant
 U+2A214	𪈔	𱊉	variant	wikidata	merge	Q109883893; P248 Q55686705; P282 Q185614 | Q109980642; P248 Q55686705; P282 Q178528
 U+2A217	𪈗	𬸄	simplified	cjkvi-variants	merge	𪈗→𬸄 cjkvi/simplified | 𬸄→𪈗 cjkvi/traditional
@@ -63863,7 +63812,6 @@ U+2A2D4	𪋔	𪋥	variant	cjkvi-variants	stands-for	𪋔→𪋥 koseki/variant
 U+2A2DA	𪋚	𪋳	variant	cjkvi-variants	merge	𪋚→𪋳 koseki/variant | 𪋚→𪋳 twedu/variant | 𪋳→𪋚 hydzd/variant
 U+2A2DA	𪋚	𪋳	variant	wikidata	merge	Q109884136; P248 Q10427532 | Q109884169; P248 Q10427532
 U+2A2DD	𪋝	𱋀	variant	wikidata	merge	Q109884139; P248 Q55686705 | Q109980707; P248 Q55686705
-U+2A2FD	𪋽	𱋄	simplified	unihan	stands-for	𪋽→𱋄 kSimplifiedVariant | 𱋄→𪋽 kTraditionalVariant
 U+2A2FF	𪋿	𪎍	simplified	yitizi	merge	ytenx/JihThex.csv
 U+2A2FF	𪋿	𫧮	simplified	cjkvi-variants	merge	𪋿→𫧮 cjkvi/simplified | 𫧮→𪋿 cjkvi/traditional
 U+2A2FF	𪋿	𫧮	simplified	opencc	merge	STCharacters | TSCharacters (self first)
@@ -63871,7 +63819,6 @@ U+2A2FF	𪋿	𫧮	simplified	unihan	merge	𪋿→𫧮 kSimplifiedVariant | 𫧮�
 U+2A2FF	𪋿	𫧮	variant	wikidata	merge	Q109884184; P248 Q63443408; P282 Q185614 | Q109945192; P248 Q63443408; P282 Q178528
 U+2A308	𪌈	𪍜	variant	cjkvi-variants	merge	𪌈→𪍜 hydzd/variant | 𪌈→𪍜 koseki/variant | 𪌈→𪍜 twedu/variant
 U+2A308	𪌈	𪍜	variant	wikidata	merge	Q109884208; P248 Q10427532 | Q109884321; P248 Q10427532
-U+2A310	𪌐	𱋉	simplified	unihan	stands-for	𪌐→𱋉 kSimplifiedVariant | 𱋉→𪌐 kTraditionalVariant
 U+2A312	𪌒	𮮅	simplified	unihan	merge	𪌒→𮮅 kSimplifiedVariant | 𮮅→𪌒 kTraditionalVariant
 U+2A312	𪌒	𮮅	variant	wikidata	merge	Q109884223; P248 Q63443408; P282 Q185614 | Q109966975; P248 Q63443408; P282 Q178528
 U+2A314	𪌔	𪍛	variant	cjkvi-variants	merge	𪍛→𪌔 twedu/variant
@@ -63891,7 +63838,6 @@ U+2A31E	𪌞	𬍞	simplified	cjkvi-variants	merge	𪌞→𬍞 cjkvi/simplified |
 U+2A31E	𪌞	𬍞	variant	wikidata	merge	Q109884239; P248 Q63443408; P282 Q185614 | Q109951054; P248 Q63443408; P282 Q178528
 U+2A323	𪌣	𱋓	simplified	unihan	merge	𪌣→𱋓 kSimplifiedVariant | 𱋓→𪌣 kTraditionalVariant
 U+2A323	𪌣	𱋓	variant	wikidata	merge	Q109884245; P248 Q10427532; P282 Q185614 | Q109980728; P248 Q10427532; P282 Q178528
-U+2A328	𪌨	𰎴	simplified	unihan	stands-for	𪌨→𰎴 kSimplifiedVariant | 𰎴→𪌨 kTraditionalVariant
 U+2A32D	𪌭	𫜓	simplified	cjkvi-variants	merge	𪌭→𫜓 cjkvi/simplified | 𫜓→𪌭 cjkvi/traditional
 U+2A32D	𪌭	𫜓	simplified	opencc	merge	STCharacters | TSCharacters (self first)
 U+2A32D	𪌭	𫜓	simplified	unihan	merge	𪌭→𫜓 kSimplifiedVariant | 𫜓→𪌭 kTraditionalVariant
@@ -63928,7 +63874,6 @@ U+2A360	𪍠	𫜕	simplified	unihan	merge	𪍠→𫜕 kSimplifiedVariant | 𫜕�
 U+2A360	𪍠	𫜕	variant	wikidata	merge	Q109884326; P248 Q63443408; P282 Q185614 | Q109901664; P248 Q63443408; P282 Q178528
 U+2A360	𪍠	𪍱	variant	cjkvi-variants	stands-for	𪍠→𪍱 hydzd/variant
 U+2A362	𪍢	𱋞	variant	wikidata	merge	Q109884328; P248 Q55686705 | Q109980740; P248 Q55686705
-U+2A362	𪍢	𪍱	variant	wikidata	stands-for	Q109884328; P248 Q55686705 | Q109884347; P248 Q55686705
 U+2A363	𪍣	𱋡	simplified	unihan	merge	𪍣→𱋡 kSimplifiedVariant | 𱋡→𪍣 kTraditionalVariant
 U+2A363	𪍣	𱋡	variant	wikidata	merge	Q109884329; P248 Q55686705; P282 Q185614 | Q109980743; P248 Q55686705; P282 Q178528
 U+2A364	𪍤	𬹍	simplified	cjkvi-variants	merge	𪍤→𬹍 cjkvi/simplified | 𬹍→𪍤 cjkvi/traditional
@@ -64020,7 +63965,6 @@ U+2A4A1	𪑠	𪒡	variant	wikidata	stands-for	Q109884674; P248 Q55686705 | Q1098
 U+2A4AC	𪒬	𬹖	simplified	cjkvi-variants	merge	𪒬→𬹖 cjkvi/simplified | 𬹖→𪒬 cjkvi/traditional
 U+2A4AC	𪒬	𬹖	simplified	unihan	merge	𪒬→𬹖 kSimplifiedVariant | 𬹖→𪒬 kTraditionalVariant
 U+2A4AC	𪒬	𬹖	variant	wikidata	merge	Q109884766; P248 Q131782202; P282 Q185614 | Q109955304; P248 Q131782202; P282 Q178528
-U+2A4B8	𨾄	𪒸	variant	cjkvi-variants	stands-for	𨾄→𪒸 koseki/variant | 𪒸→𨾄 koseki/variant
 U+2A4BE	𪒾	𪓆	variant	cjkvi-variants	merge	𪒾→𪓆 hydzd/variant | 𪒾→𪓆 koseki/variant | 𪒾→𪓆 twedu/variant
 U+2A4BE	𪒾	𪓆	variant	wikidata	merge	Q109884789; P248 Q10427532 | Q109884799; P248 Q10427532
 U+2A4BF	𪒿	𬹘	simplified	cjkvi-variants	merge	𪒿→𬹘 cjkvi/simplified | 𬹘→𪒿 cjkvi/traditional
@@ -64346,8 +64290,6 @@ U+2B0C5	𫓞	𫿧	variant	wikidata	merge	Q109900873; P248 Q137120432 | Q10994968
 U+2B0C5	𫿧	𬄜	variant	wikidata	merge	Q109949682; P248 Q137120432 | Q109950176; P248 Q137120432
 U+2B0C5	𫿧	𬫫	variant	wikidata	merge	Q109949682; P248 Q137120432 | Q109954102; P248 Q137120432
 U+2B0C5	𫿧	𬬟	variant	wikidata	merge	Q109949682; P248 Q137120432 | Q109954204; P248 Q137120432
-U+2B0D0	𫃐	𬖟	simplified	cjkvi-variants	stands-for	𫃐→𬖟 cjkvi/simplified | 𬖟→𫃐 cjkvi/traditional
-U+2B0D0	𫃐	𬖟	simplified	unihan	stands-for	𫃐→𬖟 kSimplifiedVariant | 𬖟→𫃐 kTraditionalVariant
 U+2B0D1	𫃑	𰪿	simplified	unihan	merge	𫃑→𰪿 kSimplifiedVariant | 𰪿→𫃑 kTraditionalVariant
 U+2B0D1	𫃑	𰪿	variant	wikidata	merge	Q109899359; P248 Q131782202; P282 Q185614 | Q109978283; P248 Q131782202; P282 Q178528
 U+2B0DA	𫃚	𱺏	simplified	unihan	merge	𫃚→𱺏 kSimplifiedVariant | 𱺏→𫃚 kTraditionalVariant
@@ -64424,10 +64366,6 @@ U+2B525	𫔥	𭥊	variant	wikidata	merge	Q109901000; P248 Q137285673 | Q10995907
 U+2B526	𫔦	𬮫	variant	wikidata	merge	Q109901001; P248 Q137660091; P282 Q109378423 | Q109954381; P248 Q137660091; P282 Q109378423
 U+2B529	𫔩	𲉆	simplified	unihan	merge	𫔩→𲉆 kSimplifiedVariant | 𲉆→𫔩 kTraditionalVariant
 U+2B52C	𫔬	𲈦	variant	wikidata	merge	Q109901011; P248 Q63443408; P282 Q178528 | Q117462659; P248 Q63443408; P282 Q185614
-U+2B538	𲈴	𫔸	simplified	unihan	stands-for	𫔸→𲈴 kTraditionalVariant | 𲈴→𫔸 kSimplifiedVariant
-U+2B53D	𨼳	𫔽	simplified	cjkvi-variants	stands-for	𨼳→𫔽 cjkvi/simplified | 𫔽→𨼳 cjkvi/traditional
-U+2B53D	𨼳	𫔽	simplified	opencc	stands-for	STCharacters | TSCharacters (self first)
-U+2B53D	𨼳	𫔽	simplified	unihan	stands-for	𨼳→𫔽 kSimplifiedVariant | 𫔽→𨼳 kTraditionalVariant
 U+2B560	𫕠	𮦯	variant	wikidata	merge	Q109901084; P248 Q137285673 | Q109966379; P248 Q137285673
 U+2B561	𫕡	𬱹	variant	wikidata	merge	Q109901085; P248 Q137660091; P282 Q109378423 | Q109954711; P248 Q137660091; P282 Q109378423
 U+2B569	𫕩	𱁛	variant	wikidata	merge	Q109901097; P248 Q137285673 | Q109980016; P248 Q137285673
@@ -64525,7 +64463,6 @@ U+2BB69	𫭩	𭏢	variant	wikidata	merge	Q109945852; P248 Q137285673 | Q10995738
 U+2BB70	𫭰	𮥂	variant	wikidata	merge	Q109945863; P248 Q137120432 | Q109966231; P248 Q137120432
 U+2BB8F	𫮏	𭎶	variant	wikidata	merge	Q109945907; P248 Q137285673 | Q109957324; P248 Q137285673
 U+2BBA5	𫮥	𬥠	variant	wikidata	merge	Q109945937; P248 Q137660091; P282 Q109378423 | Q109953523; P248 Q137660091; P282 Q109378423
-U+2BBC9	𩝃	𫯉	variant	wikidata	stands-for	Q109874686; P248 Q137120432 | Q109945993; P248 Q137120432
 U+2BBCA	𫯊	𬁒	variant	wikidata	merge	Q109945995; P248 Q137660091; P282 Q109378423 | Q109949892; P248 Q137660091; P282 Q109378423
 U+2BBCB	𫯋	𫯎	variant	wikidata	merge	Q109945996; P248 Q137120432 | Q109946001; P248 Q137120432
 U+2BBD3	𫯓	𬻮	simplified	unihan	merge	𫯓→𬻮 kSimplifiedVariant | 𬻮→𫯓 kTraditionalVariant
@@ -64616,10 +64553,6 @@ U+2C341	𬍁	𬌵	simplified	unihan	merge	𬌵→𬍁 kTraditionalVariant | 𬍁
 U+2C34D	𬍍	𬛈	variant	wikidata	merge	Q109951025; P248 Q137660091; P282 Q109378423 | Q109952360; P248 Q137660091; P282 Q109378423
 U+2C36D	𬍭	𬍵	variant	wikidata	merge	Q109951083; P248 Q137120432 | Q109951097; P248 Q137120432
 U+2C38D	𬎍	𮴘	variant	wikidata	merge	Q109951135; P248 Q63443408; P282 Q185614 | Q122605759; P248 Q63443408; P282 Q178528
-U+2C39F	𬎟	𮴌	simplified	unihan	stands-for	𬎟→𮴌 kSimplifiedVariant | 𮴌→𬎟 kTraditionalVariant
-U+2C39F	𬎟	𮴌	variant	wikidata	stands-for	Q109951158; P248 Q63443408; P282 Q185614 | Q122605620; P248 Q63443408; P282 Q178528
-U+2C39F	𬎟	𮴹	semantic	unihan	stands-for	𬎟→𮴹 kSemanticVariant | 𮴹→𬎟 kSemanticVariant
-U+2C39F	𬎟	𮴹	variant	wikidata	stands-for	Q109951158; P248 Q63443408; P282 Q185614 | Q122606180; P248 Q63443408; P282 Q178528
 U+2C3F1	𬏱	𬏻	variant	wikidata	merge	Q109951265; P248 Q137660091; P282 Q109378423 | Q109951278; P248 Q137660091; P282 Q109378423
 U+2C3F2	𬏲	𰣢	simplified	unihan	merge	𬏲→𰣢 kSimplifiedVariant | 𰣢→𬏲 kTraditionalVariant
 U+2C3F2	𬏲	𰣢	variant	wikidata	merge	Q109951266; P248 Q131782202; P282 Q185614 | Q109977679; P248 Q131782202; P282 Q178528
@@ -64632,12 +64565,8 @@ U+2C461	𬑡	𬑍	simplified	unihan	merge	𬑍→𬑡 kTraditionalVariant | 𬑡
 U+2C492	𬒄	𬒒	variant	wikidata	merge	Q109951544; P248 Q131782202; P282 Q178528 | Q109951563; P248 Q131782202; P282 Q185614
 U+2C492	𬒒	𬒄	simplified	cjkvi-variants	merge	𬒄→𬒒 cjkvi/traditional | 𬒒→𬒄 cjkvi/simplified
 U+2C492	𬒒	𬒄	simplified	unihan	merge	𬒄→𬒒 kTraditionalVariant | 𬒒→𬒄 kSimplifiedVariant
-U+2C4AA	𥒿	𬒪	variant	wikidata	stands-for	Q109840980; P248 Q55686705; P282 Q178528 | Q109951594; P248 Q55686705; P282 Q185614
-U+2C4AA	𬒪	𥒿	simplified	cjkvi-variants	stands-for	𥒿→𬒪 cjkvi/traditional | 𬒪→𥒿 cjkvi/simplified
 U+2C55C	𬕜	𮵭	simplified	unihan	merge	𬕜→𮵭 kSimplifiedVariant | 𮵭→𬕜 kTraditionalVariant
 U+2C55C	𬕜	𮵭	variant	wikidata	merge	Q109951837; P248 Q63443408; P282 Q185614 | Q122606855; P248 Q63443408; P282 Q178528
-U+2C59F	𫃐	𬖟	simplified	cjkvi-variants	stands-for	𫃐→𬖟 cjkvi/simplified | 𬖟→𫃐 cjkvi/traditional
-U+2C59F	𫃐	𬖟	simplified	unihan	stands-for	𫃐→𬖟 kSimplifiedVariant | 𬖟→𫃐 kTraditionalVariant
 U+2C5AD	𬖭	𬖷	variant	wikidata	merge	Q109951942; P248 Q137660091; P282 Q109378423 | Q109951957; P248 Q137660091; P282 Q109378423
 U+2C5C8	𬗈	𮶀	simplified	unihan	merge	𬗈→𮶀 kSimplifiedVariant | 𮶀→𬗈 kTraditionalVariant
 U+2C5C8	𬗈	𮶀	variant	wikidata	merge	Q109951978; P248 Q63443408; P282 Q185614 | Q122607094; P248 Q63443408; P282 Q178528
@@ -64648,8 +64577,6 @@ U+2C5EE	𬗮	𱺩	simplified	unihan	merge	𬗮→𱺩 kSimplifiedVariant | 𱺩�
 U+2C5FA	𬗺	𬙀	simplified	cjkvi-variants	merge	𬗺→𬙀 cjkvi/simplified | 𬙀→𬗺 cjkvi/traditional
 U+2C5FA	𬗺	𬙀	simplified	unihan	merge	𬗺→𬙀 kSimplifiedVariant | 𬙀→𬗺 kTraditionalVariant
 U+2C5FA	𬗺	𬙀	variant	wikidata	merge	Q109952036; P248 Q131782202; P282 Q185614 | Q109952167; P248 Q131782202; P282 Q178528
-U+2C617	𬘗	𰫛	variant	wikidata	stands-for	Q109952111; P248 Q131782202; P282 Q178528 | Q109978314; P248 Q131782202; P282 Q185614
-U+2C617	𰫛	𬘗	simplified	unihan	stands-for	𬘗→𰫛 kTraditionalVariant | 𰫛→𬘗 kSimplifiedVariant
 U+2C654	𬙏	𬙔	variant	wikidata	merge	Q109952186; P248 Q131782202; P282 Q178528 | Q109952192; P248 Q131782202; P282 Q185614
 U+2C654	𬙔	𬙏	simplified	cjkvi-variants	merge	𬙏→𬙔 cjkvi/traditional | 𬙔→𬙏 cjkvi/simplified
 U+2C654	𬙔	𬙏	simplified	unihan	merge	𬙏→𬙔 kTraditionalVariant | 𬙔→𬙏 kSimplifiedVariant
@@ -64703,7 +64630,6 @@ U+2CB87	𬮇	𬮝	variant	wikidata	merge	Q109954335; P248 Q131782202; P282 Q1856
 U+2CB8C	𬮌	𲈾	simplified	unihan	merge	𬮌→𲈾 kSimplifiedVariant | 𲈾→𬮌 kTraditionalVariant
 U+2CB8D	𬮍	𮤷	simplified	unihan	merge	𬮍→𮤷 kSimplifiedVariant | 𮤷→𬮍 kTraditionalVariant
 U+2CB8D	𬮍	𮤷	variant	wikidata	merge	Q109954342; P248 Q63443408; P282 Q185614 | Q109966220; P248 Q63443408; P282 Q178528
-U+2CBB7	𲈳	𬮷	simplified	unihan	stands-for	𬮷→𲈳 kTraditionalVariant | 𲈳→𬮷 kSimplifiedVariant
 U+2CBD8	𬯊	𬯘	variant	wikidata	merge	Q109954436; P248 Q131782202; P282 Q178528 | Q109954457; P248 Q131782202; P282 Q185614
 U+2CBD8	𬯘	𬯊	simplified	cjkvi-variants	merge	𬯊→𬯘 cjkvi/traditional | 𬯘→𬯊 cjkvi/simplified
 U+2CBD8	𬯘	𬯊	simplified	unihan	merge	𬯊→𬯘 kTraditionalVariant | 𬯘→𬯊 kSimplifiedVariant
@@ -64732,7 +64658,6 @@ U+2CD68	𬵨	鿹	simplified	unihan	merge	鿹→𬵨 kTraditionalVariant | 𬵨�
 U+2CD6E	𬵮	𬶑	simplified	cjkvi-variants	merge	𬵮→𬶑 cjkvi/simplified | 𬶑→𬵮 cjkvi/traditional
 U+2CD6E	𬵮	𬶑	simplified	unihan	merge	𬵮→𬶑 kSimplifiedVariant | 𬶑→𬵮 kTraditionalVariant
 U+2CD6E	𬵮	𬶑	variant	wikidata	merge	Q109955016; P248 Q131782202; P282 Q185614 | Q109955058; P248 Q131782202; P282 Q178528
-U+2CDA9	𬶩	𱆶	variant	wikidata	stands-for	Q109955086; P248 Q131782202; P282 Q178528 | Q109980393; P248 Q131782202; P282 Q185614
 U+2CDBC	𬶼	𱉉	simplified	unihan	merge	𬶼→𱉉 kSimplifiedVariant | 𱉉→𬶼 kTraditionalVariant
 U+2CDBC	𬶼	𱉉	variant	wikidata	merge	Q109955108; P248 Q63443408; P282 Q185614 | Q109980563; P248 Q63443408; P282 Q178528
 U+2CDC8	𬷈	𮹕	simplified	unihan	merge	𬷈→𮹕 kSimplifiedVariant | 𮹕→𬷈 kTraditionalVariant
@@ -64821,8 +64746,6 @@ U+2D7DC	𭟜	𰑨	variant	wikidata	merge	Q109958615; P248 Q837315 | Q109975651; 
 U+2D858	𭡘	𰔢	variant	wikidata	merge	Q109958764; P248 Q63443408; P282 Q178528 | Q109976113; P248 Q63443408; P282 Q185614
 U+2D88B	𢸔	𭢋	simplified	unihan	stands-for	𢸔→𭢋 kSimplifiedVariant | 𭢋→𢸔 kTraditionalVariant
 U+2D892	𭢒	𰓤	simplified	unihan	merge	𭢒→𰓤 kSimplifiedVariant | 𰓤→𭢒 kTraditionalVariant
-U+2D895	𢷞	𭢕	simplified	unihan	stands-for	𢷞→𭢕 kSimplifiedVariant | 𭢕→𢷞 kTraditionalVariant
-U+2D953	𣊯	𭥓	simplified	unihan	stands-for	𣊯→𭥓 kSimplifiedVariant | 𭥓→𣊯 kTraditionalVariant
 U+2D9BA	𭦺	𭻡	variant	wikidata	merge	Q109959204; P248 Q837315 | Q109960909; P248 Q837315
 U+2D9D2	𭧒	𰖏	simplified	unihan	merge	𭧒→𰖏 kSimplifiedVariant | 𰖏→𭧒 kTraditionalVariant
 U+2D9D2	𭧒	𰖏	variant	wikidata	merge	Q109959230; P248 Q63443408; P282 Q185614 | Q109976240; P248 Q63443408; P282 Q178528
@@ -64837,7 +64760,6 @@ U+2DA36	𭨶	𮌲	variant	wikidata	merge	Q109959356; P248 Q63443408; P282 Q17852
 U+2DA6F	𭩯	𮌾	variant	wikidata	merge	Q109959424; P248 Q137285673 | Q109964344; P248 Q137285673
 U+2DB84	𭮄	𭮊	variant	wikidata	merge	Q109959737; P248 Q837315 | Q109959743; P248 Q837315
 U+2DB84	𭮄	𭮐	variant	wikidata	merge	Q109959737; P248 Q837315 | Q109959750; P248 Q837315
-U+2DC17	𣼊	𭰗	simplified	unihan	stands-for	𣼊→𭰗 kSimplifiedVariant | 𭰗→𣼊 kTraditionalVariant
 U+2DC3A	𭰺	𱑎	variant	wikidata	merge	Q109959997; P248 Q137660091; P282 Q109378423 | Q117442766; P248 Q137660091; P282 Q109378423
 U+2DC58	𭱘	𰛨	simplified	unihan	merge	𭱘→𰛨 kSimplifiedVariant | 𰛨→𭱘 kTraditionalVariant
 U+2DC58	𭱘	𰛨	variant	wikidata	merge	Q109960033; P248 Q63443408; P282 Q185614 | Q109976687; P248 Q63443408; P282 Q178528
@@ -64863,7 +64785,6 @@ U+2E345	𮪶	𮪷	variant	wikidata	merge	Q109966716; P248 Q837315 | Q109966717; 
 U+2E3C0	𫉍	𮏀	simplified	unihan	stands-for	𫉍→𮏀 kSimplifiedVariant | 𮏀→𫉍 kTraditionalVariant
 U+2E3DF	𮏟	𰜑	variant	wikidata	merge	Q109964536; P248 Q136643781 | Q109976909; P248 Q136643781
 U+2E441	𮑁	𮑡	variant	wikidata	merge	Q109964664; P248 Q837315 | Q109964700; P248 Q837315
-U+2E556	𮕖	𰳉	variant	wikidata	stands-for	Q109965033; P248 Q63443408; P282 Q185614 | Q109978910; P248 Q63443408; P282 Q178528
 U+2E693	𮚓	𲃃	simplified	unihan	merge	𮚓→𲃃 kSimplifiedVariant | 𲃃→𮚓 kTraditionalVariant
 U+2E712	𮜒	𰸙	variant	wikidata	merge	Q109965557; P248 Q63443408; P282 Q185614 | Q109979323; P248 Q63443408; P282 Q178528
 U+2E717	𮜗	𰸦	simplified	unihan	merge	𮜗→𰸦 kSimplifiedVariant | 𰸦→𮜗 kTraditionalVariant
@@ -64896,21 +64817,10 @@ U+2EB2D	𮬭	𮭣	simplified	unihan	merge	𮬭→𮭣 kSimplifiedVariant | 𮭣�
 U+2EB2D	𮬭	𮭣	variant	wikidata	merge	Q109966873; P248 Q63443408; P282 Q185614 | Q109966934; P248 Q63443408; P282 Q178528
 U+2EB52	𮭒	𲎃	simplified	unihan	merge	𮭒→𲎃 kSimplifiedVariant | 𲎃→𮭒 kTraditionalVariant
 U+2EB58	𮭘	𱉁	variant	wikidata	merge	Q109966921; P248 Q137916925 | Q109980555; P248 Q137916925
-U+2EC2B	𮰫	𮰭	semantic	unihan	stands-for	𮰫→𮰭 kSemanticVariant | 𮰭→𮰫 kSemanticVariant
-U+2EC2D	𮰫	𮰭	semantic	unihan	stands-for	𮰫→𮰭 kSemanticVariant | 𮰭→𮰫 kSemanticVariant
 U+2EC5A	𮱚	𱙋	simplified	unihan	merge	𮱚→𱙋 kSimplifiedVariant | 𱙋→𮱚 kTraditionalVariant
 U+2EC71	𮱦	𮱱	variant	wikidata	merge	Q122603808; P248 Q63443408; P282 Q178528 | Q122603828; P248 Q63443408; P282 Q185614
 U+2EC71	𮱱	𮱦	simplified	unihan	merge	𮱦→𮱱 kTraditionalVariant | 𮱱→𮱦 kSimplifiedVariant
-U+2ED0C	𬎟	𮴌	simplified	unihan	stands-for	𬎟→𮴌 kSimplifiedVariant | 𮴌→𬎟 kTraditionalVariant
-U+2ED0C	𬎟	𮴌	variant	wikidata	stands-for	Q109951158; P248 Q63443408; P282 Q185614 | Q122605620; P248 Q63443408; P282 Q178528
-U+2ED0C	𮴌	𮴹	semantic	unihan	stands-for	𮴌→𮴹 kSemanticVariant | 𮴹→𮴌 kSemanticVariant
-U+2ED39	𬎟	𮴹	semantic	unihan	stands-for	𬎟→𮴹 kSemanticVariant | 𮴹→𬎟 kSemanticVariant
-U+2ED39	𬎟	𮴹	variant	wikidata	stands-for	Q109951158; P248 Q63443408; P282 Q185614 | Q122606180; P248 Q63443408; P282 Q178528
-U+2ED39	𮴌	𮴹	semantic	unihan	stands-for	𮴌→𮴹 kSemanticVariant | 𮴹→𮴌 kSemanticVariant
 U+2EDCD	𮚫	𮷍	simplified	unihan	stands-for	𮚫→𮷍 kSimplifiedVariant | 𮷍→𮚫 kTraditionalVariant
-U+2EDF7	𨰘	𮷷	simplified	unihan	stands-for	𨰘→𮷷 kSimplifiedVariant | 𮷷→𨰘 kTraditionalVariant
-U+2EDF7	𫒊	𮷷	simplified	unihan	stands-for	𫒊→𮷷 kSimplifiedVariant | 𮷷→𫒊 kTraditionalVariant
-U+2EDF7	𫒊	𮷷	variant	wikidata	stands-for	Q109900720; P248 Q63443408; P282 Q185614 | Q122608614; P248 Q63443408; P282 Q178528
 U+2EE01	𮸁	𲇌	variant	wikidata	merge	Q117462520; P248 Q139006076 | Q122608632; P248 Q139006076
 U+2EE3E	𮸾	𲋢	simplified	unihan	merge	𮸾→𲋢 kSimplifiedVariant | 𲋢→𮸾 kTraditionalVariant
 U+30065	𰁥	𱎴	variant	wikidata	merge	Q109971989; P248 Q55686705 | Q117442549; P248 Q55686705
@@ -64930,7 +64840,6 @@ U+30240	𰉀	𪢋	simplified	unihan	merge	𪢋→𰉀 kTraditionalVariant | 𰉀
 U+30294	𰊔	𱠢	variant	wikidata	merge	Q109972725; P248 Q123740387 | Q117449248; P248 Q123740387
 U+302C6	𪤅	𰋆	variant	wikidata	merge	Q109890278; P248 Q63443408; P282 Q178528 | Q109972787; P248 Q63443408; P282 Q185614
 U+302C6	𰋆	𪤅	simplified	unihan	merge	𪤅→𰋆 kTraditionalVariant | 𰋆→𪤅 kSimplifiedVariant
-U+303B4	𪌨	𰎴	simplified	unihan	stands-for	𪌨→𰎴 kSimplifiedVariant | 𰎴→𪌨 kTraditionalVariant
 U+303BC	𰎦	𰎼	variant	wikidata	merge	Q109975024; P248 Q63443408; P282 Q178528 | Q109975104; P248 Q63443408; P282 Q185614
 U+303BC	𰎼	𰎦	simplified	unihan	merge	𰎦→𰎼 kTraditionalVariant | 𰎼→𰎦 kSimplifiedVariant
 U+303D0	𰏐	𰗰	variant	wikidata	merge	Q109975170; P248 Q63443408 | Q109976353; P248 Q63443408
@@ -64947,9 +64856,7 @@ U+3062F	𰘯	𰘅	simplified	unihan	merge	𰘅→𰘯 kTraditionalVariant | 𰘯
 U+30682	𪵇	𰚂	variant	wikidata	merge	Q109896219; P248 Q63443408; P282 Q178528 | Q109976521; P248 Q63443408; P282 Q185614
 U+30682	𰚂	𪵇	simplified	unihan	merge	𪵇→𰚂 kTraditionalVariant | 𰚂→𪵇 kSimplifiedVariant
 U+306A3	𰚣	𰚍	simplified	unihan	merge	𰚍→𰚣 kTraditionalVariant | 𰚣→𰚍 kSimplifiedVariant
-U+306F1	𰝢	𰛱	simplified	unihan	stands-for	𰛱→𰝢 kTraditionalVariant | 𰝢→𰛱 kSimplifiedVariant
 U+3075C	𰝜	𣴇	simplified	unihan	merge	𣴇→𰝜 kTraditionalVariant | 𰝜→𣴇 kSimplifiedVariant
-U+30762	𰝢	𰛱	simplified	unihan	stands-for	𰛱→𰝢 kTraditionalVariant | 𰝢→𰛱 kSimplifiedVariant
 U+307EB	𰟄	𰟫	variant	wikidata	merge	Q109977335; P248 Q131782202; P282 Q178528 | Q109977381; P248 Q131782202; P282 Q185614
 U+307EB	𰟫	𰟄	simplified	unihan	merge	𰟄→𰟫 kTraditionalVariant | 𰟫→𰟄 kSimplifiedVariant
 U+30853	𰡉	𰡓	variant	wikidata	merge	Q109977489; P248 Q55686705; P282 Q178528 | Q109977500; P248 Q55686705; P282 Q185614
@@ -64970,14 +64877,12 @@ U+30BF2	𰀢	𰯲	variant	wikidata	merge	Q109971911; P248 Q63443408 | Q109978674
 U+30BF2	𰯲	𰀢	simplified	unihan	merge	𰀢→𰯲 kTraditionalVariant | 𰯲→𰀢 kSimplifiedVariant
 U+30C53	𰱓	𰱧	variant	wikidata	merge	Q109978783; P248 Q63443408 | Q109978803; P248 Q63443408
 U+30C9F	𪂬	𰲟	variant	wikidata	stands-for	Q109883206; P248 Q55686705; P282 Q185614 | Q109978864; P248 Q55686705; P282 Q178528
-U+30CC9	𮕖	𰳉	variant	wikidata	stands-for	Q109965033; P248 Q63443408; P282 Q185614 | Q109978910; P248 Q63443408; P282 Q178528
 U+30D0F	𫌩	𰴏	variant	wikidata	merge	Q109900239; P248 Q63443408; P282 Q178528 | Q109979009; P248 Q63443408; P282 Q185614
 U+30D0F	𰴏	𫌩	simplified	unihan	merge	𫌩→𰴏 kTraditionalVariant | 𰴏→𫌩 kSimplifiedVariant
 U+30D26	𰴥	𰴦	variant	wikidata	merge	Q109979036; P248 Q55686705; P282 Q178528 | Q109979037; P248 Q55686705; P282 Q185614
 U+30D26	𰴦	𰴥	simplified	unihan	merge	𰴥→𰴦 kTraditionalVariant | 𰴦→𰴥 kSimplifiedVariant
 U+30D3D	𬤃	𰴽	variant	wikidata	merge	Q109953400; P248 Q131782202; P282 Q178528 | Q109979061; P248 Q131782202; P282 Q185614
 U+30D3D	𰴽	𬤃	simplified	unihan	merge	𬤃→𰴽 kTraditionalVariant | 𰴽→𬤃 kSimplifiedVariant
-U+30D4B	𲁢	𰵋	simplified	unihan	stands-for	𰵋→𲁢 kTraditionalVariant | 𲁢→𰵋 kSimplifiedVariant
 U+30E48	𰹈	𰹯	simplified	unihan	merge	𰹈→𰹯 kSimplifiedVariant | 𰹯→𰹈 kTraditionalVariant
 U+30E48	𰹈	𰹯	variant	wikidata	merge	Q109979376; P248 Q63443408; P282 Q185614 | Q109979420; P248 Q63443408; P282 Q178528
 U+30EDE	𰻝	𰻞	variant	wikidata	merge	Q109979539; P248 Q63443408; P282 Q178528 | Q109979540; P248 Q63443408; P282 Q185614
@@ -64991,33 +64896,24 @@ U+310E2	𬲧	𱃢	variant	wikidata	merge	Q109954763; P248 Q131782202; P282 Q1785
 U+310E2	𱃢	𬲧	simplified	unihan	merge	𬲧→𱃢 kTraditionalVariant | 𱃢→𬲧 kSimplifiedVariant
 U+310EA	𬲽	𱃪	variant	wikidata	merge	Q109954792; P248 Q131782202; P282 Q178528 | Q109980171; P248 Q131782202; P282 Q185614
 U+310EA	𱃪	𬲽	simplified	unihan	merge	𬲽→𱃪 kTraditionalVariant | 𱃪→𬲽 kSimplifiedVariant
-U+31119	𱄙	𱅌	simplified	unihan	stands-for	𱄙→𱅌 kSimplifiedVariant | 𱅌→𱄙 kTraditionalVariant
 U+3111D	𱄝	𲌆	simplified	unihan	merge	𱄝→𲌆 kSimplifiedVariant | 𲌆→𱄝 kTraditionalVariant
 U+3112A	𱄪	𱄲	variant	wikidata	merge	Q109980240; P248 Q55686705 | Q109980251; P248 Q55686705
-U+3114C	𱄙	𱅌	simplified	unihan	stands-for	𱄙→𱅌 kSimplifiedVariant | 𱅌→𱄙 kTraditionalVariant
 U+311A5	鿕	𱆥	variant	wikidata	merge	Q109771166; P248 Q63443408; P282 Q178528 | Q109980375; P248 Q63443408; P282 Q185614
 U+311A5	𱆥	鿕	simplified	unihan	merge	鿕→𱆥 kTraditionalVariant | 𱆥→鿕 kSimplifiedVariant
-U+311B6	𬶩	𱆶	variant	wikidata	stands-for	Q109955086; P248 Q131782202; P282 Q178528 | Q109980393; P248 Q131782202; P282 Q185614
 U+311CB	𬶥	𱇋	variant	wikidata	merge	Q109955082; P248 Q131782202; P282 Q178528 | Q109980417; P248 Q131782202; P282 Q185614
 U+311CB	𱇋	𬶥	simplified	unihan	merge	𬶥→𱇋 kTraditionalVariant | 𱇋→𬶥 kSimplifiedVariant
-U+312B4	𪈏	𱊴	simplified	unihan	stands-for	𪈏→𱊴 kSimplifiedVariant | 𱊴→𪈏 kTraditionalVariant
-U+312C4	𪋽	𱋄	simplified	unihan	stands-for	𪋽→𱋄 kSimplifiedVariant | 𱋄→𪋽 kTraditionalVariant
-U+312C9	𪌐	𱋉	simplified	unihan	stands-for	𪌐→𱋉 kSimplifiedVariant | 𱋉→𪌐 kTraditionalVariant
 U+31357	𱍗	𱥺	variant	wikidata	merge	Q117442428; P248 Q137660091; P282 Q109378423 | Q117451618; P248 Q137660091; P282 Q109378423
 U+31385	𱎅	𱎆	variant	wikidata	merge	Q117442490; P248 Q139006076 | Q117442491; P248 Q139006076
 U+31D6D	𮵚	𱵭	variant	wikidata	merge	Q117457122; P248 Q63443408; P282 Q185614 | Q122606613; P248 Q63443408; P282 Q178528
 U+31D6D	𱵭	𮵚	simplified	unihan	merge	𮵚→𱵭 kTraditionalVariant | 𱵭→𮵚 kSimplifiedVariant
 U+31E70	𱹰	𱺚	simplified	unihan	merge	𱹰→𱺚 kSimplifiedVariant | 𱺚→𱹰 kTraditionalVariant
 U+31E83	𱺃	𱺪	simplified	unihan	merge	𱺃→𱺪 kSimplifiedVariant | 𱺪→𱺃 kTraditionalVariant
-U+32062	𲁢	𰵋	simplified	unihan	stands-for	𰵋→𲁢 kTraditionalVariant | 𲁢→𰵋 kSimplifiedVariant
 U+320AB	𲂫	𲃀	simplified	unihan	merge	𲂫→𲃀 kSimplifiedVariant | 𲃀→𲂫 kTraditionalVariant
 U+320B4	𲂴	𲃆	simplified	unihan	merge	𲂴→𲃆 kSimplifiedVariant | 𲃆→𲂴 kTraditionalVariant
 U+321CA	𲇊	𬭄	simplified	unihan	writes	𬭄→𲇊 kTraditionalVariant | 𲇊→𬭄 kSimplifiedVariant
 U+321CB	𲇋	𲇼	simplified	unihan	merge	𲇋→𲇼 kSimplifiedVariant | 𲇼→𲇋 kTraditionalVariant
 U+3222B	𫔳	𲈫	variant	wikidata	merge	Q109901020; P248 Q63443408; P282 Q178528 | Q117463105; P248 Q63443408; P282 Q185614
 U+3222B	𲈫	𫔳	simplified	unihan	merge	𫔳→𲈫 kTraditionalVariant | 𲈫→𫔳 kSimplifiedVariant
-U+32233	𲈳	𬮷	simplified	unihan	stands-for	𬮷→𲈳 kTraditionalVariant | 𲈳→𬮷 kSimplifiedVariant
-U+32234	𲈴	𫔸	simplified	unihan	stands-for	𫔸→𲈴 kTraditionalVariant | 𲈴→𫔸 kSimplifiedVariant
 U+322D5	𲋕	𲋣	simplified	unihan	merge	𲋕→𲋣 kSimplifiedVariant | 𲋣→𲋕 kTraditionalVariant
 U+322DC	𲋜	𲋨	simplified	unihan	merge	𲋜→𲋨 kSimplifiedVariant | 𲋨→𲋜 kTraditionalVariant
 U+322FC	𲋼	𩨂	simplified	unihan	writes	𩨂→𲋼 kTraditionalVariant | 𲋼→𩨂 kSimplifiedVariant
