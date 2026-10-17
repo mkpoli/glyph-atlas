@@ -100,7 +100,9 @@ Boxes a reviewer draws on a page photo go on one line per page with role `other`
 `page` and the whole page as its box, created by the first box drawn on that page.
 `atlas review propose-marks` puts the interlinear marks and circles it proposes on the same line, as
 units with `method` `detect`, `review` `machine`, no character, and `meta.proposer` naming the
-proposer's version. A reviewer names, keeps or removes each one.
+proposer's version. A reviewer names, keeps or removes each one. `atlas review propose-characters`
+does the same with the character detector's boxes on pages that have no transcription, filed under
+the script the source is written in (`--script tangut`).
 
 ### units
 
