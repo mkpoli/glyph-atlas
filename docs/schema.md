@@ -102,7 +102,10 @@ Boxes a reviewer draws on a page photo go on one line per page with role `other`
 units with `method` `detect`, `review` `machine`, no character, and `meta.proposer` naming the
 proposer's version. A reviewer names, keeps or removes each one. `atlas review propose-characters`
 does the same with the character detector's boxes on pages that have no transcription, filed under
-the script the source is written in (`--script tangut`).
+the script the source is written in (`--script tangut`). A unit with no character that is filed
+under a script is a crop of the collection, grouped by that script and published with an empty
+character; it counts towards its book, under no character, and is left out of review rounds until a
+reader names it.
 
 ### units
 

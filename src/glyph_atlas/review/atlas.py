@@ -182,9 +182,21 @@ def review_priority(unit: Unit) -> int:
     return 1
 
 
+#: The gallery group of a unit no one has read yet, by the script it was filed under.
+SCRIPT_GROUPS = {Script.HIRAGANA: "kana", Script.HENTAIGANA: "kana", Script.KATAKANA: "kana", Script.HAN: "kanji",
+                 Script.HANGUL: "hangul", Script.GUGYEOL: "gugyeol", Script.TANGUT: "tangut"}
+
+
+def unread(unit: Unit) -> bool:
+    """Whether a unit is a box no one has read yet: no transcription and no written character."""
+    return not transcription(unit) and not written_identity(unit)
+
+
 def character_group(unit: Unit) -> str:
     shown = written_identity(unit) or transcription(unit)
-    char = shown[0] if shown else ""
+    if not shown:
+        return SCRIPT_GROUPS.get(unit.script, "other")
+    char = shown[0]
     name = unicodedata.name(char, "") if char else ""
     if name.startswith(("HIRAGANA", "KATAKANA", "HENTAIGANA")):
         return "kana"
@@ -787,10 +799,12 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         return written if single_character(written) else transcription(unit)
 
     def eligible(unit: Unit) -> bool:
+        """Whether a unit is a crop of the collection: one character, or a box filed under a script
+        that waits for a reader to name its character (`atlas review propose-characters`)."""
         readable = single_character(transcription(unit)) or (
             not transcription(unit) and single_character(written_identity(unit))
             and not is_space_identity(written_identity(unit))
-        )
+        ) or (unread(unit) and unit.script in SCRIPT_GROUPS)
         return unit.active and unit.granularity == "char" and bool(readable) and bool(
             unit.crop_sha256 or (unit.page_id and unit.box and unit.box.w > 0 and unit.box.h > 0)
         ) and image_source(unit) is not None
@@ -804,7 +818,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         a person to judge ink the pass could not align spends their attention on a known-bad crop and
         then records their answer against it.
         """
-        return eligible(unit) and not repair_withheld(unit)
+        return eligible(unit) and not unread(unit) and not repair_withheld(unit)
 
     def crop_url(unit: Unit, revision: int, source=None) -> str:
         """The URL of the crop as it stands: a new cut of the unit gives a new URL.
@@ -965,7 +979,8 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         # The books the crops come from, counted like the characters: `document` picks one.
         shelves: dict[str, Counter] = {}
         for unit, _ in records:
-            groups = [categories.setdefault(shown(unit), Counter())]
+            # An unread box is no character's crop, and counts only towards its book.
+            groups = [] if unread(unit) else [categories.setdefault(shown(unit), Counter())]
             if books[unit.id]:
                 groups.append(shelves.setdefault(books[unit.id], Counter()))
             for counts in groups:
