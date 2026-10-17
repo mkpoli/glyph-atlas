@@ -73,3 +73,9 @@ def test_the_ids_editor_starts_from_the_characters_description_with_each_compone
     assert {"char": "コ", "count": 1} in found["substitutes"]["龴"]
     assert refs.structure("𠤕")["sequences"] == ["⿱匕矢"]
     assert "失" in {row["char"] for row in refs.substitutes("矢")}
+
+
+def test_a_characters_regional_shapes_are_its_descriptions_that_name_different_regions():
+    assert refs.structure("所")["shapes"] == [{"text": "⿰戶斤", "regions": "GHTKPV"}, {"text": "⿰戸斤", "regions": "J"}]
+    assert refs.regional_shapes("主") == [], "⿱亠土 (X) analyses the shape every region writes as ⿱丶王"
+    assert refs.regional_shapes("疑") == []

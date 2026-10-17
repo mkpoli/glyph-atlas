@@ -1447,10 +1447,10 @@ async function derivedOf(env: Env, rows: DerivedRow[]): Promise<DerivedEntry[]> 
     return [{ char: row.other, code_point: encoded ? cp(row.other) : null, encoded, routes, sources: [...sources].sort() }];
   });
 }
-// What the form picker's IDS editor starts from (0068): a character's descriptions by key, and the
+// What the form picker's IDS editor starts from (0068, 0080): a character's descriptions and regional shapes by key, and the
 // substitutes of each component they name, the `component_variants` rows naming it as `a` (by key) or
 // as `b` (by `component_variant_b`), at most STRUCTURE_PARTS components a request.
-export const structureQuery = () => `SELECT sequences FROM han_ids WHERE char=?`;
+export const structureQuery = () => `SELECT sequences, shapes FROM han_ids WHERE char=?`;
 export const substitutesQuery = (n: number) => `SELECT a,b,count FROM component_variants WHERE a IN (${Array(n).fill('?').join(',')})
   UNION ALL SELECT a,b,count FROM component_variants WHERE b IN (${Array(n).fill('?').join(',')})`;
 // A description holds at most 64 code points; the components of every sequence of one character fit here.
@@ -1464,8 +1464,9 @@ async function structureOf(env: Env, ctx: ExecutionContext, origin: string, char
   const key = new Request(`${origin}/layers/structure?c=${encodeURIComponent(char)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
-  const row = await env.DB.prepare(structureQuery()).bind(char).first<{ sequences: string }>();
+  const row = await env.DB.prepare(structureQuery()).bind(char).first<{ sequences: string; shapes: string | null }>();
   const sequences: string[] = row ? JSON.parse(row.sequences) : [];
+  const shapes: { text: string; regions: string }[] = row?.shapes ? JSON.parse(row.shapes) : [];
   const parts = [...new Set(sequences.flatMap(text => [...text].filter(c => !IDS_OPERATOR.test(c))))].slice(0, STRUCTURE_PARTS);
   const rows = parts.length ? (await env.DB.prepare(substitutesQuery(parts.length)).bind(...parts, ...parts)
     .all<{ a: string; b: string; count: number }>()).results : [];
@@ -1477,7 +1478,7 @@ async function structureOf(env: Env, ctx: ExecutionContext, origin: string, char
       .slice(0, SUBSTITUTES_SHOWN);
     if (found.length) substitutes[part] = found;
   }
-  const found = { char, sequences, substitutes };
+  const found = { char, sequences, shapes, substitutes };
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return found;
 }

@@ -391,6 +391,21 @@ def ids_sequences(char: str) -> list[str]:
     return found
 
 
+def regional_shapes(char: str) -> list[dict[str, str]]:
+    """The shapes BabelStone gives `char` by region, as `{"text", "regions"}` (所 as ⿰戶斤 in GHTKPV
+    and ⿰戸斤 in J), when its descriptions name more than one; empty otherwise. An `(X)` sequence is
+    another analysis of a shape some region already has (主's ⿱亠土 beside ⿱丶王), so it names none."""
+    usable = ids_sequences(char)
+    found: dict[str, str] = {}
+    for sequence in han_components._sequences().get(char, ()):
+        tagged = re.search(r"\(([^)]*)\)$", sequence)
+        regions = tagged.group(1).replace("X", "") if tagged else ""
+        text = sequence[:tagged.start()] if tagged else sequence
+        if regions and text in usable:
+            found[text] = found.get(text, "") + "".join(r for r in regions if r not in found.get(text, ""))
+    return [{"text": text, "regions": regions} for text, regions in found.items()] if len(found) > 1 else []
+
+
 def substitutes(component: str) -> list[dict[str, Any]]:
     """What may stand in `component`'s place: each substitution of han-component-variants.tsv naming
     it, as `{"char", "count"}`, most contexts first, at most `SUBSTITUTES_SHOWN`."""
@@ -401,12 +416,12 @@ def substitutes(component: str) -> list[dict[str, Any]]:
 
 
 def structure(char: str) -> dict[str, Any]:
-    """What the IDS editor starts from for `char`: its descriptions, and the substitutes of every
-    component they name, as the Worker's `/layers/structure` answers."""
+    """What the IDS editor starts from for `char`: its descriptions, its regional shapes, and the
+    substitutes of every component they name, as the Worker's `/layers/structure` answers."""
     sequences = ids_sequences(char)
     parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
                     if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})
-    return {"char": char, "sequences": sequences,
+    return {"char": char, "sequences": sequences, "shapes": regional_shapes(char),
             "substitutes": {part: found for part in parts if (found := substitutes(part))}}
 
 
