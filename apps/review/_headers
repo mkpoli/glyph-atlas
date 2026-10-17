@@ -1,0 +1,6 @@
+# Font files named by their content may be kept for good; the others keep their names across rebuilds
+# and are checked on each use.
+/fonts/fallback/*.woff2
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/tangut/*.woff2
+  Cache-Control: public, max-age=31536000, immutable

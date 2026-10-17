@@ -58,8 +58,9 @@ LXGW WenKai TC, then LXGW WenKai, then GenZui Sans for the kana they lack.
   under the SIL Open Font License 1.1 as `fallback/wenkai-tc-OFL.txt` and `fallback/wenkai-OFL.txt`.
   They are cut down to the labels
   with crops in the corpus that Kureedo Kata and Klee One do not draw, listed with their crop
-  counts in `fallback/characters.tsv`, and split into files of 120 characters, most frequent
-  first. Neither release reserves a font name, so the subsets keep the family names.
+  counts in `fallback/characters.tsv`, and split into WOFF2 files of 120 characters, most frequent
+  first, each named by its content hash so a browser can keep it for good. Neither release reserves
+  a font name, so the subsets keep the family names.
   `scripts/build_fallback_fonts.py` rebuilds them from the release files, which it checks against
   pinned hashes; run it with `--labels work/corpus-index/chars.parquet` when the corpus grows.
 - Labels no font here draws fall back to the reader's own fonts: 46 characters of CJK Extensions
