@@ -2089,6 +2089,52 @@ try {
     assert.deepEqual(await db.prepare("SELECT character,family FROM units WHERE id='ba-1'").first(), { character: ha, family: 'U+3070' },
       'a crop marked as a sequence member stays filed under its grapheme')
   }
+  // An admin sends corpus glyphs a check found in doubt to the Flagged view: each gets its `units` row,
+  // flagged, with the finding beside the record; a glyph already named, one whose character moved since
+  // the check, one this site may not show and one not published are left out, and a retry writes nothing.
+  {
+    const flagGlyphs = [glyph('doubt-a', { label: '𛁈', char: '𛁈', written_character: '𛁈' }), glyph('doubt-moved', { label: '𛁈', char: '𛁈', written_character: '𛁈' }),
+      glyph('doubt-private', { label: '𛁈', char: '𛁈', written_character: '𛁈', proxyable: false })]
+    let pack = ''
+    for (const record of flagGlyphs) {
+      const bytes = JSON.stringify(record), offset = new TextEncoder().encode(pack).length
+      pack += bytes
+      await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(record.id, '𛁈', 'U+3057', null, 7,
+        'pack-doubt', offset, new TextEncoder().encode(bytes).length, 'handwritten', 0).run()
+    }
+    await bucket.put('pack-doubt', pack)
+    await db.prepare("INSERT INTO corpus_characters VALUES('𛁈','handwritten',3,0)").run()
+    const sent = { finding: 'box-relabel', glyphs: [
+      { id: 'doubt-a', character: '𛁈', realigned: '所', transcribed: 'シ' },
+      { id: 'doubt-moved', character: 'し', realigned: null, transcribed: 'し' },
+      { id: 'doubt-private', character: '𛁈', realigned: null, transcribed: 'シ' },
+      { id: 'nu-shown', character: 'ヌ', realigned: null, transcribed: 'ヌ' },
+      { id: 'doubt-unpublished', character: '𛁈', realigned: null, transcribed: null }] }
+    await call('/api/admin/corpus-flags', sent, 403, 'bob')
+    await call('/api/admin/corpus-flags', { ...sent, glyphs: [sent.glyphs[0], sent.glyphs[0]] }, 422, 'judge')
+    const flagged = await call('/api/admin/corpus-flags', sent, 200, 'judge')
+    assert.deepEqual({ ...flagged, rows_written: undefined }, { flagged: ['doubt-a'], held: ['nu-shown'], changed: ['doubt-moved'],
+      unshowable: ['doubt-private'], missing: ['doubt-unpublished'], rows_written: undefined })
+    assert.ok(flagged.rows_written > 0)
+    const row = await db.prepare("SELECT origin,character,state,revision,priority,data,snapshot FROM units WHERE id='doubt-a'").first()
+    const data = JSON.parse(row.data)
+    assert.deepEqual([row.origin, row.character, row.state, row.revision, data.state, data.issue, data.revision, JSON.parse(row.snapshot).state],
+      ['corpus', '𛁈', 'flagged', 1, 'flagged', 'character', 1, 'pending'], 'the glyph is flagged; its snapshot is the published record')
+    assert.deepEqual({ ...data.flag, at: undefined }, { finding: 'box-relabel', realigned: '所', transcribed: 'シ', at: undefined })
+    assert.equal(await db.prepare("SELECT count(*) AS n FROM events WHERE target='doubt-a'").first('n'), 0, 'a finding is no review')
+    assert.deepEqual(await db.prepare("SELECT n,named FROM corpus_characters WHERE character='𛁈'").first(), { n: 3, named: 1 },
+      'a flagged glyph leaves the untouched glyphs a round deals')
+    assert.ok((await call('/atlas/corpus/reviews')).items.some(item => item.id === 'doubt-a'), 'it waits in the Flagged view')
+    const again = await call('/api/admin/corpus-flags', sent, 200, 'judge')
+    assert.deepEqual([again.flagged, again.held, again.rows_written], [[], ['doubt-a', 'nu-shown'], 0], 'sent again, it writes nothing')
+    const queue = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.flaggedCorpusQuery()).all()).results.map(r => r.detail)
+    assert.ok(queue.some(d => /USING (COVERING )?INDEX unit_state/.test(d)) && !queue.some(d => /TEMP B-TREE/.test(d)), queue.join('; '))
+    // A person settles it, and it leaves the queue.
+    const settled = await call('/atlas/corpus/reviews', { id: crypto.randomUUID(), identity: 'doubt-a', source_revision: data.source_revision,
+      revision: 1, verdict: 'match' }, 200, 'bob')
+    assert.equal(settled.state, 'checked')
+    assert.ok(!(await call('/atlas/corpus/reviews')).items.some(item => item.id === 'doubt-a'), 'a settled glyph leaves the Flagged view')
+  }
   // One address is held to a number of claims a minute (CLAIMS, 100). The minute can turn while they are
   // sent, which starts the count again, so up to two and a half minutes' worth are sent: one minute then
   // holds more than its limit whichever claim it turns at.
@@ -2105,7 +2151,7 @@ try {
     rateLimited = response.status === 429
   }
   assert.ok(rateLimited, 'batches are rate-rateLimited per address')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, redrawn boxes, crop versions, the assertion ledger, crop forms.')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, redrawn boxes, crop versions, the assertion ledger, crop forms, corpus flags.')
 } finally {
   await mf.dispose()
   await rm(bundleDir, { recursive: true, force: true })
