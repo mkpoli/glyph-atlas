@@ -50,6 +50,7 @@
   "character.sourceHonkoku": "みんなで翻刻 ↗",
   "chips.allForms": "모든 字形",
   "chips.forms": "字形",
+  "chips.glyphs": "用例",
   "chips.grapheme": "字素",
   "chips.includeVariants": "異體字도 包含",
   "chips.layers.label": "文字 層",
