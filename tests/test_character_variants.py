@@ -159,3 +159,11 @@ def test_a_spelling_counted_under_two_readings_names_each():
     (pou,) = [entry for entry in word["spellings"] if entry["spelling"] == "抔"]
     assert {s["ruby"] for s in pou["sources"] if s["source"] == "honkoku-ruby"} == {"など", "なと"}
     assert all(s["ruby"] is None for s in pou["sources"] if s["source"] != "honkoku-ruby")
+
+
+def test_the_card_lists_the_graphemes_a_reduced_form_writes_and_the_forms_that_write_its_own(monkeypatch):
+    monkeypatch.setattr(characters.corpus_source, "counts", lambda chars: {})
+    assert characters.variant_card("后", {})["writes"] == [{"code_point": "U+5F8C", "char": "後"}]
+    assert characters.variant_card("後", {})["writers"] == [{"code_point": "U+540E", "char": "后"}]
+    card = characters.variant_card("时", {})
+    assert card["writes"] == [] and card["writers"] == []
