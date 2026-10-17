@@ -266,6 +266,16 @@ def test_the_yixiezi_pass_never_joins_two_curated_families():
     assert grouped(rows, curated={"国": ["国", "國"], "学": ["学", "學"]}) == {"国": "国國", "学": "学學"}
 
 
+def test_groups_joining_one_family_are_checked_against_each_other():
+    """踩 and 踹 are each tied to 跴 alone; both are GB 2312, so only the first joins."""
+    rows = [edge("踩", "跴", "variant"), edge("踹", "跴", "semantic", "unihan", "跴→踹 kSemanticVariant")]
+    found = families(rows, [], {"踩", "踹", "跴"}, {}, set(), gb2312={"踩", "踹"})
+    assert {"".join(sorted(family.members)) for family in found} == {"跴踩"}
+    rows = [edge("卥", "西", "variant"), edge("𠧧", "西", "variant"),
+            edge("卥", "𠧧", "non-cognate", "cjkvi-variants", "卥→𠧧 cjkvi/non-cognate")]
+    assert grouped(rows) == {"卥": "卥西"}
+
+
 def test_a_simplified_form_that_writes_itself_stays_apart_whatever_else_relates_it():
     rows = [edge("衚", "胡", "simplified", "opencc", "STCharacters (also itself) | TSCharacters"),
             edge("衚", "胡", "variant", "cjkvi-variants", "胡→衚 hydzd/variant")]
