@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from glyph_atlas import images
 from glyph_atlas.schema import Page
 
 SCHEMA = "\n".join(p.read_text() for p in sorted(Path("apps/cloudflare/migrations").glob("*.sql")))
@@ -24,16 +25,16 @@ def scripts(monkeypatch):
     ("https://kokusho.nijl.ac.jp/api/iiif/100334875/v4/TSDT/TSDT-01855/TSDT-01855-00000.tif/full/5616,/0/default.jpg",
      "https://kokusho.nijl.ac.jp/api/iiif/100334875/v4/TSDT/TSDT-01855/TSDT-01855-00000.tif"),
     ("https://da2.library.ryukoku.ac.jp/image/?IIIF=/17%2F170161%2F170161-0001.tif/full/1350,/0/default.jpg",
-     "https://da2.library.ryukoku.ac.jp/image/?IIIF=/17%2F170161%2F170161-0001.tif"),
+     "https://da2.library.ryukoku.ac.jp/image/?IIIF=/17/170161/170161-0001.tif"),
     ("https://ourarchives.amane-project.jp/iipsrv/iipsrv.fcgi?IIIF=/img/a.tif/full/full/0/default.jpg",
      "https://ourarchives.amane-project.jp/iipsrv/iipsrv.fcgi?IIIF=/img/a.tif"),
     ("https://example.org/service/info.json", "https://example.org/service"),
+    ("https://images.eap.bl.uk/EAP140/EAP140_1_52/5.jp2", "https://images.eap.bl.uk/EAP140/EAP140_1_52/5.jp2"),
     ("https://upload.wikimedia.org/wikipedia/commons/a/ab/Scan.jpg", None),
     ("", None),
 ])
-def test_a_page_image_names_its_iiif_service(scripts, image, service):
-    export, _ = scripts
-    assert export.image_service(image) == service
+def test_a_page_image_names_its_iiif_service(image, service):
+    assert images.service_of(image) == service
 
 
 def unit(identity, page, line="l", seq=0):
