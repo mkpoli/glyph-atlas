@@ -13,7 +13,7 @@
 #   unihan: Unihan_IRGSources.txt kIRG_JSource J0 (JIS X 0208) of Unicode 18.0.0, for the representative and for which reductions need a second source
 # role: merge joins a and b; corroborates is the second source a reduction between two JIS X 0208 characters needs.
 # columns: head, a, b, relation, source, role, detail
-# families: 15955 (270 curated), characters: 52503, rows: 61414
+# families: 15952 (270 curated), characters: 52495, rows: 61407
 head	a	b	relation	source	role	detail
 U+3401	㐁	𠀬	variant	cjkvi-variants	merge	㐁→𠀬 hydzd/variant | 㐁→𠀬 koseki/variant | 㐁→𠀬 twedu/variant
 U+3401	㐁	𠀬	variant	wikidata	merge	Q109781829; P248 Q10427532 | Q109797207; P248 Q10427532
@@ -7638,7 +7638,6 @@ U+50F0	僰	𤏡	variant	wikidata	merge	Q109737802; P248 Q10427532 | Q109834069; 
 U+50F0	僰	𭞧	variant	wikidata	merge	Q109737802; P248 Q10427532 | Q109958556; P248 Q10427532
 U+50F0	僰	𰒝	variant	wikidata	merge	Q109737802; P248 Q10427532 | Q109975772; P248 Q10427532
 U+50F1	僱	𬿍	variant	wikidata	merge	Q109737803; P248 Q137916925 | Q109955993; P248 Q137916925
-U+50F5	僵	殭	variant	cjkvi-variants	merge	僵→殭 dypytz/variant | 僵→殭 hydzd/variant
 U+50F6	僶	𠊟	simplified	cjkvi-variants	merge	僶→𠊟 cjkvi/simplified | 𠊟→僶 cjkvi/traditional
 U+50F6	僶	𠊟	variant	wikidata	merge	Q109737808; P248 Q55686705; P282 Q185614 | Q109797914; P248 Q55686705; P282 Q178528
 U+50F6	僶	𬿄	variant	wikidata	merge	Q109737808; P248 Q837315 | Q109955981; P248 Q837315
@@ -9505,8 +9504,6 @@ U+541F	訡	吟	reduction	mj-shrink-map	merge	MJ024371: 法務省戸籍法関連�
 U+5421	吡	諀	variant	cjkvi-variants	merge	諀→吡 hydzd/variant
 U+5421	諀	𧨬	variant	cjkvi-variants	merge	諀→𧨬 hydzd/variant | 諀→𧨬 koseki/variant | 諀→𧨬 twedu/variant
 U+5421	諀	𧨬	variant	wikidata	merge	Q109762665; P248 Q10427532 | Q109863848; P248 Q10427532
-U+5423	吣	唚	variant	cjkvi-variants	merge	吣→唚 hydzd/variant
-U+5423	吣	唚	semantic	unihan	merge	吣→唚 kSemanticVariant<kMatthews | 唚→吣 kSemanticVariant<kMatthews
 U+5426	𠘶	否	reduction	mj-shrink-map	merge	MJ031165: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5426	𡃠	否	reduction	mj-shrink-map	merge	MJ032715: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+5426	吥	否	variant	cjkvi-variants	merge	否→吥 twedu/variant
@@ -17283,8 +17280,6 @@ U+62FC	拼	拼	compatibility	unicode-ucd	merge	62FC
 U+62FC	拼	𰭙	variant	wikidata	merge	Q109748200; P248 Q837315 | Q109978501; P248 Q837315
 U+62FD	𡲝	拽	reduction	mj-shrink-map	merge	MJ034387: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+62FE	拾	拾	compatibility	unicode-ucd	merge	62FE
-U+62FF	㧱	拿	variant	cjkvi-variants	merge	拿→㧱 dypytz/variant | 拿→㧱 hydzd/variant | 拿→㧱 twedu/variant
-U+62FF	㧱	拿	variant	wikidata	merge	Q109748204; P248 Q10427532 | Q109784133; P248 Q10427532
 U+6301	持	𠱾	variant	wikidata	merge	Q109800603; P248 Q55686705 | Q54874274; P248 Q55686705
 U+6301	持	𰩠	variant	wikidata	merge	Q109978172; P248 Q63443408 | Q54874274; P248 Q63443408
 U+6302	挂	𫭳	variant	wikidata	merge	Q109748212; P248 Q137120432 | Q109945867; P248 Q137120432
@@ -33280,7 +33275,6 @@ U+80E1	𠴱	胡	reduction	mj-shrink-map	merge	MJ032316: 法務省戸籍法関連
 U+80E1	𡋞	胡	reduction	mj-shrink-map	merge	MJ033011: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+80E1	㗅	胡	variant	cjkvi-variants	merge	胡→㗅 hydzd/variant
 U+80E1	楜	胡	variant	cjkvi-variants	merge	胡→楜 koseki/variant
-U+80E1	胡	衚	variant	cjkvi-variants	merge	胡→衚 dypytz/variant
 U+80E1	胡	𬰒	variant	wikidata	merge	Q109954586; P248 Q137120432 | Q56225673; P248 Q137120432
 U+80E4	𠉥	胤	reduction	mj-shrink-map	merge	MJ030638: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+80E4	𤗅	胤	reduction	mj-shrink-map	merge	MJ040365: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -43167,7 +43161,6 @@ U+91C2	釂	𨤊	variant	cjkvi-variants	merge	釂→𨤊 hydzd/variant | 釂→�
 U+91C2	釂	𨤊	variant	wikidata	merge	Q109764719; P248 Q10427532 | Q109870027; P248 Q10427532
 U+91C2	釂	𰼕	variant	wikidata	merge	Q109764719; P248 Q10427532 | Q109979598; P248 Q10427532
 U+91C7	𤓳	采	reduction	mj-shrink-map	merge	MJ040211: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+91C7	埰	采	variant	cjkvi-variants	merge	采→埰 hydzd/variant
 U+91C7	采	𰗕	variant	wikidata	merge	Q109976323; P248 Q10427532 | Q55852159; P248 Q10427532
 U+91C8	釋	釈	reduction	mj-shrink-map	merge	MJ026590: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+91C8	释	釋	variant	wikidata	merge	Q109764727; P248 Q10427532 Q14941454 Q63443408; P282 Q178528 | Q109764728; P248 Q10427532 Q14941454 Q63443408; P282 Q185614
