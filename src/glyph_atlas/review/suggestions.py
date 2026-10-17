@@ -93,12 +93,16 @@ def _class_family(name: str) -> tuple[str, tuple[str, ...]]:
 
 
 def classifier_results(classes, probabilities) -> tuple[list[dict], dict]:
-    """CODH-trained class probabilities support a family when its forms were merged."""
+    """CODH-trained class probabilities support a family when its forms were merged. A family's
+    candidates are the members the classifier has a class for: the rest of a large family (the
+    rare 異寫字 of 仮) were never learned, and the vote names the family for them."""
     groups = {}
     for name, probability in zip(classes, probabilities, strict=True):
         family, members = _class_family(name)
-        group = groups.setdefault(family, {"family": family, "members": members, "score": 0.})
+        group = groups.setdefault(family, {"family": family, "members": members, "classed": set(), "score": 0.})
         group["score"] += float(probability)
+        if name.startswith("U+"):
+            group["classed"].add(refs.to_char(name))
     ordered = sorted(groups.values(), key=lambda group: -group["score"])
     top = ordered[0]
     scope = "family" if len(top["members"]) > 1 else "character" if top["members"] else "other"
@@ -111,7 +115,7 @@ def classifier_results(classes, probabilities) -> tuple[list[dict], dict]:
         if group["score"] < .015:
             continue
         ambiguous = len(group["members"]) > 1
-        for member in group["members"][:5]:
+        for member in [member for member in group["members"] if member in group["classed"]][:5]:
             candidate = {"text": member, "engine": "Atlas classifier", "verified": False,
                          "identity_scope": "family" if ambiguous else "character", "family": group["family"]}
             if ambiguous:
