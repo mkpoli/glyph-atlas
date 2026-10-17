@@ -81,7 +81,9 @@ which is an editorial judgment. Each item is an evidence row beside the crop ver
 in the `form` scheme, is `certain` or `probable`: how sure the reader is that the crop is the
 character it is filed under, as with a cursive form read from its context. Two readers who name the
 same word and judge the form differently agree on the slot; disputed is what the resolver finds,
-never a value anyone asserts.
+never a value anyone asserts. `atlas review sense-candidates` lists the crops worth such a claim: those a
+person filed under another Han character than their source text gives, with the 異体字 relation
+between the two and the rubies over the crop.
 
 Acceptance is its own row in `assertion_actions`: `accept`, `reject`, `retract` (by the asserter) or
 `adjudicate` (by an adjudicator). A predicate catalogue (`data/ledger.json`) states each

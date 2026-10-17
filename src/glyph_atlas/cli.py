@@ -610,6 +610,22 @@ def review_ocr_repair(
     typer.echo(json.dumps({k: v for k, v in result.items() if k not in ("items", "kept")}, ensure_ascii=False))
 
 
+@review_app.command("sense-candidates")
+def review_sense_candidates(
+    directory: Annotated[Path, typer.Argument(help="dataset directory with its review store")],
+    out: Annotated[Path, typer.Option(help="TSV of every candidate crop")],
+    character: Annotated[list[str] | None, typer.Option(help="only crops now filed under this character")] = None,
+) -> None:
+    """List looked-at crops whose character differs from their source text, and count the pairs."""
+    from .review import sense_candidates
+
+    rows = sense_candidates.candidates(directory, characters=character or ())
+    sense_candidates.write(rows, out)
+    for found, source, crops, documents in sense_candidates.pairs(rows)[:20]:
+        typer.echo(f"{found} {source} {crops:>6} crops {documents:>4} documents")
+    typer.echo(f"{len(rows)} candidates")
+
+
 @review_app.command("consensus-relabel")
 def review_consensus_relabel(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose crops are checked")],
