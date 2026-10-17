@@ -957,6 +957,37 @@ async function line(env: Env, ctx: ExecutionContext, url: URL, id: string) {
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
   return body;
 }
+// A page as the page view shows it: its published record (0078) with each of its crops as the site holds
+// it now, label and box, so a review or a redrawn box shows on the page at once. The crops are read by id in
+// the record's order, one primary-key lookup each; a crop retired or not yet on the site is left out. The
+// photo is a request of the holder's IIIF image service, its longer side at most PAGE_IMAGE pixels, laid
+// over the page pixels the boxes are given in; a page no service serves is shown as its boxes alone.
+const PAGE_IMAGE = 3000;
+export const pageCropsQuery = () => `SELECT u.id AS id,u.character AS label,u.data AS data FROM json_each(?1) j
+  CROSS JOIN units u ON u.id=j.value AND +u.origin='local' ORDER BY j.key`;
+export function pageView(record: Json, rows: { id: string; label: string | null; data: string }[]): Json {
+  const { crops: _, service, page_number, document, title, ...rest } = record;
+  return { ...rest, document_id: document, document_title: title, seq: page_number - 1, service: service ?? null,
+    image_url: service ? `${service}/full/!${PAGE_IMAGE},${PAGE_IMAGE}/0/default.jpg` : null, drawable: false,
+    units: rows.map(row => {
+      const d = parse(row.data);
+      return { id: row.id, line_id: d.line_id ?? null, box: d.box ?? null, character: row.label, code_point: null,
+        image: d.image ?? null, state: d.state ?? null, issue: d.issue ?? null, tone: d.tone ?? null, image_size: d.image_size ?? null };
+    }) };
+}
+// The edge keeps a copy per catalogue version, as for a crop's line.
+async function sourcePage(env: Env, ctx: ExecutionContext, url: URL, id: string) {
+  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json() as Json;
+  const row = await env.DB.prepare('SELECT data FROM pages WHERE id=?').bind(id).first<{ data: string }>();
+  if (!row) throw new Problem(404, 'This page is not in the published collection.');
+  const record = parse(row.data);
+  const rows = await env.DB.prepare(pageCropsQuery()).bind(JSON.stringify(record.crops ?? [])).all<{ id: string; label: string | null; data: string }>();
+  const body = pageView(record, rows.results);
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
+  return body;
+}
 async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: string | null) {
   const q = url.searchParams;
   const purpose = q.get('purpose') || 'browse';
@@ -2395,6 +2426,9 @@ const routes = {
       const neighbours=path.match(/^\/atlas\/characters\/([^/]+)\/line$/);
       if(neighbours){let id:string;try{id=decodeURIComponent(neighbours[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
         return json(await line(env,ctx,url,id),200,{'cache-control':'no-cache'})}
+      const shown=path.match(/^\/atlas\/pages\/([^/]+)$/);
+      if(shown){let id:string;try{id=decodeURIComponent(shown[1])}catch{throw new Problem(404,'This page is not in the published collection.')}
+        return json(await sourcePage(env,ctx,url,id),200,{'cache-control':'no-cache'})}
       const cited=path.match(/^\/atlas\/cite\/([^/]+)\/([^/]+)$/);
       if(cited)return await cite(env,ctx,url,cited[1],cited[2]);
       const versions=path.match(/^\/atlas\/characters\/([^/]+)\/versions$/);

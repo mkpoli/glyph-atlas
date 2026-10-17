@@ -292,13 +292,15 @@ LEDGER_LINES = ("INSERT OR IGNORE INTO representations(", "INSERT OR IGNORE INTO
                 "DELETE FROM current_claims ", "INSERT INTO current_claims(")
 
 
-def split_sealed(sql: str, wanted: set[str], fresh: set[str]) -> tuple[list[str], list[str], list[str], list[str]]:
+def split_sealed(sql: str, wanted: set[str], fresh: set[str]) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
     """A sealed catalogue's statements this publication applies: the image rows of `wanted` media keys,
-    the rows of `fresh` units, every pair and trigram statement, and the ledger's rows with the
-    resolution of their slots, in the order sealing wrote them."""
-    media, units, ngrams, claims = [], [], [], []
+    the rows of `fresh` units, the pages of every crop sealed, every pair and trigram statement, and the
+    ledger's rows with the resolution of their slots, in the order sealing wrote them."""
+    media, units, pages, ngrams, claims = [], [], [], [], []
     for line in sql.splitlines(keepends=True):
-        if line.startswith(("DELETE FROM unit_ngrams ", "INSERT OR IGNORE INTO unit_ngrams(")):
+        if line.startswith("INSERT INTO pages("):
+            pages.append(line)
+        elif line.startswith(("DELETE FROM unit_ngrams ", "INSERT OR IGNORE INTO unit_ngrams(")):
             ngrams.append(line)
         elif line.startswith(LEDGER_LINES):
             claims.append(line)
@@ -308,7 +310,7 @@ def split_sealed(sql: str, wanted: set[str], fresh: set[str]) -> tuple[list[str]
         elif line.startswith('INSERT OR IGNORE INTO "units"') and \
                 UNIT_ID.match(line).group(1).replace("''", "'") in fresh:
             units.append(line)
-    return media, units, ngrams, claims
+    return media, units, pages, ngrams, claims
 
 
 def main() -> None:
@@ -373,11 +375,11 @@ def main() -> None:
             wanted.update(key_of(json.loads(data).get(f)) for f in ("image", "context_image"))
     wanted.discard("")
     objects = {obj for key, obj in atlas.execute("SELECT key, object FROM media") if key in wanted}
-    media, units, ngrams, claims = split_sealed((sealed / "catalogue.sql").read_text(encoding="utf-8"), wanted, fresh)
+    media, units, pages, ngrams, claims = split_sealed((sealed / "catalogue.sql").read_text(encoding="utf-8"), wanted, fresh)
     extras = [statements(path.read_text(encoding="utf-8")) for path in args.extra]
     # The version row goes last, so the Worker's cached listings change only once every row has.
     # The ledger after the crops: a claim's slot is resolved against the crop's version on the site.
-    groups = [media, units, updates, ngrams, claims, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
+    groups = [media, units, updates, pages, ngrams, claims, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
     parts = write_parts(sealed, groups)
 
     manifest = json.loads((sealed / "publication.json").read_text())
@@ -385,7 +387,7 @@ def main() -> None:
     manifest["sql"] = parts
     (sealed / "publication.json").write_text(json.dumps(manifest, ensure_ascii=False))
     referenced = sum(MEDIA_KEY.match(line).group(1) in published for line in media)
-    print(json.dumps({"lost": len(lost["units"]), "new": len(units), "ledger": len(claims), "overlapping": len(overlapping), "media": len(media),
+    print(json.dumps({"lost": len(lost["units"]), "new": len(units), "pages": len(pages), "ledger": len(claims), "overlapping": len(overlapping), "media": len(media),
                       "media_on_site": referenced, "media_packed": len(media) - referenced, "refresh": counts,
                       "held": len(held), "extra": [str(p) for p in args.extra], "status": args.status,
                       "objects": len(manifest["objects"]), "parts": parts, "publication": str(sealed)}, ensure_ascii=False))

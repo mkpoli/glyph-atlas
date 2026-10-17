@@ -1,15 +1,20 @@
 <script>
-  import { onMount, tick } from 'svelte'
+  import { onMount, tick, untrack } from 'svelte'
   import DrawnBoxDialog from '../components/DrawnBoxDialog.svelte'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
+  import SourceCredit from '../components/SourceCredit.svelte'
   import { number } from '../lib/client.js'
   import { pageList, pageRecord, drawBox } from '../lib/pages.js'
   import { t, localize } from '../lib/i18n.svelte.js'
-  // The page photos of the dataset, with every active box drawn over them. With Draw on, a drag on
-  // the photo records a new box in page pixels; the box then asks for its character.
-  let { pageId = '', inspect } = $props()
+  // A page with every box drawn over its photo: on the site, the published page and its crops, the
+  // photo from the holder's IIIF image service; on the local review service, every page of the dataset,
+  // where with Draw on a drag on the photo records a new box in page pixels that then asks for its
+  // character. `focus` is a crop the page opens on, marked and centred; `index` says the list of every
+  // page is served.
+  // `initial` is the page as the server rendered it, shown at once.
+  let { pageId = '', focus = '', index = false, initial = null, inspect } = $props()
   let documents = $state(null), data = $state(null), error = $state(''), notice = $state('')
-  let stage = $state(null), scale = $state(1), tx = $state(0), ty = $state(0), fitted = 1
+  let stage = $state(null), list = $state(null), scale = $state(1), tx = $state(0), ty = $state(0), fitted = 1
   let drawing = $state(false), draft = $state(null), busy = $state(false), open = $state(null)
   let drag = null, closed = false, generation = 0
   const MIN_BOX = 3
@@ -26,7 +31,7 @@
       const result = await pageRecord(id)
       if (closed || current !== generation) return null
       data = result
-      if (!keepView) { await tick(); fit() }
+      if (!keepView) { await tick(); fit(); centreFocus() }
       return result
     } catch (e) { if (!closed && current === generation) error = e.message }
     return null
@@ -39,6 +44,19 @@
     scale = fitted
     tx = (r.width - data.width * scale) / 2
     ty = (r.height - data.height * scale) / 2
+  }
+  /** Opens on the focused crop: centred, its longer side a twelfth of the view's shorter one, or the whole page if that is nearer. */
+  function centreFocus() {
+    const box = data?.units.find(unit => unit.id === focus)?.box
+    if (!stage || !box) return
+    const r = stage.getBoundingClientRect()
+    scale = Math.min(8, Math.max(fitted, Math.min(r.width, r.height) / (Math.max(box.w, box.h) * 12)))
+    tx = r.width / 2 - (box.x + box.w / 2) * scale
+    ty = r.height / 2 - (box.y + box.h / 2) * scale
+    const item = list?.querySelector('button.focused')
+    if (!item) return
+    const a = item.getBoundingClientRect(), b = list.getBoundingClientRect()
+    list.scrollTop += a.top - b.top - (b.height - a.height) / 2
   }
   function zoomAt(factor, cx, cy) {
     const next = Math.min(8, Math.max(fitted * 0.5, scale * factor))
@@ -133,7 +151,13 @@
   $effect(() => {
     const id = pageId
     closed = false
-    if (id) { data = null; drawing = false; loadPage(id) } else { data = null; loadList() }
+    if (id && initial?.id === id) { generation++; data = initial; drawing = false; tick().then(() => { if (!closed) { fit(); centreFocus() } }) }
+    else if (id) { data = null; drawing = false; loadPage(id) } else { data = null; loadList() }
+  })
+  // Another crop of the same page opens on it without reloading the page.
+  $effect(() => {
+    focus
+    untrack(() => { if (data?.id === pageId) centreFocus() })
   })
   onMount(() => {
     const resized = () => { if (data) fit() }
@@ -152,14 +176,14 @@
 {#if pageId}
   <section class="page-view">
     <div class="page-toolbar">
-      <a class="quiet-link" href={localize('/pages')}>← {t('pages.back')}</a>
+      {#if index}<a class="quiet-link" href={localize('/pages')}>← {t('pages.back')}</a>{/if}
       {#if data}
         <strong class="page-title">{data.document_title ?? data.document_id} · {t('pages.pageNumber', { number: data.seq + 1 })}</strong>
         <span class="toolbar-space"></span>
         {#if data.drawable}
           <button class="draw-toggle" class:active={drawing} aria-pressed={drawing} onclick={() => drawing = !drawing}
                   title={t('pages.draw.hint')}>{drawing ? t('pages.draw.on') : t('pages.draw.off')} <kbd>D</kbd></button>
-        {:else}
+        {:else if index}
           <span class="page-note">{t('pages.draw.unavailable')}</span>
         {/if}
         <div class="zoom-controls">
@@ -177,38 +201,37 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="page-stage" class:drawing={drawing && data.drawable} bind:this={stage}
              onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={() => { drag = null; draft = null }}>
-          {#if data.image_url}
-            <div class="page-sheet" style="width:{data.width}px;height:{data.height}px;transform:translate({tx}px,{ty}px) scale({scale})">
-              <img src={data.image_url} alt={t('pages.photoAlt', { number: data.seq + 1 })} draggable="false" />
-              <svg viewBox="0 0 {data.width} {data.height}" aria-hidden="true">
-                {#each data.units as unit (unit.id)}
-                  {#if unit.box}
-                    <rect data-unit={unit.id} class="unit-box" class:manual={unit.manual || (unit.detected && !unit.proposed)} class:proposed={unit.proposed} class:unidentified={!unit.character}
-                          x={unit.box.x} y={unit.box.y} width={unit.box.w} height={unit.box.h} vector-effect="non-scaling-stroke" />
-                  {/if}
-                {/each}
-                {#if draft}<rect class="draft-box" x={draft.x} y={draft.y} width={draft.w} height={draft.h} vector-effect="non-scaling-stroke" />{/if}
-              </svg>
-            </div>
-          {:else}
-            <p class="page-note missing">{t('pages.photoMissing')}</p>
-          {/if}
+          <!-- A page with no photo is a blank sheet of its size, its boxes where they stand on it. -->
+          <div class="page-sheet" class:blank={!data.image_url} style="width:{data.width}px;height:{data.height}px;transform:translate({tx}px,{ty}px) scale({scale})">
+            {#if data.image_url}<img src={data.image_url} alt={t('pages.photoAlt', { number: data.seq + 1 })} draggable="false" />{/if}
+            <svg viewBox="0 0 {data.width} {data.height}" aria-hidden="true">
+              {#each data.units as unit (unit.id)}
+                {#if unit.box}
+                  <rect data-unit={unit.id} class="unit-box" class:manual={unit.manual || (unit.detected && !unit.proposed)} class:proposed={unit.proposed} class:unidentified={!unit.character}
+                        class:focused={unit.id === focus} x={unit.box.x} y={unit.box.y} width={unit.box.w} height={unit.box.h} vector-effect="non-scaling-stroke" />
+                {/if}
+              {/each}
+              {#if draft}<rect class="draft-box" x={draft.x} y={draft.y} width={draft.w} height={draft.h} vector-effect="non-scaling-stroke" />{/if}
+            </svg>
+          </div>
+          {#if !data.image_url}<p class="stage-status">{t('pages.photoMissing')}</p>{/if}
           {#if busy}<p class="stage-status" role="status">{t('common.saving')}</p>{/if}
         </div>
-        <aside class="page-boxes">
+        <aside class="page-boxes" bind:this={list}>
           <h2>{t('pages.boxes.count', { count: data.units.length })}{#if proposedCount}<span class="proposed-count">{t('pages.boxes.proposed', { count: proposedCount })}</span>{/if}</h2>
           {#if data.drawable}<p class="page-note">{t('pages.draw.hint')}</p>{/if}
           {#if data.units.length}
             <ul>
               {#each data.units as unit (unit.id)}
-                <li><button onclick={() => choose(unit)} class:manual={onPage(unit) && !unit.proposed} class:proposed={unit.proposed}>
-                  <span class="box-glyph">{#if unit.character}<ReferenceGlyph char={unit.character} code_point={unit.code_point ?? ''} size="sm" />{:else}<span class="box-none">?</span>{/if}</span>
+                <li><button onclick={() => choose(unit)} class:manual={onPage(unit) && !unit.proposed} class:proposed={unit.proposed} class:focused={unit.id === focus}>
+                  <span class="box-glyph">{#if unit.image}<img src={unit.image} alt="" loading="lazy" />{:else if unit.character}<ReferenceGlyph char={unit.character} code_point={unit.code_point ?? ''} size="sm" />{:else}<span class="box-none">?</span>{/if}</span>
                   <span class="box-name">{unitLabel(unit)}</span>
                   <small>{origin(unit)}</small>
                 </button></li>
               {/each}
             </ul>
           {/if}
+          {#if !index}<div class="page-credit"><SourceCredit item={{ source: data.document_title, holder: data.holder, attribution: data.attribution, licence: data.licence, rights_url: data.rights_url }} /></div>{/if}
         </aside>
       </div>
     {:else if !error}<p class="find-count" role="status">{t('pages.loading')}</p>{/if}
@@ -257,11 +280,13 @@
   .page-stage:active{cursor:grabbing}
   .page-stage.drawing{cursor:crosshair}
   .page-sheet{position:absolute;left:0;top:0;transform-origin:0 0}
+  .page-sheet.blank{background:light-dark(#fbfaf7, #fbfaf7);box-shadow:0 0 0 1px var(--line)}
   .page-sheet img{display:block;width:100%;height:100%;user-select:none;pointer-events:none;image-orientation:none}
   .page-sheet svg{position:absolute;inset:0;width:100%;height:100%}
   .unit-box{fill:light-dark(#d0890014, #d0890014);stroke:light-dark(#c07c00, #c07c00);stroke-width:1.5;cursor:pointer}
   .unit-box.manual{fill:light-dark(#6356e51f, #6356e51f);stroke:var(--accent-solid);stroke-width:2}
   .unit-box.unidentified{stroke-dasharray:5 3}
+  .unit-box.focused{fill:light-dark(#6356e533, #6356e533);stroke:var(--accent-solid);stroke-width:3}
   .unit-box.proposed{fill:light-dark(#0e8a7a2e, #0e8a7a2e);stroke:light-dark(#0e8a7a, #0e8a7a);stroke-width:2.5;stroke-dasharray:3 2}
   .page-stage.drawing .unit-box{pointer-events:none}
   .draft-box{fill:light-dark(#6356e526, #6356e526);stroke:var(--accent-solid);stroke-width:2;stroke-dasharray:4 3}
@@ -273,7 +298,10 @@
   .page-boxes ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:4px}
   .page-boxes li button{display:flex;align-items:center;gap:10px;width:100%;padding:6px 8px;border:1px solid transparent;background:transparent;text-align:left;font-size:12px}
   .page-boxes li button:hover{background:var(--surface-badge)}
-  .box-glyph{width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--surface-tile);border-radius:5px}
+  .box-glyph{width:30px;height:30px;flex:none;display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--surface-tile);border-radius:5px;overflow:hidden}
+  .box-glyph img{width:100%;height:100%;object-fit:contain}
+  .page-boxes li button.focused{border-color:var(--accent-solid);background:var(--accent-light)}
+  .page-credit{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
   .box-none{color:var(--muted)}
   .box-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .page-boxes small{color:var(--muted);font-size:10px}
