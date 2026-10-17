@@ -374,6 +374,9 @@ def _join_yixiezi(
         if a not in ideographs or b not in ideographs or _canonical(a) == _canonical(b):
             continue
         left, right = unit(a), unit(b)
+        # Before the skip below: a reduction inside one family still counts toward what its form writes.
+        if relation in REDUCED_FORM and _whole(row, set()):
+            reduced.setdefault(b, []).append(Edge(a, b, relation, row["source"], row["detail"], WRITES))
         if left is right:
             continue
         units[id(left)], units[id(right)] = left, right
@@ -394,8 +397,6 @@ def _join_yixiezi(
         ties.setdefault(id(right), set()).add(id(left))
         if _whole(row, standalone):
             whole.setdefault(pair, []).append(Edge(a, b, relation, row["source"], row["detail"]))
-        if relation in REDUCED_FORM and _whole(row, set()):
-            reduced.setdefault(b, []).append(Edge(a, b, relation, row["source"], row["detail"], WRITES))
     joins = []
     for key in sorted(ties, key=lambda key: ord(min(units[key].members, key=ord))):
         if len(ties[key]) != 1:
@@ -462,10 +463,9 @@ def _add_writers(
         own = group[writer]
         by_family: dict[int, tuple[Family, list[Edge]]] = {}
         for edge in edges:
-            if edge.a in unlike.get(writer, set()):
-                continue
             target = group[edge.a]
-            by_family.setdefault(id(target), (target, []))[1].append(edge)
+            if not unlike.get(writer, set()) & target.members:
+                by_family.setdefault(id(target), (target, []))[1].append(edge)
         if len(by_family | ({id(own): None} if writer in standalone else {})) < 2:
             continue
         for target, found in by_family.values():

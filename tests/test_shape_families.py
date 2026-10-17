@@ -372,12 +372,22 @@ def test_a_plain_variant_of_two_characters_or_a_homograph_writes_neither():
     rows = [edge("閑", "闲", "simplified", "opencc", "TSCharacters"),
             edge("閒", "闲", "simplified", "opencc", "TSCharacters"), edge("閒", "闲", "non-cognate")]
     assert writers(rows) == {}, "闲 is left writing 閑 alone"
+    rows[2:] = [edge("閧", "闲", "simplified", "opencc", "TSCharacters"), edge("𮳣", "闲", "spoofing"),
+                edge("閒", "𮳣", "z")]
+    assert writers(rows) == {"閑": "闲", "閧": "闲"}, "nor a family holding its look-alike"
+
+
+def test_a_reduced_form_inside_one_family_still_writes_another():
+    """当 is in the family of 當 and also the simplified 噹."""
+    rows = [edge("當", "当", "simplified", "unihan", "當→当 kSimplifiedVariant"),
+            edge("噹", "当", "simplified", "unihan", "噹→当 kSimplifiedVariant")]
+    assert writers([edge("當", "当", "z"), *rows]) == {"噹": "当"}
 
 
 def test_the_site_lists_the_forms_that_write_several_characters():
     writes = {char: "".join(refs.to_char(head) for head in refs.also_writes(refs.to_code_point(char)))
-              for char in "后弁闲时"}
-    assert writes == {"后": "後", "弁": "瓣辦辨辮辯", "闲": "閑閒", "时": ""}
+              for char in "后弁闲时当"}
+    assert writes == {"后": "後", "弁": "瓣辦辨辮辯", "闲": "閑閒", "时": "", "当": "噹"}
     family = refs.grapheme_info(refs.to_code_point("後"))
     assert [w["char"] for w in family["writers"]] == ["后"]
     assert "后" not in family["label"], "a writer is not a member"
