@@ -6,7 +6,7 @@ import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
 import { formsFor, setForm, withForms } from './cropForms';
-import { GALLERY_GROUPS, SAMPLE_RANGE, WHOLE_GROUPS, categoryOf, idsCharacter, isGugyeol } from './category';
+import { categoryOf, idsCharacter, isGugyeol } from './category';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { ranking } from './ranking';
@@ -1222,6 +1222,8 @@ async function corpusRound(env: Env, characters: string[], production: string, s
 // A script group deals the copies of its category (0079). The scripts the corpus holds few glyphs of
 // are copied whole (WHOLE_GROUPS), so their seed's point falls anywhere in the shuffle range, and the
 // unchosen gallery keeps to the sample below SAMPLE_RANGE, where every script is copied alike.
+const SAMPLE_RANGE = 4194304;
+const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol'];
 export const gallerySampleQuery = (side: '>=' | '<', grouped = false) => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
   FROM corpus_gallery s JOIN corpus_units c ON c.id=s.id AND c.object=s.object AND c.offset=s.offset
   LEFT JOIN units u ON u.id=s.id LEFT JOIN form_units f ON f.id=s.id
