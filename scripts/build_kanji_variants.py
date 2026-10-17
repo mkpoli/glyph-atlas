@@ -17,7 +17,7 @@ row reads "b is the <relation> of a".
                         人名用漢字, 表外漢字字体表, JIS X 0212/0213, 原規格分離, 古壮字字典)
 `z`                     one abstract character encoded twice (Unihan kZVariant, cjkvi 重複漢字)
 `simplified`            directed: b is a simplified form of a (Unihan kSimplifiedVariant, and
-                        kTraditionalVariant read backwards; OpenCC TSCharacters; yitizi 簡體;
+                        kTraditionalVariant read backwards; OpenCC TSCharacters and STCharacters; yitizi 簡體;
                         cjkvi-simplified and 漢語大字典 𥳑體字)
 `shinjitai`             directed: b is the Japanese 新字体 of a (Unihan kJapaneseNewVariant, and
                         kJapaneseOldVariant read backwards; OpenCC JPShinjitaiCharacters; cjkvi
@@ -140,9 +140,11 @@ GROUP BY ?s ?ac ?bc
 SPECIALIZED_SEMANTIC = "Q126726325"
 
 #: relation, region, and whether the file maps the other way round (JPShinjitaiCharacters is the
-#: jp2t table: 新字体 key, 旧字体 values).
+#: jp2t table: 新字体 key, 旧字体 values; STCharacters the s2t table: simplified key, traditional
+#: values).
 OPENCC_FILES = {
     "TSCharacters.txt": ("simplified", None, False),
+    "STCharacters.txt": ("simplified", None, True),
     "JPShinjitaiCharacters.txt": ("shinjitai", None, True),
     "TWVariants.txt": ("regional", "TW", False),
     "HKVariants.txt": ("regional", "HK", False),
@@ -280,7 +282,9 @@ def opencc_edges(name: str, text: str) -> list[Edge]:
 
     A key whose first candidate is itself keeps its other candidates; in JPShinjitaiCharacters such
     a line is a historical entry outside 常用漢字表, 人名用漢字表 and 表外漢字字体表 (the file's
-    header), and its rows say so.
+    header), and its rows say so. In STCharacters a key listed among its own traditional forms is a
+    simplified form that also writes a character of its own (后 for 後 and 后, 云 for 雲 and 云), and
+    its rows say that instead.
     """
     relation, region, backwards = OPENCC_FILES[name]
     base = name.removesuffix(".txt") + (f" {region}" if region else "")
@@ -290,7 +294,10 @@ def opencc_edges(name: str, text: str) -> list[Edge]:
             continue
         key, values = line.split("\t", 1)
         candidates = values.split()
-        detail = base + (" (self first)" if candidates and candidates[0] == key else "")
+        if name == "STCharacters.txt":
+            detail = base + (" (also itself)" if key in candidates else "")
+        else:
+            detail = base + (" (self first)" if candidates and candidates[0] == key else "")
         for value in candidates:
             rows.append(
                 edge(value, key, relation, "opencc", detail)
