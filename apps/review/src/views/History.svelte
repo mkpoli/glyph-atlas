@@ -9,6 +9,7 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import { t, withText, formatDateTime, localize } from '../lib/i18n.svelte.js'
   import { groupRuns } from '../lib/historyGroups.js'
+  import { holdsLegacyReviewer, sessionStarted } from '../lib/session.svelte.js'
   let { inspect } = $props()
   let items = $state([]), loading = $state(true), loadingMore = $state(false), error = $state('')
   let cursor = $state(null), hasMore = $state(true)
@@ -95,7 +96,13 @@
   }
   function when(at) { try { return formatDateTime(at) } catch { return at } }
   $effect(() => { if (nearEnd && hasMore && !error && !loading && !loadingMore) load(true) })
-  onMount(() => { onlyMine = stored('atlas.history.onlyMine', false); load(); return () => { closed = true; clearTimeout(filterTimer) } })
+  onMount(() => {
+    onlyMine = stored('atlas.history.onlyMine', false)
+    // A browser from before accounts reads its history once the session has claimed its old work, so
+    // its own rows are counted as its own; every other browser asks at once.
+    Promise.resolve(holdsLegacyReviewer() ? sessionStarted() : null).then(() => { if (!closed) load() })
+    return () => { closed = true; clearTimeout(filterTimer) }
+  })
 </script>
 
 <!-- A row's character in its script's colour, or a note that it has none. -->
