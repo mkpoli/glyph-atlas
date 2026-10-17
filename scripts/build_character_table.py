@@ -39,7 +39,7 @@ Sources, all from one Unicode release:
 
 Which code points are included: every character of every kana block that Unicode assigns, the CJK
 Unified Ideographs and their extensions, the Hangul jamo and syllable blocks, the 구결자 of
-`gugyeol.tsv`, and always the code points `graphemes.yaml` names, so a grapheme is never a dangling reference. Kana and Hangul outside
+`gugyeol.tsv`, the Tangut ideographs, and always the code points `graphemes.yaml` names, so a grapheme is never a dangling reference. Kana and Hangul outside
 those blocks, which is to say the letters on the Enclosed CJK Letters and Months chart (㋕, ㉠ and
 the like) and the halfwidth jamo, are not text characters and are left out.
 
@@ -116,6 +116,10 @@ BLOCKS = (
     "Hangul Jamo Extended-A",
     "Hangul Syllables",
     "Hangul Jamo Extended-B",
+    # Tangut, written in the Western Xia books of the 11th to 13th centuries. The component blocks
+    # hold the parts dictionaries analyse a character into, which no text writes on their own.
+    "Tangut",
+    "Tangut Supplement",
 )
 
 #: The name Unicode gives the ideographs of a CJK block, as a format over the hex code point.
@@ -127,6 +131,10 @@ CJK_NAME = "CJK UNIFIED IDEOGRAPH-{point}"
 
 #: The blocks whose characters are named after their own code point.
 CJK_NAME_BLOCKS = frozenset(name for name in BLOCKS if name.startswith("CJK Unified Ideographs"))
+
+#: The Tangut ideographs are named after their code point the same way, under their own prefix.
+TANGUT_NAME = "TANGUT IDEOGRAPH-{point}"
+TANGUT_NAME_BLOCKS = frozenset(("Tangut", "Tangut Supplement"))
 
 #: The constants of the Hangul syllable name derivation in chapter 3.12 of the Unicode Standard: the
 #: first syllable, the first leading consonant, vowel and trailing consonant (one before the first,
@@ -720,6 +728,8 @@ def _stated_characters(
             # A CJK block has holes in it: code points the block reserves and Unicode has not
             # assigned. Only the ones inside a First/Last range are characters.
             return CJK_NAME.format(point=f"{point:04X}")
+        if block in TANGUT_NAME_BLOCKS and value_of(ranges, point) is not None:
+            return TANGUT_NAME.format(point=f"{point:04X}")
         if block == HANGUL_SYLLABLES_BLOCK and value_of(ranges, point) is not None:
             return hangul_syllable_name(point, jamo)
         return None

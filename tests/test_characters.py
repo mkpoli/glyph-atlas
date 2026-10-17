@@ -74,7 +74,7 @@ def test_the_table_is_one_row_per_character():
 def test_the_table_holds_the_kana_and_the_kanji():
     rows = rows_of(TABLE)
     scripts = {row["script"] for row in rows}
-    assert scripts == {"gugyeol", "han", "hangul", "hiragana", "hentaigana", "katakana", "symbol"}
+    assert scripts == {"gugyeol", "han", "hangul", "hiragana", "hentaigana", "katakana", "symbol", "tangut"}
     assert len([row for row in rows if row["script"] == "hentaigana" and len(row["char"]) == 1]) == 285
     assert len([row for row in rows if row["script"] == "han"]) > 90_000
 
@@ -107,6 +107,16 @@ def test_the_table_holds_the_hanyang_gugyeol_block():
     assert all(row["name"] == "" and row["grapheme"] == row["code_point"] for row in rows)
     assert all(row["readings"] == "" and row["jibo"] == "" for row in rows)
     assert refs.script_of(chr(0xF67E)) == "gugyeol"
+
+
+def test_the_table_holds_the_tangut_ideographs():
+    """Every Tangut ideograph, named after its code point; the component blocks are left out."""
+    rows = [row for row in rows_of(TABLE) if row["script"] == "tangut"]
+    assert {row["block"] for row in rows} == {"Tangut", "Tangut Supplement"}
+    assert len(rows) == 6_144 + 33
+    assert all(row["name"] == f"TANGUT IDEOGRAPH-{row['code_point'][2:]}" for row in rows)
+    assert all(row["grapheme"] == row["code_point"] and row["readings"] == "" for row in rows)
+    assert refs.script_of(chr(0x17000)) == "tangut" and refs.script_of(chr(0x18800)) == "unknown"
 
 
 def test_a_compatibility_jamo_reads_as_itself():
