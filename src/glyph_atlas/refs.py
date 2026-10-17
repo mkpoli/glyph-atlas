@@ -944,6 +944,7 @@ def _grapheme_families() -> dict[str, dict]:
             evidence.append({"id": source, "title": record["name"], "url": record["url"], "edges": rows})
         families[head] = {
             "members": members,
+            "stated": stated if family else [],
             "relation": family["relation"] if family else SHAPE_VARIANT,
             "evidence": evidence,
         }
@@ -989,6 +990,14 @@ def _grapheme_info(head: str) -> dict:
         "evidence": stated["evidence"] if stated else [],
         "url": f"/layers/graphemes/{head}",
     }
+
+
+def curated_members(code_point: str) -> tuple[str, ...]:
+    """The characters graphemes.yaml states for the family of `code_point`, head first; none when
+    the family is not a curated one."""
+    head = grapheme(code_point)
+    family = _grapheme_families().get(head) if head else None
+    return tuple(to_char(point) for point in family["stated"]) if family else ()
 
 
 def grapheme_info(code_point: str) -> dict | None:
