@@ -21,7 +21,7 @@
   <span class="run-tile-image" aria-hidden="true" bind:clientWidth={width} bind:clientHeight={height}>{#if run.crops}{#if width && height}<RunImage crops={run.crops} page={run.page} vertical={run.vertical} fill={height / width} />{/if}{:else}<span class="run-tile-text">{run.text}</span>{/if}</span>
   <span class="tile-caption">
     <span class="tile-label"><span class="tile-glyph"><ScriptText text={run.text} titled={false} /></span></span>
-    <span class="tile-footer"><span class="tile-count" title={t(run.kind === 'trigram' ? 'tile.countTrigram' : 'tile.countPair', { text: run.text, count: run.n, rank: run.rank })}>{t('tile.count', { count: run.n })}</span>{#if run.crops && tileDate(run.crops[0])}<span class="tile-year">{tileDate(run.crops[0])}</span>{/if}{#if run.crops && workTitle(run.crops[0])}<span class="tile-work">{workTitle(run.crops[0])}</span>{/if}<span class="tile-arrow">↗</span></span>
+    <span class="tile-footer"><span class="tile-count" title={run.kind === 'trigram' ? t('tile.countTrigram', { text: run.text, count: run.n, rank: run.rank }) : t('tile.countPair', { text: run.text, count: run.n, rank: run.rank })}>{t('tile.count', { count: run.n })}</span>{#if run.crops && tileDate(run.crops[0])}<span class="tile-year">{tileDate(run.crops[0])}</span>{/if}{#if run.crops && workTitle(run.crops[0])}<span class="tile-work">{workTitle(run.crops[0])}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 </a>
 {:else}<div class="glyph-skeleton collage-cell" {style} aria-hidden="true"></div>{/if}
