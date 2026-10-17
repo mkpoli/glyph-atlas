@@ -42,10 +42,10 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import koji
 from .importers import honkoku_data
-from .rare_chars import DOCUMENT_ROLES, _lines, is_han
+from .rare_chars import _lines, is_han
 from .refs import to_hiragana
+from .rubies import marks
 
 #: Readings counted when none are named: the words of data/vocab/words.tsv in historical kana, and the
 #: forms transcribers also type for them: without the dakuten (はかり, なと, まて, ことし, ことく), with
@@ -56,10 +56,6 @@ WORDS = ("ばかり", "はかり", "など", "なと", "のみ", "さて", "ま�
          "ことく", "ゆゑ", "ゆへ", "ゆえ", "ころ", "ため", "もつて", "もって")
 #: Example locations kept per row, each from a different entry.
 EXAMPLES = 5
-#: Roles of a ruby's base: the document text without what a 見せ消ち strikes out.
-BASE_ROLES = DOCUMENT_ROLES - {"cancelled"}
-#: Roles of a damage mark, which can stand in a reading as well as in a base.
-DAMAGE_ROLES = frozenset({"gap", "unreadable"})
 COLUMNS = ("reading", "spelling", "code_points", "documents", "occurrences", "projects", "ruby", "examples")
 
 
@@ -76,50 +72,9 @@ def rubies(text: str) -> list[tuple[str, str]]:
     """The `(base, right-hand reading as typed)` of every 振り仮名 of a raw line, in document order.
 
     The base is every document character inside the ruby, nested rubies included; the reading is the
-    right-hand ruby text whose innermost ruby is this one. A damage mark belongs to whichever field it
-    stands in.
+    right-hand ruby text whose innermost ruby is this one (`rubies.marks`).
     """
-    if "（" not in text and "《" not in text:
-        return []
-    parsed = koji.parse(text)
-    elements = [element for element in koji.walk(parsed.nodes) if element.kind == "ruby"]
-    if not elements:
-        return []
-    order = [element.id for element in elements]
-    starts = {element.id: _reading_start(text, element) for element in elements}
-    wanted = set(order)
-    bases = {ruby: "" for ruby in order}
-    readings = {ruby: "" for ruby in order}
-    for char in parsed.chars:
-        mine = [node for node in char.path if node in wanted]
-        if not mine:
-            continue
-        if char.role == "ruby" or (char.role in DAMAGE_ROLES and char.start >= starts[mine[-1]]):
-            readings[mine[-1]] += char.text
-        elif char.role in BASE_ROLES or char.role in DAMAGE_ROLES:
-            for ruby in mine:
-                bases[ruby] += char.text
-    return [(bases[ruby], readings[ruby]) for ruby in order]
-
-
-def _reading_start(text: str, element: koji.Element) -> int:
-    """Where the reading field of a ruby element begins in the raw line.
-
-    In `base（reading）` it follows the `（`, which a base never holds. In `《振り仮名：base｜reading》`
-    it follows the first `｜` outside the constructs nested in the base.
-    """
-    if element.attrs.get("form") == "legacy":
-        return text.index("（", element.start) + 1
-    depth = 0
-    for at in range(text.index("：", element.start) + 1, element.end):
-        char = text[at]
-        if char in "《（":
-            depth += 1
-        elif char in "》）":
-            depth -= 1
-        elif char in "｜|" and depth == 0:
-            return at + 1
-    return element.end
+    return [(mark.base, mark.readings.get("right", "")) for mark in marks(text)]
 
 
 def _count_entry(job: tuple[str, str, str, tuple[str, ...]]) -> list[tuple[str, str, str, int, int]]:

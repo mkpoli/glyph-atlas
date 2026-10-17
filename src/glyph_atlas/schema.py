@@ -469,6 +469,25 @@ class Group(BaseModel):
     unit_ids: list[str]
 
 
+class Ruby(BaseModel):
+    """One reading field of a 振り仮名, with the units of the base it stands over (`glyph_atlas.rubies`)."""
+
+    id: str
+    page_id: str
+    line_id: str
+    base: str = Field(description="the base as typed, without what a 見せ消ち strikes out")
+    base_start: int | None = Field(default=None, description="offset of the base's first character in the line's text_raw")
+    base_end: int | None = Field(default=None, description="offset after the base's last character")
+    base_unit_ids: list[str] = Field(default_factory=list, description="the units placed for the base, in reading order")
+    side: Literal["right", "left"] = Field(description="right, a reading; left, a 左訓, often a gloss or a second language")
+    text: str = Field(description="the reading as typed, spaces kept")
+    reading: str = Field(description="spaces removed and katakana mapped to hiragana; historical kana kept")
+    span: Literal["mono", "group"] = Field(description="mono when the base is one character; group when one reading covers a run")
+    source: Literal["振り仮名", "ルビ", "迎え仮名", "legacy"] = Field(description="the markup: a bracket's name, or legacy for base（reading）")
+    placement: Literal["unchecked", "checked"] = Field(
+        default="unchecked", description="whether a reviewer saw the ruby on the page over these units")
+
+
 class Review(BaseModel):
     """One reviewer's decision, appended to the review log."""
 

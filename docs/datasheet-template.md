@@ -185,8 +185,9 @@ report for the sample.
 
 `out/<version>/` holds the release:
 
-- `documents.parquet`, `pages.parquet`, `lines.parquet`, `units.parquet`, `groups.parquet` and
-  `page_texts.parquet`, with `units` and `lines` sharded by document.
+- `documents.parquet`, `pages.parquet`, `lines.parquet`, `units.parquet`, `groups.parquet`,
+  `page_texts.parquet` and, where the dataset has one, `rubies.parquet`, with `units` and `lines`
+  sharded by document.
 - `crops/<bucket>/<id with ':' replaced by '_'>.jpg`: the materialised crops, {{counts.crops}}.
 - `ATTRIBUTION.md`, `COUNTS.md`, `datasheet.md`, `CHECKSUMS.txt` and `MANIFEST.json`.
 

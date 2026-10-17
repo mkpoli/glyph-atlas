@@ -10,9 +10,10 @@ dates; the review log takes JSON values and names its target.
 
 Changes accepted and deferred until the pilot shows the shape they need:
 
-- Typed relationships between lines and units: ruby to its base span, 割書 container and subline
-  order, reading-order edges, parent region. A role label on a line does not say which text it
-  annotates.
+- Typed relationships between lines and units: 割書 container and subline order, reading-order
+  edges, parent region. A role label on a line does not say which text it annotates. A transcribed
+  ruby's base is the `rubies` table (`docs/schema.md`); a `ruby` line located on the image still
+  names no base.
 - 見せ消ち as two linked records, the cancellation stroke and the affected text, with the textual
   state (cancelled, replacement, surviving) on the text side.
 - Voicing marks with an attachment to their base unit and an assessment status (present, absent,

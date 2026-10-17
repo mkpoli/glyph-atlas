@@ -27,6 +27,7 @@ from glyph_atlas.schema import (
     Review,
     ReviewState,
     Rights,
+    Ruby,
     Script,
     Source,
     Unit,
@@ -41,6 +42,7 @@ MODELS = {
     "lines": Line,
     "units": Unit,
     "groups": Group,
+    "rubies": Ruby,
 }
 
 
@@ -90,6 +92,13 @@ def group(ident: str = "g1", **overrides) -> Group:
     return Group(**{**fields, **overrides})
 
 
+def ruby(ident: str = "l1:ruby0:right", **overrides) -> Ruby:
+    fields = {"id": ident, "page_id": "p1", "line_id": "l1", "base": "計", "base_start": 0, "base_end": 1,
+              "base_unit_ids": ["u1"], "side": "right", "text": "バカリ", "reading": "ばかり", "span": "mono",
+              "source": "legacy"}
+    return Ruby(**{**fields, **overrides})
+
+
 def write_dataset(directory: Path, **records: list) -> Path:
     """Write the named tables as plain files; a table that is not named is absent from the directory."""
     directory.mkdir(parents=True, exist_ok=True)
@@ -125,6 +134,7 @@ SAMPLES = {
         active=False, split_into=["u5", "u6"], merged_into=None,
     ),
     Group: group(unit_ids=["u1", "u2"]),
+    Ruby: ruby(placement="checked"),
     Review: Review(id="r1", target_type="unit", target_id="u1", field="unicode", old="U+304A",
                    new={"unicode": "U+304B"}, role="reviewer", actor="reviewer-1",
                    evidence="https://example.org/review/1", at=datetime(2024, 5, 1, 12, 0, tzinfo=UTC)),
@@ -236,7 +246,7 @@ def test_the_manifest_counts_the_rows_written_and_checksums_the_files(tmp_path):
 
 def test_a_complete_dataset_validates_without_errors(tmp_path):
     directory = write_dataset(tmp_path / "work", documents=[document()], pages=[page()], page_texts=[page_text()],
-                              lines=[line()], units=[unit()], groups=[group()])
+                              lines=[line()], units=[unit()], groups=[group()], rubies=[ruby()])
     dataset = tables.Dataset(directory)
     assert dataset.validate() == []
     assert dataset.read("groups") == [group()]
@@ -250,9 +260,12 @@ def test_a_dangling_page_id_is_reported(tmp_path):
 
 def test_other_dangling_references_are_reported(tmp_path):
     directory = write_dataset(tmp_path / "work", documents=[document()], pages=[page()], lines=[],
-                              units=[unit(line_id="l9")], groups=[group(unit_ids=["u9"])])
+                              units=[unit(line_id="l9")], groups=[group(unit_ids=["u9"])],
+                              rubies=[ruby(line_id="l9", base_unit_ids=["u9"])])
     assert tables.Dataset(directory).validate() == ["units: u1: line_id 'l9' not in lines",
-                                                    "groups: g1: unit_ids 'u9' not in units"]
+                                                    "groups: g1: unit_ids 'u9' not in units",
+                                                    "rubies: l1:ruby0:right: line_id 'l9' not in lines",
+                                                    "rubies: l1:ruby0:right: base_unit_ids 'u9' not in units"]
 
 
 def test_a_unit_without_a_page_and_without_a_crop_is_reported(tmp_path):

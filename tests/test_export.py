@@ -21,6 +21,7 @@ from glyph_atlas.schema import (
     Register,
     ReviewState,
     Rights,
+    Ruby,
     Script,
     Unit,
     UnitKind,
@@ -378,6 +379,24 @@ def test_groups_survive_only_when_every_unit_of_them_does(dataset: Path, tmp_pat
     groups = tables.read(out2 / "groups.parquet", Group)
     assert [group.id for group in groups] == ["codh:A:g1"]
     assert groups[0].unit_ids == ["codh:A:u3"]
+
+
+def test_a_ruby_follows_its_line_and_names_only_released_units(dataset: Path, tmp_path: Path):
+    rubies = [Ruby(id=f"{line_id}:ruby0:right", page_id=page_id, line_id=line_id, base=base, base_start=0,
+                   base_end=1, base_unit_ids=[unit_id, "codh:A:gone"], side="right", text=text, reading=text,
+                   span="mono", source="legacy")
+              for line_id, page_id, base, unit_id, text in (("codh:A:p1:L2", "codh:A:p1", "國", "codh:A:u2", "くに"),
+                                                            ("codh:C:p1:L1", "codh:C:p1", "う", "codh:C:u1", "う"))]
+    tables.write(dataset / "rubies.parquet", rubies, Ruby)
+    out = tmp_path / "out" / "0.11r"
+    export.release([dataset], out, review=[ReviewState.TRANSCRIBER.value], include_machine=True)
+    released = tables.read(out / "rubies.parquet", Ruby)
+    assert [(ruby.line_id, ruby.base_unit_ids) for ruby in released] == [("codh:A:p1:L2", ["codh:A:u2"])]
+    assert tables.Dataset(out).validate() == []
+    # A line the review filter leaves out takes its rubies with it.
+    out2 = tmp_path / "out" / "0.11s"
+    export.release([dataset], out2, review=[ReviewState.TRANSCRIBER.value])
+    assert not (out2 / "rubies.parquet").exists()
 
 
 def test_a_page_text_follows_its_page(dataset: Path, tmp_path: Path):

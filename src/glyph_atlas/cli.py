@@ -1282,6 +1282,17 @@ def align(
         typer.echo(f"{name:<14} {value:>10}")
 
 
+@app.command("rubies")
+def rubies(
+    directory: Annotated[Path, typer.Argument(help="dataset directory with lines and units")],
+) -> None:
+    """Write the dataset's rubies table: each 振り仮名 with the units of the base it stands over."""
+    from . import rubies as rubies_module
+
+    count = rubies_module.build_dataset(directory, command=f"atlas rubies {directory}")
+    typer.echo(f"rubies {count:>10}")
+
+
 @app.command("rare-chars")
 def rare_chars(
     clone: Annotated[Path | None, typer.Option(help="みんなで翻刻データ clone; cache/honkoku-data when unset")] = None,

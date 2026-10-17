@@ -1,7 +1,7 @@
 """Write, read, validate and merge the dataset tables as Parquet.
 
 A dataset is one file per model of `glyph_atlas.schema`: `documents.parquet` and the optional
-`pages`, `page_texts`, `lines`, `units` and `groups`. Every file carries the full schema of its
+`pages`, `page_texts`, `lines`, `units`, `groups` and `rubies`. Every file carries the full schema of its
 model, so an empty table still has every column. `Character` is a model too but not a dataset table:
 the character layer is one generated vocabulary under `data/vocab/`, read through `refs`, and a
 release refers to it rather than copying it. `units` and `lines` may instead be a directory of
@@ -37,7 +37,7 @@ import pyarrow.parquet as pq
 from pydantic import BaseModel, ValidationError
 
 from . import __version__
-from .schema import RETIRED_UNIT_FIELDS, Box, Document, Group, Line, Page, PageText, Unit
+from .schema import RETIRED_UNIT_FIELDS, Box, Document, Group, Line, Page, PageText, Ruby, Unit
 
 #: The version of the dataset tables' schema, written into every `MANIFEST.json`. Version 2 removed
 #: `Unit.jibo`: the 字母 is metadata on a character now, and `data/vocab/characters.tsv` states it.
@@ -60,6 +60,7 @@ TABLES: dict[str, type[BaseModel]] = {
     "lines": Line,
     "units": Unit,
     "groups": Group,
+    "rubies": Ruby,
 }
 
 #: The tables that may be a directory of shards.
@@ -755,7 +756,7 @@ def _box_errors(where: str, box: Box | None, page_id: str | None, sizes: dict[st
 class Dataset:
     """The tables of one dataset directory.
 
-    `tables` maps `documents`, `pages`, `page_texts`, `lines`, `units` and `groups` to the file or
+    `tables` maps `documents`, `pages`, `page_texts`, `lines`, `units`, `groups` and `rubies` to the file or
     shard directory that holds the table, or to `None` when the directory has no such table.
     `documents` is the only table a complete dataset needs.
     """
@@ -853,6 +854,11 @@ class Dataset:
                             for unit_id in record.unit_ids:
                                 errors.extend(_dangling(where, "unit_ids", unit_id, known["units"], "units"))
                             errors.extend(_box_errors(where, record.box, record.page_id, sizes))
+                        elif name == "rubies":
+                            errors.extend(_dangling(where, "page_id", record.page_id, known["pages"], "pages"))
+                            errors.extend(_dangling(where, "line_id", record.line_id, known["lines"], "lines"))
+                            for unit_id in record.base_unit_ids:
+                                errors.extend(_dangling(where, "base_unit_ids", unit_id, known["units"], "units"))
             except pa.ArrowException as exc:
                 errors.append(f"{name}: cannot read the table: {exc}")
         return errors
