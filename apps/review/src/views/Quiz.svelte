@@ -214,7 +214,7 @@
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; errorStatus = 0; categoryOpen = false
     try {
-      const summary = await catalogue({ purpose: 'review', production: scope, limit: 1, state: 'pending' })
+      const summary = await catalogue({ purpose: 'review', production: scope, limit: 0, state: 'pending' })
       if (closed || id !== requestId) return
       data = summary
       const epochKey = 'atlas.review-epoch'

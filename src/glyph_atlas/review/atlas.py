@@ -936,7 +936,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         document: Annotated[str | None, Query(max_length=256)] = None,
         grapheme: Annotated[str | None, Query(max_length=256, description="A grapheme's code point(s), `U+4EEE`")] = None,
         seed: int = 0,
-        limit: Annotated[int, Query(ge=1, le=96)] = 60,
+        limit: Annotated[int, Query(ge=0, le=96)] = 60,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> dict:
         """One listing, two questions, and they are not the same question.

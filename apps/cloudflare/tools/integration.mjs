@@ -475,6 +475,10 @@ try {
   const category = async (as = null) => (await call('/atlas?purpose=review&limit=1', undefined, 200, as)).categories.find(c => c.label === 'ナ')
   assert.deepEqual(await category(), { label: 'ナ', grapheme: 'U+30CA', total: 7, pending: 7, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 }, 'counts include corpus glyphs')
   assert.equal((await call('/atlas?purpose=review&limit=1&production=all')).categories.find(c => c.label === 'ナ').pending, 8)
+  // A round choosing its character asks for the counts alone; they match a listing's, with nothing listed.
+  const countsOnly = await call('/atlas?purpose=review&limit=0&production=all', undefined, 200, 'alice')
+  const listedToo = await call('/atlas?purpose=review&limit=1&production=all', undefined, 200, 'alice')
+  assert.deepEqual([countsOnly.categories, countsOnly.counts, countsOnly.items, countsOnly.total], [listedToo.categories, listedToo.counts, [], null], 'counts alone match a listing\'s')
   const na = Object.fromEntries((await roundOf('&seed=0')).items.map(i => [i.id, i]))
   const cropRound = { id: crypto.randomUUID(), grapheme: 'U+30CA',
     answers: [{ id: 'na-2', revision: 0, source_revision: na['na-2'].source_revision, verdict: 'wrong', issue: 'crop' }],

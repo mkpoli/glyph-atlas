@@ -191,6 +191,9 @@ def test_quick_review_excludes_movable_type_until_explicitly_selected(dataset):
     assert default['counts'] == {'pending': 20}
     assert next(c for c in default['categories'] if c['label'] == '字')['pending'] == 4
     assert {i['production'] for i in default['items']} == {'handwritten', 'printed/woodblock', 'mixed', 'unknown'}
+    # A round choosing its character asks for the counts alone.
+    counted = client.get('/atlas?purpose=review&limit=0').json()
+    assert (counted['categories'], counted['counts'], counted['items']) == (default['categories'], default['counts'], [])
     assert client.get('/atlas').json()['total'] == 22
     assert client.get('/atlas?purpose=review&production=all').json()['total'] == 22
     expected = {'handwritten': 1, 'printed': 3, 'printed/type': 2, 'printed/type/metal/copper': 1,
