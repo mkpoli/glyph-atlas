@@ -23,6 +23,7 @@ def corpus(rows):
     db = sqlite3.connect(":memory:")
     db.execute("CREATE TABLE corpus_units(id TEXT PRIMARY KEY, character TEXT, shuffle INTEGER, object TEXT, offset INTEGER, size INTEGER)")
     db.execute("CREATE INDEX corpus_character ON corpus_units(character,id)")
+    db.execute("CREATE INDEX corpus_sample ON corpus_units(shuffle)")
     db.execute("CREATE TABLE corpus_gallery(id TEXT PRIMARY KEY, shuffle INTEGER, object TEXT, offset INTEGER, data TEXT, category TEXT)")
     db.executemany("INSERT INTO corpus_units VALUES(?,?,?,'pack',0,1)", rows)
     return db
@@ -39,10 +40,13 @@ def test_missing_copies_the_sample_and_every_hangul_and_gugyeol_glyph():
     assert "syllable" not in {row[0] for row in db.execute(fill.MISSING)}
 
 
-def test_missing_reads_ranges_of_the_character_index():
+def test_missing_reads_index_ranges_alone():
     fill = load()
-    plan = " ".join(row[3] for row in corpus([]).execute("EXPLAIN QUERY PLAN " + fill.MISSING))
-    assert "corpus_character (character>? AND character<?)" in plan
+    plan = [row[3] for row in corpus([]).execute("EXPLAIN QUERY PLAN " + fill.MISSING)]
+    assert "MULTI-INDEX OR" in plan
+    assert "SEARCH c USING INDEX corpus_sample (shuffle<?)" in plan
+    assert any(step.endswith("(character>? AND character<?)") for step in plan)
+    assert not any(step.startswith("SCAN c") for step in plan)
 
 
 def test_copies_take_their_glyphs_current_scripts():

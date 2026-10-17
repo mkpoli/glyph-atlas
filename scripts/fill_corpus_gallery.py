@@ -45,14 +45,13 @@ PART_BYTES = 90 * 1024**2
 # A read that fails mid-stream is not retried by botocore itself.
 READ_ATTEMPTS = 4
 # Scripts whose every corpus glyph has a copy, by the code point ranges their characters start in:
-# each range is one stretch of the `corpus_character` index.
+# each range is one stretch of the `corpus_character` index, which SQLite reads beside the sample's
+# stretch of `corpus_sample` (one OR, since D1 allows a compound SELECT of five terms at most).
 WHOLE = {"hangul": HANGUL, "gugyeol": GUGYEOL}
-WANTED = " UNION ".join(
-    [f"SELECT id,shuffle,object,offset,size,character FROM corpus_units WHERE shuffle<{SAMPLE_RANGE}"]
-    + [f"SELECT id,shuffle,object,offset,size,character FROM corpus_units WHERE character>=char({a}) AND character<char({b + 1})"
-       for ranges in WHOLE.values() for a, b in ranges])
-MISSING = f"""SELECT c.id,c.shuffle,c.object,c.offset,c.size,c.character FROM ({WANTED}) c
-  WHERE NOT EXISTS (SELECT 1 FROM corpus_gallery g WHERE g.id=c.id AND g.object=c.object AND g.offset=c.offset)"""
+WANTED = " OR ".join([f"shuffle<{SAMPLE_RANGE}"] + [f"(character>=char({a}) AND character<char({b + 1}))"
+                                                     for ranges in WHOLE.values() for a, b in ranges])
+MISSING = f"""SELECT c.id,c.shuffle,c.object,c.offset,c.size,c.character FROM corpus_units c WHERE ({WANTED})
+  AND NOT EXISTS (SELECT 1 FROM corpus_gallery g WHERE g.id=c.id AND g.object=c.object AND g.offset=c.offset)"""
 # Every current copy with the character its glyph is now filed under, which a form decision can move
 # to another script without republishing the record.
 COPIES = """SELECT g.id,g.shuffle,g.category,c.character FROM corpus_gallery g JOIN corpus_units c
