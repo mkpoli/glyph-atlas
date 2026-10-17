@@ -145,7 +145,13 @@
   async function loadCorpusCounts() {
     if (flagged || corpusCountsAsked) return
     corpusCountsAsked = true; corpusCountsFailed = false
-    try { const found = await request('/atlas/corpus/characters'); if (!closed) corpusCounts = found.items }
+    try {
+      const found = await request('/atlas/corpus/characters')
+      if (closed) return
+      corpusCounts = found.items
+      // Under a script group, an empty listing waits for these counts to tell whether the corpus holds its grapheme.
+      if (filter !== 'all' && !picked && !loading && data) openEmptyGrapheme(data)
+    }
     catch { if (!closed) corpusCountsFailed = true }
   }
   // How many glyphs the site holds of each written form and of each grapheme, the collection's and the
