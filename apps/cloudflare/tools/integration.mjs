@@ -438,6 +438,13 @@ try {
   assert.deepEqual(unusual.items.map(i => [i.id, i.irregular]), [['na-local-a', { shape: -6.5 }]], 'a mark made for another box does not hold')
   assert.equal(unusual.irregular_count, 1)
   assert.equal(unusual.categories.find(c => c.label === 'ナ')?.irregular, 1, 'the character list counts it')
+  // A withheld crop waits in Needs fixing, which a round's filter leaves out: each keeps its own counts.
+  await db.batch([db.prepare("UPDATE units SET quiz=0 WHERE id='na-local-a'"),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','irregular-withheld')")])
+  await call('/atlas?state=attention&purpose=review&production=all')
+  assert.equal((await fixing()).categories.find(c => c.label === 'ナ')?.irregular, 1, 'a round keeps its own counts')
+  await db.batch([db.prepare("UPDATE units SET quiz=1 WHERE id='na-local-a'"),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','irregular')")])
   const hidden = await fixing('&irregular=hide')
   assert.deepEqual([hidden.items.length, hidden.irregular_count], [0, 1], 'irregular=hide leaves it out and counts it')
   await db.prepare('DELETE FROM unit_irregular').run()
