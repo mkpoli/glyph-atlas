@@ -117,6 +117,8 @@ def test_the_api_lists_clusters_and_records_decisions(clustering, tmp_path):
     client.post("/atlas/forms/decisions", json={"kind": "glyph", "units": [B], "form": "𛂞"})
     one = client.get("/atlas/forms/families/U+306F").json()["items"][0]
     assert (one["majority"], one["majority_count"], one["count"]) == ("𛂥", 2, 3)
+    # A glyph named otherwise is listed under its form, to be shown in that form's panel.
+    assert [(s["form"], s["count"], [g["id"] for g in s["glyphs"]]) for s in one["strays"]] == [("𛂞", 1, [B])]
     # The family counts its glyphs by form, most used first.
     assert client.get("/atlas/forms/families/U+306F").json()["usage"] == [{"char": "𛂥", "count": 2}, {"char": "𛂞", "count": 1}]
 

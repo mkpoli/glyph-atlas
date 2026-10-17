@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { FOLLOW_BATCH, describedClaimsQuery, followCorpus, formed, formsRoute, leastTypicalQuery, member, membersQuery } from './forms';
+import { FOLLOW_BATCH, describedClaimsQuery, followCorpus, formed, formsRoute, leastTypicalQuery, member, membersQuery, straysQuery } from './forms';
 
 describe('form decisions outside cluster membership', () => {
   it('keeps the corrected identity without linking to a removed cluster', () => {
@@ -27,6 +27,22 @@ describe('form decisions outside cluster membership', () => {
     expect(db.query(leastTypicalQuery()).all('U+306F')).toEqual([
       { cluster: 'c', id: 'kept', image: null, rank: 12 },
     ]);
+    db.close();
+  });
+
+  it('finds a cluster\'s glyphs named with another form, twelve a form, leaving out unnamed and reported ones', () => {
+    const db = new Database(':memory:');
+    const migrations = new URL('../migrations/', import.meta.url);
+    for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort())
+      db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+    const insert = db.prepare(`INSERT INTO form_units(id,family,cluster,rank,similarity,split,clustered,form,issue) VALUES(?,'U+306E','c',?,1,'',?,?,?)`);
+    insert.run('own', 0, 1, 'の', null); insert.run('unnamed', 1, 1, null, null); insert.run('reported', 2, 1, '𛂙', 'crop');
+    insert.run('excluded', 3, 0, '𛂙', null);
+    for (let i = 0; i < 14; i++) insert.run(`s${i}`, 10 + i, 1, '𛂙', null);
+    insert.run('ノ', 30, 1, 'ノ', null);
+    const rows = db.query(straysQuery()).all(JSON.stringify([['c', 'の']])) as { form: string, id: string }[];
+    expect(rows.filter(r => r.form === '𛂙').map(r => r.id)).toEqual(Array.from({ length: 12 }, (_, i) => `s${i}`));
+    expect(rows.filter(r => r.form !== '𛂙').map(r => r.id)).toEqual(['ノ']);
     db.close();
   });
 

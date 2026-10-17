@@ -77,14 +77,19 @@
     return loaded
   }
   // The grid's sections: the open clusters, then a group a form. Each cluster keeps its index in `items`.
+  // The glyphs of a grouped cluster named with another form are shown in that form's panel, under the
+  // cluster's label.
   const sections = $derived.by(() => {
     const open = [], groups = new Map()
+    const groupFor = key => groups.get(key) ?? groups.set(key, { key, items: [], strays: [], glyphs: 0 }).get(key)
     ;(current?.items ?? []).forEach((c, i) => {
       if (!grouped(c)) { open.push({ c, i }); return }
-      const key = groupOf(c), group = groups.get(key) ?? { key, items: [], glyphs: 0 }
-      group.items.push({ c, i }); group.glyphs += c.count; groups.set(key, group)
+      const strays = c.issue ? [] : c.strays ?? [], group = groupFor(groupOf(c))
+      group.items.push({ c, i }); group.glyphs += c.count - strays.reduce((n, s) => n + s.count, 0)
+      for (const stray of strays) { const other = groupFor(stray.form); other.strays.push({ c, i, stray }); other.glyphs += stray.count }
     })
-    return { open, groups: [...groups.values()] }
+    const rank = current ? ranking(current) : new Map()
+    return { open, groups: [...groups.values()].sort((a, b) => (rank.get(a.key) ?? rank.size) - (rank.get(b.key) ?? rank.size)) }
   })
   // How many of the family's glyphs each form names, against the whole family.
   const usage = $derived((current?.usage ?? []).map(u => ({ ...u, share: current.count ? u.count / current.count : 0 })))
@@ -363,6 +368,20 @@
   </li>
 {/snippet}
 
+<!-- A cluster's glyphs named with this panel's form, while the cluster itself sits in its own form's panel. -->
+{#snippet strayCard(c, i, stray)}
+  <li class="form-cluster stray">
+    <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)}>
+      <span class="cluster-head">
+        <strong lang="ja">{c.label}</strong><span>{number(stray.count)}</span>
+        <span class="cluster-open"><span class="inline-glyph"><FormText text={groupOf(c)} /></span></span>
+      </span>
+      <span class="cluster-samples">{#each stray.glyphs as g (g.id)}{#if g.image}<Glyph item={g} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: g.id, pin: false }))} />{/if}{/each}</span>
+    </button>
+    <span class="cluster-foot"><button class="quiet-link" onclick={() => show(i)}>{t('forms.open', { count: c.count })}</button></span>
+  </li>
+{/snippet}
+
 <section class="forms">
   <div class="page-status">
     <h1 class="visually-hidden">{t('forms.heading')}</h1>
@@ -549,6 +568,7 @@
               </header>
               <ol class="cluster-grid compact">
                 {#each group.items as { c, i } (c.id)}{@render clusterCard(c, i, true)}{/each}
+                {#each group.strays as { c, i, stray } (c.id)}{@render strayCard(c, i, stray)}{/each}
               </ol>
             </section>
           {/each}
@@ -616,6 +636,7 @@
   .form-cluster{border:1.5px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
   .form-cluster.active{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
   .form-cluster.assigned{background:light-dark(#fbfbfe, #202027)}
+  .compact .form-cluster.stray{background:light-dark(#f4f4f8, #1b1b21)}
   .cluster-select{display:block;width:100%;border:0;border-radius:0;background:transparent;padding:12px 12px 8px;text-align:left}
   .cluster-head{display:flex;align-items:center;gap:10px;font-size:12px;margin-bottom:8px}
   .cluster-head>span:nth-child(2){color:var(--muted);font-variant-numeric:tabular-nums}
