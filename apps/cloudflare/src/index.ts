@@ -1293,6 +1293,10 @@ function chunks<T>(list: T[], size: number): T[][] {
 // A character's edges in the 異体字 graph, both ways (0033): each by the key or by `b`'s index.
 export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,written,widens FROM character_variants WHERE a=?
   UNION ALL SELECT a AS other,relation,source,detail,written,widens FROM character_variants WHERE b=? LIMIT 2000`;
+// The graphemes a reduced form writes besides its own, and the forms that write a grapheme (0081): each by
+// its key or by the grapheme index, a handful of rows.
+export const writesQuery = () => `SELECT grapheme AS char FROM grapheme_writers WHERE writer=? LIMIT ${VARIANTS_SHOWN}`;
+export const writersQuery = () => `SELECT writer AS char FROM grapheme_writers WHERE grapheme=? LIMIT ${VARIANTS_SHOWN}`;
 // A character's derived list (0070): its one row, the forms in the order and caps refs.derived_variants gives them.
 export const derivedEdgesQuery = () => `SELECT forms FROM character_derived WHERE a=?`;
 // What the substitutions a derived list came by are backed by: each one's count and every pair behind
@@ -1371,12 +1375,16 @@ type VariantRow = { char: string; code_point: string; widens: boolean; written: 
 // The characters `char` shares an edge with, as the card lists them: `items` a gallery widens to (a
 // pair with a widening edge and none that keeps it apart), `related` the rest; each most attested
 // first (sources, then code point), every edge kept. `written` marks a pair one of whose edges says
-// one may be written for the other. `sources` cites each source used.
-async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char: string, version: string) {
+// one may be written for the other. `sources` cites each source used. `writes` are the graphemes besides
+// its own a reduced form of several characters writes (后: 後), `writers` the forms of that kind that write
+// its grapheme, `head` (後: 后).
+async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char: string, head: string, version: string) {
   const key = new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(version)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const edges = (await env.DB.prepare(variantEdgesQuery()).bind(char, char).all<VariantEdge>()).results;
+  const [writes, writers] = (await env.DB.batch([env.DB.prepare(writesQuery()).bind(char), env.DB.prepare(writersQuery()).bind(head)]) as
+    D1Result<{ char: string }>[]).map(found => found.results.map(row => ({ char: row.char, code_point: cp(row.char) })));
   const derivedRow = await env.DB.prepare(derivedEdgesQuery()).bind(char).first<{ forms: string }>();
   const derivedRows: DerivedRow[] = derivedRow ? (JSON.parse(derivedRow.forms) as [string, [string, string][][]][]).map(([other, routes]) => ({ other, routes })) : [];
   const byChar = new Map<string, VariantRow & { edges: VariantEdge[] }>();
@@ -1410,7 +1418,7 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
   for (const entry of predicted) for (const source of entry.sources) used.add(source);
   if (predicted.length) used.add(DERIVED_IDS);
   const found = { items: rows.filter(row => row.widens), related: rows.filter(row => !row.widens), derived: predicted,
-    total: byChar.size, sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? source])) };
+    total: byChar.size, writes, writers, sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? source])) };
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return found;
 }
@@ -2626,7 +2634,7 @@ const routes = {
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
       if(layer){const value=decodeURIComponent(layer[1]),card=await known(env,value),{detail}=card;const found=await occurrences(env,value,q,card);
-        const version=await catalogueVersion(env),[variants,words]=await Promise.all([variantsOf(env,ctx,url.origin,detail.char,version),wordsOf(env,ctx,url.origin,detail.char,version)]);
+        const version=await catalogueVersion(env),[variants,words]=await Promise.all([variantsOf(env,ctx,url.origin,detail.char,detail.grapheme?.char??detail.char,version),wordsOf(env,ctx,url.origin,detail.char,version)]);
         return json({...detail,variants,words,query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
       if(path==='/layers/candidates'){const found=await corpusOccurrences(env,ctx,url,await known(env,q.get('code_point')||''),q);

@@ -588,6 +588,8 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     VARIANTS_SHOWN each; `derived` is the `derived-ids` tier, forms up to two component substitutions
     may write the character as, no gallery widening to them. Every edge keeps its relation, source and
     claims; `sources` cites each source used, and a card with a derived row cites `derived-ids` too.
+    `writes` are the graphemes besides its own that `char`, a reduced form of several characters,
+    writes (后: 後), and `writers` the forms of that kind that write its grapheme (後: 后).
     """
     widening, other = variant_pairs(char)
     shown = [*widening[:VARIANTS_SHOWN], *other[:VARIANTS_SHOWN]]
@@ -606,8 +608,11 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     used = {source for row in rows for source in row["sources"]}
     if predictions:
         used |= {source for row in predictions for source in row["sources"]} | {refs.DERIVED_IDS}
+    point = refs.to_code_point(char)
     return {"items": [r for r in rows if r["widens"]], "related": [r for r in rows if not r["widens"]],
             "derived": predictions, "total": len(widening) + len(other),
+            "writes": [{"code_point": head, "char": refs.to_char(head)} for head in refs.also_writes(point)],
+            "writers": list((refs.grapheme_info(point) or {}).get("writers", [])),
             "sources": {source: cited.get(source, source) for source in sorted(used)}}
 
 
