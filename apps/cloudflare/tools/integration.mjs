@@ -2127,6 +2127,8 @@ try {
     assert.ok((await call('/atlas/corpus/reviews')).items.some(item => item.id === 'doubt-a'), 'it waits in the Flagged view')
     const again = await call('/api/admin/corpus-flags', sent, 200, 'judge')
     assert.deepEqual([again.flagged, again.held, again.rows_written], [[], ['doubt-a', 'nu-shown'], 0], 'sent again, it writes nothing')
+    const queue = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.flaggedCorpusQuery()).all()).results.map(r => r.detail)
+    assert.ok(queue.some(d => /USING (COVERING )?INDEX unit_state/.test(d)) && !queue.some(d => /TEMP B-TREE/.test(d)), queue.join('; '))
     // A person settles it, and it leaves the queue.
     const settled = await call('/atlas/corpus/reviews', { id: crypto.randomUUID(), identity: 'doubt-a', source_revision: data.source_revision,
       revision: 1, verdict: 'match' }, 200, 'bob')

@@ -2294,6 +2294,9 @@ async function flagCorpus(env:Env,input:Json){
   out.flagged=out.flagged.filter(id=>written.has(id));
   return {...out,rows_written:results.reduce((n,r)=>n+(r.meta.rows_written??0),0)};
 }
+// The corpus glyphs waiting for a person, the earliest flagged first: `unit_state` holds them in rowid
+// order, so a page reads its own rows and sorts nothing, however many wait.
+export const flaggedCorpusQuery=()=>"SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY rowid LIMIT 96";
 // The journal ids of one reviewer: a user's, or one id from before accounts that nobody holds.
 export function reviewerActors(input:Json):[string,string[]]{
   if(typeof input.user==='string')return ['(SELECT actor FROM actors WHERE user_id=?)',[text(input.user,64,'user',true)!]];
@@ -2591,7 +2594,7 @@ const routes = {
         const rows=await env.DB.prepare(`SELECT data FROM characters WHERE ${selector} LIMIT ? OFFSET ?`).bind(integer(q,'limit',200,500),integer(q,'offset',0)).all<{data:string}>();
         return json({items:rows.results.map(r=>parse(r.data)),total:rows.results.length})}
       if(path==='/atlas/corpus/reviews'){
-        const rows=await env.DB.prepare("SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY id LIMIT 96").all<UnitRow>();
+        const rows=await env.DB.prepare(flaggedCorpusQuery()).all<UnitRow>();
         return json({items:await withDating(env,await withForms(env,rows.results.map(compact))),total:rows.results.length})}
       if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed)}
