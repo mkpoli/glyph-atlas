@@ -506,7 +506,7 @@ const FACETS_TTL = 3600;
 // The grapheme a label is filed under: its family, or its own code points when it has none. The
 // publication writes `family` from the same rule (`atlas.grapheme_of`).
 export const graphemeOf = (label: string, family: string | null) => family || cp(label) || null;
-type Facet = { label: string; family: string | null; document: string | null; title: string | null; state: string; n: number };
+type Facet = { label: string | null; family: string | null; document: string | null; title: string | null; state: string; n: number };
 async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement, version: Promise<string>) {
   const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(await version)}`);
   const cached = await caches.default.match(key);
@@ -588,10 +588,11 @@ export async function graphemeMembers(env: Env, key: string): Promise<string[]> 
 // A round and its reference strips name their grapheme's characters, and read each through
 // `unit_character`: the review filter is kept off its index (`+`), which would otherwise drive the
 // query over every crop that can be dealt. Browsing leaves withheld crops out the same way unless
-// `withheld` asks for them.
+// `withheld` asks for them. A crop no one has read yet has no character to ask about, so a round
+// leaves it out; browsing shows it.
 export function listingFilter(review: boolean, production: string, characters: string[] | null, withheld = false) {
   const [materials, materialValues] = material(production, 'production');
-  const where = ["origin='local'", ...(review ? [characters === null ? 'quiz=1' : '+quiz=1'] : withheld ? [] : ['+quiz=1']), materials];
+  const where = ["origin='local'", ...(review ? (characters === null ? ['quiz=1', "character<>''"] : ['+quiz=1']) : withheld ? [] : ['+quiz=1']), materials];
   const values: (string | number)[] = [...materialValues];
   if (characters !== null) { where.push('character IN (SELECT value FROM json_each(?))'); values.push(JSON.stringify(characters)) }
   return { where, values };
@@ -627,7 +628,7 @@ export function facetsQueries(review: boolean, reviewer: string | null, where: s
 // reviewer's skips are counted now and browse's counts may be the edge's copy of this catalogue
 // version, so a move never takes more than `pending` holds.
 export function moved(stored: Facet[], moves: Facet[]): Facet[] {
-  const key = (row: { label: string; document: string | null }, state: string) => JSON.stringify([row.label, row.document, state]);
+  const key = (row: { label: string | null; document: string | null }, state: string) => JSON.stringify([row.label, row.document, state]);
   const rows = new Map(stored.map(row => [key(row, row.state), { ...row }]));
   for (const move of moves) {
     const pending = rows.get(key(move, 'pending'));
@@ -1047,10 +1048,14 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
   const empty = { total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 };
-  const add = (label: string, state: string, n: number, document: string | null = null, title: string | null = null, family: string | null = null) => {
-    const category = categories.get(label) || { label, grapheme: graphemeOf(label, family), ...empty };
-    category.total += n; category[state] += n; counts[state] += n;
-    categories.set(label, category);
+  // A crop no one has read yet counts towards its book, under no character.
+  const add = (label: string | null, state: string, n: number, document: string | null = null, title: string | null = null, family: string | null = null) => {
+    counts[state] += n;
+    if (label) {
+      const category = categories.get(label) || { label, grapheme: graphemeOf(label, family), ...empty };
+      category.total += n; category[state] += n;
+      categories.set(label, category);
+    }
     if (!document) return;
     const book = documents.get(document) || { id: document, title, ...empty };
     book.total += n; book[state] += n;
