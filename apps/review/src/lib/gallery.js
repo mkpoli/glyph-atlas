@@ -2,6 +2,7 @@ import { character as layerCharacter, occurrences, candidates as layerCandidates
 import { writtenLabel } from './identity.js'
 import { STYLE_GROUPS, styleParam } from './style.js'
 import { keyText } from './codePoints.js'
+import { hasCharacterPage } from './issues.js'
 
 // A character's gallery: the occurrences this collection holds and the located glyphs the corpus index
 // knows about. The page server renders it and the collection view loads it the same way.
@@ -31,6 +32,10 @@ export function characterAddress(codePoint, { scope = null, visual = '', style =
   const query = new URLSearchParams(Object.entries({ scope, visual, style, order, years }).filter(([, value]) => value))
   return '/character/' + slug(codePoint) + (query.size ? '?' + query : '')
 }
+
+/** The page of a grapheme, by its key and the text it is shown as. A grapheme of more than one character
+ * has no page of its own, so its address narrows the collection to it. */
+export const graphemeAddress = (key, text) => hasCharacterPage(text) ? characterAddress(key, { scope: 'family' }) : collectionAddress({ grapheme: key })
 
 /** The collection with a search and filters: a grapheme key, a work's document id and a script group. */
 export function collectionAddress({ q = '', grapheme = '', work = '', group = 'all' } = {}) {

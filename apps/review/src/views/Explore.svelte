@@ -31,7 +31,7 @@
   import { catalogue, character, request, randomSeed, number, stored, remember } from '../lib/client.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
-  import { characterAddress, collectionAddress, corpusScope, expandFor, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
+  import { characterAddress, collectionAddress, corpusScope, expandFor, graphemeAddress, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
   import { keyText } from '../lib/codePoints.js'
   import { useSession } from '../lib/session.svelte.js'
   import { roundAddress } from '../lib/reviewRounds.js'
@@ -560,8 +560,6 @@
     const same = shownGraphemes?.length === next.length && next.every((group, i) => group.key === shownGraphemes[i].key && group.n === shownGraphemes[i].n)
     return same ? shownGraphemes : (shownGraphemes = next)
   })
-  // A grapheme of more than one character has no page of its own; its chip narrows the collection to it.
-  const graphemeAddress = group => hasCharacterPage(group.text) ? characterAddress(group.key, { scope: 'family' }) : collectionAddress({ grapheme: group.key })
   // A few pairs and trigrams scattered through the homepage's first page of crops, each as one place it
   // was written, drawn from the frequent ones by the gallery's seed, so a shuffle deals others. Their
   // places and their tiles' shape come from the seed alone: the page the server renders holds them
@@ -1010,7 +1008,7 @@
     </p>
   {/if}
   {#if bare}{#if runKind === 'grapheme'}<RunStrip runs={frequentGraphemes} heading={t('explore.runs.heading')} failed={corpusCountsFailed ? t('explore.graphemes.failed') : ''} onretry={() => { corpusCountsAsked = false; loadCorpusCounts() }}
-      address={graphemeAddress} tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />
+      address={group => graphemeAddress(group.key, group.text)} tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />
     {:else}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
       tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}{/if}
   {#if picked}

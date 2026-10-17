@@ -1,19 +1,19 @@
 <script>
   // One grapheme and the forms it gathers, with their own code points and counts: 仮 and 假 under one
-  // heading. The heading links to the grapheme's page; choosing a form opens that form's own gallery;
+  // heading. The heading links to the grapheme's page (the collection narrowed to it when it has none); choosing a form opens that form's own gallery;
   // "All forms" chooses the whole family. The grapheme browser shows it over a pointed tile, and the
   // search box for each grapheme a query names.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
-  import { characterAddress } from '../lib/gallery.js'
+  import { graphemeAddress } from '../lib/gallery.js'
 
   let { group, onchoose = () => {}, onform = () => {} } = $props()
   const codes = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 </script>
 
 <div class="grapheme-card">
-  <a class="card-head" href={localize(characterAddress(group.key, { scope: 'family' }))}>
+  <a class="card-head" href={localize(graphemeAddress(group.key, group.char))}>
     <ReferenceGlyph char={group.char} size="lg" />
     <span><b>{t('chips.grapheme')}</b> <code>{group.key}</code><br />{t('explore.grapheme.forms', { count: group.members.length })} · {number(group.count)}</span>
   </a>
