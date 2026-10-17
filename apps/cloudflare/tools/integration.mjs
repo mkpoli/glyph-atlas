@@ -2070,9 +2070,11 @@ try {
     assert.deepEqual(await db.prepare("SELECT character,family FROM units WHERE id='ba-1'").first(), { character: ha, family: 'U+3070' },
       'a crop marked as a sequence member stays filed under its grapheme')
   }
-  // One address is held to a number of claims a minute.
+  // One address is held to a number of claims a minute (CLAIMS, 100). The minute can turn while they are
+  // sent, which starts the count again, so up to two and a half minutes' worth are sent: one minute then
+  // holds more than its limit whichever claim it turns at.
   let claimsLimited = false
-  for (let i = 0; i < 120 && !claimsLimited; i++) {
+  for (let i = 0; i < 250 && !claimsLimited; i++) {
     const response = await mf.dispatchFetch(base + formPath, { method: 'POST', headers: { 'content-type': 'application/json', origin: base, cookie: (await user('integration')).cookie }, body: '{}' })
     claimsLimited = response.status === 429
   }
