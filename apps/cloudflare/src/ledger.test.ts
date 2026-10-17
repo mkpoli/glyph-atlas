@@ -21,6 +21,29 @@ test('and refuses the rest, as the review service does', () => {
   expect(refused('has_form', [member({ value: 'unresolved' }), member({ value: 'unresolved' })])).toContain('differ')
 })
 
+test('an attestation names a word or a gloss, how the sense is known, and how sure the form is', () => {
+  const refused = (members: Member[], method: string | null = 'ruby', kinds: Record<string, string> = { 'ja/にしん/名詞': 'word' }) => {
+    try { checkClaims('writes_word', members, kinds, fail, method); return null } catch (e) { return String(e) } }
+  const word = member({ object: 'ja/にしん/名詞', confidence: 0.5, confidence_scheme: 'form' })
+  expect(refused([word])).toBeNull()
+  expect(refused([member({ value: { gloss: 'herring' }, confidence: 1, confidence_scheme: 'form' })], 'context')).toBeNull()
+  expect(refused([word], null)).toContain('names how it is known')
+  expect(refused([word], 'guess')).toContain('names how it is known')
+  expect(refused([member({ object: 'ja/にしん/名詞' })])).toContain('confidence at one of these levels')
+  expect(refused([member({ object: 'ja/にしん/名詞', confidence: 0.7, confidence_scheme: 'form' })])).toContain('levels')
+  expect(refused([member({ value: 'disputed', confidence: 1, confidence_scheme: 'form' })])).toContain('is not a value')
+  expect(refused([member({ value: { gloss: ' ' }, confidence: 1, confidence_scheme: 'form' })])).toContain('is not a value')
+  expect(refused([word], 'ruby', { 'ja/にしん/名詞': 'form' })).toContain('cannot be the object')
+  const evidence = (items: { kind: string; ref: string; locator: string | null }[]) => {
+    try { checkClaims('writes_word', [word], { 'ja/にしん/名詞': 'word' }, fail, 'ruby', items); return null } catch (e) { return String(e) } }
+  expect(evidence([{ kind: 'source', ref: 'rubies:l1:ruby0:right', locator: null }])).toBeNull()
+  expect(evidence([{ kind: 'crop', ref: 'x', locator: null }])).toContain('Evidence is')
+  expect(evidence([{ kind: 'page', ref: 'p1', locator: 'a' }, { kind: 'page', ref: 'p1', locator: 'b' }])).toContain('named once')
+  expect(refused([member({ value: { gloss: '𠀀'.repeat(200) }, confidence: 1, confidence_scheme: 'form' })], 'gloss')).toBeNull()
+  expect(refused([member({ value: { gloss: '𠀀'.repeat(201) }, confidence: 1, confidence_scheme: 'form' })], 'gloss')).toContain('is not a value')
+  expect(refused([member({ value: { gloss: 'herring ' }, confidence: 1, confidence_scheme: 'form' })], 'gloss')).toContain('is not a value')
+})
+
 test('the resolver names its version and runs over the site\'s own crops', () => {
   expect(resolveWriteQuery()).toContain(`'${RESOLVER}' AS resolver`)
   expect(resolveWriteQuery()).toContain('SELECT id,crop_version FROM units')

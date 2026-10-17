@@ -73,3 +73,21 @@ def test_the_ledger_survives_a_reopened_store_and_rebuilds_to_the_same_rows(data
     assert store.resolve_claims(lambda unit: version if unit == UNIT else None) == 1
     with store._connection() as conn:
         assert conn.execute("SELECT * FROM current_claims").fetchall() == before
+
+
+def test_an_attestation_names_a_word_of_the_vocabulary_and_its_evidence(dataset):  # noqa: F811
+    client = TestClient(create_app(dataset))
+    version = client.get("/atlas/characters/" + UNIT).json()["crop_version"]
+    body = {"id": str(uuid4()), "client_id": "ann", "subject": UNIT, "predicate": "writes_word", "crop_version": version,
+            "claims": [{"object": "ja/ばかり/副助詞", "confidence": 0.5, "confidence_scheme": "form"}], "method": "ruby",
+            "evidence": [{"kind": "source", "ref": "rubies:l1:ruby0:right"}]}
+    made = client.post("/atlas/claims", json=body)
+    assert made.status_code == 200, made.text
+    assert made.json()["current"][0]["object"] == "ja/ばかり/副助詞"
+    history = client.get("/atlas/claims", params={"subject": UNIT}).json()["history"]
+    assert {(item["kind"], item["ref"]) for item in history[0]["evidence"]} >= {("source", "rubies:l1:ruby0:right")}
+    unknown = {**body, "id": str(uuid4()), "claims": [{"object": "ja/ないことば/名詞", "confidence": 1, "confidence_scheme": "form"}]}
+    assert client.post("/atlas/claims", json=unknown).status_code == 422
+    gloss = {**body, "id": str(uuid4()), "claims": [{"value": {"gloss": "herring"}, "confidence": 1, "confidence_scheme": "form"}],
+             "method": "context", "evidence": []}
+    assert client.post("/atlas/claims", json=gloss).json()["current"][0]["value"] == {"gloss": "herring"}

@@ -53,7 +53,8 @@ count for など; the counts stay in the generated table and are joined when rea
   and 漢字ペディア stated none of 斗, 杯, 而, 矣, 迠 and 焉 for these words, and glossed 約 only as
   おおよそ; the others were not searched. A 古文書 reading dictionary that states them adds a row
   beside these.
-- A reading of one crop as a word (this 斗 reads ばかり) is a claim about that crop and belongs in the
-  assertion ledger, which has no predicate for it yet.
+- A reading of one crop as a word (this 斗 reads ばかり) is a claim about that crop: a `writes_word`
+  claim of the assertion ledger (`docs/design/form-model.md`), which names the word, how the sense
+  is known and how sure the reader is of the form.
 - A matching or normalisation policy that uses words is a new named policy when something needs it;
   `align-v1` and `export-v1` are unchanged.

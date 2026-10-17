@@ -5,7 +5,8 @@
 import catalogue from '../../../data/ledger.json';
 
 type Json = Record<string, any>;
-type Predicate = { label: string; subject: string; objects: string[]; values?: string[]; cardinality: 'one' | 'many'; alternatives?: boolean };
+type Predicate = { label: string; subject: string; objects: string[]; values?: string[]; value_shape?: string; cardinality: 'one' | 'many';
+  alternatives?: boolean; methods?: string[]; confidence?: Record<string, Record<string, number>> };
 export const RESOLVER: string = catalogue.resolver;
 export const PREDICATES: Record<string, Predicate> = catalogue.predicates as Record<string, Predicate>;
 const ACTIONS = new Set<string>(catalogue.actions);
@@ -19,6 +20,9 @@ export const resolveClearQuery = () => `DELETE FROM current_claims WHERE (subjec
 export const resolveWriteQuery = () => `INSERT INTO current_claims(${COLUMNS}) WITH crop_now(unit,version) AS (${CROP_NOW}),\n${BODY}`;
 // At most this many members in one alternative set, and this many claims and actions in a subject's history.
 const MEMBERS_MAX = 8, HISTORY_MAX = 200;
+// The evidence a claim may name beside its crop version, which the ledger writes itself; at most this many items.
+const EVIDENCE_KINDS = new Set(['page', 'source']), EVIDENCE_MAX = 8, GLOSS_MAX = 200;
+export type Evidence = { kind: string; ref: string; locator: string | null };
 
 export type LedgerTools = {
   fail: (status: number, message: string) => never;
@@ -33,18 +37,34 @@ export type LedgerTools = {
 };
 export type Member = { object: string | null; value: unknown; confidence: number | null; confidence_scheme: string | null };
 
-/** Refuse members the catalogue does not allow; `kinds` gives the kind of each named entity. */
-export function checkClaims(predicate: string, members: Member[], kinds: Record<string, string>, fail: LedgerTools['fail']) {
+// A value a predicate takes besides its listed ones: a `gloss` is {gloss: text}, the sense in words where no word
+// row fits yet, with no space around it and at most GLOSS_MAX code points, as the review service counts them.
+const shaped = (shape: string | undefined, value: unknown) => {
+  if (shape !== 'gloss' || typeof value !== 'object' || value === null || Array.isArray(value) || Object.keys(value).join() !== 'gloss') return false;
+  const gloss = (value as Json).gloss;
+  return typeof gloss === 'string' && gloss === gloss.trim() && gloss.length > 0 && [...gloss].length <= GLOSS_MAX;
+};
+
+/** Refuse members the catalogue does not allow; `kinds` gives the kind of each named entity. A predicate
+ *  that lists `methods` takes one of them, and one that lists `confidence` schemes a confidence at one of their levels. */
+export function checkClaims(predicate: string, members: Member[], kinds: Record<string, string>, fail: LedgerTools['fail'],
+  method: string | null = null, evidence: Evidence[] = []) {
   const spec = PREDICATES[predicate];
   if (!spec) fail(422, `Unknown predicate ${predicate}.`);
   if (!members.length) fail(422, 'A claim names a value.');
+  if (spec.methods && !spec.methods.includes(method as string)) fail(422, `${predicate} names how it is known: one of ${spec.methods.join(', ')}.`);
+  if (evidence.length > EVIDENCE_MAX || evidence.some(e => !EVIDENCE_KINDS.has(e.kind) || !e.ref)) fail(422, `Evidence is at most ${EVIDENCE_MAX} pages or sources, each with a reference.`);
+  if (new Set(evidence.map(e => JSON.stringify([e.kind, e.ref]))).size < evidence.length) fail(422, 'Each item of evidence is named once.');
+  const schemes = spec.confidence;
   if (members.length > 1 && !(spec.alternatives && spec.cardinality === 'one')) fail(422, `${predicate} takes one value a claim.`);
   const seen = new Set<string>();
   for (const m of members) {
     if ((m.object === null) === (m.value === null)) fail(422, 'A claim names an object or a value.');
     if (m.object !== null && !spec.objects.includes(kinds[m.object])) fail(422, `${m.object} cannot be the object of ${predicate}.`);
-    if (m.object === null && !(spec.values ?? []).includes(m.value as string)) fail(422, `${JSON.stringify(m.value)} is not a value of ${predicate}.`);
+    if (m.object === null && !(spec.values ?? []).includes(m.value as string) && !shaped(spec.value_shape, m.value)) fail(422, `${JSON.stringify(m.value)} is not a value of ${predicate}.`);
     if ((m.confidence === null) !== (m.confidence_scheme === null)) fail(422, 'A confidence names its scheme.');
+    if (schemes && !Object.values(schemes[m.confidence_scheme as string] ?? {}).includes(m.confidence as number))
+      fail(422, `${predicate} takes a confidence at one of these levels (${Object.entries(schemes).map(([n, l]) => `${n}: ${Object.keys(l).join(', ')}`).join('; ')}).`);
     if (m.confidence !== null && !Number.isFinite(m.confidence)) fail(422, 'A confidence is a number.');
     const key = JSON.stringify([m.object, m.value]);
     if (seen.has(key)) fail(422, 'The alternatives of a claim differ.');
@@ -97,7 +117,7 @@ export type Plan = { statements: D1PreparedStatement[]; keys: Slot[] };
  *  the actor's own earlier claims in a slot that takes one value. A crop subject's claim rests on the
  *  evidence version `version`, which the caller has checked is the crop's current one. */
 export async function planClaim(env: Env, claim: { key: string; actor: string; subject: string; predicate: string; scope: string;
-  members: Member[]; version: string | null; tier?: string; method?: string | null; at: string }, tools: LedgerTools) {
+  members: Member[]; version: string | null; tier?: string; method?: string | null; evidence?: Evidence[]; at: string }, tools: LedgerTools) {
   const { key, actor, subject, predicate, scope, members, version, at } = claim;
   const set = members.length > 1 ? 'cf:' + crypto.randomUUID() : null, ids = members.map(() => 'cf:' + crypto.randomUUID());
   const statements: D1PreparedStatement[] = [];
@@ -106,6 +126,8 @@ export async function planClaim(env: Env, claim: { key: string; actor: string; s
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ids[i], key, subject, predicate, scope, slotOf(predicate, m, tools.canonical), m.object,
       m.value === null ? null : tools.canonical(m.value), set, claim.tier ?? 'observed', actor, at, m.confidence, m.confidence_scheme, claim.method ?? null));
     if (version) statements.push(env.DB.prepare("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES(?,'crop',?)").bind(ids[i], version));
+    for (const e of claim.evidence ?? []) statements.push(env.DB.prepare('INSERT INTO assertion_evidence(assertion,kind,ref,locator) VALUES(?,?,?,?)')
+      .bind(ids[i], e.kind, e.ref, e.locator));
   });
   // The actor's own earlier claims in a slot that takes one value are retracted by the batch itself,
   // so a claim of theirs saved meanwhile is retracted too.
@@ -174,18 +196,21 @@ export async function writeClaim(env: Env, input: Json, actor: string, tools: Le
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > MEMBERS_MAX) tools.fail(422, `A claim names 1–${MEMBERS_MAX} values.`);
   const members: Member[] = raw.map((m: Json) => ({ object: m?.object == null ? null : tools.text(m.object, 128, 'object', true),
     value: m?.value ?? null, confidence: m?.confidence ?? null, confidence_scheme: m?.confidence_scheme == null ? null : tools.text(m.confidence_scheme, 64, 'confidence scheme', true) }));
-  // An object this route can name is a form the site holds.
+  // An object this route can name is a form or a word the site holds.
   const named = members.flatMap(m => m.object === null ? [] : [m.object]);
-  const kinds: Record<string, string> = named.length ? Object.fromEntries((await env.DB.prepare('SELECT id FROM forms WHERE id IN (SELECT value FROM json_each(?))')
-    .bind(JSON.stringify(named)).all<{ id: string }>()).results.map(r => [r.id, 'form'])) : {};
-  checkClaims(predicate, members, kinds, tools.fail);
+  const kinds: Record<string, string> = named.length ? Object.fromEntries((await env.DB.prepare(`SELECT id,'form' AS kind FROM forms WHERE id IN (SELECT value FROM json_each(?1))
+    UNION ALL SELECT id,'word' FROM words WHERE id IN (SELECT value FROM json_each(?1))`).bind(JSON.stringify(named)).all<{ id: string; kind: string }>()).results.map(r => [r.id, r.kind])) : {};
+  const method = tools.text(input.method ?? null, 64, 'method');
+  if (input.evidence != null && !Array.isArray(input.evidence)) tools.fail(422, 'Evidence is a list.');
+  const evidence: Evidence[] = (input.evidence ?? []).map((e: Json) => ({ kind: tools.text(e?.kind, 16, 'evidence kind', true)!,
+    ref: tools.text(e?.ref, 512, 'evidence reference', true)!, locator: tools.text(e?.locator ?? null, 512, 'evidence locator') }));
+  checkClaims(predicate, members, kinds, tools.fail, method, evidence);
   if (spec.subject !== 'crop') tools.fail(422, `${predicate} has no subject the site can check yet.`);
   const crop = await tools.crop(env, tools.text(input.subject, 512, 'subject', true)!, input.crop_version);
   if (!crop.version) tools.fail(409, 'This crop has no image to make a claim about.');
   if (input.crop_version !== crop.version) tools.fail(409, 'This crop was cut again. Reload it.');
   const at = new Date().toISOString();
-  const plan = await planClaim(env, { key, actor, subject: crop.id, predicate, scope, members, version: crop.version, at,
-    method: tools.text(input.method ?? null, 64, 'method') }, tools);
+  const plan = await planClaim(env, { key, actor, subject: crop.id, predicate, scope, members, version: crop.version, at, method, evidence }, tools);
   const saved = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: crop.id, assertions: plan.assertions }, tools);
   return { ...saved, current: await currentOf(env, crop.id) };
 }

@@ -6,7 +6,8 @@
   "`current_claims` row; the Worker, the review service and the publication run it after a `WITH crop_now(unit,version)`",
   "of their own, which names the current evidence version of the crops being resolved, and bind ?1 to a JSON array of",
   "[subject, predicate, scope, slot] keys. Lines starting with -- are comments.",
-  "A `date_*` predicate dates a document: its value is a date as `glyph_atlas.dates` reads it ({of, text, start, end, precision, qualifier, uncertain, day, calendar, conversion, note}), and it lists no `values` because only a publication writes one, from a data/sources record (`scripts/export_dates_cloudflare.py`)."
+  "A `date_*` predicate dates a document: its value is a date as `glyph_atlas.dates` reads it ({of, text, start, end, precision, qualifier, uncertain, day, calendar, conversion, note}), and it lists no `values` because only a publication writes one, from a data/sources record (`scripts/export_dates_cloudflare.py`).",
+  "`writes_word` says which word a crop writes at its place in the text (decision 0004): its object is a word of data/vocab/words.tsv, or its value a `{\"gloss\": …}` where no word row fits yet. `method` names the strongest evidence for the sense, from `methods`, strongest first; each item of it is an evidence row (a ruby as `source` `rubies:<id>`, a note or a parallel witness as `page`). Its confidence, in the `form` scheme of `confidence`, says how sure the reader is that the crop is the character it is filed under. Disputed is never asserted: it is what the resolver finds when standing claims differ."
  ],
  "resolver": "ledger-r1",
  "tiers": [
@@ -41,6 +42,30 @@
     "representation"
    ],
    "cardinality": "many"
+  },
+  "writes_word": {
+   "label": "the word a crop writes at its place in the text; each crop of a spelling of several characters (而已) writes the whole word",
+   "subject": "crop",
+   "objects": [
+    "word"
+   ],
+   "values": [],
+   "value_shape": "gloss",
+   "cardinality": "one",
+   "alternatives": true,
+   "methods": [
+    "gloss",
+    "ruby",
+    "note",
+    "parallel",
+    "context"
+   ],
+   "confidence": {
+    "form": {
+     "certain": 1,
+     "probable": 0.5
+    }
+   }
   },
   "date_composed": {
    "label": "when the text a document carries was composed (成立)",
