@@ -27,8 +27,8 @@ after `character_derived`.
 `refs.word_spellings`, which joins each 振り仮名 row to its counts; a character card shows them
 beside its variants. `--words` writes those two tables alone, as one part that replaces them, cites
 their sources and bumps the listing version, so a new word reaches the site without rewriting the
-graph. `grapheme_writers` holds the reduced forms that write several characters, one row per form and
-grapheme it writes besides its own (`refs.also_writes`); `--writers` replaces it alone, as one part.
+graph. `grapheme_writers` holds the reduced forms that write several characters and the forms with no
+character of their own, one row per form and grapheme it writes besides its own (`refs.also_writes`); `--writers` replaces it alone, as one part.
 
 OUT/sql/part-NNN.sql are the parts in order and OUT/apply.sh imports them, retrying a refused part,
 and checks the counts it expects. The full export (`export_cloudflare.py`) fills the same tables
@@ -60,7 +60,7 @@ WORDS_STAGING = "words_next"
 IDS_COLUMNS = ("char", "sequences")
 WORD_COLUMNS = ("id", "language", "reading", "class")
 SPELLINGS_STAGING = "word_spellings_next"
-WRITER_COLUMNS = ("writer", "grapheme")
+WRITER_COLUMNS = ("writer", "grapheme", "own")
 SPELLING_COLUMNS = ("word", "spelling", "source", "locator", "tier", "word_by", "basis", "related", "statement",
                     "documents", "occurrences")
 # The Worker keys its cached listings and cards on this row; the swap writes it with the new graph.
@@ -138,9 +138,10 @@ def expected() -> dict[str, int]:
             "writers": len(writer_rows())}
 
 
-def writer_rows() -> list[tuple[str, str]]:
-    """Each reduced form and a grapheme it writes besides its own, as text, by form then grapheme."""
-    return sorted((refs.to_char(point), refs.to_char(head))
+def writer_rows() -> list[tuple[str, str, int]]:
+    """Each form and a grapheme it writes besides its own, as text, by form then grapheme, with whether
+    the form is a character of its own (`refs.own_grapheme`)."""
+    return sorted((refs.to_char(point), refs.to_char(head), int(refs.own_grapheme(point)))
                   for head, family in refs._grapheme_families().items() for point in family["writers"])
 
 
@@ -270,7 +271,7 @@ def fill(db: sqlite3.Connection, *, derived: bool = True) -> None:
         db.executemany("INSERT INTO han_ids(char,sequences) VALUES (?,?)", ids_rows())
     db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('variant_sources',?)", (citations(),))
     db.execute("DELETE FROM grapheme_writers")
-    db.executemany("INSERT INTO grapheme_writers(writer,grapheme) VALUES (?,?)", writer_rows())
+    db.executemany("INSERT INTO grapheme_writers(writer,grapheme,own) VALUES (?,?,?)", writer_rows())
     db.execute("DELETE FROM words")
     db.executemany(f"INSERT INTO words({','.join(WORD_COLUMNS)}) VALUES ({','.join('?' * len(WORD_COLUMNS))})", word_rows())
     db.execute("DELETE FROM word_spellings")

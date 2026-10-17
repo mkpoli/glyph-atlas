@@ -164,6 +164,9 @@ def test_a_spelling_counted_under_two_readings_names_each():
 def test_the_card_lists_the_graphemes_a_reduced_form_writes_and_the_forms_that_write_its_own(monkeypatch):
     monkeypatch.setattr(characters.corpus_source, "counts", lambda chars: {})
     assert characters.variant_card("后", {})["writes"] == [{"code_point": "U+5F8C", "char": "後"}]
-    assert characters.variant_card("後", {})["writers"] == [{"code_point": "U+540E", "char": "后"}]
+    assert characters.variant_card("後", {})["writers"] == [{"code_point": "U+540E", "char": "后", "shared": True}]
+    stand_in = characters.variant_card("𠮮", {})
+    assert [w["char"] for w in stand_in["writes"]] == ["后", "𠯑"] and stand_in["own"] is False
+    assert {w["char"]: w["shared"] for w in characters.variant_card("后", {})["writers"]}["𠮮"] is True
     card = characters.variant_card("时", {})
     assert card["writes"] == [] and card["writers"] == []

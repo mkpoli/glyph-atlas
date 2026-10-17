@@ -59,7 +59,7 @@
   "chips.variants": "異體字",
   "chips.related": "關聯字",
   "chips.shared": "兼用",
-  "chips.alsoOwn": "別字ヲモ兼ヌ",
+  "chips.alsoOther": "他字ニモ用ヰル",
   "chips.alsoWritten": "{char}トモ書ク",
   "chips.derived": "導出",
   "chips.relation.variant": "異體字",

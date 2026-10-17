@@ -60,7 +60,7 @@
   "chips.variants": "異體",
   "chips.related": "相關",
   "chips.shared": "兼",
-  "chips.alsoOwn": "亦別字",
+  "chips.alsoOther": "亦用於他字",
   "chips.alsoWritten": "亦作{char}",
   "chips.derived": "推",
   "chips.relation.variant": "異體",

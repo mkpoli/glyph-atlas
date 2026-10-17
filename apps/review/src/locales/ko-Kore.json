@@ -59,7 +59,7 @@
   "chips.variants": "異體字",
   "chips.related": "關聯 글자",
   "chips.shared": "兼用",
-  "chips.alsoOwn": "다른 글자이기도 함",
+  "chips.alsoOther": "다른 글자에도 씀",
   "chips.alsoWritten": "{char}로도 씀",
   "chips.derived": "派生",
   "chips.relation.variant": "異體字",
