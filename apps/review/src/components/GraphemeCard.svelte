@@ -1,20 +1,22 @@
 <script>
   // One grapheme and the forms it gathers, with their own code points and counts: 仮 and 假 under one
-  // heading. Choosing a form opens that form's own gallery; "All forms" chooses the whole family. The
-  // grapheme browser shows it over a pointed tile, and the search box for each grapheme a query names.
+  // heading. The heading links to the grapheme's page; choosing a form opens that form's own gallery;
+  // "All forms" chooses the whole family. The grapheme browser shows it over a pointed tile, and the
+  // search box for each grapheme a query names.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { number } from '../lib/client.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { t, localize } from '../lib/i18n.svelte.js'
+  import { characterAddress } from '../lib/gallery.js'
 
   let { group, onchoose = () => {}, onform = () => {} } = $props()
   const codes = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 </script>
 
 <div class="grapheme-card">
-  <div class="card-head">
+  <a class="card-head" href={localize(characterAddress(group.key, { scope: 'family' }))}>
     <ReferenceGlyph char={group.char} size="lg" />
     <span><b>{t('chips.grapheme')}</b> <code>{group.key}</code><br />{t('explore.grapheme.forms', { count: group.members.length })} · {number(group.count)}</span>
-  </div>
+  </a>
   <ul>
     {#each group.members as member (member.label)}
       <li><button type="button" onclick={() => onform(member.label)}>
@@ -26,7 +28,8 @@
 </div>
 
 <style>
-  .card-head{display:flex;gap:10px;align-items:center;padding:2px 4px 8px;border-bottom:1px solid var(--line);color:var(--muted);line-height:1.5}
+  .card-head{display:flex;gap:10px;align-items:center;padding:2px 4px 8px;border-bottom:1px solid var(--line);color:var(--muted);line-height:1.5;text-decoration:none}
+  .card-head:hover b,.card-head:focus-visible b{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
   .card-head b{font-weight:500;color:var(--ink)}
   .card-head>span{font-size:12px}
   ul{list-style:none;margin:6px 0 0;padding:0;max-height:260px;overflow:auto}
