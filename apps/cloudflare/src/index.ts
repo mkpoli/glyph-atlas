@@ -1248,8 +1248,8 @@ function chunks<T>(list: T[], size: number): T[][] {
   return out;
 }
 // A character's edges in the 異体字 graph, both ways (0033): each by the key or by `b`'s index.
-export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,widens FROM character_variants WHERE a=?
-  UNION ALL SELECT a AS other,relation,source,detail,widens FROM character_variants WHERE b=? LIMIT 2000`;
+export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,written,widens FROM character_variants WHERE a=?
+  UNION ALL SELECT a AS other,relation,source,detail,written,widens FROM character_variants WHERE b=? LIMIT 2000`;
 // A character's derived list (0070): its one row, the forms in the order and caps refs.derived_variants gives them.
 export const derivedEdgesQuery = () => `SELECT forms FROM character_derived WHERE a=?`;
 // What the substitutions a derived list came by are backed by: each one's count and every pair behind
@@ -1323,11 +1323,12 @@ function styleCounts(rows: { s: number; n: number }[], group: number | null) {
   const total = group === null ? rows.reduce((sum, row) => sum + row.n, 0) : rows.find(row => row.s === group)?.n ?? 0;
   return { styles, total };
 }
-type VariantEdge = { other: string; relation: string; source: string; detail: string; widens: number };
-type VariantRow = { char: string; code_point: string; widens: boolean; relations: { relation: string; source: string; detail: string }[] };
+type VariantEdge = { other: string; relation: string; source: string; detail: string; written: number; widens: number };
+type VariantRow = { char: string; code_point: string; widens: boolean; written: boolean; relations: { relation: string; source: string; detail: string }[] };
 // The characters `char` shares an edge with, as the card lists them: `items` a gallery widens to (a
 // pair with a widening edge and none that keeps it apart), `related` the rest; each most attested
-// first (sources, then code point), every edge kept. `sources` cites each source used.
+// first (sources, then code point), every edge kept. `written` marks a pair one of whose edges says
+// one may be written for the other. `sources` cites each source used.
 async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char: string, version: string) {
   const key = new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(version)}`);
   const cached = await caches.default.match(key);
@@ -1338,14 +1339,15 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
   const byChar = new Map<string, VariantRow & { edges: VariantEdge[] }>();
   for (const edge of edges) {
     if (edge.other === char) continue;
-    const entry = byChar.get(edge.other) ?? { char: edge.other, code_point: cp(edge.other), widens: false, relations: [], edges: [] };
+    const entry = byChar.get(edge.other) ?? { char: edge.other, code_point: cp(edge.other), widens: false, written: false, relations: [], edges: [] };
     entry.edges.push(edge);
     entry.relations.push({ relation: edge.relation, source: edge.source, detail: edge.detail });
     byChar.set(edge.other, entry);
   }
   const attested = (entry: VariantRow) => new Set(entry.relations.map(r => r.source)).size;
   const ordered = [...byChar.values()].map(({ edges: pair, ...entry }) => ({ ...entry,
-    widens: pair.some(e => e.widens) && !pair.some(e => KEPT_APART.has(e.relation)) }))
+    widens: pair.some(e => e.widens) && !pair.some(e => KEPT_APART.has(e.relation)),
+    written: pair.some(e => e.written) }))
     .sort((a, b) => attested(b) - attested(a) || (a.char.codePointAt(0)! - b.char.codePointAt(0)!));
   const shown = [...ordered.filter(e => e.widens).slice(0, VARIANTS_SHOWN), ...ordered.filter(e => !e.widens).slice(0, VARIANTS_SHOWN)];
   const derived = await derivedOf(env, derivedRows);

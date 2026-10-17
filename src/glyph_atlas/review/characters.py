@@ -537,7 +537,8 @@ def _attested(entry: dict[str, Any]) -> tuple[int, int]:
 
 def variant_pairs(char: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """The characters `char` shares an edge of the 異体字 graph with: those a gallery widens to (a pair
-    with one widening edge), then the rest, each most attested first. Every edge of a pair is kept."""
+    with one widening edge), then the rest, each most attested first. Every edge of a pair is kept;
+    `written` marks a pair one of whose edges says one may be written for the other."""
     by_char: dict[str, dict[str, Any]] = {}
     for edge in refs.variant_edges_of(char):
         other = edge["b"] if edge["a"] == char else edge["a"]
@@ -548,7 +549,8 @@ def variant_pairs(char: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
         entry["edges"].append(edge)
         entry["relations"].append({"relation": edge["relation"], "source": edge["source"], "detail": edge["detail"]})
     for entry in by_char.values():
-        entry["widens"] = refs.widens(entry.pop("edges"))
+        edges = entry.pop("edges")
+        entry["widens"], entry["written"] = refs.widens(edges), any(edge["written"] for edge in edges)
     ordered = sorted(by_char.values(), key=_attested)
     return [e for e in ordered if e["widens"]], [e for e in ordered if not e["widens"]]
 
