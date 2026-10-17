@@ -73,6 +73,16 @@ its hash. `assertion_premises` names the assertions a derivation rests on. Rows 
 claim about a crop is deleted only once the crop has left the site, as a withdrawn document's crops
 do, and its evidence, premises and actions with it.
 
+A crop's `writes_word` claim names the word it writes at its place in the text (decision 0004), or a
+gloss where no word row fits yet. Its `method` is the strongest evidence for the sense: the source's
+own gloss of a headword, a 振り仮名 over the character or its word (`rubies`), a note such as a 割書,
+a parallel witness that writes another spelling at the same place, or the surrounding text alone,
+which is an editorial judgment. Each item is an evidence row beside the crop version. Its confidence,
+in the `form` scheme, is `certain` or `probable`: how sure the reader is that the crop is the
+character it is filed under, as with a cursive form read from its context. Two readers who name the
+same word and judge the form differently agree on the slot; disputed is what the resolver finds,
+never a value anyone asserts.
+
 Acceptance is its own row in `assertion_actions`: `accept`, `reject`, `retract` (by the asserter) or
 `adjudicate` (by an adjudicator). A predicate catalogue (`data/ledger.json`) states each
 predicate's subject and object types and its cardinality, and every write is checked against it.

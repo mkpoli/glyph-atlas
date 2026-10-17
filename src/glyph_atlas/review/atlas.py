@@ -624,10 +624,20 @@ class ClaimMember(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     object: str | None = Field(default=None, min_length=1, max_length=128)
-    value: str | None = Field(default=None, min_length=1, max_length=64)
+    #: A listed value, or a typed one such as a gloss (`{"gloss": "herring"}`); the catalogue checks which.
+    value: str | dict[str, str] | None = Field(default=None, min_length=1, max_length=64)
     # A number, as the Worker takes it: a numeric string is refused.
     confidence: float | None = Field(default=None, strict=True)
     confidence_scheme: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class ClaimEvidence(BaseModel):
+    """What a claim rests on besides the crop: a `page` locator, or a `source` row such as `rubies:<id>`."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: str = Field(min_length=1, max_length=16)
+    ref: str = Field(min_length=1, max_length=512)
+    locator: str | None = Field(default=None, max_length=512)
 
 
 class ClaimEdit(BaseModel):
@@ -643,6 +653,7 @@ class ClaimEdit(BaseModel):
     crop_version: str | None = Field(default=None, max_length=1024)
     claims: list[ClaimMember] = Field(min_length=1, max_length=8)
     method: str | None = Field(default=None, max_length=64)
+    evidence: list[ClaimEvidence] = Field(default_factory=list, max_length=8)
 
 
 class ClaimAction(BaseModel):
@@ -1091,8 +1102,13 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             raise HTTPException(409, "This crop was cut again. Reload it.")
         members = [ledger.Claim(object=m.object, value=m.value, confidence=m.confidence, confidence_scheme=m.confidence_scheme)
                    for m in edit.claims]
+        # An object this route can name is a word of the vocabulary.
+        known = refs.words()
+        objects = {m.object: "word" for m in members if m.object in known}
+        items = [ledger.Evidence(item.kind, item.ref, item.locator) for item in edit.evidence]
         return ledger_call(store.write_claims, key=key, actor=edit.client_id, request=request, subject=edit.subject,
-                           predicate=edit.predicate, scope=edit.scope, claims=members, crop_version=version, method=edit.method)
+                           predicate=edit.predicate, scope=edit.scope, claims=members, crop_version=version, method=edit.method,
+                           objects=objects, evidence=items)
 
     @api.post("/atlas/claims/{assertion}/actions")
     def act_on_claim(assertion: str, edit: ClaimAction) -> dict:

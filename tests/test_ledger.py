@@ -277,3 +277,44 @@ def test_a_reason_over_several_lines_is_published_as_one_statement_a_line(conn):
     ledger.schema(copy)
     copy.executescript("".join(statements))
     assert copy.execute("SELECT reason FROM assertion_actions").fetchone()[0] == "blurry\nsee page 2\r\n'twice'"
+
+
+WORD = "ja/にしん/名詞"
+
+
+def attest(conn, actor, *members, method="ruby", evidence=(), objects=None):
+    return ledger.write_claims(conn, key=f"{actor}:{uuid.uuid4()}", actor=actor, request={"members": [repr(m) for m in members]},
+                               subject=CROP, predicate="writes_word", claims=list(members), crop_version=V1, method=method,
+                               evidence=evidence, objects=objects or {WORD: "word"})
+
+
+def test_an_attestation_names_its_word_its_evidence_and_how_sure_the_form_is(conn):
+    ruby = ledger.Evidence("source", "rubies:l1:ruby0:right")
+    made = attest(conn, "ann", Claim(object=WORD, confidence=0.5, confidence_scheme="form"), evidence=[ruby])
+    row = ledger.current(conn, CROP, V1)[0]
+    assert (row["predicate"], row["object"], row["status"]) == ("writes_word", WORD, "asserted")
+    assert conn.execute("SELECT method FROM assertions WHERE id=?", made["assertions"]).fetchone() == ("ruby",)
+    assert set(conn.execute("SELECT kind,ref FROM assertion_evidence WHERE assertion=?", made["assertions"])) == {
+        ("crop", V1), ("source", "rubies:l1:ruby0:right")}
+    # Agreeing on the word while judging the form differently is agreement, not a dispute.
+    attest(conn, "bob", Claim(object=WORD, confidence=1, confidence_scheme="form"), method="context")
+    assert ledger.current(conn, CROP, V1)[0]["status"] == "asserted"
+
+
+def test_an_attestation_without_a_word_row_names_a_gloss(conn):
+    attest(conn, "ann", Claim(value={"gloss": "herring"}, confidence=1, confidence_scheme="form"), method="gloss")
+    assert ledger.current(conn, CROP, V1)[0]["value"] == {"gloss": "herring"}
+
+
+@pytest.mark.parametrize("members, method, evidence, message", [
+    ([Claim(object=WORD, confidence=1, confidence_scheme="form")], None, (), "names how it is known"),
+    ([Claim(object=WORD, confidence=1, confidence_scheme="form")], "guess", (), "names how it is known"),
+    ([Claim(object=WORD)], "ruby", (), "levels"),
+    ([Claim(object=WORD, confidence=0.7, confidence_scheme="form")], "ruby", (), "levels"),
+    ([Claim(value="disputed", confidence=1, confidence_scheme="form")], "ruby", (), "is not a value"),
+    ([Claim(value={"gloss": ""}, confidence=1, confidence_scheme="form")], "ruby", (), "is not a value"),
+    ([Claim(object=WORD, confidence=1, confidence_scheme="form")], "ruby", [ledger.Evidence("crop", "x")], "Evidence is"),
+])
+def test_the_catalogue_refuses_an_attestation_it_does_not_take(conn, members, method, evidence, message):
+    with pytest.raises(LedgerError, match=message):
+        attest(conn, "ann", *members, method=method, evidence=evidence)

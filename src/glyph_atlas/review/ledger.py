@@ -46,6 +46,9 @@ COLUMNS = ("subject", "predicate", "scope", "slot", "status", "object", "value",
 #: How many slots one resolution statement names; a publication writes its keys into the statement.
 #: The resolver compares each slot's claims with one another, so a statement is kept to a few slots.
 KEYS_PER_STATEMENT = 50
+#: The evidence a claim may name beside its crop version, which the ledger writes itself.
+EVIDENCE_KINDS = frozenset({"page", "source"})
+GLOSS_MAX = 200
 
 
 class LedgerError(ValueError):
@@ -82,6 +85,15 @@ def canonical(value: Any) -> str:
 
 
 @dataclass(frozen=True)
+class Evidence:
+    """What a claim rests on besides its crop: a `page` locator, or a `source` row such as `rubies:<id>`."""
+
+    kind: str
+    ref: str
+    locator: str | None = None
+
+
+@dataclass(frozen=True)
 class Claim:
     """One member of a claim: an object or a value, and its confidence."""
 
@@ -98,13 +110,24 @@ def slot_of(predicate: str, claim: Claim) -> str:
     return claim.object if claim.object is not None else canonical(claim.value)
 
 
-def check(predicate: str, claims: Sequence[Claim], *, objects: Mapping[str, str] | None = None) -> None:
-    """Refuse claims the catalogue does not allow. `objects` gives the kind of each named entity."""
+def check(predicate: str, claims: Sequence[Claim], *, objects: Mapping[str, str] | None = None,
+          method: str | None = None, evidence: Sequence[Evidence] = ()) -> None:
+    """Refuse claims the catalogue does not allow. `objects` gives the kind of each named entity.
+
+    A predicate that lists `methods` takes one of them, and one that lists `confidence` schemes takes
+    a confidence in one of them, at one of the scheme's levels.
+    """
     spec = PREDICATES.get(predicate)
     if spec is None:
         raise LedgerError(422, f"Unknown predicate {predicate!r}.")
     if not claims:
         raise LedgerError(422, "A claim names a value.")
+    if "methods" in spec and method not in spec["methods"]:
+        raise LedgerError(422, f"{predicate} names how it is known: one of {', '.join(spec['methods'])}.")
+    for item in evidence:
+        if item.kind not in EVIDENCE_KINDS or not item.ref:
+            raise LedgerError(422, f"Evidence is a {' or a '.join(sorted(EVIDENCE_KINDS))} with a reference.")
+    schemes = spec.get("confidence")
     if len(claims) > 1 and not (spec.get("alternatives") and spec["cardinality"] == "one"):
         raise LedgerError(422, f"{predicate} takes one value a claim.")
     seen = set()
@@ -115,16 +138,29 @@ def check(predicate: str, claims: Sequence[Claim], *, objects: Mapping[str, str]
             kind = (objects or {}).get(claim.object)
             if kind is None or kind not in spec["objects"]:
                 raise LedgerError(422, f"{claim.object} cannot be the object of {predicate}.")
-        elif claim.value not in spec.get("values", []):
+        elif claim.value not in spec.get("values", []) and not _shaped(spec.get("value_shape"), claim.value):
             raise LedgerError(422, f"{claim.value!r} is not a value of {predicate}.")
         if (claim.confidence is None) != (claim.confidence_scheme is None):
             raise LedgerError(422, "A confidence names its scheme.")
+        if schemes is not None and (claim.confidence_scheme not in schemes
+                                    or claim.confidence not in schemes[claim.confidence_scheme].values()):
+            levels = "; ".join(f"{name}: {', '.join(levels)}" for name, levels in schemes.items())
+            raise LedgerError(422, f"{predicate} takes a confidence at one of these levels ({levels}).")
         if claim.confidence is not None and not math.isfinite(claim.confidence):
             raise LedgerError(422, "A confidence is a number.")
         key = (claim.object, canonical(claim.value))
         if key in seen:
             raise LedgerError(422, "The alternatives of a claim differ.")
         seen.add(key)
+
+
+def _shaped(shape: str | None, value: Any) -> bool:
+    """Whether a value has the shape a predicate takes besides its listed values: a `gloss` is
+    `{"gloss": text}`, the sense in words where no word row fits yet."""
+    if shape == "gloss":
+        return (isinstance(value, dict) and value.keys() == {"gloss"} and isinstance(value["gloss"], str)
+                and 0 < len(value["gloss"].strip()) <= GLOSS_MAX)
+    return False
 
 
 def previous(conn: sqlite3.Connection, key: str, request: str) -> dict | None:
@@ -145,14 +181,15 @@ def _retracted(conn: sqlite3.Connection, assertion: str) -> bool:
 def write_claims(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], subject: str,
                  predicate: str, claims: Sequence[Claim], scope: str = "", crop_version: str | None = None,
                  tier: str = "observed", method: str | None = None, run: str | None = None, legacy: str | None = None,
-                 objects: Mapping[str, str] | None = None, prefix: str = "lc", at: str | None = None,
-                 mint: Callable[[], str] | None = None) -> dict:
+                 objects: Mapping[str, str] | None = None, evidence: Sequence[Evidence] = (), prefix: str = "lc",
+                 at: str | None = None, mint: Callable[[], str] | None = None) -> dict:
     """Record one claim (several members make an alternative set) and resolve its slot.
 
     `key` is the submission's own key (its actor and the client's id); a repeat with the same request
     answers with the first response. A crop subject's claim names the evidence version it was made on,
     which the caller has checked is the crop's current one. A new claim in a slot that takes one value
-    retracts the asserter's own earlier claims there in the same write. The response names the
+    retracts the asserter's own earlier claims there in the same write. `evidence` is written for each
+    member beside the crop version. The response names the
     submission, the subject and the rows written, as the Worker's does. `mint` makes the new rows'
     ids, `{prefix}:` and a random UUID unless a caller needs them reproducible.
     """
@@ -162,7 +199,7 @@ def write_claims(conn: sqlite3.Connection, *, key: str, actor: str, request: Map
         return saved
     if tier not in TIERS:
         raise LedgerError(422, f"Unknown tier {tier!r}.")
-    check(predicate, claims, objects=objects)
+    check(predicate, claims, objects=objects, method=method, evidence=evidence)
     spec = PREDICATES[predicate]
     if spec["subject"] == "crop" and not crop_version:
         raise LedgerError(409, "This crop has no image to make a claim about.")
@@ -187,6 +224,9 @@ def write_claims(conn: sqlite3.Connection, *, key: str, actor: str, request: Map
              claim.confidence, claim.confidence_scheme, method, run, legacy))
         if crop_version:
             conn.execute("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES(?,'crop',?)", (identity, crop_version))
+        for item in evidence:
+            conn.execute("INSERT INTO assertion_evidence(assertion,kind,ref,locator) VALUES(?,?,?,?)",
+                         (identity, item.kind, item.ref, item.locator))
         ids.append(identity)
     for own in retracted:
         conn.execute("INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,?,?,?,?,?,?)",
