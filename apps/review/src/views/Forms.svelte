@@ -47,6 +47,16 @@
   const cluster = $derived(current?.items[active] ?? null)
   const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
+  // The list holds thousands of families; only the rows in view, and a few either side, are drawn.
+  // ROW is the height the stylesheet gives each row.
+  const ROW = 50, OVERSCAN = 10
+  let familyList = $state(null), listTop = $state(0), listHeight = $state(1000)
+  const rows = $derived.by(() => {
+    const from = Math.max(0, Math.floor(listTop / ROW) - OVERSCAN)
+    const to = Math.min(shown.length, Math.ceil((listTop + listHeight) / ROW) + OVERSCAN)
+    return { from, to, items: shown.slice(from, to) }
+  })
+  function refilter() { if (familyList) familyList.scrollTop = 0; listTop = 0 }
   const byForm = $derived(new Map((current?.forms ?? []).map(f => [f.char, f])))
   // The forms a key or a click assigns: the encoded ones, then the descriptions already in use.
   const palette = $derived(paletteOf(current))
@@ -391,17 +401,19 @@
   {#if error}<p class="error-message">{error}</p>{/if}
   <div class="forms-layout">
     <aside class="family-list" aria-label={t('forms.families.label')}>
-      <input type="search" placeholder={t('forms.findFamily.placeholder')} bind:value={filter} aria-label={t('forms.findFamily.aria')} />
-      <ol aria-busy={!list.length && !error}>
+      <input type="search" placeholder={t('forms.findFamily.placeholder')} bind:value={filter} oninput={refilter} aria-label={t('forms.findFamily.aria')} />
+      <div class="family-scroll" bind:this={familyList} bind:clientHeight={listHeight} onscroll={event => listTop = event.currentTarget.scrollTop}>
+      <ol aria-busy={!list.length && !error} style:padding-top={`${rows.from * ROW}px`} style:padding-bottom={`${(shown.length - rows.to) * ROW}px`}>
         {#if !list.length && !error}{#each Array(12) as _, i (i)}<li class="family-skeleton" aria-hidden="true"><span class="shimmer"></span><span class="shimmer"></span></li>{/each}{/if}
-        {#each shown as f (f.code_point)}
-          <li><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
+        {#each rows.items as f, k (f.code_point)}
+          <li aria-posinset={rows.from + k + 1} aria-setsize={shown.length}><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
             <span class="family-char"><ScriptText text={f.char} /></span>
             <span class="family-meta"><span>{number(f.count)}</span><small>{t('forms.clusters.count', { count: f.clusters })}</small></span>
             <span class="family-progress" aria-label={t('forms.percentDone', { count: f.assigned + f.rejected ? Math.max(1, Math.round(100 * (f.assigned + f.rejected) / f.count)) : 0 })}><i style={`width:${100 * f.assigned / f.count}%`}></i><i class="rejected" style={`width:${100 * f.rejected / f.count}%`}></i></span>
           </button></li>
         {/each}
       </ol>
+      </div>
     </aside>
 
     {#if loadingFamily || (!current && !error)}
@@ -586,8 +598,9 @@
   .forms-layout{border-top:1px solid var(--line);padding-top:18px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
   .family-list{position:sticky;top:16px;max-height:calc(100dvh - 32px);display:flex;flex-direction:column;gap:10px}
   .family-list input{width:100%;font-size:13px;padding:9px 11px}
-  .family-list ol{list-style:none;margin:0;padding:0;overflow:auto;border-top:1px solid var(--line)}
-  .family-list button{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto 3px;gap:4px 10px;width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 6px;text-align:left}
+  .family-scroll{overflow:auto;border-top:1px solid var(--line)}.family-list ol{list-style:none;margin:0;padding:0}
+  .family-list li:not(.family-skeleton){height:50px}
+  .family-list button{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto 3px;align-content:center;gap:4px 10px;width:100%;height:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 6px;text-align:left}
   .family-list button.current{background:var(--accent-light)}
   .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
   .family-meta{display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums}
