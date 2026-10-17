@@ -501,8 +501,8 @@ const FACETS_TTL = 3600;
 // publication writes `family` from the same rule (`atlas.grapheme_of`).
 export const graphemeOf = (label: string, family: string | null) => family || cp(label) || null;
 type Facet = { label: string; family: string | null; document: string | null; title: string | null; state: string; n: number };
-async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement) {
-  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement, version: Promise<string>) {
+  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(await version)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Facet[];
   const [counted, marks] = await env.DB.batch<Facet>([stored, marked]);
@@ -1013,13 +1013,16 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   let groups: Facet[], published: D1Result<{ label: string; n: number }> | null = null;
+  // Asked once a request: the facets and the withheld total share it.
+  let version: Promise<string> | null = null;
+  const catalogueOnce = () => version ??= catalogueVersion(env);
   if (review) {
     const corpus = corpusCountQuery(production, members);
     const results = await env.DB.batch<any>([...[stored, marked, skipped].filter(s => s !== null), env.DB.prepare(corpus.sql).bind(...corpus.values)]);
     published = results.pop()!;
     groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
   } else {
-    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!);
+    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, catalogueOnce());
     if (skipped) groups = moved(groups, (await skipped.all<Facet>()).results);
   }
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
@@ -1102,16 +1105,25 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // them once withheld ones are left out, as would counting them.
   const told = rotated && q.get('above') !== null ? integer(q, 'above', 0) : null;
   const below = told !== null && offset >= told;
+  // Unnarrowed, every visitor asks for the same total, which sums the whole of `unit_counts`; the edge
+  // keeps one per catalogue version and material.
+  const totalKey = hiddenCount && !hiddenCount.values.length ? new Request(`${url.origin}/atlas/withheld-total?production=${
+    encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueOnce())}`) : null;
+  const cachedTotal = totalKey ? await caches.default.match(totalKey).then(hit => hit ? hit.json() as Promise<number> : null) : null;
+  const counting = cachedTotal === null ? hiddenCount : null;
   const results = await env.DB.batch([
     ...(tally ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
     below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
       : rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
       : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
-    ...(hiddenCount ? [env.DB.prepare(hiddenCount.sql).bind(...materialValues, ...hiddenCount.values)] : []),
+    ...(counting ? [env.DB.prepare(counting.sql).bind(...materialValues, ...counting.values)] : []),
   ]);
   const count = tally ? null : results.shift()!, window = results.shift()!;
-  const reportedCount = reportedCountWhere ? results.shift()! : null, hiddenCounted = hiddenCount ? results.shift()! : null;
+  const reportedCount = reportedCountWhere ? results.shift()! : null, hiddenCounted = counting ? results.shift()! : null;
+  const withheldCount = cachedTotal ?? (hiddenCounted ? (hiddenCounted.results[0] as { n: number }).n : null);
+  if (totalKey && cachedTotal === null && withheldCount !== null)
+    ctx.waitUntil(caches.default.put(totalKey, Response.json(withheldCount, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   const listed = tally ? groups.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
     : (count!.results[0] as { n: number }).n;
   const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
@@ -1146,7 +1158,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
     documents: [...documents.values()].sort((a,b) => b.total-a.total || (a.title ?? '').localeCompare(b.title ?? '') || a.id.localeCompare(b.id)),
     reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
-    withheld_count: hiddenCounted ? (hiddenCounted.results[0] as { n: number }).n : null, above,
+    withheld_count: withheldCount, above,
     items: await withDating(env, items) };
 }
 // The withheld crops in this material, of a character, a book or a family where one is named.
