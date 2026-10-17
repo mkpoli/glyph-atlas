@@ -1102,16 +1102,25 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // them once withheld ones are left out, as would counting them.
   const told = rotated && q.get('above') !== null ? integer(q, 'above', 0) : null;
   const below = told !== null && offset >= told;
+  // Unnarrowed, every visitor asks for the same total, which sums the whole of `unit_counts`; the edge
+  // keeps one per catalogue version and material.
+  const totalKey = hiddenCount && !hiddenCount.values.length ? new Request(`${url.origin}/atlas/withheld-total?production=${
+    encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueVersion(env))}`) : null;
+  const cachedTotal = totalKey ? await caches.default.match(totalKey).then(hit => hit ? hit.json() as Promise<number> : null) : null;
+  const counting = cachedTotal === null ? hiddenCount : null;
   const results = await env.DB.batch([
     ...(tally ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
     below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
       : rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
       : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
-    ...(hiddenCount ? [env.DB.prepare(hiddenCount.sql).bind(...materialValues, ...hiddenCount.values)] : []),
+    ...(counting ? [env.DB.prepare(counting.sql).bind(...materialValues, ...counting.values)] : []),
   ]);
   const count = tally ? null : results.shift()!, window = results.shift()!;
-  const reportedCount = reportedCountWhere ? results.shift()! : null, hiddenCounted = hiddenCount ? results.shift()! : null;
+  const reportedCount = reportedCountWhere ? results.shift()! : null, hiddenCounted = counting ? results.shift()! : null;
+  const withheldCount = cachedTotal ?? (hiddenCounted ? (hiddenCounted.results[0] as { n: number }).n : null);
+  if (totalKey && cachedTotal === null && withheldCount !== null)
+    ctx.waitUntil(caches.default.put(totalKey, Response.json(withheldCount, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   const listed = tally ? groups.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
     : (count!.results[0] as { n: number }).n;
   const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
@@ -1146,7 +1155,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
     documents: [...documents.values()].sort((a,b) => b.total-a.total || (a.title ?? '').localeCompare(b.title ?? '') || a.id.localeCompare(b.id)),
     reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
-    withheld_count: hiddenCounted ? (hiddenCounted.results[0] as { n: number }).n : null, above,
+    withheld_count: withheldCount, above,
     items: await withDating(env, items) };
 }
 // The withheld crops in this material, of a character, a book or a family where one is named.
