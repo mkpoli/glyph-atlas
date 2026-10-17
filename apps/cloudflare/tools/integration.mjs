@@ -1662,7 +1662,9 @@ try {
   const vettedRound = { id: crypto.randomUUID(), grapheme: 'U+30AD',
     answers: [{ id: 'vetted', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' }] }
   await call('/atlas/rounds', vettedRound)
-  await db.prepare(`UPDATE units SET data=json_set(data,'$.repair',json('{"status":"uncertain","quiz":false}')), quiz=0 WHERE id='vetted' AND revision=1`).run()
+  // A refresh writes the new verdict in place and stamps the catalogue, as `refresh_published_units.py` does.
+  await db.batch([db.prepare(`UPDATE units SET data=json_set(data,'$.repair',json('{"status":"uncertain","quiz":false}')), quiz=0 WHERE id='vetted' AND revision=1`),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','vetted')")])
   await call(`/atlas/rounds/${vettedRound.id}/undo`, {})
   const vettedRow = await db.prepare("SELECT quiz, json_extract(data,'$.repair.quiz') AS dealt, json_extract(data,'$.state') AS state FROM units WHERE id='vetted'").first()
   assert.deepEqual(vettedRow, { quiz: 0, dealt: 0, state: 'pending' }, 'undo restores the review state and keeps the newer repair verdict out of the quiz')

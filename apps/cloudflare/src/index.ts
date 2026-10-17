@@ -492,14 +492,20 @@ const SHUFFLE_RANGE = 268435456;
 // publication stamps `published_at`, `refresh_published_units.py` stamps `units_refreshed_at`, a
 // review or undo adds an event, a round adds a submission, and an undo of a round with no review
 // only marks its submission undone.
-async function catalogueVersion(env: Env): Promise<string> {
-  const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
+type CatalogueStamps = { published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number };
+async function catalogueStamps(env: Env): Promise<CatalogueStamps | null> {
+  return env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
     (SELECT value FROM metadata WHERE key='units_refreshed_at') AS refreshed,
     (SELECT max(rowid) FROM events) AS event,(SELECT max(rowid) FROM submissions) AS submission,
-    (SELECT count(*) FROM submissions WHERE undone=1) AS undone`)
-    .first<{ published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number }>();
-  return [version?.published ?? '', version?.refreshed ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':');
+    (SELECT count(*) FROM submissions WHERE undone=1) AS undone`).first<CatalogueStamps>();
 }
+const catalogueKey = (version: CatalogueStamps | null) =>
+  [version?.published ?? '', version?.refreshed ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':');
+async function catalogueVersion(env: Env): Promise<string> {
+  return catalogueKey(await catalogueStamps(env));
+}
+// The publication and refresh the collection's crops come from, without the reviews since.
+const publicationKey = (version: CatalogueStamps | null) => [version?.published ?? '', version?.refreshed ?? ''].join(':');
 // Browse counts every local crop by character and state, which reads the whole table and takes
 // seconds, and every visitor gets the same answer. The edge keeps one copy per catalogue version.
 const FACETS_TTL = 3600;
@@ -1033,16 +1039,16 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   let groups: Facet[], published: D1Result<{ label: string; n: number }> | null = null;
-  // Asked once a request: the facets and the withheld total share it.
-  let version: Promise<string> | null = null;
-  const catalogueOnce = () => version ??= catalogueVersion(env);
+  // Asked once a request: the facets and the withheld total key their copies by it.
+  let stamps: Promise<CatalogueStamps | null> | null = null;
+  const stampsOnce = () => stamps ??= catalogueStamps(env);
   if (review) {
     const corpus = corpusCountQuery(production, members);
     const results = await env.DB.batch<any>([...[stored, marked, skipped].filter(s => s !== null), env.DB.prepare(corpus.sql).bind(...corpus.values)]);
     published = results.pop()!;
     groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
   } else {
-    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, catalogueOnce());
+    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, stampsOnce().then(catalogueKey));
     if (skipped) groups = moved(groups, (await skipped.all<Facet>()).results);
   }
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
@@ -1145,9 +1151,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const told = rotated && q.get('above') !== null ? integer(q, 'above', 0) : null;
   const below = told !== null && offset >= told;
   // Unnarrowed, every visitor asks for the same total, which sums the whole of `unit_counts`; the edge
-  // keeps one per catalogue version and material.
+  // keeps one per publication and material for `FACETS_TTL`. Reviews leave a local crop's `quiz` alone, and
+  // a publication or refresh that changes it stamps a new key.
   const totalKey = hiddenCount && !hiddenCount.values.length ? new Request(`${url.origin}/atlas/withheld-total?production=${
-    encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueOnce())}`) : null;
+    encodeURIComponent(production)}&v=${encodeURIComponent(publicationKey(await stampsOnce()))}`) : null;
   const cachedTotal = totalKey ? await caches.default.match(totalKey).then(hit => hit ? hit.json() as Promise<number> : null) : null;
   const counting = cachedTotal === null ? hiddenCount : null;
   const results = await env.DB.batch([
