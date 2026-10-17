@@ -1522,7 +1522,7 @@ export function describedCard(value: string) {
       unassigned_count: 0, groups: [] } };
   return { data, detail };
 }
-async function suggest(env: Env, q: URLSearchParams) {
+export async function suggest(env: Env, q: URLSearchParams) {
   const term = (q.get('q') || '').slice(0, 128).trim();
   if (!term) return { items: [], total: 0, status: 'idle' };
   const limit = integer(q, 'limit', 8, 48);
@@ -1550,7 +1550,33 @@ async function suggest(env: Env, q: URLSearchParams) {
   }
   const found = rows.results.map(r => ({ ...parse(r.data), rank: r.rank }));
   found.push(...await searchVariants(env, literal(term), found, limit));
-  return { query: term, items: found.slice(0,limit), total: found.length, more: Math.max(0,found.length-limit), status:'ok',corpus:{ready:true} };
+  const shown = found.slice(0, limit);
+  const members = await unlistedForms(env, shown);
+  return { query: term, items: byGrapheme(shown, members), total: found.length, more: Math.max(0,found.length-limit), status:'ok',corpus:{ready:true} };
+}
+// Each grapheme a list names, once, at the place of its first form there: the forms the query found in
+// their order, then every other form of the grapheme. 时 lists 時 = 时 = 旹, ね lists ね, ネ and 𛂒 to 𛄧.
+const familyOf = (item: Json): string => item.grapheme?.code_point ?? item.code_point;
+export function byGrapheme(found: Json[], members: Map<string, Json>) {
+  const groups = new Map<string, Json[]>();
+  for (const item of found) groups.set(familyOf(item), [...(groups.get(familyOf(item)) ?? []), item]);
+  return [...groups.values()].flatMap(group => {
+    const listed = new Set(group.map(item => item.code_point));
+    const rest = (group[0].grapheme?.members ?? []).filter((m: Json) => !listed.has(m.code_point) && members.has(m.code_point))
+      .map((m: Json) => ({ ...members.get(m.code_point)!, rank: 8 }));
+    return [...group, ...rest];
+  });
+}
+// A list reads at most GRAPHEME_MEMBERS forms it did not find, by key.
+const GRAPHEME_MEMBERS = 48;
+async function unlistedForms(env: Env, found: Json[]) {
+  const listed = new Set(found.map(item => item.code_point));
+  const wanted = [...new Set(found.flatMap(item => (item.grapheme?.members ?? []).map((m: Json) => m.code_point as string)))]
+    .filter(code => !listed.has(code)).slice(0, GRAPHEME_MEMBERS);
+  if (!wanted.length) return new Map<string, Json>();
+  const rows = (await env.DB.prepare(`SELECT data FROM characters WHERE code_point IN (${wanted.map(() => '?').join(',')})`)
+    .bind(...wanted).all<{ data: string }>()).results;
+  return new Map(rows.map(r => { const card = parse(r.data); return [card.code_point as string, card] }));
 }
 // The 異体字 of a one-character query the table holds, after what the query names: a reader who types
 // 鯡 is shown 𩹉. Only the pairs the card lists as variants (a widening edge, none that keeps the pair
