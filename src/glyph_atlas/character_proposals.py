@@ -10,9 +10,9 @@ about 0.04 on four EAP140 pages) while its boxes still sit on single characters.
 is therefore the collection run's own, score 0.02 and NMS 0.2, with the detector's ink gate dropping
 boxes on blank paper and show-through.
 
-The proposer's name carries the checksum of the detector and the operating point, so a new model or
-threshold is a new version: `propose_units` records each version once per page and retires the
-untouched proposals of an earlier one.
+The proposer's name carries the checksum of the detector, the operating point and the detector's ink
+gate and tiling, so a new model, threshold or gate is a new version: `propose_units` records each
+version once per page and retires the untouched proposals of an earlier one.
 """
 
 from __future__ import annotations
@@ -44,9 +44,14 @@ class Proposal:
 
 
 def proposer(onnx: Path, *, score: float = SCORE, nms: float = NMS) -> str:
-    """The proposer version: the detector's checksum and the operating point, hashed together."""
+    """The proposer version: the detector's checksum, the operating point and the page geometry and
+    ink gate `detect` applies, hashed together."""
+    from . import detect
+
     model = hashlib.sha256(Path(onnx).read_bytes()).hexdigest()
-    return f"{FAMILY}-{hashlib.sha256(f'{model}:{score}:{nms}'.encode()).hexdigest()[:12]}"
+    settings = (model, score, nms, detect.TILE, detect.OVERLAP, detect.CONTAIN, detect.INK, detect.INK_PERCENTILE,
+                detect.INK_REFERENCE)
+    return f"{FAMILY}-{hashlib.sha256(repr(settings).encode()).hexdigest()[:12]}"
 
 
 def propose(image: Image.Image, detector: Any) -> list[Proposal]:

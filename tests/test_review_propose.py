@@ -245,9 +245,11 @@ def test_propose_characters_records_the_detector_boxes(dataset: Path, monkeypatc
     from glyph_atlas import character_proposals, detect
     from glyph_atlas.cli import app
 
+    made = []
+
     class Stub:
         def __init__(self, *args, **kwargs) -> None:
-            pass
+            made.append(kwargs)
 
         def boxes(self, image):
             return [(Box(x=10, y=20, w=30, h=40), 0.05), (Box(x=60, y=20, w=30, h=40), 0.03)]
@@ -264,7 +266,13 @@ def test_propose_characters_records_the_detector_boxes(dataset: Path, monkeypatc
     assert {str(unit.script) for unit in units} == {"tangut"}
     assert sorted(unit.box.iiif_region() for unit in units) == ["120,40,60,80", "20,40,60,80"]
     assert {unit.meta["proposer"] for unit in units} == {character_proposals.proposer(model)}
+    assert made == [{"score": 0.02, "nms": 0.2}]
     again = runner.invoke(app, ["review", "propose-characters", str(dataset), "--onnx", str(model)])
-    assert "already proposed" in again.output
-    wrong = runner.invoke(app, ["review", "propose-characters", str(dataset), "--script", "klingon", "--onnx", str(model)])
-    assert wrong.exit_code != 0
+    assert again.exit_code == 0 and "already proposed" in again.output
+    for arguments, message in ((["--script", "klingon"], "no script"), (["--document", "nope"], "no document"),
+                               (["--onnx", str(tmp_path / "missing.onnx")], "no detector export")):
+        refused = runner.invoke(app, ["review", "propose-characters", str(dataset), "--onnx", str(model), *arguments])
+        assert refused.exit_code == 2 and message in refused.output, refused.output
+    apply(dataset)
+    rebuilt = {unit.id: unit for unit in tables.read(dataset / "units.parquet", Unit)}
+    assert {str(rebuilt[unit.id].script) for unit in units} == {"tangut"}

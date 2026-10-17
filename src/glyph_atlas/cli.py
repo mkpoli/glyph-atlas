@@ -758,6 +758,7 @@ def review_propose_characters(
     from PIL import Image
 
     from . import character_proposals
+    from .ainu import DEFAULT_ONNX
     from .detect import Detector
     from .review.characters import page_digest
     from .review.server import cached_image
@@ -768,14 +769,19 @@ def review_propose_characters(
         filed = Script(script)
     except ValueError as error:
         raise typer.BadParameter(f"no script {script!r}") from error
-    model = onnx or Path("models/detector/artifacts/detector.onnx")
-    version = character_proposals.proposer(model, score=score, nms=nms)
-    detector = Detector(model, score=score, nms=nms)
+    model = onnx or DEFAULT_ONNX
+    if not model.is_file():
+        raise typer.BadParameter(f"no detector export at {model}")
     store = Store(directory)
     pages = sorted(store.pages().values(), key=lambda record: (record.document_id, record.seq, record.id))
     missing = set(page or ()) - {record.id for record in pages}
     if missing:
         raise typer.BadParameter(f"no page {', '.join(sorted(missing))}")
+    unknown = set(document or ()) - {record.document_id for record in pages}
+    if unknown:
+        raise typer.BadParameter(f"no document {', '.join(sorted(unknown))}")
+    version = character_proposals.proposer(model, score=score, nms=nms)
+    detector = Detector(model, score=score, nms=nms)
     if page or document:
         pages = [record for record in pages
                  if record.id in set(page or ()) or record.document_id in set(document or ())]
