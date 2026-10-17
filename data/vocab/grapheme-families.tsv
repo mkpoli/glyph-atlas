@@ -5355,9 +5355,6 @@ U+4F01	㑫	企	variant	wikidata	merge	Q109782019; P248 Q10427532 | Q55406133; P2
 U+4F01	企	𬽾	variant	wikidata	merge	Q109955897; P248 Q10427532 | Q55406133; P248 Q10427532
 U+4F01	企	𰸍	variant	wikidata	merge	Q109979309; P248 Q837315 | Q55406133; P248 Q837315
 U+4F01	企	𱀏	variant	wikidata	merge	Q109979935; P248 Q63443408 | Q55406133; P248 Q63443408
-U+4F03	妤	伃	reduction	mj-shrink-map	merge	MJ009597: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+4F03	妤	𭑴	variant	wikidata	merge	Q109740727; P248 Q137916925 | Q109957569; P248 Q137916925
-U+4F03	妤	𭛞	variant	wikidata	merge	Q109740727; P248 Q65229515 | Q109958285; P248 Q65229515
 U+4F09	伉	𬽶	variant	wikidata	merge	Q109737186; P248 Q65229515 | Q109955886; P248 Q65229515
 U+4F0A	洢	伊	reduction	mj-shrink-map	merge	MJ015293: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+4F0A	𠈽	伊	reduction	mj-shrink-map	merge	MJ030620: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -9552,23 +9549,6 @@ U+5773	坳	𡌝	variant	wikidata	merge	Q109739857; P248 Q10427532 | Q109807917; 
 U+5775	坵	𭎌	variant	wikidata	merge	Q109739860; P248 Q837315 | Q109957274; P248 Q837315
 U+5775	坵	𰉟	variant	wikidata	merge	Q109739860; P248 Q123740387 | Q109972664; P248 Q123740387
 U+577A	坺	𰉠	variant	wikidata	merge	Q109739866; P248 Q63443408 | Q109972665; P248 Q63443408
-U+577B	坘	坻	reduction	mj-shrink-map	merge	MJ008953: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+577B	𡉬	坻	reduction	mj-shrink-map	merge	MJ032953: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+577B	𡊆	坻	reduction	mj-shrink-map	merge	MJ032972: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+577B	𡊈	坻	reduction	mj-shrink-map	merge	MJ032974: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+577B	𡍓	坻	reduction	mj-shrink-map	merge	MJ033074: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+577B	𣲋	坻	reduction	mj-shrink-map	merge	MJ039203: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+577B	坻	泜	variant	cjkvi-variants	merge	坻→泜 hydzd/variant
-U+577B	坻	𡉪	variant	wikidata	merge	Q109739867; P248 Q55686705 | Q109806249; P248 Q55686705
-U+577B	坘	𡉳	variant	cjkvi-variants	merge	坘→𡉳 koseki/variant
-U+577B	坻	𡉳	variant	cjkvi-variants	merge	坻→𡉳 hydzd/variant | 坻→𡉳 twedu/variant
-U+577B	坻	𡉳	variant	wikidata	merge	Q109739867; P248 Q10427532 | Q109806266; P248 Q10427532
-U+577B	坻	𡊇	variant	cjkvi-variants	merge	坻→𡊇 hydzd/variant | 坻→𡊇 twedu/variant
-U+577B	坻	𡊇	variant	wikidata	merge	Q109739867; P248 Q10427532 | Q109806299; P248 Q10427532
-U+577B	𡊆	𡊇	variant	cjkvi-variants	merge	𡊆→𡊇 koseki/variant
-U+577B	坻	𡊓	variant	cjkvi-variants	merge	坻→𡊓 twedu/variant
-U+577B	坻	𡊓	variant	wikidata	merge	Q109739867; P248 Q10427532 | Q109806320; P248 Q10427532
-U+577B	坻	𡌞	variant	wikidata	merge	Q109739867; P248 Q10427532 | Q109807918; P248 Q10427532
 U+577C	𡍔	坼	reduction	mj-shrink-map	merge	MJ033075: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+577C	𡍩	坼	reduction	mj-shrink-map	merge	MJ057235: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+577C	𤇚	坼	reduction	mj-shrink-map	merge	MJ039880: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -10893,6 +10873,9 @@ U+599E	㚼	妞	variant	cjkvi-variants	merge	妞→㚼 hydzd/variant
 U+59A0	妠	𡜴	variant	cjkvi-variants	merge	妠→𡜴 hydzd/variant | 妠→𡜴 koseki/variant | 妠→𡜴 twedu/variant
 U+59A0	妠	𡜴	variant	wikidata	merge	Q109740722; P248 Q10427532 | Q109809732; P248 Q10427532
 U+59A3	𡚧	妣	reduction	mj-shrink-map	merge	MJ033532: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+59A4	妤	伃	reduction	mj-shrink-map	merge	MJ009597: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+59A4	妤	𭑴	variant	wikidata	merge	Q109740727; P248 Q137916925 | Q109957569; P248 Q137916925
+U+59A4	妤	𭛞	variant	wikidata	merge	Q109740727; P248 Q65229515 | Q109958285; P248 Q65229515
 U+59A5	𡛎	妥	reduction	mj-shrink-map	merge	MJ033549: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+59A5	𢼻	妥	reduction	mj-shrink-map	merge	MJ037278: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+59A5	妥	𡛵	variant	wikidata	merge	Q109809644; P248 Q55686705 | Q55408422; P248 Q55686705
@@ -12770,10 +12753,10 @@ U+5D3F	崿	𰎵	variant	wikidata	merge	Q109741744; P248 Q10427532 | Q109975044; 
 U+5D3F	崿	𰎶	variant	wikidata	merge	Q109741744; P248 Q837315 | Q109975051; P248 Q837315
 U+5D3F	崿	𰎽	variant	wikidata	merge	Q109741744; P248 Q10427532 | Q109975105; P248 Q10427532
 U+5D43	嵃	嵃	compatibility	unicode-ucd	merge	5D43
-U+5D46	嵇	嵆	reduction	mj-shrink-map	merge	MJ010603: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+5D46	嵇	𥞇	variant	wikidata	merge	Q109741752; P248 Q10427532 | Q109841879; P248 Q10427532
-U+5D46	嵇	𭖽	variant	wikidata	merge	Q109741752; P248 Q10427532 | Q109957952; P248 Q10427532
-U+5D46	嵇	𰎨	variant	wikidata	merge	Q109741752; P248 Q837315 | Q109975026; P248 Q837315
+U+5D47	嵇	嵆	reduction	mj-shrink-map	merge	MJ010603: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+5D47	嵇	𥞇	variant	wikidata	merge	Q109741752; P248 Q10427532 | Q109841879; P248 Q10427532
+U+5D47	嵇	𭖽	variant	wikidata	merge	Q109741752; P248 Q10427532 | Q109957952; P248 Q10427532
+U+5D47	嵇	𰎨	variant	wikidata	merge	Q109741752; P248 Q837315 | Q109975026; P248 Q837315
 U+5D49	嵉	𡺣	variant	cjkvi-variants	merge	嵉→𡺣 hydzd/variant
 U+5D49	嵉	𡺣	variant	wikidata	merge	Q109741754; P248 Q55686705 | Q109813664; P248 Q55686705
 U+5D4A	嵊	𡹴	variant	cjkvi-variants	merge	嵊→𡹴 hydzd/variant
@@ -20988,6 +20971,23 @@ U+6CDA	泚	𣸆	variant	wikidata	merge	Q109752088; P248 Q10427532 | Q109824897; 
 U+6CDA	泚	𭂍	variant	wikidata	merge	Q109752088; P248 Q137916925 | Q109956259; P248 Q137916925
 U+6CDA	泚	𭱨	variant	wikidata	merge	Q109752088; P248 Q837315 | Q109960052; P248 Q837315
 U+6CDB	𣳋	泛	reduction	mj-shrink-map	merge	MJ039240: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+6CDC	坘	坻	reduction	mj-shrink-map	merge	MJ008953: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+6CDC	𡉬	坻	reduction	mj-shrink-map	merge	MJ032953: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+6CDC	𡊆	坻	reduction	mj-shrink-map	merge	MJ032972: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+6CDC	𡊈	坻	reduction	mj-shrink-map	merge	MJ032974: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+6CDC	𡍓	坻	reduction	mj-shrink-map	merge	MJ033074: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+6CDC	𣲋	坻	reduction	mj-shrink-map	merge	MJ039203: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+6CDC	坻	泜	variant	cjkvi-variants	merge	坻→泜 hydzd/variant
+U+6CDC	坻	𡉪	variant	wikidata	merge	Q109739867; P248 Q55686705 | Q109806249; P248 Q55686705
+U+6CDC	坘	𡉳	variant	cjkvi-variants	merge	坘→𡉳 koseki/variant
+U+6CDC	坻	𡉳	variant	cjkvi-variants	merge	坻→𡉳 hydzd/variant | 坻→𡉳 twedu/variant
+U+6CDC	坻	𡉳	variant	wikidata	merge	Q109739867; P248 Q10427532 | Q109806266; P248 Q10427532
+U+6CDC	坻	𡊇	variant	cjkvi-variants	merge	坻→𡊇 hydzd/variant | 坻→𡊇 twedu/variant
+U+6CDC	坻	𡊇	variant	wikidata	merge	Q109739867; P248 Q10427532 | Q109806299; P248 Q10427532
+U+6CDC	𡊆	𡊇	variant	cjkvi-variants	merge	𡊆→𡊇 koseki/variant
+U+6CDC	坻	𡊓	variant	cjkvi-variants	merge	坻→𡊓 twedu/variant
+U+6CDC	坻	𡊓	variant	wikidata	merge	Q109739867; P248 Q10427532 | Q109806320; P248 Q10427532
+U+6CDC	坻	𡌞	variant	wikidata	merge	Q109739867; P248 Q10427532 | Q109807918; P248 Q10427532
 U+6CDD	𣳙	泝	reduction	mj-shrink-map	merge	MJ039243: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6CDD	𣴔	泝	reduction	mj-shrink-map	merge	MJ039280: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+6CE1	泡	𣴊	variant	wikidata	merge	Q109824601; P248 Q10427532 | Q55765870; P248 Q10427532
@@ -24471,6 +24471,10 @@ U+73A4	玤	𤤵	variant	cjkvi-variants	merge	玤→𤤵 hydzd/variant | 玤→�
 U+73A4	玤	𤤵	variant	wikidata	merge	Q109754099; P248 Q10427532 | Q109836366; P248 Q10427532
 U+73A5	玥	玥	compatibility	unicode-ucd	merge	73A5
 U+73A6	𤤏	玦	reduction	mj-shrink-map	merge	MJ040952: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+73A8	玨	珏	reduction	mj-shrink-map	merge	MJ017150: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+73A8	瑴	珏	reduction	mj-shrink-map	merge	MJ017389: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+73A8	玨	𤤴	variant	cjkvi-variants	merge	玨→𤤴 hydzd/variant
+U+73A8	玨	𤤴	variant	wikidata	merge	Q109754103; P248 Q10427532 | Q109836365; P248 Q10427532
 U+73A9	貦	玩	reduction	mj-shrink-map	merge	MJ025006: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+73A9	玩	𮴀	variant	wikidata	merge	Q122605462; P248 Q63443408; P282 Q178528 | Q55851742; P248 Q63443408; P282 Q185614
 U+73A9	貦	𰷡	simplified	unihan	merge	貦→𰷡 kSimplifiedVariant | 𰷡→貦 kTraditionalVariant
@@ -24541,10 +24545,6 @@ U+73CD	鉁	𨱅	variant	wikidata	merge	Q109764849; P248 Q63443408; P282 Q185614 
 U+73CD	鉁	𨱅	simplified	yitizi	merge	ytenx/JihThex.csv
 U+73CD	珍	𭹀	variant	wikidata	merge	Q109960618; P248 Q10427532 | Q55765959; P248 Q10427532
 U+73CD	珍	𰡳	variant	wikidata	merge	Q109977535; P248 Q10427532 | Q55765959; P248 Q10427532
-U+73CF	玨	珏	reduction	mj-shrink-map	merge	MJ017150: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+73CF	瑴	珏	reduction	mj-shrink-map	merge	MJ017389: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+73CF	玨	𤤴	variant	cjkvi-variants	merge	玨→𤤴 hydzd/variant
-U+73CF	玨	𤤴	variant	wikidata	merge	Q109754103; P248 Q10427532 | Q109836365; P248 Q10427532
 U+73D2	珒	𤦯	variant	cjkvi-variants	merge	珒→𤦯 hydzd/variant | 珒→𤦯 koseki/variant | 珒→𤦯 twedu/variant | 𤦯→珒 koseki/variant
 U+73D2	珒	𤦯	variant	wikidata	merge	Q109754146; P248 Q10427532 | Q109836502; P248 Q10427532
 U+73D2	珒	𤧎	variant	wikidata	merge	Q109754146; P248 Q130335703 | Q109836542; P248 Q130335703
@@ -24613,6 +24613,13 @@ U+7409	琉	𤩾	variant	wikidata	merge	Q109754205; P248 Q130335703 | Q109837014;
 U+7409	琉	𭹗	variant	wikidata	merge	Q109754205; P248 Q10427532 | Q109960643; P248 Q10427532
 U+740A	瑘	琊	reduction	mj-shrink-map	merge	MJ017349: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+740D	琍	𭹳	variant	wikidata	merge	Q109754209; P248 Q10427532 | Q109960675; P248 Q10427532
+U+740F	璉	璉	compatibility	unicode-ucd	merge	7489
+U+740F	琏	璉	variant	wikidata	merge	Q109754211; P248 Q10427532 Q14941454 Q63443408; P282 Q178528 | Q109754353; P248 Q10427532 Q14941454 Q63443408; P282 Q185614
+U+740F	璉	琏	simplified	cjkvi-variants	merge	琏→璉 cjkvi/traditional | 璉→琏 cjkvi/simplified | 璉→琏 hydzd/simplified
+U+740F	璉	琏	simplified	opencc	merge	STCharacters | TSCharacters
+U+740F	璉	琏	simplified	unihan	merge	琏→璉 kTraditionalVariant | 璉→琏 kSimplifiedVariant
+U+740F	璉	琏	simplified	yitizi	merge	ytenx/JihThex.csv
+U+740F	璉	𫧛	variant	wikidata	merge	Q109754353; P248 Q137120432 | Q109945159; P248 Q137120432
 U+7414	琔	𤩱	variant	cjkvi-variants	merge	琔→𤩱 hydzd/variant | 𤩱→琔 koseki/variant | 𤩱→琔 twedu/variant
 U+7414	琔	𤩱	variant	wikidata	merge	Q109754218; P248 Q10427532 | Q109836986; P248 Q10427532
 U+7416	琖	𬍗	variant	wikidata	merge	Q109754220 | Q109951042
@@ -24829,13 +24836,6 @@ U+7483	璃	𭺊	variant	wikidata	merge	Q109960700; P248 Q837315 | Q55851997; P24
 U+7483	璃	𰢎	variant	wikidata	merge	Q109977563; P248 Q10427532 | Q55851997; P248 Q10427532
 U+7485	璅	璅	compatibility	unicode-ucd	merge	7485
 U+7487	璇	𭥄	variant	wikidata	merge	Q109754351; P248 Q137916925 | Q109959069; P248 Q137916925
-U+7489	璉	璉	compatibility	unicode-ucd	merge	7489
-U+7489	琏	璉	variant	wikidata	merge	Q109754211; P248 Q10427532 Q14941454 Q63443408; P282 Q178528 | Q109754353; P248 Q10427532 Q14941454 Q63443408; P282 Q185614
-U+7489	璉	琏	simplified	cjkvi-variants	merge	琏→璉 cjkvi/traditional | 璉→琏 cjkvi/simplified | 璉→琏 hydzd/simplified
-U+7489	璉	琏	simplified	opencc	merge	STCharacters | TSCharacters
-U+7489	璉	琏	simplified	unihan	merge	琏→璉 kTraditionalVariant | 璉→琏 kSimplifiedVariant
-U+7489	璉	琏	simplified	yitizi	merge	ytenx/JihThex.csv
-U+7489	璉	𫧛	variant	wikidata	merge	Q109754353; P248 Q137120432 | Q109945159; P248 Q137120432
 U+748A	㻊	璊	variant	cjkvi-variants	merge	璊→㻊 hydzd/variant | 璊→㻊 koseki/variant | 璊→㻊 twedu/variant
 U+748A	㻊	璊	variant	wikidata	merge	Q109754354; P248 Q10427532 | Q109787601; P248 Q10427532
 U+748A	璊	𤨸	variant	cjkvi-variants	merge	璊→𤨸 hydzd/variant | 璊→𤨸 koseki/variant | 璊→𤨸 twedu/variant
@@ -25208,23 +25208,6 @@ U+7523	産	产	simplified	opencc	merge	TSCharacters
 U+7523	産	产	simplified	unihan	merge	产→産 kTraditionalVariant | 産→产 kSimplifiedVariant
 U+7523	産	簅	variant	cjkvi-variants	merge	簅→産 hydzd/variant
 U+7523	產	𪯨	variant	wikidata	merge	Q109754580; P248 Q137120432 | Q109892942; P248 Q137120432
-U+7524	蕤	蕤	compatibility	unicode-ucd	merge	8564
-U+7524	㽔	蕤	variant	wikidata	merge	Q109760842; P248 Q22001375 | Q109788136; P248 Q22001375
-U+7524	甤	甤	compatibility	unicode-ucd	merge	7524
-U+7524	甤	蕤	variant	cjkvi-variants	merge	蕤→甤 twedu/variant
-U+7524	甤	蕤	semantic	unihan	merge	甤→蕤 kSemanticVariant<kMatthews | 蕤→甤 kSemanticVariant<kMatthews
-U+7524	甤	蕤	variant	wikidata	merge	Q109754582; P248 Q10427532 | Q109760842; P248 Q10427532
-U+7524	蕤	甤	variant	cjkvi-variants	merge	蕤→甤 twedu/variant
-U+7524	蕤	𤯹	variant	wikidata	merge	Q109760842; P248 Q63443408 | Q109838182; P248 Q63443408
-U+7524	蕤	𦷃	variant	wikidata	merge	Q109760842; P248 Q130335703 | Q109848130; P248 Q130335703
-U+7524	蕤	𦼆	variant	cjkvi-variants	merge	蕤→𦼆 twedu/variant
-U+7524	蕤	𦼆	variant	wikidata	merge	Q109760842; P248 Q10427532 | Q109848508; P248 Q10427532
-U+7524	蕤	𦿮	variant	wikidata	merge	Q109760842; P248 Q130335703 | Q109848754; P248 Q130335703
-U+7524	蕤	𬎼	variant	wikidata	merge	Q109760842; P248 Q136643781 | Q109951196; P248 Q136643781
-U+7524	蕤	𮒂	variant	wikidata	merge	Q109760842; P248 Q837315 | Q109964739; P248 Q837315
-U+7524	蕤	𮒩	variant	wikidata	merge	Q109760842; P248 Q837315 | Q109964785; P248 Q837315
-U+7524	蕤	𮒻	variant	wikidata	merge	Q109760842; P248 Q837315 | Q109964809; P248 Q837315
-U+7524	蕤	𮶭	variant	wikidata	merge	Q109760842; P248 Q136643781 | Q122607732; P248 Q136643781
 U+7525	㽒	甥	reduction	mj-shrink-map	merge	MJ002619: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+7525	甥	𭻙	variant	wikidata	merge	Q109754583; P248 Q137966511 | Q109960884; P248 Q137966511
 U+7526	𤯳	甦	reduction	mj-shrink-map	merge	MJ041321: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -34826,6 +34809,23 @@ U+8562	蕢	蒉	simplified	yitizi	merge	ytenx/JihThex.csv
 U+8562	蕢	𰷌	variant	wikidata	merge	Q109760840; P248 Q55686705 | Q109979220; P248 Q55686705
 U+8563	橓	蕣	reduction	mj-shrink-map	merge	MJ014505: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8563	𧂌	蕣	reduction	mj-shrink-map	merge	MJ047190: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8564	蕤	蕤	compatibility	unicode-ucd	merge	8564
+U+8564	㽔	蕤	variant	wikidata	merge	Q109760842; P248 Q22001375 | Q109788136; P248 Q22001375
+U+8564	甤	甤	compatibility	unicode-ucd	merge	7524
+U+8564	甤	蕤	variant	cjkvi-variants	merge	蕤→甤 twedu/variant
+U+8564	甤	蕤	semantic	unihan	merge	甤→蕤 kSemanticVariant<kMatthews | 蕤→甤 kSemanticVariant<kMatthews
+U+8564	甤	蕤	variant	wikidata	merge	Q109754582; P248 Q10427532 | Q109760842; P248 Q10427532
+U+8564	蕤	甤	variant	cjkvi-variants	merge	蕤→甤 twedu/variant
+U+8564	蕤	𤯹	variant	wikidata	merge	Q109760842; P248 Q63443408 | Q109838182; P248 Q63443408
+U+8564	蕤	𦷃	variant	wikidata	merge	Q109760842; P248 Q130335703 | Q109848130; P248 Q130335703
+U+8564	蕤	𦼆	variant	cjkvi-variants	merge	蕤→𦼆 twedu/variant
+U+8564	蕤	𦼆	variant	wikidata	merge	Q109760842; P248 Q10427532 | Q109848508; P248 Q10427532
+U+8564	蕤	𦿮	variant	wikidata	merge	Q109760842; P248 Q130335703 | Q109848754; P248 Q130335703
+U+8564	蕤	𬎼	variant	wikidata	merge	Q109760842; P248 Q136643781 | Q109951196; P248 Q136643781
+U+8564	蕤	𮒂	variant	wikidata	merge	Q109760842; P248 Q837315 | Q109964739; P248 Q837315
+U+8564	蕤	𮒩	variant	wikidata	merge	Q109760842; P248 Q837315 | Q109964785; P248 Q837315
+U+8564	蕤	𮒻	variant	wikidata	merge	Q109760842; P248 Q837315 | Q109964809; P248 Q837315
+U+8564	蕤	𮶭	variant	wikidata	merge	Q109760842; P248 Q136643781 | Q122607732; P248 Q136643781
 U+8567	蕧	𰱦	simplified	unihan	merge	蕧→𰱦 kSimplifiedVariant | 𰱦→蕧 kTraditionalVariant
 U+8567	蕧	𰱦	variant	wikidata	merge	Q109760845; P248 Q55686705; P282 Q185614 | Q109978802; P248 Q55686705; P282 Q178528
 U+8568	𧂱	蕨	reduction	mj-shrink-map	merge	MJ047220: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -39723,6 +39723,16 @@ U+8CD1	賑	赈	simplified	opencc	merge	STCharacters | TSCharacters
 U+8CD1	賑	赈	simplified	unihan	merge	賑→赈 kSimplifiedVariant | 赈→賑 kTraditionalVariant
 U+8CD1	賑	赈	variant	wikidata	merge	Q109763317; P248 Q10427532 Q14941454 Q63443408; P282 Q185614 | Q109763447; P248 Q10427532 Q14941454 Q63443408; P282 Q178528
 U+8CD1	賑	赈	simplified	yitizi	merge	ytenx/JihThex.csv
+U+8CD2	賒	賖	reduction	mj-shrink-map	merge	MJ025061: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8CD2	𧴳	賖	reduction	mj-shrink-map	merge	MJ049596: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+8CD2	唦	賒	variant	cjkvi-variants	merge	唦→賒 hydzd/variant
+U+8CD2	賒	赊	simplified	cjkvi-variants	merge	賒→赊 cjkvi/simplified | 賒→赊 hydzd/simplified | 赊→賒 cjkvi/traditional
+U+8CD2	賒	赊	simplified	opencc	merge	STCharacters | TSCharacters
+U+8CD2	賒	赊	simplified	unihan	merge	賒→赊 kSimplifiedVariant | 赊→賒 kTraditionalVariant
+U+8CD2	賒	赊	variant	wikidata	merge	Q109763318; P248 Q10427532 Q14941454 Q63443408; P282 Q185614 | Q109763449; P248 Q10427532 Q14941454 Q63443408; P282 Q178528
+U+8CD2	賒	赊	simplified	yitizi	merge	ytenx/JihThex.csv
+U+8CD2	賒	𮚎	variant	wikidata	merge	Q109763318; P248 Q837315 | Q109965402; P248 Q837315
+U+8CD2	賒	𮚒	variant	wikidata	merge	Q109763318; P248 Q837315 | Q109965407; P248 Q837315
 U+8CD3	賓	賓	compatibility	unicode-ucd	merge	8CD3
 U+8CD3	䆥	賓	reduction	mj-shrink-map	merge	MJ003211: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
 U+8CD3	賔	賓	reduction	mj-shrink-map	merge	MJ025063: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
@@ -39742,16 +39752,6 @@ U+8CD3	賓	𥧨	variant	cjkvi-variants	merge	賓→𥧨 hydzd/variant
 U+8CD3	賓	𥧨	variant	wikidata	merge	Q109842573; P248 Q55686705 | Q55814662; P248 Q55686705
 U+8CD3	賓	𭓫	variant	wikidata	merge	Q109957704; P248 Q10427532 | Q55814662; P248 Q10427532
 U+8CD3	賓	𮱫	variant	wikidata	merge	Q122603816; P248 Q10427532 | Q55814662; P248 Q10427532
-U+8CD6	賒	賖	reduction	mj-shrink-map	merge	MJ025061: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8CD6	𧴳	賖	reduction	mj-shrink-map	merge	MJ049596: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+8CD6	唦	賒	variant	cjkvi-variants	merge	唦→賒 hydzd/variant
-U+8CD6	賒	赊	simplified	cjkvi-variants	merge	賒→赊 cjkvi/simplified | 賒→赊 hydzd/simplified | 赊→賒 cjkvi/traditional
-U+8CD6	賒	赊	simplified	opencc	merge	STCharacters | TSCharacters
-U+8CD6	賒	赊	simplified	unihan	merge	賒→赊 kSimplifiedVariant | 赊→賒 kTraditionalVariant
-U+8CD6	賒	赊	variant	wikidata	merge	Q109763318; P248 Q10427532 Q14941454 Q63443408; P282 Q185614 | Q109763449; P248 Q10427532 Q14941454 Q63443408; P282 Q178528
-U+8CD6	賒	赊	simplified	yitizi	merge	ytenx/JihThex.csv
-U+8CD6	賒	𮚎	variant	wikidata	merge	Q109763318; P248 Q837315 | Q109965402; P248 Q837315
-U+8CD6	賒	𮚒	variant	wikidata	merge	Q109763318; P248 Q837315 | Q109965407; P248 Q837315
 U+8CD7	賗	𬥸	simplified	cjkvi-variants	merge	賗→𬥸 cjkvi/simplified | 𬥸→賗 cjkvi/traditional
 U+8CD7	賗	𬥸	simplified	unihan	merge	賗→𬥸 kSimplifiedVariant | 𬥸→賗 kTraditionalVariant
 U+8CD7	賗	𬥸	variant	wikidata	merge	Q109763325; P248 Q131782202; P282 Q185614 | Q109953555; P248 Q131782202; P282 Q178528
@@ -44414,13 +44414,6 @@ U+93F5	鏵	𣏼	variant	wikidata	merge	Q109765337; P248 Q55686705 | Q109821244; 
 U+93F8	鏸	𨫍	variant	wikidata	merge	Q109765340; P248 Q130335703 | Q109870565; P248 Q130335703
 U+93F8	鏸	𰾶	simplified	unihan	merge	鏸→𰾶 kSimplifiedVariant | 𰾶→鏸 kTraditionalVariant
 U+93F8	鏸	𰾶	variant	wikidata	merge	Q109765340; P248 Q55686705; P282 Q185614 | Q109979808; P248 Q55686705; P282 Q178528
-U+93F9	鏹	鏹	compatibility	unicode-ucd	merge	93F9
-U+93F9	鏹	镪	simplified	cjkvi-variants	merge	鏹→镪 cjkvi/simplified | 鏹→镪 hydzd/simplified | 镪→鏹 cjkvi/traditional
-U+93F9	鏹	镪	simplified	opencc	merge	STCharacters | TSCharacters
-U+93F9	鏹	镪	simplified	unihan	merge	鏹→镪 kSimplifiedVariant | 镪→鏹 kTraditionalVariant
-U+93F9	鏹	镪	variant	wikidata	merge	Q109765341; P248 Q10427532 Q14941454 Q63443408; P282 Q185614 | Q109765719; P248 Q10427532 Q14941454 Q63443408; P282 Q178528
-U+93F9	鏹	镪	simplified	yitizi	merge	ytenx/JihThex.csv
-U+93F9	鏹	镪	simplified	cjkvi-variants	merge	镪→鏹 cjkvi/traditional | 鏹→镪 cjkvi/simplified
 U+93FA	㔇	鏺	variant	cjkvi-variants	merge	鏺→㔇 hydzd/variant | 鏺→㔇 koseki/variant
 U+93FA	䥽	鏺	variant	wikidata	merge	Q109765342; P248 Q14941454 Q10427532 Q63443408; P282 Q185614 | Q109793535; P248 Q10427532 Q14941454 Q63443408; P282 Q178528
 U+93FA	鏺	䥽	simplified	cjkvi-variants	merge	䥽→鏺 cjkvi/traditional | 鏺→䥽 cjkvi/simplified | 鏺→䥽 hydzd/simplified
@@ -45244,6 +45237,13 @@ U+9569	鑹	镩	simplified	unihan	merge	鑹→镩 kSimplifiedVariant | 镩→鑹 
 U+9569	鑹	镩	variant	wikidata	merge	Q109765473; P248 Q10427532 Q14941454 Q63443408; P282 Q185614 | Q109765718; P248 Q10427532 Q14941454 Q63443408; P282 Q178528
 U+9569	鑹	镩	simplified	yitizi	merge	ytenx/JihThex.csv
 U+9569	鑹	𮣨	variant	wikidata	merge	Q109765473; P248 Q837315 | Q109966119; P248 Q837315
+U+956A	鏹	鏹	compatibility	unicode-ucd	merge	93F9
+U+956A	鏹	镪	simplified	cjkvi-variants	merge	鏹→镪 cjkvi/simplified | 鏹→镪 hydzd/simplified | 镪→鏹 cjkvi/traditional
+U+956A	鏹	镪	simplified	opencc	merge	STCharacters | TSCharacters
+U+956A	鏹	镪	simplified	unihan	merge	鏹→镪 kSimplifiedVariant | 镪→鏹 kTraditionalVariant
+U+956A	鏹	镪	variant	wikidata	merge	Q109765341; P248 Q10427532 Q14941454 Q63443408; P282 Q185614 | Q109765719; P248 Q10427532 Q14941454 Q63443408; P282 Q178528
+U+956A	鏹	镪	simplified	yitizi	merge	ytenx/JihThex.csv
+U+956A	鏹	镪	simplified	cjkvi-variants	merge	镪→鏹 cjkvi/traditional | 鏹→镪 cjkvi/simplified
 U+9571	鐿	镱	simplified	cjkvi-variants	merge	鐿→镱 cjkvi/simplified | 鐿→镱 hydzd/simplified | 镱→鐿 cjkvi/traditional
 U+9571	鐿	镱	simplified	opencc	merge	STCharacters | TSCharacters
 U+9571	鐿	镱	simplified	unihan	merge	鐿→镱 kSimplifiedVariant | 镱→鐿 kTraditionalVariant
@@ -50894,24 +50894,24 @@ U+9C52	鱒	鳟	simplified	opencc	merge	STCharacters | TSCharacters
 U+9C52	鱒	鳟	simplified	unihan	merge	鱒→鳟 kSimplifiedVariant | 鳟→鱒 kTraditionalVariant
 U+9C52	鱒	鳟	variant	wikidata	merge	Q109770158; P248 Q10427532 Q14941454 Q63443408; P282 Q185614 | Q109770307; P248 Q10427532 Q14941454 Q63443408; P282 Q178528
 U+9C52	鱒	鳟	simplified	yitizi	merge	ytenx/JihThex.csv
-U+9C53	䱇	鱓	reduction	mj-shrink-map	merge	MJ005946: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+9C53	䱧	鱔	reduction	mj-shrink-map	merge	MJ005978: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+9C53	鱔	鱓	reduction	mj-shrink-map	merge	MJ029363: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
-U+9C53	鱓	鳝	simplified	cjkvi-variants	merge	鱓→鳝 cjkvi/simplified
-U+9C53	鱔	鳝	simplified	cjkvi-variants	merge	鱔→鳝 cjkvi/simplified | 鱔→鳝 hydzd/simplified | 鳝→鱔 cjkvi/traditional
-U+9C53	鱔	鳝	simplified	opencc	merge	STCharacters | TSCharacters
-U+9C53	鱔	鳝	simplified	unihan	merge	鱔→鳝 kSimplifiedVariant | 鳝→鱔 kTraditionalVariant
-U+9C53	鱔	鳝	variant	wikidata	merge	Q109770160; P248 Q10427532 Q14941454 Q63443408; P282 Q185614 | Q109770305; P248 Q10427532 Q14941454 Q63443408; P282 Q178528
-U+9C53	鱔	鳝	simplified	yitizi	merge	ytenx/JihThex.csv
-U+9C53	䱧	𫚠	simplified	cjkvi-variants	merge	䱧→𫚠 cjkvi/simplified | 𫚠→䱧 cjkvi/traditional
-U+9C53	䱧	𫚠	simplified	opencc	merge	STCharacters | TSCharacters (self first)
-U+9C53	䱧	𫚠	simplified	unihan	merge	䱧→𫚠 kSimplifiedVariant | 𫚠→䱧 kTraditionalVariant
-U+9C53	䱧	𫚠	variant	wikidata	merge	Q109795233; P248 Q63443408; P282 Q185614 | Q109901497; P248 Q63443408; P282 Q178528
-U+9C53	鱓	𬶛	simplified	cjkvi-variants	merge	鱓→𬶛 cjkvi/variant-simplified | 𬶛→鱓 cjkvi/traditional
-U+9C53	鱓	𬶛	simplified	unihan	merge	鱓→𬶛 kSimplifiedVariant | 𬶛→鱓 kTraditionalVariant
-U+9C53	鱓	𬶛	variant	wikidata	merge	Q109770159; P248 Q55686705; P282 Q185614 | Q109955071; P248 Q55686705; P282 Q178528
-U+9C53	䱇	𱇞	simplified	unihan	merge	䱇→𱇞 kSimplifiedVariant | 𱇞→䱇 kTraditionalVariant
-U+9C53	䱇	𱇞	variant	wikidata	merge	Q109795191; P248 Q55686705; P282 Q185614 | Q109980440; P248 Q55686705; P282 Q178528
+U+9C54	䱇	鱓	reduction	mj-shrink-map	merge	MJ005946: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+9C54	䱧	鱔	reduction	mj-shrink-map	merge	MJ005978: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+9C54	鱔	鱓	reduction	mj-shrink-map	merge	MJ029363: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1
+U+9C54	鱓	鳝	simplified	cjkvi-variants	merge	鱓→鳝 cjkvi/simplified
+U+9C54	鱔	鳝	simplified	cjkvi-variants	merge	鱔→鳝 cjkvi/simplified | 鱔→鳝 hydzd/simplified | 鳝→鱔 cjkvi/traditional
+U+9C54	鱔	鳝	simplified	opencc	merge	STCharacters | TSCharacters
+U+9C54	鱔	鳝	simplified	unihan	merge	鱔→鳝 kSimplifiedVariant | 鳝→鱔 kTraditionalVariant
+U+9C54	鱔	鳝	variant	wikidata	merge	Q109770160; P248 Q10427532 Q14941454 Q63443408; P282 Q185614 | Q109770305; P248 Q10427532 Q14941454 Q63443408; P282 Q178528
+U+9C54	鱔	鳝	simplified	yitizi	merge	ytenx/JihThex.csv
+U+9C54	䱧	𫚠	simplified	cjkvi-variants	merge	䱧→𫚠 cjkvi/simplified | 𫚠→䱧 cjkvi/traditional
+U+9C54	䱧	𫚠	simplified	opencc	merge	STCharacters | TSCharacters (self first)
+U+9C54	䱧	𫚠	simplified	unihan	merge	䱧→𫚠 kSimplifiedVariant | 𫚠→䱧 kTraditionalVariant
+U+9C54	䱧	𫚠	variant	wikidata	merge	Q109795233; P248 Q63443408; P282 Q185614 | Q109901497; P248 Q63443408; P282 Q178528
+U+9C54	鱓	𬶛	simplified	cjkvi-variants	merge	鱓→𬶛 cjkvi/variant-simplified | 𬶛→鱓 cjkvi/traditional
+U+9C54	鱓	𬶛	simplified	unihan	merge	鱓→𬶛 kSimplifiedVariant | 𬶛→鱓 kTraditionalVariant
+U+9C54	鱓	𬶛	variant	wikidata	merge	Q109770159; P248 Q55686705; P282 Q185614 | Q109955071; P248 Q55686705; P282 Q178528
+U+9C54	䱇	𱇞	simplified	unihan	merge	䱇→𱇞 kSimplifiedVariant | 𱇞→䱇 kTraditionalVariant
+U+9C54	䱇	𱇞	variant	wikidata	merge	Q109795191; P248 Q55686705; P282 Q185614 | Q109980440; P248 Q55686705; P282 Q178528
 U+9C55	鱕	𱈕	simplified	unihan	merge	鱕→𱈕 kSimplifiedVariant | 𱈕→鱕 kTraditionalVariant
 U+9C55	鱕	𱈕	variant	wikidata	merge	Q109770161; P248 Q55686705; P282 Q185614 | Q109980505; P248 Q55686705; P282 Q178528
 U+9C56	鱖	鳜	simplified	cjkvi-variants	merge	鱖→鳜 cjkvi/simplified | 鱖→鳜 hydzd/simplified | 鳜→鱖 cjkvi/traditional

@@ -306,4 +306,10 @@ def test_a_traditional_form_or_the_seiji_heads_over_a_simplification():
     rows = [reduction("篙", "㰏", "MJ2")]
     found = families(rows, [], {"篙", "㰏"}, {"MJ2": "篙"}, set(), familiarity={"篙": 5})
     assert [f.head for f in found] == ["篙"], "a 正字 of an extension does not head a character a reader knows"
+    rows = [reduction("玨", "珏", "MJ3")]
+    found = families(rows, [], {"玨", "珏"}, {"MJ3": "玨"}, set(), familiarity={"玨": 4})
+    assert [f.head for f in found] == ["玨"], "a traditional standard's member heads over a 正字 it lacks"
+    rows = [edge("蕤", "甤", "compatibility", "unicode-ucd", "751D")]
+    found = families(rows, [], {"蕤", "甤"}, {}, set(), familiarity={"蕤": 5})
+    assert [f.head for f in found] == ["蕤"], "a decomposition target is no 正字 over a known member"
 
