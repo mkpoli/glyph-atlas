@@ -569,11 +569,13 @@ def read_table(path: Path) -> list[dict[str, str]]:
 def familiarity(ucd: Path) -> dict[str, int]:
     """How well a Japanese reader knows each ideograph, lowest first: 0 a 常用漢字 (Unihan
     `kJoyoKanji` 2010), 1 a 人名用漢字 (`kJinmeiyoKanji`), 2 JIS X 0208 level 1 (rows 16-47),
-    3 level 2; then the ones a reader of Chinese knows: 4 CNS 11643 plane 1, 5 GB 2312."""
+    3 level 2; then the ones a reader of Chinese knows: 4 CNS 11643 plane 1, 5 GB 2312 and CNS
+    11643 plane 2 both, 6 GB 2312 alone, 7 CNS 11643 plane 2 alone."""
     with zipfile.ZipFile(ucd / "Unihan.zip") as archive:
         mappings = archive.read("Unihan_OtherMappings.txt").decode("utf-8")
         sources = archive.read("Unihan_IRGSources.txt").decode("utf-8")
     found: dict[str, int] = {}
+    chinese: dict[str, set[str]] = {}
 
     def rank(char: str, value: int) -> None:
         found[char] = min(value, found.get(char, value))
@@ -585,10 +587,12 @@ def familiarity(ucd: Path) -> dict[str, int]:
         char = chr(int(cells[0].removeprefix("U+"), 16))
         if cells[1] == "kIRG_JSource" and cells[2].startswith("J0-"):
             rank(char, 2 if int(cells[2][3:5], 16) - 0x20 <= 47 else 3)
-        elif cells[1] == "kIRG_TSource" and cells[2].startswith("T1-"):
-            rank(char, 4)
+        elif cells[1] == "kIRG_TSource" and cells[2].startswith(("T1-", "T2-")):
+            chinese.setdefault(char, set()).add(cells[2][:2])
         elif cells[1] == "kIRG_GSource" and cells[2].startswith("G0-"):
-            rank(char, 5)
+            chinese.setdefault(char, set()).add("G0")
+    for char, held in chinese.items():
+        rank(char, 4 if "T1" in held else 5 if held == {"G0", "T2"} else 6 if "G0" in held else 7)
     for line in mappings.splitlines():
         cells = line.split("\t")
         if len(cells) != 3:

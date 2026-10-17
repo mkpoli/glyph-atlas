@@ -85,12 +85,22 @@ kind by code point), so the build gives the same families on every run.
 The head of a family is its curated representative when `graphemes.yaml` names the family; otherwise
 the member a Japanese reader knows best (`familiarity`: a 常用漢字, then a 人名用漢字, then JIS X
 0208 level 1, then level 2), the 正字 the family's directed edges point at (the member that is a
-reduction or decomposition target and is reduced to nothing else) first among several; with none of
-those, that 正字 when it is of the main CJK block; then the member a reader of Chinese knows, CNS
-11643 plane 1 before GB 2312, so a traditional form heads over its simplification; then a 正字 of an
-extension; then a unified ideograph over a compatibility one, one of the main block over the
-extensions, then the lowest code point. So 群 heads the family 羣 joins, 村 the family of 邨, 厲 the
-family of 厉, 墊 the family of 垫, 氯 the family of 㲶, and 篙 the family of 㰏, the 正字 the 戸籍統一文字
+reduction or decomposition target and is reduced to nothing else) first among several.
+
+With no such member, a simplified form that CNS 11643 does not hold never heads (璉 heads 琏; 凳,
+which cjkvi gives as the simplified 櫈, is CNS 11643's own and heads), and the head is, in order:
+
+1. a 正字 a reduction names in the main CJK block that CNS 11643 plane 1 or GB 2312 holds (坻 over 泜);
+2. a member of CNS 11643 plane 1, then of plane 2 and GB 2312 both;
+3. any 正字 a reduction names in the main block;
+4. a member of GB 2312, then of CNS 11643 plane 2 alone (吕 heads 郘);
+5. the full form a simplified member simplifies (戇 heads 戆 and 戅);
+6. any 正字, a compatibility ideograph's decomposition included.
+
+Among equals the full form of a simplification wins (靚 over 靘, both of plane 2 alone); then a
+unified ideograph over a compatibility one, one of the main block over the extensions, then the
+lowest code point. So 群 heads the family 羣 joins, 村 the family of 邨, 厲 the family of 厉, 墊 the
+family of 垫, 妤 the family of 伃, 氯 the family of 㲶, and 篙 the family of 㰏, the 正字 the 戸籍統一文字
 registers it under. The 正字 is the character a source names as the one the others are written for;
 the code point is only there to make the choice total.
 """
@@ -409,9 +419,15 @@ def _join_yixiezi(
             group[char] = keep
 
 
-#: The ranks of `familiarity` a Japanese reader knows (常用, 人名用, JIS X 0208 levels 1 and 2), and
-#: the ones only a reader of Chinese does (CNS 11643 plane 1, GB 2312), which come after a 正字 of the main block.
-JAPANESE_RANKS, CHINESE_RANKS = range(4), range(4, 6)
+#: The ranks of `familiarity` a Japanese reader knows (常用, 人名用, JIS X 0208 levels 1 and 2), the
+#: traditional standard's (CNS 11643 planes 1 and 2) and the simplified standard's (GB 2312).
+JAPANESE_RANKS, TRADITIONAL_RANKS, SIMPLIFIED_RANKS = range(4), frozenset({4, 5, 7}), frozenset({6})
+#: CNS 11643 plane 1, and plane 2 where GB 2312 holds the character too; plane 2 alone comes after
+#: GB 2312, so a live GB form is not headed by an obscure one (吕, not 郘).
+TAIWAN_RANKS, TRADITIONAL_ONLY_RANKS = frozenset({4, 5}), frozenset({7})
+
+#: The two standards' common sets, CNS 11643 plane 1 and GB 2312: a 正字 in one of them heads first.
+COMMON_CHINESE_RANKS = frozenset({4, 5, 6})
 
 
 def head_of(family: Family, familiarity: Mapping[str, int]) -> str:
@@ -419,12 +435,30 @@ def head_of(family: Family, familiarity: Mapping[str, int]) -> str:
     directed = [edge for edge in family.edges if edge.relation in DIRECTED and edge.role == "merge"]
     sources = {edge.a for edge in directed}
     sinks = {edge.b for edge in directed} - sources
-    def best(ranks: range) -> set[str]:
-        known = {char for char in family.members if familiarity.get(char) in ranks}
+    # A 正字 a reduction names: a compatibility ideograph's decomposition is the same character in
+    # another code point, not a form the others are written for.
+    seiji = {edge.b for edge in directed if edge.relation == "reduction"} - sources
+    # Past the Japanese ranks, a member that is another member's simplified form and no character of
+    # the traditional standard never heads; 凳, which cjkvi gives as the simplified 櫈, is CNS 11643's own.
+    reduced = [edge for edge in family.edges if edge.relation == "simplified" and edge.a in family.members
+               and familiarity.get(edge.b) not in TRADITIONAL_RANKS]
+    simplified = {edge.b for edge in reduced}
+    candidates = (family.members - simplified) or family.members
+    # The forms those simplify, which head before any other member left unranked: 戇 for 戆, not 戅.
+    full = {edge.a for edge in reduced} & candidates
+
+    def best(ranks: Iterable[int], among: set[str]) -> set[str]:
+        known = {char for char in among if familiarity.get(char) in ranks}
         top = min((familiarity[char] for char in known), default=None)
         return {char for char in known if familiarity[char] == top}
 
-    japanese = best(JAPANESE_RANKS)
-    main = {char for char in sinks if 0x4E00 <= ord(char) <= 0x9FFF}
-    pool = (japanese & sinks) or japanese or main or best(CHINESE_RANKS) or sinks or family.members
+    japanese = best(JAPANESE_RANKS, family.members)
+    if japanese:
+        pool = (japanese & sinks) or japanese
+    else:
+        main = {char for char in seiji & candidates if 0x4E00 <= ord(char) <= 0x9FFF}
+        ranked = {char for char in main if familiarity.get(char) in COMMON_CHINESE_RANKS}
+        pool = (ranked or best(TAIWAN_RANKS, candidates) or main or best(SIMPLIFIED_RANKS, candidates)
+                or best(TRADITIONAL_ONLY_RANKS, candidates) or full or (sinks & candidates) or candidates)
+        pool = (pool & full) or pool  # among equals, the form a simplification simplifies: 靚 over 靘
     return min(pool, key=lambda char: (_canonical(char) != char, not 0x4E00 <= ord(char) <= 0x9FFF, ord(char)))
