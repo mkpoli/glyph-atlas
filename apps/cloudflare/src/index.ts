@@ -339,10 +339,22 @@ export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | 
 }
 // The crops that can be flagged or hard: those stored as flagged (`unit_state`), and those marked hard
 // (`unit_mark`). Every crop the effective state calls flagged or hard is among them.
-export const attentionCandidatesQuery = () => `id IN (SELECT id FROM units WHERE origin='local' AND state='flagged'
-  UNION SELECT id FROM unit_marks WHERE mark='hard')`;
-const ATTENTION_CANDIDATES = attentionCandidatesQuery();
+// With `irregular`, the crops whose box was found unlike their character's (`unit_irregular`) are among them too.
+export const attentionCandidatesQuery = (irregular = false) => `id IN (SELECT id FROM units WHERE origin='local' AND state='flagged'
+  UNION SELECT id FROM unit_marks WHERE mark='hard'${irregular ? ' UNION SELECT id FROM unit_irregular' : ''})`;
 const EFFECTIVE_STATE = `iif(state='pending',coalesce(${MARK},state),state)`;
+// A crop's irregular mark (`atlas review irregular`), how far its box's shape lies from its character's,
+// while it keeps the label and box that were measured.
+const IRREGULAR_MARK = `unit_irregular g WHERE g.id=units.id AND g.label=json_extract(units.data,'$.label')
+  AND g.x=json_extract(units.data,'$.box.x') AND g.y=json_extract(units.data,'$.box.y')
+  AND g.w=json_extract(units.data,'$.box.w') AND g.h=json_extract(units.data,'$.box.h')`;
+const IRREGULAR = `(SELECT g.shape FROM ${IRREGULAR_MARK})`;
+// An irregular crop waits in the 要修正 view until a review decides it, after the flagged and hard ones.
+export const irregularWaitingQuery = (state: string) => `${state} IN ('pending','seen','skipped') AND EXISTS(SELECT 1 FROM ${IRREGULAR_MARK})`;
+// The irregular crops still waiting, by character and book, the same for every visitor: nobody's own
+// skip counts, so the effective state stands for each.
+export const irregularFacetsQuery = (filter: string) => `SELECT units.character AS label,units.document AS document,count(*) AS n
+  FROM unit_irregular m CROSS JOIN units ON units.id=m.id WHERE ${filter} AND ${irregularWaitingQuery(EFFECTIVE_STATE)} GROUP BY 1,2`;
 // How long a crop a reviewer skipped stays out of that reviewer's own rounds.
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
 const quoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -503,6 +515,16 @@ async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, productio
   const groups = moved(counted.results, marks.results);
   ctx.waitUntil(caches.default.put(key, Response.json(groups, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return groups;
+}
+// The irregular crops still waiting by character and book (`irregularFacetsQuery`), which the 要修正 view
+// lists beside its flagged ones; the edge keeps a copy per catalogue version, as for the other counts.
+async function irregularFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, filter: string, values: (string | number)[]) {
+  const key = new Request(`${url.origin}/atlas/facets?by=irregular&production=${encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json() as { label: string; document: string | null; n: number }[];
+  const rows = (await env.DB.prepare(irregularFacetsQuery(filter)).bind(...values).all<{ label: string; document: string | null; n: number }>()).results;
+  ctx.waitUntil(caches.default.put(key, Response.json(rows, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return rows;
 }
 // Corpus glyphs by character in the material asked for, with the grapheme the character table files each
 // under: what the grapheme browser counts beside the collection's own crops, so a character the site
@@ -1002,6 +1024,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const flaggedView = ['flagged', 'attention'].includes(q.get('state') ?? '');
   const withheld = flaggedView || q.get('withheld') === 'show';
   const { where, values } = listingFilter(review, production, members, withheld);
+  const scope = { filter: where.join(' AND '), values: [...values] };
   const [materials, materialValues] = material(production, 'production');
   const queries = facetsQueries(review, reviewer, where, scoped, since);
   const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
@@ -1060,9 +1083,21 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // them (`+`); the script's index would read every crop of that script.
   if (q.get('group') && q.get('group') !== 'all') { where.push(character || grapheme || q.get('q') ? '+category=?' : 'category=?'); values.push(q.get('group')!); tally = null }
   // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read. The
-  // review state is worked out per crop, so the query starts from the few that can qualify.
-  if (q.get('state') === 'attention') { where[0] = "+origin='local'"; where.push(ATTENTION_CANDIDATES, `${state} IN ('flagged','hard')`); tally = null }
+  // review state is worked out per crop, so the query starts from the few that can qualify. Irregular
+  // crops nobody has decided wait there too unless `irregular=hide`; `irregularCountWhere` counts them either way.
+  const attention = q.get('state') === 'attention', irregular = attention && q.get('irregular') !== 'hide';
+  const irregularCountWhere = attention ? ["+origin='local'", ...where.slice(1), 'id IN (SELECT id FROM unit_irregular)', irregularWaitingQuery(state)] : null;
+  if (attention) {
+    where[0] = "+origin='local'";
+    where.push(attentionCandidatesQuery(irregular), irregular ? `(${state} IN ('flagged','hard') OR ${irregularWaitingQuery(state)})` : `${state} IN ('flagged','hard')`);
+    tally = null;
+  }
   else if (q.get('state') && q.get('state') !== 'all') { const wanted = q.get('state')!; where.push(`${state}=?`); values.push(wanted); tally?.push(row => row.state === wanted) }
+  if (irregular) for (const row of await irregularFacets(env, ctx, url, production, scope.filter, scope.values)) {
+    const category = categories.get(row.label), book = row.document ? documents.get(row.document) : null;
+    if (category) category.irregular = (category.irregular ?? 0) + row.n;
+    if (book) book.irregular = (book.irregular ?? 0) + row.n;
+  }
   // The Flagged view hides crops already looked at in the inspector by default; `reported=show`
   // (the default for every other caller) leaves them in. `reportedCountWhere` is captured before the
   // hide filter, so the count is of what is hidden, not what remains.
@@ -1086,8 +1121,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
   const reviewedLast = flaggedView ? `${REVIEWED_IN_INSPECTOR},` : '';
+  // The irregular crops come after every flagged and hard one.
+  const irregularLast = irregular ? `${state} NOT IN ('flagged','hard'),` : '';
   // What a tile shows (`compact`): the record without the review snapshot, context and model votes.
-  const columns = `id,origin,data,document,style,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order,${SUSPECT} AS suspect`;
+  const columns = `id,origin,data,document,style,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order,${SUSPECT} AS suspect${attention ? `,${IRREGULAR} AS irregular` : ''}`;
   // Browse deals crops in `shuffle` order from a point the seed picks, and wraps round past the
   // highest: an index serves that order, where a seed-scrambled order sorts every row on each visit.
   // A named character is found through `unit_character` instead, and its few crops sort in memory.
@@ -1110,18 +1147,20 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     ...(tally ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
     below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
       : rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
-      : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
+      : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${irregularLast}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
     ...(counting ? [env.DB.prepare(counting.sql).bind(...materialValues, ...counting.values)] : []),
+    ...(irregularCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${irregularCountWhere.join(' AND ')}`).bind(...values)] : []),
   ]);
   const count = tally ? null : results.shift()!, window = results.shift()!;
   const reportedCount = reportedCountWhere ? results.shift()! : null, hiddenCounted = counting ? results.shift()! : null;
+  const irregularCount = irregularCountWhere ? results.shift()! : null;
   const withheldCount = cachedTotal ?? (hiddenCounted ? (hiddenCounted.results[0] as { n: number }).n : null);
   if (totalKey && cachedTotal === null && withheldCount !== null)
     ctx.waitUntil(caches.default.put(totalKey, Response.json(withheldCount, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   const listed = tally ? groups.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
     : (count!.results[0] as { n: number }).n;
-  const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
+  const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null; irregular?: number | null })[];
   let above: number | null = below ? told : null;
   if (rotated && !below && rows.length < limit) {
     above = rows.length ? offset + rows.length : told ?? (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
@@ -1131,7 +1170,8 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   }
   const items: Json[] = await withForms(env, rows
     .map(row => { const item = compact(row); return { ...item, state: row.effective, shape_order: row.shape_order,
-      suspect: suspectOf(row.suspect ? parse(row.suspect) as Suspect : null, item) } }));
+      suspect: suspectOf(row.suspect ? parse(row.suspect) as Suspect : null, item),
+      ...(row.irregular != null ? { irregular: { shape: row.irregular } } : {}) } }));
   // Positions run through the `units` rows and then the untouched corpus glyphs. A glyph its record
   // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
   // glyphs run out `total` is what was there to deal.
@@ -1154,6 +1194,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     documents: [...documents.values()].sort((a,b) => b.total-a.total || (a.title ?? '').localeCompare(b.title ?? '') || a.id.localeCompare(b.id)),
     reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
     withheld_count: withheldCount, above,
+    irregular_count: irregularCount ? (irregularCount.results[0] as { n: number }).n : 0,
     items: await withDating(env, items) };
 }
 // The withheld crops in this material, of a character, a book or a family where one is named.

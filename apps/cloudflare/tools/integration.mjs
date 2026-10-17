@@ -428,6 +428,19 @@ try {
   const doubted = Object.fromEntries((await roundOf('&seed=0')).items.map(i => [i.id, i.suspect]))
   assert.deepEqual(doubted['na-3'], { p: 0.02, reads_as: null }, 'a corpus glyph carries its mark as well')
   assert.equal(doubted['na-1'], null, 'a mark made for another box does not hold')
+  // An irregular crop nobody has decided waits in Needs fixing, after the flagged ones, while it keeps the
+  // label and box that were measured; `irregular=hide` leaves it out and still counts it.
+  await db.batch([db.prepare('INSERT INTO unit_irregular VALUES(?,?,?,?,?,?,?)').bind('na-local-a', 'ナ', 1, 2, 3, 4, -6.5),
+    db.prepare('INSERT INTO unit_irregular VALUES(?,?,?,?,?,?,?)').bind('na-local-b', 'ナ', 1, 2, 3, 9, 7),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','irregular')")])
+  const fixing = async (shown = '') => call('/atlas?state=attention&character=%E3%83%8A' + shown)
+  const unusual = await fixing()
+  assert.deepEqual(unusual.items.map(i => [i.id, i.irregular]), [['na-local-a', { shape: -6.5 }]], 'a mark made for another box does not hold')
+  assert.equal(unusual.irregular_count, 1)
+  assert.equal(unusual.categories.find(c => c.label === 'ナ')?.irregular, 1, 'the character list counts it')
+  const hidden = await fixing('&irregular=hide')
+  assert.deepEqual([hidden.items.length, hidden.irregular_count], [0, 1], 'irregular=hide leaves it out and counts it')
+  await db.prepare('DELETE FROM unit_irregular').run()
   const paged = []
   for (let offset = 0; offset < 7; offset += 3) paged.push(...await ids(`&seed=0&limit=3&offset=${offset}`))
   assert.deepEqual(paged, dealtNa, 'paging runs on from the local crops into the corpus glyphs')
@@ -868,6 +881,11 @@ try {
   const attentionPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE +origin='local' AND ${worker.attentionCandidatesQuery()}`, values: [] }, [])
   assert.ok(attentionPlan.some(d => /SEARCH units USING (COVERING )?INDEX unit_state \(origin=\? AND state=\?\)/.test(d)), attentionPlan.join('; '))
   assert.ok(!attentionPlan.some(d => /^SCAN units\b/.test(d)), attentionPlan.join('; '))
+  // With the irregular crops, the marks are read once and each crop looked up by id.
+  const irregularPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE +origin='local' AND ${worker.attentionCandidatesQuery(true)}`, values: [] }, [])
+  assert.ok(!irregularPlan.some(d => /^SCAN units\b/.test(d)), irregularPlan.join('; '))
+  const irregularFacetsPlan = await plan({ sql: worker.irregularFacetsQuery("origin='local'"), values: [] }, [])
+  assert.ok(irregularFacetsPlan.some(d => /^SEARCH units USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), irregularFacetsPlan.join('; '))
   // A document's characters are read along the table's own key, and each unit by its id.
   const documentPlan = await plan({ sql: worker.documentCharactersQuery(), values: [] }, ['hk:doc'])
   served(documentPlan, null)
