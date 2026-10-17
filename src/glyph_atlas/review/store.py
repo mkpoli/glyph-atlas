@@ -942,20 +942,23 @@ class Store:
         return line, self._commit_within(conn, _change(state, event, guard=False), state, client_id, key)
 
     def propose_units(self, page_id: str, proposals: Sequence[Any], proposer: str, *,
-                      image_size: tuple[int, int]) -> dict[str, Any]:
+                      image_size: tuple[int, int], script: Script = Script.UNKNOWN) -> dict[str, Any]:
         """Record the boxes a detector proposed on a page photo as machine units on the page's own line.
 
         `proposals` carry `x`, `y`, `w`, `h` in pixels of the image the detector read, `kind` (`mark`
-        or `circle`), `score` and `features`; `image_size` is that image's (width, height), and the
+        `circle` or `character`), `score` and `features`; `image_size` is that image's (width, height), and the
         boxes are scaled to the pixels of the page record, as a drawn box is. Each becomes a unit with
         method `detect`, review `machine`, no character, kind `char` for a mark and `punctuation` for
         a circle, and `meta.proposer` naming the proposer's version; its id is
-        `{line_id}:{run}:{n}`, with `run` a short hash of that version.
+        `{line_id}:{run}:{n}`, with `run` a short hash of that version. `script` is the script the
+        units are filed under before anyone reads them, when the source is written in one.
 
         The proposals of one version are recorded once per page: when any unit of the page, active
         or retired, already carries this version, nothing is written, so a proposal a reviewer
-        removed does not come back. Proposals of an earlier version that nobody has touched (still
-        `machine`, still active, still without a character) are retired first; manual units and
+        removed does not come back. Proposals of an earlier version of the same proposer (the name up
+        to its last hyphen: `interlinear-1` before `interlinear-2`) that nobody has touched (still
+        `machine`, still active, still without a character) are retired first; another proposer's
+        proposals, manual units and
         units a reviewer confirmed are never changed, and a proposal overlapping any active unit of
         the page by more than half its area is left out. Every write is an event of the review log,
         role `model`, so `atlas review apply` reproduces the units.
@@ -985,7 +988,8 @@ class Store:
             retired = []
             for unit in units:
                 if (unit.active and unit.method == DETECT and unit.review == ReviewState.MACHINE
-                        and not unit.unicode and unit.meta.get("proposer") not in (None, proposer)):
+                        and not unit.unicode and unit.meta.get("proposer") not in (None, proposer)
+                        and _family(unit.meta["proposer"]) == _family(proposer)):
                     event = Review(id="", target_type="unit", target_id=unit.id, field="active", new=False,
                                    role="model", actor=client, evidence=json.dumps({"superseded_by": proposer}),
                                    at=datetime.now(UTC))
@@ -1019,6 +1023,7 @@ class Store:
                     box=box,
                     kind=UnitKind.PUNCTUATION if circle else UnitKind.CHAR,
                     classification=Classification.UNASSESSED,
+                    script=script,
                     method=DETECT,
                     confidence=Confidence(detection=proposal.score, model=proposer),
                     review=ReviewState.MACHINE,
@@ -2162,3 +2167,8 @@ def _problem(exc: ValidationError) -> str:
     return "; ".join(
         f"{'.'.join(str(part) for part in problem['loc'])}: {problem['msg']}" for problem in exc.errors()[:3]
     )
+
+
+def _family(proposer: str) -> str:
+    """A proposer's name without its version: `interlinear` of `interlinear-1`."""
+    return proposer.rsplit("-", 1)[0]

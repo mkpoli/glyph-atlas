@@ -226,3 +226,53 @@ def test_the_command_says_which_extra_it_needs(dataset: Path, monkeypatch: pytes
     monkeypatch.setattr(builtins, "__import__", without_cv2)
     result = CliRunner().invoke(app, ["review", "propose-marks", str(dataset)])
     assert result.exit_code == 2 and "uv sync --extra marks" in result.output
+
+
+def test_another_proposers_units_are_not_retired(dataset: Path) -> None:
+    from glyph_atlas.character_proposals import Proposal as Character
+
+    store = Store(dataset)
+    marks = propose(store)["created"]
+    result = store.propose_units(PAGE, [Character(x=300, y=200, w=40, h=40, score=0.05)], "characters-abc",
+                                 image_size=(400, 300), script="tangut")
+    assert result["retired"] == [] and all(store.unit(unit).active for unit in marks)
+    (unit,) = (store.unit(identifier) for identifier in result["created"])
+    assert (str(unit.kind), str(unit.script), unit.meta["proposal"]) == ("char", "tangut", "character")
+
+
+def test_propose_characters_records_the_detector_boxes(dataset: Path, monkeypatch: pytest.MonkeyPatch,
+                                                      tmp_path: Path) -> None:
+    from glyph_atlas import character_proposals, detect
+    from glyph_atlas.cli import app
+
+    made = []
+
+    class Stub:
+        def __init__(self, *args, **kwargs) -> None:
+            made.append(kwargs)
+
+        def boxes(self, image):
+            return [(Box(x=10, y=20, w=30, h=40), 0.05), (Box(x=60, y=20, w=30, h=40), 0.03)]
+
+    monkeypatch.setattr(detect, "Detector", Stub)
+    model = tmp_path / "detector.onnx"
+    model.write_bytes(b"model")
+    runner = CliRunner()
+    first = runner.invoke(app, ["review", "propose-characters", str(dataset), "--document", DOCUMENT,
+                                "--script", "tangut", "--onnx", str(model)])
+    assert first.exit_code == 0, first.output
+    assert first.output.splitlines()[0].split()[1:5] == ["2", "boxes", "2", "recorded"]
+    units = Store(dataset).units_of_page(PAGE)
+    assert {str(unit.script) for unit in units} == {"tangut"}
+    assert sorted(unit.box.iiif_region() for unit in units) == ["120,40,60,80", "20,40,60,80"]
+    assert {unit.meta["proposer"] for unit in units} == {character_proposals.proposer(model)}
+    assert made == [{"score": 0.02, "nms": 0.2}]
+    again = runner.invoke(app, ["review", "propose-characters", str(dataset), "--onnx", str(model)])
+    assert again.exit_code == 0 and "already proposed" in again.output
+    for arguments, message in ((["--script", "klingon"], "no script"), (["--document", "nope"], "no document"),
+                               (["--onnx", str(tmp_path / "missing.onnx")], "no detector export")):
+        refused = runner.invoke(app, ["review", "propose-characters", str(dataset), "--onnx", str(model), *arguments])
+        assert refused.exit_code == 2 and message in refused.output, refused.output
+    apply(dataset)
+    rebuilt = {unit.id: unit for unit in tables.read(dataset / "units.parquet", Unit)}
+    assert {str(rebuilt[unit.id].script) for unit in units} == {"tangut"}
