@@ -612,6 +612,30 @@ def review_withheld_release(
     typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
 
 
+@review_app.command("source-duplicates")
+def review_source_duplicates(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose hk: and ar: crops are compared")],
+    out: Annotated[Path, typer.Option(help="report of every proposed withhold")],
+    apply: Annotated[bool, typer.Option("--apply/--dry-run", help="record the withholds in the dataset's journal")] = False,
+    undo: Annotated[bool, typer.Option(help="put back the notes this pass wrote instead (with --apply; a dry run "
+                                       "counts them)")] = False,
+    protect: Annotated[Path | None, typer.Option(help="file of unit ids never withheld, one per line (reviewed on the site)")] = None,
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    min_overlap: Annotated[float, typer.Option(help="least share of the smaller box the two boxes share")] = 0.5,
+) -> None:
+    """Withhold the worse of two shown hk:/ar: crops of one character on one ink (needs CUDA)."""
+    from .review import source_duplicates
+
+    if undo:
+        result = source_duplicates.undo(directory, apply=apply)
+    else:
+        ids = protect.read_text().split() if protect else ()
+        result = source_duplicates.run(directory, checkpoint=checkpoint, apply=apply, protect=ids,
+                                       min_overlap=min_overlap)
+    source_duplicates.write(result, out)
+    typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
+
+
 @review_app.command("ocr-repair")
 def review_ocr_repair(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose OCR-labelled crops are checked")],
