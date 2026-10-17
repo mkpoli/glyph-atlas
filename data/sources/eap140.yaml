@@ -5,7 +5,8 @@
 #
 # The list is the BL catalogue's EAP140/1 hierarchy, read on 2026-10-17 from
 # https://searcharchives.bl.uk/?f%5Broot_ancestor_reference_ssi%5D%5B%5D=EAP140/1&format=json&sort=hierarchy
-# (210 files, 25,955 TIFF images); each file's title is the catalogue's, with the date range dropped.
+# (210 files, 25,955 TIFF images); each `title` is the catalogue's without its date range, and the
+# collected document takes the manifest's label, which keeps it.
 # Each file has a IIIF Presentation 3 manifest at eap.bl.uk/archive-file/EAP140-1-<n>/manifest whose
 # canvases point at the IIIF image service images.eap.bl.uk. The catalogue's HTML pages sit behind a
 # bot challenge; the manifests and the image service do not.
