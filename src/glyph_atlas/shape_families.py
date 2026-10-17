@@ -51,8 +51,8 @@ group to the one family it is tied to when
 3. no source calls the two a variant in some senses only (`specialized-semantic`) or relates them
    as different characters (`DIFFERENT`);
 4. a simplified form OpenCC's STCharacters also lists as its own traditional (`STANDALONE`: 云 for
-   雲 and 云, 后 for 後 and 后) is the merger of two characters, and its simplification joins
-   nothing;
+   雲 and 云, 后 for 後 and 后) is the merger of two characters, and the pair stays apart whatever
+   else relates it: 衚 is also a plain variant of 胡 in one table, and stays apart;
 5. a group joins the simplified, 新字体, regional or 隸定 form of its own character only when that
    form is tied to nothing else: 閑 is tied to 闲 alone, and 闲 is also the simplified 閒;
 6. where it would put two characters one national standard holds as two (JIS X 0208, GB 2312,
@@ -332,6 +332,7 @@ def _join_yixiezi(
     ties: dict[int, set[int]] = {}
     whole: dict[frozenset[int], list[Edge]] = {}
     apart: set[frozenset[int]] = set()
+    merged: set[frozenset[int]] = set()
     for row in variants:
         a, b, relation = row["a"], row["b"], row["relation"]
         if a not in ideographs or b not in ideographs or _canonical(a) == _canonical(b):
@@ -343,6 +344,8 @@ def _join_yixiezi(
         pair = frozenset((id(left), id(right)))
         if relation in SPLIT or relation in DIFFERENT:
             apart.add(pair)
+        if relation == "simplified" and b in standalone:
+            merged.add(pair)
         if relation not in refs.WRITTEN_FOR or not any(
                 refs._counts(relation, claim) for claim in row["detail"].split(" | ")):
             continue
@@ -362,6 +365,8 @@ def _join_yixiezi(
         full = all(edge.relation in REDUCED_FORM and edge.a in units[key].members for edge in edges)
         if pair in apart:
             refuse("a variant in some senses only, or a different character", edges[0])
+        elif pair in merged:
+            refuse("a simplified form that also writes itself", edges[0])
         elif full and ties[other] != {key}:
             refuse("the full form of a reduced form that writes another character too", edges[0])
         elif any(units[key].members & standard and units[other].members & standard

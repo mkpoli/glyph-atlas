@@ -265,3 +265,9 @@ def test_the_yixiezi_pass_never_joins_two_curated_families():
     rows = [edge("国", "学", "variant")]
     assert grouped(rows, curated={"国": ["国", "國"], "学": ["学", "學"]}) == {"国": "国國", "学": "学學"}
 
+
+def test_a_simplified_form_that_writes_itself_stays_apart_whatever_else_relates_it():
+    rows = [edge("衚", "胡", "simplified", "opencc", "STCharacters (also itself) | TSCharacters"),
+            edge("衚", "胡", "variant", "cjkvi-variants", "胡→衚 hydzd/variant")]
+    assert grouped(rows) == {}
+
