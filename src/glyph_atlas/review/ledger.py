@@ -48,6 +48,8 @@ COLUMNS = ("subject", "predicate", "scope", "slot", "status", "object", "value",
 KEYS_PER_STATEMENT = 50
 #: The evidence a claim may name beside its crop version, which the ledger writes itself.
 EVIDENCE_KINDS = frozenset({"page", "source"})
+EVIDENCE_MAX = 8
+#: The longest gloss, in code points.
 GLOSS_MAX = 200
 
 
@@ -124,9 +126,10 @@ def check(predicate: str, claims: Sequence[Claim], *, objects: Mapping[str, str]
         raise LedgerError(422, "A claim names a value.")
     if "methods" in spec and method not in spec["methods"]:
         raise LedgerError(422, f"{predicate} names how it is known: one of {', '.join(spec['methods'])}.")
-    for item in evidence:
-        if item.kind not in EVIDENCE_KINDS or not item.ref:
-            raise LedgerError(422, f"Evidence is a {' or a '.join(sorted(EVIDENCE_KINDS))} with a reference.")
+    if len(evidence) > EVIDENCE_MAX or any(item.kind not in EVIDENCE_KINDS or not item.ref for item in evidence):
+        raise LedgerError(422, f"Evidence is at most {EVIDENCE_MAX} pages or sources, each with a reference.")
+    if len({(item.kind, item.ref) for item in evidence}) < len(evidence):
+        raise LedgerError(422, "Each item of evidence is named once.")
     schemes = spec.get("confidence")
     if len(claims) > 1 and not (spec.get("alternatives") and spec["cardinality"] == "one"):
         raise LedgerError(422, f"{predicate} takes one value a claim.")
@@ -156,10 +159,10 @@ def check(predicate: str, claims: Sequence[Claim], *, objects: Mapping[str, str]
 
 def _shaped(shape: str | None, value: Any) -> bool:
     """Whether a value has the shape a predicate takes besides its listed values: a `gloss` is
-    `{"gloss": text}`, the sense in words where no word row fits yet."""
+    `{"gloss": text}`, the sense in words where no word row fits yet, with no space around it."""
     if shape == "gloss":
-        return (isinstance(value, dict) and value.keys() == {"gloss"} and isinstance(value["gloss"], str)
-                and 0 < len(value["gloss"].strip()) <= GLOSS_MAX)
+        gloss = value.get("gloss") if isinstance(value, dict) and value.keys() == {"gloss"} else None
+        return isinstance(gloss, str) and gloss == gloss.strip() and 0 < len(gloss) <= GLOSS_MAX
     return False
 
 

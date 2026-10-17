@@ -304,6 +304,8 @@ def test_an_attestation_names_its_word_its_evidence_and_how_sure_the_form_is(con
 def test_an_attestation_without_a_word_row_names_a_gloss(conn):
     attest(conn, "ann", Claim(value={"gloss": "herring"}, confidence=1, confidence_scheme="form"), method="gloss")
     assert ledger.current(conn, CROP, V1)[0]["value"] == {"gloss": "herring"}
+    # A gloss is counted in code points, as the Worker counts it.
+    attest(conn, "ann", Claim(value={"gloss": "𠀀" * 200}, confidence=1, confidence_scheme="form"), method="gloss")
 
 
 @pytest.mark.parametrize("members, method, evidence, message", [
@@ -314,6 +316,12 @@ def test_an_attestation_without_a_word_row_names_a_gloss(conn):
     ([Claim(value="disputed", confidence=1, confidence_scheme="form")], "ruby", (), "is not a value"),
     ([Claim(value={"gloss": ""}, confidence=1, confidence_scheme="form")], "ruby", (), "is not a value"),
     ([Claim(object=WORD, confidence=1, confidence_scheme="form")], "ruby", [ledger.Evidence("crop", "x")], "Evidence is"),
+    ([Claim(object=WORD, confidence=1, confidence_scheme="form")], "ruby",
+     [ledger.Evidence("page", "p1", "a"), ledger.Evidence("page", "p1", "b")], "named once"),
+    ([Claim(object=WORD, confidence=1, confidence_scheme="form")], "ruby", [ledger.Evidence("page", f"p{n}") for n in range(9)],
+     "at most 8"),
+    ([Claim(value={"gloss": "herring "}, confidence=1, confidence_scheme="form")], "ruby", (), "is not a value"),
+    ([Claim(value={"gloss": "𠀀" * 201}, confidence=1, confidence_scheme="form")], "ruby", (), "is not a value"),
 ])
 def test_the_catalogue_refuses_an_attestation_it_does_not_take(conn, members, method, evidence, message):
     with pytest.raises(LedgerError, match=message):

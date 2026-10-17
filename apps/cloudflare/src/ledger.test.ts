@@ -38,6 +38,10 @@ test('an attestation names a word or a gloss, how the sense is known, and how su
     try { checkClaims('writes_word', [word], { 'ja/にしん/名詞': 'word' }, fail, 'ruby', items); return null } catch (e) { return String(e) } }
   expect(evidence([{ kind: 'source', ref: 'rubies:l1:ruby0:right', locator: null }])).toBeNull()
   expect(evidence([{ kind: 'crop', ref: 'x', locator: null }])).toContain('Evidence is')
+  expect(evidence([{ kind: 'page', ref: 'p1', locator: 'a' }, { kind: 'page', ref: 'p1', locator: 'b' }])).toContain('named once')
+  expect(refused([member({ value: { gloss: '𠀀'.repeat(200) }, confidence: 1, confidence_scheme: 'form' })], 'gloss')).toBeNull()
+  expect(refused([member({ value: { gloss: '𠀀'.repeat(201) }, confidence: 1, confidence_scheme: 'form' })], 'gloss')).toContain('is not a value')
+  expect(refused([member({ value: { gloss: 'herring ' }, confidence: 1, confidence_scheme: 'form' })], 'gloss')).toContain('is not a value')
 })
 
 test('the resolver names its version and runs over the site\'s own crops', () => {

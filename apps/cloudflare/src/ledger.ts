@@ -37,10 +37,13 @@ export type LedgerTools = {
 };
 export type Member = { object: string | null; value: unknown; confidence: number | null; confidence_scheme: string | null };
 
-// A value a predicate takes besides its listed ones: a `gloss` is {gloss: text}, the sense in words where no word row fits yet.
-const shaped = (shape: string | undefined, value: unknown) => shape === 'gloss' && typeof value === 'object' && value !== null
-  && !Array.isArray(value) && Object.keys(value).join() === 'gloss' && typeof (value as Json).gloss === 'string'
-  && (value as Json).gloss.trim().length > 0 && (value as Json).gloss.length <= GLOSS_MAX;
+// A value a predicate takes besides its listed ones: a `gloss` is {gloss: text}, the sense in words where no word
+// row fits yet, with no space around it and at most GLOSS_MAX code points, as the review service counts them.
+const shaped = (shape: string | undefined, value: unknown) => {
+  if (shape !== 'gloss' || typeof value !== 'object' || value === null || Array.isArray(value) || Object.keys(value).join() !== 'gloss') return false;
+  const gloss = (value as Json).gloss;
+  return typeof gloss === 'string' && gloss === gloss.trim() && gloss.length > 0 && [...gloss].length <= GLOSS_MAX;
+};
 
 /** Refuse members the catalogue does not allow; `kinds` gives the kind of each named entity. A predicate
  *  that lists `methods` takes one of them, and one that lists `confidence` schemes a confidence at one of their levels. */
@@ -51,6 +54,7 @@ export function checkClaims(predicate: string, members: Member[], kinds: Record<
   if (!members.length) fail(422, 'A claim names a value.');
   if (spec.methods && !spec.methods.includes(method as string)) fail(422, `${predicate} names how it is known: one of ${spec.methods.join(', ')}.`);
   if (evidence.length > EVIDENCE_MAX || evidence.some(e => !EVIDENCE_KINDS.has(e.kind) || !e.ref)) fail(422, `Evidence is at most ${EVIDENCE_MAX} pages or sources, each with a reference.`);
+  if (new Set(evidence.map(e => JSON.stringify([e.kind, e.ref]))).size < evidence.length) fail(422, 'Each item of evidence is named once.');
   const schemes = spec.confidence;
   if (members.length > 1 && !(spec.alternatives && spec.cardinality === 'one')) fail(422, `${predicate} takes one value a claim.`);
   const seen = new Set<string>();

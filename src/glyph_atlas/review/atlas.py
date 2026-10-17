@@ -1105,7 +1105,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         # An object this route can name is a word of the vocabulary.
         known = refs.words()
         objects = {m.object: "word" for m in members if m.object in known}
-        items = [ledger.Evidence(item.kind, item.ref, item.locator) for item in edit.evidence]
+        # References are trimmed, as the Worker trims them.
+        items = [ledger.Evidence(item.kind.strip(), item.ref.strip(), item.locator.strip() if item.locator else None)
+                 for item in edit.evidence]
         return ledger_call(store.write_claims, key=key, actor=edit.client_id, request=request, subject=edit.subject,
                            predicate=edit.predicate, scope=edit.scope, claims=members, crop_version=version, method=edit.method,
                            objects=objects, evidence=items)
