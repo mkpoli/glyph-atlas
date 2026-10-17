@@ -22,7 +22,8 @@ def test_work_balancing_is_stable_under_source_order_and_caps_sources():
 
 
 def test_variant_families_use_shared_canonical_keys():
-    assert families("仮假") == {"U+4EEE": ["U+4EEE", "U+5047"]}
+    found = families("仮假")
+    assert list(found) == ["U+4EEE"] and {"U+4EEE", "U+5047"} <= set(found["U+4EEE"])
 
 
 class NeverRead(httpx.SyncByteStream):

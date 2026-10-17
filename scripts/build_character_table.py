@@ -594,6 +594,16 @@ def familiarity(ucd: Path) -> dict[str, int]:
     return found
 
 
+def gb2312(ucd: Path) -> set[str]:
+    """The ideographs whose Unihan `kIRG_GSource` is `G0`, the GB 2312 repertoire."""
+    return _irg_repertoire(ucd, "kIRG_GSource", "G0-")
+
+
+def cns1(ucd: Path) -> set[str]:
+    """The ideographs whose Unihan `kIRG_TSource` is `T1`, CNS 11643 plane 1."""
+    return _irg_repertoire(ucd, "kIRG_TSource", "T1-")
+
+
 def jis0208(ucd: Path) -> set[str]:
     """The ideographs whose Unihan `kIRG_JSource` is `J0`, the JIS X 0208 repertoire."""
     return _irg_repertoire(ucd, "kIRG_JSource", "J0-")
@@ -630,7 +640,7 @@ def _add_shape_families(
                for head, family in (document.get("families") or {}).items()}
     families = shape_families.families(
         read_table(vocab / VARIANTS_NAME), read_table(vocab / EQUIVALENTS_NAME), ideographs,
-        default_figure, jis0208(ucd), curated, refused, familiarity=familiarity(ucd))
+        default_figure, jis0208(ucd), curated, refused, gb2312(ucd), cns1(ucd), familiarity(ucd))
     for family in families:
         head = code_point(ord(family.head))
         for member in family.members:

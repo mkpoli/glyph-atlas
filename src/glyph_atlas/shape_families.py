@@ -13,11 +13,11 @@ them as the same character in another shape join two code points:
   character is registered under in the 戸籍統一文字.
 
 Simplified, semantic, specialized-semantic and the other relations of `kanji-variants.tsv` join
-nothing, and the relations `refs` keeps apart block a merge (`BLOCKING`): no family holds two
-characters that any source calls a simplification, a variant in some senses only, a loan (通假),
-a substitute, a non-cognate homograph or a look-alike of one another. The check is made on the
-whole of both groups before they are joined, so a chain cannot carry a family across a pair it
-could not join directly.
+nothing in this pass, and the relations `refs` keeps apart block a merge (`BLOCKING`): no merge here
+puts together two characters that any source calls a simplification, a variant in some senses only,
+a loan (通假), a substitute, a non-cognate homograph or a look-alike of one another. The check is
+made on the whole of both groups before they are joined, so a chain cannot carry a family across a
+pair it could not join directly.
 
 The MJ縮退マップ is a table for 戸籍 administration and joins more than shapes, so a reduction
 counts only when:
@@ -34,16 +34,59 @@ counts only when:
 4. it does not join two groups that each hold a 正字 of their own (a reduction target that is not
    itself reduced), which would make one character a variant of two.
 
+A second pass takes in the 異寫字: a character, or a family built above, that the sources tie to
+one family only and call that family's character written another way. The simplified 时 of 時,
+the 新字体 竜 of 龍 and a 略字 one table lists are each 異寫字, since each writes one character and
+nothing else. A character tied to two families is a variant of both and joins neither: 寸 is a
+variant of 時 and of 算, 弁 the 新字体 of 辨, 辯 and 瓣, and both stay apart. The pass joins a
+group to the one family it is tied to when
+
+1. every relation of `refs.WRITTEN_FOR` it has with a character outside itself leads into that
+   family, so it is a variant of nothing else;
+2. at least one of those is a statement of the whole character (`WHOLE`): a variant, a full
+   equivalent, a semantic, `z` or compatibility variant, a simplified, 新字体, regional or 隸定 form.
+   cjkvi's 関連字 and 原規格分離 tables (`RELATED_ONLY`) say two characters are related, not that
+   one is written for the other, and a variant in some senses, a fallback reduction or a 韻典網
+   group joins nothing;
+3. no source calls the two a variant in some senses only (`specialized-semantic`) or relates them
+   as different characters (`DIFFERENT`);
+4. a simplified form OpenCC's STCharacters also lists as its own traditional (`STANDALONE`: 云 for
+   雲 and 云, 后 for 後 and 后) is the merger of two characters, and its simplification joins
+   nothing;
+5. a group joins the simplified, 新字体, regional or 隸定 form of its own character only when that
+   form is tied to nothing else: 閑 is tied to 闲 alone, and 闲 is also the simplified 閒;
+6. where it would put two characters one national standard holds as two (JIS X 0208, GB 2312,
+   CNS 11643 plane 1) into one family, that standard's own tradition states them one character:
+   for JIS X 0208 a 新字体 or a 異体字 row of the Japanese tables cjkvi carries (`JAPANESE_TABLES`:
+   戸籍統一文字, 常用漢字表, 人名用漢字, 表外漢字字体表). The simplification and 異体字 tables of the
+   Chinese standards keep their pairs as two, so a GB 2312 or CNS pair joins only as one character
+   encoded twice (`z`, compatibility). 躰 and 體, 邉 and 邊 join on the 戸籍統一文字; 咲 and 笑, 果
+   and 菓, 辟 and 避 stay apart, as do 余 and 馀;
+7. two curated families are never joined.
+
+The pass looks at the groups as the first pass left them and joins them all at once, so a chain
+cannot carry a family on: 閑 is tied to 閒 alone, but once joined the pair would be tied to 間 alone,
+and 閑 and 間 are not one character.
+
+The word 異寫字 for a variant that differs in writing only, set against the broader 異體字, follows
+字統网 (zi.tools, https://zi.tools/, read 2026-10-17), whose variant graph also links a variant to
+a whole character (`時-*`) or to one of its senses; the pages read state no definition of the term.
+A one-to-many simplification or 新字体 as the test of ambiguity follows the join of the 常用漢字表
+with the 通用规范汉字表 in Ryusei Yamaguchi (mandel59), 「文字情報ハックのすすめ」, undated slides
+(https://biangbiangcon.ryusei.dev/, read 2026-10-17), where 弁 meets 瓣, 辨 and 辩 and 乾 meets 乾
+and 干; a talk's slides, not a reviewed publication.
+
 Edges are applied in a fixed order (compatibility and `z` first, then 包摂, then reductions; within a
 kind by code point), so the build gives the same families on every run.
 
 The head of a family is its curated representative when `graphemes.yaml` names the family; otherwise
 the member a Japanese reader knows best (`familiarity`: a 常用漢字, then a 人名用漢字, then JIS X
-0208 level 1, then level 2), the 正字 the family's directed edges point at (the member that is a
-reduction or decomposition target and is reduced to nothing else) first among several; with none of
-those, that 正字; then a unified ideograph over a compatibility one, then the lowest code point. So
-群 heads the family 羣 joins, and 村 the family of 邨. The 正字 is the character a source names as
-the one the others are written for; the code point is only there to make the choice total.
+0208 level 1, then level 2), the 正字 the family's directed edges point at (the
+member that is a reduction or decomposition target and is reduced to nothing else) first among
+several; with none of those, that 正字; then a unified ideograph over a compatibility one, then the
+lowest code point. So 群 heads the family 羣 joins, and 村 the family of 邨. The 正字 is the
+character a source names as the one the others are written for; the code point is only there to
+make the choice total.
 """
 
 from __future__ import annotations
@@ -58,6 +101,23 @@ from . import refs
 #: Relations of the 異体字 graph that keep a pair in separate families.
 DIFFERENT = frozenset({"borrowed", "substitute", "non-cognate", "spoofing"})
 BLOCKING = refs.KEPT_APART | refs.NOT_WIDENED | DIFFERENT
+#: Relations that state one character written whole in another shape: a 異寫字 joins its family by
+#: one of these.
+WHOLE = frozenset({"variant", "equivalent", "semantic", "z", "simplified", "shinjitai", "regional",
+                   "shuowen", "compatibility"})
+#: Relations that tie a pair as a variant in some senses only, and keep it apart.
+SPLIT = frozenset({"specialized-semantic"})
+#: Directed relations whose `b` is the form written for `a`'s character: a reduced form that may
+#: write more than one.
+REDUCED_FORM = frozenset({"simplified", "shinjitai", "regional", "shuowen"})
+#: cjkvi tag prefixes of the Japanese 異体字 tables.
+JAPANESE_TABLES = ("koseki/", "joyo/", "jinmei1/", "jinmei2/", "hyogai/")
+#: Relations that state one character encoded twice, which every standard accepts.
+ENCODED_TWICE = frozenset({"z", "compatibility"})
+#: The claim of an OpenCC row whose simplified form STCharacters lists among its own traditional forms.
+STANDALONE = "STCharacters (also itself)"
+#: cjkvi tables whose rows only say two characters are related (関連字, 原規格分離).
+RELATED_ONLY = frozenset({"cjkvi/variant", "jisx0212/variant", "jisx0213/variant", "ucs-scs/variant"})
 #: Relations another source uses for the same character in another shape; they corroborate a
 #: reduction between two JIS X 0208 characters and join nothing themselves.
 CORROBORATING = frozenset({"variant", "equivalent", "shinjitai", "z"})
@@ -167,6 +227,8 @@ def families(
     jis0208: set[str],
     curated: Mapping[str, list[str]] | None = None,
     refused: list[tuple[str, Edge]] | None = None,
+    gb2312: set[str] | None = None,
+    cns1: set[str] | None = None,
     familiarity: Mapping[str, int] | None = None,
 ) -> list[Family]:
     """Every family of more than one character, curated ones included, in head code point order.
@@ -174,9 +236,11 @@ def families(
     `curated` maps a head character to the members `graphemes.yaml` states for it, head first. A
     curated family keeps its head and may take in further members by a shape edge; two curated
     families are never joined. `refused`, when given, collects the merges a rule turned down — as
-    (reason, edge) pairs in edge order — for the build's summary. `familiarity` ranks the characters
+    (reason, edge) pairs in edge order — for the build's summary. `gb2312` and `cns1` are the GB 2312
+    and CNS 11643 plane 1 repertoires (rule 6 of the 異寫字 pass), `familiarity` ranks the characters
     a Japanese reader knows, lowest first, for the head.
     """
+    variants = list(variants)
     edges, corroboration, blocked = candidate_edges(
         variants, equivalents, ideographs, default_figure, jis0208)
     reduced = {edge.a for edge in edges if edge.relation == "reduction"}
@@ -191,7 +255,7 @@ def families(
         return group.get(char) or Family(char, {char})
 
     def refuse(reason: str, edge: Edge) -> None:
-        if refused is not None:
+        if refused is not None and (reason, edge) not in refused:
             refused.append((reason, edge))
 
     for edge in edges:
@@ -223,11 +287,100 @@ def families(
         keep.edges += gone.edges + [edge] + seconds
         for char in keep.members:
             group[char] = keep
+    _join_yixiezi(variants, ideographs, {"jis": jis0208, "gb": gb2312 or set(), "cns": cns1 or set()}, group, refuse)
     found = {id(family): family for family in group.values() if len(family.members) > 1}
     for family in found.values():
         if not family.curated:
             family.head = head_of(family, familiarity or {})
     return sorted(found.values(), key=lambda family: ord(family.head))
+
+
+def _whole(row: Mapping[str, str], standalone: set[str]) -> bool:
+    """Whether a row states one character written whole for the other (rules 2 and 4)."""
+    if row["relation"] not in WHOLE or (row["relation"] == "simplified" and row["b"] in standalone):
+        return False
+    claims = [claim for claim in row["detail"].split(" | ") if refs._counts(row["relation"], claim)]
+    if row["source"] == "cjkvi-variants":
+        claims = [claim for claim in claims if claim.split()[1:2] and claim.split()[1] not in RELATED_ONLY]
+    return bool(claims)
+
+
+def _stated_by(standard: str, edge: Edge) -> bool:
+    """Whether a standard's own tradition states a pair one character (rule 6)."""
+    if edge.relation in ENCODED_TWICE:
+        return True
+    if standard != "jis":
+        return False
+    return edge.relation == "shinjitai" or (edge.source == "cjkvi-variants" and any(
+        claim.split()[1].startswith(JAPANESE_TABLES) for claim in edge.detail.split(" | ") if len(claim.split()) > 1))
+
+
+def _join_yixiezi(
+    variants: list[Mapping[str, str]], ideographs: set[str], standards: tuple[set[str], ...],
+    group: dict[str, Family], refuse,
+) -> None:
+    """The 異寫字 pass (see the module docstring): join each group tied to one family only."""
+    standalone = {row["b"] for row in variants if row["relation"] == "simplified" and row["source"] == "opencc"
+                  and STANDALONE in row["detail"].split(" | ")}
+    units: dict[str, Family] = {}
+
+    def unit(char: str) -> Family:
+        if char not in group:
+            group[char] = Family(char, {char})
+        return group[char]
+
+    ties: dict[int, set[int]] = {}
+    whole: dict[frozenset[int], list[Edge]] = {}
+    apart: set[frozenset[int]] = set()
+    for row in variants:
+        a, b, relation = row["a"], row["b"], row["relation"]
+        if a not in ideographs or b not in ideographs or _canonical(a) == _canonical(b):
+            continue
+        left, right = unit(a), unit(b)
+        if left is right:
+            continue
+        units[id(left)], units[id(right)] = left, right
+        pair = frozenset((id(left), id(right)))
+        if relation in SPLIT or relation in DIFFERENT:
+            apart.add(pair)
+        if relation not in refs.WRITTEN_FOR or not any(
+                refs._counts(relation, claim) for claim in row["detail"].split(" | ")):
+            continue
+        ties.setdefault(id(left), set()).add(id(right))
+        ties.setdefault(id(right), set()).add(id(left))
+        if _whole(row, standalone):
+            whole.setdefault(pair, []).append(Edge(a, b, relation, row["source"], row["detail"]))
+    joins = []
+    for key in sorted(ties, key=lambda key: ord(min(units[key].members, key=ord))):
+        if len(ties[key]) != 1:
+            continue
+        (other,) = ties[key]
+        pair = frozenset((key, other))
+        if pair not in whole:
+            continue
+        edges = sorted(whole[pair], key=lambda edge: (ord(edge.a), ord(edge.b), edge.source, edge.relation))
+        full = all(edge.relation in REDUCED_FORM and edge.a in units[key].members for edge in edges)
+        if pair in apart:
+            refuse("a variant in some senses only, or a different character", edges[0])
+        elif full and ties[other] != {key}:
+            refuse("the full form of a reduced form that writes another character too", edges[0])
+        elif any(units[key].members & standard and units[other].members & standard
+                 and not any(_stated_by(name, edge) for edge in edges) for name, standard in standards.items()):
+            refuse("two characters of one standard its tradition does not join", edges[0])
+        elif units[key].curated and units[other].curated:
+            refuse("two curated families", edges[0])
+        else:
+            joins.append((units[key], units[other], edges))
+    for gone, keep, edges in joins:
+        gone, keep = group[min(gone.members, key=ord)], group[min(keep.members, key=ord)]
+        if gone is keep:
+            continue  # two groups tied to each other only, joined from the other side already
+        if gone.curated:
+            gone, keep = keep, gone
+        keep.members |= gone.members
+        keep.edges += gone.edges + edges
+        for char in keep.members:
+            group[char] = keep
 
 
 def head_of(family: Family, familiarity: Mapping[str, int]) -> str:
