@@ -648,6 +648,7 @@
   "state.checked": "確認됨",
   "state.flagged": "修正 必要",
   "state.hard": "難讀: 檢討者 두 名이 건너뜀",
+  "state.unchecked": "未確認",
   "suggestions.finding": "提案 찾는 中…",
   "suggestions.heading": "提案",
   "suggestions.label": "提案",

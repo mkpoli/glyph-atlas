@@ -650,6 +650,7 @@
   "state.checked": "已校",
   "state.flagged": "待正",
   "state.hard": "難辨：二校者皆闕疑",
+  "state.unchecked": "未校",
   "style.basis.document": "從書",
   "style.basis.document_confirmed": "從書（已審）",
   "style.basis.page": "從頁",
