@@ -24,7 +24,14 @@ def grouped(variants, *, equivalents=(), figures=None, jis=(), curated=None, ide
     chars = {char for row in [*variants, *equivalents] for char in (row["a"], row["b"])}
     found = families(variants, equivalents, ideographs or chars, figures or {}, set(jis), curated,
                      familiarity={char: 2 for char in jis})
-    return {family.head: "".join(sorted(family.members)) for family in found}
+    return {family.head: "".join(sorted(family.members)) for family in found if len(family.members) > 1}
+
+
+def writers(variants, **options):
+    """The forms that write several characters, as {family head: sorted writers}."""
+    chars = {char for row in variants for char in (row["a"], row["b"])}
+    found = families(variants, (), options.get("ideographs") or chars, {}, set())
+    return {family.head: "".join(sorted(family.writers)) for family in found if family.writers}
 
 
 #: 還 and the figures the 戸籍統一文字 registers under it, as the MJ tables state them.
@@ -341,3 +348,46 @@ def test_a_traditional_form_or_the_seiji_heads_over_a_simplification():
     found = families(rows, [], {"吕", "郘"}, {}, set(), familiarity={"吕": 6, "郘": 7})
     assert [f.head for f in found] == ["吕"], "GB 2312 heads over CNS 11643 plane 2 alone"
 
+
+
+def test_a_reduced_form_of_two_characters_writes_each():
+    """闲 writes 閑 and 閒; each family lists it, and neither full form writes 闲."""
+    rows = [edge("閑", "闲", "simplified", "opencc", "TSCharacters"),
+            edge("閒", "闲", "simplified", "opencc", "TSCharacters")]
+    assert writers(rows) == {"閑": "闲", "閒": "闲"}
+    assert writers(rows[:1]) == {}, "a reduced form of one character is in its family"
+
+
+def test_a_simplified_form_that_also_writes_itself_writes_the_full_form():
+    """后 is its own character and 後's simplified form, and 後's loan in one table."""
+    rows = [edge("後", "后", "simplified", "opencc", "STCharacters (also itself) | TSCharacters"),
+            edge("後", "后", "borrowed", "cjkvi-variants", "後→后 hydcd/borrowed 5298")]
+    assert writers(rows) == {"後": "后"}
+    assert writers([{**rows[0], "detail": "STCharacters | TSCharacters"}]) == {}
+
+
+def test_a_plain_variant_of_two_characters_or_a_homograph_writes_neither():
+    """A variant row does not say which form is reduced; a non-cognate homograph writes nothing."""
+    assert writers([edge("寸", "時", "variant"), edge("寸", "算", "variant")]) == {}
+    rows = [edge("閑", "闲", "simplified", "opencc", "TSCharacters"),
+            edge("閒", "闲", "simplified", "opencc", "TSCharacters"), edge("閒", "闲", "non-cognate")]
+    assert writers(rows) == {}, "闲 is left writing 閑 alone"
+    rows[2:] = [edge("閧", "闲", "simplified", "opencc", "TSCharacters"), edge("𮳣", "闲", "spoofing"),
+                edge("閒", "𮳣", "z")]
+    assert writers(rows) == {"閑": "闲", "閧": "闲"}, "nor a family holding its look-alike"
+
+
+def test_a_reduced_form_inside_one_family_still_writes_another():
+    """当 is in the family of 當 and also the simplified 噹."""
+    rows = [edge("當", "当", "simplified", "unihan", "當→当 kSimplifiedVariant"),
+            edge("噹", "当", "simplified", "unihan", "噹→当 kSimplifiedVariant")]
+    assert writers([edge("當", "当", "z"), *rows]) == {"噹": "当"}
+
+
+def test_the_site_lists_the_forms_that_write_several_characters():
+    writes = {char: "".join(refs.to_char(head) for head in refs.also_writes(refs.to_code_point(char)))
+              for char in "后弁闲时当"}
+    assert writes == {"后": "後", "弁": "瓣辦辨辮辯", "闲": "閑閒", "时": "", "当": "噹"}
+    family = refs.grapheme_info(refs.to_code_point("後"))
+    assert [w["char"] for w in family["writers"]] == ["后"]
+    assert "后" not in family["label"], "a writer is not a member"
