@@ -334,4 +334,10 @@ def test_a_traditional_form_or_the_seiji_heads_over_a_simplification():
     rows = [edge("𥄨", "瞅", "simplified", "cjkvi-variants", "𥄨→瞅 cjkvi/simplified")]
     found = families(rows, [], {"𥄨", "瞅"}, {}, set(), familiarity={"瞅": 5})
     assert [f.head for f in found] == ["瞅"], "GB 2312 and CNS 11643 plane 2 both: Taiwan writes it too"
+    rows = [edge("睹", "覩", "simplified", "cjkvi-variants", "覩→睹 cjkvi/simplified")]
+    found = families(rows, [], {"睹", "覩"}, {}, set(), familiarity={"睹": 3, "覩": 3})
+    assert [f.head for f in found] == ["睹"], "a simplification does not decide between Japanese ranks"
+    rows = [edge("吕", "郘", "variant", "cjkvi-variants", "吕→郘 hydzd/variant")]
+    found = families(rows, [], {"吕", "郘"}, {}, set(), familiarity={"吕": 6, "郘": 7})
+    assert [f.head for f in found] == ["吕"], "GB 2312 heads over CNS 11643 plane 2 alone"
 

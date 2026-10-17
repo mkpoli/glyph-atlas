@@ -85,18 +85,22 @@ kind by code point), so the build gives the same families on every run.
 The head of a family is its curated representative when `graphemes.yaml` names the family; otherwise
 the member a Japanese reader knows best (`familiarity`: a 常用漢字, then a 人名用漢字, then JIS X
 0208 level 1, then level 2), the 正字 the family's directed edges point at (the member that is a
-reduction or decomposition target and is reduced to nothing else) first among several. Past those
-ranks, a member that is another member's simplified form and not of CNS 11643 never heads (璉 over
-琏, while 凳 of CNS 11643 keeps heading the 櫈 cjkvi simplifies to it), and the head is a 正字 a
-reduction names in the main CJK block that CNS 11643 plane 1 or GB 2312 holds (坻 over 泜, but not 靘
-of plane 2 over 靚); then a member of CNS 11643,
-plane 1 before plane 2; then any 正字 a reduction names in the main block; then a member of GB 2312;
-then the form a simplified member simplifies (戇 heads 戆 and 戅), which also wins any tie above (靚
-over 靘, both of plane 2 only); then any 正字, a compatibility
-ideograph's decomposition included; then a unified ideograph over a compatibility one,
-one of the main block over the extensions, then the lowest code point. So 群 heads the family 羣
-joins, 村 the family of 邨, 厲 the family of 厉, 墊 the family of 垫, 璉 the family of 琏, 坻 the family
-of 泜, 妤 the family of 伃, 氯 the family of 㲶, and 篙 the family of 㰏, the 正字 the 戸籍統一文字
+reduction or decomposition target and is reduced to nothing else) first among several.
+
+With no such member, a simplified form that CNS 11643 does not hold never heads (璉 heads 琏; 凳,
+which cjkvi gives as the simplified 櫈, is CNS 11643's own and heads), and the head is, in order:
+
+1. a 正字 a reduction names in the main CJK block that CNS 11643 plane 1 or GB 2312 holds (坻 over 泜);
+2. a member of CNS 11643 plane 1, then of plane 2 and GB 2312 both;
+3. any 正字 a reduction names in the main block;
+4. a member of GB 2312, then of CNS 11643 plane 2 alone (吕 heads 郘);
+5. the full form a simplified member simplifies (戇 heads 戆 and 戅);
+6. any 正字, a compatibility ideograph's decomposition included.
+
+Among equals the full form of a simplification wins (靚 over 靘, both of plane 2 alone); then a
+unified ideograph over a compatibility one, one of the main block over the extensions, then the
+lowest code point. So 群 heads the family 羣 joins, 村 the family of 邨, 厲 the family of 厉, 墊 the
+family of 垫, 妤 the family of 伃, 氯 the family of 㲶, and 篙 the family of 㰏, the 正字 the 戸籍統一文字
 registers it under. The 正字 is the character a source names as the one the others are written for;
 the code point is only there to make the choice total.
 """
@@ -418,6 +422,10 @@ def _join_yixiezi(
 #: The ranks of `familiarity` a Japanese reader knows (常用, 人名用, JIS X 0208 levels 1 and 2), the
 #: traditional standard's (CNS 11643 planes 1 and 2) and the simplified standard's (GB 2312).
 JAPANESE_RANKS, TRADITIONAL_RANKS, SIMPLIFIED_RANKS = range(4), frozenset({4, 5, 7}), frozenset({6})
+#: CNS 11643 plane 1, and plane 2 where GB 2312 holds the character too; plane 2 alone comes after
+#: GB 2312, so a live GB form is not headed by an obscure one (吕, not 郘).
+TAIWAN_RANKS, TRADITIONAL_ONLY_RANKS = frozenset({4, 5}), frozenset({7})
+
 #: The two standards' common sets, CNS 11643 plane 1 and GB 2312: a 正字 in one of them heads first.
 COMMON_CHINESE_RANKS = frozenset({4, 5, 6})
 
@@ -445,9 +453,12 @@ def head_of(family: Family, familiarity: Mapping[str, int]) -> str:
         return {char for char in known if familiarity[char] == top}
 
     japanese = best(JAPANESE_RANKS, family.members)
-    main = {char for char in seiji & candidates if 0x4E00 <= ord(char) <= 0x9FFF}
-    ranked = {char for char in main if familiarity.get(char) in COMMON_CHINESE_RANKS}
-    pool = ((japanese & sinks) or japanese or ranked or best(TRADITIONAL_RANKS, candidates) or main
-            or best(SIMPLIFIED_RANKS, candidates) or full or (sinks & candidates) or candidates)
-    pool = (pool & full) or pool  # among equals, the form a simplification simplifies: 靚 over 靘
+    if japanese:
+        pool = (japanese & sinks) or japanese
+    else:
+        main = {char for char in seiji & candidates if 0x4E00 <= ord(char) <= 0x9FFF}
+        ranked = {char for char in main if familiarity.get(char) in COMMON_CHINESE_RANKS}
+        pool = (ranked or best(TAIWAN_RANKS, candidates) or main or best(SIMPLIFIED_RANKS, candidates)
+                or best(TRADITIONAL_ONLY_RANKS, candidates) or full or (sinks & candidates) or candidates)
+        pool = (pool & full) or pool  # among equals, the form a simplification simplifies: 靚 over 靘
     return min(pool, key=lambda char: (_canonical(char) != char, not 0x4E00 <= ord(char) <= 0x9FFF, ord(char)))
