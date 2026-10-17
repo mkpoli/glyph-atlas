@@ -43,6 +43,12 @@ async function families(env: Env) {
     label: r.label, count: r.count, clusters: r.cluster_count, assigned: r.assigned, rejected: r.rejected })) };
 }
 
+// The code points that have a family, which the site reads to link a character to its forms.
+async function codes(env: Env) {
+  const rows = await env.DB.prepare('SELECT code_point FROM form_families ORDER BY code_point').all<{ code_point: string }>();
+  return rows.results.length ? { items: rows.results.map(r => r.code_point) } : null;
+}
+
 // Each cluster's twelve glyphs least like its centre, past the twelve most typical it already shows
 // and leaving out reported ones: a glyph of another form is most often among them. Read backwards
 // along form_unit_cluster, twelve rows a cluster.
@@ -398,6 +404,11 @@ export async function formsRoute(env: Env, request: Request, path: string, q: UR
   const url = new URL(request.url);
   if (path === '/atlas/forms/families')
     return (await cached(url, state, 'families', () => families(env), ctx)) ?? tools.fail(404, 'No clustering has been published.');
+  if (path === '/atlas/forms/codes') {
+    const value = (await cached(url, state, 'codes', () => codes(env), ctx)) ?? tools.fail(404, 'No clustering has been published.');
+    // Every page asks for these; the browser keeps them a few minutes.
+    return Response.json(value, { headers: { 'cache-control': 'public, max-age=300', 'x-content-type-options': 'nosniff' } });
+  }
   if (path === '/atlas/forms/decisions.jsonl') return decisionLog(env);
   const familyPath = path.match(/^\/atlas\/forms\/families\/([^/]+)$/);
   if (familyPath) {
