@@ -1225,11 +1225,11 @@ async function corpusRound(env: Env, characters: string[], production: string, s
 // from the packs took one R2 request each. Packs are content-addressed, so a copy is current exactly
 // while `corpus_units` still names the object and offset it came from; `scripts/fill_corpus_gallery.py`
 // copies the rest after a publication. A glyph a review has named shows its `units` row.
-// A script group deals the copies of its category (0079) from the whole shuffle range: the scripts the
-// corpus holds few glyphs of are copied whole, so the unchosen gallery keeps to the sample below
-// SAMPLE_RANGE, where every script is copied alike.
+// A script group deals the copies of its category (0079). The scripts the corpus holds few glyphs of
+// are copied whole (WHOLE_GROUPS), so their seed's point falls anywhere in the shuffle range, and the
+// unchosen gallery keeps to the sample below SAMPLE_RANGE, where every script is copied alike.
 const SAMPLE_RANGE = 4194304;
-const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'other'];
+const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol'];
 export const gallerySampleQuery = (side: '>=' | '<', grouped = false) => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
   FROM corpus_gallery s JOIN corpus_units c ON c.id=s.id AND c.object=s.object AND c.offset=s.offset
   LEFT JOIN units u ON u.id=s.id LEFT JOIN form_units f ON f.id=s.id
@@ -1237,7 +1237,7 @@ export const gallerySampleQuery = (side: '>=' | '<', grouped = false) => `SELECT
 async function gallery(env: Env, q: URLSearchParams) {
   const group = q.get('group') && q.get('group') !== 'all' ? q.get('group')! : null;
   if (group && !GALLERY_GROUPS.includes(group)) throw new Problem(400, 'Invalid group.');
-  const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % (group ? SHUFFLE_RANGE : SAMPLE_RANGE);
+  const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % (group && WHOLE_GROUPS.includes(group) ? SHUFFLE_RANGE : SAMPLE_RANGE);
   type Row = UnitForm & { data: string; current: string | null };
   const read = (side: '>=' | '<', n: number) => env.DB.prepare(gallerySampleQuery(side, !!group)).bind(...(group ? [group] : []), start, n).all<Row>();
   const rows = (await read('>=', limit)).results;

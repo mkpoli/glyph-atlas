@@ -9,7 +9,7 @@ The homepage gallery deals copies of the records of the corpus glyphs whose `shu
 its category (0079), so a script group deals its own. This reads which of those D1 lacks a current
 copy of, reads each record's bytes from its R2 pack with a ranged S3 request, and writes SQL parts
 under D1's import size that remove copies whose record has since been republished, insert the missing
-ones and give a category to copies made before there was one. `publish_cloudflare.sh`
+ones and bring every copy's category to its glyph's current character. `publish_cloudflare.sh`
 runs it and applies the parts after every publication; by hand:
 
     uv run scripts/fill_corpus_gallery.py gallery
@@ -53,8 +53,10 @@ WANTED = " UNION ".join(
        for ranges in WHOLE.values() for a, b in ranges])
 MISSING = f"""SELECT c.id,c.shuffle,c.object,c.offset,c.size,c.character FROM ({WANTED}) c
   WHERE NOT EXISTS (SELECT 1 FROM corpus_gallery g WHERE g.id=c.id AND g.object=c.object AND g.offset=c.offset)"""
-UNSORTED = """SELECT g.id,c.character FROM corpus_gallery g JOIN corpus_units c
-  ON c.id=g.id AND c.object=g.object AND c.offset=g.offset WHERE g.category IS NULL"""
+# Every current copy with the character its glyph is now filed under, which a form decision can move
+# to another script without republishing the record.
+COPIES = """SELECT g.id,g.shuffle,g.category,c.character FROM corpus_gallery g JOIN corpus_units c
+  ON c.id=g.id AND c.object=g.object AND c.offset=g.offset"""
 STALE = """DELETE FROM corpus_gallery WHERE NOT EXISTS (SELECT 1 FROM corpus_units c
   WHERE c.id=corpus_gallery.id AND c.object=corpus_gallery.object AND c.offset=corpus_gallery.offset);"""
 
@@ -65,21 +67,35 @@ def remote(sql: str) -> list[dict]:
     return json.loads(out)[0]["results"]
 
 
-def categorised(rows: list[dict], quote) -> list[str]:
-    """Statements that give each copy in `rows` its category, one per category and run of ids."""
-    ids: dict[str, list[str]] = {}
+def in_lists(head: str, quoted: list[str]) -> list[str]:
+    """`head` followed by runs of `quoted` as `IN (…)` lists, each statement under D1's limit."""
+    statements, run, size = [], [], len(head) + 2
+    for value in quoted:
+        if run and size + len(value) + 1 > STATEMENT_BYTES:
+            statements.append(head + ",".join(run) + ");")
+            run, size = [], len(head) + 2
+        run.append(value)
+        size += len(value) + 1
+    return statements + ([head + ",".join(run) + ");"] if run else [])
+
+
+def recategorised(rows: list[dict], quote) -> list[str]:
+    """Statements that bring each copy in `rows` to its character's category: a copy without one or
+    of another script is given its own, and one only its old script was copied whole for is removed."""
+    moved: dict[str, list[str]] = {}
+    unwanted: list[str] = []
     for row in rows:
-        ids.setdefault(category_of(row["character"]), []).append(quote.execute("SELECT quote(?)", (row["id"],)).fetchone()[0])
-    statements = []
-    for category, quoted in ids.items():
-        head, run = f"UPDATE corpus_gallery SET category='{category}' WHERE id IN (", []
-        for value in quoted:
-            if run and len(head) + sum(len(v) + 1 for v in run) + len(value) + 3 > STATEMENT_BYTES:
-                statements.append(head + ",".join(run) + ");")
-                run = []
-            run.append(value)
-        statements.append(head + ",".join(run) + ");")
-    return statements
+        category = category_of(row["character"])
+        if category == row["category"]:
+            continue
+        quoted = quote.execute("SELECT quote(?)", (row["id"],)).fetchone()[0]
+        if row["shuffle"] >= SAMPLE_RANGE and category not in WHOLE:
+            unwanted.append(quoted)
+        else:
+            moved.setdefault(category, []).append(quoted)
+    return ([s for category, quoted in moved.items()
+             for s in in_lists(f"UPDATE corpus_gallery SET category='{category}' WHERE id IN (", quoted)]
+            + in_lists("DELETE FROM corpus_gallery WHERE id IN (", unwanted))
 
 
 def bucket_client(remote: str, jobs: int):
@@ -116,12 +132,12 @@ def main():
     parser.add_argument("--bucket", default="glyph-atlas")
     parser.add_argument("--jobs", type=int, default=64, help="simultaneous R2 reads")
     args = parser.parse_args()
-    rows, unsorted = remote(MISSING), remote(UNSORTED)
+    rows, copies = remote(MISSING), remote(COPIES)
     s3 = bucket_client(args.remote, args.jobs)
     with ThreadPoolExecutor(args.jobs) as pool:
         records = list(pool.map(lambda row: record(s3, args.bucket, row), rows))
     quote = sqlite3.connect(":memory:")
-    statements = [STALE, *categorised(unsorted, quote)]
+    statements = [STALE, *recategorised(copies, quote)]
     for row, text in zip(rows, records):
         values = quote.execute("SELECT quote(?),quote(?),quote(?)", (row["id"], row["object"], text)).fetchone()
         statement = (f"INSERT OR REPLACE INTO corpus_gallery(id,shuffle,object,offset,data,category) VALUES({values[0]},"
@@ -139,7 +155,7 @@ def main():
         size += len(statement.encode()) + 1
     for index, part in enumerate(parts, 1):
         (args.output / f"{index:03}.sql").write_text("\n".join(part) + "\n")
-    print(f"{len(rows)} records and {len(unsorted)} categories written to {len(parts)} parts in {args.output}")
+    print(f"{len(rows)} records written to {len(parts)} parts in {args.output}")
 
 
 if __name__ == "__main__":

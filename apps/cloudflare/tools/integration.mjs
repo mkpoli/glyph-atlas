@@ -181,6 +181,7 @@ try {
   assert.ok(!galleried.some(item => item.id === hangulGlyph.id), 'the homepage deals only the sample range')
   assert.deepEqual((await call('/layers/gallery?group=hangul&seed=7')).items.map(item => item.id), [hangulGlyph.id], 'a script group deals its whole copies')
   assert.deepEqual((await call('/layers/gallery?group=kanji')).items.map(item => item.id), [corpus.id], 'a group deals none of another script')
+  assert.deepEqual((await call('/layers/gallery?group=kanji&seed=200000000')).items.map(item => item.id), [corpus.id], 'a sampled group seeds within the sample')
   await call('/layers/gallery?group=latin', undefined, 400)
   const exported = await call('/atlas/reviews.json')
   assert.equal(exported.reviews.filter(r => r.current).length, 1)

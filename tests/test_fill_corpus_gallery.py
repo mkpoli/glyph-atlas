@@ -45,20 +45,25 @@ def test_missing_reads_ranges_of_the_character_index():
     assert "corpus_character (character>? AND character<?)" in plan
 
 
-def test_copies_without_a_category_get_their_scripts():
+def test_copies_take_their_glyphs_current_scripts():
     fill = load()
-    quote = sqlite3.connect(":memory:")
-    rows = [{"id": "a", "character": "仮"}, {"id": "b", "character": "그"}, {"id": "c", "character": "あ"}, {"id": "d", "character": "仮"}]
-    statements = fill.categorised(rows, quote)
-    assert statements == ["UPDATE corpus_gallery SET category='kanji' WHERE id IN ('a','d');",
-                          "UPDATE corpus_gallery SET category='hangul' WHERE id IN ('b');",
-                          "UPDATE corpus_gallery SET category='kana' WHERE id IN ('c');"]
+    high = fill.SAMPLE_RANGE + 1
+    rows = [{"id": "a", "shuffle": 1, "category": None, "character": "仮"},
+            {"id": "b", "shuffle": high, "category": None, "character": "그"},
+            {"id": "c", "shuffle": 1, "category": "kana", "character": "あ"},
+            {"id": "d", "shuffle": 2, "category": "kana", "character": "仮"},
+            {"id": "e", "shuffle": high, "category": "kana", "character": "그"},
+            {"id": "f", "shuffle": high, "category": "hangul", "character": "あ"}]
+    assert fill.recategorised(rows, sqlite3.connect(":memory:")) == [
+        "UPDATE corpus_gallery SET category='kanji' WHERE id IN ('a','d');",
+        "UPDATE corpus_gallery SET category='hangul' WHERE id IN ('b','e');",
+        "DELETE FROM corpus_gallery WHERE id IN ('f');"]
 
 
 def test_long_runs_of_ids_split_under_the_statement_limit():
     fill = load()
-    rows = [{"id": f"codh:{i:08}", "character": "仮"} for i in range(20_000)]
-    statements = fill.categorised(rows, sqlite3.connect(":memory:"))
+    rows = [{"id": f"codh:{i:08}", "shuffle": 1, "category": None, "character": "仮"} for i in range(20_000)]
+    statements = fill.recategorised(rows, sqlite3.connect(":memory:"))
     assert len(statements) > 1
     assert all(len(statement.encode()) <= fill.STATEMENT_BYTES for statement in statements)
     assert sum(statement.count("'codh:") for statement in statements) == len(rows)
