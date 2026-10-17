@@ -1152,10 +1152,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const counting = cachedTotal === null ? hiddenCount : null;
   // `limit=0` asks for the counts alone, as a round does to choose its character: the listing is neither
   // counted nor read, and a round's count of every crop it could deal reads each of them.
-  const listing = limit > 0;
+  const wantsRows = limit > 0;
   const statements = [
-    ...(tally || !listing ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
-    ...(!listing ? [] : [below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
+    ...(tally || !wantsRows ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
+    ...(!wantsRows ? [] : [below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
       : rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
       : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${irregularLast}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset)]),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
@@ -1163,7 +1163,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     ...(irregularCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${irregularCountWhere.join(' AND ')}`).bind(...values)] : []),
   ];
   const results = statements.length ? await env.DB.batch(statements) : [];
-  const count = tally || !listing ? null : results.shift()!, window = listing ? results.shift()! : null;
+  const count = tally || !wantsRows ? null : results.shift()!, window = wantsRows ? results.shift()! : null;
   const reportedCount = reportedCountWhere ? results.shift()! : null, hiddenCounted = counting ? results.shift()! : null;
   const irregularCount = irregularCountWhere ? results.shift()! : null;
   const withheldCount = cachedTotal ?? (hiddenCounted ? (hiddenCounted.results[0] as { n: number }).n : null);
@@ -1173,7 +1173,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     : count ? (count.results[0] as { n: number }).n : null;
   const rows = (window?.results ?? []) as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null; irregular?: number | null })[];
   let above: number | null = below ? told : null;
-  if (listing && rotated && !below && rows.length < limit) {
+  if (wantsRows && rotated && !below && rows.length < limit) {
     above = rows.length ? offset + rows.length : told ?? (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
       .bind(...values, start).first<{ n: number }>())!.n;
     const wrapped = await env.DB.prepare(side('<')).bind(...values, start, limit - rows.length, Math.max(offset - above, 0)).all();
