@@ -39,6 +39,7 @@ because a scan of a public-domain page may carry no copyright of its own.
 | 奈良文化財研究所 木簡庫 | images surveyed by 奈良文化財研究所: free reuse including commercial, with a source line and a modification notice; other institutions' tablets follow their own terms | https://mokkanko.nabunken.go.jp/ja/?c=help |
 | 국립한글박물관 아카이브 | per record in `koglCdId`; `CD00167` is 공공누리 제1유형(출처표시), and only those records are collected | https://archives.hangeul.go.kr/ko/M000000614/html/view |
 | 국가유산청 국가유산 검색 Open API | per photograph in `imageNuri`; `A` is 공공누리 제1유형(출처표시), and only those photographs are collected | https://www.khs.go.kr/html/HtmlPage.do?pg=/publicinfo/pbinfo3_0202.jsp&mn=NS_04_04_02 |
+| British Library, Endangered Archives Programme (EAP140, the Tangut collection of the Institute of Oriental Manuscripts, RAS) | each IIIF manifest's `requiredStatement`: "Except as otherwise permitted under your national copyright law this material may not be copied or distributed further"; the catalogue's user condition is "For research purposes only"; recorded as `restricted` | https://eap.bl.uk/archive-file/EAP140-1-52/manifest |
 | 국립중앙도서관 디지털도서관 원문보기 | no 공공누리 mark; `[관외이용-무료]` means copyright has expired or the rightsholder gave permission to read outside the library, not that reuse beyond viewing and printing is licensed; recorded as `restricted` | https://www.nl.go.kr/NL/contents/N70600000000.do |
 
 Honkoku-Lines' provider table lists 29 institutions with the licence of each

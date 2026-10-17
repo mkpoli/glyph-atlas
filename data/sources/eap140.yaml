@@ -1,0 +1,869 @@
+# The Tangut Collection of the Institute of Oriental Manuscripts, Russian Academy of Sciences, as the
+# British Library's Endangered Archives Programme publishes its digitisation (EAP140/1). Every one of
+# the 210 files is catalogued as "Maha praj napara mita sutra" (the 大般若波羅蜜多經 in Tangut), a
+# concertina or pothi of cotton paper written in gum ink, dated 10th–13th century.
+#
+# The list is the BL catalogue's EAP140/1 hierarchy, read on 2026-10-17 from
+# https://searcharchives.bl.uk/?f%5Broot_ancestor_reference_ssi%5D%5B%5D=EAP140/1&format=json&sort=hierarchy
+# (210 files, 25,955 TIFF images); each file's title is the catalogue's, with the date range dropped.
+# Each file has a IIIF Presentation 3 manifest at eap.bl.uk/archive-file/EAP140-1-<n>/manifest whose
+# canvases point at the IIIF image service images.eap.bl.uk. The catalogue's HTML pages sit behind a
+# bot challenge; the manifests and the image service do not.
+#
+# The manifests carry no transcription: the pages are collected as page images only.
+
+id: eap140
+name: The Tangut Collection (EAP140)
+publisher: British Library, Endangered Archives Programme
+holder: Institute of Oriental Manuscripts, Russian Academy of Sciences
+kind: image-collection
+url: https://eap.bl.uk/project/EAP140
+licence: PD
+licence_evidence: https://eap.bl.uk/archive-file/EAP140-1-52/manifest
+image_licence: restricted
+attribution: British Library, Endangered Archives Programme, EAP140 (Institute of Oriental Manuscripts, Russian Academy of Sciences)
+notes:
+  - Each manifest's requiredStatement reads "Except as otherwise permitted under your national copyright law this material may not be copied or distributed further", and the catalogue's user condition is "For research purposes only". The images reproduce 10th–13th-century manuscripts, so under docs/licensing.md (Copyright in crops) they are recorded as public domain and the statement is kept as the holder's terms, verbatim in each document's `holder_statement`.
+  - Digitised by the Institute of Oriental Studies, Russian Academy of Sciences, with funding from the Endangered Archives Programme supported by Arcadia (manifest metadata).
+  - The last canvas of a file is often a larger shot (e.g. 7230 x 5428 for EAP140/1/52 against 1612 x 2466 for its pages), kept as a page like the others.
+books:
+  - id: eap140:1-1
+    title: 'Maha praj napara mita sutra, Tang.334/134'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-1/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-1
+  - id: eap140:1-2
+    title: 'Maha praj napara mita sutra, Tang.334/135'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-2/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-2
+  - id: eap140:1-3
+    title: 'Maha praj napara mita sutra, Tang.334/136'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-3/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-3
+  - id: eap140:1-4
+    title: 'Maha praj napara mita sutra, Tang.334/137'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-4/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-4
+  - id: eap140:1-5
+    title: 'Maha praj napara mita sutra, Tang.334/138'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-5/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-5
+  - id: eap140:1-6
+    title: 'Maha praj napara mita sutra, Tang.334/139'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-6/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-6
+  - id: eap140:1-7
+    title: 'Maha praj napara mita sutra, Tang.334/140'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-7/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-7
+  - id: eap140:1-8
+    title: 'Maha praj napara mita sutra, Tang.334/151'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-8/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-8
+  - id: eap140:1-9
+    title: 'Maha praj napara mita sutra, Tang.334/152'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-9/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-9
+  - id: eap140:1-10
+    title: 'Maha praj napara mita sutra, Tang.334/154'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-10/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-10
+  - id: eap140:1-11
+    title: 'Maha praj napara mita sutra, Tang.334/155'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-11/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-11
+  - id: eap140:1-12
+    title: 'Maha praj napara mita sutra, Tang.334/156'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-12/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-12
+  - id: eap140:1-13
+    title: 'Maha praj napara mita sutra, Tang.334/157'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-13/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-13
+  - id: eap140:1-14
+    title: 'Maha praj napara mita sutra, Tang.334/1717'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-14/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-14
+  - id: eap140:1-15
+    title: 'Maha praj napara mita sutra, Tang.334/180'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-15/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-15
+  - id: eap140:1-16
+    title: 'Maha praj napara mita sutra, Tang.334/182'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-16/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-16
+  - id: eap140:1-17
+    title: 'Maha praj napara mita sutra, Tang.334/183'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-17/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-17
+  - id: eap140:1-18
+    title: 'Maha praj napara mita sutra, Tang.334/184'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-18/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-18
+  - id: eap140:1-19
+    title: 'Maha praj napara mita sutra, Tang.334/185'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-19/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-19
+  - id: eap140:1-20
+    title: 'Maha praj napara mita sutra, Tang.334/186'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-20/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-20
+  - id: eap140:1-21
+    title: 'Maha praj napara mita sutra, Tang.334/187'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-21/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-21
+  - id: eap140:1-22
+    title: 'Maha praj napara mita sutra, Tang.334/188'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-22/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-22
+  - id: eap140:1-23
+    title: 'Maha praj napara mita sutra, Tang.334/189'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-23/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-23
+  - id: eap140:1-24
+    title: 'Maha praj napara mita sutra, Tang.334/190'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-24/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-24
+  - id: eap140:1-25
+    title: 'Maha praj napara mita sutra, Tang.334/191'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-25/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-25
+  - id: eap140:1-26
+    title: 'Maha praj napara mita sutra, Tang.334/192'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-26/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-26
+  - id: eap140:1-27
+    title: 'Maha praj napara mita sutra, Tang.334/193'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-27/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-27
+  - id: eap140:1-28
+    title: 'Maha praj napara mita sutra, Tang.334/194'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-28/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-28
+  - id: eap140:1-29
+    title: 'Maha praj napara mita sutra, Tang.334/195'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-29/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-29
+  - id: eap140:1-30
+    title: 'Maha praj napara mita sutra, Tang.334/196'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-30/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-30
+  - id: eap140:1-31
+    title: 'Maha praj napara mita sutra, Tang.334/197'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-31/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-31
+  - id: eap140:1-32
+    title: 'Maha praj napara mita sutra, Tang.334/198'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-32/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-32
+  - id: eap140:1-33
+    title: 'Maha praj napara mita sutra, Tang.334/199'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-33/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-33
+  - id: eap140:1-34
+    title: 'Maha praj napara mita sutra, Tang.334/200'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-34/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-34
+  - id: eap140:1-35
+    title: 'Maha praj napara mita sutra, Tang.334/201'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-35/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-35
+  - id: eap140:1-36
+    title: 'Maha praj napara mita sutra, Tang.334/202'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-36/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-36
+  - id: eap140:1-37
+    title: 'Maha praj napara mita sutra, Tang.334/203'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-37/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-37
+  - id: eap140:1-38
+    title: 'Maha praj napara mita sutra, Tang.334/204'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-38/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-38
+  - id: eap140:1-39
+    title: 'Maha praj napara mita sutra, Tang.334/205'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-39/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-39
+  - id: eap140:1-40
+    title: 'Maha praj napara mita sutra, Tang.334/206'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-40/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-40
+  - id: eap140:1-41
+    title: 'Maha praj napara mita sutra, Tang.334/207'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-41/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-41
+  - id: eap140:1-42
+    title: 'Maha praj napara mita sutra, Tang.334/208'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-42/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-42
+  - id: eap140:1-43
+    title: 'Maha praj napara mita sutra, Tang.334/209'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-43/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-43
+  - id: eap140:1-44
+    title: 'Maha praj napara mita sutra, Tang.334/210'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-44/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-44
+  - id: eap140:1-45
+    title: 'Maha praj napara mita sutra, Tang.334/211'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-45/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-45
+  - id: eap140:1-46
+    title: 'Maha praj napara mita sutra, Tang.334/214'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-46/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-46
+  - id: eap140:1-47
+    title: 'Maha praj napara mita sutra, Tang.334/216'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-47/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-47
+  - id: eap140:1-48
+    title: 'Maha praj napara mita sutra, Tang.334/217'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-48/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-48
+  - id: eap140:1-49
+    title: 'Maha praj napara mita sutra, Tang.334/218'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-49/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-49
+  - id: eap140:1-50
+    title: 'Maha praj napara mita sutra, Tang.334/231'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-50/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-50
+  - id: eap140:1-51
+    title: 'Maha praj napara mita sutra, Tang.334/232'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-51/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-51
+  - id: eap140:1-52
+    title: 'Maha praj napara mita sutra, Tang.334/233'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-52/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-52
+  - id: eap140:1-53
+    title: 'Maha praj napara mita sutra, Tang.334/234'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-53/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-53
+  - id: eap140:1-54
+    title: 'Maha praj napara mita sutra, Tang.334/235'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-54/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-54
+  - id: eap140:1-55
+    title: 'Maha praj napara mita sutra, Tang.334/236'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-55/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-55
+  - id: eap140:1-56
+    title: 'Maha praj napara mita sutra, Tang.334/238'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-56/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-56
+  - id: eap140:1-57
+    title: 'Maha praj napara mita sutra, Tang.334/241'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-57/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-57
+  - id: eap140:1-58
+    title: 'Maha praj napara mita sutra, Tang.334/244'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-58/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-58
+  - id: eap140:1-59
+    title: 'Maha praj napara mita sutra, Tang.334/247'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-59/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-59
+  - id: eap140:1-60
+    title: 'Maha praj napara mita sutra, Tang.334/248'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-60/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-60
+  - id: eap140:1-61
+    title: 'Maha praj napara mita sutra, Tang.334/249'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-61/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-61
+  - id: eap140:1-62
+    title: 'Maha praj napara mita sutra, Tang.334/250'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-62/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-62
+  - id: eap140:1-63
+    title: 'Maha praj napara mita sutra, Tang.334/251'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-63/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-63
+  - id: eap140:1-64
+    title: 'Maha praj napara mita sutra, Tang.334/252'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-64/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-64
+  - id: eap140:1-65
+    title: 'Maha praj napara mita sutra, Tang.334/253'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-65/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-65
+  - id: eap140:1-66
+    title: 'Maha praj napara mita sutra, Tang.334/255'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-66/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-66
+  - id: eap140:1-67
+    title: 'Maha praj napara mita sutra, Tang.334/258'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-67/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-67
+  - id: eap140:1-68
+    title: 'Maha praj napara mita sutra, Tang.334/259'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-68/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-68
+  - id: eap140:1-69
+    title: 'Maha praj napara mita sutra, Tang.334/260'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-69/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-69
+  - id: eap140:1-70
+    title: 'Maha praj napara mita sutra, Tang.334/261'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-70/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-70
+  - id: eap140:1-71
+    title: 'Maha praj napara mita sutra, Tang.334/262'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-71/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-71
+  - id: eap140:1-72
+    title: 'Maha praj napara mita sutra, Tang.334/263'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-72/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-72
+  - id: eap140:1-73
+    title: 'Maha praj napara mita sutra, Tang.334/264'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-73/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-73
+  - id: eap140:1-74
+    title: 'Maha praj napara mita sutra, Tang.334/266'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-74/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-74
+  - id: eap140:1-75
+    title: 'Maha praj napara mita sutra, Tang.334/267'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-75/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-75
+  - id: eap140:1-76
+    title: 'Maha praj napara mita sutra, Tang.334/268'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-76/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-76
+  - id: eap140:1-77
+    title: 'Maha praj napara mita sutra, Tang.334/269'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-77/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-77
+  - id: eap140:1-78
+    title: 'Maha praj napara mita sutra, Tang.334/270'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-78/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-78
+  - id: eap140:1-79
+    title: 'Maha praj napara mita sutra, Tang.334/274'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-79/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-79
+  - id: eap140:1-80
+    title: 'Maha praj napara mita sutra, Tang.334/275'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-80/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-80
+  - id: eap140:1-81
+    title: 'Maha praj napara mita sutra, Tang.334/276'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-81/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-81
+  - id: eap140:1-82
+    title: 'Maha praj napara mita sutra, Tang.334/277'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-82/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-82
+  - id: eap140:1-83
+    title: 'Maha praj napara mita sutra, Tang.334/279'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-83/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-83
+  - id: eap140:1-84
+    title: 'Maha praj napara mita sutra, Tang.334/281'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-84/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-84
+  - id: eap140:1-85
+    title: 'Maha praj napara mita sutra, Tang.334/282'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-85/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-85
+  - id: eap140:1-86
+    title: 'Maha praj napara mita sutra, Tang.334/290'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-86/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-86
+  - id: eap140:1-87
+    title: 'Maha praj napara mita sutra, Tang.334/293'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-87/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-87
+  - id: eap140:1-88
+    title: 'Maha praj napara mita sutra, Tang.334/295'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-88/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-88
+  - id: eap140:1-89
+    title: 'Maha praj napara mita sutra, Tang.334/297'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-89/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-89
+  - id: eap140:1-90
+    title: 'Maha praj napara mita sutra, Tang.334/310'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-90/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-90
+  - id: eap140:1-91
+    title: 'Maha praj napara mita sutra, Tang.334/311'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-91/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-91
+  - id: eap140:1-92
+    title: 'Maha praj napara mita sutra, Tang.334/312'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-92/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-92
+  - id: eap140:1-93
+    title: 'Maha praj napara mita sutra, Tang.334/349'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-93/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-93
+  - id: eap140:1-94
+    title: 'Maha praj napara mita sutra, Tang.334/350'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-94/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-94
+  - id: eap140:1-95
+    title: 'Maha praj napara mita sutra, Tang.334/352'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-95/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-95
+  - id: eap140:1-96
+    title: 'Maha praj napara mita sutra, Tang.334/354'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-96/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-96
+  - id: eap140:1-97
+    title: 'Maha praj napara mita sutra, Tang.334/355'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-97/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-97
+  - id: eap140:1-98
+    title: 'Maha praj napara mita sutra, Tang.334/356'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-98/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-98
+  - id: eap140:1-99
+    title: 'Maha praj napara mita sutra, Tang.334/357'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-99/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-99
+  - id: eap140:1-100
+    title: 'Maha praj napara mita sutra, Tang.334/358'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-100/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-100
+  - id: eap140:1-101
+    title: 'Maha praj napara mita sutra, Tang.334/359'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-101/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-101
+  - id: eap140:1-102
+    title: 'Maha praj napara mita sutra, Tang.334/360'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-102/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-102
+  - id: eap140:1-103
+    title: 'Maha praj napara mita sutra, Tang.334/361'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-103/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-103
+  - id: eap140:1-104
+    title: 'Maha praj napara mita sutra, Tang.334/366'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-104/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-104
+  - id: eap140:1-105
+    title: 'Maha praj napara mita sutra, Tang.334/367'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-105/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-105
+  - id: eap140:1-106
+    title: 'Maha praj napara mita sutra, Tang.334/368'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-106/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-106
+  - id: eap140:1-107
+    title: 'Maha praj napara mita sutra, Tang.334/408'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-107/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-107
+  - id: eap140:1-108
+    title: 'Maha praj napara mita sutra, Tang.334/410'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-108/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-108
+  - id: eap140:1-109
+    title: 'Maha praj napara mita sutra, Tang.334/411'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-109/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-109
+  - id: eap140:1-110
+    title: 'Maha praj napara mita sutra, Tang.334/416'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-110/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-110
+  - id: eap140:1-111
+    title: 'Maha praj napara mita sutra, Tang.334/420'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-111/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-111
+  - id: eap140:1-112
+    title: 'Maha praj napara mita sutra, Tang.334/422'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-112/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-112
+  - id: eap140:1-113
+    title: 'Maha praj napara mita sutra, Tang.334/423'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-113/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-113
+  - id: eap140:1-114
+    title: 'Maha praj napara mita sutra, Tang.334/425'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-114/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-114
+  - id: eap140:1-115
+    title: 'Maha praj napara mita sutra, Tang.334/426'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-115/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-115
+  - id: eap140:1-116
+    title: 'Maha praj napara mita sutra, Tang.334/429'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-116/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-116
+  - id: eap140:1-117
+    title: 'Maha praj napara mita sutra, Tang.334/432'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-117/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-117
+  - id: eap140:1-118
+    title: 'Maha praj napara mita sutra, Tang.334/433'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-118/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-118
+  - id: eap140:1-119
+    title: 'Maha praj napara mita sutra, Tang.334/438'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-119/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-119
+  - id: eap140:1-120
+    title: 'Maha praj napara mita sutra, Tang.334/439'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-120/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-120
+  - id: eap140:1-121
+    title: 'Maha praj napara mita sutra, Tang.334/440'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-121/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-121
+  - id: eap140:1-122
+    title: 'Maha praj napara mita sutra, Tang.334/442'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-122/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-122
+  - id: eap140:1-123
+    title: 'Maha praj napara mita sutra, Tang.334/443'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-123/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-123
+  - id: eap140:1-124
+    title: 'Maha praj napara mita sutra, Tang.334/444'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-124/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-124
+  - id: eap140:1-125
+    title: 'Maha praj napara mita sutra, Tang.334/445'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-125/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-125
+  - id: eap140:1-126
+    title: 'Maha praj napara mita sutra, Tang.334/446'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-126/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-126
+  - id: eap140:1-127
+    title: 'Maha praj napara mita sutra, Tang.334/447'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-127/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-127
+  - id: eap140:1-128
+    title: 'Maha praj napara mita sutra, Tang.334/448'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-128/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-128
+  - id: eap140:1-129
+    title: 'Maha praj napara mita sutra, Tang.334/449'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-129/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-129
+  - id: eap140:1-130
+    title: 'Maha praj napara mita sutra, Tang.334/450'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-130/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-130
+  - id: eap140:1-131
+    title: 'Maha praj napara mita sutra, Tang.334/451'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-131/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-131
+  - id: eap140:1-132
+    title: 'Maha praj napara mita sutra, Tang.334/452'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-132/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-132
+  - id: eap140:1-133
+    title: 'Maha praj napara mita sutra, Tang.334/453'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-133/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-133
+  - id: eap140:1-134
+    title: 'Maha praj napara mita sutra, Tang.334/454'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-134/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-134
+  - id: eap140:1-135
+    title: 'Maha praj napara mita sutra, Tang.334/455'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-135/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-135
+  - id: eap140:1-136
+    title: 'Maha praj napara mita sutra, Tang.334/456'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-136/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-136
+  - id: eap140:1-137
+    title: 'Maha praj napara mita sutra, Tang.334/464'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-137/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-137
+  - id: eap140:1-138
+    title: 'Maha praj napara mita sutra, Tang.334/465'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-138/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-138
+  - id: eap140:1-139
+    title: 'Maha praj napara mita sutra, Tang.334/466'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-139/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-139
+  - id: eap140:1-140
+    title: 'Maha praj napara mita sutra, Tang.334/470'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-140/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-140
+  - id: eap140:1-141
+    title: 'Maha praj napara mita sutra, Tang.334/471'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-141/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-141
+  - id: eap140:1-142
+    title: 'Maha praj napara mita sutra, Tang.334/472'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-142/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-142
+  - id: eap140:1-143
+    title: 'Maha praj napara mita sutra, Tang.334/473'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-143/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-143
+  - id: eap140:1-144
+    title: 'Maha praj napara mita sutra, Tang.334/474'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-144/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-144
+  - id: eap140:1-145
+    title: 'Maha praj napara mita sutra, Tang.334/475'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-145/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-145
+  - id: eap140:1-146
+    title: 'Maha praj napara mita sutra, Tang.334/476'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-146/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-146
+  - id: eap140:1-147
+    title: 'Maha praj napara mita sutra, Tang.334/477'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-147/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-147
+  - id: eap140:1-148
+    title: 'Maha praj napara mita sutra, Tang.334/478'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-148/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-148
+  - id: eap140:1-149
+    title: 'Maha praj napara mita sutra, Tang.334/479'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-149/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-149
+  - id: eap140:1-150
+    title: 'Maha praj napara mita sutra, Tang.334/480'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-150/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-150
+  - id: eap140:1-151
+    title: 'Maha praj napara mita sutra, Tang.334/481'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-151/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-151
+  - id: eap140:1-152
+    title: 'Maha praj napara mita sutra, Tang.334/482'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-152/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-152
+  - id: eap140:1-153
+    title: 'Maha praj napara mita sutra, Tang.334/483'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-153/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-153
+  - id: eap140:1-154
+    title: 'Maha praj napara mita sutra, Tang.334/484'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-154/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-154
+  - id: eap140:1-155
+    title: 'Maha praj napara mita sutra, Tang.334/486'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-155/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-155
+  - id: eap140:1-156
+    title: 'Maha praj napara mita sutra, Tang.334/487'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-156/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-156
+  - id: eap140:1-157
+    title: 'Maha praj napara mita sutra, Tang.334/489'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-157/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-157
+  - id: eap140:1-158
+    title: 'Maha praj napara mita sutra, Tang.334/490'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-158/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-158
+  - id: eap140:1-159
+    title: 'Maha praj napara mita sutra, Tang.334/491'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-159/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-159
+  - id: eap140:1-160
+    title: 'Maha praj napara mita sutra, Tang.334/492'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-160/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-160
+  - id: eap140:1-161
+    title: 'Maha praj napara mita sutra, Tang.334/493'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-161/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-161
+  - id: eap140:1-162
+    title: 'Maha praj napara mita sutra, Tang.334/527'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-162/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-162
+  - id: eap140:1-163
+    title: 'Maha praj napara mita sutra, Tang.334/528'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-163/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-163
+  - id: eap140:1-164
+    title: 'Maha praj napara mita sutra, Tang.334/529'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-164/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-164
+  - id: eap140:1-165
+    title: 'Maha praj napara mita sutra, Tang.334/530'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-165/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-165
+  - id: eap140:1-166
+    title: 'Maha praj napara mita sutra, Tang.334/531'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-166/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-166
+  - id: eap140:1-167
+    title: 'Maha praj napara mita sutra, Tang.334/532'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-167/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-167
+  - id: eap140:1-168
+    title: 'Maha praj napara mita sutra, Tang.334/533'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-168/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-168
+  - id: eap140:1-169
+    title: 'Maha praj napara mita sutra, Tang.334/534'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-169/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-169
+  - id: eap140:1-170
+    title: 'Maha praj napara mita sutra, Tang.334/535'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-170/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-170
+  - id: eap140:1-171
+    title: 'Maha praj napara mita sutra, Tang.334/536'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-171/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-171
+  - id: eap140:1-172
+    title: 'Maha praj napara mita sutra, Tang.334/537'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-172/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-172
+  - id: eap140:1-173
+    title: 'Maha praj napara mita sutra, Tang.334/538'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-173/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-173
+  - id: eap140:1-174
+    title: 'Maha praj napara mita sutra, Tang.334/539'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-174/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-174
+  - id: eap140:1-175
+    title: 'Maha praj napara mita sutra, Tang.334/540'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-175/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-175
+  - id: eap140:1-176
+    title: 'Maha praj napara mita sutra, Tang.334/541'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-176/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-176
+  - id: eap140:1-177
+    title: 'Maha praj napara mita sutra, Tang.334/542'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-177/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-177
+  - id: eap140:1-178
+    title: 'Maha praj napara mita sutra, Tang.334/543'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-178/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-178
+  - id: eap140:1-179
+    title: 'Maha praj napara mita sutra, Tang.334/544'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-179/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-179
+  - id: eap140:1-180
+    title: 'Maha praj napara mita sutra, Tang.334/545'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-180/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-180
+  - id: eap140:1-181
+    title: 'Maha praj napara mita sutra, Tang.334/546'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-181/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-181
+  - id: eap140:1-182
+    title: 'Maha praj napara mita sutra, Tang.334/547'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-182/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-182
+  - id: eap140:1-183
+    title: 'Maha praj napara mita sutra, Tang.334/548'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-183/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-183
+  - id: eap140:1-184
+    title: 'Maha praj napara mita sutra, Tang.334/550'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-184/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-184
+  - id: eap140:1-185
+    title: 'Maha praj napara mita sutra, Tang.334/551'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-185/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-185
+  - id: eap140:1-186
+    title: 'Maha praj napara mita sutra, Tang.334/552'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-186/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-186
+  - id: eap140:1-187
+    title: 'Maha praj napara mita sutra, Tang.334/553'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-187/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-187
+  - id: eap140:1-188
+    title: 'Maha praj napara mita sutra, Tang.334/554'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-188/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-188
+  - id: eap140:1-189
+    title: 'Maha praj napara mita sutra, Tang.334/620'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-189/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-189
+  - id: eap140:1-190
+    title: 'Maha praj napara mita sutra, Tang.334/621'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-190/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-190
+  - id: eap140:1-191
+    title: 'Maha praj napara mita sutra, Tang.334/623'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-191/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-191
+  - id: eap140:1-192
+    title: 'Maha praj napara mita sutra, Tang.334/625'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-192/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-192
+  - id: eap140:1-193
+    title: 'Maha praj napara mita sutra, Tang.334/626'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-193/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-193
+  - id: eap140:1-194
+    title: 'Maha praj napara mita sutra, Tang.334/627'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-194/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-194
+  - id: eap140:1-195
+    title: 'Maha praj napara mita sutra, Tang.334/628'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-195/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-195
+  - id: eap140:1-196
+    title: 'Maha praj napara mita sutra, Tang.334/629'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-196/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-196
+  - id: eap140:1-197
+    title: 'Maha praj napara mita sutra, Tang.334/630'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-197/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-197
+  - id: eap140:1-198
+    title: 'Maha praj napara mita sutra, Tang.334/632'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-198/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-198
+  - id: eap140:1-199
+    title: 'Maha praj napara mita sutra, Tang.334/633'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-199/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-199
+  - id: eap140:1-200
+    title: 'Maha praj napara mita sutra, Tang.334/638'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-200/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-200
+  - id: eap140:1-201
+    title: 'Maha praj napara mita sutra, Tang.334/639'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-201/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-201
+  - id: eap140:1-202
+    title: 'Maha praj napara mita sutra, Tang.334/641'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-202/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-202
+  - id: eap140:1-203
+    title: 'Maha praj napara mita sutra, Tang.334/642'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-203/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-203
+  - id: eap140:1-204
+    title: 'Maha praj napara mita sutra, Tang.334/643'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-204/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-204
+  - id: eap140:1-205
+    title: 'Maha praj napara mita sutra, TANG3352'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-205/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-205
+  - id: eap140:1-206
+    title: 'Maha praj napara mita sutra, TANG3359'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-206/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-206
+  - id: eap140:1-207
+    title: 'Maha praj napara mita sutra, TANG33510'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-207/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-207
+  - id: eap140:1-208
+    title: 'Maha praj napara mita sutra, TANG33514'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-208/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-208
+  - id: eap140:1-209
+    title: 'Maha praj napara mita sutra, TANG33533'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-209/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-209
+  - id: eap140:1-210
+    title: 'Maha praj napara mita sutra, TANG33534'
+    manifest: https://eap.bl.uk/archive-file/EAP140-1-210/manifest
+    source_url: https://eap.bl.uk/archive-file/EAP140-1-210
