@@ -519,7 +519,9 @@ async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, productio
 // The irregular crops still waiting by character and book (`irregularFacetsQuery`), which the 要修正 view
 // lists beside its flagged ones; the edge keeps a copy per catalogue version, as for the other counts.
 async function irregularFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, filter: string, values: (string | number)[]) {
-  const key = new Request(`${url.origin}/atlas/facets?by=irregular&production=${encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  // A round and a browse filter crops differently (`listingFilter`), so the filter is part of the key.
+  const key = new Request(`${url.origin}/atlas/facets?by=irregular&production=${encodeURIComponent(production)}&filter=${encodeURIComponent(filter)
+    }&values=${encodeURIComponent(JSON.stringify(values))}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as { label: string; document: string | null; n: number }[];
   const rows = (await env.DB.prepare(irregularFacetsQuery(filter)).bind(...values).all<{ label: string; document: string | null; n: number }>()).results;
