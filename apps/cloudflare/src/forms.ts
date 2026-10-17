@@ -107,7 +107,8 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
   for (const t of tallies.results as Json[]) if (t.form) usage.set(t.form, (usage.get(t.form) ?? 0) + t.n);
   const own = new Map((clusters.results as Json[]).map(c => {
     const forms = byCluster.get(c.id)?.forms;
-    const [majority, majorityCount] = (forms ? [...forms].sort((a, b) => b[1] - a[1])[0] : null) ?? [null, 0];
+    // A tie goes to the lower form, as on the local review server.
+    const [majority, majorityCount] = (forms ? [...forms].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0] : null) ?? [null, 0];
     return [c.id, { majority, majorityCount, form: c.form ?? majority }];
   }));
   // A cluster's glyphs named otherwise, by form; a cluster reported as a whole has none.

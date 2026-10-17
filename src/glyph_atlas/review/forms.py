@@ -153,7 +153,9 @@ def router(media, corpus_root: Path) -> APIRouter:
                                if (decided.get(identity) or {}).get("form"))
             # Up to twelve glyphs of each form other than the cluster's own (its form, else the one
             # most of its glyphs have), most typical first.
-            home = (named.get(cluster["id"]) or {}).get("form") or (assigned.most_common(1)[0][0] if assigned else None)
+            # The form most of the cluster's glyphs have; a tie goes to the lower form, as on the Worker.
+            majority = min(assigned.items(), key=lambda kv: (-kv[1], kv[0])) if assigned else (None, 0)
+            home = (named.get(cluster["id"]) or {}).get("form") or majority[0]
             strays: dict[str, list[str]] = {}
             if not (named.get(cluster["id"]) or {}).get("issue"):
                 for identity in members:
@@ -165,8 +167,8 @@ def router(media, corpus_root: Path) -> APIRouter:
                              "exceptions": own,
                              "assigned": sum(assigned.values()),
                              "rejected": sum(1 for identity in members if (decided.get(identity) or {}).get("issue")),
-                             "majority": assigned.most_common(1)[0][0] if assigned else None,
-                             "majority_count": assigned.most_common(1)[0][1] if assigned else 0,
+                             "majority": majority[0],
+                             "majority_count": majority[1],
                              "nearest": ({**near["nearest"][cluster["id"]],
                                           "label": data["labels"].get(near["nearest"][cluster["id"]]["id"])}
                                          if cluster["id"] in near.get("nearest", {}) else None),
