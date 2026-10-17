@@ -83,13 +83,16 @@ Edges are applied in a fixed order (compatibility and `z` first, then 包摂, th
 kind by code point), so the build gives the same families on every run.
 
 The head of a family is its curated representative when `graphemes.yaml` names the family; otherwise
-the member a reader knows best (`familiarity`: a 常用漢字, then a 人名用漢字, then JIS X 0208 level
-1, then level 2, then GB 2312, then CNS 11643 plane 1), the 正字 the family's directed edges point at
-(the member that is a reduction or decomposition target and is reduced to nothing else) first among
-several; with none of those, that 正字; then a unified ideograph over a compatibility one, one of the
-main block over the extensions, then the lowest code point. So 群 heads the family 羣 joins, 村 the
-family of 邨, and 氯 the family of 㲶. The 正字 is the character a source names as the one the others
-are written for; the code point is only there to make the choice total.
+the member a Japanese reader knows best (`familiarity`: a 常用漢字, then a 人名用漢字, then JIS X
+0208 level 1, then level 2), the 正字 the family's directed edges point at (the member that is a
+reduction or decomposition target and is reduced to nothing else) first among several; with none of
+those, that 正字 when it is of the main CJK block; then the member a reader of Chinese knows, CNS
+11643 plane 1 before GB 2312, so a traditional form heads over its simplification; then a 正字 of an
+extension; then a unified ideograph over a compatibility one, one of the main block over the
+extensions, then the lowest code point. So 群 heads the family 羣 joins, 村 the family of 邨, 厲 the
+family of 厉, 墊 the family of 垫, 氯 the family of 㲶, and 篙 the family of 㰏, the 正字 the 戸籍統一文字
+registers it under. The 正字 is the character a source names as the one the others are written for;
+the code point is only there to make the choice total.
 """
 
 from __future__ import annotations
@@ -406,14 +409,22 @@ def _join_yixiezi(
             group[char] = keep
 
 
+#: The ranks of `familiarity` a Japanese reader knows (常用, 人名用, JIS X 0208 levels 1 and 2), and
+#: the ones only a reader of Chinese does (CNS 11643 plane 1, GB 2312), which come after a 正字 of the main block.
+JAPANESE_RANKS, CHINESE_RANKS = range(4), range(4, 6)
+
+
 def head_of(family: Family, familiarity: Mapping[str, int]) -> str:
     """The representative of a derived family (see the module docstring)."""
     directed = [edge for edge in family.edges if edge.relation in DIRECTED and edge.role == "merge"]
     sources = {edge.a for edge in directed}
     sinks = {edge.b for edge in directed} - sources
-    known = {char for char in family.members if char in familiarity}
-    if known:
-        best = min(familiarity[char] for char in known)
-        known = {char for char in known if familiarity[char] == best}
-    pool = (known & sinks) or known or sinks or family.members
+    def best(ranks: range) -> set[str]:
+        known = {char for char in family.members if familiarity.get(char) in ranks}
+        top = min((familiarity[char] for char in known), default=None)
+        return {char for char in known if familiarity[char] == top}
+
+    japanese = best(JAPANESE_RANKS)
+    main = {char for char in sinks if 0x4E00 <= ord(char) <= 0x9FFF}
+    pool = (japanese & sinks) or japanese or main or best(CHINESE_RANKS) or sinks or family.members
     return min(pool, key=lambda char: (_canonical(char) != char, not 0x4E00 <= ord(char) <= 0x9FFF, ord(char)))
