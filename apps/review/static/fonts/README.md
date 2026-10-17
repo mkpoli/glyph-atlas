@@ -68,3 +68,22 @@ rebuilt whenever `vi-Hani.json` gains one.
   platform; a machine with no CJK font at all shows boxes for the whole interface, 㐌 included.
 - Licence: SIL Open Font License 1.1, copied in `OFL-Plangothic.txt`. The font declares no Reserved
   Font Name.
+
+## Registered figures
+
+`mj/` draws the ideographic variation sequences of the Moji_Joho collection that the form picker
+offers (所󠄂 and 所󠄃 for 所): the code points `data/vocab/mj-kanji.tsv` gives more than one registered
+figure, 5,057 of them with 11,382 sequences, in files of 40 code points. Beside each font, a JSON of
+the same name lists its code points' sequences with their MJ figure names and marks the default
+figure; `figures.json` gives each file's first and last code point. A page loads the file of the
+character it shows and no other.
+
+- Family: `MJ Figures`, a subset of IPAmj明朝 Ver.006.01 (文字情報技術促進協議会), from
+  `ipamjm00601.zip`, SHA-256 `35494e0f2896f38b3f7369a8421a895cea6440a42c0a66ac95eab47d6ed25b68`,
+  as distributed through 窓の杜 from <https://moji.or.jp/mojikiban/font/>.
+- Licence: IPA Font License v1.0, copied in `mj/IPA_Font_License_Agreement_v1.0.txt`. The subset is
+  a Derived Program under that licence and is licensed under it. The licence bars the original's
+  name on a derived font, so every name record and file is called `MJ Figures`.
+- To use the original font instead, point the font face in `src/lib/mjFigures.js` at `ipamjm.ttf`
+  from the archive above. `scripts/build_mj_figures_font.py` rebuilds the subset: it fetches the
+  archive, checks the hash and cuts the files.
