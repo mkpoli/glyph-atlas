@@ -57,6 +57,7 @@ from ..schema import (
     UnitKind,
 )
 from . import crop_forms, ledger
+from .request_cache import file_stamp
 
 STORE_NAME = "review.sqlite"
 LOG_NAME = "reviews.jsonl"
@@ -1228,8 +1229,7 @@ class Store:
         """Notice a background publisher without requiring a server restart."""
         with self._lock:
             files = (self.path, Path(str(self.path) + "-wal"))
-            stamp = tuple((path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else None
-                          for path in files)
+            stamp = tuple(file_stamp(path) for path in files)
             if stamp == self._imports_stamp:
                 return
             with self._connection() as conn:
