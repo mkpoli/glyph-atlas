@@ -575,14 +575,16 @@ def review_ocr_repair(
         "work/ainu-records/page_texts.parquet"),
     apply: Annotated[bool, typer.Option(help="record the relabels in the dataset's journal")] = False,
     protect: Annotated[Path | None, typer.Option(help="file of unit ids never relabelled, one per line (reviewed on the site)")] = None,
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint that reads the kana the OCR and the "
+                                             "transcription disagree on")] = Path("models/classifier/artifacts/best.pt"),
 ) -> None:
-    """Relabel crops whose OCR reading the page's transcription corrects."""
+    """Relabel crops whose OCR reading the page's transcription corrects (needs CUDA)."""
     from .review import ocr_repair
 
     ids = protect.read_text().split() if protect else ()
-    result = ocr_repair.run(directory, pages=pages, apply=apply, protect=ids)
+    result = ocr_repair.run(directory, pages=pages, checkpoint=checkpoint, apply=apply, protect=ids)
     ocr_repair.write(result, out)
-    typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
+    typer.echo(json.dumps({k: v for k, v in result.items() if k not in ("items", "kept")}, ensure_ascii=False))
 
 
 @review_app.command("consensus-relabel")

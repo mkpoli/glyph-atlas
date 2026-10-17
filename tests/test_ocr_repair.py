@@ -55,3 +55,67 @@ def test_a_page_without_text_is_counted():
 
 def test_the_method_is_named():
     assert ocr_repair.METHOD == "ocr-transcription-v1"
+
+
+def test_a_normalised_form_is_told_apart_from_a_misreading():
+    assert ocr_repair.form_pair("嶋", "島") == "variant"
+    assert ocr_repair.form_pair("ハ", "は") == "kana"
+    assert ocr_repair.form_pair("緋", "鯡") is None
+
+
+def test_kana_around_decide_a_kana_the_ink_cannot():
+    assert ocr_repair.prior("ハ", "は", "これかのものに") > 0
+    assert ocr_repair.prior("ハ", "は", "コレカノモノニ") < 0
+    assert ocr_repair.prior("嶋", "島", "コレカノモノニ") == 0
+
+
+def test_the_written_form_stays_unless_the_ink_or_its_neighbours_say_otherwise():
+    assert ocr_repair.keeps_written(None, None, 0.0)
+    assert ocr_repair.keeps_written(0.6, 0.1, 0.0)
+    assert not ocr_repair.keeps_written(0.1, 0.6, 0.0)
+    assert ocr_repair.keeps_written(0.3, 0.4, -2.0)
+
+
+def test_a_kept_written_form_keeps_its_label_and_text():
+    items = [{"unit_id": "u", "before": "嶋", "character": "島", "text_before": "嶋", "text": "島", "offset": 0,
+              "form": "variant", "prior": 0.0, "text_form": True}]
+    ocr_repair.settle(None, items, None)
+    assert (items[0]["character"], items[0]["text"], items[0]["written"]) == ("嶋", "嶋", True)
+
+
+def test_a_transcription_that_keeps_the_older_form_is_followed():
+    assert ocr_repair.normalises("國", "国") and ocr_repair.normalises("邊", "辺")
+    assert not ocr_repair.normalises("辺", "邊") and not ocr_repair.normalises("嶋", "島")
+    items = [{"unit_id": "u", "before": "国", "character": "國", "text_before": "国", "text": "國", "offset": 0,
+              "form": "variant", "prior": 0.0, "text_form": True}]
+    ocr_repair.settle(None, items, None)
+    assert (items[0]["character"], items[0]["text"], items[0].get("written")) == ("國", "國", None)
+
+
+def test_a_simplified_chinese_pair_keeps_the_ocr_form():
+    items = [{"unit_id": "u", "before": "烟", "character": "煙", "text_before": "烟", "text": "煙", "offset": 0,
+              "form": "variant", "prior": 0.0, "text_form": True}]
+    ocr_repair.settle(None, items, None)
+    assert (items[0]["character"], items[0]["text"], items[0]["written"]) == ("烟", "烟", True)
+
+
+def test_a_crop_is_cut_at_the_services_full_resolution(monkeypatch, tmp_path):
+    from PIL import Image
+
+    from glyph_atlas import images, net
+    from glyph_atlas.schema import Box, Page
+
+    asked = []
+    monkeypatch.setattr(images, "info", lambda service, client=None: {"width": 2686, "version": 2})
+
+    def download(url, dest, **_):
+        asked.append(url)
+        Image.new("L", (46, 90)).save(dest, "JPEG")
+        return dest
+
+    monkeypatch.setattr(net, "download", download)
+    page = Page(id="hk:d:1", document_id="hk:d", seq=1, width=1343, height=1000,
+                image="https://example.org/iiif/?IIIF=/a.tif/full/1343,/0/default.jpg")
+    picture = ocr_repair.ink(page, Box(x=162, y=406, w=23, h=45), {})
+    assert asked == ["https://example.org/iiif/?IIIF=/a.tif/324,812,46,90/full/0/default.jpg"]
+    assert picture.size == (46, 90)
