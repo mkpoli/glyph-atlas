@@ -374,8 +374,9 @@ const FORMS_TTL = 3600;
 // The shape of what `family` and `families` answer; a change to it leaves the older copies behind.
 const FORMS_SHAPE = 3;
 type FormsState = { loading: number; loaded: string | null; revision: string | null; decision: number | null; following: number };
-async function cached(url: URL, state: FormsState, key: string, read: () => Promise<Json | null>, ctx: ExecutionContext) {
-  const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${FORMS_SHAPE}:${state.loaded}:${state.revision}:${state.decision ?? 0}`)}`);
+// A copy that no decision changes (`decided: false`) outlives them.
+async function cached(url: URL, state: FormsState, key: string, read: () => Promise<Json | null>, ctx: ExecutionContext, decided = true) {
+  const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${FORMS_SHAPE}:${state.loaded}:${state.revision}:${decided ? state.decision ?? 0 : ''}`)}`);
   const hit = await caches.default.match(request);
   if (hit) return hit.json<Json>();
   const value = await read();
@@ -405,7 +406,7 @@ export async function formsRoute(env: Env, request: Request, path: string, q: UR
   if (path === '/atlas/forms/families')
     return (await cached(url, state, 'families', () => families(env), ctx)) ?? tools.fail(404, 'No clustering has been published.');
   if (path === '/atlas/forms/codes') {
-    const value = (await cached(url, state, 'codes', () => codes(env), ctx)) ?? tools.fail(404, 'No clustering has been published.');
+    const value = (await cached(url, state, 'codes', () => codes(env), ctx, false)) ?? tools.fail(404, 'No clustering has been published.');
     // Every page asks for these; the browser keeps them a few minutes.
     return Response.json(value, { headers: { 'cache-control': 'public, max-age=300', 'x-content-type-options': 'nosniff' } });
   }

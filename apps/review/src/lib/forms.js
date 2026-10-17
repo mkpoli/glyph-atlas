@@ -10,8 +10,12 @@ export async function familyCodes(send = fetch) {
   } catch { return null }
 }
 // The same code points in a browser, asked once a visit: a character card links to its forms with them.
+// A failed answer is asked again by the next card.
 let known = null
-export const familyCodeSet = () => known ??= familyCodes().then(codes => new Set(codes ?? []))
+export const familyCodeSet = () => known ??= familyCodes().then(codes => {
+  if (codes === null) known = null
+  return new Set(codes ?? [])
+})
 export const families = options => request('/atlas/forms/families', undefined, options)
 export const family = (codePoint, order = 'shape', options) =>
   request('/atlas/forms/families/' + encodeURIComponent(codePoint) + '?' + new URLSearchParams({ order }), undefined, options)
