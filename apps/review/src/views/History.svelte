@@ -31,8 +31,10 @@
     else { loading = true; items = []; cursor = null; hasMore = true }
     error = ''
     try {
+      // A reviewer's run folds into one row, so a screen of rows can take hundreds of decisions; the
+      // largest page the site serves fills it in fewer round trips.
       const result = await fetchHistory({
-        limit: 40, before: append ? cursor : undefined,
+        limit: 100, before: append ? cursor : undefined,
         mine: (onlyMine && !userFilter) || undefined, user: userFilter || undefined, label: characterFilter.trim() || undefined,
       })
       if (closed || id !== requestId) return
