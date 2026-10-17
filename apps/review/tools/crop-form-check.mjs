@@ -154,6 +154,29 @@ try {
   assert(units(config.directory)[second].unicode === 'U+3042', 'a description changed the crop\'s character')
   console.log('PASS a form written as a description is composed, checked and claimed')
 
+  // A character BabelStone describes by region offers each regional shape among its variants: 所 as
+  // ⿰戶斤 and ⿰戸斤.
+  const third = Object.entries(units(config.directory)).find(([id, unit]) => unit.active && unit.unicode === 'U+3042' && id !== first && id !== second)?.[0]
+  assert(third, 'the fixture has a third crop written as あ')
+  const renamed = await browser.evaluate(`(async () => {
+    const crop = await (await fetch('/atlas/characters/' + encodeURIComponent(${JSON.stringify(third)}))).json()
+    const response = await fetch('/layers/units/' + encodeURIComponent(${JSON.stringify(third)}), { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: crypto.randomUUID(), revision: crop.revision, image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character: '所' }) })
+    return response.status
+  })()`)
+  assert(renamed < 300, `the crop could not be renamed to 所: ${renamed}`)
+  await browser.goto(`${service.base}/en/crop/${encodeURIComponent(third)}`, { waitFor: ready, timeout: 90000 })
+  await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
+  const options = `[...document.querySelectorAll('dialog[open] .form-picker .form-section')].find(s => s.querySelector('.form-section-title').textContent === 'Variants')?.querySelectorAll('.form-option')`
+  await browser.waitFor(`(${options})?.length > 1`, 20000)
+  const variants = await browser.evaluate(`[...${options}].map(o => o.title)`)
+  assert(variants[0] === '⿰戶斤' && variants[1] === '⿰戸斤', `the regional shapes do not lead the variants: ${variants.join(' ')}`)
+  await browser.screenshot(join(screenshots, 'form-picker-shapes-light.png'))
+  await browser.setColorScheme('dark')
+  await browser.screenshot(join(screenshots, 'form-picker-shapes-dark.png'))
+  await browser.setColorScheme('light')
+  console.log('PASS a character\'s regional shapes lead its variants')
+
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop form')
 } finally {

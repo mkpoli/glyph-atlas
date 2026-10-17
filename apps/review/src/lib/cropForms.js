@@ -1,5 +1,5 @@
 import { request, character as readCrop, corpusCharacter } from './client.js'
-import { character as readCard } from './layers.js'
+import { character as readCard, structure as readStructure } from './layers.js'
 
 /**
  * What a crop is written as, read and set through the calls the interface uses and nothing else:
@@ -19,16 +19,21 @@ const derivedEntry = item => ({ ...entry(item), code_point: item.code_point ?? n
 const cards = new Map()
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then the
- * variants the sources attest for `char` and the derived ones. A character the layer does not know
- * offers itself alone.
+ * variants: the shapes BabelStone gives `char` by region when it gives more than one (所 as ⿰戶斤 and
+ * ⿰戸斤), and the variants the sources attest; then the derived ones. A character the layer does not
+ * know offers itself alone.
  */
 export function listForms(char) {
   if (!char) return Promise.resolve({ members: [], variants: [], derived: [] })
   if (!cards.has(char)) {
     // A sequence the table has no card for (ツ + U+309A) offers itself alone.
-    const loaded = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error)).then(card => {
+    const card = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error))
+    // Only one character has descriptions; a sequence, or a failed read, has no shapes to add.
+    const described = [...char].length === 1 ? readStructure(char).then(found => found.sequences, () => []) : Promise.resolve([])
+    const loaded = Promise.all([card, described]).then(([card, sequences]) => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
-      const variants = [...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)
+      const shapes = sequences.length > 1 ? sequences.map(text => ({ char: text, code_point: null, script: '', encoded: false })) : []
+      const variants = [...shapes, ...[...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)]
       const derived = (card?.variants?.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))
       const fresh = list => list.filter(item => !seen.has(item.char) && seen.add(item.char))
