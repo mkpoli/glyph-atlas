@@ -43,6 +43,9 @@ try {
   await browser.writeAs('crop-form-check')
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
+  // A cold service builds a character's card, derived variants and all, slower than the page waits
+  // for it; the cards the check opens are built first.
+  for (const point of ['U+3042', 'U+6240']) await fetch(`${service.base}/layers/characters/${encodeURIComponent(point)}?expand=none`)
   const open = async id => {
     await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
     await browser.waitFor(`${chips}.length > 1`, 30000)
