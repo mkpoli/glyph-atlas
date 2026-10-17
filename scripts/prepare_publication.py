@@ -26,10 +26,10 @@
    on (`units_refreshed_at`), so they change once the rest has. Each part stays under D1's upload size and every
    statement under its statement limit; `publication.json` lists the parts.
 
-With `--ids`, a file of unit ids one per line, only those units are published: their live rows are read
-by primary key, a hundred at a time, and the SQL holds their image rows, rows and pages. Runs are left
-alone, since a relabel or a recut moves no crop within its line and a run's text follows its crops' rows
-on the site.
+With `--ids`, a file of unit ids one per line, only those of them the site already holds are refreshed:
+their live rows are read by primary key, a hundred at a time, and the SQL holds their image rows, rows,
+pages and every run on their lines. A listed unit the site does not hold waits for a full publication
+(OUTPUT/not-live.json), and so does the ledger.
 
 Nothing is uploaded or written to D1 here: reading the live units and images is the only request.
 """
@@ -55,6 +55,7 @@ from seal_cloudflare import MEDIA_URL, crossing_packs, seal
 
 from glyph_atlas import withdrawn
 from glyph_atlas.extraction_queue import overlaps
+from glyph_atlas.ngrams import Run, ngram_statements
 from glyph_atlas.schema import Box
 
 _spec = importlib.util.spec_from_file_location("refresh", ROOT / "scripts" / "refresh_published_units.py")
@@ -203,6 +204,25 @@ def read_ids(ids: list[str]) -> list[dict]:
     chunks = [ids[i:i + LIVE_CHUNK] for i in range(0, len(ids), LIVE_CHUNK)]
     with ThreadPoolExecutor(2) as pool:
         return [row for rows in pool.map(read, chunks) for row in rows]
+
+
+def listed_runs(catalogue: Path, atlas: sqlite3.Connection, touched: set[str]) -> list[str]:
+    """The run statements of a listed publication: every run starting on a touched unit's line, removed
+    first as `ngram_statements` does. A line's runs depend on the spacing of all its crops, so a relabel or
+    a recut can join or break a pair anywhere on it; rebuilding the whole line leaves none stale."""
+    with sqlite3.connect(catalogue) as db:
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='unit_ngrams'").fetchone():
+            return []
+        runs = [Run(tuple(i for i in ids if i), bool(vertical)) for *ids, vertical in
+                db.execute("SELECT first,second,third,vertical FROM unit_ngrams ORDER BY first,size")]
+    lines = {}
+    for ident, origin, data in atlas.execute("SELECT id, origin, data FROM units"):
+        if origin == "local" and (line := json.loads(data).get("line_id")) is not None:
+            lines[ident] = line
+    near = {lines[i] for i in touched if i in lines}
+    firsts = set(touched) | {i for i, line in lines.items() if line in near}
+    firsts |= {run.units[0] for run in runs if touched & set(run.units)}
+    return [statement + "\n" for statement in ngram_statements(sorted(firsts), [run for run in runs if run.units[0] in firsts])]
 
 
 def read_live(prefixes: list[str]) -> list[dict]:
@@ -388,6 +408,9 @@ def main() -> None:
     listed = sorted(set(args.ids.read_text().split())) if args.ids else None
     if args.live:
         live_rows = [json.loads(line) for line in args.live.read_text().splitlines() if line.strip()]
+        if listed is not None:
+            wanted = set(listed)
+            live_rows = [row for row in live_rows if row["id"] in wanted]
     else:
         live_rows = read_ids(listed) if listed is not None else read_live(args.prefix)
     live = {row["id"]: row for row in live_rows}
@@ -400,7 +423,8 @@ def main() -> None:
     atlas = sqlite3.connect(sealed / "atlas.sqlite")
     fresh = {i for i, in atlas.execute("SELECT id FROM units")} - live.keys()
     if listed is not None:
-        fresh &= set(listed)
+        (out / "not-live.json").write_text(json.dumps(sorted(fresh & set(listed)), indent=1))
+        fresh = set()
     overlapping = live_overlaps(atlas, fresh, live_rows)
     fresh -= set(overlapping)
     (out / "overlapping.json").write_text(json.dumps(overlapping, indent=1))
@@ -412,9 +436,9 @@ def main() -> None:
     objects = {obj for key, obj in atlas.execute("SELECT key, object FROM media") if key in wanted}
     media, units, pages, ngrams, claims = split_sealed((sealed / "catalogue.sql").read_text(encoding="utf-8"), wanted, fresh)
     if listed is not None:
-        mine = {json.loads(data).get("page_id") for i, data in atlas.execute("SELECT id, data FROM units") if i in fresh or i in touched}
+        mine = {json.loads(data).get("page_id") for i, data in atlas.execute("SELECT id, data FROM units") if i in touched}
         pages = [line for line in pages if PAGE_ID.match(line).group(1).replace("''", "'") in mine]
-        ngrams = []
+        ngrams, claims = listed_runs(catalogue, atlas, touched), []
     extras = [statements(path.read_text(encoding="utf-8")) for path in args.extra]
     # The version row goes last, so the Worker's cached listings change only once every row has.
     # The ledger after the crops: a claim's slot is resolved against the crop's version on the site.

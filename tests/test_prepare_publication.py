@@ -246,7 +246,7 @@ def test_a_media_chunk_that_does_not_come_back_is_read_in_halves(monkeypatch):
 
 
 def test_listed_units_are_read_by_key_and_published_alone(tmp_path, monkeypatch):
-    # ar:2 was cut again; ar:3 is new to the site but not listed, so it waits for a full publication.
+    # ar:2 was cut again; ar:3 is listed but new to the site, so it waits for a full publication.
     export = resumed_export(tmp_path, {"ar:1": A, "ar:2": B, "ar:3": C})
     with sqlite3.connect(export / "catalogue.sqlite") as db:
         rows = {r[0]: r for r in db.execute("SELECT id, origin, revision, quiz, data, style FROM units")}
@@ -263,14 +263,31 @@ def test_listed_units_are_read_by_key_and_published_alone(tmp_path, monkeypatch)
         return [row for i, row in live.items() if f"'{i}'" in sql]
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(prepare, "d1", d1)
-    (tmp_path / "ids.txt").write_text("ar:2\n")
+    (tmp_path / "ids.txt").write_text("ar:2\nar:3\n")
     monkeypatch.setattr("sys.argv", ["prepare", str(export), str(tmp_path / "out"), "--prefix", "ar:", "--ids", str(tmp_path / "ids.txt")])
     prepare.main()
-    assert asked == ["'ar:2'"], "only the listed unit is read, by key"
+    assert asked == ["'ar:2','ar:3'"], "only the listed units are read, by key"
     sealed = tmp_path / "out" / "sealed"
     manifest = json.loads((sealed / "publication.json").read_text())
     sql = "".join((sealed / p).read_text() for p in manifest["sql"])
-    assert "ar:2" in sql and "'ar:3'" not in sql and "unit_ngrams" not in sql
+    assert "ar:2" in sql and "'ar:3'" not in sql and "DELETE FROM unit_ngrams WHERE first IN ('ar:2')" in sql
+    assert json.loads((tmp_path / "out" / "not-live.json").read_text()) == ["ar:3"]
+
+
+def test_a_listed_publication_records_anew_the_runs_on_its_units_lines(tmp_path):
+    catalogue = tmp_path / "catalogue.sqlite"
+    with sqlite3.connect(catalogue) as db:
+        db.execute("CREATE TABLE unit_ngrams(size, first, second, third, vertical)")
+        db.executemany("INSERT INTO unit_ngrams VALUES(?,?,?,?,1)", [
+            (2, "hk:1", "hk:2", None), (3, "hk:1", "hk:2", "hk:3"), (2, "hk:3", "hk:4", None), (2, "hk:7", "hk:8", None)])
+    atlas = sqlite3.connect(":memory:")
+    atlas.execute("CREATE TABLE units(id, origin, data)")
+    atlas.executemany("INSERT INTO units VALUES(?, 'local', ?)", [
+        (f"hk:{n}", json.dumps({"line_id": "L1" if n < 7 else "L2"})) for n in range(1, 9)])
+    sql = "".join(prepare.listed_runs(catalogue, atlas, {"hk:3"}))
+    removed = re.findall(r"DELETE FROM unit_ngrams WHERE first IN \(([^)]*)\)", sql)
+    assert removed == ["'hk:1','hk:2','hk:3','hk:4','hk:5','hk:6'"], "every run on the unit's line"
+    assert "'hk:3','hk:4'" in sql and "hk:7" not in sql
 
 
 def test_live_rows_by_key_are_read_in_halves_when_a_chunk_fails(monkeypatch):
