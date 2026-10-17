@@ -87,7 +87,7 @@
   "chips.senseMethod.ruby": "旁訓",
   "chips.senseMethod.note": "注",
   "chips.senseMethod.parallel": "他本",
-  "chips.senseMethod.context": "文脈",
+  "chips.senseMethod.context": "上下文",
   "chips.documents.other": "書{count}部",
   "client.changed": "此字已改，復載而校其新",
   "client.saveFailed": "所校不能存",

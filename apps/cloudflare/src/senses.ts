@@ -12,7 +12,7 @@ type Json = Record<string, any>;
 export const SENSES_MAX = 500;
 export const sensesQuery = () => `SELECT c.subject,c.object,c.status,c.members,a.method,u.document,u.data
   FROM current_claims c INDEXED BY current_claim_object JOIN units u ON u.id=c.subject AND u.crop_version IS c.crop_version
-  JOIN assertions a ON a.id=json_extract(c.supporting,'$[0]')
+  JOIN assertions a ON a.id=json_extract(c.members,'$[0].assertion')
   WHERE c.predicate='writes_word' AND c.object IS NOT NULL AND c.status<>'rejected' AND u.character=?
   ORDER BY c.object,c.subject LIMIT ${SENSES_MAX}`;
 // The words the claims name, with the spellings their sources state.
@@ -27,8 +27,8 @@ const FORM: Record<number, string> = { 1: 'certain', 0.5: 'probable' };
 const pointOf = (spelling: string) => [...spelling].length === 1
   ? 'U+' + spelling.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0') : null;
 
-/** The senses, one per word, its witnesses in document order: each crop with its document, how the
- *  sense is known, the form judgment and the slot's status. */
+/** The senses, one per word, its witnesses by crop id: each crop with its document, how the sense is
+ *  known and the form judgment, both from the claim the slot resolved to, and the slot's status. */
 export function senses(rows: SenseRow[], words: WordRow[]) {
   const named = new Map<string, { id: string; reading: string; class: string; spellings: Map<string, string[]> }>();
   for (const w of words) {
@@ -53,9 +53,21 @@ export function senses(rows: SenseRow[], words: WordRow[]) {
   }).sort((a, b) => b.crops - a.crops || (a.id < b.id ? -1 : 1));
 }
 
-/** The senses attested for `char`, each witness dated by its document. Not cached: a claim moves no
- *  catalogue version. */
-export async function sensesOf(env: Env, char: string) {
+// A claim moves no catalogue version, so the senses are kept at the edge for a few minutes only: a new
+// claim shows within that time, and a character page does not read every word claim on every view.
+export const SENSES_TTL = 300;
+
+/** The senses attested for `char`, each witness dated by its document. */
+export async function sensesOf(env: Env, ctx: ExecutionContext, origin: string, char: string) {
+  const key = new Request(`${origin}/layers/senses?c=${encodeURIComponent(char)}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json();
+  const found = await readSenses(env, char);
+  ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${SENSES_TTL}` } })));
+  return found;
+}
+
+async function readSenses(env: Env, char: string) {
   const rows = (await env.DB.prepare(sensesQuery()).bind(char).all<SenseRow>()).results;
   if (!rows.length) return { items: [] };
   const ids = [...new Set(rows.map(r => r.object))];

@@ -69,7 +69,8 @@
     try { await navigator.clipboard.writeText(text) } catch { return }
     copiedLine = key; clearTimeout(copyTimer); copyTimer = setTimeout(() => copiedLine = null, 1500)
   }
-  const lineOf = (language, w) => wiktionaryLine(language, card.char, w, page.url.origin + localize(cropAddress(w.id), language))
+  // A crop's page in the language of the Wiktionary the line is for.
+  const lineOf = (language, w) => wiktionaryLine(language, card.char, w, page.url.origin + localize('/crop/' + encodeURIComponent(w.id), language))
   // Outside the unified ideographs' main block a character may be missing from the reader's fonts or
   // look like another (a compatibility ideograph, a Kangxi radical), so it shows its code point too.
   const named = v => { const p = v.char.codePointAt(0); return !(p >= 0x4e00 && p <= 0x9fff) }
@@ -156,17 +157,18 @@
         <ul>
           {#each sense.witnesses as w (w.id)}
             <li>
-              <a href={localize(cropAddress(w.id))}>{titleOf(w.source) || w.id}</a>
+              <a href={cropAddress(w.id)}>{titleOf(w.source) || w.id}</a>
               {[yearOf(w), METHODS[w.method]?.() ?? w.method, w.form === 'probable' && t('chips.senseProbable')].filter(Boolean).join(' · ')}
               <span class="cite-label">{t('chips.senseCite')}</span>{#each ['ja', 'en'] as language (language)}
                 <button type="button" class="cite-line" onclick={() => copyLine(w.id + language, lineOf(language, w))}
-                  aria-label="{t('chips.senseCite')} {language}" title={lineOf(language, w)}>{copiedLine === w.id + language ? t('copyId.copied') : language}</button>
+                  aria-label="{t('cite.copy')}: {t('chips.senseCite')} {language}" title={lineOf(language, w)}>{copiedLine === w.id + language ? t('copyId.copied') : language}</button>
               {/each}
             </li>
           {/each}
         </ul>
       </details>
     {/each}
+    {#if senses.length}<span class="visually-hidden" role="status">{copiedLine ? t('copyId.copied') : ''}</span>{/if}
     {#if words.items.length}
       <details class="variant-sources">
         <summary>{t('chips.variantSources')}: {Object.keys(words.sources).join(' · ')}</summary>
