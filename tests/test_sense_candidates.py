@@ -25,14 +25,16 @@ def _store(directory: Path, units: list[Unit]) -> Path:
 
 
 def test_a_reviewed_crop_filed_under_another_han_character_is_a_candidate(tmp_path):
-    directory = _store(tmp_path / "work", [
+    # A directory name a URI would read as a fragment or a query.
+    directory = _store(tmp_path / "work#1?x", [
         _unit("u1", "鯡", "U+29E49", line_id="l1", method="detect-align"),
         _unit("u2", "鯡", "U+29E49", meta={"ainu_records": {"origin": "ocr", "context": "此島の鯡"}}),
-        # Same character, a machine label, a kana and a retired unit are not candidates.
+        # Same character, a machine label, a kana, a retired and a rejected unit are not candidates.
         _unit("u3", "鯡", "U+9BE1"),
         _unit("u4", "鯡", "U+29E49", review=ReviewState.MACHINE),
         _unit("u5", "に", "U+29E49"),
         _unit("u6", "鯡", "U+29E49", active=False),
+        _unit("u7", "鯡", "U+29E49", review=ReviewState.REJECTED),
     ])
     tables.write(directory / "rubies.parquet", [Ruby(id="l1:ruby0:right", page_id="p1", line_id="l1", base="鯡",
                                                      base_unit_ids=["u1"], side="right", text="にしん", reading="にしん",

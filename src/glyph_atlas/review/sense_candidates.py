@@ -18,8 +18,9 @@ What a row holds:
 - `rubies` are the readings a 振り仮名 gives over the crop or its word (`rubies.parquet`, when the
   dataset has one), the strongest evidence of the sense the transcription itself holds.
 
-Only Han characters on both sides are listed, and only crops a person has looked at (`review` past
-`machine`), since a machine label that differs from the transcription is the aligner's guess.
+Only Han characters on both sides are listed, and only crops a person has looked at and kept
+(`review` past `machine`, not `rejected`), since a machine label that differs from the transcription
+is the aligner's guess.
 """
 
 from __future__ import annotations
@@ -35,8 +36,10 @@ from pathlib import Path
 from .. import refs, tables
 from ..schema import ReviewState, Ruby, Script
 
-#: Review states that mean a person looked at the crop.
-LOOKED = frozenset(state.value for state in ReviewState) - {ReviewState.MACHINE.value, ReviewState.TRANSCRIBER.value}
+#: Review states that mean a person looked at the crop and kept it under its character; a rejected crop
+#: is not the character it is filed under.
+LOOKED = frozenset(state.value for state in ReviewState) - {
+    ReviewState.MACHINE.value, ReviewState.TRANSCRIBER.value, ReviewState.REJECTED.value}
 COLUMNS = ("character", "code_point", "source", "source_code_point", "basis", "relation", "rubies", "unit", "review",
            "document", "line", "context")
 
@@ -92,11 +95,14 @@ def _rubies(directory: Path) -> dict[str, list[str]]:
 
 def _rows(store: Path) -> Iterator[dict]:
     """Every active unit of a review store whose character and source text are one code point each."""
-    with sqlite3.connect(f"file:{store}?mode=ro", uri=True) as conn:
+    conn = sqlite3.connect(f"{store.resolve().as_uri()}?mode=ro", uri=True)
+    try:
         query = ("SELECT data FROM units WHERE active=1 AND json_extract(data,'$.unicode') IS NOT NULL "
                  "AND length(json_extract(data,'$.text_source'))=1")
         for (data,) in conn.execute(query):
             yield json.loads(data)
+    finally:
+        conn.close()
 
 
 def candidates(directory: Path, *, characters: Iterable[str] = ()) -> list[Candidate]:
