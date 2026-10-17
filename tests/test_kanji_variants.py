@@ -84,6 +84,15 @@ def test_opencc_reads_the_japanese_table_from_shinjitai_to_kyujitai():
     }
 
 
+def test_opencc_marks_a_simplified_form_listed_among_its_own_traditional_forms():
+    text = "# s2t\n时\t時\n后\t后 後\n云\t雲 云\n"
+    assert rows(variants.opencc_edges("STCharacters.txt", text)) == {
+        ("時", "时", "simplified", "opencc", "STCharacters"),
+        ("後", "后", "simplified", "opencc", "STCharacters (also itself)"),
+        ("雲", "云", "simplified", "opencc", "STCharacters (also itself)"),
+    }
+
+
 def test_cjkvi_reads_variant_tags_by_table_and_refuses_unknown_tags():
     text = (
         "# 異體字表\n"

@@ -421,11 +421,13 @@ def test_historical_family_keeps_written_characters_transcriptions_and_ink_disti
     assert {sample["label"] for sample in old["samples"]} == {"假"}
     assert {sample["written_character"] for sample in old["samples"]} == {"假"}
     family = api.get("/layers/graphemes/假").json()
-    assert family["code_point"] == "U+4EEE" and family["label"] == "仮 = 假"
-    assert family["character_count"] == 2 and family["occurrence_count"] == 3
+    # The family holds 仮's rarer 異寫字 too, with no occurrence here.
+    assert family["code_point"] == "U+4EEE" and family["label"].startswith("仮 = 假 = ")
+    assert family["character_count"] == 6 and family["occurrence_count"] == 3
     assert family["relation"] == "shinjitai-kyujitai"
     assert family["evidence"][0]["url"].startswith("https://www.bunka.go.jp/")
-    assert [(row["char"], row["occurrence_count"]) for row in family["characters"]] == [("仮", 1), ("假", 2)]
+    counts = [(row["char"], row["occurrence_count"]) for row in family["characters"]]
+    assert counts[:2] == [("仮", 1), ("假", 2)] and all(count == 0 for _, count in counts[2:])
     assert api.get("/layers/graphemes/U+4EEE").json() == family
     grouped = api.get("/layers/occurrences", params={"code_point": "仮", "expand": "grapheme"}).json()
     assert grouped["counts"]["total"] == 3 and grouped["counts"]["exact_total"] == 1
@@ -439,7 +441,7 @@ def test_historical_family_keeps_written_characters_transcriptions_and_ink_disti
         assert {row["char"] for row in suggestions} >= {"仮", "假"}
         for row in suggestions:
             if row["char"] in ("仮", "假"):
-                assert row["grapheme"]["label"] == "仮 = 假"
+                assert row["grapheme"]["label"].startswith("仮 = 假 = ")
     # Grouping never changes the stored source character, transcription or crop.
     stored = Store(dataset).unit("variant:1")
     assert stored.unicode == "U+5047" and stored.text_source == "かり" and stored.box.x == 50

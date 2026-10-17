@@ -22,7 +22,8 @@ def edge(a: str, b: str, relation: str, source: str = "wikidata", detail: str = 
 def grouped(variants, *, equivalents=(), figures=None, jis=(), curated=None, ideographs=None):
     """The families as {head: sorted members}."""
     chars = {char for row in [*variants, *equivalents] for char in (row["a"], row["b"])}
-    found = families(variants, equivalents, ideographs or chars, figures or {}, set(jis), curated)
+    found = families(variants, equivalents, ideographs or chars, figures or {}, set(jis), curated,
+                     familiarity={char: 2 for char in jis})
     return {family.head: "".join(sorted(family.members)) for family in found}
 
 
@@ -33,6 +34,7 @@ KAN = [
     edge("還", "𮟃", "variant"),
     reduction("还", "還", "MJ025810"),
     edge("還", "还", "simplified", "unihan", "還→还 kSimplifiedVariant"),
+    edge("還", "还", "simplified", "opencc", "STCharacters (also itself) | TSCharacters"),
     reduction("𢕼", "還", "MJ035930"),
     edge("𢕼", "還", "specialized-semantic", "wikidata", "Q109816001"),
 ]
@@ -50,9 +52,9 @@ def test_a_simplified_or_specialized_semantic_pair_stays_apart_despite_its_reduc
 
 
 def test_a_pair_kept_apart_blocks_a_chain_as_well():
-    """X reaches 還 through Y, and X is 還's simplification: X stays out."""
+    """X reaches 還 through Y, and X is a loan for 還: X stays out."""
     rows = [reduction("甲", "乙", "MJ1"), reduction("乙", "還", "MJ2"),
-            edge("還", "甲", "simplified", "opencc", "TSCharacters")]
+            edge("還", "甲", "borrowed", "cjkvi-variants", "還→甲 hydcd/borrowed")]
     assert grouped(rows, figures={"MJ1": "甲", "MJ2": "乙"}) == {"還": "乙還"}
 
 
@@ -87,10 +89,16 @@ def test_two_jis_characters_need_a_second_source():
 
 
 def test_the_koseki_table_does_not_corroborate_itself():
+    """The reduction is refused; the 異寫字 pass then joins 唔, tied to 吾 alone, on the 戸籍統一文字's row."""
     rows = [reduction("唔", "吾", "MJ1"), edge("吾", "唔", "variant", "cjkvi-variants", "吾→唔 koseki/variant")]
-    assert grouped(rows, figures={"MJ1": "唔"}, jis="吾唔") == {}
+    refused: list[tuple[str, object]] = []
+    families(rows, [], {"吾", "唔"}, {"MJ1": "唔"}, {"吾", "唔"}, refused=refused)
+    assert [(reason, edge.a, edge.b) for reason, edge in refused] == [
+        ("no second source for a JIS X 0208 pair", "唔", "吾")]
     rows[1] = edge("吾", "唔", "variant", "cjkvi-variants", "吾→唔 koseki/variant | 吾→唔 hydzd/variant")
-    assert grouped(rows, figures={"MJ1": "唔"}, jis="吾唔") == {"吾": "吾唔"}
+    refused.clear()
+    families(rows, [], {"吾", "唔"}, {"MJ1": "唔"}, {"吾", "唔"}, refused=refused)
+    assert refused == []
 
 
 def test_a_character_unicode_unifies_elsewhere_does_not_bring_its_twin():
@@ -178,3 +186,82 @@ def test_every_source_a_family_cites_has_a_source_record():
     for head, family in refs._grapheme_families().items():
         for entry in family["evidence"]:
             assert entry["title"] and str(entry["url"]).startswith("https://"), (head, entry["id"])
+
+
+def test_a_simplified_form_of_one_character_joins_its_grapheme():
+    """时 is 時 written another way and nothing else: the 異寫字 pass joins it."""
+    rows = [reduction("旹", "時", "MJ1"), edge("時", "时", "simplified", "unihan", "時→时 kSimplifiedVariant"),
+            edge("时", "時", "overlap", "yitizi", "ytenx/JihThex.csv 时旹時")]
+    assert grouped(rows, figures={"MJ1": "旹"}) == {"時": "时旹時"}
+
+
+def test_a_variant_of_two_characters_joins_neither():
+    """寸 is listed as a variant of 時 and of 算, each of which has variants of its own."""
+    rows = [edge("寸", "時", "variant", "wikidata"), edge("寸", "算", "variant", "wikidata"),
+            edge("時", "𭥱", "variant", "wikidata"), edge("算", "祘", "variant", "wikidata")]
+    assert grouped(rows) == {"時": "時𭥱", "祘": "祘算"}
+
+
+def test_a_full_form_does_not_join_a_reduced_form_that_writes_another_character():
+    """闲 is the simplified 閑 and the simplified 閒; 閑, tied to 闲 alone, stays out."""
+    rows = [edge("閑", "闲", "simplified", "opencc", "TSCharacters"),
+            edge("閒", "闲", "simplified", "opencc", "TSCharacters")]
+    assert grouped(rows) == {}
+    assert grouped(rows[:1]) == {"閑": "閑闲"}, "a reduced form of one character joins it"
+
+
+def test_a_related_only_table_or_a_partial_relation_joins_nothing():
+    for row in (edge("寸", "時", "variant", "cjkvi-variants", "寸→時 cjkvi/variant"),
+                edge("時", "㫑", "overlap", "yitizi", "yitizi.txt 㫑時"),
+                {"a": "䝰", "b": "時", "relation": "reduction", "source": "mj-shrink-map",
+                 "detail": "MJ004730: 法務省告示582号別表第四, 表 二, 順位 第1順位"}):
+        assert grouped([row]) == {}, row["relation"]
+    assert grouped([edge("寸", "時", "variant", "cjkvi-variants", "寸→時 cjkvi/variant | 寸→時 hydzd/variant")]) \
+        == {"寸": "寸時"}, "a 異体字 table's claim beside it does join"
+
+
+def test_a_variant_in_some_senses_or_a_loan_keeps_a_pair_apart():
+    for relation in ("specialized-semantic", "borrowed"):
+        rows = [edge("㫑", "時", "variant", "wikidata"), edge("㫑", "時", relation, "wikidata")]
+        assert grouped(rows) == {}, relation
+
+
+def test_a_simplified_form_that_writes_a_character_of_its_own_stays_apart():
+    rows = [edge("後", "后", "simplified", "opencc", "STCharacters (also itself) | TSCharacters"),
+            edge("後", "后", "simplified", "unihan", "後→后 kSimplifiedVariant")]
+    assert grouped(rows) == {}
+    assert grouped([{**rows[0], "detail": "STCharacters | TSCharacters"}, rows[1]]) == {"后": "后後"}
+
+
+def test_the_pass_joins_once_so_a_chain_does_not_carry_on():
+    """甲 and 丁 are each tied to one character only and join it; 乙 and 丙 stay two families."""
+    rows = [edge("甲", "乙", "variant"), edge("乙", "丙", "variant"), edge("丙", "丁", "variant")]
+    assert grouped(rows) == {"乙": "乙甲", "丁": "丁丙"}
+
+
+def test_two_characters_of_one_standard_join_on_its_own_tradition_only():
+    rows = [edge("菓", "果", "variant", "cjkvi-variants", "果→菓 dypytz/variant | 果→菓 hydzd/variant"),
+            edge("菓", "果", "simplified", "cjkvi-variants", "菓→果 cjkvi/simplified")]
+    assert grouped(rows, jis="菓果") == {}
+    assert grouped(rows) == {"果": "果菓"}, "outside the standards the claims are enough"
+    rows = [edge("躰", "體", "variant", "cjkvi-variants", "體→躰 hydzd/variant | 體→躰 koseki/variant")]
+    assert grouped(rows, jis="躰體") == {"躰": "躰體"}
+    rows = [edge("龍", "竜", "shinjitai", "unihan", "竜→龍 kJapaneseOldVariant")]
+    assert grouped(rows, jis="竜龍") == {"竜": "竜龍"}
+    rows = [edge("餘", "馀", "simplified", "cjkvi-variants", "餘→馀 cjkvi/simplified")]
+    assert grouped(rows, ideographs={"餘", "馀"}) == {"餘": "餘馀"}
+    found = families(rows, [], {"餘", "馀", "余"}, {}, set(), gb2312={"馀", "余"},
+                     curated={"余": ["余", "餘"]})
+    assert {family.head: "".join(sorted(family.members)) for family in found} == {"余": "余餘"}
+
+
+def test_the_head_is_the_character_a_japanese_reader_knows_best():
+    rows = [edge("羣", "群", "variant", "wikidata")]
+    found = families(rows, [], {"羣", "群"}, {}, set(), familiarity={"群": 0, "羣": 3})
+    assert [family.head for family in found] == ["群"]
+
+
+def test_the_yixiezi_pass_never_joins_two_curated_families():
+    rows = [edge("国", "学", "variant")]
+    assert grouped(rows, curated={"国": ["国", "國"], "学": ["学", "學"]}) == {"国": "国國", "学": "学學"}
+

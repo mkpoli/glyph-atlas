@@ -9,14 +9,18 @@ The hierarchy is grapheme → character → form.
 
 | Layer | What it is | Where it lives |
 | --- | --- | --- |
-| Grapheme | A curated family, such as 仮 and 假 | `Character.grapheme` points to its representative |
+| Grapheme | The characters that write one character, such as 仮 and 假, or 時, 时 and 旹 | `Character.grapheme` points to its representative |
 | Character | The written identity and its code point | `data/vocab/characters.tsv`, one row per code point |
 | Form | A category of written appearance a crop is written in | the assertion ledger: a crop's `has_form` claim names a form, and a form's representations name it ([docs/design/form-model.md](design/form-model.md)) |
 
 仮 (`U+4EEE`) and 假 (`U+5047`) share a family represented by 仮. Their individual
-characters and occurrence counts remain separate. The 271 supported one-to-one
-Japanese old/new pairs are cited in `graphemes.yaml`; broader alignment equivalences
-and shared pronunciations do not create browsing families.
+characters and occurrence counts remain separate. The 271 one-to-one Japanese
+old/new pairs are cited in `graphemes.yaml`. `glyph_atlas.shape_families` adds the
+rest from `kanji-variants.tsv`: characters a source defines as one character in
+another shape, then the 異寫字, a simplified, 新字体 or other variant form that
+writes one character only (时 for 時). A form that writes two characters (寸 for 時
+and 算, 后 for 後 and 后) stays a character of its own, and shared pronunciations
+do not create browsing families.
 
 Kana retain their curated families. For example, ね, ネ and 𛄧 share `U+306D`.
 The kanji 子 remains a separate character and family, while `Character.jibo` records

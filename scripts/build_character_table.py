@@ -566,14 +566,57 @@ def read_table(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader([line for line in handle if not line.startswith("#")], delimiter="\t"))
 
 
+def familiarity(ucd: Path) -> dict[str, int]:
+    """How well a Japanese reader knows each ideograph, lowest first: 0 a 常用漢字 (Unihan
+    `kJoyoKanji` 2010), 1 a 人名用漢字 (`kJinmeiyoKanji`), 2 JIS X 0208 level 1 (rows 16-47),
+    3 level 2."""
+    with zipfile.ZipFile(ucd / "Unihan.zip") as archive:
+        mappings = archive.read("Unihan_OtherMappings.txt").decode("utf-8")
+        sources = archive.read("Unihan_IRGSources.txt").decode("utf-8")
+    found: dict[str, int] = {}
+
+    def rank(char: str, value: int) -> None:
+        found[char] = min(value, found.get(char, value))
+
+    for line in sources.splitlines():
+        cells = line.split("\t")
+        if len(cells) == 3 and cells[1] == "kIRG_JSource" and cells[2].startswith("J0-"):
+            rank(chr(int(cells[0].removeprefix("U+"), 16)), 2 if int(cells[2][3:5], 16) - 0x20 <= 47 else 3)
+    for line in mappings.splitlines():
+        cells = line.split("\t")
+        if len(cells) != 3:
+            continue
+        char = chr(int(cells[0].removeprefix("U+"), 16))
+        if cells[1] == "kJoyoKanji" and not cells[2].startswith("U+"):
+            rank(char, 0)
+        elif cells[1] == "kJinmeiyoKanji":
+            rank(char, 1)
+    return found
+
+
+def gb2312(ucd: Path) -> set[str]:
+    """The ideographs whose Unihan `kIRG_GSource` is `G0`, the GB 2312 repertoire."""
+    return _irg_repertoire(ucd, "kIRG_GSource", "G0-")
+
+
+def cns1(ucd: Path) -> set[str]:
+    """The ideographs whose Unihan `kIRG_TSource` is `T1`, CNS 11643 plane 1."""
+    return _irg_repertoire(ucd, "kIRG_TSource", "T1-")
+
+
 def jis0208(ucd: Path) -> set[str]:
     """The ideographs whose Unihan `kIRG_JSource` is `J0`, the JIS X 0208 repertoire."""
+    return _irg_repertoire(ucd, "kIRG_JSource", "J0-")
+
+
+def _irg_repertoire(ucd: Path, field: str, prefix: str) -> set[str]:
+    """The ideographs one IRG source field places in one national standard."""
     with zipfile.ZipFile(ucd / "Unihan.zip") as archive:
         text = archive.read("Unihan_IRGSources.txt").decode("utf-8")
     found = set()
     for line in text.splitlines():
         cells = line.split("\t")
-        if len(cells) == 3 and cells[1] == "kIRG_JSource" and cells[2].startswith("J0-"):
+        if len(cells) == 3 and cells[1] == field and cells[2].startswith(prefix):
             found.add(chr(int(cells[0].removeprefix("U+"), 16)))
     return found
 
@@ -597,7 +640,7 @@ def _add_shape_families(
                for head, family in (document.get("families") or {}).items()}
     families = shape_families.families(
         read_table(vocab / VARIANTS_NAME), read_table(vocab / EQUIVALENTS_NAME), ideographs,
-        default_figure, jis0208(ucd), curated, refused)
+        default_figure, jis0208(ucd), curated, refused, gb2312(ucd), cns1(ucd), familiarity(ucd))
     for family in families:
         head = code_point(ord(family.head))
         for member in family.members:

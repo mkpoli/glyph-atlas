@@ -314,12 +314,15 @@ def test_cited_kanji_families_keep_character_identity_separate():
     assert modern.readings == old.readings == []
     assert refs.grapheme("仮") == refs.grapheme("假") == "U+4EEE"
     family = refs.grapheme_info("假")
-    assert family["label"] == "仮 = 假"
-    assert family["members"] == [{"code_point": "U+4EEE", "char": "仮"}, {"code_point": "U+5047", "char": "假"}]
+    assert family["label"].startswith("仮 = 假")
+    assert family["members"][:2] == [{"code_point": "U+4EEE", "char": "仮"}, {"code_point": "U+5047", "char": "假"}]
     assert family["relation"] == "shinjitai-kyujitai"
     assert family["evidence"][0]["title"].startswith("文化庁")
     assert len(family["evidence"][0]["sha256"]) == 64
     assert refs.grapheme("国") == refs.grapheme("國") == "U+56FD"
+    # A simplified form of one character joins it; a form that writes two characters stays apart.
+    assert refs.grapheme_info("时")["label"].startswith("時 = 时 = 旹")
+    assert len({refs.grapheme(char) for char in "寸時算"}) == 3 and refs.grapheme("后") != refs.grapheme("後")
     # Neither homophones nor broader alignment unifications define browsing families.
     assert refs.grapheme("加") != refs.grapheme("仮")
     assert len({refs.grapheme(char) for char in "弁辨辯瓣"}) == 4
@@ -434,6 +437,7 @@ def write_release(directory: Path) -> Path:
     with zipfile.ZipFile(directory / "Unihan.zip", "w") as archive:
         archive.writestr("Unihan_IRGSources.txt", "# Unihan_IRGSources.txt\nU+5CF6\tkIRG_JSource\tJ0-4567\n"
                          "U+5D8B\tkIRG_JSource\tJ0-5068\nU+5B50\tkIRG_JSource\tJ0-3B52\n")
+        archive.writestr("Unihan_OtherMappings.txt", "# Unihan_OtherMappings.txt\nU+5CF6\tkJoyoKanji\t2010\n")
     return directory
 
 
