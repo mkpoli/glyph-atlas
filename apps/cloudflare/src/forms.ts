@@ -112,7 +112,7 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
   }));
   // A cluster's glyphs named otherwise, by form; a cluster reported as a whole has none.
   const pairs = (clusters.results as Json[]).filter(c => !c.issue && own.get(c.id)!.form
-    && [...byCluster.get(c.id)!.forms.keys()].some(form => form !== own.get(c.id)!.form)).map(c => [c.id, own.get(c.id)!.form]);
+    && [...byCluster.get(c.id)?.forms.keys() ?? []].some(form => form !== own.get(c.id)!.form)).map(c => [c.id, own.get(c.id)!.form]);
   const strayRows = pairs.length ? (await env.DB.prepare(straysQuery()).bind(JSON.stringify(pairs)).all<Json>()).results : [];
   const strays = new Map<string, Map<string, Json[]>>();
   for (const r of strayRows) {
