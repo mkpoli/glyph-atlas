@@ -62,6 +62,13 @@ function preferred(event) {
 /** A first path segment shaped like a language tag: fr, pt-BR, zh-TW, ja-x-classical. */
 const LANGUAGE_TAG = /^[a-z]{2,3}(-[a-z0-9]{1,8})*$/i
 
+// Every page: another site may not frame it under its own buttons, a response is read as the type it is
+// sent as, the browser keeps to HTTPS, and a link out names this site without the page's address.
+const PAGE_HEADERS = [
+  ['content-security-policy', "frame-ancestors 'self'"], ['x-frame-options', 'SAMEORIGIN'], ['x-content-type-options', 'nosniff'],
+  ['strict-transport-security', 'max-age=31536000'], ['referrer-policy', 'strict-origin-when-cross-origin'],
+]
+
 const moved = (status, location) => new Response(null, { status, headers: { location, vary: 'Accept-Language, Cookie' } })
 
 export async function handle({ event, resolve }) {
@@ -77,6 +84,7 @@ export async function handle({ event, resolve }) {
       .replace('%theme-color-light%', themeColorMedia(theme, 'light')).replace('%theme-color-dark%', themeColorMedia(theme, 'dark')) })
     // A page carries who is signed in, so no shared cache may keep one reader's copy for another.
     if (!response.headers.has('cache-control')) response.headers.set('cache-control', 'private, no-cache')
+    for (const [name, value] of PAGE_HEADERS) if (!response.headers.has(name)) response.headers.set(name, value)
     return response
   }
   // Every other address is sent to a language's address: a site language written in other case to that
