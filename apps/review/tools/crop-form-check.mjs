@@ -164,7 +164,7 @@ try {
   const renamed = await browser.evaluate(`(async () => {
     const crop = await (await fetch('/atlas/characters/' + encodeURIComponent(${JSON.stringify(third)}))).json()
     const response = await fetch('/layers/units/' + encodeURIComponent(${JSON.stringify(third)}), { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: crypto.randomUUID(), revision: crop.revision, image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character: '所' }) })
+      body: JSON.stringify({ id: crypto.randomUUID(), client_id: 'crop-form-check', revision: crop.revision, image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character: '所' }) })
     return response.status
   })()`)
   assert(renamed < 300, `the crop could not be renamed to 所: ${renamed}`)
