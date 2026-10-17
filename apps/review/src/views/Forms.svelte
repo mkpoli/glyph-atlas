@@ -57,6 +57,8 @@
     return { from, to, items: shown.slice(from, to) }
   })
   function refilter() { if (familyList) familyList.scrollTop = 0; listTop = 0 }
+  // A list scrolled before the page hydrated starts from where it was scrolled to.
+  $effect(() => { if (familyList) listTop = familyList.scrollTop })
   const byForm = $derived(new Map((current?.forms ?? []).map(f => [f.char, f])))
   // The forms a key or a click assigns: the encoded ones, then the descriptions already in use.
   const palette = $derived(paletteOf(current))
