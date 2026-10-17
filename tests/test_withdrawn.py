@@ -48,7 +48,7 @@ def site():
     assert db.execute("SELECT count(*) FROM unit_marks").fetchone()[0] == 1
     for glyph in ("hl:gone_0_000:x:1", "hl:gone_1_002:x:4", "hl:gonearound_0_000:x:1", "hl:kept_0_000:x:1"):
         db.execute("INSERT INTO corpus_units(id,character,shuffle,object,offset,size) VALUES(?,'字',0,'o',0,1)", (glyph,))
-        db.execute("INSERT INTO corpus_gallery VALUES(?,0,'o',0,'{}')", (glyph,))
+        db.execute("INSERT INTO corpus_gallery(id,shuffle,object,offset,data) VALUES(?,0,'o',0,'{}')", (glyph,))
     # A round wrote this glyph's `units` row, which names no document, and a reviewer has seen it.
     db.execute("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,"
                "data,snapshot,context,visual) VALUES('hl:gone_0_000:x:1','corpus','字','unknown','kanji','pending',"

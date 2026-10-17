@@ -291,7 +291,19 @@ def test_two_curated_families_never_meet_through_a_family_both_join():
 def test_with_no_ranked_member_the_head_is_of_the_main_block():
     """氯 is GB 2312; with no rank at all, 喎 of the main block heads over 㖞 of Extension A."""
     rows = [edge("㲶", "氯", "z", "unihan", "z")]
-    assert [f.head for f in families(rows, [], {"㲶", "氯"}, {}, set(), familiarity={"氯": 4})] == ["氯"]
+    assert [f.head for f in families(rows, [], {"㲶", "氯"}, {}, set(), familiarity={"氯": 5})] == ["氯"]
     rows = [edge("㖞", "喎", "z", "unihan", "z")]
     assert [f.head for f in families(rows, [], {"㖞", "喎"}, {}, set())] == ["喎"]
+
+
+def test_a_traditional_form_or_the_seiji_heads_over_a_simplification():
+    """墊 (CNS 11643 plane 1) heads over 垫 (GB 2312); 厲, the 正字 a reduction points at, over 厉."""
+    rows = [edge("墊", "垫", "simplified", "unihan", "墊→垫 kSimplifiedVariant")]
+    assert [f.head for f in families(rows, [], {"墊", "垫"}, {}, set(), familiarity={"墊": 4, "垫": 5})] == ["墊"]
+    rows = [reduction("厉", "厲", "MJ1")]
+    found = families(rows, [], {"厉", "厲"}, {"MJ1": "厉"}, set(), familiarity={"厉": 5})
+    assert [f.head for f in found] == ["厲"]
+    rows = [reduction("篙", "㰏", "MJ2")]
+    found = families(rows, [], {"篙", "㰏"}, {"MJ2": "篙"}, set(), familiarity={"篙": 5})
+    assert [f.head for f in found] == ["篙"], "a 正字 of an extension does not head a character a reader knows"
 

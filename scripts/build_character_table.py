@@ -577,7 +577,7 @@ def read_table(path: Path) -> list[dict[str, str]]:
 def familiarity(ucd: Path) -> dict[str, int]:
     """How well a Japanese reader knows each ideograph, lowest first: 0 a 常用漢字 (Unihan
     `kJoyoKanji` 2010), 1 a 人名用漢字 (`kJinmeiyoKanji`), 2 JIS X 0208 level 1 (rows 16-47),
-    3 level 2; then the ones a reader of Chinese knows: 4 GB 2312, 5 CNS 11643 plane 1."""
+    3 level 2; then the ones a reader of Chinese knows: 4 CNS 11643 plane 1, 5 GB 2312."""
     with zipfile.ZipFile(ucd / "Unihan.zip") as archive:
         mappings = archive.read("Unihan_OtherMappings.txt").decode("utf-8")
         sources = archive.read("Unihan_IRGSources.txt").decode("utf-8")
@@ -593,9 +593,9 @@ def familiarity(ucd: Path) -> dict[str, int]:
         char = chr(int(cells[0].removeprefix("U+"), 16))
         if cells[1] == "kIRG_JSource" and cells[2].startswith("J0-"):
             rank(char, 2 if int(cells[2][3:5], 16) - 0x20 <= 47 else 3)
-        elif cells[1] == "kIRG_GSource" and cells[2].startswith("G0-"):
-            rank(char, 4)
         elif cells[1] == "kIRG_TSource" and cells[2].startswith("T1-"):
+            rank(char, 4)
+        elif cells[1] == "kIRG_GSource" and cells[2].startswith("G0-"):
             rank(char, 5)
     for line in mappings.splitlines():
         cells = line.split("\t")
