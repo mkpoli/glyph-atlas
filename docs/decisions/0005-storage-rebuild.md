@@ -64,8 +64,8 @@ CREATE INDEX crop_family ON crops(family, style, shuffle);
 CREATE INDEX crop_book ON crops(book, shuffle);
 ```
 
-Strings live in small dictionary tables (`books`, `pages`, `graphemes` and the code tables for
-production, category, style and state). The page's crops in reading order are a range scan on the
+Strings live in small dictionary tables: `books` (key, title and year, which a tile's caption shows),
+`pages`, `graphemes` and the code tables for production, category, style and state. The page's crops in reading order are a range scan on the
 primary key, so there is no page index. No table holds a text crop id or an image hash, and `media` is
 gone.
 
@@ -80,8 +80,9 @@ rights, page size and IIIF service, lines (text and box), and per crop its slot,
 script, model votes, gate evidence, repair, and each cut's box with its image location (pack, offset,
 size, digest). Measured at 53.8 B per crop gzipped, 0.8 GB at 15M crops.
 
-Images keep their packs. A crop image URL is `/i/<id>-<digest>.webp`: the Worker takes the page from
-the id, reads the bundle (edge-cached), and range-reads the pack. A recut changes the digest, so the
+Images keep their packs, and each crop's line image is located the same way. A crop image URL is
+`/i/<id>-<cut>.webp`, which a gallery can write from the `crops` row alone. The Worker takes the page
+from the id, reads the bundle (edge-cached), and range-reads the pack. A recut increments `cut`, so the
 image stays immutable under its URL.
 
 ### Reviews
