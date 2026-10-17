@@ -2252,6 +2252,48 @@ async function reject(env:Env,admin:string,input:Json){
     next:!Array.isArray(input.submissions)&&more&&last?encodeCursor(last.at,last.id):null,
     left:Array.isArray(input.submissions)?rows.slice(done.length).map(row=>row.id):[]};
 }
+// Corpus glyphs a check made outside the site found in doubt, sent to the Flagged view by an admin: the
+// boxes `atlas repair relabel` would label otherwise than a form a person decided (its `review` units).
+// Each is written as a round would write it (`materialise`), flagged with a wrong-character issue and the
+// finding in `flag`, so it waits among the corpus glyphs `/atlas/corpus/reviews` lists until a person
+// settles it. No event is written: the flag is a finding, not a person's review. A glyph that already has
+// a `units` row is left as it is (`held`), so what a round or a review said stands and a list sent again
+// writes nothing. One whose shown character is no longer the one the finding was made against
+// (`changed`), or whose image this site may not serve (`unshowable`), is left out.
+const FLAG_MAX=96;
+export function flagRequest(input:Json){
+  const finding=text(input?.finding,64,'finding',true)!;
+  if(!Array.isArray(input.glyphs)||!input.glyphs.length||input.glyphs.length>FLAG_MAX)throw new Problem(422,`Name 1 to ${FLAG_MAX} glyphs.`);
+  const glyphs=input.glyphs.map((g:Json)=>({id:text(g?.id,512,'glyph id',true)!,character:text(g?.character,16,'character',true)!,
+    realigned:text(g?.realigned,16,'realigned character'),transcribed:text(g?.transcribed,16,'transcribed character')}));
+  if(new Set(glyphs.map((g:Json)=>g.id)).size!==glyphs.length)throw new Problem(422,'A glyph is named twice.');
+  return {finding,glyphs} as {finding:string;glyphs:{id:string;character:string;realigned:string|null;transcribed:string|null}[]};
+}
+async function flagCorpus(env:Env,input:Json){
+  const {finding,glyphs}=flagRequest(input);
+  const rows=await unitsById(env,glyphs.map(g=>g.id));
+  const at=new Date().toISOString(),out:Record<string,string[]>={flagged:[],held:[],changed:[],unshowable:[],missing:[]};
+  const statements:D1PreparedStatement[]=[];
+  for(const g of glyphs){
+    const row=rows.get(g.id)!;
+    if(row instanceof Problem){out.missing.push(g.id);continue}
+    if(!row.fresh){out.held.push(g.id);continue}
+    const data=parse(row.data);
+    if(data.written_character!==g.character){out.changed.push(g.id);continue}
+    if(!dealable('corpus',data)){out.unshowable.push(g.id);continue}
+    // A new revision, so a page that still holds the unflagged glyph saves against a row that moved on.
+    const next={...data,state:'flagged',issue:'character',revision:data.revision+1,
+      flag:{finding,realigned:g.realigned,transcribed:g.transcribed,at}};
+    statements.push(materialise(env,{...row,data:JSON.stringify(next),fresh:row.fresh}));
+    out.flagged.push(g.id);
+  }
+  const results=statements.length?await env.DB.batch(statements):[];
+  // A round may have named a glyph since it was read; INSERT OR IGNORE leaves that row, and it is held.
+  const written=new Set(out.flagged.filter((_,i)=>results[i].meta.changes>0));
+  out.held.push(...out.flagged.filter(id=>!written.has(id)));
+  out.flagged=out.flagged.filter(id=>written.has(id));
+  return {...out,rows_written:results.reduce((n,r)=>n+(r.meta.rows_written??0),0)};
+}
 // The journal ids of one reviewer: a user's, or one id from before accounts that nobody holds.
 export function reviewerActors(input:Json):[string,string[]]{
   if(typeof input.user==='string')return ['(SELECT actor FROM actors WHERE user_id=?)',[text(input.user,64,'user',true)!]];
@@ -2414,6 +2456,7 @@ const routes = {
         // An admin's page: rejecting what a reviewer saved. Banning and roles are Better Auth's own.
         if(path.startsWith('/api/admin/')&&!me.admin)throw new Problem(403,'Only an admin can do this.');
         if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request)));
+        if(path==='/api/admin/corpus-flags')return json(await flagCorpus(env,await body(request)));
         if(path==='/api/account/avatar'){
           const origin=request.headers.get('origin');
           if(origin&&origin!==url.origin)throw new Problem(403,'Use the account page on this site.');
