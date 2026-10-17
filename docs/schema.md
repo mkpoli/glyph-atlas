@@ -175,6 +175,30 @@ Whole-page transcriptions for pages without line records: `page_id`, `source`, `
 
 連綿 groups: `id`, `page_id`, `box`, `unit_ids`.
 
+### rubies
+
+One reading field of a 振り仮名 in a line's transcription, with the units of the base it stands over.
+`atlas rubies <dataset>` writes it from the lines and units (`glyph_atlas.rubies`).
+
+| Field | Meaning |
+| --- | --- |
+| `id` | `{line_id}:ruby{n}:{side}`, `n` numbering the line's constructs in document order |
+| `page_id`, `line_id` | where the ruby was transcribed |
+| `base`, `base_start`, `base_end` | the base as typed, without what a 見せ消ち strikes out, and where it lies in `text_raw` |
+| `base_unit_ids` | the units placed for the base, in reading order; empty when the aligner placed none |
+| `side` | `right`, a reading; `left`, a 左訓, often a gloss or a second language |
+| `text`, `reading` | the reading as typed; spaces removed and katakana mapped to hiragana, historical kana kept |
+| `span` | `mono` when the base is one character; `group` when one reading covers a run |
+| `source` | the markup: `振り仮名`, `ルビ`, `迎え仮名`, or `legacy` for `base（reading）` |
+| `placement` | `unchecked` until a reviewer saw the ruby on the page over these units |
+
+A base can carry two readings: `《振り仮名：鯡漁図｜ヘロキコイキ｜ニシントリ》` is two rows over the
+same units. A nested ruby is a row of its own, so a unit can sit under a reading of its own and a
+reading of its word; `rubies.by_unit` lists both. A run is never split into per-character readings,
+since the markup does not say where one character's reading ends. Units are matched to the line's
+tokens by their transcribed text, so a unit whose box was relabelled or whose text the aligner
+did not place is left out of the base.
+
 ### reviews
 
 Append-only log: `id`, `target_type`, `target_id`, `field`, `old`, `new` (JSON values, so a box or a

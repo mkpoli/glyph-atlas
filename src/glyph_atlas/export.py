@@ -41,7 +41,7 @@ from pydantic import BaseModel
 
 from . import reconcile, refs, registry, tables, withdrawn
 from . import rights as rights_module
-from .schema import Document, Group, Licence, Line, Page, PageText, ReviewState, Rights, Script, Unit
+from .schema import Document, Group, Licence, Line, Page, PageText, ReviewState, Rights, Ruby, Script, Unit
 
 ROOT = Path(__file__).resolve().parents[2]
 VOCAB = ROOT / "data" / "vocab"
@@ -463,6 +463,11 @@ def _apply_filters(
         | {str(row.page_id) for row in page_texts_all if row.page_id in kept_page_ids}
     )
     groups = [group for group in groups_all if group.unit_ids and set(group.unit_ids) <= kept_units]
+    # A ruby is a record of its line, and its base names only the units the release holds.
+    released_lines = {line.id for line in line_rows}
+    rubies = [ruby.model_copy(update={"base_unit_ids": [unit for unit in ruby.base_unit_ids if unit in kept_units]})
+              for ruby in (dataset.read("rubies") if dataset.tables["rubies"] is not None else ())
+              if ruby.line_id in released_lines]
     page_texts = [row for row in page_texts_all if row.page_id in used_pages]
     pages = [page for page in pages if page.id in used_pages]
     # Every read of the merged directory is done, so its unfiltered tables are dropped here. The
@@ -481,6 +486,8 @@ def _apply_filters(
         _write_unit_rows(work / "units.parquet", unit_rows, columns)
     tables.write(work / "groups.parquet", groups, Group)
     tables.write(work / "page_texts.parquet", page_texts, PageText)
+    if dataset.tables["rubies"] is not None:
+        tables.write(work / "rubies.parquet", rubies, Ruby)
     return {
         "units": len(unit_rows),
         "lines": len(line_rows),
