@@ -123,3 +123,39 @@ def test_a_run_that_reads_no_crop_fails(dataset: Path, monkeypatch):
 def test_an_overlap_outside_zero_to_one_is_refused(dataset: Path):
     with pytest.raises(ValueError):
         sd.run(dataset, checkpoint=Path("unused"), min_overlap=0)
+
+
+def test_a_pair_with_an_unloaded_image_is_skipped(dataset: Path, monkeypatch):
+    monkeypatch.setattr(shift_repair, "_shown", lambda store, blocks, checkpoint, **_:
+                        {i: np.array([0.9]) for i in blocks if i not in ("ar:a1", "hk:h1")})
+    result = sd.run(dataset, checkpoint=Path("unused"))
+    assert [i["unit_id"] for i in result["items"]] == ["hk:h2"]
+    assert result["skipped"] == {"unread": 1}
+
+
+def test_a_kept_crop_changed_while_reading_leaves_its_pair(dataset: Path, monkeypatch):
+    from glyph_atlas.review.atlas import repair_withheld
+    from glyph_atlas.review.refine import _changes
+    from glyph_atlas.review.store import Store
+
+    def shown(store, blocks, checkpoint, **_):
+        kept, revision = store.unit_snapshot("ar:a1")[0]
+        _changes(store, kept, {"unicode": "U+30CA"}, {"kind": "test"}, base_revision=revision)
+        return {i: np.array([0.9]) for i in blocks}
+    monkeypatch.setattr(shift_repair, "_shown", shown)
+    assert sd.run(dataset, checkpoint=Path("unused"), apply=True)["counts"] == {"stale": 1, "withheld": 1}
+    assert not repair_withheld(Store(dataset).unit_snapshot("hk:h1")[0][0])
+
+
+def test_undo_keeps_what_a_later_pass_added_to_the_note(dataset: Path, monkeypatch):
+    from glyph_atlas.review.refine import _changes
+    from glyph_atlas.review.store import Store
+
+    reading(monkeypatch)
+    sd.run(dataset, checkpoint=Path("unused"), apply=True)
+    store = Store(dataset)
+    unit, revision = store.unit_snapshot("hk:h1")[0]
+    note = {**unit.meta["alignment_repair"], "checked_by": "later"}
+    _changes(store, unit, {"meta": {**unit.meta, "alignment_repair": note}}, {"kind": "test"}, base_revision=revision)
+    assert sd.undo(dataset, apply=True)["counts"] == {"restored": 2}
+    assert Store(dataset).unit_snapshot("hk:h1")[0][0].meta["alignment_repair"] == {"checked_by": "later"}

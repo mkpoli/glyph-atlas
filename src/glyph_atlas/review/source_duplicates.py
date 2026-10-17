@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import math
-import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from pathlib import Path
@@ -54,10 +53,13 @@ def withhold_note(note: dict | None, kept: str) -> dict:
 
 
 def restored_meta(meta: dict) -> dict:
-    """The unit's meta as it was before the pass withheld it."""
-    before = meta["alignment_repair"].get("before")
+    """The unit's meta as it was before the pass withheld it, keeping what later passes added to the note."""
+    note = meta["alignment_repair"]
+    before = note.get("before")
+    added = {key: value for key, value in note.items() if key not in WITHHELD_KEYS}
     rest = {key: value for key, value in meta.items() if key != "alignment_repair"}
-    return rest if before is NO_NOTE else {**rest, "alignment_repair": before}
+    restored = {**(before or {}), **added}
+    return {**rest, "alignment_repair": restored} if restored or before is not NO_NOTE else rest
 
 
 def worse(read: dict[str, float], copy: str, kept: str) -> str:
@@ -68,6 +70,9 @@ def worse(read: dict[str, float], copy: str, kept: str) -> str:
     if math.isnan(p_copy):
         return copy
     return kept if math.isnan(p_kept) or p_copy > p_kept else copy
+
+
+WITHHELD_KEYS = frozenset(withhold_note(None, ""))
 
 
 def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterable[str] = (),
@@ -92,7 +97,6 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
         label = written_identity(unit)
         if not label:
             continue
-        label = unicodedata.normalize("NFC", label)
         side = {"ar:": 0, "hk:": 1}.get(unit.id[:3])
         if side is not None:
             pages[unit.page_id][side].append((unit, label))
@@ -122,6 +126,10 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
             # One crop of the pair is already withheld as the worse copy of another pair.
             skipped["paired twice"] += 1
             continue
+        if not {copy, kept} <= read.keys():
+            # An image that could not be loaded says nothing about which crop is the better cut.
+            skipped["unread"] += 1
+            continue
         loser = worse(read, copy, kept)
         winner = kept if loser == copy else copy
         withheld.add(loser)
@@ -131,6 +139,10 @@ def run(dataset: Path, *, checkpoint: Path, apply: bool = False, protect: Iterab
         if not apply:
             continue
         unit, revision, _ = units[loser]
+        if store.unit_snapshot(winner)[0][1] != units[winner][1]:
+            # The crop that would stay was reviewed or changed while the crops were read.
+            item["status"] = "stale"
+            continue
         note = (unit.meta or {}).get("alignment_repair")
         evidence = {"kind": "source-duplicate", "method": METHOD, "automated": True, "revision": revision,
                     "duplicate_of": winner, "overlap": item["overlap"], "min_overlap": min_overlap,
