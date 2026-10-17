@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -43,11 +44,26 @@ def batches(entries: list[dict], size: int = BATCH) -> list[dict]:
     return [{"finding": FINDING, "glyphs": glyphs[start:start + size]} for start in range(0, len(glyphs), size)]
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect would carry the session cookie to wherever it points, so none is followed."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, f"refused a redirect to {newurl}", headers, fp)
+
+
+OPENER = urllib.request.build_opener(NoRedirect)
+
+
 def send(site: str, cookie: str, batch: dict) -> dict:
+    if not site.startswith("https://"):
+        raise ValueError(f"{site}: the session cookie is only sent over https")
     request = urllib.request.Request(f"{site}/api/admin/corpus-flags", data=json.dumps(batch, ensure_ascii=False).encode(),
                                      headers={"content-type": "application/json", "origin": site, "cookie": cookie}, method="POST")
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return json.load(response)
+    try:
+        with OPENER.open(request, timeout=120) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        sys.exit(f"{error.code} from {site}: {error.read().decode(errors='replace')[:500]}")
 
 
 def main(argv: list[str] | None = None) -> None:
