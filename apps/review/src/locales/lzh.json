@@ -249,6 +249,7 @@
   "forms.group": "第{number}群",
   "forms.group.reported": "各自已舉",
   "forms.haveForm.other": "{count}已定體，多作「{glyph}」",
+  "forms.unnamed": "{count}未定體",
   "forms.heading": "定字體",
   "forms.keyboardHint": "J K移 · X或⌘/Ctrl點加 · Shift點擇其間 · 1–0定 · Enter開 · ⌫除 · M雜 · V從衆",
   "forms.leastTypical": "罕者",

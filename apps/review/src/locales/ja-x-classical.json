@@ -247,6 +247,7 @@
   "forms.group": "第{number}群",
   "forms.group.reported": "個別ニ報告濟",
   "forms.haveForm.other": "{count}ハ字體定マル　多クハ「{glyph}」",
+  "forms.unnamed": "{count}ハ字體未ダ定マラズ",
   "forms.heading": "字體ヲ定ム",
   "forms.keyboardHint": "J K：移動 · X又ハ⌘/Ctrl押下：追加 · Shift押下：範圍 · 1–0：指定 · Enter：開ク · ⌫：消去 · M：混在 · V：多數ニ從フ",
   "forms.leastTypical": "稀ナルモノ",

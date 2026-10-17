@@ -248,6 +248,7 @@
   "forms.group": "第{number}群",
   "forms.group.reported": "個別 報告됨",
   "forms.haveForm.other": "{count}個 指定됨, 大部分 {glyph}",
+  "forms.unnamed": "{count}個 未指定",
   "forms.heading": "字形을 指定합니다.",
   "forms.keyboardHint": "J K 移動 · X 또는 ⌘/Ctrl-클릭 追加 · Shift-클릭 範圍 · 1–0 指定 · Enter 열기 · ⌫ 解除 · M 混在 · V 多數 字形으로 確定",
   "forms.leastTypical": "特異한 것",
