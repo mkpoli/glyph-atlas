@@ -16,11 +16,12 @@ const entry = item => ({ char: item.char, code_point: item.code_point ?? pointOf
 // A derived form keeps whether it is encoded and how it was made, which the picker shows.
 const derivedEntry = item => ({ ...entry(item), code_point: item.code_point ?? null, encoded: item.encoded, routes: item.routes })
 
+const HAN = /^\p{Script=Han}$/u
 const cards = new Map()
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then the
- * variants: the shapes BabelStone gives `char` by region when it gives more than one (所 as ⿰戶斤 and
- * ⿰戸斤), and the variants the sources attest; then the derived ones. A character the layer does not
+ * variants: the shapes BabelStone gives `char` by region when it gives more than one (所 as ⿰戶斤 in
+ * GHTKPV and ⿰戸斤 in J), and the variants the sources attest; then the derived ones. A character the layer does not
  * know offers itself alone.
  */
 export function listForms(char) {
@@ -28,11 +29,11 @@ export function listForms(char) {
   if (!cards.has(char)) {
     // A sequence the table has no card for (ツ + U+309A) offers itself alone.
     const card = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error))
-    // Only one character has descriptions; a sequence, or a failed read, has no shapes to add.
-    const described = [...char].length === 1 ? readStructure(char).then(found => found.sequences, () => []) : Promise.resolve([])
-    const loaded = Promise.all([card, described]).then(([card, sequences]) => {
+    // Only a Han character has regional shapes; a sequence, or a failed read, has none to add.
+    const described = HAN.test(char) ? readStructure(char).then(found => found.shapes ?? [], () => []) : Promise.resolve([])
+    const loaded = Promise.all([card, described]).then(([card, regional]) => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
-      const shapes = sequences.length > 1 ? sequences.map(text => ({ char: text, code_point: null, script: '', encoded: false })) : []
+      const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions }))
       const variants = [...shapes, ...[...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)]
       const derived = (card?.variants?.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))
