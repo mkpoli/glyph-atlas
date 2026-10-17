@@ -500,6 +500,12 @@ async function catalogueVersion(env: Env): Promise<string> {
     .first<{ published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number }>();
   return [version?.published ?? '', version?.refreshed ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':');
 }
+// The publication the collection's crops come from, which a review leaves alone.
+async function publicationVersion(env: Env): Promise<string> {
+  const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
+    (SELECT value FROM metadata WHERE key='units_refreshed_at') AS refreshed`).first<{ published: string | null; refreshed: string | null }>();
+  return [version?.published ?? '', version?.refreshed ?? ''].join(':');
+}
 // Browse counts every local crop by character and state, which reads the whole table and takes
 // seconds, and every visitor gets the same answer. The edge keeps one copy per catalogue version.
 const FACETS_TTL = 3600;
@@ -1033,16 +1039,13 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   let groups: Facet[], published: D1Result<{ label: string; n: number }> | null = null;
-  // Asked once a request: the facets and the withheld total share it.
-  let version: Promise<string> | null = null;
-  const catalogueOnce = () => version ??= catalogueVersion(env);
   if (review) {
     const corpus = corpusCountQuery(production, members);
     const results = await env.DB.batch<any>([...[stored, marked, skipped].filter(s => s !== null), env.DB.prepare(corpus.sql).bind(...corpus.values)]);
     published = results.pop()!;
     groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
   } else {
-    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, catalogueOnce());
+    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, catalogueVersion(env));
     if (skipped) groups = moved(groups, (await skipped.all<Facet>()).results);
   }
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
@@ -1145,9 +1148,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const told = rotated && q.get('above') !== null ? integer(q, 'above', 0) : null;
   const below = told !== null && offset >= told;
   // Unnarrowed, every visitor asks for the same total, which sums the whole of `unit_counts`; the edge
-  // keeps one per catalogue version and material.
+  // keeps one per publication and material for `FACETS_TTL`. A review or undo that moves a crop in or out
+  // of rounds shifts it by one, which the hour absorbs.
   const totalKey = hiddenCount && !hiddenCount.values.length ? new Request(`${url.origin}/atlas/withheld-total?production=${
-    encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueOnce())}`) : null;
+    encodeURIComponent(production)}&v=${encodeURIComponent(await publicationVersion(env))}`) : null;
   const cachedTotal = totalKey ? await caches.default.match(totalKey).then(hit => hit ? hit.json() as Promise<number> : null) : null;
   const counting = cachedTotal === null ? hiddenCount : null;
   const results = await env.DB.batch([
