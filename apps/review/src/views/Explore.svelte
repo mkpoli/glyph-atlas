@@ -10,6 +10,7 @@
   import PeriodFilter from '../components/PeriodFilter.svelte'
   import { STYLE_GROUPS, styleRank } from '../lib/style.js'
   import { isUnassigned, writtenLabel, visualGroup, matchesVisualGroup, graphemeChar } from '../lib/identity.js'
+  import { categoryOf } from '../../../cloudflare/src/category.ts'
   import Glyph from '../components/Glyph.svelte'
   import ScriptText from '../components/ScriptText.svelte'
   import ScriptLine from '../components/ScriptLine.svelte'
@@ -213,22 +214,24 @@
       tile.toggleAttribute('data-cut-' + part, !!shown && (!shown.offsetParent || shown.scrollWidth > shown.clientWidth + 1))
     }
   }
-  // Tiles count corpus glyphs only while choosing one opens its gallery: with a work or a script group
-  // chosen, a tile narrows the collection's listing instead, and corpus glyphs belong to neither.
-  const countsCorpus = $derived(!flagged && !work && filter === 'all')
+  // Tiles count corpus glyphs only while choosing one opens its gallery: with a work chosen, a tile
+  // narrows the work's listing instead, and corpus glyphs belong to no work.
+  const countsCorpus = $derived(!flagged && !work)
   // The characters the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile. The
-  // catalogue's counts are the whole collection's crops (`local`), whatever the filters; while
-  // `countsCorpus`, a tile adds the corpus glyphs of its characters (`corpus`), so characters held only
-  // as corpus glyphs are listed too.
+  // catalogue's counts are the whole collection's crops (`local`), whatever the filters, so a script
+  // group keeps its own script's characters; while `countsCorpus`, a tile adds the corpus glyphs of its
+  // characters (`corpus`), so characters held only as corpus glyphs are listed too.
   const graphemes = $derived.by(() => {
-    const groups = new Map()
+    const groups = new Map(), inGroup = label => filter === 'all' || categoryOf(label) === filter
     const groupFor = key => { const group = groups.get(key) ?? { key, char: charOf(key), count: 0, local: 0, corpus: 0, members: [] }; groups.set(key, group); return group }
     for (const c of categories) {
+      if (!inGroup(c.label)) continue
       const group = groupFor(c.grapheme ?? c.label)
       const count = flagged ? fixingCount(c) : c.total
       group.members.push({ label: c.label, count }); group.count += count; group.local += count
     }
     if (countsCorpus) for (const [label, key, n] of corpusCounts ?? []) {
+      if (!inGroup(label)) continue
       const group = groupFor(key)
       const member = group.members.find(m => m.label === label)
       if (member) member.count += n; else group.members.push({ label, count: n })
@@ -888,7 +891,7 @@
   // An address that narrows the collection to a grapheme it holds no crop of (one held only as corpus
   // glyphs) opens the grapheme's gallery instead of an empty listing.
   function openEmptyGrapheme(result) {
-    if (!grapheme || work || flagged || query || filter !== 'all' || result.total > 0) return false
+    if (!grapheme || work || flagged || query || result.total > 0) return false
     pick({ code_point: grapheme, char: charOf(grapheme) }, 'family')
     return true
   }
