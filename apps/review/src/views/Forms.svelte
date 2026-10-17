@@ -611,7 +611,7 @@
   .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
   .family-title p{font-size:12px;color:var(--muted)}
   .history-actions{margin-left:auto;display:flex;gap:4px}.history-actions button{font-size:11px;padding:6px 10px}.family-title strong{color:var(--ink);font-weight:500}
-  .form-palette{position:sticky;top:0;z-index:3;background:var(--overlay-page);backdrop-filter:blur(12px);padding:14px 0;border-bottom:1px solid var(--line)}
+  .form-palette{position:sticky;top:0;z-index:3;background:var(--overlay-page);padding:14px 0;border-bottom:1px solid var(--line)}
   .palette-target{font-size:12px;color:var(--muted);margin-bottom:10px}.palette-target strong{color:var(--ink);font-weight:500}
   .palette-forms{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch}
   .form-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:66px;padding:8px 8px 6px;background:var(--surface)}
