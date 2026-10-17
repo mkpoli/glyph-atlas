@@ -889,9 +889,11 @@
     else select(key)
   }
   // An address that narrows the collection to a grapheme it holds no crop of (one held only as corpus
-  // glyphs) opens the grapheme's gallery instead of an empty listing.
+  // glyphs) opens the grapheme's gallery instead of an empty listing; under a script group, only when
+  // the corpus holds the grapheme in that script.
   function openEmptyGrapheme(result) {
     if (!grapheme || work || flagged || query || result.total > 0) return false
+    if (filter !== 'all' && !(graphemeByKey.get(grapheme)?.corpus > 0)) return false
     pick({ code_point: grapheme, char: charOf(grapheme) }, 'family')
     return true
   }
