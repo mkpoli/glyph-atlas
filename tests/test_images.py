@@ -157,6 +157,9 @@ def info_bytes(document: dict) -> bytes:
             "https://h.example/fcgi?IIIF=%2Fa.tif%2Finfo.json",
             "https://h.example/fcgi?IIIF=/a.tif",
         ),
+        ("https://images.eap.bl.uk/EAP140/EAP140_1_52/5.jp2", "https://images.eap.bl.uk/EAP140/EAP140_1_52/5.jp2"),
+        ("https://images.eap.bl.uk/EAP140/EAP140_1_52/5.jp2/full/full/0/default.jpg",
+         "https://images.eap.bl.uk/EAP140/EAP140_1_52/5.jp2"),
         ("https://example.org/collections/12345/photo.jpg", None),
         ("https://example.org/files/scan.tif", None),
         ("https://example.org/data?id=7", None),
@@ -742,3 +745,15 @@ def test_processes_registering_at_once_keep_every_row_of_the_index(tmp_path: Pat
     assert [worker.exitcode for worker in workers] == [0] * 4
     assert len(images.index(root=tmp_path / "cache")) == 60
     assert not list((tmp_path / "cache").glob("index.parquet.*.tmp"))
+
+
+def test_a_service_that_caps_without_saying_so_is_stitched_at_the_size_it_sent(http_server: Server) -> None:
+    info = {**V2_INFO, "width": 64, "height": 48, "sizes": [], "tiles": []}
+    http_server.put("iiif/2/quiet/info.json", info_bytes(info))
+    http_server.put("iiif/2/quiet/full/full/0/default.jpg", jpeg(40, 30))  # the whole image, scaled down
+    for x, y in ((0, 0), (40, 0), (0, 40), (40, 40)):
+        w, h = min(40, 64 - x), min(40, 48 - y)
+        http_server.put(f"iiif/2/quiet/{x},{y},{w},{h}/{w},/0/default.jpg", jpeg(w, h))
+    record = images.fetch(http_server.url("iiif/2/quiet"), pause=0)
+    assert (record.width, record.height) == (64, 48)
+
