@@ -13,6 +13,8 @@
   import { characterAddress } from '../lib/gallery.js'
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
+  import { cropAddress } from '../lib/inspector.svelte.js'
+  import { titleOf, yearOf, yearsOf, wiktionaryLine } from '../lib/senses.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
   // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
@@ -56,6 +58,18 @@
   // One line per source: a 振り仮名 row names the reading it counts, since 抔 is counted under など and なと.
   const spellingTitle = s => s.spelling + '\n' + s.sources.map(c => [c.ruby ? `${c.source} ${c.ruby}` : c.source,
     c.documents ? t('chips.documents', { count: c.documents }) : ''].filter(Boolean).join(' · ')).join('\n')
+  // The words this character's crops are attested writing (`writes_word` claims): each with how many
+  // crops and documents attest it and when, and every witness with how its sense is known and a line to
+  // quote it under the sense on Wiktionary. A card from a service without the ledger has none.
+  const senses = $derived(card?.senses?.items ?? [])
+  const METHODS = { gloss: () => t('chips.senseMethod.gloss'), ruby: () => t('chips.senseMethod.ruby'),
+    note: () => t('chips.senseMethod.note'), parallel: () => t('chips.senseMethod.parallel'), context: () => t('chips.senseMethod.context') }
+  let copiedLine = $state(null), copyTimer
+  async function copyLine(key, text) {
+    try { await navigator.clipboard.writeText(text) } catch { return }
+    copiedLine = key; clearTimeout(copyTimer); copyTimer = setTimeout(() => copiedLine = null, 1500)
+  }
+  const lineOf = (language, w) => wiktionaryLine(language, card.char, w, page.url.origin + localize(cropAddress(w.id), language))
   // Outside the unified ideographs' main block a character may be missing from the reader's fonts or
   // look like another (a compatibility ideograph, a Kangxi radical), so it shows its code point too.
   const named = v => { const p = v.char.codePointAt(0); return !(p >= 0x4e00 && p <= 0x9fff) }
@@ -126,6 +140,33 @@
         </div>
       </div>
     {/each}
+    {#each senses as sense, i (sense.id)}
+      <div class="layer-row">
+        <span class="layer-label">{#if !i}{t('chips.senses')}{/if}</span>
+        <div class="variant-chips">
+          <span class="word-reading" title={sense.class}><ScriptText text={sense.reading ?? sense.id} titled={false} /></span>
+          <small class="sense-counts">{[t('chips.senseCrops', { count: sense.crops }), t('chips.documents', { count: sense.documents }), yearsOf(sense)].filter(Boolean).join(' · ')}</small>
+          {#each sense.spellings.filter(s => s.spelling !== card.char) as s (s.spelling)}
+            <a class="variant" href={localize(s.code_point ? characterAddress(s.code_point) : runAddress(s.spelling))} title={s.spelling + '\n' + s.sources.join(', ')}><ScriptText text={s.spelling} titled={false} /></a>
+          {/each}
+        </div>
+      </div>
+      <details class="variant-sources sense-witnesses">
+        <summary>{t('chips.senseWitnesses')}</summary>
+        <ul>
+          {#each sense.witnesses as w (w.id)}
+            <li>
+              <a href={localize(cropAddress(w.id))}>{titleOf(w.source) || w.id}</a>
+              {[yearOf(w), METHODS[w.method]?.() ?? w.method, w.form === 'probable' && t('chips.senseProbable')].filter(Boolean).join(' · ')}
+              <span class="cite-label">{t('chips.senseCite')}</span>{#each ['ja', 'en'] as language (language)}
+                <button type="button" class="cite-line" onclick={() => copyLine(w.id + language, lineOf(language, w))}
+                  aria-label="{t('chips.senseCite')} {language}" title={lineOf(language, w)}>{copiedLine === w.id + language ? t('copyId.copied') : language}</button>
+              {/each}
+            </li>
+          {/each}
+        </ul>
+      </details>
+    {/each}
     {#if words.items.length}
       <details class="variant-sources">
         <summary>{t('chips.variantSources')}: {Object.keys(words.sources).join(' · ')}</summary>
@@ -182,6 +223,11 @@
   .variant.unencoded:hover{border-color:var(--accent)}
   .variant small{font-size:11px;color:var(--muted)}
   .word-reading{font-size:15px;align-self:center;margin-right:4px}
+  .sense-counts{font-size:11px;color:var(--muted);align-self:center;margin-right:4px}
+  .sense-witnesses a{color:var(--accent);text-decoration:none}.sense-witnesses a:hover{text-decoration:underline}
+  .cite-label{margin-left:8px}
+  .cite-line{border:0;background:none;padding:0 0 0 6px;font-size:inherit;color:var(--accent);cursor:copy}
+  .cite-line:hover{text-decoration:underline}
   .variant .code{font-family:"GenZui Sans",ui-monospace,monospace;font-size:10px}
   .include-variants{justify-self:start;margin-left:92px}
   @media(max-width:600px){.include-variants{margin-left:0}}

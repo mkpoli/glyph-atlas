@@ -14,6 +14,7 @@ import { connections } from './connections';
 import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
+import { sensesOf } from './senses';
 import { honkokuPage } from './honkoku';
 import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
 import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
@@ -2475,8 +2476,8 @@ const routes = {
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
       if(layer){const value=decodeURIComponent(layer[1]),card=await known(env,value),{detail}=card;const found=await occurrences(env,value,q,card);
-        const version=await catalogueVersion(env),[variants,words]=await Promise.all([variantsOf(env,ctx,url.origin,detail.char,version),wordsOf(env,ctx,url.origin,detail.char,version)]);
-        return json({...detail,variants,words,query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
+        const version=await catalogueVersion(env),[variants,words,senses]=await Promise.all([variantsOf(env,ctx,url.origin,detail.char,version),wordsOf(env,ctx,url.origin,detail.char,version),sensesOf(env,detail.char)]);
+        return json({...detail,variants,words,senses,query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
       if(path==='/layers/candidates'){const found=await corpusOccurrences(env,ctx,url,await known(env,q.get('code_point')||''),q);
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
