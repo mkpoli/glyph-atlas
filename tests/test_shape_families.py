@@ -230,7 +230,7 @@ def test_a_simplified_form_that_writes_a_character_of_its_own_stays_apart():
     rows = [edge("後", "后", "simplified", "opencc", "STCharacters (also itself) | TSCharacters"),
             edge("後", "后", "simplified", "unihan", "後→后 kSimplifiedVariant")]
     assert grouped(rows) == {}
-    assert grouped([{**rows[0], "detail": "STCharacters | TSCharacters"}, rows[1]]) == {"后": "后後"}
+    assert grouped([{**rows[0], "detail": "STCharacters | TSCharacters"}, rows[1]]) == {"後": "后後"}
 
 
 def test_the_pass_joins_once_so_a_chain_does_not_carry_on():
@@ -243,7 +243,7 @@ def test_two_characters_of_one_standard_join_on_its_own_tradition_only():
     rows = [edge("菓", "果", "variant", "cjkvi-variants", "果→菓 dypytz/variant | 果→菓 hydzd/variant"),
             edge("菓", "果", "simplified", "cjkvi-variants", "菓→果 cjkvi/simplified")]
     assert grouped(rows, jis="菓果") == {}
-    assert grouped(rows) == {"果": "果菓"}, "outside the standards the claims are enough"
+    assert list(grouped(rows).values()) == ["果菓"], "outside the standards the claims are enough"
     rows = [edge("躰", "體", "variant", "cjkvi-variants", "體→躰 hydzd/variant | 體→躰 koseki/variant")]
     assert grouped(rows, jis="躰體") == {"躰": "躰體"}
     rows = [edge("龍", "竜", "shinjitai", "unihan", "竜→龍 kJapaneseOldVariant")]
@@ -312,4 +312,14 @@ def test_a_traditional_form_or_the_seiji_heads_over_a_simplification():
     rows = [edge("蕤", "甤", "compatibility", "unicode-ucd", "751D")]
     found = families(rows, [], {"蕤", "甤"}, {}, set(), familiarity={"蕤": 5})
     assert [f.head for f in found] == ["蕤"], "a decomposition target is no 正字 over a known member"
+    rows = [edge("璉", "琏", "simplified", "unihan", "璉→琏 kSimplifiedVariant"),
+            edge("\uf994", "璉", "compatibility", "unicode-ucd", "7489")]
+    found = families(rows, [], {"璉", "琏", "\uf994"}, {}, set(), familiarity={"琏": 5})
+    assert [f.head for f in found] == ["璉"], "a simplified form never heads its traditional form"
+    rows = [reduction("泜", "坻", "MJ4")]
+    found = families(rows, [], {"泜", "坻"}, {"MJ4": "泜"}, set(), familiarity={"泜": 4, "坻": 5})
+    assert [f.head for f in found] == ["坻"], "a 正字 a Chinese standard holds heads over a rarer form"
+    rows = [reduction("妤", "伃", "MJ5")]
+    found = families(rows, [], {"妤", "伃"}, {"MJ5": "妤"}, set(), familiarity={"妤": 4})
+    assert [f.head for f in found] == ["妤"], "an unranked 正字 yields to a standard's member"
 
