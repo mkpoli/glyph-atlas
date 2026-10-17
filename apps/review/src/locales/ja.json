@@ -247,6 +247,7 @@
   "forms.group": "グループ{number}",
   "forms.group.reported": "個別に報告済み",
   "forms.haveForm.other": "{count}件は字体あり、主に「{glyph}」",
+  "forms.unnamed": "{count}件は字体なし",
   "forms.heading": "字体を割り当てる",
   "forms.keyboardHint": "J K移動 · Xまたは⌘/Ctrl-クリックで追加 · Shift-クリックで範囲選択 · 1〜0で割り当て · Enterで開く · ⌫でクリア · Mで混在 · Vで多数の字体に確定",
   "forms.leastTypical": "非典型的なもの",

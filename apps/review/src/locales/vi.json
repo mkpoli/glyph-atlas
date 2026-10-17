@@ -243,6 +243,7 @@
   "forms.group": "Nhóm {number}",
   "forms.group.reported": "Đã báo riêng",
   "forms.haveForm.other": "{count} đã có tự dạng, phần lớn là {glyph}",
+  "forms.unnamed": "{count} chưa có tự dạng",
   "forms.heading": "Gán tự dạng",
   "forms.keyboardHint": "J K di chuyển · X hoặc ⌘/Ctrl-click để thêm · Shift-click chọn khoảng · 1–0 gán · Enter mở · ⌫ bỏ gán · M lẫn lộn · V chốt theo đa số",
   "forms.leastTypical": "Kém điển hình nhất",

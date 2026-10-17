@@ -40,6 +40,10 @@
   let composing = $state(false)
   // A cluster is done once it is named or marked, or every glyph has a form or was reported as not belonging.
   const isOpen = c => !c.form && !c.issue && c.assigned + c.rejected < c.count
+  // A cluster joins its form's panel once it is done, or once more than half of its glyphs not reported
+  // have one form; the glyphs still without a form are counted on it there.
+  const grouped = c => !isOpen(c) || 2 * c.majority_count > c.count - c.rejected
+  const unnamed = c => c.form || c.issue ? 0 : c.count - c.assigned - c.rejected
   const cluster = $derived(current?.items[active] ?? null)
   const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
@@ -57,22 +61,26 @@
   // named one by one goes with the form most of them have.
   const groupOf = c => c.form ?? c.issue ?? c.majority ?? 'reported'
   const ISSUE_GROUPS = ['mixed', 'character', 'crop', 'reported']
-  /** A family as the grid shows it: clusters with glyphs still to name first, in their own order; then
-   *  finished ones by form, the most used form first, and the reported ones last. */
+  // The order of the panels: the most used form first. A form no glyph has any more (each was named
+  // otherwise one by one) follows the used ones, so a group's clusters stay together and the keys move
+  // through the grid as it is drawn; the reported ones come last.
+  function ranking(loaded) {
+    const keys = new Set([...(loaded.usage ?? []).map(u => u.char),
+      ...loaded.items.filter(grouped).map(groupOf).filter(key => !ISSUE_GROUPS.includes(key)), ...ISSUE_GROUPS])
+    return new Map([...keys].map((key, i) => [key, i]))
+  }
+  /** A family as the grid shows it: clusters without a clear form first, in their own order; then the
+   *  others by form. */
   function arranged(loaded) {
-    // A form no glyph has any more (each was named otherwise one by one) follows the used ones, so a
-    // group's clusters stay together and the keys move through the grid as it is drawn.
-    const finished = loaded.items.filter(c => !isOpen(c))
-    const keys = new Set([...(loaded.usage ?? []).map(u => u.char), ...finished.map(groupOf).filter(key => !ISSUE_GROUPS.includes(key)), ...ISSUE_GROUPS])
-    const rank = new Map([...keys].map((key, i) => [key, i]))
-    loaded.items = [...loaded.items.filter(isOpen), ...finished.sort((a, b) => rank.get(groupOf(a)) - rank.get(groupOf(b)))]
+    const rank = ranking(loaded)
+    loaded.items = [...loaded.items.filter(c => !grouped(c)), ...loaded.items.filter(grouped).sort((a, b) => rank.get(groupOf(a)) - rank.get(groupOf(b)))]
     return loaded
   }
   // The grid's sections: the open clusters, then a group a form. Each cluster keeps its index in `items`.
   const sections = $derived.by(() => {
     const open = [], groups = new Map()
     ;(current?.items ?? []).forEach((c, i) => {
-      if (isOpen(c)) { open.push({ c, i }); return }
+      if (!grouped(c)) { open.push({ c, i }); return }
       const key = groupOf(c), group = groups.get(key) ?? { key, items: [], glyphs: 0 }
       group.items.push({ c, i }); group.glyphs += c.count; groups.set(key, group)
     })
@@ -232,9 +240,12 @@
     await apply(target.majority)
     try { if (wasOpen && !error && isOpen(current.items[active] ?? {})) await show(active) } catch (e) { error = e.message }
   }
+  // The next cluster with glyphs still to name, after `from` and then from the top: one can sit in a
+  // form's panel below the open ones.
   function nextOpen(from) {
     const after = current.items.findIndex((c, i) => i > from && isOpen(c))
-    return after >= 0 ? after : Math.min(from + 1, current.items.length - 1)
+    const first = after >= 0 ? after : current.items.findIndex(isOpen)
+    return first >= 0 ? first : Math.min(from + 1, current.items.length - 1)
   }
   async function reviewed({ reported, issue, mixed, form, count }) {
     notice = [mixed ? t('forms.notice.mixed', { count: 1 }) : '',
@@ -333,7 +344,7 @@
     <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)} aria-pressed={i === active || picked.has(c.id)}>
       <span class="cluster-head">
         <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
-        {#if compact}
+        {#if compact}{#if unnamed(c)}<span class="cluster-open">{t('forms.unnamed', { count: number(unnamed(c)) })}</span>{/if}
         {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
         {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
       </span>
