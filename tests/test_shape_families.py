@@ -291,7 +291,7 @@ def test_two_curated_families_never_meet_through_a_family_both_join():
 def test_with_no_ranked_member_the_head_is_of_the_main_block():
     """氯 is GB 2312; with no rank at all, 喎 of the main block heads over 㖞 of Extension A."""
     rows = [edge("㲶", "氯", "z", "unihan", "z")]
-    assert [f.head for f in families(rows, [], {"㲶", "氯"}, {}, set(), familiarity={"氯": 5})] == ["氯"]
+    assert [f.head for f in families(rows, [], {"㲶", "氯"}, {}, set(), familiarity={"氯": 6})] == ["氯"]
     rows = [edge("㖞", "喎", "z", "unihan", "z")]
     assert [f.head for f in families(rows, [], {"㖞", "喎"}, {}, set())] == ["喎"]
 
@@ -299,27 +299,39 @@ def test_with_no_ranked_member_the_head_is_of_the_main_block():
 def test_a_traditional_form_or_the_seiji_heads_over_a_simplification():
     """墊 (CNS 11643 plane 1) heads over 垫 (GB 2312); 厲, the 正字 a reduction points at, over 厉."""
     rows = [edge("墊", "垫", "simplified", "unihan", "墊→垫 kSimplifiedVariant")]
-    assert [f.head for f in families(rows, [], {"墊", "垫"}, {}, set(), familiarity={"墊": 4, "垫": 5})] == ["墊"]
+    assert [f.head for f in families(rows, [], {"墊", "垫"}, {}, set(), familiarity={"墊": 4, "垫": 6})] == ["墊"]
     rows = [reduction("厉", "厲", "MJ1")]
-    found = families(rows, [], {"厉", "厲"}, {"MJ1": "厉"}, set(), familiarity={"厉": 5})
+    found = families(rows, [], {"厉", "厲"}, {"MJ1": "厉"}, set(), familiarity={"厉": 6})
     assert [f.head for f in found] == ["厲"]
     rows = [reduction("篙", "㰏", "MJ2")]
-    found = families(rows, [], {"篙", "㰏"}, {"MJ2": "篙"}, set(), familiarity={"篙": 5})
+    found = families(rows, [], {"篙", "㰏"}, {"MJ2": "篙"}, set(), familiarity={"篙": 6})
     assert [f.head for f in found] == ["篙"], "a 正字 of an extension does not head a character a reader knows"
     rows = [reduction("玨", "珏", "MJ3")]
     found = families(rows, [], {"玨", "珏"}, {"MJ3": "玨"}, set(), familiarity={"玨": 4})
     assert [f.head for f in found] == ["玨"], "a traditional standard's member heads over a 正字 it lacks"
     rows = [edge("蕤", "甤", "compatibility", "unicode-ucd", "751D")]
-    found = families(rows, [], {"蕤", "甤"}, {}, set(), familiarity={"蕤": 5})
+    found = families(rows, [], {"蕤", "甤"}, {}, set(), familiarity={"蕤": 6})
     assert [f.head for f in found] == ["蕤"], "a decomposition target is no 正字 over a known member"
     rows = [edge("璉", "琏", "simplified", "unihan", "璉→琏 kSimplifiedVariant"),
             edge("\uf994", "璉", "compatibility", "unicode-ucd", "7489")]
-    found = families(rows, [], {"璉", "琏", "\uf994"}, {}, set(), familiarity={"琏": 5})
+    found = families(rows, [], {"璉", "琏", "\uf994"}, {}, set(), familiarity={"琏": 6})
     assert [f.head for f in found] == ["璉"], "a simplified form never heads its traditional form"
     rows = [reduction("泜", "坻", "MJ4")]
-    found = families(rows, [], {"泜", "坻"}, {"MJ4": "泜"}, set(), familiarity={"泜": 4, "坻": 5})
+    found = families(rows, [], {"泜", "坻"}, {"MJ4": "泜"}, set(), familiarity={"泜": 4, "坻": 6})
     assert [f.head for f in found] == ["坻"], "a 正字 a Chinese standard holds heads over a rarer form"
     rows = [reduction("妤", "伃", "MJ5")]
     found = families(rows, [], {"妤", "伃"}, {"MJ5": "妤"}, set(), familiarity={"妤": 4})
     assert [f.head for f in found] == ["妤"], "an unranked 正字 yields to a standard's member"
+    rows = [edge("戇", "戆", "simplified", "unihan", "戇→戆 kSimplifiedVariant"), edge("戅", "戇", "z", "unihan", "z")]
+    found = families(rows, [], {"戇", "戆", "戅"}, {}, set())
+    assert [f.head for f in found] == ["戇"], "with nothing ranked, the form a simplification simplifies"
+    rows = [edge("垜", "垛", "simplified", "cjkvi-variants", "垜→垛 cjkvi/simplified")]
+    found = families(rows, [], {"垜", "垛"}, {}, set(), familiarity={"垛": 5})
+    assert [f.head for f in found] == ["垛"], "a CNS 11643 plane 2 character is no mere simplification"
+    rows = [reduction("靚", "靘", "MJ6"), edge("靚", "靓", "simplified", "unihan", "靚→靓 kSimplifiedVariant")]
+    found = families(rows, [], {"靚", "靘", "靓"}, {"MJ6": "靚"}, set(), familiarity={"靚": 4, "靘": 7, "靓": 6})
+    assert [f.head for f in found] == ["靚"], "a 正字 of CNS 11643 plane 2 does not head over plane 1"
+    rows = [edge("𥄨", "瞅", "simplified", "cjkvi-variants", "𥄨→瞅 cjkvi/simplified")]
+    found = families(rows, [], {"𥄨", "瞅"}, {}, set(), familiarity={"瞅": 5})
+    assert [f.head for f in found] == ["瞅"], "GB 2312 and CNS 11643 plane 2 both: Taiwan writes it too"
 
