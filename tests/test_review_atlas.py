@@ -130,9 +130,10 @@ def test_catalogue_files_labels_under_graphemes_and_filters_by_one(dataset):
 
 def test_character_group_follows_the_script_of_the_first_character():
     groups = {char: atlas_module.character_group(Unit(id=char, text_source=char))
-              for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', 'A')}
+              for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', '𗀀', '𘬀', 'A')}
     assert groups == {'あ': 'kana', 'ア': 'kana', '𛀁': 'kana', '仮': 'kanji', 'ㅿ': 'hangul', 'ᄫ': 'hangul',
-                      '한': 'hangul', '㉠': 'hangul', '': 'gugyeol', 'A': 'other'}
+                      '한': 'hangul', '㉠': 'hangul', '': 'gugyeol', '𗀀': 'tangut', '𘬀': 'other',
+                      'A': 'other'}
 
 
 def test_catalogue_filters_gugyeol_as_its_own_group(dataset):

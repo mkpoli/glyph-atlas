@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'bun:test';
-import { refiled } from './category';
+import { categoryOf, refiled } from './category';
+
+describe('categoryOf', () => {
+  it('files Tangut as its own script and leaves Khitan, which Unicode places between its blocks, out', () => {
+    expect(['𗀀', '𘴀', '\u{16FE0}', '\u{18B00}'].map(categoryOf)).toEqual(['tangut', 'tangut', 'tangut', 'other']);
+  });
+});
 
 describe('refiled', () => {
   it('refiles copies a decision moved to another script and keeps the rest', () => {

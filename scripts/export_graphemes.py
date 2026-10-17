@@ -164,9 +164,7 @@ def fresh(point: str) -> dict[str, Any]:
     info = characters._row(row, {})
     info["origin"] = refs.origin_of(point)
     info["candidates"] = characters.candidate_summary(row.char, live=None, local=0)
-    info["kind"] = ("ligature" if row.ligature else "han" if str(row.script) == "han"
-                    else "hangul" if str(row.script) == "hangul"
-                    else "gugyeol" if str(row.script) == "gugyeol" else "kana")
+    info["kind"] = characters.kind_of(row)
     detail = {**info, "alias": row.alias, "category": row.category,
               "confusables": [characters.to_row(refs.character(cp)) for cp in row.confusables],
               "derived": [], "expansions": [], "visual_analysis": {}}

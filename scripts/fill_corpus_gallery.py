@@ -34,7 +34,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts")]
-from cloudflare_schema import GUGYEOL, HANGUL, category_of
+from cloudflare_schema import GUGYEOL, HANGUL, TANGUT, category_of
 
 CLOUDFLARE = ROOT / "apps/cloudflare"
 # Matches `SAMPLE_RANGE` in the Worker and the cut migration 0020 describes.
@@ -47,7 +47,7 @@ READ_ATTEMPTS = 4
 # Scripts whose every corpus glyph has a copy, by the code point ranges their characters start in:
 # each range is one stretch of the `corpus_character` index, which SQLite reads beside the sample's
 # stretch of `corpus_sample` (one OR, since D1 allows a compound SELECT of five terms at most).
-WHOLE = {"hangul": HANGUL, "gugyeol": GUGYEOL}
+WHOLE = {"hangul": HANGUL, "gugyeol": GUGYEOL, "tangut": TANGUT}
 WANTED = " OR ".join([f"shuffle<{SAMPLE_RANGE}"] + [f"(character>=char({a}) AND character<char({b + 1}))"
                                                      for ranges in WHOLE.values() for a, b in ranges])
 MISSING = f"""SELECT c.id,c.shuffle,c.object,c.offset,c.size,c.character FROM corpus_units c WHERE ({WANTED})

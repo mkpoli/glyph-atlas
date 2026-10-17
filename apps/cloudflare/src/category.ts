@@ -5,7 +5,7 @@ import { formProblem, isSequence } from './representation';
 export const isGugyeol=(value:string)=>{const c=value.codePointAt(0)??-1;return c>=0xF67E&&c<=0xF77C};
 // A well-formed ideographic description sequence describes one Han character Unicode lacks.
 export const idsCharacter = (value: string) => isSequence(value) && formProblem(value) === null;
-export const categoryOf=(value:string)=>{const first=[...value][0]??'';if(idsCharacter(value))return 'kanji';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':/\p{Script=Hangul}/u.test(first)?'hangul':isGugyeol(first)?'gugyeol':'other'};
+export const categoryOf=(value:string)=>{const first=[...value][0]??'';if(idsCharacter(value))return 'kanji';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':/\p{Script=Hangul}/u.test(first)?'hangul':/\p{Script=Tangut}/u.test(first)?'tangut':isGugyeol(first)?'gugyeol':'other'};
 
 /** The statements that give gallery copies whose glyph a decision has moved to `character` its new
  * category. A copy is never removed here, so undoing the decision files it back. */

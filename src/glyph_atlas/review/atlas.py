@@ -193,6 +193,9 @@ def character_group(unit: Unit) -> str:
     # 구결자 have no Unicode name; they are tested by their Hanyang private-use code point instead.
     if char and 0xF67E <= ord(char) <= 0xF77C:
         return "gugyeol"
+    # Python names no Tangut ideograph, so the Tangut blocks decide (Khitan lies between them).
+    if char and (ord(char) == 0x16FE0 or 0x17000 <= ord(char) <= 0x18AFF or 0x18D00 <= ord(char) <= 0x18DFF):
+        return "tangut"
     return "kanji" if name.startswith("CJK") else "other"
 
 
@@ -910,7 +913,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
     def catalogue(
         character: str | None = None,
         q: str | None = None,
-        group: Literal["all", "kana", "kanji", "hangul", "gugyeol"] = "all",
+        group: Literal["all", "kana", "kanji", "hangul", "gugyeol", "tangut"] = "all",
         state: Literal["all", "pending", "seen", "checked", "flagged", "hard", "skipped", "attention"] = "all",
         reviewer: str | None = Query(default=None, max_length=128),
         purpose: Literal["browse", "review"] = "browse",
