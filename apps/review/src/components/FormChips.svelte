@@ -14,7 +14,7 @@
     {@const char = charOf(form)}
     <button type="button" class="form-chip" class:chosen={chosen === char} class:current={current === char && chosen == null} {disabled}
       aria-pressed={chosen === char || (current === char && chosen == null)} onclick={() => onchoose(char)} title={title(char)} aria-label={title(char)}>
-      <FormText text={char} script={typeof form === 'string' ? '' : form.script} />{#if i < KEYS.length}<kbd>{KEYS[i]}</kbd>{/if}
+      <FormText text={char} script={typeof form === 'string' ? '' : form.script} lang={typeof form === 'string' ? '' : form.lang} />{#if i < KEYS.length}<kbd>{KEYS[i]}</kbd>{/if}
     </button>
   {/each}
   {@render children?.()}

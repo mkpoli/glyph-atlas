@@ -47,7 +47,7 @@
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   function choose(char) { onchoose(char === current ? null : char) }
   function add(item) {
-    if (!bar.some(chip => chip.char === item.char)) added = [...added, { char: item.char, code_point: item.code_point, script: item.script ?? '' }]
+    if (!bar.some(chip => chip.char === item.char)) added = [...added, { char: item.char, code_point: item.code_point, script: item.script ?? '', lang: item.lang ?? '' }]
     picking = false; query = ''; composing = false
     onchoose(item.char === current ? null : item.char)
   }
@@ -87,7 +87,7 @@
           <div class="form-options">
             {#each items as item (item.char)}
               <button type="button" class="form-option" {disabled} title={optionTitle(item)} onclick={() => add(item)}>
-                <FormText text={item.char} script={item.script} />{#if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{:else if item.regions}<small>{item.regions}</small>{/if}
+                <FormText text={item.char} script={item.script} lang={item.lang} />{#if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{:else if item.regions}<small>{item.regions}</small>{/if}
               </button>
             {/each}
           </div>

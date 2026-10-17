@@ -17,6 +17,9 @@ const entry = item => ({ char: item.char, code_point: item.code_point ?? pointOf
 const derivedEntry = item => ({ ...entry(item), code_point: item.code_point ?? null, encoded: item.encoded, routes: item.routes })
 
 const HAN = /^\p{Script=Han}$/u
+// The language whose fonts draw a BabelStone region's shape (U+6236 戶 is drawn as 戸 under `ja`).
+const REGION_LANG = { G: 'zh-Hans', H: 'zh-HK', M: 'zh-MO', T: 'zh-Hant', J: 'ja', K: 'ko', P: 'ko-KP', V: 'vi' }
+const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(Boolean) ?? ''
 const cards = new Map()
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then the
@@ -35,7 +38,7 @@ export function listForms(char) {
     const described = HAN.test(char) ? readStructure(char).then(found => found.shapes ?? [], () => { partial = true; return [] }) : Promise.resolve([])
     const loaded = Promise.all([card, described]).then(([card, regional]) => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
-      const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions }))
+      const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) }))
       const variants = [...shapes, ...[...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)]
       const derived = (card?.variants?.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))
