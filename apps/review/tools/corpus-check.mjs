@@ -82,7 +82,7 @@ try {
   // before the navigation finishes opens a dialog the new page then closes.
   await browser.waitFor(`location.pathname === '/en/flagged' && document.querySelector('.glyph-grid[aria-busy="false"] [data-corpus="${fixture.next}"]')`)
   await click(`[data-corpus="${fixture.next}"]`)
-  await browser.waitFor(`document.querySelector('.corpus-dialog .state-pill')?.classList.contains('flagged')`)
+  await browser.waitFor(`document.querySelector('.corpus-dialog .review-state')?.classList.contains('flagged')`)
   assert(await browser.evaluate(`document.querySelector('dialog').scrollWidth <= document.querySelector('dialog').clientWidth + 1`), 'mobile dialog overflows')
   const proposal = (await exportRows()).find(row => row.source_update.proposed_character === '有')
   assert(proposal?.source_update.original_character === '在' && proposal.source_update.applied_upstream === false, 'export lost source proposal provenance')

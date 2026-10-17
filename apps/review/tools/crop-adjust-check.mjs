@@ -117,7 +117,7 @@ try {
   // above is played.
   await browser.goto(`${service.base}/en/character/${units(config.directory)[id].unicode}`, { waitFor: `!!document.querySelector('[data-unit="${id}"]')`, timeout: 90000 })
   await browser.evaluate(`document.querySelector('[data-unit="${id}"]').click()`)
-  await browser.waitFor(`document.querySelector('dialog[open] .state-pill')?.textContent === 'Box corrected, awaiting re-cut'`, 30000)
+  await browser.waitFor(`document.querySelector('dialog[open] .review-state')?.textContent === 'Box corrected, awaiting re-cut'`, 30000)
   // The saved box is the one outlined on the page.
   await browser.waitFor(`!!document.querySelector('dialog[open] .crop-mask')`, 30000)
   const shownBox = await browser.evaluate(`(() => { const r = document.querySelector('dialog[open] .crop-mask')?.getBoundingClientRect(); return r ? r.width / r.height : null })()`)
