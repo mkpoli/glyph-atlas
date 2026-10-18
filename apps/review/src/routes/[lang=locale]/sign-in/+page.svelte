@@ -13,7 +13,8 @@
   function sameSite(path, origin) {
     if (!path?.startsWith('/')) return null
     const url = new URL(path, origin)
-    return url.origin === origin ? url.pathname + url.search + url.hash : null
+    // The address checked is the one followed; `/..//host` resolves to a path that starts `//`.
+    return url.origin === origin && !url.pathname.startsWith('//') ? url.href : null
   }
   // A reader who is already signed in has nothing to do here.
   $effect(() => { if (session.state.user && !session.state.user.anonymous) goto(next, { replaceState: true }) })
