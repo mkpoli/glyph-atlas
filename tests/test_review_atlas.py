@@ -130,9 +130,36 @@ def test_catalogue_files_labels_under_graphemes_and_filters_by_one(dataset):
 
 def test_character_group_follows_the_script_of_the_first_character():
     groups = {char: atlas_module.character_group(Unit(id=char, text_source=char))
-              for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', 'A')}
+              for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', '𗀀', '𘬀', 'A')}
     assert groups == {'あ': 'kana', 'ア': 'kana', '𛀁': 'kana', '仮': 'kanji', 'ㅿ': 'hangul', 'ᄫ': 'hangul',
-                      '한': 'hangul', '㉠': 'hangul', '': 'gugyeol', 'A': 'other'}
+                      '한': 'hangul', '㉠': 'hangul', '': 'gugyeol', '𗀀': 'tangut', '𘬀': 'other',
+                      'A': 'other'}
+
+
+def test_an_unread_unit_is_grouped_by_the_script_it_was_filed_under():
+    assert atlas_module.character_group(Unit(id='box', script='tangut')) == 'tangut'
+    assert atlas_module.character_group(Unit(id='box', script='han')) == 'kanji'
+    assert atlas_module.character_group(Unit(id='box')) == 'other'
+
+
+def test_an_unread_box_is_in_the_collection_and_out_of_the_queue(dataset):
+    """A proposed box waits for a reader: it is a crop to look at, and no character's to quiz on."""
+    units = list(tables.read(dataset / 'units.parquet', Unit))
+    units.extend([Unit(id='tangut-box', document_id='d', page_id=PAGE, script='tangut', method='detect',
+                       box=Box(x=20, y=20, w=65, h=100)),
+                  Unit(id='unfiled-box', document_id='d', page_id=PAGE, method='detect',
+                       box=Box(x=110, y=20, w=65, h=100))])
+    tables.write(dataset / 'units.parquet', units, Unit)
+    client = TestClient(create_app(dataset))
+    browse = client.get('/atlas', params={'limit': 96}).json()
+    assert browse['available'] == 17, "a box filed under no script is left out"
+    assert {c['label'] for c in browse['categories']} == {'あ', 'シ'}, "an unread box is no character's"
+    assert [b['total'] for b in browse['documents']] == [17]
+    tangut = client.get('/atlas', params={'group': 'tangut'}).json()
+    assert [(i['id'], i['label']) for i in tangut['items']] == [('tangut-box', '')]
+    assert 'tangut-box' not in {i['id'] for i in client.get('/atlas', params={'purpose': 'review', 'limit': 96}).json()['items']}
+    assert client.get('/atlas', params={'grapheme': 'U+3042'}).json()['total'] == 12
+
 
 
 def test_catalogue_filters_gugyeol_as_its_own_group(dataset):
@@ -164,6 +191,9 @@ def test_quick_review_excludes_movable_type_until_explicitly_selected(dataset):
     assert default['counts'] == {'pending': 20}
     assert next(c for c in default['categories'] if c['label'] == '字')['pending'] == 4
     assert {i['production'] for i in default['items']} == {'handwritten', 'printed/woodblock', 'mixed', 'unknown'}
+    # A round choosing its character asks for the counts alone.
+    counted = client.get('/atlas?purpose=review&limit=0').json()
+    assert (counted['categories'], counted['counts'], counted['items']) == (default['categories'], default['counts'], [])
     assert client.get('/atlas').json()['total'] == 22
     assert client.get('/atlas?purpose=review&production=all').json()['total'] == 22
     expected = {'handwritten': 1, 'printed': 3, 'printed/type': 2, 'printed/type/metal/copper': 1,

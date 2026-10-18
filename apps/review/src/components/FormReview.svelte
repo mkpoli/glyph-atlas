@@ -156,7 +156,7 @@
 
 <style>
   .form-review{margin-top:16px}
-  .review-bar{position:sticky;top:0;z-index:3;background:var(--overlay-page);backdrop-filter:blur(12px);padding:12px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+  .review-bar{position:sticky;top:0;z-index:3;background:var(--overlay-page);padding:12px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
   .review-heading{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
   .review-heading h3{font-size:16px;font-weight:500}.review-heading small{font-size:11px;color:var(--muted);font-weight:400;margin-left:6px}
   .review-progress{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -174,8 +174,8 @@
   span.review-glyph{display:block}.review-glyph.marked{border-color:var(--wrong);background:light-dark(#fdeceb, rgb(255 146 159 / 15%))}
   .review-glyph.marked::after{content:"✕";position:absolute;top:2px;left:6px;font-size:13px;color:var(--wrong)}
   .review-glyph.reported{opacity:.55}
-  .review-flag{position:absolute;top:3px;right:6px;font-size:14px;color:var(--wrong);font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
-  .review-form-mark{position:absolute;top:3px;right:6px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans",system-ui,sans-serif}
+  .review-flag{position:absolute;top:3px;right:6px;font-size:14px;color:var(--wrong);font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans","Noto Serif Tangut",sans-serif}
+  .review-form-mark{position:absolute;top:3px;right:6px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans","Noto Serif Tangut",system-ui,sans-serif}
   .review-done{padding:48px 0;font-size:14px;color:var(--muted);text-align:center}
   @media(max-width:700px){.review-grid{grid-template-columns:repeat(auto-fill,minmax(76px,1fr))}.review-actions .primary{margin-left:0}}
 </style>

@@ -67,6 +67,17 @@
   })
   const others = $derived(groupOf ? items.map((item, index) => ({ item, index })).filter(({ item }) => !groupOf(item)) : [])
   const carded = $derived(cards.length > 0)
+  // The rows in the graphemes they belong to: the service lists a grapheme's forms together, the ones
+  // the query found first, so 时 shows 時 = 时 = 旹 under one heading.
+  const blocks = $derived.by(() => {
+    const found = []
+    items.forEach((item, index) => {
+      const key = item.grapheme?.code_point ?? item.code_point, last = found.at(-1)
+      if (last?.key === key) last.entries.push({ item, index })
+      else found.push({ key, grapheme: item.grapheme, entries: [{ item, index }] })
+    })
+    return found
+  })
 
   function searchSignal() {
     pending?.abort()
@@ -231,7 +242,7 @@
   })
 </script>
 
-{#snippet row(item, index)}
+{#snippet row(item, index, grouped = false)}
   <div class="candidate-row"><button type="button" class="candidate" id={`${listId}-${index}`} role={carded ? undefined : 'option'}
           bind:this={options[index]}
           aria-selected={carded ? undefined : index === active} class:active={!carded && index === active}
@@ -245,7 +256,7 @@
         {#if item.kind === 'ligature'}<span class="tag">{t('search.ligature')}</span>{/if}
         {#if item.variant_of}<span class="tag">{t('chips.relation.variant')}</span>{/if}
       </span>
-      <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if item.grapheme?.character_count > 1}<span> · <ScriptText text={item.grapheme.label} /></span>{/if}</span>
+      <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if !grouped && item.grapheme?.character_count > 1}<span> · <ScriptText text={item.grapheme.label} /></span>{/if}</span>
     </span>
   </button></div>
 {/snippet}
@@ -293,7 +304,16 @@
           </details>
         {/if}
       {:else}
-        {#each items as item, index (item.code_point)}{@render row(item, index)}{/each}
+        {#each blocks as block (`${block.key}:${block.entries[0].index}`)}
+          {#if block.grapheme?.character_count > 1}
+            <div class="candidate-grapheme" role="group" aria-label={`${t('chips.grapheme')} ${block.grapheme.label}`}>
+              <p class="candidate-grapheme-head" aria-hidden="true">{t('chips.grapheme')} <ScriptText text={block.grapheme.char ?? block.entries[0].item.char} /> · {t('explore.grapheme.forms', { count: block.grapheme.character_count })}</p>
+              {#each block.entries as { item, index } (item.code_point)}{@render row(item, index, true)}{/each}
+            </div>
+          {:else}
+            {#each block.entries as { item, index } (item.code_point)}{@render row(item, index)}{/each}
+          {/if}
+        {/each}
       {/if}
       {#if items.length && (!carded || others.length)}<div class="candidate-legend"><ScriptLegend /></div>{/if}
       {#if !loading && !failed && !items.length && answer}
@@ -324,4 +344,6 @@
   .candidate-others{margin-top:8px;color:var(--muted)}
   .candidate-others summary{cursor:pointer;padding:8px 6px;font-size:12px}
   .candidate-others .candidate-row{opacity:.8}
+  .candidate-grapheme{margin:4px 6px;border:1px solid var(--line);border-radius:9px}
+  .candidate-grapheme-head{margin:0;padding:6px 10px 2px;font-size:12px;color:var(--muted)}
 </style>

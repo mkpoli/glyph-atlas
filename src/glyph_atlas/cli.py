@@ -542,6 +542,28 @@ def review_catalogue_suspects(
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 
+@review_app.command("irregular")
+def review_irregular(
+    catalogues: Annotated[list[Path], typer.Argument(help="publication catalogue.sqlite files, later ones winning")],
+    target: Annotated[Path, typer.Option(help="file the marks are written to")],
+) -> None:
+    """Mark the local crops whose box is far narrower or wider than their character's other crops."""
+    from .review import irregular
+
+    typer.echo(json.dumps(irregular.compute(catalogues, target), ensure_ascii=False))
+
+
+@review_app.command("irregular-sql")
+def review_irregular_sql(
+    marks: Annotated[Path, typer.Argument(help="marks file from `atlas review irregular`")],
+    out: Annotated[Path, typer.Argument(help="D1 SQL that replaces unit_irregular (migration 0080)")],
+) -> None:
+    """Write D1 SQL that replaces the hosted irregular marks; run it with `wrangler d1 execute --remote --file`."""
+    from .review import irregular
+
+    typer.echo(json.dumps({"unit_irregular": irregular.sql(marks, out)}))
+
+
 @review_app.command("shift-repair")
 def review_shift_repair(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose blocks are checked")],
@@ -587,6 +609,30 @@ def review_withheld_release(
         ids = protect.read_text().split() if protect else ()
         result = withheld_release.run(directory, checkpoint=checkpoint, apply=apply, protect=ids, min_p=min_p)
     withheld_release.write(result, out)
+    typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
+
+
+@review_app.command("source-duplicates")
+def review_source_duplicates(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose hk: and ar: crops are compared")],
+    out: Annotated[Path, typer.Option(help="report of every proposed withhold")],
+    apply: Annotated[bool, typer.Option("--apply/--dry-run", help="record the withholds in the dataset's journal")] = False,
+    undo: Annotated[bool, typer.Option(help="put back the notes this pass wrote instead (with --apply; a dry run "
+                                       "counts them)")] = False,
+    protect: Annotated[Path | None, typer.Option(help="file of unit ids never withheld, one per line (reviewed on the site)")] = None,
+    checkpoint: Annotated[Path, typer.Option(help="classifier checkpoint")] = Path("models/classifier/artifacts/best.pt"),
+    min_overlap: Annotated[float, typer.Option(help="least share of the smaller box the two boxes share")] = 0.5,
+) -> None:
+    """Withhold the worse of two shown hk:/ar: crops of one character on one ink (needs CUDA)."""
+    from .review import source_duplicates
+
+    if undo:
+        result = source_duplicates.undo(directory, apply=apply)
+    else:
+        ids = protect.read_text().split() if protect else ()
+        result = source_duplicates.run(directory, checkpoint=checkpoint, apply=apply, protect=ids,
+                                       min_overlap=min_overlap)
+    source_duplicates.write(result, out)
     typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
 
 
@@ -734,6 +780,73 @@ def review_propose_marks(
         marks = sum(1 for proposal in proposals if proposal.kind == "mark")
         typer.echo(f"{record.id:<40} {marks:>4} marks {len(proposals) - marks:>4} circles "
                    f"{len(result['created']):>4} recorded {len(result['retired']):>4} retired")
+        totals["created"] += len(result["created"])
+        totals["retired"] += len(result["retired"])
+    typer.echo(f"{'recorded':<40} {totals['created']:>4}")
+    if totals["retired"]:
+        typer.echo(f"{'retired':<40} {totals['retired']:>4}")
+
+
+@review_app.command("propose-characters")
+def review_propose_characters(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose pages are searched")],
+    page: Annotated[list[str] | None, typer.Option("--page", help="page id; repeat for several")] = None,
+    document: Annotated[list[str] | None, typer.Option("--document", help="document id; repeat for several")] = None,
+    script: Annotated[str, typer.Option(help="script the proposed characters are filed under, e.g. tangut")] = "unknown",
+    onnx: Annotated[Path | None, typer.Option(help="detector export")] = None,
+    score: Annotated[float, typer.Option(help="detector score cutoff")] = 0.02,
+    nms: Annotated[float, typer.Option(help="IoU above which a lower-scoring box is suppressed")] = 0.2,
+) -> None:
+    """Propose the character boxes of page photos that have no transcription, for reviewers to read.
+
+    Searches every page with a cached photo, or the pages named and the pages of the documents named.
+    A page already searched by this version of the proposer is left as it is."""
+    from PIL import Image
+
+    from . import character_proposals
+    from .ainu import DEFAULT_ONNX
+    from .detect import Detector
+    from .review.characters import page_digest
+    from .review.server import cached_image
+    from .review.store import Store
+    from .schema import Script
+
+    try:
+        filed = Script(script)
+    except ValueError as error:
+        raise typer.BadParameter(f"no script {script!r}") from error
+    model = onnx or DEFAULT_ONNX
+    if not model.is_file():
+        raise typer.BadParameter(f"no detector export at {model}")
+    store = Store(directory)
+    pages = sorted(store.pages().values(), key=lambda record: (record.document_id, record.seq, record.id))
+    missing = set(page or ()) - {record.id for record in pages}
+    if missing:
+        raise typer.BadParameter(f"no page {', '.join(sorted(missing))}")
+    unknown = set(document or ()) - {record.document_id for record in pages}
+    if unknown:
+        raise typer.BadParameter(f"no document {', '.join(sorted(unknown))}")
+    version = character_proposals.proposer(model, score=score, nms=nms)
+    detector = Detector(model, score=score, nms=nms)
+    if page or document:
+        pages = [record for record in pages
+                 if record.id in set(page or ()) or record.document_id in set(document or ())]
+    totals = {"created": 0, "retired": 0}
+    for record in pages:
+        digest = page_digest(record)
+        path = cached_image(digest) if digest else None
+        if path is None or not record.width or not record.height:
+            typer.echo(f"{record.id:<40} no cached photo")
+            continue
+        with Image.open(path) as image:
+            proposals = character_proposals.propose(image.convert("RGB"), detector)
+            size = image.size
+        result = store.propose_units(record.id, proposals, version, image_size=size, script=filed)
+        if result["skipped"]:
+            typer.echo(f"{record.id:<40} already proposed by {version}")
+            continue
+        typer.echo(f"{record.id:<40} {len(proposals):>4} boxes {len(result['created']):>4} recorded "
+                   f"{len(result['retired']):>4} retired")
         totals["created"] += len(result["created"])
         totals["retired"] += len(result["retired"])
     typer.echo(f"{'recorded':<40} {totals['created']:>4}")

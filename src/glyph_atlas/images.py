@@ -67,6 +67,9 @@ REQUEST_SUFFIX = re.compile(rf"/{REGION}/{SIZE}/{ROTATION}/{QUALITY}\.{FORMAT}$"
 INFO_SUFFIX = re.compile(r"/info\.json$", re.IGNORECASE)
 #: Path segments that mark an Image API service, so that a bare service URL is not read as a file.
 IIIF_MARKERS = ("iiif", "image-api", "imageapi")
+#: A whole image sent at most this share of the width `info.json` states is read as capped by a limit
+#: the server does not state; one a few pixels short is a rounding of the stated size and kept.
+SILENT_CAP = 0.95
 
 
 class ImageError(RuntimeError):
@@ -121,9 +124,9 @@ def service_of(url: str) -> str | None:
 
     A request suffix (`/{region}/{size}/{rotation}/{quality}.{format}`), an `info.json` suffix, a
     query string other than an IIPImage identifier, and a trailing slash are removed. A URL whose
-    path carries a IIIF marker and no request suffix is a service base itself, which is how the
-    `.../{bid}/{image}.tif` services of CODH are read. Anything else is a file that is fetched as it
-    stands.
+    path carries a IIIF marker, or ends in a `.jp2` identifier, and has no request suffix is a service
+    base itself, which is how the `.../{bid}/{image}.tif` services of CODH are read. Anything else is a
+    file that is fetched as it stands.
     """
     base = _bare(url)
     if not base:
@@ -140,6 +143,10 @@ def service_of(url: str) -> str | None:
     if "iiif" in (parts.hostname or "").lower() or any(
         marker in segment for segment in segments for marker in IIIF_MARKERS
     ):
+        return base
+    if segments and segments[-1].endswith(".jp2"):
+        # A JPEG 2000 file is an image server's source, named as the identifier (EAP's
+        # `images.eap.bl.uk/EAP140/EAP140_1_52/5.jp2`); browsers cannot show one as it stands.
         return base
     return None
 
@@ -258,7 +265,9 @@ def fetch(
             path = net.download(request_url, temporary, expected="image", client=client, refresh=True,
                                 pause=pause, clock=clock, sleeper=sleeper, meta=seen)
             target, created = _store(cache, path, _extension(request_url, seen.get("content_type")))
-            wanted = _wanted_width(request_url) if service is not None and box is None else None
+            wanted = None
+            if service is not None and box is None:
+                wanted = _wanted_width(request_url) or (described["width"] if described is not None else None)
             if wanted is not None and _image_size(target)[0] < wanted:
                 # A request URL that names a width the server did not send; when its stated limits
                 # explain the shortfall, region requests at full resolution add up to that image.
@@ -266,6 +275,16 @@ def fetch(
                 try:
                     described = described or info(service, client=client, pause=pause, clock=clock,
                                                   sleeper=sleeper)
+                    served = _image_size(capped)
+                    if (described["width"] == wanted and not _capped(described, wanted)
+                            and served[0] <= SILENT_CAP * wanted
+                            and abs(served[0] * described["height"] - served[1] * described["width"])
+                            <= 0.01 * served[1] * described["width"]):
+                        # A server that caps without saying so (EAP sends 1,200 px of a 2,027 px scan,
+                        # and shrinks larger regions too) sends the whole image scaled down. The size
+                        # it sent is within whatever it limits, width, height or area, so regions no
+                        # wider and no taller than that come back whole.
+                        described = {**described, "limits": {"maxWidth": served[0], "maxHeight": served[1]}}
                     if described["width"] == wanted and _capped(described, wanted):
                         target, _ = _store(cache, stitch(), ".jpg")
                         seen = {}

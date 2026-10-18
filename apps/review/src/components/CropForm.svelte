@@ -32,7 +32,7 @@
   const bar = $derived.by(() => {
     const chips = listed.members.filter(member => !others || member.char !== current).slice(0, BAR)
     const has = char => chips.some(chip => chip.char === char)
-    if (current && !others && !has(current)) chips.push({ char: current, script: '' })
+    if (current && !others && !has(current)) chips.push({ char: current, script: '', lang: listed.variants.find(v => v.char === current)?.lang ?? '' })
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
@@ -47,15 +47,16 @@
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   function choose(char) { onchoose(char === current ? null : char) }
   function add(item) {
-    if (!bar.some(chip => chip.char === item.char)) added = [...added, { char: item.char, code_point: item.code_point, script: item.script ?? '' }]
+    if (!bar.some(chip => chip.char === item.char)) added = [...added, { char: item.char, code_point: item.code_point, script: item.script ?? '', lang: item.lang ?? '' }]
     picking = false; query = ''; composing = false
     onchoose(item.char === current ? null : item.char)
   }
   // A derived option names how it was made: each substitution of its first route, as made; a
-  // registered figure names its sequence and its MJ figure.
+  // registered figure names its sequence and its MJ figure; a regional shape names its regions.
   const optionTitle = item => item.routes?.length
     ? `${item.char}\n` + item.routes[0].map(sub => `${sub.was} → ${sub.became}`).join('\n')
-    : item.mj ? `${item.code_point}\n${item.mj}` : item.code_point ?? item.char
+    : item.mj ? `${item.code_point}\n${item.mj}`
+    : item.regions ? `${item.char}\n${item.regions}` : item.code_point ?? item.char
   // 1–0 choose the bar's forms, as Quick Review's form bar does; a key typed into a field is the field's.
   function keydown(event) {
     if (disabled || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
@@ -87,7 +88,7 @@
           <div class="form-options">
             {#each items as item (item.char)}
               <button type="button" class="form-option" {disabled} title={optionTitle(item)} onclick={() => add(item)}>
-                <FormText text={item.char} script={item.script} />{#if item.mj}<small>{item.mj}</small>{:else if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{/if}
+                <FormText text={item.char} script={item.script} lang={item.lang} />{#if item.mj}<small>{item.mj}</small>{:else if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{:else if item.regions}<small>{item.regions}</small>{/if}
               </button>
             {/each}
           </div>
@@ -116,7 +117,7 @@
   .form-section-title{font-size:11px;color:var(--muted)}
   .form-options{display:flex;flex-wrap:wrap;gap:6px}
   .form-option{display:inline-flex;flex-direction:column;align-items:center;gap:2px;min-width:44px;padding:5px 9px;font-size:21px;line-height:1.2;
-    font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans",serif}
+    font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
   .form-option small{font-family:ui-monospace,monospace;font-size:9px;color:var(--muted)}
   .form-option:not(:disabled):hover{border-color:var(--accent)}
   .form-compose{align-self:flex-start;font-size:13px;padding:4px 10px}

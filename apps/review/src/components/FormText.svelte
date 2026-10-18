@@ -5,12 +5,12 @@
   // colour of Han, and shown as the sequence's text until the drawing loads or where none is made.
   // Hovering shows the sequence as written. A registered figure, a character with an ideographic
   // variation selector, is drawn in MJ Figures, the font that maps its sequence. `stacked` sets the
-  // tag under the form, as a card's label.
+  // tag under the form, as a card's label; `lang` the language whose fonts draw it (a regional shape).
   import ScriptText from './ScriptText.svelte'
   import { drawingKey, isDescription } from '../lib/ids.js'
   import { FAMILY, drawFigure, isFigure } from '../lib/mjFigures.js'
   import { t } from '../lib/i18n.svelte.js'
-  let { text = '', script = '', stacked = false } = $props()
+  let { text = '', script = '', lang = '', stacked = false } = $props()
   const described = $derived(isDescription(text))
   const figure = $derived(isFigure(text))
   let drawing = $state(null)
@@ -31,11 +31,11 @@
 </script>
 
 {#if described}
-  <span class="ids-form" class:stacked title={text}>{#if drawing}<span class="ids-drawing script-char" data-script="kanji" role="img" aria-label={text} style:--drawing="url({drawing})"></span>{:else}<span class="ids-text"><ScriptText {text} script="han" titled={false} /></span>{/if}<small class="ids-tag">{t('form.ids.tag')}</small></span>
+  <span class="ids-form" class:stacked title={text}>{#if drawing}<span class="ids-drawing script-char" data-script="kanji" role="img" aria-label={text} style:--drawing="url({drawing})"></span>{:else}<span class="ids-text"><ScriptText {text} script="han" {lang} titled={false} /></span>{/if}<small class="ids-tag">{t('form.ids.tag')}</small></span>
 {:else if figure}
   <span class="figure-form" style:font-family={`"${FAMILY}", serif`}><ScriptText {text} {script} /></span>
 {:else}
-  <ScriptText {text} {script} />
+  <ScriptText {text} {script} {lang} />
 {/if}
 
 <style>

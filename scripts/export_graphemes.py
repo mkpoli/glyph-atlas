@@ -92,7 +92,8 @@ def changed(previous: dict[str, tuple[str, frozenset[str]]]) -> list[str]:
     """The code points whose head or family is not the one the earlier table gave them.
 
     The head matters besides the membership: a family that moves to another representative keeps
-    every member but `data.grapheme` and `units.family` still name the old one.
+    every member but `data.grapheme` and `units.family` still name the old one. A code point the
+    earlier table did not have is new to the site and changed whatever its family.
     """
     now_head: dict[str, str] = {}
     now_set: dict[str, frozenset[str]] = {}
@@ -103,7 +104,7 @@ def changed(previous: dict[str, tuple[str, frozenset[str]]]) -> list[str]:
             now_set[point] = members
     return sorted(
         (point for point in now_set
-         if previous.get(point, (point, frozenset({point}))) != (now_head[point], now_set[point])),
+         if previous.get(point) != (now_head[point], now_set[point])),
         key=lambda point: [int(part.removeprefix("U+"), 16) for part in point.split()])
 
 
@@ -164,9 +165,7 @@ def fresh(point: str) -> dict[str, Any]:
     info = characters._row(row, {})
     info["origin"] = refs.origin_of(point)
     info["candidates"] = characters.candidate_summary(row.char, live=None, local=0)
-    info["kind"] = ("ligature" if row.ligature else "han" if str(row.script) == "han"
-                    else "hangul" if str(row.script) == "hangul"
-                    else "gugyeol" if str(row.script) == "gugyeol" else "kana")
+    info["kind"] = characters.kind_of(row)
     detail = {**info, "alias": row.alias, "category": row.category,
               "confusables": [characters.to_row(refs.character(cp)) for cp in row.confusables],
               "derived": [], "expansions": [], "visual_analysis": {}}
@@ -232,6 +231,9 @@ def statements(rows: dict[str, tuple[dict, dict]]) -> list[list[str]]:
     # A character the site lacks is inserted, with the aliases a publication gives it; a rerun finds it.
     # A plain INSERT: a row that collides with another's text fails the part rather than going missing.
     swap: list[str] = [
+        # The moves join crops to the staging table by character; without this index each crop scans
+        # all of it (about 52k rows), and D1 drops the import.
+        f"CREATE INDEX IF NOT EXISTS {STAGING}_character ON {STAGING}(character);\n",
         (f"INSERT INTO characters(code_point,character,name,data,detail)"
          f" SELECT code_point,character,name,data,detail FROM {STAGING} n"
          " WHERE NOT EXISTS (SELECT 1 FROM characters c WHERE c.code_point=n.code_point);\n"),

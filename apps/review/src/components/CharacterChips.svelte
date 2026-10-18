@@ -10,19 +10,22 @@
   import { countsLabel } from '../lib/layers.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
-  import { characterAddress } from '../lib/gallery.js'
+  import { characterAddress, graphemeAddress } from '../lib/gallery.js'
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
+  import { familyCodeSet } from '../lib/forms.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
   // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
   // widening to variants has no address of its own to cite.
   const entry = $derived(card?.code_point && expand !== 'variants' ? characterEntry(expand === 'grapheme' ? 'grapheme' : 'form', card) : null)
   // The Forms family this character is clustered in, by its grapheme or its own code point; none, no link.
-  const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && page.data.forms?.includes(code)))
+  let clustered = $state(null)
+  $effect(() => { if (page.data.forms) familyCodeSet().then(codes => { clustered = codes }) })
+  const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && clustered?.has(code)))
   // The 異体字 graph: the variants a gallery widens to, characters related otherwise, and the
-  // derived tier — forms up to two component substitutions may write this character as, listed
-  // after the attested variants with a mark, no gallery widening to them.
+  // derived tier — forms up to two component substitutions may write this character as, folded
+  // after the attested variants, each with a mark, no gallery widening to them.
   // A card cached before the derived tier existed has no `derived`; it reads as none.
   const variants = $derived({ items: [], related: [], sources: {}, ...card?.variants, derived: card?.variants?.derived ?? [] })
   // Every relation of kanji-variants.tsv in the reader's language; one the table gains later reads as its id.
@@ -43,12 +46,31 @@
     for (const r of v.relations) by.set(r.relation, new Set([...(by.get(r.relation) ?? []), r.source]))
     return [...by].map(([relation, sources]) => ({ relation, name: relationName(relation), sources: [...sources] }))
   }
-  const relationTitle = v => `${v.char} ${v.code_point}\n` + relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`).join('\n')
+  const relationTitle = v => [`${v.char} ${v.code_point}`, ...(writers.has(v.code_point) ? [shareLabel(v)] : []),
+    ...relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`)].join('\n')
+  // A chip names one relation, the most specific a pair has; its title lists them all with their sources.
+  const RELATION_RANK = ['simplified', 'shinjitai', 'regional', 'shuowen', 'reduction', 'compatibility', 'z',
+    'variant', 'equivalent', 'specialized-semantic', 'overlap', 'semantic', 'borrowed', 'substitute', 'non-cognate', 'spoofing']
+  const rank = relation => (RELATION_RANK.indexOf(relation) + RELATION_RANK.length + 1) % (RELATION_RANK.length + 1)
+  const mainRelation = v => relationsOf(v).sort((a, b) => rank(a.relation) - rank(b.relation))[0]?.name ?? ''
   // A derived chip's evidence, after the word that marks it: each route it came by, each substitution
   // as made with its count of contexts and the pairs behind it with their sources.
   const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + (v.routes ?? []).map(route => route.map(s =>
     `${s.was} → ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n+ ')).join('\n\n')
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
+  // Three levels: the 字種 (the grapheme, and any other grapheme this form also writes, 后: 後), its 字体
+  // (the grapheme's own forms, then the 異体字 outside it, the ones a gallery widens to first), and the
+  // characters related otherwise (a loan, a homograph, a fallback reduction). A form that writes this
+  // grapheme and a character of its own (後: 后) is a 字体 tagged as shared. A card cached before rows
+  // carried `written` lists every unwidening pair as related; one cached before the writers has neither.
+  const grapheme = $derived(card?.grapheme ?? card)
+  const writers = $derived(new Set((variants.writers ?? []).map(v => v.code_point)))
+  const writes = $derived(variants.writes ?? [])
+  const shareLabel = v => writers.has(v.code_point) ? t('chips.alsoOwn') : t('chips.alsoWritten', { char: card.char })
+  const own = $derived(new Set([...members, ...writes].map(member => member.code_point)))
+  const written = $derived([...variants.items, ...variants.related.filter(v => v.written || writers.has(v.code_point))]
+    .filter(v => !own.has(v.code_point)).sort((a, b) => writers.has(b.code_point) - writers.has(a.code_point)))
+  const related = $derived(variants.related.filter(v => !v.written && !writers.has(v.code_point) && !own.has(v.code_point)))
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
   // for it: characters that write the same word, kept out of the variant tiers and the widening. A card
   // cached before the word tables existed has no `words`; it reads as none.
@@ -65,44 +87,50 @@
   <div class="character-layers" aria-label={t('chips.layers.label')}>
     <div class="layer-row">
       <span class="layer-label">{t('chips.grapheme')}</span>
-      <button class="family" class:active={expand === 'grapheme'} aria-pressed={expand === 'grapheme'}
-        onclick={() => expand = 'grapheme'}>{#each members as member, i (member.code_point)}{#if i}{' = '}{/if}<ScriptText text={member.char} script={member.script} />{/each}</button>
+      <div class="variant-chips">
+        <a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char))}><ScriptText text={grapheme.char} lang="zh" titled={false} /></a>
+        {#each writes as v (v.code_point)}
+          <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={shareLabel(v)}><ScriptText text={v.char} lang="zh" titled={false} /><small class="share">{t('chips.shared')}</small></a>
+        {/each}
+      </div>
     </div>
     <div class="layer-row">
-      <span class="layer-label">{t('chips.characters')}</span>
+      <span class="layer-label">{t('chips.forms')}</span>
       <div class="character-members">
+        {#if members.length > 1}<button class="family" class:active={expand === 'grapheme'} aria-pressed={expand === 'grapheme'}
+          onclick={() => expand = 'grapheme'}>{t('chips.allForms')}</button>{/if}
         {#each members as member (member.code_point)}
           <div class="member-choice"><button class="member" class:active={expand !== 'grapheme' && member.code_point === card.code_point}
             aria-pressed={expand !== 'grapheme' && member.code_point === card.code_point}
             aria-label={t('chips.showCharacter', { char: member.char })} onclick={() => onselect(member.code_point)}>
             <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" />
-          </button><ZiLink character={member.char} compact /></div>
+          </button>{#if member.code_point === card.code_point}<ZiLink character={member.char} compact />{/if}</div>
         {/each}
+        {#each written as v (v.code_point)}
+          <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if writers.has(v.code_point)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !v.widens}{mainRelation(v)}{#if crops(v)} · {/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
+        {/each}
+        {#if variants.derived.length}
+          <details class="derived">
+            <summary>{t('chips.derived')} <small>{formatNumber(variants.derived.length)}</small></summary>
+            <div class="variant-chips">
+              {#each variants.derived as v (v.code_point ?? v.char)}
+                {#if v.code_point}
+                  <a class="variant" href={localize(characterAddress(v.code_point))} title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
+                {:else}
+                  <span class="variant unencoded" title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup></span>
+                {/if}
+              {/each}
+            </div>
+          </details>
+        {/if}
       </div>
     </div>
-    {#if variants.items.length || variants.derived.length}
-      <div class="layer-row">
-        <span class="layer-label">{t('chips.variants')}</span>
-        <div class="variant-chips">
-          {#each variants.items as v (v.code_point)}
-            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
-          {/each}
-          {#each variants.derived as v (v.code_point ?? v.char)}
-            {#if v.code_point}
-              <a class="variant" href={localize(characterAddress(v.code_point))} title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup><span class="visually-hidden">{t('chips.derived')}</span>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
-            {:else}
-              <span class="variant unencoded" title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup><span class="visually-hidden">{t('chips.derived')}</span></span>
-            {/if}
-          {/each}
-        </div>
-      </div>
-    {/if}
-    {#if variants.related.length}
+    {#if related.length}
       <div class="layer-row">
         <span class="layer-label">{t('chips.related')}</span>
         <div class="variant-chips">
-          {#each variants.related as v (v.code_point)}
-            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{relationsOf(v).map(r => r.name).join(' · ')}{#if crops(v)} · {formatNumber(crops(v))}{/if}</small></a>
+          {#each related as v (v.code_point)}
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{mainRelation(v)}{#if crops(v)} · {formatNumber(crops(v))}{/if}</small></a>
           {/each}
         </div>
       </div>
@@ -134,7 +162,7 @@
     {/if}
     <div class="layer-legend"><ScriptLegend /></div>
     <div class="layer-row forms-row">
-      <span class="layer-label">{t('chips.forms')}</span>
+      <span class="layer-label">{t('chips.glyphs')}</span>
       <span>{#if expand === 'grapheme'}{t('chips.allForms')}{:else}<ScriptText text={card.char} script={card.script} />{/if}</span>
       {#if formsFamily}<a class="forms-link" href={localize('/forms/' + formsFamily)}>{t('nav.forms')} →</a>{/if}
       {#if card.code_point}<a class="forms-link" href={localize(chronologyAddress(card.code_point, { scope: expand === 'grapheme' ? 'grapheme' : '' }))}>{t('nav.chronology')} →</a>{/if}
@@ -158,16 +186,19 @@
 
 <style>
   .character-layers{padding:20px 0;border-bottom:1px solid var(--line);display:grid;gap:12px}
-  .layer-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-  .layer-label{font-size:11px;color:var(--muted);min-width:76px}
+  /* A label sits on the first line of chips, however many lines a row wraps to. */
+  .layer-row{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .layer-label{font-size:11px;color:var(--muted);min-width:76px;line-height:43px}
   .layer-legend{padding-left:92px}
   @media(max-width:600px){.layer-legend{padding-left:0}}
-  .family{font-size:24px;padding:8px 18px;background:transparent}
-  .character-members{display:flex;flex-wrap:wrap;gap:8px;flex:1}
+  .family{align-self:flex-start;padding:8px 14px;background:transparent}
+  .character-members{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;flex:1}
+  .variant-chips > .variant, .character-members > .variant{min-height:43px;box-sizing:border-box;align-items:center}
   .member-choice{display:flex;flex-direction:column;align-items:center;gap:4px}
   .member{display:flex;align-items:center;gap:10px;padding:8px 12px;background:transparent}
   .active{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
-  .forms-row{font-size:12px;color:var(--muted)}
+  .forms-row{font-size:12px;color:var(--muted);align-items:center}
+  .forms-row .layer-label{line-height:normal}
   .forms-row small{margin-left:auto}
   .forms-link{color:var(--accent);text-decoration:none}.forms-link:hover{text-decoration:underline}
   .forms-row :global(.cite-link){border:0;background:none;padding:0;font-size:inherit;color:var(--accent)}.forms-row :global(.cite-link:hover){text-decoration:underline}
@@ -180,7 +211,12 @@
   .derived-mark{font-size:11px;color:var(--muted);margin-left:-4px;align-self:flex-start}
   .variant.unencoded :global(.script-text){font-size:15px}
   .variant.unencoded:hover{border-color:var(--accent)}
+  .derived{flex-basis:100%}
+  .derived summary{cursor:pointer;width:fit-content;font-size:12px;color:var(--muted)}
+  .derived summary small{font-variant-numeric:tabular-nums}
+  .derived[open] summary{margin-bottom:6px}
   .variant small{font-size:11px;color:var(--muted)}
+  .variant small.share{color:var(--accent)}
   .word-reading{font-size:15px;align-self:center;margin-right:4px}
   .variant .code{font-family:"GenZui Sans",ui-monospace,monospace;font-size:10px}
   .include-variants{justify-self:start;margin-left:92px}

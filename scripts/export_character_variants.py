@@ -2,6 +2,8 @@
 parts D1 can import.
 
     python scripts/export_character_variants.py OUT
+    python scripts/export_character_variants.py --words OUT
+    python scripts/export_character_variants.py --writers OUT
 
 D1 imports each `--file` as one transaction: a part that fails leaves the database as it was. The
 graph is too large for one statement, so its parts fill staging tables (`character_variants_next`,
@@ -23,7 +25,10 @@ character's descriptions, which the form picker's IDS editor starts from; it is 
 after `character_derived`.
 `words` and `word_spellings` are the hand tables of decision 0004, read through `refs.words` and
 `refs.word_spellings`, which joins each 振り仮名 row to its counts; a character card shows them
-beside its variants.
+beside its variants. `--words` writes those two tables alone, as one part that replaces them, cites
+their sources and bumps the listing version, so a new word reaches the site without rewriting the
+graph. `grapheme_writers` holds the reduced forms that write several characters, one row per form and
+grapheme it writes besides its own (`refs.also_writes`); `--writers` replaces it alone, as one part.
 
 OUT/sql/part-NNN.sql are the parts in order and OUT/apply.sh imports them, retrying a refused part,
 and checks the counts it expects. The full export (`export_cloudflare.py`) fills the same tables
@@ -52,9 +57,10 @@ DERIVED_COLUMNS = ("a", "forms")
 DERIVED_PART_BYTES = 2 * 1024 * 1024
 SUBSTITUTION_COLUMNS = ("a", "b", "count", "pairs")
 WORDS_STAGING = "words_next"
-IDS_COLUMNS = ("char", "sequences")
+IDS_COLUMNS = ("char", "sequences", "shapes")
 WORD_COLUMNS = ("id", "language", "reading", "class")
 SPELLINGS_STAGING = "word_spellings_next"
+WRITER_COLUMNS = ("writer", "grapheme")
 SPELLING_COLUMNS = ("word", "spelling", "source", "locator", "tier", "word_by", "basis", "related", "statement",
                     "documents", "occurrences")
 # The Worker keys its cached listings and cards on this row; the swap writes it with the new graph.
@@ -108,9 +114,11 @@ def word_citations() -> str:
 
 
 @cache
-def ids_rows() -> tuple[tuple[str, str], ...]:
-    """`han_ids`: each character's descriptions the IDS editor starts from (`refs.ids_sequences`)."""
-    return tuple((char, json.dumps(found, ensure_ascii=False, separators=(",", ":")))
+def ids_rows() -> tuple[tuple[str, str, str | None], ...]:
+    """`han_ids`: each character's descriptions the IDS editor starts from (`refs.ids_sequences`), and
+    its regional shapes when it has several (`refs.regional_shapes`, else NULL)."""
+    dump = lambda value: json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return tuple((char, dump(found), dump(shapes) if (shapes := refs.regional_shapes(char)) else None)
                  for char in sorted(han_components._sequences()) if (found := refs.ids_sequences(char)))
 
 
@@ -128,7 +136,21 @@ def expected() -> dict[str, int]:
     return {"edges": len(rows), "written": sum(e["written"] for e in rows.values()),
             "widens": sum(e["widens"] for e in rows.values()),
             "substitutions": len(substitution_rows()), "derived": len(derived_rows()),
-            "words": len(word_rows()), "spellings": len(spelling_rows()), "ids": len(ids_rows())}
+            "words": len(word_rows()), "spellings": len(spelling_rows()), "ids": len(ids_rows()),
+            "writers": len(writer_rows())}
+
+
+def writer_rows() -> list[tuple[str, str]]:
+    """Each reduced form and a grapheme it writes besides its own, as text, by form then grapheme."""
+    return sorted((refs.to_char(point), refs.to_char(head))
+                  for head, family in refs._grapheme_families().items() for point in family["writers"])
+
+
+def writer_statements() -> list[str]:
+    """One transaction that replaces `grapheme_writers` and bumps the listing version. The table holds
+    about a thousand rows, so it needs no staging."""
+    return ["DELETE FROM grapheme_writers;\n", *insert_rows("grapheme_writers", WRITER_COLUMNS, writer_rows()),
+            VERSION_BUMP]
 
 
 def insert_rows(into: str, columns: tuple[str, ...], rows) -> list[str]:
@@ -173,6 +195,16 @@ def ranged_parts(table: str, key: str, columns: tuple[str, ...], rows, budget: i
     return parts
 
 
+def word_statements() -> list[str]:
+    """One transaction that replaces `words` and `word_spellings`, cites their sources and bumps the
+    listing version. The tables hold a few hundred rows, so they need no staging."""
+    return ["DELETE FROM words;\n", *insert_rows("words", WORD_COLUMNS, word_rows()),
+            "DELETE FROM word_spellings;\n", *insert_rows("word_spellings", SPELLING_COLUMNS, spelling_rows()),
+            "INSERT INTO metadata(key,value) VALUES('word_sources'," + quote(word_citations())
+            + ") ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n",
+            VERSION_BUMP]
+
+
 def statements() -> list[list[str]]:
     """The staging fill, in statements under D1's statement limit, then the swap, then each ranged part
     of `character_derived` as a group of its own."""
@@ -209,6 +241,7 @@ def statements() -> list[list[str]]:
                  f"INSERT INTO {live}({','.join(columns)}) SELECT {','.join(columns)} FROM {staging};\n",
                  f"DROP TABLE {staging};\n"]
     swap += [
+        *writer_statements()[:-1],
         "INSERT INTO metadata(key,value) VALUES('variant_sources'," + quote(citations())
         + ") ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n",
         "INSERT INTO metadata(key,value) VALUES('word_sources'," + quote(word_citations())
@@ -236,8 +269,10 @@ def fill(db: sqlite3.Connection, *, derived: bool = True) -> None:
         db.executemany(f"INSERT OR REPLACE INTO character_derived({','.join(DERIVED_COLUMNS)}) VALUES (?,?)",
                        derived_rows())
         db.execute("DELETE FROM han_ids")
-        db.executemany("INSERT INTO han_ids(char,sequences) VALUES (?,?)", ids_rows())
+        db.executemany("INSERT INTO han_ids(char,sequences,shapes) VALUES (?,?,?)", ids_rows())
     db.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('variant_sources',?)", (citations(),))
+    db.execute("DELETE FROM grapheme_writers")
+    db.executemany("INSERT INTO grapheme_writers(writer,grapheme) VALUES (?,?)", writer_rows())
     db.execute("DELETE FROM words")
     db.executemany(f"INSERT INTO words({','.join(WORD_COLUMNS)}) VALUES ({','.join('?' * len(WORD_COLUMNS))})", word_rows())
     db.execute("DELETE FROM word_spellings")
@@ -273,6 +308,35 @@ def write_parts(out: Path, groups: list[list[str]]) -> list[Path]:
     return paths
 
 
+def write_one_part(out: Path, statements: list[str]) -> list[Path]:
+    """An export of one part: the words alone, or the writers alone."""
+    directory = out / "sql"
+    directory.mkdir(parents=True, exist_ok=True)
+    for old in directory.glob("*.sql"):
+        old.unlink()
+    path = directory / "part-001.sql"
+    path.write_text("".join(statements), encoding="utf-8")
+    return [path]
+
+
+ONE_PART_APPLY = """#!/usr/bin/env bash
+# Replace the site's TABLES with this export, in one D1 transaction, and check the counts. Safe to
+# rerun.
+set -uo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+cd ~/projects/Philology/glyph-atlas/apps/cloudflare
+count="COUNT"
+q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
+echo "before: $(q "$count")"
+echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ); undo: bunx wrangler d1 time-travel restore glyph-atlas --timestamp=<that time>"
+../../scripts/d1_import.sh "$here/sql/part-001.sql" || {{ echo "part-001.sql did not apply; nothing of it is in the database." >&2; exit 1; }}
+after=$(q "$count")
+echo "after: $after"
+[ "$after" = '{expected}' ] || {{ echo 'expected {expected}' >&2; exit 1; }}
+echo "done"
+"""
+
+
 APPLY = """#!/usr/bin/env bash
 # Replace the site's variant and word tables (character_variants, component_variants, words,
 # word_spellings) with this export, then character_derived and han_ids range by range. Each part is
@@ -283,7 +347,7 @@ APPLY = """#!/usr/bin/env bash
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd ~/projects/Philology/glyph-atlas/apps/cloudflare
-count="SELECT (SELECT count(*) FROM character_variants) AS edges, (SELECT count(*) FROM character_variants WHERE written=1) AS written, (SELECT count(*) FROM character_variants WHERE widens=1) AS widens, (SELECT count(*) FROM component_variants) AS substitutions, (SELECT count(*) FROM character_derived) AS derived, (SELECT count(*) FROM words) AS words, (SELECT count(*) FROM word_spellings) AS spellings, (SELECT count(*) FROM han_ids) AS ids"
+count="SELECT (SELECT count(*) FROM character_variants) AS edges, (SELECT count(*) FROM character_variants WHERE written=1) AS written, (SELECT count(*) FROM character_variants WHERE widens=1) AS widens, (SELECT count(*) FROM component_variants) AS substitutions, (SELECT count(*) FROM character_derived) AS derived, (SELECT count(*) FROM words) AS words, (SELECT count(*) FROM word_spellings) AS spellings, (SELECT count(*) FROM han_ids) AS ids, (SELECT count(*) FROM grapheme_writers) AS writers"
 q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
 echo "before: $(q "$count")"
 echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ); undo: bunx wrangler d1 time-travel restore glyph-atlas --timestamp=<that time>"
@@ -301,12 +365,27 @@ echo "done"
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("output", type=Path)
-    out = parser.parse_args().output
-    groups = statements()
-    paths = write_parts(out, groups)
-    want = expected()
+    alone = parser.add_mutually_exclusive_group()
+    alone.add_argument("--words", action="store_true", help="write words and word_spellings alone")
+    alone.add_argument("--writers", action="store_true", help="write grapheme_writers alone")
+    arguments = parser.parse_args()
+    out = arguments.output
+    if arguments.words:
+        paths = write_one_part(out, word_statements())
+        want = {"words": len(word_rows()), "spellings": len(spelling_rows())}
+        script = ONE_PART_APPLY.replace("TABLES", "words and word_spellings").replace(
+            "COUNT", "SELECT (SELECT count(*) FROM words) AS words, (SELECT count(*) FROM word_spellings) AS spellings")
+    elif arguments.writers:
+        paths = write_one_part(out, writer_statements())
+        want = {"writers": len(writer_rows())}
+        script = ONE_PART_APPLY.replace("TABLES", "grapheme_writers").replace(
+            "COUNT", "SELECT (SELECT count(*) FROM grapheme_writers) AS writers")
+    else:
+        paths = write_parts(out, statements())
+        want = expected()
+        script = APPLY
     apply = out / "apply.sh"
-    apply.write_text(APPLY.format(expected=json.dumps(want, separators=(",", ":"))), encoding="utf-8")
+    apply.write_text(script.format(expected=json.dumps(want, separators=(",", ":"))), encoding="utf-8")
     apply.chmod(0o755)
     print(json.dumps({**want, "parts": [str(p.relative_to(out)) for p in paths]}))
 

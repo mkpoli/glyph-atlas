@@ -29,6 +29,10 @@ export function ngramCounts(kind, work = '', options = {}) {
   return request(`/atlas/ngrams/${NGRAM_KINDS[kind]}` + (work ? '?' + new URLSearchParams({ document: work }) : ''), undefined, options)
 }
 
+/** How many occurrences a run's page opens with: its records are read for every one, so a first page
+ *  shorter than the ones that follow it as the reader scrolls arrives sooner. */
+export const RUN_FIRST = 24
+
 /** One page of a run's occurrences: `{ text, size, next_offset, items: [{ crops }] }`, and on the first
  *  page `total`, `more` (the count stopped at `total`), `vertical`, the crops of each group
  *  (`hands`), the run's `works` (`{ id, title, count }`) and, for a run of two or three, the written

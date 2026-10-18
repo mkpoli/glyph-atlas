@@ -1,5 +1,5 @@
 import { request, character as readCrop, corpusCharacter } from './client.js'
-import { character as readCard } from './layers.js'
+import { character as readCard, structure as readStructure } from './layers.js'
 import { drawFigure, figuresOf } from './mjFigures.js'
 
 /**
@@ -17,26 +17,34 @@ const entry = item => ({ char: item.char, code_point: item.code_point ?? pointOf
 // A derived form keeps whether it is encoded and how it was made, which the picker shows.
 const derivedEntry = item => ({ ...entry(item), code_point: item.code_point ?? null, encoded: item.encoded, routes: item.routes })
 
+const HAN = /^\p{Script=Han}$/u
+// The language whose fonts draw a BabelStone region's shape (U+6236 戶 is drawn as 戸 under `ja`).
+const REGION_LANG = { G: 'zh-Hans', H: 'zh-HK', M: 'zh-MO', T: 'zh-Hant', J: 'ja', K: 'ko', P: 'ko-KP', V: 'vi' }
+const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(Boolean) ?? ''
 const cards = new Map()
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then the
  * variants: the figures the IVD registers for `char` when it registers more than one (所󠄂 and 所󠄃),
- * each named by its MJ figure, and the variants the sources attest; then the derived ones. A character
- * the layer does not know offers itself alone.
+ * each named by its MJ figure; the shapes BabelStone gives `char` by region when it gives more than
+ * one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J); and the variants the sources attest; then the derived
+ * ones. A character the layer does not know offers itself alone.
  */
 export function listForms(char) {
   if (!char) return Promise.resolve({ members: [], variants: [], derived: [] })
   if (!cards.has(char)) {
     // A sequence the table has no card for (ツ + U+309A) offers itself alone.
     const card = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error))
-    // Figures are offered once their font is loaded, since without it they all look like `char`. A
-    // failed read leaves them out of this answer, which is not kept, and the card's forms still come.
+    // Figures are offered once their font is loaded, since without it they all look like `char`. Only
+    // a Han character has regional shapes. A failed read leaves its forms out of this answer, which is
+    // not kept, and the card's forms still come.
     let partial = false
     const registered = figuresOf(char).then(async figures => (figures.length && await drawFigure(figures[0].char), figures))
       .catch(() => { partial = true; return [] })
-    const loaded = Promise.all([card, registered]).then(([card, figures]) => {
+    const described = HAN.test(char) ? readStructure(char).then(found => found.shapes ?? [], () => { partial = true; return [] }) : Promise.resolve([])
+    const loaded = Promise.all([card, registered, described]).then(([card, figures, regional]) => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
-      const variants = [...figures.map(figure => ({ ...entry(figure), mj: figure.mj })),
+      const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) }))
+      const variants = [...figures.map(figure => ({ ...entry(figure), mj: figure.mj })), ...shapes,
         ...[...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)]
       const derived = (card?.variants?.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))

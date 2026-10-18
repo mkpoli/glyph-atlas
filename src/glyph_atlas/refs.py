@@ -391,6 +391,28 @@ def ids_sequences(char: str) -> list[str]:
     return found
 
 
+#: BabelStone's source letters for a glyph some region or body uses, in the file's order. `X` (another
+#: analysis of a glyph already described), `Z` (a plausible form no source uses) and `UCS2003` (an old
+#: code-chart glyph) name none.
+SOURCE_REGIONS = "GHMTJKPVUSB"
+
+
+def regional_shapes(char: str) -> list[dict[str, str]]:
+    """The shapes BabelStone gives `char` by source, as `{"text", "regions"}` (所 as ⿰戶斤 in GHTKPV
+    and ⿰戸斤 in J), when its descriptions name more than one; empty otherwise. Only source letters
+    count (`SOURCE_REGIONS`), read as `han_component_variants.regions` reads a tag: 主's ⿱亠土 (X)
+    analyses the ⿱丶王 every source writes, and 亼's ⿱人一 (Z) is no source's glyph."""
+    usable = ids_sequences(char)
+    found: dict[str, set[str]] = {}
+    for sequence in han_components._sequences().get(char, ()):
+        text = han_component_variants.REGION.sub("", sequence)
+        named = han_component_variants.regions(sequence) & set(SOURCE_REGIONS)
+        if named and text in usable:
+            found.setdefault(text, set()).update(named)
+    return [{"text": text, "regions": "".join(r for r in SOURCE_REGIONS if r in named)}
+            for text, named in found.items()] if len(found) > 1 else []
+
+
 def substitutes(component: str) -> list[dict[str, Any]]:
     """What may stand in `component`'s place: each substitution of han-component-variants.tsv naming
     it, as `{"char", "count"}`, most contexts first, at most `SUBSTITUTES_SHOWN`."""
@@ -401,12 +423,12 @@ def substitutes(component: str) -> list[dict[str, Any]]:
 
 
 def structure(char: str) -> dict[str, Any]:
-    """What the IDS editor starts from for `char`: its descriptions, and the substitutes of every
-    component they name, as the Worker's `/layers/structure` answers."""
+    """What the IDS editor starts from for `char`: its descriptions, its regional shapes, and the
+    substitutes of every component they name, as the Worker's `/layers/structure` answers."""
     sequences = ids_sequences(char)
     parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
                     if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})
-    return {"char": char, "sequences": sequences,
+    return {"char": char, "sequences": sequences, "shapes": regional_shapes(char),
             "substitutes": {part: found for part in parts if (found := substitutes(part))}}
 
 
@@ -900,6 +922,9 @@ def graphemes() -> dict[str, list[str]]:
 
 #: The relation of a kanji family joined by shape-variant edges (`glyph_atlas.shape_families`).
 SHAPE_VARIANT = "shape-variant"
+#: The role of a family's edge to a reduced form outside it that writes several characters, this one
+#: among them (`shape_families.WRITES`).
+WRITES = "writes"
 
 
 @cache
@@ -928,10 +953,20 @@ def _grapheme_families() -> dict[str, dict]:
         stated = [to_code_point(char) for char in family["members"]] if family else [head]
         attested: dict[str, set[str]] = {}
         for row in edges.get(head, ()):
-            for end in ("a", "b"):
-                attested.setdefault(to_code_point(row[end]), set()).add(row["source"])
+            if row["role"] != WRITES:
+                for end in ("a", "b"):
+                    attested.setdefault(to_code_point(row[end]), set()).add(row["source"])
         members = stated + sorted(set(attested) - set(stated),
                                   key=lambda point: (-len(attested[point]), _point_order(point)))
+        if not attested and not family:
+            members = [head]
+        writing: dict[str, set[str]] = {}
+        for row in edges.get(head, ()):
+            if row["role"] == WRITES:
+                for end in ("a", "b"):
+                    if to_code_point(row[end]) not in members:
+                        writing.setdefault(to_code_point(row[end]), set()).add(row["source"])
+        writers = sorted(writing, key=lambda point: (-len(writing[point]), _point_order(point)))
         if set(members) != set(graphemes().get(head, [])):
             raise ValueError(f"family {head} disagrees with characters.tsv; rebuild the character table")
         evidence = [{"id": key, **document["sources"][key]} for key in family["sources"]] if family else []
@@ -944,6 +979,8 @@ def _grapheme_families() -> dict[str, dict]:
             evidence.append({"id": source, "title": record["name"], "url": record["url"], "edges": rows})
         families[head] = {
             "members": members,
+            "stated": stated if family else [],
+            "writers": writers,
             "relation": family["relation"] if family else SHAPE_VARIANT,
             "evidence": evidence,
         }
@@ -985,10 +1022,34 @@ def _grapheme_info(head: str) -> dict:
         "code_point": head, "char": row.char, "name": row.name, "script": str(row.script),
         "label": " = ".join(member["char"] for member in members),
         "members": members, "character_count": len(members),
+        "writers": [{"code_point": point, "char": to_char(point)} for point in (stated or {}).get("writers", [])],
         "relation": stated["relation"] if stated else "kana-family" if len(members) > 1 else "self",
         "evidence": stated["evidence"] if stated else [],
         "url": f"/layers/graphemes/{head}",
     }
+
+
+@cache
+def _written_by() -> dict[str, tuple[str, ...]]:
+    found: dict[str, list[str]] = {}
+    for head, family in _grapheme_families().items():
+        for point in family["writers"]:
+            found.setdefault(point, []).append(head)
+    return {point: tuple(sorted(heads, key=_point_order)) for point, heads in found.items()}
+
+
+def also_writes(code_point: str) -> tuple[str, ...]:
+    """The graphemes besides its own that a form writing several characters writes, by head: 后
+    writes 後 too, 闲 writes 閑 and 閒. A form that writes one character writes none."""
+    return _written_by().get(code_point, ())
+
+
+def curated_members(code_point: str) -> tuple[str, ...]:
+    """The characters graphemes.yaml states for the family of `code_point`, head first; none when
+    the family is not a curated one."""
+    head = grapheme(code_point)
+    family = _grapheme_families().get(head) if head else None
+    return tuple(to_char(point) for point in family["stated"]) if family else ()
 
 
 def grapheme_info(code_point: str) -> dict | None:

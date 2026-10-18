@@ -47,6 +47,18 @@
   const cluster = $derived(current?.items[active] ?? null)
   const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
     || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
+  // The list holds thousands of families; only the rows in view, and a few either side, are drawn.
+  // ROW is the height the stylesheet gives each row.
+  const ROW = 50, OVERSCAN = 10
+  let familyList = $state(null), listTop = $state(0), listHeight = $state(1000)
+  const rows = $derived.by(() => {
+    const from = Math.max(0, Math.floor(listTop / ROW) - OVERSCAN)
+    const to = Math.min(shown.length, Math.ceil((listTop + listHeight) / ROW) + OVERSCAN)
+    return { from, to, items: shown.slice(from, to) }
+  })
+  function refilter() { if (familyList) familyList.scrollTop = 0; listTop = 0 }
+  // A list scrolled before the page hydrated starts from where it was scrolled to.
+  $effect(() => { if (familyList) listTop = familyList.scrollTop })
   const byForm = $derived(new Map((current?.forms ?? []).map(f => [f.char, f])))
   // The forms a key or a click assigns: the encoded ones, then the descriptions already in use.
   const palette = $derived(paletteOf(current))
@@ -391,17 +403,19 @@
   {#if error}<p class="error-message">{error}</p>{/if}
   <div class="forms-layout">
     <aside class="family-list" aria-label={t('forms.families.label')}>
-      <input type="search" placeholder={t('forms.findFamily.placeholder')} bind:value={filter} aria-label={t('forms.findFamily.aria')} />
-      <ol aria-busy={!list.length && !error}>
+      <input type="search" placeholder={t('forms.findFamily.placeholder')} bind:value={filter} oninput={refilter} aria-label={t('forms.findFamily.aria')} />
+      <div class="family-scroll" bind:this={familyList} bind:clientHeight={listHeight} onscroll={event => listTop = event.currentTarget.scrollTop}>
+      <ol aria-busy={!list.length && !error} style:padding-top={`${rows.from * ROW}px`} style:padding-bottom={`${(shown.length - rows.to) * ROW}px`}>
         {#if !list.length && !error}{#each Array(12) as _, i (i)}<li class="family-skeleton" aria-hidden="true"><span class="shimmer"></span><span class="shimmer"></span></li>{/each}{/if}
-        {#each shown as f (f.code_point)}
-          <li><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
+        {#each rows.items as f, k (f.code_point)}
+          <li aria-posinset={rows.from + k + 1} aria-setsize={shown.length}><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
             <span class="family-char"><ScriptText text={f.char} /></span>
             <span class="family-meta"><span>{number(f.count)}</span><small>{t('forms.clusters.count', { count: f.clusters })}</small></span>
             <span class="family-progress" aria-label={t('forms.percentDone', { count: f.assigned + f.rejected ? Math.max(1, Math.round(100 * (f.assigned + f.rejected) / f.count)) : 0 })}><i style={`width:${100 * f.assigned / f.count}%`}></i><i class="rejected" style={`width:${100 * f.rejected / f.count}%`}></i></span>
           </button></li>
         {/each}
       </ol>
+      </div>
     </aside>
 
     {#if loadingFamily || (!current && !error)}
@@ -586,27 +600,28 @@
   .forms-layout{border-top:1px solid var(--line);padding-top:18px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
   .family-list{position:sticky;top:16px;max-height:calc(100dvh - 32px);display:flex;flex-direction:column;gap:10px}
   .family-list input{width:100%;font-size:13px;padding:9px 11px}
-  .family-list ol{list-style:none;margin:0;padding:0;overflow:auto;border-top:1px solid var(--line)}
-  .family-list button{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto 3px;gap:4px 10px;width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 6px;text-align:left}
+  .family-scroll{overflow:auto;border-top:1px solid var(--line)}.family-list ol{list-style:none;margin:0;padding:0}
+  .family-list li:not(.family-skeleton){height:50px}
+  .family-list button{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto 3px;align-content:center;gap:4px 10px;width:100%;height:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 6px;text-align:left}
   .family-list button.current{background:var(--accent-light)}
-  .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
+  .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans","Noto Serif Tangut",sans-serif}
   .family-meta{display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums}
   .family-meta small{font-size:10px;color:var(--muted)}
   .family-progress{display:flex;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}.family-progress i.rejected{background:var(--wrong);opacity:.55}
   .family-title{display:flex;align-items:baseline;gap:18px;border-bottom:1px solid var(--line);padding-bottom:12px}
   .family-link{color:inherit;text-decoration:none}.family-link:hover{color:var(--accent)}
-  .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
+  .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans","Noto Serif Tangut",sans-serif}
   .family-title p{font-size:12px;color:var(--muted)}
   .history-actions{margin-left:auto;display:flex;gap:4px}.history-actions button{font-size:11px;padding:6px 10px}.family-title strong{color:var(--ink);font-weight:500}
-  .form-palette{position:sticky;top:0;z-index:3;background:var(--overlay-page);backdrop-filter:blur(12px);padding:14px 0;border-bottom:1px solid var(--line)}
+  .form-palette{position:sticky;top:0;z-index:3;background:var(--overlay-page);padding:14px 0;border-bottom:1px solid var(--line)}
   .palette-target{font-size:12px;color:var(--muted);margin-bottom:10px}.palette-target strong{color:var(--ink);font-weight:500}
   .palette-forms{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch}
   .form-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:66px;padding:8px 8px 6px;background:var(--surface)}
   .form-choice:not(:disabled):hover{border-color:var(--accent);background:var(--accent-hover)}
-  .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans",sans-serif}
+  .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans","Noto Serif Tangut",sans-serif}
   .form-choice small{font-size:8px;color:var(--muted);font-family:"GenZui Sans",ui-monospace,monospace}
   .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:var(--faint);font-family:"GenZui Sans",ui-monospace,monospace}
-  .form-choice.described{justify-content:center;font-size:22px;line-height:1.2;padding:8px 12px;font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans",serif}
+  .form-choice.described{justify-content:center;font-size:22px;line-height:1.2;padding:8px 12px;font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
   .form-choice.form-compose{justify-content:center;font-size:12px;color:var(--muted);border-style:dashed}
   .form-choice.form-compose[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
   .palette-composer{margin-top:12px;max-width:560px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
@@ -618,12 +633,12 @@
   .form-cluster.picked{border-color:var(--accent);background:light-dark(#f3f1ff, rgb(156 146 255 / 10%))}
   .form-usage{list-style:none;margin:0;padding:12px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 28px}
   .form-usage li{display:grid;grid-template-columns:30px minmax(0,1fr) auto 3.2em;align-items:center;gap:10px;font-size:12px;font-variant-numeric:tabular-nums}
-  .usage-form{font-size:20px;line-height:1.2;text-align:center;font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans",sans-serif}
+  .usage-form{font-size:20px;line-height:1.2;text-align:center;font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans","Noto Serif Tangut",sans-serif}
   .usage-bar{height:8px;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:0 4px 4px 0}
   .usage-count{color:var(--ink)}.usage-share{color:var(--muted);text-align:right}
   .form-group{margin-top:22px}
   .form-group header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-  .group-form{font-size:26px;line-height:1.2;color:var(--accent);font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans",sans-serif}
+  .group-form{font-size:26px;line-height:1.2;color:var(--accent);font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans","Noto Serif Tangut",sans-serif}
   .group-source{font-size:13px;color:var(--muted)}.group-meta{font-size:11px;color:var(--muted);margin-left:auto}
   .form-group .cluster-issue{margin-left:0}
   .cluster-grid.compact{grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr));gap:0;border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
@@ -667,7 +682,7 @@
   .member-flag{position:absolute;top:3px;right:5px;font-size:12px;color:var(--wrong)}
   .correct-char{display:flex;gap:4px}.correct-char input{width:64px;padding:6px 8px;font-size:14px}.correct-char button{font-size:11px;padding:6px 9px}
   .member-year{position:absolute;bottom:3px;left:5px;font-size:9px;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none}
-  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans",system-ui,sans-serif}
+  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans","Noto Serif Tangut",system-ui,sans-serif}
   @media(max-width:900px){.forms-layout{grid-template-columns:1fr}.family-list{position:static;max-height:260px}.cluster-grid{grid-template-columns:1fr}}
   @media(max-width:700px){.forms{padding:16px 16px 40px}.form-choice{min-width:54px}.palette-other{flex-direction:row;margin-left:0;width:100%}}
 </style>

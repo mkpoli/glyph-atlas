@@ -1,6 +1,7 @@
+import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
-import { canonical, samePixels, literal, hira, single, validRound, categoryOf, describedCard, jamoCard, jamoSyllable,
-  encodeCursor, decodeCursor, historyItem, historyQuery, moved, substitutionKey } from './index';
+import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
+  encodeCursor, decodeCursor, historyItem, historyQuery, moved, substitutionKey, flagRequest, listingFilter } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';
 
@@ -228,5 +229,26 @@ describe('derived substitutions', () => {
     // U+FF1F sorts after a surrogate pair as UTF-16, before it as a code point.
     expect(substitutionKey('𠀀', '？')).toEqual(['？', '𠀀']);
     expect(substitutionKey('⿱口矢', '吴')).toEqual(['吴', '⿱口矢']);
+  });
+});
+
+describe('corpus flags', () => {
+  const glyph = { id: 'hl:a:1', character: '𛁈', realigned: '所', transcribed: 'シ' };
+  it('takes a finding and the glyphs it found in doubt', () => {
+    expect(flagRequest({ finding: 'box-relabel', glyphs: [glyph, { id: 'hl:a:2', character: 'と' }] })).toEqual({ finding: 'box-relabel',
+      glyphs: [glyph, { id: 'hl:a:2', character: 'と', realigned: null, transcribed: null }] });
+  });
+  it('refuses a request without a finding, a glyph twice, a glyph without its character, or too many glyphs', () => {
+    for (const input of [{ glyphs: [glyph] }, { finding: 'x', glyphs: [] }, { finding: 'x', glyphs: [glyph, glyph] },
+      { finding: 'x', glyphs: [{ id: 'hl:a:1' }] }, { finding: 'x', glyphs: Array.from({ length: 97 }, (_, i) => ({ id: `g${i}`, character: 'と' })) }])
+      expect(() => flagRequest(input)).toThrow();
+  });
+});
+
+describe('unread crops', () => {
+  it('are browsed and never dealt in a round', () => {
+    expect(listingFilter(true, 'all', null).where).toContain("character<>''");
+    expect(listingFilter(false, 'all', null).where).not.toContain("character<>''");
+    expect(listingFilter(false, 'all', null).where).toContain('+quiz=1');
   });
 });

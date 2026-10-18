@@ -20,7 +20,7 @@ import export_character_variants
 from cloudflare_schema import schema
 from PIL import Image
 
-from glyph_atlas import ngrams, refs, style, tone, withdrawn
+from glyph_atlas import images, ngrams, refs, style, tone, withdrawn
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.review import atlas, characters, collection, corpus_source, ledger
 from glyph_atlas.review.context_suggestions import context_guesses
@@ -169,20 +169,6 @@ def page_fields(page) -> dict:
     return {"page_number": page.seq + 1 if page else None, "page_index": page.seq if page else None}
 
 
-#: The tail of a IIIF Image API request (region, size, rotation, quality and format), which leaves the
-#: service it was made of.
-IIIF_REQUEST = re.compile(r"/(?:full|square|\d+,\d+,\d+,\d+|pct:[\d.,]+)/[^/]+/!?[\d.]+/(?:default|color|gray|bitonal|native)\.\w+$")
-
-
-def image_service(url: str | None) -> str | None:
-    """The IIIF image service a page's image is served by: the base of the request it names, or the
-    image itself when it names a service. None for an image no IIIF service serves."""
-    if not url:
-        return None
-    base = IIIF_REQUEST.sub("", url.removesuffix("/info.json"))
-    return base if base != url or "iiif" in url.lower() else None
-
-
 def page_record(page, doc, crops, previous, following) -> dict:
     """A page as the page view shows it (0078): its book, number and size in the page pixels boxes are
     given in, its IIIF image service, its credit, the pages before and after it that hold crops, and
@@ -190,7 +176,7 @@ def page_record(page, doc, crops, previous, following) -> dict:
     rights = doc.image_rights if doc else None
     return {"id": page.id, "document": page.document_id, "title": doc.title if doc else None,
             "page_number": page.seq + 1, "width": page.width, "height": page.height,
-            "service": image_service(page.image), "canvas": page.canvas,
+            "service": images.service_of(page.image or ""), "canvas": page.canvas,
             "holder": doc.holder if doc else None, "licence": str(rights.licence) if rights else None,
             "attribution": rights.attribution if rights else None, "rights_url": rights.evidence if rights else None,
             "previous": previous, "next": following, "crops": crops}
@@ -369,9 +355,7 @@ def export(dataset: Path, output: Path, *, resume=False):
             info["origin"] = refs.origin_of(row.code_point)
             info["candidates"] = characters.candidate_summary(row.char, live=live_counts.get(row.char),
                                                                local=counts.get(row.code_point, 0))
-            info["kind"] = ("ligature" if row.ligature else "han" if str(row.script) == "han"
-                            else "hangul" if str(row.script) == "hangul"
-                            else "gugyeol" if str(row.script) == "gugyeol" else "kana")
+            info["kind"] = characters.kind_of(row)
             info["default_scope"] = "grapheme" if info["candidates"].get("requires_family_scope") else info["default_scope"]
             detail = {**info, "alias": row.alias, "category": row.category,
                       "confusables": [characters.to_row(refs.character(cp)) for cp in row.confusables],

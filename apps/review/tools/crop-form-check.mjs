@@ -158,7 +158,8 @@ try {
   console.log('PASS a form written as a description is composed, checked and claimed')
 
   // A character the IVD registers several figures for offers each sequence among its variants, named
-  // by its MJ figure and drawn in MJ Figures: 所 as 所󠄂 (MJ012120) and 所󠄃 (MJ012119).
+  // by its MJ figure and drawn in MJ Figures: 所 as 所󠄂 (MJ012120) and 所󠄃 (MJ012119). Its regional
+  // shapes follow, named by their regions: ⿰戶斤 (GHTKPV) and ⿰戸斤 (J).
   // Another crop written as あ, one with an image to name, is renamed 所.
   const others = Object.entries(units(config.directory)).filter(([id, unit]) => unit.active && unit.unicode === 'U+3042' && id !== first && id !== second).map(([id]) => id)
   const [third, renamed] = await browser.evaluate(`(async () => {
@@ -176,14 +177,15 @@ try {
   await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
   const options = `[...document.querySelectorAll('dialog[open] .form-picker .form-section')].find(s => s.querySelector('.form-section-title').textContent === 'Variants')?.querySelectorAll('.form-option')`
   await browser.waitFor(`(${options})?.length > 1`, 20000)
-  const figures = await browser.evaluate(`[...${options}].slice(0, 2).map(o => o.title)`)
-  assert(figures[0] === 'U+6240 U+E0102\nMJ012120' && figures[1] === 'U+6240 U+E0103\nMJ012119', `the registered figures do not lead the variants: ${JSON.stringify(figures)}`)
+  const variants = await browser.evaluate(`[...${options}].map(o => o.title)`)
+  assert(variants[0] === 'U+6240 U+E0102\nMJ012120' && variants[1] === 'U+6240 U+E0103\nMJ012119', `the registered figures do not lead the variants: ${JSON.stringify(variants)}`)
+  assert(variants[2] === '⿰戶斤\nGHTKPV' && variants[3] === '⿰戸斤\nJ', `the regional shapes do not follow the figures: ${JSON.stringify(variants)}`)
   await browser.waitFor(`[...document.fonts].some(f => f.family.replaceAll('"', '') === 'MJ Figures' && f.status === 'loaded')`, 20000)
-  await browser.screenshot(join(screenshots, 'form-picker-figures-light.png'))
+  await browser.screenshot(join(screenshots, 'form-picker-variants-light.png'))
   await browser.setColorScheme('dark')
-  await browser.screenshot(join(screenshots, 'form-picker-figures-dark.png'))
+  await browser.screenshot(join(screenshots, 'form-picker-variants-dark.png'))
   await browser.setColorScheme('light')
-  console.log('PASS a character\'s registered figures lead its variants, drawn in MJ Figures')
+  console.log('PASS a character\'s registered figures, then its regional shapes, lead its variants')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop form')

@@ -67,7 +67,9 @@ function build(env: Env, origin: string) {
     },
     advanced: {
       ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
-      database: { generateId: () => crypto.randomUUID() },
+      // The auth tables come from the migrations. Checking them reads every table's columns once per
+      // isolate, which made schema checks the most frequent statement on the database.
+      database: { generateId: () => crypto.randomUUID(), validateSchema: false },
     },
     rateLimit: { enabled: true, storage: 'database', window: 60, max: 60, customRules: {
       // A code costs a mail; an address gets three a minute and a guess at a code ten.
@@ -86,8 +88,10 @@ function build(env: Env, origin: string) {
       user: {
         create: {
           // A sign-in that gives no name (a code by mail) is called `anon-…`; nobody new is named like
-          // an old reviewer id, since a new user holds none.
-          before: async user => ({ data: { ...user, name: user.name && !LEGACY_REVIEWER.test(user.name) ? user.name : generatedName() } }),
+          // an old reviewer id, since a new user holds none. A picture comes from a connected account
+          // or the avatar route, never from the body of a sign-in by mail.
+          before: async (user, ctx) => ({ data: { ...user, name: user.name && !LEGACY_REVIEWER.test(user.name) ? user.name : generatedName(),
+            ...(ctx?.path === '/sign-in/email-otp' ? { image: null } : {}) } }),
           // A user writes under their own id first.
           after: async user => {
             await env.DB.prepare("INSERT OR IGNORE INTO actors(actor,user_id,via,at) VALUES(?,?,'account',?)")
@@ -95,8 +99,11 @@ function build(env: Env, origin: string) {
           },
         },
         update: {
-          // A name shaped like an old reviewer id is only for the user who holds that id.
           before: async (user, ctx) => {
+            // A picture is chosen through `/api/account/avatar`, which checks where it comes from; one
+            // sent here could name any address, or another reader's upload.
+            if (ctx?.path === '/update-user' && user.image !== undefined) throw new APIError('BAD_REQUEST', { message: 'Choose a picture from the account page.' });
+            // A name shaped like an old reviewer id is only for the user who holds that id.
             if (typeof user.name !== 'string' || !LEGACY_REVIEWER.test(user.name)) return;
             const id = ctx?.context.session?.user.id;
             const held = id && await env.DB.prepare('SELECT 1 FROM actors WHERE actor=? AND user_id=?').bind(user.name, id).first();

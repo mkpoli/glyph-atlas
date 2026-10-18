@@ -33,11 +33,13 @@ def test_the_card_lists_written_variants_apart_from_related_characters(monkeypat
     assert first["sources"] == ["cjkvi-variants", "mj-shrink-map", "wikidata"]
     assert (first["count"], first["corpus_count"]) == (2, 3)
     assert {r["relation"] for r in card["related"][0]["relations"]} == {"borrowed"}
+    assert all(row["written"] for row in card["items"]) and not any(row["written"] for row in card["related"])
     assert card["sources"]["wikidata"].startswith("Wikidata, property P5475")
 
 
 def test_a_simplified_pair_is_kept_apart_from_the_widening():
     items, related = characters.variant_pairs("干")
+    assert all(row["written"] for row in related if row["char"] in "乾幹"), "a simplification is written, though apart"
     assert {"乾", "幹"} <= {row["char"] for row in related}, "four sources give them as simplifications"
     assert not {"乾", "幹"} & {row["char"] for row in items}
     items, _ = characters.variant_pairs("刻")
@@ -55,7 +57,7 @@ def test_the_graph_swaps_in_once_and_the_derived_rows_land_range_by_range(tmp_pa
     # The whole derived tier takes minutes; a few rows of it stand in, in parts of one or two rows.
     rows = (("寰", '[["⿱宂睘",[[["宀","宂"]]]]]'), ("還", '[["⿺廴睘",[[["廴","辶"]]]]]'),
             ("鬱", '[["⿳木缶⿰木鬯",[[["林","木"]]]]]'))
-    ids = (("寰", '["⿱宀睘"]'), ("還", '["⿺辶睘"]'))
+    ids = (("寰", '["⿱宀睘"]', '[{"text":"⿱宀睘","regions":"G"},{"text":"⿱宂睘","regions":"J"}]'), ("還", '["⿺辶睘"]', None))
     monkeypatch.setattr(export, "derived_rows", lambda: rows)
     monkeypatch.setattr(export, "ids_rows", lambda: ids)
     monkeypatch.setattr(export, "DERIVED_PART_BYTES", 60)
@@ -105,7 +107,7 @@ def test_the_graph_swaps_in_once_and_the_derived_rows_land_range_by_range(tmp_pa
     for path in [*parts[1:], *parts]:
         db.executescript(path.read_text(encoding="utf-8"))
     assert db.execute("SELECT a, forms FROM character_derived ORDER BY a").fetchall() == list(rows)
-    assert db.execute("SELECT char, sequences FROM han_ids ORDER BY char").fetchall() == list(ids)
+    assert db.execute("SELECT char, sequences, shapes FROM han_ids ORDER BY char").fetchall() == list(ids)
     assert db.execute("SELECT count(*) FROM character_derived").fetchone() == (len(rows),)
     assert db.execute("SELECT value FROM metadata WHERE key='units_refreshed_at'").fetchone() != version
     apply = export.APPLY.format(expected="{}")
@@ -157,3 +159,11 @@ def test_a_spelling_counted_under_two_readings_names_each():
     (pou,) = [entry for entry in word["spellings"] if entry["spelling"] == "抔"]
     assert {s["ruby"] for s in pou["sources"] if s["source"] == "honkoku-ruby"} == {"など", "なと"}
     assert all(s["ruby"] is None for s in pou["sources"] if s["source"] != "honkoku-ruby")
+
+
+def test_the_card_lists_the_graphemes_a_reduced_form_writes_and_the_forms_that_write_its_own(monkeypatch):
+    monkeypatch.setattr(characters.corpus_source, "counts", lambda chars: {})
+    assert characters.variant_card("后", {})["writes"] == [{"code_point": "U+5F8C", "char": "後"}]
+    assert characters.variant_card("後", {})["writers"] == [{"code_point": "U+540E", "char": "后"}]
+    card = characters.variant_card("时", {})
+    assert card["writes"] == [] and card["writers"] == []

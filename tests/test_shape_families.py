@@ -24,7 +24,14 @@ def grouped(variants, *, equivalents=(), figures=None, jis=(), curated=None, ide
     chars = {char for row in [*variants, *equivalents] for char in (row["a"], row["b"])}
     found = families(variants, equivalents, ideographs or chars, figures or {}, set(jis), curated,
                      familiarity={char: 2 for char in jis})
-    return {family.head: "".join(sorted(family.members)) for family in found}
+    return {family.head: "".join(sorted(family.members)) for family in found if len(family.members) > 1}
+
+
+def writers(variants, **options):
+    """The forms that write several characters, as {family head: sorted writers}."""
+    chars = {char for row in variants for char in (row["a"], row["b"])}
+    found = families(variants, (), options.get("ideographs") or chars, {}, set())
+    return {family.head: "".join(sorted(family.writers)) for family in found if family.writers}
 
 
 #: 還 and the figures the 戸籍統一文字 registers under it, as the MJ tables state them.
@@ -230,7 +237,7 @@ def test_a_simplified_form_that_writes_a_character_of_its_own_stays_apart():
     rows = [edge("後", "后", "simplified", "opencc", "STCharacters (also itself) | TSCharacters"),
             edge("後", "后", "simplified", "unihan", "後→后 kSimplifiedVariant")]
     assert grouped(rows) == {}
-    assert grouped([{**rows[0], "detail": "STCharacters | TSCharacters"}, rows[1]]) == {"后": "后後"}
+    assert grouped([{**rows[0], "detail": "STCharacters | TSCharacters"}, rows[1]]) == {"後": "后後"}
 
 
 def test_the_pass_joins_once_so_a_chain_does_not_carry_on():
@@ -243,7 +250,7 @@ def test_two_characters_of_one_standard_join_on_its_own_tradition_only():
     rows = [edge("菓", "果", "variant", "cjkvi-variants", "果→菓 dypytz/variant | 果→菓 hydzd/variant"),
             edge("菓", "果", "simplified", "cjkvi-variants", "菓→果 cjkvi/simplified")]
     assert grouped(rows, jis="菓果") == {}
-    assert grouped(rows) == {"果": "果菓"}, "outside the standards the claims are enough"
+    assert list(grouped(rows).values()) == ["果菓"], "outside the standards the claims are enough"
     rows = [edge("躰", "體", "variant", "cjkvi-variants", "體→躰 hydzd/variant | 體→躰 koseki/variant")]
     assert grouped(rows, jis="躰體") == {"躰": "躰體"}
     rows = [edge("龍", "竜", "shinjitai", "unihan", "竜→龍 kJapaneseOldVariant")]
@@ -265,3 +272,122 @@ def test_the_yixiezi_pass_never_joins_two_curated_families():
     rows = [edge("国", "学", "variant")]
     assert grouped(rows, curated={"国": ["国", "國"], "学": ["学", "學"]}) == {"国": "国國", "学": "学學"}
 
+
+def test_groups_joining_one_family_are_checked_against_each_other():
+    """踩 and 踹 are each tied to 跴 alone; both are GB 2312, so only the first joins."""
+    rows = [edge("踩", "跴", "variant"), edge("踹", "跴", "semantic", "unihan", "跴→踹 kSemanticVariant")]
+    found = families(rows, [], {"踩", "踹", "跴"}, {}, set(), gb2312={"踩", "踹"})
+    assert {"".join(sorted(family.members)) for family in found} == {"跴踩"}
+    rows = [edge("卥", "西", "variant"), edge("𠧧", "西", "variant"),
+            edge("卥", "𠧧", "non-cognate", "cjkvi-variants", "卥→𠧧 cjkvi/non-cognate")]
+    assert grouped(rows) == {"卥": "卥西"}
+
+
+def test_a_simplified_form_that_writes_itself_stays_apart_whatever_else_relates_it():
+    rows = [edge("衚", "胡", "simplified", "opencc", "STCharacters (also itself) | TSCharacters"),
+            edge("衚", "胡", "variant", "cjkvi-variants", "胡→衚 hydzd/variant")]
+    assert grouped(rows) == {}
+
+
+def test_two_curated_families_never_meet_through_a_family_both_join():
+    rows = [edge("乙", "丙", "variant"), edge("戊", "丙", "variant")]
+    found = grouped(rows, curated={"甲": ["甲", "乙"], "丁": ["丁", "戊"]})
+    assert found == {"丁": "丁丙戊", "甲": "乙甲"}
+
+
+def test_with_no_ranked_member_the_head_is_of_the_main_block():
+    """氯 is GB 2312; with no rank at all, 喎 of the main block heads over 㖞 of Extension A."""
+    rows = [edge("㲶", "氯", "z", "unihan", "z")]
+    assert [f.head for f in families(rows, [], {"㲶", "氯"}, {}, set(), familiarity={"氯": 6})] == ["氯"]
+    rows = [edge("㖞", "喎", "z", "unihan", "z")]
+    assert [f.head for f in families(rows, [], {"㖞", "喎"}, {}, set())] == ["喎"]
+
+
+def test_a_traditional_form_or_the_seiji_heads_over_a_simplification():
+    """墊 (CNS 11643 plane 1) heads over 垫 (GB 2312); 厲, the 正字 a reduction points at, over 厉."""
+    rows = [edge("墊", "垫", "simplified", "unihan", "墊→垫 kSimplifiedVariant")]
+    assert [f.head for f in families(rows, [], {"墊", "垫"}, {}, set(), familiarity={"墊": 4, "垫": 6})] == ["墊"]
+    rows = [reduction("厉", "厲", "MJ1")]
+    found = families(rows, [], {"厉", "厲"}, {"MJ1": "厉"}, set(), familiarity={"厉": 6})
+    assert [f.head for f in found] == ["厲"]
+    rows = [reduction("篙", "㰏", "MJ2")]
+    found = families(rows, [], {"篙", "㰏"}, {"MJ2": "篙"}, set(), familiarity={"篙": 6})
+    assert [f.head for f in found] == ["篙"], "a 正字 of an extension does not head a character a reader knows"
+    rows = [reduction("玨", "珏", "MJ3")]
+    found = families(rows, [], {"玨", "珏"}, {"MJ3": "玨"}, set(), familiarity={"玨": 4})
+    assert [f.head for f in found] == ["玨"], "a traditional standard's member heads over a 正字 it lacks"
+    rows = [edge("蕤", "甤", "compatibility", "unicode-ucd", "751D")]
+    found = families(rows, [], {"蕤", "甤"}, {}, set(), familiarity={"蕤": 6})
+    assert [f.head for f in found] == ["蕤"], "a decomposition target is no 正字 over a known member"
+    rows = [edge("璉", "琏", "simplified", "unihan", "璉→琏 kSimplifiedVariant"),
+            edge("\uf994", "璉", "compatibility", "unicode-ucd", "7489")]
+    found = families(rows, [], {"璉", "琏", "\uf994"}, {}, set(), familiarity={"琏": 6})
+    assert [f.head for f in found] == ["璉"], "a simplified form never heads its traditional form"
+    rows = [reduction("泜", "坻", "MJ4")]
+    found = families(rows, [], {"泜", "坻"}, {"MJ4": "泜"}, set(), familiarity={"泜": 4, "坻": 6})
+    assert [f.head for f in found] == ["坻"], "a 正字 a Chinese standard holds heads over a rarer form"
+    rows = [reduction("妤", "伃", "MJ5")]
+    found = families(rows, [], {"妤", "伃"}, {"MJ5": "妤"}, set(), familiarity={"妤": 4})
+    assert [f.head for f in found] == ["妤"], "an unranked 正字 yields to a standard's member"
+    rows = [edge("戇", "戆", "simplified", "unihan", "戇→戆 kSimplifiedVariant"), edge("戅", "戇", "z", "unihan", "z")]
+    found = families(rows, [], {"戇", "戆", "戅"}, {}, set())
+    assert [f.head for f in found] == ["戇"], "with nothing ranked, the form a simplification simplifies"
+    rows = [edge("垜", "垛", "simplified", "cjkvi-variants", "垜→垛 cjkvi/simplified")]
+    found = families(rows, [], {"垜", "垛"}, {}, set(), familiarity={"垛": 5})
+    assert [f.head for f in found] == ["垛"], "a CNS 11643 plane 2 character is no mere simplification"
+    rows = [reduction("靚", "靘", "MJ6"), edge("靚", "靓", "simplified", "unihan", "靚→靓 kSimplifiedVariant")]
+    found = families(rows, [], {"靚", "靘", "靓"}, {"MJ6": "靚"}, set(), familiarity={"靚": 4, "靘": 7, "靓": 6})
+    assert [f.head for f in found] == ["靚"], "a 正字 of CNS 11643 plane 2 does not head over plane 1"
+    rows = [edge("𥄨", "瞅", "simplified", "cjkvi-variants", "𥄨→瞅 cjkvi/simplified")]
+    found = families(rows, [], {"𥄨", "瞅"}, {}, set(), familiarity={"瞅": 5})
+    assert [f.head for f in found] == ["瞅"], "GB 2312 and CNS 11643 plane 2 both: Taiwan writes it too"
+    rows = [edge("睹", "覩", "simplified", "cjkvi-variants", "覩→睹 cjkvi/simplified")]
+    found = families(rows, [], {"睹", "覩"}, {}, set(), familiarity={"睹": 3, "覩": 3})
+    assert [f.head for f in found] == ["睹"], "a simplification does not decide between Japanese ranks"
+    rows = [edge("吕", "郘", "variant", "cjkvi-variants", "吕→郘 hydzd/variant")]
+    found = families(rows, [], {"吕", "郘"}, {}, set(), familiarity={"吕": 6, "郘": 7})
+    assert [f.head for f in found] == ["吕"], "GB 2312 heads over CNS 11643 plane 2 alone"
+
+
+
+def test_a_reduced_form_of_two_characters_writes_each():
+    """闲 writes 閑 and 閒; each family lists it, and neither full form writes 闲."""
+    rows = [edge("閑", "闲", "simplified", "opencc", "TSCharacters"),
+            edge("閒", "闲", "simplified", "opencc", "TSCharacters")]
+    assert writers(rows) == {"閑": "闲", "閒": "闲"}
+    assert writers(rows[:1]) == {}, "a reduced form of one character is in its family"
+
+
+def test_a_simplified_form_that_also_writes_itself_writes_the_full_form():
+    """后 is its own character and 後's simplified form, and 後's loan in one table."""
+    rows = [edge("後", "后", "simplified", "opencc", "STCharacters (also itself) | TSCharacters"),
+            edge("後", "后", "borrowed", "cjkvi-variants", "後→后 hydcd/borrowed 5298")]
+    assert writers(rows) == {"後": "后"}
+    assert writers([{**rows[0], "detail": "STCharacters | TSCharacters"}]) == {}
+
+
+def test_a_plain_variant_of_two_characters_or_a_homograph_writes_neither():
+    """A variant row does not say which form is reduced; a non-cognate homograph writes nothing."""
+    assert writers([edge("寸", "時", "variant"), edge("寸", "算", "variant")]) == {}
+    rows = [edge("閑", "闲", "simplified", "opencc", "TSCharacters"),
+            edge("閒", "闲", "simplified", "opencc", "TSCharacters"), edge("閒", "闲", "non-cognate")]
+    assert writers(rows) == {}, "闲 is left writing 閑 alone"
+    rows[2:] = [edge("閧", "闲", "simplified", "opencc", "TSCharacters"), edge("𮳣", "闲", "spoofing"),
+                edge("閒", "𮳣", "z")]
+    assert writers(rows) == {"閑": "闲", "閧": "闲"}, "nor a family holding its look-alike"
+
+
+def test_a_reduced_form_inside_one_family_still_writes_another():
+    """当 is in the family of 當 and also the simplified 噹."""
+    rows = [edge("當", "当", "simplified", "unihan", "當→当 kSimplifiedVariant"),
+            edge("噹", "当", "simplified", "unihan", "噹→当 kSimplifiedVariant")]
+    assert writers([edge("當", "当", "z"), *rows]) == {"噹": "当"}
+
+
+def test_the_site_lists_the_forms_that_write_several_characters():
+    writes = {char: "".join(refs.to_char(head) for head in refs.also_writes(refs.to_code_point(char)))
+              for char in "后弁闲时当"}
+    assert writes == {"后": "後", "弁": "瓣辦辨辮辯", "闲": "閑閒", "时": "", "当": "噹"}
+    family = refs.grapheme_info(refs.to_code_point("後"))
+    assert [w["char"] for w in family["writers"]] == ["后"]
+    assert "后" not in family["label"], "a writer is not a member"

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { categoryOf } from '../src/category.ts'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 
 const bundleDir = await mkdtemp(join(tmpdir(), 'atlas-worker-'))
@@ -108,9 +109,17 @@ try {
   // The gallery deals copies of the published records; one copied from a pack a later publication
   // replaced no longer matches its row, and is not dealt.
   const stale = { ...corpus, id: 'codh:stale', label: '古' }
-  await db.batch([db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind(corpus.id, 1, 'fixture', 0, raw),
+  await db.batch([db.prepare('INSERT INTO corpus_gallery(id,shuffle,object,offset,data,category) VALUES(?,?,?,?,?,?)').bind(corpus.id, 1, 'fixture', 0, raw, 'kanji'),
     db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(stale.id, null, 'U+53E4', null, 2, 'newer-pack', 0, 10, 'unknown', 0),
-    db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind(stale.id, 2, 'older-pack', 0, JSON.stringify(stale))])
+    db.prepare('INSERT INTO corpus_gallery(id,shuffle,object,offset,data,category) VALUES(?,?,?,?,?,?)').bind(stale.id, 2, 'older-pack', 0, JSON.stringify(stale), 'kanji')])
+  // A script the corpus holds few glyphs of is copied whole: its copies above the homepage's sample
+  // range are dealt to its own group alone.
+  const hangulGlyph = { ...corpus, id: 'eo:hangul', label: '그', source_label: '그', grapheme: 'U+ADF8', visual_group: null }
+  const hangulRaw = JSON.stringify(hangulGlyph)
+  await bucket.put('hangul-pack', hangulRaw)
+  await db.batch([db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(hangulGlyph.id, '그', 'U+ADF8', null, 5000000, 'hangul-pack', 0, new TextEncoder().encode(hangulRaw).length, 'unknown', 0),
+    db.prepare('INSERT INTO corpus_gallery(id,shuffle,object,offset,data,category) VALUES(?,?,?,?,?,?)').bind(hangulGlyph.id, 5000000, 'hangul-pack', 0, hangulRaw, 'hangul'),
+    db.prepare("INSERT INTO corpus_characters VALUES('그','unknown',1,0)")])
   // Miniflare hands the Worker its own loopback address, so the page origin a browser would send is
   // that address; a fixed `http://localhost` fails the Worker's same-origin check on every POST.
   const base = new URL(await mf.ready).origin
@@ -135,6 +144,12 @@ try {
     assert.equal(response.status, status, path + ' ' + JSON.stringify(json))
     return json
   }
+  // A picture is set through the account's avatar route only; the auth API takes a name and refuses a picture.
+  const profile = async body => (await mf.dispatchFetch(base + '/api/auth/update-user', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: base, cookie: (await user('integration')).cookie }, body: JSON.stringify(body) })).status
+  assert.equal(await profile({ image: 'https://example.org/tracker.png' }), 400, 'a picture address sent to the auth API is refused')
+  assert.equal(await profile({ name: 'Integration' }), 200, 'a name is taken')
+  assert.equal((await db.prepare('SELECT image FROM "user" WHERE id=?').bind((await user('integration')).id).first()).image, null, 'and the picture is left alone')
   const decision = { id: 'one', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'merged', correction: 'アイ' }
   const round = { id: crypto.randomUUID(), grapheme: 'U+3042', answers: [decision] }
   assert.deepEqual(await call('/atlas/rounds', round, 401, null), { detail: 'Sign in to save.' }, 'an anonymous save is refused')
@@ -170,6 +185,11 @@ try {
   const galleried = (await call('/layers/gallery')).items
   assert.equal(galleried[0].label, '假', 'gallery uses current reviews')
   assert.ok(!galleried.some(item => item.id === stale.id), 'a copy of a replaced record is not dealt')
+  assert.ok(!galleried.some(item => item.id === hangulGlyph.id), 'the homepage deals only the sample range')
+  assert.deepEqual((await call('/layers/gallery?group=hangul&seed=7')).items.map(item => item.id), [hangulGlyph.id], 'a script group deals its whole copies')
+  assert.deepEqual((await call('/layers/gallery?group=kanji')).items.map(item => item.id), [corpus.id], 'a group deals none of another script')
+  assert.deepEqual((await call('/layers/gallery?group=kanji&seed=200000000')).items.map(item => item.id), [corpus.id], 'a sampled group seeds within the sample')
+  await call('/layers/gallery?group=latin', undefined, 400)
   const exported = await call('/atlas/reviews.json')
   assert.equal(exported.reviews.filter(r => r.current).length, 1)
   assert.equal(exported.reviews.find(r => r.origin === 'corpus').source_update.proposed_character, '假')
@@ -414,6 +434,26 @@ try {
   const doubted = Object.fromEntries((await roundOf('&seed=0')).items.map(i => [i.id, i.suspect]))
   assert.deepEqual(doubted['na-3'], { p: 0.02, reads_as: null }, 'a corpus glyph carries its mark as well')
   assert.equal(doubted['na-1'], null, 'a mark made for another box does not hold')
+  // An irregular crop nobody has decided waits in Needs fixing, after the flagged ones, while it keeps the
+  // label and box that were measured; `irregular=hide` leaves it out and still counts it.
+  await db.batch([db.prepare('INSERT INTO unit_irregular VALUES(?,?,?,?,?,?,?)').bind('na-local-a', 'ナ', 1, 2, 3, 4, -6.5),
+    db.prepare('INSERT INTO unit_irregular VALUES(?,?,?,?,?,?,?)').bind('na-local-b', 'ナ', 1, 2, 3, 9, 7),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','irregular')")])
+  const fixing = async (shown = '') => call('/atlas?state=attention&character=%E3%83%8A' + shown)
+  const unusual = await fixing()
+  assert.deepEqual(unusual.items.map(i => [i.id, i.irregular]), [['na-local-a', { shape: -6.5 }]], 'a mark made for another box does not hold')
+  assert.equal(unusual.irregular_count, 1)
+  assert.equal(unusual.categories.find(c => c.label === 'ナ')?.irregular, 1, 'the character list counts it')
+  // A withheld crop waits in Needs fixing, which a round's filter leaves out: each keeps its own counts.
+  await db.batch([db.prepare("UPDATE units SET quiz=0 WHERE id='na-local-a'"),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','irregular-withheld')")])
+  await call('/atlas?state=attention&purpose=review&production=all')
+  assert.equal((await fixing()).categories.find(c => c.label === 'ナ')?.irregular, 1, 'a round keeps its own counts')
+  await db.batch([db.prepare("UPDATE units SET quiz=1 WHERE id='na-local-a'"),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','irregular')")])
+  const hidden = await fixing('&irregular=hide')
+  assert.deepEqual([hidden.items.length, hidden.irregular_count], [0, 1], 'irregular=hide leaves it out and counts it')
+  await db.prepare('DELETE FROM unit_irregular').run()
   const paged = []
   for (let offset = 0; offset < 7; offset += 3) paged.push(...await ids(`&seed=0&limit=3&offset=${offset}`))
   assert.deepEqual(paged, dealtNa, 'paging runs on from the local crops into the corpus glyphs')
@@ -441,6 +481,10 @@ try {
   const category = async (as = null) => (await call('/atlas?purpose=review&limit=1', undefined, 200, as)).categories.find(c => c.label === 'ナ')
   assert.deepEqual(await category(), { label: 'ナ', grapheme: 'U+30CA', total: 7, pending: 7, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 }, 'counts include corpus glyphs')
   assert.equal((await call('/atlas?purpose=review&limit=1&production=all')).categories.find(c => c.label === 'ナ').pending, 8)
+  // A round choosing its character asks for the counts alone; they match a listing's, with nothing listed.
+  const countsOnly = await call('/atlas?purpose=review&limit=0&production=all', undefined, 200, 'alice')
+  const listedToo = await call('/atlas?purpose=review&limit=1&production=all', undefined, 200, 'alice')
+  assert.deepEqual([countsOnly.categories, countsOnly.counts, countsOnly.items, countsOnly.total], [listedToo.categories, listedToo.counts, [], null], 'counts alone match a listing\'s')
   const na = Object.fromEntries((await roundOf('&seed=0')).items.map(i => [i.id, i]))
   const cropRound = { id: crypto.randomUUID(), grapheme: 'U+30CA',
     answers: [{ id: 'na-2', revision: 0, source_revision: na['na-2'].source_revision, verdict: 'wrong', issue: 'crop' }],
@@ -650,9 +694,13 @@ try {
   assert.ok(!derivedCard.variants.items.some(v => v.char === '𠈌') && !derivedCard.variants.related.some(v => v.char === '𠈌'), 'a derived form is in no attested tier')
   // The IDS editor's start: 仮's descriptions by key, and the substitutes of each component, most
   // contexts first, read by key on either side of a substitution.
-  await db.batch([db.prepare(`INSERT INTO han_ids VALUES('仮','["⿰亻反"]')`)])
+  // 所's regional shapes come with it; a character with one shape has none.
+  await db.batch([db.prepare(`INSERT INTO han_ids VALUES('仮','["⿰亻反"]',NULL)`),
+    db.prepare(`INSERT INTO han_ids VALUES('所','["⿰戶斤","⿰戸斤"]','[{"text":"⿰戶斤","regions":"GHTKPV"},{"text":"⿰戸斤","regions":"J"}]')`)])
   const structure = await call('/layers/structure?c=%E4%BB%AE')
   assert.deepEqual(structure.sequences, ['⿰亻反'])
+  assert.deepEqual(structure.shapes, [])
+  assert.deepEqual((await call('/layers/structure?c=%E6%89%80')).shapes, [{ text: '⿰戶斤', regions: 'GHTKPV' }, { text: '⿰戸斤', regions: 'J' }])
   assert.deepEqual(structure.substitutes['反'], [{ char: '𠬝', count: 3 }])
   assert.deepEqual(structure.substitutes['亻'], [{ char: '彳', count: 1 }])
   assert.deepEqual((await call('/layers/structure?c=%E5%81%87')).sequences, [], 'a character with no row has no description')
@@ -854,6 +902,11 @@ try {
   const attentionPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE +origin='local' AND ${worker.attentionCandidatesQuery()}`, values: [] }, [])
   assert.ok(attentionPlan.some(d => /SEARCH units USING (COVERING )?INDEX unit_state \(origin=\? AND state=\?\)/.test(d)), attentionPlan.join('; '))
   assert.ok(!attentionPlan.some(d => /^SCAN units\b/.test(d)), attentionPlan.join('; '))
+  // With the irregular crops, the marks are read once and each crop looked up by id.
+  const irregularPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE +origin='local' AND ${worker.attentionCandidatesQuery(true)}`, values: [] }, [])
+  assert.ok(!irregularPlan.some(d => /^SCAN units\b/.test(d)), irregularPlan.join('; '))
+  const irregularFacetsPlan = await plan({ sql: worker.irregularFacetsQuery("origin='local'"), values: [] }, [])
+  assert.ok(irregularFacetsPlan.some(d => /^SEARCH units USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), irregularFacetsPlan.join('; '))
   // A document's characters are read along the table's own key, and each unit by its id.
   const documentPlan = await plan({ sql: worker.documentCharactersQuery(), values: [] }, ['hk:doc'])
   served(documentPlan, null)
@@ -1427,7 +1480,7 @@ try {
     if (c >= 0xD800 && c <= 0xDFFF) continue
     const sql = within(kana, c) ? 'kana' : within(han, c) ? 'kanji' : within(hangul, c) ? 'hangul'
       : within(gugyeolRange, c) ? 'gugyeol' : 'other'
-    if (worker.categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${worker.categoryOf(String.fromCodePoint(c))} vs ${sql}`)
+    if (categoryOf(String.fromCodePoint(c)) !== sql) assert.fail(`U+${c.toString(16)}: ${categoryOf(String.fromCodePoint(c))} vs ${sql}`)
   }
   // A context widened in place survives a review and its undo.
   const framed = { id: 'framed', label: 'カ', state: 'pending', revision: 0, image_sha256: hash, production: 'handwritten',
@@ -1489,7 +1542,7 @@ try {
   const plain = JSON.stringify({ ...corpus, id: 'codh:plain' })
   await bucket.put('plain', plain)
   await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind('codh:plain', '假', 'U+4EEE', null, 2, 'plain', 0, new TextEncoder().encode(plain).length, 'unknown', 0).run()
-  await db.prepare('INSERT INTO corpus_gallery VALUES(?,?,?,?,?)').bind('codh:plain', 2, 'plain', 0, plain).run()
+  await db.prepare('INSERT INTO corpus_gallery(id,shuffle,object,offset,data,category) VALUES(?,?,?,?,?,?)').bind('codh:plain', 2, 'plain', 0, plain, 'kanji').run()
   // Published as a corpus publication publishes it: counted, and the count stamped.
   await db.batch([db.prepare("INSERT INTO corpus_characters VALUES('假','unknown',1,0) ON CONFLICT DO UPDATE SET n=n+1"),
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('corpus_counts_at','\"forms-fixture\"')")])
@@ -1507,6 +1560,10 @@ try {
   }
   await counted()
   assert.equal((await call('/atlas/forms/families')).items[0].code_point, 'U+4EEE')
+  // A page links a character to its forms from the code points alone.
+  const codes = await mf.dispatchFetch(base + '/atlas/forms/codes')
+  assert.deepEqual([(await codes.json()).items, codes.headers.get('cache-control')],
+    [(await call('/atlas/forms/families')).items.map(f => f.code_point).sort(), 'public, max-age=300'], 'the codes are the families\' code points')
   await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: 'あ' }, 422)
   const named = await call('/atlas/forms/decisions', { kind: 'cluster', cluster: 'U+4EEE:c1', form: '仮' })
   assert.equal(named.count, 2)
@@ -1519,6 +1576,11 @@ try {
   const leastTypical = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.leastTypicalQuery()).bind('U+4EEE').all()).results.map(r => r.detail)
   assert.ok(leastTypical.some(d => /SEARCH form_units USING INDEX form_unit_cluster \(cluster=\? AND rank>\?\)/.test(d)), leastTypical.join('; '))
   assert.ok(!leastTypical.some(d => /^SCAN|TEMP B-TREE/.test(d)), leastTypical.join('; '))
+  // A script group's gallery page is one stretch of its category's index, as the homepage's is of shuffle.
+  for (const grouped of [false, true]) {
+    const plan = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.gallerySampleQuery('>=', grouped)).bind(...(grouped ? ['hangul'] : []), 0, 60).all()).results.map(r => r.detail)
+    assert.ok(plan.some(d => (grouped ? /corpus_gallery_category \(category=\? AND shuffle>\?\)/ : /corpus_gallery_order \(shuffle>\? AND shuffle<\?\)/).test(d)), plan.join('; '))
+  }
   assert.equal((await db.prepare("SELECT character FROM corpus_units WHERE id='codh:plain'").first()).character, '仮')
   await counted()
   assert.equal((await call('/atlas/corpus/character?id=codh%3Aplain')).identity_basis, 'form_cluster')
@@ -1618,7 +1680,9 @@ try {
   const vettedRound = { id: crypto.randomUUID(), grapheme: 'U+30AD',
     answers: [{ id: 'vetted', revision: 0, image_sha256: hash, verdict: 'wrong', issue: 'blank' }] }
   await call('/atlas/rounds', vettedRound)
-  await db.prepare(`UPDATE units SET data=json_set(data,'$.repair',json('{"status":"uncertain","quiz":false}')), quiz=0 WHERE id='vetted' AND revision=1`).run()
+  // A refresh writes the new verdict in place and stamps the catalogue, as `refresh_published_units.py` does.
+  await db.batch([db.prepare(`UPDATE units SET data=json_set(data,'$.repair',json('{"status":"uncertain","quiz":false}')), quiz=0 WHERE id='vetted' AND revision=1`),
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('units_refreshed_at','vetted')")])
   await call(`/atlas/rounds/${vettedRound.id}/undo`, {})
   const vettedRow = await db.prepare("SELECT quiz, json_extract(data,'$.repair.quiz') AS dealt, json_extract(data,'$.state') AS state FROM units WHERE id='vetted'").first()
   assert.deepEqual(vettedRow, { quiz: 0, dealt: 0, state: 'pending' }, 'undo restores the review state and keeps the newer repair verdict out of the quiz')
@@ -2070,6 +2134,52 @@ try {
     assert.deepEqual(await db.prepare("SELECT character,family FROM units WHERE id='ba-1'").first(), { character: ha, family: 'U+3070' },
       'a crop marked as a sequence member stays filed under its grapheme')
   }
+  // An admin sends corpus glyphs a check found in doubt to the Flagged view: each gets its `units` row,
+  // flagged, with the finding beside the record; a glyph already named, one whose character moved since
+  // the check, one this site may not show and one not published are left out, and a retry writes nothing.
+  {
+    const flagGlyphs = [glyph('doubt-a', { label: '𛁈', char: '𛁈', written_character: '𛁈' }), glyph('doubt-moved', { label: '𛁈', char: '𛁈', written_character: '𛁈' }),
+      glyph('doubt-private', { label: '𛁈', char: '𛁈', written_character: '𛁈', proxyable: false })]
+    let pack = ''
+    for (const record of flagGlyphs) {
+      const bytes = JSON.stringify(record), offset = new TextEncoder().encode(pack).length
+      pack += bytes
+      await db.prepare(`INSERT INTO corpus_units(${CORPUS_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(record.id, '𛁈', 'U+3057', null, 7,
+        'pack-doubt', offset, new TextEncoder().encode(bytes).length, 'handwritten', 0).run()
+    }
+    await bucket.put('pack-doubt', pack)
+    await db.prepare("INSERT INTO corpus_characters VALUES('𛁈','handwritten',3,0)").run()
+    const sent = { finding: 'box-relabel', glyphs: [
+      { id: 'doubt-a', character: '𛁈', realigned: '所', transcribed: 'シ' },
+      { id: 'doubt-moved', character: 'し', realigned: null, transcribed: 'し' },
+      { id: 'doubt-private', character: '𛁈', realigned: null, transcribed: 'シ' },
+      { id: 'nu-shown', character: 'ヌ', realigned: null, transcribed: 'ヌ' },
+      { id: 'doubt-unpublished', character: '𛁈', realigned: null, transcribed: null }] }
+    await call('/api/admin/corpus-flags', sent, 403, 'bob')
+    await call('/api/admin/corpus-flags', { ...sent, glyphs: [sent.glyphs[0], sent.glyphs[0]] }, 422, 'judge')
+    const flagged = await call('/api/admin/corpus-flags', sent, 200, 'judge')
+    assert.deepEqual({ ...flagged, rows_written: undefined }, { flagged: ['doubt-a'], held: ['nu-shown'], changed: ['doubt-moved'],
+      unshowable: ['doubt-private'], missing: ['doubt-unpublished'], rows_written: undefined })
+    assert.ok(flagged.rows_written > 0)
+    const row = await db.prepare("SELECT origin,character,state,revision,priority,data,snapshot FROM units WHERE id='doubt-a'").first()
+    const data = JSON.parse(row.data)
+    assert.deepEqual([row.origin, row.character, row.state, row.revision, data.state, data.issue, data.revision, JSON.parse(row.snapshot).state],
+      ['corpus', '𛁈', 'flagged', 1, 'flagged', 'character', 1, 'pending'], 'the glyph is flagged; its snapshot is the published record')
+    assert.deepEqual({ ...data.flag, at: undefined }, { finding: 'box-relabel', realigned: '所', transcribed: 'シ', at: undefined })
+    assert.equal(await db.prepare("SELECT count(*) AS n FROM events WHERE target='doubt-a'").first('n'), 0, 'a finding is no review')
+    assert.deepEqual(await db.prepare("SELECT n,named FROM corpus_characters WHERE character='𛁈'").first(), { n: 3, named: 1 },
+      'a flagged glyph leaves the untouched glyphs a round deals')
+    assert.ok((await call('/atlas/corpus/reviews')).items.some(item => item.id === 'doubt-a'), 'it waits in the Flagged view')
+    const again = await call('/api/admin/corpus-flags', sent, 200, 'judge')
+    assert.deepEqual([again.flagged, again.held, again.rows_written], [[], ['doubt-a', 'nu-shown'], 0], 'sent again, it writes nothing')
+    const queue = (await db.prepare('EXPLAIN QUERY PLAN ' + worker.flaggedCorpusQuery()).all()).results.map(r => r.detail)
+    assert.ok(queue.some(d => /USING (COVERING )?INDEX unit_state/.test(d)) && !queue.some(d => /TEMP B-TREE/.test(d)), queue.join('; '))
+    // A person settles it, and it leaves the queue.
+    const settled = await call('/atlas/corpus/reviews', { id: crypto.randomUUID(), identity: 'doubt-a', source_revision: data.source_revision,
+      revision: 1, verdict: 'match' }, 200, 'bob')
+    assert.equal(settled.state, 'checked')
+    assert.ok(!(await call('/atlas/corpus/reviews')).items.some(item => item.id === 'doubt-a'), 'a settled glyph leaves the Flagged view')
+  }
   // One address is held to a number of claims a minute (CLAIMS, 100). The minute can turn while they are
   // sent, which starts the count again, so up to two and a half minutes' worth are sent: one minute then
   // holds more than its limit whichever claim it turns at.
@@ -2086,7 +2196,7 @@ try {
     rateLimited = response.status === 429
   }
   assert.ok(rateLimited, 'batches are rate-rateLimited per address')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, redrawn boxes, crop versions, the assertion ledger, crop forms.')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, redrawn boxes, crop versions, the assertion ledger, crop forms, corpus flags.')
 } finally {
   await mf.dispose()
   await rm(bundleDir, { recursive: true, force: true })

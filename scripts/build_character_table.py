@@ -39,7 +39,7 @@ Sources, all from one Unicode release:
 
 Which code points are included: every character of every kana block that Unicode assigns, the CJK
 Unified Ideographs and their extensions, the Hangul jamo and syllable blocks, the 구결자 of
-`gugyeol.tsv`, and always the code points `graphemes.yaml` names, so a grapheme is never a dangling reference. Kana and Hangul outside
+`gugyeol.tsv`, the Tangut ideographs, and always the code points `graphemes.yaml` names, so a grapheme is never a dangling reference. Kana and Hangul outside
 those blocks, which is to say the letters on the Enclosed CJK Letters and Months chart (㋕, ㉠ and
 the like) and the halfwidth jamo, are not text characters and are left out.
 
@@ -116,6 +116,10 @@ BLOCKS = (
     "Hangul Jamo Extended-A",
     "Hangul Syllables",
     "Hangul Jamo Extended-B",
+    # Tangut, written in the Western Xia books of the 11th to 13th centuries. The component blocks
+    # hold the parts dictionaries analyse a character into, which no text writes on their own.
+    "Tangut",
+    "Tangut Supplement",
 )
 
 #: The name Unicode gives the ideographs of a CJK block, as a format over the hex code point.
@@ -127,6 +131,10 @@ CJK_NAME = "CJK UNIFIED IDEOGRAPH-{point}"
 
 #: The blocks whose characters are named after their own code point.
 CJK_NAME_BLOCKS = frozenset(name for name in BLOCKS if name.startswith("CJK Unified Ideographs"))
+
+#: The Tangut ideographs are named after their code point the same way, under their own prefix.
+TANGUT_NAME = "TANGUT IDEOGRAPH-{point}"
+TANGUT_NAME_BLOCKS = frozenset(("Tangut", "Tangut Supplement"))
 
 #: The constants of the Hangul syllable name derivation in chapter 3.12 of the Unicode Standard: the
 #: first syllable, the first leading consonant, vowel and trailing consonant (one before the first,
@@ -569,19 +577,30 @@ def read_table(path: Path) -> list[dict[str, str]]:
 def familiarity(ucd: Path) -> dict[str, int]:
     """How well a Japanese reader knows each ideograph, lowest first: 0 a 常用漢字 (Unihan
     `kJoyoKanji` 2010), 1 a 人名用漢字 (`kJinmeiyoKanji`), 2 JIS X 0208 level 1 (rows 16-47),
-    3 level 2."""
+    3 level 2; then the ones a reader of Chinese knows: 4 CNS 11643 plane 1, 5 GB 2312 and CNS
+    11643 plane 2 both, 6 GB 2312 alone, 7 CNS 11643 plane 2 alone."""
     with zipfile.ZipFile(ucd / "Unihan.zip") as archive:
         mappings = archive.read("Unihan_OtherMappings.txt").decode("utf-8")
         sources = archive.read("Unihan_IRGSources.txt").decode("utf-8")
     found: dict[str, int] = {}
+    chinese: dict[str, set[str]] = {}
 
     def rank(char: str, value: int) -> None:
         found[char] = min(value, found.get(char, value))
 
     for line in sources.splitlines():
         cells = line.split("\t")
-        if len(cells) == 3 and cells[1] == "kIRG_JSource" and cells[2].startswith("J0-"):
-            rank(chr(int(cells[0].removeprefix("U+"), 16)), 2 if int(cells[2][3:5], 16) - 0x20 <= 47 else 3)
+        if len(cells) != 3:
+            continue
+        char = chr(int(cells[0].removeprefix("U+"), 16))
+        if cells[1] == "kIRG_JSource" and cells[2].startswith("J0-"):
+            rank(char, 2 if int(cells[2][3:5], 16) - 0x20 <= 47 else 3)
+        elif cells[1] == "kIRG_TSource" and cells[2].startswith(("T1-", "T2-")):
+            chinese.setdefault(char, set()).add(cells[2][:2])
+        elif cells[1] == "kIRG_GSource" and cells[2].startswith("G0-"):
+            chinese.setdefault(char, set()).add("G0")
+    for char, held in chinese.items():
+        rank(char, 4 if "T1" in held else 5 if held == {"G0", "T2"} else 6 if "G0" in held else 7)
     for line in mappings.splitlines():
         cells = line.split("\t")
         if len(cells) != 3:
@@ -713,6 +732,8 @@ def _stated_characters(
             # A CJK block has holes in it: code points the block reserves and Unicode has not
             # assigned. Only the ones inside a First/Last range are characters.
             return CJK_NAME.format(point=f"{point:04X}")
+        if block in TANGUT_NAME_BLOCKS and value_of(ranges, point) is not None:
+            return TANGUT_NAME.format(point=f"{point:04X}")
         if block == HANGUL_SYLLABLES_BLOCK and value_of(ranges, point) is not None:
             return hangul_syllable_name(point, jamo)
         return None
@@ -1153,8 +1174,9 @@ def write_families(families: list[shape_families.Family], target: Path, vocab: P
     The counts describe the rows below: a curated family no edge joins (two 新旧字体 pairs) is
     part of the build but carries no row here, so it is not counted.
     """
-    rows = [(family, edge) for family in families for edge in family.edges]
-    emitted = [family for family in families if family.edges]
+    rows = [(family, edge) for family in families
+            for edge in [*family.edges, *(edge for _, edges in sorted(family.writers.items()) for edge in edges)]]
+    emitted = [family for family in families if family.edges or family.writers]
     used = sorted({edge.source for _, edge in rows} | {"unihan"})
     lines = [
         "# Kanji grapheme families: the edges that join each family; see src/glyph_atlas/shape_families.py.",
@@ -1179,10 +1201,12 @@ def write_families(families: list[shape_families.Family], target: Path, vocab: P
         (f"#   unihan: Unihan_IRGSources.txt kIRG_JSource J0 (JIS X 0208) of Unicode {RELEASE}, "
          "for the representative and for which reductions need a second source"),
         ("# role: merge joins a and b; corroborates is the second source a reduction between two "
-         "JIS X 0208 characters needs."),
+         "JIS X 0208 characters needs; writes says the end outside the family, a form that writes "
+         "several characters, writes this one too."),
         "# columns: " + ", ".join(FAMILY_FIELDS),
         (f"# families: {len(emitted)} ({sum(1 for family in emitted if family.curated)} curated), "
-         f"characters: {sum(len(family.members) for family in emitted)}, rows: {len(rows)}"),
+         f"characters: {sum(len(family.members) for family in emitted)}, "
+         f"writers: {sum(len(family.writers) for family in emitted)}, rows: {len(rows)}"),
         "\t".join(FAMILY_FIELDS),
     ]
     lines += ["\t".join((code_point(ord(family.head)), edge.a, edge.b, edge.relation, edge.source,

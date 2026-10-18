@@ -6,7 +6,7 @@ import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
 import { formsFor, setForm, withForms } from './cropForms';
-import { formProblem, isSequence } from './representation';
+import { categoryOf, idsCharacter, isGugyeol } from './category';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { ranking } from './ranking';
@@ -40,12 +40,6 @@ const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Respon
 });
 const parse = (value: string): Json => JSON.parse(value);
 const unavailable = { status: 'unavailable', candidates: [] };
-// A label's category is its first character's script, as the migrations and publication scripts compute it.
-// 구결자 have no Unicode script property, so they are tested by their Hanyang private-use range.
-const isGugyeol=(value:string)=>{const c=value.codePointAt(0)??-1;return c>=0xF67E&&c<=0xF77C};
-// A well-formed ideographic description sequence describes one Han character Unicode lacks.
-const idsCharacter = (value: string) => isSequence(value) && formProblem(value) === null;
-export const categoryOf=(value:string)=>{const first=[...value][0]??'';if(idsCharacter(value))return 'kanji';return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(first)?'kana':/\p{Script=Han}/u.test(first)?'kanji':/\p{Script=Hangul}/u.test(first)?'hangul':isGugyeol(first)?'gugyeol':'other'};
 const cp = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 const toneMark = (char: string) => [0x302E, 0x302F].includes(char.codePointAt(0)!);
 const choseong = (char: string) => {
@@ -345,10 +339,22 @@ export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | 
 }
 // The crops that can be flagged or hard: those stored as flagged (`unit_state`), and those marked hard
 // (`unit_mark`). Every crop the effective state calls flagged or hard is among them.
-export const attentionCandidatesQuery = () => `id IN (SELECT id FROM units WHERE origin='local' AND state='flagged'
-  UNION SELECT id FROM unit_marks WHERE mark='hard')`;
-const ATTENTION_CANDIDATES = attentionCandidatesQuery();
+// With `irregular`, the crops whose box was found unlike their character's (`unit_irregular`) are among them too.
+export const attentionCandidatesQuery = (irregular = false) => `id IN (SELECT id FROM units WHERE origin='local' AND state='flagged'
+  UNION SELECT id FROM unit_marks WHERE mark='hard'${irregular ? ' UNION SELECT id FROM unit_irregular' : ''})`;
 const EFFECTIVE_STATE = `iif(state='pending',coalesce(${MARK},state),state)`;
+// A crop's irregular mark (`atlas review irregular`), how far its box's shape lies from its character's,
+// while it keeps the label and box that were measured.
+const IRREGULAR_MARK = `unit_irregular g WHERE g.id=units.id AND g.label=json_extract(units.data,'$.label')
+  AND g.x=json_extract(units.data,'$.box.x') AND g.y=json_extract(units.data,'$.box.y')
+  AND g.w=json_extract(units.data,'$.box.w') AND g.h=json_extract(units.data,'$.box.h')`;
+const IRREGULAR = `(SELECT g.shape FROM ${IRREGULAR_MARK})`;
+// An irregular crop waits in the 要修正 view until a review decides it, after the flagged and hard ones.
+export const irregularWaitingQuery = (state: string) => `${state} IN ('pending','seen','skipped') AND EXISTS(SELECT 1 FROM ${IRREGULAR_MARK})`;
+// The irregular crops still waiting, by character and book, the same for every visitor: nobody's own
+// skip counts, so the effective state stands for each.
+export const irregularFacetsQuery = (filter: string) => `SELECT units.character AS label,units.document AS document,count(*) AS n
+  FROM unit_irregular m CROSS JOIN units ON units.id=m.id WHERE ${filter} AND ${irregularWaitingQuery(EFFECTIVE_STATE)} GROUP BY 1,2`;
 // How long a crop a reviewer skipped stays out of that reviewer's own rounds.
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
 const quoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -486,21 +492,27 @@ const SHUFFLE_RANGE = 268435456;
 // publication stamps `published_at`, `refresh_published_units.py` stamps `units_refreshed_at`, a
 // review or undo adds an event, a round adds a submission, and an undo of a round with no review
 // only marks its submission undone.
-async function catalogueVersion(env: Env): Promise<string> {
-  const version = await env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
+type CatalogueStamps = { published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number };
+async function catalogueStamps(env: Env): Promise<CatalogueStamps | null> {
+  return env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
     (SELECT value FROM metadata WHERE key='units_refreshed_at') AS refreshed,
     (SELECT max(rowid) FROM events) AS event,(SELECT max(rowid) FROM submissions) AS submission,
-    (SELECT count(*) FROM submissions WHERE undone=1) AS undone`)
-    .first<{ published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number }>();
-  return [version?.published ?? '', version?.refreshed ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':');
+    (SELECT count(*) FROM submissions WHERE undone=1) AS undone`).first<CatalogueStamps>();
 }
+const catalogueKey = (version: CatalogueStamps | null) =>
+  [version?.published ?? '', version?.refreshed ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':');
+async function catalogueVersion(env: Env): Promise<string> {
+  return catalogueKey(await catalogueStamps(env));
+}
+// The publication and refresh the collection's crops come from, without the reviews since.
+const publicationKey = (version: CatalogueStamps | null) => [version?.published ?? '', version?.refreshed ?? ''].join(':');
 // Browse counts every local crop by character and state, which reads the whole table and takes
 // seconds, and every visitor gets the same answer. The edge keeps one copy per catalogue version.
 const FACETS_TTL = 3600;
 // The grapheme a label is filed under: its family, or its own code points when it has none. The
 // publication writes `family` from the same rule (`atlas.grapheme_of`).
 export const graphemeOf = (label: string, family: string | null) => family || cp(label) || null;
-type Facet = { label: string; family: string | null; document: string | null; title: string | null; state: string; n: number };
+type Facet = { label: string | null; family: string | null; document: string | null; title: string | null; state: string; n: number };
 async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement, version: Promise<string>) {
   const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(await version)}`);
   const cached = await caches.default.match(key);
@@ -509,6 +521,18 @@ async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, productio
   const groups = moved(counted.results, marks.results);
   ctx.waitUntil(caches.default.put(key, Response.json(groups, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return groups;
+}
+// The irregular crops still waiting by character and book (`irregularFacetsQuery`), which the 要修正 view
+// lists beside its flagged ones; the edge keeps a copy per catalogue version, as for the other counts.
+async function irregularFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, filter: string, values: (string | number)[]) {
+  // A round and a browse filter crops differently (`listingFilter`), so the filter is part of the key.
+  const key = new Request(`${url.origin}/atlas/facets?by=irregular&production=${encodeURIComponent(production)}&filter=${encodeURIComponent(filter)
+    }&values=${encodeURIComponent(JSON.stringify(values))}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json() as { label: string; document: string | null; n: number }[];
+  const rows = (await env.DB.prepare(irregularFacetsQuery(filter)).bind(...values).all<{ label: string; document: string | null; n: number }>()).results;
+  ctx.waitUntil(caches.default.put(key, Response.json(rows, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return rows;
 }
 // Corpus glyphs by character in the material asked for, with the grapheme the character table files each
 // under: what the grapheme browser counts beside the collection's own crops, so a character the site
@@ -570,10 +594,11 @@ export async function graphemeMembers(env: Env, key: string): Promise<string[]> 
 // A round and its reference strips name their grapheme's characters, and read each through
 // `unit_character`: the review filter is kept off its index (`+`), which would otherwise drive the
 // query over every crop that can be dealt. Browsing leaves withheld crops out the same way unless
-// `withheld` asks for them.
+// `withheld` asks for them. A crop no one has read yet has no character to ask about, so a round
+// leaves it out; browsing shows it.
 export function listingFilter(review: boolean, production: string, characters: string[] | null, withheld = false) {
   const [materials, materialValues] = material(production, 'production');
-  const where = ["origin='local'", ...(review ? [characters === null ? 'quiz=1' : '+quiz=1'] : withheld ? [] : ['+quiz=1']), materials];
+  const where = ["origin='local'", ...(review ? (characters === null ? ['quiz=1', "character<>''"] : ['+quiz=1']) : withheld ? [] : ['+quiz=1']), materials];
   const values: (string | number)[] = [...materialValues];
   if (characters !== null) { where.push('character IN (SELECT value FROM json_each(?))'); values.push(JSON.stringify(characters)) }
   return { where, values };
@@ -609,7 +634,7 @@ export function facetsQueries(review: boolean, reviewer: string | null, where: s
 // reviewer's skips are counted now and browse's counts may be the edge's copy of this catalogue
 // version, so a move never takes more than `pending` holds.
 export function moved(stored: Facet[], moves: Facet[]): Facet[] {
-  const key = (row: { label: string; document: string | null }, state: string) => JSON.stringify([row.label, row.document, state]);
+  const key = (row: { label: string | null; document: string | null }, state: string) => JSON.stringify([row.label, row.document, state]);
   const rows = new Map(stored.map(row => [key(row, row.state), { ...row }]));
   for (const move of moves) {
     const pending = rows.get(key(move, 'pending'));
@@ -1008,30 +1033,35 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const flaggedView = ['flagged', 'attention'].includes(q.get('state') ?? '');
   const withheld = flaggedView || q.get('withheld') === 'show';
   const { where, values } = listingFilter(review, production, members, withheld);
+  const scope = { filter: where.join(' AND '), values: [...values] };
   const [materials, materialValues] = material(production, 'production');
   const queries = facetsQueries(review, reviewer, where, scoped, since);
   const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
   // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
   let groups: Facet[], published: D1Result<{ label: string; n: number }> | null = null;
-  // Asked once a request: the facets and the withheld total share it.
-  let version: Promise<string> | null = null;
-  const catalogueOnce = () => version ??= catalogueVersion(env);
+  // Asked once a request: the facets and the withheld total key their copies by it.
+  let stamps: Promise<CatalogueStamps | null> | null = null;
+  const stampsOnce = () => stamps ??= catalogueStamps(env);
   if (review) {
     const corpus = corpusCountQuery(production, members);
     const results = await env.DB.batch<any>([...[stored, marked, skipped].filter(s => s !== null), env.DB.prepare(corpus.sql).bind(...corpus.values)]);
     published = results.pop()!;
     groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
   } else {
-    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, catalogueOnce());
+    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, stampsOnce().then(catalogueKey));
     if (skipped) groups = moved(groups, (await skipped.all<Facet>()).results);
   }
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
   const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
   const empty = { total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 };
-  const add = (label: string, state: string, n: number, document: string | null = null, title: string | null = null, family: string | null = null) => {
-    const category = categories.get(label) || { label, grapheme: graphemeOf(label, family), ...empty };
-    category.total += n; category[state] += n; counts[state] += n;
-    categories.set(label, category);
+  // A crop no one has read yet counts towards its book, under no character.
+  const add = (label: string | null, state: string, n: number, document: string | null = null, title: string | null = null, family: string | null = null) => {
+    counts[state] += n;
+    if (label) {
+      const category = categories.get(label) || { label, grapheme: graphemeOf(label, family), ...empty };
+      category.total += n; category[state] += n;
+      categories.set(label, category);
+    }
     if (!document) return;
     const book = documents.get(document) || { id: document, title, ...empty };
     book.total += n; book[state] += n;
@@ -1066,9 +1096,21 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   // them (`+`); the script's index would read every crop of that script.
   if (q.get('group') && q.get('group') !== 'all') { where.push(character || grapheme || q.get('q') ? '+category=?' : 'category=?'); values.push(q.get('group')!); tally = null }
   // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read. The
-  // review state is worked out per crop, so the query starts from the few that can qualify.
-  if (q.get('state') === 'attention') { where[0] = "+origin='local'"; where.push(ATTENTION_CANDIDATES, `${state} IN ('flagged','hard')`); tally = null }
+  // review state is worked out per crop, so the query starts from the few that can qualify. Irregular
+  // crops nobody has decided wait there too unless `irregular=hide`; `irregularCountWhere` counts them either way.
+  const attention = q.get('state') === 'attention', irregular = attention && q.get('irregular') !== 'hide';
+  const irregularCountWhere = attention ? ["+origin='local'", ...where.slice(1), 'id IN (SELECT id FROM unit_irregular)', irregularWaitingQuery(state)] : null;
+  if (attention) {
+    where[0] = "+origin='local'";
+    where.push(attentionCandidatesQuery(irregular), irregular ? `(${state} IN ('flagged','hard') OR ${irregularWaitingQuery(state)})` : `${state} IN ('flagged','hard')`);
+    tally = null;
+  }
   else if (q.get('state') && q.get('state') !== 'all') { const wanted = q.get('state')!; where.push(`${state}=?`); values.push(wanted); tally?.push(row => row.state === wanted) }
+  if (irregular) for (const row of await irregularFacets(env, ctx, url, production, scope.filter, scope.values)) {
+    const category = categories.get(row.label), book = row.document ? documents.get(row.document) : null;
+    if (category) category.irregular = (category.irregular ?? 0) + row.n;
+    if (book) book.irregular = (book.irregular ?? 0) + row.n;
+  }
   // The Flagged view hides crops already looked at in the inspector by default; `reported=show`
   // (the default for every other caller) leaves them in. `reportedCountWhere` is captured before the
   // hide filter, so the count is of what is hidden, not what remains.
@@ -1092,8 +1134,10 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const order = others + (review && seed % 5 ? 'priority,' : '');
   // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
   const reviewedLast = flaggedView ? `${REVIEWED_IN_INSPECTOR},` : '';
+  // The irregular crops come after every flagged and hard one.
+  const irregularLast = irregular ? `${state} NOT IN ('flagged','hard'),` : '';
   // What a tile shows (`compact`): the record without the review snapshot, context and model votes.
-  const columns = `id,origin,data,document,style,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order,${SUSPECT} AS suspect`;
+  const columns = `id,origin,data,document,style,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order,${SUSPECT} AS suspect${attention ? `,${IRREGULAR} AS irregular` : ''}`;
   // Browse deals crops in `shuffle` order from a point the seed picks, and wraps round past the
   // highest: an index serves that order, where a seed-scrambled order sorts every row on each visit.
   // A named character is found through `unit_character` instead, and its few crops sort in memory.
@@ -1107,29 +1151,36 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   const told = rotated && q.get('above') !== null ? integer(q, 'above', 0) : null;
   const below = told !== null && offset >= told;
   // Unnarrowed, every visitor asks for the same total, which sums the whole of `unit_counts`; the edge
-  // keeps one per catalogue version and material.
+  // keeps one per publication and material for `FACETS_TTL`. Reviews leave a local crop's `quiz` alone, and
+  // a publication or refresh that changes it stamps a new key.
   const totalKey = hiddenCount && !hiddenCount.values.length ? new Request(`${url.origin}/atlas/withheld-total?production=${
-    encodeURIComponent(production)}&v=${encodeURIComponent(await catalogueOnce())}`) : null;
+    encodeURIComponent(production)}&v=${encodeURIComponent(publicationKey(await stampsOnce()))}`) : null;
   const cachedTotal = totalKey ? await caches.default.match(totalKey).then(hit => hit ? hit.json() as Promise<number> : null) : null;
   const counting = cachedTotal === null ? hiddenCount : null;
-  const results = await env.DB.batch([
-    ...(tally ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
-    below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
+  // `limit=0` asks for the counts alone, as a round does to choose its character: the listing is neither
+  // counted nor read, and a round's count of every crop it could deal reads each of them.
+  const wantsRows = limit > 0;
+  const statements = [
+    ...(tally || !wantsRows ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
+    ...(!wantsRows ? [] : [below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
       : rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
-      : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset),
+      : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${irregularLast}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset)]),
     ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
     ...(counting ? [env.DB.prepare(counting.sql).bind(...materialValues, ...counting.values)] : []),
-  ]);
-  const count = tally ? null : results.shift()!, window = results.shift()!;
+    ...(irregularCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${irregularCountWhere.join(' AND ')}`).bind(...values)] : []),
+  ];
+  const results = statements.length ? await env.DB.batch(statements) : [];
+  const count = tally || !wantsRows ? null : results.shift()!, window = wantsRows ? results.shift()! : null;
   const reportedCount = reportedCountWhere ? results.shift()! : null, hiddenCounted = counting ? results.shift()! : null;
+  const irregularCount = irregularCountWhere ? results.shift()! : null;
   const withheldCount = cachedTotal ?? (hiddenCounted ? (hiddenCounted.results[0] as { n: number }).n : null);
   if (totalKey && cachedTotal === null && withheldCount !== null)
     ctx.waitUntil(caches.default.put(totalKey, Response.json(withheldCount, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   const listed = tally ? groups.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
-    : (count!.results[0] as { n: number }).n;
-  const rows = window.results as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
+    : count ? (count.results[0] as { n: number }).n : null;
+  const rows = (window?.results ?? []) as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null; irregular?: number | null })[];
   let above: number | null = below ? told : null;
-  if (rotated && !below && rows.length < limit) {
+  if (wantsRows && rotated && !below && rows.length < limit) {
     above = rows.length ? offset + rows.length : told ?? (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
       .bind(...values, start).first<{ n: number }>())!.n;
     const wrapped = await env.DB.prepare(side('<')).bind(...values, start, limit - rows.length, Math.max(offset - above, 0)).all();
@@ -1137,14 +1188,15 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
   }
   const items: Json[] = await withForms(env, rows
     .map(row => { const item = compact(row); return { ...item, state: row.effective, shape_order: row.shape_order,
-      suspect: suspectOf(row.suspect ? parse(row.suspect) as Suspect : null, item) } }));
+      suspect: suspectOf(row.suspect ? parse(row.suspect) as Suspect : null, item),
+      ...(row.irregular != null ? { irregular: { shape: row.irregular } } : {}) } }));
   // Positions run through the `units` rows and then the untouched corpus glyphs. A glyph its record
   // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
   // glyphs run out `total` is what was there to deal.
-  let total = listed, next = offset + items.length;
+  let total: number | null = listed, next = offset + items.length;
   const unnamed = dealt ? members!.reduce((n, member) => n + (corpus.get(member) || 0), 0) : 0;
-  if (dealt && unnamed) {
-    total += unnamed;
+  if (dealt && unnamed && listed !== null) {
+    total = listed + unnamed;
     if (items.length < limit) {
       const round = await corpusRound(env, members!, production, seed, Math.max(offset - listed, 0), limit - items.length);
       // A glyph is one crop whichever list deals it, even should its published row read as untouched.
@@ -1160,6 +1212,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     documents: [...documents.values()].sort((a,b) => b.total-a.total || (a.title ?? '').localeCompare(b.title ?? '') || a.id.localeCompare(b.id)),
     reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
     withheld_count: withheldCount, above,
+    irregular_count: irregularCount ? (irregularCount.results[0] as { n: number }).n : 0,
     items: await withDating(env, items) };
 }
 // The withheld crops in this material, of a character, a book or a family where one is named.
@@ -1226,17 +1279,26 @@ async function corpusRound(env: Env, characters: string[], production: string, s
 // from the packs took one R2 request each. Packs are content-addressed, so a copy is current exactly
 // while `corpus_units` still names the object and offset it came from; `scripts/fill_corpus_gallery.py`
 // copies the rest after a publication. A glyph a review has named shows its `units` row.
+// A script group deals the copies of its category (0079). The scripts the corpus holds few glyphs of
+// are copied whole (WHOLE_GROUPS), so their seed's point falls anywhere in the shuffle range, and the
+// unchosen gallery keeps to the sample below SAMPLE_RANGE, where every script is copied alike.
 const SAMPLE_RANGE = 4194304;
-export const gallerySampleQuery = (side: '>=' | '<') => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
+const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol', 'tangut'];
+export const gallerySampleQuery = (side: '>=' | '<', grouped = false) => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
   FROM corpus_gallery s JOIN corpus_units c ON c.id=s.id AND c.object=s.object AND c.offset=s.offset
   LEFT JOIN units u ON u.id=s.id LEFT JOIN form_units f ON f.id=s.id
-  WHERE s.shuffle${side}? ORDER BY s.shuffle LIMIT ?`;
+  WHERE ${grouped ? 's.category=?' : `s.shuffle<${SAMPLE_RANGE}`} AND s.shuffle${side}? ORDER BY s.shuffle LIMIT ?`;
 async function gallery(env: Env, q: URLSearchParams) {
-  const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % SAMPLE_RANGE;
+  const group = q.get('group') && q.get('group') !== 'all' ? q.get('group')! : null;
+  if (group && !GALLERY_GROUPS.includes(group)) throw new Problem(400, 'Invalid group.');
+  const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % (group && WHOLE_GROUPS.includes(group) ? SHUFFLE_RANGE : SAMPLE_RANGE);
   type Row = UnitForm & { data: string; current: string | null };
-  const rows = (await env.DB.prepare(gallerySampleQuery('>=')).bind(start, limit).all<Row>()).results;
-  if (rows.length < limit) rows.push(...(await env.DB.prepare(gallerySampleQuery('<')).bind(start, limit - rows.length).all<Row>()).results);
-  const items = await withForms(env, rows.map(r => r.current ? parse(r.current) : formed(parse(r.data), r.id ? r : null, formTools)));
+  const read = (side: '>=' | '<', n: number) => env.DB.prepare(gallerySampleQuery(side, !!group)).bind(...(group ? [group] : []), start, n).all<Row>();
+  const rows = (await read('>=', limit)).results;
+  if (rows.length < limit) rows.push(...(await read('<', limit - rows.length)).results);
+  // A review may have moved a glyph to another script since its copy was filed.
+  const items = (await withForms(env, rows.map(r => r.current ? parse(r.current) : formed(parse(r.data), r.id ? r : null, formTools))))
+    .filter(item => !group || categoryOf(String(item.label ?? '')) === group);
   return { status: 'ok', available: items.length, items: await withDating(env, items) };
 }
 function chunks<T>(list: T[], size: number): T[][] {
@@ -1245,8 +1307,12 @@ function chunks<T>(list: T[], size: number): T[][] {
   return out;
 }
 // A character's edges in the 異体字 graph, both ways (0033): each by the key or by `b`'s index.
-export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,widens FROM character_variants WHERE a=?
-  UNION ALL SELECT a AS other,relation,source,detail,widens FROM character_variants WHERE b=? LIMIT 2000`;
+export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,written,widens FROM character_variants WHERE a=?
+  UNION ALL SELECT a AS other,relation,source,detail,written,widens FROM character_variants WHERE b=? LIMIT 2000`;
+// The graphemes a reduced form writes besides its own, and the forms that write a grapheme (0081): each by
+// its key or by the grapheme index, a handful of rows.
+export const writesQuery = () => `SELECT grapheme AS char FROM grapheme_writers WHERE writer=? LIMIT ${VARIANTS_SHOWN}`;
+export const writersQuery = () => `SELECT writer AS char FROM grapheme_writers WHERE grapheme=? LIMIT ${VARIANTS_SHOWN}`;
 // A character's derived list (0070): its one row, the forms in the order and caps refs.derived_variants gives them.
 export const derivedEdgesQuery = () => `SELECT forms FROM character_derived WHERE a=?`;
 // What the substitutions a derived list came by are backed by: each one's count and every pair behind
@@ -1320,29 +1386,35 @@ function styleCounts(rows: { s: number; n: number }[], group: number | null) {
   const total = group === null ? rows.reduce((sum, row) => sum + row.n, 0) : rows.find(row => row.s === group)?.n ?? 0;
   return { styles, total };
 }
-type VariantEdge = { other: string; relation: string; source: string; detail: string; widens: number };
-type VariantRow = { char: string; code_point: string; widens: boolean; relations: { relation: string; source: string; detail: string }[] };
+type VariantEdge = { other: string; relation: string; source: string; detail: string; written: number; widens: number };
+type VariantRow = { char: string; code_point: string; widens: boolean; written: boolean; relations: { relation: string; source: string; detail: string }[] };
 // The characters `char` shares an edge with, as the card lists them: `items` a gallery widens to (a
 // pair with a widening edge and none that keeps it apart), `related` the rest; each most attested
-// first (sources, then code point), every edge kept. `sources` cites each source used.
-async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char: string, version: string) {
+// first (sources, then code point), every edge kept. `written` marks a pair one of whose edges says
+// one may be written for the other. `sources` cites each source used. `writes` are the graphemes besides
+// its own a reduced form of several characters writes (后: 後), `writers` the forms of that kind that write
+// its grapheme, `head` (後: 后).
+async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char: string, head: string, version: string) {
   const key = new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(version)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const edges = (await env.DB.prepare(variantEdgesQuery()).bind(char, char).all<VariantEdge>()).results;
+  const [writes, writers] = (await env.DB.batch([env.DB.prepare(writesQuery()).bind(char), env.DB.prepare(writersQuery()).bind(head)]) as
+    D1Result<{ char: string }>[]).map(found => found.results.map(row => ({ char: row.char, code_point: cp(row.char) })));
   const derivedRow = await env.DB.prepare(derivedEdgesQuery()).bind(char).first<{ forms: string }>();
   const derivedRows: DerivedRow[] = derivedRow ? (JSON.parse(derivedRow.forms) as [string, [string, string][][]][]).map(([other, routes]) => ({ other, routes })) : [];
   const byChar = new Map<string, VariantRow & { edges: VariantEdge[] }>();
   for (const edge of edges) {
     if (edge.other === char) continue;
-    const entry = byChar.get(edge.other) ?? { char: edge.other, code_point: cp(edge.other), widens: false, relations: [], edges: [] };
+    const entry = byChar.get(edge.other) ?? { char: edge.other, code_point: cp(edge.other), widens: false, written: false, relations: [], edges: [] };
     entry.edges.push(edge);
     entry.relations.push({ relation: edge.relation, source: edge.source, detail: edge.detail });
     byChar.set(edge.other, entry);
   }
   const attested = (entry: VariantRow) => new Set(entry.relations.map(r => r.source)).size;
   const ordered = [...byChar.values()].map(({ edges: pair, ...entry }) => ({ ...entry,
-    widens: pair.some(e => e.widens) && !pair.some(e => KEPT_APART.has(e.relation)) }))
+    widens: pair.some(e => e.widens) && !pair.some(e => KEPT_APART.has(e.relation)),
+    written: pair.some(e => e.written) }))
     .sort((a, b) => attested(b) - attested(a) || (a.char.codePointAt(0)! - b.char.codePointAt(0)!));
   const shown = [...ordered.filter(e => e.widens).slice(0, VARIANTS_SHOWN), ...ordered.filter(e => !e.widens).slice(0, VARIANTS_SHOWN)];
   const derived = await derivedOf(env, derivedRows);
@@ -1362,7 +1434,7 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
   for (const entry of predicted) for (const source of entry.sources) used.add(source);
   if (predicted.length) used.add(DERIVED_IDS);
   const found = { items: rows.filter(row => row.widens), related: rows.filter(row => !row.widens), derived: predicted,
-    total: byChar.size, sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? source])) };
+    total: byChar.size, writes, writers, sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? source])) };
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return found;
 }
@@ -1448,10 +1520,10 @@ async function derivedOf(env: Env, rows: DerivedRow[]): Promise<DerivedEntry[]> 
     return [{ char: row.other, code_point: encoded ? cp(row.other) : null, encoded, routes, sources: [...sources].sort() }];
   });
 }
-// What the form picker's IDS editor starts from (0068): a character's descriptions by key, and the
+// What the form picker's IDS editor starts from (0068, 0080): a character's descriptions and regional shapes by key, and the
 // substitutes of each component they name, the `component_variants` rows naming it as `a` (by key) or
 // as `b` (by `component_variant_b`), at most STRUCTURE_PARTS components a request.
-export const structureQuery = () => `SELECT sequences FROM han_ids WHERE char=?`;
+export const structureQuery = () => `SELECT sequences, shapes FROM han_ids WHERE char=?`;
 export const substitutesQuery = (n: number) => `SELECT a,b,count FROM component_variants WHERE a IN (${Array(n).fill('?').join(',')})
   UNION ALL SELECT a,b,count FROM component_variants WHERE b IN (${Array(n).fill('?').join(',')})`;
 // A description holds at most 64 code points; the components of every sequence of one character fit here.
@@ -1465,8 +1537,9 @@ async function structureOf(env: Env, ctx: ExecutionContext, origin: string, char
   const key = new Request(`${origin}/layers/structure?c=${encodeURIComponent(char)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
-  const row = await env.DB.prepare(structureQuery()).bind(char).first<{ sequences: string }>();
+  const row = await env.DB.prepare(structureQuery()).bind(char).first<{ sequences: string; shapes: string | null }>();
   const sequences: string[] = row ? JSON.parse(row.sequences) : [];
+  const shapes: { text: string; regions: string }[] = row?.shapes ? JSON.parse(row.shapes) : [];
   const parts = [...new Set(sequences.flatMap(text => [...text].filter(c => !IDS_OPERATOR.test(c))))].slice(0, STRUCTURE_PARTS);
   const rows = parts.length ? (await env.DB.prepare(substitutesQuery(parts.length)).bind(...parts, ...parts)
     .all<{ a: string; b: string; count: number }>()).results : [];
@@ -1478,7 +1551,7 @@ async function structureOf(env: Env, ctx: ExecutionContext, origin: string, char
       .slice(0, SUBSTITUTES_SHOWN);
     if (found.length) substitutes[part] = found;
   }
-  const found = { char, sequences, substitutes };
+  const found = { char, sequences, shapes, substitutes };
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return found;
 }
@@ -1523,7 +1596,7 @@ export function describedCard(value: string) {
       unassigned_count: 0, groups: [] } };
   return { data, detail };
 }
-async function suggest(env: Env, q: URLSearchParams) {
+export async function suggest(env: Env, q: URLSearchParams) {
   const term = (q.get('q') || '').slice(0, 128).trim();
   if (!term) return { items: [], total: 0, status: 'idle' };
   const limit = integer(q, 'limit', 8, 48);
@@ -1550,8 +1623,64 @@ async function suggest(env: Env, q: URLSearchParams) {
     return { query: term, match_kind: 'components', items, total: items.length, more: more ? 1 : 0, status: 'ok', corpus: { ready: true } };
   }
   const found = rows.results.map(r => ({ ...parse(r.data), rank: r.rank }));
+  const { cards, unread } = await readingKanji(env, term, found, limit);
+  found.push(...cards);
   found.push(...await searchVariants(env, literal(term), found, limit));
-  return { query: term, items: found.slice(0,limit), total: found.length, more: Math.max(0,found.length-limit), status:'ok',corpus:{ready:true} };
+  const shown = found.slice(0, limit);
+  const members = await unlistedForms(env, shown);
+  const total = found.length + unread;
+  return { query: term, items: byGrapheme(shown, members), total, more: Math.max(0,total-limit), status:'ok',corpus:{ready:true} };
+}
+// Each grapheme a list names, once, at the place of its first form there: the forms the query found in
+// their order, then every other form of the grapheme. 时 lists 時 = 时 = 旹, ね lists ね, ネ and 𛂒 to 𛄧.
+const familyOf = (item: Json): string => item.grapheme?.code_point ?? item.code_point;
+export function byGrapheme(found: Json[], members: Map<string, Json>) {
+  const groups = new Map<string, Json[]>();
+  for (const item of found) groups.set(familyOf(item), [...(groups.get(familyOf(item)) ?? []), item]);
+  return [...groups.values()].flatMap(group => {
+    const listed = new Set(group.map(item => item.code_point));
+    const rest = (group[0].grapheme?.members ?? []).filter((m: Json) => !listed.has(m.code_point) && members.has(m.code_point))
+      .map((m: Json) => ({ ...members.get(m.code_point)!, rank: 8 }));
+    return [...group, ...rest];
+  });
+}
+// A list reads at most GRAPHEME_MEMBERS forms it did not find, by key.
+const GRAPHEME_MEMBERS = 48;
+async function unlistedForms(env: Env, found: Json[]) {
+  const listed = new Set(found.map(item => item.code_point));
+  const wanted = [...new Set(found.flatMap(item => (item.grapheme?.members ?? []).map((m: Json) => m.code_point as string)))]
+    .filter(code => !listed.has(code)).slice(0, GRAPHEME_MEMBERS);
+  if (!wanted.length) return new Map<string, Json>();
+  const rows = (await env.DB.prepare(`SELECT data FROM characters WHERE code_point IN (${wanted.map(() => '?').join(',')})`)
+    .bind(...wanted).all<{ data: string }>()).results;
+  return new Map(rows.map(r => { const card = parse(r.data); return [card.code_point as string, card] }));
+}
+// The kanji a kana query is a Japanese reading of (scripts/build_kanji_readings.py), after the kana it
+// names: とき finds 𛄤, then 時 and 刻. The table lists a reading's kanji most attested first, so a
+// list reads only the rows it shows. The readings are a static asset, kept once an isolate has read them.
+let kanjiReadings: Record<string, string[]> | null = null;
+async function readingTable(env: Env) {
+  if (kanjiReadings) return kanjiReadings;
+  const response = await env.ASSETS.fetch('https://assets.invalid/refs/kanji-readings.json');
+  if (!response.ok) throw new Error(`kanji readings: ${response.status}`);
+  kanjiReadings = (await response.json<{ readings: Record<string, string[]> }>()).readings;
+  return kanjiReadings;
+}
+const KANA_TERM = /^[\p{Script=Hiragana}\p{Script=Katakana}ー]+$/u;
+async function readingKanji(env: Env, term: string, found: Json[], limit: number): Promise<{ cards: (Json & { rank: number })[]; unread: number }> {
+  if (!KANA_TERM.test(term)) return { cards: [], unread: 0 };
+  let table: Record<string, string[]>;
+  // A search without the readings still answers with the kana it names.
+  try { table = await readingTable(env) } catch (error) { console.error(error); return { cards: [], unread: 0 } }
+  const listed = new Set(found.map(item => item.char));
+  const all = (table[hira(term)] ?? []).filter(char => !listed.has(char));
+  const wanted = all.slice(0, Math.max(0, limit + 1 - found.length));
+  if (!wanted.length) return { cards: [], unread: all.length };
+  const rows = (await env.DB.prepare(`SELECT code_point,data FROM characters WHERE code_point IN (${wanted.map(() => '?').join(',')})`)
+    .bind(...wanted.map(cp)).all<{ code_point: string; data: string }>()).results;
+  const byCode = new Map(rows.map(r => [r.code_point, r.data]));
+  const cards = wanted.filter(char => byCode.has(cp(char))).map(char => ({ ...parse(byCode.get(cp(char))!), rank: 5 }));
+  return { cards, unread: all.length - wanted.length };
 }
 // The 異体字 of a one-character query the table holds, after what the query names: a reader who types
 // 鯡 is shown 𩹉. Only the pairs the card lists as variants (a widening edge, none that keeps the pair
@@ -2046,7 +2175,7 @@ async function submit(env: Env, request: Request, actor: string, target?: string
     const resolved=!kept&&(answer.verdict==='match'||Boolean(answer.issue==='character'&&written));
     const family=written?(await lookup(written))?.data.grapheme?.code_point:null;
     const next:Json={...current,revision:current.revision+1,state:resolved?'checked':'flagged',
-      ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':/\p{Script=Hangul}/u.test(written)?'hangul':isGugyeol(written)?'gugyeol':'symbol'}:{}),
+      ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':/\p{Script=Hangul}/u.test(written)?'hangul':/\p{Script=Tangut}/u.test(written)?'tangut':isGugyeol(written)?'gugyeol':'symbol'}:{}),
       ...(written?{grapheme:family||cp(written),visual_group:null,category:categoryOf(written)}:{}),
       issue:resolved?null:kept??answer.issue,
       // A redrawn box is the crop's until the next publication cuts it; the image shown is still the old cut.
@@ -2193,6 +2322,52 @@ async function reject(env:Env,admin:string,input:Json){
     next:!Array.isArray(input.submissions)&&more&&last?encodeCursor(last.at,last.id):null,
     left:Array.isArray(input.submissions)?rows.slice(done.length).map(row=>row.id):[]};
 }
+// Corpus glyphs a check made outside the site found in doubt, sent to the Flagged view by an admin: the
+// boxes `atlas repair relabel` would label otherwise than a form a person decided (its `review` units).
+// Each is written as a round would write it (`materialise`), flagged with a wrong-character issue and the
+// finding in `flag`, so it waits among the corpus glyphs `/atlas/corpus/reviews` lists until a person
+// settles it. No event is written: the flag is a finding, not a person's review. A glyph that already has
+// a `units` row is left as it is (`held`), so what a round or a review said stands and a list sent again
+// writes nothing. One whose shown character is no longer the one the finding was made against
+// (`changed`), or whose image this site may not serve (`unshowable`), is left out.
+const FLAG_MAX=96;
+export function flagRequest(input:Json){
+  const finding=text(input?.finding,64,'finding',true)!;
+  if(!Array.isArray(input.glyphs)||!input.glyphs.length||input.glyphs.length>FLAG_MAX)throw new Problem(422,`Name 1 to ${FLAG_MAX} glyphs.`);
+  const glyphs=input.glyphs.map((g:Json)=>({id:text(g?.id,512,'glyph id',true)!,character:text(g?.character,16,'character',true)!,
+    realigned:text(g?.realigned,16,'realigned character'),transcribed:text(g?.transcribed,16,'transcribed character')}));
+  if(new Set(glyphs.map((g:Json)=>g.id)).size!==glyphs.length)throw new Problem(422,'A glyph is named twice.');
+  return {finding,glyphs} as {finding:string;glyphs:{id:string;character:string;realigned:string|null;transcribed:string|null}[]};
+}
+async function flagCorpus(env:Env,input:Json){
+  const {finding,glyphs}=flagRequest(input);
+  const rows=await unitsById(env,glyphs.map(g=>g.id));
+  const at=new Date().toISOString(),out:Record<string,string[]>={flagged:[],held:[],changed:[],unshowable:[],missing:[]};
+  const statements:D1PreparedStatement[]=[];
+  for(const g of glyphs){
+    const row=rows.get(g.id)!;
+    if(row instanceof Problem){out.missing.push(g.id);continue}
+    if(!row.fresh){out.held.push(g.id);continue}
+    const data=parse(row.data);
+    if(data.written_character!==g.character){out.changed.push(g.id);continue}
+    if(!dealable('corpus',data)){out.unshowable.push(g.id);continue}
+    // A new revision, so a page that still holds the unflagged glyph saves against a row that moved on.
+    const next={...data,state:'flagged',issue:'character',revision:data.revision+1,
+      flag:{finding,realigned:g.realigned,transcribed:g.transcribed,at}};
+    statements.push(materialise(env,{...row,data:JSON.stringify(next),fresh:row.fresh}));
+    out.flagged.push(g.id);
+  }
+  const results=statements.length?await env.DB.batch(statements):[];
+  // A round may have named a glyph since it was read; INSERT OR IGNORE leaves that row, and it is held.
+  const written=new Set(out.flagged.filter((_,i)=>results[i].meta.changes>0));
+  out.held.push(...out.flagged.filter(id=>!written.has(id)));
+  out.flagged=out.flagged.filter(id=>written.has(id));
+  return {...out,rows_written:results.reduce((n,r)=>n+(r.meta.rows_written??0),0)};
+}
+// The corpus glyphs waiting for a person, in the order their rows were written (a row a round made earlier
+// keeps its place when it is flagged later): `unit_state` holds them in rowid order, so a page reads its own
+// rows and sorts nothing, however many wait.
+export const flaggedCorpusQuery=()=>"SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY rowid LIMIT 96";
 // The journal ids of one reviewer: a user's, or one id from before accounts that nobody holds.
 export function reviewerActors(input:Json):[string,string[]]{
   if(typeof input.user==='string')return ['(SELECT actor FROM actors WHERE user_id=?)',[text(input.user,64,'user',true)!]];
@@ -2355,6 +2530,7 @@ const routes = {
         // An admin's page: rejecting what a reviewer saved. Banning and roles are Better Auth's own.
         if(path.startsWith('/api/admin/')&&!me.admin)throw new Problem(403,'Only an admin can do this.');
         if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request)));
+        if(path==='/api/admin/corpus-flags')return json(await flagCorpus(env,await body(request)));
         if(path==='/api/account/avatar'){
           const origin=request.headers.get('origin');
           if(origin&&origin!==url.origin)throw new Problem(403,'Use the account page on this site.');
@@ -2475,7 +2651,7 @@ const routes = {
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
       if(layer){const value=decodeURIComponent(layer[1]),card=await known(env,value),{detail}=card;const found=await occurrences(env,value,q,card);
-        const version=await catalogueVersion(env),[variants,words]=await Promise.all([variantsOf(env,ctx,url.origin,detail.char,version),wordsOf(env,ctx,url.origin,detail.char,version)]);
+        const version=await catalogueVersion(env),[variants,words]=await Promise.all([variantsOf(env,ctx,url.origin,detail.char,detail.grapheme?.char??detail.char,version),wordsOf(env,ctx,url.origin,detail.char,version)]);
         return json({...detail,variants,words,query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
       if(path==='/layers/candidates'){const found=await corpusOccurrences(env,ctx,url,await known(env,q.get('code_point')||''),q);
@@ -2489,7 +2665,7 @@ const routes = {
         const rows=await env.DB.prepare(`SELECT data FROM characters WHERE ${selector} LIMIT ? OFFSET ?`).bind(integer(q,'limit',200,500),integer(q,'offset',0)).all<{data:string}>();
         return json({items:rows.results.map(r=>parse(r.data)),total:rows.results.length})}
       if(path==='/atlas/corpus/reviews'){
-        const rows=await env.DB.prepare("SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY id LIMIT 96").all<UnitRow>();
+        const rows=await env.DB.prepare(flaggedCorpusQuery()).all<UnitRow>();
         return json({items:await withDating(env,await withForms(env,rows.results.map(compact))),total:rows.results.length})}
       if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed)}

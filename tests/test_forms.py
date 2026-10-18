@@ -103,6 +103,7 @@ def test_the_api_lists_clusters_and_records_decisions(clustering, tmp_path):
     client = TestClient(app)
     assert client.get("/atlas/forms/families").json()["items"][0] == {
         "code_point": "U+306F", "char": "は", "label": "は", "count": 4, "clusters": 2, "assigned": 0, "rejected": 0}
+    assert "U+306F" in client.get("/atlas/forms/codes").json()["items"]
     family = client.get("/atlas/forms/families/U+306F").json()
     assert [c["id"] for c in family["items"]] == ["U+306F:one", "U+306F:two"]
     assert {"char": "𛂥", "code_point": "U+1B0A5"}.items() <= next(f for f in family["forms"] if f["char"] == "𛂥").items()

@@ -127,7 +127,7 @@
   .ids-composer{display:flex;flex-direction:column;gap:10px}
   .ids-field{display:flex;flex-direction:column;gap:4px}
   .ids-title{font-size:11px;color:var(--muted)}
-  .ids-field input{font-size:20px;padding:6px 8px;font-family:"GenZui Sans","Klee One","LXGW WenKai TC",serif}
+  .ids-field input{font-size:20px;padding:6px 8px;font-family:"GenZui Sans","Noto Serif Tangut","Klee One","LXGW WenKai TC",serif}
   .ids-field input[aria-invalid="true"]{border-color:var(--fault)}
   .ids-operators{display:flex;flex-wrap:wrap;gap:4px}
   .ids-key{min-width:34px;padding:3px 6px;font-size:18px;line-height:1.2}
@@ -136,13 +136,13 @@
   .ids-tree > .ids-node{border-color:transparent}
   .ids-node.chosen{background:var(--accent-light)}
   .ids-part,.ids-op{padding:1px 4px;font-size:20px;line-height:1.2;border-color:transparent;background:none;
-    font-family:"GenZui Sans","Klee One","LXGW WenKai TC",serif}
+    font-family:"GenZui Sans","Noto Serif Tangut","Klee One","LXGW WenKai TC",serif}
   .ids-op{color:var(--muted)}
   .ids-part:hover,.ids-op:hover{border-color:var(--line-strong)}
   .ids-part.chosen{border:2px solid var(--accent);padding:0 3px;background:var(--accent-light)}
   .ids-swaps{display:flex;flex-direction:column;gap:4px}
   .ids-options{display:flex;flex-wrap:wrap;gap:6px}
-  .ids-swap{min-width:40px;padding:3px 8px;font-size:20px;line-height:1.2;font-family:"GenZui Sans","Klee One","LXGW WenKai TC",serif}
+  .ids-swap{min-width:40px;padding:3px 8px;font-size:20px;line-height:1.2;font-family:"GenZui Sans","Noto Serif Tangut","Klee One","LXGW WenKai TC",serif}
   .ids-split{font-size:16px;color:var(--muted)}
   .ids-swap:not(:disabled):hover{border-color:var(--accent)}
   .ids-problem{margin:0;font-size:12px;color:var(--fault)}

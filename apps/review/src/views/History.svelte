@@ -9,10 +9,12 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import { t, withText, formatDateTime, localize } from '../lib/i18n.svelte.js'
   import { groupRuns } from '../lib/historyGroups.js'
+  import { holdsLegacyReviewer, sessionStarted } from '../lib/session.svelte.js'
   let { inspect } = $props()
   let items = $state([]), loading = $state(true), loadingMore = $state(false), error = $state('')
   let cursor = $state(null), hasMore = $state(true)
-  let onlyMine = $state(stored('atlas.history.onlyMine', false))
+  // Read from this browser once the page runs in it, so the page rendered on the server matches.
+  let onlyMine = $state(false)
   let characterFilter = $state('')
   let requestId = 0, closed = false, filterTimer
   // True while the load-more row is on screen or close to it: scrolling down loads the next page.
@@ -30,8 +32,10 @@
     else { loading = true; items = []; cursor = null; hasMore = true }
     error = ''
     try {
+      // A reviewer's run folds into one row, so a screen of rows can take hundreds of decisions; the
+      // largest page the site serves fills it in fewer round trips.
       const result = await fetchHistory({
-        limit: 40, before: append ? cursor : undefined,
+        limit: 100, before: append ? cursor : undefined,
         mine: (onlyMine && !userFilter) || undefined, user: userFilter || undefined, label: characterFilter.trim() || undefined,
       })
       if (closed || id !== requestId) return
@@ -92,7 +96,13 @@
   }
   function when(at) { try { return formatDateTime(at) } catch { return at } }
   $effect(() => { if (nearEnd && hasMore && !error && !loading && !loadingMore) load(true) })
-  onMount(() => { load(); return () => { closed = true; clearTimeout(filterTimer) } })
+  onMount(() => {
+    onlyMine = stored('atlas.history.onlyMine', false)
+    // A browser from before accounts reads its history once the session has claimed its old work, so
+    // its own rows are counted as its own; every other browser asks at once.
+    Promise.resolve(holdsLegacyReviewer() ? sessionStarted() : null).then(() => { if (!closed) load() })
+    return () => { closed = true; clearTimeout(filterTimer) }
+  })
 </script>
 
 <!-- A row's character in its script's colour, or a note that it has none. -->

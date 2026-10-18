@@ -46,8 +46,8 @@ def test_the_swap_moves_the_characters_crops_and_glyphs_of_a_family(module):
     for sql in swap:
         if sql.startswith(("UPDATE units", "UPDATE corpus_units")):
             plan = " ".join(row[-1] for row in db.execute("EXPLAIN QUERY PLAN " + sql))
-            assert "SCAN units" not in plan and "SCAN corpus_units" not in plan, plan
-    db.executescript("".join(swap))
+            assert "SCAN" not in plan, plan
+        db.executescript(sql)
     assert db.execute("SELECT family FROM units ORDER BY id").fetchall() == [("U+9084",), ("U+9084",)]
     corpus = json.loads(db.execute("SELECT data FROM units WHERE id='c1'").fetchone()[0])
     assert corpus == {"grapheme": "U+9084", "family_members": members}
@@ -104,6 +104,14 @@ def test_a_family_that_only_moves_its_head_is_still_a_change(module, tmp_path, m
     assert module.changed(previous) == []
     monkeypatch.setattr(module.refs, "graphemes", lambda: {"U+0042": ["U+0041", "U+0042"]})
     assert module.changed(previous) == ["U+0041", "U+0042"]
+
+
+def test_a_character_the_earlier_table_lacked_is_a_change(module, tmp_path, monkeypatch):
+    path = tmp_path / "before.tsv"
+    path.write_text("code_point\tgrapheme\nU+0041\tU+0041\n", encoding="utf-8")
+    previous = module.previous_families(path)
+    monkeypatch.setattr(module.refs, "graphemes", lambda: {"U+0041": ["U+0041"], "U+17000": ["U+17000"]})
+    assert module.changed(previous) == ["U+17000"]
 
 
 def insert_forms(db):

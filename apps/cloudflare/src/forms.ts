@@ -4,6 +4,7 @@
 // `corpus_units.character` follows it for search and counts shortly after (`followCorpus`).
 import { withDating } from './dating';
 import { formProblem, isSequence } from './representation';
+import { refiled } from './category';
 type Json = Record<string, any>;
 export type FormTools = {
   fail: (status: number, message: string, extra?: Record<string, unknown>) => never;
@@ -40,6 +41,12 @@ async function families(env: Env) {
   if (!rows.results.length) return null;
   return { revision: rows.results[0].revision, items: rows.results.map(r => ({ code_point: r.code_point, char: r.char,
     label: r.label, count: r.count, clusters: r.cluster_count, assigned: r.assigned, rejected: r.rejected })) };
+}
+
+// The code points that have a family, which the site reads to link a character to its forms.
+async function codes(env: Env) {
+  const rows = await env.DB.prepare('SELECT code_point FROM form_families ORDER BY code_point').all<{ code_point: string }>();
+  return rows.results.length ? { items: rows.results.map(r => r.code_point) } : null;
 }
 
 // Each cluster's twelve glyphs least like its centre, past the twelve most typical it already shows
@@ -285,12 +292,20 @@ async function drain(env: Env, held: { until: number }) {
       env.DB.prepare(`INSERT INTO corpus_characters(character,production,n,named) SELECT character,production,count(*),0 ${unnamed}
         GROUP BY character,production ON CONFLICT(character,production) DO UPDATE SET n=n+excluded.n`),
       env.DB.prepare('DELETE FROM corpus_characters WHERE n=0'),
+      // The gallery copies of the glyphs moved, read before they leave the list, to refile below.
+      env.DB.prepare(`SELECT g.id,g.category,c.character FROM corpus_gallery g JOIN corpus_units c ON c.id=g.id
+        WHERE g.id IN (${following})`),
       env.DB.prepare(`DELETE FROM corpus_follow WHERE id IN (${following})`),
     ]);
     // The grapheme browser's corpus counts are cached on this stamp; it is written once the counts
     // have changed, so a request in between caches the new counts under the old key at worst.
     if (results[2].meta.changes || results[4].meta.changes)
       await env.DB.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('corpus_counts_at',?)").bind(JSON.stringify(new Date().toISOString())).run();
+    // A glyph moved to another script is dealt to that script's group. Should this fail, the gallery
+    // refill after the next publication files the copies (`scripts/fill_corpus_gallery.py`).
+    const moves = refiled(results.at(-2)!.results as { id: string; category: string | null; character: string | null }[]);
+    if (moves.length) await env.DB.batch(moves.map(move => env.DB.prepare(move.sql).bind(...move.values)))
+      .catch(error => console.error('gallery refile', error));
     if (!results[0].meta.changes) return;
     held.until = until;
     if (results.at(-1)!.meta.changes < FOLLOW_BATCH) return;
@@ -389,6 +404,11 @@ export async function formsRoute(env: Env, request: Request, path: string, q: UR
   const url = new URL(request.url);
   if (path === '/atlas/forms/families')
     return (await cached(url, state, 'families', () => families(env), ctx)) ?? tools.fail(404, 'No clustering has been published.');
+  if (path === '/atlas/forms/codes') {
+    const value = (await cached(url, state, 'codes', () => codes(env), ctx)) ?? tools.fail(404, 'No clustering has been published.');
+    // Every page asks for these; the browser keeps them a few minutes.
+    return Response.json(value, { headers: { 'cache-control': 'public, max-age=300', 'x-content-type-options': 'nosniff' } });
+  }
   if (path === '/atlas/forms/decisions.jsonl') return decisionLog(env);
   const familyPath = path.match(/^\/atlas\/forms\/families\/([^/]+)$/);
   if (familyPath) {

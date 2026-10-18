@@ -201,6 +201,14 @@ def _ligature_row(ligature) -> dict[str, Any]:
             "evidence": ligature.evidence}
 
 
+def kind_of(character: Character) -> str:
+    """What a character is to the interface: a ligature, or the script it is written in, kana by default."""
+    if character.ligature:
+        return "ligature"
+    script = str(character.script)
+    return script if script in ("han", "hangul", "gugyeol", "tangut") else "kana"
+
+
 def _row(character: Character, counts: dict[str, int], *, reason: str | None = None) -> dict[str, Any]:
     """One character as a compact row: what it is, and how much ink the corpus has of it."""
     row: dict[str, Any] = {
@@ -529,7 +537,8 @@ def _attested(entry: dict[str, Any]) -> tuple[int, int]:
 
 def variant_pairs(char: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """The characters `char` shares an edge of the 異体字 graph with: those a gallery widens to (a pair
-    with one widening edge), then the rest, each most attested first. Every edge of a pair is kept."""
+    with one widening edge), then the rest, each most attested first. Every edge of a pair is kept;
+    `written` marks a pair one of whose edges says one may be written for the other."""
     by_char: dict[str, dict[str, Any]] = {}
     for edge in refs.variant_edges_of(char):
         other = edge["b"] if edge["a"] == char else edge["a"]
@@ -540,7 +549,8 @@ def variant_pairs(char: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
         entry["edges"].append(edge)
         entry["relations"].append({"relation": edge["relation"], "source": edge["source"], "detail": edge["detail"]})
     for entry in by_char.values():
-        entry["widens"] = refs.widens(entry.pop("edges"))
+        edges = entry.pop("edges")
+        entry["widens"], entry["written"] = refs.widens(edges), any(edge["written"] for edge in edges)
     ordered = sorted(by_char.values(), key=_attested)
     return [e for e in ordered if e["widens"]], [e for e in ordered if not e["widens"]]
 
@@ -578,6 +588,8 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     VARIANTS_SHOWN each; `derived` is the `derived-ids` tier, forms up to two component substitutions
     may write the character as, no gallery widening to them. Every edge keeps its relation, source and
     claims; `sources` cites each source used, and a card with a derived row cites `derived-ids` too.
+    `writes` are the graphemes besides its own that `char`, a reduced form of several characters,
+    writes (后: 後), and `writers` the forms of that kind that write its grapheme (後: 后).
     """
     widening, other = variant_pairs(char)
     shown = [*widening[:VARIANTS_SHOWN], *other[:VARIANTS_SHOWN]]
@@ -596,8 +608,11 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     used = {source for row in rows for source in row["sources"]}
     if predictions:
         used |= {source for row in predictions for source in row["sources"]} | {refs.DERIVED_IDS}
+    point = refs.to_code_point(char)
     return {"items": [r for r in rows if r["widens"]], "related": [r for r in rows if not r["widens"]],
             "derived": predictions, "total": len(widening) + len(other),
+            "writes": [{"code_point": head, "char": refs.to_char(head)} for head in refs.also_writes(point)],
+            "writers": list((refs.grapheme_info(point) or {}).get("writers", [])),
             "sources": {source: cited.get(source, source) for source in sorted(used)}}
 
 
@@ -832,10 +847,7 @@ def suggest(term: str, layer: Layers, *, limit: int = 8) -> dict[str, Any]:
         row = refs.character(code_point)
         item = _row(row, counts, reason=reason)
         item["rank"] = rank
-        item["kind"] = ("ligature" if row.ligature
-                        else "han" if str(row.script) == "han"
-                        else "hangul" if str(row.script) == "hangul"
-                        else "gugyeol" if str(row.script) == "gugyeol" else "kana")
+        item["kind"] = kind_of(row)
         if code_point in variant_of:
             item["variant_of"] = variant_of[code_point]
         item["candidates"] = {**candidate_summary(
