@@ -59,6 +59,11 @@ describe('a reader\'s picture', () => {
     expect((await setAvatar(env, me, 'upload', post(new Uint8Array([137, 80, 78, 71, 0, 0, 0, 0, 0, 0, 0, 0, 0]), 'image/webp'))).status).toBe(415);
     expect((await setAvatar(env, me, 'upload', post(webp(), 'image/png'))).status).toBe(415);
     expect((await setAvatar(env, me, 'upload', post(webp(300 * 1024), 'image/webp'))).status).toBe(413);
+    // A body sent without its length is read only until it passes the limit.
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({ pull(controller) { pulled += 64 * 1024; controller.enqueue(webp(64 * 1024)) } });
+    expect((await setAvatar(env, me, 'upload', post(endless, 'image/webp'))).status).toBe(413);
+    expect(pulled).toBeLessThan(1024 * 1024);
     expect((await setAvatar(env, { ...me, anonymous: true }, 'initial', post('{}'))).status).toBe(403);
     expect((await setAvatar(env, me, 'elsewhere', post('{}'))).status).toBe(422);
   });
