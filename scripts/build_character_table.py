@@ -628,6 +628,15 @@ def jis0208(ucd: Path) -> set[str]:
     return _irg_repertoire(ucd, "kIRG_JSource", "J0-")
 
 
+def readings(ucd: Path) -> set[str]:
+    """The ideographs Unihan gives a reading or a definition (any field of `Unihan_Readings.txt`): the
+    characters of their own, against forms that only write others."""
+    with zipfile.ZipFile(ucd / "Unihan.zip") as archive:
+        text = archive.read("Unihan_Readings.txt").decode("utf-8")
+    return {chr(int(line.split("\t", 1)[0].removeprefix("U+"), 16))
+            for line in text.splitlines() if line.startswith("U+")}
+
+
 def _irg_repertoire(ucd: Path, field: str, prefix: str) -> set[str]:
     """The ideographs one IRG source field places in one national standard."""
     with zipfile.ZipFile(ucd / "Unihan.zip") as archive:
@@ -659,7 +668,7 @@ def _add_shape_families(
                for head, family in (document.get("families") or {}).items()}
     families = shape_families.families(
         read_table(vocab / VARIANTS_NAME), read_table(vocab / EQUIVALENTS_NAME), ideographs,
-        default_figure, jis0208(ucd), curated, refused, gb2312(ucd), cns1(ucd), familiarity(ucd))
+        default_figure, jis0208(ucd), curated, refused, gb2312(ucd), cns1(ucd), familiarity(ucd), readings(ucd))
     for family in families:
         head = code_point(ord(family.head))
         for member in family.members:
@@ -1199,10 +1208,12 @@ def write_families(families: list[shape_families.Family], target: Path, vocab: P
          f"{EQUIVALENTS_NAME} (itaiji, source mj-kanji: the MJ文字情報一覧表's X0213 column) and "
          f"{MJ_KANJI_NAME} (実装したUCS, the default figure of a code point)"),
         (f"#   unihan: Unihan_IRGSources.txt kIRG_JSource J0 (JIS X 0208) of Unicode {RELEASE}, "
-         "for the representative and for which reductions need a second source"),
+         "for the representative and for which reductions need a second source; Unihan_Readings.txt, "
+         "for the forms with no reading or definition of their own"),
         ("# role: merge joins a and b; corroborates is the second source a reduction between two "
          "JIS X 0208 characters needs; writes says the end outside the family, a form that writes "
-         "several characters, writes this one too."),
+         "several characters, writes this one too; stands-for says the end outside the family, a "
+         "form with no reading or definition of its own, stands for this one."),
         "# columns: " + ", ".join(FAMILY_FIELDS),
         (f"# families: {len(emitted)} ({sum(1 for family in emitted if family.curated)} curated), "
          f"characters: {sum(len(family.members) for family in emitted)}, "

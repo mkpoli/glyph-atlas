@@ -62,7 +62,7 @@
   "chips.variants": "异体字",
   "chips.related": "相关字",
   "chips.shared": "兼用",
-  "chips.alsoOwn": "也是别字",
+  "chips.alsoOther": "也用于别的字",
   "chips.alsoWritten": "也写作{char}",
   "chips.derived": "推导",
   "chips.relation.variant": "异体字",

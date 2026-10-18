@@ -63,6 +63,8 @@ def test_the_writers_part_replaces_grapheme_writers_alone(monkeypatch, tmp_path)
     assert ("后", "後") in rows and ("弁", "辯") in rows and ("甲", "乙") not in rows
     assert len(rows) == len(variants.writer_rows())
     assert db.execute("SELECT writer FROM grapheme_writers WHERE grapheme='後'").fetchall() == [("后",)]
+    assert set(db.execute("SELECT grapheme,own FROM grapheme_writers WHERE writer='𠮮'")) == {("后", 0), ("𠯑", 0)}
+    assert db.execute("SELECT own FROM grapheme_writers WHERE writer='后'").fetchall() == [(1,)]
     monkeypatch.setattr(sys, "argv", ["export_character_variants.py", "--writers", str(tmp_path)])
     variants.main()
     assert [path.name for path in (tmp_path / "sql").iterdir()] == ["part-001.sql"]

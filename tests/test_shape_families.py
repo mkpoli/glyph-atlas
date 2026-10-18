@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 
 from glyph_atlas import refs
-from glyph_atlas.shape_families import families
+from glyph_atlas.shape_families import STANDS_FOR, families
 
 OYAJI = "{figure}: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1"
 
@@ -391,3 +391,30 @@ def test_the_site_lists_the_forms_that_write_several_characters():
     family = refs.grapheme_info(refs.to_code_point("後"))
     assert [w["char"] for w in family["writers"]] == ["后"]
     assert "后" not in family["label"], "a writer is not a member"
+
+
+def test_a_form_with_no_character_of_its_own_stands_for_each_it_is_a_variant_of():
+    """𠮮 has no reading in Unihan and is a variant of 后 and of 𠯑; 寸, a character of its own, is not."""
+    rows = [edge("后", "𠮮", "variant", "cjkvi-variants", "后→𠮮 twedu/variant"),
+            edge("𠮮", "𠯑", "variant", "cjkvi-variants", "𠯑→𠮮 twedu/variant"),
+            edge("寸", "時", "variant"), edge("寸", "算", "variant"),
+            # Each also a variant of something else, as on the site, so neither joins 𠮮 as a leaf.
+            edge("後", "后", "simplified", "opencc", "STCharacters (also itself) | TSCharacters"),
+            edge("舌", "𠯑", "variant"), edge("㕲", "𠯑", "variant"), edge("舌", "甲", "variant"),
+            edge("㕲", "乙", "variant")]
+    chars = {char for row in rows for char in (row["a"], row["b"])}
+    found = families(rows, (), chars, {}, set(), readings=chars - {"𠮮"})
+    assert {family.head: "".join(family.writers) for family in found if family.writers} == {"后": "𠮮", "後": "后", "𠯑": "𠮮"}
+    assert {edge.role for family in found for edge in family.writers.get("𠮮", [])} == {STANDS_FOR}
+    assert not [family for family in families(rows, (), chars, {}, set()) if "𠮮" in family.writers], "no readings, none"
+    pair = [edge("甲", "乙", "variant"), edge("甲", "丙", "variant"), edge("乙", "丁", "variant"),
+            edge("丙", "戊", "variant"), edge("丁", "己", "variant")]
+    found = families(pair, (), set("甲乙丙丁戊己"), {}, set(), readings=set("丙丁戊己"))
+    assert {family.head: "".join(family.writers) for family in found if family.writers} == {"丙": "甲", "丁": "乙"}, \
+        "two forms with no character of their own never stand for each other"
+
+
+def test_the_site_gives_a_stand_in_the_graphemes_it_stands_for():
+    point = refs.to_code_point("𠮮")
+    assert not refs.own_grapheme(point) and refs.own_grapheme(refs.to_code_point("后"))
+    assert "".join(refs.to_char(head) for head in refs.also_writes(point)) == "后𠯑"

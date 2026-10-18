@@ -63,7 +63,7 @@
   "chips.variants": "Variants",
   "chips.related": "Related",
   "chips.shared": "shared",
-  "chips.alsoOwn": "also its own character",
+  "chips.alsoOther": "also writes another character",
   "chips.alsoWritten": "also written {char}",
   "chips.derived": "Derived",
   "chips.relation.variant": "Variant",

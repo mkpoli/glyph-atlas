@@ -59,7 +59,7 @@
   "chips.variants": "Dị thể",
   "chips.related": "Liên quan",
   "chips.shared": "dùng cả hai",
-  "chips.alsoOwn": "cũng là chữ riêng",
+  "chips.alsoOther": "cũng dùng cho chữ khác",
   "chips.alsoWritten": "cũng viết {char}",
   "chips.derived": "Phái sinh",
   "chips.relation.variant": "Dị thể",
