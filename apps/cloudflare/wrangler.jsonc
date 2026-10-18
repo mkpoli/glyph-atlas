@@ -28,7 +28,9 @@
   "ratelimits": [{"name": "CORRECTIONS", "namespace_id": "4401", "simple": {"limit": 20, "period": 60}},
                  {"name": "CLAIMS", "namespace_id": "4403", "simple": {"limit": 30, "period": 60}},
                  // An image search is a few Vectorize queries and record reads; one address gets 30 a minute.
-                 {"name": "REVERSE_QUERIES", "namespace_id": "4404", "simple": {"limit": 30, "period": 60}}],
+                 {"name": "REVERSE_QUERIES", "namespace_id": "4404", "simple": {"limit": 30, "period": 60}},
+                 // A sign-in code is a mail; one address receives two a minute, from whichever network asks.
+                 {"name": "SIGN_IN_MAIL", "namespace_id": "4405", "simple": {"limit": 2, "period": 60}}],
   // The image search's vectors, one index per classifier encoder (`glyph-atlas-similar-<encoder[:8]>`).
   // `scripts/publish_reverse.sh create` makes it and `publish` fills it; it has to exist before a deploy,
   // and SIMILAR_INDEX_NAME above names it too.

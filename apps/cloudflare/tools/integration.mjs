@@ -22,7 +22,8 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
   d1Databases: ['DB'], r2Buckets: ['MEDIA'], bindings: { BETTER_AUTH_SECRET: 'integration-test-secret-integration-test' },
   ratelimits: { CORRECTIONS: { namespace_id: '4401', simple: { limit: 20, period: 60 } },
     // The ledger and form sections make more claims than the site's 30 a minute; the limit itself is checked at the end.
-    CLAIMS: { namespace_id: '4403', simple: { limit: 100, period: 60 } } },
+    CLAIMS: { namespace_id: '4403', simple: { limit: 100, period: 60 } },
+    SIGN_IN_MAIL: { namespace_id: '4405', simple: { limit: 2, period: 60 } } },
 }]}))
 try {
   const db = await mf.getD1Database('DB')

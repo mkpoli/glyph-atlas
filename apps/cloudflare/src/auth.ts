@@ -3,7 +3,7 @@
 // The journal stays append-only. Its `actor` column holds whatever id wrote the row, and `actors` says
 // which user each of those ids now belongs to.
 import { betterAuth } from 'better-auth';
-import { APIError } from 'better-auth/api';
+import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { admin, anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
 import { MAIL, signInMail } from './mail';
@@ -111,6 +111,18 @@ function build(env: Env, origin: string) {
           },
         },
       },
+    },
+    hooks: {
+      // The address a code goes to is held to SIGN_IN_MAIL before a code is made: a refused request
+      // leaves the code already sent in place. The limiter is keyed by the address's hash.
+      before: createAuthMiddleware(async ctx => {
+        if (ctx.path !== '/email-otp/send-verification-otp') return;
+        const email = String(ctx.body?.email ?? '').trim().toLowerCase();
+        const key = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email)))]
+          .map(b => b.toString(16).padStart(2, '0')).join('');
+        const { success } = await env.SIGN_IN_MAIL.limit({ key });
+        if (!success) throw new APIError('TOO_MANY_REQUESTS', { message: 'A code was just sent to this address. Wait a minute and try again.' });
+      }),
     },
     plugins: [
       emailOTP({

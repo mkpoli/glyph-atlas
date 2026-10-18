@@ -8,6 +8,7 @@ interface __BaseEnv_Env {
 	CORRECTIONS: RateLimit;
 	CLAIMS: RateLimit;
 	REVERSE_QUERIES: RateLimit;
+	SIGN_IN_MAIL: RateLimit;
 	SIMILAR_INDEX: VectorizeIndex;
 	ASSETS: Fetcher;
 	MAIL_FROM: "sign-in@glyphatlas.org";
