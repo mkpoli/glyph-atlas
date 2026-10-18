@@ -9,7 +9,13 @@
   // `onedit` hears each new box, in source pixels, `onexit` an Escape.
   let { item, detail = null, corpus = false, cropBox = null, disabled = false, editing = false,
     onedit = null, onexit = null, describedby = undefined, onload = () => {}, onerror = () => {} } = $props()
-  let viewport = $state(null), data = $state(null), loading = $state(true), detailFailed = $state(false)
+  // A supplied record names the crop shown: the same crop, revision and image (or corpus source).
+  const matches = (supplied, shown, fromCorpus) => supplied.id === shown.id && supplied.revision === shown.revision
+    && (fromCorpus ? supplied.source_revision === shown.source_revision : supplied.image_sha256 === shown.image_sha256)
+  // A supplied record is in place from the first render, the server's included, so the page around
+  // the crop is in the page's HTML and its photo loads with the document.
+  const first = detail && matches(detail, item, corpus) ? detail : null
+  let viewport = $state(null), data = $state(first), loading = $state(!first), detailFailed = $state(false)
   let contextReady = $state(false), contextFailed = $state(false), fullReady = $state(false), fullFailed = $state(false)
   let expandPage = $state(false)
   let pageSize = $state({ width: 0, height: 0 }), size = $state({ width: 400, height: 380 })
@@ -17,9 +23,12 @@
   let cropReady = $state(false), cropFailed = $state(false), notified = $state(null)
   let pointer = null
 
+  let rendered = Boolean(first)
   $effect(() => {
     const { id, revision, image_sha256, source_revision } = item
     const supplied = detail, fromCorpus = corpus
+    // The record rendered with is already shown, and its photos may have loaded before hydration.
+    if (rendered) { rendered = false; return }
     const abort = new AbortController()
     data = null; loading = true; detailFailed = false
     contextReady = false; contextFailed = false; fullReady = false; fullFailed = fromCorpus
@@ -28,8 +37,7 @@
     pageSize = { width: 0, height: 0 }; zoom = 1; pan = { x: 0, y: 0 }
     pointer = null; dragging = false
     if (supplied) {
-      const sameSource = fromCorpus ? supplied.source_revision === source_revision : supplied.image_sha256 === image_sha256
-      if (supplied.id === id && supplied.revision === revision && sameSource) data = supplied
+      if (matches(supplied, { id, revision, image_sha256, source_revision }, fromCorpus)) data = supplied
       else detailFailed = true
       loading = false
       return () => abort.abort()
