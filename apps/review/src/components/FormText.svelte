@@ -3,11 +3,12 @@
   // Unicode lacks, named by its ideographic description sequence and marked as one. Such a form is
   // drawn from the composer's drawing of the sequence (`drawingKey`, served under /atlas/ids/) in the
   // colour of Han, and shown as the sequence's text until the drawing loads or where none is made.
-  // Hovering shows the sequence as written. `stacked` sets the tag under the form, as a card's label.
+  // Hovering shows the sequence as written. `stacked` sets the tag under the form, as a card's label;
+  // `lang` the language whose fonts draw it (a regional shape).
   import ScriptText from './ScriptText.svelte'
   import { drawingKey, isDescription } from '../lib/ids.js'
   import { t } from '../lib/i18n.svelte.js'
-  let { text = '', script = '', stacked = false } = $props()
+  let { text = '', script = '', lang = '', stacked = false } = $props()
   const described = $derived(isDescription(text))
   let drawing = $state(null)
 
@@ -25,9 +26,9 @@
 </script>
 
 {#if described}
-  <span class="ids-form" class:stacked title={text}>{#if drawing}<span class="ids-drawing script-char" data-script="kanji" role="img" aria-label={text} style:--drawing="url({drawing})"></span>{:else}<span class="ids-text"><ScriptText {text} script="han" titled={false} /></span>{/if}<small class="ids-tag">{t('form.ids.tag')}</small></span>
+  <span class="ids-form" class:stacked title={text}>{#if drawing}<span class="ids-drawing script-char" data-script="kanji" role="img" aria-label={text} style:--drawing="url({drawing})"></span>{:else}<span class="ids-text"><ScriptText {text} script="han" {lang} titled={false} /></span>{/if}<small class="ids-tag">{t('form.ids.tag')}</small></span>
 {:else}
-  <ScriptText {text} {script} />
+  <ScriptText {text} {script} {lang} />
 {/if}
 
 <style>

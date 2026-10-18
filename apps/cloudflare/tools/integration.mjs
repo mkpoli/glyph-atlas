@@ -694,9 +694,13 @@ try {
   assert.ok(!derivedCard.variants.items.some(v => v.char === '𠈌') && !derivedCard.variants.related.some(v => v.char === '𠈌'), 'a derived form is in no attested tier')
   // The IDS editor's start: 仮's descriptions by key, and the substitutes of each component, most
   // contexts first, read by key on either side of a substitution.
-  await db.batch([db.prepare(`INSERT INTO han_ids VALUES('仮','["⿰亻反"]')`)])
+  // 所's regional shapes come with it; a character with one shape has none.
+  await db.batch([db.prepare(`INSERT INTO han_ids VALUES('仮','["⿰亻反"]',NULL)`),
+    db.prepare(`INSERT INTO han_ids VALUES('所','["⿰戶斤","⿰戸斤"]','[{"text":"⿰戶斤","regions":"GHTKPV"},{"text":"⿰戸斤","regions":"J"}]')`)])
   const structure = await call('/layers/structure?c=%E4%BB%AE')
   assert.deepEqual(structure.sequences, ['⿰亻反'])
+  assert.deepEqual(structure.shapes, [])
+  assert.deepEqual((await call('/layers/structure?c=%E6%89%80')).shapes, [{ text: '⿰戶斤', regions: 'GHTKPV' }, { text: '⿰戸斤', regions: 'J' }])
   assert.deepEqual(structure.substitutes['反'], [{ char: '𠬝', count: 3 }])
   assert.deepEqual(structure.substitutes['亻'], [{ char: '彳', count: 1 }])
   assert.deepEqual((await call('/layers/structure?c=%E5%81%87')).sequences, [], 'a character with no row has no description')

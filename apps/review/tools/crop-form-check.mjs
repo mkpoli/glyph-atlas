@@ -43,6 +43,9 @@ try {
   await browser.writeAs('crop-form-check')
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
+  // A cold service builds a character's card, derived variants and all, slower than the page waits
+  // for it; the cards the check opens are built first.
+  for (const point of ['U+3042', 'U+6240']) await fetch(`${service.base}/layers/characters/${encodeURIComponent(point)}?expand=none`)
   const open = async id => {
     await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
     await browser.waitFor(`${chips}.length > 1`, 30000)
@@ -153,6 +156,33 @@ try {
   assert(JSON.stringify(claimed(second)) === JSON.stringify(['⿰⿱匕失⿱コ疋']), `the description was not claimed: ${claimed(second)}`)
   assert(units(config.directory)[second].unicode === 'U+3042', 'a description changed the crop\'s character')
   console.log('PASS a form written as a description is composed, checked and claimed')
+
+  // A character BabelStone describes by region offers each regional shape among its variants, named by
+  // its regions: 所 as ⿰戶斤 (GHTKPV) and ⿰戸斤 (J).
+  // Another crop written as あ, one with an image to name, is renamed 所.
+  const others = Object.entries(units(config.directory)).filter(([id, unit]) => unit.active && unit.unicode === 'U+3042' && id !== first && id !== second).map(([id]) => id)
+  const [third, renamed] = await browser.evaluate(`(async () => {
+    for (const id of ${JSON.stringify(others)}) {
+      const crop = await (await fetch('/atlas/characters/' + encodeURIComponent(id))).json()
+      if (!crop.image_sha256) continue
+      const response = await fetch('/layers/units/' + encodeURIComponent(id), { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: crypto.randomUUID(), client_id: 'crop-form-check', revision: crop.revision, image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character: '所' }) })
+      return [id, response.status + ' ' + await response.text()]
+    }
+    return [null, 'no other crop written as あ has an image']
+  })()`)
+  assert(third && renamed.startsWith('2'), `no crop could be renamed to 所: ${renamed}`)
+  await browser.goto(`${service.base}/en/crop/${encodeURIComponent(third)}`, { waitFor: ready, timeout: 90000 })
+  await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
+  const options = `[...document.querySelectorAll('dialog[open] .form-picker .form-section')].find(s => s.querySelector('.form-section-title').textContent === 'Variants')?.querySelectorAll('.form-option')`
+  await browser.waitFor(`(${options})?.length > 1`, 20000)
+  const variants = await browser.evaluate(`[...${options}].map(o => o.title)`)
+  assert(variants[0] === '⿰戶斤\nGHTKPV' && variants[1] === '⿰戸斤\nJ', `the regional shapes do not lead the variants: ${variants.join(' ')}`)
+  await browser.screenshot(join(screenshots, 'form-picker-shapes-light.png'))
+  await browser.setColorScheme('dark')
+  await browser.screenshot(join(screenshots, 'form-picker-shapes-dark.png'))
+  await browser.setColorScheme('light')
+  console.log('PASS a character\'s regional shapes lead its variants')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop form')
