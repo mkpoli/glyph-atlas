@@ -53,7 +53,10 @@ export async function wordsFor(env: Env, ids: string[]): Promise<Map<string, Jso
   const valuesOf = (row: Json): Json[] => row.members.length ? row.members
     : row.status === 'disputed' ? row.claims.filter((c: Json) => c.standing).flatMap((c: Json) => c.members) : [];
   const words = [...new Set(parsed.flatMap(row => valuesOf(row).flatMap(m => m.object ? [m.object] : [])))];
-  const supporting = [...new Set(parsed.flatMap(row => row.supporting))];
+  // The claims a slot rests on: its supporting ones, or, disputed, each standing claim.
+  const backing = (row: Json): string[] => row.status === 'disputed'
+    ? row.claims.filter((c: Json) => c.standing).flatMap((c: Json) => c.members.map((m: Json) => m.assertion)) : row.supporting;
+  const supporting = [...new Set(parsed.flatMap(backing))];
   const names = new Map(words.length ? (await env.DB.prepare(wordNamesQuery()).bind(JSON.stringify(words)).all<{ id: string; reading: string; class: string }>())
     .results.map(r => [r.id, { reading: r.reading, class: r.class }]) : []);
   const methods = new Map(supporting.length ? (await env.DB.prepare(wordMethodsQuery()).bind(JSON.stringify(supporting)).all<{ id: string; method: string }>())
@@ -63,7 +66,7 @@ export async function wordsFor(env: Env, ids: string[]): Promise<Map<string, Jso
       form: formOf(m.confidence, m.scheme) }));
     const by = [...new Set((row.claims as Json[]).filter(c => row.status === 'disputed' ? c.standing : c.members.some((m: Json) => row.supporting.includes(m.assertion)))
       .map(c => c.asserted_by))];
-    const held = new Set(row.supporting.map((id: string) => methods.get(id)));
+    const held = new Set(backing(row).map(id => methods.get(id)));
     found.set(row.subject, { status: row.status, values, methods: spec.methods!.filter(method => held.has(method)), supporting: row.supporting, by });
   }
   return found;
@@ -74,23 +77,33 @@ export async function withWords<T extends Json>(env: Env, items: T[]): Promise<(
   return items.map(item => ({ ...item, word: words.get(item.id) ?? null }));
 }
 
-// Spellings find their words by the spelling index; reading searches use a range of the word key.
-export const wordChoicesQuery = (reading = false) => `SELECT id,reading,class FROM words WHERE ${reading
-  ? 'id>=? AND id<?' : 'id IN (SELECT word FROM word_spellings WHERE spelling IN (SELECT value FROM json_each(?)))'} ORDER BY id LIMIT 20`;
-export const wordSpellingsQuery = () => `SELECT DISTINCT word,spelling FROM word_spellings
+// At most this many words are offered.
+const CHOICES_MAX = 20;
+// Spellings find their words by the spelling index, readings by a range of the word key; a reading
+// typed beside the crop's characters narrows the words they spell to it.
+const SPELLED = 'id IN (SELECT word FROM word_spellings WHERE spelling IN (SELECT value FROM json_each(?)))';
+export const wordChoicesQuery = (by: 'spelling' | 'reading' | 'both') => `SELECT id,reading,class FROM words WHERE ${
+  by === 'reading' ? 'id>=? AND id<?' : by === 'both' ? SPELLED + ' AND id>=? AND id<?' : SPELLED} ORDER BY id LIMIT ${CHOICES_MAX}`;
+export const choiceSpellingsQuery = () => `SELECT DISTINCT word,spelling FROM word_spellings
   WHERE word IN (SELECT value FROM json_each(?)) ORDER BY word,spelling`;
 
-/** Words spelled by the crop's characters first, followed by matches for the reading prefix. */
+// The key range of the word ids that begin with `prefix`.
+function range(prefix: string): [string, string] {
+  const points = [...prefix].map(c => c.codePointAt(0)!);
+  while (points.at(-1) === 0x10ffff) points.pop();
+  const next = points.pop()! + 1;
+  return [prefix, String.fromCodePoint(...points, next >= 0xd800 && next <= 0xdfff ? 0xe000 : next)];
+}
+
+/** Words spelled by the crop's characters first, followed by words whose reading begins with `q`. */
 export async function wordChoices(env: Env, q: string, chars: string[]) {
-  const wanted = [...new Set(chars)].slice(0, 4);
-  const spelled = wanted.length ? (await env.DB.prepare(wordChoicesQuery()).bind(JSON.stringify(wanted)).all<Json>()).results : [];
+  const wanted = JSON.stringify([...new Set(chars)].slice(0, 4));
   const reading = q.trim().replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
-  const prefix = [...'ja/' + reading];
-  while (prefix.at(-1) === '\u{10ffff}') prefix.pop();
-  const last = prefix.pop()!;
-  const matches = reading && spelled.length < 20 ? (await env.DB.prepare(wordChoicesQuery(true))
-    .bind('ja/' + reading, prefix.join('') + String.fromCodePoint(last.codePointAt(0)! + 1)).all<Json>()).results : [];
-  const choices = [...new Map([...spelled, ...matches].map(row => [row.id, row])).values()].slice(0, 20);
-  const spellings = choices.length ? (await env.DB.prepare(wordSpellingsQuery()).bind(JSON.stringify(choices.map(row => row.id))).all<{ word: string; spelling: string }>()).results : [];
+  const ids = reading ? range('ja/' + reading) : null;
+  const all = (sql: string, ...values: unknown[]) => env.DB.prepare(sql).bind(...values).all<Json>().then(r => r.results);
+  const spelled = chars.length ? await (ids ? all(wordChoicesQuery('both'), wanted, ...ids) : all(wordChoicesQuery('spelling'), wanted)) : [];
+  const read = ids && spelled.length < CHOICES_MAX ? await all(wordChoicesQuery('reading'), ...ids) : [];
+  const choices = [...new Map([...spelled, ...read].map(row => [row.id, row])).values()].slice(0, CHOICES_MAX);
+  const spellings = choices.length ? await all(choiceSpellingsQuery(), JSON.stringify(choices.map(row => row.id))) : [];
   return choices.map(row => ({ ...row, spellings: spellings.filter(s => s.word === row.id).map(s => s.spelling) }));
 }
