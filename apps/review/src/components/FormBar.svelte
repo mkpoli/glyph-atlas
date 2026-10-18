@@ -9,7 +9,7 @@
 
 <div class="form-bar" role="region" aria-label={t('bulk.label')}>
   {#if done}
-    <span class="form-done" role="status">{t('bulk.done', { count: done.count, char: done.char })}{#if done.kept} · {t('bulk.kept', { count: done.kept })}{/if}</span>
+    <span class="form-done" role="status">{t('bulk.done', { count: done.count, char: done.char })}{#if done.kept}{' · '}{t('bulk.kept', { count: done.kept })}{/if}</span>
     <button class="quiet" disabled={busy} onclick={onundo}>{t('bulk.undo')}</button>
     {#if !count}<button class="quiet" onclick={ondismiss} aria-label={t('bulk.dismiss')}>×</button>{/if}
   {/if}

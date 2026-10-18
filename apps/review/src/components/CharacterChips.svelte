@@ -114,7 +114,7 @@
           </button>{#if member.code_point === card.code_point}<ZiLink character={member.char} compact />{/if}</div>
         {/each}
         {#each written as v (v.code_point)}
-          <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if sharedWriters.has(v.code_point)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !v.widens}{mainRelation(v)}{#if crops(v)} · {/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
+          <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if sharedWriters.has(v.code_point)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !v.widens}{mainRelation(v)}{#if crops(v)}{' · '}{/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
         {/each}
         {#if variants.derived.length}
           <details class="derived">
@@ -137,7 +137,7 @@
         <span class="layer-label">{t('chips.related')}</span>
         <div class="variant-chips">
           {#each related as v (v.code_point)}
-            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{mainRelation(v)}{#if crops(v)} · {formatNumber(crops(v))}{/if}</small></a>
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{mainRelation(v)}{#if crops(v)}{' · '}{formatNumber(crops(v))}{/if}</small></a>
           {/each}
         </div>
       </div>

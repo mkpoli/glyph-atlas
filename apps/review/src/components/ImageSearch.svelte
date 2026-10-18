@@ -296,7 +296,7 @@
           {#each result.candidates as candidate, n (candidate.key)}
             <button type="button" aria-pressed={chosen === n} onclick={() => chosen = n}>
               <span class="chip-chars"><ScriptText text={candidate.chars.slice(0, 3).join('')} /></span>
-              <small>{percent(candidate.score)}{#if candidate.family} · {t('imageSearch.candidates.family')}{/if}</small>
+              <small>{percent(candidate.score)}{#if candidate.family}{' · '}{t('imageSearch.candidates.family')}{/if}</small>
             </button>
           {/each}
         </div>
