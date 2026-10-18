@@ -11,7 +11,7 @@
   // this site is followed: a browser reads `//host` and `/\host` as another site.
   const next = $derived(sameSite(page.url.searchParams.get('next'), page.url.origin) ?? localize('/account'))
   function sameSite(path, origin) {
-    if (!path?.startsWith('/')) return null
+    if (!path?.startsWith('/') || !URL.canParse(path, origin)) return null
     const url = new URL(path, origin)
     // The address checked is the one followed; `/..//host` resolves to a path that starts `//`.
     return url.origin === origin && !url.pathname.startsWith('//') ? url.href : null
