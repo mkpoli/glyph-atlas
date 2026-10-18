@@ -282,6 +282,49 @@ def test_local_event_between_publication_and_site_chain_is_rejected(store):
     assert len(store.events()) == count and store.unit("u").unicode == "U+624B"
 
 
+def model_meta(store, meta):
+    store.record_batch([ReviewRequest(target_id="u", field="meta", new=meta, client_id="pass",
+                                      base_revision=store.revision("u"))], role="model")
+
+
+def test_a_repair_note_the_site_takes_in_place_does_not_block_its_review(store):
+    publication = baseline(store)
+    model_meta(store, {"alignment_repair": {"status": "uncertain", "quiz": False}})
+    publication = baseline(store)
+    model_meta(store, {"alignment_repair": {"status": "released", "quiz": True}})
+    assert store.revision("u") == publication["character"]["revision"] + 1
+    record, _ = remote(publication, character="ナ")
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"imported": 1}
+    assert store.unit("u").unicode == "U+30CA"
+
+
+def test_other_local_changes_after_the_publication_still_block_it(store):
+    publication = baseline(store)
+    model_meta(store, {"alignment_repair": {"status": "released"}, "note": "another key"})
+    record, _ = remote(publication, character="ナ")
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["items"][0]["reason"] == "local revision differs from the published baseline"
+    assert store.unit("u").unicode == "U+624B"
+
+
+def test_a_repair_note_then_a_local_review_blocks_it(store):
+    publication = baseline(store)
+    model_meta(store, {"alignment_repair": {"status": "released"}})
+    store.record(ReviewRequest(target_id="u", field="review", new="reviewed", client_id="local"))
+    record, _ = remote(publication, character="ナ")
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["items"][0]["reason"] == "local revision differs from the published baseline"
+
+
+def test_a_publication_ahead_of_the_store_is_refused(store):
+    publication = baseline(store)
+    publication["character"]["revision"] += 2
+    record, _ = remote(publication, character="ナ")
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["items"][0]["reason"] == "local revision differs from the published baseline"
+
+
 def test_later_batch_can_follow_own_refinement_but_not_later_local_review(store):
     publication = baseline(store)
     first, after = remote(publication)
