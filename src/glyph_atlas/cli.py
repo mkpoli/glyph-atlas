@@ -832,6 +832,64 @@ def review_propose_characters(
         typer.echo(f"{'retired':<40} {totals['retired']:>4}")
 
 
+@review_app.command("propose-columns")
+def review_propose_columns(
+    directory: Annotated[Path, typer.Argument(help="dataset directory whose pages are searched")],
+    page: Annotated[list[str] | None, typer.Option("--page", help="page id; repeat for several")] = None,
+    document: Annotated[list[str] | None, typer.Option("--document", help="document id; repeat for several")] = None,
+    script: Annotated[str, typer.Option(help="script the proposed characters are filed under, e.g. tangut")] = "unknown",
+) -> None:
+    """Propose the characters a page's columns hold where its boxes leave a gap, for reviewers to read.
+
+    Searches every page with a cached photo and active boxes, or the pages named and the pages of the
+    documents named. A page already searched by this version of the proposer is left as it is."""
+    from PIL import Image
+
+    from . import column_proposals
+    from .review.characters import page_digest
+    from .review.server import cached_image
+    from .review.store import Store
+    from .schema import Box, Script
+
+    try:
+        filed = Script(script)
+    except ValueError as error:
+        raise typer.BadParameter(f"no script {script!r}") from error
+    store = Store(directory)
+    pages = sorted(store.pages().values(), key=lambda record: (record.document_id, record.seq, record.id))
+    missing = set(page or ()) - {record.id for record in pages}
+    if missing:
+        raise typer.BadParameter(f"no page {', '.join(sorted(missing))}")
+    unknown = set(document or ()) - {record.document_id for record in pages}
+    if unknown:
+        raise typer.BadParameter(f"no document {', '.join(sorted(unknown))}")
+    version = column_proposals.proposer()
+    if page or document:
+        pages = [record for record in pages
+                 if record.id in set(page or ()) or record.document_id in set(document or ())]
+    totals = {"created": 0}
+    for record in pages:
+        digest = page_digest(record)
+        path = cached_image(digest) if digest else None
+        if path is None or not record.width or not record.height:
+            typer.echo(f"{record.id:<40} no cached photo")
+            continue
+        with Image.open(path) as image:
+            sx, sy = image.width / record.width, image.height / record.height
+            boxes = [Box(x=round(unit.box.x * sx), y=round(unit.box.y * sy), w=round(unit.box.w * sx),
+                         h=round(unit.box.h * sy))
+                     for unit in store.units_of_page(record.id) if unit.box]
+            proposals = column_proposals.propose(image.convert("RGB"), boxes)
+            size = image.size
+        result = store.propose_units(record.id, proposals, version, image_size=size, script=filed)
+        if result["skipped"]:
+            typer.echo(f"{record.id:<40} already proposed by {version}")
+            continue
+        typer.echo(f"{record.id:<40} {len(boxes):>4} boxes {len(result['created']):>4} recorded")
+        totals["created"] += len(result["created"])
+    typer.echo(f"{'recorded':<40} {totals['created']:>4}")
+
+
 @review_app.command("replay")
 def review_replay(directory: Annotated[Path, typer.Argument(help="dataset directory to rebuild")]) -> None:
     """Rebuild the review state from the tables and the log and check that it matches."""
