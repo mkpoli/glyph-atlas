@@ -139,7 +139,7 @@
       {/each}
     </ul>
     {#if shift}
-      <p class="line-hint" role="status">{#if shift.offset == null}{t('line.pick')}{:else if !count}{t('line.same')}{:else}{t('line.preview', { count })}{#if plan.steps.some(step => step.kept)} {t('line.kept')}{/if}{/if}</p>
+      <p class="line-hint" role="status">{#if shift.offset == null}{t('line.pick')}{:else if !count}{t('line.same')}{:else}{t('line.preview', { count })}{#if plan.steps.some(step => step.kept)}{' '}{t('line.kept')}{/if}{/if}</p>
       <div class="line-tools">
         <span class="line-trim"><span>{t('line.start')}</span>
           <button type="button" aria-label={t('line.startEarlier')} disabled={busy || !plan?.more.start} onclick={() => trim('skip', -1)}>‹</button>
