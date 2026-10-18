@@ -23,14 +23,6 @@
   unicode-range: U+3000-303F, U+3099-309C, U+30A1-30FE, U+31F0-31FF, U+1B127-1B128, U+2A708;
 }
 
-@font-face {
-  font-family: "Noto Serif Tangut";
-  src: url("/fonts/NotoSerifTangut-Tangut.woff2") format("woff2");
-  font-display: swap;
-  /* The Tangut ideographs and the iteration mark; few installed fonts draw any of them. */
-  unicode-range: U+16FE0, U+17000-187F7, U+18D00-18D08;
-}
-
 .reference-glyph { display: inline-block; line-height: 1.1; white-space: nowrap; }
 .reference-glyph.sm { font-size: 1.05rem; }
 .reference-glyph.md { font-size: 1.4rem; }
