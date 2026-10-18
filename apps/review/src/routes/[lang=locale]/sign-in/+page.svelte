@@ -7,9 +7,14 @@
   import { t, localize } from '$lib/i18n.svelte.js'
   import { useSession } from '$lib/session.svelte.js'
   const session = useSession()
-  // A sign-in reached from another page goes back there; otherwise to the account.
-  const next = $derived(page.url.searchParams.get('next')?.startsWith('/') && !page.url.searchParams.get('next').startsWith('//')
-    ? page.url.searchParams.get('next') : localize('/account'))
+  // A sign-in reached from another page goes back there; otherwise to the account. Only a path on
+  // this site is followed: a browser reads `//host` and `/\host` as another site.
+  const next = $derived(sameSite(page.url.searchParams.get('next'), page.url.origin) ?? localize('/account'))
+  function sameSite(path, origin) {
+    if (!path?.startsWith('/')) return null
+    const url = new URL(path, origin)
+    return url.origin === origin ? url.pathname + url.search + url.hash : null
+  }
   // A reader who is already signed in has nothing to do here.
   $effect(() => { if (session.state.user && !session.state.user.anonymous) goto(next, { replaceState: true }) })
 </script>
