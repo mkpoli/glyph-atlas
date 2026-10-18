@@ -140,10 +140,14 @@ def _holds(read: tuple[Box, int] | None, across: float, tall: float) -> bool:
 def propose(image: Image.Image, boxes: Sequence[Box]) -> list[Proposal]:
     """The character boxes the columns of `boxes` imply on `image` where none stands, top to bottom
     within each column. `boxes` are the page's boxes in pixels of `image`."""
-    if not boxes:
-        return []
     mask = ink(image)
     height, width = mask.shape
+    # Boxes clipped to the image; one with nothing left on it, or no height or width, is left out.
+    boxes = [Box(x=max(0, box.x), y=max(0, box.y), w=min(width, box.x + box.w) - max(0, box.x),
+                 h=min(height, box.y + box.h) - max(0, box.y)) for box in boxes]
+    boxes = [box for box in boxes if box.w > 0 and box.h > 0]
+    if not boxes:
+        return []
     size = float(np.median([max(box.w, box.h) for box in boxes]))
 
     def cell(centre: float, reach: float, top: float, bottom: float, gap: int) -> tuple[Box, int] | None:
@@ -173,7 +177,7 @@ def propose(image: Image.Image, boxes: Sequence[Box]) -> list[Proposal]:
         tall = float(np.median([box.h for box in column]))
         across = float(np.median([box.w for box in column]))
         reach = REACH * across
-        steps = [lower.y - upper.y for upper, lower in pairwise(column) if lower.y - upper.y < ADJACENT * tall]
+        steps = [lower.y - upper.y for upper, lower in pairwise(column) if 0 < lower.y - upper.y < ADJACENT * tall]
         pitch = float(np.median(steps)) if steps else tall * CELL
         parted = max(2, int(PARTED * tall))
 
@@ -199,8 +203,9 @@ def propose(image: Image.Image, boxes: Sequence[Box]) -> list[Proposal]:
             cuts = [top]
             for n in range(1, count):
                 guess = top + n * (bottom - top) / count
-                low, high = int(guess - SLACK * pitch), int(guess + SLACK * pitch) + 1
-                cuts.append(low + int(np.argmin(profile[low:high])))
+                low = max(cuts[-1], int(guess - SLACK * pitch))
+                high = min(bottom, height, int(guess + SLACK * pitch) + 1)
+                cuts.append(low + int(np.argmin(profile[low:high])) if high > low else int(guess))
             cuts.append(bottom)
             for a, b in pairwise(cuts):
                 read = cell(centre, reach, a, b, parted)

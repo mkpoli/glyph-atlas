@@ -876,9 +876,12 @@ def review_propose_columns(
             continue
         with Image.open(path) as image:
             sx, sy = image.width / record.width, image.height / record.height
+            # Every column proposal is left out: an earlier version's are retired as this one is
+            # recorded, and a kept one stands against its replacement in the store.
             boxes = [Box(x=round(unit.box.x * sx), y=round(unit.box.y * sy), w=round(unit.box.w * sx),
                          h=round(unit.box.h * sy))
-                     for unit in store.units_of_page(record.id) if unit.box]
+                     for unit in store.units_of_page(record.id)
+                     if unit.box and not unit.meta.get("proposer", "").startswith(f"{column_proposals.FAMILY}-")]
             proposals = column_proposals.propose(image.convert("RGB"), boxes)
             size = image.size
         result = store.propose_units(record.id, proposals, version, image_size=size, script=filed)

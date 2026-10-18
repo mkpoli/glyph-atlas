@@ -120,3 +120,31 @@ def test_the_command_adds_the_missed_characters_beside_the_detectors(dataset: Pa
     for arguments, message in ((["--script", "klingon"], "no script"), (["--page", "nope"], "no page")):
         refused = runner.invoke(app, ["review", "propose-columns", str(dataset), *arguments])
         assert refused.exit_code == 2 and message in refused.output, refused.output
+
+
+def test_degenerate_and_outlying_boxes_propose_nothing_and_raise_nothing() -> None:
+    flat = [Box(x=x, y=y, w=40, h=0) for x in COLUMNS[:3] for y in range(100, 700, 60)]
+    assert column_proposals.propose(page(), flat) == []
+    stacked = [Box(x=x, y=y, w=SIDE, h=SIDE) for x in COLUMNS[:3] for y in (100, 100, 100, 100, 200, 260)]
+    column_proposals.propose(page(), stacked)
+    below = [Box(x=x, y=y, w=SIDE, h=SIDE) for x in COLUMNS[:3] for y in (700, 760, 820, 1000, 1060, 1120)]
+    column_proposals.propose(Image.new("RGB", (560, 900), "white"), below)
+
+
+def test_a_new_version_puts_back_the_boxes_the_old_one_proposed(dataset: Path,
+                                                                monkeypatch: pytest.MonkeyPatch) -> None:
+    from glyph_atlas.character_proposals import Proposal
+    from glyph_atlas.cli import app
+
+    store = Store(dataset)
+    detected = [Proposal(x=b.x, y=b.y, w=b.w, h=b.h, score=0.05)
+                for b in (cell(c, r) for c in range(len(COLUMNS)) for r in range(ROWS)) if (b.x, b.y) != (300, 280)]
+    store.propose_units("eap140:fixture:1", detected, "characters-abc", image_size=(560, 900))
+    runner = CliRunner()
+    assert runner.invoke(app, ["review", "propose-columns", str(dataset)]).exit_code == 0
+    monkeypatch.setattr(column_proposals, "proposer", lambda: "columns-next")
+    upgraded = runner.invoke(app, ["review", "propose-columns", str(dataset)])
+    assert upgraded.exit_code == 0, upgraded.output
+    units = Store(dataset).units_of_page("eap140:fixture:1")
+    assert len(units) == len(COLUMNS) * ROWS
+    assert [unit.meta["proposer"] for unit in units if unit.meta["proposer"].startswith("columns-")] == ["columns-next"]
