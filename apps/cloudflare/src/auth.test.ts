@@ -73,3 +73,23 @@ describe('sign-in codes to one address', () => {
     expect(await call('/sign-in/email-otp', { email, otp: last }, '203.0.113.9')).toBe(200);
   });
 });
+
+describe('requests that mail no sign-in code', () => {
+  it('leave the address its two a minute', async () => {
+    const { call } = setup('https://refused.glyphatlas.org');
+    const email = 'reader@example.org';
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'forget-password' }, '192.0.2.1')).toBe(400);
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'change-email' }, '192.0.2.2')).toBe(400);
+    expect(await call('/email-otp/send-verification-otp', { email: ' ' + email, type: 'sign-in' }, '192.0.2.3')).toBe(400);
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'sign-in' }, '192.0.2.4')).toBe(200);
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'sign-in' }, '192.0.2.5')).toBe(200);
+  });
+  it('find the other routes that mail a code off', async () => {
+    const { call } = setup('https://routes.glyphatlas.org');
+    const email = 'reader@example.org';
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'sign-in' })).toBe(200);
+    for (const path of ['/email-otp/request-password-reset', '/forget-password/email-otp', '/email-otp/reset-password',
+      '/email-otp/request-email-change', '/email-otp/change-email'])
+      expect(await call(path, { email, newEmail: 'other@example.org', otp: '000000', password: 'x'.repeat(12) })).toBe(404);
+  });
+});
