@@ -157,8 +157,9 @@ try {
   assert(units(config.directory)[second].unicode === 'U+3042', 'a description changed the crop\'s character')
   console.log('PASS a form written as a description is composed, checked and claimed')
 
-  // A character BabelStone describes by region offers each regional shape among its variants, named by
-  // its regions: 所 as ⿰戶斤 (GHTKPV) and ⿰戸斤 (J).
+  // A character the IVD registers several figures for offers each sequence among its variants, named
+  // by its MJ figure and drawn in MJ Figures: 所 as 所󠄂 (MJ012120) and 所󠄃 (MJ012119). Its regional
+  // shapes follow, named by their regions: ⿰戶斤 (GHTKPV) and ⿰戸斤 (J).
   // Another crop written as あ, one with an image to name, is renamed 所.
   const others = Object.entries(units(config.directory)).filter(([id, unit]) => unit.active && unit.unicode === 'U+3042' && id !== first && id !== second).map(([id]) => id)
   const [third, renamed] = await browser.evaluate(`(async () => {
@@ -177,12 +178,14 @@ try {
   const options = `[...document.querySelectorAll('dialog[open] .form-picker .form-section')].find(s => s.querySelector('.form-section-title').textContent === 'Variants')?.querySelectorAll('.form-option')`
   await browser.waitFor(`(${options})?.length > 1`, 20000)
   const variants = await browser.evaluate(`[...${options}].map(o => o.title)`)
-  assert(variants[0] === '⿰戶斤\nGHTKPV' && variants[1] === '⿰戸斤\nJ', `the regional shapes do not lead the variants: ${variants.join(' ')}`)
-  await browser.screenshot(join(screenshots, 'form-picker-shapes-light.png'))
+  assert(variants[0] === 'U+6240 U+E0102\nMJ012120' && variants[1] === 'U+6240 U+E0103\nMJ012119', `the registered figures do not lead the variants: ${JSON.stringify(variants)}`)
+  assert(variants[2] === '⿰戶斤\nGHTKPV' && variants[3] === '⿰戸斤\nJ', `the regional shapes do not follow the figures: ${JSON.stringify(variants)}`)
+  await browser.waitFor(`[...document.fonts].some(f => f.family.replaceAll('"', '') === 'MJ Figures' && f.status === 'loaded')`, 20000)
+  await browser.screenshot(join(screenshots, 'form-picker-variants-light.png'))
   await browser.setColorScheme('dark')
-  await browser.screenshot(join(screenshots, 'form-picker-shapes-dark.png'))
+  await browser.screenshot(join(screenshots, 'form-picker-variants-dark.png'))
   await browser.setColorScheme('light')
-  console.log('PASS a character\'s regional shapes lead its variants')
+  console.log('PASS a character\'s registered figures, then its regional shapes, lead its variants')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop form')

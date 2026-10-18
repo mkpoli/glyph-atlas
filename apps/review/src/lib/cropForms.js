@@ -1,5 +1,6 @@
 import { request, character as readCrop, corpusCharacter } from './client.js'
 import { character as readCard, structure as readStructure } from './layers.js'
+import { drawFigure, figuresOf } from './mjFigures.js'
 
 /**
  * What a crop is written as, read and set through the calls the interface uses and nothing else:
@@ -23,23 +24,28 @@ const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(B
 const cards = new Map()
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then the
- * variants: the shapes BabelStone gives `char` by region when it gives more than one (所 as ⿰戶斤 in
- * GHTKPV and ⿰戸斤 in J), and the variants the sources attest; then the derived ones. A character the layer does not
- * know offers itself alone.
+ * variants: the figures the IVD registers for `char` when it registers more than one (所󠄂 and 所󠄃),
+ * each named by its MJ figure; the shapes BabelStone gives `char` by region when it gives more than
+ * one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J); and the variants the sources attest; then the derived
+ * ones. A character the layer does not know offers itself alone.
  */
 export function listForms(char) {
   if (!char) return Promise.resolve({ members: [], variants: [], derived: [] })
   if (!cards.has(char)) {
     // A sequence the table has no card for (ツ + U+309A) offers itself alone.
     const card = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error))
-    // Only a Han character has regional shapes. A failed read leaves them out of this answer, which is
+    // Figures are offered once their font is loaded, since without it they all look like `char`. Only
+    // a Han character has regional shapes. A failed read leaves its forms out of this answer, which is
     // not kept, and the card's forms still come.
     let partial = false
+    const registered = figuresOf(char).then(async figures => (figures.length && await drawFigure(figures[0].char), figures))
+      .catch(() => { partial = true; return [] })
     const described = HAN.test(char) ? readStructure(char).then(found => found.shapes ?? [], () => { partial = true; return [] }) : Promise.resolve([])
-    const loaded = Promise.all([card, described]).then(([card, regional]) => {
+    const loaded = Promise.all([card, registered, described]).then(([card, figures, regional]) => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
       const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) }))
-      const variants = [...shapes, ...[...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)]
+      const variants = [...figures.map(figure => ({ ...entry(figure), mj: figure.mj })), ...shapes,
+        ...[...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)]
       const derived = (card?.variants?.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))
       const fresh = list => list.filter(item => !seen.has(item.char) && seen.add(item.char))

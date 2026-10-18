@@ -51,10 +51,11 @@
     picking = false; query = ''; composing = false
     onchoose(item.char === current ? null : item.char)
   }
-  // A derived option names how it was made: each substitution of its first route, as made; a regional
-  // shape names its regions.
+  // A derived option names how it was made: each substitution of its first route, as made; a
+  // registered figure names its sequence and its MJ figure; a regional shape names its regions.
   const optionTitle = item => item.routes?.length
     ? `${item.char}\n` + item.routes[0].map(sub => `${sub.was} → ${sub.became}`).join('\n')
+    : item.mj ? `${item.code_point}\n${item.mj}`
     : item.regions ? `${item.char}\n${item.regions}` : item.code_point ?? item.char
   // 1–0 choose the bar's forms, as Quick Review's form bar does; a key typed into a field is the field's.
   function keydown(event) {
@@ -87,7 +88,7 @@
           <div class="form-options">
             {#each items as item (item.char)}
               <button type="button" class="form-option" {disabled} title={optionTitle(item)} onclick={() => add(item)}>
-                <FormText text={item.char} script={item.script} lang={item.lang} />{#if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{:else if item.regions}<small>{item.regions}</small>{/if}
+                <FormText text={item.char} script={item.script} lang={item.lang} />{#if item.mj}<small>{item.mj}</small>{:else if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{:else if item.regions}<small>{item.regions}</small>{/if}
               </button>
             {/each}
           </div>
