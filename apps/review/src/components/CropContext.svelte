@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte'
   import { request } from '../lib/client.js'
   import Glyph from './Glyph.svelte'
   import BoxEditor, { nudged } from './BoxEditor.svelte'
@@ -14,7 +15,7 @@
     && (fromCorpus ? supplied.source_revision === shown.source_revision : supplied.image_sha256 === shown.image_sha256)
   // A supplied record is in place from the first render, the server's included, so the page around
   // the crop is in the page's HTML and its photo loads with the document.
-  const first = detail && matches(detail, item, corpus) ? detail : null
+  const first = untrack(() => detail && matches(detail, item, corpus) ? detail : null)
   let viewport = $state(null), data = $state(first), loading = $state(!first), detailFailed = $state(false)
   let contextReady = $state(false), contextFailed = $state(false), fullReady = $state(false), fullFailed = $state(false)
   let expandPage = $state(false)
@@ -23,12 +24,13 @@
   let cropReady = $state(false), cropFailed = $state(false), notified = $state(null)
   let pointer = null
 
-  let rendered = Boolean(first)
+  let rendered = first
   $effect(() => {
     const { id, revision, image_sha256, source_revision } = item
     const supplied = detail, fromCorpus = corpus
     // The record rendered with is already shown, and its photos may have loaded before hydration.
-    if (rendered) { rendered = false; return }
+    if (rendered && supplied === rendered) { rendered = null; return }
+    rendered = null
     const abort = new AbortController()
     data = null; loading = true; detailFailed = false
     contextReady = false; contextFailed = false; fullReady = false; fullFailed = fromCorpus
