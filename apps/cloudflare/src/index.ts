@@ -2097,7 +2097,7 @@ async function submit(env: Env, request: Request, actor: string, target?: string
   const {answers,seen,skipped}=batch?{answers:correction!.crops,seen:[],skipped:[]}:validRound(input,target);
   // A redrawn box is held to the rate batch corrections are, by address.
   if(!batch&&answers.some(answer=>answer.box!==undefined)){
-    const {success}=await env.CORRECTIONS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
+    const {success}=await env.CORRECTIONS.limit({key:addressKey(request.headers.get('cf-connecting-ip'))});
     if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
   }
   const rows=await unitsById(env,answers.map(answer=>text(answer.id,512,'character id',true)!));
@@ -2508,14 +2508,14 @@ const routes = {
         if(path==='/atlas/rounds')return json(await submit(env,request,me.id));
         if(path==='/atlas/corrections'){
           // A batch changes many crops at once, so each address is held to a rate.
-          const {success}=await env.CORRECTIONS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
+          const {success}=await env.CORRECTIONS.limit({key:addressKey(request.headers.get('cf-connecting-ip'))});
           if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
           return json(await submit(env,request,me.id,'@batch'));
         }
         const acted=path.match(/^\/atlas\/claims\/([^/]+)\/actions$/),picked=path.match(/^\/atlas\/characters\/([^/]+)\/form$/);
         if(path==='/atlas/claims'||acted||picked){
           // A claim, an action or a crop's form is a few small rows, and one address is held to a rate.
-          const {success}=await env.CLAIMS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
+          const {success}=await env.CLAIMS.limit({key:addressKey(request.headers.get('cf-connecting-ip'))});
           if(!success)throw new Problem(429,'Too many claims at once. Wait a minute and try again.');
           const input=await body(request);
           let target='';
