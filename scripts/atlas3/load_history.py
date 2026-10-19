@@ -1,0 +1,218 @@
+"""Load the translated history (`out/history.sqlite`, from history.py) into glyph-atlas-v3.
+
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/load_history.py [--dry-run]
+
+Decision record 0006. Every step writes SQL parts under `out/history-load/<name>/`, named by the
+content of `out/history.sqlite`, so a rerun on the same translation skips what D1 already holds; each
+part is confirmed by its stamp in `imports` and replayed on the local copy.
+
+1. Migration 0003 (stamp `migration:0003`), on D1 and the local copy; the mirror's `codes` take the
+   two mark states the migration numbers, so the publisher never numbers them differently.
+2. The rows of every history table.
+3. Marks: a pending crop with a mark takes the mark as its state, one revision past its own, with an
+   event at the round that marked it. A mark on a crop that is not pending is left out, as the old
+   site showed it only on pending crops.
+4. Earlier cuts: `out/history-cuts.sqlite`, a catalogue of the crops with an earlier box, their
+   records naming their cuts, for `publish.py`.
+
+Run `answers.py` afterwards: marks change the counts by state.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import gzip
+import hashlib
+import json
+import sqlite3
+import sys
+
+from build import HERE, OUT
+from publish import CF, applied, lit, send, write_parts
+
+SCHEMA = CF / "migrations-atlas"
+# Tables in the order their rows load: who and which request first, then what names them.
+TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats", "suspects", "shapes",
+          "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "current_claims",
+          "ledger_submissions", "rejections", "forms", "form_decisions", "corpus_follow", "written_forms")
+GROUP = 500
+
+
+def source(table):
+    db = sqlite3.connect(f"file:{HERE / f'source-{table}.sqlite'}?mode=ro", uri=True)
+    db.row_factory = sqlite3.Row
+    return db
+
+
+def deliver(run, atlas):
+    """Each part of the run to D1, then to the local copy, in order."""
+    for part in sorted(run.glob("*.sql")):
+        stamp = f"{run.name}.{part.stem}"
+        if atlas.execute("SELECT 1 FROM imports WHERE stamp=?", (stamp,)).fetchone():
+            continue
+        if not send("glyph-atlas-v3", part, stamp):
+            sys.exit(f"{part.name} did not apply; rerun to finish")
+        atlas.executescript("BEGIN;\n" + part.read_text() + "COMMIT;\n")
+
+
+def stamped(sql, stamp):
+    return sql + f"\nINSERT INTO imports(stamp, at) VALUES({lit(stamp)}, unixepoch());\n"
+
+
+def migrate(history, atlas, mirror, dry):
+    """Migration 0003 on D1 and the local copy, once; a layout built with it already has its tables."""
+    # The mirror numbers new codes after the highest it holds; the two mark states must be the
+    # migration's numbers before anything else claims them.
+    taken = dict(mirror.execute("SELECT key, code FROM codes WHERE field='state'"))
+    for key, code in history.execute("SELECT key, code FROM codes WHERE field='state'"):
+        if taken.get(key, code) != code or (key not in taken and code in taken.values()):
+            sys.exit(f"the mirror numbers states {taken}; migration 0003 numbers {key} {code}")
+    if dry:
+        print("dry run: migration 0003 and the mirror's mark states not written", flush=True)
+        return
+    mirror.executemany("INSERT OR IGNORE INTO codes(field, key, code) VALUES(?, ?, ?)",
+                       history.execute("SELECT field, key, code FROM codes WHERE field='state'").fetchall())
+    mirror.commit()
+    if atlas.execute("SELECT 1 FROM sqlite_master WHERE name='actors'").fetchone():
+        return
+    path = OUT / "history-load" / "0003.sql"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(stamped((SCHEMA / "0003_history.sql").read_text(), "migration:0003"))
+    if not applied("glyph-atlas-v3", "migration:0003") and not send("glyph-atlas-v3", path, "migration:0003"):
+        sys.exit("migration 0003 did not apply; rerun")
+    atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+    print("migration 0003 applied", flush=True)
+
+
+def rows(history):
+    """INSERT statements for every history row, in groups."""
+    groups = []
+    for table in TABLES:
+        cols = [r[1] for r in history.execute(f'PRAGMA table_info("{table}")')]
+        names = ",".join(f'"{c}"' for c in cols)
+        batch = []
+        for r in history.execute(f'SELECT {names} FROM "{table}" ORDER BY rowid' if table not in
+                                 ("seen", "skips", "favourites", "assertion_evidence", "assertion_premises", "current_claims")
+                                 else f'SELECT {names} FROM "{table}"'):
+            batch.append(f'INSERT INTO "{table}"({names}) VALUES({",".join(lit(v) for v in r)});')
+            if len(batch) == GROUP:
+                groups.append(batch)
+                batch = []
+        if batch:
+            groups.append(batch)
+    return groups
+
+
+def marks(history, atlas):
+    """Each pending marked crop takes its mark as state, one revision past its own, with the event of
+    the latest round that showed it unflagged."""
+    kinds = dict(history.execute("SELECT key, code FROM codes WHERE field='kind'"))
+    states = dict(history.execute("SELECT key, code FROM codes WHERE field='state'"))
+    pending = dict(atlas.execute("SELECT key, code FROM codes WHERE field='state'"))["pending"]
+    statements, left = [], 0
+    for m in json.loads((OUT / "history-marks.json").read_text()):
+        crop = atlas.execute("SELECT state, revision, cut FROM crops WHERE id=?", (m["crop"],)).fetchone()
+        if crop is None or crop[0] != pending:
+            left += 1
+            continue
+        state, revision, cut = states[m["state"]], crop[1], crop[2]
+        shown = history.execute("SELECT s.submission, s.at, b.actor FROM seen s JOIN submissions b ON b.id = s.submission "
+                                "WHERE s.crop = ? AND s.cut = ? AND b.undone = 0 ORDER BY s.at DESC LIMIT 1",
+                                (m["crop"], cut)).fetchone()
+        if shown is None:
+            sys.exit(f"crop {m['crop']} is marked {m['state']} with no round that showed it at its cut {cut}")
+        statements.append(
+            f"INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind, state) VALUES("
+            f"{m['crop']}, {revision + 1}, {cut}, 0, {shown[2]}, {shown[0]}, {shown[1]}, {kinds[m['state']]}, {state});")
+        statements.append(f"UPDATE crops SET state = {state}, revision = {revision + 1} WHERE id = {m['crop']} AND revision = {revision};")
+    return [statements[i:i + GROUP] for i in range(0, len(statements), GROUP)], left
+
+
+def cuts_catalogue():
+    """The crops with an earlier box, as a catalogue whose records name their cuts."""
+    cuts = json.loads((OUT / "history-cuts.json").read_text())
+    shards = {}
+
+    def place(image):
+        key = image.rsplit("/", 1)[-1].split(".")[0]
+        if key[:3] not in shards:
+            path = OUT / "media" / f"{key[:3]}.json.gz"
+            shards[key[:3]] = json.loads(gzip.decompress(path.read_bytes())) if path.exists() else {"objects": [], "keys": {}}
+        s = shards[key[:3]]
+        found = s["keys"].get(key[3:])
+        return [s["objects"][found[0]], found[1], found[2]] if found else None
+
+    path = OUT / "history-cuts.sqlite"
+    path.unlink(missing_ok=True)
+    out = sqlite3.connect(path)
+    units = source("units")
+    cols = [r[1] for r in units.execute("PRAGMA table_info(units)") if r[1] != "_rowid"]
+    out.execute(f"CREATE TABLE units({','.join(cols)})")
+    missing = []
+    for text, versions in cuts.items():
+        r = units.execute("SELECT * FROM units WHERE id=? ORDER BY _rowid DESC LIMIT 1", (text,)).fetchone()
+        if r is None:
+            missing.append(text)
+            continue
+        data = json.loads(r["data"])
+        data["cuts"] = [{"cut": v["cut"], "box": v["box"], "image_sha256": v["pixels"], "image": v["image"],
+                         **({"image_place": place(v["image"])} if v.get("image") and place(v["image"]) else {})}
+                        for v in versions]
+        out.execute(f"INSERT INTO units VALUES({','.join('?' * len(cols))})",
+                    [json.dumps(data, ensure_ascii=False) if c == "data" else r[c] for c in cols])
+    out.commit()
+    if missing:
+        sys.exit(f"{len(missing)} crops with an earlier box have no live record: {missing[:5]}")
+    print(f"{len(cuts)} crops with an earlier box -> {path}; publish it with publish.py", flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--dry-run", action="store_true", help="write the parts and the catalogue, send nothing")
+    args = parser.parse_args()
+    lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    history = sqlite3.connect(f"file:{OUT / 'history.sqlite'}?mode=ro", uri=True)
+    atlas = sqlite3.connect(OUT / "atlas.sqlite")
+    mirror = sqlite3.connect(OUT / "mirror.sqlite")
+    if (OUT / "history-report.txt").read_text().rstrip().endswith("rows stop the move"):
+        sys.exit("the translation stopped the move; run history.py until it exits 0")
+
+    migrate(history, atlas, mirror, args.dry_run)
+    name = "history-" + hashlib.sha256((OUT / "history.sqlite").read_bytes()).hexdigest()[:12]
+    run = OUT / "history-load" / name
+    if not run.exists():
+        run.mkdir(parents=True)
+        tmp = run / "build"
+        tmp.mkdir()
+        n = write_parts(tmp, "rows", rows(history))
+        for part in sorted(tmp.glob("*.sql")):
+            # Stamps name this run, so a part is applied once.
+            part.write_text(part.read_text().replace("'build.rows.", f"'{name}.rows-"))
+            part.rename(run / part.name)
+        tmp.rmdir()
+        print(f"{n} parts of history rows -> {run}", flush=True)
+    if args.dry_run:
+        cuts_catalogue()
+        print("dry run: nothing sent", flush=True)
+        return
+    deliver(run, atlas)
+    # The marks are written once, from the crops as they stand before any is set; a rerun finishes
+    # the same parts.
+    marked = OUT / "history-load" / f"{name}-marks"
+    if not marked.exists():
+        groups, left = marks(history, atlas)
+        marked.mkdir()
+        write_parts(marked, "marks", groups)
+        for part in sorted(marked.glob("*.sql")):
+            part.write_text(part.read_text().replace(f"'{marked.name}.marks.", f"'{marked.name}.marks-"))
+        (marked / "left").write_text(str(left))
+    deliver(marked, atlas)
+    set_ = sum(p.read_text().count("UPDATE crops") for p in marked.glob("*.sql"))
+    print(f"history loaded; {set_} marks set, {(marked / 'left').read_text()} left on crops no longer pending", flush=True)
+    cuts_catalogue()
+
+
+if __name__ == "__main__":
+    main()

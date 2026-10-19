@@ -1,0 +1,52 @@
+import importlib
+import json
+import sqlite3
+import sys
+
+from test_atlas3_history import A1, event, history, sources
+from test_atlas3_publish import crops, ids, layout  # noqa: F401 -- `layout` is the fixture
+
+
+def load(publish, remote, monkeypatch, *flags):
+    sys.modules.pop("load_history", None)
+    module = importlib.import_module("load_history")
+    monkeypatch.setattr(module, "send", remote.send)
+    monkeypatch.setattr(module, "applied", lambda database, stamp: bool(
+        remote.query(database, f"SELECT 1 AS n FROM imports WHERE stamp = '{stamp}'")))
+    monkeypatch.setattr(sys, "argv", ["load_history.py", *flags])
+    module.main()
+
+
+def test_history_loads_once_and_a_mark_becomes_the_crops_state(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    sources(root, events=[event("cf:1", "ex:a2", "u1:s1", "u1", 1, "2026-10-01T00:00:02Z", {"x": 0, "y": 20, "w": 10, "h": 10})],
+            seen=[("ex:a1", "u1:s1", json.dumps(A1), "p1", "2026-10-01T00:00:02Z")], unit_marks=[("ex:a1", "seen")])
+    assert history(monkeypatch, root)[0] == 0
+    a1 = ids(root)["ex:a1"]
+    before = crops(remote)[a1]
+    load(publish, remote, monkeypatch)
+    db = remote.dbs["glyph-atlas-v3"]
+    seen_state = db.execute("SELECT code FROM codes WHERE field='state' AND key='seen'").fetchone()[0]
+    assert crops(remote)[a1]["state"] == seen_state and crops(remote)[a1]["revision"] == before["revision"] + 1
+    assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 2
+    assert db.execute("SELECT count(*) FROM seen").fetchone()[0] == 1
+    # The local copy replays the same parts, and the mirror holds the mark states.
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert local.execute("SELECT state, revision FROM crops WHERE id=?", (a1,)).fetchone() == (seen_state, before["revision"] + 1)
+    assert sqlite3.connect(root / "out" / "mirror.sqlite").execute(
+        "SELECT code FROM codes WHERE field='state' AND key='seen'").fetchone() == (seen_state,)
+    # A second run sends nothing.
+    load(publish, remote, monkeypatch)
+    assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 2
+    # The crop with an earlier box comes out as a catalogue naming its cut -1.
+    cut = sqlite3.connect(root / "out" / "history-cuts.sqlite").execute("SELECT data FROM units WHERE id='ex:a1'").fetchone()
+    assert [(c["cut"], c["box"]) for c in json.loads(cut[0])["cuts"]] == [(-1, {"x": 5, "y": 5, "w": 10, "h": 10})]
+
+
+def test_a_dry_run_changes_nothing(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    sources(root)
+    assert history(monkeypatch, root)[0] == 0
+    load(publish, remote, monkeypatch, "--dry-run")
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT count(*) FROM actors").fetchone() == (0,)
+    assert not sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT 1 FROM codes WHERE key='seen'").fetchone()

@@ -115,9 +115,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    never through a redirect, and writes a per-table report; it exits 1 if any row stops the move. It
    also writes the earlier cuts, the tombstones and the marks the publisher applies. An event on a crop
    the mirror lacks stops the run until `publish.py out/history-tombstones.sqlite` has numbered its
-   tombstone. `0003_history.sql` numbers two crop states (`seen`, `hard`), which the mirror's `codes`
-   must hold too before the publisher runs on a database with that migration. Loading the
-   result into D1 and the alias files for old URLs are *not built*.
+   tombstone. `load_history.py` then applies `0003_history.sql` (which numbers the mark states `seen`
+   and `hard`; the mirror takes the same numbers), loads every translated row in stamped parts, sets
+   each pending marked crop's state to its mark one revision on with an event, and writes
+   `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut. `answers.py`
+   follows, since marks change the counts. The alias files for old URLs are *not built*.
 6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.
 7. **Switch** the Worker's routes to the new layout and resume reviews.
