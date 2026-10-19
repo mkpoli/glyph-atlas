@@ -205,19 +205,22 @@ CREATE INDEX run_rank ON run_stats(size, n);
 - `pages/<page>-<rev>.json.gz`: book, number, credit and rights, page size, IIIF service, lines (text,
   box, direction, image place), and per crop its source id, line, label, script, votes, gate
   evidence, repair and every cut's box and image place. Candidates sit in the same list, marked as
-  candidates. `pages/<page>-<rev>.cuts` is a table of `(slot, cut, image place)` sorted by slot and
-  cut, read by binary search over range reads.
+  candidates.
 - `pub/<pub>/…`, written whole per publication: rendered answers, which are character totals by
   state, counts by style, top books, chronology by decade with capped samples, browse facets and
   totals, the browse sample pool, character cards (variants, derived forms, words, IDS), books with
   both dating axes and their run counts, run details, forms tool lists and the alias shards.
 - `pointer.json`: `(pub, through_gen)`, moved last.
+- `media/<prefix>.json.gz`: the image key map, one shard per first three hex digits of the key,
+  each key's pack, offset and size. A key's place never changes, so shards only grow; a publication
+  uploads the shards its new images fall in before its bundles.
 - Packs hold crop and line images, unchanged.
 
-A crop image is `/i/<id>-<rev>-<cut>.webp`. The page that lists the crop knows its page's `rev`, so
-the image route reads no D1: it takes the page from the id, reads `.cuts` and range-reads the pack,
-and the response is immutable. A bundle stays readable for a week after its page moves to a newer
-revision.
+An image keeps its URL, `/atlas/media/<key>.webp`, the key being the SHA-256 it was exported under.
+The route reads no D1: it reads the key's shard (held at the edge for minutes) and range-reads the
+pack, and the response is immutable. A corpus glyph's record names its images only by key, so the
+map serves collected crops and corpus glyphs alike, and URLs already issued keep working. A bundle
+stays readable for a week after its page moves to a newer revision.
 
 ### Similar crops
 
@@ -231,7 +234,7 @@ A re-cut overwrites the crop's vector.
 ### Publication
 
 - **Changed pages only.** A publication writes only the pages whose content changed. Per page, it
-  uploads the bundle and `.cuts`, then sends the page's rows and its `rev` in one batch, so a reader
+  uploads the bundle, then sends the page's rows and its `rev` in one batch, so a reader
   sees either the old page or the new one.
 - **Row diff.** The publisher keeps a local mirror of every table it owns and sends inserts, updates
   and deletes from the diff, limited to the columns it owns. An upsert carries `WHERE` clauses that

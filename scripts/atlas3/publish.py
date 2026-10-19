@@ -3,7 +3,8 @@
     python3 publish.py <catalogue.sqlite> [--dry-run]
 
 The catalogue is what export_cloudflare.py / export_cloudflare_corpus.py write: `units`, and when
-present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`.
+present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`. A `media` table also adds its
+images to the image key map (`media_map.py`).
 
 - Ids come from out/mirror.sqlite. A new text id gets a page and slot once; the allocation and a
   record of the pending publish are saved in one transaction before anything is sent.
@@ -34,6 +35,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+import media_map
 from build import CORPUS_PAGE, PAGE, bundle_entry, char_text, shuffle
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -314,6 +316,8 @@ def mark(run, line):
 def deliver(m, run):
     """Finish a publish whose ids are allocated. Every step can run again: bundles to R2, then each
     part to D1, then the same part to the local copy, in order; then the guarded rows are read back."""
+    # Image places first, so no crop is listed before its image can be served.
+    media_map.send(upload)
     if "uploaded" not in journal(run):
         upload(sorted((run / "pages").iterdir()))
         mark(run, "uploaded")
@@ -401,6 +405,8 @@ def main():
     media = {}
     if "media" in tables:
         media = {r["key"]: [r["object"], r["offset"], r["size"]] for r in src.execute("SELECT key, object, offset, size FROM media")}
+        if not dry:
+            media_map.merge(src.execute("SELECT key, object, offset, size, content_type FROM media"))
 
     def place(data, field):
         key = (data.get(field) or "").rsplit("/", 1)[-1].split(".")[0]
@@ -656,6 +662,7 @@ def main():
     if not atlas_parts and not runs_parts:
         m.ids.rollback()
         mark(run, "nothing to send")
+        media_map.send(upload)
         print("nothing changed")
         return
     # The allocation and the record that this publish is pending are one transaction.

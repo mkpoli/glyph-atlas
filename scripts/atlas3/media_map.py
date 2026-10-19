@@ -1,0 +1,108 @@
+"""The image key map: where each published image sits in its pack, as R2 shards.
+
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/media_map.py <media.sqlite> [--dry-run]
+
+An image's URL is `/atlas/media/<key>.webp`, its key the SHA-256 the exporter named it by. The map
+holds one shard per first three hex digits of the key, `v3/media/<prefix>.json.gz`:
+`{"objects": [pack, ...], "keys": {<rest of key>: [object index, offset, size]}}`, with a fourth
+member for a content type other than image/webp. A key's place never changes, so shards only grow:
+a run merges the keys of a `media` table into the local copies under `out/media/` and uploads the
+shards that changed. The publisher does the same with a catalogue's `media` table.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import gzip
+import json
+import sqlite3
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+from build import OUT
+
+PREFIX = "v3/media/"
+WEBP = "image/webp"
+
+
+def shard_path(prefix):
+    return OUT / "media" / f"{prefix}.json.gz"
+
+
+def read_shard(prefix):
+    path = shard_path(prefix)
+    if not path.exists():
+        return {"objects": [], "keys": {}}
+    return json.loads(gzip.decompress(path.read_bytes()))
+
+
+def merge(rows, write=True):
+    """Merge (key, object, offset, size, content_type) rows into the local shards and return the number
+    of new keys and of shards they fall in. A key already mapped elsewhere stops the run before any
+    shard is written: a key names one image. Each changed shard is listed in `out/media/unsent` until
+    `send` has uploaded it, so a run that stops between the two leaves it for the next."""
+    by_prefix = defaultdict(list)
+    for row in rows:
+        by_prefix[row[0][:3]].append(row)
+    grown, new = {}, 0
+    for prefix, members in sorted(by_prefix.items()):
+        shard = read_shard(prefix)
+        objects = {name: i for i, name in enumerate(shard["objects"])}
+        grew = False
+        for key, obj, offset, size, content_type in members:
+            if obj not in objects:
+                objects[obj] = len(shard["objects"])
+                shard["objects"].append(obj)
+            place = [objects[obj], offset, size] + ([] if content_type in (None, WEBP) else [content_type])
+            old = shard["keys"].get(key[3:])
+            if old is None:
+                shard["keys"][key[3:]] = place
+                grew = True
+                new += 1
+            elif [shard["objects"][old[0]], *old[1:]] != [obj, offset, size, *place[3:]]:
+                sys.exit(f"image {key} is mapped to {shard['objects'][old[0]]} {old[1:]} and now to {obj} {offset} {size}; nothing written")
+        if grew:
+            grown[prefix] = shard
+    if write and grown:
+        (OUT / "media").mkdir(parents=True, exist_ok=True)
+        with open(OUT / "media" / "unsent", "a") as unsent:
+            unsent.write("".join(f"{prefix}\n" for prefix in grown))
+        for prefix, shard in grown.items():
+            shard_path(prefix).write_bytes(gzip.compress(json.dumps(shard, separators=(",", ":")).encode()))
+    return new, len(grown)
+
+
+def send(upload):
+    """Upload the shards listed in `out/media/unsent` with `upload(files, prefix)`, then clear the list."""
+    unsent = OUT / "media" / "unsent"
+    if not unsent.exists():
+        return 0
+    prefixes = sorted(set(unsent.read_text().split()))
+    upload([shard_path(prefix) for prefix in prefixes], PREFIX)
+    unsent.unlink()
+    return len(prefixes)
+
+
+def main():
+    from publish import upload  # publish imports this module, so it is read here
+
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("media", type=Path, help="an SQLite file with a media(key, object, offset, size, content_type) table")
+    parser.add_argument("--dry-run", action="store_true", help="count what would change and write nothing")
+    args = parser.parse_args()
+    lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    src = sqlite3.connect(f"file:{args.media}?mode=ro", uri=True)
+    rows = src.execute("SELECT key, object, offset, size, content_type FROM media")
+    new, shards = merge(rows, write=not args.dry_run)
+    print(f"{new} new images in {shards} shards", flush=True)
+    if args.dry_run:
+        print("dry run: nothing written or uploaded", flush=True)
+        return
+    print(f"{send(upload)} shards uploaded", flush=True)
+
+
+if __name__ == "__main__":
+    main()
