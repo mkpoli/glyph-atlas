@@ -59,9 +59,11 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   withdrawal needs a catalogue that names it.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
   keeps its runs.
-- A known crop on another page, a known crop with another box or image, or a new box overlapping a
-  published crop on its page (IoU ≥ 0.5) stops the publish with a report: those need the slot
-  matcher, which is not built yet. Publish new pages and new boxes only.
+- A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`
+  moves on by one, and its bundle entry takes the new record. Reviews and claims name the cut they
+  were made on, so they stay with the old one.
+- A known crop on another page, or a new or re-cut box overlapping another crop on its page
+  (IoU ≥ 0.5), stops the publish with a report: those need the slot matcher, which is not built yet.
 - Order: page bundles to R2 (`v3/pages/`, through rclone's `r2` remote), then the rows in parts of at
   most 40 MiB that never split a page (its crops and its revision go together), then the runs. Each
   part is confirmed by its stamp in `imports`, then replayed on the local copy. A publish stopped
