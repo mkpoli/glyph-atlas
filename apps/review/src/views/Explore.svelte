@@ -931,17 +931,17 @@
     }
   }
   onMount(() => { layout = storedLayout() })
-  // A character's page comes without the collection's counts by character and by work, which run to
-  // hundreds of kilobytes: they are read once it shows, for the work menu, the grapheme list and the
-  // tiles' ranks, and a failed read leaves those empty. Counts a save or a listing brought in the
-  // meantime are newer, and stay.
+  // A character's page, and the collection's when no search or filter narrows it, come without the
+  // collection's counts by character and by work, which run to hundreds of kilobytes: they are read
+  // once the page shows, for the work menu, the grapheme list and the tiles' ranks, and a failed read
+  // leaves those empty. Counts a save or a listing brought in the meantime are newer, and stay.
   async function readSummary(signal) {
     try {
-      const summary = await catalogue({ withheld: withheldParam(), limit: 1 }, { priority: 'low', signal })
+      const summary = await catalogue({ group: filter, withheld: withheldParam(), limit: 1 }, { priority: 'low', signal })
       if (!closed && !data?.categories?.length) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents }
     } catch { /* the next save reads them again */ }
   }
-  onMount(() => { if (!opened) return; const reading = new AbortController(); readSummary(reading.signal); return () => reading.abort() })
+  onMount(() => { if (!opened && !(first && !first.result.categories?.length)) return; const reading = new AbortController(); readSummary(reading.signal); return () => reading.abort() })
   // The crop count is read again every half minute while the tab is in view; a hidden tab waits.
   onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) || openSplit(first.result) : false; if (!collection) readCollection(); if (!first && !opened || showWithheld && !flagged) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(() => document.hidden || readCollection(), 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
@@ -975,7 +975,7 @@
   <div class="page-status">
     <h1 class="visually-hidden">{flagged ? t('explore.heading.flagged') : t('explore.heading.atlas')}</h1>
     <SiteLinks />
-    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span>{#if data?.counts?.checked != null}<span class="meta-divider">/</span><span>{t('explore.meta.reviewedCrops', { count: (data.counts.checked ?? 0) + (data.counts.flagged ?? 0) })}</span>{/if}{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span><span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.filter(group => group.local > 0).length })}</span>{/if}</div>
+    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span>{#if data?.counts?.checked != null}<span class="meta-divider">/</span><span>{t('explore.meta.reviewedCrops', { count: (data.counts.checked ?? 0) + (data.counts.flagged ?? 0) })}</span>{/if}{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span>{#if wholeCategories.length}<span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.filter(group => group.local > 0).length })}</span>{/if}{/if}</div>
   </div>
   <div class="collection-toolbar" onfocusin={e => { if (e.target.closest('.character-search') && e.target.matches('input')) loadCorpusCounts() }}>
     <!-- The box, empty and focused, lists the collection's graphemes; one chosen narrows the grid, and a
