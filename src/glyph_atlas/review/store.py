@@ -358,16 +358,19 @@ class Store:
     The store is created from the dataset tables on first use: `documents` names the dataset, and
     `lines` and `units` are copied into SQLite. Every later open reads the store, not the tables, so
     `apply` can write a reviewed state back to the tables without the store losing its own copy of
-    the events. `replay` rebuilds the state from the tables plus the log.
+    the events. `replay` rebuilds the state from the tables plus the log. A `readonly` open uses the
+    existing database without loading tables or migrating its schema.
     """
 
-    def __init__(self, directory: Path, *, rebuilding: bool = False, exporting: bool = False) -> None:
+    def __init__(self, directory: Path, *, rebuilding: bool = False, exporting: bool = False,
+                 readonly: bool = False) -> None:
         # A rebuild reads the tables and replays the events over them, so it does its own reload and
         # keeps the events it holds; an export has to reach the events that a changed table would
         # otherwise hide, because writing them to the log is the way out of that state. Every other
         # open guards against a table another writer changed.
         self.rebuilding = rebuilding
         self.exporting = exporting
+        self.readonly = readonly
         self.directory = Path(directory)
         self.path = self.directory / STORE_NAME
         self.dataset = tables.Dataset(self.directory)
@@ -378,6 +381,9 @@ class Store:
         self._page_texts_stamp: tuple = ()
         self._imports_stamp: tuple = ()
         self._imports_generation: str | None = None
+        # Reports read the stored state without loading tables or migrating the database.
+        if readonly:
+            return
         with self._lock, self._connection() as conn:
             self._schema(conn)
             stamp = self._source_stamp()
@@ -1185,10 +1191,12 @@ class Store:
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path, isolation_level=None, timeout=30.0)
+        target = f"{self.path.resolve().as_uri()}?mode=ro" if self.readonly else self.path
+        conn = sqlite3.connect(target, uri=self.readonly, isolation_level=None, timeout=30.0)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA synchronous = NORMAL")
+        if not self.readonly:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
         try:
             yield conn
         finally:
