@@ -27,7 +27,9 @@ This writes the UPDATE statements that bring such units up to date:
   with its `production` column;
 - a unit whose crop gained or changed its paper colour and image size (`tone`, `image_size`:
   `glyph_atlas.tone`, what the site paints in the crop's place until its image arrives) takes them
-  in place, reviewed or not: they describe the published image, which no review changes.
+  in place, reviewed or not: they describe the published image, which no review changes;
+- a unit whose geometry flags changed (`geometry`: `glyph_atlas.ainu_geometry`, what ainu-records
+  measured on the box) takes them in place too, reviewed or not.
 
 The file ends by stamping `metadata.units_refreshed_at`, which the Worker's cached listings are keyed by.
 
@@ -79,7 +81,7 @@ def quote(value) -> str:
 CROP_KEYS = ("box", "crop_box", "image", "image_sha256")
 # What a publication owns: set on the live row without a new revision, reviewed or not.
 IN_PLACE_KEYS = ("context_image", "context_box", "repair", "page_number",
-                 "production", "production_evidence", "production_label", "tone", "image_size")
+                 "production", "production_evidence", "production_label", "tone", "image_size", "geometry")
 
 
 def same_crop(new_data: str, live_data: str) -> bool:

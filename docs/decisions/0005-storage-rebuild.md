@@ -86,10 +86,10 @@ CREATE TABLE crops(id INTEGER PRIMARY KEY,
   flags INTEGER NOT NULL DEFAULT 0); -- suspect, irregular, reported
 CREATE INDEX crop_char ON crops(char, kind, style, shuffle, id, quiz, state) WHERE kind < 2;
 CREATE INDEX crop_year ON crops(char, kind, year, shuffle, id, style, quiz, state) WHERE kind < 2 AND year IS NOT NULL;
-CREATE INDEX crop_book ON crops(book, shuffle) WHERE kind < 2;
-CREATE INDEX crop_pending ON crops(production, shuffle) WHERE kind = 0 AND state = 0 AND quiz = 1;
+CREATE INDEX crop_book ON crops(book, shuffle, id) WHERE kind < 2;
+CREATE INDEX crop_pending ON crops(production, shuffle, id) WHERE kind = 0 AND state = 0 AND quiz = 1;
 CREATE INDEX crop_backlog ON crops(shuffle, id, production) WHERE kind = 0 AND state = 0 AND quiz = 1;
-CREATE INDEX crop_candidate ON crops(char, shuffle) WHERE kind = 2;
+CREATE INDEX crop_candidate ON crops(char, shuffle, id) WHERE kind = 2;
 CREATE INDEX crop_attention ON crops(char, book) WHERE flags <> 0;
 CREATE TABLE pages(id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, book INTEGER NOT NULL,
   rev INTEGER NOT NULL, next_slot INTEGER NOT NULL DEFAULT 0, next_site_slot INTEGER NOT NULL DEFAULT 8388608);
@@ -138,7 +138,7 @@ CREATE TABLE tally(gen INTEGER, kind INTEGER, char INTEGER, book INTEGER, produc
 CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTEGER, at INTEGER);
 ```
 
-`tally` key columns write 0 for an unknown value, since a `WITHOUT ROWID` key cannot hold NULL.
+`tally` key columns write -1 for an unknown value, since a `WITHOUT ROWID` key cannot hold NULL and 0 is a real code.
 
 - **Two writers, one rule.** Reviews own `char`, `state`, `style`, `quiz`, `kind` (confirming a
   candidate) and `flags`; the publisher owns the rest. A publisher update that touches a
@@ -185,7 +185,7 @@ CREATE TABLE runs(size INTEGER, graphemes TEXT, hand INTEGER, shuffle INTEGER, f
   second INTEGER, third INTEGER, book INTEGER,
   PRIMARY KEY(size, graphemes, hand, shuffle, first)) WITHOUT ROWID;
 CREATE INDEX run_book ON runs(size, graphemes, book, first);
-CREATE INDEX run_first ON runs(first) WHERE size = 2;
+CREATE INDEX run_first ON runs(first);
 CREATE INDEX run_second ON runs(second) WHERE size = 2;
 CREATE TABLE run_stats(size INTEGER, graphemes TEXT, n INTEGER, down INTEGER,
   PRIMARY KEY(size, graphemes)) WITHOUT ROWID;

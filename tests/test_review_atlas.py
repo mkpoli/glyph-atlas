@@ -1981,6 +1981,19 @@ def test_a_crop_carries_its_suspect_mark(dataset):
     assert {mark for identity, mark in marks.items() if identity != first} == {None}
 
 
+def test_a_crop_carries_the_geometry_flags_of_its_box(dataset):
+    first, second = LINE + ":u0", LINE + ":u1"
+    box = {"x": 20, "y": 20, "w": 65, "h": 100}
+    (dataset / "crop-geometry.json").write_text(json.dumps({"units": {
+        first: {"flags": ["tall-crop"], "box": box},
+        # Measured on another cut of the crop: it no longer holds.
+        second: {"flags": ["tall-crop"], "box": {**box, "h": 300}}}}))
+    items = TestClient(create_app(dataset)).get('/atlas', params={"character": "あ", "limit": 96}).json()["items"]
+    marks = {item["id"]: item["geometry"] for item in items}
+    assert marks[first] == {"flags": ["tall-crop"], "box": box}
+    assert {str(mark) for identity, mark in marks.items() if identity != first} == {"None"}
+
+
 def test_a_crop_shows_its_style_and_where_it_comes_from(dataset, tmp_path, monkeypatch):
     from glyph_atlas import style
 

@@ -1,7 +1,7 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
 import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
-  encodeCursor, decodeCursor, historyItem, historyQuery, moved, held, wroteLately, markWriter, substitutionKey, flagRequest, listingFilter } from './index';
+  encodeCursor, decodeCursor, historyItem, historyQuery, moved, held, wroteLately, markWriter, substitutionKey, flagRequest, listingFilter, dealable } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';
 
@@ -300,5 +300,15 @@ describe('unread crops', () => {
     expect(listingFilter(true, 'all', null).where).toContain("character<>''");
     expect(listingFilter(false, 'all', null).where).not.toContain("character<>''");
     expect(listingFilter(false, 'all', null).where).toContain('+quiz=1');
+  });
+});
+
+describe('dealing a local crop', () => {
+  const box = { x: 1, y: 2, w: 3, h: 4 };
+  it('withholds a box ainu-records measured almost no ink in, while the box is unchanged', () => {
+    expect(dealable('local', { box, geometry: { flags: ['sparse-ink'], box } })).toBe(false);
+    expect(dealable('local', { box: { ...box, h: 40 }, geometry: { flags: ['sparse-ink'], box } })).toBe(true);
+    expect(dealable('local', { box, geometry: { flags: ['tall-crop', 'blank-band'], box } })).toBe(true);
+    expect(dealable('local', { box, repair: { quiz: false } })).toBe(false);
   });
 });

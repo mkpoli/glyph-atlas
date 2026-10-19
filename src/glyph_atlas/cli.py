@@ -634,6 +634,19 @@ def review_ocr_repair(
     typer.echo(json.dumps({k: v for k, v in result.items() if k not in ("items", "kept")}, ensure_ascii=False))
 
 
+@review_app.command("ledger-spellings")
+def review_ledger_spellings(
+    directories: Annotated[list[Path], typer.Argument(help="dataset directories with their review stores")],
+    out: Annotated[Path, typer.Option(help="generated spelling table")] = Path("data/vocab/ledger-spellings.tsv"),
+) -> None:
+    """Count the word spellings attested by current crop claims."""
+    from .review import ledger_spellings
+
+    rows = ledger_spellings.count(directories)
+    ledger_spellings.write(rows, out)
+    typer.echo(f"{len(rows)} spellings")
+
+
 @review_app.command("sense-candidates")
 def review_sense_candidates(
     directory: Annotated[Path, typer.Argument(help="dataset directory with its review store")],
@@ -1170,6 +1183,19 @@ def ainu_boxes(
     for name, value in sorted(result["counts"].items()):
         typer.echo(f"{name:<20} {value:>8}")
     typer.echo(f"-> {out}")
+
+
+@ainu_app.command("geometry")
+def ainu_geometry(
+    directory: Annotated[Path, typer.Argument(help="atlas dataset directory holding the Ainu records' units")],
+    records: Annotated[Path, typer.Argument(help="ainu-records checkout, or a copy of its data/characters")],
+    apply: Annotated[bool, typer.Option(help="write the flags to the dataset's crop-geometry.json")] = False,
+) -> None:
+    """Give each `ar:` crop the geometry flags ainu-records measured on its current box."""
+    from . import ainu_geometry
+
+    for name, value in sorted(ainu_geometry.run(directory, records, apply=apply)["counts"].items()):
+        typer.echo(f"{name:<20} {value:>8}")
 
 
 @ainu_app.command("merge")

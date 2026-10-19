@@ -56,5 +56,7 @@ count for など; the counts stay in the generated table and are joined when rea
 - A reading of one crop as a word (this 斗 reads ばかり) is a claim about that crop: a `writes_word`
   claim of the assertion ledger (`docs/design/form-model.md`), which names the word, how the sense
   is known and how sure the reader is of the form.
+- A standing `writes_word` claim on a crop’s current version counts as an observed spelling of the
+  word through `ledger-spellings.tsv`. A gloss claim stays on its crop; dictionary senses stay hand rows.
 - A matching or normalisation policy that uses words is a new named policy when something needs it;
   `align-v1` and `export-v1` are unchanged.
