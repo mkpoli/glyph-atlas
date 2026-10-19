@@ -491,7 +491,9 @@ def main():
         crop_ids[r["id"]] = cid
         given = {"id": cid, "kind": 0, "book": m.book(r["document"]), "char": m.grapheme(r["character"]),
                  "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
-                 "category": m.code("category", r["category"]), "style": m.code("style", r["style"]),
+                 "category": m.code("category", r["category"]),
+                 # A crop with no style is unassessed: galleries page by style and hold no crop without one.
+                 "style": m.code("style", r["style"] or "unassessed"),
                  "state": m.code("state", r["state"]), "quiz": r["quiz"], "year": years.get(r["document"], KEEP),
                  "revision": r["revision"], "shuffle": shuffle(cid)}
         bundle = {"id": r["id"], **bundle_entry(data)}
@@ -519,7 +521,7 @@ def main():
             given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source),
                      "char": m.grapheme((o["character"] if o else None) or r["character"]),
                      "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
-                     "style": m.code("style", (o["style"] if o else None) or r["style"]),
+                     "style": m.code("style", (o["style"] if o else None) or r["style"] or "unassessed"),
                      "state": m.code("state", o["state"] if o else "pending"), "quiz": o["quiz"] if o else 1,
                      "year": years.get(r["document"], KEEP), "revision": o["revision"] if o else 0, "shuffle": shuffle(cid)}
             m.crop(given, {"id": r["id"], "label": r["label"], "record_place": [r["object"], r["offset"], r["size"]]},
