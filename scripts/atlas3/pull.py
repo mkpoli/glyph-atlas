@@ -28,6 +28,31 @@ TABLES = {
     "document_dating": ("document,axis,kind,start,end,precision,label,status", ["document", "axis"], 8000),
     "corpus_documents": ("document,n,title", ["document"], 8000),
     "unit_redirects": ("id,target", ["id"], 8000),
+    # Review history, claims and the crop marks the cutover moves with integer crop ids.
+    "submissions": ("id,actor,request,response,at,undone", ["id"], 2000),
+    "events": ("id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at,processed", ["id"], 300),
+    "skips": ("target,submission,actor,box,image_sha256,at", ["target", "submission"], 5000),
+    "seen": ("target,submission,box,image_sha256,at", ["target", "submission"], 5000),
+    "actors": ("actor,user_id,via,at", ["actor"], 8000),
+    "favourites": ("user_id,unit,at", ["user_id", "unit"], 8000),
+    "written_forms": ("id,submission,target,actor,revision,pixels,label,form,request,at", ["id"], 1000),
+    "assertions": (("id,submission,subject,predicate,scope,slot,object,value,alternative_set,tier,asserted_by,asserted_at,"
+                    "confidence,confidence_scheme,method,run,legacy"), ["id"], 2000),
+    "assertion_actions": ("id,submission,assertion,action,actor,at,reason", ["id"], 4000),
+    "assertion_evidence": ("assertion,kind,ref,locator", ["assertion", "kind", "ref"], 8000),
+    "assertion_premises": ("assertion,premise,role", ["assertion", "premise"], 8000),
+    "current_claims": ("subject,predicate,scope,slot,status,object,value,members,supporting,claims,crop_version,resolver,at",
+                       ["subject", "predicate", "scope", "slot"], 2000),
+    "ledger_submissions": ("id,actor,request,response,at", ["id"], 1000),
+    "rejections": ('submission,"by",reason,at', ["submission"], 8000),
+    "form_decisions": ("seq,id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,written_family", ["seq"], 1000),
+    "form_marks": ("id,at,seq,kind,form,decision,issue,character,written_family", ["rowid"], 5000),
+    "crop_versions": ("id,unit,pixels,box,document,image,at", ["id"], 5000),
+    "unit_marks": ("id,mark", ["id"], 8000),
+    "unit_suspects": ("id,p,reads_as,label,box", ["id"], 8000),
+    "unit_shapes": ("id,shape_order", ["id"], 8000),
+    "forms": ("id,anchor,created_by,created_at", ["id"], 8000),
+    "corpus_follow": ("id", ["id"], 8000),
     "characters": ("code_point,character,name,json_extract(data,'$.grapheme.code_point') AS head", ["code_point"], 8000),
     "aliases": ("query,code_point,rank", ["rowid"], 15000),
 }
@@ -57,7 +82,7 @@ def pull(table, fresh):
         path.unlink(missing_ok=True)
     db = sqlite3.connect(path)
     cols, keys, chunk = TABLES[table]
-    names = [c.split(" AS ")[-1].strip() for c in cols.split(",")]
+    names = [c.split(" AS ")[-1].strip().strip('"') for c in cols.split(",")]
     if table == "characters":
         names = ["code_point", "character", "name", "head"]
     keycols = [k for k in keys if k != "rowid"]
