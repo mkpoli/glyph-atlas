@@ -126,9 +126,12 @@ async function unit(env: Env, id: string): Promise<UnitRow> {
     context:JSON.stringify(unavailable),visual:JSON.stringify(unavailable),fresh:pointer};
 }
 // Whether a crop may be dealt in Quick review at all; its review state says whether it is due now.
-// A local crop is withheld only by the alignment repair. A corpus glyph needs an image this site may
+// A local crop is withheld by the alignment repair, or when ainu-records measured almost no ink in its
+// box (`geometry`, while the box is still the measured one). A corpus glyph needs an image this site may
 // serve and a written character, since a round asks whether the crop is that character.
-const dealable=(origin:string,data:Json)=>origin==='corpus'?Boolean(data.proxyable&&data.written_character):data.repair?.quiz!==false;
+const blank=(data:Json)=>Array.isArray(data.geometry?.flags)&&data.geometry.flags.includes('sparse-ink')
+  &&['x','y','w','h'].every(k=>data.geometry.box?.[k]===data.box?.[k]);
+export const dealable=(origin:string,data:Json)=>origin==='corpus'?Boolean(data.proxyable&&data.written_character):data.repair?.quiz!==false&&!blank(data);
 const productionOf=(data:Json)=>typeof data.production==='string'?data.production:'unknown';
 // The first round or review that names a corpus glyph writes its `units` row from the published record,
 // in the same batch and before the rows that reference it.

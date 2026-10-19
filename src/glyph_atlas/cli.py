@@ -1172,6 +1172,19 @@ def ainu_boxes(
     typer.echo(f"-> {out}")
 
 
+@ainu_app.command("geometry")
+def ainu_geometry(
+    directory: Annotated[Path, typer.Argument(help="atlas dataset directory holding the Ainu records' units")],
+    records: Annotated[Path, typer.Argument(help="ainu-records checkout, or a copy of its data/characters")],
+    apply: Annotated[bool, typer.Option(help="write the flags to the dataset's crop-geometry.json")] = False,
+) -> None:
+    """Give each `ar:` crop the geometry flags ainu-records measured on its current box."""
+    from . import ainu_geometry
+
+    for name, value in sorted(ainu_geometry.run(directory, records, apply=apply)["counts"].items()):
+        typer.echo(f"{name:<20} {value:>8}")
+
+
 @ainu_app.command("merge")
 def ainu_merge(
     atlas: Annotated[Path, typer.Argument(help="atlas dataset directory holding the Ainu records' units")],

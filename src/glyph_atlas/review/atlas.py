@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse, Response
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import evidence, images, recorded_terms, refs
+from .. import ainu_geometry, evidence, images, recorded_terms, refs
 from .. import production as production_metadata
 from .. import style as style_module
 from ..clusters import is_one_character
@@ -818,7 +818,11 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         a person to judge ink the pass could not align spends their attention on a known-bad crop and
         then records their answer against it.
         """
-        return eligible(unit) and not unread(unit) and not repair_withheld(unit)
+        return eligible(unit) and not unread(unit) and not repair_withheld(unit) and not ainu_geometry.out_of_quiz(geometry(unit))
+
+    def geometry(unit: Unit) -> dict | None:
+        """The geometry flags ainu-records measured on the unit's current box (`ainu_geometry`)."""
+        return ainu_geometry.current(ainu_geometry.load(store.directory).get(unit.id), unit.box.model_dump() if unit.box else None)
 
     def crop_url(unit: Unit, revision: int, source=None) -> str:
         """The URL of the crop as it stands: a new cut of the unit gives a new URL.
@@ -865,7 +869,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "shape_order": quiz_shapes.load(store.directory).get(unit.id),
                 # The classifier's doubt about the label (`quiz_suspects`): a round can show only these.
                 "suspect": quiz_suspects.current(quiz_suspects.load(store.directory).get(unit.id), shown(unit),
-                                                 unit.box.model_dump() if unit.box else None)}
+                                                 unit.box.model_dump() if unit.box else None),
+                # What ainu-records measured on this box: `{flags, box}`, or None.
+                "geometry": geometry(unit)}
 
     def one(unit_id: str) -> tuple[Unit, int]:
         records = store.unit_snapshot(unit_id)
