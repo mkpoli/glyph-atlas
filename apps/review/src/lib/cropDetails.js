@@ -30,8 +30,22 @@ export function repairOf(item) {
 /** The work a crop was cut from, by its title. */
 export const workTitle = item => typeof item.source === 'string' ? item.source : (item.source?.title ?? item.title)
 
+const GEOMETRY_FLAGS = {
+  'tall-crop': () => t('geometry.flag.tallCrop'), 'wide-crop': () => t('geometry.flag.wideCrop'),
+  'blank-band': () => t('geometry.flag.blankBand'), 'large-margin': () => t('geometry.flag.largeMargin'),
+  'sparse-ink': () => t('geometry.flag.sparseInk'),
+}
+
+/** The geometry flags ainu-records measured on the crop's box (`glyph_atlas.ainu_geometry`), as one line,
+ * while that box is still the crop's: a crop recut since has none until it is measured again. */
+export function geometryLine(item) {
+  const geometry = item.geometry, box = item.box
+  if (!geometry?.flags?.length || !box || ['x', 'y', 'w', 'h'].some(k => geometry.box?.[k] !== box[k])) return null
+  return t('geometry.detail', { flags: geometry.flags.map(flag => GEOMETRY_FLAGS[flag]?.()).filter(Boolean).join(t('geometry.join')) })
+}
+
 /** What a crop's details list: the written form, the material, how far the record
- * has been checked, where it comes from, the work and page, when the copy and its text were made, and the holder. A line that names a character is
+ * has been checked, the crop's measured shape, where it comes from, the work and page, when the copy and its text were made, and the holder. A line that names a character is
  * `{ before, text, after }`, for `ScriptLine` to draw the character in its script's colour; the others are text. */
 export function cropDetails(item) {
   const repair = repairOf(item)
@@ -46,7 +60,7 @@ export function cropDetails(item) {
   // take, the crop still filed under its label. Competing forms are named together.
   const names = formNames(item.form)
   const written = names.length && names.join(' / ') !== item.label ? withText('written.detail', 'form', { form: names.join(' / ') }) : null
-  return [written, productionLabel(item), state, origin,
+  return [written, productionLabel(item), state, geometryLine(item), origin,
     [work, page].filter(Boolean).join(' · ') || null, datingLine(item), typeof item.source === 'string' ? item.holder : (item.source?.holder ?? item.holder)]
     .filter(Boolean)
 }
