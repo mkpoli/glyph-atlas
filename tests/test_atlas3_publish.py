@@ -433,3 +433,23 @@ def test_a_build_takes_every_migration_of_the_new_layout(layout):
     root, _publish, _remote = layout
     names = {r[0] for r in sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT name FROM sqlite_master WHERE type='index'")}
     assert {"crop_char", "crop_undated"} <= names
+
+
+def test_two_crops_trading_glyphs_stop_the_publish(layout, monkeypatch, tmp_path):
+    _root, publish, remote = layout
+    before = crops(remote)
+    with pytest.raises(SystemExit):
+        run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "あ"),
+                                                                    unit("ex:a2", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "い",
+                                                                         state="checked", revision=3)]))
+    assert crops(remote) == before
+
+
+def test_a_retired_crop_put_back_with_another_box_is_published_again(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    gone = list(unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う"))
+    gone[UNITS.index("origin")] = "retired"
+    run(publish, monkeypatch, catalogue(tmp_path / "gone.sqlite", [tuple(gone)]))
+    assert ids(root)["ex:b1"] not in crops(remote)
+    run(publish, monkeypatch, catalogue(tmp_path / "back.sqlite", [unit("ex:b1", "hl:p2", {"x": 3, "y": 3, "w": 10, "h": 10}, "う")]))
+    assert ids(root)["ex:b1"] in crops(remote)

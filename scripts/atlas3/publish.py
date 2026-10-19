@@ -435,11 +435,12 @@ def main():
     units = list(src.execute(f"SELECT {columns} FROM units WHERE origin IN ('local', 'retired') ORDER BY id")) if "units" in tables else []
     overlay = {r["id"]: r for r in src.execute(f"SELECT {columns} FROM units WHERE origin='corpus'")} if "units" in tables else {}
     retiring = {r["id"] for r in units if r["origin"] == "retired"}
-    # A known crop with another box or image on its own page is re-cut: it keeps its id and its cut
+    # A live crop with another box or image on its own page is re-cut: it keeps its id and its cut
     # moves on, so claims and reviews made on the old cut stay with it.
     recut = set()
     for r in units:
-        if r["origin"] == "local" and (cid := m.known(r["id"])) is not None:
+        if r["origin"] == "local" and (cid := m.known(r["id"])) is not None and \
+                m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone():
             data, published = json.loads(r["data"]), entry(cid)
             if (data.get("box") and published.get("box") and data["box"] != published["box"]) or \
                     (data.get("image_sha256") and published.get("image_sha256") and data["image_sha256"] != published["image_sha256"]):
@@ -458,8 +459,9 @@ def main():
             elif m.page_key(cid // PAGE) != page_key:
                 refused.append(f"{r['id']}: page {m.page_key(cid // PAGE)} -> {page_key}")
             elif r["id"] in recut and data.get("box"):
+                # Against every other crop's published box, re-cut ones too, so two crops cannot trade glyphs.
                 for e in bundle_of(cid // PAGE)["crops"]:
-                    if e["id"] != r["id"] and not e.get("retired") and e["id"] not in retiring | recut \
+                    if e["id"] != r["id"] and not e.get("retired") and e["id"] not in retiring \
                             and iou(data["box"], e.get("box")) >= 0.5:
                         refused.append(f"{r['id']}: re-cut box overlaps published crop {e['id']} (IoU {iou(data['box'], e['box']):.2f})")
                         break
