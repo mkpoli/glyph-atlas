@@ -18,8 +18,13 @@ ROOT = Path(__file__).resolve().parents[2]
 # Copies of the live tables and the build output live outside the repository.
 HERE = Path(os.environ.get("ATLAS3_DIR", ROOT / "work/atlas-v3"))
 OUT = HERE / "out"
-SCHEMA = ROOT / "apps/cloudflare/migrations-atlas/0001_init.sql"
-RUNS_SCHEMA = ROOT / "apps/cloudflare/migrations-atlas-runs/0001_init.sql"
+# Each database's schema is every file of its migrations folder, in order.
+SCHEMA = ROOT / "apps/cloudflare/migrations-atlas"
+RUNS_SCHEMA = ROOT / "apps/cloudflare/migrations-atlas-runs"
+
+
+def schema(folder):
+    return "\n".join(path.read_text() for path in sorted(folder.glob("*.sql")))
 SITE_SLOT = 1 << 23
 PAGE = 1 << 24
 CORPUS_PAGE = 256
@@ -87,7 +92,7 @@ def main():
     for name in ("atlas.sqlite", "atlas-runs.sqlite", "mirror.sqlite"):
         (OUT / name).unlink(missing_ok=True)
     atlas = sqlite3.connect(OUT / "atlas.sqlite")
-    atlas.executescript(SCHEMA.read_text())
+    atlas.executescript(schema(SCHEMA))
     mirror = sqlite3.connect(OUT / "mirror.sqlite")
     mirror.executescript("""
       CREATE TABLE ids(text TEXT PRIMARY KEY, id INTEGER NOT NULL UNIQUE) WITHOUT ROWID;
@@ -241,7 +246,7 @@ def main():
 
     # Runs.
     runs = sqlite3.connect(OUT / "atlas-runs.sqlite")
-    runs.executescript(RUNS_SCHEMA.read_text())
+    runs.executescript(schema(RUNS_SCHEMA))
     ngrams = src("unit_ngrams")
     out, stats, missing, vertical = [], defaultdict(lambda: [0, 0]), 0, []
     for r in ngrams.execute("SELECT * FROM unit_ngrams"):

@@ -412,3 +412,9 @@ def test_a_crop_with_no_style_is_published_as_unassessed(layout, monkeypatch, tm
     run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [tuple(row)]))
     unassessed = remote.query("glyph-atlas-v3", "SELECT code FROM codes WHERE field='style' AND key='unassessed'")[0]["code"]
     assert crops(remote)[ids(root)["ex:new"]]["style"] == unassessed
+
+
+def test_a_build_takes_every_migration_of_the_new_layout(layout):
+    root, _publish, _remote = layout
+    names = {r[0] for r in sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    assert {"crop_char", "crop_undated"} <= names
