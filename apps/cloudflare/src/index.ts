@@ -491,7 +491,8 @@ export function held<T>() {
   return async (read: () => Promise<T>, now: number, lag: number) => {
     if (copy && now - copy.at < lag * 1000) return copy.value;
     const value = await read();
-    copy = { at: now, value };
+    // A read that started earlier and finished later is older than the one kept.
+    if (!copy || copy.at <= now) copy = { at: now, value };
     return value;
   };
 }

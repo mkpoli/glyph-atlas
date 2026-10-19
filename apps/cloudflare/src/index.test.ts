@@ -187,6 +187,15 @@ describe('a held value', () => {
     expect(await Promise.all([hold(read, 0, 60), hold(read, 0, 60)])).toEqual([1, 2])
     expect(await hold(read, 1, 60)).toBe(2)
   })
+  it('keeps the later read when an earlier one finishes after it', async () => {
+    const hold = held<string>()
+    let finish!: (value: string) => void
+    const slow = hold(() => new Promise<string>(resolve => { finish = resolve }), 0, 60)
+    expect(await hold(async () => 'new', 1, 0)).toBe('new')
+    finish('old')
+    expect(await slow).toBe('old')
+    expect(await hold(async () => 'unread', 2, 60)).toBe('new')
+  })
   it('drops a read that fails', async () => {
     const hold = held<number>()
     await expect(hold(() => Promise.reject(new Error('busy')), 0, 60)).rejects.toThrow('busy')
