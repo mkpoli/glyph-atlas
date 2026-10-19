@@ -47,7 +47,6 @@ class FakeD1:
                     "glyph-atlas-v3-runs": sqlite3.connect(root / "out" / "atlas-runs.sqlite.remote")}
         for name, local in (("glyph-atlas-v3", "atlas.sqlite"), ("glyph-atlas-v3-runs", "atlas-runs.sqlite")):
             sqlite3.connect(root / "out" / local).backup(self.dbs[name])
-            self.dbs[name].execute("CREATE TABLE IF NOT EXISTS imports(stamp TEXT PRIMARY KEY, at INTEGER NOT NULL)")
         self.uploaded = []
 
     def send(self, database, file, stamp):
@@ -125,6 +124,8 @@ def test_an_unchanged_catalogue_sends_nothing_and_keeps_every_page_revision(layo
     run(publish, monkeypatch, catalogue(tmp_path / "same.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ")]))
     assert remote.query("glyph-atlas-v3", "SELECT id, rev FROM pages") == before
     assert remote.uploaded == []
+    assert [r["graphemes"] for r in remote.query("glyph-atlas-v3-runs", "SELECT graphemes FROM runs")] == ["あい"]
+    assert remote.query("glyph-atlas-v3-runs", "SELECT graphemes, n FROM run_stats") == [{"graphemes": "あい", "n": 1}]
 
 
 def test_a_review_made_since_the_mirror_read_is_kept_and_read_back(layout, monkeypatch, tmp_path):
@@ -209,10 +210,11 @@ def test_runs_of_a_published_crop_follow_its_catalogue(layout, monkeypatch, tmp_
 def test_a_retired_crop_leaves_the_galleries_and_its_runs_but_keeps_its_id(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     ids = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))
-    gone = unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10})
+    gone = unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, revision=3)
     run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [(gone[0], "retired", *gone[2:])]))
     assert ids["ex:a2"] not in crops(remote)
     assert remote.query("glyph-atlas-v3-runs", "SELECT * FROM runs") == []
+    assert remote.query("glyph-atlas-v3-runs", "SELECT * FROM run_stats") == []
     body = json.loads(gzip.decompress((root / "out" / "pages" / f"{ids['ex:a2'] // PAGE}-2.json.gz").read_bytes()))
     assert {"id": "ex:a2", "retired": True}.items() <= next(c for c in body["crops"] if c["id"] == "ex:a2").items()
 
@@ -231,3 +233,76 @@ def test_a_corpus_catalogue_keeps_the_review_of_a_corpus_glyph(layout, monkeypat
     assert (after["char"], after["state"], after["quiz"], after["revision"]) == (before["char"], before["state"], before["quiz"], 2)
     body = json.loads(gzip.decompress((root / "out" / "pages" / f"{g1 // PAGE}-2.json.gz").read_bytes()))
     assert body["crops"][0]["record_place"] == ["corpus-0002.bin", 0, 120]
+
+
+def test_a_retirement_older_than_a_review_is_refused(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    gone = unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, revision=1)
+    with pytest.raises(SystemExit):
+        run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [(gone[0], "retired", *gone[2:])]))
+    ids = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))
+    assert ids["ex:a2"] in crops(remote)
+
+
+def test_a_known_crop_with_another_box_stops_the_publish(layout, monkeypatch, tmp_path):
+    _root, publish, _remote = layout
+    with pytest.raises(SystemExit):
+        run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10})]))
+
+
+def test_fields_a_catalogue_does_not_carry_keep_their_values(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1 = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["ex:a1"]
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("UPDATE crops SET form=7, cluster=8, cut=3, flags=4 WHERE id=?", (a1,))
+        db.commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お")]))
+    c = crops(remote)[a1]
+    assert (c["form"], c["cluster"], c["cut"], c["flags"]) == (7, 8, 3, 4)
+
+
+def test_a_corpus_overlay_sets_the_reviewed_style(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    g1 = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["codh:g1"]
+    path = tmp_path / "corpus.sqlite"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.execute("INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'corpus-0001.bin',0,100,'printed',0,'unassessed','codh:b',NULL)")
+    db.execute(f"CREATE TABLE units({','.join(UNITS)})")
+    db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})",
+               ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 5, 0, 1, "codh:b", "cursive", None, "{}"))
+    db.commit()
+    run(publish, monkeypatch, path)
+    styles = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, code FROM codes WHERE field='style'"))
+    assert crops(remote)[g1]["style"] == styles["cursive"]
+    assert crops(remote)[g1]["revision"] == 5
+
+
+def test_a_change_of_page_facts_alone_moves_the_page_revision(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    path = catalogue(tmp_path / "c.sqlite", [])
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE pages(id, document, data)")
+    db.execute("INSERT INTO pages VALUES('hl:p2', 'book:a', ?)", (json.dumps({"iiif": "https://example.org/p2"}),))
+    db.commit()
+    run(publish, monkeypatch, path)
+    pid = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, id FROM pages"))["hl:p2"]
+    assert remote.query("glyph-atlas-v3", f"SELECT rev FROM pages WHERE id={pid}") == [{"rev": 2}]
+    body = json.loads(gzip.decompress((root / "out" / "pages" / f"{pid}-2.json.gz").read_bytes()))
+    assert body["page"] == {"iiif": "https://example.org/p2"} and [c["id"] for c in body["crops"]] == ["ex:b1"]
+
+
+def test_a_publish_stopped_before_its_bundles_reached_r2_is_finished_by_the_next_run(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+
+    def fail(files):
+        raise SystemExit("network")
+
+    monkeypatch.setattr(publish, "upload", fail)
+    with pytest.raises(SystemExit):
+        run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:new", "hl:p5", {"x": 0, "y": 0, "w": 10, "h": 10})]))
+    monkeypatch.setattr(publish, "upload", remote.upload)
+    run(publish, monkeypatch, catalogue(tmp_path / "other.sqlite", [unit("ex:other", "hl:p6", {"x": 0, "y": 0, "w": 10, "h": 10})]))
+    ids = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))
+    assert ids["ex:new"] in crops(remote) and ids["ex:other"] in crops(remote)
+    assert sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT count(*) FROM pending").fetchone() == (0,)

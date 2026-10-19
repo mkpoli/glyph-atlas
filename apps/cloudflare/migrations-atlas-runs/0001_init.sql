@@ -7,3 +7,4 @@ CREATE INDEX run_second ON runs(second) WHERE size = 2;
 CREATE TABLE run_stats(size INTEGER, graphemes TEXT, n INTEGER, down INTEGER,
   PRIMARY KEY(size, graphemes)) WITHOUT ROWID;
 CREATE INDEX run_rank ON run_stats(size, n);
+CREATE TABLE imports(stamp TEXT PRIMARY KEY, at INTEGER NOT NULL);

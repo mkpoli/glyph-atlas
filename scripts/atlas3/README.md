@@ -33,22 +33,32 @@ Data lives in `work/atlas-v3/` (or `$ATLAS3_DIR`), outside the repository:
 The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` already write
 (`units`, and when present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`).
 
-- A new text id gets a page and slot once, from `out/mirror.sqlite`, saved before anything is sent.
-- Only rows that differ from the local copy are sent, and pages whose content did not change keep
-  their revision. Fields a catalogue does not carry keep their published value.
+- A new text id gets a page and slot once, from `out/mirror.sqlite`. The allocation and the record
+  that the publish is pending are one transaction, saved before anything is sent.
+- Only what differs from the local copy is sent; pages whose crops and facts did not change keep
+  their revision. A field the catalogue does not carry (form, cluster, cut, other flag bits, a corpus
+  label) keeps its published value. Witness years come from the catalogue's dating, else from the
+  dating already published.
 - Review-owned columns (`char`, `state`, `style`, `quiz`, `kind`, `flags`) change only when the
-  catalogue's revision is at least the published one, and only while nobody has reviewed the crop
-  since; a corpus glyph's come only from its review overlay.
-- A crop the catalogue marks `retired` leaves the galleries and runs.
-- A known crop on another page, or a new box overlapping a published crop on its page (IoU ≥ 0.5),
-  stops the publish with a report: those need the slot matcher, which is not built yet. Publish
-  new pages and new boxes only.
-- Order: page bundles to R2 (`v3/pages/`), then the rows in parts of at most 40 MiB, page revisions
-  last, then the runs. Each part is confirmed by its stamp in `imports`. A publish stopped after
-  allocating is finished by the next run before anything else.
-- A dry run writes the parts and bundles under `out/publish/<stamp>/` and changes nothing else.
+  catalogue's revision is at least the published one, and in D1 only while the crop's revision is
+  unchanged; the result is read back. A corpus glyph's come only from its review overlay
+  (`units` rows with `origin='corpus'`), which a plain corpus export does not have.
+- A crop leaves the galleries and runs only when the catalogue carries it with `origin='retired'`,
+  at a revision no older than the published one. The exporters drop withdrawn crops instead, so a
+  withdrawal needs a catalogue that names it.
+- A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
+  keeps its runs.
+- A known crop on another page, a known crop with another box or image, or a new box overlapping a
+  published crop on its page (IoU ≥ 0.5) stops the publish with a report: those need the slot
+  matcher, which is not built yet. Publish new pages and new boxes only.
+- Order: page bundles to R2 (`v3/pages/`, through rclone's `r2` remote), then the rows in parts of at
+  most 40 MiB that never split a page (its crops and its revision go together), then the runs. Each
+  part is confirmed by its stamp in `imports`, then replayed on the local copy. A publish stopped
+  after allocating is finished by the next run before anything else.
+- A dry run writes the parts and bundles under `out/publish/<stamp>/` and publishes nothing.
 
-One publish runs at a time. `upload.py` sends the first build's bundles to R2.
+One publish runs at a time. The first build's bundles went to R2 with
+`rclone copy out/pages r2:glyph-atlas/v3/pages --header-upload "Content-Type: application/json" --header-upload "Content-Encoding: gzip"`.
 
 ## Not in the new databases yet
 
