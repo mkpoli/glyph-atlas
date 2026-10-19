@@ -58,6 +58,14 @@ SUSPECT = 1
 # What a bundle entry keeps of each earlier cut: enough to show and cite its pixels.
 CUT_FIELDS = ("box", "crop_box", "context_box", "image", "image_sha256", "image_size", "image_place",
               "context_image", "context_image_place")
+
+
+def merged_cuts(*lists):
+    """Earlier cuts by number, a later list's entry replacing an earlier one's, in cut order."""
+    by = {c["cut"]: c for cuts in lists for c in cuts or []}
+    return [by[k] for k in sorted(by)]
+
+
 RUN_KEY = ("size", "graphemes", "hand", "shuffle", "first")
 # D1 takes an imported file whole; parts stay under the size the publication scripts use.
 PART_BYTES = 40 * 1024 ** 2
@@ -280,10 +288,12 @@ class Mirror:
 
     def retire(self, cid, text_id, mirror_revision, replaced_by):
         pid = cid // PAGE
+        # The entry keeps the crop's cut, so a crop put back continues from it.
+        cut = self.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()["cut"]
         self.page_sql[pid].append(f"DELETE FROM crops WHERE id={cid} AND revision={mirror_revision};")
         self.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
         self.guarded.append(cid)
-        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, **replaced_by}, True)
+        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut, **replaced_by}, True)
 
 
 def write_parts(run, name, groups):
@@ -442,8 +452,9 @@ def main():
     # moves on, so claims and reviews made on the old cut stay with it.
     recut = set()
     for r in units:
-        if r["origin"] == "local" and (cid := m.known(r["id"])) is not None and \
-                m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone():
+        # A live crop, or a retired one put back, against the entry it had.
+        if r["origin"] == "local" and (cid := m.known(r["id"])) is not None and (
+                m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone() or entry(cid).get("retired")):
             data, published = json.loads(r["data"]), entry(cid)
             if (data.get("box") and published.get("box") and data["box"] != published["box"]) or \
                     (data.get("image_sha256") and published.get("image_sha256") and data["image_sha256"] != published["image_sha256"]):
@@ -534,12 +545,15 @@ def main():
                  "state": m.code("state", r["state"]), "quiz": r["quiz"], "year": years.get(r["document"], KEEP),
                  "revision": r["revision"], "shuffle": shuffle(cid)}
         bundle = {"id": r["id"], **bundle_entry(data)}
+        previous, row = entry(cid), m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()
+        old_cut = row["cut"] if row else previous.get("cut", 0)
         if r["id"] in recut:
             # The version the crop had joins its earlier cuts, so a citation of it still finds its pixels.
-            old_cut, previous = m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()["cut"], entry(cid)
             given["cut"] = old_cut + 1
-            bundle["cuts"] = [*(bundle.get("cuts") or previous.get("cuts") or []),
-                              {"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous}}]
+            bundle["cuts"] = merged_cuts(previous.get("cuts"), bundle.get("cuts"),
+                                         [{"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous}}])
+        elif row is None and previous.get("retired"):
+            given["cut"] = old_cut
         for field in ("image", "context_image"):
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
@@ -661,9 +675,9 @@ def main():
             for field in ("image", "context_image"):
                 if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
                     new[field + "_place"] = old[field + "_place"]
-            # A crop's earlier cuts stay unless its record names them itself.
-            if "cuts" not in new and "cuts" in old:
-                new["cuts"] = old["cuts"]
+            # A crop's earlier cuts stay; a record that names cuts sets those it names.
+            if "cuts" in old and not new.get("retired"):
+                new["cuts"] = merged_cuts(old["cuts"], new.get("cuts"))
             touched = touched or row_changed or new != merged.get(slot)
             merged[slot] = new
         if not touched:
