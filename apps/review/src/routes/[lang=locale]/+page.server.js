@@ -36,5 +36,8 @@ export async function load({ fetch, params, url }) {
     // The most frequent pairs, shown above the collection; the view reads them itself if they do not come.
     bare ? frequent('pair', { fetch, signal: AbortSignal.timeout(READ_TIMEOUT) }).then(items => items.slice(0, KEPT)).catch(() => null) : null,
   ])
-  return { explore: { seed, q, grapheme, work, group, collection, result, sample, runs } }
+  // Unnarrowed, the page shows nothing of the counts by character and by work, so the view reads them
+  // once it shows; a search, grapheme or work names one of them in the page itself.
+  const listed = result && sampled ? { ...result, categories: [], documents: [] } : result
+  return { explore: { seed, q, grapheme, work, group, collection, result: listed, sample, runs } }
 }
