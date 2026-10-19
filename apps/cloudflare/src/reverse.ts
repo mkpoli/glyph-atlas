@@ -101,11 +101,11 @@ export function addressKey(address: string | null): string {
   return groups.slice(0, 4).map(group => group.toLowerCase().replace(/^0+(?=.)/, '')).join(':') + '::/64';
 }
 
-/** The body as text, or null once it passes `limit` bytes; a larger body is never held in full. */
-export async function boundedText(request: Request, limit: number): Promise<string | null> {
+/** The body's bytes, or null once it passes `limit` bytes; a larger body is never held in full. */
+export async function boundedBytes(request: Request, limit: number): Promise<Uint8Array | null> {
   const declared = Number(request.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > limit) return null;
-  if (!request.body) return '';
+  if (!request.body) return new Uint8Array();
   const reader = request.body.getReader(), parts: Uint8Array[] = [];
   let size = 0;
   for (;;) {
@@ -118,7 +118,13 @@ export async function boundedText(request: Request, limit: number): Promise<stri
   const bytes = new Uint8Array(size);
   let at = 0;
   for (const part of parts) { bytes.set(part, at); at += part.byteLength }
-  return new TextDecoder().decode(bytes);
+  return bytes;
+}
+
+/** The body as text, or null once it passes `limit` bytes. */
+export async function boundedText(request: Request, limit: number): Promise<string | null> {
+  const bytes = await boundedBytes(request, limit);
+  return bytes && new TextDecoder().decode(bytes);
 }
 
 export class QueryError extends Error {

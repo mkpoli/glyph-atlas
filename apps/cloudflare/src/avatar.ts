@@ -2,6 +2,7 @@
 // an image they upload. An upload is cropped and encoded as WebP in the browser, so the Worker only
 // checks and stores it.
 import type { Viewer } from './auth';
+import { boundedBytes } from './reverse';
 
 type Answer = { status: number; body: Record<string, unknown> };
 const UPLOAD_MAX = 256 * 1024;
@@ -49,8 +50,8 @@ export async function setAvatar(env: Env, me: Viewer, source: string, request: R
     image = profile.image;
   } else if (source === 'upload') {
     if (request.headers.get('content-type') !== 'image/webp') return { status: 415, body: { detail: 'Send the picture as WebP.' } };
-    const bytes = new Uint8Array(await request.arrayBuffer());
-    if (bytes.length > UPLOAD_MAX) return { status: 413, body: { detail: 'The picture is too large.' } };
+    const bytes = await boundedBytes(request, UPLOAD_MAX);
+    if (!bytes) return { status: 413, body: { detail: 'The picture is too large.' } };
     if (!isWebp(bytes)) return { status: 415, body: { detail: 'Send the picture as WebP.' } };
     const name = hex(await crypto.subtle.digest('SHA-256', bytes)).slice(0, 16);
     await env.MEDIA.put(`avatars/${me.id}/${name}.webp`, bytes, { httpMetadata: { contentType: 'image/webp', cacheControl: 'public, max-age=31536000, immutable' } });
