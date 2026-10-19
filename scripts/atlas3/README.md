@@ -113,7 +113,10 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    claims, form decisions, suspects and shapes from the copies into `out/history.sqlite`
    (`migrations-atlas/0003_history.sql`), with every text id resolved through `out/mirror.sqlite` and
    never through a redirect, and writes a per-table report; it exits 1 if any row stops the move. It
-   also writes the earlier cuts, the tombstones and the marks the publisher applies. Loading the
+   also writes the earlier cuts, the tombstones and the marks the publisher applies. An event on a crop
+   the mirror lacks stops the run until `publish.py out/history-tombstones.sqlite` has numbered its
+   tombstone. `0003_history.sql` numbers two crop states (`seen`, `hard`), which the mirror's `codes`
+   must hold too before the publisher runs on a database with that migration. Loading the
    result into D1 and the alias files for old URLs are *not built*.
 6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.

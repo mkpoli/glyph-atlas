@@ -40,9 +40,10 @@ those crops, already include them.
 - **History never follows a redirect.** A history row (event, submission, seen mark, skip, favourite,
   claim, form decision) names the crop it was made on, resolved through the publisher's mirror
   (`out/mirror.sqlite`, text id → integer id). The 56 retired crops kept for their history already
-  have numbers (0005 publisher). A history row naming a crop the mirror lacks (today one event, on a
-  crop deleted after its review) gets a tombstone: a number and a retired bundle entry built from the
-  event's own record of the crop.
+  have numbers (0005 publisher). A history row naming a crop the mirror lacks (today one event, on the
+  review overlay of a corpus glyph no longer in the corpus) gets a tombstone: a number and a retired
+  bundle entry showing the crop as that review left it. The translation stops until the publisher has
+  numbered it, so the event cannot be left behind.
 - **Old URLs follow redirects.** Every text id known at the cutover (the mirror's and the sources of
   `unit_redirects`) resolves through alias shards in R2, `v3/aliases/<first three hex digits of its
   SHA-256>.json.gz`, written once, with chains resolved and cycles refused. The set is closed: crops
@@ -75,7 +76,10 @@ written only at the URL boundary.
 - `events`: the 0005 table. Each old event becomes one row, its `revision` the per-crop sequence by
   time, checked to end at or below the crop's current revision, with the verdict, issue, label, state
   and box it set; a review sets no style or withheld flag.
-- `seen(submission, crop, cut, at)` and `skips(crop, actor, cut, at)`.
+- `seen(submission, crop, cut, at)` and `skips(crop, actor, cut, at, submission)`, so an undone round
+  stops counting its skips.
+- The kinds of event (verdicts and marks), issues and the two mark states are numbered once, in the
+  migration, so rehearsal and cutover give the same codes. `actor_stats` starts from the moved history.
 - **Marks are states.** The old site shows a pending crop with a mark as `seen` or `hard` (its effective
   state), and the mark takes it out of the review queue. In `glyph-atlas-v3` the mark is the crop's
   state, so `crop_pending` leaves it out by its own condition. Setting a mark is a review-owned write

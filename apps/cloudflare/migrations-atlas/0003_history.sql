@@ -12,8 +12,16 @@ CREATE TABLE submissions(id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, actor
 CREATE INDEX submission_actor ON submissions(actor, at);
 CREATE INDEX submission_history ON submissions(at, id) WHERE undone = 0;
 
--- An event's verdict and issue, in `codes` (field 'verdict', 'issue').
+-- An event's kind (its verdict, or the mark it set) and issue, in `codes`, numbered once here so the
+-- Worker and the translation agree. A mark is a crop state, after the three 0001 numbers.
+INSERT INTO codes(field, code, key) VALUES ('kind', 0, 'match'), ('kind', 1, 'wrong'), ('kind', 2, 'unsure'),
+  ('kind', 3, 'seen'), ('kind', 4, 'hard'),
+  ('issue', 0, 'character'), ('issue', 1, 'merged'), ('issue', 2, 'crop'), ('issue', 3, 'blank'),
+  ('issue', 4, 'other'), ('issue', 5, 'unclear'), ('issue', 6, 'reading'),
+  ('state', 3, 'seen'), ('state', 4, 'hard');
 ALTER TABLE events ADD COLUMN issue INTEGER;
+-- A skip names its submission, so an undone round stops counting it.
+ALTER TABLE skips ADD COLUMN submission INTEGER;
 CREATE INDEX event_crop ON events(crop, revision);
 CREATE INDEX event_submission ON events(submission);
 CREATE INDEX event_history ON events(at, id);

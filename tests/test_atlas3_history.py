@@ -102,15 +102,21 @@ def test_a_box_no_recorded_version_has_takes_the_cut_below_the_oldest(layout, mo
     assert "1 events, seen marks and skips name a box no recorded version has" in (root / "out" / "history-report.txt").read_text()
 
 
-def test_an_event_on_a_crop_the_mirror_lacks_becomes_a_tombstone(layout, monkeypatch):  # noqa: F811
-    root, _publish, _remote = layout
+def test_an_event_on_a_crop_the_mirror_lacks_waits_for_its_tombstone_to_be_numbered(layout, monkeypatch):  # noqa: F811
+    root, publish, _remote = layout
     sources(root, events=[event("cf:1", "ex:gone", "u1:s1", "u1", 0, "2026-10-01T00:00:02Z")])
     code, out = history(monkeypatch, root)
-    assert code == 0
+    assert code == 1
     assert out.execute("SELECT count(*) FROM events").fetchone()[0] == 0
     tombstones = json.loads((root / "out" / "history-tombstones.json").read_text())
     assert [(t["text_id"], t["page_key"], t["record"]["box"]) for t in tombstones] == [("ex:gone", "hl:p9", A1)]
-    assert "tombstone pending" in (root / "out" / "history-report.txt").read_text()
+    assert "tombstone not yet numbered" in (root / "out" / "history-report.txt").read_text()
+    # The publisher numbers the tombstone from its catalogue; the next run places the event on it.
+    monkeypatch.setattr(sys, "argv", ["publish.py", str(root / "out" / "history-tombstones.sqlite")])
+    publish.main()
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    assert out.execute("SELECT count(*) FROM events").fetchone()[0] == 1
 
 
 def test_events_take_their_revision_cut_codes_and_translated_ids(layout, monkeypatch):  # noqa: F811
@@ -125,7 +131,7 @@ def test_events_take_their_revision_cut_codes_and_translated_ids(layout, monkeyp
     assert list(out.execute("SELECT id, key, user FROM actors")) == [(1, "r-b", None), (2, "u1", "user-1")]
     assert list(out.execute("SELECT id, key, actor FROM submissions")) == [(1, "r-b:s2", 1), (2, "u1:s1", 2)]
     rows = list(out.execute("SELECT crop, revision, cut, actor, submission, kind, issue, x, y FROM events ORDER BY id"))
-    verdict = dict(out.execute("SELECT key, code FROM codes WHERE field='verdict'"))
+    verdict = dict(out.execute("SELECT key, code FROM codes WHERE field='kind'"))
     issue = dict(out.execute("SELECT key, code FROM codes WHERE field='issue'"))
     assert rows[0] == (a2, 1, 0, 1, 1, verdict["match"], None, 0, 0)
     assert rows[1][:2] == (a2, 2) and rows[1][5:7] == (verdict["wrong"], issue["crop"])

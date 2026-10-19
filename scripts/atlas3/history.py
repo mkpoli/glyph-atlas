@@ -116,11 +116,11 @@ def statements(path):
 
 
 def create(db):
-    """`events`, `skips` and `codes` as 0001 creates them, then everything 0003 adds."""
+    """`events`, `skips`, `codes` and `actor_stats` as 0001 creates them, then everything 0003 adds."""
     for s in statements(SCHEMA / "0001_init.sql"):
         body = "\n".join(line for line in s.splitlines() if not line.startswith("--"))
         m = re.match(r"CREATE (?:TABLE (\w+)|INDEX \w+ ON (\w+))", body)
-        if m and (m[1] or m[2]) in ("events", "skips", "codes"):
+        if m and (m[1] or m[2]) in ("events", "skips", "codes", "actor_stats"):
             db.execute(body)
     db.executescript((SCHEMA / "0003_history.sql").read_text())
 
@@ -286,16 +286,18 @@ def main():
                 where = before.get("source") if isinstance(before.get("source"), dict) else {}
                 page_id = before.get("page_id") or where.get("page_id")
                 document = before.get("document") or where.get("document_id")
-                tombstones[r["target"]] = {"text_id": r["target"], "page_key": page_id or f"book:{document}", "record": before}
+                # The record after the review: a tombstone shows the crop as it was last reviewed.
+                tombstones[r["target"]] = {"text_id": r["target"], "page_key": page_id or f"book:{document}", "record": after,
+                                           "document": document}
                 if not before.get("page_id") and not before.get("document"):
                     report.note(f"tombstone {r['target']}: before_data has no page_id or document; page key "
                                 f"{tombstones[r['target']]['page_key']} from before_data.source")
-            report.drop("events", "tombstone pending")
+            # The event waits for its crop's number: publish history-tombstones.sqlite, then run again.
+            report.stop("events", "tombstone not yet numbered", f"{r['id']} on {r['target']}")
             continue
         parsed.append((r, cid, before, after, evidence))
-    # The verdict and issue codes, 0.. in key order.
-    codes = {f: {k: i for i, k in enumerate(sorted({e[4].get(f) for e in parsed} - {None, ""}))} for f in ("verdict", "issue")}
-    insert("codes", [(f, c, k) for f, t in codes.items() for k, c in t.items()])
+    # The kind and issue codes 0003 numbers.
+    codes = {f: dict(out.execute("SELECT key, code FROM codes WHERE field=?", (f,))) for f in ("kind", "issue")}
 
     # Revisions: expected_revision + 1, unless a crop has two events at one revision.
     by_crop = defaultdict(list)
@@ -330,7 +332,8 @@ def main():
             problems.append(f"submission {r['submission']} unknown")
         current = crops.row(cid)
         current_revision = current[1] if current else retired_revision.get(cid)
-        if current_revision is None or revision[r["id"]] > current_revision:
+        # A tombstone with no record left on the old site has no revision to stay below.
+        if current_revision is not None and revision[r["id"]] > current_revision:
             problems.append(f"revision {revision[r['id']]} above the crop's {current_revision}")
         cut = crops.cut(cid, before.get("box"))
         if cut is None:
@@ -341,7 +344,10 @@ def main():
         state = atlas_codes["state"].get(after.get("state"))
         if state is None:
             problems.append(f"state {after.get('state')!r} has no code")
-        verdict = codes["verdict"].get(evidence.get("verdict"))
+        verdict = codes["kind"].get(evidence.get("verdict"))
+        issue = evidence.get("issue") or None
+        if issue is not None and issue not in codes["issue"]:
+            problems.append(f"issue {issue!r} has no code")
         if verdict is None:
             problems.append(f"verdict {evidence.get('verdict')!r} missing")
         box = box_of(after.get("box")) or (None,) * 4
@@ -352,7 +358,7 @@ def main():
         events.append((cid, revision[r["id"]], cut, 0, actor[r["actor"]], sub_id, ms(r["at"]), verdict,
                        graphemes.get(label) if label else None, state, None, after.get("quiz"), *box,
                        (evidence.get("note") or None) and evidence["note"][:2000],
-                       codes["issue"].get(evidence.get("issue"))))
+                       codes["issue"].get(issue)))
     insert("events", [(i, *e) for i, e in enumerate(events, 1)])
     report.tables["events"]["out"] = len(events)
     report.note("events: a review sets no style and no withheld flag, so both are NULL")
@@ -394,7 +400,7 @@ def main():
     report.drop("skips", "an older skip by the same actor", len(all_skips) - len(newest))
     report.note(f"{unrecorded} events, seen marks and skips name a box no recorded version has: "
                 "the cut below the oldest recorded one")
-    insert("skips", [s[:4] for s in newest.values()])
+    insert("skips", list(newest.values()))
     report.tables["skips"]["out"] = len(newest)
 
     # Marks: recomputed by the old triggers' rules, compared with the live ones.
@@ -580,6 +586,22 @@ def main():
         cuts[text_of[cid]] = [{"cut": -1, "box": dict(zip("xywh", box)), "pixels": pixels, "image": image}]
     (OUT / "history-cuts.json").write_text(json.dumps(cuts, ensure_ascii=False, indent=1) + "\n")
     (OUT / "history-tombstones.json").write_text(json.dumps(list(tombstones.values()), ensure_ascii=False, indent=1) + "\n")
+    # Each actor's totals, as the review batch keeps them from the cutover on.
+    out.execute("INSERT INTO actor_stats SELECT a.id, (SELECT count(*) FROM events e WHERE e.actor = a.id), "
+                "(SELECT count(*) FROM submissions s WHERE s.actor = a.id AND s.undone = 0), "
+                "(SELECT max(at) FROM submissions s WHERE s.actor = a.id) FROM actors a")
+    out.commit()
+    # The same crops as a catalogue of retired crops, which publish.py numbers.
+    catalogue = OUT / "history-tombstones.sqlite"
+    catalogue.unlink(missing_ok=True)
+    tomb = sqlite3.connect(catalogue)
+    tomb.execute("CREATE TABLE units(id, origin, character, visual_group, production, category, state, revision, quiz, "
+                 "document, style, data)")
+    tomb.executemany("INSERT INTO units VALUES(?, 'retired', ?, NULL, ?, NULL, ?, 0, 1, ?, ?, ?)",
+                     [(t["text_id"], t["record"].get("label"), t["record"].get("production"), t["record"].get("state"),
+                       t["document"], t["record"].get("style"), json.dumps({**t["record"], "page_id": t["page_key"]}))
+                      for t in tombstones.values()])
+    tomb.commit()
     (OUT / "history-marks.json").write_text(json.dumps(marks, indent=1) + "\n")
     report.note(f"tombstones: {len(tombstones)}", list(tombstones))
 
