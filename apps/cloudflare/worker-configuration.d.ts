@@ -4,6 +4,8 @@
 interface __BaseEnv_Env {
 	MEDIA: R2Bucket;
 	DB: D1Database;
+	ATLAS: D1Database;
+	ATLAS_RUNS: D1Database;
 	EMAIL: SendEmail;
 	CORRECTIONS: RateLimit;
 	CLAIMS: RateLimit;
