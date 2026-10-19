@@ -419,3 +419,20 @@ def test_a_build_takes_every_migration_of_the_new_layout(layout):
     root, _publish, _remote = layout
     names = {r[0] for r in sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT name FROM sqlite_master WHERE type='index'")}
     assert {"crop_char", "crop_undated"} <= names
+
+
+def test_a_crop_retired_before_the_new_layout_gets_a_number_and_a_retired_entry(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    row = list(unit("ex:old", "hl:p1", {"x": 40, "y": 40, "w": 10, "h": 10}))
+    row[UNITS.index("origin")] = "retired"
+    path = catalogue(tmp_path / "c.sqlite", [tuple(row)])
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE unit_redirects(id, target)")
+    db.execute("INSERT INTO unit_redirects VALUES('ex:old', 'ex:a1')")
+    db.commit()
+    run(publish, monkeypatch, path)
+    old = ids(root)["ex:old"]
+    assert old // PAGE == ids(root)["ex:a1"] // PAGE and old not in crops(remote)
+    entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{old // PAGE}-2.json.gz").read_bytes()))["crops"]
+                 if e["id"] == "ex:old")
+    assert entry["retired"] is True and entry["replaced_by"] == "ex:a1" and entry["box"] == {"x": 40, "y": 40, "w": 10, "h": 10}
