@@ -3,7 +3,7 @@
     python3 publish.py <catalogue.sqlite> [--dry-run]
 
 The catalogue is what export_cloudflare.py / export_cloudflare_corpus.py write: `units`, and when
-present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`. A `media` table also adds its
+present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`, `unit_redirects`. A `media` table also adds its
 images to the image key map (`media_map.py`).
 
 - Ids come from out/mirror.sqlite. A new text id gets a page and slot once; the allocation and a
@@ -275,12 +275,12 @@ class Mirror:
         bundle = {k: v for k, v in bundle.items() if v is not None}
         self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
 
-    def retire(self, cid, text_id, mirror_revision):
+    def retire(self, cid, text_id, mirror_revision, replaced_by):
         pid = cid // PAGE
         self.page_sql[pid].append(f"DELETE FROM crops WHERE id={cid} AND revision={mirror_revision};")
         self.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
         self.guarded.append(cid)
-        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True}, True)
+        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, **replaced_by}, True)
 
 
 def write_parts(run, name, groups):
@@ -495,15 +495,30 @@ def main():
     run = OUT / "publish" / stamp
     (run / "pages").mkdir(parents=True)
 
+    # A retired crop names the crop it was retired in favour of, where the catalogue says: one hop, so a
+    # reader follows `replaced_by` while the crop it names is retired too.
+    replaced = dict(src.execute("SELECT id, target FROM unit_redirects")) if "unit_redirects" in tables else {}
     n, crop_ids, retired = 0, {}, set()
     for r in units:
         data = json.loads(r["data"])
         if r["origin"] == "retired":
             cid = m.known(r["id"])
             current = cid is not None and m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
+            named = {"replaced_by": replaced[r["id"]]} if r["id"] in replaced else {}
             if current:
-                m.retire(cid, r["id"], current["revision"])
+                m.retire(cid, r["id"], current["revision"], named)
                 retired.add(cid)
+                n += 1
+            elif cid is not None:
+                # Already retired: a replacement named since is added to its entry.
+                if named and entry(cid).get("replaced_by") != named["replaced_by"]:
+                    m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": r["id"], "retired": True, **named}, True)
+            elif cid is None:
+                # A crop retired before it reached the new layout still gets a number, kept only in its
+                # page's bundle, so its reviews, claims and links resolve.
+                cid = m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
+                m.touched_pages[cid // PAGE][cid % PAGE] = (
+                    {"id": r["id"], "retired": True, **bundle_entry(data), **named}, True)
                 n += 1
             continue
         cid = m.known(r["id"]) or m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
@@ -635,7 +650,7 @@ def main():
             # A crop's new record replaces its old one, so a field the record no longer has goes. A
             # retired crop keeps its record; an image keeps its pack place when the catalogue could
             # not look it up.
-            new = {**old, **new_entry} if new_entry.get("retired") else {"slot": slot, **new_entry}
+            new = {**old, **new_entry, "slot": slot} if new_entry.get("retired") else {"slot": slot, **new_entry}
             for field in ("image", "context_image"):
                 if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
                     new[field + "_place"] = old[field + "_place"]
