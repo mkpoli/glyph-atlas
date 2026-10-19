@@ -16,17 +16,18 @@ const bundle = join(bundleDir, 'worker.mjs')
 await build({ entryPoints: [fileURLToPath(new URL('../src/index.ts', import.meta.url))], outfile: bundle, bundle: true,
   format: 'esm', platform: 'neutral', conditions: ['workerd', 'worker', 'browser'], mainFields: ['module', 'main'],
   external: ['node:*'], logLevel: 'error' })
-const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
-  name: 'atlas-test',
-  modules: true, script: await readFile(bundle, 'utf8'), compatibilityDate: '2026-09-22', compatibilityFlags: ['nodejs_compat'],
-  d1Databases: ['DB'], r2Buckets: ['MEDIA'], bindings: { BETTER_AUTH_SECRET: 'integration-test-secret-integration-test',
-    // Browse counts follow every write at once here; the lag the site allows is checked on its own.
-    BROWSE_COUNTS_LAG: '0' },
+const script = await readFile(bundle, 'utf8')
+// Two Workers over one database: the first answers every write at once, the second lets cached answers
+// stand behind the reviews as the site does (`CATALOGUE_LAG`).
+const worker = (name, lag) => ({
+  name, modules: true, script, compatibilityDate: '2026-09-22', compatibilityFlags: ['nodejs_compat'],
+  d1Databases: ['DB'], r2Buckets: ['MEDIA'], bindings: { BETTER_AUTH_SECRET: 'integration-test-secret-integration-test', CATALOGUE_LAG: lag },
   ratelimits: { CORRECTIONS: { namespace_id: '4401', simple: { limit: 20, period: 60 } },
     // The ledger and form sections make more claims than the site's 30 a minute; the limit itself is checked at the end.
     CLAIMS: { namespace_id: '4403', simple: { limit: 100, period: 60 } },
     SIGN_IN_MAIL: { namespace_id: '4405', simple: { limit: 2, period: 60 } } },
-}]}))
+})
+const mf = new Miniflare(convertV4MiniflareOptions({workers:[worker('atlas-test', '0'), worker('atlas-lagged', '60')]}))
 try {
   const db = await mf.getD1Database('DB')
   // The columns a fixture row fills; later ones (`style`) take their defaults.
@@ -2178,7 +2179,30 @@ try {
     rateLimited = response.status === 429
   }
   assert.ok(rateLimited, 'batches are rate-rateLimited per address')
-  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, redrawn boxes, crop versions, the assertion ledger, crop forms, corpus flags.')
+  // Cached answers stand a minute behind the reviews, except for a browser that has just written.
+  const lagged = await mf.getWorker('atlas-lagged')
+  for (const id of ['lag-a', 'lag-b']) {
+    const d = { id, label: 'ロ', state: 'pending', revision: 0, image_sha256: hash,
+      image: `/atlas/media/${id}.webp`, production: 'handwritten', box: { x: 1, y: 2, w: 3, h: 4 }, repair: { quiz: true } }
+    await db.prepare(`INSERT INTO units(${CROP_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id, 'local', 'ロ', 'U+30ED', null, 'handwritten', 'kana', 'pending', 0, 1, 1, 1,
+      JSON.stringify(d), JSON.stringify({ character: d }), '{}', '{}', null).run()
+  }
+  const laggedRo = async cookie => {
+    const { pending, seen } = (await (await lagged.fetch(base + '/atlas', { headers: cookie ? { cookie } : {} })).json()).categories.find(c => c.label === 'ロ')
+    return { pending, seen }
+  }
+  assert.deepEqual(await laggedRo(), { pending: 2, seen: 0 })
+  await call('/atlas/rounds', { id: crypto.randomUUID(), grapheme: 'U+30ED', seen: [{ id: 'lag-a', image_sha256: hash }] })
+  assert.deepEqual(await laggedRo(), { pending: 2, seen: 0 }, 'a review elsewhere shows within the lag')
+  assert.deepEqual(await laggedRo('atlas-wrote=1'), { pending: 1, seen: 1 }, 'a browser that has just written reads the catalogue as it stands')
+  assert.deepEqual(await laggedRo(), { pending: 1, seen: 1 }, 'and the isolate keeps what it read')
+  const wrote = await lagged.fetch(base + '/atlas/rounds', { method: 'POST',
+    headers: { 'content-type': 'application/json', origin: base, cookie: users.integration.cookie },
+    body: JSON.stringify({ id: crypto.randomUUID(), grapheme: 'U+30ED', seen: [{ id: 'lag-b', image_sha256: hash }] }) })
+  assert.equal(wrote.status, 200)
+  assert.ok(wrote.headers.getSetCookie().includes('atlas-wrote=1; Max-Age=60; Path=/; HttpOnly; Secure; SameSite=Lax'), 'a write marks its browser')
+  console.log('Workerd integration passed: atomic rounds, issue-only saves, retries, undo, corpus identity, search, gallery, export, seen crops, flagged order, corpus rounds, edit history, hosted forms, batch corrections, redrawn boxes, crop versions, the assertion ledger, crop forms, corpus flags, cache lag.')
 } finally {
   await mf.dispose()
   await rm(bundleDir, { recursive: true, force: true })

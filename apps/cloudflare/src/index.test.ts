@@ -1,7 +1,7 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
 import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
-  encodeCursor, decodeCursor, historyItem, historyQuery, moved, facetsCopyStands, substitutionKey, flagRequest, listingFilter, dealable } from './index';
+  encodeCursor, decodeCursor, historyItem, historyQuery, moved, held, wroteLately, markWriter, substitutionKey, flagRequest, listingFilter, dealable } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';
 
@@ -170,12 +170,54 @@ it('moves crops counted apart out of pending, and never more than pending holds'
     .toEqual([row('ア', 'd', 'checked', 1), row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ア', 'd', 'skipped', 3)])
 })
 
-it('keeps browse counts of the current catalogue, and others for the lag alone', () => {
-  const copy = { version: 'p:r:10:4:0', at: 1_000_000, groups: [] }
-  expect(facetsCopyStands(copy, 'p:r:10:4:0', 1_000_000 + 3_000_000, 60)).toBe(true)
-  expect(facetsCopyStands(copy, 'p:r:11:4:0', 1_000_000 + 59_000, 60)).toBe(true)
-  expect(facetsCopyStands(copy, 'p:r:11:4:0', 1_000_000 + 60_000, 60)).toBe(false)
-  expect(facetsCopyStands(copy, 'p:r:11:4:0', 1_000_000, 0)).toBe(false)
+describe('a held value', () => {
+  it('is read again only once the lag is out', async () => {
+    const hold = held<number>()
+    let reads = 0
+    const read = async () => ++reads
+    expect(await hold(read, 0, 60)).toBe(1)
+    expect(await hold(read, 59_999, 60)).toBe(1)
+    expect(await hold(read, 60_000, 60)).toBe(2)
+    expect(await hold(read, 60_001, 0)).toBe(3)
+  })
+  it('shares no read still pending', async () => {
+    const hold = held<number>()
+    let reads = 0
+    const read = async () => { await Promise.resolve(); return ++reads }
+    expect(await Promise.all([hold(read, 0, 60), hold(read, 0, 60)])).toEqual([1, 2])
+    expect(await hold(read, 1, 60)).toBe(2)
+  })
+  it('keeps the later read when an earlier one finishes after it', async () => {
+    const hold = held<string>()
+    let finish!: (value: string) => void
+    const slow = hold(() => new Promise<string>(resolve => { finish = resolve }), 0, 60)
+    expect(await hold(async () => 'new', 1, 0)).toBe('new')
+    finish('old')
+    expect(await slow).toBe('old')
+    expect(await hold(async () => 'unread', 2, 60)).toBe('new')
+  })
+  it('drops a read that fails', async () => {
+    const hold = held<number>()
+    await expect(hold(() => Promise.reject(new Error('busy')), 0, 60)).rejects.toThrow('busy')
+    expect(await hold(async () => 7, 1, 60)).toBe(7)
+  })
+})
+
+describe('a writer reads the catalogue as it stands', () => {
+  it('marks a browser whose write succeeded, for the lag', () => {
+    expect(markWriter(Response.json({}), 60).headers.get('set-cookie')).toBe('atlas-wrote=1; Max-Age=60; Path=/; HttpOnly; Secure; SameSite=Lax')
+    expect(markWriter(Response.json({}, { status: 409 }), 60).headers.get('set-cookie')).toBe(null)
+    expect(markWriter(Response.json({}), 0).headers.get('set-cookie')).toBe(null)
+  })
+  it('keeps the cookies a response already sets', () => {
+    const response = new Response('{}', { headers: [['set-cookie', 'session=a; Path=/']] })
+    expect(markWriter(response, 60).headers.getSetCookie()).toEqual(['session=a; Path=/', 'atlas-wrote=1; Max-Age=60; Path=/; HttpOnly; Secure; SameSite=Lax'])
+  })
+  it('reads the mark among other cookies', () => {
+    expect(wroteLately('session=a; atlas-wrote=1')).toBe(true)
+    expect(wroteLately('atlas-wrote=10')).toBe(false)
+    expect(wroteLately(null)).toBe(false)
+  })
 })
 
 describe('a search of ideographs asks for the characters built from them', () => {

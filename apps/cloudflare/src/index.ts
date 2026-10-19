@@ -253,7 +253,7 @@ async function cropVersions(env: Env, id: string) {
 }
 // A citation of a crop at one of its evidence versions (`?v=`, as `versionToken` names it; the current
 // one without), a grapheme or a form, as CSL-JSON, BibTeX or Hayagriva (`?format=`). It is read again
-// once anything is reviewed or published, and on each new day (in UTC), the date it was accessed.
+// once the catalogue version moves (`catalogueStamps`), and on each new day (in UTC), the date it was accessed.
 const CITE_TTL = 3600;
 const CITABLE_CHARACTER = /^U\+[0-9A-Fa-f]{4,6}(-U\+[0-9A-Fa-f]{4,6})*$/;
 const CITE_TYPES: Record<Format, string> = { csl: 'application/vnd.citationstyles.csl+json; charset=utf-8',
@@ -483,13 +483,28 @@ const SHUFFLE_RANGE = 268435456;
 // What the cached listings are keyed by: every way `units` and the review tables change moves it. A
 // publication stamps `published_at`, `refresh_published_units.py` stamps `units_refreshed_at`, a
 // review or undo adds an event, a round adds a submission, and an undo of a round with no review
-// only marks its submission undone.
+// only marks its submission undone. An isolate keeps the stamps it read for `CATALOGUE_LAG` seconds,
+// so while reviews come in every copy keyed by them moves once a minute rather than on each review,
+// and most requests ask the database nothing for them.
 type CatalogueStamps = { published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number };
-async function catalogueStamps(env: Env): Promise<CatalogueStamps | null> {
-  return env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
+/** A value read at most once per `lag` seconds. Only a value already read is kept: a read still
+ *  pending belongs to its request, and workerd cancels it should that request end first. */
+export function held<T>() {
+  let copy: { at: number; value: T } | null = null;
+  return async (read: () => Promise<T>, now: number, lag: number) => {
+    if (copy && now - copy.at < lag * 1000) return copy.value;
+    const value = await read();
+    // A read that started earlier and finished later is older than the one kept.
+    if (!copy || copy.at <= now) copy = { at: now, value };
+    return value;
+  };
+}
+const heldStamps = held<CatalogueStamps | null>();
+function catalogueStamps(env: Env): Promise<CatalogueStamps | null> {
+  return heldStamps(() => env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,
     (SELECT value FROM metadata WHERE key='units_refreshed_at') AS refreshed,
     (SELECT max(rowid) FROM events) AS event,(SELECT max(rowid) FROM submissions) AS submission,
-    (SELECT count(*) FROM submissions WHERE undone=1) AS undone`).first<CatalogueStamps>();
+    (SELECT count(*) FROM submissions WHERE undone=1) AS undone`).first<CatalogueStamps>(), Date.now(), Number(env.CATALOGUE_LAG));
 }
 const catalogueKey = (version: CatalogueStamps | null) =>
   [version?.published ?? '', version?.refreshed ?? '', version?.event ?? 0, version?.submission ?? 0, version?.undone ?? 0].join(':');
@@ -499,27 +514,19 @@ async function catalogueVersion(env: Env): Promise<string> {
 // The publication and refresh the collection's crops come from, without the reviews since.
 const publicationKey = (version: CatalogueStamps | null) => [version?.published ?? '', version?.refreshed ?? ''].join(':');
 // Browse counts every local crop by character and state, which reads the whole table and takes
-// seconds, and every visitor gets the same answer. The edge keeps a copy of such counts for an hour.
+// seconds, and every visitor gets the same answer. The edge keeps one copy per catalogue version.
 const FACETS_TTL = 3600;
 // The grapheme a label is filed under: its family, or its own code points when it has none. The
 // publication writes `family` from the same rule (`atlas.grapheme_of`).
 export const graphemeOf = (label: string, family: string | null) => family || cp(label) || null;
 type Facet = { label: string | null; family: string | null; document: string | null; title: string | null; state: string; n: number };
-// Browse's counts are kept per publication, with the catalogue version they were counted at. A copy of
-// the current version stands for `FACETS_TTL`; once a review has moved the version, the copy stands
-// until it is `lag` seconds old (`BROWSE_COUNTS_LAG`), so a stretch of reviewing recounts once a minute.
-type FacetsCopy = { version: string; at: number; groups: Facet[] };
-export const facetsCopyStands = (copy: FacetsCopy, version: string, now: number, lag: number) =>
-  copy.version === version || now - copy.at < lag * 1000;
-async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement, stamps: Promise<CatalogueStamps | null>) {
-  const version = catalogueKey(await stamps);
-  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(publicationKey(await stamps))}`);
+async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement, version: Promise<string>) {
+  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(await version)}`);
   const cached = await caches.default.match(key);
-  const copy = cached ? await cached.json() as FacetsCopy : null;
-  if (copy && facetsCopyStands(copy, version, Date.now(), Number(env.BROWSE_COUNTS_LAG))) return copy.groups;
+  if (cached) return await cached.json() as Facet[];
   const [counted, marks] = await env.DB.batch<Facet>([stored, marked]);
   const groups = moved(counted.results, marks.results);
-  ctx.waitUntil(caches.default.put(key, Response.json({ version, at: Date.now(), groups }, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  ctx.waitUntil(caches.default.put(key, Response.json(groups, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return groups;
 }
 // Corpus glyphs by character in the material asked for, with the grapheme the character table files each
@@ -619,7 +626,7 @@ export function facetsQueries(review: boolean, reviewer: string | null, where: s
   return { stored, marked, skipped };
 }
 // Stored counts with the crops counted apart moved from `pending` to the state they are in. A
-// reviewer's skips are counted now and browse's counts may be the edge's copy of an earlier catalogue
+// reviewer's skips are counted now and browse's counts may be the edge's copy of this catalogue
 // version, so a move never takes more than `pending` holds.
 export function moved(stored: Facet[], moves: Facet[]): Facet[] {
   const key = (row: { label: string | null; document: string | null }, state: string) => JSON.stringify([row.label, row.document, state]);
@@ -971,7 +978,7 @@ async function line(env: Env, ctx: ExecutionContext, url: URL, id: string) {
   return body;
 }
 // A page as the page view shows it: its published record (0078) with each of its crops as the site holds
-// it now, label and box, so a review or a redrawn box shows on the page at once. The crops are read by id in
+// it now, label and box, so a review or a redrawn box shows on the page once the catalogue version moves. The crops are read by id in
 // the record's order, one primary-key lookup each; a crop retired or not yet on the site is left out. The
 // photo is a request of the holder's IIIF image service, its longer side at most PAGE_IMAGE pixels, laid
 // over the page pixels the boxes are given in; a page no service serves is shown as its boxes alone.
@@ -1035,7 +1042,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     published = results.pop()!;
     groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
   } else {
-    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, stampsOnce());
+    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, stampsOnce().then(catalogueKey));
     if (skipped) groups = moved(groups, (await skipped.all<Facet>()).results);
   }
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
@@ -2656,13 +2663,24 @@ const routes = {
   },
 };
 
+// A writer reads the catalogue as it now stands: a write that succeeds marks the browser for
+// `CATALOGUE_LAG` seconds, and a marked request reads the stamps afresh, which the isolate then keeps.
+const WROTE = 'atlas-wrote';
+export const wroteLately = (cookie: string | null) => (cookie ?? '').split(';').some(part => part.trim() === `${WROTE}=1`);
+export function markWriter(response: Response, lag: number): Response {
+  if (!(lag > 0) || !response.ok) return response;
+  const marked = new Response(response.body, response);
+  marked.headers.append('set-cookie', `${WROTE}=1; Max-Age=${lag}; Path=/; HttpOnly; Secure; SameSite=Lax`);
+  return marked;
+}
 export default {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     // A read is tried again while D1 is busy; a write is answered at once, and the browser keeps it
     // until the database is back.
     const read=request.method==='GET'||request.method==='HEAD';
-    const outcome=await retried(()=>routes.fetch(request,env,ctx),read?READ_BUDGET:0);
-    if('value' in outcome)return outcome.value;
+    const scoped=wroteLately(request.headers.get('cookie'))?{...env,CATALOGUE_LAG:'0' as string} as Env:env;
+    const outcome=await retried(()=>routes.fetch(request,scoped,ctx),read?READ_BUDGET:0);
+    if('value' in outcome)return read?outcome.value:markWriter(outcome.value,Number(env.CATALOGUE_LAG));
     const path=new URL(request.url).pathname,open=opened(path)?OPEN:{};
     const busy=transient(outcome.error);
     console.error(JSON.stringify({event:'request_failed',path,method:request.method,busy,attempts:outcome.attempts,...described(outcome.error)}));
