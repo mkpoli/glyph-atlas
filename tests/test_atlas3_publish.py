@@ -436,3 +436,20 @@ def test_a_crop_retired_before_the_new_layout_gets_a_number_and_a_retired_entry(
     entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{old // PAGE}-2.json.gz").read_bytes()))["crops"]
                  if e["id"] == "ex:old")
     assert entry["retired"] is True and entry["replaced_by"] == "ex:a1" and entry["box"] == {"x": 40, "y": 40, "w": 10, "h": 10}
+
+
+def test_a_crop_retired_later_names_its_replacement(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    gone = list(unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う"))
+    gone[UNITS.index("origin")] = "retired"
+    run(publish, monkeypatch, catalogue(tmp_path / "gone.sqlite", [tuple(gone)]))
+    path = catalogue(tmp_path / "named.sqlite", [tuple(gone)])
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE unit_redirects(id, target)")
+    db.execute("INSERT INTO unit_redirects VALUES('ex:b1', 'ex:a1')")
+    db.commit()
+    run(publish, monkeypatch, path)
+    b1 = ids(root)["ex:b1"]
+    entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{b1 // PAGE}-3.json.gz").read_bytes()))["crops"]
+                 if e["id"] == "ex:b1")
+    assert entry["retired"] is True and entry["replaced_by"] == "ex:a1"
