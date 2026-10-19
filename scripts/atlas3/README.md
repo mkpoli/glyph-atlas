@@ -1,4 +1,4 @@
-# New storage layout: first build
+# New storage layout: build and publish
 
 The tools that fill the D1 databases of [decision record 0005](../../docs/decisions/0005-storage-rebuild.md)
 from the live database: `glyph-atlas-v3` (`0b475d45-dfe4-49a6-8c44-996289e82995`: crops, pages,
@@ -12,7 +12,13 @@ Data lives in `work/atlas-v3/` (or `$ATLAS3_DIR`), outside the repository:
 - `out/atlas.sqlite`, `out/atlas-runs.sqlite`: local copies of the new databases;
 - `out/mirror.sqlite`: the id allocation (text id → integer crop id, page and book keys, codes),
   the only record of which number each crop has. Back it up after every change;
-- `out/pages/<page>-<rev>.json.gz`: page bundles.
+- `out/pages/<page>-<rev>.json.gz`: page bundles, the latest revision of each page;
+- `out/publish/<stamp>/`: each publish's parts, bundles and journal. A publish listed in the
+  mirror's `pending` table is finished by the next run, so its folder must stay until then.
+
+Publishing needs an rclone remote named `r2` (or `$ATLAS3_R2_REMOTE`) that reaches the site's R2
+account. A schema change is applied by hand to databases that are already loaded; `load.sh` only
+creates them.
 
 ## Steps
 
@@ -22,8 +28,44 @@ Data lives in `work/atlas-v3/` (or `$ATLAS3_DIR`), outside the repository:
    names its record's page, with its page and book, and every run has its crops. It refuses to run
    over an existing `out/mirror.sqlite`, since a rebuild renumbers every crop.
 3. `sample.py` compares random crops with their source records field by field.
-4. `load.sh` creates the tables, loads the rows in parts, then builds the indexes. A rerun skips the
-   parts of the same build that are already loaded.
+4. `load.sh` creates the tables, loads the rows in parts, then builds the indexes, and records the
+   build id in `imports`; `publish.py` refuses a mirror whose build the database does not name. A
+   rerun skips the parts already loaded, and refuses once anything has been published.
+
+## Publishing into the new layout
+
+    python3 scripts/atlas3/publish.py <catalogue.sqlite> --dry-run
+    python3 scripts/atlas3/publish.py <catalogue.sqlite>
+
+The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` already write
+(`units`, and when present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`).
+
+- A new text id gets a page and slot once, from `out/mirror.sqlite`. The allocation and the record
+  that the publish is pending are one transaction, saved before anything is sent.
+- Only what differs from the local copy is sent; pages whose crops and facts did not change keep
+  their revision. A field the catalogue does not carry (form, cluster, cut, other flag bits, a corpus
+  label) keeps its published value. Witness years come from the catalogue's dating, else from the
+  dating already published.
+- Review-owned columns (`char`, `state`, `style`, `quiz`, `kind`, `flags`) change only when the
+  catalogue's revision is at least the published one, and in D1 only while the crop's revision is
+  unchanged; the result is read back. A corpus glyph's come only from its review overlay
+  (`units` rows with `origin='corpus'`), which a plain corpus export does not have.
+- A crop leaves the galleries and runs only when the catalogue carries it with `origin='retired'`,
+  at a revision no older than the published one. The exporters drop withdrawn crops instead, so a
+  withdrawal needs a catalogue that names it.
+- A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
+  keeps its runs.
+- A known crop on another page, a known crop with another box or image, or a new box overlapping a
+  published crop on its page (IoU ≥ 0.5) stops the publish with a report: those need the slot
+  matcher, which is not built yet. Publish new pages and new boxes only.
+- Order: page bundles to R2 (`v3/pages/`, through rclone's `r2` remote), then the rows in parts of at
+  most 40 MiB that never split a page (its crops and its revision go together), then the runs. Each
+  part is confirmed by its stamp in `imports`, then replayed on the local copy. A publish stopped
+  after allocating is finished by the next run before anything else.
+- A dry run writes the parts and bundles under `out/publish/<stamp>/` and publishes nothing.
+
+One publish runs at a time. The first build's bundles went to R2 with
+`rclone copy out/pages r2:glyph-atlas/v3/pages --header-upload "Content-Type: application/json" --header-upload "Content-Encoding: gzip"`.
 
 ## Not in the new databases yet
 
@@ -38,7 +80,14 @@ answers:
 - character data (`characters` cards, `character_variants`, `character_derived`,
   `component_variants`, `han_ids`, `han_components`, `han_component_names`, `grapheme_writers`,
   `document_characters`, `corpus_documents`, `representations`);
-- the model votes in `units.visual`, and the text-id alias files.
+- the model votes in `units.visual`, and the text-id alias files;
+- family heads and search names for characters that first appear after the first build;
+- `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
+  new `crops` has no per-crop grapheme column yet, so the read path decides how such a crop joins a
+  family gallery before cutover.
+
+The Worker read path builds on the catalogue stamps of #763 (`catalogueStamps`, `catalogueKey`), so a
+reviewer's own save still shows at once.
 
 Anything that changes in the live database after the copy reaches the new databases at cutover, from
 a fresh copy (`pull.py --fresh`).

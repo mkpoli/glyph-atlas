@@ -10,6 +10,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -83,7 +84,11 @@ def main():
       CREATE TABLE books(key TEXT PRIMARY KEY, id INTEGER NOT NULL UNIQUE) WITHOUT ROWID;
       CREATE TABLE codes(field TEXT, key TEXT, code INTEGER, PRIMARY KEY(field, key)) WITHOUT ROWID;
       CREATE TABLE run_vertical(first INTEGER, size INTEGER, vertical INTEGER, PRIMARY KEY(first, size)) WITHOUT ROWID;
+      CREATE TABLE book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
+      CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
     """)
+    # The build id ties this allocation to the databases loaded from it (load.sh writes it to D1).
+    mirror.execute("INSERT INTO meta VALUES('build', ?)", (time.strftime("%Y%m%dT%H%M%S"),))
     code = Codes({"state": STATE, "style": STYLE})
 
     # Graphemes: every character the site knows, with its family head.
@@ -212,6 +217,7 @@ def main():
     mirror.executemany("INSERT INTO ids VALUES(?,?)", ids.items())
     mirror.executemany("INSERT INTO pages VALUES(?,?,?,?)", [(k, p["id"], p["book"], p["next"]) for k, p in pages.items()])
     mirror.executemany("INSERT INTO books VALUES(?,?)", books.items())
+    mirror.executemany("INSERT INTO book_years VALUES(?,?)", years.items())
     mirror.executemany("INSERT INTO codes VALUES(?,?,?)", [(f, k, c) for f, t in code.codes.items() for k, c in t.items()])
     mirror.commit()
 

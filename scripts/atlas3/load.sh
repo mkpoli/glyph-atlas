@@ -28,6 +28,15 @@ load() { # <database> <sqlite> <schema>
     touch "$part.done"
   done
 }
+# Once anything is published, the local copies have moved on from the build: loading again would
+# resend every row. A new layout starts from build.py --replace and empty databases.
+if [ -n "$(ls "$here/out/publish" 2>/dev/null)" ]; then
+  echo "out/publish/ holds publishes; this build is loaded and live. Not loading again." >&2; exit 1
+fi
+build_id="$(sqlite3 "$here/out/mirror.sqlite" "SELECT value FROM meta WHERE key='build'")"
 load glyph-atlas-v3 "$here/out/atlas.sqlite" "$cf/migrations-atlas/0001_init.sql"
 load glyph-atlas-v3-runs "$here/out/atlas-runs.sqlite" "$cf/migrations-atlas-runs/0001_init.sql"
+# The databases name the build their ids come from; publish.py checks it before every publish.
+(cd "$cf" && bunx wrangler d1 execute glyph-atlas-v3 --remote --yes \
+  --command "INSERT OR IGNORE INTO imports(stamp, at) VALUES('build:$build_id', unixepoch())") > /dev/null
 echo loaded
