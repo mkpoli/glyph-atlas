@@ -209,3 +209,24 @@ def test_script_facts_on_crops_that_no_longer_exist_are_dropped(layout, monkeypa
     assert list(out.execute("SELECT crops FROM form_decisions")) == [(json.dumps([ids(root)["codh:g1"]]),)]
     report = (root / "out" / "history-report.txt").read_text()
     assert "unit_suspects: in 2, out 1, dropped 1" in report and "dropped (1) crop no longer exists" in report
+
+
+TWO_EARLIER = [version("ex:a1", "p1", A1), version("ex:a1", "p0", OLD), version("ex:a1", "pz", {"x": 5, "y": 5, "w": 5, "h": 5})]
+
+
+def test_a_crop_with_two_earlier_boxes_stops_the_move_and_keeps_its_current_box(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    sources(root, crop_versions=TWO_EARLIER, seen=[("ex:a1", "u1:s1", json.dumps(A1), "p1", "2026-10-01T00:00:02Z")])
+    code, out = history(monkeypatch, root)
+    assert code == 1
+    assert "more than one earlier box" in (root / "out" / "history-report.txt").read_text()
+    assert out.execute("SELECT cut FROM seen").fetchall() == [(0,)]
+
+
+def test_a_box_no_cut_has_on_a_crop_with_two_earlier_boxes_is_not_guessed(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    sources(root, crop_versions=TWO_EARLIER, seen=[("ex:a1", "u1:s1", json.dumps({"x": 9, "y": 9, "w": 9, "h": 9}), "p1",
+                                                    "2026-10-01T00:00:02Z")])
+    code, out = history(monkeypatch, root)
+    assert code == 1
+    assert out.execute("SELECT count(*) FROM seen").fetchone()[0] == 0

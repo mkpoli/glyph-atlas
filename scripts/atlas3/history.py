@@ -147,7 +147,11 @@ class Crops:
     def load_cuts(self):
         """Each collected crop's current box (its bundle entry's) and earlier version (crop_versions)."""
         by_unit, no_box, unknown = defaultdict(list), Counter(), Counter()
-        for r in source("crop_versions").execute("SELECT id, unit, pixels, box, image FROM crop_versions"):
+        rows = source("crop_versions").execute("SELECT id, unit, pixels, box, image FROM crop_versions").fetchall()
+        table = self.report.table("crop_versions", len(rows))
+        # Every version becomes a cut or a version id evidence can name; none is written as a row.
+        table["out"] = len(rows)
+        for r in rows:
             cid = self.ids.get(r["unit"])
             if cid is None:
                 unknown[r["unit"]] += 1
@@ -173,7 +177,8 @@ class Crops:
                 no_current.append(cid)
                 continue
             older = [v for v in versions if v[1] != self.current[cid]]
-            if len(older) > 1:
+            # Versions that differ only in their image encoding share a box and are one cut.
+            if len({v[1] for v in older}) > 1:
                 many.append(cid)
             elif older:
                 self.earlier[cid] = older[0]
@@ -185,7 +190,9 @@ class Crops:
                          f"{len(corpus)} of them corpus glyphs (cut 0)", [c for c in no_current if c not in set(corpus)])
         self.report.note(f"crops whose only version differs from their bundle box (cut -1 with no cut 0 row): {len(orphan)}", orphan)
         self.many = set(many)
-        self.report.note(f"crops with more than one earlier version: {len(many)}", many)
+        # Cut -1 holds one earlier box; a crop with two needs a rule before it can move.
+        for cid in many:
+            self.report.stop("crop_versions", "more than one earlier box", str(cid))
 
     def box(self, cid):
         """The crop's current box, from its bundle (crops crop_versions does not name are read here)."""
@@ -200,18 +207,21 @@ class Crops:
         """Cut 0 for the current box (and every corpus glyph), -1 for the earlier one, else None."""
         if self.corpus(cid):
             return 0
-        if cid in self.many:
-            return None
         box = box_of(box)
         if box is not None and box == self.box(cid):
             return 0
+        if cid in self.many:
+            return None
         if cid in self.earlier and box == self.earlier[cid][1]:
             return -1
         return None
 
     def older(self, cid):
         """The cut below the oldest recorded one: a box no recorded version has belongs to a version
-        from before crop_versions kept them."""
+        from before crop_versions kept them. None for a crop with more than one earlier version, whose
+        cuts are not numbered: that stops the move."""
+        if cid in self.many:
+            return None
         return -2 if cid in self.earlier else -1
 
     def ref_cut(self, ref):
@@ -338,6 +348,8 @@ def main():
         cut = crops.cut(cid, before.get("box"))
         if cut is None:
             cut, unrecorded = crops.older(cid), unrecorded + 1
+            if cut is None:
+                problems.append("box matches no cut of a crop with more than one earlier version")
         label = char_text(after.get("label")) or None
         if label is not None and label not in graphemes:
             problems.append(f"label {label!r} has no grapheme")
@@ -358,7 +370,9 @@ def main():
         events.append((cid, revision[r["id"]], cut, 0, actor[r["actor"]], sub_id, ms(r["at"]), verdict,
                        graphemes.get(label) if label else None, state, None, after.get("quiz"), *box,
                        (evidence.get("note") or None) and evidence["note"][:2000],
-                       codes["issue"].get(issue)))
+                       codes["issue"].get(issue),
+                       # Typed characters: `suggested_text`, or `suggested_reading` in reviews saved before it.
+                       evidence.get("suggested_text") or evidence.get("suggested_reading") or None))
     insert("events", [(i, *e) for i, e in enumerate(events, 1)])
     report.tables["events"]["out"] = len(events)
     report.note("events: a review sets no style and no withheld flag, so both are NULL")
@@ -372,7 +386,7 @@ def main():
         cut = crops.cut(cid, r["box"]) if cid is not None else None
         if cid is not None and cut is None:
             cut, unrecorded = crops.older(cid), unrecorded + 1
-        if cid is None or r["submission"] not in sub:
+        if cid is None or cut is None or r["submission"] not in sub:
             report.stop("seen", "crop unknown" if cid is None else "submission unknown" if r["submission"] not in sub
                         else "box matches no cut", f"{r['target']} ({cid}) {r['box']} image {r['image_sha256']} in "
                         f"{r['submission']} at {r['at']}; current box {crops.box(cid) if cid else None}")
@@ -388,7 +402,7 @@ def main():
         cut = crops.cut(cid, r["box"]) if cid is not None else None
         if cid is not None and cut is None:
             cut, unrecorded = crops.older(cid), unrecorded + 1
-        if cid is None or r["submission"] not in sub:
+        if cid is None or cut is None or r["submission"] not in sub:
             report.stop("skips", "crop unknown" if cid is None else "submission unknown" if r["submission"] not in sub
                         else "box matches no cut", f"{r['target']} ({cid}) {r['box']} image {r['image_sha256']} in "
                         f"{r['submission']} at {r['at']}; current box {crops.box(cid) if cid else None}")

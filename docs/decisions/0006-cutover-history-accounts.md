@@ -75,7 +75,8 @@ written only at the URL boundary.
   client asked and got. No reader takes a crop id from them.
 - `events`: the 0005 table. Each old event becomes one row, its `revision` the per-crop sequence by
   time, checked to end at or below the crop's current revision, with the verdict, issue, label, state
-  and box it set; a review sets no style or withheld flag.
+  and box it set, and the characters the reviewer typed (`text`); a review sets no style or withheld
+  flag. Whether it came from a round, a batch or a single review is its submission's.
 - `seen(submission, crop, cut, at)` and `skips(crop, actor, cut, at, submission)`, so an undone round
   stops counting its skips.
 - The kinds of event (verdicts and marks), issues and the two mark states are numbered once, in the

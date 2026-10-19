@@ -20,6 +20,8 @@ INSERT INTO codes(field, code, key) VALUES ('kind', 0, 'match'), ('kind', 1, 'wr
   ('issue', 4, 'other'), ('issue', 5, 'unclear'), ('issue', 6, 'reading'),
   ('state', 3, 'seen'), ('state', 4, 'hard');
 ALTER TABLE events ADD COLUMN issue INTEGER;
+-- The characters a reviewer typed for a joined or misread crop, which the history shows.
+ALTER TABLE events ADD COLUMN text TEXT CHECK(length(text) <= 64);
 -- A skip names its submission, so an undone round stops counting it.
 ALTER TABLE skips ADD COLUMN submission INTEGER;
 CREATE INDEX event_crop ON events(crop, revision);
