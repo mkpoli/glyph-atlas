@@ -193,6 +193,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 /* The source line sits under the crop on a wide screen and after everything else on a narrow one, so
    it never pushes the decision down. */
 .credit-beside{display:none;margin-top:10px}.credit-after{margin-top:24px}
+.crop-shape{margin:2px 0 0;font-size:11px;line-height:1.5;color:var(--faint)}
 .inspector-header{justify-content:flex-end;min-height:48px}
 /* Beside the decision, the crop's column is as tall as what it holds, so a crop without a transcription
    has no blank under it. Above the decision, on a narrow screen, it keeps a transcription's room, so
