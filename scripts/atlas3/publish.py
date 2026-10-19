@@ -112,22 +112,23 @@ def send(database, file, stamp):
     return applied(database, stamp)
 
 
-def upload(files):
-    """Bundles to R2 through rclone's S3 interface; a bundle name is never reused, so a resend is harmless."""
+def upload(files, prefix=BUNDLE_PREFIX):
+    """Files to R2 under a prefix, through rclone's S3 interface; an object name is never reused, so a
+    resend is harmless."""
     if not files:
         return
     folder = files[0].parent
     names = "\n".join(f.name for f in files) + "\n"
     for attempt in range(4):
-        done = subprocess.run(["rclone", "copy", str(folder), f"{R2_REMOTE}:{BUCKET}/{BUNDLE_PREFIX}", "--files-from-raw", "-",
+        done = subprocess.run(["rclone", "copy", str(folder), f"{R2_REMOTE}:{BUCKET}/{prefix}", "--files-from-raw", "-",
                                "--transfers", "16", "--s3-no-check-bucket", "--header-upload", "Content-Type: application/json",
                                "--header-upload", "Content-Encoding: gzip"], input=names, text=True, check=False)
-        listed = subprocess.run(["rclone", "lsf", f"{R2_REMOTE}:{BUCKET}/{BUNDLE_PREFIX}", "--files-from-raw", "-"],
+        listed = subprocess.run(["rclone", "lsf", f"{R2_REMOTE}:{BUCKET}/{prefix}", "--files-from-raw", "-"],
                                 input=names, text=True, capture_output=True, check=False)
         if done.returncode == 0 and set(listed.stdout.split()) >= {f.name for f in files}:
             return
         time.sleep(10 * (attempt + 1))
-    sys.exit("bundle upload failed; rerun to finish")
+    sys.exit(f"upload to {prefix} failed; rerun to finish")
 
 
 class Mirror:

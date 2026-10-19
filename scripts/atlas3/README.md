@@ -71,6 +71,17 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
 One publish runs at a time. The first build's bundles went to R2 with
 `rclone copy out/pages r2:glyph-atlas/v3/pages --header-upload "Content-Type: application/json" --header-upload "Content-Encoding: gzip"`.
 
+## Publication answers
+
+`answers.py` (dry run with `--dry-run`) publishes what the galleries count. It bumps `generation`
+in `glyph-atlas-v3` from G to G + 1, writes per-character counts from the local copy to
+`v3/pub/<pub>/counts/<char % 256>.json.gz` and the unread crops' counts per script to
+`v3/pub/<pub>/unread.json.gz`, then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A cell
+counts the crops of one kind, style, state, withheld flag, witness decade and visual group, in the
+codes of the `codes` table. It runs after a publish, under the same lock, and refuses while a publish
+is unfinished or while the database holds review events, which it cannot absorb yet. Each run costs
+one D1 row and 258 R2 objects.
+
 ## Not in the new databases yet
 
 These stay in the live database until cutover, when they move with integer crop ids or become R2
