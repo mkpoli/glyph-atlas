@@ -92,6 +92,28 @@ run's shards go with the next. A publish whose catalogue has a `media` table add
 way and uploads them before its bundles. The first map comes from the live `media` table:
 5,271,887 images in 4,096 shards, 354 MB.
 
+## Cutover
+
+The site moves to the new layout in one window; the old database stays untouched, so going back is
+a redeploy of the previous Worker. Steps marked *not built* must exist before the window.
+
+1. **Rehearse** the whole sequence on fresh copies and fix whatever `check.py` reports.
+2. **Freeze.** Every session stops publishing to the old database, and the site pauses review writes
+   (*not built*: a Worker switch that answers review writes with 503 for the window).
+3. **Copy** the live tables again, `pull.py --fresh`, from a Codespace with the Cloudflare
+   credentials: the copy is about 3 GB and the uploads after it are large.
+4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
+   ones), merge its images into the map (`media_map.py`) and publish the answers (`answers.py`).
+5. **Move the history** (*not built*): reviews, submissions, skips, seen marks, favourites, claims,
+   written forms and form decisions, with every text id translated through `out/mirror.sqlite`;
+   none may stay unresolved. Old URLs resolve through text-id alias files in R2 (*not built*).
+6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
+   local Worker on each layout.
+7. **Switch** the Worker's routes to the new layout and resume reviews.
+
+`check.py` compares the copies with the local copy of the new layout, crop by crop: numbers, row
+values, bundle boxes and images, runs and the image map. It reads nothing remote.
+
 ## Not in the new databases yet
 
 These stay in the live database until cutover, when they move with integer crop ids or become R2
