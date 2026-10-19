@@ -83,6 +83,7 @@ def main():
       CREATE TABLE books(key TEXT PRIMARY KEY, id INTEGER NOT NULL UNIQUE) WITHOUT ROWID;
       CREATE TABLE codes(field TEXT, key TEXT, code INTEGER, PRIMARY KEY(field, key)) WITHOUT ROWID;
       CREATE TABLE run_vertical(first INTEGER, size INTEGER, vertical INTEGER, PRIMARY KEY(first, size)) WITHOUT ROWID;
+      CREATE TABLE book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
     """)
     code = Codes({"state": STATE, "style": STYLE})
 
@@ -212,6 +213,7 @@ def main():
     mirror.executemany("INSERT INTO ids VALUES(?,?)", ids.items())
     mirror.executemany("INSERT INTO pages VALUES(?,?,?,?)", [(k, p["id"], p["book"], p["next"]) for k, p in pages.items()])
     mirror.executemany("INSERT INTO books VALUES(?,?)", books.items())
+    mirror.executemany("INSERT INTO book_years VALUES(?,?)", years.items())
     mirror.executemany("INSERT INTO codes VALUES(?,?,?)", [(f, k, c) for f, t in code.codes.items() for k, c in t.items()])
     mirror.commit()
 

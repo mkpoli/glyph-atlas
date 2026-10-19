@@ -1,4 +1,4 @@
-# New storage layout: first build
+# New storage layout: build and publish
 
 The tools that fill the D1 databases of [decision record 0005](../../docs/decisions/0005-storage-rebuild.md)
 from the live database: `glyph-atlas-v3` (`0b475d45-dfe4-49a6-8c44-996289e82995`: crops, pages,
@@ -24,6 +24,31 @@ Data lives in `work/atlas-v3/` (or `$ATLAS3_DIR`), outside the repository:
 3. `sample.py` compares random crops with their source records field by field.
 4. `load.sh` creates the tables, loads the rows in parts, then builds the indexes. A rerun skips the
    parts of the same build that are already loaded.
+
+## Publishing into the new layout
+
+    python3 scripts/atlas3/publish.py <catalogue.sqlite> --dry-run
+    python3 scripts/atlas3/publish.py <catalogue.sqlite>
+
+The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` already write
+(`units`, and when present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`).
+
+- A new text id gets a page and slot once, from `out/mirror.sqlite`, saved before anything is sent.
+- Only rows that differ from the local copy are sent, and pages whose content did not change keep
+  their revision. Fields a catalogue does not carry keep their published value.
+- Review-owned columns (`char`, `state`, `style`, `quiz`, `kind`, `flags`) change only when the
+  catalogue's revision is at least the published one, and only while nobody has reviewed the crop
+  since; a corpus glyph's come only from its review overlay.
+- A crop the catalogue marks `retired` leaves the galleries and runs.
+- A known crop on another page, or a new box overlapping a published crop on its page (IoU ≥ 0.5),
+  stops the publish with a report: those need the slot matcher, which is not built yet. Publish
+  new pages and new boxes only.
+- Order: page bundles to R2 (`v3/pages/`), then the rows in parts of at most 40 MiB, page revisions
+  last, then the runs. Each part is confirmed by its stamp in `imports`. A publish stopped after
+  allocating is finished by the next run before anything else.
+- A dry run writes the parts and bundles under `out/publish/<stamp>/` and changes nothing else.
+
+One publish runs at a time. `upload.py` sends the first build's bundles to R2.
 
 ## Not in the new databases yet
 
