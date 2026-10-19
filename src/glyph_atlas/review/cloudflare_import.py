@@ -20,6 +20,9 @@ REMOTE_ID = re.compile(r"cf:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", re.IG
 #: A site user's id, which the Worker records as the actor of every write since accounts.
 ACCOUNT_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.IGNORECASE)
 POLICY = "cloudflare-import-v1"
+#: The notes a publication sets on the site's row in place, leaving its revision where it is
+#: (`repair` in `scripts/refresh_published_units.py`); locally each rewrite is a revision.
+IN_PLACE_META = frozenset({"alignment_repair"})
 
 
 class Rejected(ValueError):
@@ -32,6 +35,28 @@ class _PreviewRollback(Exception):
 
 def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _in_place_since(store, conn, target, published):
+    """Whether every local event past the `published` revision only rewrote a note the site takes in place.
+
+    Such a pass (a withheld crop released, a duplicate withheld) reaches the site without a new
+    revision, so a review saved there against the published one still describes this crop.
+    """
+    row = conn.execute("SELECT base FROM revision_bases WHERE target_id=?", (target,)).fetchone()
+    revision = row["base"] if row else 0
+    reached = revision == published
+    for event in map(_review, conn.execute("SELECT * FROM events WHERE target_id=? ORDER BY seq", (target,))):
+        after = advanced(revision, event)
+        if reached and after != revision:
+            old, new = event.old if isinstance(event.old, dict) else {}, event.new
+            if (event.role != "model" or event.field != "meta" or not isinstance(new, dict)
+                    or {k: v for k, v in old.items() if k not in IN_PLACE_META}
+                    != {k: v for k, v in new.items() if k not in IN_PLACE_META}):
+                return False
+        revision = after
+        reached = reached or revision == published
+    return reached and revision == store._revision(conn, target)
 
 
 def _snapshot(record):
@@ -247,7 +272,9 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                                 raise Rejected("a later local decision must be preserved")
                     else:
                         before = deepcopy(publication["character"])
-                        if type(before.get("revision")) is not int or store._revision(conn, target) != before["revision"]:
+                        if type(before.get("revision")) is not int or (
+                                store._revision(conn, target) != before["revision"]
+                                and not _in_place_since(store, conn, target, before["revision"])):
                             raise Rejected("local revision differs from the published baseline")
                     actual = {"id": unit.id, "label": written_identity(unit),
                               "box": unit.box.model_dump() if unit.box else None, "page_id": unit.page_id,
