@@ -1,3 +1,5 @@
+import { readRecords, recordKey } from './records';
+
 // Reads of the new storage layout (docs/decisions/0005-storage-rebuild.md): the crop index in the D1
 // database bound as ATLAS, and page bundles in R2 under `v3/pages/`.
 
@@ -11,7 +13,7 @@ export const pageOf = (id: number) => Math.floor(id / PAGE);
 export const slotOf = (id: number) => id % PAGE;
 
 // Public URLs write the id in Crockford base 32, lower case. Reading takes either case and the letters
-// Crockford reads as digits (i and l as 1, o as 0).
+// Crockford reads as digits (i and l as 1, o as 0). A leading zero is refused, so a crop has one URL.
 const DIGITS = '0123456789abcdefghjkmnpqrstvwxyz';
 export function publicId(id: number): string {
   let out = '';
@@ -19,7 +21,7 @@ export function publicId(id: number): string {
   return out;
 }
 export function cropOf(text: string): number | null {
-  if (!/^[0-9a-z]{1,11}$/i.test(text)) return null;
+  if (!/^[0-9a-z]{1,11}$/i.test(text) || /^[0o]/i.test(text)) return null;
   let id = 0;
   for (const c of text.toLowerCase().replace(/[il]/g, '1').replace(/o/g, '0')) {
     const digit = DIGITS.indexOf(c);
@@ -47,29 +49,25 @@ export function bundle(env: Env, page: number, rev: number): Promise<Bundle | nu
     return { key: body.key, book: body.book, rev: body.rev, page: body.page ?? null,
       bySlot: new Map((body.crops as Entry[]).map(entry => [entry.slot, entry])) };
   })();
-  // A failed read is not kept, so the next request reads again.
-  read.catch(() => held.delete(key));
+  // A failed read is not kept, so the next request reads again; a newer read under the key stays.
+  read.catch(() => { if (held.get(key) === read) held.delete(key); });
   held.set(key, read);
   while (held.size > BUNDLES_HELD) held.delete(held.keys().next().value!);
   return read;
 }
 
 // Small code tables (state, style, category), the same for every request until a publication adds a
-// code, which a missing code makes the isolate read again.
+// code: a listing that meets a code the isolate does not hold reads the table again, once.
 let codes: Promise<Map<string, string>> | null = null;
-async function codeNames(env: Env): Promise<Map<string, string>> {
-  codes ??= env.ATLAS.prepare(`SELECT field,code,key FROM codes WHERE field IN ('state','style','category')`)
-    .all<{ field: string; code: number; key: string }>()
-    .then(r => new Map(r.results.map(row => [`${row.field}:${row.code}`, row.key])));
-  codes.catch(() => { codes = null; });
+function codeNames(env: Env, fresh = false): Promise<Map<string, string>> {
+  if (fresh || !codes) {
+    const read = env.ATLAS.prepare(`SELECT field,code,key FROM codes WHERE field IN ('state','style','category')`)
+      .all<{ field: string; code: number; key: string }>()
+      .then(r => new Map(r.results.map(row => [`${row.field}:${row.code}`, row.key])));
+    read.catch(() => { if (codes === read) codes = null; });
+    codes = read;
+  }
   return codes;
-}
-async function codeName(env: Env, field: string, code: number | null): Promise<string | null> {
-  if (code === null) return null;
-  const name = (await codeNames(env)).get(`${field}:${code}`);
-  if (name !== undefined) return name;
-  codes = null;
-  return (await codeNames(env)).get(`${field}:${code}`) ?? null;
 }
 
 export type CropRow = { id: number; kind: number; char: string | null; production: string | null; category: number | null;
@@ -82,19 +80,13 @@ export const cropRowsQuery = () => `SELECT c.id,c.kind,g.text AS char,p.key AS p
   FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN pages pg ON pg.id=c.id>>24 JOIN books b ON b.id=c.book
   LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN productions p ON p.id=c.production`;
 
-// A corpus glyph's bundle entry points at its record in a pack (`record_place`: object, offset,
-// size); the records of one listing are read in parallel, one range each.
-async function packRecord(env: Env, [object, offset, size]: [string, number, number]): Promise<Json | null> {
-  const found = await env.MEDIA.get(object, { range: { offset, length: size } });
-  if (!found) return null;
-  try { return JSON.parse(await found.text()); } catch { return null; }
-}
-
 // Fields only a crop's inspector reads, and where the images sit in their packs, which only the image
 // route reads.
 const UNLISTED = ['text', 'line', 'context_image', 'context_box', 'crop_box', 'image_place', 'context_image_place', 'record_place', 'slot'];
 // The item a listing shows for each crop, in the order asked: the bundle's record under the row's
-// current values. A crop with no row, a candidate, or one its bundle does not hold is left out.
+// current values. A crop with no row, a candidate, or one its bundle does not hold is left out, and so
+// is a corpus glyph whose record (at `record_place` in a pack) is missing or does not parse. A storage
+// error fails the call, as `readRecords` explains.
 export async function cropItems(env: Env, ids: number[]): Promise<Json[]> {
   if (!ids.length) return [];
   const rows = (await env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>()).results;
@@ -102,21 +94,23 @@ export async function cropItems(env: Env, ids: number[]): Promise<Json[]> {
   const pages = new Map(rows.map(row => [pageOf(row.id), row.rev]));
   const bundles = new Map(await Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev)] as const)));
   const entries = new Map(ids.map(id => [id, byId.has(id) ? bundles.get(pageOf(id))?.bySlot.get(slotOf(id)) : undefined]));
-  const records = new Map(await Promise.all([...entries].filter(([, entry]) => entry?.record_place)
-    .map(async ([id, entry]) => [id, await packRecord(env, entry!.record_place)] as const)));
+  const pointer = (entry: Entry) => ({ object: entry.record_place[0], offset: entry.record_place[1], size: entry.record_place[2] });
+  const records = await readRecords(env, [...entries.values()].filter(entry => entry?.record_place).map(entry => pointer(entry!)));
+  const keys = rows.flatMap(row => [`state:${row.state}`, `style:${row.style}`, `category:${row.category}`]).filter(key => !key.endsWith(':null'));
+  let names = await codeNames(env);
+  if (keys.some(key => !names.has(key))) names = await codeNames(env, true);
+  const name = (field: string, code: number | null) => code === null ? null : names.get(`${field}:${code}`) ?? null;
   const items: Json[] = [];
   for (const id of ids) {
     const row = byId.get(id), entry = entries.get(id);
     if (!row || !entry || row.kind === 2 || entry.retired) continue;
-    // A corpus glyph whose record cannot be read is left out.
-    const whole = entry.record_place ? records.get(id) : entry;
+    const whole = entry.record_place ? records.get(recordKey(pointer(entry))) : entry;
     if (!whole) continue;
     const record = Object.fromEntries(Object.entries(whole).filter(([k]) => !UNLISTED.includes(k)));
     items.push({ ...record, id: publicId(id), source_id: entry.id, label: row.char ?? '',
       origin: row.kind === 1 ? 'corpus' : 'local', production: row.production ?? 'unknown',
-      category: await codeName(env, 'category', row.category), style: await codeName(env, 'style', row.style),
-      state: await codeName(env, 'state', row.state), revision: row.revision, cut: row.cut, page_id: row.page_key, document: row.document,
-      year: row.year, withheld: row.quiz === 0, flags: row.flags });
+      category: name('category', row.category), style: name('style', row.style), state: name('state', row.state),
+      revision: row.revision, cut: row.cut, page_id: row.page_key, document: row.document, year: row.year, withheld: row.quiz === 0, flags: row.flags });
   }
   return items;
 }

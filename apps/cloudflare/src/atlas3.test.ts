@@ -16,7 +16,7 @@ function bucket(objects: Map<string, Uint8Array>, reads: string[] = []) {
       const bytes = objects.get(key);
       if (!bytes) return null;
       const body = options?.range ? bytes.subarray(options.range.offset, options.range.offset + options.range.length) : bytes;
-      return { body: new Response(body).body!, text: async () => new TextDecoder().decode(body), arrayBuffer: async () => body.buffer };
+      return { body: new Response(body).body!, text: async () => new TextDecoder().decode(body), arrayBuffer: async () => body.slice().buffer };
     },
   };
 }
@@ -67,6 +67,8 @@ describe('new-layout crop ids', () => {
     expect(cropOf('ex:a1')).toBeNull();
     expect(cropOf('u')).toBeNull();
     expect(cropOf('0')).toBeNull();
+    expect(cropOf('0' + text)).toBeNull();
+    expect(cropOf('o' + text)).toBeNull();
   });
 });
 
@@ -94,6 +96,18 @@ describe('new-layout listing items', () => {
     expect(item).toMatchObject({ id: publicId(g), source_id: 'kmnist:1', origin: 'corpus', image: '/atlas/media/k.webp', label: '所', state: 'pending' });
     expect(item.text).toBeUndefined();
     expect(item.record_place).toBeUndefined();
+  });
+
+  it('read nearby corpus records in one range', async () => {
+    const { env, reads, g } = setup();
+    await cropItems(env, [g, g]);
+    expect(reads.filter(key => key === 'packs/p.bin')).toHaveLength(1);
+  });
+
+  it('read the codes again for a code the isolate does not hold', async () => {
+    const { db, env, a } = setup();
+    db.exec(`INSERT INTO codes VALUES('state',3,'hard'); UPDATE crops SET state=3 WHERE id=${a}`);
+    expect((await cropItems(env, [a]))[0].state).toBe('hard');
   });
 
   it('read each bundle once per isolate', async () => {
