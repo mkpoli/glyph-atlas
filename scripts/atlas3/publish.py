@@ -55,6 +55,9 @@ REVIEW_OWNED = ("char", "state", "style", "quiz", "kind", "flags")
 # What a crop takes when it is new and the catalogue does not say.
 DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0}
 SUSPECT = 1
+# What a bundle entry keeps of each earlier cut: enough to show and cite its pixels.
+CUT_FIELDS = ("box", "crop_box", "context_box", "image", "image_sha256", "image_size", "image_place",
+              "context_image", "context_image_place")
 RUN_KEY = ("size", "graphemes", "hand", "shuffle", "first")
 # D1 takes an imported file whole; parts stay under the size the publication scripts use.
 PART_BYTES = 40 * 1024 ** 2
@@ -530,9 +533,13 @@ def main():
                  "style": m.code("style", r["style"] or "unassessed"),
                  "state": m.code("state", r["state"]), "quiz": r["quiz"], "year": years.get(r["document"], KEEP),
                  "revision": r["revision"], "shuffle": shuffle(cid)}
-        if r["id"] in recut:
-            given["cut"] = m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()["cut"] + 1
         bundle = {"id": r["id"], **bundle_entry(data)}
+        if r["id"] in recut:
+            # The version the crop had joins its earlier cuts, so a citation of it still finds its pixels.
+            old_cut, previous = m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()["cut"], entry(cid)
+            given["cut"] = old_cut + 1
+            bundle["cuts"] = [*(bundle.get("cuts") or previous.get("cuts") or []),
+                              {"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous}}]
         for field in ("image", "context_image"):
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
@@ -654,6 +661,9 @@ def main():
             for field in ("image", "context_image"):
                 if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
                     new[field + "_place"] = old[field + "_place"]
+            # A crop's earlier cuts stay unless its record names them itself.
+            if "cuts" not in new and "cuts" in old:
+                new["cuts"] = old["cuts"]
             touched = touched or row_changed or new != merged.get(slot)
             merged[slot] = new
         if not touched:
