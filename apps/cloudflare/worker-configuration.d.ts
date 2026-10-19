@@ -13,6 +13,7 @@ interface __BaseEnv_Env {
 	ASSETS: Fetcher;
 	MAIL_FROM: "sign-in@glyphatlas.org";
 	SIMILAR_INDEX_NAME: "glyph-atlas-similar-5dc40a3e";
+	BROWSE_COUNTS_LAG: "60";
 	BETTER_AUTH_SECRET: string;
 	GITHUB_CLIENT_ID: string;
 	GITHUB_CLIENT_SECRET: string;

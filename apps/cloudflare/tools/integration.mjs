@@ -19,7 +19,9 @@ await build({ entryPoints: [fileURLToPath(new URL('../src/index.ts', import.meta
 const mf = new Miniflare(convertV4MiniflareOptions({workers:[{
   name: 'atlas-test',
   modules: true, script: await readFile(bundle, 'utf8'), compatibilityDate: '2026-09-22', compatibilityFlags: ['nodejs_compat'],
-  d1Databases: ['DB'], r2Buckets: ['MEDIA'], bindings: { BETTER_AUTH_SECRET: 'integration-test-secret-integration-test' },
+  d1Databases: ['DB'], r2Buckets: ['MEDIA'], bindings: { BETTER_AUTH_SECRET: 'integration-test-secret-integration-test',
+    // Browse counts follow every write at once here; the lag the site allows is checked on its own.
+    BROWSE_COUNTS_LAG: '0' },
   ratelimits: { CORRECTIONS: { namespace_id: '4401', simple: { limit: 20, period: 60 } },
     // The ledger and form sections make more claims than the site's 30 a minute; the limit itself is checked at the end.
     CLAIMS: { namespace_id: '4403', simple: { limit: 100, period: 60 } },

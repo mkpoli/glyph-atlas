@@ -1,7 +1,7 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
 import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
-  encodeCursor, decodeCursor, historyItem, historyQuery, moved, substitutionKey, flagRequest, listingFilter } from './index';
+  encodeCursor, decodeCursor, historyItem, historyQuery, moved, facetsCopyStands, substitutionKey, flagRequest, listingFilter } from './index';
 import { ROUND_MAX } from './rounds';
 import { componentTerm, rankMatches } from './components';
 
@@ -168,6 +168,14 @@ it('moves crops counted apart out of pending, and never more than pending holds'
   expect(moved([row('ア', 'd', 'pending', 5), row('ア', 'd', 'checked', 1), row('イ', null, 'pending', 2)],
     [row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ウ', null, 'seen', 1), row('ア', 'd', 'skipped', 9)]))
     .toEqual([row('ア', 'd', 'checked', 1), row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ア', 'd', 'skipped', 3)])
+})
+
+it('keeps browse counts of the current catalogue, and others for the lag alone', () => {
+  const copy = { version: 'p:r:10:4:0', at: 1_000_000, groups: [] }
+  expect(facetsCopyStands(copy, 'p:r:10:4:0', 1_000_000 + 3_000_000, 60)).toBe(true)
+  expect(facetsCopyStands(copy, 'p:r:11:4:0', 1_000_000 + 59_000, 60)).toBe(true)
+  expect(facetsCopyStands(copy, 'p:r:11:4:0', 1_000_000 + 60_000, 60)).toBe(false)
+  expect(facetsCopyStands(copy, 'p:r:11:4:0', 1_000_000, 0)).toBe(false)
 })
 
 describe('a search of ideographs asks for the characters built from them', () => {

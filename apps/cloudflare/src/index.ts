@@ -496,19 +496,27 @@ async function catalogueVersion(env: Env): Promise<string> {
 // The publication and refresh the collection's crops come from, without the reviews since.
 const publicationKey = (version: CatalogueStamps | null) => [version?.published ?? '', version?.refreshed ?? ''].join(':');
 // Browse counts every local crop by character and state, which reads the whole table and takes
-// seconds, and every visitor gets the same answer. The edge keeps one copy per catalogue version.
+// seconds, and every visitor gets the same answer. The edge keeps a copy of such counts for an hour.
 const FACETS_TTL = 3600;
 // The grapheme a label is filed under: its family, or its own code points when it has none. The
 // publication writes `family` from the same rule (`atlas.grapheme_of`).
 export const graphemeOf = (label: string, family: string | null) => family || cp(label) || null;
 type Facet = { label: string | null; family: string | null; document: string | null; title: string | null; state: string; n: number };
-async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement, version: Promise<string>) {
-  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(await version)}`);
+// Browse's counts are kept per publication, with the catalogue version they were counted at. A copy of
+// the current version stands for `FACETS_TTL`; once a review has moved the version, the copy stands
+// until it is `lag` seconds old (`BROWSE_COUNTS_LAG`), so a stretch of reviewing recounts once a minute.
+type FacetsCopy = { version: string; at: number; groups: Facet[] };
+export const facetsCopyStands = (copy: FacetsCopy, version: string, now: number, lag: number) =>
+  copy.version === version || now - copy.at < lag * 1000;
+async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement, stamps: Promise<CatalogueStamps | null>) {
+  const version = catalogueKey(await stamps);
+  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(publicationKey(await stamps))}`);
   const cached = await caches.default.match(key);
-  if (cached) return await cached.json() as Facet[];
+  const copy = cached ? await cached.json() as FacetsCopy : null;
+  if (copy && facetsCopyStands(copy, version, Date.now(), Number(env.BROWSE_COUNTS_LAG))) return copy.groups;
   const [counted, marks] = await env.DB.batch<Facet>([stored, marked]);
   const groups = moved(counted.results, marks.results);
-  ctx.waitUntil(caches.default.put(key, Response.json(groups, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  ctx.waitUntil(caches.default.put(key, Response.json({ version, at: Date.now(), groups }, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return groups;
 }
 // Corpus glyphs by character in the material asked for, with the grapheme the character table files each
@@ -608,7 +616,7 @@ export function facetsQueries(review: boolean, reviewer: string | null, where: s
   return { stored, marked, skipped };
 }
 // Stored counts with the crops counted apart moved from `pending` to the state they are in. A
-// reviewer's skips are counted now and browse's counts may be the edge's copy of this catalogue
+// reviewer's skips are counted now and browse's counts may be the edge's copy of an earlier catalogue
 // version, so a move never takes more than `pending` holds.
 export function moved(stored: Facet[], moves: Facet[]): Facet[] {
   const key = (row: { label: string | null; document: string | null }, state: string) => JSON.stringify([row.label, row.document, state]);
@@ -1024,7 +1032,7 @@ async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: st
     published = results.pop()!;
     groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
   } else {
-    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, stampsOnce().then(catalogueKey));
+    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, stampsOnce());
     if (skipped) groups = moved(groups, (await skipped.all<Facet>()).results);
   }
   const categories = new Map<string, Json>(), documents = new Map<string, Json>();
