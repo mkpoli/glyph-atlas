@@ -178,6 +178,23 @@ def test_a_page_bundle_carries_the_whole_record_but_what_the_crop_row_holds(layo
     assert "state" not in entry and "page_id" not in entry and entry["id"] == "ex:a1"
 
 
+def test_a_new_record_replaces_the_old_and_keeps_an_unchanged_image_place(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    pid = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["ex:a1"] // PAGE
+    path = root / "out" / "pages" / f"{pid}-1.json.gz"
+    body = json.loads(gzip.decompress(path.read_bytes()))
+    body["crops"][0].update(repair={"by": "old"}, image_place=["packs/p.bin", 0, 9])
+    path.write_bytes(gzip.compress(json.dumps(body).encode()))
+    row = list(unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お"))
+    data = json.loads(row[-1])
+    data.update(issue="crop", written_character="於", crop_editable=True)
+    row[-1] = json.dumps(data)
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [tuple(row)]))
+    entry = json.loads(gzip.decompress((root / "out" / "pages" / f"{pid}-2.json.gz").read_bytes()))["crops"][0]
+    assert "repair" not in entry and entry["image_place"] == ["packs/p.bin", 0, 9]
+    assert not {"issue", "written_character", "crop_editable"} & set(entry)
+
+
 def test_a_new_box_over_a_published_crop_stops_the_publish(layout, monkeypatch, tmp_path):
     root, publish, _remote = layout
     with pytest.raises(SystemExit):

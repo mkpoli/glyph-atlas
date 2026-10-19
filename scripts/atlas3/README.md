@@ -13,8 +13,10 @@ Data lives in `work/atlas-v3/` (or `$ATLAS3_DIR`), outside the repository:
 - `out/mirror.sqlite`: the id allocation (text id → integer crop id, page and book keys, codes),
   the only record of which number each crop has. Back it up after every change;
 - `out/pages/<page>-<rev>.json.gz`: page bundles, the latest revision of each page. A crop's entry is
-  its whole record, less the fields its row in `crops` holds (`state`, `revision`, `production`,
-  `category`, `style`, `quiz`, `suspect`) and its page key;
+  its whole record, less its page key, the fields its row in `crops` holds, those a review or a form
+  decision sets (`issue`, the written character and its identity) and those the Worker computes
+  (`crop_editable`, `crop_version`). A new record replaces the old one; an image keeps its pack place
+  when the catalogue has no `media` table to look it up;
 - `out/publish/<stamp>/`: each publish's parts, bundles and journal. A publish listed in the
   mirror's `pending` table is finished by the next run, so its folder must stay until then.
 

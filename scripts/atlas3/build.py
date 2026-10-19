@@ -63,8 +63,12 @@ class Codes:
         return table[key]
 
 
-# Record fields a crop's row or its page holds; the bundle keeps the rest of the record.
-ROW_FIELDS = frozenset({"id", "state", "revision", "production", "category", "style", "quiz", "suspect", "page_id"})
+# Record fields a bundle leaves out: those a crop's row or its page holds, those a review or a form
+# decision sets (the read applies them), and those the Worker computes from the rest.
+ROW_FIELDS = frozenset({"id", "state", "revision", "production", "category", "style", "quiz", "suspect", "page_id",
+                        "visual_group", "issue", "char", "code_point", "written_character", "grapheme",
+                        "identity_status", "identity_basis", "form_decision", "form_cluster", "crop_version",
+                        "crop_editable"})
 
 
 def bundle_entry(data):

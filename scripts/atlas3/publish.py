@@ -269,7 +269,6 @@ class Mirror:
             if changed:
                 self.atlas.execute(f"UPDATE crops SET {','.join(f'{c}=?' for c in changed)} WHERE id=?",
                                    [row[c] for c in changed] + [cid])
-        # A field the catalogue does not carry keeps what the bundle had.
         bundle = {k: v for k, v in bundle.items() if v is not None}
         self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
 
@@ -608,7 +607,14 @@ def main():
         merged = dict(previous["by_slot"])
         touched = p["key"] in facts and previous.get("page") != facts[p["key"]]
         for slot, (new_entry, row_changed) in entries.items():
-            new = {**merged.get(slot, {}), "slot": slot, **new_entry}
+            old = merged.get(slot, {})
+            # A crop's new record replaces its old one, so a field the record no longer has goes. A
+            # retired crop keeps its record; an image keeps its pack place when the catalogue could
+            # not look it up.
+            new = {**old, **new_entry} if new_entry.get("retired") else {"slot": slot, **new_entry}
+            for field in ("image", "context_image"):
+                if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
+                    new[field + "_place"] = old[field + "_place"]
             touched = touched or row_changed or new != merged.get(slot)
             merged[slot] = new
         if not touched:
