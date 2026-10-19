@@ -34,7 +34,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from build import CORPUS_PAGE, PAGE, char_text, shuffle
+from build import CORPUS_PAGE, PAGE, bundle_entry, char_text, shuffle
 
 ROOT = Path(__file__).resolve().parents[2]
 # Copies of the live tables and the build output live outside the repository.
@@ -53,9 +53,6 @@ REVIEW_OWNED = ("char", "state", "style", "quiz", "kind", "flags")
 # What a crop takes when it is new and the catalogue does not say.
 DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0}
 SUSPECT = 1
-BUNDLE_KEYS = ("label", "script", "line_id", "box", "crop_box", "context_box", "image_sha256", "image",
-               "context_image", "repair", "gate", "text", "page_number", "source", "licence", "holder",
-               "attribution", "rights_url", "tone", "image_size")
 RUN_KEY = ("size", "graphemes", "hand", "shuffle", "first")
 # D1 takes an imported file whole; parts stay under the size the publication scripts use.
 PART_BYTES = 40 * 1024 ** 2
@@ -272,7 +269,6 @@ class Mirror:
             if changed:
                 self.atlas.execute(f"UPDATE crops SET {','.join(f'{c}=?' for c in changed)} WHERE id=?",
                                    [row[c] for c in changed] + [cid])
-        # A field the catalogue does not carry keeps what the bundle had.
         bundle = {k: v for k, v in bundle.items() if v is not None}
         self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
 
@@ -497,7 +493,7 @@ def main():
                  "category": m.code("category", r["category"]), "style": m.code("style", r["style"]),
                  "state": m.code("state", r["state"]), "quiz": r["quiz"], "year": years.get(r["document"], KEEP),
                  "revision": r["revision"], "shuffle": shuffle(cid)}
-        bundle = {"id": r["id"], **{k: data[k] for k in BUNDLE_KEYS if data.get(k) is not None}}
+        bundle = {"id": r["id"], **bundle_entry(data)}
         for field in ("image", "context_image"):
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
@@ -611,7 +607,14 @@ def main():
         merged = dict(previous["by_slot"])
         touched = p["key"] in facts and previous.get("page") != facts[p["key"]]
         for slot, (new_entry, row_changed) in entries.items():
-            new = {**merged.get(slot, {}), "slot": slot, **new_entry}
+            old = merged.get(slot, {})
+            # A crop's new record replaces its old one, so a field the record no longer has goes. A
+            # retired crop keeps its record; an image keeps its pack place when the catalogue could
+            # not look it up.
+            new = {**old, **new_entry} if new_entry.get("retired") else {"slot": slot, **new_entry}
+            for field in ("image", "context_image"):
+                if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
+                    new[field + "_place"] = old[field + "_place"]
             touched = touched or row_changed or new != merged.get(slot)
             merged[slot] = new
         if not touched:
