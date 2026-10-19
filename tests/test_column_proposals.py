@@ -75,6 +75,43 @@ def test_boxes_below_the_text_do_not_stretch_a_column() -> None:
     assert column_proposals.propose(page(drawn), boxes + chart) == []
 
 
+def grid_without(*missed: tuple[int, int]) -> list[Box]:
+    return [cell(c, r) for c in range(len(COLUMNS)) for r in range(ROWS) if (c, r) not in missed]
+
+
+def test_a_stroke_reaching_out_of_the_column_stays_in_the_box() -> None:
+    image = page()
+    box = cell(1, 5)
+    ImageDraw.Draw(image).rectangle([box.x - 10, box.y + 18, box.x + box.w + 10, box.y + 24], fill=(40, 40, 40))
+    (proposal,) = column_proposals.propose(image, grid_without((1, 5)))
+    assert proposal.x <= box.x - 9 and proposal.x + proposal.w >= box.x + box.w + 9
+
+
+def test_touching_characters_are_cut_apart() -> None:
+    image = page()
+    upper, lower = cell(2, 4), cell(2, 5)
+    ImageDraw.Draw(image).rectangle([upper.x + 17, upper.y, upper.x + 23, lower.y + 10], fill=(40, 40, 40))
+    assert found(column_proposals.propose(image, grid_without((2, 4), (2, 5)))) == {(2, 4), (2, 5)}
+
+
+def test_a_character_its_box_holds_in_part_gets_no_second_box() -> None:
+    boxes = grid_without()
+    boxes[boxes.index(cell(0, 4))] = Box(x=cell(0, 4).x, y=cell(0, 4).y + SIDE // 2, w=SIDE, h=SIDE // 2)
+    assert column_proposals.propose(page(), boxes) == []
+
+
+def test_flat_strata_and_a_crack_hold_no_character() -> None:
+    blank = {(1, 3), (3, 6)}
+    image = page([cell(c, r) for c in range(len(COLUMNS)) for r in range(ROWS) if (c, r) not in blank])
+    draw = ImageDraw.Draw(image)
+    strata = cell(1, 3)
+    for y in range(strata.y, strata.y + strata.h, 8):
+        draw.rectangle([strata.x - 4, y, strata.x + strata.w + 4, y + 3], fill=(40, 40, 40))
+    crack = cell(3, 6)
+    draw.line([crack.x + 10, crack.y, crack.x + 26, crack.y + crack.h], fill=(250, 250, 245), width=3)
+    assert column_proposals.propose(image, grid_without(*blank)) == []
+
+
 def test_the_version_names_the_family() -> None:
     assert column_proposals.proposer().startswith("columns-")
 
