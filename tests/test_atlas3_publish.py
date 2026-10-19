@@ -165,6 +165,19 @@ def test_a_publish_keeps_the_crops_and_fields_it_does_not_carry_in_the_page_bund
     assert body["crops"][1]["label"] == "い"
 
 
+def test_a_page_bundle_carries_the_whole_record_but_what_the_crop_row_holds(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    row = list(unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お"))
+    data = json.loads(row[-1])
+    data.update(production_evidence=[{"source": "colophon"}], context=True, source_scale=[1, 1], state="pending")
+    row[-1] = json.dumps(data)
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [tuple(row)]))
+    pid = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["ex:a1"] // PAGE
+    entry = json.loads(gzip.decompress((root / "out" / "pages" / f"{pid}-2.json.gz").read_bytes()))["crops"][0]
+    assert entry["production_evidence"] == [{"source": "colophon"}] and entry["context"] is True and entry["source_scale"] == [1, 1]
+    assert "state" not in entry and "page_id" not in entry and entry["id"] == "ex:a1"
+
+
 def test_a_new_box_over_a_published_crop_stops_the_publish(layout, monkeypatch, tmp_path):
     root, publish, _remote = layout
     with pytest.raises(SystemExit):

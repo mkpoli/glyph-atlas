@@ -63,6 +63,14 @@ class Codes:
         return table[key]
 
 
+# Record fields a crop's row or its page holds; the bundle keeps the rest of the record.
+ROW_FIELDS = frozenset({"id", "state", "revision", "production", "category", "style", "quiz", "suspect", "page_id"})
+
+
+def bundle_entry(data):
+    return {k: v for k, v in data.items() if v is not None and k not in ROW_FIELDS}
+
+
 STATE = {"pending": 0, "checked": 1, "flagged": 2}
 STYLE = {"cursive": 0, "running": 1, "unassessed": 2, "mixed": 3, "formal": 4, "printed": 5}
 
@@ -165,10 +173,7 @@ def main():
             row = (grapheme(r["character"]), None, None, code("visual_group", r["visual_group"]),
                    production(r["production"]), code("category", r["category"]), code("style", r["style"]),
                    code("state", r["state"]), r["quiz"], year, 0, r["revision"], flags)
-            bundle = {k: data.get(k) for k in ("label", "script", "line_id", "box", "crop_box", "context_box",
-                                                 "image_sha256", "image", "context_image", "repair", "gate",
-                                                 "text", "page_number", "source", "licence", "holder",
-                                                 "attribution", "rights_url", "tone", "image_size") if data.get(k) is not None}
+            bundle = bundle_entry(data)
             for field in ("image", "context_image"):
                 image_key = (data.get(field) or "").rsplit("/", 1)[-1].split(".")[0]
                 found = image_key and media.execute("SELECT object, offset, size FROM media WHERE key=?", (image_key,)).fetchone()
