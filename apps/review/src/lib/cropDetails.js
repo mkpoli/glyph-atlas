@@ -31,7 +31,7 @@ export function repairOf(item) {
 export const workTitle = item => typeof item.source === 'string' ? item.source : (item.source?.title ?? item.title)
 
 /** What a crop's details list: the written form, the material, how far the record
- * has been checked, the crop's measured shape, where it comes from, the work and page, when the copy and its text were made, and the holder. A line that names a character is
+ * has been checked, where it comes from, the work and page, when the copy and its text were made, and the holder. A line that names a character is
  * `{ before, text, after }`, for `ScriptLine` to draw the character in its script's colour; the others are text. */
 export function cropDetails(item) {
   const repair = repairOf(item)
