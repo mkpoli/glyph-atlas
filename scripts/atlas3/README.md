@@ -81,7 +81,13 @@ answers:
   `component_variants`, `han_ids`, `han_components`, `han_component_names`, `grapheme_writers`,
   `document_characters`, `corpus_documents`, `representations`);
 - the model votes in `units.visual`, and the text-id alias files;
-- family heads and search names for characters that first appear after the first build.
+- family heads and search names for characters that first appear after the first build;
+- `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
+  new `crops` has no per-crop grapheme column yet, so the read path decides how such a crop joins a
+  family gallery before cutover.
+
+The Worker read path builds on the catalogue stamps of #763 (`catalogueStamps`, `catalogueKey`), so a
+reviewer's own save still shows at once.
 
 Anything that changes in the live database after the copy reaches the new databases at cutover, from
 a fresh copy (`pull.py --fresh`).
