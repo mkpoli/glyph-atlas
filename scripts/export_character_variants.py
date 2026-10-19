@@ -23,8 +23,8 @@ its new one, never neither. The parts are idempotent: a stopped run is resumed f
 (`FROM=part-NNN.sql apply.sh`), and a rerun from the start is the same. `han_ids` holds each
 character's descriptions, which the form picker's IDS editor starts from; it is written the same way,
 after `character_derived`.
-`words` and `word_spellings` are the hand tables of decision 0004, read through `refs.words` and
-`refs.word_spellings`, which joins each 振り仮名 row to its counts; a character card shows them
+`words` and `word_spellings` are the word layer of decision 0004, read through `refs.words` and
+`refs.word_spellings`, which joins 振り仮名 counts and observed crop claims; a character card shows them
 beside its variants. `--words` writes those two tables alone, as one part that replaces them, cites
 their sources and bumps the listing version, so a new word reaches the site without rewriting the
 graph. `grapheme_writers` holds the reduced forms that write several characters and the forms with no

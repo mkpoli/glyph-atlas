@@ -84,6 +84,8 @@
   "chips.relation.spoofing": "Look-alike",
   "chips.variantSources": "Sources",
   "chips.words": "Words",
+  "chips.wordCrops.one": "{count} crop",
+  "chips.wordCrops.other": "{count} crops",
   "chips.documents.one": "{count} document",
   "chips.documents.other": "{count} documents",
   "client.changed": "This character changed. Reload to review the current version.",

@@ -1414,13 +1414,13 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char:
   return found;
 }
 // The spellings of every word a character is cited as writing (0064): the words by the `spelling`
-// index, then each word's rows by the key. The table is hand-kept and small; the limit bounds a
+// index, then each word's rows by the key. Hand rows and observed counts share the table; the limit bounds a
 // character that writes many words.
-export const wordSpellingsQuery = () => `SELECT s.word,w.reading,w.class,s.spelling,s.source,s.locator,s.tier,s.documents
+export const wordSpellingsQuery = () => `SELECT s.word,w.reading,w.class,s.spelling,s.source,s.locator,s.tier,s.documents,s.occurrences
   FROM word_spellings s JOIN words w ON w.id=s.word
   WHERE s.word IN (SELECT word FROM word_spellings WHERE spelling=?) LIMIT 500`;
-type WordRow = { word: string; reading: string; class: string; spelling: string; source: string; locator: string; tier: string; documents: number | null };
-type WordSpelling = { spelling: string; code_point: string | null; current: boolean; sources: { source: string; tier: string; ruby: string | null; documents: number | null }[] };
+type WordRow = { word: string; reading: string; class: string; spelling: string; source: string; locator: string; tier: string; documents: number | null; occurrences: number | null };
+type WordSpelling = { spelling: string; code_point: string | null; current: boolean; sources: { source: string; tier: string; ruby: string | null; documents: number | null; occurrences: number | null }[] };
 // The 振り仮名 a row counts, from its locator (`ruby-spellings.tsv なと 抔`): 抔 is counted under など and
 // under なと, and a reader tells the two apart by it.
 const rubyOf = (locator: string) => locator.startsWith('ruby-spellings.tsv ') ? locator.split(' ')[1] : null;
@@ -1433,8 +1433,9 @@ const byCodePoint = (a: string, b: string) => {
 // The words `char` is cited as writing, by id, each with every spelling cited for it: most sources first,
 // then most documents in all, then by code point; `sources` cites each source used. The local review service's
 // `word_card` returns the same shape. Nothing here widens a gallery.
+const WORDS_SHAPE = 2;
 async function wordsOf(env: Env, ctx: ExecutionContext, origin: string, char: string, version: string) {
-  const key = new Request(`${origin}/layers/words?c=${encodeURIComponent(char)}&v=${encodeURIComponent(version)}`);
+  const key = new Request(`${origin}/layers/words?c=${encodeURIComponent(char)}&v=${encodeURIComponent(`${WORDS_SHAPE}:${version}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const rows = (await env.DB.prepare(wordSpellingsQuery()).bind(char).all<WordRow>()).results;
@@ -1444,7 +1445,7 @@ async function wordsOf(env: Env, ctx: ExecutionContext, origin: string, char: st
     const single = [...row.spelling].length === 1;
     const entry = word.spellings.get(row.spelling) ?? { spelling: row.spelling, code_point: single ? cp(row.spelling) : null,
       current: row.spelling === char, sources: [] };
-    entry.sources.push({ source: row.source, tier: row.tier, ruby: rubyOf(row.locator), documents: row.documents });
+    entry.sources.push({ source: row.source, tier: row.tier, ruby: rubyOf(row.locator), documents: row.documents, occurrences: row.occurrences });
     word.spellings.set(row.spelling, entry);
     words.set(row.word, word);
   }

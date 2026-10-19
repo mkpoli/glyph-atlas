@@ -65,6 +65,7 @@ SUSPECT_FORMS_TSV = "suspect-forms.tsv"
 WORDS_TSV = "words.tsv"
 WORD_SPELLINGS_TSV = "word-spellings.tsv"
 RUBY_SPELLINGS_TSV = "ruby-spellings.tsv"
+LEDGER_SPELLINGS_TSV = "ledger-spellings.tsv"
 POLICIES_YAML = "equivalence-policies.yaml"
 LIGATURES_YAML = "ligatures.yaml"
 BUILT_BY = {
@@ -81,6 +82,7 @@ BUILT_BY = {
     WORDS_TSV: "nothing: it is kept by hand, citing a source per row",
     WORD_SPELLINGS_TSV: "nothing: it is kept by hand, citing a source per row",
     RUBY_SPELLINGS_TSV: "atlas ruby-spellings",
+    LEDGER_SPELLINGS_TSV: "atlas review ledger-spellings",
 }
 #: hentaigana.tsv and mj-hentaigana.tsv joined, with the character layer for everything the two
 #: kana tables do not state: the Unicode name and 字母, the MJ figure, the 音価 merged into
@@ -722,6 +724,10 @@ def clear_cache() -> None:
         _ambiguous,
         _components,
         _by_ligature,
+        words,
+        word_spellings,
+        word_sources,
+        word_spelling_sources,
     ):
         cached.cache_clear()
 
@@ -1156,14 +1162,12 @@ def words() -> dict[str, dict[str, str]]:
 
 @cache
 def word_spellings() -> tuple[dict[str, Any], ...]:
-    """The rows of word-spellings.tsv, one per source statement that a spelling writes a word.
+    """Source statements from word-spellings.tsv and observed rows from ledger-spellings.tsv.
 
-    A `honkoku-ruby` row carries the `documents` and `occurrences` that ruby-spellings.tsv counts for
-    the reading and spelling its locator names (`ruby-spellings.tsv なと 抔`); every other row carries
-    neither. The two tables are built apart, so a ruby row that the regenerated table no longer holds
-    raises KeyError. Nothing here relates two characters:
-    the spellings of one word are found through the word, never stored as a pair, and no row reaches
-    the 異体字 graph, a grapheme family or a gallery.
+    A `honkoku-ruby` row joins its reading and spelling to ruby-spellings.tsv for document and
+    occurrence counts. An `atlas-ledger` row carries those counts from current crop claims and
+    names a word of words.tsv. A missing ruby count or word raises KeyError. No row reaches the
+    異体字 graph, a grapheme family or a gallery.
     """
     counts = {(row["reading"], row["spelling"]): row for row in _read_tsv(RUBY_SPELLINGS_TSV)}
     found = []
@@ -1174,6 +1178,13 @@ def word_spellings() -> tuple[dict[str, Any], ...]:
             ruby = counts[(reading, spelling)]
             row["documents"], row["occurrences"] = int(ruby["documents"]), int(ruby["occurrences"])
         found.append(row)
+    for row in _read_tsv(LEDGER_SPELLINGS_TSV):
+        word, spelling = row["word"], row["spelling"]
+        reading = words()[word]["reading"]
+        found.append({"word": word, "spelling": spelling, "source": "atlas-ledger", "tier": "observed",
+                      "word_by": "source", "basis": "", "related": "", "statement": f"{spelling}（{reading}）",
+                      "locator": f"{LEDGER_SPELLINGS_TSV} {word} {spelling}",
+                      "documents": int(row["documents"]), "occurrences": int(row["occurrences"])})
     return tuple(found)
 
 
@@ -1185,8 +1196,8 @@ def word_sources() -> dict[str, str]:
 
 @cache
 def word_spelling_sources() -> dict[str, str]:
-    """The citation of each source of word-spellings.tsv, as the table's header states it."""
-    return _source_citations(WORD_SPELLINGS_TSV)
+    """The citations in the hand spelling table and the generated ledger table."""
+    return {**_source_citations(WORD_SPELLINGS_TSV), **_source_citations(LEDGER_SPELLINGS_TSV)}
 
 
 def spellings_of(word: str) -> dict[str, list[dict[str, Any]]]:

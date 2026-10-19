@@ -289,3 +289,31 @@ def test_a_compatibility_ideograph_is_a_han_character():
     """﨑 and the other compatibility ideographs are written in sources, so the layer holds them."""
     assert refs.script_of("﨑") is Script.HAN
     assert refs.script_of(chr(0x2F800)) is Script.HAN
+
+
+def test_ledger_spellings_join_counts_citations_and_cards(tmp_path, monkeypatch):
+    from glyph_atlas.review import characters, ledger_spellings
+
+    vocab = refs.VOCAB
+    row = {"word": "ja/ばかり/副助詞", "spelling": "斗", "code_points": "U+6597", "documents": 2,
+           "occurrences": 3, "crops": 3, "probable": 1, "methods": "context", "examples": "a b c"}
+    ledger_spellings.write([row], tmp_path / refs.LEDGER_SPELLINGS_TSV)
+    for name in (refs.WORDS_TSV, refs.WORD_SPELLINGS_TSV):
+        (tmp_path / name).write_text((vocab / name).read_text())
+    monkeypatch.setattr(refs, "VOCAB", tmp_path)
+    (tmp_path / refs.RUBY_SPELLINGS_TSV).write_text((vocab / refs.RUBY_SPELLINGS_TSV).read_text())
+    joined = next(r for r in refs.word_spellings() if r["source"] == "atlas-ledger")
+    assert joined == {"word": row["word"], "spelling": "斗", "source": "atlas-ledger", "tier": "observed",
+                      "word_by": "source", "basis": "", "related": "", "statement": "斗（ばかり）",
+                      "locator": "ledger-spellings.tsv ja/ばかり/副助詞 斗", "documents": 2, "occurrences": 3}
+    assert "https://glyphatlas.org" in refs.word_spelling_sources()["atlas-ledger"]
+    card = characters.word_card("斗")
+    spelling = next(s for s in card["items"][0]["spellings"] if s["current"])
+    assert next(s for s in spelling["sources"] if s["source"] == "atlas-ledger") == {
+        "source": "atlas-ledger", "tier": "observed", "ruby": None, "documents": 2, "occurrences": 3}
+    assert card["sources"]["atlas-ledger"] == refs.word_spelling_sources()["atlas-ledger"]
+    row["word"] = "ja/missing/名詞"
+    ledger_spellings.write([row], tmp_path / refs.LEDGER_SPELLINGS_TSV)
+    refs.word_spellings.cache_clear()
+    with pytest.raises(KeyError, match="missing"):
+        refs.word_spellings()

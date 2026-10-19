@@ -80,6 +80,7 @@
   "chips.relation.spoofing": "Dễ nhầm",
   "chips.variantSources": "Nguồn",
   "chips.words": "Từ ngữ",
+  "chips.wordCrops.other": "{count} vùng cắt",
   "chips.documents.other": "{count} tài liệu",
   "client.changed": "Chữ này đã thay đổi. Tải lại để duyệt bản mới nhất.",
   "client.saveFailed": "Không lưu được kết quả duyệt.",

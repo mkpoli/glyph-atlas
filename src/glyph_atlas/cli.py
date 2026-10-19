@@ -634,6 +634,19 @@ def review_ocr_repair(
     typer.echo(json.dumps({k: v for k, v in result.items() if k not in ("items", "kept")}, ensure_ascii=False))
 
 
+@review_app.command("ledger-spellings")
+def review_ledger_spellings(
+    directories: Annotated[list[Path], typer.Argument(help="dataset directories with their review stores")],
+    out: Annotated[Path, typer.Option(help="generated spelling table")] = Path("data/vocab/ledger-spellings.tsv"),
+) -> None:
+    """Count the word spellings attested by current crop claims."""
+    from .review import ledger_spellings
+
+    rows = ledger_spellings.count(directories)
+    ledger_spellings.write(rows, out)
+    typer.echo(f"{len(rows)} spellings")
+
+
 @review_app.command("sense-candidates")
 def review_sense_candidates(
     directory: Annotated[Path, typer.Argument(help="dataset directory with its review store")],
