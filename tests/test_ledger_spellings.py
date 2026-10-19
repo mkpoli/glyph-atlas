@@ -127,3 +127,29 @@ def test_missing_store_is_not_created(tmp_path):
     with pytest.raises(sqlite3.OperationalError):
         ledger_spellings.count([tmp_path])
     assert not (tmp_path / "review.sqlite").exists()
+
+
+def test_a_repeated_word_is_two_occurrences_and_a_partial_spelling_stays_one_crop(crops):
+    store, add, claim = crops
+    claim(add("a", line=LINE, seq=0))
+    claim(add("b", line=LINE, seq=1))
+    claim(add("c", "而", line="other", seq=0))
+    rows = {row["spelling"]: row for row in ledger_spellings.count([store.directory])}
+    assert (rows["斗"]["occurrences"], rows["斗"]["crops"]) == (2, 2)
+    assert (rows["而"]["occurrences"], rows["而"]["crops"]) == (1, 1)
+    assert "斗斗" not in rows
+
+
+@pytest.mark.parametrize("disputed", [False, True])
+def test_an_adjudicated_slot_counts_its_word(crops, disputed):
+    store, add, claim = crops
+    unit = add("a")
+    made = claim(unit)
+    if disputed:
+        claim(unit, word=OTHER, actor="bob")
+    version = evidence.crop_version(unit.id, characters._source_digest(store, unit), unit.box)
+    with store._connection() as conn:
+        ledger.act(conn, key=str(uuid4()), actor="dan", request={}, target=made["assertions"][0],
+                   action="adjudicate", adjudicator=True, version_of=lambda _: version)
+    row, = ledger_spellings.count([store.directory])
+    assert (row["word"], row["occurrences"]) == (WORD, 1)
