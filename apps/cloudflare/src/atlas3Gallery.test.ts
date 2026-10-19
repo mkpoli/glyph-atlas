@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from './forms.test';
 import { bundleKey, cropId, publicId } from './atlas3';
-import { SHARDS, characterCounts, characterGallery, currentPointer, galleryQuery } from './atlas3Gallery';
+import { SHARDS, characterCounts, characterGallery, currentPointer, cursorOf, galleryQuery, tallyQuery } from './atlas3Gallery';
 
 const databases: Database[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); });
@@ -17,7 +17,8 @@ let pages = 5000;
 // Ten crops of 所 on one page: styles 0 and 2, every third one withheld, the last two without a year.
 function setup() {
   const db = new Database(':memory:'); databases.push(db);
-  db.exec(readFileSync(new URL('../migrations-atlas/0001_init.sql', import.meta.url), 'utf8'));
+  const migrations = new URL('../migrations-atlas/', import.meta.url);
+  for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
   const page = ++pages, ids = Array.from({ length: 10 }, (_, slot) => cropId(page, slot));
   db.exec(`INSERT INTO books VALUES(1,'hk:book'); INSERT INTO graphemes(id,text) VALUES(7,'所');
     INSERT INTO codes VALUES('state',0,'pending'),('state',1,'checked'),('style',0,'cursive'),('style',2,'unassessed');
@@ -51,27 +52,46 @@ describe('new-layout character galleries', () => {
     expect((await characterGallery(env, { char: 7, limit: 20, withheld: true })).items).toHaveLength(ids.length);
   });
 
-  it('filter by style and state, and order by witness year', async () => {
+  it('filter by style group and state, and order by witness year with the undated last', async () => {
     const { env } = setup();
-    expect((await characterGallery(env, { char: 7, limit: 20, style: 2, state: 1 })).items.map(i => i.source_id)).toEqual(['hk:7', 'hk:5']);
-    expect((await characterGallery(env, { char: 7, limit: 20, order: 'year' })).items.map(i => i.year)).toEqual([1710, 1720, 1740, 1750, 1770]);
+    expect((await characterGallery(env, { char: 7, limit: 20, group: 'unassessed', state: 1 })).items.map(i => i.source_id)).toEqual(['hk:7', 'hk:5']);
+    expect((await characterGallery(env, { char: 7, limit: 20, group: 'formal' })).items).toEqual([]);
+    expect((await characterGallery(env, { char: 7, limit: 20, order: 'year' })).items.map(i => i.year)).toEqual([1710, 1720, 1740, 1750, 1770, null]);
+    expect((await characterGallery(env, { char: 7, limit: 20, order: 'year', from: 1720, to: 1750 })).items.map(i => i.year)).toEqual([1720, 1740, 1750]);
+    // Page by page across the dated and undated ranges.
+    const seen: (number | null)[] = [];
+    let after: string | null = null;
+    do {
+      const page = await characterGallery(env, { char: 7, limit: 2, order: 'year', withheld: true, after });
+      seen.push(...page.items.map(item => item.year));
+      after = page.next;
+    } while (after);
+    expect(seen).toEqual([1700, 1710, 1720, 1730, 1740, 1750, 1760, 1770, null, null]);
   });
 
   it('refuse a cursor it did not write', async () => {
     const { env, ids } = setup();
-    expect(() => galleryQuery({ char: 7, limit: 3, after: 'x' })).toThrow('Invalid cursor.');
-    expect(galleryQuery({ char: 7, limit: 3, after: `0.993.${publicId(ids[1])}` }).values).toEqual([7, 0, 993, ids[1], 4]);
-    expect((await characterGallery(env, { char: 7, limit: 3, after: `0.993.${publicId(ids[1])}` })).items.map(i => i.source_id)).toEqual(['hk:8', 'hk:7', 'hk:5']);
+    expect(() => cursorOf('x')).toThrow('Invalid cursor.');
+    expect(() => cursorOf(`null.98.${publicId(ids[1])}`)).toThrow('Invalid cursor.');
+    expect(() => galleryQuery({ char: 7, limit: 0 }, 'style', null)).toThrow('Invalid limit.');
+    expect((await characterGallery(env, { char: 7, limit: 3, after: `s0.993.${publicId(ids[1])}` })).items.map(i => i.source_id)).toEqual(['hk:8', 'hk:7', 'hk:5']);
   });
 
   it('read every gallery query from a covering index', () => {
     const { db } = setup();
-    for (const q of [{ char: 7, limit: 3 }, { char: 7, limit: 3, style: 2, state: 1, after: `2.1.${publicId(cropId(1, 1))}` }, { char: 7, limit: 3, order: 'year' as const }]) {
-      const { sql, values } = galleryQuery(q);
-      const plan = (db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...values) as { detail: string }[]).map(r => r.detail).join(' | ');
-      expect(plan).toMatch(/COVERING INDEX crop_(char|year)/);
-      expect(plan).not.toContain('TEMP B-TREE');
+    const after: [number, number, number] = [2, 1, cropId(1, 1)];
+    for (const [q, phase, index] of [[{ char: 7, limit: 3 }, 'style', 'crop_char'], [{ char: 7, limit: 3, group: 'unassessed', state: 1 }, 'style', 'crop_char'],
+      [{ char: 7, limit: 3, group: 'formal' }, 'style', 'crop_char'], [{ char: 7, limit: 3, from: 1700, to: 1800 }, 'dated', 'crop_year'],
+      [{ char: 7, limit: 3, withheld: true }, 'undated', 'crop_undated']] as const) {
+      for (const from of [null, after]) {
+        const { sql, values } = galleryQuery(q, phase, from);
+        const plan = (db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...values) as { detail: string }[]).map(r => r.detail).join(' | ');
+        expect(plan).toContain(`COVERING INDEX ${index}`);
+        expect(plan).not.toContain('TEMP B-TREE');
+      }
     }
+    const tally = (db.query(`EXPLAIN QUERY PLAN ${tallyQuery()}`).all(3, '[7]') as { detail: string }[]).map(r => r.detail).join(' | ');
+    expect(tally).toContain('USING PRIMARY KEY (gen=? AND char=?)');
   });
 });
 

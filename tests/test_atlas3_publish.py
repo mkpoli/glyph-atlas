@@ -403,3 +403,12 @@ def test_a_mirror_from_another_build_is_refused(layout, monkeypatch, tmp_path):
     mirror.commit()
     with pytest.raises(SystemExit):
         run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:z", "hl:p8", {"x": 0, "y": 0, "w": 10, "h": 10})]))
+
+
+def test_a_crop_with_no_style_is_published_as_unassessed(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    row = list(unit("ex:new", "hl:p3", {"x": 0, "y": 0, "w": 10, "h": 10}))
+    row[UNITS.index("style")] = None
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [tuple(row)]))
+    unassessed = remote.query("glyph-atlas-v3", "SELECT code FROM codes WHERE field='style' AND key='unassessed'")[0]["code"]
+    assert crops(remote)[ids(root)["ex:new"]]["style"] == unassessed
