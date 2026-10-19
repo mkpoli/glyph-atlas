@@ -33,7 +33,7 @@ This writes the UPDATE statements that bring such units up to date:
 
 The file ends by stamping `metadata.units_refreshed_at`, which the Worker's cached listings are keyed by.
 
-A key the Worker computes on every read is not compared: `crop_editable` (`record` in the Worker, from the
+A key the Worker computes for every crop record it serves is not compared: `crop_editable` (`record` in the Worker, from the
 crop's origin and redraw limits), which rows written by older catalogues hold as false.
 
 A key holding null is the same as no key: the Worker reads both as nothing, and rows written by
@@ -85,7 +85,7 @@ CROP_KEYS = ("box", "crop_box", "image", "image_sha256")
 # What a publication owns: set on the live row without a new revision, reviewed or not.
 IN_PLACE_KEYS = ("context_image", "context_box", "repair", "page_number",
                  "production", "production_evidence", "production_label", "tone", "image_size", "geometry")
-# What the Worker computes on every read; the stored value is never served.
+# What the Worker computes for every crop record it serves; anything that acts on it reads the record.
 COMPUTED_KEYS = ("crop_editable",)
 
 
