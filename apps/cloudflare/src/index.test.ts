@@ -180,6 +180,13 @@ describe('a held value', () => {
     expect(await hold(read, 60_000, 60)).toBe(2)
     expect(await hold(read, 60_001, 0)).toBe(3)
   })
+  it('shares no read still pending', async () => {
+    const hold = held<number>()
+    let reads = 0
+    const read = async () => { await Promise.resolve(); return ++reads }
+    expect(await Promise.all([hold(read, 0, 60), hold(read, 0, 60)])).toEqual([1, 2])
+    expect(await hold(read, 1, 60)).toBe(2)
+  })
   it('drops a read that fails', async () => {
     const hold = held<number>()
     await expect(hold(() => Promise.reject(new Error('busy')), 0, 60)).rejects.toThrow('busy')

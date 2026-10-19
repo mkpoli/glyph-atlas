@@ -250,7 +250,7 @@ async function cropVersions(env: Env, id: string) {
 }
 // A citation of a crop at one of its evidence versions (`?v=`, as `versionToken` names it; the current
 // one without), a grapheme or a form, as CSL-JSON, BibTeX or Hayagriva (`?format=`). It is read again
-// once anything is reviewed or published, and on each new day (in UTC), the date it was accessed.
+// once the catalogue version moves (`catalogueStamps`), and on each new day (in UTC), the date it was accessed.
 const CITE_TTL = 3600;
 const CITABLE_CHARACTER = /^U\+[0-9A-Fa-f]{4,6}(-U\+[0-9A-Fa-f]{4,6})*$/;
 const CITE_TYPES: Record<Format, string> = { csl: 'application/vnd.citationstyles.csl+json; charset=utf-8',
@@ -484,15 +484,15 @@ const SHUFFLE_RANGE = 268435456;
 // so while reviews come in every copy keyed by them moves once a minute rather than on each review,
 // and most requests ask the database nothing for them.
 type CatalogueStamps = { published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number };
-/** A value read at most once per `lag` seconds; a read that fails is not kept. */
+/** A value read at most once per `lag` seconds. Only a value already read is kept: a read still
+ *  pending belongs to its request, and workerd cancels it should that request end first. */
 export function held<T>() {
-  let copy: { at: number; value: Promise<T> } | null = null;
-  return (read: () => Promise<T>, now: number, lag: number) => {
+  let copy: { at: number; value: T } | null = null;
+  return async (read: () => Promise<T>, now: number, lag: number) => {
     if (copy && now - copy.at < lag * 1000) return copy.value;
-    const entry = { at: now, value: read() };
-    copy = entry;
-    entry.value.catch(() => { if (copy === entry) copy = null });
-    return entry.value;
+    const value = await read();
+    copy = { at: now, value };
+    return value;
   };
 }
 const heldStamps = held<CatalogueStamps | null>();
@@ -974,7 +974,7 @@ async function line(env: Env, ctx: ExecutionContext, url: URL, id: string) {
   return body;
 }
 // A page as the page view shows it: its published record (0078) with each of its crops as the site holds
-// it now, label and box, so a review or a redrawn box shows on the page at once. The crops are read by id in
+// it now, label and box, so a review or a redrawn box shows on the page once the catalogue version moves. The crops are read by id in
 // the record's order, one primary-key lookup each; a crop retired or not yet on the site is left out. The
 // photo is a request of the holder's IIIF image service, its longer side at most PAGE_IMAGE pixels, laid
 // over the page pixels the boxes are given in; a page no service serves is shown as its boxes alone.
