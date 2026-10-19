@@ -19,7 +19,8 @@
   // Sign-in codes are sent from MAIL_FROM, on a domain onboarded to Email Sending.
   "send_email": [{"name": "EMAIL"}],
   // SIMILAR_INDEX_NAME names the Vectorize index bound as SIMILAR_INDEX, whose pointer the image search reads.
-  "vars": {"MAIL_FROM": "sign-in@glyphatlas.org", "SIMILAR_INDEX_NAME": "glyph-atlas-similar-5dc40a3e"},
+  // BROWSE_COUNTS_LAG is how many seconds browse's counts may stand behind the reviews (`browseFacets`).
+  "vars": {"MAIL_FROM": "sign-in@glyphatlas.org", "SIMILAR_INDEX_NAME": "glyph-atlas-similar-5dc40a3e", "BROWSE_COUNTS_LAG": "60"},
   // BETTER_AUTH_SECRET is a secret, and so is each sign-in provider's app id and secret (GITHUB_CLIENT_ID,
   // GITHUB_CLIENT_SECRET, and GOOGLE_, DISCORD_, LINE_ and KAKAO_ likewise); a provider without them is not offered.
   // BETTER_AUTH_SECRET: `wrangler secret put BETTER_AUTH_SECRET`, and `.dev.vars` locally.
