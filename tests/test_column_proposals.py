@@ -13,6 +13,9 @@ import pytest
 from PIL import Image, ImageDraw
 from typer.testing import CliRunner
 
+# Column proposals read the page with OpenCV, which only the `ocr` and `marks` extras install.
+pytest.importorskip("cv2")
+
 from glyph_atlas import column_proposals, tables
 from glyph_atlas.review.store import Store
 from glyph_atlas.schema import Box, Document, Page
