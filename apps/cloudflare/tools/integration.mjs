@@ -700,18 +700,22 @@ try {
   await db.batch([
     db.prepare("INSERT INTO words VALUES('ja/ばかり/副助詞','ja','ばかり','副助詞')"),
     db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','仮','honkoku-ruby','ruby-spellings.tsv ばかり 仮','observed','reading','','','仮（ばかり）',2,3)"),
+    db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','仮','atlas-ledger','ledger-spellings.tsv ja/ばかり/副助詞 仮','observed','source','','','仮（ばかり）',1,2)"),
     db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','計','honkoku-ruby','ruby-spellings.tsv ばかり 計','observed','reading','','','計（ばかり）',48,114)"),
     db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','計','wiktionary-ja','ばかり, revision 2291631','attested','source','','','【計り】',NULL,NULL)"),
     db.prepare("INSERT INTO word_spellings VALUES('ja/ばかり/副助詞','而已','honkoku-ruby','ruby-spellings.tsv ばかり 而已','observed','reading','','','而已（ばかり）',2,3)"),
-    db.prepare(`INSERT OR REPLACE INTO metadata VALUES('word_sources','{"honkoku-ruby":"みんなで翻刻 振り仮名","wiktionary-ja":"Wiktionary 日本語版"}')`),
+    db.prepare(`INSERT OR REPLACE INTO metadata VALUES('word_sources','{"honkoku-ruby":"みんなで翻刻 振り仮名","wiktionary-ja":"Wiktionary 日本語版","atlas-ledger":"Glyph Atlas reviewers"}')`),
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('units_refreshed_at','\"words-test\"')"),
   ])
   const wordCard = await call('/layers/characters/U%2B4EEE')
   assert.deepEqual(wordCard.words.items.map(w => [w.id, w.spellings.map(s => [s.spelling, s.code_point, s.current])]),
     [['ja/ばかり/副助詞', [['計', 'U+8A08', false], ['仮', 'U+4EEE', true], ['而已', null, false]]]])
-  assert.deepEqual(wordCard.words.items[0].spellings[0].sources.map(s => [s.source, s.tier, s.ruby, s.documents]),
-    [['honkoku-ruby', 'observed', 'ばかり', 48], ['wiktionary-ja', 'attested', null, null]], 'a 振り仮名 row names the reading it counts')
+  assert.deepEqual(wordCard.words.items[0].spellings[0].sources.map(s => [s.source, s.tier, s.ruby, s.documents, s.occurrences]),
+    [['honkoku-ruby', 'observed', 'ばかり', 48, 114], ['wiktionary-ja', 'attested', null, null, null]], 'a 振り仮名 row names the reading it counts')
   assert.equal(wordCard.words.sources['wiktionary-ja'], 'Wiktionary 日本語版')
+  assert.equal(wordCard.words.sources['atlas-ledger'], 'Glyph Atlas reviewers')
+  assert.deepEqual(wordCard.words.items[0].spellings.find(s => s.current).sources.find(s => s.source === 'atlas-ledger'),
+    { source: 'atlas-ledger', tier: 'observed', ruby: null, documents: 1, occurrences: 2 })
   assert.ok(!wordCard.variants.items.concat(wordCard.variants.related).some(v => v.char === '計'), 'a shared word is no variant')
   assert.deepEqual((await call('/layers/characters/U%2B5047')).words.items, [], 'a character no source cites writes no word')
   const wordPlan = await plan({ sql: worker.wordSpellingsQuery(), values: [] }, ['仮'])

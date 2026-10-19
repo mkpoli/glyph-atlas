@@ -83,6 +83,7 @@
   "chips.relation.spoofing": "形近字",
   "chips.variantSources": "来源",
   "chips.words": "词",
+  "chips.wordCrops.other": "{count}例",
   "chips.documents.other": "{count}部文献",
   "client.changed": "该字已更改。请重新加载以审阅当前版本。",
   "client.saveFailed": "无法保存审阅结果。",

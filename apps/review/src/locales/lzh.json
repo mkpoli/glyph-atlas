@@ -81,6 +81,7 @@
   "chips.relation.spoofing": "形近",
   "chips.variantSources": "據",
   "chips.words": "詞",
+  "chips.wordCrops.other": "{count}例",
   "chips.documents.other": "書{count}部",
   "client.changed": "此字已改，復載而校其新",
   "client.saveFailed": "所校不能存",

@@ -95,6 +95,7 @@
   "chips.relation.spoofing": "混同字",
   "chips.variantSources": "出處",
   "chips.words": "單語",
+  "chips.wordCrops.other": "用例 {count}件",
   "chips.documents.other": "資料 {count}件",
   "client.changed": "이 文字가 變更되었습니다. 다시 불러와 最新 版을 檢討하십시오.",
   "client.saveFailed": "檢討를 貯藏할 수 없습니다.",

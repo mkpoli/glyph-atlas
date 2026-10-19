@@ -80,6 +80,7 @@
   "chips.relation.spoofing": "紛らわしい字",
   "chips.variantSources": "出典",
   "chips.words": "語",
+  "chips.wordCrops.other": "{count}例",
   "chips.documents.other": "資料{count}件",
   "client.changed": "この文字は更新されました。再読み込みして最新版をレビューしてください。",
   "client.saveFailed": "レビューを保存できませんでした。",

@@ -80,6 +80,7 @@
   "chips.relation.spoofing": "紛ハシキ字",
   "chips.variantSources": "出典",
   "chips.words": "語",
+  "chips.wordCrops.other": "{count}例",
   "chips.documents.other": "資料{count}件",
   "client.changed": "此字ハ改メラレタリ　開キ直シテ現版ヲ校閱スベシ",
   "client.saveFailed": "校閱ヲ保存スルコト能ハズ",

@@ -82,6 +82,7 @@
   // for it: characters that write the same word, kept out of the variant tiers and the widening. A card
   // cached before the word tables existed has no `words`; it reads as none.
   const words = $derived({ items: [], sources: {}, ...card?.words })
+  const wordCrops = w => w.spellings.find(s => s.current)?.sources.find(s => s.source === 'atlas-ledger')
   // One line per source: a 振り仮名 row names the reading it counts, since 抔 is counted under など and なと.
   const spellingTitle = s => s.spelling + '\n' + s.sources.map(c => [c.ruby ? `${c.source} ${c.ruby}` : c.source,
     c.documents ? t('chips.documents', { count: c.documents }) : ''].filter(Boolean).join(' · ')).join('\n')
@@ -151,10 +152,14 @@
       </details>
     {/if}
     {#each words.items as w, i (w.id)}
+      {@const crops = wordCrops(w)}
       <div class="layer-row">
         <span class="layer-label">{#if !i}{t('chips.words')}{/if}</span>
         <div class="variant-chips">
           <span class="word-reading" title={w.class}><ScriptText text={w.reading} titled={false} /></span>
+          {#if crops}
+            <span class="word-crops" title={t('chips.documents', { count: crops.documents })}>{t('chips.wordCrops', { count: crops.occurrences })}</span>
+          {/if}
           {#each w.spellings.filter(s => !s.current) as s (s.spelling)}
             <a class="variant" href={localize(s.code_point ? characterAddress(s.code_point) : runAddress(s.spelling))} title={spellingTitle(s)}><ScriptText text={s.spelling} titled={false} /></a>
           {/each}
@@ -224,6 +229,7 @@
   .derived[open] summary{margin-bottom:6px}
   .variant small{font-size:11px;color:var(--muted)}
   .variant small.share{color:var(--accent)}
+  .word-crops{font-size:12px;color:var(--muted);align-self:center}
   .word-reading{font-size:15px;align-self:center;margin-right:4px}
   .variant .code{font-family:"GenZui Sans",ui-monospace,monospace;font-size:10px}
   .include-variants{justify-self:start;margin-left:92px}
