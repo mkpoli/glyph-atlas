@@ -61,6 +61,10 @@ class FakeD1:
     def query(self, database, sql):
         db = self.dbs[database]
         db.row_factory = sqlite3.Row
+        if ";" in sql.strip().rstrip(";"):
+            # D1 runs a command of several statements in one transaction and answers with the last.
+            db.executescript(f"BEGIN; {sql}; COMMIT;")
+            return []
         return [dict(r) for r in db.execute(sql)]
 
     def upload(self, files):
