@@ -485,8 +485,10 @@
       if (closed || id !== requestId) return
       if (!append && (openEmptyGrapheme(result) || openSplit(result))) return
       // A further page keeps the counts by character and work it came with: they answer the same filters,
-      // and replacing them redraws the work menu and regathers thousands of graphemes for every page.
-      data = append && data ? { ...result, categories: data.categories, documents: data.documents, above: result.above ?? data.above } : result
+      // and replacing them redraws the work menu and regathers thousands of graphemes for every page. A
+      // view still without them (its read after the page showed failed) takes the page's.
+      data = append && data ? { ...result, categories: data.categories.length ? data.categories : result.categories,
+        documents: data.documents.length ? data.documents : result.documents, above: result.above ?? data.above } : result
       reach = append ? Math.min(reach, items.length) : 0
       items = append ? [...items, ...result.items] : result.items
       if (!append) await showSample(id, sampled, result.items)
@@ -934,14 +936,15 @@
   // A character's page, and the collection's when no search or filter narrows it, come without the
   // collection's counts by character and by work, which run to hundreds of kilobytes: they are read
   // once the page shows, for the work menu, the grapheme list and the tiles' ranks, and a failed read
-  // leaves those empty. Counts a save or a listing brought in the meantime are newer, and stay.
+  // leaves those empty. Counts a save or a listing brought in the meantime are newer, and stay; a
+  // collection that shows withheld crops lists itself again on mount, and that listing brings them.
   async function readSummary(signal) {
     try {
-      const summary = await catalogue({ group: filter, withheld: withheldParam(), limit: 1 }, { priority: 'low', signal })
+      const summary = await catalogue({ withheld: withheldParam(), limit: 0 }, { priority: 'low', signal })
       if (!closed && !data?.categories?.length) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents }
     } catch { /* the next save reads them again */ }
   }
-  onMount(() => { if (!opened && !(first && !first.result.categories?.length)) return; const reading = new AbortController(); readSummary(reading.signal); return () => reading.abort() })
+  onMount(() => { if (!opened && !(first && !first.result.categories?.length) || first && showWithheld && !flagged) return; const reading = new AbortController(); readSummary(reading.signal); return () => reading.abort() })
   // The crop count is read again every half minute while the tab is in view; a hidden tab waits.
   onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) || openSplit(first.result) : false; if (!collection) readCollection(); if (!first && !opened || showWithheld && !flagged) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(() => document.hidden || readCollection(), 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
