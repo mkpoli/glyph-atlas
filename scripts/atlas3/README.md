@@ -109,9 +109,12 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    credentials: the copy is about 3 GB and the uploads after it are large.
 4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
    ones), merge its images into the map (`media_map.py`) and publish the answers (`answers.py`).
-5. **Move the history** (*not built*): reviews, submissions, skips, seen marks, favourites, claims,
-   written forms and form decisions, with every text id translated through `out/mirror.sqlite`;
-   none may stay unresolved. Old URLs resolve through text-id alias files in R2 (*not built*).
+5. **Move the history:** `history.py` translates reviews, submissions, seen marks, skips, favourites,
+   claims, form decisions, suspects and shapes from the copies into `out/history.sqlite`
+   (`migrations-atlas/0003_history.sql`), with every text id resolved through `out/mirror.sqlite` and
+   never through a redirect, and writes a per-table report; it exits 1 if any row stops the move. It
+   also writes the earlier cuts, the tombstones and the marks the publisher applies. Loading the
+   result into D1 and the alias files for old URLs are *not built*.
 6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.
 7. **Switch** the Worker's routes to the new layout and resume reviews.
