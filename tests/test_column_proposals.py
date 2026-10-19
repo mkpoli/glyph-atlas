@@ -94,6 +94,25 @@ def test_touching_characters_are_cut_apart() -> None:
     assert found(column_proposals.propose(image, grid_without((2, 4), (2, 5)))) == {(2, 4), (2, 5)}
 
 
+def test_a_cut_character_is_as_wide_as_its_own_ink() -> None:
+    image = page()
+    upper, lower = cell(2, 4), cell(2, 5)
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([upper.x + 17, upper.y, upper.x + 23, lower.y + 10], fill=(40, 40, 40))
+    draw.rectangle([upper.x - 10, upper.y + 18, upper.x + upper.w + 10, upper.y + 24], fill=(40, 40, 40))
+    proposals = sorted(column_proposals.propose(image, grid_without((2, 4), (2, 5))), key=lambda p: p.y)
+    assert found(proposals) == {(2, 4), (2, 5)}
+    assert proposals[0].w >= upper.w + 19 and abs(proposals[1].x - lower.x) <= 1 and proposals[1].w <= lower.w + 2
+
+
+def test_a_stroke_joining_a_boxed_character_does_not_split_the_next() -> None:
+    image = page()
+    upper, lower = cell(2, 4), cell(2, 5)
+    ImageDraw.Draw(image).rectangle([upper.x + 17, upper.y, upper.x + 23, lower.y + 10], fill=(40, 40, 40))
+    (proposal,) = column_proposals.propose(image, grid_without((2, 5)))
+    assert abs(proposal.y - lower.y) <= 4 and abs(proposal.h - lower.h) <= 4
+
+
 def test_a_character_its_box_holds_in_part_gets_no_second_box() -> None:
     boxes = grid_without()
     boxes[boxes.index(cell(0, 4))] = Box(x=cell(0, 4).x, y=cell(0, 4).y + SIDE // 2, w=SIDE, h=SIDE // 2)

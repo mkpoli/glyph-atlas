@@ -51,6 +51,9 @@ ALIGN = 0.45
 ADJACENT = 1.6
 SPLIT = 1.5
 SLACK = 0.25
+# A row whose ink spans less than this share of the column's width is a joining stroke where a run
+# meets a box or a cut.
+THIN = 0.2
 # A stroke lies in the column whose centre is within this share of the column's width of its own, and
 # belongs to a box of the page when this share of it lies inside that box.
 REACH = 0.6
@@ -97,7 +100,7 @@ LOOSE = 3
 
 def proposer() -> str:
     """The proposer version: the settings that place a cell, hashed together."""
-    settings = (CRACK, CLOSING, SMOOTHING, CONTRAST, MAT, ALIGN, ADJACENT, SPLIT, SLACK, REACH, TAKEN, DOT, SPECK,
+    settings = (CRACK, CLOSING, SMOOTHING, CONTRAST, MAT, ALIGN, ADJACENT, SPLIT, SLACK, THIN, REACH, TAKEN, DOT, SPECK,
                 DROP, MARGIN, STRADDLE, STROKE, INK, HEIGHT, NARROWEST, WIDEST, TALLEST, OVERLAP, SHORTEST, FEWEST, ORDERLY, STRAY, LOOSE)
     return f"{FAMILY}-{hashlib.sha256(repr(settings).encode()).hexdigest()[:12]}"
 
@@ -143,6 +146,17 @@ def trimmed(column: list[Box]) -> list[Box]:
 def _shared(a: Box, b: Box) -> int:
     return (max(0, min(a.x + a.w, b.x + b.w) - max(a.x, b.x))
             * max(0, min(a.y + a.h, b.y + b.h) - max(a.y, b.y)))
+
+
+def _trim(profile: np.ndarray, across: float, head: bool, tail: bool) -> tuple[int, int]:
+    """The rows of `profile` left once the thin rows (ink across less than `THIN` of `across`) are taken
+    off its head and its tail, as asked, as (start, end)."""
+    if not head and not tail:
+        return 0, len(profile)
+    thick = np.flatnonzero(profile >= THIN * across)
+    if not len(thick):
+        return 0, 0
+    return (int(thick[0]) if head else 0), (int(thick[-1]) + 1 if tail else len(profile))
 
 
 def _segments(runs: list[tuple[int, int]], tall: float) -> list[list[int]]:
@@ -239,28 +253,39 @@ def propose(image: Image.Image, boxes: Sequence[Box]) -> list[Proposal]:
                     runs[-1][2].append(part)
                 else:
                     runs.append([top, bottom, [part]])
-            # A run too tall for one character is characters touching: cut at the rows of least ink.
+            # A run cut off by a box of the column, or cut from the characters it touches, starts or ends in
+            # the thin stroke joining it to them; those rows are left out. A run still too tall for one
+            # character is characters touching, cut at the rows of least ink.
             pieces: list[tuple[int, int, list]] = []
             for top, bottom, members in runs:
-                if bottom - top <= SPLIT * tall:
-                    pieces.append((top, bottom, members))
-                    continue
-                count = max(2, round((bottom - top) / pitch))
                 x0 = min(part[0].x for part in members)
                 x1 = max(part[0].x + part[0].w for part in members)
                 profile = mask[top:bottom, x0:x1].sum(1)
-                cuts = [top]
+                start, end = _trim(profile, across, top == ceiling, bottom == floor)
+                if end <= start:
+                    continue
+                if end - start <= SPLIT * tall:
+                    pieces.append((top + start, top + end, members))
+                    continue
+                count = max(2, round((end - start) / pitch))
+                cuts = [start]
                 for n in range(1, count):
-                    guess = top + n * (bottom - top) / count
+                    guess = start + n * (end - start) / count
                     low = max(cuts[-1] + 1, int(guess - SLACK * pitch))
-                    high = min(bottom, int(guess + SLACK * pitch) + 1)
-                    window = profile[low - top:high - top]
+                    high = min(end, int(guess + SLACK * pitch) + 1)
+                    window = profile[low:high]
                     # The middle of the rows of least ink, where a joining stroke is all there is.
                     cuts.append(low + int(np.median(np.flatnonzero(window == window.min()))) if high > low
                                 else int(guess))
-                cuts.append(bottom)
-                for a, b in pairwise(cuts):
-                    pieces.append((a, b, [(Box(x=x0, y=a, w=x1 - x0, h=b - a), 0.0, 0.0, 0)]))
+                cuts.append(end)
+                for n, (a, b) in enumerate(pairwise(cuts)):
+                    shift, stop = _trim(profile[a:b], across, n > 0, n < count - 1)
+                    a, b = a + shift, a + stop
+                    if b <= a:
+                        continue
+                    cols = np.flatnonzero(mask[top + a:top + b, x0:x1].any(0))
+                    piece = Box(x=x0 + int(cols[0]), y=top + a, w=int(cols[-1] - cols[0]) + 1, h=b - a)
+                    pieces.append((top + a, top + b, [(piece, 0.0, 0.0, 0)]))
             for group in _segments([(top, bottom) for top, bottom, _ in pieces], tall):
                 members = [part for n in group for part in pieces[n][2]]
                 top, bottom = pieces[group[0]][0], pieces[group[-1]][1]
