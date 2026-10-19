@@ -59,3 +59,12 @@ def test_a_publish_maps_its_catalogues_images_before_its_bundles(layout, monkeyp
     assert remote.prefixes[0] == "v3/media/" and remote.uploaded[0] == "abc.json.gz"
     assert "v3/pages/" in remote.prefixes[1:]
     assert shard(root)["keys"]["1" * 61] == [0, 0, 9]
+
+
+def test_a_list_naming_a_shard_never_written_stops_the_send(layout):  # noqa: F811
+    root, _publish, _remote = layout
+    media_map = module()
+    (root / "out" / "media").mkdir(parents=True, exist_ok=True)
+    (root / "out" / "media" / "unsent").write_text("fff\n")
+    with pytest.raises(SystemExit):
+        media_map.send(lambda files, prefix: None)

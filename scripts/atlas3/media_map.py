@@ -16,6 +16,7 @@ import argparse
 import fcntl
 import gzip
 import json
+import os
 import sqlite3
 import sys
 from collections import defaultdict
@@ -70,7 +71,10 @@ def merge(rows, write=True):
         with open(OUT / "media" / "unsent", "a") as unsent:
             unsent.write("".join(f"{prefix}\n" for prefix in grown))
         for prefix, shard in grown.items():
-            shard_path(prefix).write_bytes(gzip.compress(json.dumps(shard, separators=(",", ":")).encode()))
+            # Whole or not at all: a cut-off shard uploaded later would stop every image in it.
+            part = shard_path(prefix).with_suffix(".part")
+            part.write_bytes(gzip.compress(json.dumps(shard, separators=(",", ":")).encode()))
+            os.replace(part, shard_path(prefix))
     return new, len(grown)
 
 
@@ -80,6 +84,10 @@ def send(upload):
     if not unsent.exists():
         return 0
     prefixes = sorted(set(unsent.read_text().split()))
+    missing = [prefix for prefix in prefixes if not shard_path(prefix).exists()]
+    if missing:
+        sys.exit(f"out/media/unsent names shards that were never written ({', '.join(missing[:5])}); "
+                 "merge their media table again, then remove them from the list")
     upload([shard_path(prefix) for prefix in prefixes], PREFIX)
     unsent.unlink()
     return len(prefixes)

@@ -59,5 +59,9 @@ describe('new-layout images', () => {
     await mediaPlace(env, key);
     expect(reads.filter(name => name === shardKey(key))).toHaveLength(1);
     expect(edge.has(`https://glyphatlas.org/_shards/${shardKey(key)}`)).toBe(true);
+    // Five minutes on, the isolate reads it again, from the edge.
+    edge.clear();
+    await mediaPlace(env, key, undefined, Date.now() + 301_000);
+    expect(reads.filter(name => name === shardKey(key))).toHaveLength(2);
   });
 });

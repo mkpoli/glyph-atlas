@@ -3,11 +3,12 @@
 
 // A shard maps the rest of each key, after its first three hex digits, to [object index, offset, size]
 // and a content type when it is not WebP. Shards only grow, so a copy may lack an image published in
-// the last few minutes: the edge keeps a shard SHARD_SECONDS, an isolate the last SHARDS_HELD.
+// the last few minutes: the edge and an isolate keep a shard SHARD_SECONDS, an isolate the last
+// SHARDS_HELD.
 type Shard = { objects: string[]; keys: Record<string, [number, number, number, string?]> };
 export type Place = { object: string; offset: number; size: number; type: string };
 const SHARD_SECONDS = 300, SHARDS_HELD = 32;
-const held = new Map<string, Promise<Shard | null>>();
+const held = new Map<string, { at: number; read: Promise<Shard | null> }>();
 export const shardKey = (key: string) => `v3/media/${key.slice(0, 3)}.json.gz`;
 
 async function readShard(env: Env, name: string, ctx?: ExecutionContext): Promise<Shard | null> {
@@ -27,19 +28,20 @@ async function readShard(env: Env, name: string, ctx?: ExecutionContext): Promis
   return await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json() as Shard;
 }
 
-export async function mediaPlace(env: Env, key: string, ctx?: ExecutionContext): Promise<Place | null> {
+export async function mediaPlace(env: Env, key: string, ctx?: ExecutionContext, now = Date.now()): Promise<Place | null> {
   if (!/^[a-f0-9]{64}$/.test(key)) return null;
   const name = shardKey(key);
-  let read = held.get(name);
-  if (read) { held.delete(name); held.set(name, read); }
+  let entry = held.get(name);
+  if (entry && now - entry.at < SHARD_SECONDS * 1000) { held.delete(name); held.set(name, entry); }
   else {
-    const fresh = readShard(env, name, ctx);
-    fresh.catch(() => { if (held.get(name) === fresh) held.delete(name); });
+    const fresh = { at: now, read: readShard(env, name, ctx) };
+    fresh.read.catch(() => { if (held.get(name) === fresh) held.delete(name); });
+    held.delete(name);
     held.set(name, fresh);
     while (held.size > SHARDS_HELD) held.delete(held.keys().next().value!);
-    read = fresh;
+    entry = fresh;
   }
-  const shard = await read, found = shard?.keys[key.slice(3)];
+  const shard = await entry.read, found = shard?.keys[key.slice(3)];
   if (!shard || !found) return null;
   const [index, offset, size, type] = found;
   return { object: shard.objects[index], offset, size, type: type ?? 'image/webp' };
