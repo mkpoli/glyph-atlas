@@ -8,11 +8,14 @@ local copy is what D1 holds. Every check covers every crop; a failing one lists 
 in `out/check-<stamp>.txt` and the run exits 1.
 
 - Ids: every live crop, corpus glyph and retired crop has a number, and no number has two crops.
-- Rows: each crop's character, state, style, withheld flag, production, category, visual group and
-  revision equal its live record's; a corpus glyph's review columns come from its review overlay.
-- Bundles: each collected crop's box and image checksum equal its live record's; a retired crop's
-  entry is marked retired and has no row.
-- Runs: the runs of two and three crops are the live ones, crop for crop.
+- Rows: each crop's character, state, style, withheld flag, production, category, visual group,
+  revision, book, witness year and suspect flag equal its live record's; a corpus glyph's review
+  columns come from its review overlay.
+- Bundles: each collected crop's entry is its live record (less the fields its row holds), a corpus
+  glyph's points at its live record, and a retired crop's is marked retired, names its replacement
+  and has no row.
+- Runs: the runs of two and three crops are the live ones, crop for crop, with their graphemes, hand
+  and book.
 - Images: every live image key is in the image key map, at its live place.
 """
 
@@ -25,7 +28,7 @@ import sys
 import time
 from collections import Counter
 
-from build import HERE, OUT, PAGE, char_text
+from build import HERE, OUT, PAGE, bundle_entry, char_text
 
 SHOWN = 20
 
@@ -61,11 +64,18 @@ def main():
     names = {f: dict(atlas.execute("SELECT code, key FROM codes WHERE field=?", (f,))) for f in ("state", "style", "category", "visual_group")}
     graphemes = dict(atlas.execute("SELECT id, text FROM graphemes"))
     productions = dict(atlas.execute("SELECT id, key FROM productions"))
-    rows = {r[0]: r for r in atlas.execute("SELECT id, kind, char, state, style, quiz, production, category, visual_group, revision FROM crops")}
+    rows = {r[0]: r for r in atlas.execute("SELECT id, kind, char, state, style, quiz, production, category, visual_group, revision, "
+                                           "book, year, flags FROM crops")}
+    books = dict(atlas.execute("SELECT id, key FROM books"))
+    book_ids = {key: bid for bid, key in books.items()}
+    years = dict(source("document_dating").execute("SELECT document, start FROM document_dating WHERE axis='witness'"))
+    redirects = dict(source("unit_redirects").execute("SELECT id, target FROM unit_redirects")) \
+        if (HERE / "source-unit_redirects.sqlite").exists() else {}
     rev = dict(atlas.execute("SELECT id, rev FROM pages"))
 
-    units = list(latest(source("units"), "units", "id, origin, character, state, style, quiz, production, category, visual_group, revision, data"))
-    corpus = list(latest(source("corpus_units"), "corpus_units", "id, character, production, style"))
+    units = list(latest(source("units"), "units",
+                        "id, origin, character, state, style, quiz, production, category, visual_group, revision, data, document"))
+    corpus = list(latest(source("corpus_units"), "corpus_units", "id, character, production, style, visual_group, document, object, offset, size, label"))
     overlay = {u[0]: u for u in units if u[1] == "corpus"}
     local = [u for u in units if u[1] == "local"]
     retired = [u for u in units if u[1] == "retired"]
@@ -87,22 +97,23 @@ def main():
     def got(cid):
         r = rows[cid]
         return (r[1], graphemes.get(r[2]), names["state"].get(r[3]), names["style"].get(r[4]), r[5], productions.get(r[6]),
-                names["category"].get(r[7]), names["visual_group"].get(r[8]), r[9])
+                names["category"].get(r[7]), names["visual_group"].get(r[8]), r[9], books.get(r[10]), r[11], r[12] & 1)
 
     diffs = []
     for u in local:
         cid = id_of.get(u[0])
-        if cid in rows and got(cid) != (w := want(*u[2:10], 0)):
+        if cid in rows and got(cid) != (w := want(*u[2:10], 0) + (u[11] or "unknown", years.get(u[11]), int(bool(json.loads(u[10]).get("suspect"))))):
             diffs.append(f"{u[0]} ({cid}): live {w}, new layout {got(cid)}")
     for c in corpus:
         cid, o = id_of.get(c[0]), overlay.get(c[0])
         if cid not in rows:
             continue
+        book = c[5] or c[0].split("|")[0].split(":")[0]
         w = want((o[2] if o else None) or c[1], o[3] if o else "pending", (o[4] if o else None) or c[3], o[5] if o else 1,
-                 c[2], None, None, o[9] if o else 0, 1)
+                 c[2], None, c[4], o[9] if o else 0, 1) + (book, years.get(c[5]), 0)
         g = got(cid)
-        # A corpus glyph's category and visual group are the publisher's; the review columns are compared.
-        if (g[:5], g[5], g[8]) != (w[:5], w[5], w[8]):
+        # A corpus glyph has no category of its own.
+        if g[:6] + g[7:] != w[:6] + w[7:]:
             diffs.append(f"{c[0]} ({cid}): live {w}, new layout {g}")
     report.check("every crop's row equals its live record", diffs)
 
@@ -126,21 +137,38 @@ def main():
         data, e = json.loads(u[10]), entry(cid)
         if e is None:
             wrong.append(f"{u[0]} ({cid}): no bundle entry")
-        elif e.get("id") != u[0] or e.get("retired") or e.get("box") != data.get("box") or e.get("image_sha256") != data.get("image_sha256"):
-            wrong.append(f"{u[0]} ({cid}): bundle {e.get('id')} box {e.get('box')} image {e.get('image_sha256')}, "
-                         f"live box {data.get('box')} image {data.get('image_sha256')}")
+        else:
+            have = {k: v for k, v in e.items() if k not in ("slot", "id", "image_place", "context_image_place")}
+            if e.get("id") != u[0] or have != bundle_entry(data):
+                differ = sorted(k for k in have.keys() | bundle_entry(data).keys() if have.get(k) != bundle_entry(data).get(k))
+                wrong.append(f"{u[0]} ({cid}): bundle entry {e.get('id')} differs in {differ}")
     for u in sorted(retired, key=lambda u: id_of.get(u[0], -1)):
         cid = id_of.get(u[0])
-        if cid is not None and (cid in rows or not (entry(cid) or {}).get("retired")):
-            wrong.append(f"{u[0]} ({cid}): retired on the live site, live in the new layout")
-    report.check("every collected crop's bundle entry holds its live box and image", wrong)
+        e = (entry(cid) or {}) if cid is not None else {}
+        if cid is not None and (cid in rows or not e.get("retired") or e.get("id") != u[0] or e.get("replaced_by") != redirects.get(u[0])):
+            wrong.append(f"{u[0]} ({cid}): retired on the live site; new layout row {cid in rows}, entry {e.get('id')} "
+                         f"retired {e.get('retired')} replaced by {e.get('replaced_by')}, live {redirects.get(u[0])}")
+    report.check("every collected and retired crop's bundle entry is its live record", wrong)
+
+    wrong = []
+    for c in sorted(corpus, key=lambda c: id_of.get(c[0], -1)):
+        cid = id_of.get(c[0])
+        if cid is None:
+            continue
+        e = entry(cid)
+        if e is None or e.get("id") != c[0] or e.get("record_place") != [c[6], c[7], c[8]] or e.get("label") != c[9]:
+            wrong.append(f"{c[0]} ({cid}): entry {None if e is None else {k: e.get(k) for k in ('id', 'record_place', 'label')}}, "
+                         f"live {[c[6], c[7], c[8]]} {c[9]}")
+    report.check("every corpus glyph's bundle entry points at its live record", wrong)
 
     # Runs.
-    def key(size, first, second, third):
-        return (size, id_of.get(first), id_of.get(second), id_of.get(third) if third else None)
+    def key(size, graphemes_text, hand, document, first, second, third):
+        return (size, graphemes_text or "", hand, book_ids.get(document or "unknown"), id_of.get(first), id_of.get(second),
+                id_of.get(third) if third else None)
 
-    live_runs = Counter(key(*r) for r in source("unit_ngrams").execute("SELECT size, first, second, third FROM unit_ngrams"))
-    new_runs = Counter(runs_db.execute("SELECT size, first, second, third FROM runs"))
+    live_runs = Counter(key(*r) for r in source("unit_ngrams").execute(
+        "SELECT size, graphemes, hand_order, document, first, second, third FROM unit_ngrams"))
+    new_runs = Counter(runs_db.execute("SELECT size, graphemes, hand, book, first, second, third FROM runs"))
     report.check("the runs are the live ones", [f"{k}: live {live_runs[k]}, new layout {new_runs[k]}"
                                                 for k in (live_runs.keys() | new_runs.keys()) if live_runs[k] != new_runs[k]])
 
