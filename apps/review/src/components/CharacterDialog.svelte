@@ -21,7 +21,7 @@
   import { t } from '../lib/i18n.svelte.js'
   import { cropAddress, useInspector } from '../lib/inspector.svelte.js'
   import CropContext from './CropContext.svelte'
-  import { geometryLine, repairOf } from '../lib/cropDetails.js'
+  import { repairOf } from '../lib/cropDetails.js'
   import SimilarCrops from './SimilarCrops.svelte'
   import CropReview from './CropReview.svelte'
   import LineStrip from './LineStrip.svelte'
@@ -335,7 +335,7 @@
       </div>
       <div class="inspector-right">
         <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} /></div>
-        <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if geometryLine(data)}<span class="repair-note">{geometryLine(data)}</span>{/if}{#if data.box_pending}<ReviewState tone="waiting" text={t('character.crop.pending')} />{:else if data.state === 'checked' || repairOf(data)?.kind === 'verified'}<ReviewState tone="checked" text={t('state.checked')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'hard'}<ReviewState tone="waiting" text={t('state.hard')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
+        <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<ReviewState tone="waiting" text={t('character.crop.pending')} />{:else if data.state === 'checked' || repairOf(data)?.kind === 'verified'}<ReviewState tone="checked" text={t('state.checked')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'hard'}<ReviewState tone="waiting" text={t('state.hard')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
         {#if !onVerdict && Object.hasOwn(data, 'word')}{#key data.id + ':' + data.crop_version}<CropWord item={data} disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} />{/key}{/if}
         {#if !onVerdict && (issue === 'character' || issue === 'crop')}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
         {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
