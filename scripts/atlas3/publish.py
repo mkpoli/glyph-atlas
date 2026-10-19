@@ -3,7 +3,7 @@
     python3 publish.py <catalogue.sqlite> [--dry-run]
 
 The catalogue is what export_cloudflare.py / export_cloudflare_corpus.py write: `units`, and when
-present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`. A `media` table also adds its
+present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`, `unit_redirects`. A `media` table also adds its
 images to the image key map (`media_map.py`).
 
 - Ids come from out/mirror.sqlite. A new text id gets a page and slot once; the allocation and a
@@ -12,9 +12,9 @@ images to the image key map (`media_map.py`).
   field the catalogue does not carry keeps its published value. Review-owned columns change only
   when the catalogue's revision is at least the published one, and in D1 only while the crop's
   revision is unchanged; the outcome is read back.
-- A publish that would move a known crop to another page, change a known crop's box or image, or
-  add a box overlapping a published crop on its page (IoU >= 0.5) is refused with a report: those
-  need the slot matcher.
+- A known crop with another box or image on its own page is re-cut: same id, its cut moves on.
+- A publish that would move a known crop to another page, or add or re-cut a box overlapping another
+  crop on its page (IoU >= 0.5), is refused with a report: those need the slot matcher.
 - Order: page bundles to R2, then the rows to glyph-atlas-v3 in parts that never split a page (its
   crops and its revision go together), then the runs to glyph-atlas-v3-runs. Each part counts as
   applied when its stamp is in that database's `imports`, and is then replayed on the local copy.
@@ -275,12 +275,12 @@ class Mirror:
         bundle = {k: v for k, v in bundle.items() if v is not None}
         self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
 
-    def retire(self, cid, text_id, mirror_revision):
+    def retire(self, cid, text_id, mirror_revision, replaced_by):
         pid = cid // PAGE
         self.page_sql[pid].append(f"DELETE FROM crops WHERE id={cid} AND revision={mirror_revision};")
         self.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
         self.guarded.append(cid)
-        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True}, True)
+        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, **replaced_by}, True)
 
 
 def write_parts(run, name, groups):
@@ -435,6 +435,16 @@ def main():
     units = list(src.execute(f"SELECT {columns} FROM units WHERE origin IN ('local', 'retired') ORDER BY id")) if "units" in tables else []
     overlay = {r["id"]: r for r in src.execute(f"SELECT {columns} FROM units WHERE origin='corpus'")} if "units" in tables else {}
     retiring = {r["id"] for r in units if r["origin"] == "retired"}
+    # A live crop with another box or image on its own page is re-cut: it keeps its id and its cut
+    # moves on, so claims and reviews made on the old cut stay with it.
+    recut = set()
+    for r in units:
+        if r["origin"] == "local" and (cid := m.known(r["id"])) is not None and \
+                m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone():
+            data, published = json.loads(r["data"]), entry(cid)
+            if (data.get("box") and published.get("box") and data["box"] != published["box"]) or \
+                    (data.get("image_sha256") and published.get("image_sha256") and data["image_sha256"] != published["image_sha256"]):
+                recut.add(r["id"])
     refused = []
     for r in units:
         data = json.loads(r["data"])
@@ -448,23 +458,26 @@ def main():
                     refused.append(f"{r['id']}: retired at revision {r['revision']}, reviewed since (revision {current['revision']})")
             elif m.page_key(cid // PAGE) != page_key:
                 refused.append(f"{r['id']}: page {m.page_key(cid // PAGE)} -> {page_key}")
-            elif data.get("box") and published.get("box") and data["box"] != published["box"]:
-                refused.append(f"{r['id']}: box {published['box']} -> {data['box']}")
-            elif data.get("image_sha256") and published.get("image_sha256") and data["image_sha256"] != published["image_sha256"]:
-                refused.append(f"{r['id']}: image changed")
+            elif r["id"] in recut and data.get("box"):
+                # Against every other crop's published box, re-cut ones too, so two crops cannot trade glyphs.
+                for e in bundle_of(cid // PAGE)["crops"]:
+                    if e["id"] != r["id"] and not e.get("retired") and e["id"] not in retiring \
+                            and iou(data["box"], e.get("box")) >= 0.5:
+                        refused.append(f"{r['id']}: re-cut box overlaps published crop {e['id']} (IoU {iou(data['box'], e['box']):.2f})")
+                        break
             continue
         if r["origin"] == "retired":
             continue
         pid_row = m.ids.execute("SELECT id FROM pages WHERE key=?", (page_key,)).fetchone()
         if pid_row and data.get("box"):
             for e in bundle_of(pid_row[0])["crops"]:
-                if not e.get("retired") and e["id"] not in retiring and iou(data["box"], e.get("box")) >= 0.5:
+                if not e.get("retired") and e["id"] not in retiring | recut and iou(data["box"], e.get("box")) >= 0.5:
                     refused.append(f"{r['id']}: new box overlaps published crop {e['id']} (IoU {iou(data['box'], e['box']):.2f})")
                     break
-    # New boxes against each other, page by page.
+    # New and re-cut boxes against each other, page by page.
     fresh = defaultdict(list)
     for r in units:
-        if r["origin"] == "local" and m.known(r["id"]) is None:
+        if r["origin"] == "local" and (m.known(r["id"]) is None or r["id"] in recut):
             data = json.loads(r["data"])
             if data.get("box"):
                 fresh[data.get("page_id") or f"book:{r['document']}"].append((r["id"], data["box"]))
@@ -472,7 +485,7 @@ def main():
         for i, (a, box_a) in enumerate(boxes):
             for b, box_b in boxes[i + 1:]:
                 if iou(box_a, box_b) >= 0.5:
-                    refused.append(f"{a} and {b}: two new boxes on one glyph (IoU {iou(box_a, box_b):.2f})")
+                    refused.append(f"{a} and {b}: two new or re-cut boxes on one glyph (IoU {iou(box_a, box_b):.2f})")
     if refused:
         report = OUT / "publish" / f"refused-{time.strftime('%Y%m%dT%H%M%S')}.txt"
         report.write_text("\n".join(refused) + "\n")
@@ -482,15 +495,30 @@ def main():
     run = OUT / "publish" / stamp
     (run / "pages").mkdir(parents=True)
 
+    # A retired crop names the crop it was retired in favour of, where the catalogue says: one hop, so a
+    # reader follows `replaced_by` while the crop it names is retired too.
+    replaced = dict(src.execute("SELECT id, target FROM unit_redirects")) if "unit_redirects" in tables else {}
     n, crop_ids, retired = 0, {}, set()
     for r in units:
         data = json.loads(r["data"])
         if r["origin"] == "retired":
             cid = m.known(r["id"])
             current = cid is not None and m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
+            named = {"replaced_by": replaced[r["id"]]} if r["id"] in replaced else {}
             if current:
-                m.retire(cid, r["id"], current["revision"])
+                m.retire(cid, r["id"], current["revision"], named)
                 retired.add(cid)
+                n += 1
+            elif cid is not None:
+                # Already retired: a replacement named since is added to its entry.
+                if named and entry(cid).get("replaced_by") != named["replaced_by"]:
+                    m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": r["id"], "retired": True, **named}, True)
+            elif cid is None:
+                # A crop retired before it reached the new layout still gets a number, kept only in its
+                # page's bundle, so its reviews, claims and links resolve.
+                cid = m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
+                m.touched_pages[cid // PAGE][cid % PAGE] = (
+                    {"id": r["id"], "retired": True, **bundle_entry(data), **named}, True)
                 n += 1
             continue
         cid = m.known(r["id"]) or m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
@@ -502,6 +530,8 @@ def main():
                  "style": m.code("style", r["style"] or "unassessed"),
                  "state": m.code("state", r["state"]), "quiz": r["quiz"], "year": years.get(r["document"], KEEP),
                  "revision": r["revision"], "shuffle": shuffle(cid)}
+        if r["id"] in recut:
+            given["cut"] = m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()["cut"] + 1
         bundle = {"id": r["id"], **bundle_entry(data)}
         for field in ("image", "context_image"):
             if place(data, field):
@@ -620,7 +650,7 @@ def main():
             # A crop's new record replaces its old one, so a field the record no longer has goes. A
             # retired crop keeps its record; an image keeps its pack place when the catalogue could
             # not look it up.
-            new = {**old, **new_entry} if new_entry.get("retired") else {"slot": slot, **new_entry}
+            new = {**old, **new_entry, "slot": slot} if new_entry.get("retired") else {"slot": slot, **new_entry}
             for field in ("image", "context_image"):
                 if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
                     new[field + "_place"] = old[field + "_place"]

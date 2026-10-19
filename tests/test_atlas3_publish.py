@@ -286,10 +286,24 @@ def test_a_retirement_older_than_a_review_is_refused(layout, monkeypatch, tmp_pa
     assert ids["ex:a2"] in crops(remote)
 
 
-def test_a_known_crop_with_another_box_stops_the_publish(layout, monkeypatch, tmp_path):
+def test_a_re_cut_onto_another_crops_glyph_stops_the_publish(layout, monkeypatch, tmp_path):
     _root, publish, _remote = layout
     with pytest.raises(SystemExit):
         run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10})]))
+
+
+def test_a_known_crop_with_another_box_is_re_cut_under_its_own_id(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a2 = ids(root)["ex:a2"]
+    before = crops(remote)[a2]
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a2", "hl:p1", {"x": 2, "y": 22, "w": 12, "h": 9}, "い",
+                                                                     state="checked", revision=3)]))
+    after = crops(remote)[a2]
+    assert ids(root)["ex:a2"] == a2 and after["cut"] == before["cut"] + 1
+    assert {k: after[k] for k in ("char", "state", "revision")} == {k: before[k] for k in ("char", "state", "revision")}
+    entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{a2 // PAGE}-2.json.gz").read_bytes()))["crops"]
+                 if e["id"] == "ex:a2")
+    assert entry["box"] == {"x": 2, "y": 22, "w": 12, "h": 9}
 
 
 def test_fields_a_catalogue_does_not_carry_keep_their_values(layout, monkeypatch, tmp_path):
@@ -419,3 +433,57 @@ def test_a_build_takes_every_migration_of_the_new_layout(layout):
     root, _publish, _remote = layout
     names = {r[0] for r in sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT name FROM sqlite_master WHERE type='index'")}
     assert {"crop_char", "crop_undated"} <= names
+
+
+def test_a_crop_retired_before_the_new_layout_gets_a_number_and_a_retired_entry(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    row = list(unit("ex:old", "hl:p1", {"x": 40, "y": 40, "w": 10, "h": 10}))
+    row[UNITS.index("origin")] = "retired"
+    path = catalogue(tmp_path / "c.sqlite", [tuple(row)])
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE unit_redirects(id, target)")
+    db.execute("INSERT INTO unit_redirects VALUES('ex:old', 'ex:a1')")
+    db.commit()
+    run(publish, monkeypatch, path)
+    old = ids(root)["ex:old"]
+    assert old // PAGE == ids(root)["ex:a1"] // PAGE and old not in crops(remote)
+    entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{old // PAGE}-2.json.gz").read_bytes()))["crops"]
+                 if e["id"] == "ex:old")
+    assert entry["retired"] is True and entry["replaced_by"] == "ex:a1" and entry["box"] == {"x": 40, "y": 40, "w": 10, "h": 10}
+
+
+def test_a_crop_retired_later_names_its_replacement(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    gone = list(unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う"))
+    gone[UNITS.index("origin")] = "retired"
+    run(publish, monkeypatch, catalogue(tmp_path / "gone.sqlite", [tuple(gone)]))
+    path = catalogue(tmp_path / "named.sqlite", [tuple(gone)])
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE unit_redirects(id, target)")
+    db.execute("INSERT INTO unit_redirects VALUES('ex:b1', 'ex:a1')")
+    db.commit()
+    run(publish, monkeypatch, path)
+    b1 = ids(root)["ex:b1"]
+    entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{b1 // PAGE}-3.json.gz").read_bytes()))["crops"]
+                 if e["id"] == "ex:b1")
+    assert entry["retired"] is True and entry["replaced_by"] == "ex:a1"
+
+
+def test_two_crops_trading_glyphs_stop_the_publish(layout, monkeypatch, tmp_path):
+    _root, publish, remote = layout
+    before = crops(remote)
+    with pytest.raises(SystemExit):
+        run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "あ"),
+                                                                    unit("ex:a2", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "い",
+                                                                         state="checked", revision=3)]))
+    assert crops(remote) == before
+
+
+def test_a_retired_crop_put_back_with_another_box_is_published_again(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    gone = list(unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う"))
+    gone[UNITS.index("origin")] = "retired"
+    run(publish, monkeypatch, catalogue(tmp_path / "gone.sqlite", [tuple(gone)]))
+    assert ids(root)["ex:b1"] not in crops(remote)
+    run(publish, monkeypatch, catalogue(tmp_path / "back.sqlite", [unit("ex:b1", "hl:p2", {"x": 3, "y": 3, "w": 10, "h": 10}, "う")]))
+    assert ids(root)["ex:b1"] in crops(remote)

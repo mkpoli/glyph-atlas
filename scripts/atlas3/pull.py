@@ -27,6 +27,7 @@ TABLES = {
     "pages": ("id,document,data", ["id"], 2000),
     "document_dating": ("document,axis,kind,start,end,precision,label,status", ["document", "axis"], 8000),
     "corpus_documents": ("document,n,title", ["document"], 8000),
+    "unit_redirects": ("id,target", ["id"], 8000),
     "characters": ("code_point,character,name,json_extract(data,'$.grapheme.code_point') AS head", ["code_point"], 8000),
     "aliases": ("query,code_point,rank", ["rowid"], 15000),
 }
