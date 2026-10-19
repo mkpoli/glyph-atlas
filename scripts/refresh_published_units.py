@@ -33,6 +33,9 @@ This writes the UPDATE statements that bring such units up to date:
 
 The file ends by stamping `metadata.units_refreshed_at`, which the Worker's cached listings are keyed by.
 
+A key the Worker computes on every read is not compared: `crop_editable` (`record` in the Worker, from the
+crop's origin and redraw limits), which rows written by older catalogues hold as false.
+
 A key holding null is the same as no key: the Worker reads both as nothing, and rows written by
 older catalogues lack keys a newer one writes as null (`shape_order`, which the Worker reads from
 `unit_shapes`, and `suspect`, which it reads from `unit_suspects`).
@@ -82,6 +85,8 @@ CROP_KEYS = ("box", "crop_box", "image", "image_sha256")
 # What a publication owns: set on the live row without a new revision, reviewed or not.
 IN_PLACE_KEYS = ("context_image", "context_box", "repair", "page_number",
                  "production", "production_evidence", "production_label", "tone", "image_size", "geometry")
+# What the Worker computes on every read; the stored value is never served.
+COMPUTED_KEYS = ("crop_editable",)
 
 
 def same_crop(new_data: str, live_data: str) -> bool:
@@ -107,7 +112,7 @@ def plan(new: dict, live: dict) -> tuple[str, str | None]:
     new_data, live_data = json.loads(new["data"]), json.loads(live["data"])
     in_place = {key: new_data.get(key) for key in IN_PLACE_KEYS if new_data.get(key) != live_data.get(key)}
     for data in (new_data, live_data):
-        for key in IN_PLACE_KEYS:
+        for key in (*IN_PLACE_KEYS, *COMPUTED_KEYS):
             data.pop(key, None)
         for key in [key for key, value in data.items() if value is None]:
             del data[key]

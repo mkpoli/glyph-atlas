@@ -75,6 +75,11 @@ def test_an_unreviewed_unit_that_did_not_change_is_left_alone():
     assert refresh.plan(unit(revision=1000001), live(revision=1000001)) == ("skip", None)
 
 
+def test_a_stored_crop_editable_the_worker_recomputes_is_not_a_change():
+    new = {**unit(revision=1000001), "data": data(BOX, "/atlas/media/a.webp", 1000001, crop_editable=True)}
+    assert refresh.plan(new, live(revision=1000001, crop_editable=False)) == ("skip", None)
+
+
 def test_a_catalogue_revision_equal_to_the_live_one_is_refused():
     with pytest.raises(refresh.Collision):
         refresh.plan(unit(image="/atlas/media/b.webp", revision=1000001), live())
