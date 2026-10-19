@@ -17,7 +17,7 @@ Copied from the live database on 19–20 October 2026:
 | `assertions`, `assertion_actions`, `assertion_evidence` | 14,172, 33, 14,140 | 45 `has_form` claims on crops; the rest are date claims on books |
 | `current_claims` | 9,467 | 43 crop subjects with a `crop_version` string |
 | `ledger_submissions`, `form_decisions`, `forms` | 45, 669, 32 | crop ids inside JSON |
-| `crop_versions` | 532,617 | one row per crop version; 531 crops have two, none more |
+| `crop_versions` | 532,617 | one row per crop version; 496 crops have an earlier box, none more than one |
 | `unit_suspects`, `unit_shapes` | 108,680, 15,573 | text id; 25,411 and 2,959 name crops that no longer exist |
 | `unit_marks` | 8,143 | text id; every one is `seen` |
 | `user`, `session`, `account`, `passkey`, `verification`, `account_profiles`, `rateLimit` | small | — |
@@ -40,9 +40,10 @@ those crops, already include them.
 - **History never follows a redirect.** A history row (event, submission, seen mark, skip, favourite,
   claim, form decision) names the crop it was made on, resolved through the publisher's mirror
   (`out/mirror.sqlite`, text id → integer id). The 56 retired crops kept for their history already
-  have numbers (0005 publisher). A history row naming a crop the mirror lacks (today one event, on a
-  crop deleted after its review) gets a tombstone: a number and a retired bundle entry built from the
-  event's own record of the crop.
+  have numbers (0005 publisher). A history row naming a crop the mirror lacks (today one event, on the
+  review overlay of a corpus glyph no longer in the corpus) gets a tombstone: a number and a retired
+  bundle entry showing the crop as that review left it. The translation stops until the publisher has
+  numbered it, so the event cannot be left behind.
 - **Old URLs follow redirects.** Every text id known at the cutover (the mirror's and the sources of
   `unit_redirects`) resolves through alias shards in R2, `v3/aliases/<first three hex digits of its
   SHA-256>.json.gz`, written once, with chains resolved and cycles refused. The set is closed: crops
@@ -53,12 +54,13 @@ those crops, already include them.
 
 ### Cuts
 
-Each crop's version at the first build is cut 0. Its earlier version, where there is one (531 crops,
-never more than one), is cut -1, kept in the crop's bundle entry under `cuts` with its box, pixel size
+Each crop's version at the first build is cut 0. Its earlier box, where there is one (496 crops,
+never more than one; 35 more changed only their image encoding and stay cut 0), is cut -1, kept in the crop's bundle entry under `cuts` with its box, pixel size
 and image key, so a citation of it still resolves to its image. A `seen` or `skip` row maps to the
 cut whose box it names, as the old site decided whether a seen mark or skip still held by the box
 alone (37 rows name a crop's box with an older image checksum, from a re-encoded image); crop evidence
-maps by its whole `id@pixels@box`. A row that matches no cut stops the move.
+maps by its whole `id@pixels@box`. A box no recorded version has comes from before `crop_versions`
+kept them (one seen mark today) and takes the cut below the oldest recorded one.
 A claim on cut -1 is not live, as the old resolver treated a claim on a crop's earlier version.
 
 ### Tables in `glyph-atlas-v3`
@@ -72,19 +74,31 @@ written only at the URL boundary.
   `key` keeps the client's `actor:uuid`; `request` and `response` stay as sent, the audit of what the
   client asked and got. No reader takes a crop id from them.
 - `events`: the 0005 table. Each old event becomes one row, its `revision` the per-crop sequence by
-  time, checked to end at or below the crop's current revision, with the label, state, style, withheld
-  flag and box its `after_data` set.
-- `seen(submission, crop, cut, at)` and `skips(crop, actor, cut, at)`. `reviews.mark` is recomputed
-  from them by the old triggers' rules (current box, submission not undone, two or more skippers for
-  `hard`) and must equal every live `unit_marks` row; until the rehearsal shows that, the live marks are
-  moved as they are.
+  time, checked to end at or below the crop's current revision, with the verdict, issue, label, state
+  and box it set, and the characters the reviewer typed (`text`); a review sets no style or withheld
+  flag. Whether it came from a round, a batch or a single review is its submission's.
+- `seen(submission, crop, cut, at)` and `skips(crop, actor, cut, at, submission)`, so an undone round
+  stops counting its skips.
+- The kinds of event (verdicts and marks), issues and the two mark states are numbered once, in the
+  migration, so rehearsal and cutover give the same codes. `actor_stats` starts from the moved history.
+- **Marks are states.** The old site shows a pending crop with a mark as `seen` or `hard` (its effective
+  state), and the mark takes it out of the review queue. In `glyph-atlas-v3` the mark is the crop's
+  state, so `crop_pending` leaves it out by its own condition. Setting a mark is a review-owned write
+  like any other: it moves the crop's revision, so a later publish with the older revision cannot undo
+  it. At the cutover each live mark becomes the crop's state, its revision one past the live one, with
+  an event recording it. The marks are recomputed from `seen` and `skips` by the old triggers' rules
+  (current box, submission not undone, two or more skippers for `hard`) and compared with every live
+  `unit_marks` row; where they differ, the live mark is moved.
 - `favourites(user, crop, at)`.
 - The claim ledger keeps its tables. A claim on a crop gains `crop INTEGER` and `cut INTEGER` beside its
   `subject`; crop evidence becomes `(crop, cut)`. `current_claims` is translated row for row, then the
   resolver runs over the moved ledger and must produce the same rows. `rejections`,
   `assertion_premises` and `corpus_follow` are created empty for the features that write them.
   `form_marks`, which no part of the site reads, is not moved.
-- `form_decisions` gains `crops` (a JSON list of integers) beside its `units`.
+- `form_decisions` gains `crops` (a JSON list of integers) beside its `units`. A decision lists its
+  cluster's glyphs as they were when it was made; `units` keeps that list, and `crops` names the ones
+  that still exist. 315 decisions name 9,537 crops since renumbered or deleted, which `crops` leaves
+  out (no redirect is followed).
 - `suspects(crop INTEGER PRIMARY KEY, p, reads_as, label, box)` and `shapes(crop INTEGER PRIMARY KEY,
   shape_order)`: the quiz selects and orders crops by them in SQL, so they stay tables, written by the
   publisher from catalogue tables of the same names.
@@ -132,4 +146,4 @@ of normal use, then is deleted.
 - Personal data sits apart in a database of a few megabytes; account deletion spans two databases and
   runs as a retryable job.
 - `unit_marks`, `crop_versions` and the `units`-keyed triggers are gone; their information lives in
-  `reviews.mark`, the bundles' `cuts` and the publisher.
+  the crops' states, the bundles' `cuts` and the publisher.
