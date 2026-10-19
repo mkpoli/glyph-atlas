@@ -67,8 +67,9 @@ class FakeD1:
             return []
         return [dict(r) for r in db.execute(sql)]
 
-    def upload(self, files):
+    def upload(self, files, prefix="v3/pages/"):
         self.uploaded += [f.name for f in files]
+        self.prefixes = getattr(self, "prefixes", []) + [prefix] * len(files)
 
 
 @pytest.fixture
@@ -91,7 +92,7 @@ def layout(tmp_path, monkeypatch):
                  [("book:a", "witness", "printed", 1700, 1700, "year", "1700", "single")])
     write_source(tmp_path, "characters", ("code_point", "character", "name", "head"), [])
     write_source(tmp_path, "aliases", ("query", "code_point", "rank"), [])
-    for name in ("build", "publish"):
+    for name in ("build", "publish", "media_map"):
         sys.modules.pop(name, None)
     build = importlib.import_module("build")
     build.main()

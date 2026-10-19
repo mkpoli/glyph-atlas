@@ -82,6 +82,16 @@ codes of the `codes` table. It runs after a publish, under the same lock, and re
 is unfinished or while the database holds review events, which it cannot absorb yet. Each run costs
 one D1 row and 258 R2 objects.
 
+## Image key map
+
+`media_map.py <media.sqlite>` (dry run with `--dry-run`) merges a `media` table into the image key
+map: `v3/media/<first three hex digits>.json.gz` in R2, each image key's pack, offset and size, with
+local copies under `out/media/`. A key mapped to another place stops the run before anything is
+written. Changed shards are listed in `out/media/unsent` until they are uploaded, so an interrupted
+run's shards go with the next. A publish whose catalogue has a `media` table adds its images the same
+way and uploads them before its bundles. The first map comes from the live `media` table:
+5,271,887 images in 4,096 shards, 354 MB.
+
 ## Not in the new databases yet
 
 These stay in the live database until cutover, when they move with integer crop ids or become R2
