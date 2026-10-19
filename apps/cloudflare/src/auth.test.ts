@@ -22,12 +22,15 @@ function setup(origin = 'https://glyphatlas.org') {
   for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
   let code = '';
   const statements: string[] = [];
+  // SIGN_IN_MAIL's two a minute, by key.
+  const sent = new Map<string, number>();
   const env = { DB: d1(db, statements), BETTER_AUTH_SECRET: 'auth-test-secret-auth-test-secret-0123', MAIL_FROM: 'sign-in@example.org',
-    EMAIL: { send: async (mail: { subject: string }) => { code = mail.subject.match(/\d{6}/)?.[0] ?? '' } } } as unknown as Env;
+    EMAIL: { send: async (mail: { subject: string }) => { code = mail.subject.match(/\d{6}/)?.[0] ?? '' } },
+    SIGN_IN_MAIL: { limit: async ({ key }: { key: string }) => { sent.set(key, (sent.get(key) ?? 0) + 1); return { success: sent.get(key)! <= 2 } } } } as unknown as Env;
   const handler = auth(env, origin).handler, jar = new Map<string, string>();
-  const call = async (path: string, body: unknown) => {
+  const call = async (path: string, body: unknown, address = '192.0.2.10') => {
     const response = await handler(new Request(origin + '/api/auth' + path, { method: 'POST', body: JSON.stringify(body), headers: {
-      origin, 'content-type': 'application/json', 'cf-connecting-ip': '192.0.2.10', cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') } }));
+      origin, 'content-type': 'application/json', 'cf-connecting-ip': address, cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') } }));
     for (const cookie of response.headers.getSetCookie()) { const [k, v] = cookie.split(';')[0].split(/=(.*)/); jar.set(k, v) }
     return response.status;
   };
@@ -55,5 +58,38 @@ describe('the auth tables', () => {
     expect(await call('/email-otp/send-verification-otp', { email: 'reader@example.org', type: 'sign-in' })).toBe(200);
     expect(statements.length).toBeGreaterThan(0);
     expect(statements.filter(sql => /pragma_table_info|sqlite_master|PRAGMA/i.test(sql))).toEqual([]);
+  });
+});
+
+describe('sign-in codes to one address', () => {
+  it('are two a minute whichever network asks, and a refused request keeps the code sent', async () => {
+    const { call, code } = setup('https://mail.glyphatlas.org');
+    const email = 'Reader@Example.org';
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'sign-in' }, '192.0.2.20')).toBe(200);
+    expect(await call('/email-otp/send-verification-otp', { email: email.toLowerCase(), type: 'sign-in' }, '198.51.100.7')).toBe(200);
+    const last = code();
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'sign-in' }, '203.0.113.9')).toBe(429);
+    expect(await call('/email-otp/send-verification-otp', { email: 'other@example.org', type: 'sign-in' }, '203.0.113.9')).toBe(200);
+    expect(await call('/sign-in/email-otp', { email, otp: last }, '203.0.113.9')).toBe(200);
+  });
+});
+
+describe('requests that mail no sign-in code', () => {
+  it('leave the address its two a minute', async () => {
+    const { call } = setup('https://refused.glyphatlas.org');
+    const email = 'reader@example.org';
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'forget-password' }, '192.0.2.1')).toBe(400);
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'change-email' }, '192.0.2.2')).toBe(400);
+    expect(await call('/email-otp/send-verification-otp', { email: ' ' + email, type: 'sign-in' }, '192.0.2.3')).toBe(400);
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'sign-in' }, '192.0.2.4')).toBe(200);
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'sign-in' }, '192.0.2.5')).toBe(200);
+  });
+  it('find the other routes that mail a code off', async () => {
+    const { call } = setup('https://routes.glyphatlas.org');
+    const email = 'reader@example.org';
+    expect(await call('/email-otp/send-verification-otp', { email, type: 'sign-in' })).toBe(200);
+    for (const path of ['/email-otp/request-password-reset', '/forget-password/email-otp', '/email-otp/reset-password',
+      '/email-otp/request-email-change', '/email-otp/change-email'])
+      expect(await call(path, { email, newEmail: 'other@example.org', otp: '000000', password: 'x'.repeat(12) })).toBe(404);
   });
 });

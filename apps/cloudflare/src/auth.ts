@@ -3,7 +3,7 @@
 // The journal stays append-only. Its `actor` column holds whatever id wrote the row, and `actors` says
 // which user each of those ids now belongs to.
 import { betterAuth } from 'better-auth';
-import { APIError } from 'better-auth/api';
+import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { admin, anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
 import { MAIL, signInMail } from './mail';
@@ -111,6 +111,24 @@ function build(env: Env, origin: string) {
           },
         },
       },
+    },
+    // A code by mail signs in and does nothing else: no passwords to reset, and an address is changed
+    // by connecting another account, so every other route that mails a code is off.
+    disabledPaths: ['/email-otp/request-password-reset', '/forget-password/email-otp', '/email-otp/reset-password',
+      '/email-otp/request-email-change', '/email-otp/change-email'],
+    hooks: {
+      // The address a sign-in code goes to is held to SIGN_IN_MAIL before a code is made: a refused
+      // request leaves the code already sent in place. The address is lower-cased as the plugin does,
+      // so only a request that names it exactly counts against it, and the limiter is keyed by its hash.
+      before: createAuthMiddleware(async ctx => {
+        if (ctx.path !== '/email-otp/send-verification-otp') return;
+        if (ctx.body?.type !== 'sign-in') throw new APIError('BAD_REQUEST', { message: 'Invalid OTP type' });
+        if (typeof ctx.body.email !== 'string') return;
+        const key = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ctx.body.email.toLowerCase())))]
+          .map(b => b.toString(16).padStart(2, '0')).join('');
+        const { success } = await env.SIGN_IN_MAIL.limit({ key });
+        if (!success) throw new APIError('TOO_MANY_REQUESTS', { message: 'A code was just sent to this address. Wait a minute and try again.' });
+      }),
     },
     plugins: [
       emailOTP({
