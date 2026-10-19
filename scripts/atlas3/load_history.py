@@ -25,6 +25,7 @@ import fcntl
 import gzip
 import hashlib
 import json
+import shutil
 import sqlite3
 import sys
 
@@ -85,18 +86,42 @@ def migrate(history, atlas, mirror, dry):
     print("migration 0003 applied", flush=True)
 
 
+# D1 refuses a statement over 100 KB. A row past STATEMENT_BYTES goes in with its long text columns
+# empty, and each is then appended in pieces of CHUNK characters (at most four bytes each), in the same
+# part, so D1 holds the value whole.
+STATEMENT_BYTES, LONG_BYTES, CHUNK = 90_000, 10_000, 20_000
+
+
+def row_statements(table, cols, keys, r):
+    names = ",".join(f'"{c}"' for c in cols)
+    insert = f'INSERT INTO "{table}"({names}) VALUES({",".join(lit(v) for v in r)});'
+    if len(insert.encode()) <= STATEMENT_BYTES:
+        return [insert]
+    long = {i for i, v in enumerate(r) if isinstance(v, str) and len(lit(v).encode()) > LONG_BYTES}
+    statements = [f'INSERT INTO "{table}"({names}) VALUES({",".join("\'\'" if i in long else lit(v) for i, v in enumerate(r))});']
+    where = " AND ".join(f'"{c}" = {lit(r[cols.index(c)])}' for c in keys)
+    for i in sorted(long):
+        for start in range(0, len(r[i]), CHUNK):
+            statements.append(f'UPDATE "{table}" SET "{cols[i]}" = "{cols[i]}" || {lit(r[i][start:start + CHUNK])} WHERE {where};')
+    if max(len(st.encode()) for st in statements) > STATEMENT_BYTES:
+        sys.exit(f"a row of {table} needs a statement over {STATEMENT_BYTES} bytes even in pieces")
+    return statements
+
+
 def rows(history):
-    """INSERT statements for every history row, in groups."""
+    """INSERT statements for every history row, in groups; a row's statements stay in one group."""
     groups = []
     for table in TABLES:
-        cols = [r[1] for r in history.execute(f'PRAGMA table_info("{table}")')]
+        info = list(history.execute(f'PRAGMA table_info("{table}")'))
+        cols = [r[1] for r in info]
+        keys = [r[1] for r in sorted(info, key=lambda r: r[5]) if r[5]]
         names = ",".join(f'"{c}"' for c in cols)
         batch = []
         for r in history.execute(f'SELECT {names} FROM "{table}" ORDER BY rowid' if table not in
                                  ("seen", "skips", "favourites", "assertion_evidence", "assertion_premises", "current_claims")
                                  else f'SELECT {names} FROM "{table}"'):
-            batch.append(f'INSERT INTO "{table}"({names}) VALUES({",".join(lit(v) for v in r)});')
-            if len(batch) == GROUP:
+            batch += row_statements(table, cols, keys, r)
+            if len(batch) >= GROUP:
                 groups.append(batch)
                 batch = []
         if batch:
@@ -167,9 +192,27 @@ def cuts_catalogue():
     print(f"{len(cuts)} crops with an earlier box -> {path}; publish it with publish.py", flush=True)
 
 
+def built(final, label, groups, extra=None):
+    """Write a run's parts under a temporary name and rename the folder once complete, so a folder
+    that exists holds every part; stamps name the final folder. None when it was already built."""
+    if final.exists():
+        return None
+    tmp = final.with_name(final.name + ".building")
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    n = write_parts(tmp, label, groups)
+    for part in tmp.glob("*.sql"):
+        part.write_text(part.read_text().replace(f"'{tmp.name}.{label}.", f"'{final.name}.{label}-"))
+    for file, text in (extra or {}).items():
+        (tmp / file).write_text(text)
+    tmp.rename(final)
+    return n
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="write the parts and the catalogue, send nothing")
+    parser.add_argument("--replace", action="store_true", help="clear the rows of another, partly loaded translation first")
     args = parser.parse_args()
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
@@ -182,16 +225,19 @@ def main():
     migrate(history, atlas, mirror, args.dry_run)
     name = "history-" + hashlib.sha256((OUT / "history.sqlite").read_bytes()).hexdigest()[:12]
     run = OUT / "history-load" / name
-    if not run.exists():
-        run.mkdir(parents=True)
-        tmp = run / "build"
-        tmp.mkdir()
-        n = write_parts(tmp, "rows", rows(history))
-        for part in sorted(tmp.glob("*.sql")):
-            # Stamps name this run, so a part is applied once.
-            part.write_text(part.read_text().replace("'build.rows.", f"'{name}.rows-"))
-            part.rename(run / part.name)
-        tmp.rmdir()
+    # A load of another translation, started and not this one, would collide on ids.
+    others = [r[0] for r in atlas.execute("SELECT stamp FROM imports WHERE stamp LIKE 'history-%' AND stamp NOT LIKE ?",
+                                          (f"{name}%",))]
+    if others and not args.replace:
+        sys.exit(f"another translation is partly loaded ({others[0]}); --replace clears its rows first")
+    if others and not args.dry_run:
+        if any(".marks-" in o for o in others):
+            sys.exit("another translation's marks are set; its crops' states must be put back by hand first")
+        clear = run.parent / f"{name}-clear"
+        built(clear, "clear", [[f'DELETE FROM "{t}";' for t in reversed(TABLES)]])
+        deliver(clear, atlas)
+    n = built(run, "rows", rows(history) if not run.exists() else [])
+    if n is not None:
         print(f"{n} parts of history rows -> {run}", flush=True)
     if args.dry_run:
         cuts_catalogue()
@@ -203,11 +249,7 @@ def main():
     marked = OUT / "history-load" / f"{name}-marks"
     if not marked.exists():
         groups, left = marks(history, atlas)
-        marked.mkdir()
-        write_parts(marked, "marks", groups)
-        for part in sorted(marked.glob("*.sql")):
-            part.write_text(part.read_text().replace(f"'{marked.name}.marks.", f"'{marked.name}.marks-"))
-        (marked / "left").write_text(str(left))
+        built(marked, "marks", groups, {"left": str(left)})
     deliver(marked, atlas)
     set_ = sum(p.read_text().count("UPDATE crops") for p in marked.glob("*.sql"))
     print(f"history loaded; {set_} marks set, {(marked / 'left').read_text()} left on crops no longer pending", flush=True)

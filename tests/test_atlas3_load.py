@@ -3,7 +3,8 @@ import json
 import sqlite3
 import sys
 
-from test_atlas3_history import A1, event, history, sources
+import pytest
+from test_atlas3_history import A1, COLUMNS, event, history, sources
 from test_atlas3_publish import crops, ids, layout  # noqa: F401 -- `layout` is the fixture
 
 
@@ -50,3 +51,32 @@ def test_a_dry_run_changes_nothing(layout, monkeypatch):  # noqa: F811
     load(publish, remote, monkeypatch, "--dry-run")
     assert remote.dbs["glyph-atlas-v3"].execute("SELECT count(*) FROM actors").fetchone() == (0,)
     assert not sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT 1 FROM codes WHERE key='seen'").fetchone()
+
+
+def test_a_row_past_d1s_statement_limit_arrives_whole(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    big = json.dumps({"input": {"note": "あ" * 120_000}})
+    sources(root, submissions=[("u1:s1", "u1", big, "{}", "2026-10-01T00:00:02Z", 0)])
+    assert history(monkeypatch, root)[0] == 0
+    load(publish, remote, monkeypatch)
+    parts = list((root / "out" / "history-load").glob("history-*/rows-*.sql"))
+    assert max(len(line.encode()) for p in parts for line in p.read_text().splitlines()) < 100_000
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT request FROM submissions WHERE key='u1:s1'").fetchone() == (big,)
+
+
+def test_another_translation_partly_loaded_needs_replace(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    sources(root)
+    assert history(monkeypatch, root)[0] == 0
+    module = importlib.import_module("load_history")
+    # Rows of one translation loaded, its marks not yet set.
+    monkeypatch.setattr(module, "marks", lambda history, atlas: ([], 0))
+    load(publish, remote, monkeypatch)
+    for table in COLUMNS:
+        (root / f"source-{table}.sqlite").unlink()
+    sources(root, favourites=[("user-1", "ex:a1", "2026-10-01T00:00:03Z")])
+    assert history(monkeypatch, root)[0] == 0
+    with pytest.raises(SystemExit):
+        load(publish, remote, monkeypatch)
+    load(publish, remote, monkeypatch, "--replace")
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT count(*) FROM favourites").fetchone() == (1,)
