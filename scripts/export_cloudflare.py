@@ -204,18 +204,25 @@ def page_rows(db, published, units, pages, documents):
     db.commit()
 
 
+def freeze(dataset: Path, frozen: Path) -> None:
+    """Copy what the export reads of `dataset` to `frozen`, so the dataset can change while it runs."""
+    # SQLite backup includes the WAL atomically; readers never copy a live WAL piecemeal.
+    for name in ("review.sqlite", "feedback-receipts.sqlite"):
+        if (dataset / name).exists():
+            with sqlite3.connect(dataset / name) as src, sqlite3.connect(frozen / name) as dst:
+                src.backup(dst)
+    # The crop geometry flags (`glyph_atlas.ainu_geometry`) are read beside the tables they describe.
+    for path in [*dataset.glob("*.parquet"), *dataset.glob(ainu_geometry.FILE)]:
+        shutil.copy2(path, frozen / path.name)
+
+
 def export(dataset: Path, output: Path, *, resume=False):
     output.mkdir(parents=True, exist_ok=resume)
     frozen = output / "source"
     fresh = not frozen.exists()
     frozen.mkdir(exist_ok=resume)
-    # SQLite backup includes the WAL atomically; readers never copy a live WAL piecemeal.
-    for name in ("review.sqlite", "feedback-receipts.sqlite"):
-        if fresh and (dataset / name).exists():
-            with sqlite3.connect(dataset / name) as src, sqlite3.connect(frozen / name) as dst:
-                src.backup(dst)
-    for path in dataset.glob("*.parquet") if fresh else []:
-        shutil.copy2(path, frozen / path.name)
+    if fresh:
+        freeze(dataset, frozen)
     store = Store(frozen)
     media = MediaCache(corpus_root=Path("work"))
     corpus = CorpusAPI("work", "work/corpus-index", autobuild=False)
