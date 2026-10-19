@@ -223,7 +223,9 @@ revision.
 
 Vectorize allows 20M vectors per index. Vectors are sharded by page-id range, and growth opens a
 new shard. A vector's metadata carries its kind, character and style, with their metadata indexes created
-before the first insert, so confirming a candidate updates metadata and moves nothing. Search queries the shards in parallel and merges, then checks each result against `crops`.
+before the first insert. Vectorize changes metadata only by an upsert that resends the vector, so
+confirming a candidate is an upsert of its vector, from the publisher's copy, in the same shard. A change
+is queryable within about two minutes. Search queries the shards in parallel and merges, then checks each result against `crops`.
 A re-cut overwrites the crop's vector.
 
 ### Publication
