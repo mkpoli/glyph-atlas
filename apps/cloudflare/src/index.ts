@@ -6,6 +6,7 @@ import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
 import { formsFor, setForm, withForms } from './cropForms';
+import { setWord, withWords, wordChoices } from './cropWords';
 import { categoryOf, idsCharacter, isGugyeol } from './category';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
@@ -284,9 +285,9 @@ async function cite(env: Env, ctx: ExecutionContext, url: URL, kind: string, raw
   ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { ...headers, 'cache-control': `public, max-age=${CITE_TTL}` } })));
   return new Response(body, { headers: { ...headers, 'cache-control': 'no-cache' } });
 }
-// A crop's record for its inspector, with its form, its book's dates and the claims they rest on.
+// A crop's record for its inspector, with its form, word, book's dates and the claims they rest on.
 const inspected = async (env: Env, row: UnitRow): Promise<Json> => {
-  const found = (await withForms(env, [record(row)]))[0];
+  const found = (await withWords(env, await withForms(env, [record(row)])))[0];
   const document = row.document ?? found.source?.document_id ?? null;
   const honkoku = honkokuPage(found, document);
   return { ...found, ...(honkoku ? { honkoku_url: honkoku } : {}), ...await documentDates(env, document) };
@@ -2512,7 +2513,7 @@ const routes = {
           if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
           return json(await submit(env,request,me.id,'@batch'));
         }
-        const acted=path.match(/^\/atlas\/claims\/([^/]+)\/actions$/),picked=path.match(/^\/atlas\/characters\/([^/]+)\/form$/);
+        const acted=path.match(/^\/atlas\/claims\/([^/]+)\/actions$/),picked=path.match(/^\/atlas\/characters\/([^/]+)\/(form|word)$/);
         if(path==='/atlas/claims'||acted||picked){
           // A claim, an action or a crop's form is a few small rows, and one address is held to a rate.
           const {success}=await env.CLAIMS.limit({key:request.headers.get('cf-connecting-ip')??'local'});
@@ -2520,7 +2521,7 @@ const routes = {
           const input=await body(request);
           let target='';
           try{target=decodeURIComponent((acted??picked)?.[1]??'')}catch{throw new Problem(404,acted?'No such claim.':'This character is not in the published collection.')}
-          if(picked)return json(await setForm(env,input,target,me.id,{...ledgerTools,literal}));
+          if(picked)return json(picked[2]==='word'?await setWord(env,input,target,me.id,ledgerTools):await setForm(env,input,target,me.id,{...ledgerTools,literal}));
           return json(acted?await actOnClaim(env,input,target,me.id,me.admin,ledgerTools):await writeClaim(env,input,me.id,ledgerTools));
         }
         const undone=path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
@@ -2609,6 +2610,7 @@ const routes = {
         }
         return json(await inspected(env,row));
       }
+      if(path==='/layers/word-choices')return json({items:await wordChoices(env,text(q.get('q')??'',128,'reading')??'',[...(q.get('c')??'')].slice(0,4))});
       if(path==='/layers/suggest')return json(await suggest(env,q));
       if(path==='/layers/structure')return json(await structureOf(env,ctx,url.origin,q.get('c')||''));
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}

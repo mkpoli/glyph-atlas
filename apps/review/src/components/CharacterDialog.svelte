@@ -3,6 +3,7 @@
   import ProductionBadge, { productionLabel } from './ProductionBadge.svelte'
   import SourceCredit from './SourceCredit.svelte'
   import StyleField from './StyleField.svelte'
+  import CropWord from './CropWord.svelte'
   import CropForm from './CropForm.svelte'
   import CropTitle from './CropTitle.svelte'
   import ReviewState from './ReviewState.svelte'
@@ -95,7 +96,7 @@
     try {
       const result = preloaded ?? await readCrop(target)
       if (closed || current !== generation) return
-      // A record the dialog already moved past (a style saved meanwhile) is not put back.
+      // A record the dialog already moved past (a field saved meanwhile) is not put back.
       if (data?.id === result.id && data.revision > result.revision) { fresh = true; return }
       if (result.image !== data?.image) loaded = false
       data = result; fresh = true
@@ -274,11 +275,11 @@
     } catch (e) { if (!closed && current === generation) error = e.message }
     finally { busy = false }
   }
-  // A style saved for one crop may come back after the dialog has moved to another; the crop is
+  // A field saved for one crop may come back after the dialog has moved to another; the crop is
   // marked as changed either way, and the record on screen is replaced only when it is that crop.
-  function styled(result) {
+  function fieldSaved(result) {
     changed?.(result.id, result)
-    // A style leaves the decision as it was.
+    // Style and word claims leave the decision as it was.
     const decided = inspector.decided(result.id)
     if (decided?.revision != null && decided.revision === data?.revision && result.id === data.id) inspector.remember(result.id, { ...decided, revision: result.revision })
     if (!closed && result.id === data?.id) data = result
@@ -333,8 +334,9 @@
         <div class="credit-beside"><SourceCredit item={data} /></div>
       </div>
       <div class="inspector-right">
-        <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={styled} /></div>
+        <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable={!onVerdict} disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} /></div>
         <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<ReviewState tone="waiting" text={t('character.crop.pending')} />{:else if data.state === 'checked' || repairOf(data)?.kind === 'verified'}<ReviewState tone="checked" text={t('state.checked')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'hard'}<ReviewState tone="waiting" text={t('state.hard')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
+        {#if !onVerdict && Object.hasOwn(data, 'word')}{#key data.id + ':' + data.crop_version}<CropWord item={data} disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} />{/key}{/if}
         {#if !onVerdict && (issue === 'character' || issue === 'crop')}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
         {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
         <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}

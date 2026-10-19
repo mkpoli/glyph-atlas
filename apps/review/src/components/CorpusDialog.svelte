@@ -5,6 +5,7 @@
   import ProductionBadge, { productionLabel } from './ProductionBadge.svelte'
   import SourceCredit from './SourceCredit.svelte'
   import CropForm from './CropForm.svelte'
+  import CropWord from './CropWord.svelte'
   import CropTitle from './CropTitle.svelte'
   import ReviewState from './ReviewState.svelte'
   import FormChips from './FormChips.svelte'
@@ -129,6 +130,7 @@
       <div class="inspector-right">
         <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}</div>
         <div class="inspector-title">{#if data.identity_status !== 'unassigned'}<CropTitle char={data.written_character ?? data.label} script={data.script} />{:else}<h2 class="unassigned-title copyable">{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span><CopyValue value={graphemeChar(data)} />{/if}</h2>{/if}{#if data.identity_status !== 'unassigned'}<ZiLink character={data.written_character ?? data.label} />{/if}{#if data.needs_segmentation}<ReviewState tone="waiting" text={t('corpus.state.needsSplitting')} />{:else if data.state === 'checked'}<ReviewState tone="checked" text={t('corpus.state.checkedHere')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'stale'}<ReviewState tone="waiting" text={t('corpus.state.sourceChanged')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
+        {#if data.identity_status !== 'unassigned' && Object.hasOwn(data, 'word')}{#key data.id + ':' + data.crop_version}<CropWord item={data} disabled={busy || !fresh} working={value => busy = value} saved={record => { changed?.(record.id, record); if (!closed && record.id === data?.id) data = record }} />{/key}{/if}
         <!-- What the source itself labelled the glyph, shown when it is not what the crop now reads. -->
         {#if data.needs_segmentation || data.identity_status === 'unassigned' || (data.written_character ?? data.label) !== data.source_label}<p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: sourceName })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if data.identity_status !== 'unassigned' && (data.written_character ?? data.label) !== data.source_label}<span> → <b lang="ja">{data.written_character ?? data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>{/if}
         {#if data.identity_status === 'unassigned'}
