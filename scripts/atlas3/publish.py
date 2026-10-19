@@ -21,6 +21,7 @@ present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`.
 
 One publish runs at a time (a lock on out/mirror.lock).
 """
+import argparse
 import fcntl
 import gzip
 import json
@@ -139,6 +140,7 @@ class Mirror:
           CREATE TABLE IF NOT EXISTS book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
           CREATE TABLE IF NOT EXISTS run_vertical(first INTEGER, size INTEGER, vertical INTEGER, PRIMARY KEY(first, size)) WITHOUT ROWID;
           CREATE TABLE IF NOT EXISTS pending(run TEXT PRIMARY KEY);
+          CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
         """)
         self.atlas = sqlite3.connect(OUT / "atlas.sqlite")
         self.atlas.row_factory = sqlite3.Row
@@ -152,7 +154,7 @@ class Mirror:
         self.head, self.runs_sql = [], []
         self.page_sql = defaultdict(list)
         self.touched_pages = defaultdict(dict)
-        self.guarded = []
+        self.guarded, self.stale, self.relabelled, self.runs_seen = [], [], [], set()
 
     def has(self, table, key, value):
         return self.atlas.execute(f"SELECT 1 FROM {table} WHERE {key}=?", (value,)).fetchone() is not None
@@ -248,6 +250,8 @@ class Mirror:
             self.emit("crops", CROP_COLS, tuple(row[c] for c in CROP_COLS), page=pid)
         else:
             speaks = review_columns and catalogue_revision >= old["revision"]
+            if review_columns and not speaks:
+                self.stale.append(cid)
             changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle") and old[c] != row[c]
                        and (c not in REVIEW_OWNED or speaks)]
             own = [c for c in changed if c not in REVIEW_OWNED]
@@ -263,6 +267,8 @@ class Mirror:
                 self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in reviewed)} "
                                           f"WHERE id={cid} AND revision={old['revision']};")
                 self.guarded.append(cid)
+            if "char" in changed:
+                self.relabelled.append(cid)
             if changed:
                 self.atlas.execute(f"UPDATE crops SET {','.join(f'{c}=?' for c in changed)} WHERE id=?",
                                    [row[c] for c in changed] + [cid])
@@ -324,11 +330,14 @@ def deliver(m, run):
             local.executescript("BEGIN;\n" + part.read_text() + "COMMIT;\n")
         if name == "atlas" and "read back" not in journal(run):
             # A guarded change D1 refused (the crop was reviewed meanwhile) leaves D1's row; take it.
-            guarded = json.loads((run / "guarded.json").read_text())
+            guarded, refused = json.loads((run / "guarded.json").read_text()), []
             for i in range(0, len(guarded), 200):
                 chunk = guarded[i:i + 200]
                 found = {r["id"]: r for r in query(database, f"SELECT * FROM crops WHERE id IN ({','.join(map(str, chunk))})")}
                 for cid in chunk:
+                    local = m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
+                    if (cid in found) != (local is not None) or (local and found[cid]["revision"] != local["revision"]):
+                        refused.append(cid)
                     if cid in found:
                         r = found[cid]
                         m.atlas.execute(f"INSERT OR REPLACE INTO crops({','.join(CROP_COLS)}) VALUES({','.join('?' * len(CROP_COLS))})",
@@ -336,9 +345,16 @@ def deliver(m, run):
                     else:
                         m.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
             m.atlas.commit()
+            (run / "refused-by-d1.json").write_text(json.dumps(refused))
+            if refused:
+                print(f"{len(refused)} changes kept D1's newer review instead (ids in {run.name}/refused-by-d1.json)", flush=True)
             mark(run, "read back")
     for path in (run / "pages").iterdir():
         shutil.copy2(path, OUT / "pages" / path.name)
+        page, rev = path.name.split(".")[0].split("-")
+        for older in (OUT / "pages").glob(f"{page}-*.json.gz"):
+            if int(older.name.split(".")[0].split("-")[1]) < int(rev):
+                older.unlink()
     m.ids.execute("DELETE FROM pending WHERE run=?", (run.name,))
     m.ids.commit()
     mark(run, "done")
@@ -351,11 +367,26 @@ def finish_unfinished(m):
 
 
 def main():
-    catalogue, dry = Path(sys.argv[1]), "--dry-run" in sys.argv
+    parser = argparse.ArgumentParser(description="Publish a catalogue into the new layout.")
+    parser.add_argument("catalogue", type=Path)
+    parser.add_argument("--dry-run", action="store_true", help="write the parts and bundles, publish nothing")
+    args = parser.parse_args()
+    catalogue, dry = args.catalogue, args.dry_run
     (OUT / "publish").mkdir(parents=True, exist_ok=True)
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
-    fcntl.flock(lock, fcntl.LOCK_EX)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("another publish holds out/mirror.lock; waiting for it", flush=True)
+        fcntl.flock(lock, fcntl.LOCK_EX)
     m = Mirror()
+    # The id allocation belongs to one build of the databases; a mirror from another build would hand
+    # live ids to other crops.
+    build_id = m.ids.execute("SELECT value FROM meta WHERE key='build'").fetchone()
+    if not build_id:
+        sys.exit("out/mirror.sqlite names no build; it is not the mirror of glyph-atlas-v3")
+    if not dry and not applied("glyph-atlas-v3", f"build:{build_id[0]}"):
+        sys.exit(f"glyph-atlas-v3 was not loaded from build {build_id[0]}; this mirror does not belong to it")
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
@@ -390,10 +421,11 @@ def main():
                 if not path.exists():
                     sys.exit(f"page {pid} has revision {p['rev']} but no bundle {path.name}; refusing to rebuild it from nothing")
                 bundles[pid] = json.loads(gzip.decompress(path.read_bytes()))
+            bundles[pid]["by_slot"] = {e["slot"]: e for e in bundles[pid]["crops"]}
         return bundles[pid]
 
     def entry(cid):
-        return next((e for e in bundle_of(cid // PAGE)["crops"] if e["slot"] == cid % PAGE), {})
+        return bundle_of(cid // PAGE)["by_slot"].get(cid % PAGE, {})
 
     # Identity checks a publish without the slot matcher can make.
     columns = "id, origin, character, visual_group, production, category, state, revision, quiz, document, style, data"
@@ -426,6 +458,18 @@ def main():
                 if not e.get("retired") and e["id"] not in retiring and iou(data["box"], e.get("box")) >= 0.5:
                     refused.append(f"{r['id']}: new box overlaps published crop {e['id']} (IoU {iou(data['box'], e['box']):.2f})")
                     break
+    # New boxes against each other, page by page.
+    fresh = defaultdict(list)
+    for r in units:
+        if r["origin"] == "local" and m.known(r["id"]) is None:
+            data = json.loads(r["data"])
+            if data.get("box"):
+                fresh[data.get("page_id") or f"book:{r['document']}"].append((r["id"], data["box"]))
+    for boxes in fresh.values():
+        for i, (a, box_a) in enumerate(boxes):
+            for b, box_b in boxes[i + 1:]:
+                if iou(box_a, box_b) >= 0.5:
+                    refused.append(f"{a} and {b}: two new boxes on one glyph (IoU {iou(box_a, box_b):.2f})")
     if refused:
         report = OUT / "publish" / f"refused-{time.strftime('%Y%m%dT%H%M%S')}.txt"
         report.write_text("\n".join(refused) + "\n")
@@ -467,8 +511,9 @@ def main():
             if cid is None:
                 # New corpus glyphs fill the newest synthetic page of their source and book, then open the next.
                 prefix = f"corpus:{source}:{r['document'] or ''}:"
-                last = m.ids.execute("SELECT key, next_slot FROM pages WHERE substr(key, 1, ?) = ? ORDER BY id DESC LIMIT 1",
-                                     (len(prefix), prefix)).fetchone()
+                last = m.ids.execute("SELECT key, next_slot FROM pages WHERE substr(key, 1, ?) = ? "
+                                     "AND substr(key, ? + 1) NOT GLOB '*[^0-9]*' ORDER BY id DESC LIMIT 1",
+                                     (len(prefix), prefix, len(prefix))).fetchone()
                 key = last[0] if last and last[1] < CORPUS_PAGE else f"{prefix}{int(last[0].rsplit(':', 1)[1]) + 1 if last else 0}"
                 cid = m.allocate(r["id"], key, r["document"] or source)
             crop_ids[r["id"]] = cid
@@ -486,7 +531,7 @@ def main():
 
     # Runs: those starting at this catalogue's crops follow it; those touching a retired crop go.
     runs_note = ""
-    if crop_ids and "unit_ngrams" in tables or retired:
+    if (crop_ids and "unit_ngrams" in tables) or retired:
         want, missing = {}, 0
         if "unit_ngrams" in tables:
             for r in src.execute("SELECT * FROM unit_ngrams"):
@@ -503,6 +548,7 @@ def main():
                     continue
                 key = (r["size"], r["graphemes"] or "", r["hand_order"], shuffle(first), first)
                 want[key] = (members[1], members[2] if len(members) > 2 else None, m.book(r["document"]), r["vertical"])
+                m.runs_seen.add(key)
         if missing:
             sys.exit(f"{missing} runs name crops with no id; nothing published")
         # A crop's runs are replaced only when the catalogue lists runs for it: an incomplete table
@@ -539,6 +585,18 @@ def main():
                                   "ON CONFLICT(size,graphemes) DO UPDATE SET n=n+excluded.n, down=down+excluded.down;")
                 m.runs_sql.append(f"DELETE FROM run_stats WHERE size={size} AND graphemes={lit(graphemes)} AND n<=0;")
         runs_note = f", {len(m.runs_sql)} run statements"
+    # Runs this catalogue cannot rebuild: a relabelled crop that is the second or third of a run
+    # anchored on a crop outside the catalogue keeps that run's old text until its first is published.
+    rebuilt = {k[4] for k in m.runs_seen}
+    behind = []
+    for i in range(0, len(m.relabelled), 500):
+        chunk = m.relabelled[i:i + 500]
+        marks = ",".join("?" * len(chunk))
+        behind += [r[0] for r in m.runs.execute(f"SELECT first FROM runs WHERE second IN ({marks}) OR third IN ({marks})", chunk + chunk)
+                   if r[0] not in rebuilt]
+    if behind:
+        (run / "runs-behind.json").write_text(json.dumps(sorted(set(behind))))
+        runs_note += f"; {len(set(behind))} runs keep an old text until their first crop is published"
 
     # Pages: those whose crops or facts changed get the next revision, the bundle merged onto the last.
     facts = {r["id"]: json.loads(r["data"]) for r in src.execute("SELECT id, data FROM pages")} if "pages" in tables else {}
@@ -550,7 +608,7 @@ def main():
     for pid, entries in m.touched_pages.items():
         p = m.atlas.execute("SELECT * FROM pages WHERE id=?", (pid,)).fetchone()
         previous = bundle_of(pid)
-        merged = {e["slot"]: e for e in previous["crops"]}
+        merged = dict(previous["by_slot"])
         touched = p["key"] in facts and previous.get("page") != facts[p["key"]]
         for slot, (new_entry, row_changed) in entries.items():
             new = {**merged.get(slot, {}), "slot": slot, **new_entry}
@@ -577,8 +635,12 @@ def main():
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))
     statements = sum(len(g) for g in groups)
+    (run / "stale.json").write_text(json.dumps(m.stale))
     print(f"{n} crops read, {statements} statements in {atlas_parts} parts{runs_note} in {runs_parts} parts, "
           f"{len(files)} pages -> {run}", flush=True)
+    if m.stale:
+        print(f"{len(m.stale)} crops have a newer review on the site than in this catalogue; their review columns were "
+              f"left as published (ids in {run.name}/stale.json)", flush=True)
     # The local copy takes the changes only from the part files, after D1 has taken them.
     m.atlas.rollback()
     m.runs.rollback()

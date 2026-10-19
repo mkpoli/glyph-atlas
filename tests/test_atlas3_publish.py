@@ -47,6 +47,9 @@ class FakeD1:
                     "glyph-atlas-v3-runs": sqlite3.connect(root / "out" / "atlas-runs.sqlite.remote")}
         for name, local in (("glyph-atlas-v3", "atlas.sqlite"), ("glyph-atlas-v3-runs", "atlas-runs.sqlite")):
             sqlite3.connect(root / "out" / local).backup(self.dbs[name])
+        build = sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
+        self.dbs["glyph-atlas-v3"].execute("INSERT INTO imports VALUES(?, 0)", (f"build:{build}",))
+        self.dbs["glyph-atlas-v3"].commit()
         self.uploaded = []
 
     def send(self, database, file, stamp):
@@ -99,6 +102,10 @@ def layout(tmp_path, monkeypatch):
 def run(publish, monkeypatch, path, *flags):
     monkeypatch.setattr(sys, "argv", ["publish.py", str(path), *flags])
     publish.main()
+
+
+def ids(root):
+    return dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))
 
 
 def crops(remote):
@@ -306,3 +313,59 @@ def test_a_publish_stopped_before_its_bundles_reached_r2_is_finished_by_the_next
     ids = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))
     assert ids["ex:new"] in crops(remote) and ids["ex:other"] in crops(remote)
     assert sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT count(*) FROM pending").fetchone() == (0,)
+
+
+def test_a_page_never_splits_across_parts(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    monkeypatch.setattr(publish, "PART_BYTES", 1)
+    new = [unit(f"ex:n{i}", f"hl:q{i % 3}", {"x": 0, "y": 20 * i, "w": 10, "h": 10}) for i in range(9)]
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", new))
+    run_dir = max((root / "out" / "publish").iterdir())
+    parts = sorted(run_dir.glob("atlas-*.sql"))
+    assert len(parts) > 1
+    for part in parts:
+        text = part.read_text()
+        for pid in {int(x.split(",")[0]) // (1 << 24) for x in text.split("INSERT INTO crops(")[1:] for x in [x.split("VALUES(")[1]]}:
+            assert f"UPDATE pages SET rev=1, next_slot=max(next_slot,3) WHERE id={pid};" in text
+    assert len(crops(remote)) == 4 + 9
+
+
+def test_a_new_corpus_glyph_stays_in_its_own_book(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    path = tmp_path / "corpus.sqlite"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.execute("INSERT INTO corpus_units VALUES('codh:x1','き',NULL,NULL,7,'corpus-0003.bin',0,100,'printed',0,'unassessed','codh:b:x',NULL)")
+    db.commit()
+    run(publish, monkeypatch, path)
+    pages = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT id, key FROM pages"))
+    assert pages[ids(root)["codh:x1"] // PAGE] == "corpus:codh:codh:b:x:0"
+
+
+def test_two_new_boxes_on_one_glyph_stop_the_publish(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    with pytest.raises(SystemExit):
+        run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:d1", "hl:p7", {"x": 0, "y": 0, "w": 10, "h": 10}),
+                                                                   unit("ex:d2", "hl:p7", {"x": 1, "y": 0, "w": 10, "h": 10})]))
+    assert "ex:d1" not in ids(root)
+
+
+def test_a_review_newer_on_the_site_than_in_the_catalogue_is_reported(layout, monkeypatch, tmp_path, capsys):
+    root, publish, remote = layout
+    a1 = ids(root)["ex:a1"]
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("UPDATE crops SET state=2, revision=5 WHERE id=?", (a1,))
+        db.commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10},
+                                                                     state="checked", revision=1)]))
+    assert "1 crops have a newer review on the site" in capsys.readouterr().out
+    assert crops(remote)[a1]["state"] == 2
+
+
+def test_a_mirror_from_another_build_is_refused(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    mirror = sqlite3.connect(root / "out" / "mirror.sqlite")
+    mirror.execute("UPDATE meta SET value='other' WHERE key='build'")
+    mirror.commit()
+    with pytest.raises(SystemExit):
+        run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:z", "hl:p8", {"x": 0, "y": 0, "w": 10, "h": 10})]))

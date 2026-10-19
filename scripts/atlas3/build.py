@@ -10,6 +10,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -84,7 +85,10 @@ def main():
       CREATE TABLE codes(field TEXT, key TEXT, code INTEGER, PRIMARY KEY(field, key)) WITHOUT ROWID;
       CREATE TABLE run_vertical(first INTEGER, size INTEGER, vertical INTEGER, PRIMARY KEY(first, size)) WITHOUT ROWID;
       CREATE TABLE book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
+      CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
     """)
+    # The build id ties this allocation to the databases loaded from it (load.sh writes it to D1).
+    mirror.execute("INSERT INTO meta VALUES('build', ?)", (time.strftime("%Y%m%dT%H%M%S"),))
     code = Codes({"state": STATE, "style": STYLE})
 
     # Graphemes: every character the site knows, with its family head.

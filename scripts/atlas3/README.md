@@ -12,7 +12,13 @@ Data lives in `work/atlas-v3/` (or `$ATLAS3_DIR`), outside the repository:
 - `out/atlas.sqlite`, `out/atlas-runs.sqlite`: local copies of the new databases;
 - `out/mirror.sqlite`: the id allocation (text id → integer crop id, page and book keys, codes),
   the only record of which number each crop has. Back it up after every change;
-- `out/pages/<page>-<rev>.json.gz`: page bundles.
+- `out/pages/<page>-<rev>.json.gz`: page bundles, the latest revision of each page;
+- `out/publish/<stamp>/`: each publish's parts, bundles and journal. A publish listed in the
+  mirror's `pending` table is finished by the next run, so its folder must stay until then.
+
+Publishing needs an rclone remote named `r2` (or `$ATLAS3_R2_REMOTE`) that reaches the site's R2
+account. A schema change is applied by hand to databases that are already loaded; `load.sh` only
+creates them.
 
 ## Steps
 
@@ -22,8 +28,9 @@ Data lives in `work/atlas-v3/` (or `$ATLAS3_DIR`), outside the repository:
    names its record's page, with its page and book, and every run has its crops. It refuses to run
    over an existing `out/mirror.sqlite`, since a rebuild renumbers every crop.
 3. `sample.py` compares random crops with their source records field by field.
-4. `load.sh` creates the tables, loads the rows in parts, then builds the indexes. A rerun skips the
-   parts of the same build that are already loaded.
+4. `load.sh` creates the tables, loads the rows in parts, then builds the indexes, and records the
+   build id in `imports`; `publish.py` refuses a mirror whose build the database does not name. A
+   rerun skips the parts already loaded, and refuses once anything has been published.
 
 ## Publishing into the new layout
 
@@ -73,7 +80,8 @@ answers:
 - character data (`characters` cards, `character_variants`, `character_derived`,
   `component_variants`, `han_ids`, `han_components`, `han_component_names`, `grapheme_writers`,
   `document_characters`, `corpus_documents`, `representations`);
-- the model votes in `units.visual`, and the text-id alias files.
+- the model votes in `units.visual`, and the text-id alias files;
+- family heads and search names for characters that first appear after the first build.
 
 Anything that changes in the live database after the copy reaches the new databases at cutover, from
 a fresh copy (`pull.py --fresh`).
