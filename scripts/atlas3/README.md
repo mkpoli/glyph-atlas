@@ -108,7 +108,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    `echo 1 | wrangler secret put WRITES_PAUSED` from `apps/cloudflare`, which takes effect without a
    deploy. Every request that writes (reviews, rounds, corrections, claims, favourites, form decisions,
    sign-in, passkeys, account and admin changes) then answers 503 `paused` with a Retry-After, while
-   reads and signed-in sessions go on. `wrangler secret delete WRITES_PAUSED` lifts it at step 7.
+   reads and signed-in sessions go on. Signing out then only expires the browser's cookies: the session
+   row stays valid until it expires, or until it is revoked from another device after writes resume.
+   `wrangler secret put` and `wrangler secret delete` deploy a new
+   version at once, and refuse while a newer version is uploaded and not deployed, so the freeze is set
+   before step 8 uploads anything.
 3. **Copy** the live tables again, `pull.py --fresh`, from a Codespace with the Cloudflare
    credentials: the copy is about 3 GB and the uploads after it are large.
 4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
@@ -163,7 +167,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    row would be refused by the half-loaded database. `check` compares the table set, the schema, row counts and a checksum
    of every row per table, first between the old database and `accounts.sqlite`, then between
    `accounts.sqlite` and `glyph-atlas-accounts`, and exits 1 on any difference. Run it before the
-   smoke tests on the deployed Worker (decision record 0006, Order step 5): their sign-ins and session
+   site checks of step 8: their sign-ins and session
    renewals write to `glyph-atlas-accounts`, after which it no longer matches.
 
    `accounts.sqlite` and `accounts-load/` hold sessions and account tokens; the script creates them
@@ -172,8 +176,90 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
        rm -rf work/atlas-v3/accounts.sqlite* work/atlas-v3/accounts-load
 
 8. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
-   local Worker on each layout.
-9. **Switch** the Worker's routes to the new layout and resume writes (`wrangler secret delete WRITES_PAUSED`).
+   local Worker on each layout. The site checks that write (an existing session, renewal, logout, a
+   history page, favourites, a claim, an old URL) run on this machine: `wrangler dev` runs the new
+   Worker locally, with its bindings reaching the real new databases and bucket, and nothing answers
+   on a public address. The deployed Worker stays paused throughout, so every row written in the
+   window is one of these checks'. Version URLs stay off (`preview_urls: false`): turned on, they
+   would also open older versions, which are bound to the old database and are not paused.
+
+   Before the window, make a test account on glyphatlas.org (a code by mail to an address you hold)
+   and copy its `__Secure-better-auth.session_token` cookie from the browser. Then, from
+   `apps/cloudflare`, with the new Worker built:
+
+   - copy `wrangler.jsonc` to `wrangler.check.jsonc` (ignored by git) and add `"remote": true` to
+     the `ATLAS`, `ATLAS_RUNS` and `ACCOUNTS` entries of `d1_databases` and to `MEDIA` in
+     `r2_buckets`; wrangler 4.135.0's config schema takes `remote` on each D1 and R2 binding, and a
+     D1 binding reaches `database_id` (set no `preview_database_id`);
+   - put the deployed `BETTER_AUTH_SECRET` in `.dev.vars.cutover` (ignored by git), so the test
+     account's cookie is accepted. `wrangler secret` cannot print a secret, so it comes from where
+     it is kept; without it, the existing session is checked on the site right after the switch.
+     The file holds no `WRITES_PAUSED`.
+
+   ```sh
+   bunx wrangler dev -c wrangler.check.jsonc --env-file .dev.vars.cutover --ip 127.0.0.1 --local-protocol https
+   ```
+
+   Every request below goes to `https://127.0.0.1:8787` (`curl -k`) with `cf-connecting-ip:
+   192.0.2.77`, the test account's cookie, and, on a POST, `origin: https://127.0.0.1:8787`. Over
+   https the Worker names its cookies with the `__Secure-` prefix, as the site does.
+
+   1. `GET /api/auth/get-session?disableCookieCache=true` answers the test account.
+   2. Renewal: on `glyph-atlas-accounts`, move the test session's `expiresAt` back to 88 days from
+      now (`UPDATE session SET expiresAt=… WHERE userId=:test`, an ISO time as stored); the same read
+      then answers an `expiresAt` 90 days out.
+   3. A favourite, set and read back; the history page; an old text-id URL, which answers the crop
+      by its integer id.
+   4. A claim: a form claim of a value outside the crop's grapheme (an IDS), which writes the ledger
+      and no review, on a crop with no `current_claims` row (`SELECT count(*) FROM current_claims
+      WHERE crop=:crop` is 0).
+   5. `POST /api/auth/sign-out` last; the read in 1 then answers null.
+
+   The checks write these rows, and nothing else writes in the window. `:test` is the test
+   account's user id, which is also its actor key; `:crop` is the claimed crop. Count each set with
+   `SELECT` first; then, with `bunx wrangler d1 execute <database> --remote --command "…"`:
+
+   ```sql
+   -- glyph-atlas-v3
+   DELETE FROM favourites WHERE user = :test;
+   DELETE FROM ledger_submissions WHERE id IN (SELECT submission FROM assertions WHERE asserted_by = :test);
+   DELETE FROM ledger_submissions WHERE id IN (SELECT submission FROM assertion_actions
+     WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test));
+   DELETE FROM assertion_actions WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test);
+   DELETE FROM assertion_evidence WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test);
+   DELETE FROM assertion_premises WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test);
+   DELETE FROM assertions WHERE asserted_by = :test;
+   DELETE FROM current_claims WHERE crop = :crop;
+   DELETE FROM actors WHERE user = :test;
+   -- glyph-atlas-accounts
+   DELETE FROM rateLimit WHERE key >= '192.0.2.77|' AND key < '192.0.2.77}';
+   DELETE FROM session WHERE userId = :test;
+   DELETE FROM account_profiles WHERE account IN (SELECT id FROM account WHERE userId = :test);
+   DELETE FROM account WHERE userId = :test;
+   DELETE FROM passkey WHERE userId = :test;
+   DELETE FROM "user" WHERE id = :test;
+   ```
+
+   The test account had no reviews, so its actor names no submission
+   (`SELECT count(*) FROM submissions WHERE actor IN (SELECT id FROM actors WHERE user = :test)` is
+   0). Each delete reads by an index or a key range. Delete `wrangler.check.jsonc` and
+   `.dev.vars.cutover` after.
+
+   Then upload the checked Worker, still paused, and make the version that will be deployed:
+
+   ```sh
+   bunx wrangler versions upload                         # keeps the secrets, WRITES_PAUSED among them
+   bunx wrangler versions secret delete WRITES_PAUSED    # a further version without it, not deployed; prints its id
+   ```
+
+   `versions upload` adds to the previous version's secrets and deletes none (its `--help`), and
+   neither command deploys, so the site keeps answering from the paused version. With Version URLs
+   off, the new versions answer nowhere until they are deployed.
+9. **Switch** the Worker's routes to the new layout and resume writes:
+   `bunx wrangler versions deploy <id of the version without WRITES_PAUSED>@100%`. This one command
+   is the switch: the paused version answers until it runs, and the new one, unpaused, after.
+   Passkey sign-in (bound to glyphatlas.org) and a provider sign-in (its callback names
+   glyphatlas.org) are checked on the site right after.
 
 `check.py` compares the copies with the local copy of the new layout, crop by crop: numbers, row
 values, bundle boxes and images, runs and the image map. It reads nothing remote.
