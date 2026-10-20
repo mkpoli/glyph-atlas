@@ -128,6 +128,12 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    to its integer crop id, and uploads the map as `v3/aliases/<first three hex digits of the text id's
    SHA-256>.json.gz`, read by `aliasCrop` in the Worker. A redirect cycle stops it with examples; a
    chain that ends outside the mirror is counted as gone and left out.
+   `crop_facts.py` (a dry run without `--send`) applies `migrations-atlas/0006_crop_facts.sql` and
+   loads the crop facts the publisher writes from the copies `unit_votes`, `form_families`,
+   `form_clusters` and `form_units`: each collected crop's model votes (`votes`, for the cut it has
+   now, in `votes.py`'s shape) and the forms tool's clustering, its clusters numbered and each glyph
+   named by its integer crop id. Text ids resolve through the mirror and never through a redirect; a
+   row naming a crop the mirror lacks is dropped and counted in `out/crop-facts-report.txt`.
 6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.
 7. **Switch** the Worker's routes to the new layout and resume writes (`wrangler secret delete WRITES_PAUSED`).
@@ -144,11 +150,11 @@ answers:
   `rejections`), including `writes_word` claims;
 - reviews (`events`, `submissions`, `skips`, `seen`, `actors`), accounts (`user`, `session`,
   `account`, `account_profiles`, `passkey`, `verification`, `rateLimit`) and `favourites`;
-- forms (`forms`, `form_*`), `words`, `word_spellings`;
+- `words`, `word_spellings`, and `form_bases` (a corpus glyph's character and family before a form
+  decision moved it);
 - character data (`characters` cards, `character_variants`, `character_derived`,
   `component_variants`, `han_ids`, `han_components`, `han_component_names`, `grapheme_writers`,
   `document_characters`, `corpus_documents`, `representations`);
-- the model votes in `units.visual`, and the text-id alias files;
 - family heads and search names for characters that first appear after the first build;
 - `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
   new `crops` has no per-crop grapheme column yet, so the read path decides how such a crop joins a
