@@ -68,12 +68,14 @@ test('a round is addressed by its grapheme as the site writes one, and its mater
 test('a first batch of only kept crops reads on, and a grapheme with nothing past them gives way', async () => {
   const crops = Array.from({ length: 5 }, (_, i) => ({ id: 'p' + i }))
   let reads
-  const page = async offset => { reads.push(offset); return { items: crops.slice(offset, offset + 2), next_offset: Math.min(offset + 2, crops.length), total: crops.length } }
+  // A cursor here is the index of the next crop; the last page names none.
+  const page = async cursor => { const at = cursor ?? 0; reads.push(at); const next = at + 2 < crops.length ? at + 2 : null
+    return { items: crops.slice(at, at + 2), next, has_more: next !== null } }
   reads = []
   const round = await firstCrops(page, new Set(['p0', 'p1']))
   assert.deepEqual(reads, [0, 2])
   assert.deepEqual(round.items, [{ id: 'p2' }, { id: 'p3' }])
-  assert.equal(round.next_offset, 4)
+  assert.equal(round.next, 4)
   reads = []
   assert.deepEqual((await firstCrops(page, new Set(crops.map(c => c.id)))).items, [])
   assert.deepEqual(reads, [0, 2, 4])

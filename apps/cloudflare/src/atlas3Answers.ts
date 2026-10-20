@@ -54,21 +54,23 @@ export const tallyDeltasQuery = (kind: 0 | 1) => `SELECT char,book,production,st
 type Delta = { char: number; book: number; production: number; state: number; quiz: number; n: number };
 
 /** A collected crop count: character, book, production and category (-1 unknown; a review's delta has
- *  no category, `null`), state code and withheld flag (`quiz` 0). */
-export type Facet = { char: number; book: number; production: number; category: number | null; state: number; quiz: number; n: number };
-/** The collected crops by character, book, production, category, state and withheld flag, with the
- *  characters they name, as they stand now. */
+ *  no category, `null`), review priority (a review's delta has none, `null`), state code and withheld
+ *  flag (`quiz` 0). */
+export type Facet = { char: number; book: number; production: number; category: number | null; priority: number | null;
+  state: number; quiz: number; n: number };
+/** The collected crops by character, book, production, category, priority, state and withheld flag,
+ *  with the characters they name, as they stand now. */
 export async function collectedCounts(env: Env): Promise<{ pub: string; cells: Facet[]; chars: Map<number, CharInfo> }> {
   const { pub, through_gen } = await currentPointer(env);
   const [body, deltas, names] = await Promise.all([answer(env, pub, 'facets.json.gz'),
     env.ATLAS.prepare(tallyDeltasQuery(0)).bind(through_gen).all<Delta>(), codeNames(env)]);
   const categories = new Map([...names].filter(([key]) => key.startsWith('category:')).map(([key, name]) => [name, Number(key.slice(9))]));
-  const cells: Facet[] = (body.cells as number[][]).map(([char, book, production, category, state, quiz, n]) =>
-    ({ char, book, production, category, state, quiz, n }));
+  const cells: Facet[] = (body.cells as number[][]).map(([char, book, production, category, priority, state, quiz, n]) =>
+    ({ char, book, production, category, priority, state, quiz, n }));
   const chars = await charsOf(env, body.chars, [...cells.map(c => c.char), ...deltas.results.map(d => d.char)]);
   for (const d of deltas.results) {
     const text = chars.get(d.char)?.text;
-    cells.push({ ...d, category: text ? categories.get(categoryOf(text)) ?? null : null });
+    cells.push({ ...d, category: text ? categories.get(categoryOf(text)) ?? null : null, priority: null });
   }
   return { pub, cells, chars };
 }

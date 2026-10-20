@@ -1,6 +1,7 @@
 // A small catalogue on the new storage layout for the browse routes' tests: three books (two
 // collected, one of corpus glyphs), their page bundles and a record pack in a fake R2, and the
 // publication's answers written by the statements scripts/atlas3/answers.py runs.
+import { expect } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
@@ -25,8 +26,8 @@ export const ctx = { waitUntil: () => {} } as unknown as ExecutionContext;
 export const gz = (value: unknown) => gzipSync(JSON.stringify(value));
 
 // The answers scripts/atlas3/answers.py writes, from the same statements.
-const FACETS = `SELECT coalesce(char, -1), book, coalesce(production, -1), coalesce(category, -1), state, quiz, count(*)
-  FROM crops WHERE kind = 0 GROUP BY 1, 2, 3, 4, 5, 6 ORDER BY 1, 2, 3, 4, 5, 6`;
+const FACETS = `SELECT coalesce(char, -1), book, coalesce(production, -1), coalesce(category, -1), priority, state, quiz, count(*)
+  FROM crops WHERE kind = 0 GROUP BY 1, 2, 3, 4, 5, 6, 7 ORDER BY 1, 2, 3, 4, 5, 6, 7`;
 const CORPUS = `SELECT char, coalesce(production, -1), state, quiz, count(*) FROM crops WHERE kind = 1 AND char IS NOT NULL
   GROUP BY 1, 2, 3, 4 ORDER BY 1, 2, 3, 4`;
 const BOOKS = 'SELECT book, sum(kind = 0), sum(kind = 1) FROM crops WHERE kind < 2 GROUP BY book ORDER BY book';
@@ -109,17 +110,17 @@ export const get = (env: Env, path: string, reviewer: string | null = null) => {
   const url = new URL(`https://glyphatlas.org${path}`);
   return catalogue(env, ctx, url, reviewer);
 };
-// Every page of a listing, as the browser asks for them, handing back `above`.
+// Every page of a listing, as the browser asks for them, handing back the cursor until there is none.
 export async function every(env: Env, path: string, limit: number, reviewer: string | null = null) {
   const seen: string[] = [];
-  let offset = 0, above: number | null = null, body: any;
+  let cursor: string | null = null, body: any, pages = 0;
   do {
-    body = await get(env, `${path}&limit=${limit}&offset=${offset}${above !== null ? `&above=${above}` : ''}`, reviewer);
+    body = await get(env, `${path}&limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, reviewer);
     seen.push(...body.items.map((item: any) => item.id));
-    above = body.above ?? above;
-    if (body.next_offset <= offset) break;
-    offset = body.next_offset;
-  } while (offset < body.total);
+    expect(body.has_more).toBe(body.next !== null);
+    cursor = body.next;
+    if (++pages > 200) throw new Error('the listing does not end');
+  } while (cursor);
   return { seen, body };
 }
 

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { cropId, publicId } from '../atlas3';
+import { bundle, bundleKey, cropId, publicId } from '../atlas3';
 import { charsQuery, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, cropFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
-import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, dateStats, deal, flaggedQuery, gallery,
+import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, cursorOf, cursorText, dateStats, flaggedQuery, gallery, page, type Stage,
   graphemeQuery, health, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter } from './browse';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
 
@@ -118,7 +118,7 @@ describe('the browse page', () => {
     expect(shown.withheld_count).toBeNull();
   });
 
-  it('page through every crop once, the seed’s point first, handing back how many lie above it', async () => {
+  it('page through every crop once from the seed’s point, the cursor ending where the index does', async () => {
     const { env } = await setup();
     for (const seed of [0, 1234567, 2147483647]) {
       const { seen, body } = await every(env, `/atlas?seed=${seed}`, 4);
@@ -289,9 +289,58 @@ describe('review rounds', () => {
     const { env, a, crop } = await setup();
     expect((await get(env, '/atlas?purpose=review&grapheme=U%2B306F&state=checked&limit=10')).items.map((i: any) => i.id)).toEqual([publicId(crop(a, 2))]);
     await expect(get(env, '/atlas?purpose=review&grapheme=U%2B30CF&limit=10')).rejects.toThrow('ハ is filed under は.');
-    await expect(get(env, '/atlas?purpose=review&grapheme=U%2B306F&offset=5000')).rejects.toThrow('A round does not page this far.');
+    for (const bad of ['x', '1.c.5.1', '0.a.5', '99999', '0.a.5.0'])
+      await expect(get(env, `/atlas?purpose=review&grapheme=U%2B306F&cursor=${bad}`)).rejects.toThrow('Invalid cursor.');
     // A grapheme the table lacks is its own text.
     expect((await get(env, '/atlas?purpose=review&grapheme=U%2B3042&limit=10')).grapheme.members).toEqual(['あ']);
+  });
+});
+
+describe('rounds by priority', () => {
+  it('deal on four seeds in five each priority in turn, on the fifth all together', async () => {
+    const { env, db, a, b, c, crop } = await setup();
+    db.exec(`UPDATE crops SET priority=2 WHERE id=${crop(a, 0)}; UPDATE crops SET priority=0 WHERE id=${crop(a, 1)}`);
+    for (const seed of [11, 12, 13, 14]) {
+      const { seen } = await every(env, `/atlas?purpose=review&grapheme=U%2B306F&state=pending&seed=${seed}`, 2);
+      expect(seen.slice(0, 3)).toEqual([publicId(crop(a, 1)), publicId(crop(b, 0)), publicId(crop(a, 0))]);
+      expect(seen.slice(3).sort()).toEqual([0, 1, 3, 4, 5].map(s => publicId(crop(c, s))).sort());
+    }
+    // The fifth seed deals the collected crops in shuffle order from its point, whatever their priority.
+    const rotated = (seed: number) => [crop(a, 0), crop(a, 1), crop(b, 0)]
+      .map(id => [id, (db.query('SELECT shuffle FROM crops WHERE id=?').get(id) as { shuffle: number }).shuffle] as const)
+      .sort((x, y) => (x[1] - seed + 2 ** 31) % 2 ** 31 - (y[1] - seed + 2 ** 31) % 2 ** 31).map(([id]) => publicId(id));
+    for (const seed of [10, 2 ** 30 + 1]) expect((await every(env, `/atlas?purpose=review&grapheme=U%2B306F&state=pending&seed=${seed}`, 2)).seen.slice(0, 3))
+      .toEqual(rotated(seed));
+  });
+});
+
+describe('a listing ends where the index does', () => {
+  it('when D1 holds more crops than the answer counts, or fewer', async () => {
+    const { env, db, a, b, c, crop } = await setup();
+    // A withheld crop the publication counted as withheld is shown since, and another is gone.
+    db.exec(`UPDATE crops SET quiz=1 WHERE id=${crop(a, 7)}; DELETE FROM crops WHERE id=${crop(b, 5)}`);
+    const { seen, body } = await every(env, '/atlas?seed=77', 4);
+    expect(seen).toContain(publicId(crop(a, 7)));
+    expect(seen).not.toContain(publicId(crop(b, 5)));
+    expect(seen.length).toBe(15);
+    expect(body.total).toBe(15);
+    const round = await every(env, '/atlas?purpose=review&grapheme=U%2B6240&state=pending&production=all&seed=3', 1);
+    expect(round.seen.sort()).toEqual([crop(a, 5), crop(a, 7), crop(b, 2), crop(c, 8)].map(publicId).sort());
+  });
+});
+
+describe('what an isolate holds', () => {
+  it('serves a page bundle the edge holds without reading R2, and keeps each one it reads', async () => {
+    const { env, objects, a } = await setup();
+    const key = bundleKey(a, 1), bytes = objects.get(key)!;
+    // A bundle read from R2 is put at the edge.
+    expect((await bundle(env, a, 1))!.bySlot.size).toBe(12);
+    expect(await (globalThis as any).caches.default.match(new Request(`https://glyphatlas.org/_bundles/${key}`))).toBeTruthy();
+    // A page whose bundle only the edge holds.
+    const other = a + 100000;
+    await (globalThis as any).caches.default.put(new Request(`https://glyphatlas.org/_bundles/${bundleKey(other, 1)}`), new Response(bytes));
+    expect((await bundle(env, other, 1))!.bySlot.size).toBe(12);
+    expect(objects.has(bundleKey(other, 1))).toBe(false);
   });
 });
 
@@ -301,11 +350,11 @@ describe('the queries', () => {
     void env;
     const plan = (sql: string, values: unknown[]) => (db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...(values as any[])) as { detail: string }[]).map(r => r.detail).join(' | ');
     const base: Filter = { chars: null, book: null, category: null, state: null, withheld: false, productions: new Set([2, 4]), named: false };
-    for (const [filter, kind, index] of [[base, 0, 'crop_listing'], [{ ...base, category: 2 }, 0, 'crop_listing'], [{ ...base, state: 1, named: true }, 0, 'crop_listing'],
-      [{ ...base, chars: new Set([1, 2]) }, 0, 'crop_deal'], [{ ...base, chars: new Set([1]), state: 0, named: true }, 1, 'crop_deal'],
-      [{ ...base, book: 1 }, 0, 'crop_book']] as [Filter, 0 | 1, string][]) {
-      for (const range of ranges(filter, kind, [2, 3, 5])) for (const [side, offset] of [['>=', false], ['<', true]] as const) {
-        const detail = plan(sideQuery(range, side, offset), [...range.values, 0, 10, ...(offset ? [5] : [])]);
+    for (const [filter, kind, index, tier] of [[base, 0, 'crop_listing', false], [{ ...base, category: 2 }, 0, 'crop_listing', false],
+      [{ ...base, state: 1, named: true }, 0, 'crop_listing', false], [{ ...base, chars: new Set([1, 2]) }, 0, 'crop_deal', false],
+      [{ ...base, chars: new Set([1]), state: 0, named: true }, 1, 'crop_deal', true], [{ ...base, book: 1 }, 0, 'crop_book', false]] as [Filter, 0 | 1, string, boolean][]) {
+      for (const range of ranges(filter, kind, [2, 3, 5], tier ? [0] : [0, 1, 2], tier)) for (const [side, after] of [['>=', false], ['<', true], ['>=', true]] as const) {
+        const detail = plan(sideQuery(range, side, after), [...range.values, 0, ...(after ? [5, 9] : []), 10]);
         expect(detail).toContain(`USING ${index === 'crop_book' ? 'INDEX' : 'COVERING INDEX'} ${index}`);
         expect(detail).not.toContain('TEMP B-TREE');
         expect(detail).not.toMatch(/SCAN crops(?! USING)/);
@@ -332,15 +381,19 @@ describe('the queries', () => {
     expect(REVIEWED_IN_INSPECTOR).toContain('e.crop=c.id');
   });
 
-  it('deal several ranges as one, from the seed’s point round past the highest', async () => {
+  it('deal several ranges as one, from the seed’s point round past the highest, each page after the last', async () => {
     const { env } = await setup();
     const filter: Filter = { chars: null, book: null, category: null, state: null, withheld: true, productions: null, named: false };
-    const list = ranges(filter, 0, [2, 3, 5]);
+    const stages: Stage[] = [{ list: ranges(filter, 0, [2, 3, 5], [0, 1, 2]) }];
     const whole: number[] = [];
-    for (let offset = 0; offset < 18; offset += 4) whole.push(...(await deal(env, list, 2 ** 30, offset, 4, new Set())).ids);
+    let cursor: string | null = null;
+    do { const got = await page(env, stages, 2 ** 30, cursor, 4, new Set()); whole.push(...got.ids); cursor = got.next; } while (cursor);
     expect(new Set(whole).size).toBe(18);
-    const told = (await deal(env, list, 2 ** 30, 0, 18, new Set())).above;
-    expect(told).not.toBeNull();
-    expect((await deal(env, list, 2 ** 30, told!, 30, new Set(), told)).ids).toEqual(whole.slice(told!));
+    expect((await page(env, stages, 2 ** 30, null, 18, new Set())).ids).toEqual(whole);
+    // A page that fills at the end of the last stage still names a next one; it holds none.
+    const all = await page(env, stages, 2 ** 30, null, 18, new Set());
+    expect(all.next === null || (await page(env, stages, 2 ** 30, all.next, 5, new Set())).ids.length === 0).toBe(true);
+    expect(cursorOf(cursorText(3, { side: 'b', shuffle: 7, id: whole[0] }))).toEqual({ stage: 3, place: { side: 'b', shuffle: 7, id: whole[0] } });
   });
+
 });

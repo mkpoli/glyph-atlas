@@ -11,9 +11,9 @@
 CREATE INDEX crop_listing ON crops(category, shuffle, id, quiz, state, production, char) WHERE kind = 0;
 
 -- One character's collected crops or corpus glyphs: a browse page of a character or grapheme reads one
--- range per character, and a review round one per character and kind, the collected crops first.
--- Corpus glyphs no one has read have no character and are never dealt, so they have no entry.
-CREATE INDEX crop_deal ON crops(char, kind, shuffle, id, quiz, state, production) WHERE kind < 2 AND char IS NOT NULL;
+-- range per character, and a review round one per character, kind and priority, the collected crops
+-- first. Corpus glyphs no one has read have no character and are never dealt, so they have no entry.
+CREATE INDEX crop_deal ON crops(char, kind, priority, shuffle, id, quiz, state, production) WHERE kind < 2 AND char IS NOT NULL;
 
 -- The Flagged view: every collected crop flagged or hard to read (state 2 or 4), withheld or not.
 CREATE INDEX crop_flagged ON crops(shuffle, id) WHERE kind = 0 AND state IN (2, 4);

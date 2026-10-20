@@ -3,7 +3,7 @@
 // `/layers/gallery`, `/atlas/dates/stats`, `/atlas/collection/status`, `/layers/summary` and
 // `/health`. Counts come from the publication's answers plus the reviews since (`atlas3Answers.ts`);
 // listings deal crops in shuffle order from the indexes of migration 0011.
-import { codeNames, publicId, type Entry } from '../atlas3';
+import { codeNames, cropOf, publicId, type Entry } from '../atlas3';
 import { bookCounts, codePoints, collectedCounts, corpusCounts, galleryIndex, galleryShard, productionKeys, type SampleEntry } from '../atlas3Answers';
 import { currentPointer } from '../atlas3Gallery';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
@@ -155,13 +155,11 @@ export async function gallery(env: Env, q: URLSearchParams): Promise<Json> {
 
 // A Quick review round leaves movable type out unless asked: it fills whole books with near-identical glyphs.
 const REVIEW_SCOPE = 'not:printed/type';
-// How far a round pages. Rounds are dealt from the front and a saved crop leaves the queue, so a
-// reader never gets this deep; the bound keeps a crawler from reading a character's whole corpus.
-const ROUND_OFFSET_MAX = 4096;
 // How long a crop a reviewer skipped stays out of that reviewer's own rounds.
 const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
-// Shuffle is a 31-bit hash.
+// Shuffle is a 31-bit hash; a seed names the point a listing starts from.
 const SHUFFLE_RANGE = 2147483648;
+const start = (seed: number) => seed % SHUFFLE_RANGE;
 // Browse counts every collected crop by character, book and state, and every visitor gets the same
 // answer: the edge keeps one copy per catalogue version.
 const FACETS_TTL = 3600;
@@ -194,54 +192,93 @@ function conditions(f: Filter, skip: { chars?: boolean; book?: boolean; category
   return { sql: where.map(w => ` AND ${w}`).join(''), values };
 }
 
-// One index range of a listing, read from the seed's point up (`>=`) or below it (`<`), in shuffle order:
-// one per character named, else the book's, else one per script category.
+// One index range of a listing, in shuffle order: one per character and priority named, else the book's,
+// else one per script category. `priorities` narrows a range with no character to one priority, which
+// the crops' row then gives.
 export type Range = { from: string; values: (number | string)[] };
-export function ranges(f: Filter, kind: 0 | 1, categories: number[]): Range[] {
+export function ranges(f: Filter, kind: 0 | 1, categories: number[], priorities: number[], tier = false): Range[] {
   if (f.chars !== null) {
     const rest = conditions(f, { chars: true });
-    return [...f.chars].sort((a, b) => a - b).map(char => ({ from: `crops INDEXED BY crop_deal WHERE char=? AND kind=? AND kind<2${rest.sql}`,
-      values: [char, kind, ...rest.values] }));
+    return [...f.chars].sort((a, b) => a - b).flatMap(char => priorities.map(priority => ({
+      from: `crops INDEXED BY crop_deal WHERE char=? AND kind=? AND kind<2 AND priority=?${rest.sql}`, values: [char, kind, priority, ...rest.values] })));
   }
+  const only = tier ? { sql: ' AND priority=?', values: priorities } : { sql: '', values: [] };
   if (f.book !== null) {
     const rest = conditions(f, { book: true });
-    return [{ from: `crops INDEXED BY crop_book WHERE book=? AND kind<2 AND kind=0${rest.sql}`, values: [f.book, ...rest.values] }];
+    return [{ from: `crops INDEXED BY crop_book WHERE book=? AND kind<2 AND kind=0${rest.sql}${only.sql}`, values: [f.book, ...rest.values, ...only.values] }];
   }
   const rest = conditions(f, { category: true });
   return (f.category !== null ? [f.category] : [...categories, -1]).map(code => ({
-    from: `crops INDEXED BY crop_listing WHERE ${code === -1 ? 'category IS NULL' : 'category=?'} AND kind=0${rest.sql}`,
-    values: [...(code === -1 ? [] : [code]), ...rest.values] }));
+    from: `crops INDEXED BY crop_listing WHERE ${code === -1 ? 'category IS NULL' : 'category=?'} AND kind=0${rest.sql}${only.sql}`,
+    values: [...(code === -1 ? [] : [code]), ...rest.values, ...only.values] }));
 }
-export const sideQuery = (range: Range, side: '>=' | '<', offset = false) =>
-  `SELECT id,shuffle FROM ${range.from} AND shuffle${side}? ORDER BY shuffle,id LIMIT ?${offset ? ' OFFSET ?' : ''}`;
+// A range read from the seed's point up (`>=`) or below it (`<`), after the last crop a page showed.
+export const sideQuery = (range: Range, side: '>=' | '<', after = false) =>
+  `SELECT id,shuffle FROM ${range.from} AND shuffle${side}?${after ? ' AND (shuffle,id)>(?,?)' : ''} ORDER BY shuffle,id LIMIT ?`;
 type Dealt = { id: number; shuffle: number };
+// Where a listing stands: the last crop it showed and on which side of the seed's point (`a` from the
+// point up, `b` below it), or how many of a list it showed.
+export type Place = { side: 'a' | 'b'; shuffle: number; id: number } | { n: number } | null;
 
-/** Positions `offset` to `offset + limit` of the crops the ranges hold, from the seed's point up and
- *  round past the highest, leaving out `exclude`. `above` is how many lie from the point up, once a page
- *  has reached them all: a later page that names it (`told`) reads only the crops below. One range with
- *  nothing left out is paged in SQL; several are merged, each read to the page's end. */
-export async function deal(env: Env, list: Range[], start: number, offset: number, limit: number, exclude: Set<number>,
-  told: number | null = null): Promise<{ ids: number[]; above: number | null }> {
-  if (!list.length || limit <= 0) return { ids: [], above: told };
-  const read = async (side: '>=' | '<', n: number, skip = 0) => (await env.ATLAS.batch<Dealt>(list.map(range =>
-    env.ATLAS.prepare(sideQuery(range, side, skip > 0)).bind(...range.values, start, n, ...(skip > 0 ? [skip] : [])))))
+/** The next `limit` crops the ranges hold together, from the seed's point up and round past the highest,
+ *  after `from`, leaving out `exclude`; `more` when some are left. Each range reads at most `limit` crops
+ *  past the place (and as many again as are left out), however deep the page. */
+export async function deal(env: Env, list: Range[], start: number, from: Place, limit: number, exclude: Set<number>): Promise<{ rows: Dealt[]; more: boolean }> {
+  if (!list.length || limit <= 0) return { rows: [], more: false };
+  const after = from && 'side' in from ? from : null;
+  const read = async (side: '>=' | '<', n: number, at: Dealt | null) => (await env.ATLAS.batch<Dealt>(list.map(range =>
+    env.ATLAS.prepare(sideQuery(range, side, at !== null)).bind(...range.values, start, ...(at ? [at.shuffle, at.id] : []), n))))
     .flatMap(r => r.results).sort((a, b) => a.shuffle - b.shuffle || a.id - b.id).filter(row => !exclude.has(row.id));
-  const one = list.length === 1 && !exclude.size, room = exclude.size;
-  if (told !== null && offset >= told) {
-    const below = one ? await read('<', limit, offset - told) : (await read('<', offset - told + limit + room)).slice(offset - told);
-    return { ids: below.slice(0, limit).map(r => r.id), above: told };
+  const want = limit + 1 + exclude.size;
+  const up = after?.side === 'b' ? [] : await read('>=', want, after);
+  if (up.length > limit) return { rows: up.slice(0, limit), more: true };
+  const below = await read('<', want - up.length, after?.side === 'b' ? after : null);
+  const rows = [...up, ...below];
+  return { rows: rows.slice(0, limit), more: rows.length > limit };
+}
+
+// A cursor names the list a listing has reached (its stage) and its place in it.
+export function cursorText(stage: number, place: Place): string {
+  if (place === null) return String(stage);
+  return 'n' in place ? `${stage}.${place.n}` : `${stage}.${place.side}.${place.shuffle}.${publicId(place.id)}`;
+}
+export function cursorOf(text: string | null): { stage: number; place: Place } {
+  if (text === null) return { stage: 0, place: null };
+  const parts = text.split('.');
+  const stage = /^\d{1,2}$/.test(parts[0]) ? Number(parts[0]) : NaN;
+  if (parts.length === 1 && !isNaN(stage)) return { stage, place: null };
+  if (parts.length === 2 && !isNaN(stage) && /^\d{1,6}$/.test(parts[1])) return { stage, place: { n: Number(parts[1]) } };
+  const crop = parts.length === 4 ? cropOf(parts[3]) : null;
+  if (!isNaN(stage) && (parts[1] === 'a' || parts[1] === 'b') && /^\d{1,10}$/.test(parts[2] ?? '') && crop !== null)
+    return { stage, place: { side: parts[1], shuffle: Number(parts[2]), id: crop } };
+  throw new Problem(422, 'Invalid cursor.');
+}
+// The lists a listing runs through in turn: crops already chosen (`ids`), or index ranges dealt in
+// shuffle order. A listing ends where the index does: the counts only say how many there are.
+export type Stage = { ids: number[] } | { list: Range[] };
+/** One page of the stages from the cursor's place: the crops, and the cursor of the next page, null
+ *  once no stage has any left. A page that fills at the end of a stage names the next one, which may
+ *  hold none. */
+export async function page(env: Env, stages: Stage[], start: number, cursor: string | null, limit: number, exclude: Set<number>) {
+  let { stage, place } = cursorOf(cursor);
+  const ids: number[] = [];
+  while (ids.length < limit && stage < stages.length) {
+    const at = stages[stage], room = limit - ids.length;
+    if ('ids' in at) {
+      const from = place && 'n' in place ? place.n : 0, taken = at.ids.slice(from, from + room);
+      ids.push(...taken);
+      if (from + taken.length < at.ids.length) return { ids, next: cursorText(stage, { n: from + taken.length }) };
+    } else {
+      const dealt = await deal(env, at.list, start, place, room, exclude);
+      ids.push(...dealt.rows.map(row => row.id));
+      if (dealt.more) {
+        const last = dealt.rows[dealt.rows.length - 1];
+        return { ids, next: cursorText(stage, { side: last.shuffle >= start ? 'a' : 'b', shuffle: last.shuffle, id: last.id }) };
+      }
+    }
+    stage++; place = null;
   }
-  const up = one ? await read('>=', limit, offset) : await read('>=', offset + limit + room);
-  const page = one ? up : up.slice(offset);
-  if (page.length >= limit) return { ids: page.slice(0, limit).map(r => r.id), above: null };
-  // The point's side ran out: every crop from it up is read, or counted, and the page wraps round.
-  let above: number;
-  if (!one) above = up.length;
-  else if (up.length) above = offset + up.length;
-  else above = told ?? (await env.ATLAS.prepare(`SELECT count(*) AS n FROM ${list[0].from} AND shuffle>=?`).bind(...list[0].values, start).first<{ n: number }>())!.n;
-  const rest = limit - page.length, skip = Math.max(offset - above, 0);
-  const below = one ? await read('<', rest, skip) : (await read('<', skip + rest + room)).slice(skip);
-  return { ids: [...page, ...below].slice(0, limit).map(r => r.id), above };
+  return { ids, next: stage < stages.length ? cursorText(stage, null) : null };
 }
 
 // The members of a grapheme a round names, by the grapheme table: は's family is は, ハ and its
@@ -276,7 +313,6 @@ export const othersSkipsQuery = () => `SELECT DISTINCT c.id,c.kind,c.char,c.book
   CROSS JOIN crops c ON c.id=k.crop WHERE k.cut=c.cut AND c.kind<2 AND c.char IS NOT NULL
   AND k.actor NOT IN (SELECT id FROM actors WHERE user=?)
   AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.id=k.submission AND s.undone=1)`;
-
 // A standing review from the character inspector, not a round's own verdict: a review event (match,
 // wrong or unsure) of a submission not undone whose request names its crop (`target`); a round's names none.
 export const REVIEWED_IN_INSPECTOR = `EXISTS(SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission AND s.undone=0
@@ -303,8 +339,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const production = q.get('production') || (review ? REVIEW_SCOPE : 'all');
   if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
   const seed = integer(q, 'seed', 0, 2147483647);
-  const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
-  if (review && offset > ROUND_OFFSET_MAX) throw new Problem(404, 'A round does not page this far.');
+  const limit = integer(q, 'limit', 60, 96), cursor = q.get('cursor') || null;
   const since = Date.now() - SKIP_REST_MS;
   // An empty `character` names none. A round names its grapheme, and deals every character of it.
   const character = q.get('character') || null;
@@ -320,7 +355,8 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const documentKey = text(q.get('document'), 256, 'document');
   const searched = q.get('q') ? literal(q.get('q')!) : null;
 
-  const [{ cells, chars }, held, stamps] = await Promise.all([collectedCounts(env), codeNames(env), catalogueStamps(env)]);
+  const stamps = await catalogueStamps(env), version = catalogueKey(stamps);
+  const [{ cells, chars }, held] = await Promise.all([collectedCounts(env), codeNames(env)]);
   const keys = await productionKeys(env, cells.map(c => c.production));
   // A publication may add a code the isolate does not hold yet: the table is read again, once.
   const names = cells.some(c => !held.has(`state:${c.state}`) || (c.category !== null && c.category !== -1 && !held.has(`category:${c.category}`)))
@@ -357,7 +393,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const counted: Filter = { chars: members ? new Set(members.ids) : null, book: null, category: null, state: null,
     withheld, productions, named: review };
   const facetsKey = review ? null : new Request(`${url.origin}/atlas/facets?production=${encodeURIComponent(production)}&withheld=${
-    withheld ? 'show' : 'hide'}&v=${encodeURIComponent(catalogueKey(stamps))}`);
+    withheld ? 'show' : 'hide'}&v=${encodeURIComponent(version)}`);
   const hit = facetsKey ? await caches.default.match(facetsKey) : undefined;
   const facets: { counts: Record<StateName, number>; categories: Category[]; documents: Book[] } = hit ? await hit.json()
     : await countFacets(env, { cells, chars, glyphs, own, counted, stateOf, review });
@@ -368,7 +404,9 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const listedCount = (f: Filter) => cells.reduce((n, c) => n + (matches(f, c) ? c.n : 0), 0);
   const exclude = new Set<number>(own.map(row => row.id));
   const wantsRows = limit > 0;
-  let ids: number[] = [], total: number, next = offset, above: number | null = null, reportedCount = 0;
+  // The review priorities a crop may hold (`review_priority` gives 0 to 2), and any other a count names.
+  const priorities = [...new Set([0, 1, 2, ...cells.flatMap(c => c.priority === null ? [] : [c.priority])])].sort((a, b) => a - b);
+  let stages: Stage[], total: number, reportedCount = 0;
   if (flaggedView) {
     // `attention` is every crop waiting for a person, flagged or hard to read; `flagged` the flagged ones.
     // The Flagged view hides crops already looked at in the inspector on `reported=hide`, and counts them.
@@ -378,55 +416,39 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     const shown = q.get('reported') === 'hide' ? rows.filter(row => !row.reported) : rows;
     // A crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
     shown.sort((a, b) => a.reported - b.reported || seeded(a.shuffle, seed) - seeded(b.shuffle, seed) || a.id - b.id);
+    stages = [{ ids: shown.map(row => row.id) }];
     total = shown.length;
-    ids = wantsRows ? shown.slice(offset, offset + limit).map(row => row.id) : [];
-    next = offset + ids.length;
   } else if (stateParam === 'skipped') {
     const mine = own.filter(row => row.kind === 0 && matches(filter, row)).map(row => row.id).sort((a, b) => a - b);
+    stages = [{ ids: mine }];
     total = mine.length;
-    ids = wantsRows ? mine.slice(offset, offset + limit) : [];
-    next = offset + ids.length;
   } else {
-    const start = seed % SHUFFLE_RANGE;
     // A grapheme's round of pending crops deals its corpus glyphs after its collected crops. Corpus
     // glyphs belong to no book of the collection, so a round narrowed to one deals none.
     const corpus = scoped && !character && book === null && (wantedState === null || wantedState === 0) && !searched
       && (category === null || members!.texts.every(member => categoryOf(member) === groupParam));
     const corpusFilter: Filter = { ...filter, state: 0, category: null };
     // A round deals what another reviewer skipped first, then the collected crops, then the corpus
-    // glyphs, each crop once.
+    // glyphs, each crop once. Four seeds in five deal the collected crops by priority, each priority in
+    // turn from the seed's point; the fifth deals them all together.
     const head = review ? (await env.ATLAS.prepare(othersSkipsQuery()).bind(reviewer).all<Row & { id: number; kind: number; shuffle: number }>()).results
       .filter(row => !exclude.has(row.id) && (row.kind === 0 ? matches(filter, row) : corpus && matches(corpusFilter, row)))
-      .sort((a, b) => (a.shuffle - start + SHUFFLE_RANGE) % SHUFFLE_RANGE - (b.shuffle - start + SHUFFLE_RANGE) % SHUFFLE_RANGE || a.id - b.id) : [];
+      .sort((a, b) => (a.shuffle - start(seed) + SHUFFLE_RANGE) % SHUFFLE_RANGE - (b.shuffle - start(seed) + SHUFFLE_RANGE) % SHUFFLE_RANGE || a.id - b.id) : [];
     for (const row of head) exclude.add(row.id);
+    const tiered = review && seed % 5 !== 0;
+    stages = [{ ids: head.map(row => row.id) },
+      ...(tiered ? priorities.map(p => ({ list: ranges(filter, 0, categoryCodes, [p], true) }))
+        : [{ list: ranges(filter, 0, categoryCodes, priorities) }]),
+      ...(corpus ? [{ list: ranges(corpusFilter, 1, categoryCodes, priorities) }] : [])];
     const left = (kind: number, f: Filter) => own.filter(row => row.kind === kind && matches(f, row)).length + head.filter(row => row.kind === kind).length;
-    const local = listedCount(filter) - left(0, filter);
     let glyphTotal = 0;
     if (corpus) for (const c of glyphs!.cells) if (matches(corpusFilter, { ...c, book: -1, category: null })) glyphTotal += c.n;
-    if (corpus) glyphTotal -= left(1, corpusFilter);
-    total = head.length + local + glyphTotal;
-    if (wantsRows) {
-      // Positions run through the head, the collected crops and the corpus glyphs. Should a list hold
-      // fewer than its count says, the next one starts where its positions begin.
-      let at = offset;
-      if (at < head.length) { ids.push(...head.slice(at, at + limit).map(row => row.id)); at = Math.min(head.length, at + limit); }
-      const told = review || q.get('above') === null ? null : integer(q, 'above', 0);
-      if (ids.length < limit && at < head.length + local) {
-        const want = limit - ids.length, page = await deal(env, ranges(filter, 0, categoryCodes), start, at - head.length, want, exclude, told);
-        ids.push(...page.ids);
-        if (!review) above = page.above;
-        at = page.ids.length < want ? head.length + local : at + page.ids.length;
-      }
-      if (corpus && ids.length < limit && at >= head.length + local) {
-        const want = limit - ids.length, page = await deal(env, ranges(corpusFilter, 1, categoryCodes), start, at - head.length - local, want, exclude);
-        ids.push(...page.ids);
-        at += page.ids.length;
-      }
-      next = at;
-    }
+    total = head.length + listedCount(filter) - left(0, filter) + (corpus ? glyphTotal - left(1, corpusFilter) : 0);
   }
+  const dealt = wantsRows ? await page(env, stages, start(seed), cursor, limit, exclude) : { ids: [], next: null };
+  const ids = dealt.ids;
   let items = wantsRows ? await listed(env, ids, new Set(own.map(row => row.id))) : [];
-  // A corpus glyph whose image this site may not serve is not dealt; it still takes its position.
+  // A corpus glyph whose image this site may not serve is not dealt; the cursor passes it all the same.
   items = items.filter(item => item.origin !== 'corpus' || item.proxyable);
   // How many withheld crops browsing left out, of a character, a book or a family where one is named;
   // with a script or a state chosen the count is not known.
@@ -434,10 +456,10 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     ? listedCount({ chars: named, book, category: null, state: null, withheld: true, productions, named: false })
       - listedCount({ chars: named, book, category: null, state: null, withheld: false, productions, named: false })
     : null;
-  return { total, next_offset: next, available: Object.values(facets.counts).reduce((a, b) => a + b, 0),
+  return { total, next: dealt.next, has_more: dealt.next !== null, available: Object.values(facets.counts).reduce((a, b) => a + b, 0),
     counts: facets.counts, purpose, production, review_limit: ROUND_MAX, review_epoch: await siteValue(env, 'review_epoch') || 0,
     query: q.get('q'), ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members: members!.texts } } : {}),
-    categories: facets.categories, documents: facets.documents, reported_count: reportedCount, withheld_count: withheldCount, above, items };
+    categories: facets.categories, documents: facets.documents, reported_count: reportedCount, withheld_count: withheldCount, items };
 }
 
 // Counts by character and state, and for browsing by book as well, with each book's key and title. A
