@@ -36,7 +36,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import media_map
-from build import CORPUS_PAGE, PAGE, bundle_entry, char_text, shuffle
+from build import CORPUS_PAGE, PAGE, bundle_entry, char_text, replacement, shuffle
 
 ROOT = Path(__file__).resolve().parents[2]
 # Copies of the live tables and the build output live outside the repository.
@@ -286,14 +286,14 @@ class Mirror:
         bundle = {k: v for k, v in bundle.items() if v is not None}
         self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
 
-    def retire(self, cid, text_id, mirror_revision, replaced_by):
+    def retire(self, cid, text_id, mirror_revision):
         pid = cid // PAGE
         # The entry keeps the crop's cut, so a crop put back continues from it.
         cut = self.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()["cut"]
         self.page_sql[pid].append(f"DELETE FROM crops WHERE id={cid} AND revision={mirror_revision};")
         self.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
         self.guarded.append(cid)
-        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut, **replaced_by}, True)
+        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut}, True)
 
 
 def write_parts(run, name, groups):
@@ -505,35 +505,54 @@ def main():
         report.write_text("\n".join(refused) + "\n")
         sys.exit(f"{len(refused)} crops need the slot matcher or are newer on the site; nothing published. See {report}")
 
+    # A retired crop names the crop it was retired in favour of by integer id: the first text id on its
+    # redirect chain that has a crop, or gets one in this publish. A reader follows `replaced_by` on
+    # while the crop it names is retired too.
+    replaced = dict(src.execute("SELECT id, target FROM unit_redirects")) if "unit_redirects" in tables else {}
+    catalogued = {r["id"] for r in units}
+
+    def gets_crop(text):
+        return m.known(text) is not None or text in catalogued or (
+            "corpus_units" in tables and src.execute("SELECT 1 FROM corpus_units WHERE id=?", (text,)).fetchone() is not None)
+
+    replacing, unresolved = {}, []
+    for r in units:
+        if r["origin"] == "retired" and r["id"] in replaced:
+            try:
+                found = replacement(r["id"], replaced, gets_crop)
+            except ValueError as loop:
+                unresolved.append(f"{r['id']}: redirects loop ({loop})")
+                continue
+            if found is None:
+                unresolved.append(f"{r['id']}: replaced by {replaced[r['id']]}, which has no crop")
+            else:
+                replacing[r["id"]] = found
+    if unresolved:
+        sys.exit(f"{len(unresolved)} retired crops name a replacement with no crop; nothing published: "
+                 + "; ".join(unresolved[:5]))
+
     stamp = time.strftime("%Y%m%dT%H%M%S") + f".{time.time_ns() % 10**9:09d}-{catalogue.parent.name}-{catalogue.stem}"
     run = OUT / "publish" / stamp
     (run / "pages").mkdir(parents=True)
 
-    # A retired crop names the crop it was retired in favour of, where the catalogue says: one hop, so a
-    # reader follows `replaced_by` while the crop it names is retired too.
-    replaced = dict(src.execute("SELECT id, target FROM unit_redirects")) if "unit_redirects" in tables else {}
-    n, crop_ids, retired = 0, {}, set()
+    n, crop_ids, retired, naming = 0, {}, set(), []
     for r in units:
         data = json.loads(r["data"])
         if r["origin"] == "retired":
             cid = m.known(r["id"])
             current = cid is not None and m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
-            named = {"replaced_by": replaced[r["id"]]} if r["id"] in replaced else {}
             if current:
-                m.retire(cid, r["id"], current["revision"], named)
+                m.retire(cid, r["id"], current["revision"])
                 retired.add(cid)
                 n += 1
-            elif cid is not None:
-                # Already retired: a replacement named since is added to its entry.
-                if named and entry(cid).get("replaced_by") != named["replaced_by"]:
-                    m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": r["id"], "retired": True, **named}, True)
             elif cid is None:
                 # A crop retired before it reached the new layout still gets a number, kept only in its
                 # page's bundle, so its reviews, claims and links resolve.
                 cid = m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
-                m.touched_pages[cid // PAGE][cid % PAGE] = (
-                    {"id": r["id"], "retired": True, **bundle_entry(data), **named}, True)
+                m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": r["id"], "retired": True, **bundle_entry(data)}, True)
                 n += 1
+            if r["id"] in replacing:
+                naming.append((cid, r["id"]))
             continue
         cid = m.known(r["id"]) or m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
         crop_ids[r["id"]] = cid
@@ -584,6 +603,16 @@ def main():
             m.crop(given, {"id": r["id"], "label": r["label"], "record_place": [r["object"], r["offset"], r["size"]]},
                    o["revision"] if o else 0, o is not None)
             n += 1
+
+    # Replacements are numbered once every crop of the catalogue has its id.
+    for cid, text_id in naming:
+        target = m.known(replacing[text_id])
+        retiring_now = m.touched_pages.get(cid // PAGE, {}).get(cid % PAGE)
+        if retiring_now:
+            retiring_now[0]["replaced_by"] = target
+        elif entry(cid).get("replaced_by") != target:
+            # Already retired: a replacement named since, or one the entry holds as a text id, is set.
+            m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": text_id, "retired": True, "replaced_by": target}, True)
 
     # Runs: those starting at this catalogue's crops follow it; those touching a retired crop go.
     runs_note = ""

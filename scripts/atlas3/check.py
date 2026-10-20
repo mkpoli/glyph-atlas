@@ -13,7 +13,7 @@ in `out/check-<stamp>.txt` and the run exits 1.
   columns come from its review overlay.
 - Bundles: each collected crop's entry is its live record (less the fields its row holds), a corpus
   glyph's points at its live record, and a retired crop's is marked retired, names its replacement
-  and has no row.
+  by the integer id of the first crop on its redirect chain, and has no row.
 - Runs: the runs of two and three crops are the live ones, crop for crop, with their graphemes, hand
   and book.
 - Images: every live image key is in the image key map, at its live place.
@@ -28,7 +28,7 @@ import sys
 import time
 from collections import Counter
 
-from build import HERE, OUT, PAGE, bundle_entry, char_text
+from build import HERE, OUT, PAGE, bundle_entry, char_text, replacement
 
 SHOWN = 20
 
@@ -143,12 +143,21 @@ def main():
             if e.get("id") != u[0] or have != bundle_entry(data):
                 differ = sorted(k for k in have.keys() | bundle_entry(data).keys() if have.get(k) != bundle_entry(data).get(k))
                 wrong.append(f"{u[0]} ({cid}): bundle entry {e.get('id')} differs in {differ}")
+    def replaced_by(text):
+        if text not in redirects:
+            return None
+        try:
+            found = replacement(text, redirects, id_of.__contains__)
+        except ValueError as loop:
+            return f"a redirect loop ({loop})"
+        return id_of[found] if found else f"{redirects[text]}, which has no crop"
+
     for u in sorted(retired, key=lambda u: id_of.get(u[0], -1)):
         cid = id_of.get(u[0])
         e = (entry(cid) or {}) if cid is not None else {}
-        if cid is not None and (cid in rows or not e.get("retired") or e.get("id") != u[0] or e.get("replaced_by") != redirects.get(u[0])):
+        if cid is not None and (cid in rows or not e.get("retired") or e.get("id") != u[0] or e.get("replaced_by") != replaced_by(u[0])):
             wrong.append(f"{u[0]} ({cid}): retired on the live site; new layout row {cid in rows}, entry {e.get('id')} "
-                         f"retired {e.get('retired')} replaced by {e.get('replaced_by')}, live {redirects.get(u[0])}")
+                         f"retired {e.get('retired')} replaced by {e.get('replaced_by')}, live {replaced_by(u[0])}")
     report.check("every collected and retired crop's bundle entry is its live record", wrong)
 
     wrong = []

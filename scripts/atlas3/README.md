@@ -58,8 +58,13 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   at a revision no older than the published one. The exporters drop withdrawn crops instead, so a
   withdrawal needs a catalogue that names it. A retired crop the new layout never had (the first
   build left out the 56 live ones, each kept for its history) gets a number and a retired bundle
-  entry with its record, and with `replaced_by` where the catalogue's `unit_redirects` names its
-  replacement, so its reviews, claims and links resolve.
+  entry with its record, so its reviews, claims and links resolve.
+- A retired crop's entry names its replacement in `replaced_by`, as an integer crop id: the first
+  text id on its `unit_redirects` chain that has a crop in `out/mirror.sqlite` or gets one in the
+  same publish, followed as `aliases.py` follows it. A reader follows `replaced_by` on while that
+  crop is retired too. A chain that loops or ends at a text id with no crop stops the publish with
+  examples. An entry that holds its replacement as a text id is rewritten by the next publish whose
+  catalogue carries the crop as retired.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
   keeps its runs.
 - A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`

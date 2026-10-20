@@ -80,6 +80,22 @@ def bundle_entry(data):
     return {k: v for k, v in data.items() if v is not None and k not in ROW_FIELDS}
 
 
+def replacement(text_id, redirects, has):
+    """The first text id on text_id's redirect chain (its target, that target's target, ...) for which
+    `has` holds, as aliases.py follows a chain; None when the chain ends at a text id without one.
+    Raises ValueError naming the loop when the chain comes back to a text id it passed."""
+    chain, at = [text_id], redirects[text_id]
+    while True:
+        if at in chain:
+            raise ValueError(" -> ".join(chain[chain.index(at):] + [at]))
+        if has(at):
+            return at
+        if at not in redirects:
+            return None
+        chain.append(at)
+        at = redirects[at]
+
+
 STATE = {"pending": 0, "checked": 1, "flagged": 2}
 STYLE = {"cursive": 0, "running": 1, "unassessed": 2, "mixed": 3, "formal": 4, "printed": 5}
 
