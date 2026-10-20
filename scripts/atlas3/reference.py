@@ -20,12 +20,18 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
   `…IDEOGRAPH-<hex>`, for a search by name.
 - `list/graphemes/<n>.json.gz` and `list/ligatures/<n>.json.gz`: the cards of families of several
   characters, and the ligatures, by code point, LIST_PAGE to an object.
+- `components/<code point>.json.gz`: the characters that hold a component, for the component search,
+  as `{"total": n, "groups": [[tier, size, code points, flags], ...]}` in tier, size, code point
+  order. A group's code points are integers, each after the first given as the step from the one
+  before; a flag is `n * 2 + direct`. Tier and size are a character's own, so they are written once
+  for the group of characters that share them.
+- `components/names.json.gz`: what a person may type for each component: `same`, the components typed
+  as themselves, as one string, and `other`, `{typed: component}` for the rest.
 
 A shard is the first two hex digits of the SHA-256 of its key's code point(s) as text.
 
 D1 rows (`migrations-atlas/0004_reference.sql`) for what a query filters, joins or sorts on:
-`component_variants`, `words`, `word_spellings`, `han_components`, `han_component_names` and
-`name_order`. Cards name characters by `graphemes` id: a card's character or family head the layout
+`component_variants`, `words`, `word_spellings` and `name_order`. Cards name characters by `graphemes` id: a card's character or family head the layout
 lacks is numbered as the publisher numbers one, and every grapheme takes its card's family head.
 Graphemes are written as `publish.py` writes them, through `char_text`.
 
@@ -82,8 +88,6 @@ TABLES = {
     "component_variants": (("a", "b", "count"), ("a", "b")),
     "words": (SOURCES["words"], ("id",)),
     "word_spellings": (SOURCES["word_spellings"], ("word", "spelling", "source", "locator")),
-    "han_components": (SOURCES["han_components"], ("component", "tier", "size", "code_point")),
-    "han_component_names": (SOURCES["han_component_names"], ("query",)),
     "name_order": (("code_point", "occurrence"), ("code_point",)),
 }
 SAMPLE_LISTS = ("representatives", "anchors")
@@ -111,6 +115,11 @@ def object_key(code_point):
 
 def code_points(code_point):
     return tuple(int(p.removeprefix("U+"), 16) for p in code_point.split())
+
+
+def code_point_of(text):
+    """`U+6C34` for 水; code points joined by spaces for a text of several."""
+    return " ".join(f"U+{ord(c):04X}" for c in text)
 
 
 def compact(value):
@@ -269,14 +278,14 @@ def translate(atlas, mirror, path):
             objects[f"list/{list_name}/{n // LIST_PAGE}.json.gz"] = encode(
                 f'{{"total":{len(items)},"offset":{n},"items":[{",".join(items[n:n + LIST_PAGE])}]}}')
 
+    for rel, text in component_lists():
+        objects[rel] = encode(text)
+
     out.executemany("INSERT INTO component_variants VALUES(?,?,?)", [(a, b, v[0]) for (a, b), v in pairs.items()])
-    for table in ("words", "word_spellings", "han_component_names"):
+    for table in ("words", "word_spellings"):
         cols = SOURCES[table]
         out.executemany(f'INSERT INTO "{table}" VALUES({",".join("?" * len(cols))})',
                         source(table).execute(f'SELECT {",".join(cols)} FROM "{table}"'))
-    out.executemany("INSERT INTO han_components VALUES(?,?,?,?,?,?)",
-                    ((c, t, s, int(cp.removeprefix("U+"), 16), n, d) for c, t, s, cp, n, d in
-                     source("han_components").execute("SELECT component, tier, size, code_point, n, direct FROM han_components")))
     out.executemany("INSERT INTO name_order VALUES(?,?)", [(code_points(c[0])[0], c[8]) for c in cards if " " not in c[0] and c[8] > 0])
     out.commit()
 
@@ -284,6 +293,42 @@ def translate(atlas, mirror, path):
     notes["graphemes of the layout whose family head the cards change"] = len(changed)
     notes["graphemes the layout lacks, numbered by this load"] = len(g.new)
     return out, objects, g.new, {gid: heads.get(gid) for gid in g.new.values()}, changed, notes
+
+
+def component_list(rows):
+    """One component's list from its (tier, size, code point, n, direct) rows."""
+    groups = []
+    for tier, size, point, n, direct in sorted(rows):
+        if not groups or groups[-1][:2] != [tier, size]:
+            groups.append([tier, size, [point], [n * 2 + direct]])
+            last = point
+            continue
+        groups[-1][2].append(point - last)
+        groups[-1][3].append(n * 2 + direct)
+        last = point
+    return compact({"total": len(rows), "groups": groups})
+
+
+def component_lists():
+    """(path, JSON text) of each component's list and of the names a person may type."""
+    rows = source("han_components").execute(
+        "SELECT component, tier, size, code_point, n, direct FROM han_components ORDER BY component")
+    component, held = None, []
+    for c, tier, size, point, n, direct in rows:
+        if c != component and held:
+            yield f"components/{object_key(code_point_of(component))}.json.gz", component_list(held)
+            held = []
+        component = c
+        held.append((tier, size, code_points(point)[0], n, int(bool(direct))))
+    if held:
+        yield f"components/{object_key(code_point_of(component))}.json.gz", component_list(held)
+    same, other = [], {}
+    for query, c in source("han_component_names").execute("SELECT query, component FROM han_component_names ORDER BY query"):
+        if query == c:
+            same.append(query)
+        else:
+            other[query] = c
+    yield "components/names.json.gz", compact({"same": "".join(same), "other": other})
 
 
 def has(db, table):

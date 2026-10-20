@@ -2,6 +2,7 @@
 // writes under `v3/reference/` (decision record 0007), read by key with no D1 read. A shard is the
 // first two hex digits of the SHA-256 of its key's code point(s) as text.
 
+import { COMPONENT_PARTS, COMPONENT_SCAN, rankMatches } from './components';
 import { heldShards } from './atlas3Media';
 
 type Json = any;
@@ -52,4 +53,78 @@ export async function cardList(env: Env, list: 'graphemes' | 'ligatures', offset
   const pages = await Promise.all([...new Set([first, last])].map(n => read(env, `${PREFIX}list/${list}/${n}.json.gz`, ctx)));
   const items = pages.flatMap(page => page?.items ?? []), start = offset - first * LIST_PAGE;
   return { items: items.slice(start, start + limit), total: pages[0]?.total ?? 0 };
+}
+
+// A component's list: [tier, size, code points, flags] groups in tier, size, code point order. Each
+// code point after a group's first is the step from the one before; a flag is n * 2 + direct.
+type ComponentList = { total: number; groups: [number, number, number[], number[]][] };
+type ComponentNames = { same: string; other: Record<string, string> };
+type Group = { points: number[]; flags: number[] };
+
+const codeKey = (text: string) => [...text].map(c => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`).join('-');
+
+// A list's groups by tier and size, each decoded the first time a lookup reaches it.
+function groupsOf(list: ComponentList) {
+  const at = new Map(list.groups.map((g, i) => [`${g[0]},${g[1]}`, i]));
+  const decoded = new Map<number, Group>();
+  return (tier: number, size: number): Group | null => {
+    const i = at.get(`${tier},${size}`);
+    if (i === undefined) return null;
+    let group = decoded.get(i);
+    if (!group) {
+      const [, , steps, flags] = list.groups[i], points = new Array<number>(steps.length);
+      for (let k = 0, p = 0; k < steps.length; k++) points[k] = p = k ? p + steps[k] : steps[0];
+      decoded.set(i, group = { points, flags });
+    }
+    return group;
+  };
+}
+
+function indexOf(points: number[], point: number): number {
+  let lo = 0, hi = points.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid] === point) return mid;
+    if (points[mid] < point) lo = mid + 1; else hi = mid - 1;
+  }
+  return -1;
+}
+
+// The component search on the R2 lists, answering as components.ts answers from D1: the rarest
+// component's first COMPONENT_SCAN characters, each looked up in the list of every other component.
+// A search reads the names object and one list per component, at most COMPONENT_PARTS; the longest
+// list, 一, holds 86,700 characters.
+export async function componentMatches(env: Env, wanted: Map<string, number>, limit: number, ctx?: ExecutionContext) {
+  const none = { codes: [] as string[], more: false };
+  const names = await read(env, `${PREFIX}components/names.json.gz`, ctx) as ComponentNames | null;
+  if (!names || wanted.size > COMPONENT_PARTS) return none;
+  // Two typed forms of one component (⺡ and 氵) ask for it twice.
+  const parts = new Map<string, number>();
+  for (const [typed, n] of wanted) {
+    const component = Object.hasOwn(names.other, typed) ? names.other[typed] : names.same.includes(typed) ? typed : null;
+    if (!component) return none;
+    parts.set(component, (parts.get(component) ?? 0) + n);
+  }
+  const lists = await Promise.all([...parts.keys()].map(c => read(env, `${PREFIX}components/${codeKey(c)}.json.gz`, ctx) as Promise<ComponentList | null>));
+  if (lists.some(list => !list)) return none;
+  const [driver, ...others] = [...parts.values()].map((n, i) => ({ n, list: lists[i]! })).sort((a, b) => a.list.total - b.list.total);
+  const lookups = others.map(other => ({ n: other.n, group: groupsOf(other.list) }));
+  const found: { code_point: string; tier: number; size: number; direct: number }[] = [];
+  let scanned = 0;
+  scan: for (const [tier, size, steps, flags] of driver.list.groups) {
+    for (let k = 0, point = 0; k < steps.length; k++) {
+      if (scanned++ >= COMPONENT_SCAN) break scan;
+      point = k ? point + steps[k] : steps[0];
+      if (flags[k] >> 1 < driver.n) continue;
+      let direct = flags[k] & 1, held = true;
+      for (const other of lookups) {
+        const group = other.group(tier, size), at = group ? indexOf(group.points, point) : -1;
+        if (at < 0 || group!.flags[at] >> 1 < other.n) { held = false; break; }
+        direct += group!.flags[at] & 1;
+      }
+      if (held) found.push({ code_point: `U+${point.toString(16).toUpperCase().padStart(4, '0')}`, tier, size, direct });
+    }
+  }
+  const ranked = rankMatches(found);
+  return { codes: ranked.slice(0, limit).map(row => row.code_point), more: ranked.length > limit || driver.list.total > COMPONENT_SCAN };
 }

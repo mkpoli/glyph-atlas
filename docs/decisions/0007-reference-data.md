@@ -27,13 +27,17 @@ character. Only a small part is filtered, joined or sorted in SQL.
   names a search by name can match: those that say more than `…IDEOGRAPH-<hex>`), and
   `list/graphemes/<n>.json.gz`, `list/ligatures/<n>.json.gz` (the card lists, 500 to an object, so a
   page of the list reads at most two).
+- `components/<code point>.json.gz`, one per component: the characters that hold it, in tier, size,
+  code point order, grouped by tier and size so each is written once per group, code points as steps.
+  `components/names.json.gz` gives what a person may type for each component. The component search
+  reads the names and one list per component it asks for (two to eight) and intersects them in the
+  Worker: the rarest list's first 3,000 characters, each looked up in the others, as the D1 query did.
 
 A shard is the first two hex digits of the SHA-256 of its key's code point(s).
 
 **What a query filters, joins or sorts on stays in D1** (`migrations-atlas/0004_reference.sql`):
 `component_variants` without its pairs (the IDS editor's substitutes, read by either end), `words` and
-`word_spellings` (looked up by spelling and validated by claims), `han_components` with integer code
-points and `han_component_names` (the component search intersects lists in SQL), and `name_order`,
+`word_spellings` (looked up by spelling and validated by claims), and `name_order`,
 how often a character occurs, which ranks the characters a name search finds. `name_order` is keyed
 by code point, as `names` files them.
 

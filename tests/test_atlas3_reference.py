@@ -42,8 +42,9 @@ def sources(root, cards=(), variants=(), derived=(), writers=(), substitutions=(
                                           "statement", "documents", "occurrences"),
                  [("ja/ばかり/副助詞", "許", "dictionary", "x", "attested", "source", "", "", "許（ばかり）", None, None)])
     write_source(root, "han_ids", ("char", "sequences", "shapes"), [("好", '["⿰女子"]', None)])
-    write_source(root, "han_components", ("component", "tier", "size", "code_point", "n", "direct"), [("女", 0, 2, "U+597D", 1, 1)])
-    write_source(root, "han_component_names", ("query", "component", "total"), [("女", "女", 1)])
+    write_source(root, "han_components", ("component", "tier", "size", "code_point", "n", "direct"),
+                 [("女", 0, 2, "U+597D", 1, 1), ("女", 1, 3, "U+5973", 1, 1), ("女", 0, 2, "U+5982", 2, 0)])
+    write_source(root, "han_component_names", ("query", "component", "total"), [("女", "女", 3), ("⼥", "女", 3)])
 
 
 class Bucket:
@@ -131,7 +132,10 @@ def test_a_card_is_one_object_with_its_edges_and_the_layout_numbers_its_characte
     assert bucket.objects["v3/reference/list/graphemes/0.json.gz"]["total"] == 2
     assert bucket.objects[f"v3/reference/ids/{shard('好')}.json.gz"] == {"好": [["⿰女子"], None]}
     assert db.execute("SELECT * FROM component_variants ORDER BY a").fetchall() == [("安", "阿", 2), ("氵", "水", 3)]
-    assert db.execute("SELECT code_point FROM han_components").fetchall() == [(0x597D,)]
+    # A component's characters by tier and size, code points as steps, flags n * 2 + direct.
+    assert bucket.objects["v3/reference/components/U+5973.json.gz"] == {
+        "total": 3, "groups": [[0, 2, [0x597D, 5], [3, 4]], [1, 3, [0x5973], [3]]]}
+    assert bucket.objects["v3/reference/components/names.json.gz"] == {"same": "女", "other": {"⼥": "女"}}
     report = (root / "out" / "reference-report.txt").read_text()
     assert "visual group samples whose crop is not published, left out: 2" in report
     # The local copy replays the same parts, and a rerun sends nothing.
@@ -183,7 +187,7 @@ def test_only_what_changed_is_sent_and_an_earlier_copy_loads_again(layout, monke
     assert bucket.objects["v3/reference/char/U+3042.json.gz"]["data"]["occurrence_count"] == 3
     second = sorted((root / "out" / "reference-load").glob("reference-2-*/*.sql"))
     sent = "".join(p.read_text() for p in second)
-    assert "DELETE FROM \"words\"" in sent and "han_components" not in sent
+    assert "DELETE FROM \"words\"" in sent and "component_variants" not in sent
     # Back to the first copy: the same rows as the first load, sent again under the next generation.
     sources(root, cards=[card("あ"), card("い")], words=[word])
     load(remote, monkeypatch, "--send", bucket=bucket)
@@ -214,7 +218,6 @@ def test_a_load_that_stopped_partway_is_finished_first(layout, monkeypatch):  # 
     monkeypatch.setattr(remote, "send", real)
     load(remote, monkeypatch, "--send")
     db = remote.dbs["glyph-atlas-v3"]
-    assert db.execute("SELECT count(*) FROM han_components").fetchone() == (1,)
     assert db.execute("SELECT count(*) FROM words").fetchone() == (1,)
     assert len(list((root / "out" / "reference-load").glob("reference-*-*"))) == 1
 
@@ -222,9 +225,8 @@ def test_a_load_that_stopped_partway_is_finished_first(layout, monkeypatch):  # 
 def test_migration_0004_is_applied_once_where_the_layout_lacks_it(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root, cards=[card("あ")])
-    both(root, remote, ";".join(f"DROP TABLE {t}" for t in ("component_variants", "words", "word_spellings",
-                                                            "han_components", "han_component_names", "name_order")))
+    both(root, remote, ";".join(f"DROP TABLE {t}" for t in ("component_variants", "words", "word_spellings", "name_order")))
     load(remote, monkeypatch, "--send")
     db = remote.dbs["glyph-atlas-v3"]
     assert db.execute("SELECT count(*) FROM imports WHERE stamp='migration:0004'").fetchone() == (1,)
-    assert db.execute("SELECT count(*) FROM han_component_names").fetchone() == (1,)
+    assert db.execute("SELECT count(*) FROM words").fetchone() == (1,)

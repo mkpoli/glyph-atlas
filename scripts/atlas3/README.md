@@ -148,8 +148,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 7. **Move the reference data:** `pull.py --fresh` copies the character cards, the 異体字 graph and its
    derived tier, the writers, words and spellings and the component index. `reference.py` (dry run
    by default) writes the cards with their edges, derived forms and writers as one R2 object per
-   character under `v3/reference/`, beside sharded card summaries, the IDS, the name list and the
-   card lists; the rows a query filters, joins or sorts on go to the tables of
+   character under `v3/reference/`, beside sharded card summaries, the IDS, the name list, the
+   card lists and one list per component; the rows a query filters, joins or sorts on go to the tables of
    `migrations-atlas/0004_reference.sql`. A card's character or family head the layout lacks gets
    the next grapheme id, and every grapheme takes its card's family head. A visual group's samples
    are crop ids found in the mirror and in `crops`. `--send` applies 0004 once, loads only the rows
