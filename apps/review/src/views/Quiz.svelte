@@ -21,7 +21,7 @@
   import { keptCrops, outbox } from '../lib/outbox.svelte.js'
   import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
-  import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
+  import { firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
   import { unslug } from '../lib/gallery.js'
   import { useSession } from '../lib/session.svelte.js'
@@ -235,9 +235,9 @@
         chosen = tries === 0 && target && available.some(c => c.label === target) ? target
           : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
         if (!chosen) break
-        result = await catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed })
+        result = await firstCrops(offset => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,
+          ...(offset ? { offset } : {}) }), away)
         if (closed || id !== requestId) return
-        result = { ...result, items: result.items.filter(item => !away.has(item.id)) }
         if (result.items.length) break
         available = available.filter(c => c.label !== chosen)
         chosen = null
