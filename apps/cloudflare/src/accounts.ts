@@ -58,10 +58,11 @@ const RESUME = 20;
  * marked and deleted with their sessions here, in the same batch.
  */
 export async function startForgetting(env: Env, user: string) {
-  const at = new Date().toISOString(), linked = 'SELECT anonymous FROM anonymous_links WHERE user=?';
+  // Only users still anonymous: a link never deletes an account.
+  const at = new Date().toISOString(), linked = `SELECT id FROM "user" WHERE isAnonymous=1 AND id IN (SELECT anonymous FROM anonymous_links WHERE user=?)`;
   await env.ACCOUNTS.batch([
     env.ACCOUNTS.prepare('INSERT OR IGNORE INTO forgotten(user,at) VALUES(?,?)').bind(user, at),
-    env.ACCOUNTS.prepare(`INSERT OR IGNORE INTO forgotten(user,at) SELECT anonymous,? FROM anonymous_links WHERE user=?`).bind(at, user),
+    env.ACCOUNTS.prepare(`INSERT OR IGNORE INTO forgotten(user,at) SELECT id,? FROM (${linked})`).bind(at, user),
     env.ACCOUNTS.prepare(`DELETE FROM session WHERE userId IN (${linked})`).bind(user),
     env.ACCOUNTS.prepare(`DELETE FROM "user" WHERE id IN (${linked})`).bind(user),
   ]);

@@ -246,6 +246,15 @@ describe('deleting a user', () => {
     expect([...media.keys()]).toEqual([`avatars/${stays}/a.webp`]);
     expect((await send('/get-session', undefined)).ok).toBe(true);
   });
+  it('deletes no account linked to it as if anonymous', async () => {
+    const { call, accounts, atlas, gone, stays } = await seeded('https://linked.glyphatlas.org');
+    accounts.exec(`INSERT INTO anonymous_links(anonymous,user,at) VALUES('${stays}','${gone}','2026-10-20T00:00:00.000Z')`);
+    expect(await call('/admin/remove-user', { userId: gone })).toBe(200);
+    expect(accounts.query('SELECT count(*) AS n FROM "user" WHERE id=?').get(stays)).toEqual({ n: 1 });
+    expect(accounts.query('SELECT count(*) AS n FROM session WHERE userId=?').get(stays)).toEqual({ n: 1 });
+    expect(atlas.query('SELECT user,crop FROM favourites').all()).toEqual([{ user: stays, crop: 7 }]);
+    expect(atlas.query('SELECT user FROM actors WHERE key=?').get(stays)).toEqual({ user: stays });
+  });
   it('is finished by the hourly run, which waits while writes are paused', async () => {
     const { call, accounts, atlas, env, gone } = await seeded('https://hourly.glyphatlas.org');
     const batch = env.ATLAS.batch;
