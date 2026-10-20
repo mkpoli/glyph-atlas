@@ -294,7 +294,7 @@ def test_a_decision_made_while_the_rows_are_sent_stops_the_load_and_opens_decisi
 
     def racing(database, file, stamp):
         # A decision lands between the first check and `loading`.
-        if stamp.endswith(".begin"):
+        if stamp.endswith(".begin-0000"):
             db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) "
                        "VALUES(1, 'd9', '2026-10-21', 'a', 'cluster', 'U+304B', 'r1', '[]', '[]', '')")
             db.commit()
@@ -311,6 +311,38 @@ def test_a_decision_made_while_the_rows_are_sent_stops_the_load_and_opens_decisi
     with pytest.raises(sqlite3.IntegrityError, match="republished"):
         db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) "
                    "VALUES(2, 'd10', '2026-10-21', 'a', 'cluster', 'U+304B', 'r1', '[]', '[]', '')")
+
+
+def test_a_rerun_of_a_refused_run_sets_loading_again_while_its_rows_go(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, decision=None)
+    facts(root, remote, monkeypatch, "--send")
+    db, local = remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")
+    # A cluster decision changes rows only, so the next load's run is named the same on each attempt.
+    decisions(root, remote, (1, "d1", "2026-01-01", "U+304B:c1"))
+    sources(root, decision="d1")
+    sent, names, loading = remote.send, [], []
+    site = "VALUES(2, 'd9', '2026-10-21', 'a', 'cluster', 'U+304B', 'r1', '[]', '[]', '')"
+
+    def racing(database, file, stamp):
+        names.append(stamp.split(".")[0])
+        if stamp.endswith(".begin-0000"):
+            db.execute(f"INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) {site}")
+            db.commit()
+        if ".rows-" in stamp:
+            loading.append(db.execute("SELECT loading FROM form_state").fetchone()[0])
+        return sent(database, file, stamp)
+
+    monkeypatch.setattr(remote, "send", racing)
+    with pytest.raises(SystemExit, match="form decisions"):
+        facts(root, remote, monkeypatch, "--send")
+    assert not loading
+    local.execute(f"INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) {site}")
+    local.commit()
+    facts(root, remote, monkeypatch, "--send")
+    assert len(set(names)) == 1 and loading and set(loading) == {1}
+    assert db.execute("SELECT loading FROM form_state").fetchone() == (0,)
+    assert db.execute("SELECT decision FROM form_clusters").fetchone() == ("d1",)
 
 
 def test_a_cluster_decision_not_the_latest_loaded_stops_the_load(layout, monkeypatch):  # noqa: F811

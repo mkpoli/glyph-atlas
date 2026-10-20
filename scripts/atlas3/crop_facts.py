@@ -430,11 +430,16 @@ def deliver(run, atlas, mirror, build):
             upload(files, prefix)
             copy_out(run, files)
             mark(run, f"uploaded {kind}")
-    if (run / "begin.sql").exists():
-        apply(run, atlas, run / "begin.sql")
+    if (run / "end.sql").exists():
+        # Each attempt sets `loading` under its own stamp: a rerun after a refused attempt sets it again.
+        attempt = len(list(run.glob("release-*.sql")))
+        begin = run / f"begin-{attempt:04}.sql"
+        if not begin.exists():
+            begin.write_text(stamped("UPDATE form_state SET loading = 1 WHERE id = 0;", f"{run.name}.{begin.stem}"))
+        apply(run, atlas, begin)
         if problem := guard(atlas):
             # The rows stay unsent: decisions open again, and the lists already up are noted for cleaning.
-            release = run / f"release-{len(list(run.glob('release-*.sql'))):04}.sql"
+            release = run / f"release-{attempt:04}.sql"
             release.write_text(stamped("UPDATE form_state SET loading = 0 WHERE id = 0;", f"{run.name}.{release.stem}"))
             apply(run, atlas, release)
             clean(run, atlas)
@@ -537,7 +542,6 @@ def main():
     fits(groups)
     extra = dict(facts.objects)
     if groups:
-        extra["begin.sql"] = stamped("UPDATE form_state SET loading = 1 WHERE id = 0;", f"{run.name}.begin")
         extra["end.sql"] = stamped(f"UPDATE form_state SET lists = {lit(run.name)}, loading = 0 WHERE id = 0;",
                                    f"{run.name}.end")
     if dry:
