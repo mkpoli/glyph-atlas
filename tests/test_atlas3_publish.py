@@ -639,3 +639,32 @@ def test_a_publish_needing_a_statement_over_d1s_limit_allocates_nothing(layout, 
     with pytest.raises(SystemExit, match="over D1's limit"):
         run(publish, monkeypatch, tmp_path / "c.sqlite")
     assert "ex:new" not in ids(root)
+
+
+def corpus_catalogue(path, rows):
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.executemany("INSERT INTO corpus_units VALUES(?,?,NULL,NULL,7,'corpus-0003.bin',0,100,'printed',0,'unassessed','codh:b',NULL)", rows)
+    db.commit()
+    return path
+
+
+def test_a_corpus_republish_keeps_a_followed_character_and_moves_its_base(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "c1.sqlite", [("codh:x1", "き"), ("codh:x2", "き")]))
+    x1, x2 = ids(root)["codh:x1"], ids(root)["codh:x2"]
+    db = remote.dbs["glyph-atlas-v3"]
+    grapheme = lambda text: db.execute("SELECT id FROM graphemes WHERE text=?", (text,)).fetchone()[0]
+    # A forms decision moved x1 to か in the Worker; its base is き.
+    db.execute("INSERT INTO form_bases(crop, char) VALUES(?, ?)", (x1, grapheme("き")))
+    db.execute("UPDATE crops SET char=? WHERE id=?", (grapheme("か"), x1))
+    db.commit()
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "c2.sqlite", [("codh:x1", "く"), ("codh:x2", "く")]))
+    after = crops(remote)
+    assert (after[x1]["char"], after[x2]["char"]) == (grapheme("か"), grapheme("く"))
+    # A withdrawn form restores the base, now the new upstream character.
+    assert db.execute("SELECT char FROM form_bases WHERE crop=?", (x1,)).fetchone()[0] == grapheme("く")
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert local.execute("SELECT char FROM crops WHERE id=?", (x2,)).fetchone()[0] == grapheme("く")
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "c3.sqlite", [("codh:x1", "く"), ("codh:x2", "く")]))
+    assert crops(remote)[x1]["char"] == grapheme("か")

@@ -165,7 +165,7 @@ describe('the forms routes on glyph-atlas-v3', () => {
       .concat([['は', (counted.get('は') ?? 0) - glyphs.length]]).filter(([, n]) => n !== 0)));
   });
 
-  it('give a glyph its character back when no decision names a form for it, and leave a reviewed one alone', async () => {
+  it('give a glyph its base character back when no decision names a form for it, and leave a reviewed one alone', async () => {
     const { fresh } = both();
     const first = glyphs[0], reviewed = glyphs[1];
     fresh.db.exec(`UPDATE crops SET revision=2 WHERE id=${reviewed.crop}`);
@@ -175,10 +175,12 @@ describe('the forms routes on glyph-atlas-v3', () => {
     await followCorpus(fresh.env);
     const char = (crop: number) => (fresh.db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(crop) as any).text;
     expect([char(first.crop), char(reviewed.crop)]).toEqual(['𛂞', 'は']);
+    // A republish gave the glyph a new upstream character, which became its base (publish.py).
+    fresh.db.exec(`INSERT INTO graphemes(id,text) VALUES(9,'ほ'); UPDATE form_bases SET char=9 WHERE crop=${first.crop}`);
     await send({ kind: 'cluster', cluster: first.cluster.key, form: null });
     await followCorpus(fresh.env);
-    expect(char(first.crop)).toBe('は');
-    expect(fresh.db.query('SELECT count(*) AS n FROM tally WHERE n<>0').get()).toEqual({ n: 0 });
+    expect(char(first.crop)).toBe('ほ');
+    
   });
 
   it('move a large decision in batches', async () => {

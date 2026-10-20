@@ -297,6 +297,15 @@ class Mirror:
                 self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in reviewed)} "
                                           f"WHERE id={cid} AND revision={old['revision']};")
                 self.guarded.append(cid)
+            if (old["kind"] == 1 and given.get("kind") == 1 and not review_columns and "char" in given
+                    and old["char"] != row["char"]):
+                # An unnamed corpus glyph's new upstream character. One a forms decision moved
+                # (`form_bases`, decision record 0008) keeps its followed character and takes the new one
+                # as its base, which a withdrawn form restores; any other takes it while still unnamed.
+                self.page_sql[pid].append(f"UPDATE form_bases SET char={lit(row['char'])} WHERE crop={cid};")
+                self.page_sql[pid].append(f"UPDATE crops SET char={lit(row['char'])} WHERE id={cid} AND revision=0 "
+                                          f"AND NOT EXISTS (SELECT 1 FROM form_bases WHERE crop={cid});")
+                changed.append("char")
             if "char" in changed:
                 self.relabelled.append(cid)
             if changed:
