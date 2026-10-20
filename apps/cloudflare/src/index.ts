@@ -20,10 +20,11 @@ import { Problem, READ_BUDGET, RETRY_AFTER, StorageUnavailable, described, retri
 import { pausedCallback, pausedResponse, pausedSignOut, writes, writesPaused } from './freeze';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
 import { honkokuPage } from './honkoku';
-import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
-import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
+import { CITE_TTL, CITE_TYPES, FORMATS, bibtex, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
+import { dateStats, datingOf, documentDates, documentOf, withDating } from './dating';
 import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
 import { MediaIncomplete, mediaResponse } from './atlas3Media';
+import { cards, characterCard, characterPage, chronology, byCodePoint, citeCharacter, corpusOccurrences, decades, describedCard, jamoCard, occurrences, type CharacterTools } from './routes/character';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 export { dateClaimsQuery, dateStatsQuery, datingQuery, tallyDates } from './dating';
@@ -219,35 +220,27 @@ async function cropVersions(env: Env, id: string) {
   return { id: row.id, current: record(row).crop_version, versions };
 }
 // A citation of a crop at one of its evidence versions (`?v=`, as `versionToken` names it; the current
-// one without), a grapheme or a form, as CSL-JSON, BibTeX or Hayagriva (`?format=`). It is read again
+// one without), as CSL-JSON, BibTeX or Hayagriva (`?format=`). It is read again
 // once the catalogue version moves (`catalogueStamps`), and on each new day (in UTC), the date it was accessed.
-const CITE_TTL = 3600;
-const CITABLE_CHARACTER = /^U\+[0-9A-Fa-f]{4,6}(-U\+[0-9A-Fa-f]{4,6})*$/;
-const CITE_TYPES: Record<Format, string> = { csl: 'application/vnd.citationstyles.csl+json; charset=utf-8',
-  bibtex: 'application/x-bibtex; charset=utf-8', hayagriva: 'application/yaml; charset=utf-8' };
 async function cite(env: Env, ctx: ExecutionContext, url: URL, kind: string, raw: string): Promise<Response> {
-  if (!(KINDS as readonly string[]).includes(kind)) throw new Problem(404, 'Unknown endpoint.');
+  if (kind !== 'crop') throw new Problem(404, 'Unknown endpoint.');
   let id: string;
   try { id = decodeURIComponent(raw) } catch { throw new Problem(404, 'Nothing is published at this address.') }
   const token = url.searchParams.get('v'), format = (url.searchParams.get('format') ?? 'csl') as Format;
   if (id.length > 512 || (token !== null && !/^[0-9a-z]{6}$/.test(token)) || !FORMATS.includes(format)) throw new Problem(422, 'Invalid citation address.');
-  if (kind !== 'crop' && !CITABLE_CHARACTER.test(id)) throw new Problem(404, 'Character not found.');
   const now = new Date(), day: Day = [now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate()];
   const key = new Request(`${url.origin}/atlas/cite/${kind}/${encodeURIComponent(id)}?v=${token ?? ''}&f=${format}&d=${day.join('-')}&c=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return new Response(cached.body, { headers: { ...Object.fromEntries(cached.headers), 'cache-control': 'no-cache' } });
-  let entry: Entry;
-  if (kind === 'crop') {
-    const row = await unit(env, id), data = record(row);
-    const honkoku = honkokuPage(data, row.document ?? data.source?.document_id ?? null);
-    let version: string | null = data.crop_version ?? null;
-    if (token !== null) {
-      const versions = (await env.DB.prepare(cropVersionsQuery()).bind(row.id).all<{ id: string }>()).results.map(r => r.id);
-      version = citedVersion(row.id, token, version ? [...versions, version] : versions);
-      if (!version) throw new Problem(404, 'This crop has no version by that name.');
-    }
-    entry = cropEntry({ ...data, ...(honkoku ? { honkoku_url: honkoku } : {}) }, row.origin === 'corpus' ? 'corpus' : 'collection', version);
-  } else entry = characterEntry(kind as 'grapheme' | 'form', (await known(env, id.split('-').join(' '))).detail);
+  const row = await unit(env, id), data = record(row);
+  const honkoku = honkokuPage(data, row.document ?? data.source?.document_id ?? null);
+  let version: string | null = data.crop_version ?? null;
+  if (token !== null) {
+    const versions = (await env.DB.prepare(cropVersionsQuery()).bind(row.id).all<{ id: string }>()).results.map(r => r.id);
+    version = citedVersion(row.id, token, version ? [...versions, version] : versions);
+    if (!version) throw new Problem(404, 'This crop has no version by that name.');
+  }
+  const entry: Entry = cropEntry({ ...data, ...(honkoku ? { honkoku_url: honkoku } : {}) }, row.origin === 'corpus' ? 'corpus' : 'collection', version);
   const body = format === 'bibtex' ? bibtex(entry, url.origin, day) + '\n' : format === 'hayagriva' ? hayagriva(entry, url.origin, day)
     : JSON.stringify([csl(entry, url.origin, day)], null, 2);
   // The edge keeps a copy for the day it is dated; a browser asks again, so a citation is never dated a day late.
@@ -1237,227 +1230,6 @@ function chunks<T>(list: T[], size: number): T[][] {
   for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
   return out;
 }
-// A character's edges in the 異体字 graph, both ways (0033): each by the key or by `b`'s index.
-export const variantEdgesQuery = () => `SELECT b AS other,relation,source,detail,written,widens FROM character_variants WHERE a=?
-  UNION ALL SELECT a AS other,relation,source,detail,written,widens FROM character_variants WHERE b=? LIMIT 2000`;
-// The graphemes a reduced form writes besides its own, and the forms that write a grapheme (0081): each by
-// its key or by the grapheme index, a handful of rows. `own` is 0 for a form with no character of its own (0083).
-export const writesQuery = () => `SELECT grapheme AS char,own FROM grapheme_writers WHERE writer=? LIMIT ${VARIANTS_SHOWN}`;
-// A writer is shared when it is a character of its own or writes another grapheme too (by the key).
-export const writersQuery = () => `SELECT writer AS char,own OR (SELECT count(*) FROM grapheme_writers o WHERE o.writer=w.writer)>1 AS shared
-  FROM grapheme_writers w WHERE grapheme=? LIMIT ${VARIANTS_SHOWN}`;
-// A character's derived list (0070): its one row, the forms in the order and caps refs.derived_variants gives them.
-export const derivedEdgesQuery = () => `SELECT forms FROM character_derived WHERE a=?`;
-// What the substitutions a derived list came by are backed by: each one's count and every pair behind
-// it with the sources that state it (the `component_variants` rows, keyed by substitution), at most
-// SUBSTITUTIONS_READ at a time so no statement binds more than D1's hundred parameters.
-export const substitutionQuery = (n: number) => `SELECT a,b,count,pairs FROM component_variants WHERE ${
-  Array(n).fill('(a=? AND b=?)').join(' OR ')}`;
-const SUBSTITUTIONS_READ = 50;
-// How many crops each of a bounded list of characters has here and in the corpus, from the counts the
-// triggers keep (0032, 0006): one key range per character, never a scan of the crops.
-export const variantCountsQuery = (n: number) => `SELECT character,sum(n) AS n FROM unit_counts WHERE origin='local' AND character IN (${Array(n).fill('?').join(',')}) GROUP BY character`;
-export const variantCorpusCountsQuery = (n: number) => `SELECT character,sum(n) AS n FROM corpus_characters WHERE character IN (${Array(n).fill('?').join(',')}) GROUP BY character`;
-// Each row of a card's variants lists at most this many, the most attested first; a gallery widens to
-// exactly the first row. The Python layer's VARIANTS_SHOWN.
-const VARIANTS_SHOWN = 32;
-// The tier of predictions, as its own source id: the citation comes from the export's metadata.
-const DERIVED_IDS = 'derived-ids';
-// A pair any source calls simplified is kept apart even where another lists it as a plain variant
-// (refs.KEPT_APART): cjkvi pairs 干 with 乾 and 幹, which four sources give as simplifications.
-const KEPT_APART = new Set(['simplified']);
-// The characters a gallery widened to its variants deals with `char`: the card's first row, in the
-// card's order (most sources, then code point), at most VARIANTS_SHOWN. One grouped read of the
-// character's edges, both ways by key and index.
-export const writtenVariantsQuery = () => `SELECT other FROM (
-    SELECT b AS other,relation,source,widens FROM character_variants WHERE a=?
-    UNION ALL SELECT a AS other,relation,source,widens FROM character_variants WHERE b=?)
-  WHERE other<>? GROUP BY other HAVING max(widens)=1 AND max(relation IN ('simplified'))=0
-  ORDER BY count(DISTINCT source) DESC,other LIMIT ${VARIANTS_SHOWN}`;
-async function writtenVariants(env: Env, char: string): Promise<string[]> {
-  const rows = (await env.DB.prepare(writtenVariantsQuery()).bind(char, char, char).all<{ other: string }>()).results;
-  return [char, ...rows.map(row => row.other)];
-}
-// A gallery widened to its variants pages this far at most and counts no further: the variants of a
-// common character can hold a hundred thousand corpus glyphs.
-const WIDENED_CAP = 2000;
-const widenedPage = (offset: number) => { if (offset > WIDENED_CAP) throw new Problem(404, 'A widened gallery does not page this far.') };
-// A character's crops with its variants', in the order `unit_character_style` holds them: by character,
-// then style (`STYLE_ORDER`), then id.
-export const widenedCropsQuery = (n: number, extra = '') => `SELECT * FROM units WHERE origin=? AND character IN (${Array(n).fill('?').join(',')})${extra} ORDER BY character,style_order,id LIMIT ? OFFSET ?`;
-export const widenedCropsCountQuery = (n: number, extra = '') => `SELECT count(*) AS n FROM (SELECT 1 FROM units WHERE origin=? AND character IN (${Array(n).fill('?').join(',')})${extra} LIMIT ${WIDENED_CAP + 1})`;
-// A corpus category: its glyphs, those corrected into it and not out of it, each branch in its own
-// index order (`k`, `s`, `i`: `corpus_character_style` or `corpus_family_style`, and
-// `unit_corpus_character_style`) so the union merges without sorting. `field` is character or family.
-// A glyph's style is its published row's; a named glyph's `units` row carries the same.
-export const corpusSelection = (field: 'character' | 'family', n: number) => {
-  const list = n === 1 ? '=?' : ` IN (${Array(n).fill('?').join(',')})`;
-  return `SELECT c.*,c.${field} AS k,c.style_order AS s,c.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
-    FROM corpus_units c LEFT JOIN units u ON c.id=u.id
-    WHERE c.${field}${list} AND (u.id IS NULL OR u.${field}=c.${field})
-    UNION ALL SELECT c.*,u.${field} AS k,u.style_order AS s,u.id AS i,u.data AS overlay,u.visual_group AS overlay_group,u.character AS overlay_character
-    FROM units u${field === 'character' ? ' INDEXED BY unit_corpus_character_style' : ''} JOIN corpus_units c ON c.id=u.id
-    WHERE u.origin='corpus' AND u.${field}${list} AND c.${field} IS NOT u.${field}`;
-};
-// The style groups a gallery is filtered by, as `style_order` (migration 0035) numbers them: running
-// and cursive script, then what nobody has judged, then the formal scripts and the print faces. A gallery lists them in
-// this order.
-export const STYLE_ORDER: Record<string, number> = { cursive: 0, unassessed: 1, formal: 2 };
-const STYLE_NAMES = Object.keys(STYLE_ORDER);
-function styleGroup(q: URLSearchParams): number | null {
-  const value = q.get('style');
-  if (!value || value === 'all') return null;
-  if (!Object.hasOwn(STYLE_ORDER, value)) throw new Problem(422, 'Invalid style.');
-  return STYLE_ORDER[value];
-}
-// A gallery names the style groups it can be filtered by (`style_groups`); a server that reports none
-// cannot filter by style.
-// Counts by `style_order` as a gallery reports them: every group by name, and the total of the one asked
-// for, or of all.
-function styleCounts(rows: { s: number; n: number }[], group: number | null) {
-  const styles = Object.fromEntries(STYLE_NAMES.map(name => [name, rows.find(row => row.s === STYLE_ORDER[name])?.n ?? 0]));
-  const total = group === null ? rows.reduce((sum, row) => sum + row.n, 0) : rows.find(row => row.s === group)?.n ?? 0;
-  return { styles, total };
-}
-type VariantEdge = { other: string; relation: string; source: string; detail: string; written: number; widens: number };
-type VariantRow = { char: string; code_point: string; widens: boolean; written: boolean; relations: { relation: string; source: string; detail: string }[] };
-// The characters `char` shares an edge with, as the card lists them: `items` a gallery widens to (a
-// pair with a widening edge and none that keeps it apart), `related` the rest; each most attested
-// first (sources, then code point), every edge kept. `written` marks a pair one of whose edges says
-// one may be written for the other. `sources` cites each source used. `writes` are the graphemes besides
-// its own a reduced form of several characters writes (后: 後), `writers` the forms of that kind that write
-// its grapheme, `head` (後: 后), each `shared` when it writes something else too. `own` is false for a form with no character of its own, whose 字種 are
-// the graphemes it writes (𠮮: 后 and 𠯑).
-async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, char: string, head: string, version: string) {
-  const key = new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(version)}`);
-  const cached = await caches.default.match(key);
-  if (cached) return await cached.json();
-  const edges = (await env.DB.prepare(variantEdgesQuery()).bind(char, char).all<VariantEdge>()).results;
-  const [writing, writtenBy] = await env.DB.batch([env.DB.prepare(writesQuery()).bind(char), env.DB.prepare(writersQuery()).bind(head)]) as
-    D1Result<{ char: string; own?: number; shared?: number }>[];
-  const writes = writing.results.map(row => ({ char: row.char, code_point: cp(row.char) }));
-  const writers = writtenBy.results.map(row => ({ char: row.char, code_point: cp(row.char), shared: !!row.shared }));
-  const own = !writing.results.some(row => row.own === 0);
-  const derivedRow = await env.DB.prepare(derivedEdgesQuery()).bind(char).first<{ forms: string }>();
-  const derivedRows: DerivedRow[] = derivedRow ? (JSON.parse(derivedRow.forms) as [string, [string, string][][]][]).map(([other, routes]) => ({ other, routes })) : [];
-  const byChar = new Map<string, VariantRow & { edges: VariantEdge[] }>();
-  for (const edge of edges) {
-    if (edge.other === char) continue;
-    const entry = byChar.get(edge.other) ?? { char: edge.other, code_point: cp(edge.other), widens: false, written: false, relations: [], edges: [] };
-    entry.edges.push(edge);
-    entry.relations.push({ relation: edge.relation, source: edge.source, detail: edge.detail });
-    byChar.set(edge.other, entry);
-  }
-  const attested = (entry: VariantRow) => new Set(entry.relations.map(r => r.source)).size;
-  const ordered = [...byChar.values()].map(({ edges: pair, ...entry }) => ({ ...entry,
-    widens: pair.some(e => e.widens) && !pair.some(e => KEPT_APART.has(e.relation)),
-    written: pair.some(e => e.written) }))
-    .sort((a, b) => attested(b) - attested(a) || (a.char.codePointAt(0)! - b.char.codePointAt(0)!));
-  const shown = [...ordered.filter(e => e.widens).slice(0, VARIANTS_SHOWN), ...ordered.filter(e => !e.widens).slice(0, VARIANTS_SHOWN)];
-  const derived = await derivedOf(env, derivedRows);
-  const chars = [...shown.map(entry => entry.char), ...derived.filter(entry => entry.encoded).map(entry => entry.char)];
-  const [local, corpus] = chars.length ? await env.DB.batch([
-    env.DB.prepare(variantCountsQuery(chars.length)).bind(...chars),
-    env.DB.prepare(variantCorpusCountsQuery(chars.length)).bind(...chars),
-  ]) as D1Result<{ character: string; n: number }>[] : [null, null];
-  const count = (rows: { character: string; n: number }[] | undefined) => new Map((rows ?? []).map(row => [row.character, row.n]));
-  const here = count(local?.results), there = count(corpus?.results);
-  const cited: Record<string, string> = (await meta(env, 'variant_sources')) || {};
-  const rows = shown.map(entry => ({ ...entry, sources: [...new Set(entry.relations.map(r => r.source))].sort(),
-    count: here.get(entry.char) ?? 0, corpus_count: there.get(entry.char) ?? 0 }));
-  const predicted = derived.map(entry => ({ ...entry,
-    count: here.get(entry.char) ?? 0, corpus_count: there.get(entry.char) ?? 0 }));
-  const used = new Set(rows.flatMap(row => row.sources));
-  for (const entry of predicted) for (const source of entry.sources) used.add(source);
-  if (predicted.length) used.add(DERIVED_IDS);
-  const found = { items: rows.filter(row => row.widens), related: rows.filter(row => !row.widens), derived: predicted,
-    total: byChar.size, writes, writers, own, sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? source])) };
-  ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
-  return found;
-}
-// The spellings of every word a character is cited as writing (0064): the words by the `spelling`
-// index, then each word's rows by the key. Hand rows and observed counts share the table; the limit bounds a
-// character that writes many words.
-export const wordSpellingsQuery = () => `SELECT s.word,w.reading,w.class,s.spelling,s.source,s.locator,s.tier,s.documents,s.occurrences
-  FROM word_spellings s JOIN words w ON w.id=s.word
-  WHERE s.word IN (SELECT word FROM word_spellings WHERE spelling=?) LIMIT 500`;
-type WordRow = { word: string; reading: string; class: string; spelling: string; source: string; locator: string; tier: string; documents: number | null; occurrences: number | null };
-type WordSpelling = { spelling: string; code_point: string | null; current: boolean; sources: { source: string; tier: string; ruby: string | null; documents: number | null; occurrences: number | null }[] };
-// The 振り仮名 a row counts, from its locator (`ruby-spellings.tsv なと 抔`): 抔 is counted under など and
-// under なと, and a reader tells the two apart by it.
-const rubyOf = (locator: string) => locator.startsWith('ruby-spellings.tsv ') ? locator.split(' ')[1] : null;
-// Strings by code point, as Python compares them; `<` compares UTF-16 units and puts 𠀀 before 﨑.
-const byCodePoint = (a: string, b: string) => {
-  const x = [...a], y = [...b];
-  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i].codePointAt(0)! - y[i].codePointAt(0)!;
-  return x.length - y.length;
-};
-// The words `char` is cited as writing, by id, each with every spelling cited for it: most sources first,
-// then most documents in all, then by code point; `sources` cites each source used. The local review service's
-// `word_card` returns the same shape. Nothing here widens a gallery.
-const WORDS_SHAPE = 2;
-async function wordsOf(env: Env, ctx: ExecutionContext, origin: string, char: string, version: string) {
-  const key = new Request(`${origin}/layers/words?c=${encodeURIComponent(char)}&v=${encodeURIComponent(`${WORDS_SHAPE}:${version}`)}`);
-  const cached = await caches.default.match(key);
-  if (cached) return await cached.json();
-  const rows = (await env.DB.prepare(wordSpellingsQuery()).bind(char).all<WordRow>()).results;
-  const words = new Map<string, { id: string; reading: string; class: string; spellings: Map<string, WordSpelling> }>();
-  for (const row of rows) {
-    const word = words.get(row.word) ?? { id: row.word, reading: row.reading, class: row.class, spellings: new Map() };
-    const single = [...row.spelling].length === 1;
-    const entry = word.spellings.get(row.spelling) ?? { spelling: row.spelling, code_point: single ? cp(row.spelling) : null,
-      current: row.spelling === char, sources: [] };
-    entry.sources.push({ source: row.source, tier: row.tier, ruby: rubyOf(row.locator), documents: row.documents, occurrences: row.occurrences });
-    word.spellings.set(row.spelling, entry);
-    words.set(row.word, word);
-  }
-  const cited = (entry: WordSpelling) => new Set(entry.sources.map(s => s.source)).size;
-  const documents = (entry: WordSpelling) => entry.sources.reduce((n, s) => n + (s.documents ?? 0), 0);
-  const items = [...words.values()].sort((a, b) => byCodePoint(a.id, b.id)).map(word => ({ id: word.id, reading: word.reading, class: word.class,
-    spellings: [...word.spellings.values()].sort((a, b) => cited(b) - cited(a) || documents(b) - documents(a) || byCodePoint(a.spelling, b.spelling)) }));
-  const all: Record<string, string> = (await meta(env, 'word_sources')) || {};
-  const used = [...new Set(rows.map(row => row.source))].sort();
-  const found = { items, sources: Object.fromEntries(used.map(source => [source, all[source] ?? source])) };
-  ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
-  return found;
-}
-type Substitution = { was: string; became: string; count: number; pairs: { a: string; b: string; sources: string[] }[] };
-type DerivedRow = { other: string; routes: [string, string][][] };
-type DerivedEntry = { char: string; code_point: string | null; encoded: boolean; routes: Substitution[][]; sources: string[] };
-type SubstitutionRow = { a: string; b: string; count: number; pairs: string };
-// A substitution's own spelling, as refs._substitution writes it: the side of fewer code points
-// first, then the smaller by code point.
-export function substitutionKey(left: string, right: string): [string, string] {
-  const l = [...left].map(c => c.codePointAt(0)!), r = [...right].map(c => c.codePointAt(0)!);
-  if (l.length !== r.length) return l.length < r.length ? [left, right] : [right, left];
-  for (let i = 0; i < l.length; i++) if (l[i] !== r[i]) return l[i] < r[i] ? [left, right] : [right, left];
-  return [left, right];
-}
-// The derived group of one character as the export ranked it, each route's substitutions backed by
-// their `component_variants` rows. A form of one character is encoded, a sequence is not. A route
-// whose substitution the table no longer holds is dropped, and a form left with none is dropped.
-async function derivedOf(env: Env, rows: DerivedRow[]): Promise<DerivedEntry[]> {
-  const listed = rows;
-  const keys = [...new Map(listed.flatMap(row => row.routes.flat()).map(([was, became]) => substitutionKey(was, became))
-    .map(key => [key.join('\u0000'), key])).values()];
-  const backed = keys.length ? (await env.DB.batch(chunks(keys, SUBSTITUTIONS_READ).map(part =>
-    env.DB.prepare(substitutionQuery(part.length)).bind(...part.flat()))) as D1Result<SubstitutionRow>[])
-    .flatMap(result => result.results) : [];
-  const evidence = new Map(backed.map(row => [`${row.a}\u0000${row.b}`, row]));
-  const made = (was: string, became: string): Substitution | null => {
-    const found = evidence.get(substitutionKey(was, became).join('\u0000'));
-    if (!found) return null;
-    return { was, became, count: found.count, pairs: JSON.parse(found.pairs) };
-  };
-  return listed.flatMap(row => {
-    const routes = row.routes.map(route => route.map(([was, became]) => made(was, became)))
-      .filter((route): route is Substitution[] => route.every(Boolean));
-    if (!routes.length) return [];
-    const encoded = [...row.other].length === 1;
-    const sources = new Set(routes.flatMap(route => route.flatMap(sub => sub.pairs.flatMap(pair => pair.sources))));
-    return [{ char: row.other, code_point: encoded ? cp(row.other) : null, encoded, routes, sources: [...sources].sort() }];
-  });
-}
 // What the form picker's IDS editor starts from (0068, 0080): a character's descriptions and regional shapes by key, and the
 // substitutes of each component they name, the `component_variants` rows naming it as `a` (by key) or
 // as `b` (by `component_variant_b`), at most STRUCTURE_PARTS components a request.
@@ -1501,38 +1273,6 @@ async function known(env: Env, value: string) {
   if (idsCharacter(text)) return describedCard(text);
   if (jamoSyllable(text)) return jamoCard(text);
   throw new Problem(404, 'Character not found.');
-}
-
-export function jamoCard(value: string) {
-  const code_point = cp(value), url = '/layers/characters/' + code_point;
-  const self = { code_point, char: value, name: null, script: 'hangul' };
-  const grapheme = { ...self, label: value, members: [{ code_point, char: value }], character_count: 1, relation: 'self',
-    evidence: [], url: '/layers/graphemes/' + code_point, is_self: true, occurrence_count: 0 };
-  const data = { ...self, age: null, block: 'Hangul Jamo', readings: [], reading: null, jibo: [], ligature: null, occurrence_count: 0,
-    url, grapheme, default_scope: 'character', kind: 'hangul',
-    candidates: { status: 'ok', known: false, glyphs: 0, lines: 0, pages: 0, total: 0, sources: [],
-      counts_kind: 'source_transcription_classes', requires_family_scope: false, source_glyphs: 0, family_glyphs: 0, imported: 0 } };
-  const detail = { ...data, alias: null, category: 'Lo', confusables: [], characters: [data], derived: [], expansions: [],
-    visual_analysis: { status: 'not_analyzed', family: code_point, model_revision: null, sample_count: 0, assigned_count: 0,
-      unassigned_count: 0, groups: [] } };
-  return { data, detail };
-}
-
-/** The card of a character Unicode lacks, written as an ideographic description sequence: it has no
- * entry in the character table and is its own grapheme, in the shape the table's cards have. */
-export function describedCard(value: string) {
-  const code_point = cp(value), url = '/layers/characters/' + code_point;
-  const self = { code_point, char: value, name: null, script: 'han' };
-  const grapheme = { ...self, label: value, members: [{ code_point, char: value }], character_count: 1, relation: 'self',
-    evidence: [], url: '/layers/graphemes/' + code_point, is_self: true, occurrence_count: 0 };
-  const data = { ...self, age: null, block: null, readings: [], reading: null, jibo: [], ligature: null, occurrence_count: 0,
-    url, grapheme, default_scope: 'character', kind: 'han',
-    candidates: { status: 'ok', known: false, glyphs: 0, lines: 0, pages: 0, total: 0, sources: [],
-      counts_kind: 'source_transcription_classes', requires_family_scope: false, source_glyphs: 0, family_glyphs: 0, imported: 0 } };
-  const detail = { ...data, alias: null, category: null, confusables: [], characters: [data], derived: [], expansions: [],
-    visual_analysis: { status: 'not_analyzed', family: code_point, model_revision: null, sample_count: 0, assigned_count: 0,
-      unassigned_count: 0, groups: [] } };
-  return { data, detail };
 }
 export async function suggest(env: Env, q: URLSearchParams) {
   const term = (q.get('q') || '').slice(0, 128).trim();
@@ -1636,307 +1376,6 @@ async function searchVariants(env: Env, char: string, found: Json[], limit: numb
   const rows = (await env.DB.prepare(searchVariantsQuery()).bind(char, char, char, limit + listed.size + 1).all<{ data: string }>()).results;
   return rows.map(r => parse(r.data)).filter(item => !listed.has(item.char)).map(item => ({ ...item, rank: 6, variant_of: char }));
 }
-// A caller that has already looked the character up passes its card, so a request reads it once.
-async function occurrences(env: Env, code: string, q: URLSearchParams, card?: Awaited<ReturnType<typeof known>>) {
-  const { data } = card ?? await known(env, code), origin = 'local';
-  const limit = integer(q,'limit',24,200), offset=integer(q,'offset',0), group = styleGroup(q);
-  // The filters other than style: the style counts are taken over them, so each group says what it holds.
-  const filters: string[] = [], extra: (string | number)[] = [];
-  if (q.get('visual_group')) {
-    if (q.get('visual_group') === 'unassigned') filters.push('visual_group IS NULL');
-    else { filters.push('visual_group=?'); extra.push(q.get('visual_group')!) }
-  }
-  if (q.get('state') && q.get('state') !== 'all') { filters.push('state=?'); extra.push(q.get('state')!) }
-  const tail = filters.map(f => ' AND ' + f).join('');
-  // Withheld crops are left out unless asked for; `withheld` says how many were, or null where counting
-  // them would read every crop of the character.
-  const hidden = q.get('withheld') !== 'show', shown = hidden ? WITHHELD_HIDDEN : '';
-  const styled = (group === null ? tail : tail + ' AND style_order=?') + shown, styledExtra = group === null ? extra : [...extra, group];
-  if (q.get('scope') === 'variants' || q.get('expand') === 'variants') {
-    widenedPage(offset);
-    const chars = await writtenVariants(env, data.char);
-    const [count, rows] = await env.DB.batch([
-      env.DB.prepare(widenedCropsCountQuery(chars.length, styled)).bind(origin, ...chars, ...styledExtra),
-      env.DB.prepare(widenedCropsQuery(chars.length, styled)).bind(origin, ...chars, ...styledExtra, limit, offset),
-    ]);
-    const counted = (count.results[0] as { n: number }).n, total = Math.min(counted, WIDENED_CAP);
-    return { ...data.candidates, query: data.code_point, code_point: data.code_point,
-      total, capped: counted > WIDENED_CAP, available: rows.results.length, items: await withDating(env, await withForms(env, (rows.results as UnitRow[]).map(compact))),
-      counts: { total, exact: total, exact_total: total }, style_groups: STYLE_NAMES, scope: 'variants', withheld: null, status: 'ok' };
-  }
-  let counted: D1PreparedStatement, listed: D1PreparedStatement, withheld: D1PreparedStatement | null = null;
-  const dated = yearOptions(q, (status, message) => { throw new Problem(status, message) });
-  if (dated) {
-    // Placed or narrowed by date: each crop joins its book's date by key, and the page is sorted here.
-    const grapheme = q.get('scope') === 'grapheme' || q.get('expand') === 'grapheme';
-    const family = data.grapheme?.code_point || data.code_point;
-    const { sql: cond, values: years } = yearCondition(dated.years);
-    const from = `FROM units u${datingJoin('u.document', dated.axis)} WHERE ${grapheme
-      ? 'u.id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)' : 'u.origin=? AND u.character=?'}`;
-    const keys = grapheme ? [origin, family, origin, data.char] : [origin, data.char];
-    // The counts take a grapheme's two disjoint branches apart, each along its own index, as `graphemeCountsQuery` does.
-    const arm = (where: string) => `SELECT u.style_order AS s,count(*) AS n FROM units u${datingJoin('u.document', dated.axis)} WHERE ${where}${tail}${shown}${cond} GROUP BY 1`;
-    counted = grapheme
-      ? env.DB.prepare(`SELECT s,sum(n) AS n FROM (${arm('u.origin=? AND u.family=?')} UNION ALL ${arm('u.origin=? AND u.character=? AND u.family IS NOT ?')}) GROUP BY 1`)
-        .bind(origin, family, ...extra, ...years, origin, data.char, family, ...extra, ...years)
-      : env.DB.prepare(arm('u.origin=? AND u.character=?')).bind(...keys, ...extra, ...years);
-    // The page is found by row and sort key alone, and only its own rows are read whole: a crop's
-    // JSON is kilobytes, and sorting it with every crop of the character costs more the further it pages.
-    listed = env.DB.prepare(datedCropsQuery(from, styled + cond, dated.order)).bind(...keys, ...styledExtra, ...years, limit, offset);
-  } else if (q.get('scope') === 'grapheme' || q.get('expand') === 'grapheme') {
-    // A grapheme's crops are its family's and its own character's. Each is one range of its own index
-    // (`unit_family_style`, `unit_character_style`), and the page merges the two in style and id order;
-    // an OR across the two columns would read every crop of the origin instead.
-    const family = data.grapheme?.code_point || data.code_point;
-    counted = env.DB.prepare(graphemeCountsQuery(tail)).bind(origin, family, ...extra, origin, data.char, family, ...extra);
-    if (hidden) withheld = env.DB.prepare(withheldCountsQuery(true, tail)).bind(origin, family, ...extra, origin, data.char, family, ...extra);
-    listed = env.DB.prepare(graphemeCropsQuery(styled)).bind(origin, family, ...styledExtra, origin, data.char, family, ...styledExtra, limit, offset);
-  } else {
-    counted = env.DB.prepare(`SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND character=?${tail} GROUP BY 1`)
-      .bind(origin, data.char, ...extra);
-    if (hidden) withheld = env.DB.prepare(withheldCountsQuery(false, tail)).bind(origin, data.char, ...extra);
-    listed = env.DB.prepare(characterCropsQuery(styled)).bind(origin, data.char, ...styledExtra, limit, offset);
-  }
-  const [count, rows, left] = await env.DB.batch([counted, listed, ...(withheld ? [withheld] : [])]);
-  const out = (left?.results ?? []) as { s: number; n: number }[];
-  const { styles, total } = styleCounts(lessWithheld(count.results as { s: number; n: number }[], out), group);
-  return { ...data.candidates, query: data.code_point, code_point: data.code_point,
-    total, available: rows.results.length, items: await withDating(env, await withForms(env, (rows.results as UnitRow[]).map(compact))),
-    counts:{ total, exact:total, exact_total:total }, styles, style_groups: STYLE_NAMES, scope:q.get('scope') || 'character', status:'ok',
-    withheld: left ? styleCounts(out, group).total : null,
-    ...(dated ? { order: dated.order, axis: dated.axis, years: dated.years } : {}) };
-}
-// A page of crops placed by date: their rows and sort keys, then the rows themselves, in that order.
-export const datedCropsQuery = (from: string, conditions: string, order: 'style' | 'year') =>
-  `SELECT u.* FROM (SELECT u.rowid AS r,${YEAR_KEY} AS y,coalesce(d.end,d.start) AS z,u.style_order AS so,u.id AS i ${from}${conditions}
-    ORDER BY ${order === 'year' ? 'y IS NULL,y,z,so,i' : 'so,i'} LIMIT ? OFFSET ?) k CROSS JOIN units u ON u.rowid=k.r
-    ORDER BY ${order === 'year' ? 'k.y IS NULL,k.y,k.z,k.so,k.i' : 'k.so,k.i'}`;
-// The stamps the decades and the time axis are kept at the edge by: a publication or refresh of the
-// crops, a recount of the corpus, the corpus glyphs' documents and the dates. A review moves a crop to
-// another character only until the hour is out.
-async function axisVersion(env: Env): Promise<string> {
-  const stamps = await env.DB.prepare(`SELECT key,value FROM metadata WHERE key IN
-    ('published_at','units_refreshed_at','corpus_counts_at','corpus_documents_at','dates_at') ORDER BY key`).all<{ key: string; value: string }>();
-  return stamps.results.map(r => `${r.key}=${r.value}`).join(':');
-}
-// How many of a character's crops, or its grapheme's, each decade holds by its book's date, the
-// collection's and the corpus's apart, with the undated as decade null. Every visitor gets the same
-// answer, so the edge keeps one copy per catalogue, corpus count and dates version. Withheld crops
-// are left out unless `withheld` asks for them, as in the gallery the decades sit beside.
-export const localDecadesQuery = (grapheme: boolean, axis: YearOptions['axis'], withheld = false) =>
-  `SELECT ${decadeColumn} AS decade,count(*) AS n FROM units u${datingJoin('u.document', axis)} WHERE ${grapheme
-    ? 'u.id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)'
-    : 'u.origin=? AND u.character=?'}${withheld ? '' : ' AND +u.quiz=1'} GROUP BY 1 ORDER BY 1`;
-export const corpusDecadesQuery = (grapheme: boolean, axis: YearOptions['axis']) =>
-  `SELECT ${decadeColumn} AS decade,count(*) AS n FROM (${corpusSelection(grapheme ? 'family' : 'character', 1)}) x${datingJoin('x.document', axis)} GROUP BY 1 ORDER BY 1`;
-async function decades(env: Env, ctx: ExecutionContext, url: URL) {
-  const q = url.searchParams, { data } = await known(env, q.get('code_point') || '');
-  const axis = q.get('axis') === 'composed' ? 'composed' : 'witness', grapheme = q.get('scope') === 'grapheme';
-  const family = data.grapheme?.code_point || data.code_point, withheld = q.get('withheld') === 'show';
-  const version = await axisVersion(env);
-  const key = new Request(`${url.origin}/layers/decades?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}&w=${withheld}`);
-  const cached = await caches.default.match(key);
-  if (cached) return cached.json();
-  const selected = grapheme ? family : data.char;
-  const [local, corpus] = await env.DB.batch([
-    env.DB.prepare(localDecadesQuery(grapheme, axis, withheld)).bind(...(grapheme ? ['local', family, 'local', data.char] : ['local', data.char])),
-    env.DB.prepare(corpusDecadesQuery(grapheme, axis)).bind(selected, selected),
-  ]);
-  const rows = (r: D1Result) => (r.results as { decade: number | null; n: number }[]).map(row => [row.decade, row.n]);
-  const body = { code_point: data.code_point, axis, scope: grapheme ? 'grapheme' : 'character', local: rows(local), corpus: rows(corpus) };
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
-  return body;
-}
-// A character's or grapheme's crops along its time axis (編年): each decade's crops counted, and a few of
-// them drawn by their shuffle so each decade shows a fair sample; the undated as decade null. A crop is
-// placed by its book's date on `axis`, and the crops may be narrowed to a style group, a kind of
-// production (`handwritten`, `printed`, `inscribed` and what is under it) or some of the grapheme's
-// characters (a script's). The answer is the same for every visitor, so the edge keeps it by the
-// stamps the decades are kept by (`axisVersion`). Withheld crops are left out unless `withheld` asks for them.
-const CHRONOLOGY_MAX = 240;
-export type ChronologyFilter = { style: number | null; production: string | null; chars: string[] };
-function chronologyFilter(q: URLSearchParams): ChronologyFilter {
-  const production = q.get('production');
-  if (production && !/^[a-z_]+(\/[a-z_]+)*$/.test(production)) throw new Problem(422, 'Unknown production.');
-  const chars = (q.get('chars') ?? '').split(',').filter(Boolean);
-  if (chars.length > 20 || chars.some(c => [...c].length > 4)) throw new Problem(422, 'Name at most 20 characters.');
-  return { style: styleGroup(q), production, chars };
-}
-/** The conditions of `filter` on a row whose style order, production and character are these columns. */
-export function chronologyConditions(filter: ChronologyFilter, columns: { style: string; production: string; character: string }) {
-  const sql: string[] = [], values: (string | number)[] = [];
-  if (filter.style !== null) { sql.push(`${columns.style}=?`); values.push(filter.style) }
-  // A production and every node under it: `printed` takes `printed/woodblock`, compared as text, not as a LIKE pattern.
-  if (filter.production) { sql.push(`(${columns.production}=? OR substr(${columns.production},1,?)=?)`); values.push(filter.production, filter.production.length + 1, filter.production + '/') }
-  if (filter.chars.length) { sql.push(`${columns.character} IN (${filter.chars.map(() => '?').join(',')})`); values.push(...filter.chars) }
-  return { sql: sql.map(c => ' AND ' + c).join(''), values };
-}
-// Each decade is ranked on its keys alone, and only the crops kept are read whole: a crop's JSON is
-// kilobytes, and sorting it with every crop of a common character would cost more than the answer.
-export const localChronologyQuery = (grapheme: boolean, axis: YearOptions['axis'], conditions = '') =>
-  `SELECT u.*,k.decade,k.r,k.bucket FROM (SELECT * FROM (SELECT u.rowid AS rid,${decadeColumn} AS decade,
-    row_number() OVER (PARTITION BY ${decadeColumn} ORDER BY u.shuffle,u.id) AS r,count(*) OVER (PARTITION BY ${decadeColumn}) AS bucket
-    FROM units u${datingJoin('u.document', axis)} WHERE ${grapheme
-      ? 'u.id IN (SELECT id FROM units WHERE origin=? AND family=? UNION SELECT id FROM units WHERE origin=? AND character=?)'
-      : 'u.origin=? AND u.character=?'}${conditions}) WHERE r<=?) k CROSS JOIN units u ON u.rowid=k.rid ORDER BY k.decade,k.r`;
-// A corpus gallery's glyphs by their keys only (`corpusSelection` without the records' JSON): the
-// character a decision gave a named glyph, its style group and its document.
-export const corpusKeys = (field: 'character' | 'family') => `SELECT c.id AS id,c.document AS document,c.shuffle AS shuffle,
-    c.style_order AS s,c.production AS production,CASE WHEN u.id IS NULL THEN c.character ELSE u.character END AS ch
-    FROM corpus_units c LEFT JOIN units u ON c.id=u.id WHERE c.${field}=? AND (u.id IS NULL OR u.${field}=c.${field})
-  UNION ALL SELECT c.id,c.document,c.shuffle,u.style_order,c.production,u.character
-    FROM units u${field === 'character' ? ' INDEXED BY unit_corpus_character_style' : ''} JOIN corpus_units c ON c.id=u.id
-    WHERE u.origin='corpus' AND u.${field}=? AND c.${field} IS NOT u.${field}`;
-export const corpusChronologyQuery = (grapheme: boolean, axis: YearOptions['axis'], conditions = '') =>
-  `SELECT * FROM (SELECT x.id,${decadeColumn} AS decade,row_number() OVER (PARTITION BY ${decadeColumn} ORDER BY x.shuffle,x.id) AS r,
-    count(*) OVER (PARTITION BY ${decadeColumn}) AS bucket FROM (${corpusKeys(grapheme ? 'family' : 'character')}) x${datingJoin('x.document', axis)}
-    WHERE 1=1${conditions}) WHERE r<=? ORDER BY decade,r`;
-// The rows of the corpus glyphs kept, with the row a round or decision gave a named one.
-export const corpusRowsQuery = (n: number) => `SELECT c.*,u.data AS overlay,u.written_form AS overlay_form
-  FROM corpus_units c LEFT JOIN units u ON u.id=c.id WHERE c.id IN (${Array(n).fill('?').join(',')})`;
-async function chronology(env: Env, ctx: ExecutionContext, url: URL) {
-  const q = url.searchParams, { data } = await known(env, q.get('code_point') || '');
-  const axis = q.get('axis') === 'composed' ? 'composed' : 'witness', grapheme = q.get('scope') === 'grapheme';
-  const per = Math.max(1, integer(q, 'per', 6, 12)), filter = chronologyFilter(q), withheld = q.get('withheld') === 'show';
-  const family = data.grapheme?.code_point || data.code_point, selected = grapheme ? family : data.char;
-  const version = await axisVersion(env);
-  const key = new Request(`${url.origin}/layers/chronology?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}&p=${per}`
-    + `&f=${encodeURIComponent(JSON.stringify(filter))}&w=${withheld}`);
-  const cached = await caches.default.match(key);
-  if (cached) return cached.json();
-  const local = chronologyConditions(filter, { style: 'u.style_order', production: 'u.production', character: 'u.character' });
-  const corpus = chronologyConditions(filter, { style: 's', production: 'production', character: 'ch' });
-  const [own, glyphs] = await env.DB.batch([
-    env.DB.prepare(localChronologyQuery(grapheme, axis, local.sql + (withheld ? '' : ' AND +u.quiz=1')))
-      .bind(...(grapheme ? ['local', family, 'local', data.char] : ['local', data.char]), ...local.values, per),
-    env.DB.prepare(corpusChronologyQuery(grapheme, axis, corpus.sql)).bind(selected, selected, ...corpus.values, per),
-  ]);
-  // At most CHRONOLOGY_MAX crops of each list are drawn: across many decades, each shows fewer.
-  const fewer = <T extends { r: number }>(found: T[]) => {
-    let k = per;
-    while (k > 1 && found.filter(row => row.r <= k).length > CHRONOLOGY_MAX) k--;
-    // More decades than the cap: the earliest keep one crop each.
-    return found.filter(row => row.r <= k).slice(0, CHRONOLOGY_MAX);
-  };
-  type Bucket = { decade: number | null; local: number; corpus: number; items: Json[] };
-  const buckets = new Map<number | null, Bucket>();
-  const bucketOf = (decade: number | null) => buckets.get(decade) ?? buckets.set(decade, { decade, local: 0, corpus: 0, items: [] }).get(decade)!;
-  for (const row of own.results as (UnitRow & { decade: number | null; r: number; bucket: number })[]) {
-    bucketOf(row.decade).local = row.bucket;
-  }
-  for (const row of fewer(own.results as (UnitRow & { decade: number | null; r: number; bucket: number })[])) {
-    bucketOf(row.decade).items.push({ ...compact(row), origin: 'collection' });
-  }
-  const found = glyphs.results as { id: string; decade: number | null; r: number; bucket: number }[];
-  for (const row of found) bucketOf(row.decade).corpus = row.bucket;
-  // A decade shows the collection's crops first; the corpus fills what is left of its `per`, and only
-  // those glyphs' records are read.
-  const room = (decade: number | null) => per - (buckets.get(decade)?.items.length ?? 0);
-  const kept = fewer(found).filter(row => row.r <= room(row.decade));
-  const decadeOf = new Map(kept.map(row => [row.id, row.decade]));
-  const rows: (CorpusRow & { overlay: string | null; overlay_form: string | null })[] = [];
-  for (let i = 0; i < kept.length; i += 90) {
-    const ids = kept.slice(i, i + 90).map(row => row.id);
-    rows.push(...(await env.DB.prepare(corpusRowsQuery(ids.length)).bind(...ids).all<CorpusRow & { overlay: string | null; overlay_form: string | null }>()).results);
-  }
-  const order = new Map(kept.map((row, i) => [row.id, i]));
-  rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
-  const read = await corpusRecords(env, rows.filter(row => !row.overlay));
-  for (const row of rows) {
-    const item = { ...(row.overlay ? parse(row.overlay) : await recordOf(env, read, row)), style: row.style, ...(row.overlay_form ? { written_form: row.overlay_form } : {}) };
-    bucketOf(decadeOf.get(row.id) ?? null).items.push({ ...listing(item), origin: 'corpus' });
-  }
-  // A decade shows `per` crops, the collection's first, as many as it has, then the corpus's.
-  const all = [...buckets.values()];
-  for (const bucket of all) bucket.items = bucket.items.slice(0, per);
-  const dated = await withDating(env, all.flatMap(b => b.items));
-  let at = 0;
-  for (const bucket of all) bucket.items = dated.slice(at, at += bucket.items.length);
-  const body = { code_point: data.code_point, char: data.char, axis, scope: grapheme ? 'grapheme' : 'character', per,
-    buckets: all.filter(b => b.decade !== null).sort((a, b) => a.decade! - b.decade!), undated: buckets.get(null) ?? { decade: null, local: 0, corpus: 0, items: [] } };
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
-  return body;
-}
-// A grapheme's crops counted by style group, as `graphemeCropsQuery` finds them: each of the two
-// disjoint branches along its own index, the counts summed by style group.
-export const graphemeCountsQuery = (extra = '') => `SELECT s,sum(n) AS n FROM (
-  SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND family=?${extra} GROUP BY 1
-  UNION ALL SELECT style_order AS s,count(*) AS n FROM units WHERE origin=? AND character=? AND family IS NOT ?${extra} GROUP BY 1) GROUP BY 1`;
-// The withheld crops among a character's or a grapheme's, by style, each branch along its partial index
-// (0077): what a gallery takes off the counts above when it leaves them out.
-export const withheldCountsQuery = (grapheme: boolean, extra = '') => grapheme ? `SELECT s,sum(n) AS n FROM (
-  SELECT style_order AS s,count(*) AS n FROM units INDEXED BY unit_family_withheld WHERE origin=? AND family=? AND quiz=0${extra} GROUP BY 1
-  UNION ALL SELECT style_order AS s,count(*) AS n FROM units INDEXED BY unit_character_withheld
-    WHERE origin=? AND character=? AND family IS NOT ? AND quiz=0${extra} GROUP BY 1) GROUP BY 1`
-  : `SELECT style_order AS s,count(*) AS n FROM units INDEXED BY unit_character_withheld WHERE origin=? AND character=? AND quiz=0${extra} GROUP BY 1`;
-// A crop the alignment repair withheld is kept and tagged, and a gallery leaves it out unless asked
-// (`withheld=show`). The listing skips it on the rows it reads; `+` keeps the condition off `unit_review`.
-const WITHHELD_HIDDEN = ' AND +quiz=1';
-// Counts by style less the withheld ones among them.
-export function lessWithheld(rows: { s: number; n: number }[], withheld: { s: number; n: number }[]) {
-  const taken = new Map(withheld.map(row => [row.s, row.n]));
-  return rows.map(row => ({ s: row.s, n: row.n - (taken.get(row.s) ?? 0) })).filter(row => row.n > 0);
-}
-// A character's crops, and a grapheme's, in style order (`STYLE_ORDER`) then id; `extra` is further
-// conditions on the crop.
-export const characterCropsQuery = (extra = '') => `SELECT * FROM units WHERE origin=? AND character=?${extra} ORDER BY style_order,id LIMIT ? OFFSET ?`;
-// A grapheme's crops are its family's, and those of its own character filed under another family; the
-// two branches share no crop, so they merge without comparing whole rows.
-export const graphemeCropsQuery = (extra = '') => `SELECT * FROM units WHERE origin=? AND family=?${extra}
-  UNION ALL SELECT * FROM units WHERE origin=? AND character=? AND family IS NOT ?${extra} ORDER BY style_order,id LIMIT ? OFFSET ?`;
-// A family's corpus glyphs and how many have no written character yet. The answer depends only on the
-// family, the catalogue and the corpus glyphs' characters, so the edge keeps one copy per family,
-// catalogue version and corpus recount (`corpus_counts_at`, which a form decision's drain stamps) rather
-// than counting on every page and filter.
-async function familyCounts(env:Env,ctx:ExecutionContext,url:URL,family:string){
-  const [catalogue,corpus]=await Promise.all([catalogueVersion(env),corpusVersion(env)]);
-  const key=new Request(`${url.origin}/layers/family-counts?family=${encodeURIComponent(family)}&v=${encodeURIComponent(catalogue)}&c=${encodeURIComponent(corpus)}`);
-  const cached=await caches.default.match(key);
-  if(cached)return await cached.json() as {total:number;unassigned:number};
-  const row=await env.DB.prepare(`SELECT count(*) AS total,sum(written IS NULL) AS unassigned FROM (
-    SELECT CASE WHEN u.id IS NULL THEN c.character ELSE u.character END AS written
-      FROM corpus_units c LEFT JOIN units u ON c.id=u.id WHERE c.family=? AND (u.id IS NULL OR u.family=c.family)
-    UNION ALL SELECT u.character AS written FROM units u JOIN corpus_units c ON c.id=u.id
-      WHERE u.origin='corpus' AND u.family=? AND c.family IS NOT u.family
-    )`).bind(family,family).first<{total:number;unassigned:number}>();
-  const counts={total:row?.total||0,unassigned:row?.unassigned||0};
-  ctx.waitUntil(caches.default.put(key,Response.json(counts,{headers:{'cache-control':`public, max-age=${FACETS_TTL}`}})));
-  return counts;
-}
-async function corpusOccurrences(env:Env,ctx:ExecutionContext,url:URL,{data,detail}:{data:Json;detail:Json},q:URLSearchParams){
-  const limit=integer(q,'limit',24,200),offset=integer(q,'offset',0),group=styleGroup(q);
-  const family=q.get('scope')==='grapheme',widened=q.get('scope')==='variants',field=family?'family':'character';
-  if(widened)widenedPage(offset);
-  // A variants widening reads the character and its variants, each by the character index.
-  const selected=widened?await writtenVariants(env,data.char):[family?(data.grapheme?.code_point||data.code_point):data.char];
-  // Unassigned source classes remain null until evidence identifies the form.
-  const where=['1=1'],values:(string|number)[]=[...selected,...selected];
-  if(q.get('visual_group')){if(q.get('visual_group')==='unassigned')where.push('(CASE WHEN overlay IS NULL THEN character ELSE overlay_character END) IS NULL');
-    else{where.push('(CASE WHEN overlay IS NULL THEN visual_group ELSE overlay_group END)=?');values.push(q.get('visual_group')!)}}
-  // Placed or narrowed by date: each glyph joins its book's date by key (`corpus_units.document`, 0053).
-  const dated=widened?null:yearOptions(q,(status,message)=>{throw new Problem(status,message)});
-  const join=dated?`FROM (${corpusSelection(field,selected.length)}) x${datingJoin('x.document',dated.axis)}`:`FROM (${corpusSelection(field,selected.length)})`;
-  if(dated){const {sql,values:years}=yearCondition(dated.years);if(sql){where.push(sql.slice(5));values.push(...years)}}
-  const styled=group===null?where:[...where,'s=?'],styledValues=group===null?values:[...values,group];
-  const [count,rows]=await env.DB.batch([
-    // A widening counts no further than its cap, and so has no style counts.
-    widened?env.DB.prepare(`SELECT count(*) AS n FROM (SELECT 1 ${join} WHERE ${styled.join(' AND ')} LIMIT ${WIDENED_CAP+1})`).bind(...styledValues)
-      :env.DB.prepare(`SELECT s,count(*) AS n ${join} WHERE ${where.join(' AND ')} GROUP BY s`).bind(...values),
-    env.DB.prepare(`SELECT ${dated?'x.*':'*'} ${join} WHERE ${styled.join(' AND ')} ORDER BY ${dated?.order==='year'?yearOrder('k,s,i'):'k,s,i'} LIMIT ? OFFSET ?`).bind(...styledValues,limit,offset),
-  ]);
-  const grouped=widened?null:styleCounts(count.results as {s:number;n:number}[],group);
-  const counted=grouped?grouped.total:(count.results[0] as {n:number}).n;
-  const items=[];
-  // A page of up to 200 records is read in a few ranges and its form decisions in one query.
-  const pageRows=rows.results as (CorpusRow&{overlay:string|null})[],read=await corpusRecords(env,pageRows.filter(row=>!row.overlay));
-  for(const row of pageRows)items.push({...(row.overlay?parse(row.overlay):await recordOf(env,read,row)),style:row.style});
-  const formed=await withForms(env,items);
-  const counts=await familyCounts(env,ctx,url,data.grapheme?.code_point||data.code_point);
-  return {...data.candidates,code_point:data.code_point,total:widened?Math.min(counted,WIDENED_CAP):counted,capped:widened&&counted>WIDENED_CAP,
-    available:formed.length,items:await withDating(env,formed),...(grouped?{styles:grouped.styles}:{}),scope:family?'grapheme':widened?'variants':'character',status:'ok',
-    visual_analysis:detail.visual_analysis,family_total:counts.total,unassigned_count:counts.unassigned,
-    ...(dated?{order:dated.order,axis:dated.axis,years:dated.years}:{})};
-}
 // A document's characters in source order. The primary key serves the filter and the order, and each
 // row joins its unit by id: a published unit gives its current character, state and revision.
 export const documentCharactersQuery = () => `SELECT c.unit,c.data,u.character,u.state,u.revision,json_extract(u.data,'$.issue') AS issue
@@ -1986,6 +1425,7 @@ function text(value: unknown, max: number, name: string, required=false): string
   return compose(value.trim());
 }
 // A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
+const characterTools: CharacterTools = { literal, jamoSyllable };
 const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp,
   family:async(env,char)=>(await known(env,char).catch(()=>null))?.data.grapheme?.code_point||cp(char)};
 // What the ledger needs of the rest of the Worker (`ledger.ts`): a crop subject is a crop the site
@@ -2551,6 +1991,7 @@ const routes = {
       if(shown){let id:string;try{id=decodeURIComponent(shown[1])}catch{throw new Problem(404,'This page is not in the published collection.')}
         return json(await sourcePage(env,ctx,url,id),200,{'cache-control':'no-cache'})}
       const cited=path.match(/^\/atlas\/cite\/([^/]+)\/([^/]+)$/);
+      if(cited&&(cited[1]==='grapheme'||cited[1]==='form'))return await citeCharacter(env,ctx,url,cited[1],cited[2],characterTools,OPEN);
       if(cited)return await cite(env,ctx,url,cited[1],cited[2]);
       const versions=path.match(/^\/atlas\/characters\/([^/]+)\/versions$/);
       if(versions){let id:string;try{id=decodeURIComponent(versions[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
@@ -2583,20 +2024,15 @@ const routes = {
       if(path==='/layers/structure')return json(await structureOf(env,ctx,url.origin,q.get('c')||''));
       if(path==='/layers/search'){const found=await suggest(env,q);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
-      if(layer){const value=decodeURIComponent(layer[1]),card=await known(env,value),{detail}=card;const found=await occurrences(env,value,q,card);
-        const version=await catalogueVersion(env),[variants,words]=await Promise.all([variantsOf(env,ctx,url.origin,detail.char,detail.grapheme?.char??detail.char,version),wordsOf(env,ctx,url.origin,detail.char,version)]);
-        return json({...detail,variants,words,query:detail.code_point,samples:found.items,occurrences:{...found.counts,filtered:found.total}})}
-      if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
-      if(path==='/layers/candidates'){const found=await corpusOccurrences(env,ctx,url,await known(env,q.get('code_point')||''),q);
+      if(layer)return json(await characterPage(env,ctx,url,decodeURIComponent(layer[1]),characterTools));
+      if(path==='/layers/occurrences')return json(await occurrences(env,await characterCard(env,q.get('code_point')||'',characterTools,ctx),q));
+      if(path==='/layers/candidates'){const found=await corpusOccurrences(env,await characterCard(env,q.get('code_point')||'',characterTools,ctx),q);
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
       if(path==='/layers/gallery')return json(await gallery(env,q));
-      if(path==='/layers/decades')return json(await decades(env,ctx,url));
-      if(path==='/layers/chronology')return json(await chronology(env,ctx,url));
+      if(path==='/layers/decades')return json(await decades(env,ctx,url,characterTools));
+      if(path==='/layers/chronology')return json(await chronology(env,ctx,url,characterTools));
       if(path==='/layers/summary')return json(await meta(env,'corpus_index'));
-      if(path==='/layers/graphemes'||path==='/layers/ligatures'){
-        const selector=path.endsWith('ligatures')?"json_extract(data,'$.ligature') IS NOT NULL":"json_array_length(json_extract(data,'$.grapheme.members'))>1";
-        const rows=await env.DB.prepare(`SELECT data FROM characters WHERE ${selector} LIMIT ? OFFSET ?`).bind(integer(q,'limit',200,500),integer(q,'offset',0)).all<{data:string}>();
-        return json({items:rows.results.map(r=>parse(r.data)),total:rows.results.length})}
+      if(path==='/layers/graphemes'||path==='/layers/ligatures')return json(await cards(env,path.endsWith('ligatures')?'ligatures':'graphemes',q,ctx));
       if(path==='/atlas/corpus/reviews'){
         const rows=await env.DB.prepare(flaggedCorpusQuery()).all<UnitRow>();
         return json({items:await withDating(env,await withForms(env,rows.results.map(compact))),total:rows.results.length})}

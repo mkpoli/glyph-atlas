@@ -1,7 +1,8 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
-import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
-  encodeCursor, decodeCursor, historyItem, historyQuery, moved, wroteLately, markWriter, substitutionKey, flagRequest, listingFilter, dealable } from './index';
+import { canonical, samePixels, literal, hira, single, validRound, jamoSyllable,
+  encodeCursor, decodeCursor, historyItem, historyQuery, moved, wroteLately, markWriter, flagRequest, listingFilter, dealable } from './index';
+import { describedCard, jamoCard, substitutionKey } from './routes/character';
 import { ROUND_MAX } from './rounds';
 import { held } from './held';
 import { componentTerm, rankMatches } from './components';

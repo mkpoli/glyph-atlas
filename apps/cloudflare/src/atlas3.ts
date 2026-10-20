@@ -107,7 +107,8 @@ export async function cropItems(env: Env, ids: number[]): Promise<Json[]> {
     const whole = entry.record_place ? records.get(recordKey(pointer(entry))) : entry;
     if (!whole) continue;
     const record = Object.fromEntries(Object.entries(whole).filter(([k]) => !UNLISTED.includes(k)));
-    items.push({ ...record, id: publicId(id), source_id: entry.id, label: row.char ?? '',
+    // A corpus glyph with no character yet keeps the label its source gave it.
+    items.push({ ...record, id: publicId(id), source_id: entry.id, label: row.char ?? (row.kind === 1 ? whole.label ?? '' : ''),
       origin: row.kind === 1 ? 'corpus' : 'local', production: row.production ?? 'unknown',
       category: name('category', row.category), style: name('style', row.style), state: name('state', row.state),
       revision: row.revision, cut: row.cut, page_id: row.page_key, document: row.document, year: row.year, withheld: row.quiz === 0, flags: row.flags });
