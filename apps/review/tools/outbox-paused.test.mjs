@@ -21,6 +21,7 @@ mock.module('../src/lib/session.svelte.js', () => ({
 const { backoff } = await import('../src/lib/busy.svelte.js')
 const { request } = await import('../src/lib/client.js')
 const { outbox, drain, keep, keptCrops } = await import('../src/lib/outbox.svelte.js')
+const { correctionBatches, sendEach } = await import('../src/lib/corrections.js')
 
 const paused = () => Response.json({ error: 'paused', message: 'Changes are paused.' }, { status: 503, headers: { 'retry-after': '300' } })
 let posts, sent, timers, realFetch, realTimeout, answer
@@ -109,4 +110,43 @@ test('a save kept while a pass is sending is sent by that pass', async () => {
   await pass
   expect(sent).toContain('round-5')
   expect(outbox.pending).toBe(0)
+})
+
+test('a batch correction keeps every batch after a kept one, under the same ids each time', async () => {
+  const crops = Array.from({ length: 5 }, (_, i) => ({ id: 'k' + i, revision: 1 }))
+  const batches = correctionBatches('い', crops, 2)
+  expect(batches.map(batch => batch.crops.length)).toEqual([2, 2, 1])
+  expect(correctionBatches('い', crops, 2).map(batch => batch.id)).toEqual(batches.map(batch => batch.id))
+  // Another revision or character is another submission.
+  expect(correctionBatches('い', [{ id: 'k0', revision: 2 }, crops[1]], 2)[0].id).not.toBe(batches[0].id)
+  expect(correctionBatches('う', crops, 2)[0].id).not.toBe(batches[0].id)
+  answer = paused; posts.length = 0; sent.length = 0
+  const send = ({ id, crops: part }) => request('/atlas/corrections', { id, character: 'い', crops: part })
+  const { answered, kept } = await sendEach(batches, send)
+  expect(answered).toEqual([])
+  expect(kept.map(batch => batch.id)).toEqual(batches.map(batch => batch.id))
+  expect(outbox.pending).toBe(3)
+  expect([...await keptCrops()].sort()).toEqual(['k0', 'k1', 'k2', 'k3', 'k4'])
+  // Pressed again, the same batches are kept under the same keys: nothing is added.
+  await sendEach(correctionBatches('い', crops, 2), send)
+  expect(outbox.pending).toBe(3)
+  // Writes resume: each batch is sent once, after the pass that met the pause has ended.
+  await new Promise(resolve => realTimeout(resolve, 10))
+  answer = () => Response.json({ results: [] }); sent.length = 0
+  await drain()
+  expect(sent).toEqual(batches.map(batch => batch.id))
+  expect(outbox.pending).toBe(0)
+})
+
+test('a run of saves stops at a refusal, and says what came before it', async () => {
+  const refusal = Object.assign(new Error('refused'), { status: 409 })
+  const results = { a: 1, c: 3 }
+  const error = await sendEach(['a', 'b', 'c', 'd'], async item => {
+    if (item === 'b') throw Object.assign(new Error('kept'), { kept: true })
+    if (item === 'd') throw refusal
+    return results[item]
+  }).catch(e => e)
+  expect(error).toBe(refusal)
+  expect(error.answered).toEqual([{ item: 'a', result: 1 }, { item: 'c', result: 3 }])
+  expect(error.kept).toEqual(['b'])
 })

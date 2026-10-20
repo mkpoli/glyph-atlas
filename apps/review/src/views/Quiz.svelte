@@ -19,6 +19,7 @@
   import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
   import { keptCrops, outbox } from '../lib/outbox.svelte.js'
+  import { correctionBatches, sendEach } from '../lib/corrections.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
   import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
@@ -378,28 +379,35 @@
     const chosen = openSelection.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
     if (!chosen.length) return
     const crops = chosen.filter(i => !((i.written_character || i.label) === form && i.state === 'checked'))
-    let kept = chosen.length - crops.length, refused = []
+    let kept = chosen.length - crops.length, refused = [], answered = [], waiting = []
     const saved = [], before = {}, after = {}
     saving = true; formError = ''
     try {
-      for (let from = 0; from < crops.length; from += CORRECTION_BATCH) {
-        const part = crops.slice(from, from + CORRECTION_BATCH), id = crypto.randomUUID()
-        const result = await request('/atlas/corrections', { id, client_id: session.state.clientId, character: form,
-          crops: part.map(i => ({ id: i.id, revision: i.revision, ...pixels(i) })) })
-        const byId = Object.fromEntries((result.results ?? []).map(r => [r.target_id, r]))
-        saved.push({ id, ids: part.filter(i => byId[i.id]).map(i => i.id) })
-        kept += (result.unchanged ?? []).length
-        for (const i of part) if (byId[i.id]) {
-          before[i.id] = i
-          after[i.id] = { ...i, label: form, char: form, written_character: form, identity_status: 'assigned',
-            state: byId[i.id].state ?? 'checked', revision: byId[i.id].revision ?? i.revision + 1 }
-        }
-      }
+      ({ answered, kept: waiting } = await sendEach(correctionBatches(form, crops, CORRECTION_BATCH), ({ id, crops: part }) =>
+        request('/atlas/corrections', { id, client_id: session.state.clientId, character: form,
+          crops: part.map(i => ({ id: i.id, revision: i.revision, ...pixels(i) })) })))
     } catch (e) {
+      answered = e.answered ?? []; waiting = e.kept ?? []
       refused = (e.targets ?? []).map(target => target.id)
       formError = refused.length ? t('bulk.refused', { count: refused.length }) : e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
     } finally { saving = false }
-    const handled = [...Object.keys(after), ...chosen.filter(i => !crops.includes(i)).map(i => i.id), ...refused]
+    for (const { item: { id, crops: part }, result } of answered) {
+      const byId = Object.fromEntries((result.results ?? []).map(r => [r.target_id, r]))
+      saved.push({ id, ids: part.filter(i => byId[i.id]).map(i => i.id) })
+      kept += (result.unchanged ?? []).length
+      for (const i of part) if (byId[i.id]) {
+        before[i.id] = i
+        after[i.id] = { ...i, label: form, char: form, written_character: form, identity_status: 'assigned',
+          state: byId[i.id].state ?? 'checked', revision: byId[i.id].revision ?? i.revision + 1 }
+      }
+    }
+    // Batches kept while writes are paused go once they resume: their crops are decided here meanwhile.
+    const waited = waiting.flatMap(batch => batch.crops)
+    if (waited.length) {
+      markRecorded(waited, 'assigned'); markKept(waited)
+      if (!formError) formError = t('client.pausedKept')
+    }
+    const handled = [...Object.keys(after), ...waited.map(i => i.id), ...chosen.filter(i => !crops.includes(i)).map(i => i.id), ...refused]
     if (saved.length) {
       items = items.map(i => after[i.id] ?? i)
       markRecorded(Object.values(after), 'assigned')
@@ -413,22 +421,24 @@
     if (!done || saving) return
     saving = true; formError = ''
     const left = [...done.batches]
+    const gone = batch => left.splice(left.indexOf(batch), 1)
     try {
       // Newest batch first. An undo is a change of its own, so a batch's crops are read again for the
       // revision they now have as soon as it is undone; a batch that fails leaves only itself and the
-      // older ones to undo.
-      while (left.length) {
-        const batch = left.at(-1)
+      // older ones to undo. An undo kept while writes are paused goes once they resume.
+      const { kept: waiting } = await sendEach([...done.batches].reverse(), async batch => {
         await request(`/atlas/corrections/${batch.id}/undo`, { client_id: session.state.clientId })
-        left.pop()
+        gone(batch)
         const now = Object.fromEntries(await Promise.all(batch.ids.map(async id => {
           const i = done.before[id]
           return [id, { ...i, ...(i.origin === 'corpus' ? await corpusCharacter(id) : await character(id)) }]
         })))
         items = items.map(i => now[i.id] ?? i)
         recorded = without(recorded, batch.ids)
-      }
-    } catch (e) { formError = e.message }
+      })
+      waiting.forEach(gone)
+      if (waiting.length) formError = t('client.pausedKept')
+    } catch (e) { (e.kept ?? []).forEach(gone); formError = e.message }
     finally {
       saving = false
       formDone = left.length ? { ...done, batches: left, count: left.reduce((n, batch) => n + batch.ids.length, 0) } : null
