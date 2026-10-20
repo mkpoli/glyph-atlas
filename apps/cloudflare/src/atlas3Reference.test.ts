@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { gzipSync } from 'node:zlib';
-import { LIST_PAGE, cardList, characterObject, characterStructure, componentMatches, familySummaries, nameMatches, referenceShard } from './atlas3Reference';
+import { IDS_DIGITS, LIST_PAGE, SUMMARY_DIGITS, cardList, characterObject, characterStructure, componentMatches, familySummaries, nameMatches, referenceShard } from './atlas3Reference';
 import { COMPONENT_SCAN, componentMatchQuery, rankMatches } from './components';
 
 const edge = new Map<string, Response>();
@@ -22,10 +22,10 @@ function bucket(objects: Record<string, unknown>) {
 }
 
 describe('reference objects', () => {
-  it('name a shard by the first two hex digits of the SHA-256, as reference.py does', async () => {
-    // Python: hashlib.sha256(key.encode()).hexdigest()[:2]
-    expect(await referenceShard('U+3042')).toBe('08');
-    expect(await referenceShard('好')).toBe('f8');
+  it('name a shard by the first hex digits of the SHA-256, as reference.py does', async () => {
+    // Python: hashlib.sha256(key.encode()).hexdigest()[:digits]
+    expect(await referenceShard('U+3042', SUMMARY_DIGITS)).toBe('08e');
+    expect(await referenceShard('好', IDS_DIGITS)).toBe('f8');
   });
 
   it('read a card by its code points and answer null for one no card has', async () => {
@@ -34,17 +34,21 @@ describe('reference objects', () => {
     expect(await characterObject(env, 'U+0000')).toBeNull();
   });
 
-  it('read each family shard once for members of several heads', async () => {
-    const a = await referenceShard('U+3044'), b = await referenceShard('U+3046');
-    const { env, reads } = bucket({ [`v3/reference/summary/${a}.json.gz`]: { 'U+3044': { char: 'い' }, 'U+1B006': { char: '𛀆' } },
-      [`v3/reference/summary/${b}.json.gz`]: { 'U+3046': { char: 'う' } } });
+  it('read each family shard once and answer only the families asked for', async () => {
+    const a = await referenceShard('U+3044', SUMMARY_DIGITS), b = await referenceShard('U+3046', SUMMARY_DIGITS);
+    // Each shard also holds a family nobody asked for.
+    const { env, reads } = bucket({
+      [`v3/reference/summary/${a}.json.gz`]: { 'U+3044': { 'U+3044': { char: 'い' }, 'U+1B006': { char: '𛀆' } }, 'U+9999': { 'U+9999': { char: '香' } } },
+      [`v3/reference/summary/${b}.json.gz`]: { 'U+3046': { 'U+3046': { char: 'う' } }, 'U+6C34': { 'U+6C34': { char: '水' } } } });
     const found = await familySummaries(env, ['U+3044', 'U+3044', 'U+3046']);
     expect([...found.keys()].sort()).toEqual(['U+1B006', 'U+3044', 'U+3046']);
-    expect(reads.length).toBe(a === b ? 1 : 2);
+    expect(found.get('U+1B006')).toEqual({ char: '𛀆' });
+    expect(reads.length).toBe(2);
+    expect((await familySummaries(env, ['U+3099'])).size).toBe(0);
   });
 
   it('find a structure and answer null for a character the shard lacks', async () => {
-    const { env } = bucket({ [`v3/reference/ids/${await referenceShard('姥')}.json.gz`]: { '姥': [['⿰女老'], null] } });
+    const { env } = bucket({ [`v3/reference/ids/${await referenceShard('姥', IDS_DIGITS)}.json.gz`]: { '姥': [['⿰女老'], null] } });
     expect(await characterStructure(env, '姥')).toEqual({ sequences: ['⿰女老'], shapes: null });
     expect(await characterStructure(env, 'constructor')).toBeNull();
   });

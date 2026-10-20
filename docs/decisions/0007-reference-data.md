@@ -21,8 +21,10 @@ character. Only a small part is filtered, joined or sorted in SQL.
   graphemes it writes, and the writers of its family head with `shared` worked out. `ids` gives the
   grapheme id of each character the object names that has one, for the count shards. A character
   page reads this one object.
-- `summary/<shard>.json.gz`: each card's `data` in the shard of its family head, so a family's members
-  are one read. `graphemeMembers` reads its key's shard; a search list reads one per family it shows.
+- `summary/<shard>.json.gz`: each card's `data` under its family head, in the shard of the head, so a
+  family's members are one read and a reader takes only the families it asks for. 4,096 shards keep
+  one near 41 KB of JSON. `graphemeMembers` reads its key's shard; a search list reads one per family
+  it shows.
 - `names.json.gz`: every card's Unicode name and how often the character occurs. A name that is a
   prefix and the hex of its code point (`CJK UNIFIED IDEOGRAPH-4E00`) is kept as the prefix and the
   code point, so a search for `4e00` or `U+4E00` still finds it; the Worker ranks what a name search
@@ -36,7 +38,8 @@ character. Only a small part is filtered, joined or sorted in SQL.
   reads the names and one list per component it asks for (two to eight) and intersects them in the
   Worker: the rarest list's first 3,000 characters, each looked up in the others, as the D1 query did.
 
-A shard is the first two hex digits of the SHA-256 of its key's code point(s).
+A shard is the first hex digits of the SHA-256 of its key as UTF-8 text: three of the family head's
+code point(s) (`U+3042`) for a summary, two of the character itself (`好`) for the IDS.
 
 **What a query filters, joins or sorts on stays in D1** (`migrations-atlas/0004_reference.sql`):
 `component_variants` without its pairs (the IDS editor's substitutes, read by either end), `words` and

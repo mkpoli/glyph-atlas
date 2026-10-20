@@ -1,6 +1,7 @@
 // Character reference data on the new storage layout: the R2 objects scripts/atlas3/reference.py
 // writes under `v3/reference/` (decision record 0007), read by key with no D1 read. A shard is the
-// first two hex digits of the SHA-256 of its key's code point(s) as text.
+// first hex digits of the SHA-256 of its key as UTF-8 text: three of the family head's code point(s)
+// (`U+3042`) for a summary, two of the character itself (`好`) for the IDS.
 
 import { COMPONENT_PARTS, COMPONENT_SCAN, rankMatches } from './components';
 import { heldShards } from './atlas3Media';
@@ -16,11 +17,12 @@ export type CharacterObject = {
 export const LIST_PAGE = 500;
 
 const PREFIX = 'v3/reference/';
+export const SUMMARY_DIGITS = 3, IDS_DIGITS = 2;
 const read = heldShards<Json>();
 
-export async function referenceShard(key: string): Promise<string> {
+export async function referenceShard(key: string, digits: number): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key)));
-  return digest[0].toString(16).padStart(2, '0');
+  return [...digest.slice(0, Math.ceil(digits / 2))].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, digits);
 }
 
 // A card's object by its URL key (`U+3042`, or code points joined by spaces); null when no card has it.
@@ -28,16 +30,21 @@ export function characterObject(env: Env, codePoint: string, ctx?: ExecutionCont
   return read(env, `${PREFIX}char/${codePoint.split(' ').join('-')}.json.gz`, ctx);
 }
 
-// The `data` of each card in the families of the given heads, by code point: one read per shard.
+// The `data` of each card in the families of the given heads, by code point, and no other family's:
+// one read per shard.
 export async function familySummaries(env: Env, heads: string[], ctx?: ExecutionContext): Promise<Map<string, Json>> {
-  const shards = [...new Set(await Promise.all(heads.map(referenceShard)))];
-  const found = await Promise.all(shards.map(key => read(env, `${PREFIX}summary/${key}.json.gz`, ctx)));
-  return new Map(found.flatMap(shard => Object.entries(shard ?? {})));
+  const wanted = [...new Set(heads)], keys = await Promise.all(wanted.map(head => referenceShard(head, SUMMARY_DIGITS)));
+  const shards = new Map(await Promise.all([...new Set(keys)].map(async key =>
+    [key, await read(env, `${PREFIX}summary/${key}.json.gz`, ctx)] as const)));
+  return new Map(wanted.flatMap((head, i) => {
+    const shard = shards.get(keys[i]);
+    return shard && Object.hasOwn(shard, head) ? Object.entries(shard[head] as Record<string, Json>) : [];
+  }));
 }
 
 // A character's ideographic descriptions and regional shapes, or null.
 export async function characterStructure(env: Env, char: string, ctx?: ExecutionContext): Promise<{ sequences: string[]; shapes: Json[] | null } | null> {
-  const shard = await read(env, `${PREFIX}ids/${await referenceShard(char)}.json.gz`, ctx);
+  const shard = await read(env, `${PREFIX}ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`, ctx);
   const found = shard && Object.hasOwn(shard, char) ? shard[char] : null;
   return found ? { sequences: found[0], shapes: found[1] } : null;
 }

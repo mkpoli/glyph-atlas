@@ -84,8 +84,8 @@ def grapheme(db, text):
     return found and found[0]
 
 
-def shard(key):
-    return hashlib.sha256(key.encode()).hexdigest()[:2]
+def shard(key, digits=3):
+    return hashlib.sha256(key.encode()).hexdigest()[:digits]
 
 
 def both(root, remote, sql):
@@ -128,9 +128,10 @@ def test_a_card_is_one_object_with_its_edges_and_the_layout_numbers_its_characte
     assert shown["representatives"] == [{"crop": mirror["ex:a1"], "source_label": "あ"}]
     assert shown["anchors"] == [{"crop": mirror["ex:a1"], "position": 1}]
     # A family's members share the shard of its head.
-    assert set(bucket.objects[f"v3/reference/summary/{shard('U+3042')}.json.gz"]) == {"U+3042", "U+1B002"}
+    summary = bucket.objects[f"v3/reference/summary/{shard('U+3042')}.json.gz"]
+    assert list(summary) == ["U+3042"] and set(summary["U+3042"]) == {"U+3042", "U+1B002"}
     assert bucket.objects["v3/reference/list/graphemes/0.json.gz"]["total"] == 2
-    assert bucket.objects[f"v3/reference/ids/{shard('好')}.json.gz"] == {"好": [["⿰女子"], None]}
+    assert bucket.objects[f"v3/reference/ids/{shard('好', 2)}.json.gz"] == {"好": [["⿰女子"], None]}
     assert db.execute("SELECT * FROM component_variants ORDER BY a").fetchall() == [("安", "阿", 2), ("氵", "水", 3)]
     # A component's characters by tier and size, code points as steps, flags n * 2 + direct.
     assert bucket.objects["v3/reference/components/U+5973.json.gz"] == {

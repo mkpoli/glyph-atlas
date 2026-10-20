@@ -13,9 +13,10 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
   `ids` gives the grapheme id of every character the object names that has one. A visual group is
   keyed by its `visual_group` code (`codes`), and its samples name crops by integer id: a sample
   whose crop the mirror or `crops` lacks leaves the list, counted in the report.
-- `summary/<shard>.json.gz`: every card's `data` by code point, in the shard of its family head, so
-  a family's members are one read.
-- `ids/<shard>.json.gz`: each character's ideographic descriptions and regional shapes.
+- `summary/<shard>.json.gz`: every card's `data`, as `{family head: {code point: data}}`, in the shard
+  of its family head (SUMMARY_DIGITS), so a family's members are one read.
+- `ids/<shard>.json.gz`: each character's ideographic descriptions and regional shapes, by the
+  character itself, in the shard of the character (IDS_DIGITS).
 - `names.json.gz`: every card's name and how often it occurs, for a search by name or code point.
   `names` is `[code point, name, occurrences]` for the cards whose name says more than
   `<prefix>IDEOGRAPH-<hex of its code point>`; `plain` gives the rest as `[prefix, code points,
@@ -30,7 +31,8 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
 - `components/names.json.gz`: what a person may type for each component: `same`, the components typed
   as themselves, as one string, and `other`, `{typed: component}` for the rest.
 
-A shard is the first two hex digits of the SHA-256 of its key's code point(s) as text.
+A shard is the first hex digits of the SHA-256 of its key as UTF-8 text: the head's code point(s)
+(`U+3042`) for a summary, the character itself (`好`) for the IDS.
 
 D1 rows (`migrations-atlas/0004_reference.sql`) for what a query filters, joins or sorts on:
 `component_variants`, `words` and `word_spellings`. Cards name characters by `graphemes` id: a
@@ -70,6 +72,8 @@ from publish import BUCKET, CF, R2_REMOTE, applied, lit, send, upload
 SCHEMA = CF / "migrations-atlas" / "0004_reference.sql"
 PREFIX = "v3/reference/"
 LIST_PAGE = 500
+# 4,096 summary shards keep one near 41 KB of JSON; the IDS, 1 MB in all, takes 256.
+SUMMARY_DIGITS, IDS_DIGITS = 3, 2
 # Rows per group of statements; a group is never split across parts.
 GROUP = 500
 SOURCES = {
@@ -106,8 +110,8 @@ def source(table):
     return db
 
 
-def shard(key):
-    return hashlib.sha256(key.encode()).hexdigest()[:2]
+def shard(key, digits):
+    return hashlib.sha256(key.encode()).hexdigest()[:digits]
 
 
 def object_key(code_point):
@@ -264,12 +268,16 @@ def translate(atlas, mirror, path):
 
     summaries = defaultdict(list)
     for c in cards:
-        summaries[shard(c[4])].append(c)
+        summaries[shard(c[4], SUMMARY_DIGITS)].append(c)
     for key, members in summaries.items():
-        objects[f"summary/{key}.json.gz"] = encode("{" + ",".join(f"{compact(c[0])}:{c[3]}" for c in sorted(members)) + "}")
+        families = defaultdict(list)
+        for c in members:
+            families[c[4]].append(f"{compact(c[0])}:{c[3]}")
+        objects[f"summary/{key}.json.gz"] = encode(
+            "{" + ",".join(f'{compact(head)}:{{{",".join(entries)}}}' for head, entries in sorted(families.items())) + "}")
     structures = defaultdict(dict)
     for char, sequences, shapes in source("han_ids").execute("SELECT char, sequences, shapes FROM han_ids"):
-        structures[shard(char)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None]
+        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None]
     for key, chars in structures.items():
         objects[f"ids/{key}.json.gz"] = encode(compact(dict(sorted(chars.items()))))
     objects["names.json.gz"] = encode(names_list((c[0], c[2], c[8]) for c in cards))
