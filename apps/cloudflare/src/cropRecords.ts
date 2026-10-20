@@ -121,12 +121,12 @@ export async function foundCrop(env: Env, id: number): Promise<FoundCrop | null>
   return base ? { row, entry, record: cropRecord(row, base, entry.id) } : null;
 }
 
-/** A crop's current evidence version as its record shows it, with its cut and the source id its claims'
- *  `subject` names; null for no crop or one with no image. */
-export async function cropVersionNow(env: Env, crop: number): Promise<{ cut: number; version: string; text: string } | null> {
+/** A crop's current evidence version as its record shows it, with its cut, its kind and the source id its
+ *  claims' `subject` names; null for no crop or one with no image. */
+export async function cropVersionNow(env: Env, crop: number): Promise<{ cut: number; version: string; text: string; kind: number } | null> {
   const found = await foundCrop(env, crop);
   const version = found?.record.crop_version;
-  return found && version ? { cut: found.row.cut, version, text: found.entry.id } : null;
+  return found && version ? { cut: found.row.cut, version, text: found.entry.id, kind: found.row.kind } : null;
 }
 
 /** Every evidence version of a crop, oldest first: its earlier cuts (the bundle entry's `cuts`), then the one

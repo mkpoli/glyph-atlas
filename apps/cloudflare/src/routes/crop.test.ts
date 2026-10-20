@@ -208,7 +208,7 @@ describe('a crop\'s record', () => {
 
   it('gives the claims port the version and cut a claim is checked against', async () => {
     const { env, ids, text } = setup();
-    expect(await cropVersionNow(env, ids.a)).toEqual({ cut: 1, version: `${publicId(ids.a)}@${hash}@10,10,20,30`, text: text.a });
+    expect(await cropVersionNow(env, ids.a)).toEqual({ cut: 1, version: `${publicId(ids.a)}@${hash}@10,10,20,30`, text: text.a, kind: 0 });
     expect(await cropVersionNow(env, ids.x)).toBeNull();
   });
 });
