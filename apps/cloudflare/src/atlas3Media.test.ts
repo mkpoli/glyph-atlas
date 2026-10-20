@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { gzipSync } from 'node:zlib';
 import { mediaPlace, mediaResponse, shardKey } from './atlas3Media';
+import worker from './index';
 
 // The Workers cache, as far as these reads use it.
 const edge = new Map<string, Response>();
@@ -24,7 +25,8 @@ function setup() {
     const bytes = objects.get(name);
     if (!bytes) return null;
     const body = options?.range ? bytes.slice(options.range.offset, options.range.offset + options.range.length) : bytes;
-    return { body: new Response(body).body!, arrayBuffer: async () => body.slice().buffer };
+    // A copy of exactly these bytes: a Buffer's `.buffer` can be its whole shared pool.
+    return { body: new Response(body).body!, arrayBuffer: async () => new Uint8Array(body).buffer };
   } };
   const waits: Promise<unknown>[] = [];
   const ctx = { waitUntil: (p: Promise<unknown>) => waits.push(p) } as unknown as ExecutionContext;
@@ -63,5 +65,44 @@ describe('new-layout images', () => {
     edge.clear();
     await mediaPlace(env, key, undefined, Date.now() + 301_000);
     expect(reads.filter(name => name === shardKey(key))).toHaveLength(2);
+  });
+});
+
+// The route itself, with no `DB` binding: a read of the old database would fail the request.
+describe('the image route', () => {
+  const get = (env: Env, ctx: ExecutionContext, key: string, headers: HeadersInit = {}) =>
+    worker.fetch(new Request(`https://glyphatlas.org/atlas/media/${key}.webp`, { headers }), env, ctx);
+
+  it('serves a mapped image immutable under its key, with its content type', async () => {
+    const { env, key, png, ctx, waits } = setup();
+    const response = await get(env, ctx, key);
+    expect(response.status).toBe(200);
+    expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([8, 9, 10, 11]);
+    expect(Object.fromEntries(response.headers)).toMatchObject({ 'content-type': 'image/webp', 'content-length': '4',
+      'cache-control': 'public, max-age=31536000, immutable', 'etag': `"${key}"`, 'x-content-type-options': 'nosniff' });
+    expect((await get(env, ctx, png)).headers.get('content-type')).toBe('image/png');
+    await Promise.all(waits);
+    expect(edge.has(`https://glyphatlas.org/atlas/media/${key}.webp`)).toBe(true);
+  });
+
+  it('answers a matching ETag with 304', async () => {
+    const { env, key, ctx } = setup();
+    expect((await get(env, ctx, key, { 'if-none-match': `"${key}"` })).status).toBe(304);
+  });
+
+  it('answers 404 for a key the map does not hold, and for a key in a shard not yet published', async () => {
+    const { env, key, ctx } = setup();
+    const missing = await get(env, ctx, key.slice(0, 63) + 'c');
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ detail: 'Image not found.' });
+    expect((await get(env, ctx, 'fff' + 'a'.repeat(61))).status).toBe(404);
+  });
+
+  it('answers 503 when a mapped pack is missing', async () => {
+    const { env, key, ctx } = setup();
+    const broken = { MEDIA: { get: async (name: string, options?: object) => options ? null : (env as any).MEDIA.get(name) } } as unknown as Env;
+    const response = await get(broken, ctx, key);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ detail: 'Image publication is incomplete.' });
   });
 });
