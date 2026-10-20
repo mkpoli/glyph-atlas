@@ -2,10 +2,12 @@
 // was busy (an import holds it), the browser was offline, or the site was rate-limiting. Only a save
 // that names its submission id is kept, since the server answers a repeat of one with its first
 // result and so records it once; an undo is named by its path, and a repeat of one changes nothing.
+// While the site pauses writes, which can last hours, nobody waits on a kept save: each caller is told
+// at once that it is kept (an error with `kept: true`), and it is sent once writes resume.
 // `DatabaseStatus` shows what is waiting.
 import { backoff, isBusy, isPaused, retryAfter } from './busy.svelte.js'
 
-export const outbox = $state({ pending: 0, refused: [] })
+export const outbox = $state({ pending: 0, refused: [], paused: false })
 
 // The browser stores saves in IndexedDB; a save IndexedDB would not take goes to localStorage, and
 // failing both, to this page's memory. All three are read together.
@@ -52,13 +54,31 @@ async function remove(key) {
 // signed in waits for it, and is not counted meanwhile.
 const count = async () => { outbox.pending = (await entries()).filter(entry => sender?.mine(entry) !== false).length }
 
+/**
+ * The crops kept saves decide, by id: the crops of a kept round (flagged, seen or skipped) and of a kept
+ * correction. They still read as pending until the saves are sent, so a round dealt meanwhile leaves
+ * them out. A save whose undo is kept too decides nothing.
+ */
+export async function keptCrops() {
+  const kept = await entries()
+  const undone = new Set(kept.map(entry => /\/([^/]+)\/undo$/.exec(entry.path)?.[1]).filter(Boolean))
+  const crops = new Set()
+  for (const { body } of kept) {
+    if (undone.has(body?.id)) continue
+    for (const list of [body?.answers, body?.seen, body?.skipped, body?.crops])
+      for (const crop of Array.isArray(list) ? list : []) if (crop?.id != null) crops.add(crop.id)
+  }
+  return crops
+}
+
 /** Whether any save is kept, in this tab or another: a new save then joins the end of the line. */
 export const anyKept = async () => outbox.pending > 0 || (await entries()).some(entry => sender?.mine(entry) !== false)
 
-// `send(entry)` makes one save and answers `{ response, value }`, or `{ wait: true }` when it cannot
-// be sent yet, or `{ skip: true }` when it belongs to an account that is not signed in. `settle`
-// turns an answer into the saved value or the error a view shows; `mine(entry)` says whether the
-// signed-in reader may send it. All three come from `client.js`.
+// `send(entry)` makes one save and answers `{ response, value }`, or `{ wait: true, retryAfter, paused }`
+// when it cannot be sent yet (`retryAfter` in seconds, 0 for no particular wait), or `{ skip: true }`
+// when it belongs to an account that is not signed in. `settle` turns an answer into the saved value
+// or the error a view shows; `mine(entry)` says whether the signed-in reader may send it; `kept()` is
+// the error a caller gets for a save kept while writes are paused. All four come from `client.js`.
 let sender = null
 export function useSender(value) { sender = value }
 
@@ -85,6 +105,20 @@ export async function deliver(path, body, user, wait = null) {
   if (wait === null) drain()
   else again(wait)
   return answered
+}
+
+/**
+ * Keep a save while writes are paused, with nobody waiting on it: it is sent after `wait` seconds, or
+ * once writes resume, and a refusal then is shown in the corner.
+ */
+export async function keep(path, body, user, wait = 0) {
+  await put({ key: keyOf(path, body), path, body, user: user?.id ?? null, anonymous: Boolean(user?.anonymous),
+    seq: Date.now() * 1000 + (sequence++ % 1000) })
+  outbox.paused = true
+  await count()
+  // A pass running now may have read the line before this save joined it, and goes round again.
+  if (draining) dirty = true
+  else again(wait)
 }
 
 /** Whether an answer means "not now": the site will take the same save later. */
@@ -139,7 +173,13 @@ async function run() {
         continue
       }
       if (answer.skip) continue
-      if (answer.wait || later(answer)) { again(answer.response ? retryAfter(answer.response) : 0); return }
+      if (answer.wait || later(answer)) {
+        // Paused, the callers of this page's kept saves are told they are kept, and stop waiting.
+        outbox.paused = Boolean(answer.paused || (answer.response && isPaused(answer.response, answer.value)))
+        if (outbox.paused) for (const key of [...waiting.keys()]) settleWaiters(key, waiter => waiter.reject(sender.kept()))
+        again(answer.response ? retryAfter(answer.response) : answer.retryAfter ?? 0); return
+      }
+      outbox.paused = false
       failures = 0
       failed.delete(entry.key)
       await remove(entry.key)

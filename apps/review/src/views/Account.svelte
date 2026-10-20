@@ -77,7 +77,11 @@
   const dropKey = id => act(id, client => client.passkey.deletePasskey({ id }))
   const revoke = token => act(token, client => client.revokeSession({ token }))
   const revokeOthers = () => act('others', client => client.revokeOtherSessions())
-  async function signOut() { await session.signOut(); goto(localize('/')) }
+  async function signOut() {
+    error = ''; notice = ''
+    try { await session.signOut() } catch (failure) { error = failure.message; return }
+    goto(localize('/'))
+  }
   // A browser and its system, read from the session's user agent, which is all a session records of its device.
   const device = agent => deviceName(agent ?? '') || t('account.sessions.unknown')
   const when = at => { try { return formatDateTime(at) } catch { return String(at) } }
