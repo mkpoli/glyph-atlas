@@ -72,7 +72,11 @@ describe('claims on reviewer ids from before accounts', () => {
     // An id that wrote before any account took it has an actor row with no user.
     expect((await claim(env, anon, 'reviewer-0000000d')).status).toBe(200);
     expect(atlas.query("SELECT user FROM actors WHERE key='reviewer-0000000d'").get()).toEqual({ user: 'u2' });
-    for (const id of ['c', 'e', 'f']) expect((await claim(env, anon, `reviewer-0000000${id}`)).status).toBe(200);
+    // An id an account held keeps no user once that account is deleted, and nobody else takes it.
+    atlas.exec(`INSERT INTO actors(key,user,via,at) VALUES('reviewer-0000000f',NULL,'legacy',1)`);
+    expect((await claim(env, anon, 'reviewer-0000000f')).status).toBe(409);
+    expect(atlas.query("SELECT user,via FROM actors WHERE key='reviewer-0000000f'").get()).toEqual({ user: null, via: 'legacy' });
+    for (const id of ['c', 'e', '9']) expect((await claim(env, anon, `reviewer-0000000${id}`)).status).toBe(200);
     expect((await claim(env, anon, 'reviewer-00000010')).status).toBe(429);
     expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user='u2' AND via='legacy'").get()).toEqual({ n: 5 });
   });

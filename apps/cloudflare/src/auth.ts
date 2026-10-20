@@ -205,20 +205,21 @@ export const owned = (user: string) => `(SELECT actor FROM actors WHERE user_id=
 const CLAIMS = 5;
 /**
  * Take over a reviewer id a browser made up before accounts. The browser that holds the id sends it,
- * and the first account to send an id holds it from then on.
+ * and the first account to send an id holds it from then on, past that account's deletion.
  */
 export async function claim(env: Env, user: Viewer, reviewer: string) {
   if (!LEGACY_REVIEWER.test(reviewer)) return { status: 422, body: { detail: 'Not a reviewer id from before accounts.' } };
   const holder = () => env.ATLAS.prepare('SELECT user FROM actors WHERE key=?').bind(reviewer).first<{ user: string | null }>();
   const answer = (row: { user: string | null } | null) => row?.user === user.id ? { status: 200, body: { reviewer, status: 'held' } }
     : { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
-  // An actor row with no user is an id whose account was deleted, or one that wrote before any account
-  // took it; the first account to send it takes it.
-  const found = await holder();
-  if (found?.user) return answer(found);
+  // An actor row with neither user nor `via` is an id that wrote before any account took it, and the
+  // first account to send it takes it. One with `via` set was held by an account since deleted, and
+  // stays with nobody.
+  const found = await env.ATLAS.prepare('SELECT user,via FROM actors WHERE key=?').bind(reviewer).first<{ user: string | null; via: string | null }>();
+  if (found?.user || found?.via) return answer(found);
   const held = await env.ATLAS.prepare("SELECT count(*) AS n FROM actors WHERE user=? AND via='legacy'").bind(user.id).first<{ n: number }>();
   if ((held?.n ?? 0) >= CLAIMS) return { status: 429, body: { detail: 'This account already holds as many old reviewer ids as one may.' } };
   await env.ATLAS.prepare(`INSERT INTO actors(key,user,via,at) VALUES(?,?,'legacy',?)
-    ON CONFLICT(key) DO UPDATE SET user=excluded.user,via=excluded.via,at=excluded.at WHERE actors.user IS NULL`).bind(reviewer, user.id, Date.now()).run();
+    ON CONFLICT(key) DO UPDATE SET user=excluded.user,via=excluded.via,at=excluded.at WHERE actors.user IS NULL AND actors.via IS NULL`).bind(reviewer, user.id, Date.now()).run();
   return answer(await holder());
 }

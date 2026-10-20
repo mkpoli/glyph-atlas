@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { auth, viewer } from './auth';
+import { auth, claim, viewer } from './auth';
 
 // The auth library reads through D1's whole statement API, `raw` and `run`'s row id included.
 class Statement {
@@ -181,7 +181,7 @@ describe('deleting a user', () => {
     return { ...s, gone, stays, rows };
   }
   it('removes its rows in ACCOUNTS, then its stars and actor links in ATLAS, and keeps the actors', async () => {
-    const { call, accounts, atlas, gone, stays, rows } = await seeded('https://delete.glyphatlas.org');
+    const { call, accounts, atlas, env, gone, stays, rows } = await seeded('https://delete.glyphatlas.org');
     expect(rows(gone)).toEqual({ session: 1, account: 1, passkey: 1 });
     expect(await call('/admin/remove-user', { userId: gone })).toBe(200);
     expect(accounts.query('SELECT count(*) AS n FROM "user" WHERE id=?').get(gone)).toEqual({ n: 0 });
@@ -192,6 +192,9 @@ describe('deleting a user', () => {
     expect(atlas.query(`SELECT key,user FROM actors WHERE key IN (?, 'reviewer-0000000a') ORDER BY key`).all(gone))
       .toEqual([{ key: gone, user: null }, { key: 'reviewer-0000000a', user: null }]);
     expect(rows(stays).session).toBe(1);
+    // The deleted user's old reviewer id is nobody's to claim.
+    const other = { id: stays, name: 'stays', image: null, anonymous: false, admin: false };
+    expect((await claim(env, other, 'reviewer-0000000a')).status).toBe(409);
   });
   it('is finished by the next deletion when ATLAS fails between the two databases', async () => {
     const { call, accounts, atlas, env, gone, stays } = await seeded('https://retry.glyphatlas.org');
