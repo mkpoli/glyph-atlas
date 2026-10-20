@@ -397,14 +397,21 @@ def loads(atlas):
 
 
 def finish(atlas):
-    """Deliver every load the local copy holds only part of."""
+    """Deliver every load D1 or the local copy holds only part of. A load whose first part D1 applied
+    is finished even when the local copy lacks every part, as when a run stopped between applying a
+    part and replaying it; a folder D1 never started is a load not sent, and is removed."""
     started = loads(atlas)
     for run in sorted((OUT / "reference-load").glob("reference-*")):
-        if run.is_dir() and run.name in started and any(
-                not atlas.execute("SELECT 1 FROM imports WHERE stamp=?", (f"{run.name}.{p.stem}",)).fetchone()
-                for p in run.glob("*.sql")):
+        if not run.is_dir() or run.name.endswith(".building"):
+            continue
+        parts = sorted(run.glob("*.sql"))
+        if all(atlas.execute("SELECT 1 FROM imports WHERE stamp=?", (f"{run.name}.{p.stem}",)).fetchone() for p in parts):
+            continue
+        if run.name in started or applied("glyph-atlas-v3", f"{run.name}.{parts[0].stem}"):
             print(f"finishing {run.name}", flush=True)
             deliver(run, atlas)
+        else:
+            shutil.rmtree(run)
 
 
 def remove(paths):

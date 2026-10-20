@@ -155,7 +155,9 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    are crop ids found in the mirror and in `crops`. `--send` applies 0004 once, loads only the rows
    that differ from the local copy in stamped parts, then uploads the objects that differ from
    `out/reference/` and deletes those the copy no longer has; figures go to
-   `out/reference-report.txt`. A load that stopped partway is finished on the next run.
+   `out/reference-report.txt`. A load that stopped partway is finished on the next run, also one
+   whose part D1 applied and the local copy missed: the run checks D1 for the stamps of every load
+   the local copy has not finished.
 8. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
    session changes still frozen. It is created once, before the window:
    `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:

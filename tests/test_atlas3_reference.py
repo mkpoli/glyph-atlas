@@ -236,6 +236,30 @@ def test_a_load_that_stopped_partway_is_finished_first(layout, monkeypatch):  # 
     assert len(list((root / "out" / "reference-load").glob("reference-*-*"))) == 1
 
 
+def test_a_part_d1_applied_but_the_local_copy_missed_is_replayed_before_anything_else(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")])
+    real = remote.send
+
+    def stops(database, file, stamp):
+        real(database, file, stamp)
+        raise SystemExit("stopped after D1 applied a part")
+
+    monkeypatch.setattr(remote, "send", stops)
+    with pytest.raises(SystemExit, match="stopped"):
+        load(remote, monkeypatch, "--send")
+    monkeypatch.setattr(remote, "send", real)
+    # The rows changed before the rerun: its difference from the local copy alone would insert the
+    # first load's words again, which D1 holds, and refuse them.
+    sources(root, cards=[card("あ"), card("い")],
+            words=[("ja/ばかり/副助詞", "ja", "ばかり", "副助詞"), ("ja/のみ/副助詞", "ja", "のみ", "副助詞")])
+    load(remote, monkeypatch, "--send")
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    for db in (remote.dbs["glyph-atlas-v3"], local):
+        assert db.execute("SELECT id FROM words ORDER BY id").fetchall() == [("ja/のみ/副助詞",), ("ja/ばかり/副助詞",)]
+    assert local.execute("SELECT count(*) FROM imports WHERE stamp LIKE 'reference-1-%'").fetchone()[0] >= 1
+
+
 def test_migration_0004_is_applied_once_where_the_layout_lacks_it(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root, cards=[card("あ")])
