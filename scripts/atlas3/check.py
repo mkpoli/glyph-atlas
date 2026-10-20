@@ -322,16 +322,23 @@ class Cuts:
         self.corpus = {t for (t,) in self.db.execute("SELECT id FROM corpus_units.corpus_units WHERE id IN (SELECT text FROM wanted)")}
         self.db.close()
 
-    def cut(self, text, box):
+    def current(self, text):
+        """A crop's current box: its live record's, or a tombstone's from its retired bundle entry."""
         origin, current = self.record.get(text, (None, None))
+        if origin in ("local", "retired"):
+            return current
+        e = self.entry(text)
+        return box4(e.get("box")) if e and e.get("retired") else None
+
+    def cut(self, text, box):
         # A corpus glyph has no record of its own, or a review overlay with no box.
-        if origin not in ("local", "retired"):
+        if self.record.get(text, (None,))[0] not in ("local", "retired"):
             if text in self.corpus:
                 return 0
             e = self.entry(text)
             if not (e and e.get("retired")):
                 return None
-            current = box4(e.get("box"))
+        current = self.current(text)
         box = box4(box)
         if box is not None and box == current:
             return 0
@@ -855,8 +862,7 @@ def check_history(report, name):
     problems, published = [], 0
     for cid in cited:
         text = mirror.execute("SELECT text FROM ids WHERE id=?", (cid,)).fetchone()[0]
-        current = cuts.record.get(text, (None, None))[1]
-        earlier = cuts.versions[text] - {current}
+        earlier = cuts.versions[text] - {cuts.current(text)}
         e = entry(cid) or {}
         have = [box4(c.get("box")) for c in e.get("cuts", []) if c.get("cut") == -1]
         published += "cuts" in e

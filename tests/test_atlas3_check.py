@@ -410,3 +410,18 @@ def test_a_null_key_in_the_local_copy_is_reported_not_raised(layout, monkeypatch
     local.commit()
     assert check(monkeypatch) == 1
     assert "forms (None,): in the local copy, not in history.sqlite" in report(root)
+
+
+def test_a_tombstones_current_box_is_its_retired_bundle_entrys(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    sources(root)
+    sys.modules.pop("check", None)
+    module = importlib.import_module("check")
+    entries = {"ex:gone": {"retired": True, "box": {"x": 1, "y": 2, "w": 3, "h": 4}}}
+    cuts = module.Cuts(entries.get)
+    cuts.want(["ex:gone", "ex:a1"])
+    cuts.load()
+    assert cuts.current("ex:gone") == (1, 2, 3, 4)
+    assert cuts.current("ex:a1") == (0, 0, 10, 10)
+    assert cuts.current("ex:nothing") is None
+    assert cuts.cut("ex:gone", {"x": 1, "y": 2, "w": 3, "h": 4}) == 0
