@@ -82,10 +82,11 @@ export const keptState = key => outbox.lost.includes(key) ? 'refused' : outbox.k
  * The crops this reader's kept saves decide, by id: the crops of a kept round (flagged, seen or skipped)
  * and of a kept correction. They still read as pending until the saves are sent, so a round dealt
  * meanwhile leaves them out. A save whose undo is kept too decides nothing, and one another account
- * made leaves its crops to this reader.
+ * made leaves its crops to this reader. Until the page knows who reads, every kept save's crops are
+ * left out.
  */
 export async function keptCrops() {
-  const kept = await mine()
+  const kept = sender && !sender.known() ? await entries() : await mine()
   const undone = new Set(kept.map(entry => /\/([^/]+)\/undo$/.exec(entry.path)?.[1]).filter(Boolean))
   const crops = new Set()
   for (const { body } of kept) {
@@ -102,8 +103,9 @@ export const anyKept = async () => outbox.pending > 0 || (await mine()).length >
 // `send(entry)` makes one save and answers `{ response, value }`, or `{ wait: true, retryAfter, paused }`
 // when it cannot be sent yet (`retryAfter` in seconds, 0 for no particular wait), or `{ skip: true }`
 // when it belongs to an account that is not signed in. `settle` turns an answer into the saved value
-// or the error a view shows; `mine(entry)` says whether the signed-in reader may send it; `kept()` is
-// the error a caller gets for a save kept while writes are paused. All four come from `client.js`.
+// or the error a view shows; `mine(entry)` says whether the signed-in reader may send it; `known()`
+// whether the page knows yet who reads; `kept()` is the error a caller gets for a save kept while
+// writes are paused. All five come from `client.js`.
 let sender = null
 export function useSender(value) { sender = value }
 

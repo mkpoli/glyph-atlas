@@ -11,10 +11,11 @@ globalThis.document = { visibilityState: 'visible', addEventListener() {}, remov
 mock.module('../src/lib/i18n.svelte.js', () => ({ t: key => key, formatNumber: String }))
 // Nobody is signed in, and starting an anonymous session is refused as a write would be.
 const signIns = []
-let me = null
+let me = null, known = true
 mock.module('../src/lib/session.svelte.js', () => ({
   sessionStarted: async () => {},
   signedInUser: () => me,
+  readerKnown: () => known,
   ensureSignedIn: async () => {
     if (me) return me
     signIns.push(Date.now())
@@ -100,6 +101,10 @@ test('a round dealt while saves are kept leaves out their crops, unless their un
   // A round another account kept on this device waits for it, and its crops are this reader's to deal.
   await keep('/atlas/rounds', { id: 'round-other', grapheme: 'U+3042', seen: [{ id: 'c9' }], skipped: [] }, { id: 'u2', anonymous: false })
   expect([...await keptCrops()].sort()).toEqual(['c4', 'c5'])
+  // Until the page knows who reads, that round's crops are left out too: never dealt twice.
+  known = false
+  expect([...await keptCrops()].sort()).toEqual(['c4', 'c5', 'c9'])
+  known = true
 })
 
 test('a save kept while a pass is sending is sent by that pass', async () => {
