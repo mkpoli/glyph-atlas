@@ -40,7 +40,8 @@ A shard is the first hex digits of the SHA-256 of its key as UTF-8 text: the hea
 (`U+3042`) for a summary, the character itself (`好`) for the IDS.
 
 D1 rows (`migrations-atlas/0004_reference.sql`) for what a query filters, joins or sorts on:
-`component_variants`, `words` and `word_spellings`. Cards name characters by `graphemes` id: a
+`component_variants`, `words`, `word_spellings` and the search's `names` (from `aliases`, each name
+under its card's one code point). Cards name characters by `graphemes` id: a
 card's character or family head the layout lacks is numbered as the publisher numbers one, and every grapheme takes its card's family head.
 Graphemes are written as `publish.py` writes them, through `char_text`.
 
@@ -99,12 +100,14 @@ SOURCES = {
     "han_ids": ("char", "sequences", "shapes"),
     "han_components": ("component", "tier", "size", "code_point", "n", "direct"),
     "han_component_names": ("query", "component", "total"),
+    "aliases": ("query", "code_point", "rank"),
 }
 # The tables reference.py owns, with their keys, in the order their rows load.
 TABLES = {
     "component_variants": (("a", "b", "count"), ("a", "b")),
     "words": (SOURCES["words"], ("id",)),
     "word_spellings": (SOURCES["word_spellings"], ("word", "spelling", "source", "locator")),
+    "names": (("text", "code_point", "rank"), ("text", "code_point")),
 }
 SAMPLE_LISTS = ("representatives", "anchors")
 # The Japanese readings a kana search finds kanji by (scripts/build_kanji_readings.py).
@@ -379,6 +382,13 @@ def translate(atlas, mirror, path, objects):
         objects.put(rel, text)
 
     out.executemany("INSERT INTO component_variants VALUES(?,?,?)", [(a, b, v[0]) for (a, b), v in pairs.items()])
+    # The names a search looks a term up by, each under its card's one code point as an integer
+    # (migration 0001). A name for a card of several code points has no row: the search finds such a
+    # card by its own text and code points, which are all the names it has.
+    out.execute("CREATE TABLE names(text TEXT, code_point INTEGER, rank INTEGER, PRIMARY KEY(text, code_point)) WITHOUT ROWID")
+    out.executemany("INSERT INTO names VALUES(?,?,?)", (
+        (query, int(code_point.removeprefix("U+"), 16), rank) for query, code_point, rank in source("aliases").execute(
+            "SELECT query, code_point, rank FROM aliases") if code_point.startswith("U+") and " " not in code_point))
     for table in ("words", "word_spellings"):
         cols = SOURCES[table]
         out.executemany(f'INSERT INTO "{table}" VALUES({",".join("?" * len(cols))})',

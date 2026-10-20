@@ -194,7 +194,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    character under `v3/reference/`, beside sharded card summaries, the IDS, the name list, the card
    lists, one list per component and the kana readings of `data/vocab/kanji-readings.json` with
    their kanji's families (run it again after `scripts/build_kanji_readings.py`); the rows a query
-   filters, joins or sorts on go to the tables of `migrations-atlas/0004_reference.sql`. A card's
+   filters, joins or sorts on go to the tables of `migrations-atlas/0004_reference.sql` and to
+   `names`, the cards' search aliases. A card's
    character or family head the layout lacks gets the next grapheme id, and every grapheme takes its
    card's family head. A visual group's samples are crop ids found in the mirror and in `crops`.
    `--send` applies 0004 once, loads only the rows that differ from the local copy in stamped parts,
@@ -352,7 +353,6 @@ answers:
   `account`, `account_profiles`, `passkey`, `verification`, `rateLimit`) and `favourites`;
 - `form_bases` (a corpus glyph's character and family before a form decision moved it);
 - `representations` (form anchors), which form claims write: they move with the forms;
-- search names for characters that first appear after the first build;
 - `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
   new `crops` has no per-crop grapheme column yet, so the read path decides how such a crop joins a
   family gallery before cutover.

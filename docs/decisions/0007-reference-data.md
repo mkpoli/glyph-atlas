@@ -53,8 +53,9 @@ code point(s) (`U+3042`) for a summary, two of the character itself (`好`) for 
 
 **What a query filters, joins or sorts on stays in D1** (`migrations-atlas/0004_reference.sql`):
 `component_variants` without its pairs (the IDS editor's substitutes, read by either end), `words` and
-`word_spellings` (looked up by spelling and validated by claims), and the graphemes the cards name
-that the layout lacks. The component index left D1: as 1.46M rows it was 30 MB and a first load's
+`word_spellings` (looked up by spelling and validated by claims), the search's `names` (the cards'
+aliases, by text, each under the card's one code point), and the graphemes the cards name that the
+layout lacks. The component index left D1: as 1.46M rows it was 30 MB and a first load's
 1.46M rows written, and the search reads it by component, which a list per component serves.
 
 - **Characters are `graphemes` ids** wherever crops meet them. A card's character or family head the

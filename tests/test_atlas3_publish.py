@@ -91,7 +91,6 @@ def layout(tmp_path, monkeypatch):
     write_source(tmp_path, "document_dating", ("document", "axis", "kind", "start", "end", "precision", "label", "status"),
                  [("book:a", "witness", "printed", 1700, 1700, "year", "1700", "single")])
     write_source(tmp_path, "characters", ("code_point", "character", "name", "head"), [])
-    write_source(tmp_path, "aliases", ("query", "code_point", "rank"), [])
     for name in ("build", "publish", "media_map"):
         sys.modules.pop(name, None)
     build = importlib.import_module("build")

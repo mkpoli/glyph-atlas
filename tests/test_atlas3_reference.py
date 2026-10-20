@@ -32,11 +32,11 @@ READINGS = {}
 
 
 def sources(root, cards=(), variants=(), derived=(), writers=(), substitutions=(("氵", "水", 3, "[]"),), words=None,
-            readings=None):
+            readings=None, aliases=()):
     READINGS["path"] = root / "kanji-readings.json"
     READINGS["path"].write_text(json.dumps({"readings": readings or {}}, ensure_ascii=False))
     for table in ("characters", "character_variants", "character_derived", "grapheme_writers", "component_variants", "words",
-                  "word_spellings", "han_ids", "han_components", "han_component_names"):
+                  "word_spellings", "han_ids", "han_components", "han_component_names", "aliases"):
         (root / f"source-{table}.sqlite").unlink(missing_ok=True)
     write_source(root, "characters", CARD, cards)
     write_source(root, "character_variants", ("a", "b", "relation", "source", "detail", "written", "widens"), variants)
@@ -49,6 +49,7 @@ def sources(root, cards=(), variants=(), derived=(), writers=(), substitutions=(
                                           "statement", "documents", "occurrences"),
                  [("ja/ばかり/副助詞", "許", "dictionary", "x", "attested", "source", "", "", "許（ばかり）", None, None)])
     write_source(root, "han_ids", ("char", "sequences", "shapes"), [("好", '["⿰女子"]', None)])
+    write_source(root, "aliases", ("query", "code_point", "rank"), aliases)
     write_source(root, "han_components", ("component", "tier", "size", "code_point", "n", "direct"),
                  [("女", 0, 2, "U+597D", 1, 1), ("女", 1, 3, "U+5973", 1, 1), ("女", 0, 2, "U+5982", 2, 0)])
     write_source(root, "han_component_names", ("query", "component", "total"), [("女", "女", 3), ("⼥", "女", 3)])
@@ -178,6 +179,21 @@ def test_a_reading_and_a_variant_bring_the_families_of_their_cards(layout, monke
     found = bucket.objects["v3/reference/char/U+6642.json.gz"]["variant_families"]
     assert {head: set(family) for head, family in found.items()} == {"U+6642": {"U+6642", "U+65F9"}, "U+523B": {"U+523B"}}
     assert bucket.objects["v3/reference/char/U+9D07.json.gz"]["variant_families"] == {}
+
+
+def test_search_names_load_under_one_code_point_and_change_as_the_aliases_do(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("ね")], aliases=[("ね", "U+306D", 0), ("u+306d", "U+306D", 0), ("ne", "U+306D", 6),
+                                                         ("か゚", "U+304B U+309A", 0)])
+    load(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    # A name of a card of several code points has no row.
+    assert db.execute("SELECT * FROM names ORDER BY text").fetchall() == [("ne", 0x306D, 6), ("u+306d", 0x306D, 0), ("ね", 0x306D, 0)]
+    sources(root, cards=[card("ね")], aliases=[("ね", "U+306D", 0), ("ne", "U+306D", 3)])
+    load(remote, monkeypatch, "--send")
+    assert db.execute("SELECT * FROM names ORDER BY text").fetchall() == [("ne", 0x306D, 3), ("ね", 0x306D, 0)]
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert local.execute("SELECT * FROM names ORDER BY text").fetchall() == [("ne", 0x306D, 3), ("ね", 0x306D, 0)]
 
 
 def test_heads_of_graphemes_a_publish_made_come_from_the_cards(layout, monkeypatch):  # noqa: F811
