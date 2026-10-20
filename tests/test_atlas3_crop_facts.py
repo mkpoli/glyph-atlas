@@ -3,6 +3,7 @@ import json
 import sqlite3
 import sys
 
+import pytest
 from test_atlas3_publish import (  # noqa: F401 -- `layout` is the fixture
     UNITS,
     crops,
@@ -143,3 +144,49 @@ def test_votes_a_publish_wrote_are_kept_by_the_load(layout, monkeypatch):  # noq
     facts(remote, monkeypatch, "--send")
     remote.dbs["glyph-atlas-v3"].row_factory = None
     assert remote.dbs["glyph-atlas-v3"].execute("SELECT context FROM votes WHERE crop=?", (a1,)).fetchone() == ("{}",)
+
+
+def voted(path, units):
+    db = sqlite3.connect(path)
+    db.execute(f"CREATE TABLE units({','.join(UNITS)},visual,context)")
+    db.executemany(f"INSERT INTO units VALUES({','.join('?' * (len(UNITS) + 2))})", units)
+    db.commit()
+    return path
+
+
+def test_a_publish_keeps_each_crops_votes_for_its_cut(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    db = remote.dbs["glyph-atlas-v3"]
+    a1, a2 = ids(root)["ex:a1"], ids(root)["ex:a2"]
+    box1, box2 = {"x": 0, "y": 0, "w": 10, "h": 10}, {"x": 0, "y": 20, "w": 10, "h": 10}
+    run(publish, monkeypatch, voted(tmp_path / "c1.sqlite", [(*unit("ex:a1", "hl:p1", box1), visual(), CONTEXT),
+                                                             (*unit("ex:a2", "hl:p1", box2, "い", "checked", 3), visual("二"), NO_CONTEXT)]))
+    db.row_factory = None
+    assert db.execute("SELECT crop, cut, context IS NULL FROM votes ORDER BY crop").fetchall() == [(a1, 0, 0), (a2, 0, 1)]
+    # The same readings send nothing.
+    stamps = db.execute("SELECT count(*) FROM imports").fetchone()
+    run(publish, monkeypatch, voted(tmp_path / "c2.sqlite", [(*unit("ex:a1", "hl:p1", box1), visual(), CONTEXT)]))
+    db.row_factory = None
+    assert db.execute("SELECT count(*) FROM imports").fetchone() == stamps
+    # A re-cut takes the new image's readings for its new cut; no reading removes the crop's votes.
+    run(publish, monkeypatch, voted(tmp_path / "c3.sqlite", [(*unit("ex:a1", "hl:p1", {"x": 1, "y": 1, "w": 9, "h": 9}), visual("王"), CONTEXT),
+                                                             (*unit("ex:a2", "hl:p1", box2, "い", "checked", 3), NONE, NO_CONTEXT)]))
+    cut, stored = db.execute("SELECT cut, visual FROM votes WHERE crop=?", (a1,)).fetchone()
+    assert cut == crops(remote)[a1]["cut"] == 1 and json.loads(stored)["votes"][0]["text"] == "王"
+    db.row_factory = None
+    assert not db.execute("SELECT 1 FROM votes WHERE crop=?", (a2,)).fetchone()
+    # A retired crop's votes go with it.
+    gone = unit("ex:a1", "hl:p1", {"x": 1, "y": 1, "w": 9, "h": 9})
+    run(publish, monkeypatch, voted(tmp_path / "c4.sqlite", [((gone[0], "retired", *gone[2:]) + (NONE, NO_CONTEXT))]))
+    db.row_factory = None
+    assert db.execute("SELECT count(*) FROM votes").fetchone() == (0,)
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert local.execute("SELECT count(*) FROM votes").fetchone() == (0,)
+
+
+def test_votes_wait_for_migration_0006(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    drop_0006(root, remote)
+    with pytest.raises(SystemExit):
+        run(publish, monkeypatch, voted(tmp_path / "c.sqlite", [(*unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}),
+                                                                  visual(), CONTEXT)]))

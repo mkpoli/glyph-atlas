@@ -48,7 +48,7 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   that the publish is pending are one transaction, saved before anything is sent.
 - Only what differs from the local copy is sent; pages whose crops and facts did not change keep
   their revision. A field the catalogue does not carry (form, cluster, cut, other flag bits, a corpus
-  label) keeps its published value. Witness years come from the catalogue's dating, else from the
+  label, model votes) keeps its published value. Witness years come from the catalogue's dating, else from the
   dating already published.
 - Review-owned columns (`char`, `state`, `style`, `quiz`, `kind`, `flags`) change only when the
   catalogue's revision is at least the published one, and in D1 only while the crop's revision is
@@ -60,6 +60,9 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   build left out the 56 live ones, each kept for its history) gets a number and a retired bundle
   entry with its record, and with `replaced_by` where the catalogue's `unit_redirects` names its
   replacement, so its reviews, claims and links resolve.
+- A catalogue whose `units` carry `visual` and `context`, as `export_cloudflare.py` writes them, sets
+  each published crop's model votes for its cut, and a reading that is not ready removes them; only
+  changed votes are sent, after the pages. A retired crop's votes go with it. It needs migration 0006.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
   keeps its runs.
 - A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`

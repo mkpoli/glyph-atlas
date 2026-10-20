@@ -19,6 +19,8 @@ images to the image key map (`media_map.py`).
   crops and its revision go together), then the runs to glyph-atlas-v3-runs. Each part counts as
   applied when its stamp is in that database's `imports`, and is then replayed on the local copy.
 - A publish stopped after allocating is finished by the next run before anything else.
+- A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes
+  (`votes`, migration 0006, in votes.py's shape) for their cut; a reading that is not ready removes them.
 
 One publish runs at a time (a lock on out/mirror.lock).
 """
@@ -36,6 +38,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import media_map
+import votes
 from build import CORPUS_PAGE, PAGE, bundle_entry, char_text, shuffle
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -66,6 +69,7 @@ def merged_cuts(*lists):
     return [by[k] for k in sorted(by)]
 
 
+VOTE_COLS = ("crop", "cut", "models", "visual", "context")
 RUN_KEY = ("size", "graphemes", "hand", "shuffle", "first")
 # D1 takes an imported file whole; parts stay under the size the publication scripts use.
 PART_BYTES = 40 * 1024 ** 2
@@ -162,7 +166,8 @@ class Mirror:
         self.runs.execute("CREATE INDEX IF NOT EXISTS run_first_all ON runs(first)")
         self.atlas.commit()
         self.runs.commit()
-        self.head, self.runs_sql = [], []
+        self.head, self.runs_sql, self.votes_sql = [], [], []
+        self.has_votes = self.atlas.execute("SELECT 1 FROM sqlite_master WHERE name='votes'").fetchone() is not None
         self.page_sql = defaultdict(list)
         self.touched_pages = defaultdict(dict)
         self.guarded, self.stale, self.relabelled, self.runs_seen = [], [], [], set()
@@ -286,11 +291,24 @@ class Mirror:
         bundle = {k: v for k, v in bundle.items() if v is not None}
         self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
 
+    def vote(self, cid, cut, visual, context):
+        """The crop's votes for its cut from the catalogue's readings, sent only when they changed."""
+        key, stored = votes.visual(visual)
+        guessed = votes.context(context)
+        new = None if stored is None and guessed is None else (cut, self.code("models", key), stored, guessed)
+        old = self.atlas.execute(f"SELECT {','.join(VOTE_COLS[1:])} FROM votes WHERE crop=?", (cid,)).fetchone()
+        if (tuple(old) if old else None) == new:
+            return
+        self.votes_sql.append(f"DELETE FROM votes WHERE crop={cid};" if new is None else
+                              insert("votes", VOTE_COLS, (cid, *new)).replace("INSERT INTO", "INSERT OR REPLACE INTO", 1))
+
     def retire(self, cid, text_id, mirror_revision, replaced_by):
         pid = cid // PAGE
         # The entry keeps the crop's cut, so a crop put back continues from it.
         cut = self.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()["cut"]
         self.page_sql[pid].append(f"DELETE FROM crops WHERE id={cid} AND revision={mirror_revision};")
+        if self.has_votes:
+            self.page_sql[pid].append(f"DELETE FROM votes WHERE crop={cid};")
         self.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
         self.guarded.append(cid)
         self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut, **replaced_by}, True)
@@ -445,6 +463,12 @@ def main():
 
     # Identity checks a publish without the slot matcher can make.
     columns = "id, origin, character, visual_group, production, category, state, revision, quiz, document, style, data"
+    with_votes = "units" in tables and {"visual", "context"} <= {r[1] for r in src.execute("PRAGMA table_info(units)")}
+    if with_votes and not m.has_votes:
+        sys.exit("the catalogue carries model votes and the layout has no votes table: apply migration 0006 "
+                 "(crop_facts.py --send) first")
+    if with_votes:
+        columns += ", visual, context"
     units = list(src.execute(f"SELECT {columns} FROM units WHERE origin IN ('local', 'retired') ORDER BY id")) if "units" in tables else []
     overlay = {r["id"]: r for r in src.execute(f"SELECT {columns} FROM units WHERE origin='corpus'")} if "units" in tables else {}
     retiring = {r["id"] for r in units if r["origin"] == "retired"}
@@ -558,6 +582,8 @@ def main():
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
         m.crop(given, bundle, r["revision"], True, suspect=bool(data.get("suspect")))
+        if with_votes:
+            m.vote(cid, given.get("cut", row["cut"] if row else 0), r["visual"], r["context"])
         n += 1
 
     if "corpus_units" in tables:
@@ -696,13 +722,15 @@ def main():
     if stray:
         sys.exit(f"pages {stray[:5]} have row changes but no new bundle; nothing published")
 
-    groups = [m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)]
+    # Votes follow the pages: a re-cut crop's older votes name its older cut, so no reader takes them.
+    groups = [m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)] + \
+        [m.votes_sql[i:i + 500] for i in range(0, len(m.votes_sql), 500)]
     atlas_parts = write_parts(run, "atlas", [g for g in groups if g])
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))
     statements = sum(len(g) for g in groups)
     (run / "stale.json").write_text(json.dumps(m.stale))
-    print(f"{n} crops read, {statements} statements in {atlas_parts} parts{runs_note} in {runs_parts} parts, "
+    print(f"{n} crops read, {statements} statements ({len(m.votes_sql)} of votes) in {atlas_parts} parts{runs_note} in {runs_parts} parts, "
           f"{len(files)} pages -> {run}", flush=True)
     if m.stale:
         print(f"{len(m.stale)} crops have a newer review on the site than in this catalogue; their review columns were "
