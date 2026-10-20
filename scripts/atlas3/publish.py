@@ -126,8 +126,10 @@ def send(database, file, stamp):
 
 
 def upload(files, prefix=BUNDLE_PREFIX):
-    """Files to R2 under a prefix, through rclone's S3 interface; an object name is never reused, so a
-    resend is harmless."""
+    """Files to R2 under a prefix, through rclone's S3 interface. A page bundle's name carries its
+    revision and a publication's files sit under its own `v3/pub/<pub>/`, so resending them writes the
+    same bytes again. The image key shards (`v3/media/`), the alias shards (`v3/aliases/`) and
+    `v3/pointer.json` have fixed names: a resend replaces the object with the local file."""
     if not files:
         return
     folder = files[0].parent
