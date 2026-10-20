@@ -66,6 +66,7 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   the objects that changed are uploaded, once D1 holds the model codes they name; `out/votes/` takes
   each object as it goes up. A retired crop's votes go with it, and a reader takes an entry only while
   its cut is the crop's. A rebuilt layout has its own build id, so its objects start a new folder.
+- A crop facts load left unfinished (`crop_facts.py --send`) stops the publish until it is finished.
 - A statement over 90 KB stops the publish before anything is allocated.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
   keeps its runs.
@@ -139,17 +140,24 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    to its integer crop id, and uploads the map as `v3/aliases/<first three hex digits of the text id's
    SHA-256>.json.gz`, read by `aliasCrop` in the Worker. A redirect cycle stops it with examples; a
    chain that ends outside the mirror is counted as gone and left out.
-   `crop_facts.py` (a dry run without `--send`) moves the crop facts from the copies `unit_votes`,
+   `crop_facts.py` (a dry run without `--send`) moves the crop facts from the copies `unit_facts`,
    `form_families`, `form_clusters` and `form_units` (decision record 0008). Each collected crop's
-   model votes join its page object in `v3/votes/` when they were read on the image of the crop's
-   current cut. The forms clustering becomes an immutable R2 list per cluster under
-   `v3/forms/<lists>/`, clusters numbered by the mirror's `codes`, and the D1 tables of migration
-   0006, which it applies: families, clusters with their decisions, and only the glyphs decided apart
-   from their cluster. Text ids resolve through the mirror and never through a redirect; rows naming
-   a crop the mirror lacks or a retired crop, and readings of another image, are dropped and counted
-   in `out/crop-facts-report.txt`, and the counts are worked out again from what is kept. D1 takes
-   the difference from the local copy, so a rerun after a fresh copy sends only what changed; `--send`
-   refuses a database holding form decisions the local copy lacks.
+   model votes join its page object in `v3/votes/<build>/` when they were read on the image of the
+   crop's current cut. Each forms cluster becomes an R2 list named by its content,
+   `v3/forms/<n>-<digest>.json.gz` (glyphs by rank with tile, tone and size), each family an index
+   object under `v3/forms/families/`, clusters numbered by the mirror's `codes`; D1 takes the tables of
+   migration 0006, which it applies: families, clusters with their decisions (each must be its
+   cluster's latest in the loaded `form_decisions`), the glyphs with their own decision, and
+   `crops.cluster`. Text ids resolve through the mirror and never through a redirect; rows naming a
+   crop the mirror lacks or a retired crop, and readings of another image, are dropped and counted in
+   `out/crop-facts-report.txt`, and the counts are worked out again from what is kept. D1 takes the
+   difference from the local copy, so a rerun after a fresh copy sends only what changed, and readings
+   an earlier load wrote are written again from the fresh copy. `--send` refuses a database holding
+   form decisions the local copy lacks, holds decisions (`form_state.loading`) while its rows go, and
+   deletes an object under `v3/forms/` that nothing names once a load two hours or more after the one
+   that first found it unnamed runs. **The first `--send`
+   writes about 1.33M `crops` rows (`crops.cluster`); it needs the owner's approval with the dry run's
+   figures.**
 6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
    characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
    `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`

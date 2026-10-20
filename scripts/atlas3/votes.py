@@ -9,10 +9,11 @@ nearby transcription's guesses (`context_guesses`), each candidate as [text, off
 since every one names the same engine. A reading that is not ready is not stored.
 
 A page object maps each slot with a reading to `{cut, models, visual, context}`, `visual` and `context`
-present only when ready. The reading was made on cut `cut`; a reader takes it only while the crop's
-`crops.cut` is that cut. Objects sit under the layout's build id (`v3/votes/<build>/`, the `codes`
-entry field 'build'), so a rebuilt layout, which numbers crops afresh, never reads another build's.
-Objects are replaced whole; the local copy of what R2 holds is `out/votes/`.
+present only when ready, and `loaded` on an entry the cutover load (crop_facts.py) wrote. The reading
+was made on cut `cut`; a reader takes it only while the crop's `crops.cut` is that cut. Objects sit
+under the layout's build id (`v3/votes/<build>/`, the `codes` entry field 'build'), so a rebuilt layout,
+which numbers crops afresh, never reads another build's. Objects are replaced whole; the local copy of
+what R2 holds is `out/votes/`.
 
 `restore` gives back what the suggestions routes answered, less `input_image`.
 """
@@ -63,11 +64,11 @@ def context(text):
     return kept
 
 
-def entry(cut, models, stored_visual, stored_context):
+def entry(cut, models, stored_visual, stored_context, loaded=False):
     """A slot's entry, or None when neither reading is ready."""
     if stored_visual is None and stored_context is None:
         return None
-    out = {"cut": cut, "models": models}
+    out = {"cut": cut, "models": models, **({"loaded": True} if loaded else {})}
     if stored_visual is not None:
         out["visual"] = stored_visual
     if stored_context is not None:

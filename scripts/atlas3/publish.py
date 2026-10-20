@@ -78,6 +78,8 @@ PART_BYTES = 40 * 1024 ** 2
 # D1 refuses a statement over 100 KB.
 STATEMENT_BYTES = 90_000
 KEEP = object()
+# A crop facts load (crop_facts.py) names its run in `pending` with this prefix.
+FACTS_RUN = "crop-facts/"
 
 
 def lit(v):
@@ -327,13 +329,19 @@ class Mirror:
         self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut, **replaced_by}, True)
 
 
-def write_parts(run, name, groups):
-    """Groups of statements in files of at most PART_BYTES (a group larger than that is a part of its
-    own); a group is never split. Each file carries its own stamp and is applied in order."""
-    parts, current, size = [], [], 0
+def fits(groups):
+    """Stop when a statement is over D1's limit; run before anything is allocated or committed."""
     for group in groups:
         if long := [s for s in group if len(s.encode()) > STATEMENT_BYTES]:
             sys.exit(f"a statement of {len(long[0].encode())} bytes is over D1's limit, nothing sent: {long[0][:200]}")
+
+
+def write_parts(run, name, groups):
+    """Groups of statements in files of at most PART_BYTES (a group larger than that is a part of its
+    own); a group is never split. Each file carries its own stamp and is applied in order."""
+    fits(groups)
+    parts, current, size = [], [], 0
+    for group in groups:
         n = sum(len(s.encode()) + 1 for s in group)
         if current and size + n > PART_BYTES:
             parts.append(current)
@@ -443,6 +451,9 @@ def main():
     m.build = build_id[0]
     if not dry and not applied("glyph-atlas-v3", f"build:{build_id[0]}"):
         sys.exit(f"glyph-atlas-v3 was not loaded from build {build_id[0]}; this mirror does not belong to it")
+    # A crop facts load writes the same tables and objects; it finishes first.
+    for (name,) in m.ids.execute("SELECT run FROM pending WHERE run LIKE ?", (FACTS_RUN + "%",)):
+        sys.exit(f"the crop facts load {name.removeprefix(FACTS_RUN)} is unfinished; finish it with crop_facts.py --send first")
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
