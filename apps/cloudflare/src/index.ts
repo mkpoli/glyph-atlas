@@ -13,16 +13,19 @@ import { setWord, withWords, wordChoices } from './cropWords';
 import { categoryOf, idsCharacter, isGugyeol } from './category';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
-import { ranking } from './ranking';
+import { ranking } from './routes/ranking';
 import { connections } from './connections';
-import { reviewers, submissions } from './admin';
+import { flagCorpus, flaggedCorpus, reject, reviewerActors, reviewers, submissions } from './routes/admin';
+import { history } from './routes/history';
+import { cropItems } from './atlas3';
+import { StaleCrop, staleResponse } from './atlas3Crops';
 import { Problem, READ_BUDGET, RETRY_AFTER, StorageUnavailable, described, retried, transient } from './busy';
 import { pausedCallback, pausedResponse, pausedSignOut, writes, writesPaused } from './freeze';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
 import { honkokuPage } from './honkoku';
 import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
 import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
-import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
+import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './routes/favourites';
 import { MediaIncomplete, mediaResponse } from './atlas3Media';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
@@ -2205,205 +2208,10 @@ async function revert(env:Env,submission:Json,actor:string,rejection?:{reason:st
   try{await env.DB.batch(statements)}catch(error){if(String(error).includes('review_revision_conflict'))throw new Problem(409,'A later review changed this crop.');throw error}
   return {results};
 }
-// Reject an admin's selection: the named submissions, or all of one reviewer's a page at a time.
-// They go newest first, so a crop two of them touched goes back step by step. One that a later
-// review by someone else has built on is left as it is and reported; `next` continues after the page.
-const REJECT_PAGE=40;
-// Each crop a rejection puts back costs a few queries, and one request may make a thousand: a page
-// stops before the crops it has put back pass this many.
-const REJECT_CROPS=250;
-async function reject(env:Env,admin:string,input:Json){
-  const reason=text(input.reason??'',500,'reason')??'';
-  const crops='(SELECT count(*) FROM events WHERE submission=submissions.id AND kind=\'review\') AS crops';
-  let rows:Json[],reviewer:[string,string[]]|undefined;
-  if(Array.isArray(input.submissions)){
-    const keys=input.submissions.slice(0,REJECT_PAGE).map((key:unknown)=>text(key,256,'submission',true)!);
-    if(!keys.length)throw new Problem(422,'Name the submissions to reject.');
-    rows=(await env.DB.prepare(`SELECT *,${crops} FROM submissions WHERE id IN (${keys.map(()=>'?').join(',')}) AND undone=0 ORDER BY at DESC,id DESC`).bind(...keys).all<Json>()).results;
-  }else{
-    reviewer=reviewerActors(input);
-    const [actors,values]=reviewer,before=input.next?decodeCursor(text(input.next,512,'cursor',true)!):{at:'9999',id:''};
-    rows=(await env.DB.prepare(`SELECT *,${crops} FROM submissions WHERE undone=0 AND actor IN ${actors} AND (at,id)<(?,?) ORDER BY at DESC,id DESC LIMIT ?`)
-      .bind(...values,before.at,before.id,REJECT_PAGE).all<Json>()).results;
-  }
-  let rejected=0,spent=0;const conflicts:string[]=[],unavailable:string[]=[],done:Json[]=[];
-  for(const submission of rows){
-    if(spent&&spent+submission.crops>REJECT_CROPS)break;
-    spent+=submission.crops;done.push(submission);
-    try{await revert(env,submission,admin,{reason,reviewer});rejected++}
-    catch(error){
-      // A crop someone else has changed since stays as it is; a crop no longer in the collection
-      // cannot be put back. Either way the rest go on.
-      if(error instanceof Problem&&error.status===409)conflicts.push(submission.id);
-      else if(error instanceof Problem&&error.status===404)unavailable.push(submission.id);
-      else throw error;
-    }
-  }
-  const last=done.at(-1),more=done.length<rows.length||(!Array.isArray(input.submissions)&&rows.length===REJECT_PAGE);
-  return {rejected,conflicts,unavailable,
-    next:!Array.isArray(input.submissions)&&more&&last?encodeCursor(last.at,last.id):null,
-    left:Array.isArray(input.submissions)?rows.slice(done.length).map(row=>row.id):[]};
-}
-// Corpus glyphs a check made outside the site found in doubt, sent to the Flagged view by an admin: the
-// boxes `atlas repair relabel` would label otherwise than a form a person decided (its `review` units).
-// Each is written as a round would write it (`materialise`), flagged with a wrong-character issue and the
-// finding in `flag`, so it waits among the corpus glyphs `/atlas/corpus/reviews` lists until a person
-// settles it. No event is written: the flag is a finding, not a person's review. A glyph that already has
-// a `units` row is left as it is (`held`), so what a round or a review said stands and a list sent again
-// writes nothing. One whose shown character is no longer the one the finding was made against
-// (`changed`), or whose image this site may not serve (`unshowable`), is left out.
-const FLAG_MAX=96;
-export function flagRequest(input:Json){
-  const finding=text(input?.finding,64,'finding',true)!;
-  if(!Array.isArray(input.glyphs)||!input.glyphs.length||input.glyphs.length>FLAG_MAX)throw new Problem(422,`Name 1 to ${FLAG_MAX} glyphs.`);
-  const glyphs=input.glyphs.map((g:Json)=>({id:text(g?.id,512,'glyph id',true)!,character:text(g?.character,16,'character',true)!,
-    realigned:text(g?.realigned,16,'realigned character'),transcribed:text(g?.transcribed,16,'transcribed character')}));
-  if(new Set(glyphs.map((g:Json)=>g.id)).size!==glyphs.length)throw new Problem(422,'A glyph is named twice.');
-  return {finding,glyphs} as {finding:string;glyphs:{id:string;character:string;realigned:string|null;transcribed:string|null}[]};
-}
-async function flagCorpus(env:Env,input:Json){
-  const {finding,glyphs}=flagRequest(input);
-  const rows=await unitsById(env,glyphs.map(g=>g.id));
-  const at=new Date().toISOString(),out:Record<string,string[]>={flagged:[],held:[],changed:[],unshowable:[],missing:[]};
-  const statements:D1PreparedStatement[]=[];
-  for(const g of glyphs){
-    const row=rows.get(g.id)!;
-    if(row instanceof Problem){out.missing.push(g.id);continue}
-    if(!row.fresh){out.held.push(g.id);continue}
-    const data=parse(row.data);
-    if(data.written_character!==g.character){out.changed.push(g.id);continue}
-    if(!dealable('corpus',data)){out.unshowable.push(g.id);continue}
-    // A new revision, so a page that still holds the unflagged glyph saves against a row that moved on.
-    const next={...data,state:'flagged',issue:'character',revision:data.revision+1,
-      flag:{finding,realigned:g.realigned,transcribed:g.transcribed,at}};
-    statements.push(materialise(env,{...row,data:JSON.stringify(next),fresh:row.fresh}));
-    out.flagged.push(g.id);
-  }
-  const results=statements.length?await env.DB.batch(statements):[];
-  // A round may have named a glyph since it was read; INSERT OR IGNORE leaves that row, and it is held.
-  const written=new Set(out.flagged.filter((_,i)=>results[i].meta.changes>0));
-  out.held.push(...out.flagged.filter(id=>!written.has(id)));
-  out.flagged=out.flagged.filter(id=>written.has(id));
-  return {...out,rows_written:results.reduce((n,r)=>n+(r.meta.rows_written??0),0)};
-}
-// The corpus glyphs waiting for a person, in the order their rows were written (a row a round made earlier
-// keeps its place when it is flagged later): `unit_state` holds them in rowid order, so a page reads its own
-// rows and sorts nothing, however many wait.
-export const flaggedCorpusQuery=()=>"SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY rowid LIMIT 96";
-// The journal ids of one reviewer: a user's, or one id from before accounts that nobody holds.
-export function reviewerActors(input:Json):[string,string[]]{
-  if(typeof input.user==='string')return ['(SELECT actor FROM actors WHERE user_id=?)',[text(input.user,64,'user',true)!]];
-  if(typeof input.actor==='string')return ['(?)',[text(input.actor,128,'actor',true)!]];
-  throw new Problem(422,'Name a user or a reviewer id.');
-}
-// A review's label sits in evidence.label (a round) or evidence.snapshot.character.label (a single
-// correction); evidence is itself a JSON string, parsed once. An undo's own evidence is the plain string
-// 'undo of <event id>', not JSON, so its label comes from the row's own snapshot column instead — the
-// CASE only evaluates the branch for the row's own kind, so a future kind touches neither column.
-// This text is repeated verbatim in migration 0011's expression index; keep the two in sync.
-export const historyLabelExpr = () => `(CASE kind WHEN 'review' THEN coalesce(json_extract(json_extract(event,'$.evidence'),'$.label'),json_extract(json_extract(event,'$.evidence'),'$.snapshot.character.label')) WHEN 'undo' THEN json_extract(snapshot,'$.character.label') END)`;
-// Newest first, keyset-paged on (at,id): `before` is strictly older than that pair, in index order.
-// Given `actors`, the rows are those written under any of those ids: one arm per id, each read in
-// event_actor_history order, merged by the compound ORDER BY so the read stops at the LIMIT instead of
-// sorting everything the ids ever wrote. Each row names the user who holds its id now, or none for a
-// reviewer id from before accounts that nobody has claimed. Parameters are numbered so the label and
-// cursor are bound once for every arm; the LIMIT is the parameter after `values`.
-export function historyQuery(actors: string[] | null, label: string | null, cursor: { at: string; id: string } | null): { sql: string; values: (string | number)[] } {
-  const values: (string | number)[] = [];
-  const bind = (value: string) => `?${values.push(value)}`;
-  const where = [`kind IN ('review','undo')`];
-  if (label !== null) where.push(`${historyLabelExpr()}=${bind(label)}`);
-  if (cursor) where.push(`(at,id)<(${bind(cursor.at)},${bind(cursor.id)})`);
-  const select = (filter: string[]) => `SELECT id,at,actor,target,kind,event,${historyLabelExpr()} AS label FROM events WHERE ${filter.join(' AND ')}`;
-  // A standing round is listed once more for the crops it passed: a pass is not a review of the crop,
-  // so it is its own row, with how many crops it passed and the round's character.
-  const passedWhere = ['undone=0', `EXISTS(SELECT 1 FROM seen k WHERE k.submission=submissions.id)`];
-  if (label !== null) passedWhere.push(`json_extract(request,'$.input.label')=${bind(label)}`);
-  if (cursor) passedWhere.push(`(at,id)<(${bind(cursor.at)},${bind(cursor.id)})`);
-  const passed = (filter: string[]) => `SELECT id,at,actor,NULL AS target,'passed' AS kind,
-    (SELECT count(*) FROM seen k WHERE k.submission=submissions.id) AS event,json_extract(request,'$.input.label') AS label
-    FROM submissions WHERE ${filter.join(' AND ')}`;
-  const arms = actors === null ? [select(where), passed(passedWhere)]
-    : actors.flatMap(actor => [select([...where, `actor=${bind(actor)}`]), passed([...passedWhere, `actor=${bind(actor)}`])]);
-  const sql = `SELECT h.*,a.user_id AS user,u.name AS name,u.image AS image FROM (${arms.join(' UNION ALL ')}
-    ORDER BY at DESC,id DESC LIMIT ?${values.length + 1}) h
-    LEFT JOIN actors a ON a.actor=h.actor LEFT JOIN "user" u ON u.id=a.user_id ORDER BY h.at DESC,h.id DESC`;
-  return { sql, values };
-}
-// D1 takes at most five terms in a compound SELECT and each id is two arms (its reviews, its passed
-// rounds), so a user holding more ids than that is read two ids to a statement, in one batch, each
-// statement bounded by the LIMIT, and the statements' pages merged here.
-const HISTORY_IDS = 2;
-export function encodeCursor(at: string, id: string): string {
-  return btoa(JSON.stringify([at, id]));
-}
-export function decodeCursor(value: string): { at: string; id: string } {
-  try {
-    const decoded = JSON.parse(atob(value));
-    if (!Array.isArray(decoded) || decoded.length !== 2 || typeof decoded[0] !== 'string' || typeof decoded[1] !== 'string') throw 0;
-    return { at: decoded[0], id: decoded[1] };
-  } catch { throw new Problem(422, 'Invalid cursor.') }
-}
-// A review keeps the words it was saved with. One saved while crops carried a reading names the
-// wrong-character issue `reading` and its typed characters `suggested_reading`.
-export const recordedIssue = (issue: unknown) => issue === 'reading' ? 'character' : issue ?? null;
+// A review keeps the words it was saved with: one saved while crops carried a reading names its typed
+// characters `suggested_reading`.
 export const typedText = (evidence: Json | null | undefined): string | null =>
   evidence?.suggested_text ?? evidence?.suggested_reading ?? null;
-type HistoryRow = { id: string; at: string; actor: string; target: string; kind: string; event: string; label: string | null;
-  user: string | null; name: string | null; image: string | null };
-// A review's evidence names its own verdict, issue and correction; an undo's evidence is only the id
-// of the event it reverses, so those fields stay null and `undoes` names that event instead.
-export function historyItem(row: HistoryRow, me: string | null = null): Json {
-  const reviewer = { user: row.user, name: row.name ?? row.actor, image: row.image, mine: Boolean(me && row.user === me) };
-  if (row.kind === 'passed') return { id: row.id, at: row.at, target: null, label: row.label, kind: 'passed', reviewer,
-    passed: Number(row.event), verdict: null, issue: null, character: null, text: null, round: row.id, batch: null, undoes: null };
-  const undo = row.kind === 'undo';
-  const parsedEvent = parse(row.event);
-  const evidence = undo ? null : parse(parsedEvent.evidence);
-  return {
-    id: row.id, at: row.at, target: row.target, label: row.label, kind: row.kind as 'review' | 'undo',
-    reviewer,
-    verdict: evidence?.verdict ?? null,
-    issue: recordedIssue(evidence?.issue),
-    character: evidence?.suggested_character ? literal(evidence.suggested_character) : null,
-    text: typedText(evidence),
-    round: evidence?.round ?? null,
-    batch: evidence?.batch ?? null,
-    undoes: undo ? String(parsedEvent.evidence).replace(/^undo of /, '') : null,
-  };
-}
-// Each decision with the dates of the book its crop comes from: a local crop's row names the book, a
-// named corpus glyph's record its source.
-export const historyDocumentsQuery = (n: number) => `SELECT id,coalesce(document,json_extract(data,'$.source.document_id')) AS document
-  FROM units WHERE id IN (${Array(n).fill('?').join(',')})`;
-async function historyDating(env: Env, items: Json[]): Promise<Json[]> {
-  const targets = [...new Set(items.map(item => item.target).filter(Boolean))] as string[];
-  if (!targets.length) return items;
-  const documents = new Map<string, string>();
-  for (const part of chunks(targets, 90))
-    for (const row of (await env.DB.prepare(historyDocumentsQuery(part.length)).bind(...part).all<{ id: string; document: string | null }>()).results)
-      if (row.document) documents.set(row.id, row.document);
-  return withDating(env, items, item => documents.get(item.target) ?? null);
-}
-export async function history(env: Env, q: URLSearchParams, me: string | null) {
-  const limit = Math.max(1, integer(q, 'limit', 40, 100));
-  if (q.get('mine') === 'true' && !me) return { items: [], next: null };
-  const user = q.get('mine') === 'true' ? me : q.get('user') ? text(q.get('user'), 64, 'user', true) : null;
-  const label = q.get('label') ? text(q.get('label'), 32, 'label', true) : null;
-  const before = q.get('before') ? decodeCursor(q.get('before')!) : null;
-  const actors = user ? (await env.DB.prepare('SELECT actor FROM actors WHERE user_id=? ORDER BY actor').bind(user).all<{ actor: string }>()).results.map(r => r.actor) : null;
-  const groups = actors === null ? [null] : Array.from({ length: Math.ceil(actors.length / HISTORY_IDS) }, (_, i) => actors.slice(i * HISTORY_IDS, (i + 1) * HISTORY_IDS));
-  const pages = await env.DB.batch<HistoryRow>(groups.map(group => {
-    const { sql, values } = historyQuery(group, label, before);
-    return env.DB.prepare(sql).bind(...values, limit + 1);
-  }));
-  const rows = pages.flatMap(page => page.results);
-  if (pages.length > 1) rows.sort((a, b) => a.at === b.at ? (a.id < b.id ? 1 : a.id > b.id ? -1 : 0) : a.at < b.at ? 1 : -1);
-  const items = await historyDating(env, rows.slice(0, limit).map(row => historyItem(row, me)));
-  // The cursor is the last row returned; the next page starts strictly after it.
-  const next = rows.length > limit ? encodeCursor(rows[limit - 1].at, rows[limit - 1].id) : null;
-  return { items, next };
-}
 async function reviews(env:Env,all:boolean){
   const rows=await env.DB.prepare(`SELECT e.event,e.snapshot,e.expected_revision,u.revision,u.origin,e.id,u.snapshot AS publication_snapshot,
     EXISTS(SELECT 1 FROM events newer WHERE newer.target=e.target AND newer.expected_revision>e.expected_revision) AS superseded
@@ -2457,16 +2265,16 @@ const routes = {
         if(!me)throw new Problem(401,'Sign in to save.');
         // An admin's page: rejecting what a reviewer saved. Banning and roles are Better Auth's own.
         if(path.startsWith('/api/admin/')&&!me.admin)throw new Problem(403,'Only an admin can do this.');
-        if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request)));
-        if(path==='/api/admin/corpus-flags')return json(await flagCorpus(env,await body(request)));
+        if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request),{text}));
+        if(path==='/api/admin/corpus-flags')return json(await flagCorpus(env,me.id,await body(request),{text}));
         if(path==='/api/account/avatar'){
           const origin=request.headers.get('origin');
           if(origin&&origin!==url.origin)throw new Problem(403,'Use the account page on this site.');
           const {status,body:out}=await setAvatar(env,me,q.get('source')??'',request);return json(out,status);
         }
         if(path==='/api/favourites'){
-          try{return json(await setFavourite(env,me.id,await body(request)))}
-          catch(error){if(error instanceof FavouriteError)throw new Problem(error.status,error.message);throw error}
+          try{return json(await setFavourite(env,me.id,await body(request),ctx))}
+          catch(error){if(error instanceof FavouriteError)throw new Problem(error.status,error.message);if(error instanceof StaleCrop)return staleResponse();throw error}
         }
         if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''));return json(out,status)}
         if(path==='/atlas/corpus/reviews')return json(await submit(env,request,me.id,'@corpus'));
@@ -2500,7 +2308,7 @@ const routes = {
       if(path.startsWith('/api/admin/')){
         if(!(await viewer(env,request,true))?.admin)throw new Problem(403,'Only an admin can see this.');
         if(path==='/api/admin/reviewers')return json(await reviewers(env,q));
-        if(path==='/api/admin/submissions')return json(await submissions(env,q,reviewerActors(Object.fromEntries(q))));
+        if(path==='/api/admin/submissions')return json(await submissions(env,q,await reviewerActors(env,Object.fromEntries(q),{text})));
         throw new Problem(404,'Unknown endpoint.');
       }
       const picture=path.match(AVATAR_PATH);
@@ -2510,7 +2318,7 @@ const routes = {
         // A browser that has never signed in has starred nothing, and reading starts no session.
         const me=await viewer(env,request);
         if(path==='/api/favourites')return json(me?await favouriteIds(env,me.id):{ids:[]},200,{'cache-control':'private, no-store'});
-        return json(me?await favouriteCrops(env,me.id,integer(q,'offset',0),integer(q,'limit',60,60),itemsFor,replacement):{items:[],total:0,offset:0,next:null},200,{'cache-control':'private, no-store'});
+        return json(me?await favouriteCrops(env,me.id,integer(q,'offset',0),integer(q,'limit',60,60),cropItems):{items:[],total:0,offset:0,next:null},200,{'cache-control':'private, no-store'});
       }
       if(path==='/api/account')return json({user:await viewer(env,request,true),providers:providers(env)});
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
@@ -2523,7 +2331,7 @@ const routes = {
       // A round leaves out what its reviewer skipped lately, so it reads who is asking.
       if(path==='/atlas')return json(await catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null));
       if(path==='/api/ranking')return await ranking(env,url,ctx);
-      if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null));
+      if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null,{text,integer}));
       const counted=path.match(/^\/atlas\/ngrams\/(\d+)$/);
       if(counted)return json(await ngrams(env,ctx,url,ngramSize(counted[1])));
       if(path==='/atlas/runs/related')return json(await runRelated(env,ctx,url));
@@ -2597,9 +2405,7 @@ const routes = {
         const selector=path.endsWith('ligatures')?"json_extract(data,'$.ligature') IS NOT NULL":"json_array_length(json_extract(data,'$.grapheme.members'))>1";
         const rows=await env.DB.prepare(`SELECT data FROM characters WHERE ${selector} LIMIT ? OFFSET ?`).bind(integer(q,'limit',200,500),integer(q,'offset',0)).all<{data:string}>();
         return json({items:rows.results.map(r=>parse(r.data)),total:rows.results.length})}
-      if(path==='/atlas/corpus/reviews'){
-        const rows=await env.DB.prepare(flaggedCorpusQuery()).all<UnitRow>();
-        return json({items:await withDating(env,await withForms(env,rows.results.map(compact))),total:rows.results.length})}
+      if(path==='/atlas/corpus/reviews')return json(await flaggedCorpus(env,cropItems));
       if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed)}
       throw new Problem(404,'Unknown endpoint.');

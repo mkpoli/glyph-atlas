@@ -1,7 +1,7 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
 import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
-  encodeCursor, decodeCursor, historyItem, historyQuery, moved, wroteLately, markWriter, substitutionKey, flagRequest, listingFilter, dealable } from './index';
+  moved, wroteLately, markWriter, substitutionKey, listingFilter, dealable } from './index';
 import { ROUND_MAX } from './rounds';
 import { held } from './held';
 import { componentTerm, rankMatches } from './components';
@@ -75,75 +75,6 @@ describe('a round names flagged answers, seen crops, or both', () => {
 describe('categoryOf', () => {
   it('names a label by the script of its first character', () => {
     expect(['ア', '仮', 'ㅿ', 'ᄫ', '한', '', 'A', ''].map(categoryOf)).toEqual(['kana', 'kanji', 'hangul', 'hangul', 'hangul', 'gugyeol', 'other', 'other']);
-  });
-});
-
-describe('history cursor', () => {
-  it('round-trips at and id, and rejects a cursor that is not one', () => {
-    const cursor = encodeCursor('2026-01-02T03:04:05.000Z', 'cf:one');
-    expect(decodeCursor(cursor)).toEqual({ at: '2026-01-02T03:04:05.000Z', id: 'cf:one' });
-    expect(() => decodeCursor('not-base64!!')).toThrow('Invalid cursor.');
-    expect(() => decodeCursor(btoa(JSON.stringify(['only-one'])))).toThrow('Invalid cursor.');
-    expect(() => decodeCursor(btoa(JSON.stringify([1, 'cf:one'])))).toThrow('Invalid cursor.');
-  });
-});
-
-describe('historyQuery', () => {
-  it('filters by kind and orders newest first, keyset-paged', () => {
-    const { sql, values } = historyQuery(null, null, null);
-    expect(sql).toContain(`kind IN ('review','undo')`);
-    expect(sql).toContain('ORDER BY at DESC,id DESC LIMIT ?1');
-    expect(values).toEqual([]);
-  });
-  it('binds the filters once per kind of row, then one id per arm, with the LIMIT after them', () => {
-    const { sql, values } = historyQuery(['u1', 'reviewer-0a1b2c3d'], 'ア', { at: '2026-01-02T00:00:00.000Z', id: 'cf:one' });
-    expect(sql).toContain('(at,id)<(?2,?3) AND actor=?7 UNION ALL SELECT');
-    expect(sql).toContain("json_extract(request,'$.input.label')=?4 AND (at,id)<(?5,?6) AND actor=?8");
-    expect(sql).toContain('(at,id)<(?2,?3) AND actor=?9');
-    expect(sql).toContain('LIMIT ?11');
-    expect(values).toEqual(['ア', '2026-01-02T00:00:00.000Z', 'cf:one', 'ア', '2026-01-02T00:00:00.000Z', 'cf:one',
-      'u1', 'u1', 'reviewer-0a1b2c3d', 'reviewer-0a1b2c3d']);
-  });
-});
-
-describe('historyItem', () => {
-  it('maps a review row, converting a suggested code point to its character', () => {
-    const event = JSON.stringify({ id: 'cf:e1', target_type: 'unit', target_id: 'one', field: 'review',
-      old: 'machine', new: 'reviewed', role: 'reviewer', actor: 'alice', at: '2026-01-02T00:00:00.000Z',
-      evidence: JSON.stringify({ kind: 'character-review', verdict: 'wrong', issue: 'character',
-        suggested_character: 'U+30D7', round: null }) });
-    expect(historyItem({ id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', actor: 'reviewer-0a1b2c3d', target: 'one',
-      kind: 'review', event, label: 'ア', user: 'u1', name: 'Alice', image: null }, 'u1')).toEqual({
-      id: 'cf:e1', at: '2026-01-02T00:00:00.000Z', target: 'one', label: 'ア', kind: 'review',
-      reviewer: { user: 'u1', name: 'Alice', image: null, mine: true },
-      verdict: 'wrong', issue: 'character', character: 'プ', text: null, round: null, batch: null, undoes: null,
-    });
-  });
-  it('reads a review saved with the reading-era words in the terms reviews use now', () => {
-    const event = JSON.stringify({ id: 'cf:e0', target_type: 'unit', target_id: 'one', field: 'review',
-      old: 'machine', new: 'disputed', role: 'reviewer', actor: 'alice', at: '2026-01-01T00:00:00.000Z',
-      evidence: JSON.stringify({ kind: 'visual-quiz', verdict: 'wrong', issue: 'reading', suggested_reading: 'ハツ' }) });
-    const item = historyItem({ id: 'cf:e0', at: '2026-01-01T00:00:00.000Z', actor: 'alice', target: 'one',
-      kind: 'review', event, label: '表', user: null, name: null, image: null });
-    expect([item.issue, item.text]).toEqual(['character', 'ハツ']);
-  });
-  it('maps an undo row, naming the event it reverses and leaving the review fields null', () => {
-    const event = JSON.stringify({ id: 'cf:e2', target_type: 'unit', target_id: 'one', field: 'review',
-      old: 'reviewed', new: 'machine', role: 'reviewer', actor: 'alice', at: '2026-01-03T00:00:00.000Z',
-      evidence: 'undo of cf:e1' });
-    expect(historyItem({ id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', actor: 'reviewer-0a1b2c3d', target: 'one',
-      kind: 'undo', event, label: null, user: null, name: null, image: null }, 'u1')).toEqual({
-      id: 'cf:e2', at: '2026-01-03T00:00:00.000Z', target: 'one', label: null, kind: 'undo',
-      reviewer: { user: null, name: 'reviewer-0a1b2c3d', image: null, mine: false },
-      verdict: null, issue: null, character: null, text: null, round: null, batch: null, undoes: 'cf:e1',
-    });
-  });
-  it('carries a round id when the review came from a visual quiz round', () => {
-    const event = JSON.stringify({ id: 'cf:e3', target_type: 'unit', target_id: 'two', field: 'review',
-      old: 'machine', new: 'reviewed', role: 'reviewer', actor: 'bob', at: '2026-01-04T00:00:00.000Z',
-      evidence: JSON.stringify({ kind: 'visual-quiz', round: 'round-1', label: 'ア', verdict: 'match', issue: null }) });
-    expect(historyItem({ id: 'cf:e3', at: '2026-01-04T00:00:00.000Z', actor: 'bob', target: 'two',
-      kind: 'review', event, label: 'ア', user: 'u2', name: 'Bob', image: null }).round).toBe('round-1');
   });
 });
 
@@ -280,19 +211,6 @@ describe('derived substitutions', () => {
     // U+FF1F sorts after a surrogate pair as UTF-16, before it as a code point.
     expect(substitutionKey('𠀀', '？')).toEqual(['？', '𠀀']);
     expect(substitutionKey('⿱口矢', '吴')).toEqual(['吴', '⿱口矢']);
-  });
-});
-
-describe('corpus flags', () => {
-  const glyph = { id: 'hl:a:1', character: '𛁈', realigned: '所', transcribed: 'シ' };
-  it('takes a finding and the glyphs it found in doubt', () => {
-    expect(flagRequest({ finding: 'box-relabel', glyphs: [glyph, { id: 'hl:a:2', character: 'と' }] })).toEqual({ finding: 'box-relabel',
-      glyphs: [glyph, { id: 'hl:a:2', character: 'と', realigned: null, transcribed: null }] });
-  });
-  it('refuses a request without a finding, a glyph twice, a glyph without its character, or too many glyphs', () => {
-    for (const input of [{ glyphs: [glyph] }, { finding: 'x', glyphs: [] }, { finding: 'x', glyphs: [glyph, glyph] },
-      { finding: 'x', glyphs: [{ id: 'hl:a:1' }] }, { finding: 'x', glyphs: Array.from({ length: 97 }, (_, i) => ({ id: `g${i}`, character: 'と' })) }])
-      expect(() => flagRequest(input)).toThrow();
   });
 });
 

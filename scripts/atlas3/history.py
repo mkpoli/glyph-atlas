@@ -21,7 +21,14 @@ Where the old events keep what (all 1,690 of 19-20 October 2026 are kind 'review
 - `after_data` is the crop's record after the review: `label` and `state` always, never `style` or
   `quiz`. A review sets no style and no withheld flag, so an event's `style` is NULL; no event records
   quiz;
-- `before_data.box` is the box the reviewer saw, which names the event's cut.
+- `before_data.box` is the box the reviewer saw, which names the event's cut;
+- the label the reviewer was shown is `evidence.label` in a round and `evidence.snapshot.character.label`
+  otherwise (`shown`), the character named is `evidence.suggested_character` (`named`), and the reading
+  the crop showed, in records from before readings left them, is `evidence.snapshot.character.reading`,
+  and the reading the review saved, as its correction names it, `evidence.correction.reading`.
+
+Corpus glyphs the old site held a `units` row for become `corpus_rows`, numbered in rowid order, and
+the finding of an admin's flag in a record's `flag` becomes a `corpus_flags` row.
 """
 
 from __future__ import annotations
@@ -116,13 +123,25 @@ def statements(path):
 
 
 def create(db):
-    """`events`, `skips`, `codes` and `actor_stats` as 0001 creates them, then everything 0003 adds."""
+    """`events`, `skips`, `codes` and `actor_stats` as 0001 creates them, everything 0003 adds, and what
+    0010 adds to them (the labels an event showed and named, corpus rows and flags)."""
     for s in statements(SCHEMA / "0001_init.sql"):
         body = "\n".join(line for line in s.splitlines() if not line.startswith("--"))
         m = re.match(r"CREATE (?:TABLE (\w+)|INDEX \w+ ON (\w+))", body)
         if m and (m[1] or m[2]) in ("events", "skips", "codes", "actor_stats"):
             db.execute(body)
     db.executescript((SCHEMA / "0003_history.sql").read_text())
+    for s in statements(SCHEMA / "0010_people.sql"):
+        body = "\n".join(line for line in s.splitlines() if not line.startswith("--"))
+        m = re.match(r"CREATE (?:UNIQUE )?INDEX \w+ ON (\w+)", body)
+        # An index on crops belongs to the layout, which this file does not hold.
+        if not (m and not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (m[1],)).fetchone()):
+            db.execute(body)
+
+
+# The columns of a translated event, in the order history rows give them.
+EVENT_COLUMNS = ("id", "crop", "revision", "cut", "gen", "actor", "submission", "at", "kind", "label", "state", "style", "quiz",
+                 "x", "y", "w", "h", "note", "issue", "text", "shown", "named", "reading", "saved_reading", "legacy")
 
 
 class Crops:
@@ -334,6 +353,15 @@ def main():
             retired_revision[crops.ids[text]] = revision_now
         report.note(f"events: {len(unrowed)} crops with no crops row (retired); revision checked against the source units row")
 
+    # Events are numbered in the order the old site wrote them: by time, and within one submission in
+    # the order its request lists the crops (a round's answers, a batch's crops), as its rows went in.
+    listed = {}
+    for r in subs:
+        input_ = json.loads(r["request"]).get("input") or {}
+        crops_ = input_.get("answers") if isinstance(input_.get("answers"), list) else input_.get("crops")
+        listed[r["id"]] = {c.get("id"): i for i, c in enumerate(crops_ or []) if isinstance(c, dict)}
+    parsed.sort(key=lambda p: (ms(p[0]["at"]), sub.get(p[0]["submission"], 0),
+                               listed.get(p[0]["submission"], {}).get(p[0]["target"], 0)))
     events, unrecorded = [], 0
     for r, cid, before, after, evidence in parsed:
         problems = []
@@ -353,6 +381,15 @@ def main():
         label = char_text(after.get("label")) or None
         if label is not None and label not in graphemes:
             problems.append(f"label {label!r} has no grapheme")
+        # The label the reviewer was shown: a round's in `evidence.label`, a single review's in its snapshot.
+        shown = char_text(evidence.get("label") or ((evidence.get("snapshot") or {}).get("character") or {}).get("label")) or None
+        if shown is not None and shown not in graphemes:
+            problems.append(f"shown label {shown!r} has no grapheme")
+        named = char_text(evidence.get("suggested_character")) or None
+        # The reading the crop showed, while records still carried one.
+        reading = ((evidence.get("snapshot") or {}).get("character") or {}).get("reading") or None
+        if named is not None and named not in graphemes:
+            problems.append(f"named character {named!r} has no grapheme")
         state = atlas_codes["state"].get(after.get("state"))
         if state is None:
             problems.append(f"state {after.get('state')!r} has no code")
@@ -372,8 +409,11 @@ def main():
                        (evidence.get("note") or None) and evidence["note"][:2000],
                        codes["issue"].get(issue),
                        # Typed characters: `suggested_text`, or `suggested_reading` in reviews saved before it.
-                       evidence.get("suggested_text") or evidence.get("suggested_reading") or None))
-    insert("events", [(i, *e) for i, e in enumerate(events, 1)])
+                       evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
+                       graphemes.get(shown) if shown else None, graphemes.get(named) if named else None, reading,
+                       (evidence.get("correction") or {}).get("reading"), r["id"]))
+    out.executemany(f'INSERT INTO events({",".join(EVENT_COLUMNS)}) VALUES({",".join("?" * len(EVENT_COLUMNS))})',
+                    [(i, *e) for i, e in enumerate(events, 1)])
     report.tables["events"]["out"] = len(events)
     report.note("events: a review sets no style and no withheld flag, so both are NULL")
     report.note(f"events: codes {json.dumps(codes, ensure_ascii=False)}")
@@ -565,6 +605,29 @@ def main():
         follow.append((crops.ids[r["id"]],))
     insert("corpus_follow", follow)
     report.tables["corpus_follow"]["out"] = len(follow)
+
+    # Corpus glyphs the old site held a row for, in the order the rows were written: the first review,
+    # round, claim or flag that named each. A flag an admin set keeps its finding.
+    corpus = list(source("units").execute(
+        "SELECT id, max(_rowid) AS r, json_extract(data, '$.flag') AS flag FROM units WHERE origin = 'corpus' GROUP BY id ORDER BY r"))
+    report.table("corpus_rows", len(corpus))
+    corpus_rows, flags = [], []
+    for r in corpus:
+        cid = crops.ids.get(r["id"])
+        if cid is None:
+            report.stop("corpus_rows", "crop unknown", r["id"])
+            continue
+        corpus_rows.append((cid, len(corpus_rows) + 1))
+        if r["flag"]:
+            flag = json.loads(r["flag"])
+            flags.append((cid, flag["finding"], flag.get("realigned"), flag.get("transcribed"), ms(flag["at"])))
+    insert("corpus_rows", corpus_rows)
+    report.tables["corpus_rows"]["out"] = len(corpus_rows)
+    report.table("corpus_flags", len(flags))
+    insert("corpus_flags", flags)
+    report.tables["corpus_flags"]["out"] = len(flags)
+    report.note(f"corpus_flags: {len(flags)} flags from the units records; each one's state and revision are the crop's own, "
+                "and the old site wrote no event for a flag")
 
     report.table("written_forms", len(src["written_forms"]))
     written = []
