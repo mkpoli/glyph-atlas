@@ -147,7 +147,7 @@ class Crops:
     def load_cuts(self):
         """Each collected crop's current box (its bundle entry's) and earlier version (crop_versions)."""
         by_unit, no_box, unknown = defaultdict(list), Counter(), Counter()
-        rows = source("crop_versions").execute("SELECT id, unit, pixels, box, image FROM crop_versions").fetchall()
+        rows = source("crop_versions").execute("SELECT id, unit, pixels, box, image, at FROM crop_versions").fetchall()
         table = self.report.table("crop_versions", len(rows))
         # Every version becomes a cut or a version id evidence can name; none is written as a row.
         table["out"] = len(rows)
@@ -161,7 +161,7 @@ class Crops:
             if box_of(r["box"]) is None:
                 no_box["corpus glyph" if self.corpus(cid) else "collected crop"] += 1
                 continue
-            by_unit[cid].append((r["id"], box_of(r["box"]), r["pixels"], r["image"]))
+            by_unit[cid].append((r["id"], box_of(r["box"]), r["pixels"], r["image"], r["at"]))
         self.report.note(f"crop_versions: rows with no box {dict(no_box)}; "
                          f"{sum(unknown.values())} rows of {len(unknown)} crops the mirror lacks", sorted(unknown)[:SHOWN])
         for pid in sorted({cid // PAGE for cid in by_unit}):
@@ -598,8 +598,9 @@ def main():
 
     cuts = {}
     text_of = {cid: t for t, cid in crops.ids.items() if cid in crops.earlier}
-    for cid, (_vid, box, pixels, image) in sorted(crops.earlier.items()):
-        cuts[text_of[cid]] = [{"cut": -1, "box": dict(zip("xywh", box)), "pixels": pixels, "image": image}]
+    # `at` is when the old site first recorded the version, which a citation of it states.
+    for cid, (_vid, box, pixels, image, at) in sorted(crops.earlier.items()):
+        cuts[text_of[cid]] = [{"cut": -1, "box": dict(zip("xywh", box)), "pixels": pixels, "image": image, "at": at}]
     (OUT / "history-cuts.json").write_text(json.dumps(cuts, ensure_ascii=False, indent=1) + "\n")
     (OUT / "history-tombstones.json").write_text(json.dumps(list(tombstones.values()), ensure_ascii=False, indent=1) + "\n")
     # Each actor's totals, as the review batch keeps them from the cutover on and the ranking counts

@@ -183,6 +183,7 @@ def cuts_catalogue():
             continue
         data = json.loads(r["data"])
         data["cuts"] = [{"cut": v["cut"], "box": v["box"], "image_sha256": v["pixels"], "image": v["image"],
+                         **({"at": v["at"]} if v.get("at") else {}),
                          **({"image_place": place(v["image"])} if v.get("image") and place(v["image"]) else {})}
                         for v in versions]
         out.execute(f"INSERT INTO units VALUES({','.join('?' * len(cols))})",

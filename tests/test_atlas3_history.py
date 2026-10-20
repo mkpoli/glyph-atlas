@@ -89,7 +89,7 @@ def test_seen_and_skips_map_to_the_cut_their_box_names(layout, monkeypatch):  # 
         [(2, i["ex:a1"], 0, 1790812802000), (1, i["ex:a1"], -1, 1790812801000), (2, i["codh:g1"], 0, 1790812802000)])
     assert list(out.execute("SELECT crop, cut FROM skips")) == [(i["ex:a1"], -1)]
     cuts = json.loads((root / "out" / "history-cuts.json").read_text())
-    assert cuts == {"ex:a1": [{"cut": -1, "box": OLD, "pixels": "p0", "image": "/atlas/media/p0.webp"}]}
+    assert cuts == {"ex:a1": [{"cut": -1, "box": OLD, "pixels": "p0", "image": "/atlas/media/p0.webp", "at": "2026-10-03T00:00:00Z"}]}
 
 
 def test_a_box_no_recorded_version_has_takes_the_cut_below_the_oldest(layout, monkeypatch):  # noqa: F811
