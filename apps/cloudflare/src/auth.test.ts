@@ -162,6 +162,17 @@ describe('users and what they wrote, in two databases', () => {
     expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user=? AND via='legacy'").get(kept)).toEqual({ n: 5 });
     expect(atlas.query('SELECT user FROM actors WHERE key=?').get(anon)).toEqual({ user: kept });
   });
+  it('keep the stars of a sign-in that lands on the anonymous user itself, and record no link', async () => {
+    const { env, atlas, accounts, call } = setup('https://same.glyphatlas.org');
+    expect(await call('/sign-in/anonymous', {})).toBe(200);
+    const anon = accounts.query('SELECT id,name FROM "user" WHERE isAnonymous=1').get() as { id: string; name: string };
+    atlas.exec(`INSERT INTO favourites VALUES('${anon.id}',9,2)`);
+    const plugin = (auth(env, 'https://same.glyphatlas.org').options.plugins as any[]).find(p => p.id === 'anonymous');
+    const user = { id: anon.id, name: anon.name, createdAt: new Date() };
+    await plugin.options.onLinkAccount({ anonymousUser: { user }, newUser: { user } });
+    expect(atlas.query('SELECT user,crop FROM favourites').all()).toEqual([{ user: anon.id, crop: 9 }]);
+    expect(accounts.query('SELECT count(*) AS n FROM anonymous_links').get()).toEqual({ n: 0 });
+  });
   it('let a user take a name shaped like an old reviewer id only when they hold that id', async () => {
     const { atlas, call, signIn } = setup('https://names.glyphatlas.org');
     const id = await signIn('ada@example.org');

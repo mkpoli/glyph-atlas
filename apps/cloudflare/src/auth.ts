@@ -164,6 +164,8 @@ function build(env: Env, origin: string, paused: boolean) {
         disableDeleteAnonymousUser: true,
         // Signing in with an account from an anonymous session brings that session's work along.
         onLinkAccount: async ({ anonymousUser, newUser }) => {
+          // A sign-in that lands on the anonymous user itself has nothing to bring.
+          if (anonymousUser.user.id === newUser.user.id) return;
           // The link is kept, so that deleting the account deletes the anonymous user too.
           await env.ACCOUNTS.prepare('INSERT OR IGNORE INTO anonymous_links(anonymous,user,at) VALUES(?,?,?)')
             .bind(anonymousUser.user.id, newUser.user.id, new Date().toISOString()).run();
