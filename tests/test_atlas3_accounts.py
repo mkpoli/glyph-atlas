@@ -13,9 +13,9 @@ MIGRATIONS = ROOT / "apps" / "cloudflare" / "migrations"
 @pytest.fixture
 def accounts(tmp_path, monkeypatch):
     """The script with ATLAS3_DIR in tmp_path, an old database built from the site's own migrations, and
-    an empty target; every query runs on local sqlite."""
+    an empty target; every query runs on local sqlite, the remote ones through a fake wrangler."""
     monkeypatch.setenv("ATLAS3_DIR", str(tmp_path))
-    for name in ("accounts", "load_history", "publish", "build", "media_map"):
+    for name in ("accounts", "load_history", "publish", "build", "media_map", "pull"):
         sys.modules.pop(name, None)
     module = importlib.import_module("accounts")
     old = sqlite3.connect(tmp_path / "old.sqlite")
@@ -23,6 +23,10 @@ def accounts(tmp_path, monkeypatch):
     for m in ("0039_accounts.sql", "0040_sign_in.sql", "0041_admin.sql", "0057_account_profiles.sql"):
         old.executescript((MIGRATIONS / m).read_text())
     old.executescript("""
+        DROP TABLE actor_claims;
+        CREATE TABLE favourites(user_id TEXT NOT NULL REFERENCES user(id), unit TEXT, at TEXT, PRIMARY KEY(user_id, unit));
+        CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
+        INSERT INTO favourites VALUES('u1', 'ex:a1', '2026-01-01');
         CREATE TABLE units(id TEXT PRIMARY KEY);
         INSERT INTO units VALUES('ex:a1');
         INSERT INTO user(id, name, email, emailVerified, createdAt, updatedAt, role)
@@ -49,15 +53,22 @@ def accounts(tmp_path, monkeypatch):
         return stamp in module.loaded(query)[0]
 
     monkeypatch.setattr(module, "send", fake_send)
+    databases = {"glyph-atlas": old, "glyph-atlas-accounts": target}
+    monkeypatch.setattr(module.publish, "query", lambda database, sql: module.local(databases[database])(sql))
     return module, old, target, sent
+
+
+def pull(module, fresh=False):
+    module.pull(module.remote(module.OLD), fresh)
 
 
 def test_pull_copies_only_the_auth_tables_with_their_exact_schema(accounts):
     module, old, _, _ = accounts
-    module.pull(module.local(old), fresh=False)
+    pull(module)
     copy = sqlite3.connect(module.COPY)
     names = {r[0] for r in copy.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert names == set(module.TABLES)  # not units, submissions, actors or actor_claims
+    # Not units, submissions, actors or favourites, which move with the history.
+    assert names == {"user", "session", "account", "passkey", "verification", "account_profiles", "rateLimit"}
     want = dict(old.execute("SELECT name, sql FROM sqlite_master WHERE tbl_name IN "
                             "('user','session','account','passkey','verification','account_profiles','rateLimit') "
                             "AND sql IS NOT NULL"))
@@ -65,22 +76,36 @@ def test_pull_copies_only_the_auth_tables_with_their_exact_schema(accounts):
     assert copy.execute("SELECT name, role FROM user ORDER BY id").fetchall() == [("O'Brien", "admin"), ("あ", None)]
     assert copy.execute("SELECT count(*) FROM session").fetchone() == (1,)
     with pytest.raises(SystemExit, match="--fresh"):
-        module.pull(module.local(old), fresh=False)
+        pull(module)
 
 
-def test_pull_reads_in_key_ranges(accounts, monkeypatch):
+def test_pull_finds_the_tables_that_lead_to_a_user(accounts):
     module, old, _, _ = accounts
-    monkeypatch.setattr(module, "CHUNK", 1)
-    reads = []
-    query = module.local(old)
-    module.pull(lambda sql: reads.append(sql) or query(sql), fresh=False)
-    assert any("WHERE (\"id\") > ('u1')" in r for r in reads)
-    assert sqlite3.connect(module.COPY).execute("SELECT count(*) FROM user").fetchone() == (2,)
+    old.executescript("""
+        CREATE TABLE twoFactor(id TEXT PRIMARY KEY, secret TEXT, userId TEXT NOT NULL REFERENCES user(id));
+        CREATE TABLE twoFactorUse(id TEXT PRIMARY KEY, factor TEXT NOT NULL REFERENCES twoFactor(id));
+        INSERT INTO twoFactor VALUES('f1', 'x', 'u1');
+        INSERT INTO twoFactorUse VALUES('e1', 'f1');
+    """)
+    pull(module)
+    copy = sqlite3.connect(module.COPY)
+    names = {r[0] for r in copy.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"twoFactor", "twoFactorUse"} <= names
+    assert "favourites" not in names
+    assert copy.execute("SELECT factor FROM twoFactorUse").fetchall() == [("f1",)]
+
+
+def test_pull_stops_on_a_table_nothing_copies(accounts):
+    module, old, _, _ = accounts
+    old.execute("CREATE TABLE mystery(id TEXT PRIMARY KEY)")
+    with pytest.raises(SystemExit, match="nothing copies: mystery"):
+        pull(module)
+    assert not module.COPY.exists()
 
 
 def test_a_dry_run_writes_parts_that_rebuild_the_copy_and_sends_nothing(accounts):
-    module, old, target, sent = accounts
-    module.pull(module.local(old), fresh=False)
+    module, _old, target, sent = accounts
+    pull(module)
     module.load(False, module.local(target))
     assert sent == []
     assert target.execute("SELECT count(*) FROM sqlite_master").fetchone() == (0,)
@@ -89,11 +114,11 @@ def test_a_dry_run_writes_parts_that_rebuild_the_copy_and_sends_nothing(accounts
 
 
 def test_load_sends_once_and_check_passes(accounts, capsys):
-    module, old, target, sent = accounts
-    module.pull(module.local(old), fresh=False)
+    module, _old, target, sent = accounts
+    pull(module)
     module.load(True, module.local(target))
     assert len(sent) == 3
-    module.check(module.local(target))
+    module.check()
     assert "matches" in capsys.readouterr().out
     assert target.execute("SELECT count(*) FROM imports").fetchone() == (3,)
     # A rerun finds every stamp and sends nothing.
@@ -102,32 +127,32 @@ def test_load_sends_once_and_check_passes(accounts, capsys):
 
 
 def test_check_reports_a_changed_row(accounts, capsys):
-    module, old, target, _ = accounts
-    module.pull(module.local(old), fresh=False)
+    module, _old, target, _ = accounts
+    pull(module)
     module.load(True, module.local(target))
     target.execute("UPDATE session SET expiresAt = '2027-01-01' WHERE id = 's1'")
     target.commit()
     with pytest.raises(SystemExit) as stop:
-        module.check(module.local(target))
+        module.check()
     assert stop.value.code == 1
     assert "session: 1 rows here, 1 there" in capsys.readouterr().out
 
 
 def test_load_refuses_a_target_holding_another_copy(accounts):
     module, old, target, sent = accounts
-    module.pull(module.local(old), fresh=False)
+    pull(module)
     module.load(True, module.local(target))
     old.execute("INSERT INTO verification VALUES('v1', 'a@example.org', '123456', '2026-01-01', '2026-01-01', '2026-01-01')")
     old.commit()
-    module.pull(module.local(old), fresh=True)
+    pull(module, fresh=True)
     with pytest.raises(SystemExit, match="another copy"):
         module.load(True, module.local(target))
     assert len(sent) == 3
 
 
 def test_load_refuses_a_target_with_tables_of_its_own(accounts):
-    module, old, target, sent = accounts
-    module.pull(module.local(old), fresh=False)
+    module, _old, target, sent = accounts
+    pull(module)
     target.execute('CREATE TABLE "user"(id TEXT PRIMARY KEY)')
     with pytest.raises(SystemExit, match="must be empty"):
         module.load(True, module.local(target))
@@ -139,7 +164,7 @@ def test_a_row_past_d1s_statement_limit_arrives_whole(accounts):
     image = "data:image/png;base64," + "A" * 150_000
     old.execute("UPDATE user SET image = ? WHERE id = 'u2'", (image,))
     old.commit()
-    module.pull(module.local(old), fresh=False)
+    pull(module)
     module.load(True, module.local(target))
     assert target.execute("SELECT image FROM user WHERE id = 'u2'").fetchone() == (image,)
     (run,) = [p for p in module.LOADS.iterdir() if p.name.startswith("accounts-")]
@@ -152,7 +177,7 @@ def test_load_refuses_rows_whose_parent_is_missing(accounts):
     old.execute("INSERT INTO session(id, expiresAt, token, createdAt, updatedAt, userId) "
                 "VALUES('s2', '2026-12-01', 't2', '2026-01-01', '2026-01-01', 'gone')")
     old.commit()
-    module.pull(module.local(old), fresh=False)
+    pull(module)
     with pytest.raises(SystemExit, match="missing parent"):
         module.load(True, module.local(target))
     assert sent == []
