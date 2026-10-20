@@ -30,7 +30,9 @@ creates them.
    and it only reads. An interrupted copy resumes; a finished one is copied again only with `--fresh`.
 2. `build.py` writes the new layout and stops unless every source crop has exactly one crop, whose id
    names its record's page, with its page and book, and every run has its crops. It refuses to run
-   over an existing `out/mirror.sqlite`, since a rebuild renumbers every crop.
+   over an existing `out/mirror.sqlite`, since a rebuild renumbers every crop. A rebuild
+   (`--replace`) also renumbers the graphemes, which the reference objects name: `reference.py
+   --send` runs again after it.
 3. `sample.py` compares random crops with their source records field by field.
 4. `load.sh` creates the tables, loads the rows in parts, then builds the indexes, and records the
    build id in `imports`; `publish.py` refuses a mirror whose build the database does not name. A
@@ -144,14 +146,16 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
    ainu-records' character lists and the catalogue's site values still write the old database.
 7. **Move the reference data:** `pull.py --fresh` copies the character cards, the 異体字 graph and its
-   derived tier, the writers, words and spellings, the form anchors (`representations`) and the
-   component index; `reference.py` (dry run by default, `--send` to load) writes them to
-   `out/reference.sqlite` as the tables of `migrations-atlas/0004_reference.sql`, applies that
-   migration once, and loads them in stamped parts with a per-table report. Characters are numbered
-   in `graphemes` (a new one takes the next id, with its card's family head), and the crops a card's
-   visual groups show go to `visual_samples` as integer ids from the mirror. A rerun of the same copy
-   sends nothing; another copy needs `--replace`, which clears every reference table except
-   `representations`.
+   derived tier, the writers, words and spellings and the component index. `reference.py` (dry run
+   by default) writes the cards with their edges, derived forms and writers as one R2 object per
+   character under `v3/reference/`, beside sharded card summaries, the IDS, the name list and the
+   card lists; the rows a query filters, joins or sorts on go to the tables of
+   `migrations-atlas/0004_reference.sql`. A card's character or family head the layout lacks gets
+   the next grapheme id, and every grapheme takes its card's family head. A visual group's samples
+   are crop ids found in the mirror and in `crops`. `--send` applies 0004 once, loads only the rows
+   that differ from the local copy in stamped parts, then uploads the objects that differ from
+   `out/reference/` and deletes those the copy no longer has; figures go to
+   `out/reference-report.txt`. A load that stopped partway is finished on the next run.
 8. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
    session changes still frozen. It is created once, before the window:
    `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:
@@ -283,9 +287,9 @@ answers:
 - reviews (`events`, `submissions`, `skips`, `seen`, `actors`), accounts (`user`, `session`,
   `account`, `account_profiles`, `passkey`, `verification`, `rateLimit`) and `favourites`;
 - forms (`forms`, `form_*`);
-- `representations` (form anchors);
+- `representations` (form anchors), which form claims write: they move with the forms;
 - the model votes in `units.visual`, and the text-id alias files;
-- family heads and search names for characters that first appear after the first build;
+- search names for characters that first appear after the first build;
 - `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
   new `crops` has no per-crop grapheme column yet, so the read path decides how such a crop joins a
   family gallery before cutover.
