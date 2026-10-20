@@ -58,7 +58,10 @@ class Bucket:
 
     def remove(self, paths):
         for p in paths:
-            del self.objects["v3/reference/" + p]
+            self.objects.pop("v3/reference/" + p, None)
+
+    def manifest(self):
+        return self.objects.get("v3/reference/manifest.json.gz", {})
 
 
 def load(remote, monkeypatch, *flags, bucket=None):
@@ -73,6 +76,7 @@ def load(remote, monkeypatch, *flags, bucket=None):
     bucket = bucket or Bucket()
     monkeypatch.setattr(module, "upload", bucket.upload)
     monkeypatch.setattr(module, "remove", bucket.remove)
+    monkeypatch.setattr(module, "fetch_manifest", bucket.manifest)
     monkeypatch.setattr(sys, "argv", ["reference.py", *flags])
     module.main()
     remote.dbs["glyph-atlas-v3"].row_factory = None
@@ -213,6 +217,33 @@ def test_only_what_changed_is_sent_and_an_earlier_copy_loads_again(layout, monke
     load(remote, monkeypatch, "--send", bucket=bucket)
     assert db.execute("SELECT count(*) FROM words").fetchone() == (0,)
     assert bucket.objects["v3/reference/names.json.gz"] == {"names": [["U+3042", "NAME U+3042", 3]], "plain": []}
+
+
+def test_objects_to_delete_come_from_the_manifest_in_r2(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ"), card("い")])
+    bucket = load(remote, monkeypatch, "--send")
+    assert bucket.manifest()["char/U+3044.json.gz"] and not (root / "out" / "reference").exists()
+    # A load that adds う stops once its cards are uploaded, before its deletions and manifest.
+    sources(root, cards=[card("あ"), card("う")])
+    real = bucket.upload
+
+    def stops(files, prefix):
+        real(files, prefix)
+        if prefix.endswith("char/"):
+            raise SystemExit("stopped after the cards")
+
+    bucket.upload = stops
+    with pytest.raises(SystemExit, match="stopped"):
+        load(remote, monkeypatch, "--send", bucket=bucket)
+    bucket.upload = real
+    assert bucket.manifest()["char/U+3046.json.gz"] == "" and "v3/reference/char/U+3046.json.gz" in bucket.objects
+    # The next load no longer has う or い: both leave R2, though no local folder ever listed う.
+    sources(root, cards=[card("あ")])
+    load(remote, monkeypatch, "--send", bucket=bucket)
+    assert sorted(k for k in bucket.objects if "/char/" in k) == ["v3/reference/char/U+3042.json.gz"]
+    assert sorted(bucket.manifest()) == sorted(k.removeprefix("v3/reference/") for k in bucket.objects
+                                               if not k.endswith("manifest.json.gz"))
 
 
 def test_a_load_that_stopped_partway_is_finished_first(layout, monkeypatch):  # noqa: F811

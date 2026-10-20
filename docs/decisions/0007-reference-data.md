@@ -53,8 +53,10 @@ code point(s) (`U+3042`) for a summary, two of the character itself (`好`) for 
   crops found in the mirror and in `crops`; a sample whose crop is not published leaves its list.
 - **Only differences are sent.** Rows are diffed against the local copy and sent in stamped parts;
   each load's stamps carry its generation, so a load that returns to an earlier copy is sent again.
-  Objects are compared with the local copy of what was uploaded; changed ones are uploaded, removed
-  ones deleted.
+  Objects are compared by hash with `manifest.json.gz`, which R2 holds beside them; changed ones are
+  uploaded, and the paths the manifest lists and the translation lacks are deleted. The manifest
+  lists every path a load may have written before it uploads, so a stopped load leaves nothing
+  unlisted, and the deletions never depend on a folder on one machine.
 - `representations` is written live by form claims and moves with the forms, outside this load.
 
 ## Consequences

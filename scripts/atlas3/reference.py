@@ -39,11 +39,17 @@ D1 rows (`migrations-atlas/0004_reference.sql`) for what a query filters, joins 
 card's character or family head the layout lacks is numbered as the publisher numbers one, and every grapheme takes its card's family head.
 Graphemes are written as `publish.py` writes them, through `char_text`.
 
-Only what differs from the local copies is sent: the rows that differ from `out/atlas.sqlite`, as
-statements in parts under `out/reference-load/reference-<generation>-<digest>/`, each confirmed by
-its stamp in `imports` and replayed on the local copy, then the objects that differ from
-`out/reference/`, which holds what was last uploaded. The generation counts the loads before, so a
-load that returns to an earlier copy is sent again. A load that stopped partway is finished first.
+Only what differs is sent: the rows that differ from `out/atlas.sqlite`, as statements in parts
+under `out/reference-load/reference-<generation>-<digest>/`, each confirmed by its stamp in `imports`
+and replayed on the local copy, then the objects whose hash differs from the one `manifest.json.gz`
+in R2 gives. The generation counts the loads before, so a load that returns to an earlier copy is
+sent again. A load that stopped partway is finished first.
+
+`manifest.json.gz` (`{path: hash}`, the first 16 hex digits of the SHA-256 of the gzipped bytes)
+names every object under `v3/reference/` this load may have written, so the objects to delete are
+decided from R2 itself. Before uploading, the load writes a manifest that adds the new paths with an
+empty hash and keeps the old hash of a changed one; after uploading and deleting, the new manifest.
+A load that stops between the two leaves every object it wrote listed, and its rerun sends them again.
 Figures go to `out/reference-report.txt`. `--send` also applies migration 0004 (stamp
 `migration:0004`) where the local copy lacks it.
 
@@ -71,6 +77,7 @@ from publish import BUCKET, CF, R2_REMOTE, applied, lit, send, upload
 
 SCHEMA = CF / "migrations-atlas" / "0004_reference.sql"
 PREFIX = "v3/reference/"
+MANIFEST = "manifest.json.gz"
 LIST_PAGE = 500
 # 4,096 summary shards keep one near 41 KB of JSON; the IDS, 1 MB in all, takes 256.
 SUMMARY_DIGITS, IDS_DIGITS = 3, 2
@@ -425,22 +432,47 @@ def remove(paths):
     sys.exit(f"deleting from {PREFIX} failed; rerun to finish")
 
 
-def differing(objects):
-    """The objects whose bytes differ from the local copy's, as {path: bytes}, and the local copy's
-    objects the translation lacks."""
-    held = OUT / "reference"
-    changed = {}
-    for rel, data in objects.items():
-        local = held / rel
-        if not local.exists() or local.read_bytes() != data:
-            changed[rel] = data
-    gone = sorted(str(p.relative_to(held)) for p in held.rglob("*.json.gz") if str(p.relative_to(held)) not in objects) \
-        if held.exists() else []
-    return changed, gone
+def digest(data):
+    return hashlib.sha256(data).hexdigest()[:16]
 
 
-def ship(changed, gone):
-    """Upload the changed objects folder by folder, delete the gone ones, then record both locally."""
+def fetch_manifest():
+    """The manifest in R2, {path: hash}; empty before the first load."""
+    listed = subprocess.run(["rclone", "lsf", f"{R2_REMOTE}:{BUCKET}/{PREFIX}", "--files-only", "--max-depth", "1"],
+                            capture_output=True, text=True, check=False)
+    if listed.returncode not in (0, 3):  # 3: the folder does not exist yet
+        sys.exit(f"listing {PREFIX} failed: {listed.stderr.strip()}")
+    if MANIFEST not in listed.stdout.split():
+        return {}
+    read = subprocess.run(["rclone", "cat", f"{R2_REMOTE}:{BUCKET}/{PREFIX}{MANIFEST}"], capture_output=True, check=False)
+    if read.returncode:
+        sys.exit(f"reading {PREFIX}{MANIFEST} failed: {read.stderr.decode().strip()}")
+    data = read.stdout
+    return json.loads(gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data)
+
+
+def differing(objects, held):
+    """The objects whose hash differs from the manifest's, as {path: bytes}; the manifest's paths the
+    translation lacks; and the new manifest."""
+    manifest = {rel: digest(data) for rel, data in objects.items()}
+    changed = {rel: objects[rel] for rel, h in manifest.items() if held.get(rel) != h}
+    gone = sorted(set(held) - set(manifest))
+    return changed, gone, manifest
+
+
+def put_manifest(manifest):
+    stage = OUT / "reference-manifest"
+    shutil.rmtree(stage, ignore_errors=True)
+    stage.mkdir(parents=True)
+    (stage / MANIFEST).write_bytes(encode(compact(dict(sorted(manifest.items())))))
+    upload([stage / MANIFEST], PREFIX)
+    shutil.rmtree(stage)
+
+
+def ship(changed, gone, manifest, held):
+    """List what this load may write in the manifest, upload the changed objects folder by folder,
+    delete the gone ones, then write the new manifest."""
+    put_manifest({**held, **{rel: "" for rel in manifest if rel not in held}})
     stage = OUT / "reference-send"
     shutil.rmtree(stage, ignore_errors=True)
     folders = defaultdict(list)
@@ -453,12 +485,7 @@ def ship(changed, gone):
         upload(sorted(files), PREFIX + (folder + "/" if folder else ""))
     if gone:
         remove(gone)
-    held = OUT / "reference"
-    for rel, data in changed.items():
-        (held / rel).parent.mkdir(parents=True, exist_ok=True)
-        (held / rel).write_bytes(data)
-    for rel in gone:
-        (held / rel).unlink()
+    put_manifest(manifest)
     shutil.rmtree(stage)
 
 
@@ -527,7 +554,8 @@ def main():
 
     ref, objects, new, new_heads, changed_heads, notes = translate(atlas, mirror, OUT / "reference.sqlite")
     groups, written = statements(ref, atlas, new, new_heads, changed_heads)
-    changed, gone = differing(objects)
+    held = fetch_manifest()
+    changed, gone, manifest = differing(objects, held)
     run = None
     if groups:
         digest = hashlib.sha256("\n".join(s for g in groups for s in g).encode()).hexdigest()[:12]
@@ -543,7 +571,7 @@ def main():
     if run:
         deliver(run, atlas)
     if changed or gone:
-        ship(changed, gone)
+        ship(changed, gone, manifest, held)
     print("reference data loaded", flush=True)
 
 
