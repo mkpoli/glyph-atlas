@@ -32,20 +32,29 @@ export function cropOf(text: string): number | null {
 }
 
 // A page bundle: the page's facts and one entry per crop, by slot. Bundles are immutable under their
-// revision, so an isolate keeps the last few it read.
+// revision, so an isolate keeps the last few it read, and the edge keeps each one it served for a day
+// under a URL of this site that no route answers: an isolate new to a page reads it from R2 once per
+// location.
 export type Entry = Json & { slot: number; id: string };
 export type Bundle = { key: string; book: number; rev: number; page: Json | null; bySlot: Map<number, Entry> };
 export const bundleKey = (page: number, rev: number) => `v3/pages/${page}-${rev}.json.gz`;
-const BUNDLES_HELD = 64;
+const BUNDLES_HELD = 64, BUNDLE_EDGE_SECONDS = 86400;
 const held = new Map<string, Promise<Bundle | null>>();
 export function bundle(env: Env, page: number, rev: number): Promise<Bundle | null> {
   const key = bundleKey(page, rev), hit = held.get(key);
   if (hit) { held.delete(key); held.set(key, hit); return hit; }
   const read = (async () => {
-    const object = await env.MEDIA.get(key);
-    if (!object) return null;
+    const edge = new Request(`https://glyphatlas.org/_bundles/${key}`);
+    let bytes = await caches.default.match(edge).then(hit => hit?.arrayBuffer() ?? null);
+    if (!bytes) {
+      const object = await env.MEDIA.get(key);
+      if (!object) return null;
+      bytes = await new Response(object.body).arrayBuffer();
+      await caches.default.put(edge, new Response(bytes, { headers: { 'cache-control': `public, max-age=${BUNDLE_EDGE_SECONDS}, immutable` } }))
+        .catch(() => {});
+    }
     // Bundles are stored gzipped and served with that encoding; the binding hands back the stored bytes.
-    const body = await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json() as Json;
+    const body = await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json() as Json;
     return { key: body.key, book: body.book, rev: body.rev, page: body.page ?? null,
       bySlot: new Map((body.crops as Entry[]).map(entry => [entry.slot, entry])) };
   })();
