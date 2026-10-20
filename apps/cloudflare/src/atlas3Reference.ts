@@ -122,8 +122,9 @@ function indexOf(points: number[], point: number): number {
 
 // The component search on the R2 lists, answering as components.ts answers from D1: the rarest
 // component's first COMPONENT_SCAN characters, each looked up in the list of every other component.
-// A search reads the names object and one list per component, at most COMPONENT_PARTS; the longest
-// list, 一, holds 86,700 characters.
+// A search reads the names object and one list per component, at most COMPONENT_PARTS. The longest
+// list, 一, holds 86,700 characters in 429 KB of JSON, 134 KB gzipped; the eight longest together
+// are 2.2 MB of JSON. Another list's groups are decoded only when a lookup reaches them.
 export async function componentMatches(env: Env, wanted: Map<string, number>, limit: number, ctx?: ExecutionContext) {
   const none = { codes: [] as string[], more: false };
   const names = await readComponentNames(env, `${PREFIX}components/names.json.gz`, ctx) as ComponentNames | null;
