@@ -230,3 +230,44 @@ def test_a_box_no_cut_has_on_a_crop_with_two_earlier_boxes_is_not_guessed(layout
     code, out = history(monkeypatch, root)
     assert code == 1
     assert out.execute("SELECT count(*) FROM seen").fetchone()[0] == 0
+
+
+def test_events_keep_the_label_shown_and_the_character_named(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+
+    def reviewed(id, expected, at, evidence, label):
+        # ex:a2 is at revision 3, so three events fit below it.
+        box = {"x": 0, "y": 20, "w": 10, "h": 10}
+        return (id, "u1:s1", "ex:a2", "u1", expected, json.dumps({"box": box, "page_id": "hl:p1", "label": "あ"}),
+                json.dumps({"label": label, "state": "checked", "box": box}), json.dumps({"evidence": json.dumps(evidence)}),
+                "{}", "review", at, 0)
+    sources(root, events=[
+        # A round names its label; a single review shows the label in its snapshot, and may name a
+        # character that leaves the label as it was.
+        reviewed("cf:1", 0, "2026-10-01T00:00:01Z", {"kind": "visual-quiz", "label": "あ", "verdict": "wrong", "issue": "character",
+                                                     "suggested_character": "U+3044"}, "い"),
+        reviewed("cf:2", 1, "2026-10-01T00:00:02Z", {"kind": "character-review", "verdict": "wrong", "issue": "character",
+                                                     "suggested_character": "U+3044", "snapshot": {"character": {"label": "い"}}}, "い"),
+        reviewed("cf:3", 2, "2026-10-01T00:00:03Z", {"kind": "character-review", "verdict": "match", "issue": None,
+                                                     "snapshot": {"character": {"label": "い"}}}, "い")])
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    text = dict(sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT id, text FROM graphemes"))
+    rows = [(r, text.get(s), text.get(n), text.get(label))
+            for r, s, n, label in out.execute("SELECT revision, shown, named, label FROM events ORDER BY revision")]
+    assert rows == [(1, "あ", "い", "い"), (2, "い", "い", "い"), (3, "い", None, "い")]
+
+
+def test_corpus_rows_follow_the_old_rows_and_keep_each_flag(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    sources(root)
+    flag = {"finding": "box-relabel", "realigned": "所", "transcribed": None, "at": "2026-10-02T00:00:00Z"}
+    db = sqlite3.connect(root / "source-units.sqlite")
+    db.execute("UPDATE units SET data=? WHERE id='codh:g1'", (json.dumps({"flag": flag}),))
+    db.commit()
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    g1 = ids(root)["codh:g1"]
+    assert list(out.execute("SELECT crop, seq FROM corpus_rows")) == [(g1, 1)]
+    assert list(out.execute("SELECT crop, finding, realigned, transcribed, at FROM corpus_flags")) == [
+        (g1, "box-relabel", "所", None, 1790899200000)]

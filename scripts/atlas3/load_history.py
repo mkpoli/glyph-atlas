@@ -6,8 +6,9 @@ Decision record 0006. Every step writes SQL parts under `out/history-load/<name>
 content of `out/history.sqlite`, so a rerun on the same translation skips what D1 already holds; each
 part is confirmed by its stamp in `imports` and replayed on the local copy.
 
-1. Migration 0003 (stamp `migration:0003`), on D1 and the local copy; the mirror's `codes` take the
-   two mark states the migration numbers, so the publisher never numbers them differently.
+1. Migrations 0003 and 0010 (stamps `migration:0003`, `migration:0010`), on D1 and the local copy;
+   the mirror's `codes` take the two mark states 0003 numbers, so the publisher never numbers them
+   differently. 0010 gives events the labels each showed and named, and the corpus rows and flags.
 2. The rows of every history table.
 3. Marks: a pending crop with a mark takes the mark as its state, one revision past its own, with an
    event at the round that marked it. A mark on a crop that is not pending is left out, as the old
@@ -36,7 +37,8 @@ SCHEMA = CF / "migrations-atlas"
 # Tables in the order their rows load: who and which request first, then what names them.
 TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats", "suspects", "shapes",
           "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "current_claims",
-          "ledger_submissions", "rejections", "forms", "form_decisions", "corpus_follow", "written_forms")
+          "ledger_submissions", "rejections", "forms", "form_decisions", "corpus_follow", "written_forms", "corpus_rows",
+          "corpus_flags")
 GROUP = 500
 
 
@@ -75,15 +77,17 @@ def migrate(history, atlas, mirror, dry):
     mirror.executemany("INSERT OR IGNORE INTO codes(field, key, code) VALUES(?, ?, ?)",
                        history.execute("SELECT field, key, code FROM codes WHERE field='state'").fetchall())
     mirror.commit()
-    if atlas.execute("SELECT 1 FROM sqlite_master WHERE name='actors'").fetchone():
-        return
-    path = OUT / "history-load" / "0003.sql"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(stamped((SCHEMA / "0003_history.sql").read_text(), "migration:0003"))
-    if not applied("glyph-atlas-v3", "migration:0003") and not send("glyph-atlas-v3", path, "migration:0003"):
-        sys.exit("migration 0003 did not apply; rerun")
-    atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
-    print("migration 0003 applied", flush=True)
+    for name, stamp, present in (("0003_history.sql", "migration:0003", "SELECT 1 FROM sqlite_master WHERE name='actors'"),
+                                 ("0010_people.sql", "migration:0010", "SELECT 1 FROM sqlite_master WHERE name='corpus_rows'")):
+        if atlas.execute(present).fetchone():
+            continue
+        path = OUT / "history-load" / f"{name.split('_')[0]}.sql"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(stamped((SCHEMA / name).read_text(), stamp))
+        if not applied("glyph-atlas-v3", stamp) and not send("glyph-atlas-v3", path, stamp):
+            sys.exit(f"migration {name} did not apply; rerun")
+        atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+        print(f"migration {name} applied", flush=True)
 
 
 # D1 refuses a statement over 100 KB. A row past STATEMENT_BYTES goes in with its long text columns
@@ -118,7 +122,8 @@ def rows(history):
         names = ",".join(f'"{c}"' for c in cols)
         batch = []
         for r in history.execute(f'SELECT {names} FROM "{table}" ORDER BY rowid' if table not in
-                                 ("seen", "skips", "favourites", "assertion_evidence", "assertion_premises", "current_claims")
+                                 ("seen", "skips", "favourites", "assertion_evidence", "assertion_premises", "current_claims",
+                                  "corpus_flags")
                                  else f'SELECT {names} FROM "{table}"'):
             batch += row_statements(table, cols, keys, r)
             if len(batch) >= GROUP:

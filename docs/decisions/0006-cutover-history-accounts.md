@@ -76,7 +76,15 @@ written only at the URL boundary.
 - `events`: the 0005 table. Each old event becomes one row, its `revision` the per-crop sequence by
   time, checked to end at or below the crop's current revision, with the verdict, issue, label, state
   and box it set, and the characters the reviewer typed (`text`); a review sets no style or withheld
-  flag. Whether it came from a round, a batch or a single review is its submission's.
+  flag. Each event also keeps the label the reviewer was shown (`shown`; an undo shows what the event it
+  reverses showed) and the character the reviewer named (`named`, null when none), since the history
+  lists a review by what it showed and a named character can leave the label as it was. Whether it came
+  from a round, a batch or a single review is its submission's.
+- `corpus_rows(crop, seq)`: the corpus glyphs anything was written about, numbered in the order the
+  first write named each (the old `units` rowid order). A review, a round that showed or skipped a
+  glyph, a claim on it and an admin's flag add its row in their batch, in that order; the Flagged view
+  lists flagged glyphs by it, and a flag leaves a glyph with a row as it is. An admin's flag is an event
+  of kind `flag` with its finding in `corpus_flags`.
 - `seen(submission, crop, cut, at)` and `skips(crop, actor, cut, at, submission)`, so an undone round
   stops counting its skips.
 - The kinds of event (verdicts and marks), issues and the two mark states are numbered once, in the
