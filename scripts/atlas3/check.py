@@ -682,7 +682,7 @@ def check_history(report, name, query=None):
                     "note": (evidence.get("note") or None) and evidence["note"][:2000], "issue": evidence.get("issue") or None,
                     "text": evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
                     "shown": char_text(r["shown_label"]) or None, "named": char_text(r["named_code"]) or None,
-                    "reading": r["snapshot_reading"] or None}
+                    "reading": r["snapshot_reading"] or None, "legacy": r["id"]}
             got = one("SELECT * FROM events WHERE crop=? AND revision=?", cid, revision)
             if got:
                 got.update(actor=actor_key.get(got["actor"]), submission=sub_key.get(got["submission"]), kind=kinds.get(got["kind"]),

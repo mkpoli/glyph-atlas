@@ -79,7 +79,8 @@ written only at the URL boundary.
   flag. Each event also keeps the label the reviewer was shown (`shown`; an undo shows what the event it
   reverses showed), the character the reviewer named (`named`, null when none) and, for a moved review
   whose record still carried one, the reading the crop showed (`reading`; crops have had none since the
-  old site's migration 0056). The history and the review export list a review
+  old site's migration 0056), and the old journal's id (`legacy`, `cf:<uuid>`), by which the review
+  export names it to the offline tools that imported it. The history and the review export list a review
   by what it showed, and a named character can leave the label as it was. Whether it came from a round,
   a batch or a single review is its submission's.
 - `corpus_rows(crop, seq)`: the corpus glyphs anything was written about, numbered in the order the

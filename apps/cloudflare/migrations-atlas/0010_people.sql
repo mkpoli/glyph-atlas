@@ -10,6 +10,9 @@ ALTER TABLE events ADD COLUMN named INTEGER;
 -- The reading the crop showed, for the reviews moved at the cutover whose records still carried one;
 -- crops have had no reading since the old site's migration 0056, so a later event has none.
 ALTER TABLE events ADD COLUMN reading TEXT CHECK(length(reading) <= 64);
+-- A review moved at the cutover keeps the id the old journal gave it (`cf:<uuid>`), which the review
+-- export names it by, as the offline tools that imported it know it.
+ALTER TABLE events ADD COLUMN legacy TEXT CHECK(length(legacy) <= 64);
 -- An admin's flag on a corpus glyph is an event too, so each revision a crop moves has its event.
 INSERT INTO codes(field, code, key) VALUES ('kind', 6, 'flag');
 

@@ -140,7 +140,7 @@ def create(db):
 
 # The columns of a translated event, in the order history rows give them.
 EVENT_COLUMNS = ("id", "crop", "revision", "cut", "gen", "actor", "submission", "at", "kind", "label", "state", "style", "quiz",
-                 "x", "y", "w", "h", "note", "issue", "text", "shown", "named", "reading")
+                 "x", "y", "w", "h", "note", "issue", "text", "shown", "named", "reading", "legacy")
 
 
 class Crops:
@@ -409,7 +409,8 @@ def main():
                        codes["issue"].get(issue),
                        # Typed characters: `suggested_text`, or `suggested_reading` in reviews saved before it.
                        evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
-                       graphemes.get(shown) if shown else None, graphemes.get(named) if named else None, reading))
+                       graphemes.get(shown) if shown else None, graphemes.get(named) if named else None, reading,
+                       r["id"]))
     out.executemany(f'INSERT INTO events({",".join(EVENT_COLUMNS)}) VALUES({",".join("?" * len(EVENT_COLUMNS))})',
                     [(i, *e) for i, e in enumerate(events, 1)])
     report.tables["events"]["out"] = len(events)

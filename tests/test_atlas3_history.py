@@ -258,6 +258,8 @@ def test_events_keep_the_label_shown_and_the_character_named(layout, monkeypatch
     rows = [(r, text.get(s), text.get(n), text.get(label), reading)
             for r, s, n, label, reading in out.execute("SELECT revision, shown, named, label, reading FROM events ORDER BY revision")]
     assert rows == [(1, "あ", "い", "い", None), (2, "い", "い", "い", "イ"), (3, "い", None, "い", None)]
+    # Each keeps the old journal's id, which the review export names it by.
+    assert [i for (i,) in out.execute("SELECT legacy FROM events ORDER BY revision")] == ["cf:1", "cf:2", "cf:3"]
 
 
 def test_corpus_rows_follow_the_old_rows_and_keep_each_flag(layout, monkeypatch):  # noqa: F811
