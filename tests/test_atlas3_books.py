@@ -69,6 +69,9 @@ def test_book_facts_load_once_by_book_and_crop(layout, monkeypatch):  # noqa: F8
     assert db.execute("SELECT count(*) FROM book_dates").fetchone() == (0,)
     report = (root / "out" / "books-report.txt").read_text()
     assert "1 dates of documents that are not books, left out" in report
+    # New rows write once each: the DELETE ahead of an INSERT finds nothing.
+    assert "book_characters\t2\t80\t0\t2\t0\t2\n" in report
+    assert "rows written: 9 " in report
 
     books(remote, monkeypatch, "--send")
     book = dict(db.execute("SELECT key, id FROM books"))
@@ -96,7 +99,12 @@ def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F
     assert got["titles"]["codh:b"] is None
     assert sorted(got["dates"]) == [("book:a", "witness", 1701, "gregorian"), ("codh:b", "composed", 1600, "gregorian")]
     assert len(got["characters"]) == 1
-    assert "books.title\t0\t0\t1" in (root / "out" / "books-report.txt").read_text()
+    report = (root / "out" / "books-report.txt").read_text()
+    # removed, added, changed, written: a changed row writes its DELETE and its INSERT.
+    assert "books.title\t0\t0\t0\t0\t1\t1\n" in report
+    assert "book_dates\t2\t203\t0\t1\t1\t3\n" in report
+    assert "book_characters\t1\t40\t1\t0\t0\t1\n" in report
+    assert "rows written: 5 " in report
 
 
 def test_a_run_stopped_after_d1_applied_a_part_is_followed_on_rerun(layout, monkeypatch):  # noqa: F811

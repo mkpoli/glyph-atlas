@@ -163,13 +163,15 @@ def remove(table, cols, key, r):
 
 def statements(books, atlas):
     """Groups of statements that turn the local copy's book facts into the translation's; a row's
-    statements stay in one group. Also the rows each table writes."""
-    groups, written = [], {}
+    statements stay in one group. Also, per table, the rows removed, added and changed, and the rows
+    written: one per statement that finds its row, so the DELETE ahead of a new row counts nothing."""
+    groups, changes = [], {}
 
-    def add(table, rows):
+    def add(table, rows, removed=0, added=0):
         for i in range(0, len(rows), GROUP):
             groups.append([s for r in rows[i:i + GROUP] for s in r])
-        written[table] = sum(len(r) for r in rows)
+        changes[table] = {"removed": removed, "added": added, "changed": len(rows) - removed - added,
+                          "written": sum(len(r) for r in rows) - added}
 
     columns = {r[1] for r in atlas.execute("PRAGMA table_info(books)")}
     now = dict(atlas.execute("SELECT id, title FROM books")) if "title" in columns else \
@@ -183,22 +185,27 @@ def statements(books, atlas):
         held = {tuple(r[i] for i in k): r for r in atlas.execute(f"SELECT {names} FROM {table}")} if has(atlas, table) else {}
         new = {tuple(r[i] for i in k): r for r in books.execute(f"SELECT {names} FROM {table}")}
         rows = [[remove(table, cols, key, r)] for kk, r in sorted(held.items()) if kk not in new]
+        removed = len(rows)
         # Each row is removed before it is written, so a part applies again without a conflict.
         rows += [[remove(table, cols, key, r), *row_statements(table, list(cols), list(key), r)]
                  for kk, r in sorted(new.items()) if held.get(kk) != r]
-        add(table, rows)
-    return groups, written
+        add(table, rows, removed, sum(kk not in held for kk, r in new.items()))
+    return groups, changes
 
 
-def figures(books, written, left):
-    """Rows and bytes per table of the translation, and the rows a load writes."""
-    lines = ["table\trows\tbytes\tstatements"]
+def figures(books, changes, left):
+    """Rows and bytes per table of the translation, and what a load changes and writes."""
+    kinds = ("removed", "added", "changed", "written")
+    lines = ["table\trows\tbytes\t" + "\t".join(kinds)]
     for table in ("books", *TABLES):
         cols = ["title"] if table == "books" else list(TABLES[table][0])
         size = " + ".join(f"coalesce(length(CAST(\"{c}\" AS BLOB)), 0)" for c in cols)
         n, b = books.execute(f"SELECT count(*), coalesce(sum({size}), 0) FROM {table}").fetchone()
-        lines.append(f"{'books.title' if table == 'books' else table}\t{n}\t{b}\t{written.get(table, 0)}")
-    lines.append(f"statements to send (each writes a row or removes one): {sum(written.values())}")
+        got = changes.get(table, {})
+        lines.append(f"{'books.title' if table == 'books' else table}\t{n}\t{b}\t"
+                     + "\t".join(str(got.get(k, 0)) for k in kinds))
+    lines.append(f"rows written: {sum(c['written'] for c in changes.values())} (a removed row 1; a new row its INSERT "
+                 "and the UPDATE per piece of a long value; a changed row its DELETE and those)")
     for reason, n in sorted(left.items()):
         lines.append(f"{n} {reason}")
     return "\n".join(lines) + "\n"
@@ -249,8 +256,8 @@ def main():
         migrate(atlas)
         catch_up(atlas)
     books, left = translate(atlas, mirror)
-    groups, written = statements(books, atlas)
-    report = figures(books, written, left)
+    groups, changes = statements(books, atlas)
+    report = figures(books, changes, left)
     (OUT / "books-report.txt").write_text(report)
     print(report, end="", flush=True)
     if not groups:
