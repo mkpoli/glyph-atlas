@@ -383,18 +383,29 @@ class Table:
                           self.problems)
 
 
+def sql_order(value):
+    """A value's place in SQLite's ORDER BY: NULL, then numbers, then text, then blobs."""
+    rank = 0 if value is None else 1 if isinstance(value, int | float) else 2 if isinstance(value, str) else 3
+    return rank, value
+
+
 def keyed_rows(db, table, cols, keys, where=""):
-    """(key, digest of the whole row) for each row of a table in key order, one row at a time."""
+    """(key, digest of the whole row) for each row of a table in key order, one row at a time; the key
+    compares as SQLite orders it, NULL among the rest."""
     names = ",".join(f'"{c}"' for c in cols)
     order = ",".join(f'"{k}"' for k in keys)
     for r in db.execute(f'SELECT {names} FROM "{table}" {where} ORDER BY {order}'):
-        yield tuple(r[cols.index(k)] for k in keys), hashlib.sha256(repr(tuple(r)).encode()).digest()
+        yield tuple(sql_order(r[cols.index(k)]) for k in keys), hashlib.sha256(repr(tuple(r)).encode()).digest()
 
 
 def compare_loaded(report, history, atlas):
     """Every table load_history.py wrote, row for row, in the local copy against history.sqlite; events
     past the translation's last are the marks', returned for their own check."""
     problems = []
+
+    def shown(key):
+        return tuple(v for _rank, v in key)
+
     last_event = history.execute("SELECT coalesce(max(id), 0) FROM events").fetchone()[0]
     for table in LOADED:
         info = list(history.execute(f'PRAGMA table_info("{table}")'))
@@ -405,14 +416,14 @@ def compare_loaded(report, history, atlas):
         a, b = next(ours, None), next(theirs, None)
         while a or b:
             if b is None or (a is not None and a[0] < b[0]):
-                problems.append(f"{table} {a[0]}: not in the local copy")
+                problems.append(f"{table} {shown(a[0])}: not in the local copy")
                 a = next(ours, None)
             elif a is None or b[0] < a[0]:
-                problems.append(f"{table} {b[0]}: in the local copy, not in history.sqlite")
+                problems.append(f"{table} {shown(b[0])}: in the local copy, not in history.sqlite")
                 b = next(theirs, None)
             else:
                 if a[1] != b[1]:
-                    problems.append(f"{table} {a[0]}: differs")
+                    problems.append(f"{table} {shown(a[0])}: differs")
                 a, b = next(ours, None), next(theirs, None)
     report.check("the local copy holds every translated row as history.sqlite has it, and no other", problems)
     return last_event

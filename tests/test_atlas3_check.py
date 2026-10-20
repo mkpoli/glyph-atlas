@@ -399,3 +399,14 @@ def test_a_mark_event_is_no_review_in_actor_stats(layout, monkeypatch):  # noqa:
         "SELECT a.key, s.reviews FROM actor_stats s JOIN actors a ON a.id = s.actor ORDER BY a.key").fetchall()
     assert stats == [("r-b", 1), ("u1", 0)]
     assert check(monkeypatch) == 0
+
+
+def test_a_null_key_in_the_local_copy_is_reported_not_raised(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    translated(root, monkeypatch, sources, history)
+    load(publish, remote, monkeypatch)
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    local.execute("INSERT INTO forms VALUES(NULL, NULL, 'x', 'y')")
+    local.commit()
+    assert check(monkeypatch) == 1
+    assert "forms (None,): in the local copy, not in history.sqlite" in report(root)
