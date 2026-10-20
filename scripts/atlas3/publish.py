@@ -27,6 +27,13 @@ images to the image key map (`media_map.py`).
   only its id and cut, its images leaving the image key map unless another entry names them, and a
   retired entry naming it as its replacement names the next live crop on its redirect chain. A crop
   reviewed on the site since stays as it is, and the publish ends by listing it as refused.
+- A catalogue's `corpus_flags` (id, character, finding, realigned, transcribed), as `flags.py` writes
+  it, sends each named corpus glyph to the Flagged view: its state `flagged` one revision on, its
+  finding in `corpus_flags` and its first row in `corpus_rows`, as the Worker's admin flag writes
+  them; like the history load's flags, it writes no event. A glyph anything
+  was written about already (a `corpus_rows` row), a collected crop, one whose character is no longer
+  the one the finding was made against, or one this site may not show is left as it is; in D1 each
+  flag waits on the crop's revision and on no `corpus_rows` row, and the outcome is read back.
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
   their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
@@ -510,6 +517,20 @@ def deliver(m, run):
                                         [r[c] for c in CROP_COLS])
                     else:
                         m.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
+            # A flagged glyph's corpus row and finding as D1 holds them: a flag D1 refused (a round or a
+            # review wrote about the glyph first) leaves D1's, or none.
+            sent = json.loads((run / "flags.json").read_text()) if (run / "flags.json").exists() else {}
+            flagged = sorted(m.known(i) for i in sent.get("flagged", []))
+            for i in range(0, len(flagged), 200):
+                chunk = ",".join(map(str, flagged[i:i + 200]))
+                for table, cols in (("corpus_rows", ("crop", "seq")), ("corpus_flags", ("crop", "finding", "realigned", "transcribed", "at"))):
+                    found = query(database, f"SELECT * FROM {table} WHERE crop IN ({chunk})")
+                    m.atlas.execute(f"DELETE FROM {table} WHERE crop IN ({chunk})")
+                    m.atlas.executemany(f"INSERT INTO {table}({','.join(cols)}) VALUES({','.join('?' * len(cols))})",
+                                        [[r[c] for c in cols] for r in found])
+                    if table == "corpus_flags":
+                        mine = {r["crop"] for r in found if r["at"] == sent["at"]}
+                        refused += [cid for cid in flagged[i:i + 200] if cid not in mine and cid not in refused]
             m.atlas.commit()
             (run / "refused-by-d1.json").write_text(json.dumps(refused))
             if refused:
@@ -989,6 +1010,37 @@ def main():
         if gone:
             print(f"cut_facts: {gone} crops retired or without an entry, left as they are", flush=True)
 
+    # Corpus glyphs flagged for a person, in the order the catalogue names them, after the crops above.
+    flag_sql, flags = [], defaultdict(list)
+    if "corpus_flags" in tables:
+        at, flagged = int(time.time() * 1000), m.code("state", "flagged")
+        for r in src.execute("SELECT id, character, finding, realigned, transcribed FROM corpus_flags ORDER BY rowid"):
+            cid = m.known(r["id"])
+            row = cid is not None and m.atlas.execute("SELECT c.kind, c.revision, c.quiz, g.text FROM crops c "
+                                                      "LEFT JOIN graphemes g ON g.id=c.char WHERE c.id=?", (cid,)).fetchone()
+            if not row:
+                flags["missing"].append(r["id"])
+            elif row["kind"] != 1 or m.atlas.execute("SELECT 1 FROM corpus_rows WHERE crop=?", (cid,)).fetchone():
+                flags["held"].append(r["id"])
+            elif row["text"] != r["character"]:
+                flags["changed"].append(r["id"])
+            elif not row["quiz"]:
+                flags["unshowable"].append(r["id"])
+            else:
+                flags["flagged"].append(r["id"])
+                rev, fresh = row["revision"], f"NOT EXISTS (SELECT 1 FROM corpus_rows WHERE crop={cid})"
+                mine = f"EXISTS (SELECT 1 FROM corpus_flags WHERE crop={cid} AND at={at})"
+                # Each waits on the one before, so a glyph reviewed or named since keeps the site's rows.
+                flag_sql.append([
+                    (f"INSERT OR REPLACE INTO corpus_flags(crop,finding,realigned,transcribed,at) SELECT {cid},{lit(r['finding'])},"
+                     f"{lit(r['realigned'])},{lit(r['transcribed'])},{at} WHERE EXISTS (SELECT 1 FROM crops WHERE id={cid} "
+                     f"AND revision={rev}) AND {fresh};"),
+                    f"INSERT INTO corpus_rows(crop,seq) SELECT {cid},(SELECT coalesce(max(seq),0)+1 FROM corpus_rows) WHERE {mine} AND {fresh};",
+                    f"UPDATE crops SET state={flagged},revision={rev + 1} WHERE id={cid} AND revision={rev} AND {mine};"])
+                m.atlas.execute("UPDATE crops SET state=?, revision=? WHERE id=?", (flagged, rev + 1, cid))
+                m.guarded.append(cid)
+                n += 1
+
     # Replacements are numbered once every crop of the catalogue has its id. None removes the field.
     for cid, text_id in naming:
         target = m.known(replacing[text_id]) if replacing[text_id] else None
@@ -1165,7 +1217,7 @@ def main():
     if stray:
         sys.exit(f"pages {stray[:5]} have row changes but no new bundle; nothing published")
 
-    groups = [m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)]
+    groups = [m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)] + flag_sql
     atlas_parts = write_parts(run, "atlas", [g for g in groups if g])
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))
@@ -1183,6 +1235,10 @@ def main():
         print(f"{len(unmapped)} images of withdrawn crops leave the image key map", flush=True)
     if fresh_media:
         (run / "media.json").write_text(json.dumps(fresh_media))
+    if flags:
+        (run / "flags.json").write_text(json.dumps({**flags, "at": at}))
+        print("corpus flags: " + ", ".join(f"{len(v)} {k}" for k, v in sorted(flags.items())) + f" (ids in {run.name}/flags.json)",
+              flush=True)
     if unresolved:
         (run / "unreplaced.txt").write_text("\n".join(unresolved) + "\n")
         print(f"{len(unresolved)} retired crops have no live crop on their redirect chain and name no replacement "

@@ -76,6 +76,13 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   them in `unreplaced.txt` in its run. An entry that holds its replacement as a text id is rewritten
   by the next publish whose catalogue carries the crop as retired, or by `publish.py --replacements`,
   which checks every retired entry against `source-unit_redirects.sqlite`.
+- A catalogue's `corpus_flags`, which `flags.py` writes from a relabel's `review-ids.json`, sends
+  each named corpus glyph to the Flagged view: state `flagged` one revision on, its finding in
+  `corpus_flags` and its first `corpus_rows` row, the rows the Worker's admin flag writes, and no
+  event, as the history load's flags have none. A collected crop, a glyph with a `corpus_rows` row
+  (anything was written about it), one whose character is not the finding's or one withheld from the
+  quiz is left out; in D1 each flag waits on the crop's revision and on no `corpus_rows` row, and the
+  local copy takes D1's rows back. The run's `flags.json` lists what became of each id.
 - A catalogue whose `units` carry `visual` and `context`, as `export_cloudflare.py` writes them, sets
   each published crop's model votes for its cut in its page's object
   `v3/votes/<build>/<page>.json.gz` (`votes.py`), and a reading that is not ready removes them. Only
