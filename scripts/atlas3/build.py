@@ -80,15 +80,16 @@ def bundle_entry(data):
     return {k: v for k, v in data.items() if v is not None and k not in ROW_FIELDS}
 
 
-def replacement(text_id, redirects, has):
+def replacement(text_id, redirects, live):
     """The first text id on text_id's redirect chain (its target, that target's target, ...) for which
-    `has` holds, as aliases.py follows a chain; None when the chain ends at a text id without one.
-    Raises ValueError naming the loop when the chain comes back to a text id it passed."""
+    `live` holds, passing text ids with no crop and retired crops; None when the chain ends without one.
+    Each step checks for a loop before it checks for a crop, so a chain that comes back to text_id is a
+    loop even when text_id is live. Raises ValueError naming the loop."""
     chain, at = [text_id], redirects[text_id]
     while True:
         if at in chain:
             raise ValueError(" -> ".join(chain[chain.index(at):] + [at]))
-        if has(at):
+        if live(at):
             return at
         if at not in redirects:
             return None

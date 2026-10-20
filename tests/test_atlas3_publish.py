@@ -510,6 +510,16 @@ def test_a_replacement_is_found_along_the_redirect_chain(layout, monkeypatch, tm
     assert entry["replaced_by"] == ids(root)["ex:a1"]
 
 
+def test_a_replacement_passes_a_retired_crop_on_the_chain(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    run(publish, monkeypatch, retired_catalogue(tmp_path / "c1.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})], []))
+    path = retired_catalogue(tmp_path / "c2.sqlite", [retired_unit("ex:old", "hl:p2", {"x": 40, "y": 40, "w": 10, "h": 10})],
+                             [("ex:old", "ex:b1"), ("ex:b1", "ex:a1")])
+    run(publish, monkeypatch, path)
+    entry, _ = bundle_entry_of(root, "ex:old")
+    assert entry["replaced_by"] == ids(root)["ex:a1"]
+
+
 @pytest.mark.parametrize("redirects", [[("ex:b1", "ex:nowhere")], [("ex:b1", "ex:x"), ("ex:x", "ex:y"), ("ex:y", "ex:x")]])
 def test_a_replacement_with_no_crop_stops_the_publish(layout, monkeypatch, tmp_path, redirects):
     root, publish, remote = layout

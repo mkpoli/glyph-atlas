@@ -508,20 +508,21 @@ def main():
         sys.exit(f"{len(refused)} crops need the slot matcher or are newer on the site; nothing published. See {report}")
 
     # A retired crop names the crop it was retired in favour of by integer id: the first text id on its
-    # redirect chain that has a crop, or gets one in this publish. A reader follows `replaced_by` on
-    # while the crop it names is retired too.
+    # redirect chain that is a live crop after this publish, past retired crops and text ids with no crop.
     replaced = dict(src.execute("SELECT id, target FROM unit_redirects")) if "unit_redirects" in tables else {}
-    catalogued = {r["id"] for r in units}
+    catalogued_live = {r["id"] for r in units if r["origin"] == "local"}
 
-    def gets_crop(text):
-        return m.known(text) is not None or text in catalogued or (
-            "corpus_units" in tables and src.execute("SELECT 1 FROM corpus_units WHERE id=?", (text,)).fetchone() is not None)
+    def live(text):
+        if text in catalogued_live or ("corpus_units" in tables and src.execute("SELECT 1 FROM corpus_units WHERE id=?", (text,)).fetchone()):
+            return True
+        cid = None if text in retiring else m.known(text)
+        return cid is not None and m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone() is not None
 
     replacing, unresolved = {}, []
     for r in units:
         if r["origin"] == "retired" and r["id"] in replaced:
             try:
-                found = replacement(r["id"], replaced, gets_crop)
+                found = replacement(r["id"], replaced, live)
             except ValueError as loop:
                 unresolved.append(f"{r['id']}: redirects loop ({loop})")
                 continue
