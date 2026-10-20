@@ -7,7 +7,7 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { ownedActors, ownedKeys } from '../auth';
 import { Problem } from '../busy';
 import { STALE_CODE } from '../atlas3Crops';
-import { cropChanges, reviewCropsQuery, reviewRoute, revert, roundMembersQuery, type Submission } from './review';
+import { cropChanges, reviewCrops, reviewCropsQuery, reviewRoute, revert, roundMembersQuery, type Submission } from './review';
 
 const H = 'a'.repeat(64), G = 'b'.repeat(64);
 const databases: Database[] = [];
@@ -267,6 +267,31 @@ describe('a batch correction', () => {
     const refused = await send(env, '/atlas/corrections', { id: uuid(3), character: 'い', crops: [local(ids[5], { revision: 4 })] });
     expect(refused).toEqual({ status: 409, body: { detail: 'Some of these crops changed or were already checked. Reload them.',
       targets: [{ id: publicId(ids[5]), reason: 'changed' }] } });
+  });
+});
+
+describe('a crop\'s issue', () => {
+  it('stays the one it was reported for when a batch names only its character, and the event keeps the answer', async () => {
+    const { db, env, ids } = setup();
+    await send(env, `/atlas/characters/${publicId(ids[0])}`, { ...local(ids[0]), id: uuid(1), verdict: 'wrong', issue: 'crop' });
+    await send(env, `/atlas/characters/${publicId(ids[2])}`, { ...local(ids[2]), id: uuid(2), verdict: 'wrong', issue: 'blank' });
+    const batch = await send(env, '/atlas/corrections', { id: uuid(3), character: 'は', crops: [local(ids[0], { revision: 1 }), local(ids[2], { revision: 1 })] });
+    expect(batch.status).toBe(200);
+    // Each answer is recorded as given (a match for the crop written so); each crop stays reported.
+    expect(db.query('SELECT crop,kind,issue,kept_issue FROM events WHERE submission=(SELECT id FROM submissions WHERE key=?) ORDER BY id').all(`u1:${uuid(3)}`))
+      .toEqual([{ crop: ids[0], kind: 0, issue: null, kept_issue: 2 }, { crop: ids[2], kind: 0, issue: null, kept_issue: 3 }]);
+    const read = await reviewCrops(env, [ids[0], ids[2]]);
+    expect([read.get(ids[0]), read.get(ids[2])].map((c: any) => [c.data.state, c.data.issue])).toEqual([['flagged', 'crop'], ['flagged', 'blank']]);
+    // Undone, the crop is reported for its box again.
+    await send(env, `/atlas/corrections/${uuid(3)}/undo`, {});
+    expect(((await reviewCrops(env, [ids[0]])).get(ids[0]) as any).data.issue).toBe('crop');
+  });
+
+  it('reads the old name `reading` as `character`', async () => {
+    const { db, env, ids } = setup();
+    db.exec(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,state,issue) VALUES(${ids[0]},1,0,0,1,1,1,1,2,6);
+      UPDATE crops SET state=2,revision=1 WHERE id=${ids[0]}`);
+    expect(((await reviewCrops(env, [ids[0]])).get(ids[0]) as any).data.issue).toBe('character');
   });
 });
 

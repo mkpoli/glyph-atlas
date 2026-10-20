@@ -12,5 +12,9 @@ ALTER TABLE events ADD COLUMN was_x INTEGER;
 ALTER TABLE events ADD COLUMN was_y INTEGER;
 ALTER TABLE events ADD COLUMN was_w INTEGER;
 ALTER TABLE events ADD COLUMN was_h INTEGER;
+-- The issue a crop stays flagged with when the event's own answer names another: a batch correction
+-- names only the character of a crop reported for its box, a blank or a merge, which stays reported.
+-- The crop's issue is its last event's `kept_issue`, else its `issue`.
+ALTER TABLE events ADD COLUMN kept_issue INTEGER;
 -- An undo finds the crops its round skipped.
 CREATE INDEX skip_submission ON skips(submission) WHERE submission IS NOT NULL;

@@ -20,7 +20,8 @@ const VERDICTS = [KIND.match, KIND.wrong, KIND.unsure];
 const STATE = { pending: 0, checked: 1, flagged: 2, seen: 3, hard: 4 } as const;
 const ISSUES = ['character', 'merged', 'crop', 'blank', 'other', 'unclear', 'reading'];
 const issueCode = (issue: string | null | undefined) => issue == null ? null : ISSUES.indexOf(issue);
-const issueName = (code: number | null) => code == null ? null : ISSUES[code] ?? null;
+// `reading` is the old name of `character` (the old site's migration 0055).
+const issueName = (code: number | null) => code == null ? null : code === 6 ? 'character' : ISSUES[code] ?? null;
 // A crop's state as the old site named it: a mark (seen, hard) is a pending crop that rounds made something of.
 const stateName = (code: number) => code === STATE.checked ? 'checked' : code === STATE.flagged ? 'flagged' : 'pending';
 const markable = (code: number) => code === STATE.pending || code === STATE.seen || code === STATE.hard;
@@ -41,7 +42,7 @@ export const standing = (row: { revision: number; settled: number }, revision: u
 const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id=${e}.reverses),3) IN (3,4)))`;
 export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label,c.state,c.revision,c.cut,c.quiz,pg.rev,
   r.x,r.y,r.w,r.h,
-  (SELECT e.issue FROM events e WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) AS issue,
+  (SELECT coalesce(e.kept_issue,e.issue) FROM events e WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) AS issue,
   (SELECT n.text FROM events e JOIN graphemes n ON n.id=e.named WHERE e.crop=c.id AND e.named IS NOT NULL
     AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id) ORDER BY e.revision DESC LIMIT 1) AS named,
   (SELECT max(e.revision) FROM events e WHERE e.crop=c.id AND NOT ${MARKED('e')}) AS reviewed,
@@ -259,17 +260,17 @@ const MARK = (c: string) => `CASE WHEN (SELECT count(DISTINCT k.actor) FROM skip
 const GEN = '(SELECT gen FROM generation WHERE id=0)';
 const SUBMISSION = '(SELECT id FROM submissions WHERE key=?)';
 // What the crop held before an event: its state, its last event's issue and its redrawn box.
-const WAS = `c.state,(SELECT p.issue FROM events p WHERE p.crop=c.id ORDER BY p.revision DESC LIMIT 1),r.x,r.y,r.w,r.h`;
-const EVENT_COLUMNS = 'crop,revision,cut,gen,actor,submission,at,kind,label,state,quiz,x,y,w,h,note,issue,text,shown,named,reverses,was_state,was_issue,was_x,was_y,was_w,was_h';
+const WAS = `c.state,(SELECT coalesce(p.kept_issue,p.issue) FROM events p WHERE p.crop=c.id ORDER BY p.revision DESC LIMIT 1),r.x,r.y,r.w,r.h`;
+const EVENT_COLUMNS = 'crop,revision,cut,gen,actor,submission,at,kind,label,state,quiz,x,y,w,h,note,issue,kept_issue,text,shown,named,reverses,was_state,was_issue,was_x,was_y,was_w,was_h';
 
 type Box = { x: number; y: number; w: number; h: number };
 /** One crop's change: the event's values, which the crop takes. `expected` and `cut` are what the
  *  writer read; a crop changed since aborts the batch. `label` and `named` are characters (a missing
  *  one joins `graphemes`); `mark` sets the state to the crop's mark when the event leaves it pending;
- *  `shown` defaults to the crop's label before; `category` (a key) and `box` keep the crop's when
+ *  `kept_issue` is the issue the crop stays flagged with when it is not `issue`; `shown` defaults to the crop's label before; `category` (a key) and `box` keep the crop's when
  *  undefined (`box` null clears the redrawn box); `quiz` null keeps it. */
 export type CropChange = { crop: number; expected: number; cut: number; kind: number; label: string | null; state: number; mark?: boolean;
-  issue: number | null; text?: string | null; note?: string | null; named?: string | null; shown?: number | null; quiz?: number | null;
+  issue: number | null; kept_issue?: number | null; text?: string | null; note?: string | null; named?: string | null; shown?: number | null; quiz?: number | null;
   category?: string; box?: Box | null; reverses?: number | null };
 
 // The events of a list of changes, each guarded by the revision and cut its writer read.
@@ -287,7 +288,7 @@ function eventStatements(env: Env, actor: number, key: string, at: number, chang
     env.ATLAS.prepare(`INSERT INTO events(${EVENT_COLUMNS})
       SELECT c.id,(SELECT x.revision+1 FROM crops x WHERE x.id=c.id AND x.revision=${v('expected')} AND x.cut=${v('cut')}),c.cut,${GEN},?,${SUBMISSION},?,${v('kind')},
       (SELECT id FROM graphemes WHERE text=${v('label')}),CASE WHEN ${v('mark')}=1 AND ${v('state')} IN (0,3,4) THEN ${MARK('c')} ELSE ${v('state')} END,
-      ${v('quiz')},${v('x')},${v('y')},${v('w')},${v('h')},${v('note')},${v('issue')},${v('text')},
+      ${v('quiz')},${v('x')},${v('y')},${v('w')},${v('h')},${v('note')},${v('issue')},${v('kept_issue')},${v('text')},
       CASE WHEN ${v('shown_set')}=1 THEN ${v('shown')} ELSE c.char END,(SELECT id FROM graphemes WHERE text=${v('named')}),${v('reverses')},${WAS}
       FROM json_each(?) j LEFT JOIN crops c ON c.id=${v('crop')} LEFT JOIN reviews r ON r.crop=c.id ORDER BY j.key`).bind(actor, key, at, list),
   ];
@@ -335,9 +336,9 @@ function markStatement(env: Env, actor: number, key: string, at: number, crops: 
   const submission = '(SELECT id FROM submissions WHERE key=?2)';
   const reverses = undo ? `(SELECT p.id FROM events p WHERE p.crop=m.id AND p.submission=${submission} AND p.kind IN (3,4) ORDER BY p.revision DESC LIMIT 1)` : 'NULL';
   return env.ATLAS.prepare(`INSERT INTO events(${EVENT_COLUMNS})
-    SELECT id,revision+1,cut,${GEN},?1,${submission},?3,${undo ? KIND.undo : 'mark'},char,mark,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,char,NULL,${reverses},
+    SELECT id,revision+1,cut,${GEN},?1,${submission},?3,${undo ? KIND.undo : 'mark'},char,mark,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,char,NULL,${reverses},
     state,was_issue,rx,ry,rw,rh
-    FROM (SELECT c.*,${MARK('c')} AS mark,(SELECT p.issue FROM events p WHERE p.crop=c.id ORDER BY p.revision DESC LIMIT 1) AS was_issue,
+    FROM (SELECT c.*,${MARK('c')} AS mark,(SELECT coalesce(p.kept_issue,p.issue) FROM events p WHERE p.crop=c.id ORDER BY p.revision DESC LIMIT 1) AS was_issue,
       r.x AS rx,r.y AS ry,r.w AS rw,r.h AS rh
       FROM json_each(?4) j JOIN crops c ON c.id=j.value LEFT JOIN reviews r ON r.crop=c.id ORDER BY j.key) m
     WHERE state IN (0,3,4) AND mark<>state${undo ? '' : ' AND mark>0'}`).bind(actor, key, at, JSON.stringify(crops));
@@ -427,7 +428,7 @@ export async function submit(env: Env, request: Request, user: string, target?: 
     const kept = batch && current.state === 'flagged' && current.issue && current.issue !== 'character' ? current.issue : null;
     const resolved = !kept && (answer.verdict === 'match' || Boolean(answer.issue === 'character' && written));
     changes.push({ crop: row.id, expected: row.revision, cut: row.cut, kind: KIND[answer.verdict as 'match'], label: written ?? (row.char === null ? null : row.label),
-      state: resolved ? STATE.checked : STATE.flagged, issue: issueCode(kept ?? answer.issue ?? null), text: answer.correction || null, note: answer.note || null,
+      state: resolved ? STATE.checked : STATE.flagged, issue: issueCode(answer.issue ?? null), ...(kept ? { kept_issue: issueCode(kept) } : {}), text: answer.correction || null, note: answer.note || null,
       named: written, ...(written ? { category: categoryOf(written) } : {}), ...(answer.box ? { box: answer.box } : {}) });
     results.push({ target_id: publicId(row.id), revision: row.revision + 1, state: resolved ? 'checked' : 'flagged' });
     first.push(row.id);
