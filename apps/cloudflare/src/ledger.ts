@@ -1,8 +1,11 @@
-// The assertion ledger on the site (migrations 0048, 0049; docs/design/form-model.md). A claim and each
-// action on it are rows written in one D1 batch with the resolution of their slot, so `current_claims`
-// always holds what the ledger says. The catalogue and the resolver are `data/ledger.json`, which the
-// review service and the publication read too: the three resolve a slot with the same SQL.
+// The assertion ledger on the site (docs/design/form-model.md), in glyph-atlas-v3 (migration
+// 0003_history, decision record 0006). A claim and each action on it are rows written in one D1 batch
+// with the resolution of their slot, so `current_claims` always holds what the ledger says. A claim on a
+// crop keeps the crop's text id in `subject`, as the moved ledger has it, and names the crop by `crop`
+// and its evidence by `(crop, cut)`; a claim on a book, form or word keeps its key in `subject`. The
+// catalogue and the resolver are `data/ledger.json`, which the review service reads too.
 import catalogue from '../../../data/ledger.json';
+import { publicId } from './atlas3';
 
 type Json = Record<string, any>;
 type Predicate = { label: string; subject: string; objects: string[]; values?: string[]; value_shape?: string; cardinality: 'one' | 'many';
@@ -10,32 +13,52 @@ type Predicate = { label: string; subject: string; objects: string[]; values?: s
 export const RESOLVER: string = catalogue.resolver;
 export const PREDICATES: Record<string, Predicate> = catalogue.predicates as Record<string, Predicate>;
 const ACTIONS = new Set<string>(catalogue.actions);
-const COLUMNS = 'subject,predicate,scope,slot,status,object,value,members,supporting,claims,crop_version,resolver,at';
+const COLUMNS = 'subject,predicate,scope,slot,status,object,value,members,supporting,claims,crop,cut,resolver,at';
 const BODY = (catalogue.resolve as string[]).filter(line => !line.trimStart().startsWith('--')).join('\n');
-// `crop_now` from D1's own crops: a crop subject's current version, `units.crop_version` (0047).
-const CROP_NOW = "SELECT id,crop_version FROM units WHERE id IN (SELECT json_extract(value,'$[0]') FROM json_each(?1))";
+
+// The catalogue's resolver compares a claim's crop evidence with the crop's current version, which its
+// caller gives as `crop_now`. Here a crop's evidence is its (crop, cut): a claim is live while its
+// evidence names its own crop at the cut that crop has now, so a claim on cut -1 never is, and a slot
+// names its crop and that crop's cut beside its key.
+const SLOT_CROP = `(SELECT a.crop FROM assertions a WHERE a.subject=k.subject AND a.predicate=k.predicate AND a.scope=k.scope
+    AND a.slot=k.slot AND a.crop IS NOT NULL LIMIT 1)`;
+const CROP_PARTS: [string, string][] = [
+  ['e.ref IS NOT (SELECT c.version FROM crop_now c WHERE c.unit=a.subject)',
+    '(e.crop IS NOT a.crop OR e.cut IS NOT (SELECT c.cut FROM crops c WHERE c.id=a.crop))'],
+  ['(SELECT c.version FROM crop_now c WHERE c.unit=k.subject) AS crop_version,',
+    `${SLOT_CROP} AS crop,\n  (SELECT c.cut FROM crops c WHERE c.id=${SLOT_CROP}) AS cut,`],
+];
+const RESOLVE = CROP_PARTS.reduce((sql, [from, to]) => {
+  if (sql.split(from).length !== 2) throw new Error(`data/ledger.json's resolver changed: ${from}`);
+  return sql.replace(from, to);
+}, BODY);
+if (RESOLVE.includes('crop_now')) throw new Error("data/ledger.json's resolver names crop_now where it is not replaced");
 // By key: the slots are rows of `current_claims`' primary key, each found by it.
 export const resolveClearQuery = () => `DELETE FROM current_claims WHERE (subject,predicate,scope,slot) IN
   (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?1))`;
-export const resolveWriteQuery = () => `INSERT INTO current_claims(${COLUMNS}) WITH crop_now(unit,version) AS (${CROP_NOW}),\n${BODY}`;
+export const resolveWriteQuery = () => `INSERT INTO current_claims(${COLUMNS}) WITH ${RESOLVE}`;
 // At most this many members in one alternative set, and this many claims and actions in a subject's history.
 const MEMBERS_MAX = 8, HISTORY_MAX = 200;
-// The evidence a claim may name beside its crop version, which the ledger writes itself; at most this many items.
+// The evidence a claim may name beside its crop, which the ledger writes itself; at most this many items.
 const EVIDENCE_KINDS = new Set(['page', 'source']), EVIDENCE_MAX = 8, GLOSS_MAX = 200;
 export type Evidence = { kind: string; ref: string; locator: string | null };
 
+/** A crop as a claim on it rests on: its cut now, its evidence version as its record shows it (null
+ *  for a crop with no image), its text id (the ledger's subject) and its kind. */
+export type CropNow = { id: number; cut: number; version: string | null; text: string; kind: number };
 export type LedgerTools = {
-  fail: (status: number, message: string) => never;
-  body: (request: Request) => Promise<Json>;
+  fail: (status: number, message: string, extra?: Json) => never;
   text: (value: unknown, max: number, name: string, required?: boolean) => string | null;
   canonical: (value: unknown) => string;
-  // A crop subject as the site holds it, and its current evidence version. A corpus glyph nothing has
-  // named yet gets its `units` row when the client saw the version that row will have (`expected`).
-  crop: (env: Env, id: string, expected: unknown) => Promise<{ id: string; version: string | null }>;
-  // The actor ids one user holds (`actors`), as SQL.
+  // The crop a write names, as its route resolved it, with its version now.
+  crop: (env: Env, named: unknown) => Promise<CropNow>;
+  // The actor keys one user holds (`actors`), as SQL.
   owned: (user: string) => string;
 };
 export type Member = { object: string | null; value: unknown; confidence: number | null; confidence_scheme: string | null };
+
+/** The actor keys a user holds in glyph-atlas-v3, as SQL; `actor_user` finds them. */
+export const ownedActors = (user: string) => `(SELECT key FROM actors WHERE user='${user.replaceAll("'", "''")}')`;
 
 // A value a predicate takes besides its listed ones: a `gloss` is {gloss: text}, the sense in words where no word
 // row fits yet, with no space around it and at most GLOSS_MAX code points, as the review service counts them.
@@ -77,33 +100,51 @@ const slotOf = (predicate: string, m: Member, canonical: LedgerTools['canonical'
 /** The statements that resolve these slots again, to run after the rows that changed them. */
 export function resolveSlots(env: Env, keys: [string, string, string, string][]): D1PreparedStatement[] {
   const bound = JSON.stringify(keys);
-  return [env.DB.prepare(resolveClearQuery()).bind(bound), env.DB.prepare(resolveWriteQuery()).bind(bound)];
+  return [env.ATLAS.prepare(resolveClearQuery()).bind(bound), env.ATLAS.prepare(resolveWriteQuery()).bind(bound)];
 }
-const parseRow = (row: Json) => ({ ...row, value: row.value === null ? null : JSON.parse(row.value),
+
+// Crops leave the ledger by public id: a crop claim's subject is its crop, and every crop column is.
+const outRow = (row: Json) => row.crop == null ? row : { ...row, subject: publicId(row.crop), crop: publicId(row.crop) };
+const outEvidence = (items: Json[]) => items.map(e => e.crop == null ? e : { ...e, crop: publicId(e.crop) });
+const parseRow = (row: Json) => outRow({ ...row, value: row.value === null ? null : JSON.parse(row.value),
   members: JSON.parse(row.members), supporting: JSON.parse(row.supporting), claims: JSON.parse(row.claims) });
-// A subject's resolved slots that hold on its current version; a crop's rows resolved on an earlier cut do not.
-export const currentClaimsQuery = () => `SELECT c.* FROM current_claims c LEFT JOIN units u ON u.id=c.subject
-  WHERE c.subject=? AND c.crop_version IS u.crop_version ORDER BY c.predicate,c.scope,c.slot`;
-async function currentOf(env: Env, subject: string) {
-  return (await env.DB.prepare(currentClaimsQuery()).bind(subject).all<Json>()).results.map(parseRow);
+
+/** A subject the ledger reads: a crop, by its integer id, or a book, form or word, by its key. */
+export type Subject = { crop: number } | { subject: string };
+// A subject's resolved slots that hold now; a crop's rows resolved on another cut do not. A crop's are
+// one range of `current_claim_crop`, another subject's one of the primary key.
+export const currentCropClaimsQuery = () => `SELECT c.* FROM current_claims c WHERE c.crop=?1
+  AND c.cut IS (SELECT cut FROM crops WHERE id=?1) ORDER BY c.predicate,c.scope,c.slot`;
+export const currentClaimsQuery = () => `SELECT c.* FROM current_claims c WHERE c.subject=? AND c.crop IS NULL
+  ORDER BY c.predicate,c.scope,c.slot`;
+async function currentOf(env: Env, of: Subject) {
+  const statement = 'crop' in of ? env.ATLAS.prepare(currentCropClaimsQuery()).bind(of.crop) : env.ATLAS.prepare(currentClaimsQuery()).bind(of.subject);
+  return (await statement.all<Json>()).results.map(parseRow);
 }
 async function repeat(env: Env, key: string, signature: string, fail: LedgerTools['fail']) {
-  const saved = await env.DB.prepare('SELECT request,response FROM ledger_submissions WHERE id=?').bind(key).first<{ request: string; response: string }>();
+  const saved = await env.ATLAS.prepare('SELECT request,response FROM ledger_submissions WHERE id=?').bind(key).first<{ request: string; response: string }>();
   if (saved && saved.request !== signature) fail(409, 'This submission was already saved with different values.');
   return saved ? JSON.parse(saved.response) as Json : null;
 }
-export function submissionId(input: Json, tools: LedgerTools) {
+export function submissionId(input: Json, tools: Pick<LedgerTools, 'text' | 'fail'>) {
   const id = tools.text(input.id, 64, 'submission id', true)!;
   if (!/^[0-9a-f-]{36}$/i.test(id)) tools.fail(422, 'Invalid submission id.');
   return id;
 }
+// A saved response names its crop by integer id (`crop`), its other subject by key (`subject`); out
+// of the Worker, a crop's subject is its public id.
+const subjectOf = (saved: Json): Subject => saved.crop != null ? { crop: saved.crop } : { subject: saved.subject };
+const answered = (saved: Json) => {
+  const { crop, ...rest } = saved;
+  return crop == null ? rest : { ...rest, subject: publicId(crop) };
+};
 
 // A random id in the shape of a UUID, made in SQL for rows a batch writes by selecting them.
 const SQL_UUID = `lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(6)))`;
 /** The statement that retracts `actor`'s earlier live claims in a single-valued slot, run in the same
  *  batch after their new claim (`by`), so a concurrent claim of theirs is retracted too. */
 export function retractOwn(env: Env, own: { key: string; actor: string; subject: string; predicate: string; scope: string; at: string; by: string; owned: string }) {
-  return env.DB.prepare(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason)
+  return env.ATLAS.prepare(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason)
     SELECT 'cf:'||${SQL_UUID},?,a.id,'retract',?,?,? FROM assertions a WHERE a.subject=? AND a.predicate=? AND a.scope=? AND a.slot=''
     AND (a.asserted_by=? OR a.asserted_by IN ${own.owned}) AND a.submission IS NOT ? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`)
     .bind(own.key, own.actor, own.at, 'superseded by ' + own.by, own.subject, own.predicate, own.scope, own.actor, own.key);
@@ -113,24 +154,29 @@ type Slot = [string, string, string, string];
 /** Rows one write adds, and the slots they fall in, to be resolved in the same batch. */
 export type Plan = { statements: D1PreparedStatement[]; keys: Slot[] };
 
-/** The rows of one claim by `actor` (several members make an alternative set), and the retraction of
- *  the actor's own earlier claims in a slot that takes one value. A crop subject's claim rests on the
- *  evidence version `version`, which the caller has checked is the crop's current one. */
-export async function planClaim(env: Env, claim: { key: string; actor: string; subject: string; predicate: string; scope: string;
-  members: Member[]; version: string | null; tier?: string; method?: string | null; evidence?: Evidence[]; at: string }, tools: LedgerTools) {
-  const { key, actor, subject, predicate, scope, members, version, at } = claim;
+// The first claim on a corpus glyph records when the glyph was first written, as its first review
+// would (`corpus_rows`, the order the old `units` rows kept).
+export const corpusRowQuery = () => 'INSERT OR IGNORE INTO corpus_rows(crop,seq) SELECT ?,coalesce(max(seq),0)+1 FROM corpus_rows';
+const CORPUS = 1;
+
+/** The rows of one claim on a crop by `actor` (several members make an alternative set), and the
+ *  retraction of the actor's own earlier claims in a slot that takes one value. The claim rests on the
+ *  crop's cut now, whose version the caller has checked is the one its reviewer saw. */
+export async function planClaim(env: Env, claim: { key: string; actor: string; crop: CropNow; predicate: string; scope: string;
+  members: Member[]; tier?: string; method?: string | null; evidence?: Evidence[]; at: string }, tools: LedgerTools) {
+  const { key, actor, crop, predicate, scope, members, at } = claim, subject = crop.text;
   const set = members.length > 1 ? 'cf:' + crypto.randomUUID() : null, ids = members.map(() => 'cf:' + crypto.randomUUID());
   const statements: D1PreparedStatement[] = [];
+  if (crop.kind === CORPUS) statements.push(env.ATLAS.prepare(corpusRowQuery()).bind(crop.id));
   members.forEach((m, i) => {
-    statements.push(env.DB.prepare(`INSERT INTO assertions(id,submission,subject,predicate,scope,slot,object,value,alternative_set,tier,asserted_by,asserted_at,confidence,confidence_scheme,method)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ids[i], key, subject, predicate, scope, slotOf(predicate, m, tools.canonical), m.object,
+    statements.push(env.ATLAS.prepare(`INSERT INTO assertions(id,submission,subject,crop,cut,predicate,scope,slot,object,value,alternative_set,tier,asserted_by,asserted_at,confidence,confidence_scheme,method)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ids[i], key, subject, crop.id, crop.cut, predicate, scope, slotOf(predicate, m, tools.canonical), m.object,
       m.value === null ? null : tools.canonical(m.value), set, claim.tier ?? 'observed', actor, at, m.confidence, m.confidence_scheme, claim.method ?? null));
-    if (version) statements.push(env.DB.prepare("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES(?,'crop',?)").bind(ids[i], version));
-    for (const e of claim.evidence ?? []) statements.push(env.DB.prepare('INSERT INTO assertion_evidence(assertion,kind,ref,locator) VALUES(?,?,?,?)')
+    statements.push(env.ATLAS.prepare("INSERT INTO assertion_evidence(assertion,kind,ref,crop,cut) VALUES(?,'crop',?,?,?)")
+      .bind(ids[i], crop.version, crop.id, crop.cut));
+    for (const e of claim.evidence ?? []) statements.push(env.ATLAS.prepare('INSERT INTO assertion_evidence(assertion,kind,ref,locator) VALUES(?,?,?,?)')
       .bind(ids[i], e.kind, e.ref, e.locator));
   });
-  // The actor's own earlier claims in a slot that takes one value are retracted by the batch itself,
-  // so a claim of theirs saved meanwhile is retracted too.
   if (PREDICATES[predicate].cardinality === 'one') statements.push(retractOwn(env, { key, actor, subject, predicate, scope, at, by: ids[0], owned: tools.owned(actor) }));
   const keys = [...new Set(members.map(m => slotOf(predicate, m, tools.canonical)))].map((slot): Slot => [subject, predicate, scope, slot]);
   return { statements, keys, assertions: ids };
@@ -143,21 +189,22 @@ export async function planAction(env: Env, act: { key: string; actor: string; ta
   admin: boolean; at: string }, tools: LedgerTools) {
   const { key, actor, target, action, reason, at } = act;
   if (!ACTIONS.has(action)) tools.fail(422, 'Unknown action.');
-  const found = await env.DB.prepare(`SELECT a.*,a.asserted_by IN ${tools.owned(actor)} OR a.asserted_by=? AS mine FROM assertions a WHERE a.id=?`)
+  const found = await env.ATLAS.prepare(`SELECT a.*,a.asserted_by IN ${tools.owned(actor)} OR a.asserted_by=? AS mine FROM assertions a WHERE a.id=?`)
     .bind(actor, target).first<Json>() ?? tools.fail(404, 'No such claim.');
   if (action === 'retract' && !found.mine) tools.fail(403, 'Only the person who made a claim can retract it.');
   if ((action === 'accept' || action === 'reject') && found.mine) tools.fail(422, 'A claim is already its asserter\'s own; retract it instead.');
   if (action === 'adjudicate' && !act.admin) tools.fail(403, 'Only an adjudicator can decide between claims.');
   const members = action === 'retract' && found.alternative_set
-    ? (await env.DB.prepare('SELECT id FROM assertions WHERE alternative_set=? ORDER BY rowid').bind(found.alternative_set).all<{ id: string }>()).results.map(r => r.id)
+    ? (await env.ATLAS.prepare('SELECT id FROM assertions WHERE alternative_set=? ORDER BY rowid').bind(found.alternative_set).all<{ id: string }>()).results.map(r => r.id)
     : [target];
-  const open = action === 'retract' ? (await env.DB.prepare(`SELECT value AS id FROM json_each(?) WHERE NOT EXISTS
+  const open = action === 'retract' ? (await env.ATLAS.prepare(`SELECT value AS id FROM json_each(?) WHERE NOT EXISTS
     (SELECT 1 FROM assertion_actions x WHERE x.assertion=json_each.value AND x.action='retract')`).bind(JSON.stringify(members)).all<{ id: string }>()).results.map(r => r.id) : members;
   if (!open.length) tools.fail(409, 'This claim was already retracted.');
   const ids = open.map(() => 'cf:' + crypto.randomUUID());
-  const statements = open.map((one, i) => env.DB.prepare('INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,?,?,?,?,?,?)')
+  const statements = open.map((one, i) => env.ATLAS.prepare('INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,?,?,?,?,?,?)')
     .bind(ids[i], key, one, action, actor, at, reason));
-  return { statements, keys: [[found.subject, found.predicate, found.scope, found.slot]] as Slot[], actions: ids, subject: found.subject as string };
+  const subject: Subject = found.crop != null ? { crop: found.crop } : { subject: found.subject };
+  return { statements, keys: [[found.subject, found.predicate, found.scope, found.slot]] as Slot[], actions: ids, subject };
 }
 
 /** The response saved for submission `key`, or null; a reuse of its id with another request is refused. */
@@ -171,10 +218,10 @@ export async function savedSubmission(env: Env, key: string, signature: string, 
 export async function commitPlan(env: Env, submission: { key: string; actor: string; signature: string; at: string },
   plan: Plan, response: Json, tools: LedgerTools): Promise<Json> {
   const statements = [...plan.statements, ...resolveSlots(env, [...new Map(plan.keys.map(k => [JSON.stringify(k), k])).values()]),
-    env.DB.prepare(`INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,json_set(?,'$.retracted',
+    env.ATLAS.prepare(`INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,json_set(?,'$.retracted',
       json((SELECT json_group_array(assertion) FROM assertion_actions WHERE submission=? AND action='retract'))),?)`)
       .bind(submission.key, submission.actor, submission.signature, JSON.stringify(response), submission.key, submission.at)];
-  try { await env.DB.batch(statements) } catch (error) {
+  try { await env.ATLAS.batch(statements) } catch (error) {
     const again = await repeat(env, submission.key, submission.signature, tools.fail);
     if (again) return again;
     throw error;
@@ -182,13 +229,19 @@ export async function commitPlan(env: Env, submission: { key: string; actor: str
   return (await repeat(env, submission.key, submission.signature, tools.fail))!;
 }
 
-/** Record one claim about a subject (several members make an alternative set) as `actor`. A crop
- *  subject's claim names the evidence version its reviewer saw, and one made after the crop was recut
- *  is refused. A new claim in a slot that takes one value retracts the actor's own earlier ones there. */
+/** Refuse a write on a crop its reviewer saw at another version: it was cut again, or its box redrawn. */
+export function sameVersion(crop: CropNow, seen: unknown, fail: LedgerTools['fail']) {
+  if (!crop.version) fail(409, 'This crop has no image to make a claim about.');
+  if (seen !== crop.version) fail(409, 'This crop was cut again. Reload it.');
+}
+
+/** Record one claim about a crop (several members make an alternative set) as `actor`. The claim names
+ *  the evidence version its reviewer saw (`crop_version`), and one made after the crop was recut is
+ *  refused. A new claim in a slot that takes one value retracts the actor's own earlier ones there. */
 export async function writeClaim(env: Env, input: Json, actor: string, tools: LedgerTools) {
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical(input);
   const previous = await repeat(env, key, signature, tools.fail);
-  if (previous) return { ...previous, current: await currentOf(env, previous.subject) };
+  if (previous) return { ...answered(previous), current: await currentOf(env, subjectOf(previous)) };
   const predicate = tools.text(input.predicate, 64, 'predicate', true)!;
   const spec = PREDICATES[predicate] ?? tools.fail(422, `Unknown predicate ${predicate}.`);
   const scope = tools.text(input.scope ?? '', 128, 'scope') ?? '';
@@ -198,7 +251,7 @@ export async function writeClaim(env: Env, input: Json, actor: string, tools: Le
     value: m?.value ?? null, confidence: m?.confidence ?? null, confidence_scheme: m?.confidence_scheme == null ? null : tools.text(m.confidence_scheme, 64, 'confidence scheme', true) }));
   // An object this route can name is a form or a word the site holds.
   const named = members.flatMap(m => m.object === null ? [] : [m.object]);
-  const kinds: Record<string, string> = named.length ? Object.fromEntries((await env.DB.prepare(`SELECT id,'form' AS kind FROM forms WHERE id IN (SELECT value FROM json_each(?1))
+  const kinds: Record<string, string> = named.length ? Object.fromEntries((await env.ATLAS.prepare(`SELECT id,'form' AS kind FROM forms WHERE id IN (SELECT value FROM json_each(?1))
     UNION ALL SELECT id,'word' FROM words WHERE id IN (SELECT value FROM json_each(?1))`).bind(JSON.stringify(named)).all<{ id: string; kind: string }>()).results.map(r => [r.id, r.kind])) : {};
   const method = tools.text(input.method ?? null, 64, 'method');
   if (input.evidence != null && !Array.isArray(input.evidence)) tools.fail(422, 'Evidence is a list.');
@@ -206,55 +259,57 @@ export async function writeClaim(env: Env, input: Json, actor: string, tools: Le
     ref: tools.text(e?.ref, 512, 'evidence reference', true)!, locator: tools.text(e?.locator ?? null, 512, 'evidence locator') }));
   checkClaims(predicate, members, kinds, tools.fail, method, evidence);
   if (spec.subject !== 'crop') tools.fail(422, `${predicate} has no subject the site can check yet.`);
-  const crop = await tools.crop(env, tools.text(input.subject, 512, 'subject', true)!, input.crop_version);
-  if (!crop.version) tools.fail(409, 'This crop has no image to make a claim about.');
-  if (input.crop_version !== crop.version) tools.fail(409, 'This crop was cut again. Reload it.');
+  const crop = await tools.crop(env, tools.text(input.subject, 512, 'subject', true));
+  sameVersion(crop, input.crop_version, tools.fail);
   const at = new Date().toISOString();
-  const plan = await planClaim(env, { key, actor, subject: crop.id, predicate, scope, members, version: crop.version, at, method, evidence }, tools);
-  const saved = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: crop.id, assertions: plan.assertions }, tools);
-  return { ...saved, current: await currentOf(env, crop.id) };
+  const plan = await planClaim(env, { key, actor, crop, predicate, scope, members, at, method, evidence }, tools);
+  const saved = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, assertions: plan.assertions }, tools);
+  return { ...answered(saved), current: await currentOf(env, { crop: crop.id }) };
 }
 
 /** Accept, reject, retract or adjudicate one claim as `actor` (`planAction`). */
 export async function actOnClaim(env: Env, input: Json, target: string, actor: string, admin: boolean, tools: LedgerTools) {
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ target, input });
   const previous = await repeat(env, key, signature, tools.fail);
-  if (previous) return { ...previous, current: await currentOf(env, previous.subject) };
+  if (previous) return { ...answered(previous), current: await currentOf(env, subjectOf(previous)) };
   const at = new Date().toISOString();
   const plan = await planAction(env, { key, actor, target, action: tools.text(input.action, 16, 'action', true)!,
     reason: tools.text(input.reason ?? '', 500, 'reason') ?? '', admin, at }, tools);
-  const saved = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: plan.subject, actions: plan.actions }, tools);
-  return { ...saved, current: await currentOf(env, plan.subject) };
+  const saved = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, ...plan.subject, actions: plan.actions }, tools);
+  return { ...answered(saved), current: await currentOf(env, plan.subject) };
 }
 
 // A subject's latest claims, oldest first, each with its evidence and the actions taken on it: one
-// range of `assertion_subject` read backwards, and each claim's rows by their own keys.
-export const claimHistoryQuery = () => `SELECT * FROM (SELECT a.*,
-  (SELECT json_group_array(json_object('kind',e.kind,'ref',e.ref,'locator',e.locator)) FROM assertion_evidence e WHERE e.assertion=a.id) AS evidence,
+// range of `assertion_crop` or `assertion_slot` read backwards, and each claim's rows by their own keys.
+const CLAIM_PARTS = `(SELECT json_group_array(json_object('kind',e.kind,'ref',e.ref,'locator',e.locator,'crop',e.crop,'cut',e.cut)) FROM assertion_evidence e WHERE e.assertion=a.id) AS evidence,
   (SELECT json_group_array(json_object('assertion',p.premise,'role',p.role)) FROM assertion_premises p WHERE p.assertion=a.id) AS premises,
-  (SELECT json_group_array(json_object('id',x.id,'action',x.action,'actor',x.actor,'at',x.at,'reason',x.reason)) FROM assertion_actions x WHERE x.assertion=a.id) AS actions
-  FROM assertions a WHERE a.subject=? ORDER BY a.asserted_at DESC,a.id DESC LIMIT ${HISTORY_MAX}) ORDER BY asserted_at,id`;
-const parseClaim = (row: Json) => ({ ...row, value: row.value === null ? null : JSON.parse(row.value),
-  evidence: JSON.parse(row.evidence), premises: JSON.parse(row.premises), actions: JSON.parse(row.actions) });
-export async function claimsOf(env: Env, subject: string) {
-  const history = (await env.DB.prepare(claimHistoryQuery()).bind(subject).all<Json>()).results.map(parseClaim);
-  return { subject, resolver: RESOLVER, current: await currentOf(env, subject), history };
+  (SELECT json_group_array(json_object('id',x.id,'action',x.action,'actor',x.actor,'at',x.at,'reason',x.reason)) FROM assertion_actions x WHERE x.assertion=a.id) AS actions`;
+export const claimHistoryQuery = (by: 'crop' | 'subject') => `SELECT * FROM (SELECT a.*,${CLAIM_PARTS}
+  FROM assertions a WHERE ${by === 'crop' ? 'a.crop=?' : 'a.subject=? AND a.crop IS NULL'} ORDER BY a.asserted_at DESC,a.id DESC LIMIT ${HISTORY_MAX})
+  ORDER BY asserted_at,id`;
+const parseClaim = (row: Json) => outRow({ ...row, value: row.value === null ? null : JSON.parse(row.value),
+  evidence: outEvidence(JSON.parse(row.evidence)), premises: JSON.parse(row.premises), actions: JSON.parse(row.actions) });
+/** A subject's claims and its current slots; a crop's subject is its public id. */
+export async function claimsOf(env: Env, of: Subject) {
+  const statement = 'crop' in of ? env.ATLAS.prepare(claimHistoryQuery('crop')).bind(of.crop) : env.ATLAS.prepare(claimHistoryQuery('subject')).bind(of.subject);
+  const history = (await statement.all<Json>()).results.map(parseClaim);
+  return { subject: 'crop' in of ? publicId(of.crop) : of.subject, resolver: RESOLVER, current: await currentOf(env, of), history };
 }
 
 // The ledger for `glyph_atlas.review.cloudflare_import`, a page at a time in the order it was written:
 // claims after rowid `after`, actions after rowid `actions_after`, each with its evidence and premises.
 const EXPORT_MAX = 500;
 export const ledgerClaimsQuery = () => `SELECT a.rowid AS seq,a.*,
-  (SELECT json_group_array(json_object('kind',e.kind,'ref',e.ref,'locator',e.locator)) FROM assertion_evidence e WHERE e.assertion=a.id) AS evidence,
+  (SELECT json_group_array(json_object('kind',e.kind,'ref',e.ref,'locator',e.locator,'crop',e.crop,'cut',e.cut)) FROM assertion_evidence e WHERE e.assertion=a.id) AS evidence,
   (SELECT json_group_array(json_object('premise',p.premise,'role',p.role)) FROM assertion_premises p WHERE p.assertion=a.id) AS premises
   FROM assertions a WHERE a.rowid>? ORDER BY a.rowid LIMIT ?`;
 export const ledgerActionsQuery = () => 'SELECT rowid AS seq,* FROM assertion_actions WHERE rowid>? ORDER BY rowid LIMIT ?';
 export async function ledgerPage(env: Env, q: URLSearchParams, integer: (q: URLSearchParams, key: string, fallback: number, max?: number) => number) {
   const after = integer(q, 'after', 0, Number.MAX_SAFE_INTEGER), actionsAfter = integer(q, 'actions_after', 0, Number.MAX_SAFE_INTEGER);
   const limit = Math.max(1, integer(q, 'limit', EXPORT_MAX, EXPORT_MAX));
-  const [claims, actions] = await env.DB.batch<Json>([env.DB.prepare(ledgerClaimsQuery()).bind(after, limit),
-    env.DB.prepare(ledgerActionsQuery()).bind(actionsAfter, limit)]);
-  const assertions: Json[] = claims.results.map(row => ({ ...row, evidence: JSON.parse(row.evidence), premises: JSON.parse(row.premises) }));
+  const [claims, actions] = await env.ATLAS.batch<Json>([env.ATLAS.prepare(ledgerClaimsQuery()).bind(after, limit),
+    env.ATLAS.prepare(ledgerActionsQuery()).bind(actionsAfter, limit)]);
+  const assertions: Json[] = claims.results.map(row => outRow({ ...row, evidence: outEvidence(JSON.parse(row.evidence)), premises: JSON.parse(row.premises) }));
   return { version: 1, kind: 'atlas-ledger', resolver: RESOLVER, assertions, actions: actions.results,
     next: { after: assertions.at(-1)?.seq ?? after, actions_after: actions.results.at(-1)?.seq ?? actionsAfter },
     done: assertions.length < limit && actions.results.length < limit };
