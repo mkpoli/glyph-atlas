@@ -54,6 +54,23 @@ async function remove(key) {
 // signed in waits for it, and is not counted meanwhile.
 const count = async () => { outbox.pending = (await entries()).filter(entry => sender?.mine(entry) !== false).length }
 
+/**
+ * The crops kept saves decide, by id: the crops of a kept round (flagged, seen or skipped) and of a kept
+ * correction. They still read as pending until the saves are sent, so a round dealt meanwhile leaves
+ * them out. A save whose undo is kept too decides nothing.
+ */
+export async function keptCrops() {
+  const kept = await entries()
+  const undone = new Set(kept.map(entry => /\/([^/]+)\/undo$/.exec(entry.path)?.[1]).filter(Boolean))
+  const crops = new Set()
+  for (const { body } of kept) {
+    if (undone.has(body?.id)) continue
+    for (const list of [body?.answers, body?.seen, body?.skipped, body?.crops])
+      for (const crop of Array.isArray(list) ? list : []) if (crop?.id != null) crops.add(crop.id)
+  }
+  return crops
+}
+
 /** Whether any save is kept, in this tab or another: a new save then joins the end of the line. */
 export const anyKept = async () => outbox.pending > 0 || (await entries()).some(entry => sender?.mine(entry) !== false)
 

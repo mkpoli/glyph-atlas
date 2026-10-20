@@ -18,6 +18,7 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
+  import { keptCrops } from '../lib/outbox.svelte.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
   import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
@@ -223,6 +224,8 @@
         remember('atlas.last-round', null)
         remember(epochKey, summary.review_epoch ?? null)
       }
+      // Crops of rounds kept on this device read as pending until they are sent, and are not dealt again.
+      const away = await keptCrops()
       // A grapheme whose count promised crops that cannot be dealt gives way to the next one.
       let available = roundGraphemes(summary.categories).filter(c => c.pending > 0), chosen = null, seed = dealt ?? randomSeed(), result = null
       for (let tries = 0; tries < 8; tries++) {
@@ -231,6 +234,7 @@
         if (!chosen) break
         result = await catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed })
         if (closed || id !== requestId) return
+        result = { ...result, items: result.items.filter(item => !away.has(item.id)) }
         if (result.items.length) break
         available = available.filter(c => c.label !== chosen)
         chosen = null
@@ -274,6 +278,8 @@
     let offset = Math.max(0, nextOffset - MORE_BATCH), additions = [], more = false
     try {
       const batchLimit = Math.min(MORE_BATCH, roundLimit - items.length)
+      // A crop of a kept round is left out as one on screen is.
+      for (const kept of await keptCrops()) seen.add(kept)
       while (additions.length < batchLimit) {
         const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: 48, offset, seed: roundSeed })
         if (closed || id !== requestId || round !== roundId) return

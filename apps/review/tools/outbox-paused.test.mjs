@@ -20,7 +20,7 @@ mock.module('../src/lib/session.svelte.js', () => ({
 
 const { backoff } = await import('../src/lib/busy.svelte.js')
 const { request } = await import('../src/lib/client.js')
-const { outbox, drain, keep } = await import('../src/lib/outbox.svelte.js')
+const { outbox, drain, keep, keptCrops } = await import('../src/lib/outbox.svelte.js')
 
 const paused = () => Response.json({ error: 'paused', message: 'Changes are paused.' }, { status: 503, headers: { 'retry-after': '300' } })
 let posts, sent, timers, realFetch, realTimeout, answer
@@ -84,6 +84,14 @@ test('a signed-in save refused while paused is kept, and one queued behind it is
   expect(posts).toEqual(['/atlas/rounds', '/atlas/rounds'])
   expect(outbox.pending).toBe(2)
   expect(signIns.length).toBe(0)
+})
+
+test('a round dealt while saves are kept leaves out their crops, unless their undo is kept too', async () => {
+  // round-3 and round-4 from above are still kept.
+  expect([...await keptCrops()].sort()).toEqual(['c3', 'c4'])
+  await keep('/atlas/corrections', { id: 'batch-1', character: 'あ', crops: [{ id: 'c5', revision: 1 }] }, me)
+  await keep('/atlas/rounds/round-3/undo', {}, me)
+  expect([...await keptCrops()].sort()).toEqual(['c4', 'c5'])
 })
 
 test('a save kept while a pass is sending is sent by that pass', async () => {
