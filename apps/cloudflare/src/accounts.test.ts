@@ -83,4 +83,15 @@ describe('claims on reviewer ids from before accounts', () => {
     expect((await claim(env, anon, 'reviewer-00000010')).status).toBe(429);
     expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user='u2' AND via='legacy'").get()).toEqual({ n: 5 });
   });
+  it('stop at five when two are sent at once', async () => {
+    const { env, atlas } = setup();
+    atlas.exec(`INSERT INTO actors(key,user,via,at) VALUES('reviewer-00000001','u2','legacy',1),('reviewer-00000002','u2','legacy',1),
+      ('reviewer-00000003','u2','legacy',1),('reviewer-00000004','u2','legacy',1)`);
+    const anon = { id: 'u2', name: 'anon-000002', image: null, anonymous: true, admin: false };
+    const statuses = (await Promise.all(['a', 'b'].map(id => claim(env, anon, `reviewer-0000000${id}`)))).map(r => r.status);
+    expect(statuses.sort()).toEqual([200, 429]);
+    expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user='u2' AND via='legacy'").get()).toEqual({ n: 5 });
+    // A claim of an id the account already holds still answers that it holds it.
+    expect((await claim(env, anon, 'reviewer-00000001')).status).toBe(200);
+  });
 });

@@ -221,17 +221,15 @@ export const owned = (user: string) => `(SELECT actor FROM actors WHERE user_id=
  */
 export async function claim(env: Env, user: Viewer, reviewer: string) {
   if (!LEGACY_REVIEWER.test(reviewer)) return { status: 422, body: { detail: 'Not a reviewer id from before accounts.' } };
-  const holder = () => env.ATLAS.prepare('SELECT user FROM actors WHERE key=?').bind(reviewer).first<{ user: string | null }>();
-  const answer = (row: { user: string | null } | null) => row?.user === user.id ? { status: 200, body: { reviewer, status: 'held' } }
-    : { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
   // An actor row with neither user nor `via` is an id that wrote before any account took it, and the
   // first account to send it takes it. One with `via` set was held by an account since deleted, and
-  // stays with nobody.
+  // stays with nobody. The cap is checked in the same statement, so that claims sent at once stop at it.
+  await env.ATLAS.prepare(`INSERT INTO actors(key,user,via,at) SELECT ?1,?2,'legacy',?3
+    WHERE (SELECT count(*) FROM actors WHERE user=?2 AND via='legacy') < ?4
+    ON CONFLICT(key) DO UPDATE SET user=excluded.user,via=excluded.via,at=excluded.at WHERE actors.user IS NULL AND actors.via IS NULL`)
+    .bind(reviewer, user.id, Date.now(), CLAIMS).run();
   const found = await env.ATLAS.prepare('SELECT user,via FROM actors WHERE key=?').bind(reviewer).first<{ user: string | null; via: string | null }>();
-  if (found?.user || found?.via) return answer(found);
-  const held = await env.ATLAS.prepare("SELECT count(*) AS n FROM actors WHERE user=? AND via='legacy'").bind(user.id).first<{ n: number }>();
-  if ((held?.n ?? 0) >= CLAIMS) return { status: 429, body: { detail: 'This account already holds as many old reviewer ids as one may.' } };
-  await env.ATLAS.prepare(`INSERT INTO actors(key,user,via,at) VALUES(?,?,'legacy',?)
-    ON CONFLICT(key) DO UPDATE SET user=excluded.user,via=excluded.via,at=excluded.at WHERE actors.user IS NULL AND actors.via IS NULL`).bind(reviewer, user.id, Date.now()).run();
-  return answer(await holder());
+  if (found?.user === user.id) return { status: 200, body: { reviewer, status: 'held' } };
+  if (found?.user || found?.via) return { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
+  return { status: 429, body: { detail: 'This account already holds as many old reviewer ids as one may.' } };
 }
