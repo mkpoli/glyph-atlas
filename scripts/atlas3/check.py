@@ -138,7 +138,8 @@ def main():
         if e is None:
             wrong.append(f"{u[0]} ({cid}): no bundle entry")
         else:
-            have = {k: v for k, v in e.items() if k not in ("slot", "id", "image_place", "context_image_place")}
+            # Earlier cuts are the new layout's own record of a crop's history, not part of the live record.
+            have = {k: v for k, v in e.items() if k not in ("slot", "id", "image_place", "context_image_place", "cuts")}
             if e.get("id") != u[0] or have != bundle_entry(data):
                 differ = sorted(k for k in have.keys() | bundle_entry(data).keys() if have.get(k) != bundle_entry(data).get(k))
                 wrong.append(f"{u[0]} ({cid}): bundle entry {e.get('id')} differs in {differ}")

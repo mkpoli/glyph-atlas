@@ -487,3 +487,38 @@ def test_a_retired_crop_put_back_with_another_box_is_published_again(layout, mon
     assert ids(root)["ex:b1"] not in crops(remote)
     run(publish, monkeypatch, catalogue(tmp_path / "back.sqlite", [unit("ex:b1", "hl:p2", {"x": 3, "y": 3, "w": 10, "h": 10}, "う")]))
     assert ids(root)["ex:b1"] in crops(remote)
+
+
+def test_a_re_cut_keeps_the_version_it_replaced_among_the_crops_cuts(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    a2 = ids(root)["ex:a2"]
+    run(publish, monkeypatch, catalogue(tmp_path / "c1.sqlite", [unit("ex:a2", "hl:p1", {"x": 2, "y": 22, "w": 12, "h": 9}, "い",
+                                                                      state="checked", revision=3)]))
+    run(publish, monkeypatch, catalogue(tmp_path / "c2.sqlite", [unit("ex:a2", "hl:p1", {"x": 3, "y": 23, "w": 12, "h": 9}, "い",
+                                                                      state="checked", revision=3)]))
+    # A later record with the same box carries the cuts along.
+    run(publish, monkeypatch, catalogue(tmp_path / "c3.sqlite", [unit("ex:a2", "hl:p1", {"x": 3, "y": 23, "w": 12, "h": 9}, "う",
+                                                                      state="checked", revision=3)]))
+    rev = sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT rev FROM pages WHERE id=?", (a2 // PAGE,)).fetchone()[0]
+    entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{a2 // PAGE}-{rev}.json.gz").read_bytes()))["crops"]
+                 if e["id"] == "ex:a2")
+    assert [(c["cut"], c["box"]) for c in entry["cuts"]] == [(0, {"x": 0, "y": 20, "w": 10, "h": 10}),
+                                                            (1, {"x": 2, "y": 22, "w": 12, "h": 9})]
+    assert entry["box"] == {"x": 3, "y": 23, "w": 12, "h": 9}
+
+
+def test_a_crop_put_back_after_retirement_continues_from_its_cut(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a2 = ids(root)["ex:a2"]
+    box_b, box_c = {"x": 2, "y": 22, "w": 12, "h": 9}, {"x": 4, "y": 24, "w": 12, "h": 9}
+    run(publish, monkeypatch, catalogue(tmp_path / "b.sqlite", [unit("ex:a2", "hl:p1", box_b, "い", state="checked", revision=3)]))
+    gone = list(unit("ex:a2", "hl:p1", box_b, "い", state="checked", revision=3))
+    gone[UNITS.index("origin")] = "retired"
+    run(publish, monkeypatch, catalogue(tmp_path / "gone.sqlite", [tuple(gone)]))
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a2", "hl:p1", box_c, "い", state="checked", revision=3)]))
+    assert crops(remote)[a2]["cut"] == 2
+    rev = sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT rev FROM pages WHERE id=?", (a2 // PAGE,)).fetchone()[0]
+    entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{a2 // PAGE}-{rev}.json.gz").read_bytes()))["crops"]
+                 if e["id"] == "ex:a2")
+    assert [(c["cut"], c["box"]) for c in entry["cuts"]] == [(0, {"x": 0, "y": 20, "w": 10, "h": 10}), (1, box_b)]
+    assert entry["box"] == box_c and not entry.get("retired")
