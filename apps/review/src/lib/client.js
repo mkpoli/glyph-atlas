@@ -17,7 +17,9 @@ export async function request(path, body, { fetch: send = fetch, wait = true, ..
     // fetch hands the redirect back, so it is followed here, once: the Worker names the final address.
     const location = [301, 302, 307, 308].includes(response.status) ? response.headers.get('location') : null
     if (location) { const to = new URL(location, 'https://glyphatlas.org'); response = await send(to.pathname + to.search, options) }
-    return { response, value: await response.json() }
+    // An answer that is not the API's own (a redirect again, a page) is an error without a body to read.
+    const value = response.ok ? await response.json() : await response.json().catch(() => ({}))
+    return { response, value }
   }
   let answered = await answer()
   // A read the database is too busy for is asked again in the browser, and the page keeps what it
