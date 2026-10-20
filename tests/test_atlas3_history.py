@@ -246,3 +246,16 @@ def test_an_event_takes_its_issue_as_the_crops_name_it_and_keeps_what_it_replace
     # The old site renamed the crops' `reading` to `character` (its migration 0055); the events kept it.
     assert list(out.execute("SELECT issue, reverses, was_state, was_issue, was_x, was_y, was_w, was_h FROM events")) == [
         (issue["character"], None, state.get("flagged", 2), issue["character"], 1, 21, 9, 9)]
+
+
+def test_a_batch_that_left_a_reported_crop_reported_moves_with_its_kept_issue(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    box = {"x": 0, "y": 20, "w": 10, "h": 10}
+    kept = list(event("cf:1", "ex:a2", "u1:s1", "u1", 0, "2026-10-01T00:00:02Z", box, verdict="match"))
+    kept[6] = json.dumps({"label": "あ", "state": "flagged", "issue": "crop", "box": box})
+    sources(root, events=[tuple(kept)])
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    issue = dict(out.execute("SELECT key, code FROM codes WHERE field='issue'"))
+    # The answer matched; the crop stays reported for its box.
+    assert list(out.execute("SELECT issue, kept_issue FROM events")) == [(None, issue["crop"])]

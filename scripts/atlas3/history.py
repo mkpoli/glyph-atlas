@@ -383,7 +383,10 @@ def main():
                        # What an undo restores (0009): no event reverses another yet; the state, issue and
                        # redrawn box before the review.
                        None, atlas_codes["state"].get(before.get("state")), codes["issue"].get(legacy_issue(before.get("issue"))),
-                       *((box_of(before.get("box")) if before.get("box_pending") else None) or (None,) * 4), None))
+                       *((box_of(before.get("box")) if before.get("box_pending") else None) or (None,) * 4),
+                       # The issue a batch left a reported crop with: the event's answer names the character.
+                       (codes["issue"].get(legacy_issue(after.get("issue")))
+                        if legacy_issue(after.get("issue")) not in (None, issue) else None)))
     insert("events", [(i, *e) for i, e in enumerate(events, 1)])
     report.tables["events"]["out"] = len(events)
     report.note("events: a review sets no style and no withheld flag, so both are NULL")
