@@ -76,6 +76,7 @@ async function suggestions(env: Env, ctx: ExecutionContext, found: FoundCrop, q:
   // A client that read the crop before marks moved its revision still holds what is shown (`settled`).
   const revision = Number(q.get('revision') ?? NaN);
   if (!(Number.isSafeInteger(revision) && revision >= row.settled && revision <= row.revision) || !samePixels(q, row.kind === 1 ? 'corpus' : 'local', record)) throw new Problem(409, 'Character changed.');
+  // The models read the published image, which a pending redraw has not replaced: its cut is `crops.cut`.
   const votes = await cropVotes(env, row.id, row.cut, ctx);
   const engines = votes?.models == null ? null : await env.ATLAS.prepare(`SELECT key FROM codes WHERE field='models' AND code=?`)
     .bind(votes.models).first<{ key: string }>().then(found => found ? JSON.parse(found.key) as { name: string }[] : null);

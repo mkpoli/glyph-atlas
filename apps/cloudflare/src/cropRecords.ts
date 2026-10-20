@@ -105,6 +105,10 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   return { ...record, crop_version: cropVersion(record.id, record), crop_editable: !corpus && Boolean(redrawLimits(record)) };
 }
 
+/** The cut a crop's claims name: its `crops.cut`, or the one the next publish gives it while a redrawn box
+ *  is pending in `reviews` (an undone redraw clears it there). */
+export const effectiveCut = (row: RecordRow) => row.cut + (row.x !== null ? 1 : 0);
+
 export type FoundCrop = { row: RecordRow; entry: Entry; record: Json };
 /** A crop's row, bundle entry and record, or null for an id with no collected crop or corpus glyph, or one
  *  whose published record is missing. A storage error fails the call. */
@@ -121,12 +125,12 @@ export async function foundCrop(env: Env, id: number): Promise<FoundCrop | null>
   return base ? { row, entry, record: cropRecord(row, base, entry.id) } : null;
 }
 
-/** A crop's current evidence version as its record shows it, with its cut, its kind and the source id its
+/** A crop's current evidence version as its record shows it, with its effective cut (`effectiveCut`), its kind and the source id its
  *  claims' `subject` names; null for no crop or one with no image. */
 export async function cropVersionNow(env: Env, crop: number): Promise<{ cut: number; version: string; text: string; kind: number } | null> {
   const found = await foundCrop(env, crop);
   const version = found?.record.crop_version;
-  return found && version ? { cut: found.row.cut, version, text: found.entry.id, kind: found.row.kind } : null;
+  return found && version ? { cut: effectiveCut(found.row), version, text: found.entry.id, kind: found.row.kind } : null;
 }
 
 /** Every evidence version of a crop, oldest first: its earlier cuts (the bundle entry's `cuts`), then the one
@@ -138,7 +142,7 @@ export function cropVersions(found: FoundCrop): { id: string; cut: number; pixel
     const pixels = cut.pixels ?? cut.image_sha256 ?? null;
     return { cut: cut.cut as number, pixels, box: cut.box, image: cut.image ?? null, at: cut.at ?? null };
   });
-  if (record.crop_version) listed.push({ cut: row.cut, pixels: record.image_sha256 ?? record.source_revision ?? null, box: record.box ?? null, image: record.image ?? null, at: null });
+  if (record.crop_version) listed.push({ cut: effectiveCut(row), pixels: record.image_sha256 ?? record.source_revision ?? null, box: record.box ?? null, image: record.image ?? null, at: null });
   return listed.flatMap(v => {
     const id = cropVersion(name, { image_sha256: v.pixels, box: v.box });
     return id ? [{ id, cut: v.cut, pixels: v.pixels, box: v.box ? ['x', 'y', 'w', 'h'].map(k => v.box[k]).join(',') : '', image: v.image, at: v.at,

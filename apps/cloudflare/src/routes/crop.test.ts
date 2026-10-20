@@ -86,6 +86,7 @@ function setup() {
     INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,members,supporting,claims,resolver,at) VALUES
       ('${text.a}','has_form','','',${a},1,'single','[{"object":"form:1","value":null,"confidence":null,"assertion":"f1"}]','["f1"]',
         '[{"asserted_by":"x","members":[{"assertion":"f1"}]}]','r','t'),
+      ('${text.d}','has_form','','',${d},1,'single','[{"object":"form:1","value":null,"confidence":null,"assertion":"f2"}]','["f2"]','[]','r','t'),
       ('${text.b}','has_form','','',${b},5,'single','[{"object":"form:0","value":null,"confidence":null,"assertion":"f0"}]','["f0"]','[]','r','t'),
       ('${text.a}','writes_word','','',${a},1,'single','[{"object":"ja/いち","value":null,"confidence":null,"assertion":"w1"}]','["w1"]',
         '[{"asserted_by":"x","members":[{"assertion":"w1"}]}]','r','t');
@@ -181,6 +182,8 @@ describe('a crop\'s record', () => {
     const record = await (await get(`/atlas/characters/${publicId(ids.d)}`)).json() as any;
     const pub = publicId(ids.d);
     expect(record).toMatchObject({ state: 'pending', revision: 0, box: { x: 101, y: 11, w: 22, h: 33 }, box_pending: true, crop_version: `${pub}@${hash}@101,11,22,33` });
+    // Its claims name the cut the redraw will be: the next one.
+    expect(record.form?.values[0].form).toBe('form:1');
   });
 
   it('reads a corpus glyph\'s published record under its row and its cluster\'s form', async () => {
@@ -209,6 +212,7 @@ describe('a crop\'s record', () => {
   it('gives the claims port the version and cut a claim is checked against', async () => {
     const { env, ids, text } = setup();
     expect(await cropVersionNow(env, ids.a)).toEqual({ cut: 1, version: `${publicId(ids.a)}@${hash}@10,10,20,30`, text: text.a, kind: 0 });
+    expect((await cropVersionNow(env, ids.d))?.cut).toBe(1);
     expect(await cropVersionNow(env, ids.x)).toBeNull();
   });
 });

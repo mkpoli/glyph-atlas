@@ -1,5 +1,5 @@
 // A crop's form and word panels on glyph-atlas-v3: its `has_form` and `writes_word` slots in the claim
-// ledger that hold on the crop's current cut, with the names of the forms and words they hold. A crop is
+// ledger that hold on the crop's effective cut, with the names of the forms and words they hold. A crop is
 // named by its integer id; a claim on an earlier cut is not live (decision record 0006).
 import { PREDICATES } from './ledger';
 
@@ -8,9 +8,11 @@ const spec = PREDICATES.writes_word;
 // At most this many crops in one call; a listing page holds fewer.
 const PAGE_MAX = 200;
 
-// The slot of each crop on its current cut: one `current_claim_crop` probe per crop.
+// The slot of each crop on its effective cut: `crops.cut`, or the next one while a redrawn box waits in
+// `reviews` for the publish that cuts it (`effectiveCut`). One `current_claim_crop` probe per crop.
 export const cropSlotsQuery = () => `SELECT c.crop,c.status,c.members,c.claims,c.supporting FROM json_each(?1) j
-  JOIN crops k ON k.id=j.value JOIN current_claims c ON c.crop=k.id AND c.predicate=?2 AND c.cut=k.cut
+  JOIN crops k ON k.id=j.value LEFT JOIN reviews r ON r.crop=k.id
+  JOIN current_claims c ON c.crop=k.id AND c.predicate=?2 AND c.cut=k.cut+(r.x IS NOT NULL)
   WHERE c.scope='' AND c.slot=''`;
 export const formNamesQuery = () => `SELECT f.id,r.scheme,r.value FROM forms f JOIN representations r ON r.id=f.anchor
   WHERE f.id IN (SELECT value FROM json_each(?))`;
