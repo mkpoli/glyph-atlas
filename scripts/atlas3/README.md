@@ -135,7 +135,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    `out/mirror.sqlite`, and writes the parts and their figures to `out/books-report.txt`; facts about
    a document that is not a book are left out with a count. `books.py --send` applies `0005_books.sql`
    and loads only what differs from the local copy, in stamped parts. A book's title comes from its
-   first page bundle, else from its corpus publication. The corpus glyphs per book and the homepage
+   first page bundle, else from the source the first of that bundle's crops names, else from its
+   corpus publication. The corpus glyphs per book and the homepage
    sample are derived from the crops by `answers.py` (*not built*), so neither is copied. Keeping the
    facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
    ainu-records' character lists and the catalogue's site values still write the old database.

@@ -134,3 +134,18 @@ def test_a_book_takes_the_title_of_its_first_page_before_its_corpus_title(layout
     sources(root, titles=[("codh:b", "鼎左秘録")])
     books(remote, monkeypatch, "--send")
     assert facts(remote.dbs["glyph-atlas-v3"])["titles"] == {"book:a": "book:a pages", "codh:b": "codh:b pages"}
+
+
+def test_a_book_without_a_page_title_takes_its_crops_source(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    book = dict(local.execute("SELECT key, id FROM books"))
+    for key, source in (("book:a", "凌煙閣功臣圖"), ("codh:b", json.dumps({"title": "羣書治要"}))):
+        pid, rev = local.execute("SELECT id, rev FROM pages WHERE book=? AND rev > 0 ORDER BY id LIMIT 1", (book[key],)).fetchone()
+        path = root / "out" / "pages" / f"{pid}-{rev}.json.gz"
+        bundle = json.loads(gzip.decompress(path.read_bytes()))
+        crops = [{**c, "source": source if i else None} for i, c in enumerate(bundle["crops"] * 2)]
+        path.write_bytes(gzip.compress(json.dumps({**bundle, "page": None, "crops": crops}).encode()))
+    sources(root, titles=[("codh:b", "鼎左秘録")])
+    books(remote, monkeypatch, "--send")
+    assert facts(remote.dbs["glyph-atlas-v3"])["titles"] == {"book:a": "凌煙閣功臣圖", "codh:b": "羣書治要"}

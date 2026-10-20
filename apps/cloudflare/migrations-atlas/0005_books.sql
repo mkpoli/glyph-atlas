@@ -1,8 +1,8 @@
 -- What the site knows of each book beside its crops, moved from the old database at the cutover
 -- (scripts/atlas3/books.py). Books are named by their integer id in `books`.
 
--- The name a listing of books shows: the title of the book's pages, or the one its corpus publication
--- gave it.
+-- The name a listing of books shows: the title of the book's pages, else the source its crops name,
+-- else the one its corpus publication gave it.
 ALTER TABLE books ADD COLUMN title TEXT;
 
 -- When each book was written, copied or printed, on two axes: `witness` the copy itself, `composed`

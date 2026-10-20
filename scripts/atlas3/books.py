@@ -8,7 +8,8 @@ The copies `source-document_dating`, `source-corpus_documents`, `source-document
 in the local copy and every published occurrence by its crop through `out/mirror.sqlite`, which is only
 read:
 
-- `books.title`: the title on the book's first page bundle, else the one its corpus publication gave;
+- `books.title`: the title on the book's first page bundle, else the source its first crop there names,
+  else the one its corpus publication gave;
 - `book_dates`: both dating axes of each book, less the claim list and the export stamp (the claims
   stay in `assertions`);
 - `book_characters`: each occurrence names its crop, or keeps the source's id when no crop has it;
@@ -61,15 +62,31 @@ def source(table):
     return db
 
 
+def source_title(value):
+    """A crop's `source`: the title itself, or an object (or its JSON) that holds one."""
+    if isinstance(value, str) and value.startswith("{"):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value.get("title") if isinstance(value, dict) else value
+
+
 def titles(atlas, corpus):
-    """Each book's title: its first page bundle's, else its corpus publication's."""
+    """Each book's title: its first page bundle's, else the source of the first of that bundle's crops
+    that names one, else its corpus publication's."""
     found, first = {}, {}
     for pid, book, rev in atlas.execute("SELECT id, book, rev FROM pages WHERE rev > 0 ORDER BY id"):
         first.setdefault(book, (pid, rev))
     for book, (pid, rev) in first.items():
         path = OUT / "pages" / f"{pid}-{rev}.json.gz"
-        if path.exists() and (title := (json.loads(gzip.decompress(path.read_bytes())).get("page") or {}).get("title")):
+        if not path.exists():
+            continue
+        bundle = json.loads(gzip.decompress(path.read_bytes()))
+        if title := (bundle.get("page") or {}).get("title"):
             found[book] = ("pages", title)
+        elif title := next((t for c in bundle.get("crops", []) if (t := source_title(c.get("source")))), None):
+            found[book] = ("crops", title)
     for book, title in corpus.items():
         if title and book not in found:
             found[book] = ("corpus", title)
