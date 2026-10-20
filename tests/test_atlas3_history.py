@@ -239,8 +239,8 @@ def test_events_keep_the_label_shown_and_the_character_named(layout, monkeypatch
         # ex:a2 is at revision 3, so three events fit below it.
         box = {"x": 0, "y": 20, "w": 10, "h": 10}
         return (id, "u1:s1", "ex:a2", "u1", expected, json.dumps({"box": box, "page_id": "hl:p1", "label": "あ"}),
-                json.dumps({"label": label, "state": "checked", "box": box}), json.dumps({"evidence": json.dumps(evidence)}),
-                "{}", "review", at, 0)
+                json.dumps({"label": label, "state": "checked", "box": box, **({"reading": "ヰ"} if id == "cf:2" else {})}),
+                json.dumps({"evidence": json.dumps(evidence)}), "{}", "review", at, 0)
     sources(root, events=[
         # A round names its label; a single review shows the label in its snapshot, and may name a
         # character that leaves the label as it was.
@@ -258,6 +258,7 @@ def test_events_keep_the_label_shown_and_the_character_named(layout, monkeypatch
     rows = [(r, text.get(s), text.get(n), text.get(label), reading)
             for r, s, n, label, reading in out.execute("SELECT revision, shown, named, label, reading FROM events ORDER BY revision")]
     assert rows == [(1, "あ", "い", "い", None), (2, "い", "い", "い", "イ"), (3, "い", None, "い", None)]
+    assert [r for (r,) in out.execute("SELECT saved_reading FROM events ORDER BY revision")] == [None, "ヰ", None]
     # Each keeps the old journal's id, which the review export names it by.
     assert [i for (i,) in out.execute("SELECT legacy FROM events ORDER BY revision")] == ["cf:1", "cf:2", "cf:3"]
 
