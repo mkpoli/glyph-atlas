@@ -16,6 +16,7 @@ import { ranking } from './ranking';
 import { connections } from './connections';
 import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
+import { pausedResponse, writes, writesPaused } from './freeze';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
 import { honkokuPage } from './honkoku';
 import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
@@ -2459,6 +2460,8 @@ const routes = {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     const url=new URL(request.url),path=url.pathname,q=url.searchParams;
     try{
+      // The write freeze: one check before any route, so no write is reached while it holds.
+      if(writesPaused(env)&&writes(request.method,path))return pausedResponse(opened(path)?OPEN:{});
       if(path.startsWith('/api/auth/'))return await auth(env,url.origin).handler(request);
       if(request.method==='POST'&&path==='/atlas/similar/query'){
         // An image search writes nothing and needs no session; one address is held to a rate. The
