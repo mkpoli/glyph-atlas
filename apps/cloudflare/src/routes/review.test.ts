@@ -21,7 +21,7 @@ function planned(db: Database) {
       const plan = (statement.all(...Array(statement.paramsCount).fill(null)) as { detail: string }[]).map(r => r.detail);
       statement.finalize();
       // A scan of a table, not of the request's JSON list or the subquery over it (`m`).
-      scans.set(sql, plan.filter(d => /^SCAN /.test(d) && !d.includes('VIRTUAL TABLE') && d !== 'SCAN m'));
+      scans.set(sql, plan.filter(d => /^SCAN /.test(d) && !d.includes('VIRTUAL TABLE') && d !== 'SCAN m' && d !== 'SCAN CONSTANT ROW'));
     }
     return atlas.prepare(sql);
   } };
@@ -63,7 +63,8 @@ function setup() {
   const places = records.map(r => { const place = ['packs/p.bin', offset, Buffer.byteLength(r)]; offset += Buffer.byteLength(r); return place; });
   const objects = new Map<string, Uint8Array>([
     [bundleKey(page, 1), gzipSync(JSON.stringify({ key: `hk:book:${page}`, book: 1, rev: 1, page: null,
-      crops: [...[0, 1, 2, 3, 4, 5].map(local), ...[6, 7, 8].map((slot, i) => ({ slot, id: `hng:${page}:${slot}`, record_place: places[i] }))] }))],
+      crops: [...[0, 1, 2, 3, 4, 5].map(local), ...[6, 7, 8].map((slot, i) => ({ slot, id: `hng:${page}:${slot}`, record_place: places[i] })),
+        { slot: 9, id: `hk:${page}:9`, retired: true, replaced_by: ids[0] }] }))],
     ['packs/p.bin', new TextEncoder().encode(records.join(''))]]);
   const MEDIA = { get: async (name: string, options?: { range?: { offset: number; length: number } }) => {
     const bytes = objects.get(name);
@@ -171,6 +172,16 @@ describe('a round', () => {
     db.exec(`UPDATE crops SET revision=revision+1 WHERE id=${ids[2]}`);
     expect((await send(env, `/atlas/characters/${publicId(ids[2])}`, { ...local(ids[2]), id: uuid(5), verdict: 'match' })).status).toBe(409);
     expect((await send(env, `/atlas/characters/${publicId(ids[2])}`, { ...local(ids[2], { revision: 2 }), id: uuid(6), verdict: 'match' })).status).toBe(200);
+  });
+
+  it('answers a retired crop with the one that replaced it', async () => {
+    const { env, ids, page } = setup();
+    const retired = publicId(cropId(page, 9));
+    expect(await send(env, `/atlas/characters/${retired}`, { ...local(cropId(page, 9)), id: uuid(1), verdict: 'match' }))
+      .toEqual({ status: 404, body: { detail: 'This crop was replaced.', replaced_by: publicId(ids[0]) } });
+    // A round's seen crop that is gone is only left out.
+    const round = await send(env, '/atlas/rounds', { id: uuid(2), grapheme: 'U+306F', seen: [local(cropId(page, 9)), local(ids[1])] });
+    expect(round.body.results).toEqual([{ target_id: publicId(ids[1]), field: 'seen' }]);
   });
 
   it('answers a text id the alias map does not hold with a prompt to reload', async () => {

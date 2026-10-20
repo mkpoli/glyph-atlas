@@ -60,8 +60,9 @@ async function missing(env: Env, id: number): Promise<Problem> {
   if (named && 'moved' in named) return new Problem(404, 'This crop was replaced.', { replaced_by: publicId(named.moved) });
   return new Problem(404, 'This character is not in the published collection.');
 }
-/** The crops by id, each as it stands, or the 404 a write naming it answers. Candidates are not reviewed here. */
-export async function reviewCrops(env: Env, ids: number[]): Promise<Map<number, Current | Problem>> {
+/** The crops by id, each as it stands, or the 404 a write naming it answers; only the crops in
+ *  `explained` are looked up for the crop that replaced them. Candidates are not reviewed here. */
+export async function reviewCrops(env: Env, ids: number[], explained: number[] = ids): Promise<Map<number, Current | Problem>> {
   const found = new Map<number, Current | Problem>();
   if (!ids.length) return found;
   const rows = (await env.ATLAS.prepare(reviewCropsQuery()).bind(JSON.stringify([...new Set(ids)])).all<CropRow>()).results;
@@ -87,7 +88,9 @@ export async function reviewCrops(env: Env, ids: number[]): Promise<Map<number, 
     found.set(row.id, { id: row.id, kind: row.kind, char: row.char, label, state: row.state, revision: row.revision, cut: row.cut, quiz: row.quiz, data,
       cutBox: stored.box ?? null, settled });
   }
-  for (const id of ids) if (!found.has(id)) found.set(id, await missing(env, id));
+  const gone = ids.filter(id => !found.has(id)), told = new Set(explained);
+  const answers = await Promise.all(gone.map(id => told.has(id) ? missing(env, id) : new Problem(404, 'This character is not in the published collection.')));
+  gone.forEach((id, i) => found.set(id, answers[i]));
   return found;
 }
 
@@ -395,7 +398,8 @@ export async function submit(env: Env, request: Request, user: string, target?: 
   // Every crop the request names, by its public id or an old text id.
   const listed = [...answers, ...seen, ...skipped].map(crop => crop?.id);
   const named = new Map<string, number | null>(await Promise.all(listed.map(async value => [value, await cropNamed(env, value, 'character id')] as const)));
-  const read = await reviewCrops(env, [...named.values()].filter((n): n is number => n !== null));
+  const read = await reviewCrops(env, [...named.values()].filter((n): n is number => n !== null),
+    answers.map(answer => named.get(answer.id)).filter((n): n is number => n != null));
   const notFound = new Problem(404, 'This character is not in the published collection.');
   const rows = new Map(answers.map(answer => { const n = named.get(answer.id); return [answer.id as string, n == null ? notFound : read.get(n)!] }));
   // A correction names crops a reader selected on the grid, so each is judged here: one that changed
