@@ -53,8 +53,20 @@ TABLES = {
     "unit_shapes": ("id,shape_order", ["id"], 8000),
     "forms": ("id,anchor,created_by,created_at", ["id"], 8000),
     "corpus_follow": ("id", ["id"], 8000),
-    "characters": ("code_point,character,name,json_extract(data,'$.grapheme.code_point') AS head", ["code_point"], 8000),
     "aliases": ("query,code_point,rank", ["rowid"], 15000),
+    # Character reference data (migrations-atlas/0004_reference.sql). A card averages 5 KB, at most 85 KB.
+    "characters": ("code_point,character,name,data,detail,json_extract(data,'$.grapheme.code_point') AS head", ["code_point"], 300),
+    "character_variants": ("a,b,relation,source,detail,written,widens", ["a", "b", "relation", "source"], 8000),
+    "character_derived": ("a,forms", ["a"], 500),
+    "component_variants": ("a,b,count,pairs", ["a", "b"], 1000),
+    "grapheme_writers": ("writer,grapheme,own", ["writer", "grapheme"], 8000),
+    "words": ("id,language,reading,class", ["id"], 8000),
+    "word_spellings": ("word,spelling,source,locator,tier,word_by,basis,related,statement,documents,occurrences",
+                       ["word", "spelling", "source", "locator"], 2000),
+    "representations": ("id,scheme,value,namespace,version", ["id"], 8000),
+    "han_ids": ("char,sequences,shapes", ["char"], 4000),
+    "han_components": ("component,tier,size,code_point,n,direct", ["component", "tier", "size", "code_point"], 8000),
+    "han_component_names": ("query,component,total", ["query"], 8000),
 }
 
 
@@ -84,7 +96,7 @@ def pull(table, fresh):
     cols, keys, chunk = TABLES[table]
     names = [c.split(" AS ")[-1].strip().strip('"') for c in cols.split(",")]
     if table == "characters":
-        names = ["code_point", "character", "name", "head"]
+        names = ["code_point", "character", "name", "data", "detail", "head"]
     keycols = [k for k in keys if k != "rowid"]
     store = (["_rowid"] if keys == ["rowid"] else []) + names
     db.execute(f'CREATE TABLE IF NOT EXISTS "{table}"({",".join(store)})')

@@ -121,9 +121,18 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    each pending marked crop's state to its mark one revision on with an event, and writes
    `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut. `answers.py`
    follows, since marks change the counts. The alias files for old URLs are *not built*.
-6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
+6. **Move the reference data:** `pull.py --fresh` copies the character cards, the 異体字 graph and its
+   derived tier, the writers, words and spellings, the form anchors (`representations`) and the
+   component index; `reference.py` (dry run by default, `--send` to load) writes them to
+   `out/reference.sqlite` as the tables of `migrations-atlas/0004_reference.sql`, applies that
+   migration once, and loads them in stamped parts with a per-table report. Characters are numbered
+   in `graphemes` (a new one takes the next id, with its card's family head), and the crops a card's
+   visual groups show go to `visual_samples` as integer ids from the mirror. A rerun of the same copy
+   sends nothing; another copy needs `--replace`, which clears every reference table except
+   `representations`.
+7. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.
-7. **Switch** the Worker's routes to the new layout and resume reviews.
+8. **Switch** the Worker's routes to the new layout and resume reviews.
 
 `check.py` compares the copies with the local copy of the new layout, crop by crop: numbers, row
 values, bundle boxes and images, runs and the image map. It reads nothing remote.
@@ -137,10 +146,8 @@ answers:
   `rejections`), including `writes_word` claims;
 - reviews (`events`, `submissions`, `skips`, `seen`, `actors`), accounts (`user`, `session`,
   `account`, `account_profiles`, `passkey`, `verification`, `rateLimit`) and `favourites`;
-- forms (`forms`, `form_*`), `words`, `word_spellings`;
-- character data (`characters` cards, `character_variants`, `character_derived`,
-  `component_variants`, `han_ids`, `han_components`, `han_component_names`, `grapheme_writers`,
-  `document_characters`, `corpus_documents`, `representations`);
+- forms (`forms`, `form_*`);
+- book data (`document_characters`, `corpus_documents`);
 - the model votes in `units.visual`, and the text-id alias files;
 - family heads and search names for characters that first appear after the first build;
 - `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
