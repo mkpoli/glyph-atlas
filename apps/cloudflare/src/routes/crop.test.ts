@@ -71,7 +71,7 @@ function setup() {
     INSERT INTO codes(field,code,key) VALUES('state',0,'pending'),('state',1,'checked'),('state',2,'flagged'),('category',1,'kanji'),
       ('models',3,'[{"name":"NDLkotenOCR","sha256":"fd75"}]');
     INSERT INTO crops(id,kind,book,char,production,category,style,state,quiz,shuffle,cut,revision) VALUES
-      (${a},0,1,1,1,1,0,0,1,1,1,0),(${b},0,1,2,1,1,0,2,1,2,0,2),(${c},0,1,4,1,1,0,1,1,3,0,1),(${d},0,1,5,1,1,0,3,1,4,0,1),
+      (${a},0,1,1,1,1,0,0,1,1,1,0),(${b},0,1,2,1,1,0,2,1,2,0,2),(${c},0,1,4,1,1,0,1,1,3,0,1),(${d},0,1,5,1,1,0,3,1,4,0,2),
       (${x},2,1,7,1,1,0,0,1,6,0,0),(${glyph},1,2,6,2,NULL,0,1,1,5,0,1);
     INSERT INTO book_dates(book,axis,kind,start,end,precision,text,label,status,calendar,conversion,source)
       VALUES(1,'witness','copied',1790,1790,'year','寛政二年','1790','single','japanese','{"query":"q"}','src');
@@ -97,8 +97,10 @@ function setup() {
     -- c: written as ム in review, and a later match keeps it.
     INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state,issue,named) VALUES (4,${c},1,0,0,1,4,4,1,4,1,0,4);
     INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state) VALUES (5,${glyph},1,0,0,1,5,5,0,6,1);
-    -- d: a round marked it seen, which moved its revision; the old site's revision did not count marks.
-    INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state) VALUES (6,${d},1,0,0,1,6,6,3,5,3);
+    -- d: a review redrew its box, then a round marked it seen, which moved its revision; the old site's
+    -- revision did not count marks.
+    INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state,x,y,w,h) VALUES
+      (7,${d},1,0,0,1,7,1760000000000,0,5,0,101,11,22,33),(6,${d},2,0,0,1,6,1760000100000,3,5,3,101,11,22,33);
     INSERT INTO reviews(crop,gen,at,state,x,y,w,h) VALUES(${d},1,1,3,101,11,22,33);
     INSERT INTO form_clusters(id,key,family,label,count,coherence,shape_position,size_position,list,form,issue,character,written_family,decision)
       VALUES(9,'U+7FC1:35ced6e49b','U+7FC1','翁',1,1,0,0,'9-x','𦐈',NULL,NULL,'U+7FC1','dec');
@@ -112,13 +114,14 @@ function setup() {
     visual_group: null, origin: 'corpus', state: 'pending', revision: 0, proxyable: true, licence: 'CC-BY-SA-4.0' };
   const packed = new TextEncoder().encode('xx' + JSON.stringify(corpus));
   const cutA = { cut: 0, box: { x: 5, y: 10, w: 20, h: 30 }, image_sha256: other, image: '/atlas/media/old.webp', at: '2026-10-03T15:27:32.712Z' };
+  const encodingA = { pixels: 'c'.repeat(64), image: '/atlas/media/enc.webp', at: '2026-10-05T00:00:00.000Z' };
   const pageFacts = { id: pageKey, document: book, title: 'Book', page_number: 5, width: 400, height: 400, service: 'https://x.org/iiif/p',
     previous: `${book}:3`, next: null, crops: [text.c, text.a, 'hk:gone', text.r, text.b, text.x] };
   const objects = new Map<string, Uint8Array>([
     [bundleKey(page, 3), gzipSync(JSON.stringify({ key: pageKey, book: 1, rev: 3, page: pageFacts, crops: [
-      { slot: 0, id: text.a, ...bundleEntry(records.a), cuts: [cutA], image_place: ['packs/p', 0, 1] },
+      { slot: 0, id: text.a, ...bundleEntry(records.a), cuts: [cutA], encodings: [encodingA], cut_at: '2026-10-13T16:53:07.985Z', image_place: ['packs/p', 0, 1] },
       { slot: 1, id: text.b, ...bundleEntry(records.b) }, { slot: 2, id: text.c, ...bundleEntry({ ...records.c, label: 'ム' }) },
-      { slot: 3, id: text.d, ...bundleEntry(records.d) }, { slot: 4, id: text.r, retired: true, replaced_by: a, ...bundleEntry(old(text.r, '五', 130)) },
+      { slot: 3, id: text.d, ...bundleEntry(records.d), cut_at: '2026-10-01T00:00:00.000Z' }, { slot: 4, id: text.r, retired: true, replaced_by: a, ...bundleEntry(old(text.r, '五', 130)) },
       { slot: 5, id: text.x, ...bundleEntry(old(text.x, '三', 160)) }] }))],
     [bundleKey(corpusPage, 1), gzipSync(JSON.stringify({ key: 'corpus:codh:x:0', book: 2, rev: 1, page: null,
       crops: [{ slot: 0, id: text.glyph, label: '翁', record_place: ['packs/records', 2, packed.length - 2] }] }))],
@@ -181,7 +184,7 @@ describe('a crop\'s record', () => {
     const { get, ids } = setup();
     const record = await (await get(`/atlas/characters/${publicId(ids.d)}`)).json() as any;
     const pub = publicId(ids.d);
-    expect(record).toMatchObject({ state: 'pending', revision: 0, box: { x: 101, y: 11, w: 22, h: 33 }, box_pending: true, crop_version: `${pub}@${hash}@101,11,22,33` });
+    expect(record).toMatchObject({ state: 'pending', revision: 1, box: { x: 101, y: 11, w: 22, h: 33 }, box_pending: true, crop_version: `${pub}@${hash}@101,11,22,33` });
     // Its claims name the cut the redraw will be: the next one.
     expect(record.form?.values[0].form).toBe('form:1');
   });
@@ -223,7 +226,18 @@ describe('a crop\'s versions', () => {
     const pub = publicId(ids.a);
     expect(await (await get(`/atlas/characters/${pub}/versions`)).json()).toEqual({ id: pub, current: `${pub}@${hash}@10,10,20,30`, versions: [
       { id: `${pub}@${other}@5,10,20,30`, pixels: other, box: '5,10,20,30', document: book, image: '/atlas/media/old.webp', at: '2026-10-03T15:27:32.712Z' },
-      { id: `${pub}@${hash}@10,10,20,30`, pixels: hash, box: '10,10,20,30', document: book, image: '/atlas/media/19968.webp', at: null }] });
+      { id: `${pub}@${'c'.repeat(64)}@10,10,20,30`, pixels: 'c'.repeat(64), box: '10,10,20,30', document: book, image: '/atlas/media/enc.webp', at: '2026-10-05T00:00:00.000Z' },
+      { id: `${pub}@${hash}@10,10,20,30`, pixels: hash, box: '10,10,20,30', document: book, image: '/atlas/media/19968.webp', at: '2026-10-13T16:53:07.985Z' }] });
+  });
+  it('lists a pending redraw after the cut it was drawn on, dated by its review', async () => {
+    const { get, ids } = setup();
+    const pub = publicId(ids.d), body = await (await get(`/atlas/characters/${pub}/versions`)).json() as any;
+    expect(body.current).toBe(`${pub}@${hash}@101,11,22,33`);
+    expect(body.versions.map((v: any) => [v.id, v.at])).toEqual([[`${pub}@${hash}@100,10,20,30`, '2026-10-01T00:00:00.000Z'],
+      [`${pub}@${hash}@101,11,22,33`, new Date(1760000000000).toISOString()]]);
+    // A citation of the cut before the redraw still resolves.
+    const [cited] = await (await get(`/atlas/cite/crop/${pub}?v=${versionToken(pub, `${pub}@${hash}@100,10,20,30`)}`)).json() as any[];
+    expect(cited.version).toBe(versionToken(pub, `${pub}@${hash}@100,10,20,30`));
   });
 });
 
@@ -257,7 +271,7 @@ describe('a crop\'s line', () => {
     expect(body.id).toBe(publicId(ids.b));
     expect(body.items.map((i: any) => [i.offset, i.label, i.state, i.issue])).toEqual([[-1, '一', 'pending', null], [0, '二', 'flagged', 'crop'],
       [1, 'ム', 'checked', null], [2, '四', 'pending', null]]);
-    expect(body.items[3].revision).toBe(0);
+    expect(body.items[3].revision).toBe(1);
     expect(body.items[0]).toEqual({ id: publicId(ids.a), offset: -1, label: '一', image: '/atlas/media/19968.webp', revision: 0, image_sha256: hash,
       state: 'pending', issue: null, tone: '#c7b9a2', image_size: [20, 30] });
   });
@@ -297,8 +311,8 @@ describe('a crop\'s model votes', () => {
       line_id: 'l', anchor: 1, source_text: '一', candidates: [{ text: '一', engine: 'Nearby transcription', offset: 0, before: '', after: '二' }] });
     expect((await get(`/atlas/characters/${pub}/suggestions?revision=1&image_sha256=${hash}`)).status).toBe(409);
     // A marked crop is asked for at its revision before the mark, or after it.
-    for (const revision of [0, 1]) expect((await get(`/atlas/characters/${publicId(ids.d)}/suggestions?revision=${revision}&image_sha256=${hash}`)).status).toBe(200);
-    expect((await get(`/atlas/characters/${publicId(ids.d)}/suggestions?revision=2&image_sha256=${hash}`)).status).toBe(409);
+    for (const revision of [1, 2]) expect((await get(`/atlas/characters/${publicId(ids.d)}/suggestions?revision=${revision}&image_sha256=${hash}`)).status).toBe(200);
+    expect((await get(`/atlas/characters/${publicId(ids.d)}/suggestions?revision=0&image_sha256=${hash}`)).status).toBe(409);
     expect(await (await get(`/atlas/characters/${publicId(ids.b)}/suggestions?revision=2&image_sha256=${hash}`)).json())
       .toEqual({ status: 'unavailable', candidates: [] });
   });

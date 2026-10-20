@@ -29,7 +29,7 @@ export function cropVersion(id: string, data: Json): string | null {
 }
 
 // Entry fields that are the bundle's own bookkeeping, never the record's.
-const INTERNAL = ['slot', 'id', 'image_place', 'context_image_place', 'record_place', 'cuts', 'retired', 'replaced_by'];
+const INTERNAL = ['slot', 'id', 'image_place', 'context_image_place', 'record_place', 'cuts', 'cut_at', 'encodings', 'retired', 'replaced_by'];
 // A mark (`seen`, `hard`) is the review queue's: the record of a marked crop is still pending.
 const MARK_STATES = new Set(['seen', 'hard']);
 // A review saved before the issue was renamed names it `reading`; a record calls it `character`.
@@ -39,7 +39,7 @@ export const recordState = (state: string | null) => state === null || MARK_STAT
 export type RecordRow = { id: number; kind: number; book: number; state: string | null; revision: number; cut: number;
   category: string | null; char: string | null; head: string | null; production: string | null; rev: number; page_key: string;
   document: string; x: number | null; y: number | null; w: number | null; h: number | null; issue: string | null;
-  reviewed: number; written: number; settled: number; cluster_key: string | null; glyph_set: number; form: string | null; form_issue: string | null;
+  reviewed: number; written: number; settled: number; redrawn_at: number | null; cluster_key: string | null; glyph_set: number; form: string | null; form_issue: string | null;
   form_character: string | null; written_family: string | null };
 // An event that only moved a mark: a round's seen or hard (kinds 3 and 4), or an undo (kind 5) of a round
 // that took one away. The old site kept marks beside the crop and never moved its revision for them.
@@ -50,13 +50,16 @@ export const MARKS = (c: string) => `(SELECT count(*) FROM events e WHERE e.crop
     FROM events f WHERE f.crop=${c}.id AND NOT ${MARKED('f')}),-1))`;
 // One crop's row with everything its record takes from D1, every join a key lookup and every event read a
 // range of `event_crop`. Each event holds the crop's values after it, undos (`reverses`) included, so a
-// flagged crop's issue is its last event's. A verdict (kind below 3: match, wrong, unsure, 0003) that no undo
+// flagged crop's issue is its last event's. A pending redraw was made by the first event of the run that holds its box (`redrawn_at`). A verdict (kind below 3: match, wrong, unsure, 0003) that no undo
 // reverses gives the record its category; the latest such event that named a character (`named`) makes the
 // crop's label its written character.
 export const recordQuery = () => `SELECT c.id,c.kind,c.book,s.key AS state,c.revision,c.cut,k.key AS category,g.text AS char,
   h.text AS head,p.key AS production,pg.rev,pg.key AS page_key,b.key AS document,r.x,r.y,r.w,r.h,
   CASE WHEN s.key='flagged' THEN (SELECT i.key FROM events e LEFT JOIN codes i ON i.field='issue' AND i.code=e.issue
     WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) END AS issue,
+  CASE WHEN r.x IS NOT NULL THEN (SELECT min(e.at) FROM events e WHERE e.crop=c.id AND e.x=r.x AND e.y=r.y AND e.w=r.w AND e.h=r.h
+    AND e.revision>coalesce((SELECT max(f.revision) FROM events f WHERE f.crop=c.id
+      AND (f.x IS NOT r.x OR f.y IS NOT r.y OR f.w IS NOT r.w OR f.h IS NOT r.h)),-1)) END AS redrawn_at,
   EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.kind<3 AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id)) AS reviewed,
   EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.named IS NOT NULL AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id)) AS written,
   c.revision-${MARKS('c')} AS settled,
@@ -109,7 +112,7 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
  *  is pending in `reviews` (an undone redraw clears it there). */
 export const effectiveCut = (row: RecordRow) => row.cut + (row.x !== null ? 1 : 0);
 
-export type FoundCrop = { row: RecordRow; entry: Entry; record: Json };
+export type FoundCrop = { row: RecordRow; entry: Entry; base: Json; record: Json };
 /** A crop's row, bundle entry and record, or null for an id with no collected crop or corpus glyph, or one
  *  whose published record is missing. A storage error fails the call. */
 export async function foundCrop(env: Env, id: number): Promise<FoundCrop | null> {
@@ -122,7 +125,7 @@ export async function foundCrop(env: Env, id: number): Promise<FoundCrop | null>
     const pointer = { object: entry.record_place[0], offset: entry.record_place[1], size: entry.record_place[2] };
     base = (await readRecords(env, [pointer])).get(recordKey(pointer));
   }
-  return base ? { row, entry, record: cropRecord(row, base, entry.id) } : null;
+  return base ? { row, entry, base, record: cropRecord(row, base, entry.id) } : null;
 }
 
 /** A crop's current evidence version as its record shows it, with its effective cut (`effectiveCut`), its kind and the source id its
@@ -133,16 +136,23 @@ export async function cropVersionNow(env: Env, crop: number): Promise<{ cut: num
   return found && version ? { cut: effectiveCut(found.row), version, text: found.entry.id, kind: found.row.kind } : null;
 }
 
-/** Every evidence version of a crop, oldest first: its earlier cuts (the bundle entry's `cuts`), then the one
- *  it has now. Each is named as `cropVersion` names it, by public id; `source` names it by the crop's id
- *  before the cutover. `at` is when the old site recorded an earlier cut; the current cut has none. */
+/** Every evidence version of a crop, oldest first: its earlier cuts (the bundle entry's `cuts`), the other
+ *  encodings of its published cut (`encodings`), that cut itself while a redrawn box is pending, then the
+ *  version it has now. Each is named as `cropVersion` names it, by public id; `source` names it by the crop's
+ *  id before the cutover. `at` is when the version was recorded: the old site's record or a publish's
+ *  (`cut_at`), or the review that redrew the box. */
 export function cropVersions(found: FoundCrop): { id: string; cut: number; pixels: string | null; box: string; image: string | null; at: string | null; source: string }[] {
-  const { row, entry, record } = found, name = publicId(row.id);
-  const listed = [...(entry.cuts ?? []) as Json[]].sort((a, b) => a.cut - b.cut).map(cut => {
-    const pixels = cut.pixels ?? cut.image_sha256 ?? null;
-    return { cut: cut.cut as number, pixels, box: cut.box, image: cut.image ?? null, at: cut.at ?? null };
-  });
-  if (record.crop_version) listed.push({ cut: effectiveCut(row), pixels: record.image_sha256 ?? record.source_revision ?? null, box: record.box ?? null, image: record.image ?? null, at: null });
+  const { row, entry, base, record } = found, name = publicId(row.id);
+  const pixelsOf = (v: Json) => v.pixels ?? v.image_sha256 ?? v.source_revision ?? null;
+  const listed: { cut: number; pixels: string | null; box: Json; image: string | null; at: string | null }[] =
+    [...(entry.cuts ?? []) as Json[]].sort((a, b) => a.cut - b.cut)
+      .map(cut => ({ cut: cut.cut as number, pixels: pixelsOf(cut), box: cut.box, image: cut.image ?? null, at: cut.at ?? null }));
+  for (const encoding of (entry.encodings ?? []) as Json[])
+    listed.push({ cut: row.cut, pixels: encoding.pixels, box: base.box, image: encoding.image ?? base.image ?? null, at: encoding.at ?? null });
+  const published = { cut: row.cut, pixels: pixelsOf(base), box: base.box, image: base.image ?? null, at: entry.cut_at ?? null };
+  if (row.x === null) listed.push(published);
+  else listed.push(published, { cut: effectiveCut(row), pixels: published.pixels, box: record.box, image: record.image ?? null,
+    at: row.redrawn_at === null ? null : new Date(row.redrawn_at).toISOString() });
   return listed.flatMap(v => {
     const id = cropVersion(name, { image_sha256: v.pixels, box: v.box });
     return id ? [{ id, cut: v.cut, pixels: v.pixels, box: v.box ? ['x', 'y', 'w', 'h'].map(k => v.box[k]).join(',') : '', image: v.image, at: v.at,
