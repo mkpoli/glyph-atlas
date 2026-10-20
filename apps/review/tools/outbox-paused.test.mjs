@@ -93,6 +93,9 @@ test('a round dealt while saves are kept leaves out their crops, unless their un
   await keep('/atlas/corrections', { id: 'batch-1', character: 'あ', crops: [{ id: 'c5', revision: 1 }] }, me)
   await keep('/atlas/rounds/round-3/undo', {}, me)
   expect([...await keptCrops()].sort()).toEqual(['c4', 'c5'])
+  // A round another account kept on this device waits for it, and its crops are this reader's to deal.
+  await keep('/atlas/rounds', { id: 'round-other', grapheme: 'U+3042', seen: [{ id: 'c9' }], skipped: [] }, { id: 'u2', anonymous: false })
+  expect([...await keptCrops()].sort()).toEqual(['c4', 'c5'])
 })
 
 test('a save kept while a pass is sending is sent by that pass', async () => {

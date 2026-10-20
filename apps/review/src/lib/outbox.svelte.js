@@ -50,17 +50,20 @@ async function remove(key) {
   const rest = fallback.all()
   if (rest.some(e => e.key === key)) fallback.write(rest.filter(e => e.key !== key))
 }
-// What the corner counts: the saves this reader can send now. One made by an account that is not
-// signed in waits for it, and is not counted meanwhile.
-const count = async () => { outbox.pending = (await entries()).filter(entry => sender?.mine(entry) !== false).length }
+// The saves this reader can send now. One made by an account that is not signed in waits for it, and
+// is not counted meanwhile.
+const mine = async () => (await entries()).filter(entry => sender?.mine(entry) !== false)
+// What the corner counts.
+const count = async () => { outbox.pending = (await mine()).length }
 
 /**
- * The crops kept saves decide, by id: the crops of a kept round (flagged, seen or skipped) and of a kept
- * correction. They still read as pending until the saves are sent, so a round dealt meanwhile leaves
- * them out. A save whose undo is kept too decides nothing.
+ * The crops this reader's kept saves decide, by id: the crops of a kept round (flagged, seen or skipped)
+ * and of a kept correction. They still read as pending until the saves are sent, so a round dealt
+ * meanwhile leaves them out. A save whose undo is kept too decides nothing, and one another account
+ * made leaves its crops to this reader.
  */
 export async function keptCrops() {
-  const kept = await entries()
+  const kept = await mine()
   const undone = new Set(kept.map(entry => /\/([^/]+)\/undo$/.exec(entry.path)?.[1]).filter(Boolean))
   const crops = new Set()
   for (const { body } of kept) {
@@ -72,7 +75,7 @@ export async function keptCrops() {
 }
 
 /** Whether any save is kept, in this tab or another: a new save then joins the end of the line. */
-export const anyKept = async () => outbox.pending > 0 || (await entries()).some(entry => sender?.mine(entry) !== false)
+export const anyKept = async () => outbox.pending > 0 || (await mine()).length > 0
 
 // `send(entry)` makes one save and answers `{ response, value }`, or `{ wait: true, retryAfter, paused }`
 // when it cannot be sent yet (`retryAfter` in seconds, 0 for no particular wait), or `{ skip: true }`
