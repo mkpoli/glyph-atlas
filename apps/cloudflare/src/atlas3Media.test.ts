@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { gzipSync } from 'node:zlib';
-import { mediaPlace, mediaResponse, shardKey } from './atlas3Media';
+import { StorageUnavailable } from './busy';
+import { heldShards, mediaPlace, mediaResponse, rereadBudget, shardKey } from './atlas3Media';
 import worker from './index';
 
 // The Workers cache, as far as these reads use it.
@@ -74,21 +75,25 @@ describe('new-layout images', () => {
     const now = Date.now();
     await mediaPlace(env, key, undefined, now);
     objects.set(name, gzipSync(JSON.stringify({ objects: ['packs/p.bin'], keys: { ['a'.repeat(61)]: [0, 8, 4], ['d'.repeat(61)]: [0, 24, 3] } })));
-    expect(await mediaPlace(env, later, undefined, now + 1000)).toEqual({ object: 'packs/p.bin', offset: 24, size: 3, type: 'image/webp' });
+    expect(await mediaPlace(env, later, undefined, now + 31_000)).toEqual({ object: 'packs/p.bin', offset: 24, size: 3, type: 'image/webp' });
     expect(reads.filter(r => r === name)).toHaveLength(2);
     // The edge copy is the new one, and the isolate holds it.
-    expect(await mediaPlace(env, later, undefined, now + 2000)).not.toBeNull();
+    expect(await mediaPlace(env, later, undefined, now + 32_000)).not.toBeNull();
     expect(reads.filter(r => r === name)).toHaveLength(2);
   });
 
-  it('read a shard straight from R2 for missing keys at most once per 30 seconds', async () => {
+  it('read a shard straight from R2 for missing keys only when the held copy is 30 seconds old', async () => {
     const { env, key, reads } = setup(), name = shardKey(key), bogus = (c: string) => key.slice(0, 3) + c.repeat(61);
     const now = Date.now();
     await mediaPlace(env, key, undefined, now);
-    expect(await Promise.all(['c', 'e', 'f'].map(c => mediaPlace(env, bogus(c), undefined, now + 1000)))).toEqual([null, null, null]);
-    expect(await mediaPlace(env, bogus('9'), undefined, now + 20_000)).toBeNull();
+    expect(await mediaPlace(env, bogus('c'), undefined, now + 1000)).toBeNull();
+    expect(reads.filter(r => r === name)).toHaveLength(1);
+    // Misses together share one read.
+    expect(await Promise.all(['c', 'e', 'f'].map(c => mediaPlace(env, bogus(c), undefined, now + 31_000)))).toEqual([null, null, null]);
     expect(reads.filter(r => r === name)).toHaveLength(2);
-    expect(await mediaPlace(env, bogus('9'), undefined, now + 32_000)).toBeNull();
+    expect(await mediaPlace(env, bogus('9'), undefined, now + 50_000)).toBeNull();
+    expect(reads.filter(r => r === name)).toHaveLength(2);
+    expect(await mediaPlace(env, bogus('9'), undefined, now + 62_000)).toBeNull();
     expect(reads.filter(r => r === name)).toHaveLength(3);
   });
 
@@ -121,6 +126,73 @@ describe('shards that fail', () => {
     // The next request reads R2 again and finds the repaired shard.
     objects.set(name, gzipSync(JSON.stringify({ objects: ['packs/p.bin'], keys: { ['a'.repeat(61)]: [0, 8, 4] } })));
     expect(await mediaPlace(env, key)).not.toBeNull();
+  });
+});
+
+// Shards named `s<i>`, each mapping `k<i>` to i, read through their own reader and budget.
+function shardSet(count: number) {
+  const objects = new Map<string, Uint8Array>(), reads: string[] = [], failing = new Set<string>();
+  const gates = new Map<string, Promise<void>>();
+  for (let i = 0; i < count; i++) objects.set(`s${i}`, gzipSync(JSON.stringify({ [`k${i}`]: i })));
+  const MEDIA = { get: async (name: string) => {
+    reads.push(name);
+    await gates.get(name);
+    if (failing.has(name)) throw new Error('R2 is unavailable');
+    const bytes = objects.get(name);
+    return bytes ? { arrayBuffer: async () => new Uint8Array(bytes).buffer } : null;
+  } };
+  const find = (key: string) => (shard: Record<string, number>) => Object.hasOwn(shard, key) ? shard[key] : undefined;
+  return { env: { MEDIA } as unknown as Env, objects, reads, failing, gates, find };
+}
+
+describe('reads straight to R2', () => {
+  it('stay within the budget when bogus keys arrive for many shards at once', async () => {
+    const { env, reads, find } = shardSet(60), lookup = heldShards<Record<string, number>>(rereadBudget(2, 4));
+    const now = Date.now(), names = Array.from({ length: 30 }, (_, i) => `s${i}`);
+    await Promise.all(names.map(name => lookup(env, name, find('nothing'), undefined, now)));
+    expect(reads).toHaveLength(30);
+    // A minute on, every held copy is old enough to read again, but the bucket holds four reads.
+    const answers = await Promise.all(names.flatMap(name => [1, 2, 3].map(j => lookup(env, name, find(`bogus${j}`), undefined, now + 60_000))));
+    expect(answers.every(answer => answer === null)).toBe(true);
+    expect(reads).toHaveLength(34);
+    // Half a second refills one read, and keys a held copy has are answered without any.
+    await Promise.all(names.slice(10).map(name => lookup(env, name, find('bogus'), undefined, now + 60_500)));
+    expect(reads).toHaveLength(35);
+    expect(await lookup(env, 's29', find('k29'), undefined, now + 60_500)).toBe(29);
+    expect(reads).toHaveLength(35);
+  });
+
+  it('answer every request waiting on a read that fails with StorageUnavailable, and try again on the next miss', async () => {
+    const { env, objects, reads, failing, find } = shardSet(1), lookup = heldShards<Record<string, number>>(rereadBudget(100, 100));
+    const now = Date.now();
+    expect(await lookup(env, 's0', find('k0'), undefined, now)).toBe(0);
+    objects.set('s0', gzipSync(JSON.stringify({ k0: 0, later: 9 })));
+    failing.add('s0');
+    const waiting = await Promise.allSettled([1, 2, 3].map(() => lookup(env, 's0', find('later'), undefined, now + 31_000)));
+    expect(reads).toHaveLength(2);
+    for (const result of waiting) {
+      expect(result.status).toBe('rejected');
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(StorageUnavailable);
+    }
+    // The held copy still answers what it has.
+    expect(await lookup(env, 's0', find('k0'), undefined, now + 31_100)).toBe(0);
+    failing.delete('s0');
+    expect(await lookup(env, 's0', find('later'), undefined, now + 31_200)).toBe(9);
+    expect(reads).toHaveLength(3);
+  });
+
+  it('answer from the copy they read even when the isolate has dropped it since', async () => {
+    const { env, objects, gates, find } = shardSet(40), lookup = heldShards<Record<string, number>>(rereadBudget(100, 100));
+    const now = Date.now();
+    await lookup(env, 's0', find('k0'), undefined, now);
+    objects.set('s0', gzipSync(JSON.stringify({ k0: 0, later: 9 })));
+    let open = () => {};
+    gates.set('s0', new Promise<void>(done => { open = done; }));
+    const waiting = lookup(env, 's0', find('later'), undefined, now + 31_000);
+    // Thirty-nine other shards push s0 out of the isolate while its read is under way.
+    await Promise.all(Array.from({ length: 39 }, (_, i) => lookup(env, `s${i + 1}`, find('x'), undefined, now + 31_000)));
+    open();
+    expect(await waiting).toBe(9);
   });
 });
 
