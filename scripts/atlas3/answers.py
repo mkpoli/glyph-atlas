@@ -2,6 +2,8 @@
 
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/answers.py [--dry-run]
 
+publish.py runs it after every publish that sent something, so the counts follow each publish.
+
 A publication bumps `generation` in glyph-atlas-v3 from G to G + 1, writes its answers under
 `v3/pub/<pub>/`, and then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A count is the
 answer plus the `tally` rows above `through_gen` (decision record 0005).
@@ -288,13 +290,17 @@ def write(path, body):
     return path
 
 
-def main(read=None):
+def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="write the answers locally and change nothing remote")
     args = parser.parse_args()
-
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
+    publication(args.dry_run)
+
+
+def publication(dry_run, read=None):
+    """Write and publish the answers; the caller holds out/mirror.lock (publish.py runs this last)."""
     mirror = sqlite3.connect(OUT / "mirror.sqlite")
     if mirror.execute("SELECT 1 FROM sqlite_master WHERE name = 'pending'").fetchone() and \
             mirror.execute("SELECT count(*) FROM pending").fetchone()[0]:
@@ -310,7 +316,7 @@ def main(read=None):
     # writes its events at generation 0, and the local copy holds them: they count as absorbed.
     if unabsorbed(through):
         sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; nothing published")
-    if not args.dry_run:
+    if not dry_run:
         # Reviews written after the bump carry the next generation, so the answers stand through G. The
         # bump names G and stamps this publication in the same statement, so a resent statement cannot
         # bump twice and only the run whose stamp is there made it.
@@ -342,7 +348,7 @@ def main(read=None):
     print(f"pub {pub} through generation {through}: {characters_counted} characters in {SHARDS} shards, "
           f"{sum(len(v) for v in unread.values())} unread cells, {len(browse)} browse cells, {len(glyphs)} corpus cells, "
           f"gallery {', '.join(f'{k} {v['glyphs']}' for k, v in pool_sizes.items())} -> {folder}", flush=True)
-    if args.dry_run:
+    if dry_run:
         print("dry run: nothing uploaded; the generation was not bumped", flush=True)
         return
     upload([f for f in files if f.parent.name == "counts"], f"{PUB_PREFIX}{pub}/counts/")

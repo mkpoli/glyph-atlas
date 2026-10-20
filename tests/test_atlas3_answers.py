@@ -172,6 +172,7 @@ def corpus_layout(tmp_path, monkeypatch):
     monkeypatch.setattr(publish, "send", remote.send)
     monkeypatch.setattr(publish, "query", remote.query)
     monkeypatch.setattr(publish, "upload", remote.upload)
+    monkeypatch.setattr(publish, "answer", lambda: None)
     return tmp_path, publish, {PACK: pack}
 
 

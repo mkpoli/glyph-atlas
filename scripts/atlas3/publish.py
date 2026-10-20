@@ -25,6 +25,7 @@ images to the image key map (`media_map.py`).
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
   crop's entry.
 - A statement over STATEMENT_BYTES stops the publish before anything is allocated.
+- A publish that sent something ends by publishing the answers (`answers.py`), so the counts follow it.
 
 With `--replacements` the publish also reads `source-unit_redirects.sqlite` (the catalogue's own
 `unit_redirects` win) and sets `replaced_by` on every retired bundle entry whose value differs from the
@@ -865,6 +866,13 @@ def main():
     mark(run, "allocated")
     deliver(m, run)
     print(f"published {stamp}")
+    answer()
+
+
+def answer():
+    """The publication's answers, so the counts follow this publish (answers.py); the lock is held."""
+    import answers
+    answers.publication(False)
 
 
 if __name__ == "__main__":

@@ -101,6 +101,9 @@ def layout(tmp_path, monkeypatch):
     monkeypatch.setattr(publish, "send", remote.send)
     monkeypatch.setattr(publish, "query", remote.query)
     monkeypatch.setattr(publish, "upload", remote.upload)
+    # A publish ends by publishing its answers; test_atlas3_answers.py runs them.
+    remote.answered = 0
+    monkeypatch.setattr(publish, "answer", lambda: setattr(remote, "answered", remote.answered + 1))
     return tmp_path, publish, remote
 
 
@@ -639,3 +642,12 @@ def test_a_publish_needing_a_statement_over_d1s_limit_allocates_nothing(layout, 
     with pytest.raises(SystemExit, match="over D1's limit"):
         run(publish, monkeypatch, tmp_path / "c.sqlite")
     assert "ex:new" not in ids(root)
+
+
+def test_a_publish_that_sent_something_publishes_the_answers_after(layout, monkeypatch, tmp_path):
+    _root, publish, remote = layout
+    run(publish, monkeypatch, catalogue(tmp_path / "dry.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お")]), "--dry-run")
+    run(publish, monkeypatch, catalogue(tmp_path / "same.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ")]))
+    assert remote.answered == 0
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お")]))
+    assert remote.answered == 1
