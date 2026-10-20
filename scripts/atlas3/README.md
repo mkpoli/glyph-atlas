@@ -202,8 +202,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    and first code point. `--send` loads the rows in stamped parts, uploads the objects whose bytes R2
    lacks, then inserts one stamp into `glyph-atlas-v3`'s `imports`, which moves the publication key the
    runs' cached answers are kept under. Figures go to `out/runs-report.txt`; `check.py` compares each run's
-   written form and every answer with the live runs. **The first `--send` writes RUNWRITTEN rows of
-   `glyph-atlas-v3-runs` and 1 of `glyph-atlas-v3`, and uploads RUNOBJECTS objects; it needs the owner's
+   written form and every answer with the live runs. **The first `--send` writes 297,905 rows of
+   `glyph-atlas-v3-runs` and 1 of `glyph-atlas-v3`, and uploads 12,153 objects (6.3 MB) on the copies of 19 October 2026; it needs the owner's
    approval with the dry run's figures.**
 7. **Move the reference data:** `pull.py --fresh` copies the character cards, the 異体字 graph and its
    derived tier, the writers, words and spellings and the component index. `reference.py` (dry run
