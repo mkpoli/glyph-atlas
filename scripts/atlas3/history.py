@@ -12,8 +12,10 @@ Reads the `source-*.sqlite` copies (`pull.py`) and the publisher's local copies 
 - `out/history-marks.json`: the live crop marks, with the seen row each one rests on;
 - `out/history-report.txt` (and stdout): rows in, out, dropped by rule and stopped, per table.
 
-A crop's text id resolves only through the mirror, never through a redirect. A row that cannot be
-translated stops the move: it is counted, up to SHOWN are listed, and the run exits 1.
+A claim on a crop (a predicate whose catalogue subject is a crop) takes the crop and cut beside its
+subject, and a saved claim response on a crop names it by integer id and cut. A crop's text id
+resolves only through the mirror, never through a redirect. A row that cannot be translated stops
+the move: it is counted, up to SHOWN are listed, and the run exits 1.
 
 Where the old events keep what (all 1,690 of 19-20 October 2026 are kind 'review'):
 - the verdict, issue and note are top-level fields of the event JSON's `evidence` (a JSON string);
@@ -38,6 +40,10 @@ from build import HERE, OUT, PAGE, ROOT, char_text
 
 SHOWN = 20
 SCHEMA = ROOT / "apps/cloudflare/migrations-atlas"
+# The predicates whose subject is a crop, as the ledger's catalogue names them: their claims take the
+# crop and cut beside their subject.
+CROP_PREDICATES = frozenset(p for p, spec in json.loads((ROOT / "data/ledger.json").read_text())["predicates"].items()
+                            if spec["subject"] == "crop")
 # The migrations whose tables hold translated rows: the history, and the representations forms name.
 MIGRATIONS = ("0003_history.sql", "0008_representations.sql")
 
@@ -480,10 +486,10 @@ def main():
     report.tables["assertion_evidence"]["out"] = len(evidence_rows)
 
     report.table("assertions", len(src["assertions"]))
-    assertions = []
+    assertions, assertions_out = [], []
     for r in src["assertions"]:
         cid = cut = None
-        if r["predicate"] == "has_form":
+        if r["predicate"] in CROP_PREDICATES:
             cid = crops.ids.get(r["subject"])
             if cid is None:
                 report.stop("assertions", "crop unknown", f"{r['id']} on {r['subject']}")
@@ -498,6 +504,7 @@ def main():
         d = dict(r)
         d.update(crop=cid, cut=cut)
         assertions.append(tuple(d[c] for c in cols("assertions")))
+        assertions_out.append((r["id"], r["subject"], r["predicate"], cid, cut))
     insert("assertions", assertions)
     report.tables["assertions"]["out"] = len(assertions)
 
@@ -507,7 +514,7 @@ def main():
         d = dict(r)
         version = d.pop("crop_version")
         d["crop"] = d["cut"] = None
-        if r["predicate"] == "has_form":
+        if r["predicate"] in CROP_PREDICATES:
             d["crop"] = crops.ids.get(r["subject"])
             if version:
                 vcid, d["cut"] = crops.ref_cut(version)
@@ -526,7 +533,32 @@ def main():
     insert("current_claims", claims)
     report.tables["current_claims"]["out"] = len(claims)
 
-    for table in ("assertion_actions", "assertion_premises", "ledger_submissions", "forms", "representations"):
+    # A saved response names its crop as the Worker's do, by integer id (`crop`) and the cut its claims
+    # rest on (`cut`), beside the text id the old site saved, so a resent submission answers again.
+    claim_on = {a[0]: (a[3], a[4]) for a in assertions_out}
+    action_on = {r["id"]: r["assertion"] for r in src["assertion_actions"]}
+    by_submission = defaultdict(set)
+    for a in src["assertions"]:
+        if a["submission"]:
+            by_submission[a["submission"]].add(a["id"])
+    for x in src["assertion_actions"]:
+        if x["submission"]:
+            by_submission[x["submission"]].add(action_on[x["id"]])
+    report.table("ledger_submissions", len(src["ledger_submissions"]))
+    saved = []
+    for r in src["ledger_submissions"]:
+        d = dict(r)
+        response = json.loads(r["response"])
+        cid = crops.ids.get(response.get("subject"))
+        if cid is not None:
+            cut = {claim_on[a][1] for a in by_submission[r["id"]] if claim_on.get(a, (None,))[0] == cid}
+            response.update(crop=cid, cut=max(cut) if cut else None)
+            d["response"] = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
+        saved.append(tuple(d[c] for c in cols("ledger_submissions")))
+    insert("ledger_submissions", saved)
+    report.tables["ledger_submissions"]["out"] = len(saved)
+
+    for table in ("assertion_actions", "assertion_premises", "forms", "representations"):
         report.table(table, len(src[table]))
         insert(table, [tuple(r[c] for c in cols(table)) for r in src[table]])
         report.tables[table]["out"] = len(src[table])
