@@ -24,7 +24,7 @@ function setup() {
     const bytes = objects.get(name);
     if (!bytes) return null;
     const body = options?.range ? bytes.slice(options.range.offset, options.range.offset + options.range.length) : bytes;
-    return { body: new Response(body).body!, arrayBuffer: async () => body.slice().buffer };
+    return { body: new Response(body).body!, arrayBuffer: async () => new Uint8Array(body).buffer };
   } };
   const waits: Promise<unknown>[] = [];
   const ctx = { waitUntil: (p: Promise<unknown>) => waits.push(p) } as unknown as ExecutionContext;
