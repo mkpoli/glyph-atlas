@@ -81,6 +81,21 @@ describe('the write freeze', () => {
     expect(written(statements)).toEqual([]);
     expect(db.query('SELECT expiresAt FROM session').get()).toEqual(before);
   });
+  it('signs out in the browser by expiring the session cookies, writing nothing', async () => {
+    const { db, send, statements } = setup();
+    expect((await send(undefined, '/api/auth/sign-in/anonymous', 'POST', {})).status).toBe(200);
+    statements.length = 0;
+    const response = await send('1', '/api/auth/sign-out', 'POST', {});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
+    const cookies = response.headers.getSetCookie();
+    for (const name of ['__Secure-better-auth.session_token', '__Secure-better-auth.session_data', '__Secure-better-auth.dont_remember'])
+      expect(cookies).toContain(`${name}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`);
+    expect(written(statements)).toEqual([]);
+    expect(db.query('SELECT count(*) AS n FROM session').get()).toEqual({ n: 1 });
+    // The browser, holding no cookie now, is signed out.
+    expect(await (await send('1', '/api/auth/get-session')).json()).toBeNull();
+  });
   it('counts sign-in routes read by GET as writes, and the session read as a read', () => {
     expect(writes('GET', '/api/auth/callback/github')).toBe(true);
     expect(writes('GET', '/api/auth/passkey/generate-register-options')).toBe(true);

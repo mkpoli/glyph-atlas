@@ -1,6 +1,9 @@
 // The write freeze. While `WRITES_PAUSED` is "1" (`wrangler secret put WRITES_PAUSED`), every request
 // that would write to the database is answered 503 `paused`, and everything else reads as usual. A
 // signed-in reader's session keeps reading: it is neither refreshed nor cleaned up while frozen.
+// Signing out still works in the browser.
+import type { BetterAuthOptions } from 'better-auth';
+import { getCookies } from 'better-auth/cookies';
 
 /** How long a refused write is told to wait, in seconds. */
 export const PAUSED_RETRY = 300;
@@ -24,3 +27,25 @@ export function writes(method: string, path: string): boolean {
 export const pausedResponse = (headers: Record<string, string> = {}) => Response.json(
   { error: 'paused', message: PAUSED_MESSAGE },
   { status: 503, headers: { ...headers, 'retry-after': String(PAUSED_RETRY), 'cache-control': 'no-store' } });
+
+/**
+ * A sign-out while paused: the browser's session cookies are expired, with the names and attributes
+ * Better Auth gives them (the `__Secure-` prefix on https), and the session's row stays in the
+ * database until it expires. The cached session may be split into numbered cookies; each one sent goes.
+ */
+export function pausedSignOut(request: Request, options: BetterAuthOptions): Response {
+  const { sessionToken, sessionData, dontRememberToken } = getCookies(options);
+  const sent = (request.headers.get('cookie') ?? '').split(';').map(pair => pair.split('=')[0].trim());
+  const chunks = sent.filter(name => name.startsWith(sessionData.name + '.') && /^\d+$/.test(name.slice(sessionData.name.length + 1)));
+  const headers = new Headers({ 'content-type': 'application/json', 'cache-control': 'no-store' });
+  for (const [name, attributes] of [[sessionToken.name, sessionToken.attributes], [sessionData.name, sessionData.attributes],
+    ...chunks.map(name => [name, sessionData.attributes] as const), [dontRememberToken.name, dontRememberToken.attributes]] as const)
+    headers.append('set-cookie', expired(name, attributes));
+  return new Response(JSON.stringify({ success: true }), { headers });
+}
+
+function expired(name: string, attributes: { path?: string; domain?: string; httpOnly?: boolean; secure?: boolean; sameSite?: string | boolean }) {
+  const sameSite = typeof attributes.sameSite === 'string' ? attributes.sameSite[0].toUpperCase() + attributes.sameSite.slice(1).toLowerCase() : null;
+  return [`${name}=`, 'Max-Age=0', `Path=${attributes.path ?? '/'}`, attributes.domain && `Domain=${attributes.domain}`,
+    attributes.httpOnly && 'HttpOnly', attributes.secure && 'Secure', sameSite && `SameSite=${sameSite}`].filter(Boolean).join('; ');
+}
