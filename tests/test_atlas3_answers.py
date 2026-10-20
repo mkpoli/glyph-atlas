@@ -32,6 +32,8 @@ def answers(publish, monkeypatch, *flags, packs=None, reads=None, sample=None):
             reads.append((key, offset, size))
         return (packs or {})[key][offset:offset + size]
     monkeypatch.setattr(answers_module, "r2_reader", lambda: read)
+    monkeypatch.setattr(answers_module, "status", lambda: {"crops": 3})
+    monkeypatch.setattr(answers_module, "CORPUS_INDEX", publish.OUT / "corpus-index.json")
     monkeypatch.setattr(sys, "argv", ["answers.py", *flags])
     answers_module.main()
     return uploaded
@@ -67,6 +69,19 @@ def test_a_publication_counts_each_character_and_moves_the_pointer_last(layout, 
     assert pointer["through_gen"] == 1
 
 
+def test_a_publication_writes_the_site_values_the_status_pages_serve(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    (root / "out" / "corpus-index.json").write_text('{"sources": 2}')
+    answers(publish, monkeypatch, sample=0)
+    assert dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, value FROM site")) == {"collection": '{"crops":3}',
+                                                                                     "corpus_index": '{"sources":2}'}
+    # Without a corpus index the summary stays as it was.
+    (root / "out" / "corpus-index.json").unlink()
+    time.sleep(1.1)  # a publication is named by its second
+    answers(publish, monkeypatch, sample=0)
+    assert dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, value FROM site"))["corpus_index"] == '{"sources":2}'
+
+
 def test_a_dry_run_bumps_nothing_and_uploads_nothing(layout, monkeypatch):  # noqa: F811
     _root, publish, remote = layout
     assert answers(publish, monkeypatch, "--dry-run", sample=0) == []
@@ -84,7 +99,7 @@ def test_review_events_on_the_new_layout_stop_a_publication_before_the_bump(layo
 
 
 def test_a_review_landing_before_the_bump_keeps_the_pointer(layout, monkeypatch):  # noqa: F811
-    _root, publish, remote = layout
+    _root, publish, _remote = layout
     real = publish.query
 
     def racing(database, sql):

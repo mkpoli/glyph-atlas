@@ -21,6 +21,8 @@ refused.
   each character's text and grapheme key: the corpus counts by character and material.
 - `books.json.gz`: each book's collected crops and corpus glyphs, which the statistics of the
   collection's dates count by period.
+- `site` in glyph-atlas-v3: the collection's status (`collection`) and the corpus summary
+  (`corpus_index`, from work/corpus-index/index.json), which the status pages serve.
 - `gallery/`: the homepage sample. `sample/<k>.json.gz` holds the corpus glyphs whose shuffle falls
   below SAMPLE_RANGE (1 in 64) and `<group>/<k>.json.gz` every glyph of a script the corpus holds few
   of (WHOLE), each glyph with its record copied out of its pack, so a page of the gallery is one or
@@ -59,6 +61,10 @@ from publish import BUCKET, OUT, R2_REMOTE, applied, query, upload
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cloudflare_schema import category_of
+from publish_collection_status import site_row, status
+
+# The corpus summary `/layers/summary` serves, as the corpus index build writes it.
+CORPUS_INDEX = Path(__file__).resolve().parents[2] / "work/corpus-index/index.json"
 
 SHARDS = 256
 PUB_PREFIX = "v3/pub/"
@@ -329,6 +335,8 @@ def main(read=None):
     glyphs, glyph_chars = corpus(atlas)
     top.append(write(folder / "corpus.json.gz", {"pub": pub, "cell": CORPUS_CELL, "cells": glyphs, "chars": glyph_chars}))
     top.append(write(folder / "books.json.gz", {"pub": pub, "cell": ["collected", "corpus"], "books": books(atlas)}))
+    # The site's values the status pages show: the collection's progress and the corpus summary.
+    site = {"collection": status(), **({"corpus_index": json.loads(CORPUS_INDEX.read_text())} if CORPUS_INDEX.exists() else {})}
     pointer = write(OUT / "pub" / f"pointer-{pub}" / "pointer.json", {"pub": pub, "through_gen": through})
     characters_counted = sum(len(s) for s in shards.values())
     print(f"pub {pub} through generation {through}: {characters_counted} characters in {SHARDS} shards, "
@@ -342,6 +350,7 @@ def main(read=None):
     for name in pool_sizes:
         upload([f for f in sampled if f.parent.name == name], f"{PUB_PREFIX}{pub}/gallery/{name}/")
     upload([f for f in sampled if f.name == "index.json.gz"], f"{PUB_PREFIX}{pub}/gallery/")
+    query("glyph-atlas-v3", "; ".join(site_row(k, v) for k, v in site.items()))
     # The pointer moves last, once everything it names is in place.
     upload([pointer], POINTER_PREFIX)
     print(f"v3/pointer.json names {pub}", flush=True)
