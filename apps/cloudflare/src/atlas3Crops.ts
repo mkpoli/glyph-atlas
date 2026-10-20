@@ -67,8 +67,11 @@ export const STALE_MESSAGE = 'This page is from before an update. Reload it.';
 export class StaleCrop extends Error {
   constructor() { super(STALE_MESSAGE); }
 }
-/** The crop id a write names, or null for a value that is no crop id. Throws StaleCrop for a text id. */
-export function writtenCrop(value: unknown): number | null {
+/** The crop id in a crop field of a write body (the crop a review, mark or favourite is about), or
+ *  null for a value that is no crop id. Throws StaleCrop for a text id. Only crop fields come here: a
+ *  claim's `subject` is a book, form or word key kept as text, and a claim on a crop names the crop in
+ *  its own `crop` field. */
+export function writtenCropField(value: unknown): number | null {
   if (typeof value !== 'string') return null;
   if (textId(value)) throw new StaleCrop();
   return cropOf(value);

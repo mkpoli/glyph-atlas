@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from './forms.test';
 import { bundleKey, cropId, publicId } from './atlas3';
-import { OLD_URL_STATUS, STALE_CODE, StaleCrop, cropParam, cropUrl, movedResponse, staleResponse, writtenCrop } from './atlas3Crops';
+import { OLD_URL_STATUS, STALE_CODE, StaleCrop, cropParam, cropUrl, movedResponse, staleResponse, writtenCropField } from './atlas3Crops';
 
 // The Workers cache, as far as alias reads use it.
 const edge = new Map<string, Response>();
@@ -115,16 +115,16 @@ describe('an old crop URL', () => {
   });
 });
 
-describe('a crop named in a write', () => {
+describe('a crop field of a write', () => {
   it('is its public id', () => {
     const id = cropId(11932, 255);
-    expect(writtenCrop(publicId(id))).toBe(id);
-    expect(writtenCrop(7)).toBeNull();
-    expect(writtenCrop('0')).toBeNull();
+    expect(writtenCropField(publicId(id))).toBe(id);
+    expect(writtenCropField(7)).toBeNull();
+    expect(writtenCropField('0')).toBeNull();
   });
 
   it('by an old text id is refused with a prompt to reload', async () => {
-    expect(() => writtenCrop('hk:book:1:L1:a:2')).toThrow(StaleCrop);
+    expect(() => writtenCropField('hk:book:1:L1:a:2')).toThrow(StaleCrop);
     const response = staleResponse();
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code: STALE_CODE });
