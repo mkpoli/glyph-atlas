@@ -116,15 +116,23 @@ describe('an old crop URL', () => {
 });
 
 describe('a crop field of a write', () => {
-  it('is its public id', () => {
+  it('is its public id', async () => {
+    const { env } = setup();
     const id = cropId(11932, 255);
-    expect(writtenCropField(publicId(id))).toBe(id);
-    expect(writtenCropField(7)).toBeNull();
-    expect(writtenCropField('0')).toBeNull();
+    expect(await writtenCropField(env, publicId(id))).toBe(id);
+    expect(await writtenCropField(env, 7)).toBeNull();
+    expect(await writtenCropField(env, '0')).toBeNull();
   });
 
-  it('by an old text id is refused with a prompt to reload', async () => {
-    expect(() => writtenCropField('hk:book:1:L1:a:2')).toThrow(StaleCrop);
+  it('by an old text id, as a save held through the freeze sends it, is the crop it named', async () => {
+    const { env, text, live, retired } = setup();
+    expect(await writtenCropField(env, text.live)).toBe(live);
+    expect(await writtenCropField(env, text.retired)).toBe(retired);
+  });
+
+  it('by a text id the alias map does not hold is refused with a prompt to reload', async () => {
+    const { env, text } = setup();
+    await expect(writtenCropField(env, text.gone)).rejects.toThrow(StaleCrop);
     const response = staleResponse();
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code: STALE_CODE });

@@ -60,21 +60,25 @@ export function movedResponse(url: URL, param: string, id: number): Response {
     'cache-control': OLD_URL_STATUS === 301 ? 'public, max-age=86400' : 'no-store' } });
 }
 
-// A write names crops by public id. An old text id comes only from a tab opened before the cutover,
-// whose crops may have moved since: it is refused with a prompt to reload.
+// A write names crops by public id. An old text id comes from a tab opened before the cutover, or a
+// save its outbox held through the freeze: it is read through the alias map, a closed set, and the
+// crop's revision check refuses it should the crop have changed since. A text id the map does not hold
+// is refused with a prompt to reload.
 export const STALE_CODE = 'reload';
 export const STALE_MESSAGE = 'This page is from before an update. Reload it.';
 export class StaleCrop extends Error {
   constructor() { super(STALE_MESSAGE); }
 }
 /** The crop id in a crop field of a write body (the crop a review, mark or favourite is about), or
- *  null for a value that is no crop id. Throws StaleCrop for a text id. Only crop fields come here: a
- *  claim's `subject` is a book, form or word key kept as text, and a claim on a crop names the crop in
- *  its own `crop` field. */
-export function writtenCropField(value: unknown): number | null {
+ *  null for a value that is no crop id. Throws StaleCrop for a text id the alias map does not hold.
+ *  Only crop fields come here: a claim's `subject` is a book, form or word key kept as text, and a
+ *  claim on a crop names the crop in its own `crop` field. */
+export async function writtenCropField(env: Env, value: unknown, ctx?: ExecutionContext): Promise<number | null> {
   if (typeof value !== 'string') return null;
-  if (textId(value)) throw new StaleCrop();
-  return cropOf(value);
+  if (!textId(value)) return cropOf(value);
+  const id = await aliasCrop(env, value, ctx);
+  if (id === null) throw new StaleCrop();
+  return id;
 }
 export const staleResponse = (headers: Record<string, string> = {}) => Response.json(
   { detail: STALE_MESSAGE, code: STALE_CODE },
