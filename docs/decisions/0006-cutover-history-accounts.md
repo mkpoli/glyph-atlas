@@ -137,7 +137,7 @@ freeze contains no decisions. Each step is resumable and records checksums.
    (`"remote": true` on each D1 and R2 binding) to the real new databases and bucket, with a test
    account made before the freeze. Nothing answers on a public address, and the deployed Worker stays
    paused, so every row written in the window is the checks'; they are listed and deleted after
-   (`scripts/atlas3/README.md`, step 8). Version URLs stay off: turned on, they would also open older
+   (`scripts/atlas3/README.md`, step 9). Version URLs stay off: turned on, they would also open older
    versions, bound to the old database and not paused. The checked Worker is then uploaded with
    `wrangler versions upload`, which keeps `WRITES_PAUSED`, and `wrangler versions secret delete
    WRITES_PAUSED` makes a further version without it; neither deploys.

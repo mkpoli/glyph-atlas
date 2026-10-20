@@ -30,7 +30,9 @@ creates them.
    and it only reads. An interrupted copy resumes; a finished one is copied again only with `--fresh`.
 2. `build.py` writes the new layout and stops unless every source crop has exactly one crop, whose id
    names its record's page, with its page and book, and every run has its crops. It refuses to run
-   over an existing `out/mirror.sqlite`, since a rebuild renumbers every crop.
+   over an existing `out/mirror.sqlite`, since a rebuild renumbers every crop. A rebuild
+   (`--replace`) also renumbers the graphemes, which the reference objects name: `reference.py
+   --send` runs again after it.
 3. `sample.py` compares random crops with their source records field by field.
 4. `load.sh` creates the tables, loads the rows in parts, then builds the indexes, and records the
    build id in `imports`; `publish.py` refuses a mirror whose build the database does not name. A
@@ -118,7 +120,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    row stays valid until it expires, or until it is revoked from another device after writes resume.
    `wrangler secret put` and `wrangler secret delete` deploy a new
    version at once, and refuse while a newer version is uploaded and not deployed, so the freeze is set
-   before step 8 uploads anything.
+   before step 9 uploads anything.
 3. **Copy** the live tables again, `pull.py --fresh`, from a Codespace with the Cloudflare
    credentials: the copy is about 3 GB and the uploads after it are large.
 4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
@@ -159,7 +161,28 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    cutover, its dates come from running the resolver, `resolve` in `src/glyph_atlas/dates.py` (the one
    `scripts/export_dates_cloudflare.py` runs), over its `date_*` assertions in `glyph-atlas-v3`; the
    step that does so and writes `book_dates` is *not built*.
-7. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
+7. **Move the reference data:** `pull.py --fresh` copies the character cards, the 異体字 graph and its
+   derived tier, the writers, words and spellings and the component index. `reference.py` (dry run
+   by default) writes the cards with their edges, derived forms and writers as one R2 object per
+   character under `v3/reference/`, beside sharded card summaries, the IDS, the name list, the card
+   lists and one list per component; the rows a query filters, joins or sorts on go to the tables
+   of `migrations-atlas/0004_reference.sql`. A card's character or family head the layout lacks
+   gets the next grapheme id, and every grapheme takes its card's family head. A visual group's
+   samples are crop ids found in the mirror and in `crops`. `--send` applies 0004 once, loads only
+   the rows that differ from the local copy in stamped parts, then uploads the objects whose hash
+   differs from `v3/reference/manifest.json.gz` and deletes the paths that manifest lists and the
+   translation lacks; figures go to `out/reference-report.txt`. A load that stopped partway is
+   finished on the next run, also one whose part D1 applied and the local copy missed: the run
+   checks D1 for the stamps of every load the local copy has not finished.
+
+   The run reads about 1 GB of copies and writes as much again to scratch files and the stage
+   folder; it holds one object at a time (190 MB resident at most on the copies of 19–20 October
+   2026). Run it in the batch slice:
+
+       systemd-run --user --unit atlas3-reference --slice=batch.slice -p MemorySwapMax=0 --same-dir \
+         --setenv=ATLAS3_DIR=$PWD/work/atlas-v3 -- .venv/bin/python scripts/atlas3/reference.py --send
+       journalctl --user -u atlas3-reference -f
+8. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
    session changes still frozen. It is created once, before the window:
    `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:
 
@@ -183,7 +206,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    row would be refused by the half-loaded database. `check` compares the table set, the schema, row counts and a checksum
    of every row per table, first between the old database and `accounts.sqlite`, then between
    `accounts.sqlite` and `glyph-atlas-accounts`, and exits 1 on any difference. Run it before the
-   site checks of step 8: their sign-ins and session
+   site checks of step 9: their sign-ins and session
    renewals write to `glyph-atlas-accounts`, after which it no longer matches.
 
    `accounts.sqlite` and `accounts-load/` hold sessions and account tokens; the script creates them
@@ -191,7 +214,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 
        rm -rf work/atlas-v3/accounts.sqlite* work/atlas-v3/accounts-load
 
-8. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
+9. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout. The site checks that write (an existing session, renewal, logout, a
    history page, favourites, a claim, an old URL) run on this machine: `wrangler dev` runs the new
    Worker locally, with its bindings reaching the real new databases and bucket, and nothing answers
@@ -276,7 +299,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    `versions upload` adds to the previous version's secrets and deletes none (its `--help`), and
    neither command deploys, so the site keeps answering from the paused version. With Version URLs
    off, the new versions answer nowhere until they are deployed.
-9. **Switch** the Worker's routes to the new layout and resume writes:
+10. **Switch** the Worker's routes to the new layout and resume writes:
    `bunx wrangler versions deploy <id of the version without WRITES_PAUSED>@100%`. This one command
    is the switch: the paused version answers until it runs, and the new one, unpaused, after.
    Passkey sign-in (bound to glyphatlas.org) and a provider sign-in (its callback names
@@ -294,12 +317,10 @@ answers:
   `rejections`), including `writes_word` claims;
 - reviews (`events`, `submissions`, `skips`, `seen`, `actors`), accounts (`user`, `session`,
   `account`, `account_profiles`, `passkey`, `verification`, `rateLimit`) and `favourites`;
-- forms (`forms`, `form_*`), `words`, `word_spellings`;
-- character data (`characters` cards, `character_variants`, `character_derived`,
-  `component_variants`, `han_ids`, `han_components`, `han_component_names`, `grapheme_writers`,
-  `representations`);
+- forms (`forms`, `form_*`);
+- `representations` (form anchors), which form claims write: they move with the forms;
 - the model votes in `units.visual`, and the text-id alias files;
-- family heads and search names for characters that first appear after the first build;
+- search names for characters that first appear after the first build;
 - `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
   new `crops` has no per-crop grapheme column yet, so the read path decides how such a crop joins a
   family gallery before cutover.
