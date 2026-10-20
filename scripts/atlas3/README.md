@@ -77,10 +77,12 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
 - A crop facts load left unfinished (`crop_facts.py --send`) stops the publish until it is finished.
 - A statement over 90 KB stops the publish before anything is allocated.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
-  keeps its runs. A run keeps its written text where it differs from its graphemes (`runs.form`) and its
-  direction, and the publish moves the site's count of each written form (`run_forms`) and recounts the
-  grid of each book whose runs it changed (`run_books`, migrations-atlas-runs/0002). It refuses a local
-  copy whose runs have no forms yet (`runs.py`).
+  keeps its runs; a run whose crops change in place is updated, not replaced. Every run is written down
+  the page: a catalogue run written across it stops the publish, since the layout has no column for its
+  direction yet. The publish keeps `run_written` for the catalogue's crops and, once the runs have
+  landed, writes again the R2 answers of the books and forms shards it changed and Explore's grids
+  (`run_answers.py`), uploading those whose bytes R2 lacks. It refuses a local copy without
+  `run_written` (`runs.py`).
 - A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`
   moves on by one, and its bundle entry takes the new record. Reviews and claims name the cut they
   were made on, so they stay with the old one. The version it replaced joins the entry's `cuts` (its
@@ -191,16 +193,18 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    cutover, its dates come from running the resolver, `resolve` in `src/glyph_atlas/dates.py` (the one
    `scripts/export_dates_cloudflare.py` runs), over its `date_*` assertions in `glyph-atlas-v3`; the
    step that does so and writes `book_dates` is *not built*.
-   `runs.py` (a dry run without `--send`) moves what the first build left out of the runs
-   (`migrations-atlas-runs/0002_forms.sql`, which `--send` applies to `glyph-atlas-v3-runs`): each run's
-   written text where it differs from its graphemes and its direction, from `source-unit_ngrams` by its
-   first crop through the mirror and its length; the site's count of each such form (`run_forms`, the
-   old `ngram_forms`, less the forms written as the graphemes, which `run_stats` holds beyond them); and
-   each book's 480 most frequent runs of each length (`run_books`, the old per-book `ngram_counts`). The
-   counts are taken from the local runs with their forms, so they add up with `run_stats`. It sends only
-   what differs from the local copy, in stamped parts, and writes its figures to `out/runs-report.txt`.
-   **The first `--send` writes about 1.5M rows of `glyph-atlas-v3-runs` (1.0M runs, 348k forms, 164k
-   book rows on the copy of 19 October 2026); it needs the owner's approval with the dry run's figures.**
+   `runs.py` (a dry run without `--send`) adds how the runs are written
+   (`migrations-atlas-runs/0002_forms.sql`, which `--send` applies to `glyph-atlas-v3-runs`):
+   `run_written` holds each crop written apart from its grapheme family's head, with its character, so a
+   run's written form is its crops' rows, else their heads; a review that changes a crop's written
+   character writes its row. The counts go to R2 under `v3/runs/` (`run_answers.py`): Explore's grid of
+   each length with the forms each run gathers, each book's grid, and every run's forms sharded by length
+   and first code point. `--send` loads the rows in stamped parts, uploads the objects whose bytes R2
+   lacks, then inserts one stamp into `glyph-atlas-v3`'s `imports`, which moves the publication key the
+   runs' cached answers are kept under. Figures go to `out/runs-report.txt`; `check.py` compares each run's
+   written form and every answer with the live runs. **The first `--send` writes RUNWRITTEN rows of
+   `glyph-atlas-v3-runs` and 1 of `glyph-atlas-v3`, and uploads RUNOBJECTS objects; it needs the owner's
+   approval with the dry run's figures.**
 7. **Move the reference data:** `pull.py --fresh` copies the character cards, the 異体字 graph and its
    derived tier, the writers, words and spellings and the component index. `reference.py` (dry run
    by default) writes the cards with their edges, derived forms and writers as one R2 object per
