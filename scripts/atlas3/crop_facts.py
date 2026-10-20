@@ -1,40 +1,45 @@
-"""Load the crop facts into the new layout (decision record 0008): the model votes as page objects in R2,
-and the forms tool's clustering, from the live copies (`pull.py unit_facts form_families form_clusters
-form_units`).
+"""Load the crop facts into the new layout (decision record 0008): the forms tool's clustering, and at
+the cutover the model votes as page objects in R2.
 
-    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/crop_facts.py [--send]
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/crop_facts.py [--clusters DIR] [--votes] [--send]
 
-Every text id resolves through out/mirror.sqlite, never through a redirect. A row naming a crop the
+Every text id resolves through out/mirror.sqlite, never through a redirect. A glyph naming a crop the
 mirror lacks, or a crop no longer live (retired), is dropped and counted.
 
-- Votes: each collected crop's latest copied reading joins its page object
-  `v3/votes/<build>/<page>.json.gz` (votes.py) for the crop's cut, when the image it was read on
-  (`image_sha256`) is that cut's image in the crop's bundle; a reading of another image is dropped and
-  counted. Entries a publish wrote for the crop's cut stay; those an earlier load wrote are written
-  again from this copy.
-- Forms: clusters are numbered by the mirror's `codes` (field 'form_cluster', key the cluster's id), so
-  a cluster keeps its number across loads. Each cluster's glyphs, by rank, go to the R2 object
-  `v3/forms/<n>-<digest>.json.gz` (`{family, key, members: [[crop, rank, similarity, image, split, tone,
-  image_size]]}`, `image` the tile's media key), named by its content, so only a changed cluster's list
-  is uploaded; each family's first 12 and last 24 glyphs per cluster go to its index object
-  `v3/forms/families/<code point>-<digest>.json.gz`. `form_families` and `form_clusters` take the
-  copies' rows and the cluster decisions, each of which must be its cluster's latest in the loaded
-  `form_decisions`; a cluster's character and written family are its decision's. `form_glyphs` takes
-  the glyphs with their own decision, each of which must be the glyph's latest glyph decision there,
-  and the glyphs whose cluster form is not their current cluster's: their latest cluster decision was
-  made on a cluster of an earlier clustering, which `carried` names and which must be the latest cluster
-  decision whose `crops` name the glyph. `crops.cluster` takes each live crop's cluster, null outside
-  the clustering. Counts are recomputed from the glyphs kept, and the form each glyph ends with is
-  checked against the copy's.
+- Forms: the clustering is `work/forms/current` (`clusters.json`, `units.parquet`, `neighbours.json`,
+  `embeddings.npy`; `--clusters` names another). Clusters are numbered by the mirror's `codes` (field
+  'form_cluster', key the cluster's id), so a cluster keeps its number across loads. Each cluster's
+  glyphs, by rank, go to the R2 object `v3/forms/<n>-<digest>.json.gz` (`{family, key, members: [[crop,
+  rank, similarity, image, split, tone, image_size]]}`, `image` the tile's media key, `split` the group
+  of each "Split into k" for k = 2..8, `tone` and `image_size` from the crop's page bundle), named by
+  its content, so only a changed cluster's list is uploaded; each family's first 12 and last 24 glyphs
+  per cluster go to its index object `v3/forms/families/<code point>-<digest>.json.gz`.
+- Tiles: each clustered glyph whose pixels are on disk (`--corpus-root`) has a 240-pixel tile, keyed as
+  the site's media; a key the image map (`out/media/`) lacks is rendered, packed into `packs/<sha>.bin`
+  and uploaded, then merged into the map (media_map.py), before any list names it. A dry run counts them.
+- Decisions come from glyph-atlas-v3's own `form_decisions` (the local copy): each cluster's latest
+  cluster decision by its key, whichever clustering it was made on, and each crop's latest glyph or
+  inherit decision; an inherit decision leaves the glyph to its cluster. A glyph carries its latest
+  cluster decision (read from the glyphs the decision listed, or the list a site decision names) when
+  that is not its cluster's and its cluster has not been decided since; `carried` (migration 0014)
+  names it. `form_families` and `form_clusters` take the clustering's rows with the cluster decisions,
+  `form_glyphs` the glyphs with their own or a carried decision, and `crops.cluster` each live crop's
+  cluster, null outside the clustering. Counts are recomputed from the glyphs kept.
 - An object under `v3/forms/` that no row and no decision names is deleted by a load at least
   KEEP_UNNAMED seconds after a load first found it unnamed, from the manifest `v3/forms/manifest.json.gz`
   (local copy out/forms/manifest.json.gz).
+- Votes (`--votes`, the cutover load only): each collected crop's latest reading in the copy
+  `source-unit_facts.sqlite` (`pull.py unit_facts`) joins its page object `v3/votes/<build>/<page>.json.gz`
+  (votes.py) for the crop's cut, when the image it was read on (`image_sha256`) is that cut's image in
+  the crop's bundle; a reading of another image is dropped and counted. Entries a publish wrote for the
+  crop's cut stay; those an earlier load wrote are written again from this copy.
 
 Rows go to D1 as the difference from the local copy (out/atlas.sqlite), as books.py sends them: a
-rerun after a fresh copy inserts, updates and removes only what changed. The ordinary first load writes about
-1.33M `crops` rows (one per clustered glyph). At cutover, `--defer-crops` leaves those updates to
-`fill.py --send`, which fills cluster, family and priority in one pass. It keeps form decisions
-paused and records a durable handoff; finish fill before publishing or loading facts again. `--send` refuses a database holding form decisions the local copy lacks, sets
+rerun after a new clustering inserts, updates and removes only what changed. A load onto an empty layout
+writes about 1.33M `crops` rows (one per clustered glyph), so it waits for the owner's approval with the
+dry run's figures; `--defer-crops` leaves those updates to `fill.py --send`, which fills cluster,
+family and priority in one pass, keeps form decisions paused and records a durable handoff (finish the
+fill before publishing or loading facts again). `--send` refuses a database holding form decisions the local copy lacks, sets
 `form_state.loading` (no decision is recorded meanwhile) and checks again before the rows go, and
 names its run in the mirror's `pending`, so publish.py waits for it. A dry run (the default) writes the
 run under `out/crop-facts/<name>-dry/` and sends nothing; the report, with rows, statement bytes and
@@ -48,22 +53,23 @@ import fcntl
 import gzip
 import hashlib
 import json
-import re
+import os
 import shutil
 import sqlite3
 import subprocess
 import sys
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
+import media_map
 import votes
-from build import HERE, OUT, PAGE
+from build import HERE, OUT, PAGE, ROOT
 from history import Report
 from load_history import GROUP, SCHEMA, built, stamped
 from publish import BUCKET, FACTS_RUN, R2_REMOTE, applied, fits, lit, query, send, upload
 
-SOURCES = ("unit_facts", "form_families", "form_clusters", "form_units")
-IMAGE = re.compile(r"/atlas/media/([0-9a-f]{64})\.webp")
 FORMS_PREFIX = "v3/forms/"
 MANIFEST = "manifest.json.gz"
 # A family's index object holds per cluster its first HEAD and last TAIL glyphs.
@@ -72,6 +78,10 @@ HEAD, TAIL = 12, 24
 KEEP_UNNAMED = 2 * 3600
 # Crop ids per `UPDATE crops SET cluster` statement, about 60 KB.
 CLUSTER_IDS = 5000
+# A tile's longest edge, the "Split into k" choices each glyph carries its group for, and a pack's size.
+TILE_EDGE = 240
+SPLITS = range(2, 9)
+PACK_BYTES = 32 * 1024**2
 # Each table crop_facts.py owns, its columns and key.
 TABLES = {
     "form_families": (("code_point", "char", "label", "count", "cluster_count", "forms", "assigned", "rejected",
@@ -148,29 +158,155 @@ def named(body):
     return gzip.compress(text.encode(), mtime=0), hashlib.sha256(text.encode()).hexdigest()[:12]
 
 
-def latest_decisions(atlas):
-    """Each cluster key's latest cluster decision in the loaded form_decisions."""
-    if not has(atlas, "form_decisions"):
-        return {}
-    return dict(atlas.execute("SELECT cluster, id FROM form_decisions WHERE kind='cluster' AND cluster IS NOT NULL "
-                              "ORDER BY at, seq"))
+def clustering(directory):
+    """The clustering in `directory`, read as the forms tool reads it."""
+    os.environ["ATLAS_FORM_CLUSTERS"] = str(Path(directory).resolve())
+    from glyph_atlas import forms
+
+    data = forms.clusters()
+    if data["revision"] is None:
+        sys.exit(f"{directory} holds no clustering; run `atlas forms cluster` first")
+    return forms, data
 
 
-def latest_by_crop(atlas, kind):
-    """Each crop's latest decision of a kind ('glyph', or 'cluster' by the glyphs it listed) in the loaded
-    form_decisions."""
-    if not has(atlas, "form_decisions"):
-        return {}
-    return dict(atlas.execute("SELECT c.value, d.id FROM form_decisions d, json_each(d.crops) c WHERE d.kind=? "
-                              "ORDER BY d.at, d.seq", (kind,)))
+def cluster_decisions(atlas):
+    """Each cluster key's latest cluster decision in the loaded form_decisions:
+    (form, issue, character, written family, decision id, revision)."""
+    latest = {}
+    for key, *row in atlas.execute("SELECT cluster, form, issue, character, written_family, id, revision FROM form_decisions "
+                                   "WHERE kind='cluster' AND cluster IS NOT NULL ORDER BY at, seq"):
+        latest[key] = tuple(row)
+    return latest
 
 
-def stated(atlas):
-    """Each loaded decision's (form, issue, character, written family) as its glyphs take it."""
-    if not has(atlas, "form_decisions"):
-        return {}
-    return {r[0]: applies(None, r[1:]) for r in atlas.execute(
-        "SELECT id, form, issue, character, written_family FROM form_decisions")}
+def glyph_decisions(atlas):
+    """Each crop's latest glyph decision in the loaded form_decisions: (family, form, issue, character,
+    written family, decision id); an inherit decision after it leaves the crop none."""
+    latest = {}
+    for crop, kind, *row in atlas.execute(
+            "SELECT c.value, d.kind, d.family, d.form, d.issue, d.character, d.written_family, d.id "
+            "FROM form_decisions d, json_each(d.crops) c WHERE d.kind IN ('glyph', 'inherit') ORDER BY d.at, d.seq"):
+        if kind == "glyph":
+            latest[crop] = tuple(row)
+        else:
+            latest.pop(crop, None)
+    return latest
+
+
+def cluster_decisions_by_crop(atlas):
+    """Each crop's latest cluster decision by the glyphs it was made on, and every cluster decision's place
+    in the order they were made and what its glyphs take from it: ((form, issue, character, written
+    family), family). A decision the history loaded lists its glyphs in `crops`; one made on the site
+    names the list it was made on, whose glyphs are read from the local copy of that list (out/forms/)."""
+    latest, order, says, missing = {}, {}, {}, []
+    # A layout before migration 0006 has no `list`: every decision there came with the history.
+    listed_by = "list" if "list" in {r[1] for r in atlas.execute("PRAGMA table_info(form_decisions)")} else "NULL"
+    for n, (identity, family, form, issue, character, written, crops, listed) in enumerate(atlas.execute(
+            f"SELECT id, family, form, issue, character, written_family, crops, {listed_by} FROM form_decisions "
+            "WHERE kind='cluster' ORDER BY at, seq")):
+        order[identity] = n
+        says[identity] = (applies(None, (form, issue, character, written)), family)
+        members = json.loads(crops or "[]")
+        if not members and listed:
+            path = OUT / "forms" / f"{listed}.json.gz"
+            if not path.exists():
+                missing.append(listed)
+                continue
+            members = [m[0] for m in json.loads(gzip.decompress(path.read_bytes()))["members"]]
+        for crop in members:
+            latest[crop] = identity
+    if missing:
+        sys.exit(f"{len(missing)} cluster decisions name a list out/forms/ lacks, so their glyphs are unknown: {missing[:5]}")
+    return latest, order, says
+
+
+def tile_keys(corpus_root, wanted):
+    """Each glyph's tile key, for the glyphs of `wanted` whose pixels are on disk, keyed as the site's
+    media (a key names the source file, its stamp and the box); and the cache that renders them."""
+    from glyph_atlas import form_clusters
+    from glyph_atlas.review.media import MediaCache
+
+    media = MediaCache(corpus_root=corpus_root)
+    pixels = form_clusters.Pixels(corpus_root)
+    found = {g["id"]: at for g in form_clusters.glyphs(corpus_root, wanted) if (at := pixels(g)) is not None}
+    keys = {}
+    # File by file, so each scan is stat'ed and decoded once.
+    for identity, (path, box) in sorted(found.items(), key=lambda item: str(item[1][0])):
+        keys[identity] = media.local(path, list(box) if box else None, edge=TILE_EDGE).rsplit("/", 1)[-1].removesuffix(".webp")
+    return keys, media
+
+
+def mapped(keys):
+    """The keys the image map (out/media/) already places."""
+    shards, held = {}, set()
+    for key in keys:
+        prefix = key[:3]
+        if prefix not in shards:
+            shards[prefix] = media_map.read_shard(prefix)["keys"]
+        if key[3:] in shards[prefix]:
+            held.add(key)
+    return held
+
+
+def pack(media, keys, folder, workers):
+    """Render `keys` and pack them into content-named files under `folder`; the image map's rows and the
+    keys that did not render."""
+    folder.mkdir(parents=True, exist_ok=True)
+
+    def render(key):
+        try:
+            return key, media.materialize(key)
+        except (OSError, ValueError):
+            return key, None
+
+    rows, pending, failed, handle = [], [], set(), None
+
+    def seal():
+        handle.close()
+        opened = folder / "open.bin"
+        with opened.open("rb") as f:
+            sha = hashlib.file_digest(f, "sha256").hexdigest()
+        opened.rename(folder / f"{sha}.bin")
+        rows.extend((key, f"packs/{sha}.bin", offset, size, media_map.WEBP) for key, offset, size in pending)
+        pending.clear()
+
+    with ThreadPoolExecutor(workers) as pool:
+        for n, (key, path) in enumerate(pool.map(render, sorted(keys)), 1):
+            if path is None:
+                failed.add(key)
+                continue
+            if handle is None:
+                handle = (folder / "open.bin").open("wb")
+            body = path.read_bytes()
+            pending.append((key, handle.tell(), len(body)))
+            handle.write(body)
+            if handle.tell() >= PACK_BYTES:
+                seal()
+                handle = None
+            if n % 20000 == 0:
+                print(f"tiles: {n} of {len(keys)} rendered", flush=True)
+    if handle is not None:
+        seal()
+    return rows, failed
+
+
+def put_packs(files):
+    """Packs to R2 under `packs/`, where the image map names them; a pack is named by its content, so a
+    resend writes the same bytes again."""
+    if not files:
+        return
+    folder = files[0].parent
+    names = "\n".join(f.name for f in files) + "\n"
+    for attempt in range(4):
+        done = subprocess.run(["rclone", "copy", str(folder), f"{R2_REMOTE}:{BUCKET}/packs", "--files-from-raw", "-",
+                               "--transfers", "4", "--s3-no-check-bucket", "--header-upload",
+                               "Content-Type: application/octet-stream"], input=names, text=True, check=False)
+        listed = subprocess.run(["rclone", "lsf", f"{R2_REMOTE}:{BUCKET}/packs", "--files-from-raw", "-"],
+                                input=names, text=True, capture_output=True, check=False)
+        if done.returncode == 0 and set(listed.stdout.split()) >= {f.name for f in files}:
+            return
+        time.sleep(10 * (attempt + 1))
+    sys.exit("the tile packs did not upload; rerun")
 
 
 class Facts:
@@ -180,29 +316,27 @@ class Facts:
         self.live = dict(atlas.execute("SELECT id, cut FROM crops"))
         self.clustered = dict(atlas.execute("SELECT id, cluster FROM crops WHERE cluster IS NOT NULL"))
         self.revs = dict(atlas.execute("SELECT id, rev FROM pages"))
-        self.head, self.rows, self.objects, self.images, self.looks, self.cluster_of = [], {}, {}, {}, {}, {}
+        self.head, self.rows, self.objects, self.entries, self.cluster_of = [], {}, {}, {}, {}
 
-    def image(self, crop):
-        """The image hash of the crop's current cut, from its page bundle."""
+    def entry(self, crop):
+        """The crop's entry in its page bundle: (image hash of its current cut, tone, image size)."""
         pid = crop // PAGE
-        if pid not in self.images:
+        if pid not in self.entries:
             path = OUT / "pages" / f"{pid}-{self.revs.get(pid)}.json.gz"
-            self.images[pid] = {e["slot"]: e.get("image_sha256") for e in json.loads(gzip.decompress(path.read_bytes()))["crops"]
-                                if not e.get("retired")} if path.exists() else {}
-        return self.images[pid].get(crop % PAGE)
+            self.entries[pid] = {e["slot"]: (e.get("image_sha256"), e.get("tone"), e.get("image_size"))
+                                 for e in json.loads(gzip.decompress(path.read_bytes()))["crops"]
+                                 if not e.get("retired")} if path.exists() else {}
+        return self.entries[pid].get(crop % PAGE, (None, None, None))
 
     def votes(self):
         report = self.report
         report.table("unit_facts", 0)
         fresh = {}
         for r in latest("unit_facts", "id"):
-            crop = self.ids.get(r["id"])
-            if crop is not None and (r["tone"] is not None or r["image_size"] is not None):
-                # A tile's paper colour and size, for the forms lists.
-                self.looks[crop] = (r["tone"], r["image_size"] and json.loads(r["image_size"]))
             if r["origin"] != "local":
                 continue
             report.tables["unit_facts"]["in"] += 1
+            crop = self.ids.get(r["id"])
             if crop is None:
                 report.drop("unit_facts", "crop the mirror lacks")
                 continue
@@ -214,7 +348,7 @@ class Facts:
             if stored is None and guessed is None:
                 report.drop("unit_facts", "no reading")
                 continue
-            current = self.image(crop)
+            current = self.entry(crop)[0]
             if not r["image_sha256"] or not current:
                 report.drop("unit_facts", "no image hash to match against the crop's cut")
                 continue
@@ -256,114 +390,130 @@ class Facts:
                     f"{len(fresh)} pages, {kept['publish']} left as a publish wrote them, {kept['unloaded']} an earlier "
                     f"load wrote replaced; {len(self.head)} new model sets")
 
-    def forms(self):
+    def glyphs(self, data):
+        """The clustering's glyphs by crop: {identity: crop} for those kept, the others dropped and counted."""
         report = self.report
-        families = {r["code_point"]: dict(r) for r in latest("form_families", "code_point")}
-        clusters = {r["id"]: dict(r) for r in latest("form_clusters", "id")}
-        report.table("form_families", len(families))
-        report.table("form_clusters", len(clusters))
-        report.table("form_units", 0)
-        # A cluster decision is the latest of its cluster in the loaded history, or the load stops.
-        decided_last = latest_decisions(self.atlas)
-        stale = [f"{k}: {c['decision']} (latest {decided_last.get(k)})" for k, c in sorted(clusters.items())
-                 if c["decision"] is not None and decided_last.get(k) != c["decision"]]
-        if stale:
-            sys.exit(f"{len(stale)} clusters name a decision that is not their latest cluster decision in the loaded "
-                     f"form_decisions; load the history from the same copy first: {stale[:5]}")
-        # What each cluster's glyphs take from it: its decision's form, issue, character and written family.
-        says = stated(self.atlas)
-        decided = {k: says[c["decision"]] if c["decision"] is not None else (None, None, None, None)
-                   for k, c in clusters.items()}
-        differ = sorted(k for k, c in clusters.items() if decided[k][:2] != applies(None, (c["form"], c["issue"], None, None))[:2])
-        if differ:
-            sys.exit(f"{len(differ)} clusters' form or issue is not their decision's; copy form_clusters again: {differ[:5]}")
-        members, outside, settled = {}, [], {}
-        undecided, carried = Counter(), Counter()
-        glyph_last, cluster_last, stale, unmarked = latest_by_crop(self.atlas, "glyph"), latest_by_crop(self.atlas, "cluster"), [], []
-        for r in latest("form_units", "id"):
-            report.tables["form_units"]["in"] += 1
-            crop = self.ids.get(r["id"])
-            reason = ("crop the mirror lacks" if crop is None else "crop no longer live (retired)" if crop not in self.live
-                      else "clustered in a cluster form_clusters lacks" if r["clustered"] and r["cluster"] not in clusters
-                      else "tile not a media key" if r["image"] is not None and not IMAGE.fullmatch(r["image"]) else None)
-            if reason:
-                report.drop("form_units", reason)
-                continue
-            own = (r["glyph_form"], r["glyph_issue"], r["glyph_character"], r["glyph_family"]) if r["glyph_set"] else None
-            if own is not None and glyph_last.get(crop) != r["glyph_decision"]:
-                stale.append(f"{r['id']}: {r['glyph_decision']} (latest {glyph_last.get(crop)})")
-            settled[crop] = (r["form"], r["issue"], r["issue_character"], r["written_family"])
-            # The glyph's cluster form: its current cluster's, or one its latest cluster decision gave it on a
-            # cluster of an earlier clustering, which is carried.
-            layer = (r["cluster_form"], r["cluster_issue"], r["cluster_character"], r["cluster_family"])
-            mark = None
-            if layer != (decided[r["cluster"]] if r["clustered"] else (None, None, None, None)):
-                mark = cluster_last.get(crop)
-                if mark is None or says[mark] != layer:
-                    unmarked.append(f"{r['id']}: {layer} (latest cluster decision {mark})")
-                carried["clustered" if r["clustered"] else "outside"] += 1
-                carried["under their own decision"] += own is not None
-            row = None
-            if own is not None:
-                row = (*own, r["glyph_decision"], mark)
-            elif mark is not None:
-                row = (*layer, mark, mark)
-            if r["clustered"]:
-                image = IMAGE.fullmatch(r["image"])[1] if r["image"] else None
-                members.setdefault(r["cluster"], []).append((r["rank"], crop, r["similarity"], image, r["split"], row))
-            elif row is not None:
-                outside.append((crop, r["family"], None, *row))
+        report.table("form_units", len(data["units"]))
+        kept = {}
+        for identity in data["units"]:
+            crop = self.ids.get(identity)
+            if crop is None:
+                report.drop("form_units", "crop the mirror lacks")
+            elif crop not in self.live:
+                report.drop("form_units", "crop no longer live (retired)")
             else:
-                # Outside the clustering with no decision: nothing to keep.
-                undecided["glyphs"] += 1
-                report.drop("form_units", "outside the clustering, no decision")
+                kept[identity] = crop
+        return kept
 
-        if stale:
-            sys.exit(f"{len(stale)} glyphs name a decision that is not their latest glyph decision in the loaded "
-                     f"form_decisions; load the history from the same copy first: {stale[:5]}")
-        if unmarked:
-            sys.exit(f"{len(unmarked)} glyphs have a cluster form that neither their cluster's decision nor their latest "
-                     f"cluster decision in the loaded form_decisions gives; load the history from the same copy first: "
-                     f"{unmarked[:5]}")
-        report.note(f"form_units: {undecided['glyphs']} glyphs outside the clustering with no decision, not kept")
-        report.note(f"form_glyphs: {carried['clustered']} clustered glyphs and {carried['outside']} outside the clustering "
-                    f"carry a cluster decision of an earlier clustering, {carried['under their own decision']} of them "
-                    "under their own decision")
-        cluster_rows, lists, glyphs, wrong, counts = [], {}, [], [], Counter()
-        for key in sorted(clusters):
-            if key not in members:
-                report.drop("form_clusters", "no glyph left")
+    def tiles(self, kept, corpus_root, send, workers):
+        """Each kept glyph's tile key, with the tiles the image map lacks rendered, uploaded and mapped
+        first when sending; a dry run counts them."""
+        keys, media = tile_keys(corpus_root, set(kept))
+        held = mapped(set(keys.values()))
+        wanted = set(keys.values()) - held
+        failed = set()
+        if send and wanted:
+            folder = OUT / "crop-facts" / "tiles"
+            shutil.rmtree(folder, ignore_errors=True)
+            rows, failed = pack(media, wanted, folder, workers)
+            # The packs first, so no key the map gains names a pack R2 lacks.
+            put_packs(sorted(folder.glob("*.bin")))
+            media_map.merge(rows)
+            shutil.rmtree(folder)
+        if send:
+            media_map.send(upload)
+        self.report.note(f"tiles: {len(keys)} glyphs with pixels on disk, {len(kept) - len(keys)} without (no tile); "
+                         f"{len(held)} tiles the image map holds, {len(wanted)} {'rendered' if send else 'to render'}"
+                         f"{f', {len(failed)} of them failed (no tile)' if failed else ''}")
+        return {identity: key for identity, key in keys.items() if key not in failed}
+
+    def forms(self, directory, corpus_root, send, workers):
+        report = self.report
+        if not has(self.atlas, "form_decisions"):
+            sys.exit("the local copy has no form_decisions; load the history (load_history.py) first")
+        forms, data = clustering(directory)
+        from glyph_atlas.review.forms import _form_entry, shape_runs
+
+        kept = self.glyphs(data)
+        tiles = self.tiles(kept, corpus_root, send, workers)
+        decided_last, glyph_last = cluster_decisions(self.atlas), glyph_decisions(self.atlas)
+        by_crop, order, says = cluster_decisions_by_crop(self.atlas)
+
+        def carried_by(crop, decision):
+            """The cluster decision a glyph carries: its latest cluster decision, when that is not its
+            cluster's and its cluster has not been decided since."""
+            mark = by_crop.get(crop)
+            if mark is None or mark == decision or (decision is not None and order[decision] > order[mark]):
+                return None
+            return mark
+        report.table("form_families", len(data["families"]))
+        report.table("form_clusters", sum(len(f["clusters"]) for f in data["families"].values()))
+        cluster_rows, lists, glyphs, counts, of_family, families = [], {}, [], Counter(), {}, {}
+        carried, older, carrying = set(), 0, Counter()
+        for cp, family in sorted(data["families"].items()):
+            clusters = family["clusters"]
+            near = data["neighbours"].get(cp, {})
+            shape = shape_runs(near, clusters) if near.get("order") else [c["id"] for c in clusters]
+            for size_position, c in enumerate(clusters):
+                key = c["id"]
+                ms = sorted((data["units"][i][3], kept[i], data["units"][i][2], i) for i in data["members"][key] if i in kept)
+                if not ms:
+                    report.drop("form_clusters", "no glyph left")
+                    continue
+                groups = {k: {i: g for g, ids in enumerate(forms.split(key, k)) for i in ids} for k in SPLITS}
+                n = numbered(self.mirror, "form_cluster", key)
+                *decided, decision, revision = decided_last.get(key, (None,) * 6)
+                if decision is not None:
+                    carried.add(key)
+                    older += revision != data["revision"]
+                body = {"family": cp, "key": key, "members": [
+                    [crop, rank, sim, tiles.get(i), "".join(str(groups[k][i]) for k in SPLITS), *self.entry(crop)[1:]]
+                    for rank, crop, sim, i in ms]}
+                blob, digest = named(body)
+                lists[n] = (f"{n}-{digest}", blob, body["members"])
+                cluster_rows.append((n, key, cp, c["label"], len(ms), c["coherence"], shape.index(key), size_position,
+                                     lists[n][0], *decided, decision))
+                of_family.setdefault(cp, []).append(n)
+                for _rank, crop, _sim, _i in ms:
+                    self.cluster_of[crop] = n
+                    mine, mark = glyph_last.get(crop), carried_by(crop, decision)
+                    own = mine[1:5] if mine else None
+                    # A carried decision is the glyph's cluster form; its own decision still comes first.
+                    got = applies(own or (says[mark][0] if mark else None), tuple(decided))
+                    counts[cp, "count"] += 1
+                    counts[cp, "assigned"] += got[0] is not None
+                    counts[cp, "rejected"] += got[1] is not None
+                    carrying["clustered"] += mark is not None
+                    if mine:
+                        glyphs.append((crop, cp, n, *own, mine[5], mark))
+                    elif mark:
+                        glyphs.append((crop, cp, n, *says[mark][0], mark, mark))
+            families[cp] = family
+        stray = sorted(k for k in decided_last if k not in carried)
+        report.note(f"form_decisions: {len(carried)} clusters take their latest cluster decision by key, {older} of them "
+                    f"made on an earlier clustering; {len(stray)} cluster keys with decisions name no cluster of this one "
+                    "with glyphs left", stray)
+        # Glyphs outside the clustering with their own decision, or carrying a cluster decision, keep it;
+        # one on a retired crop is dropped.
+        outside, gone = [], 0
+        for crop in sorted(glyph_last.keys() | by_crop.keys()):
+            if crop in self.cluster_of:
                 continue
-            c, ms = clusters[key], sorted(members[key], key=lambda m: m[:2])
-            n = numbered(self.mirror, "form_cluster", key)
-            character, written = decided[key][2:]
-            body = {"family": c["family"], "key": key,
-                    "members": [[crop, rank, sim, image, split, *self.looks.get(crop, (None, None))]
-                                for rank, crop, sim, image, split, _row in ms]}
-            data, digest = named(body)
-            lists[n] = (f"{n}-{digest}", data, body["members"])
-            cluster_rows.append((n, key, c["family"], c["label"], len(ms), c["coherence"], c["shape_position"],
-                                 c["size_position"], lists[n][0], c["form"], c["issue"], character, written, c["decision"]))
-            for _rank, crop, _sim, _image, _split, row in ms:
-                self.cluster_of[crop] = n
-                got = applies(row and row[:4], decided[key])
-                if got != settled[crop]:
-                    wrong.append(crop)
-                counts[c["family"], "count"] += 1
-                counts[c["family"], "assigned"] += got[0] is not None
-                counts[c["family"], "rejected"] += got[1] is not None
-                if row is not None:
-                    glyphs.append((crop, c["family"], n, *row))
-        report.note(f"form_units: {len(wrong)} glyphs whose form, issue, character or family differs from the copy's "
-                    "when worked out from their own row and their cluster", wrong)
+            if crop not in self.live:
+                gone += 1
+                continue
+            mine, mark = glyph_last.get(crop), carried_by(crop, None)
+            carrying["outside"] += mark is not None
+            if mine:
+                family, *own, decision = mine
+                outside.append((crop, family, None, *own, decision, mark))
+            else:
+                outside.append((crop, says[mark][1], None, *says[mark][0], mark, mark))
+        report.note(f"form_glyphs: {len(glyphs)} clustered glyphs and {len(outside)} outside the clustering with their own "
+                    f"or a carried decision; {carrying['clustered']} clustered and {carrying['outside']} outside carry a "
+                    f"cluster decision their cluster has not had since; {gone} decisions on crops no longer live left out")
 
-        revisions = {f["revision"] for f in families.values()}
-        if len(revisions) > 1:
-            sys.exit(f"the copied families name {len(revisions)} clustering revisions; copy form_families again")
-        of_family = {}
-        for row in cluster_rows:
-            of_family.setdefault(row[2], []).append(row[0])
-        family_rows, indexes, changed = [], {}, 0
+        family_rows, indexes = [], {}
         for cp in sorted(families):
             f = families[cp]
             if cp not in of_family:
@@ -372,29 +522,26 @@ class Facts:
             # Each cluster's first and last glyphs, for the family view's representatives and least typical.
             index = {"family": cp, "clusters": {}}
             for n in of_family[cp]:
-                name, _data, ms = lists[n]
+                name, _blob, ms = lists[n]
                 look = [[m[0], m[1], m[3], m[5], m[6]] for m in ms]
                 index["clusters"][str(n)] = {"list": name, "count": len(ms), "head": look[:HEAD],
                                              "tail": look[max(HEAD, len(look) - TAIL):]}
-            data, digest = named(index)
-            indexes[cp] = (f"{cp}-{digest}", data)
-            row = (cp, f["char"], f["label"], counts[cp, "count"], len(of_family[cp]), f["forms"], counts[cp, "assigned"],
-                   counts[cp, "rejected"], f["revision"], indexes[cp][0])
-            changed += (row[3], row[4], row[6], row[7]) != (f["count"], f["cluster_count"], f["assigned"], f["rejected"])
-            family_rows.append(row)
-        report.note(f"form_families: {changed} families whose counts changed with the glyphs left out")
+            blob, digest = named(index)
+            indexes[cp] = (f"{cp}-{digest}", blob)
+            entries = json.dumps([_form_entry(char) for char in forms.family_members(cp)], ensure_ascii=False)
+            family_rows.append((cp, f["char"], f["label"], counts[cp, "count"], len(of_family[cp]), entries,
+                                counts[cp, "assigned"], counts[cp, "rejected"], data["revision"], indexes[cp][0]))
         report.tables["form_families"]["out"] = len(family_rows)
         report.tables["form_clusters"]["out"] = len(cluster_rows)
-        report.tables["form_units"]["out"] = sum(len(ms) for _n, _d, ms in lists.values()) + len(outside)
-        report.note(f"form_glyphs: {len(glyphs)} clustered glyphs and {len(outside)} outside the clustering with their "
-                    f"own or a carried decision; {len(lists)} cluster lists, {len(indexes)} family indexes")
+        report.tables["form_units"]["out"] = sum(len(ms) for _n, _d, ms in lists.values())
+        report.note(f"forms: clustering {data['revision']}; {len(lists)} cluster lists, {len(indexes)} family indexes")
         self.rows = {"form_families": family_rows, "form_clusters": cluster_rows, "form_glyphs": glyphs + outside}
-        for name, data, _ms in lists.values():
+        for name, blob, _ms in lists.values():
             if not (OUT / "forms" / f"{name}.json.gz").exists():
-                self.objects[f"forms/{name}.json.gz"] = data
-        for name, data in indexes.values():
+                self.objects[f"forms/{name}.json.gz"] = blob
+        for name, blob in indexes.values():
             if not (OUT / "forms" / "families" / f"{name}.json.gz").exists():
-                self.objects[f"forms/families/{name}.json.gz"] = data
+                self.objects[f"forms/families/{name}.json.gz"] = blob
 
     def groups(self, defer_crops=False):
         """The statements that turn the local copy's tables into these, in groups; per table the statements,
@@ -561,7 +708,12 @@ def clean(run, atlas):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--send", action="store_true", help="apply migration 0006, upload the objects and send the rows")
+    parser.add_argument("--clusters", type=Path, default=ROOT / "work/forms/current", help="the clustering to load")
+    parser.add_argument("--corpus-root", type=Path, default=ROOT / "work", help="corpus root holding the glyphs' pixels")
+    parser.add_argument("--workers", type=int, default=8, help="threads rendering tiles")
+    parser.add_argument("--votes", action="store_true", help="also load the model votes from source-unit_facts.sqlite "
+                        "(the cutover load)")
+    parser.add_argument("--send", action="store_true", help="apply migrations 0006 and 0014, upload the objects and send the rows")
     parser.add_argument("--defer-crops", action="store_true", help="leave cluster updates to fill.py with family and priority")
     args = parser.parse_args()
     dry = not args.send
@@ -599,8 +751,9 @@ def main():
         migrate(atlas, build)
 
     facts = Facts(mirror, atlas, build)
-    facts.votes()
-    facts.forms()
+    if args.votes:
+        facts.votes()
+    facts.forms(args.clusters, args.corpus_root, not dry, args.workers)
     groups, written = facts.groups(args.defer_crops)
     digest = hashlib.sha256(b"defer-crops" if args.defer_crops else b"")
     for g in groups:

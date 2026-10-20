@@ -279,25 +279,28 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    to its integer crop id, and uploads the map as `v3/aliases/<first three hex digits of the text id's
    SHA-256>.json.gz`, read by `aliasCrop` in the Worker. A redirect cycle stops it with examples; a
    chain that ends outside the mirror is counted as gone and left out.
-   `crop_facts.py` (a dry run without `--send`) moves the crop facts from the copies `unit_facts`,
-   `form_families`, `form_clusters` and `form_units` (decision record 0008). Each collected crop's
-   model votes join its page object in `v3/votes/<build>/` when they were read on the image of the
-   crop's current cut. Each forms cluster becomes an R2 list named by its content,
-   `v3/forms/<n>-<digest>.json.gz` (glyphs by rank with tile, tone and size), each family an index
-   object under `v3/forms/families/`, clusters numbered by the mirror's `codes`; D1 takes the tables of
-   migrations 0006 and 0014, which it applies: families, clusters with their decisions (each must be
-   its cluster's latest in the loaded `form_decisions`), the glyphs with their own decision (each its
-   latest glyph decision there) or with a cluster form from a decision of an earlier clustering (each
-   the latest cluster decision that listed the glyph, named in `carried`), and `crops.cluster`. Text ids resolve through the mirror and never through a redirect; rows naming a
-   crop the mirror lacks or a retired crop, and readings of another image, are dropped and counted in
+   `crop_facts.py --votes` (a dry run without `--send`) moves the crop facts (decision record 0008).
+   Each collected crop's model votes in the copy `unit_facts` join its page object in
+   `v3/votes/<build>/` when they were read on the image of the crop's current cut; `--votes` is for
+   this load only, as publications carry the votes afterwards. The forms tool's clustering comes from
+   `work/forms/current`: each cluster becomes an R2 list named by its content,
+   `v3/forms/<n>-<digest>.json.gz` (glyphs by rank with tile, split groups, tone and size), each family
+   an index object under `v3/forms/families/`, clusters numbered by the mirror's `codes`; tiles the
+   image map lacks are rendered, packed under `packs/` and mapped first. D1 takes the tables of
+   migrations 0006 and 0014, which it applies: families, clusters with their latest cluster decision by
+   key in the loaded `form_decisions`, the glyphs with their own latest glyph decision or carrying the
+   latest cluster decision made on them while their cluster has had none since (named in `carried`),
+   and `crops.cluster`. Text ids resolve through the mirror and never through a redirect; glyphs naming
+   a crop the mirror lacks or a retired crop, and readings of another image, are dropped and counted in
    `out/crop-facts-report.txt`, and the counts are worked out again from what is kept. D1 takes the
-   difference from the local copy, so a rerun after a fresh copy sends only what changed, and readings
-   an earlier load wrote are written again from the fresh copy. `--send` refuses a database holding
-   form decisions the local copy lacks, holds decisions (`form_state.loading`) while its rows go, and
-   deletes an object under `v3/forms/` that nothing names once a load two hours or more after the one
-   that first found it unnamed runs. At cutover use `--send --defer-crops`: the metadata and lists
-   load first, while the shared fill handles the approximately 1.33M cluster assignments together
-   with family and priority. Review the combined dry-run figures before sending the fill.
+   difference from the local copy, so a rerun after a new clustering sends only what changed, and
+   readings an earlier load wrote are written again from the fresh copy. `--send` refuses a database
+   holding form decisions the local copy lacks, holds decisions (`form_state.loading`) while its rows
+   go, and deletes an object under `v3/forms/` that nothing names once a load two hours or more after
+   the one that first found it unnamed runs. At cutover use `--send --defer-crops`: the metadata and
+   lists load first, while the shared fill handles the approximately 1.33M cluster assignments together
+   with family and priority. Review the combined dry-run figures before sending the fill. A new
+   clustering after the cutover is loaded the same way, without `--votes` or `--defer-crops`.
 6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
    characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
    `review_epoch`; the citations are `reference.py`'s) from the copies into `out/books.sqlite`

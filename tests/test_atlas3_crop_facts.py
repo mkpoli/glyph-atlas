@@ -55,10 +55,11 @@ def test_votes_are_stored_without_what_every_row_repeats_and_restore_whole():
 
 
 def facts(root, remote, monkeypatch, *flags):
-    for name in ("crop_facts", "load_history", "history"):
+    for name in ("crop_facts", "load_history", "history", "media_map"):
         sys.modules.pop(name, None)
     module = importlib.import_module("crop_facts")
     loader = importlib.import_module("load_history")
+    importlib.import_module("glyph_atlas.forms")._CLUSTERS.invalidate()
 
     def applied(database, stamp):
         return bool(remote.query(database, f"SELECT 1 AS n FROM imports WHERE stamp = '{stamp}'"))
@@ -70,7 +71,15 @@ def facts(root, remote, monkeypatch, *flags):
     monkeypatch.setattr(module, "upload", remote.upload)
     remote.removed = getattr(remote, "removed", [])
     monkeypatch.setattr(module, "remove", lambda names, prefix: remote.removed.extend(prefix + n for n in names))
-    monkeypatch.setattr(sys, "argv", ["crop_facts.py", *flags])
+    # Tiles: every glyph but those of `remote.unheld` has pixels on disk, all with one tile.
+    monkeypatch.setattr(module, "tile_keys", lambda corpus_root, wanted: (
+        {i: getattr(remote, "tile", TILE) for i in wanted if i not in getattr(remote, "unheld", ())}, None))
+    remote.packed = getattr(remote, "packed", [])
+    monkeypatch.setattr(module, "pack", lambda media, keys, folder, workers: (
+        folder.mkdir(parents=True, exist_ok=True), (folder / "p.bin").write_bytes(b"RIFF"),
+        remote.packed.append(sorted(keys)), ([(k, "packs/p.bin", 0, 4, None) for k in keys], set()))[-1])
+    monkeypatch.setattr(module, "put_packs", lambda files: remote.uploaded.extend(f"packs/{f.name}" for f in files))
+    monkeypatch.setattr(sys, "argv", ["crop_facts.py", "--clusters", str(root / "forms"), *flags])
     try:
         module.main()
     finally:
@@ -78,28 +87,46 @@ def facts(root, remote, monkeypatch, *flags):
     return module
 
 
-FORM_UNIT = ["id", "family", "cluster", "rank", "similarity", "image", "split", "clustered", "cluster_form", "cluster_issue",
-             "cluster_character", "cluster_family", "glyph_set", "glyph_form", "glyph_decision", "glyph_issue", "glyph_character",
-             "glyph_family", "form", "issue", "issue_character", "written_family"]
-TILE = "/atlas/media/" + "ab" * 32 + ".webp"
+TILE = "ab" * 32
 SHA = "cd" * 32
+# The clustering of か: c1 with three glyphs (one the mirror lacks), c2 with a glyph the mirror lacks.
+CLUSTERS = {"U+304B:c1": [("codh:g1", 0.9), ("ex:a1", 0.9), ("ex:b1", 0.9), ("codh:gone", 0.8)],
+            "U+304B:c2": [("codh:gone2", 0.8)]}
 
 
-def form_unit(id, cluster, rank, clustered=1, cluster_form=None, own=None, image=TILE):
-    """A glyph of か's family; `own` is its own decision's form."""
-    form = own if own is not None else cluster_form
-    return (id, "U+304B", cluster, rank, 0.9, image, "0101010", clustered, cluster_form, None, None, None,
-            int(own is not None), own, "g1" if own is not None else None, None, None, None, form, None, None, None)
+def clustering(root, monkeypatch, clusters=None, revision="r1", order=None):
+    """The clustering at `root/forms`, as `atlas forms cluster` writes it: one family of か."""
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    monkeypatch.setenv("ATLAS_FORM_CLUSTERS", str(root / "forms"))
+    clusters = CLUSTERS if clusters is None else clusters
+    folder = root / "forms"
+    folder.mkdir(exist_ok=True)
+    rows = [(i, key, sim, rank) for key, ms in clusters.items() for rank, (i, sim) in enumerate(ms)]
+    (folder / "clusters.json").write_text(json.dumps({"revision": revision, "families": {"U+304B": {
+        "family": "U+304B", "char": "か", "label": "か", "count": len(rows),
+        "members": [{"code_point": "U+304B", "char": "か"}, {"code_point": "U+1B019", "char": "𛀙"}],
+        "clusters": [{"id": key, "label": f"Cluster {n}", "count": len(ms), "coherence": 0.9}
+                     for n, (key, ms) in enumerate(clusters.items(), 1)]}}}))
+    pq.write_table(pa.table({"id": [r[0] for r in rows], "family": ["U+304B"] * len(rows), "cluster": [r[1] for r in rows],
+                             "similarity": [r[2] for r in rows], "rank": [r[3] for r in rows]}), folder / "units.parquet")
+    np.save(folder / "embeddings.npy", np.array([[1, n % 3] for n in range(len(rows))], np.float16))
+    (folder / "neighbours.json").write_text(json.dumps({"U+304B": {"order": order, "adjacent": [1.0]}} if order else {}))
 
 
-def hash_images(root, hashes):
-    """Give crops' bundle entries the image hash of their cut."""
+def hash_images(root, hashes, looks=None):
+    """Give crops' bundle entries the image hash of their cut, and a tone and size."""
     for path in (root / "out" / "pages").glob("*.json.gz"):
         body = json.loads(gzip.decompress(path.read_bytes()))
         page = int(path.name.split("-")[0])
         for e in body["crops"]:
-            if page * PAGE + e["slot"] in hashes:
-                e["image_sha256"] = hashes[page * PAGE + e["slot"]]
+            crop = page * PAGE + e["slot"]
+            if crop in hashes:
+                e["image_sha256"] = hashes[crop]
+            if crop in (looks or {}):
+                e["tone"], e["image_size"] = looks[crop]
         path.write_bytes(gzip.compress(json.dumps(body, ensure_ascii=False).encode()))
 
 
@@ -108,47 +135,29 @@ def unit_facts(root, rows):
     write_source(root, "unit_facts", ["id", "origin", "visual", "context", "image_sha256", "tone", "image_size"], rows)
 
 
-def sources(root, decided="か", units=None, decision="d1"):
-    """The copies; a cluster without a decision has no form."""
-    decided = decided if decision is not None else None
-    for name in ("form_families", "form_clusters", "form_units"):
-        (root / f"source-{name}.sqlite").unlink(missing_ok=True)
-    unit_facts(root, [
-        ("ex:a1", "local", visual(), CONTEXT, SHA, "#cbc0b0", "[83,133]"), ("ex:a2", "local", visual(), CONTEXT, "ef" * 32, None, None),
-        ("ex:b1", "local", visual(), CONTEXT, SHA, None, None), ("ex:gone", "local", visual(), CONTEXT, SHA, None, None),
-        ("codh:g1", "corpus", NONE, NO_CONTEXT, None, None, None)])
-    write_source(root, "form_families", ["code_point", "char", "label", "count", "cluster_count", "forms", "assigned", "rejected", "revision"],
-                 [("U+304B", "か", "か", 4, 2, "[]", 4, 0, "r1")])
-    write_source(root, "form_clusters", ["id", "family", "label", "count", "coherence", "shape_position", "size_position",
-                                         "form", "decision", "issue"],
-                 [("U+304B:c1", "U+304B", "Cluster 1", 3, 0.9, 0, 0, decided, decision, None),
-                  ("U+304B:c2", "U+304B", "Cluster 2", 1, 0.8, 1, 1, None, None, None)])
-    write_source(root, "form_units", FORM_UNIT, units or [
-        form_unit("codh:g1", "U+304B:c1", 0, cluster_form=decided), form_unit("ex:a1", "U+304B:c1", 1, cluster_form=decided, own="𛀙"),
-        form_unit("ex:b1", "U+304B:c1", 2, cluster_form=decided), form_unit("codh:gone", "U+304B:c2", 0),
-        form_unit("ex:a2", "U+304B:old", 0, clustered=0, own="か", image=None)])
+def mapped_tile(root, key=TILE):
+    """A tile the image map already places."""
+    importlib.import_module("media_map").merge([(key, "packs/held.bin", 0, 10, None)])
+    (root / "out" / "media" / "unsent").unlink()
 
 
-def decisions(root, remote, *rows):
-    """Cluster decisions in the loaded history, on D1 and the local copy: (seq, id, at, cluster[, form[, glyphs]]),
-    form か and no glyphs listed unless given."""
+def decide(root, remote, *rows):
+    """Decisions in the loaded history, on D1 and the local copy: (seq, id, at, kind, cluster, form, crops, revision)."""
     known = ids(root)
-    rows = [(*r[:4], r[4] if len(r) > 4 else "か", json.dumps(r[5] if len(r) > 5 else []),
-             json.dumps([known[g] for g in (r[5] if len(r) > 5 else [])])) for r in rows]
     for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
         db.executemany("INSERT INTO form_decisions(seq, id, at, actor, kind, family, cluster, form, revision, units, crops, note) "
-                       "VALUES(?, ?, ?, 'a', 'cluster', 'U+304B', ?, ?, 'r1', ?, ?, '')", rows)
+                       "VALUES(?, ?, ?, 'a', ?, 'U+304B', ?, ?, ?, ?, ?, '')",
+                       [(seq, id, at, kind, cluster, form, revision, json.dumps(list(units)), json.dumps([known[u] for u in units]))
+                        for seq, id, at, kind, cluster, form, units, revision in rows])
         db.commit()
 
 
-def glyph_decided(root, remote, crops=("ex:a1", "ex:a2"), id="g1", seq=0, at="2025-01-01"):
-    """A glyph decision in the loaded history, on D1 and the local copy, over the crops the sources decide."""
-    known = ids(root)
-    for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
-        db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) "
-                   "VALUES(?, ?, ?, 'a', 'glyph', 'U+304B', 'r1', ?, ?, '')",
-                   (seq, id, at, json.dumps(list(crops)), json.dumps([known[c] for c in crops])))
-        db.commit()
+def cluster_decided(root, remote, seq=1, id="d1", at="2026-01-01", cluster="U+304B:c1", form="か", revision="r1"):
+    decide(root, remote, (seq, id, at, "cluster", cluster, form, (), revision))
+
+
+def glyph_decided(root, remote, crops=("ex:a1", "ex:a2"), id="g1", seq=0, at="2025-01-01", form="𛀙", kind="glyph"):
+    decide(root, remote, (seq, id, at, kind, None, form, crops, "r1"))
 
 
 def retire(root, remote, crop):
@@ -176,55 +185,55 @@ def build_of(root):
     return sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
 
 
-def test_crop_facts_load_votes_to_r2_and_the_forms_by_integer_crop_id(layout, monkeypatch):  # noqa: F811
+def test_the_clustering_loads_by_integer_crop_id_with_the_decisions_carried_by_key_and_crop(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
-    glyph_decided(root, remote)
     known = ids(root)
-    sources(root)
-    hash_images(root, {known["ex:a1"]: SHA, known["ex:a2"]: SHA, known["ex:b1"]: SHA})
-    retire(root, remote, known["ex:b1"])
+    a1, b1, g1 = known["ex:a1"], known["ex:b1"], known["codh:g1"]
+    clustering(root, monkeypatch)
+    mapped_tile(root)
+    hash_images(root, {}, {a1: ("#cbc0b0", [83, 133])})
+    retire(root, remote, b1)
     drop_0006(root, remote)
-    decisions(root, remote, (1, "d0", "2026-01-01", "U+304B:c1"), (2, "d1", "2026-01-02", "U+304B:c1"))
+    # Two cluster decisions on c1, the later from an earlier clustering; a glyph decision on a1 and a2,
+    # a2 outside the clustering.
+    cluster_decided(root, remote, 1, "d0", "2026-01-01")
+    cluster_decided(root, remote, 2, "d1", "2026-01-02", revision="r0")
+    glyph_decided(root, remote)
     db, mirror = remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "mirror.sqlite")
 
     facts(root, remote, monkeypatch)
     assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='form_glyphs'").fetchone() and not remote.uploaded
-    assert not mirror.execute("SELECT 1 FROM codes WHERE field IN ('models', 'form_cluster')").fetchone()
+    assert not mirror.execute("SELECT 1 FROM codes WHERE field='form_cluster'").fetchone()
 
     facts(root, remote, monkeypatch, "--send")
-    assert db.execute("SELECT count(*) FROM imports WHERE stamp IN ('migration:0006', 'migration:0014')").fetchone() == (2,)
+    assert db.execute("SELECT 1 FROM imports WHERE stamp='migration:0006'").fetchone()
     assert db.execute("SELECT key FROM codes WHERE field='build'").fetchone() == (build_of(root),)
-    code = mirror.execute("SELECT code FROM codes WHERE field='models'").fetchone()[0]
-    assert json.loads(db.execute("SELECT key FROM codes WHERE field='models' AND code=?", (code,)).fetchone()[0]) == ENGINES
-    # Votes: only the reading made on the crop's current image, in its page object under the build.
-    a1 = known["ex:a1"]
-    page = votes.read(root / "out" / "votes", a1 // PAGE)
-    assert list(page) == [a1 % PAGE] and page[a1 % PAGE]["cut"] == 0 and page[a1 % PAGE]["models"] == code
-    assert page[a1 % PAGE]["loaded"] is True
-    assert votes.restore(ENGINES, page[a1 % PAGE])["context"] == json.loads(CONTEXT)
-    assert f"{a1 // PAGE}.json.gz" in remote.uploaded and f"v3/votes/{build_of(root)}/" in remote.prefixes
-    report = (root / "out" / "crop-facts-report.txt").read_text()
-    assert "dropped (1) crop the mirror lacks" in report and "dropped (1) read on another image" in report
-    # Forms: the cluster's number is the mirror's; its list, named by its content, holds its glyphs by rank
-    # with their tone and size; the counts leave out the retired glyph and the glyph the mirror lacks,
-    # whose cluster is left with none.
+    # The cluster's number is the mirror's; its list, named by its content, holds its live glyphs by rank
+    # with their tile, split groups, tone and size; c2 is left with no glyph.
     c1 = mirror.execute("SELECT code FROM codes WHERE field='form_cluster' AND key='U+304B:c1'").fetchone()[0]
-    assert db.execute("SELECT id, key, count, form, decision FROM form_clusters").fetchall() == [(c1, "U+304B:c1", 2, "か", "d1")]
+    assert db.execute("SELECT id, key, label, count, shape_position, size_position, form, decision FROM form_clusters").fetchall() == [
+        (c1, "U+304B:c1", "Cluster 1", 2, 0, 0, "か", "d1")]
     name = db.execute("SELECT list FROM form_clusters").fetchone()[0]
     assert name.startswith(f"{c1}-")
-    count, clusters, assigned, index = db.execute("SELECT count, cluster_count, assigned, list FROM form_families").fetchone()
-    assert (count, clusters, assigned) == (2, 1, 2) and index.startswith("U+304B-")
-    assert sorted(db.execute("SELECT crop, cluster, form, decision, carried FROM form_glyphs").fetchall()) == sorted([
-        (a1, c1, "𛀙", "g1", None), (known["ex:a2"], None, "か", "g1", None)])
-    members = [[known["codh:g1"], 0, 0.9, "ab" * 32, "0101010", None, None], [a1, 1, 0.9, "ab" * 32, "0101010", "#cbc0b0", [83, 133]]]
-    assert body(root / "out" / "forms" / f"{name}.json.gz") == {"family": "U+304B", "key": "U+304B:c1", "members": members}
+    members = body(root / "out" / "forms" / f"{name}.json.gz")["members"]
+    assert [m[:4] for m in members] == [[g1, 0, 0.9, TILE], [a1, 1, 0.9, TILE]]
+    assert all(len(m[4]) == 7 for m in members) and [m[5:] for m in members] == [[None, None], ["#cbc0b0", [83, 133]]]
+    char, count, clusters, assigned, forms_, revision, index = db.execute(
+        "SELECT char, count, cluster_count, assigned, forms, revision, list FROM form_families").fetchone()
+    assert (char, count, clusters, assigned, revision) == ("か", 2, 1, 2, "r1") and index.startswith("U+304B-")
+    assert [f["char"] for f in json.loads(forms_)] == ["か", "𛀙"]
     assert body(root / "out" / "forms" / "families" / f"{index}.json.gz") == {"family": "U+304B", "clusters": {str(c1): {
         "list": name, "count": 2, "head": [[m[0], m[1], m[3], m[5], m[6]] for m in members], "tail": []}}}
+    # a1 has its own form in its cluster; a2 keeps its decision outside the clustering.
+    assert sorted(db.execute("SELECT crop, family, cluster, form, decision FROM form_glyphs").fetchall()) == sorted([
+        (a1, "U+304B", c1, "𛀙", "g1"), (known["ex:a2"], "U+304B", None, "𛀙", "g1")])
     assert "v3/forms/" in remote.prefixes and "v3/forms/families/" in remote.prefixes
-    assert "dropped (1) crop no longer live (retired)" in report and "dropped (1) no glyph left" in report
-    assert "0 glyphs whose form, issue, character or family differs" in report
+    report = (root / "out" / "crop-facts-report.txt").read_text()
+    assert "dropped (2) crop the mirror lacks" in report and "dropped (1) crop no longer live (retired)" in report
+    assert "dropped (1) no glyph left" in report
+    assert "1 clusters take their latest cluster decision by key, 1 of them made on an earlier clustering" in report
     # A crop's cluster is in crops.
-    assert dict(db.execute("SELECT id, cluster FROM crops WHERE cluster IS NOT NULL")) == {known["codh:g1"]: c1, a1: c1}
+    assert dict(db.execute("SELECT id, cluster FROM crops WHERE cluster IS NOT NULL")) == {g1: c1, a1: c1}
     assert db.execute("SELECT lists LIKE 'facts-%', loading FROM form_state").fetchone() == (1, 0)
     # The local copy replayed the same parts; nothing is pending; a second run sends nothing.
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
@@ -236,31 +245,67 @@ def test_crop_facts_load_votes_to_r2_and_the_forms_by_integer_crop_id(layout, mo
     assert db.execute("SELECT count(*) FROM imports").fetchone() == stamps and len(remote.uploaded) == uploads
 
 
-def test_a_rerun_after_a_fresh_copy_sends_the_difference(layout, monkeypatch):  # noqa: F811
+def test_a_tile_the_image_map_lacks_is_packed_and_mapped_before_a_list_names_it(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
+    clustering(root, monkeypatch)
+    remote.unheld = {"codh:g1"}
     glyph_decided(root, remote)
+    facts(root, remote, monkeypatch)
+    # A dry run renders nothing and counts the tile.
+    assert not remote.packed and not remote.uploaded
+    assert "2 glyphs with pixels on disk, 1 without (no tile); 0 tiles the image map holds, 1 to render" in (
+        root / "out" / "crop-facts-report.txt").read_text()
+    facts(root, remote, monkeypatch, "--send")
+    assert remote.packed == [[TILE]]
+    # The pack, then the map's shard, then the lists.
+    order = remote.uploaded
+    assert order.index("packs/p.bin") < order.index(f"{TILE[:3]}.json.gz") < min(
+        i for i, n in enumerate(order) if n.startswith(("1-", "U+304B-")))
+    assert importlib.import_module("media_map").read_shard(TILE[:3])["keys"][TILE[3:]] == [0, 0, 4]
+    name = remote.dbs["glyph-atlas-v3"].execute("SELECT list FROM form_clusters").fetchone()[0]
+    members = body(root / "out" / "forms" / f"{name}.json.gz")["members"]
+    assert [m[3] for m in members] == [None, TILE, TILE]
+    # Mapped now, the tile is not rendered again.
+    remote.packed.clear()
+    facts(root, remote, monkeypatch, "--send")
+    assert not remote.packed
+
+
+def test_tiles_are_keyed_as_the_sites_media_and_packed_from_their_pixels(tmp_path, monkeypatch, form_corpora):
+    root, glyph = form_corpora
+    sys.modules.pop("crop_facts", None)
+    module = importlib.import_module("crop_facts")
+    wanted = {*glyph["held"], glyph["unheld"], glyph["crop"]}
+    keys, media = module.tile_keys(root, wanted)
+    assert set(keys) == {*glyph["held"], glyph["crop"]}
+    rows, failed = module.pack(media, set(keys.values()), tmp_path / "packs", 2)
+    assert not failed and {r[0] for r in rows} == set(keys.values())
+    for key, obj, offset, size, content_type in rows:
+        assert content_type == "image/webp"
+        assert (tmp_path / obj).read_bytes()[offset:offset + size][:4] == b"RIFF"
+
+
+def test_a_new_clustering_sends_the_difference_and_an_inherit_decision_returns_a_glyph_to_its_cluster(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
     known = ids(root)
-    sources(root)
-    decisions(root, remote, (1, "d1", "2026-01-01", "U+304B:c1"), (2, "d2", "2026-01-02", "U+304B:c1", "か", ["ex:a2"]))
-    sources(root, decision="d2")
+    clustering(root, monkeypatch)
+    mapped_tile(root)
+    cluster_decided(root, remote)
+    glyph_decided(root, remote)
     facts(root, remote, monkeypatch, "--send")
     db = remote.dbs["glyph-atlas-v3"]
     c1, before = db.execute("SELECT id, list FROM form_clusters WHERE key='U+304B:c1'").fetchone()
     family = db.execute("SELECT list FROM form_families").fetchone()[0]
     uploads = len(remote.uploaded)
-    # The fresh copy has another cluster decision, a1 follows its cluster again, codh:g1 has left, and a2,
-    # outside the clustering, no longer has a decision of its own: it keeps the form d2 listed it with.
-    decisions(root, remote, (3, "d3", "2026-01-03", "U+304B:c1", "𛀙", ["ex:a1"]))
-    sources(root, decided="𛀙", decision="d3", units=[form_unit("ex:a1", "U+304B:c1", 1, cluster_form="𛀙"),
-                                                      form_unit("ex:a2", "U+304B:old", 0, clustered=0, cluster_form="か", image=None)])
+    # A new clustering leaves codh:g1 out; a1 inherits its cluster's form again; a later cluster decision.
+    clustering(root, monkeypatch, {"U+304B:c1": [("ex:a1", 0.9), ("ex:b1", 0.8)]}, revision="r2")
+    glyph_decided(root, remote, crops=("ex:a1",), id="g2", seq=3, at="2026-02-01", form=None, kind="inherit")
+    cluster_decided(root, remote, 4, "d2", "2026-02-02", form="𛀙", revision="r2")
     facts(root, remote, monkeypatch, "--send")
-    assert db.execute("SELECT id, form FROM form_clusters").fetchall() == [(c1, "𛀙")]
-    assert db.execute("SELECT crop, cluster, form, decision, carried FROM form_glyphs").fetchall() == [
-        (known["ex:a2"], None, "か", "d2", "d2")]
-    assert "0 clustered glyphs and 1 outside the clustering carry a cluster decision" in (
-        root / "out" / "crop-facts-report.txt").read_text()
-    assert db.execute("SELECT count, assigned, list <> ? FROM form_families", (family,)).fetchone() == (1, 1, 1)
-    assert dict(db.execute("SELECT id, cluster FROM crops WHERE cluster IS NOT NULL")) == {known["ex:a1"]: c1}
+    assert db.execute("SELECT id, form, decision FROM form_clusters").fetchall() == [(c1, "𛀙", "d2")]
+    assert db.execute("SELECT crop FROM form_glyphs").fetchall() == [(known["ex:a2"],)]
+    assert db.execute("SELECT count, assigned, revision, list <> ? FROM form_families", (family,)).fetchone() == (2, 2, "r2", 1)
+    assert dict(db.execute("SELECT id, cluster FROM crops WHERE cluster IS NOT NULL")) == {known["ex:a1"]: c1, known["ex:b1"]: c1}
     # Only the changed list and its family's index went up.
     after = db.execute("SELECT list FROM form_clusters").fetchone()[0]
     assert after != before and sorted(remote.uploaded[uploads:]) == sorted(
@@ -269,50 +314,67 @@ def test_a_rerun_after_a_fresh_copy_sends_the_difference(layout, monkeypatch):  
     assert local.execute("SELECT id, form FROM form_clusters").fetchall() == [(c1, "𛀙")]
 
 
-def test_a_glyph_keeps_the_cluster_form_a_decision_of_an_earlier_clustering_gave_it(layout, monkeypatch):  # noqa: F811
+def test_a_glyph_carries_its_latest_cluster_decision_until_its_cluster_is_decided(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     known = ids(root)
-    db, local = remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")
-    # A layout loaded before migration 0014.
-    for d in (db, local):
-        d.execute("ALTER TABLE form_glyphs DROP COLUMN carried")
-        d.commit()
-    glyph_decided(root, remote, crops=("ex:a1",))
-    # d0 named a1, b1 and a2 𛀙 on a cluster of an earlier clustering; d1 decided c1 since, listing g1.
-    decisions(root, remote, (1, "d0", "2026-01-01", "U+304B:old", "𛀙", ["ex:a1", "ex:b1", "ex:a2"]),
-              (2, "d1", "2026-01-02", "U+304B:c1", "か", ["codh:g1"]))
-    units = [form_unit("codh:g1", "U+304B:c1", 0, cluster_form="か"), form_unit("ex:a1", "U+304B:c2", 0, cluster_form="𛀙", own="か"),
-             form_unit("ex:b1", "U+304B:c2", 1, cluster_form="𛀙"),
-             form_unit("ex:a2", "U+304B:old", 0, clustered=0, cluster_form="𛀙", image=None)]
-    sources(root, units=units)
+    a1, a2, g1 = known["ex:a1"], known["ex:a2"], known["codh:g1"]
+    clustering(root, monkeypatch)
+    mapped_tile(root)
+    # c1 decided か; later a cluster of an earlier clustering, holding a1 and a2, was decided 𛀙.
+    cluster_decided(root, remote, 1, "d1", "2025-12-01")
+    decide(root, remote, (2, "d0", "2026-01-01", "cluster", "U+304B:old", "𛀙", ("ex:a1", "ex:a2"), "r0"))
+    facts(root, remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    c1, listed = db.execute("SELECT id, list FROM form_clusters WHERE key='U+304B:c1'").fetchone()
+    # a1 keeps 𛀙 in c1 and a2 outside the clustering, both naming d0 as carried; g1 takes c1's か.
+    assert sorted(db.execute("SELECT crop, family, cluster, form, decision, carried FROM form_glyphs").fetchall()) == sorted([
+        (a1, "U+304B", c1, "𛀙", "d0", "d0"), (a2, "U+304B", None, "𛀙", "d0", "d0")])
+    assert g1 not in {r[0] for r in db.execute("SELECT crop FROM form_glyphs")}
+    assert db.execute("SELECT count, assigned FROM form_families").fetchone() == (3, 3)
+    # A decision on c1 made on the site, which names its list and no crops, replaces what a1 carries.
+    for target in (sqlite3.connect(root / "out" / "atlas.sqlite"), db):
+        target.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, cluster, form, revision, units, crops, note, list) "
+                       "VALUES(3, 'd2', '2026-02-01', 'a', 'cluster', 'U+304B', 'U+304B:c1', 'か', 'r1', '[]', '[]', '', ?)", (listed,))
+        target.execute("UPDATE form_clusters SET decision='d2' WHERE id=?", (c1,))
+        target.commit()
+    facts(root, remote, monkeypatch, "--send")
+    assert db.execute("SELECT crop, cluster, decision, carried FROM form_glyphs").fetchall() == [(a2, None, "d0", "d0")]
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert local.execute("SELECT * FROM form_glyphs").fetchall() == db.execute("SELECT * FROM form_glyphs").fetchall()
+
+
+def test_a_decision_on_a_cluster_key_the_clustering_lacks_is_reported(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    clustering(root, monkeypatch)
+    mapped_tile(root)
+    cluster_decided(root, remote, cluster="U+304B:gone")
     facts(root, remote, monkeypatch)
     report = (root / "out" / "crop-facts-report.txt").read_text()
-    assert "2 clustered glyphs and 1 outside the clustering carry a cluster decision of an earlier clustering, 1 of them" in report
+    assert "0 clusters take their latest cluster decision by key" in report and "1 cluster keys with decisions name no cluster" in report
+
+
+def test_shape_positions_follow_the_neighbour_chain(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    clustering(root, monkeypatch, {"U+304B:c1": [("ex:a1", 0.9)], "U+304B:c2": [("ex:b1", 0.9)]},
+               order=["U+304B:c2", "U+304B:c1"])
+    mapped_tile(root)
     facts(root, remote, monkeypatch, "--send")
-    assert db.execute("SELECT 1 FROM imports WHERE stamp='migration:0014'").fetchone()
-    c2 = sqlite3.connect(root / "out" / "mirror.sqlite").execute(
-        "SELECT code FROM codes WHERE field='form_cluster' AND key='U+304B:c2'").fetchone()[0]
-    # Each row is what the glyph ends with; `carried` names the earlier decision, which a1's own decision overrides.
-    assert sorted(db.execute("SELECT crop, cluster, form, decision, carried FROM form_glyphs").fetchall()) == sorted([
-        (known["ex:a1"], c2, "か", "g1", "d0"), (known["ex:b1"], c2, "𛀙", "d0", "d0"), (known["ex:a2"], None, "𛀙", "d0", "d0")])
-    # Every clustered glyph has a form, as the copy counts them.
-    assert db.execute("SELECT count, assigned FROM form_families").fetchone() == (3, 3)
-    assert "0 glyphs whose form, issue, character or family differs" in (root / "out" / "crop-facts-report.txt").read_text()
-    # A rerun sends nothing.
-    stamps, uploads = db.execute("SELECT count(*) FROM imports").fetchone(), len(remote.uploaded)
-    facts(root, remote, monkeypatch, "--send")
-    assert db.execute("SELECT count(*) FROM imports").fetchone() == stamps and len(remote.uploaded) == uploads
-    # A cluster form no loaded decision gives stops the load.
-    units[2] = form_unit("ex:b1", "U+304B:c2", 1, cluster_form="𛀁")
-    sources(root, units=units)
-    with pytest.raises(SystemExit, match=r"1 glyphs have a cluster form .*ex:b1"):
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT key, shape_position, size_position FROM form_clusters ORDER BY key").fetchall() == [
+        ("U+304B:c1", 1, 0), ("U+304B:c2", 0, 1)]
+
+
+def test_a_load_without_the_history_is_refused(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    clustering(root, monkeypatch)
+    sqlite3.connect(root / "out" / "atlas.sqlite").execute("DROP TABLE form_decisions")
+    with pytest.raises(SystemExit, match="load the history"):
         facts(root, remote, monkeypatch)
 
 
 def test_a_list_no_row_or_decision_names_is_deleted_after_the_cache_time(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
-    glyph_decided(root, remote)
-    sources(root, decision=None)
+    clustering(root, monkeypatch)
+    mapped_tile(root)
     facts(root, remote, monkeypatch, "--send")
     db = remote.dbs["glyph-atlas-v3"]
     first, family = db.execute("SELECT form_clusters.list, form_families.list FROM form_clusters, form_families").fetchone()
@@ -323,7 +385,7 @@ def test_a_list_no_row_or_decision_names_is_deleted_after_the_cache_time(layout,
     sqlite3.connect(root / "out" / "atlas.sqlite").execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, cluster, "
                                                            "revision, units, crops, note) VALUES(1, 'd9', '2026-10-21', 'a', "
                                                            "'cluster', 'U+304B', 'U+304B:c1', 'r1', '[]', '[]', '')").connection.commit()
-    sources(root, decision=None, units=[form_unit("ex:a1", "U+304B:c1", 1)])
+    clustering(root, monkeypatch, {"U+304B:c1": [("ex:a1", 0.9)]})
     facts(root, remote, monkeypatch, "--send")
     manifest = root / "out" / "forms" / "manifest.json.gz"
     held = body(manifest)
@@ -332,8 +394,6 @@ def test_a_list_no_row_or_decision_names_is_deleted_after_the_cache_time(layout,
     with pytest.raises(sqlite3.IntegrityError, match="cluster has changed"):
         db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, cluster, revision, units, crops, note, list) "
                    "VALUES(2, 'd10', '2026-10-21', 'a', 'cluster', 'U+304B', 'U+304B:c1', 'r1', '[]', '[]', '', ?)", (first,))
-    db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, cluster, revision, units, crops, note, list) "
-               "VALUES(2, 'd10', '2026-10-21', 'a', 'cluster', 'U+304B', 'U+304B:c1', 'r1', '[]', '[]', '', NULL)")
     db.rollback()
     assert not remote.removed
     # Two hours on, the next load deletes the family index nothing names; the list a decision names stays.
@@ -351,12 +411,12 @@ class FailingDelete(list):
 
 def test_a_list_whose_delete_failed_goes_up_again_when_a_load_names_it(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
-    glyph_decided(root, remote)
-    sources(root, decision=None)
+    clustering(root, monkeypatch)
+    mapped_tile(root)
     facts(root, remote, monkeypatch, "--send")
     db = remote.dbs["glyph-atlas-v3"]
     first, family = db.execute("SELECT form_clusters.list, form_families.list FROM form_clusters, form_families").fetchone()
-    sources(root, decision=None, units=[form_unit("ex:a1", "U+304B:c1", 1)])
+    clustering(root, monkeypatch, {"U+304B:c1": [("ex:a1", 0.9)]})
     facts(root, remote, monkeypatch, "--send")
     manifest = root / "out" / "forms" / "manifest.json.gz"
     aged = {k: v and v - 7200 for k, v in body(manifest).items()}
@@ -371,7 +431,7 @@ def test_a_list_whose_delete_failed_goes_up_again_when_a_load_names_it(layout, m
     # The first clustering again: its list and index go up again, named once more.
     remote.removed = []
     uploads = len(remote.uploaded)
-    sources(root, decision=None)
+    clustering(root, monkeypatch)
     facts(root, remote, monkeypatch, "--send")
     assert {f"{first}.json.gz", f"{family}.json.gz"} <= set(remote.uploaded[uploads:])
     assert db.execute("SELECT form_clusters.list, form_families.list FROM form_clusters, form_families").fetchone() == (first, family)
@@ -382,7 +442,7 @@ def test_a_list_whose_delete_failed_goes_up_again_when_a_load_names_it(layout, m
 
 def test_a_load_over_decisions_the_site_made_is_refused(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
-    sources(root, decision=None)
+    clustering(root, monkeypatch)
     db = remote.dbs["glyph-atlas-v3"]
     db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) "
                "VALUES(1, 'd9', '2026-10-21', 'a', 'cluster', 'U+304B', 'r1', '[]', '[]', '')")
@@ -393,8 +453,8 @@ def test_a_load_over_decisions_the_site_made_is_refused(layout, monkeypatch):  #
 
 def test_a_decision_made_while_the_rows_are_sent_stops_the_load_and_opens_decisions_again(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
-    glyph_decided(root, remote)
-    sources(root, decision=None)
+    clustering(root, monkeypatch)
+    mapped_tile(root)
     db = remote.dbs["glyph-atlas-v3"]
     sent = remote.send
 
@@ -421,13 +481,12 @@ def test_a_decision_made_while_the_rows_are_sent_stops_the_load_and_opens_decisi
 
 def test_a_rerun_of_a_refused_run_sets_loading_again_while_its_rows_go(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
-    glyph_decided(root, remote)
-    sources(root, decision=None)
+    clustering(root, monkeypatch)
+    mapped_tile(root)
     facts(root, remote, monkeypatch, "--send")
     db, local = remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")
     # A cluster decision changes rows only, so the next load's run is named the same on each attempt.
-    decisions(root, remote, (1, "d1", "2026-01-01", "U+304B:c1"))
-    sources(root, decision="d1")
+    cluster_decided(root, remote)
     sent, names, loading = remote.send, [], []
     site = "VALUES(2, 'd9', '2026-10-21', 'a', 'cluster', 'U+304B', 'r1', '[]', '[]', '')"
 
@@ -452,32 +511,10 @@ def test_a_rerun_of_a_refused_run_sets_loading_again_while_its_rows_go(layout, m
     assert db.execute("SELECT decision FROM form_clusters").fetchone() == ("d1",)
 
 
-def test_a_cluster_decision_not_the_latest_loaded_stops_the_load(layout, monkeypatch):  # noqa: F811
-    root, _publish, remote = layout
-    sources(root)
-    with pytest.raises(SystemExit, match="not their latest cluster decision"):
-        facts(root, remote, monkeypatch)
-    decisions(root, remote, (1, "d1", "2026-01-01", "U+304B:c1"), (2, "d2", "2026-01-02", "U+304B:c1"))
-    with pytest.raises(SystemExit, match=r"U\+304B:c1: d1 \(latest d2\)"):
-        facts(root, remote, monkeypatch)
-
-
-def test_a_glyph_decision_not_the_latest_loaded_stops_the_load(layout, monkeypatch):  # noqa: F811
-    root, _publish, remote = layout
-    sources(root, decision=None)
-    with pytest.raises(SystemExit, match="not their latest glyph decision"):
-        facts(root, remote, monkeypatch)
-    # A later glyph decision over a1 leaves the copy's g1 behind; a2's latest is still g1.
-    glyph_decided(root, remote)
-    glyph_decided(root, remote, crops=("ex:a1",), id="g2", seq=1, at="2025-02-01")
-    with pytest.raises(SystemExit, match=r"1 glyphs .*'ex:a1: g1 \(latest g2\)"):
-        facts(root, remote, monkeypatch)
-
-
 def test_an_oversized_statement_stops_the_load_before_any_number_is_kept(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
-    glyph_decided(root, remote)
-    sources(root, decision=None)
+    clustering(root, monkeypatch)
+    mapped_tile(root)
     monkeypatch.setattr(importlib.import_module("publish"), "STATEMENT_BYTES", 100)
     with pytest.raises(SystemExit, match="over D1's limit"):
         facts(root, remote, monkeypatch, "--send")
@@ -486,36 +523,62 @@ def test_an_oversized_statement_stops_the_load_before_any_number_is_kept(layout,
     assert not mirror.execute("SELECT 1 FROM pending").fetchone()
 
 
+def test_votes_load_at_the_cutover_only_for_the_crops_current_image(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    known = ids(root)
+    a1 = known["ex:a1"]
+    clustering(root, monkeypatch)
+    mapped_tile(root)
+    unit_facts(root, [("ex:a1", "local", visual(), CONTEXT, SHA, None, None), ("ex:a2", "local", visual(), CONTEXT, "ef" * 32, None, None),
+                      ("ex:gone", "local", visual(), CONTEXT, SHA, None, None), ("codh:g1", "corpus", NONE, NO_CONTEXT, None, None, None)])
+    hash_images(root, {a1: SHA, known["ex:a2"]: SHA})
+    # Without --votes nothing reads the copy.
+    facts(root, remote, monkeypatch, "--send")
+    assert not (root / "out" / "votes").exists()
+    facts(root, remote, monkeypatch, "--votes", "--send")
+    mirror, db = sqlite3.connect(root / "out" / "mirror.sqlite"), remote.dbs["glyph-atlas-v3"]
+    code = mirror.execute("SELECT code FROM codes WHERE field='models'").fetchone()[0]
+    assert json.loads(db.execute("SELECT key FROM codes WHERE field='models' AND code=?", (code,)).fetchone()[0]) == ENGINES
+    page = votes.read(root / "out" / "votes", a1 // PAGE)
+    assert list(page) == [a1 % PAGE] and page[a1 % PAGE]["cut"] == 0 and page[a1 % PAGE]["models"] == code
+    assert page[a1 % PAGE]["loaded"] is True
+    assert votes.restore(ENGINES, page[a1 % PAGE])["context"] == json.loads(CONTEXT)
+    assert f"{a1 // PAGE}.json.gz" in remote.uploaded and f"v3/votes/{build_of(root)}/" in remote.prefixes
+    report = (root / "out" / "crop-facts-report.txt").read_text()
+    assert "dropped (1) crop the mirror lacks" in report and "dropped (1) read on another image" in report
+
+
 def test_a_rerun_after_a_fresh_copy_refreshes_the_loaded_readings_and_keeps_a_publishs(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
-    glyph_decided(root, remote)
     known = ids(root)
     a1, a2 = known["ex:a1"], known["ex:a2"]
-    sources(root, decision=None)
+    clustering(root, monkeypatch)
+    mapped_tile(root)
     hash_images(root, {a1: SHA, a2: SHA})
     unit_facts(root, [("ex:a1", "local", visual(), CONTEXT, SHA, None, None), ("ex:a2", "local", visual(), CONTEXT, SHA, None, None)])
-    facts(root, remote, monkeypatch, "--send")
+    facts(root, remote, monkeypatch, "--votes", "--send")
     # A publish writes a2's entry for its cut.
     slots = votes.read(root / "out" / "votes", a2 // PAGE)
     slots[a2 % PAGE] = votes.entry(0, None, None, votes.context(CONTEXT))
     votes.write(root / "out" / "votes", a2 // PAGE, slots)
     unit_facts(root, [("ex:a1", "local", visual("王"), CONTEXT, SHA, None, None), ("ex:a2", "local", visual("王"), CONTEXT, SHA, None, None)])
-    facts(root, remote, monkeypatch, "--send")
+    facts(root, remote, monkeypatch, "--votes", "--send")
     slots = votes.read(root / "out" / "votes", a1 // PAGE)
     assert slots[a1 % PAGE]["visual"]["votes"][0]["text"] == "王" and slots[a1 % PAGE]["loaded"]
     assert "visual" not in slots[a2 % PAGE] and "loaded" not in slots[a2 % PAGE]
     # A reading the fresh copy no longer has goes.
     unit_facts(root, [("ex:a2", "local", visual("王"), CONTEXT, SHA, None, None)])
-    facts(root, remote, monkeypatch, "--send")
+    facts(root, remote, monkeypatch, "--votes", "--send")
     assert list(votes.read(root / "out" / "votes", a1 // PAGE)) == [a2 % PAGE]
 
 
 def test_votes_wait_for_their_model_codes_and_reach_out_votes_as_they_go_up(layout, monkeypatch):  # noqa: F811
     root, publish, remote = layout
-    glyph_decided(root, remote)
     a1 = ids(root)["ex:a1"]
-    sources(root, decision=None)
+    clustering(root, monkeypatch)
+    mapped_tile(root)
     hash_images(root, {a1: SHA})
+    unit_facts(root, [("ex:a1", "local", visual(), CONTEXT, SHA, None, None)])
     db = remote.dbs["glyph-atlas-v3"]
     uploaded = remote.upload
 
@@ -535,13 +598,13 @@ def test_votes_wait_for_their_model_codes_and_reach_out_votes_as_they_go_up(layo
 
     monkeypatch.setattr(remote, "send", stopped)
     with pytest.raises(SystemExit, match="stopped"):
-        facts(root, remote, monkeypatch, "--send")
+        facts(root, remote, monkeypatch, "--votes", "--send")
     assert not (root / "out" / "votes" / f"{a1 // PAGE}.json.gz").exists()
     # A publish waits for the unfinished load.
     with pytest.raises(SystemExit, match="crop facts load .* is unfinished"):
         run(publish, monkeypatch, voted(root / "c.sqlite", []))
     monkeypatch.setattr(remote, "send", sent)
-    facts(root, remote, monkeypatch, "--send")
+    facts(root, remote, monkeypatch, "--votes", "--send")
     assert (root / "out" / "votes" / f"{a1 // PAGE}.json.gz").exists()
     assert db.execute("SELECT loading FROM form_state").fetchone() == (0,)
     assert not sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT 1 FROM pending").fetchone()
