@@ -246,6 +246,18 @@ def test_objects_to_delete_come_from_the_manifest_in_r2(layout, monkeypatch):  #
                                                if not k.endswith("manifest.json.gz"))
 
 
+def test_a_row_changed_under_its_key_is_replaced(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")], words=[("ja/ばかり/副助詞", "ja", "ばかり", "副助詞")])
+    bucket = load(remote, monkeypatch, "--send")
+    sources(root, cards=[card("あ")], words=[("ja/ばかり/副助詞", "ja", "ばかり", "助詞")])
+    load(remote, monkeypatch, "--send", bucket=bucket)
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        assert db.execute("SELECT class FROM words").fetchall() == [("助詞",)]
+    sent = "".join(p.read_text() for p in sorted((root / "out" / "reference-load").glob("reference-2-*/*.sql")))
+    assert sent.count("DELETE FROM") == 1 and sent.count("INSERT INTO \"words\"") == 1
+
+
 def test_a_load_that_stopped_partway_is_finished_first(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root, cards=[card("あ")])
