@@ -360,13 +360,27 @@ function corpusRows(env: Env, crops: number[]): D1PreparedStatement[] {
 }
 // A batch that failed on a crop's revision: another write moved it first.
 const conflict = (error: unknown) => /NOT NULL constraint failed: events\.revision|UNIQUE constraint failed: events\.crop/.test(String(error));
+// Whether every crop the changes name moved since it was read only by marks, one revision each, at
+// the cut it was read at: the old site never counted marks, so the write is made again on a fresh read.
+export const marksOnlyQuery = () => `SELECT count(*) AS n FROM json_each(?) j JOIN crops c ON c.id=j.value->>'crop'
+  WHERE c.cut<>j.value->>'cut' OR c.revision<>j.value->>'expected'+(SELECT count(*) FROM events e WHERE e.crop=c.id AND e.revision>j.value->>'expected')
+  OR EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.revision>j.value->>'expected' AND NOT ${MARKED('e')})`;
+async function marksOnly(env: Env, changes: CropChange[]): Promise<boolean> {
+  const list = JSON.stringify(changes.map(c => ({ crop: c.crop, expected: c.expected, cut: c.cut })));
+  return (await env.ATLAS.prepare(marksOnlyQuery()).bind(list).first<{ n: number }>())?.n === 0;
+}
 
 // --- Submitting ---
 
 /** Save a review: a round (no target), a batch correction (`@batch`), a corpus glyph's review
  *  (`@corpus`) or one crop's review (its id as written in the path). */
 export async function submit(env: Env, request: Request, user: string, target?: string) {
-  const input = await body(request);
+  const sent = await body(request);
+  return await save(env, sent, request.headers.get('cf-connecting-ip'), user, target, true);
+}
+async function save(env: Env, sent: Json, address: string | null, user: string, target: string | undefined, again: boolean): Promise<Json> {
+  // The checks below normalise what they read in place; a second attempt starts from what was sent.
+  const input = structuredClone(sent);
   const corpus = target === '@corpus', batch = target === '@batch';
   if (corpus) target = text(input.identity, 512, 'corpus identity', true)!;
   if (batch) target = undefined;
@@ -391,8 +405,8 @@ export async function submit(env: Env, request: Request, user: string, target?: 
   const correction = batch ? validBatch(input) : null;
   const { answers, seen, skipped } = batch ? { answers: correction!.crops, seen: [], skipped: [] } : validRound(input, target);
   // A redrawn box is held to the rate batch corrections are, by address.
-  if (!batch && answers.some(answer => answer.box !== undefined)) {
-    const { success } = await env.CORRECTIONS.limit({ key: addressKey(request.headers.get('cf-connecting-ip')) });
+  if (again && !batch && answers.some(answer => answer.box !== undefined)) {
+    const { success } = await env.CORRECTIONS.limit({ key: addressKey(address) });
     if (!success) throw new Problem(429, 'Too many corrections at once. Wait a minute and try again.');
   }
   // Every crop the request names, by its public id or an old text id.
@@ -478,6 +492,7 @@ export async function submit(env: Env, request: Request, user: string, target?: 
   } catch (error) {
     const repeat = await previous();
     if (repeat?.request === signature) return answered(JSON.parse(repeat.response));
+    if (conflict(error) && again && await marksOnly(env, changes)) return await save(env, sent, address, user, target, false);
     if (conflict(error)) throw new Problem(409, 'Another review changed this crop. Reload it.');
     throw error;
   }
@@ -512,7 +527,7 @@ type Reviewed = { id: number; crop: number; revision: number; cut: number; label
  *  a later review has changed it since; the crops its round showed or skipped take their marks without
  *  it. A rejection is the same undo made by an admin, recorded with its reason; passing `reviewer`
  *  (every actor of the reviewer) also passes over that reviewer's own later work already undone. */
-export async function revert(env: Env, submission: Submission, actor: number, rejection?: { by: string; reason: string; reviewer?: number[] }): Promise<{ results: Json[]; duplicate?: true }> {
+export async function revert(env: Env, submission: Submission, actor: number, rejection?: { by: string; reason: string; reviewer?: number[] }, again = true): Promise<{ results: Json[]; duplicate?: true }> {
   if (submission.undone) return { results: [], duplicate: true };
   const reviewed = (await env.ATLAS.prepare(`SELECT e.id,e.crop,e.revision,e.cut,e.label,e.shown,g.text AS shown_text,e.was_state,e.was_issue,e.was_x,e.was_y,e.was_w,e.was_h
     FROM events e LEFT JOIN graphemes g ON g.id=e.shown WHERE e.submission=? AND e.kind IN (0,1,2) ORDER BY e.id`).bind(submission.id).all<Reviewed>()).results;
@@ -553,6 +568,7 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     const out = await env.ATLAS.batch<{ id: number; crop: number }>(statements);
     ids = new Map(out[out.length - 1].results.map(row => [row.crop, row.id]));
   } catch (error) {
+    if (conflict(error) && again && await marksOnly(env, changes)) return await revert(env, submission, actor, rejection, false);
     if (conflict(error)) throw new Problem(409, 'A later review changed this crop.');
     throw error;
   }

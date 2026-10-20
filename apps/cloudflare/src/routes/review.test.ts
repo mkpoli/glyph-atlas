@@ -174,6 +174,29 @@ describe('a round', () => {
     expect((await send(env, `/atlas/characters/${publicId(ids[2])}`, { ...local(ids[2], { revision: 2 }), id: uuid(6), verdict: 'match' })).status).toBe(200);
   });
 
+  it('saves again on a fresh read when only a mark moved the crop between its read and its batch', async () => {
+    const { db, env, ids } = setup();
+    const batch = env.ATLAS.batch.bind(env.ATLAS);
+    let raced = 0;
+    // Another round marks the crop seen once, just before this write's batch.
+    (env.ATLAS as any).batch = async (list: any[]) => {
+      if (!raced++) db.exec(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,state) VALUES(${ids[0]},1,0,3,9,9,1,3,3);
+        UPDATE crops SET state=3,revision=1 WHERE id=${ids[0]}`);
+      return batch(list);
+    };
+    const saved = await send(env, `/atlas/characters/${publicId(ids[0])}`, { ...local(ids[0]), id: uuid(1), verdict: 'unsure' });
+    expect(saved.body.results[0]).toMatchObject({ revision: 2, state: 'flagged' });
+    expect(crop(db, ids[0])).toMatchObject({ state: 2, revision: 2 });
+    // A review in between is a change: refused.
+    raced = 0;
+    (env.ATLAS as any).batch = async (list: any[]) => {
+      if (!raced++) db.exec(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,state) VALUES(${ids[1]},1,0,3,9,9,1,0,1);
+        UPDATE crops SET state=1,revision=1 WHERE id=${ids[1]}`);
+      return batch(list);
+    };
+    expect((await send(env, `/atlas/characters/${publicId(ids[1])}`, { ...local(ids[1]), id: uuid(2), verdict: 'unsure' })).status).toBe(409);
+  });
+
   it('answers a retired crop with the one that replaced it', async () => {
     const { env, ids, page } = setup();
     const retired = publicId(cropId(page, 9));
