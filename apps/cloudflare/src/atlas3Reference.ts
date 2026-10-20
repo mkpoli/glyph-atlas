@@ -42,9 +42,28 @@ export async function characterStructure(env: Env, char: string, ctx?: Execution
   return found ? { sequences: found[0], shapes: found[1] } : null;
 }
 
-// [code point, name] of every card whose name is more than `…IDEOGRAPH-<hex>`.
-export async function characterNames(env: Env, ctx?: ExecutionContext): Promise<[string, string][]> {
-  return await read(env, `${PREFIX}names.json.gz`, ctx) ?? [];
+// Every card's name: `names` as [code point, name, occurrences], and the names that are a prefix and
+// the hex of the code point as [prefix, code points as steps, occurrences].
+type NameList = { names: [string, string, number][]; plain: [string, number[], number[]][] };
+const hex = (point: number) => point.toString(16).toUpperCase().padStart(4, '0');
+
+// The cards whose code point or name holds the term, ignoring case ("4e00", "U+4E00", "hiragana"),
+// most frequent first, then by code point; at most `limit`, with how many there are.
+export async function nameMatches(env: Env, term: string, limit: number, ctx?: ExecutionContext) {
+  const list = await read(env, `${PREFIX}names.json.gz`, ctx) as NameList | null;
+  const wanted = term.trim().toUpperCase(), found: [string, number, number][] = [];
+  if (!list || !wanted) return { codes: [] as string[], total: 0 };
+  for (const [codePoint, name, occurrences] of list.names)
+    if (codePoint.includes(wanted) || name.toUpperCase().includes(wanted)) found.push([codePoint, occurrences, parseInt(codePoint.slice(2), 16)]);
+  for (const [prefix, steps, occurrences] of list.plain) {
+    for (let k = 0, point = 0; k < steps.length; k++) {
+      point = k ? point + steps[k] : steps[0];
+      const code = hex(point);
+      if (`U+${code}`.includes(wanted) || (prefix + code).includes(wanted)) found.push([`U+${code}`, occurrences[k], point]);
+    }
+  }
+  found.sort((a, b) => b[1] - a[1] || a[2] - b[2] || (a[0] < b[0] ? -1 : 1));
+  return { codes: found.slice(0, limit).map(f => f[0]), total: found.length };
 }
 
 // One page of a card list from `offset`: at most two objects for a page of up to LIST_PAGE.

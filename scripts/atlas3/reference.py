@@ -16,8 +16,10 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
 - `summary/<shard>.json.gz`: every card's `data` by code point, in the shard of its family head, so
   a family's members are one read.
 - `ids/<shard>.json.gz`: each character's ideographic descriptions and regional shapes.
-- `names.json.gz`: `[code point, name]` for the cards whose Unicode name is more than
-  `…IDEOGRAPH-<hex>`, for a search by name.
+- `names.json.gz`: every card's name and how often it occurs, for a search by name or code point.
+  `names` is `[code point, name, occurrences]` for the cards whose name says more than
+  `<prefix>IDEOGRAPH-<hex of its code point>`; `plain` gives the rest as `[prefix, code points,
+  occurrences]`, code points as steps, the name being the prefix and the hex.
 - `list/graphemes/<n>.json.gz` and `list/ligatures/<n>.json.gz`: the cards of families of several
   characters, and the ligatures, by code point, LIST_PAGE to an object.
 - `components/<code point>.json.gz`: the characters that hold a component, for the component search,
@@ -31,8 +33,8 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
 A shard is the first two hex digits of the SHA-256 of its key's code point(s) as text.
 
 D1 rows (`migrations-atlas/0004_reference.sql`) for what a query filters, joins or sorts on:
-`component_variants`, `words`, `word_spellings` and `name_order`. Cards name characters by `graphemes` id: a card's character or family head the layout
-lacks is numbered as the publisher numbers one, and every grapheme takes its card's family head.
+`component_variants`, `words` and `word_spellings`. Cards name characters by `graphemes` id: a
+card's character or family head the layout lacks is numbered as the publisher numbers one, and every grapheme takes its card's family head.
 Graphemes are written as `publish.py` writes them, through `char_text`.
 
 Only what differs from the local copies is sent: the rows that differ from `out/atlas.sqlite`, as
@@ -88,10 +90,9 @@ TABLES = {
     "component_variants": (("a", "b", "count"), ("a", "b")),
     "words": (SOURCES["words"], ("id",)),
     "word_spellings": (SOURCES["word_spellings"], ("word", "spelling", "source", "locator")),
-    "name_order": (("code_point", "occurrence"), ("code_point",)),
 }
 SAMPLE_LISTS = ("representatives", "anchors")
-PLAIN_NAME = re.compile(r"IDEOGRAPH-[0-9A-F]{4,6}$")
+PLAIN_NAME = re.compile(r"^(.*IDEOGRAPH-)([0-9A-F]{4,6})$")
 
 
 def source(table):
@@ -271,7 +272,7 @@ def translate(atlas, mirror, path):
         structures[shard(char)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None]
     for key, chars in structures.items():
         objects[f"ids/{key}.json.gz"] = encode(compact(dict(sorted(chars.items()))))
-    objects["names.json.gz"] = encode(compact([[c[0], c[2]] for c in cards if c[2] and not PLAIN_NAME.search(c[2])]))
+    objects["names.json.gz"] = encode(names_list((c[0], c[2], c[8]) for c in cards))
     lists = {"graphemes": [c[3] for c in cards if c[6]], "ligatures": [c[3] for c in cards if c[7]]}
     for list_name, items in lists.items():
         for n in range(0, max(len(items), 1), LIST_PAGE):
@@ -286,13 +287,28 @@ def translate(atlas, mirror, path):
         cols = SOURCES[table]
         out.executemany(f'INSERT INTO "{table}" VALUES({",".join("?" * len(cols))})',
                         source(table).execute(f'SELECT {",".join(cols)} FROM "{table}"'))
-    out.executemany("INSERT INTO name_order VALUES(?,?)", [(code_points(c[0])[0], c[8]) for c in cards if " " not in c[0] and c[8] > 0])
     out.commit()
 
     changed = {gid: head for gid, head in heads.items() if gid in g.heads and g.heads[gid] != head}
     notes["graphemes of the layout whose family head the cards change"] = len(changed)
     notes["graphemes the layout lacks, numbered by this load"] = len(g.new)
     return out, objects, g.new, {gid: heads.get(gid) for gid in g.new.values()}, changed, notes
+
+
+def names_list(cards):
+    """The name list from (code point, name, occurrences) in code point order."""
+    named, plain = [], {}
+    for code_point, name, occurrences in cards:
+        points = code_points(code_point)
+        found = PLAIN_NAME.match(name or "")
+        if len(points) == 1 and found and int(found[2], 16) == points[0] and len(found[2]) == len(f"{points[0]:04X}"):
+            group = plain.setdefault(found[1], [found[1], [], [], 0])
+            group[1].append(points[0] - group[3])
+            group[2].append(occurrences)
+            group[3] = points[0]
+        else:
+            named.append([code_point, name or "", occurrences])
+    return compact({"names": named, "plain": [g[:3] for g in plain.values()]})
 
 
 def component_list(rows):
@@ -465,7 +481,7 @@ def report(ref, written, objects, changed, gone, notes, parts):
 
 def migrate(atlas):
     """Migration 0004 on D1 and the local copy, once; a layout built with it already has its tables."""
-    if has(atlas, "name_order"):
+    if has(atlas, "words"):
         return
     path = OUT / "reference-load" / "0004.sql"
     path.parent.mkdir(parents=True, exist_ok=True)

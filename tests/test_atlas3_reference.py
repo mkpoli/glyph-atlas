@@ -160,6 +160,19 @@ def test_heads_of_graphemes_a_publish_made_come_from_the_cards(layout, monkeypat
     assert db.execute("SELECT head FROM graphemes WHERE id=?", (hentaigana,)).fetchone() == (None,)
 
 
+def test_names_said_by_the_code_point_are_kept_as_steps(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("一", name="CJK UNIFIED IDEOGRAPH-4E00"), card("丁", name="CJK UNIFIED IDEOGRAPH-4E01", occurrences=2),
+                         card("兀", name="CJK COMPATIBILITY IDEOGRAPH-FA0C"), card("あ", name="HIRAGANA LETTER A"),
+                         card("𠀀", name="CJK UNIFIED IDEOGRAPH-020000")])
+    bucket = load(remote, monkeypatch, "--send")
+    # 兀 is U+5140 and 𠀀's name pads its hex: both are names of their own.
+    assert bucket.objects["v3/reference/names.json.gz"] == {
+        "names": [["U+3042", "HIRAGANA LETTER A", 0], ["U+5140", "CJK COMPATIBILITY IDEOGRAPH-FA0C", 0],
+                  ["U+20000", "CJK UNIFIED IDEOGRAPH-020000", 0]],
+        "plain": [["CJK UNIFIED IDEOGRAPH-", [0x4E00, 1], [0, 2]]]}
+
+
 def test_a_dry_run_reports_and_changes_nothing(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root, cards=[card("𛀂", head="あ")])
@@ -181,7 +194,7 @@ def test_only_what_changed_is_sent_and_an_earlier_copy_loads_again(layout, monke
     sources(root, cards=[card("あ", occurrences=3)], words=[])
     load(remote, monkeypatch, "--send", bucket=bucket)
     assert db.execute("SELECT count(*) FROM words").fetchone() == (0,)
-    assert db.execute("SELECT * FROM name_order").fetchall() == [(0x3042, 3)]
+    assert bucket.objects["v3/reference/names.json.gz"] == {"names": [["U+3042", "NAME U+3042", 3]], "plain": []}
     # The card gone from the copy leaves R2; the other changed and nothing else was sent.
     assert "v3/reference/char/U+3044.json.gz" not in bucket.objects
     assert bucket.objects["v3/reference/char/U+3042.json.gz"]["data"]["occurrence_count"] == 3
@@ -192,13 +205,13 @@ def test_only_what_changed_is_sent_and_an_earlier_copy_loads_again(layout, monke
     sources(root, cards=[card("あ"), card("い")], words=[word])
     load(remote, monkeypatch, "--send", bucket=bucket)
     assert db.execute("SELECT id FROM words").fetchall() == [(word[0],)]
-    assert db.execute("SELECT count(*) FROM name_order").fetchone() == (0,)
+    assert [n[2] for n in bucket.objects["v3/reference/names.json.gz"]["names"]] == [0, 0]
     assert "v3/reference/char/U+3044.json.gz" in bucket.objects
     # And to the second again: the same statements as the second load, which its stamps do not skip.
     sources(root, cards=[card("あ", occurrences=3)], words=[])
     load(remote, monkeypatch, "--send", bucket=bucket)
     assert db.execute("SELECT count(*) FROM words").fetchone() == (0,)
-    assert db.execute("SELECT * FROM name_order").fetchall() == [(0x3042, 3)]
+    assert bucket.objects["v3/reference/names.json.gz"] == {"names": [["U+3042", "NAME U+3042", 3]], "plain": []}
 
 
 def test_a_load_that_stopped_partway_is_finished_first(layout, monkeypatch):  # noqa: F811
@@ -225,7 +238,7 @@ def test_a_load_that_stopped_partway_is_finished_first(layout, monkeypatch):  # 
 def test_migration_0004_is_applied_once_where_the_layout_lacks_it(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root, cards=[card("あ")])
-    both(root, remote, ";".join(f"DROP TABLE {t}" for t in ("component_variants", "words", "word_spellings", "name_order")))
+    both(root, remote, ";".join(f"DROP TABLE {t}" for t in ("component_variants", "words", "word_spellings")))
     load(remote, monkeypatch, "--send")
     db = remote.dbs["glyph-atlas-v3"]
     assert db.execute("SELECT count(*) FROM imports WHERE stamp='migration:0004'").fetchone() == (1,)

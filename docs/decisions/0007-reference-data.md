@@ -23,8 +23,11 @@ character. Only a small part is filtered, joined or sorted in SQL.
   page reads this one object.
 - `summary/<shard>.json.gz`: each card's `data` in the shard of its family head, so a family's members
   are one read. `graphemeMembers` reads its key's shard; a search list reads one per family it shows.
-- `ids/<shard>.json.gz` (descriptions and regional shapes by character), `names.json.gz` (the Unicode
-  names a search by name can match: those that say more than `…IDEOGRAPH-<hex>`), and
+- `names.json.gz`: every card's Unicode name and how often the character occurs. A name that is a
+  prefix and the hex of its code point (`CJK UNIFIED IDEOGRAPH-4E00`) is kept as the prefix and the
+  code point, so a search for `4e00` or `U+4E00` still finds it; the Worker ranks what a name search
+  finds by occurrences.
+- `ids/<shard>.json.gz` (descriptions and regional shapes by character) and
   `list/graphemes/<n>.json.gz`, `list/ligatures/<n>.json.gz` (the card lists, 500 to an object, so a
   page of the list reads at most two).
 - `components/<code point>.json.gz`, one per component: the characters that hold it, in tier, size,
@@ -37,9 +40,7 @@ A shard is the first two hex digits of the SHA-256 of its key's code point(s).
 
 **What a query filters, joins or sorts on stays in D1** (`migrations-atlas/0004_reference.sql`):
 `component_variants` without its pairs (the IDS editor's substitutes, read by either end), `words` and
-`word_spellings` (looked up by spelling and validated by claims), and `name_order`,
-how often a character occurs, which ranks the characters a name search finds. `name_order` is keyed
-by code point, as `names` files them.
+`word_spellings` (looked up by spelling and validated by claims).
 
 - **Characters are `graphemes` ids** wherever crops meet them. A card's character or family head the
   layout lacks is numbered as `publish.py` numbers one, through `char_text`, and every grapheme takes

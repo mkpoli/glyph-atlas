@@ -14,7 +14,3 @@ CREATE TABLE word_spellings(word TEXT NOT NULL, spelling TEXT NOT NULL, source T
   tier TEXT NOT NULL, word_by TEXT NOT NULL, basis TEXT NOT NULL, related TEXT NOT NULL, statement TEXT NOT NULL,
   documents INTEGER, occurrences INTEGER, PRIMARY KEY(word, spelling, source, locator)) WITHOUT ROWID;
 CREATE INDEX word_spelling_spelling ON word_spellings(spelling);
-
--- How often a character occurs, by code point as `names` files it, so a name search ranks the
--- characters it finds; a character absent here has none.
-CREATE TABLE name_order(code_point INTEGER PRIMARY KEY, occurrence INTEGER NOT NULL);

@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { gzipSync } from 'node:zlib';
-import { LIST_PAGE, cardList, characterObject, characterStructure, componentMatches, familySummaries, referenceShard } from './atlas3Reference';
+import { LIST_PAGE, cardList, characterObject, characterStructure, componentMatches, familySummaries, nameMatches, referenceShard } from './atlas3Reference';
 import { COMPONENT_SCAN, componentMatchQuery, rankMatches } from './components';
 
 const edge = new Map<string, Response>();
@@ -57,6 +57,18 @@ describe('reference objects', () => {
     const page = await cardList(env, 'graphemes', LIST_PAGE - 2, 5);
     expect(page).toEqual({ items: items.slice(LIST_PAGE - 2, LIST_PAGE + 3), total: LIST_PAGE + 10 });
     expect(reads.length).toBe(2);
+  });
+
+  it('find a card by its name or code point, those named by code point included', async () => {
+    const { env } = bucket({ 'v3/reference/names.json.gz': {
+      names: [['U+3042', 'HIRAGANA LETTER A', 50], ['U+304B U+309A', '', 0], ['U+2F800', 'CJK COMPATIBILITY IDEOGRAPH-2F800', 0]],
+      plain: [['CJK UNIFIED IDEOGRAPH-', [0x4E00, 1, 0x24E00 - 0x4E01], [3, 9, 0]]] } });
+    expect(await nameMatches(env, 'hiragana', 8)).toEqual({ codes: ['U+3042'], total: 1 });
+    expect(await nameMatches(env, '4e00', 8)).toEqual({ codes: ['U+4E00', 'U+24E00'], total: 2 });
+    expect(await nameMatches(env, 'U+4E00', 8)).toEqual({ codes: ['U+4E00'], total: 1 });
+    expect(await nameMatches(env, 'u+309a', 8)).toEqual({ codes: ['U+304B U+309A'], total: 1 });
+    // The most frequent first: 丁 (9) before 一 (3).
+    expect(await nameMatches(env, 'unified ideograph', 1)).toEqual({ codes: ['U+4E01'], total: 3 });
   });
 
   // Rows as han_components holds them: [component, tier, size, code point, n, direct].
