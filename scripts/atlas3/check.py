@@ -2,11 +2,16 @@
 
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/check.py [--cutover]
 
-Reads the `source-*.sqlite` copies (`pull.py`) and the local copies the publisher keeps (`out/`), and
-nothing remote: every publish is confirmed by its stamp in D1 and replayed on the local copy, so the
-local copy is what D1 holds. Every check covers every crop; a failing one lists up to SHOWN examples
-in `out/check-<stamp>.txt` and the run exits 1. A check that cannot run yet is skipped; with
---cutover, for the run before the switch, every skip fails.
+Reads the `source-*.sqlite` copies (`pull.py`) and the local copies the publisher keeps (`out/`): every
+publish is confirmed by its stamp in D1 and replayed on the local copy. Every check covers every crop;
+a failing one lists up to SHOWN examples in `out/check-<stamp>.txt` and the run exits 1. A check that
+cannot run yet is skipped.
+
+--cutover, for the run before the switch, fails every skip and also reads the remote databases, after
+printing how many rows it will read: glyph-atlas-v3 (this translation's load stamps, each loaded
+table's row count and checksum, each marked crop's state and revision; about 150k rows), and
+glyph-atlas and glyph-atlas-accounts for the accounts (a few thousand rows each). Without it nothing
+remote is read.
 
 - Ids: every live crop, corpus glyph and retired crop has a number, and no number has two crops.
 - Rows: each crop's character, state, style, withheld flag, production, category, visual group,
@@ -39,8 +44,11 @@ History (decision record 0006), when `out/history.sqlite` exists (history.py):
   rows loaded with no marks set fail; each marked crop that was pending has its mark as state, with an
   event at its revision and cut by the latest round not undone that showed it there (of rounds at one
   time, the highest submission id); at the cutover the count of marks the load left must be recorded.
-- Accounts: with `accounts.sqlite`, every `actors.user` and `favourites.user` names a user, and every
-  row (each session among them) is in the parts accounts.py load wrote for the copy.
+  With --cutover, glyph-atlas-v3 equals the local copy in all of this.
+- Accounts: with `accounts.sqlite`, every `actors.user` and `favourites.user` names a user, and the
+  parts accounts.py load wrote for the copy rebuild it, each session among them. With --cutover, the
+  copy equals the old database's auth tables and glyph-atlas-accounts equals the copy, as accounts.py
+  check compares them.
 """
 
 from __future__ import annotations
@@ -437,35 +445,84 @@ def compare_loaded(report, history, atlas):
     return last_event
 
 
-def check_accounts(report, acc):
-    """The parts accounts.py load wrote for this copy (what glyph-atlas-accounts was sent), replayed:
-    every row of every table of accounts.sqlite, sessions among them, is there by its key."""
+def remote(database):
+    """Read-only queries on a D1 database, through publish.query."""
+    import publish
+
+    def run(sql):
+        assert sql.lstrip().upper().startswith("SELECT"), sql
+        return publish.query(database, sql)
+    return run
+
+
+def remote_atlas(report, name, atlas, query):
+    """glyph-atlas-v3 against the local copy every load replays: this translation's load stamps, each
+    loaded table's row count and checksum (accounts.py's summary on both sides), and each marked crop's
+    state and revision."""
     import accounts
 
+    marked = sorted({m["crop"] for m in json.loads((OUT / "history-marks.json").read_text())}) \
+        if (OUT / "history-marks.json").exists() else []
+    rows = sum(atlas.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0] for t in LOADED)
+    print(f"glyph-atlas-v3: about {rows + len(marked):,} rows to read ({rows:,} in {len(LOADED)} tables, "
+          f"{len(marked):,} marked crops)", flush=True)
+    here = accounts.local(atlas)
+    stamps = (f"SELECT stamp FROM imports WHERE stamp LIKE {accounts.lit(name + '.rows-%')} "
+              f"OR stamp LIKE {accounts.lit(name + '-marks.%')}")
+    ours, theirs = ({r["stamp"] for r in q(stamps)} for q in (here, query))
+    problems = [f"{s}: in the local copy, not in glyph-atlas-v3" for s in sorted(ours - theirs)]
+    problems += [f"{s}: in glyph-atlas-v3, not in the local copy" for s in sorted(theirs - ours)]
+    report.check(f"glyph-atlas-v3 holds the {len(ours)} load stamps of this translation the local copy holds, and no other",
+                 problems)
+
+    ours, theirs = accounts.summary(here, atlas, LOADED), accounts.summary(query, atlas, LOADED)
+    report.check(f"glyph-atlas-v3 holds every loaded table as the local copy does, row count and checksum ({rows:,} rows)",
+                 [f"{t}: {ours[t][0]} rows here, {theirs[t][0]} there, checksums {ours[t][1][:12]} and {theirs[t][1][:12]}"
+                  for t in LOADED if ours[t] != theirs[t]])
+
+    states = dict(atlas.execute("SELECT code, key FROM codes WHERE field='state'"))
+    ours, theirs = {}, {}
+    for i in range(0, len(marked), 500):
+        sql = f"SELECT id, state, revision FROM crops WHERE id IN ({','.join(map(str, marked[i:i + 500]))})"
+        ours.update((r["id"], (r["state"], r["revision"])) for r in here(sql))
+        theirs.update((r["id"], (r["state"], r["revision"])) for r in query(sql))
+    by_state = Counter(states.get(s, s) for s, _rev in theirs.values())
+    report.check("glyph-atlas-v3 gives each marked crop the local copy's state and revision ("
+                 + ", ".join(f"{k} {n}" for k, n in sorted(by_state.items())) + ")",
+                 [f"{cid}: state and revision {ours.get(cid)} here, {theirs.get(cid)} there"
+                  for cid in marked if ours.get(cid) != theirs.get(cid)])
+
+
+def check_accounts(report, acc, query=None):
+    """The parts accounts.py load wrote for this copy (what glyph-atlas-accounts was sent), replayed and
+    compared with accounts.sqlite table by table, schema, row count and checksum. With `query` (the
+    cutover), the chain old database -> accounts.sqlite -> glyph-atlas-accounts as accounts.py check
+    compares it."""
+    import accounts
+
+    sessions = acc.execute('SELECT count(*) FROM "session"').fetchone()[0] if "session" in accounts.tables(acc) else 0
     run = HERE / "accounts-load" / accounts.copy_name(acc)
-    name = "every accounts.sqlite row, every session among them, is in the parts loaded into glyph-atlas-accounts"
+    name = f"the parts loaded into glyph-atlas-accounts rebuild accounts.sqlite, every session among them ({sessions} sessions)"
     if not run.is_dir():
         report.skip(name, f"no {run.relative_to(HERE)}; accounts.py load writes it")
+    else:
+        loaded = sqlite3.connect(":memory:")
+        loaded.execute("PRAGMA foreign_keys = ON")
+        for part in sorted(run.glob("*.sql")):
+            loaded.executescript("BEGIN;\n" + part.read_text() + "COMMIT;\n")
+        report.check(name, accounts.differences(acc, accounts.local(loaded))[0])
+    if query is None:
         return
-    loaded = sqlite3.connect(":memory:")
-    loaded.execute("PRAGMA foreign_keys = ON")
-    for part in sorted(run.glob("*.sql")):
-        loaded.executescript("BEGIN;\n" + part.read_text() + "COMMIT;\n")
-    problems, sessions = [], 0
-    for table in accounts.tables(acc):
-        key = ",".join(accounts.q(k) if k != "rowid" else k for k in accounts.keys(acc, table))
-        ours = {r for r in acc.execute(f"SELECT {key} FROM {accounts.q(table)}")}
-        try:
-            theirs = {r for r in loaded.execute(f"SELECT {key} FROM {accounts.q(table)}")}
-        except sqlite3.OperationalError:
-            theirs = set()
-        sessions += len(ours) if table == "session" else 0
-        problems += [f"{table} {k}: not in the parts" for k in sorted(ours - theirs, key=repr)]
-        problems += [f"{table} {k}: in the parts, not in accounts.sqlite" for k in sorted(theirs - ours, key=repr)]
-    report.check(f"{name} ({sessions} sessions)", problems)
+    rows = sum(acc.execute(f"SELECT count(*) FROM {accounts.q(t)}").fetchone()[0] for t in accounts.tables(acc))
+    print(f"{accounts.OLD} and {accounts.DATABASE}: about {rows:,} rows to read from each", flush=True)
+    old = query(accounts.OLD)
+    report.check(f"accounts.sqlite equals the auth tables of {accounts.OLD}, schema, row count and checksum",
+                 accounts.differences(acc, old, accounts.auth_tables(old))[0])
+    report.check(f"{accounts.DATABASE} equals accounts.sqlite, schema, row count and checksum",
+                 accounts.differences(acc, query(accounts.DATABASE))[0])
 
 
-def check_history(report, name):
+def check_history(report, name, query=None):
     path = OUT / "history.sqlite"
     if name is None:
         report.skip("history", "no out/history.sqlite; run history.py first")
@@ -666,6 +723,8 @@ def check_history(report, name):
     if not loaded:
         report.skip("the local copy holds every translated row as history.sqlite has it, and no other",
                     "this translation is not loaded (no rows stamp in imports); load_history.py loads it")
+    elif query is not None:
+        remote_atlas(report, name, atlas, query("glyph-atlas-v3"))
     if applied_marks(atlas, name) is None and loaded:
         report.check("every marked crop has its mark as its state",
                      ["the rows of this translation are loaded and its marks are not set; rerun load_history.py"])
@@ -888,16 +947,18 @@ def check_history(report, name):
                     for _k, user in db.execute(f"SELECT {column}, user FROM {table_} WHERE user IS NOT NULL")
                     if not acc.execute('SELECT 1 FROM "user" WHERE id=?', (user,)).fetchone()]
         report.check(f"every actors.user and favourites.user in {where} names an account", problems)
-        check_accounts(report, acc)
+        check_accounts(report, acc, query)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--cutover", action="store_true", help="fail every check that cannot run yet instead of skipping it")
-    report = Report(strict=parser.parse_args().cutover)
+    parser.add_argument("--cutover", action="store_true", help="fail every check that cannot run yet instead of skipping it, "
+                        "and read glyph-atlas-v3, glyph-atlas and glyph-atlas-accounts to compare them with the local copies")
+    cutover = parser.parse_args().cutover
+    report = Report(strict=cutover)
     name = translation()
     check_crops(report, name)
-    check_history(report, name)
+    check_history(report, name, remote if cutover else None)
     path = OUT / f"check-{time.strftime('%Y%m%dT%H%M%S')}.txt"
     path.write_text("\n".join(report.lines) + "\n")
     print(f"{'all checks pass' if not report.failed else f'{report.failed} checks fail'}; report in {path}", flush=True)

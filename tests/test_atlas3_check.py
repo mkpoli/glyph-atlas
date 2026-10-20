@@ -12,6 +12,7 @@ from test_atlas3_publish import ids, layout, write_source  # noqa: F401 -- the f
 
 def check(monkeypatch, *flags):
     sys.modules.pop("check", None)
+    sys.modules.pop("accounts", None)
     module = importlib.import_module("check")
     monkeypatch.setattr(sys, "argv", ["check.py", *flags])
     with pytest.raises(SystemExit) as stopped:
@@ -300,10 +301,20 @@ def accounts_copy(root, sessions):
     db = sqlite3.connect(root / "accounts.sqlite")
     db.executescript('''CREATE TABLE "user"(id TEXT PRIMARY KEY);
         CREATE TABLE "session"(id TEXT PRIMARY KEY, userId TEXT NOT NULL REFERENCES "user"(id));
+        CREATE TABLE verification(id TEXT PRIMARY KEY);
+        CREATE TABLE rateLimit(id TEXT PRIMARY KEY);
         INSERT INTO "user" VALUES('user-1');''')
     db.executemany('INSERT INTO "session" VALUES(?, \'user-1\')', [(s,) for s in sessions])
     db.commit()
     db.close()
+
+
+def accounts_load(root, monkeypatch):
+    sys.modules.pop("accounts", None)
+    accounts = importlib.import_module("accounts")
+    monkeypatch.setattr(accounts, "COPY", root / "accounts.sqlite")
+    monkeypatch.setattr(accounts, "LOADS", root / "accounts-load")
+    accounts.load(False)
 
 
 def test_every_session_is_in_the_accounts_load(layout, monkeypatch):  # noqa: F811
@@ -311,19 +322,48 @@ def test_every_session_is_in_the_accounts_load(layout, monkeypatch):  # noqa: F8
     translated(root, monkeypatch, sources, history)
     accounts_copy(root, ["s1", "s2"])
     assert check(monkeypatch) == 0
-    assert "skip every accounts.sqlite row, every session among them, is in the parts loaded" in report(root)
-    sys.modules.pop("accounts", None)
-    accounts = importlib.import_module("accounts")
-    monkeypatch.setattr(accounts, "COPY", root / "accounts.sqlite")
-    monkeypatch.setattr(accounts, "LOADS", root / "accounts-load")
-    accounts.load(False)
+    assert "skip the parts loaded into glyph-atlas-accounts rebuild accounts.sqlite" in report(root)
+    accounts_load(root, monkeypatch)
     assert check(monkeypatch) == 0
-    assert "ok   every accounts.sqlite row, every session among them, is in the parts loaded into glyph-atlas-accounts (2 sessions)" in report(root)
+    assert "ok   the parts loaded into glyph-atlas-accounts rebuild accounts.sqlite, every session among them (2 sessions)" in report(root)
     # A session the parts lack: drop it from the part that inserts it.
     for part in (root / "accounts-load").glob("*/*.sql"):
         part.write_text(part.read_text().replace("\nINSERT INTO \"session\"(\"id\",\"userId\") VALUES('s2','user-1');", ""))
     assert check(monkeypatch) == 1
-    assert "session ('s2',): not in the parts" in report(root)
+    assert "session: 2 rows here, 1 there" in report(root)
+
+
+def accounts_remote(root, remote):
+    """The old database holding the copy's tables, and glyph-atlas-accounts loaded from its parts."""
+    remote.dbs["glyph-atlas"] = sqlite3.connect(":memory:")
+    sqlite3.connect(root / "accounts.sqlite").backup(remote.dbs["glyph-atlas"])
+    remote.dbs["glyph-atlas-accounts"] = target = sqlite3.connect(":memory:")
+    for part in sorted((root / "accounts-load").glob("*/*.sql")):
+        target.executescript("BEGIN;\n" + part.read_text() + "COMMIT;\n")
+
+
+@pytest.mark.parametrize(("database", "change", "line"), [
+    (None, None, None),
+    ("glyph-atlas", "INSERT INTO \"session\" VALUES('s3', 'user-1')",
+     "FAIL (1) accounts.sqlite equals the auth tables of glyph-atlas, schema, row count and checksum\n     session: 2 rows here, 3 there"),
+    ("glyph-atlas-accounts", "DELETE FROM \"session\" WHERE id = 's2'",
+     "FAIL (1) glyph-atlas-accounts equals accounts.sqlite, schema, row count and checksum\n     session: 2 rows here, 1 there"),
+])
+def test_at_the_cutover_the_accounts_chain_is_compared_remotely(layout, monkeypatch, database, change, line):  # noqa: F811
+    root, _publish, remote = layout
+    translated(root, monkeypatch, sources, history)
+    accounts_copy(root, ["s1", "s2"])
+    accounts_load(root, monkeypatch)
+    accounts_remote(root, remote)
+    if change:
+        remote.dbs[database].execute(change)
+    assert check(monkeypatch, "--cutover") == 1
+    text = report(root)
+    if line:
+        assert line in text
+    else:
+        assert "ok   accounts.sqlite equals the auth tables of glyph-atlas" in text
+        assert "ok   glyph-atlas-accounts equals accounts.sqlite" in text
 
 
 @pytest.mark.parametrize(("change", "line"), [
@@ -360,6 +400,46 @@ def test_a_mark_event_names_the_latest_round_that_showed_the_crop(layout, monkey
     local.commit()
     assert check(monkeypatch) == 1
     assert line in report(root)
+
+
+@pytest.mark.parametrize(("change", "line"), [
+    (None, None),
+    ("DELETE FROM imports WHERE stamp LIKE '%-marks.%'", "-marks.marks-"),
+    ("UPDATE seen SET at = at + 1", "FAIL (1) glyph-atlas-v3 holds every loaded table as the local copy does"),
+    ("DELETE FROM favourites", "favourites: 1 rows here, 0 there"),
+    ("UPDATE crops SET revision = revision + 1 WHERE id = {a1}", "FAIL (1) glyph-atlas-v3 gives each marked crop"),
+])
+def test_at_the_cutover_glyph_atlas_v3_is_compared_with_the_local_copy(layout, monkeypatch, capsys, change, line):  # noqa: F811
+    root, publish, remote = layout
+    translated(root, monkeypatch, sources, history)
+    load(publish, remote, monkeypatch)
+    if change:
+        remote.dbs["glyph-atlas-v3"].execute(change.format(a1=ids(root)["ex:a1"]))
+        remote.dbs["glyph-atlas-v3"].commit()
+    capsys.readouterr()
+    # The cuts are not published and there is no accounts copy, so the cutover run fails either way.
+    assert check(monkeypatch, "--cutover") == 1
+    text = report(root)
+    if line:
+        assert line in text
+    else:
+        assert "glyph-atlas-v3: about" in capsys.readouterr().out
+        assert "ok   glyph-atlas-v3 holds the " in text
+        assert "ok   glyph-atlas-v3 holds every loaded table as the local copy does" in text
+        assert "ok   glyph-atlas-v3 gives each marked crop the local copy's state and revision (checked 1, seen 1)" in text
+
+
+def test_without_cutover_nothing_remote_is_read(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    translated(root, monkeypatch, sources, history)
+    load(publish, remote, monkeypatch)
+    accounts_copy(root, ["s1"])
+    accounts_load(root, monkeypatch)
+
+    def refuse(database, sql):
+        raise AssertionError(f"read {database}")
+    monkeypatch.setattr(publish, "query", refuse)
+    assert check(monkeypatch) == 0
 
 
 def test_at_the_cutover_the_count_of_marks_left_must_be_recorded(layout, monkeypatch):  # noqa: F811
