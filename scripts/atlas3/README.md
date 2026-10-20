@@ -142,6 +142,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    sample are derived from the crops by `answers.py` (*not built*), so neither is copied. Keeping the
    facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
    ainu-records' character lists and the catalogue's site values still write the old database.
+   The date claims on documents that are not books stay in `assertions` with the history (11,998 of
+   the 14,095), and no `book_dates` row is made for them. When such a document gains crops after the
+   cutover, its dates come from running the resolver, `resolve` in `src/glyph_atlas/dates.py` (the one
+   `scripts/export_dates_cloudflare.py` runs), over its `date_*` assertions in `glyph-atlas-v3`; the
+   step that does so and writes `book_dates` is *not built*.
 7. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
    session changes still frozen. It is created once, before the window:
    `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:
