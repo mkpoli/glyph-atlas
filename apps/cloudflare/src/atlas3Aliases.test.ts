@@ -8,6 +8,7 @@ const edge = new Map<string, Response>();
 (globalThis as any).caches = { default: {
   match: async (request: Request) => edge.get(request.url)?.clone(),
   put: async (request: Request, response: Response) => { edge.set(request.url, response.clone()); },
+  delete: async (request: Request) => edge.delete(request.url),
 } };
 beforeEach(() => edge.clear());
 
@@ -25,7 +26,8 @@ function setup() {
   const MEDIA = { get: async (name: string) => {
     reads.push(name);
     const bytes = objects.get(name);
-    return bytes ? { arrayBuffer: async () => bytes.slice().buffer } : null;
+    // A copy of exactly these bytes: a Buffer's `.buffer` can be its whole shared pool.
+    return bytes ? { arrayBuffer: async () => new Uint8Array(bytes).buffer } : null;
   } };
   return { env: { MEDIA } as unknown as Env, ids, reads };
 }
