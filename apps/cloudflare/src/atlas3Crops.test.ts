@@ -25,14 +25,14 @@ function setup() {
   const page = ++pages, n = page;
   const live = cropId(page, 0), retired = cropId(page, 1), orphan = cropId(page, 2), chained = cropId(page, 3), byNumber = cropId(page, 4);
   db.exec(`INSERT INTO books VALUES(1,'hk:book');
-    INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${page},'hk:book:${n}',1,2,5);
+    INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${page},'hk:book:${n}',1,2,8);
     INSERT INTO crops(id,kind,book,state,quiz,shuffle) VALUES(${live},0,1,0,1,1);`);
   const text = { live: `hk:${n}:live`, retired: `hk:${n}:retired`, orphan: `hk:${n}:orphan`, chained: `hk:${n}:chained`,
-    redirected: `hk:${n}:redirected`, gone: `hk:${n}:gone` };
+    redirected: `hk:${n}:redirected`, gone: `hk:${n}:gone`, ends: `hk:${n}:ends`, wide: `tsj:s${n}a10７:0` };
   // The alias map: each mirror id to its crop, and a redirect source to the crop its chain ends at,
   // which for a retired crop is the retired crop itself.
   const aliases: Record<string, number> = { [text.live]: live, [text.retired]: retired, [text.orphan]: orphan,
-    [text.chained]: chained, [text.redirected]: retired };
+    [text.chained]: chained, [text.redirected]: retired, [text.ends]: cropId(page, 7), [text.wide]: live };
   const shards = new Map<string, Record<string, number>>();
   for (const [t, id] of Object.entries(aliases)) {
     const name = `v3/aliases/${createHash('sha256').update(t).digest('hex').slice(0, 3)}.json.gz`;
@@ -46,7 +46,8 @@ function setup() {
     { slot: 3, id: text.chained, retired: true, replaced_by: text.retired },
     { slot: 4, id: `hk:${n}:number`, retired: true, replaced_by: live },
     { slot: 5, id: `hk:${n}:loop`, retired: true, replaced_by: cropId(page, 6) },
-    { slot: 6, id: `hk:${n}:loop2`, retired: true, replaced_by: cropId(page, 5) }] })));
+    { slot: 6, id: `hk:${n}:loop2`, retired: true, replaced_by: cropId(page, 5) },
+    { slot: 7, id: text.ends, retired: true, replaced_by: text.orphan }] })));
   const MEDIA = { get: async (name: string) => {
     const bytes = objects.get(name);
     return bytes ? { body: new Response(bytes).body!, arrayBuffer: async () => new Uint8Array(bytes).buffer } : null;
@@ -94,6 +95,16 @@ describe('a crop named in a route', () => {
     expect(await cropParam(env, 'not an id')).toBeNull();
   });
 
+  it('is percent-decoded once, as written in the path', async () => {
+    const { env, text, live } = setup();
+    const raw = new URL(`https://glyphatlas.org/atlas/characters/${text.wide}`).pathname.split('/').at(-1)!;
+    expect(raw).toContain('%EF%BC%97');
+    expect(await cropParam(env, raw)).toEqual({ moved: live });
+    expect(await cropParam(env, text.wide)).toEqual({ moved: live });
+    expect(await cropParam(env, encodeURIComponent(encodeURIComponent(text.wide)))).toBeNull();
+    expect(await cropParam(env, '%E0%A4%A')).toBeNull();
+  });
+
   it('ends with nothing at a loop of replacements or a replacement gone', async () => {
     const { db, env, text, live } = setup();
     expect(await cropParam(env, publicId(cropId(pages, 5)))).toBeNull();
@@ -106,8 +117,8 @@ describe('an old crop URL', () => {
   it('is answered with the public id in its place, in the path or the query', () => {
     const id = cropId(7, 3);
     const url = new URL('https://glyphatlas.org/atlas/characters/hk%3Aa%3A1/versions?around=hk:a:1&n=2');
-    expect(cropUrl(url, 'hk:a:1', id).href).toBe(`https://glyphatlas.org/atlas/characters/${publicId(id)}/versions?around=${publicId(id)}&n=2`);
-    const response = movedResponse(new URL('https://glyphatlas.org/atlas/characters/ex:1:日本'), 'ex:1:日本', id);
+    expect(cropUrl(url, 'hk%3Aa%3A1', id).href).toBe(`https://glyphatlas.org/atlas/characters/${publicId(id)}/versions?around=${publicId(id)}&n=2`);
+    const response = movedResponse(new URL('https://glyphatlas.org/atlas/characters/ex:1:日本'), 'ex:1:%E6%97%A5%E6%9C%AC', id);
     expect(response.status).toBe(OLD_URL_STATUS);
     expect(OLD_URL_STATUS).toBe(302);
     expect(response.headers.get('location')).toBe(`https://glyphatlas.org/atlas/characters/${publicId(id)}`);

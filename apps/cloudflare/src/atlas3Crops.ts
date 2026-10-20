@@ -28,7 +28,15 @@ async function replacement(env: Env, entry: Record<string, unknown> | undefined,
   return typeof named === 'string' && named ? await aliasCrop(env, named, ctx) : null;
 }
 
-export async function cropParam(env: Env, param: string, ctx?: ExecutionContext): Promise<CropParam> {
+/** A path segment as written in the URL, percent-decoded once; null when it does not decode. */
+export function decodedSegment(raw: string): string | null {
+  try { return decodeURIComponent(raw); } catch { return null; }
+}
+
+/** What the path segment `raw`, as written in the URL, names. It is decoded here and nowhere else. */
+export async function cropParam(env: Env, raw: string, ctx?: ExecutionContext): Promise<CropParam> {
+  const param = decodedSegment(raw);
+  if (param === null) return null;
   const named = textId(param) ? await aliasCrop(env, param, ctx) : cropOf(param);
   if (named === null) return null;
   let id = named, replaced = false;
@@ -45,18 +53,17 @@ export async function cropParam(env: Env, param: string, ctx?: ExecutionContext)
   return !replaced && publicId(id) === param ? { id } : { moved: id };
 }
 
-/** The URL with the crop's public id in place of `param`, in its path segment or query value. */
-export function cropUrl(url: URL, param: string, id: number): URL {
-  const target = new URL(url), name = publicId(id);
-  target.pathname = target.pathname.split('/').map(part => {
-    try { return decodeURIComponent(part) === param ? name : part; } catch { return part; }
-  }).join('/');
+/** The URL with the crop's public id in place of the path segment `raw`, written as in the URL, and
+ *  of any query value that is that segment decoded. */
+export function cropUrl(url: URL, raw: string, id: number): URL {
+  const target = new URL(url), name = publicId(id), param = decodedSegment(raw);
+  target.pathname = target.pathname.split('/').map(part => part === raw ? name : part).join('/');
   for (const [key, value] of [...target.searchParams]) if (value === param) target.searchParams.set(key, name);
   return target;
 }
 
-export function movedResponse(url: URL, param: string, id: number): Response {
-  return new Response(null, { status: OLD_URL_STATUS, headers: { location: cropUrl(url, param, id).href,
+export function movedResponse(url: URL, raw: string, id: number): Response {
+  return new Response(null, { status: OLD_URL_STATUS, headers: { location: cropUrl(url, raw, id).href,
     'cache-control': OLD_URL_STATUS === 301 ? 'public, max-age=86400' : 'no-store' } });
 }
 
