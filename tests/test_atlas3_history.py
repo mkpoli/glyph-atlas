@@ -247,15 +247,17 @@ def test_events_keep_the_label_shown_and_the_character_named(layout, monkeypatch
         reviewed("cf:1", 0, "2026-10-01T00:00:01Z", {"kind": "visual-quiz", "label": "あ", "verdict": "wrong", "issue": "character",
                                                      "suggested_character": "U+3044"}, "い"),
         reviewed("cf:2", 1, "2026-10-01T00:00:02Z", {"kind": "character-review", "verdict": "wrong", "issue": "character",
-                                                     "suggested_character": "U+3044", "snapshot": {"character": {"label": "い"}}}, "い"),
+                                                     "suggested_character": "U+3044",
+                                                     # A record from before readings left them, its reading not its label.
+                                                     "snapshot": {"character": {"label": "い", "reading": "イ"}}}, "い"),
         reviewed("cf:3", 2, "2026-10-01T00:00:03Z", {"kind": "character-review", "verdict": "match", "issue": None,
                                                      "snapshot": {"character": {"label": "い"}}}, "い")])
     code, out = history(monkeypatch, root)
     assert code == 0
     text = dict(sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT id, text FROM graphemes"))
-    rows = [(r, text.get(s), text.get(n), text.get(label))
-            for r, s, n, label in out.execute("SELECT revision, shown, named, label FROM events ORDER BY revision")]
-    assert rows == [(1, "あ", "い", "い"), (2, "い", "い", "い"), (3, "い", None, "い")]
+    rows = [(r, text.get(s), text.get(n), text.get(label), reading)
+            for r, s, n, label, reading in out.execute("SELECT revision, shown, named, label, reading FROM events ORDER BY revision")]
+    assert rows == [(1, "あ", "い", "い", None), (2, "い", "い", "い", "イ"), (3, "い", None, "い", None)]
 
 
 def test_corpus_rows_follow_the_old_rows_and_keep_each_flag(layout, monkeypatch):  # noqa: F811

@@ -660,7 +660,8 @@ def check_history(report, name, query=None):
     for target, rows_ in itertools.groupby(stream("events", "id, submission, target, actor, expected_revision, before_data, "
                                                   f"after_data, event, at, coalesce(json_extract({evidence_sql}, '$.label'), "
                                                   f"json_extract({evidence_sql}, '$.snapshot.character.label')) AS shown_label, "
-                                                  f"json_extract({evidence_sql}, '$.suggested_character') AS named_code", "target"),
+                                                  f"json_extract({evidence_sql}, '$.suggested_character') AS named_code, "
+                                                  f"json_extract({evidence_sql}, '$.snapshot.character.reading') AS snapshot_reading", "target"),
                                            key=lambda r: r["target"]):
         group, cid = list(rows_), crop(target)
         if cid is None:
@@ -680,7 +681,8 @@ def check_history(report, name, query=None):
                     "quiz": after.get("quiz"), "box": box4(after.get("box")) or (None,) * 4,
                     "note": (evidence.get("note") or None) and evidence["note"][:2000], "issue": evidence.get("issue") or None,
                     "text": evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
-                    "shown": char_text(r["shown_label"]) or None, "named": char_text(r["named_code"]) or None}
+                    "shown": char_text(r["shown_label"]) or None, "named": char_text(r["named_code"]) or None,
+                    "reading": r["snapshot_reading"] or None}
             got = one("SELECT * FROM events WHERE crop=? AND revision=?", cid, revision)
             if got:
                 got.update(actor=actor_key.get(got["actor"]), submission=sub_key.get(got["submission"]), kind=kinds.get(got["kind"]),

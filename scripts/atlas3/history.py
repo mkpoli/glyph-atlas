@@ -23,7 +23,8 @@ Where the old events keep what (all 1,690 of 19-20 October 2026 are kind 'review
   quiz;
 - `before_data.box` is the box the reviewer saw, which names the event's cut;
 - the label the reviewer was shown is `evidence.label` in a round and `evidence.snapshot.character.label`
-  otherwise (`shown`), and the character named is `evidence.suggested_character` (`named`).
+  otherwise (`shown`), the character named is `evidence.suggested_character` (`named`), and the reading
+  the crop showed, in records from before readings left them, is `evidence.snapshot.character.reading`.
 
 Corpus glyphs the old site held a `units` row for become `corpus_rows`, numbered in rowid order, and
 the finding of an admin's flag in a record's `flag` becomes a `corpus_flags` row.
@@ -139,7 +140,7 @@ def create(db):
 
 # The columns of a translated event, in the order history rows give them.
 EVENT_COLUMNS = ("id", "crop", "revision", "cut", "gen", "actor", "submission", "at", "kind", "label", "state", "style", "quiz",
-                 "x", "y", "w", "h", "note", "issue", "text", "shown", "named")
+                 "x", "y", "w", "h", "note", "issue", "text", "shown", "named", "reading")
 
 
 class Crops:
@@ -384,6 +385,8 @@ def main():
         if shown is not None and shown not in graphemes:
             problems.append(f"shown label {shown!r} has no grapheme")
         named = char_text(evidence.get("suggested_character")) or None
+        # The reading the crop showed, while records still carried one.
+        reading = ((evidence.get("snapshot") or {}).get("character") or {}).get("reading") or None
         if named is not None and named not in graphemes:
             problems.append(f"named character {named!r} has no grapheme")
         state = atlas_codes["state"].get(after.get("state"))
@@ -406,7 +409,7 @@ def main():
                        codes["issue"].get(issue),
                        # Typed characters: `suggested_text`, or `suggested_reading` in reviews saved before it.
                        evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
-                       graphemes.get(shown) if shown else None, graphemes.get(named) if named else None))
+                       graphemes.get(shown) if shown else None, graphemes.get(named) if named else None, reading))
     out.executemany(f'INSERT INTO events({",".join(EVENT_COLUMNS)}) VALUES({",".join("?" * len(EVENT_COLUMNS))})',
                     [(i, *e) for i, e in enumerate(events, 1)])
     report.tables["events"]["out"] = len(events)
