@@ -137,15 +137,29 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
        python3 scripts/atlas3/accounts.py load --send
        python3 scripts/atlas3/accounts.py check
 
-   `pull` reads the CREATE statements of `user`, `session`, `account`, `passkey`, `verification`,
-   `account_profiles` and `rateLimit` (with their indexes) from the old database's `sqlite_master` and
-   copies their rows in primary-key ranges into `accounts.sqlite`; it only reads. `load` writes the
-   tables with those exact statements, the rows (parents first) and then the indexes as parts under
-   `accounts-load/<copy>/`, named by the copy's checksums, and replays them on an empty database to
-   confirm they rebuild the copy. Only `--send` writes to D1: each part is confirmed by its stamp in an
-   `imports` table, a rerun sends what is missing, and a database holding another copy's rows or tables
-   of its own is refused. `check` compares the schema, row counts and a checksum of every row per table
-   and exits 1 on any difference.
+   `pull` finds the authentication tables in the old database's `sqlite_master`: `user`,
+   `verification`, `rateLimit` and every table whose foreign keys lead to `user` (`session`,
+   `account`, `passkey`, `account_profiles`), less those `pull.py` copies for the history
+   (`favourites`). A table that is neither and is not named, with its reason, in `LEFT` in
+   `accounts.py` stops it. It copies their CREATE statements (with their indexes) and their rows in
+   primary-key ranges into `accounts.sqlite`, then compares the copy with the old database as `check`
+   does; it only reads. `load` writes the tables with those exact statements, the rows (parents
+   first) and then the indexes as parts under `accounts-load/<copy>/`, named by the copy's checksums,
+   and replays them on an empty database to confirm they rebuild the copy. Only `--send` writes to D1:
+   each part is confirmed by its stamp in an `imports` table, and a database holding another copy's
+   rows or tables of its own is refused. If `--send` stops partway, run `load --send` again on the
+   same copy, without `pull --fresh`: it sends only the missing parts, and a copy differing in any
+   row would be refused by the half-loaded database. `check` compares the table set, the schema, row counts and a checksum
+   of every row per table, first between the old database and `accounts.sqlite`, then between
+   `accounts.sqlite` and `glyph-atlas-accounts`, and exits 1 on any difference. Run it before the
+   smoke tests on the deployed Worker (decision record 0006, Order step 5): their sign-ins and session
+   renewals write to `glyph-atlas-accounts`, after which it no longer matches.
+
+   `accounts.sqlite` and `accounts-load/` hold sessions and account tokens; the script creates them
+   readable by the owner only. Once `check` passes, delete both, in the Codespace too:
+
+       rm -rf work/atlas-v3/accounts.sqlite* work/atlas-v3/accounts-load
+
 7. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.
 8. **Switch** the Worker's routes to the new layout and resume writes (`wrangler secret delete WRITES_PAUSED`).
