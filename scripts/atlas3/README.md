@@ -120,7 +120,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    and `hard`; the mirror takes the same numbers), loads every translated row in stamped parts, sets
    each pending marked crop's state to its mark one revision on with an event, and writes
    `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut. `answers.py`
-   follows, since marks change the counts. The alias files for old URLs are *not built*.
+   follows, since marks change the counts. `aliases.py` (counts only without `--send`) maps every text
+   id in the mirror, and every source of `unit_redirects` followed to the first text id the mirror has,
+   to its integer crop id, and uploads the map as `v3/aliases/<first three hex digits of the text id's
+   SHA-256>.json.gz`, read by `aliasCrop` in the Worker. A redirect cycle stops it with examples; a
+   chain that ends outside the mirror is counted as gone and left out.
 6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.
 7. **Switch** the Worker's routes to the new layout and resume reviews.
