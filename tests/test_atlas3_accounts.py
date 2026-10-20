@@ -77,6 +77,7 @@ def test_pull_copies_only_the_auth_tables_with_their_exact_schema(accounts):
     assert copy.execute("SELECT count(*) FROM session").fetchone() == (1,)
     with pytest.raises(SystemExit, match="--fresh"):
         pull(module)
+    assert module.COPY.stat().st_mode & 0o777 == 0o600
 
 
 def test_pull_finds_the_tables_that_lead_to_a_user(accounts):
@@ -156,6 +157,7 @@ def test_a_dry_run_writes_parts_that_rebuild_the_copy_and_sends_nothing(accounts
     assert target.execute("SELECT count(*) FROM sqlite_master").fetchone() == (0,)
     (run,) = [p for p in module.LOADS.iterdir() if p.name.startswith("accounts-")]
     assert sorted(p.name for p in run.glob("*.sql")) == ["1-schema-0000.sql", "2-rows-0000.sql", "3-indexes-0000.sql"]
+    assert {p.stat().st_mode & 0o777 for p in (module.LOADS, run)} == {0o700}
 
 
 def test_load_sends_once_and_check_passes(accounts, capsys):

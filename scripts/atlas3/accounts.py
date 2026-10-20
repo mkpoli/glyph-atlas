@@ -180,6 +180,8 @@ def pull(query, fresh):
     names = auth_tables(query)
     tmp = COPY.with_name(COPY.name + ".building")
     tmp.unlink(missing_ok=True)
+    # Sessions and account tokens: readable by the owner only.
+    os.close(os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
     db = sqlite3.connect(tmp)
     entries = schema(query, names)
     for e in entries:
@@ -229,7 +231,9 @@ def parts(db):
     entries = schema(local(db), tables(db))
     tmp = LOADS / ".building" / run.name
     shutil.rmtree(tmp, ignore_errors=True)
-    tmp.mkdir(parents=True)
+    for d in (LOADS, tmp.parent, tmp):
+        d.mkdir(mode=0o700, exist_ok=True)
+        d.chmod(0o700)
     write_parts(tmp, "1-schema", [[IMPORTS] + [e["sql"] + ";" for e in entries if e["type"] == "table"]])
     groups = []
     for table in ordered(db):
