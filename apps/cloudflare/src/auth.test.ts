@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { auth, claim, viewer } from './auth';
+import { hourly as run } from './accounts';
 
 // The auth library reads through D1's whole statement API, `raw` and `run`'s row id included.
 class Statement {
@@ -229,6 +230,21 @@ describe('deleting a user', () => {
     expect(atlas.query('SELECT count(*) AS n FROM actors WHERE user IN (?,?)').get(gone, anon)).toEqual({ n: 0 });
     expect([...media.keys()]).toEqual([`avatars/${stays}/a.webp`]);
     expect((await send('/get-session', undefined)).ok).toBe(true);
+  });
+  it('is finished by the hourly run, which waits while writes are paused', async () => {
+    const { call, accounts, atlas, env, gone } = await seeded('https://hourly.glyphatlas.org');
+    const batch = env.ATLAS.batch;
+    (env.ATLAS as any).batch = async () => { throw new Error('D1_ERROR: unavailable') };
+    expect(await call('/admin/remove-user', { userId: gone })).toBe(200);
+    (env.ATLAS as any).batch = batch;
+    const hourly = (more: Record<string, string>) => run({ ...env, ...more } as Env);
+    await hourly({ WRITES_PAUSED: '1' });
+    expect(accounts.query('SELECT user FROM forgotten').all()).toEqual([{ user: gone }]);
+    expect(atlas.query('SELECT count(*) AS n FROM favourites WHERE user=?').get(gone)).toEqual({ n: 1 });
+    await hourly({});
+    expect(accounts.query('SELECT count(*) AS n FROM forgotten').get()).toEqual({ n: 0 });
+    expect(atlas.query('SELECT count(*) AS n FROM favourites WHERE user=?').get(gone)).toEqual({ n: 0 });
+    expect(atlas.query('SELECT count(*) AS n FROM actors WHERE user=?').get(gone)).toEqual({ n: 0 });
   });
   it('is finished by the next deletion when ATLAS fails between the two databases', async () => {
     const { call, accounts, atlas, env, gone, stays } = await seeded('https://retry.glyphatlas.org');

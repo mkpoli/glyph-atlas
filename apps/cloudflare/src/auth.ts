@@ -119,7 +119,7 @@ function build(env: Env, origin: string, paused: boolean) {
         // Better Auth deletes the user's sessions and sign-in accounts, runs `before`, which marks the user
         // and deletes the anonymous users joined to it, then deletes the user. `after` removes their
         // favourites and links to actors in `ATLAS` and their pictures; a deletion that stops before that
-        // is finished by the next one.
+        // is finished by the next one or by the hourly `scheduled` run.
         delete: {
           before: async user => { await startForgetting(env, user.id) },
           after: async () => { await finishForgetting(env).catch(error => console.error(JSON.stringify({ event: 'forget_failed', error: String(error) }))) },

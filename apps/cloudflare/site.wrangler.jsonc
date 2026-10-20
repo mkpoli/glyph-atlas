@@ -1,0 +1,8 @@
+// What the SvelteKit adapter reads (apps/review/svelte.config.js): where to write the site's Worker and
+// its static files. The Worker deployed is wrangler.jsonc's `main`, which wraps this one.
+{
+  "name": "glyph-atlas",
+  "compatibility_date": "2026-09-22",
+  "main": "../review/.svelte-kit/cloudflare/_worker.js",
+  "assets": {"directory": "../review/.svelte-kit/cloudflare", "binding": "ASSETS"}
+}

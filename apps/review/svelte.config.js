@@ -1,7 +1,8 @@
 import adapter from '@sveltejs/adapter-cloudflare'
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
 
-// The Worker's configuration, bindings and routes live with the API in `apps/cloudflare`.
+// The Worker's configuration, bindings and routes live with the API in `apps/cloudflare`. The adapter
+// writes the site's Worker where `site.wrangler.jsonc` says, and `src/entry.js` there deploys it.
 const wrangler = '../cloudflare/wrangler.jsonc'
 
 export default {
@@ -11,7 +12,7 @@ export default {
     runes: true,
   },
   kit: {
-    adapter: adapter({ config: wrangler, platformProxy: { configPath: wrangler } }),
+    adapter: adapter({ config: '../cloudflare/site.wrangler.jsonc', platformProxy: { configPath: wrangler } }),
     alias: {
       $components: 'src/components',
       $views: 'src/views',

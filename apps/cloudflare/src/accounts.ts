@@ -1,6 +1,7 @@
 // Users live in glyph-atlas-accounts (`ACCOUNTS`); what they wrote, their actors and their favourites in
 // glyph-atlas-v3 (`ATLAS`). D1 cannot join across databases, so a page naming who wrote a row reads the
 // ids from one database and the names from the other, a bounded IN list to a statement.
+import { writesPaused } from './freeze';
 
 // D1 binds at most 100 values to a statement.
 export const IN_LIST = 100;
@@ -95,4 +96,12 @@ export async function finishForgetting(env: Env) {
   for (const user of gone) await dropAvatars(env, user);
   if (done.length) await env.ACCOUNTS.prepare(`DELETE FROM forgotten WHERE user IN (${marks(done.length)})`).bind(...done).run();
   return gone;
+}
+
+/**
+ * The hourly cron (`src/entry.js`) finishes deletions a failure left: one indexed read of `forgotten`,
+ * which is almost always empty. It waits while writes are paused.
+ */
+export async function hourly(env: Env) {
+  if (!writesPaused(env)) await finishForgetting(env);
 }
