@@ -540,6 +540,20 @@ def test_a_replacement_whose_chain_lost_its_live_crop_is_removed(layout, monkeyp
     assert entry["retired"] is True and "replaced_by" not in entry
 
 
+def test_the_replacements_pass_names_a_retired_crop_no_catalogue_carries(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    run(publish, monkeypatch, retired_catalogue(tmp_path / "c.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})], []))
+    assert "replaced_by" not in bundle_entry_of(root, "ex:b1")[0]
+    write_source(root, "unit_redirects", ("id", "target"), [("ex:b1", "ex:gone"), ("ex:gone", "ex:a1"), ("ex:a2", "ex:a1")])
+    sent = len(remote.uploaded)
+    monkeypatch.setattr(sys, "argv", ["publish.py", "--replacements"])
+    publish.main()
+    entry, _ = bundle_entry_of(root, "ex:b1")
+    assert entry["replaced_by"] == ids(root)["ex:a1"] and len(remote.uploaded) == sent + 1
+    publish.main()
+    assert len(remote.uploaded) == sent + 1
+
+
 def test_a_replacement_held_as_a_text_id_is_rewritten_as_a_number(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     path = retired_catalogue(tmp_path / "c.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})],

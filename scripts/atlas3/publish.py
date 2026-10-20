@@ -1,6 +1,7 @@
 """Publish a catalogue in today's export format into the new layout (decision record 0005).
 
     python3 publish.py <catalogue.sqlite> [--dry-run]
+    python3 publish.py [<catalogue.sqlite>] --replacements [--dry-run]
 
 The catalogue is what export_cloudflare.py / export_cloudflare_corpus.py write: `units`, and when
 present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`, `unit_redirects`. A `media` table also adds its
@@ -19,6 +20,10 @@ images to the image key map (`media_map.py`).
   crops and its revision go together), then the runs to glyph-atlas-v3-runs. Each part counts as
   applied when its stamp is in that database's `imports`, and is then replayed on the local copy.
 - A publish stopped after allocating is finished by the next run before anything else.
+
+With `--replacements` the publish also reads `source-unit_redirects.sqlite` (the catalogue's own
+`unit_redirects` win) and sets `replaced_by` on every retired bundle entry whose value differs from the
+first live crop on its chain, catalogued or not; without a catalogue it does only that.
 
 One publish runs at a time (a lock on out/mirror.lock).
 """
@@ -384,9 +389,13 @@ def finish_unfinished(m):
 
 def main():
     parser = argparse.ArgumentParser(description="Publish a catalogue into the new layout.")
-    parser.add_argument("catalogue", type=Path)
+    parser.add_argument("catalogue", type=Path, nargs="?")
     parser.add_argument("--dry-run", action="store_true", help="write the parts and bundles, publish nothing")
+    parser.add_argument("--replacements", action="store_true",
+                        help="name the replacement of every retired crop from source-unit_redirects.sqlite")
     args = parser.parse_args()
+    if args.catalogue is None and not args.replacements:
+        parser.error("a catalogue, --replacements, or both")
     catalogue, dry = args.catalogue, args.dry_run
     (OUT / "publish").mkdir(parents=True, exist_ok=True)
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
@@ -407,7 +416,7 @@ def main():
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
         sys.exit("an earlier publish is unfinished; run a publish (not a dry run) to finish it first")
-    src = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True)
+    src = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True) if catalogue else sqlite3.connect(":memory:")
     src.row_factory = sqlite3.Row
     tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
@@ -509,7 +518,12 @@ def main():
 
     # A retired crop names the crop it was retired in favour of by integer id: the first text id on its
     # redirect chain that is a live crop after this publish, past retired crops and text ids with no crop.
-    replaced = dict(src.execute("SELECT id, target FROM unit_redirects")) if "unit_redirects" in tables else {}
+    replaced = {}
+    if args.replacements:
+        replaced = dict(sqlite3.connect(f"file:{HERE / 'source-unit_redirects.sqlite'}?mode=ro", uri=True)
+                        .execute("SELECT id, target FROM unit_redirects"))
+    if "unit_redirects" in tables:
+        replaced.update(src.execute("SELECT id, target FROM unit_redirects"))
     catalogued_live = {r["id"] for r in units if r["origin"] == "local"}
 
     def live(text):
@@ -531,12 +545,31 @@ def main():
                     unresolved.append(f"{r['id']}: no live crop on its redirect chain from {replaced[r['id']]}")
             # A chain with no live crop leaves `replaced_by` unset; the site answers that the crop is retired.
             replacing[r["id"]] = found
+    naming = []
+    if args.replacements:
+        # Every other retired crop with a redirect: a mirror id with no row and a retired entry.
+        catalogued = {r["id"] for r in units}
+        for text in sorted(replaced.keys() - catalogued):
+            cid = m.known(text)
+            if cid is None or m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone() or not entry(cid).get("retired"):
+                continue
+            try:
+                found = replacement(text, replaced, live)
+            except ValueError as loop:
+                found = None
+                unresolved.append(f"{text}: its redirects loop ({loop})")
+            else:
+                if found is None:
+                    unresolved.append(f"{text}: no live crop on its redirect chain from {replaced[text]}")
+            replacing[text] = found
+            naming.append((cid, text))
 
-    stamp = time.strftime("%Y%m%dT%H%M%S") + f".{time.time_ns() % 10**9:09d}-{catalogue.parent.name}-{catalogue.stem}"
+    stamp = time.strftime("%Y%m%dT%H%M%S") + f".{time.time_ns() % 10**9:09d}-" + (
+        f"{catalogue.parent.name}-{catalogue.stem}" if catalogue else "replacements")
     run = OUT / "publish" / stamp
     (run / "pages").mkdir(parents=True)
 
-    n, crop_ids, retired, naming = 0, {}, set(), []
+    n, crop_ids, retired = 0, {}, set()
     for r in units:
         data = json.loads(r["data"])
         if r["origin"] == "retired":

@@ -64,7 +64,8 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   ids with no crop, so a reader reaches a live crop in one step. A chain that loops, or ends with no
   live crop, leaves `replaced_by` unset; the publish counts those crops, prints examples and lists
   them in `unreplaced.txt` in its run. An entry that holds its replacement as a text id is rewritten
-  by the next publish whose catalogue carries the crop as retired.
+  by the next publish whose catalogue carries the crop as retired, or by `publish.py --replacements`,
+  which checks every retired entry against `source-unit_redirects.sqlite`.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
   keeps its runs.
 - A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`
