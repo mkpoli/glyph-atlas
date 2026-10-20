@@ -524,15 +524,13 @@ def main():
             try:
                 found = replacement(r["id"], replaced, live)
             except ValueError as loop:
-                unresolved.append(f"{r['id']}: redirects loop ({loop})")
-                continue
-            if found is None:
-                unresolved.append(f"{r['id']}: replaced by {replaced[r['id']]}, which has no crop")
+                found = None
+                unresolved.append(f"{r['id']}: its redirects loop ({loop})")
             else:
-                replacing[r["id"]] = found
-    if unresolved:
-        sys.exit(f"{len(unresolved)} retired crops name a replacement with no crop; nothing published: "
-                 + "; ".join(unresolved[:5]))
+                if found is None:
+                    unresolved.append(f"{r['id']}: no live crop on its redirect chain from {replaced[r['id']]}")
+            # A chain with no live crop leaves `replaced_by` unset; the site answers that the crop is retired.
+            replacing[r["id"]] = found
 
     stamp = time.strftime("%Y%m%dT%H%M%S") + f".{time.time_ns() % 10**9:09d}-{catalogue.parent.name}-{catalogue.stem}"
     run = OUT / "publish" / stamp
@@ -607,9 +605,9 @@ def main():
                    o["revision"] if o else 0, o is not None)
             n += 1
 
-    # Replacements are numbered once every crop of the catalogue has its id.
+    # Replacements are numbered once every crop of the catalogue has its id. None removes the field.
     for cid, text_id in naming:
-        target = m.known(replacing[text_id])
+        target = m.known(replacing[text_id]) if replacing[text_id] else None
         retiring_now = m.touched_pages.get(cid // PAGE, {}).get(cid % PAGE)
         if retiring_now:
             retiring_now[0]["replaced_by"] = target
@@ -703,7 +701,8 @@ def main():
             # A crop's new record replaces its old one, so a field the record no longer has goes. A
             # retired crop keeps its record; an image keeps its pack place when the catalogue could
             # not look it up.
-            new = {**old, **new_entry, "slot": slot} if new_entry.get("retired") else {"slot": slot, **new_entry}
+            new = {k: v for k, v in {**old, **new_entry, "slot": slot}.items() if v is not None} \
+                if new_entry.get("retired") else {"slot": slot, **new_entry}
             for field in ("image", "context_image"):
                 if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
                     new[field + "_place"] = old[field + "_place"]
@@ -736,6 +735,10 @@ def main():
     (run / "stale.json").write_text(json.dumps(m.stale))
     print(f"{n} crops read, {statements} statements in {atlas_parts} parts{runs_note} in {runs_parts} parts, "
           f"{len(files)} pages -> {run}", flush=True)
+    if unresolved:
+        (run / "unreplaced.txt").write_text("\n".join(unresolved) + "\n")
+        print(f"{len(unresolved)} retired crops have no live crop on their redirect chain and name no replacement "
+              f"(all in {run.name}/unreplaced.txt), for example: " + "; ".join(unresolved[:5]), flush=True)
     if m.stale:
         print(f"{len(m.stale)} crops have a newer review on the site than in this catalogue; their review columns were "
               f"left as published (ids in {run.name}/stale.json)", flush=True)

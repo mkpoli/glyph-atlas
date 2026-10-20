@@ -521,13 +521,23 @@ def test_a_replacement_passes_a_retired_crop_on_the_chain(layout, monkeypatch, t
 
 
 @pytest.mark.parametrize("redirects", [[("ex:b1", "ex:nowhere")], [("ex:b1", "ex:x"), ("ex:x", "ex:y"), ("ex:y", "ex:x")]])
-def test_a_replacement_with_no_crop_stops_the_publish(layout, monkeypatch, tmp_path, redirects):
+def test_a_chain_with_no_live_crop_leaves_the_replacement_unset(layout, monkeypatch, tmp_path, capsys, redirects):
     root, publish, remote = layout
-    before, crops_before = ids(root), crops(remote)
     path = retired_catalogue(tmp_path / "c.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})], redirects)
-    with pytest.raises(SystemExit) as stopped:
-        run(publish, monkeypatch, path)
-    assert "ex:b1" in str(stopped.value.code) and ids(root) == before and crops(remote) == crops_before
+    run(publish, monkeypatch, path)
+    entry, _ = bundle_entry_of(root, "ex:b1")
+    assert entry["retired"] is True and "replaced_by" not in entry and ids(root)["ex:b1"] not in crops(remote)
+    assert "1 retired crops have no live crop on their redirect chain" in capsys.readouterr().out
+
+
+def test_a_replacement_whose_chain_lost_its_live_crop_is_removed(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    run(publish, monkeypatch, retired_catalogue(tmp_path / "c1.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})],
+                                                [("ex:b1", "ex:a1")]))
+    run(publish, monkeypatch, retired_catalogue(tmp_path / "c2.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})],
+                                                [("ex:b1", "ex:nowhere")]))
+    entry, _ = bundle_entry_of(root, "ex:b1")
+    assert entry["retired"] is True and "replaced_by" not in entry
 
 
 def test_a_replacement_held_as_a_text_id_is_rewritten_as_a_number(layout, monkeypatch, tmp_path):
