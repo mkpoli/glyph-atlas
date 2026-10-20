@@ -15,8 +15,9 @@ export const standingQuery = () => `SELECT (SELECT 1 FROM crops WHERE id=?1) AS 
 
 /** What a route parameter names: a live crop (`id`, the parameter being its public id as written),
  *  a live crop under another spelling or an old text id, or a crop retired in favour of it (`moved`),
- *  a retired crop that names no replacement (`retired`), or nothing. */
-export type CropParam = { id: number } | { moved: number } | { retired: number } | null;
+ *  a retired crop that names no replacement, where a chain of replacements ends too (`retired`, with
+ *  `canonical` when the parameter is that crop's public id as written), or nothing. */
+export type CropParam = { id: number } | { moved: number } | { retired: number; canonical: boolean } | null;
 
 // Every old text id has a colon (2,128,966 mirror ids and 7,200 redirect sources at the cutover) and no
 // public id has one, so the two never meet.
@@ -28,7 +29,15 @@ async function replacement(env: Env, entry: Record<string, unknown> | undefined,
   return typeof named === 'string' && named ? await aliasCrop(env, named, ctx) : null;
 }
 
-export async function cropParam(env: Env, param: string, ctx?: ExecutionContext): Promise<CropParam> {
+/** A path segment as written in the URL, percent-decoded once; null when it does not decode. */
+export function decodedSegment(raw: string): string | null {
+  try { return decodeURIComponent(raw); } catch { return null; }
+}
+
+/** What the path segment `raw`, as written in the URL, names. It is decoded here and nowhere else. */
+export async function cropParam(env: Env, raw: string, ctx?: ExecutionContext): Promise<CropParam> {
+  const param = decodedSegment(raw);
+  if (param === null) return null;
   const named = textId(param) ? await aliasCrop(env, param, ctx) : cropOf(param);
   if (named === null) return null;
   let id = named, replaced = false;
@@ -38,25 +47,30 @@ export async function cropParam(env: Env, param: string, ctx?: ExecutionContext)
     if (row?.rev == null) return null;
     const entry = (await bundle(env, pageOf(id), row.rev))?.bySlot.get(slotOf(id));
     if (!entry?.retired) return null;
-    const next: number | null = hop < REPLACEMENT_HOPS ? await replacement(env, entry, ctx) : null;
-    if (next === null) return replaced ? null : { retired: id };
+    if (hop >= REPLACEMENT_HOPS) return null;
+    const next = await replacement(env, entry, ctx);
+    if (next === null) return { retired: id, canonical: !replaced && publicId(id) === param };
     id = next; replaced = true;
   }
   return !replaced && publicId(id) === param ? { id } : { moved: id };
 }
 
-/** The URL with the crop's public id in place of `param`, in its path segment or query value. */
-export function cropUrl(url: URL, param: string, id: number): URL {
-  const target = new URL(url), name = publicId(id);
-  target.pathname = target.pathname.split('/').map(part => {
-    try { return decodeURIComponent(part) === param ? name : part; } catch { return part; }
-  }).join('/');
+/** The URL with the crop's public id in place of the path segment `raw`, written as in the URL, and
+ *  of any query value that is that segment decoded. */
+export function cropUrl(url: URL, raw: string, id: number): URL {
+  const target = new URL(url), name = publicId(id), param = decodedSegment(raw);
+  target.pathname = target.pathname.split('/').map(part => part === raw ? name : part).join('/');
   for (const [key, value] of [...target.searchParams]) if (value === param) target.searchParams.set(key, name);
   return target;
 }
 
-export function movedResponse(url: URL, param: string, id: number): Response {
-  return new Response(null, { status: OLD_URL_STATUS, headers: { location: cropUrl(url, param, id).href,
+/** The redirect from an old crop URL to the crop's public id, or 404 when the URL holds no segment
+ *  to replace, which would otherwise redirect to itself. */
+export function movedResponse(url: URL, raw: string, id: number): Response {
+  const target = cropUrl(url, raw, id);
+  if (target.href === url.href) return Response.json({ detail: 'Nothing is published at this address.' },
+    { status: 404, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
+  return new Response(null, { status: OLD_URL_STATUS, headers: { location: target.href,
     'cache-control': OLD_URL_STATUS === 301 ? 'public, max-age=86400' : 'no-store' } });
 }
 

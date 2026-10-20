@@ -2,8 +2,10 @@
 // was busy (an import holds it), the browser was offline, or the site was rate-limiting. Only a save
 // that names its submission id is kept, since the server answers a repeat of one with its first
 // result and so records it once; an undo is named by its path, and a repeat of one changes nothing.
-// `DatabaseStatus` shows what is waiting.
-import { backoff, isBusy, isPaused, retryAfter } from './busy.svelte.js'
+// A save refused as coming from before a site update (409 `reload`) stays kept, and is sent again when
+// a page is next loaded; until then it waits, shown as needing a reload. `DatabaseStatus` shows what
+// is waiting.
+import { backoff, isBusy, isPaused, isReload, retryAfter } from './busy.svelte.js'
 
 export const outbox = $state({ pending: 0, refused: [] })
 
@@ -50,10 +52,13 @@ async function remove(key) {
 }
 // What the corner counts: the saves this reader can send now. One made by an account that is not
 // signed in waits for it, and is not counted meanwhile.
-const count = async () => { outbox.pending = (await entries()).filter(entry => sender?.mine(entry) !== false).length }
+// A save refused on this page for a reload is kept but not counted, nor sent again before one.
+const awaitingReload = new Set()
+const sendable = entry => sender?.mine(entry) !== false && !awaitingReload.has(entry.key)
+const count = async () => { outbox.pending = (await entries()).filter(sendable).length }
 
 /** Whether any save is kept, in this tab or another: a new save then joins the end of the line. */
-export const anyKept = async () => outbox.pending > 0 || (await entries()).some(entry => sender?.mine(entry) !== false)
+export const anyKept = async () => outbox.pending > 0 || (await entries()).some(sendable)
 
 // `send(entry)` makes one save and answers `{ response, value }`, or `{ wait: true }` when it cannot
 // be sent yet, or `{ skip: true }` when it belongs to an account that is not signed in. `settle`
@@ -128,6 +133,7 @@ async function run() {
     const keys = new Set(kept.map(entry => entry.key))
     for (const [key, [{ entry }]] of waiting) if (!keys.has(key)) kept.unshift(entry)
     for (const entry of kept) {
+      if (awaitingReload.has(entry.key)) continue
       let answer
       try { answer = await sender.send(entry) } catch (error) {
         if (offline(error)) { again(); return }
@@ -142,6 +148,14 @@ async function run() {
       if (answer.wait || later(answer)) { again(answer.response ? retryAfter(answer.response) : 0); return }
       failures = 0
       failed.delete(entry.key)
+      if (isReload(answer.response, answer.value)) {
+        awaitingReload.add(entry.key)
+        let error
+        try { sender.settle(answer) } catch (refusal) { error = refusal }
+        if (!settleWaiters(entry.key, waiter => waiter.reject(error)) && !outbox.refused.some(r => r.key === entry.key))
+          outbox.refused.push({ key: entry.key, message: error.message, reload: true })
+        continue
+      }
       await remove(entry.key)
       let value
       try { value = sender.settle(answer) } catch (error) {
@@ -166,4 +180,12 @@ export function resume() {
   return () => { removeEventListener('online', online); document.removeEventListener('visibilitychange', visible); clearTimeout(timer) }
 }
 
-export const dismiss = key => { outbox.refused = outbox.refused.filter(r => r.key !== key) }
+/** Close a refusal in the corner; one awaiting a reload is a kept save, which this discards. */
+export async function dismiss(key) {
+  const reload = outbox.refused.some(r => r.key === key && r.reload)
+  outbox.refused = outbox.refused.filter(r => r.key !== key)
+  if (!reload) return
+  await remove(key)
+  awaitingReload.delete(key)
+  await count()
+}

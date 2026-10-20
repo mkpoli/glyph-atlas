@@ -1,5 +1,5 @@
 import { t } from './i18n.svelte.js'
-import { isBusy, isPaused, retryAfter, waitOut } from './busy.svelte.js'
+import { isBusy, isPaused, isReload, retryAfter, waitOut } from './busy.svelte.js'
 import { anyKept, deliver, keepable, offline, useSender } from './outbox.svelte.js'
 
 // Whoever keeps records read ahead hears of every write, which may have changed any of them.
@@ -24,7 +24,7 @@ function settle({ response, value }) {
   if (response.ok) return value
   // FastAPI reports a validation failure as a list of problems; show their messages.
   const listed = Array.isArray(value.detail) ? value.detail.map(problem => problem.msg).filter(Boolean).join('; ') : ''
-  const error = new Error(isBusy(response, value) ? t('client.busy') : isPaused(response, value) ? t('client.paused') : typeof value.detail === 'string' ? value.detail : listed ? listed
+  const error = new Error(isBusy(response, value) ? t('client.busy') : isPaused(response, value) ? t('client.paused') : isReload(response, value) ? t('client.reload') : typeof value.detail === 'string' ? value.detail : listed ? listed
     : response.status === 409 ? t('client.changed') : t('client.saveFailed'))
   error.code = value.code
   error.status = response.status
