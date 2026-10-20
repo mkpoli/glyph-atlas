@@ -50,7 +50,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from cloudflare_schema import schema
+from catalogue import schema
 from seal_cloudflare import MEDIA_URL, crossing_packs, seal
 
 from glyph_atlas import withdrawn
@@ -84,8 +84,7 @@ def snapshot(export: Path, output: Path) -> Path:
     with sqlite3.connect(f"file:{export / 'catalogue.sqlite'}?mode=ro", uri=True, timeout=120) as src, \
             sqlite3.connect(target) as dst:
         src.backup(dst)
-    # An export made before a migration is brought up to it, as a resume of the export would be, so
-    # the seal copies rows of the shape the site holds.
+    # A catalogue table the export lacks is made empty, so the seal finds every table it copies.
     with sqlite3.connect(target) as db:
         schema(db)
     for pack in export.glob("pack-*.bin"):

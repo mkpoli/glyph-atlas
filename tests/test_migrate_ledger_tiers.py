@@ -17,8 +17,7 @@ def former_store(path: Path) -> None:
     """A store made before 0069: the ledger's table allows the former fourth tier and holds two such rows."""
     conn = sqlite3.connect(path, isolation_level=None)
     conn.execute("CREATE TABLE units (id TEXT PRIMARY KEY)")
-    for ddl in ledger.DDL_PATHS:
-        conn.executescript(ddl.read_text(encoding="utf-8").replace("'attested','observed','derived'", FORMER))
+    conn.executescript(ledger.DDL_PATH.read_text(encoding="utf-8").replace("'attested','observed','derived'", FORMER))
     rows = [("a1", "fm:1", "represented_by", "rp:1", None, "editorial", "u1"),
             ("a2", "doc", "date_composed", None, '{"of":"work"}', "editorial", "source:ainu-records"),
             ("a3", "hk:1", "has_form", "fm:1", None, "observed", "u1")]

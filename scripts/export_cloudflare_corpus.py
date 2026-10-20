@@ -1,21 +1,23 @@
-"""Stream corpus metadata and locally held glyph images into immutable R2 packs."""
+"""Stream corpus metadata and locally held glyph images into immutable R2 packs, with the runs of the
+glyphs exported (`corpus_runs`)."""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
 import sqlite3
+import unicodedata
 from collections import Counter
 from pathlib import Path
 
 import pyarrow.dataset as ds
-from cloudflare_schema import CORPUS_REFRESH, schema
+from catalogue import schema
 from export_cloudflare import Packs, encoded
 
-from glyph_atlas import box_relabel, export_lock, style, tone, withdrawn
+from glyph_atlas import box_relabel, export_lock, ngrams, style, tone, withdrawn
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
-from glyph_atlas.corpus.details import DetailResolver, _iiif_region, _viewport
+from glyph_atlas.corpus.details import DetailResolver, _iiif_region, _viewport, unit_label
 from glyph_atlas.corpus.index import (
     UNIT_CORPORA,
     _char_of_codepoint,
@@ -23,6 +25,7 @@ from glyph_atlas.corpus.index import (
     _MetaCache,
     _unit_row,
 )
+from glyph_atlas.importers.codh_all import reading_place
 from glyph_atlas.review.media import MediaCache
 
 
@@ -172,6 +175,85 @@ def line_orientation(corpus) -> dict[str, bool]:
         return {}
     table = lines.to_table(columns=["id", "vertical"])
     return dict(zip(table["id"].to_pylist(), table["vertical"].to_pylist(), strict=True))
+
+
+#: What a run is read from, of a corpus's units.
+RUN_COLUMNS = ("id", "document_id", "page_id", "line_id", "seq", "box", "kind", "granularity", "active", "method", "unicode",
+               "text_source")
+#: Units whose line numbers come from the aligner, which numbered a line's boxes in a scrambled order
+#: until 2026-09-24 (`glyph_atlas.box_relabel`): their places are read from their boxes instead.
+ALIGNED = "detect-align"
+
+
+def placed(row: dict) -> dict:
+    """A unit row with its line and position: its own, or those its dataset's ids carry
+    (`codh_all.reading_place`)."""
+    if row.get("line_id") is None and (place := reading_place(row["id"], row.get("page_id"))):
+        row["line_id"], row["seq"] = place
+    return row
+
+
+def single(text: str) -> bool:
+    """Whether a text is one character, as the Worker splits a run's text into crops."""
+    return len(text) == 1 and not unicodedata.combining(text)
+
+
+def corpus_runs(corpus) -> tuple[list[ngrams.Run], list[str], dict[str, str]]:
+    """A corpus's runs, the ids of every glyph on a line, whose earlier runs the new ones replace, and
+    the label each of those glyphs' records is shown with while no written form is settled.
+
+    A run is found the way a crop's is (`ngrams.adjacent_ngrams`): by the glyph's line and position on
+    it. A corpus whose units carry no line, such as a set of pre-cut crops, has none; a CODH unit's line
+    and place are read from its id (`codh_all.reading_place`), an aligned unit's place from its box
+    (`ngrams.in_reading_order`). The glyphs of withdrawn documents are left out.
+    """
+    paths = corpus.parquet_files("units")
+    if not paths:
+        return [], [], {}
+    dataset = ds.dataset([str(p) for p in paths], format="parquet")
+    if not {"line_id", "seq"} <= set(dataset.schema.names):
+        return [], [], {}
+    vertical = line_orientation(corpus)
+    gone = withdrawn.documents()
+    rows = [placed(row) for row in dataset.to_table(columns=[c for c in RUN_COLUMNS if c in dataset.schema.names]).to_pylist()
+            if row.get("document_id") not in gone]
+    rows = [row for row in rows if row.get("line_id")]
+    horizontal = {line for line, down in vertical.items() if down is False}
+    glyphs = [ngrams.Glyph.of(row) for row in rows if row.get("method") != ALIGNED]
+    glyphs += ngrams.in_reading_order((ngrams.Glyph.of(row) for row in rows if row.get("method") == ALIGNED), horizontal)
+    # A line read from the ids is a block of several columns (`adjacent_ngrams`).
+    blocks = {row["line_id"] for row in rows if reading_place(row["id"], row.get("page_id"))}
+    runs = ngrams.adjacent_ngrams(glyphs, horizontal, blocks)
+    # A label stands for one crop of a run, so a transcription of several characters gives none.
+    members = {i for run in runs for i in run.units}
+    labels = {row["id"]: label for row in rows if row["id"] in members and (label := unit_label(row)) and single(label)}
+    return runs, [row["id"] for row in rows], labels
+
+
+#: Ids a statement names at once.
+CHUNK = 5000
+
+
+def record_corpus_runs(db, corpus) -> int:
+    """Replace the runs of a corpus's glyphs in an export's `unit_ngrams`; return how many were written.
+
+    A glyph with no written character takes its label, which its runs read in place of one. A run is
+    recorded only while all of its glyphs are in the export's `corpus_units`, so one with a glyph of a
+    withdrawn document or one the export left out is not; its text is its glyphs' characters as written
+    there and its document its first glyph's.
+    """
+    runs, on_lines, labels = corpus_runs(corpus)
+    for start in range(0, len(on_lines), CHUNK):
+        db.execute("DELETE FROM unit_ngrams WHERE first IN (SELECT value FROM json_each(?))", (json.dumps(on_lines[start:start + CHUNK]),))
+    named = sorted(labels.items())
+    db.executemany("UPDATE corpus_units SET label=? WHERE id=? AND character IS NULL", [(label, i) for i, label in named])
+    members = sorted({i for run in runs for i in run.units})
+    glyphs = {}
+    for start in range(0, len(members), CHUNK):
+        glyphs.update((i, ngrams.Written(*rest)) for i, *rest in db.execute(
+            "SELECT id,coalesce(character,label),document,hand_order,shuffle FROM corpus_units WHERE id IN (SELECT value FROM json_each(?))",
+            (json.dumps(members[start:start + CHUNK]),)))
+    return ngrams.record_runs(db, sorted(runs), glyphs)
 
 
 def stale_units(dataset, vertical=None) -> set[str]:
@@ -366,7 +448,9 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
     if record_file:
         record_file.close()
     packs.close()
-    db.executescript(CORPUS_REFRESH)
+    for corpus in found:
+        counts["runs"] += record_corpus_runs(db, corpus)
+        db.commit()
     db.close()
     print(encoded({"complete": True, "counts": dict(counts)}), flush=True)
 

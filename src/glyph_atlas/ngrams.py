@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import math
-from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Container, Iterable, Iterator, Mapping
+from functools import cache
 from itertools import pairwise
 from typing import Any, NamedTuple
 
+from . import refs
 from .schema import Unit, UnitKind
 
 #: The lengths counted: pairs and trigrams. `unit_ngrams` holds a column for each member.
@@ -287,70 +288,43 @@ def _unheld_before(box: Place, found: list[Glyph], held: set[int]) -> int:
     return sum(1 for n in range(min(held), min(numbers)) if n not in held)
 
 
-#: A corpus glyph's character as the site holds it: the one a round or review gave it (its `units` row)
-#: or, while it has none, its published row's, which a form decision moves (`corpus_units`), or, while
-#: no written form is settled, the label its record is shown with (`corpus_units.label`).
-def _written(i: int) -> str:
-    return f"coalesce(iif(u{i}.id IS NULL,c{i}.character,u{i}.character),c{i}.label)"
+@cache
+def fold(character: str) -> str:
+    """A character as a run's `graphemes` spell it: its family head's character, when the character
+    layer holds both, else the character itself."""
+    row = refs.character(" ".join(refs.to_code_points(character)))
+    if row is None:
+        return character
+    info = refs.grapheme_info(row.code_point)
+    head = refs.character(info["code_point"] if info else row.code_point)
+    return head.char if head else character
 
 
-def corpus_ngram_statements(ranges: Iterable[tuple[str, str]], ngrams: list[Run], *,
-                            labels: Mapping[str, str] | None = None, batch: int = 200) -> list[str]:
-    """D1 statements that make `ngrams` the runs of corpus glyphs starting in the id `ranges`.
-
-    The runs starting in each range, an inclusive pair of corpus glyph ids, are removed first, so a
-    publication may be applied again after the lines were cut anew; a run the publication records
-    again unchanged stays, unwritten. Each glyph in `labels` that has no
-    written character on the site is then given the label its record is shown with, which its runs
-    read in place of one. A run is then recorded only while
-    every glyph of it is published (`corpus_units`), so one with a glyph of a withdrawn document or one
-    the corpus publication left out is never recorded; its text is its glyphs' characters as the site
-    holds them and its document its first glyph's.
-    """
-    quote = lambda value: "'" + value.replace("'", "''") + "'"
-    ranges = list(ranges)
-    published = "(SELECT count(*) FROM corpus_units WHERE id IN (k.column1,k.column3,k.column4))"
-    starting = defaultdict(list)
-    for run in ngrams:
-        starting[run.units[0]].append(run)
-    firsts = sorted(starting)
-    statements = []
-    for low, high in ranges:
-        # A range is removed in slices that each name few enough runs for one statement; a slice ends
-        # where the next begins, so every id in the range is in one.
-        inside = firsts[bisect_left(firsts, low):bisect_right(firsts, high)]
-        groups = list(_groups(inside, starting, quote, len(inside) or 1)) or [[]]
-        for n, group in enumerate(groups):
-            start = low if n == 0 else group[0]
-            end = f"first<{quote(groups[n + 1][0])}" if n + 1 < len(groups) else f"first<={quote(high)}"
-            runs = [run for first in group for run in starting[first]]
-            statements.append(f"DELETE FROM unit_ngrams WHERE first>={quote(start)} AND {end}"
-                              f" AND NOT {_kept(runs, published, quote)};")
-    named = sorted((labels or {}).items())
-    statements += [
-        "UPDATE corpus_units SET label=p.column2 FROM (VALUES "
-        + ",".join(f"({quote(i)},{quote(label)})" for i, label in named[start:start + batch])
-        + ") AS p WHERE corpus_units.id=p.column1 AND corpus_units.character IS NULL AND corpus_units.label IS NOT p.column2;"
-        for start in range(0, len(named), batch)
-    ]
-    for size in SIZES:
-        runs = [run for run in ngrams if len(run.units) == size]
-        head = (f"INSERT OR IGNORE INTO unit_ngrams(size,{','.join(COLUMNS[:size])},vertical,text,document) "
-                f"SELECT {size},{','.join(f'p.column{i + 1}' for i in range(size))},p.column{size + 1},"
-                f"{'||'.join(_written(i) for i in range(size))},c0.document FROM (VALUES ")
-        joins = "".join(f" JOIN corpus_units c{i} ON c{i}.id=p.column{i + 1} LEFT JOIN units u{i} ON u{i}.id=c{i}.id"
-                        for i in range(size))
-        statements += [
-            head + ",".join(f"({','.join(map(quote, run.units))},{int(run.vertical)})" for run in runs[start:start + batch])
-            + ") AS p" + joins + ";"
-            for start in range(0, len(runs), batch)
-        ]
-    statements += [_rederived(f"first>={quote(low)} AND first<={quote(high)}") for low, high in ranges]
-    return statements
+class Written(NamedTuple):
+    """What a run reads of one of its glyphs in a catalogue: the character it is written with (None when
+    it has none), its document, its `hand_order` and its `shuffle`."""
+    character: str | None
+    document: str | None
+    hand_order: int
+    shuffle: int
 
 
-def id_ranges(ids: Iterable[str], size: int) -> Iterator[tuple[str, str]]:
-    """Sorted `ids` as inclusive ranges of at most `size` ids each."""
-    ordered = sorted(ids)
-    for start in range(0, len(ordered), size):
-        yield ordered[start], ordered[min(start + size, len(ordered)) - 1]
+def record_runs(db, runs: Iterable[Run], glyphs: Mapping[str, Written]) -> int:
+    """Write into a catalogue's `unit_ngrams` each of `runs` whose glyphs are all in `glyphs`; return how
+    many. Its text is its glyphs' characters, its `graphemes` the same folded (`fold`), and its
+    document, order and shuffle its first glyph's. A run with a glyph that has no character has
+    neither text nor graphemes. A run keyed like one already written is left out."""
+    rows = []
+    for run in runs:
+        if not all(i in glyphs for i in run.units):
+            continue
+        first, members = glyphs[run.units[0]], [glyphs[i].character for i in run.units]
+        text = None if None in members else "".join(members)
+        graphemes = None if text is None else "".join(fold(c) for c in members)
+        third = run.units[2] if len(run.units) > 2 else None
+        rows.append((run.units[0], len(run.units), run.units[1], third, text, first.document, int(run.vertical),
+                     first.hand_order, first.shuffle, graphemes))
+    before = db.total_changes
+    db.executemany("INSERT OR IGNORE INTO unit_ngrams(first,size,second,third,text,document,vertical,hand_order,shuffle,graphemes)"
+                   " VALUES(?,?,?,?,?,?,?,?,?,?)", rows)
+    return db.total_changes - before

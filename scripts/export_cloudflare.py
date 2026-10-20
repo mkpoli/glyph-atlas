@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import export_character_variants
-from cloudflare_schema import schema
+from catalogue import schema
 from PIL import Image
 
 from glyph_atlas import ainu_geometry, export_lock, images, ngrams, refs, style, tone, withdrawn
@@ -364,8 +364,9 @@ def export(dataset: Path, output: Path, *, resume=False):
         db.commit()
         # Only runs whose crops were all published above are recorded.
         db.execute("DELETE FROM unit_ngrams")
-        for statement in ngrams.ngram_statements([], ngrams.adjacent_ngrams(units.values(), store.horizontal_lines())):
-            db.execute(statement)
+        published = {i: ngrams.Written(*rest) for i, *rest in db.execute(
+            "SELECT id,character,document,hand_order,shuffle FROM units WHERE origin='local'")}
+        ngrams.record_runs(db, ngrams.adjacent_ngrams(units.values(), store.horizontal_lines()), published)
         db.commit()
         read_crops(db, media)
         # Keyed as the character layer keys a row, so a sequence it holds (𛂞 + U+3099) is counted too.

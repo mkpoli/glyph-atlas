@@ -1,4 +1,5 @@
-"""The D1 schema as the Worker's migrations define it, for the SQLite files a publication is built in."""
+"""The site's first database (`glyph-atlas`) as its migrations define it, and the SQL a publication into it
+writes (`seal_cloudflare.py`). A publication catalogue's own tables are `catalogue.sql`."""
 from __future__ import annotations
 
 import re
