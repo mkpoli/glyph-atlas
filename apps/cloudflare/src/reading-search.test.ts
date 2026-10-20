@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
-const table: Record<string, string[]> = JSON.parse(readFileSync(new URL('../../review/static/refs/kanji-readings.json', import.meta.url), 'utf8')).readings;
+const table: Record<string, string[]> = JSON.parse(readFileSync(new URL('../../../data/vocab/kanji-readings.json', import.meta.url), 'utf8')).readings;
 
 describe('kanji found by a Japanese reading', () => {
   it('keys 音 and 訓 alike in hiragana', () => {

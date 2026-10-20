@@ -8,13 +8,18 @@ Reads the copies `source-<table>.sqlite` (pull.py) and writes two things.
 R2 objects under `v3/reference/`, gzipped JSON, each read by key:
 
 - `char/<code point>.json.gz` (code points joined by `-`): a card's `data` and `detail`, its grapheme
-  id, its 異体字 edges from both ends, its derived forms with the component pairs their substitutions
+  id, its 異体字 edges from both ends with the families of the cards they name (`variant_families`, as
+  in a summary shard), its derived forms with the component pairs their substitutions
   rest on, the graphemes it writes, and the writers of its family head with `shared` worked out.
   `ids` gives the grapheme id of every character the object names that has one. A visual group is
   keyed by its `visual_group` code (`codes`), and its samples name crops by integer id: a sample
   whose crop the mirror or `crops` lacks leaves the list, counted in the report.
 - `summary/<shard>.json.gz`: every card's `data`, as `{family head: {code point: data}}`, in the shard
   of its family head (SUMMARY_DIGITS), so a family's members are one read.
+- `readings/<shard>.json.gz`: each kana reading of `data/vocab/kanji-readings.json`
+  (scripts/build_kanji_readings.py) with its kanji, most attested first, and the families of the first
+  READING_CARDS of them, as `{reading: {"kanji": [...], "families": {head: {code point: data}}}}`, in
+  the shard of the reading (SUMMARY_DIGITS). A kana search reads the one shard for the kanji it lists.
 - `ids/<shard>.json.gz`: each character's ideographic descriptions and regional shapes, by the
   character itself, in the shard of the character (IDS_DIGITS).
 - `names.json.gz`: every card's name and how often it occurs, for a search by name or code point.
@@ -70,7 +75,7 @@ import subprocess
 import sys
 from collections import defaultdict
 
-from build import HERE, OUT, char_text
+from build import HERE, OUT, ROOT, char_text
 from load_history import built, deliver, row_statements, stamped
 from publish import BUCKET, CF, R2_REMOTE, applied, lit, send, upload
 
@@ -102,6 +107,11 @@ TABLES = {
     "word_spellings": (SOURCES["word_spellings"], ("word", "spelling", "source", "locator")),
 }
 SAMPLE_LISTS = ("representatives", "anchors")
+# The Japanese readings a kana search finds kanji by (scripts/build_kanji_readings.py).
+READINGS = ROOT / "data" / "vocab" / "kanji-readings.json"
+# A kana search takes at most 49 kanji of a reading, 48 to show and one more for its count, skipping the
+# ones the query names itself: those it takes are among the first 49.
+READING_CARDS = 49
 PLAIN_NAME = re.compile(r"^(.*IDEOGRAPH-)([0-9A-F]{4,6})$")
 
 
@@ -254,6 +264,8 @@ def translate(atlas, mirror, path, objects):
         head TEXT, family TEXT NOT NULL, family_char TEXT NOT NULL, shard TEXT NOT NULL, several INTEGER NOT NULL,
         ligature INTEGER NOT NULL, occurrences INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE INDEX card_sort ON cards(sort);
+      CREATE INDEX card_char ON cards(char);
+      CREATE INDEX card_family ON cards(family, sort);
       CREATE TABLE edges(seq INTEGER PRIMARY KEY, char TEXT NOT NULL, other TEXT NOT NULL, edge TEXT NOT NULL);
       CREATE INDEX edge_char ON edges(char, seq);
       CREATE TABLE derived(char TEXT PRIMARY KEY, forms TEXT NOT NULL) WITHOUT ROWID;
@@ -329,7 +341,8 @@ def translate(atlas, mirror, path, objects):
         ids = {c: i for c in sorted(named) if (i := g.get(c)) is not None}
         objects.put(f"char/{object_key(code_point)}.json.gz",
                     f'{{"grapheme":{g.get(char)},"data":{data_text},"detail":{visual_groups(detail, codes, crop_of, notes)},'
-                    f'"variants":[{",".join(e for _, e in edges)}],"derived":{forms_text},'
+                    f'"variants":[{",".join(e for _, e in edges)}],'
+                    f'"variant_families":{families_text(scratch, [other for other, _ in edges])},"derived":{forms_text},'
                     f'"substitutions":{compact([[a, b, *pairs[(a, b)]] for a, b in subs if (a, b) in pairs])},'
                     f'"writes":{compact([[w, own] for w, own in writes.get(char, [])])},'
                     f'"writers":{compact(writers.get(head, []))},"ids":{compact(ids)}}}')
@@ -345,6 +358,8 @@ def translate(atlas, mirror, path, objects):
         families.setdefault(family, []).append(f"{compact(code_point)}:{data_text}")
     if families:
         objects.put(f"summary/{key}.json.gz", summary_text(families))
+    for rel, text in reading_objects(scratch):
+        objects.put(rel, text)
     structures = defaultdict(dict)
     for char, sequences, shapes in source("han_ids").execute("SELECT char, sequences, shapes FROM han_ids"):
         structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None]
@@ -374,6 +389,30 @@ def translate(atlas, mirror, path, objects):
     notes["graphemes of the layout whose family head the cards change"] = len(changed)
     notes["graphemes the layout lacks, numbered by this load"] = len(g.new)
     return out, g.new, {gid: heads.get(gid) for gid in g.new.values()}, changed, notes
+
+
+def families_text(scratch, chars):
+    """`{family head: {code point: data}}` of the families of the cards of `chars`, each family whole."""
+    heads = []
+    for char in chars:
+        found = scratch.execute("SELECT family FROM cards WHERE char=?", (char,)).fetchone()
+        if found and found[0] not in heads:
+            heads.append(found[0])
+    return summary_text({head: [f"{compact(code_point)}:{data}" for code_point, data in scratch.execute(
+        "SELECT code_point, data FROM cards WHERE family=? ORDER BY sort", (head,))] for head in heads})
+
+
+def reading_objects(scratch):
+    """(path, JSON text) of the reading shards: each kana reading's kanji, most attested first, and the
+    families of the first READING_CARDS of them, in the shard of the reading (SUMMARY_DIGITS)."""
+    table = json.loads(READINGS.read_text())["readings"]
+    shards = defaultdict(list)
+    for reading in sorted(table):
+        kanji = table[reading]
+        shards[shard(reading, SUMMARY_DIGITS)].append(
+            f'{compact(reading)}:{{"kanji":{compact(kanji)},"families":{families_text(scratch, kanji[:READING_CARDS])}}}')
+    for key in sorted(shards):
+        yield f"readings/{key}.json.gz", "{" + ",".join(shards[key]) + "}"
 
 
 def summary_text(families):

@@ -2,10 +2,10 @@
 // from the reference objects (`atlas3Reference.ts`, decision record 0007), the family each card files
 // under from `graphemes.head`, and the IDS editor's substitutes from `component_variants`.
 //
-// A card's `data` is in the summary shard of its family head. A list reads the name list and one
-// summary shard per family it shows; a one-character query that names a card also reads that card's
-// object for its 異体字.
-import { characterObject, characterStructure, componentMatches, familySummaries, nameIndex, type NameIndex } from '../atlas3Reference';
+// A card's `data` is in the summary shard of its family head. A list reads the name list and the
+// summary shards of the families the query names; the kanji of a kana reading come with their families
+// in the reading's shard, and the 異体字 of a one-character query with theirs in its card's object.
+import { characterObject, characterStructure, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, type NameIndex } from '../atlas3Reference';
 import { catalogueVersion } from '../atlas3Stamps';
 import { Problem } from '../busy';
 import { idsCharacter } from '../category';
@@ -55,44 +55,37 @@ async function aliasHits(env: Env, index: NameIndex, term: string, limit: number
     .slice(0, limit);
 }
 
-// The `data` of the cards of each family the codes file under, by code point: one summary shard per family.
-async function cardsOf(env: Env, codes: string[], ctx?: ExecutionContext): Promise<Map<string, Json>> {
-  if (!codes.length) return new Map();
-  const rows = (await env.ATLAS.prepare(headsQuery()).bind(JSON.stringify([...new Set(codes)].map(textOf)))
+// The `data` of the cards of each family the codes file under, by code point: the cards held already,
+// and one summary shard per family of the rest.
+async function cardsOf(env: Env, codes: string[], held: Map<string, Json>, ctx?: ExecutionContext): Promise<Map<string, Json>> {
+  const wanted = [...new Set(codes)].filter(code => !held.has(code));
+  if (!wanted.length) return held;
+  const rows = (await env.ATLAS.prepare(headsQuery()).bind(JSON.stringify(wanted.map(textOf)))
     .all<{ text: string; head: string | null }>()).results;
   const heads = new Map(rows.map(row => [cp(row.text), row.head === null ? cp(row.text) : cp(row.head)]));
-  return await familySummaries(env, codes.map(code => heads.get(code) ?? code), ctx);
+  return new Map([...held, ...await familySummaries(env, wanted.map(code => heads.get(code) ?? code), ctx)]);
 }
 
 // The kanji a kana query is a Japanese reading of (scripts/build_kanji_readings.py), after the kana it
-// names: とき finds 𛄤, then 時 and 刻. The table lists a reading's kanji most attested first, so a
-// list takes only the ones it can show. The readings are a static asset, kept once an isolate has read them.
-let kanjiReadings: Record<string, string[]> | null = null;
-async function readingTable(env: Env) {
-  if (kanjiReadings) return kanjiReadings;
-  const response = await env.ASSETS.fetch('https://assets.invalid/refs/kanji-readings.json');
-  if (!response.ok) throw new Error(`kanji readings: ${response.status}`);
-  kanjiReadings = (await response.json<{ readings: Record<string, string[]> }>()).readings;
-  return kanjiReadings;
-}
+// names: とき finds 𛄤, then 時 and 刻. A reading lists its kanji most attested first, so a list takes
+// only the ones it can show, whose cards come in the reading's shard.
 const KANA_TERM = /^[\p{Script=Hiragana}\p{Script=Katakana}ー]+$/u;
-async function readingKanji(env: Env, index: NameIndex, term: string, found: Hit[], limit: number): Promise<{ hits: Hit[]; unread: number }> {
-  if (!KANA_TERM.test(term)) return { hits: [], unread: 0 };
-  let table: Record<string, string[]>;
-  // A search without the readings still answers with the kana it names.
-  try { table = await readingTable(env) } catch (error) { console.error(error); return { hits: [], unread: 0 } }
+async function readingKanji(env: Env, index: NameIndex, term: string, found: Hit[], limit: number, ctx?: ExecutionContext) {
+  if (!KANA_TERM.test(term)) return { hits: [] as Hit[], unread: 0, cards: new Map<string, Json>() };
+  const reading = await readingObject(env, hira(term), ctx);
   const listed = new Set(found.map(hit => textOf(hit.code)));
-  const all = (Object.hasOwn(table, hira(term)) ? table[hira(term)] : []).filter(char => !listed.has(char));
+  const all = (reading?.kanji ?? []).filter(char => !listed.has(char));
   const wanted = all.slice(0, Math.max(0, limit + 1 - found.length));
-  return { hits: wanted.filter(char => index.occurrences.has(cp(char))).map(char => ({ code: cp(char), rank: 5 })), unread: all.length - wanted.length };
+  return { hits: wanted.filter(char => index.occurrences.has(cp(char))).map(char => ({ code: cp(char), rank: 5 })),
+    unread: all.length - wanted.length, cards: familyCards(reading?.families ?? {}) };
 }
 
 // The 異体字 of a one-character query, after what the query names: a reader who types 鯡 is shown 𩹉.
 // Only the characters the card's edges call variants (a widening edge, none that keeps the pair apart),
 // most sources first, then by character; a character no card has is never answered with one of its variants.
-async function searchVariants(env: Env, index: NameIndex, char: string, found: Hit[], limit: number, ctx?: ExecutionContext): Promise<Hit[]> {
+async function searchVariants(env: Env, index: NameIndex, char: string, found: Hit[], limit: number, ctx?: ExecutionContext) {
   // A list already past the limit shows no variant; the edges would only move the count.
-  if ([...char].length !== 1 || found.length > limit || !found.some(hit => hit.code === cp(char))) return [];
+  if ([...char].length !== 1 || found.length > limit || !found.some(hit => hit.code === cp(char))) return { hits: [] as Hit[], cards: new Map<string, Json>() };
   const card = await characterObject(env, cp(char), ctx);
   const others = new Map<string, { sources: Set<string>; widens: boolean; apart: boolean }>();
   for (const [other, relation, source, , , widens] of card?.variants ?? []) {
@@ -104,11 +97,12 @@ async function searchVariants(env: Env, index: NameIndex, char: string, found: H
     others.set(other, edge);
   }
   const listed = new Set(found.map(hit => hit.code));
-  return [...others].filter(([other, edge]) => edge.widens && !edge.apart && index.occurrences.has(cp(other)))
+  const hits = [...others].filter(([other, edge]) => edge.widens && !edge.apart && index.occurrences.has(cp(other)))
     .sort((a, b) => b[1].sources.size - a[1].sources.size || byCodePoint(a[0], b[0]))
     .slice(0, limit + listed.size + 1)
     .filter(([other]) => !listed.has(cp(other)))
     .map(([other]) => ({ code: cp(other), rank: 6, variant_of: char }));
+  return { hits, cards: familyCards(card?.variant_families ?? {}) };
 }
 
 // Each grapheme a list names, once, at the place of its first form there: the forms the query found in
@@ -150,17 +144,19 @@ export async function suggest(env: Env, q: URLSearchParams, ctx?: ExecutionConte
   const wanted = found.length ? null : componentTerm(literal(term));
   if (wanted) {
     const { codes, more } = await componentMatches(env, wanted, limit, ctx);
-    const held = codes.filter(code => index.occurrences.has(code)), cards = await cardsOf(env, held, ctx);
+    const held = codes.filter(code => index.occurrences.has(code)), cards = await cardsOf(env, held, new Map(), ctx);
     const items = held.filter(code => cards.has(code)).map(code => ({ ...cards.get(code), rank: 7 }));
     return { query: term, match_kind: 'components', items, total: items.length, more: more ? 1 : 0, status: 'ok', corpus: { ready: true } };
   }
-  const { hits, unread } = await readingKanji(env, index, term, found, limit);
-  found.push(...hits);
-  found.push(...await searchVariants(env, index, literal(term), found, limit, ctx));
-  const hitsShown = found.slice(0, limit), cards = await cardsOf(env, hitsShown.map(hit => hit.code), ctx);
+  const kanji = await readingKanji(env, index, term, found, limit, ctx);
+  found.push(...kanji.hits);
+  const variants = await searchVariants(env, index, literal(term), found, limit, ctx);
+  found.push(...variants.hits);
+  const hitsShown = found.slice(0, limit);
+  const cards = await cardsOf(env, hitsShown.map(hit => hit.code), new Map([...kanji.cards, ...variants.cards]), ctx);
   const shown = hitsShown.filter(hit => cards.has(hit.code)).map(hit => ({ ...cards.get(hit.code), rank: hit.rank,
     ...(hit.variant_of === undefined ? {} : { variant_of: hit.variant_of }) }));
-  const total = found.length + unread;
+  const total = found.length + kanji.unread;
   return { query: term, items: byGrapheme(shown, unlistedForms(shown, cards)), total, more: Math.max(0, total - limit), status: 'ok', corpus: { ready: true } };
 }
 

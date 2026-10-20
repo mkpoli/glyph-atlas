@@ -9,8 +9,10 @@ import { heldObjects } from './atlas3Media';
 type Json = any;
 // [other, relation, source, detail, written, widens], from either end of the edge.
 export type VariantEdge = [string, string, string, string, number, number];
+// Cards by family head, then code point, as a summary shard holds them.
+export type Families = Record<string, Record<string, Json>>;
 export type CharacterObject = {
-  grapheme: number; data: Json; detail: Json; variants: VariantEdge[];
+  grapheme: number; data: Json; detail: Json; variants: VariantEdge[]; variant_families: Families;
   derived: [string, [string, string][][]][]; substitutions: [string, string, number, Json][];
   writes: [string, number][]; writers: [string, number][]; ids: Record<string, number>;
 };
@@ -19,8 +21,9 @@ export const LIST_PAGE = 500;
 const PREFIX = 'v3/reference/';
 export const SUMMARY_DIGITS = 3, IDS_DIGITS = 2;
 // Each kind of object has its own isolate copies, as many as a request of that kind reads: a character
-// page one card, a search list up to 48 families, a component search up to COMPONENT_PARTS lists.
-const readCard = heldObjects<Json>(32), readSummary = heldObjects<Json>(64), readIds = heldObjects<Json>(16),
+// page one card, a search one reading, the list a component search answers up to 48 families, and the
+// component search up to COMPONENT_PARTS lists.
+const readCard = heldObjects<Json>(32), readSummary = heldObjects<Json>(64), readIds = heldObjects<Json>(16), readReadings = heldObjects<Json>(16),
   readNames = heldObjects<Json>(1), readList = heldObjects<Json>(4), readComponentNames = heldObjects<Json>(1),
   readComponents = heldObjects<Json>(COMPONENT_PARTS);
 
@@ -34,6 +37,9 @@ export function characterObject(env: Env, codePoint: string, ctx?: ExecutionCont
   return readCard(env, `${PREFIX}char/${codePoint.split(' ').join('-')}.json.gz`, ctx);
 }
 
+// Every card of the families, by code point.
+export const familyCards = (families: Families) => new Map(Object.values(families).flatMap(cards => Object.entries(cards)));
+
 // The `data` of each card in the families of the given heads, by code point, and no other family's:
 // one read per shard.
 export async function familySummaries(env: Env, heads: string[], ctx?: ExecutionContext): Promise<Map<string, Json>> {
@@ -44,6 +50,12 @@ export async function familySummaries(env: Env, heads: string[], ctx?: Execution
     const shard = shards.get(keys[i]);
     return shard && Object.hasOwn(shard, head) ? Object.entries(shard[head] as Record<string, Json>) : [];
   }));
+}
+
+// A kana reading's kanji, most attested first, and the families of the first of them, or null.
+export async function readingKanji(env: Env, reading: string, ctx?: ExecutionContext): Promise<{ kanji: string[]; families: Families } | null> {
+  const shard = await readReadings(env, `${PREFIX}readings/${await referenceShard(reading, SUMMARY_DIGITS)}.json.gz`, ctx);
+  return shard && Object.hasOwn(shard, reading) ? shard[reading] : null;
 }
 
 // A character's ideographic descriptions and regional shapes, or null.

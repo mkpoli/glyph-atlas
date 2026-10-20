@@ -93,7 +93,7 @@ const edges: [string, string, string, string, number][] = [
   ['鮓', '鮨', 'simplified', 'unihan', 0], ['時', '旹', 'variant', 'unihan', 1], ['時', '刻', 'variant', 'other', 1], ['時', '鴇', 'variant', 'other', 1],
   ['時', '鴇', 'variant', 'third', 1],
 ];
-const readings = { 'とき': ['時', '刻', '鴇', '朱鷺'], 'ね': ['子', '音', '値'], 'じ': ['時', '事'] };
+const readings = { 'とき': ['時', '刻', '鴇', '朱鷺'], 'ね': ['子', '音', '値'], 'じ': ['時', '事'], 'こく': ['刻', '黒'] };
 const structures: [string, string[], { text: string; regions: string }[] | null][] = [
   ['滑', ['⿰氵骨'], [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }]],
   ['骨', ['⿱⿵冂⿰丨𠃌月'], null],
@@ -167,11 +167,26 @@ objects['v3/reference/names.json.gz'] = { names: named, plain: [...plain.values(
 // Each card's object with its edges from both ends, in the order reference.py writes them.
 const sortedEdges = [...edges].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0) || (x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0)
   || (x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0) || (x[3] < y[3] ? -1 : x[3] > y[3] ? 1 : 0));
+// The families of the cards of `chars`, each family whole, as reference.families_text writes them.
+const familiesOf = (chars: string[]) => {
+  const families: Record<string, Record<string, unknown>> = {};
+  for (const char of chars) {
+    const card = cards.find(c => c.char === char);
+    if (!card) continue;
+    const head = (card.family ?? [card.char])[0];
+    families[cp(head)] ??= Object.fromEntries(cards.filter(c => (c.family ?? [c.char])[0] === head).map(c => [cp(c.char), dataOf(c)]));
+  }
+  return families;
+};
 for (const card of cards) {
   const variants = sortedEdges.flatMap(([a, b, relation, source, widens]) => [
     ...(a === card.char ? [[b, relation, source, '', 1, widens]] : []), ...(b === card.char ? [[a, relation, source, '', 1, widens]] : [])]);
   objects[`v3/reference/char/${cp(card.char).split(' ').join('-')}.json.gz`] = { grapheme: ids.get(card.char), data: dataOf(card), detail: {},
-    variants, derived: [], substitutions: [], writes: [], writers: [], ids: {} };
+    variants, variant_families: familiesOf(variants.map(v => v[0] as string)), derived: [], substitutions: [], writes: [], writers: [], ids: {} };
+}
+for (const [reading, kanji] of Object.entries(readings)) {
+  const name = `v3/reference/readings/${await referenceShard(reading, SUMMARY_DIGITS)}.json.gz`;
+  objects[name] = { ...(objects[name] as object ?? {}), [reading]: { kanji, families: familiesOf(kanji.slice(0, 49)) } };
 }
 for (const [char, sequences, shapes] of structures) {
   const name = `v3/reference/ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`;
@@ -201,7 +216,7 @@ const MEDIA = { get: async (name: string) => {
 } };
 const ASSETS = { fetch: async () => Response.json({ readings }) };
 const statements: string[] = [];
-const newEnv = { ATLAS: d1(atlasDb, statements), MEDIA, ASSETS, CATALOGUE_LAG: '0' } as unknown as Env;
+const newEnv = { ATLAS: d1(atlasDb, statements), MEDIA, CATALOGUE_LAG: '0' } as unknown as Env;
 const oldEnv = { DB: d1(oldDb), ASSETS } as unknown as Parameters<typeof old.suggest>[0];
 const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
 const ask = (q: string, limit?: number) => new URLSearchParams(limit === undefined ? { q } : { q, limit: String(limit) });
@@ -216,24 +231,24 @@ describe('the search fixture', () => {
 });
 
 describe('a character search', () => {
-  const queries = ['ね', 'ネ', '𛄧', 'ぬ', 'ねこ', 'とき', 'トキ', 'じ', '時', '时', '鯡', '𩹉', '鮓', '蚱', '鮨', 'か', 'か゚', 'U+304B U+309A',
+  const queries = ['ね', 'ネ', '𛄧', 'ぬ', 'ねこ', 'とき', 'トキ', 'こく', 'コク', 'じ', '時', '时', '鯡', '𩹉', '鮓', '蚱', '鮨', 'か', 'か゚', 'U+304B U+309A',
     'u+304b u+309a', 'U+304B-U+309A', 'ア゙', 'U+30A2 U+3099', 'u+30a2 u+3099', 'u+30a2  u+3099', 'U+3061', 'u+306d', 'U+306D', 'ne', 'NE',
     'hiragana', 'letter', 'katakana letter', 'ideograph-4e0', '4e00', 'fa11', 'compatibility', 'zzz', '-', '1', 'CJK UNIFIED', 'unified ideograph',
     '口木', '一口', '木木', 'U+6C34 U+9AA8', 'U+6C35 U+9AA8', '骨氵骨', '骨⺡', '一水𠂉', '口木水𠂉', '⺡骨', '水骨', '⺡月', '氵', '⿰氵骨', '⿱⿵冂⿰丨𠃌月', '⿰木', '  ね  ', '', ' ', '一', '丁', '𠀀', 'ﾈ',
     'ﾈ ', 'た', 'A'];
 
   // First in the file, so the isolate holds none of the objects yet.
-  it('reads the name list, one summary shard per family it shows, and a card object only for 異体字', async () => {
-    const shards = async (chars: string[]) => new Set(await Promise.all(chars.map(c => referenceShard(cp(c), SUMMARY_DIGITS))));
+  it('reads the name list, the summary shards of the families the query names, and one object for its kanji or 異体字', async () => {
+    const summary = async (chars: string[]) => new Set(await Promise.all(chars.map(async c => `v3/reference/summary/${await referenceShard(cp(c), SUMMARY_DIGITS)}.json.gz`)));
     reads.length = 0;
     await suggest(newEnv, ask('とき', 8), ctx);
-    expect(reads.filter(r => !r.includes('/summary/'))).toEqual(['v3/reference/names.json.gz']);
-    expect(new Set(reads.filter(r => r.includes('/summary/')))).toEqual(new Set([...await shards(['𛄤', '時', '刻', '鴇'])]
-      .map(shard => `v3/reference/summary/${shard}.json.gz`)));
+    expect(reads.filter(r => !r.includes('/summary/'))).toEqual(['v3/reference/names.json.gz',
+      `v3/reference/readings/${await referenceShard('とき', SUMMARY_DIGITS)}.json.gz`]);
+    expect(new Set(reads.filter(r => r.includes('/summary/')))).toEqual(await summary(['𛄤']));
     reads.length = 0;
-    await suggest(newEnv, ask('鮓', 8), ctx);
+    await suggest(newEnv, ask('鮓', 48), ctx);
     expect(reads.filter(r => !r.includes('/summary/'))).toEqual([`v3/reference/char/${cp('鮓')}.json.gz`]);
-    expect(reads.filter(r => r.includes('/summary/')).length).toBe((await shards(['鮓', '鮺'])).size);
+    expect(new Set(reads.filter(r => r.includes('/summary/')))).toEqual(await summary(['鮓']));
   });
 
   it('answers every query, at every limit, as the old database did', async () => {
@@ -260,6 +275,10 @@ describe('a character search', () => {
     statements.length = 0;
     await suggest(newEnv, ask('とき', 8), ctx);
     expect(statements).toEqual([namesQuery(), headsQuery()]);
+    statements.length = 0;
+    // A list of kanji alone has their cards from the reading's shard: no family head is asked for.
+    expect((await suggest(newEnv, ask('こく', 8), ctx)).items.map((item: { char: string }) => item.char)).toEqual(['刻']);
+    expect(statements).toEqual([namesQuery()]);
     const plan = (sql: string, ...args: unknown[]) => (atlasDb.query('EXPLAIN QUERY PLAN ' + sql).all(...(args as never[])) as { detail: string }[]).map(r => r.detail);
     expect(plan(namesQuery(), 'a', 'b', 'c')).toEqual(['SEARCH names USING PRIMARY KEY (text=?)', 'USE TEMP B-TREE FOR GROUP BY']);
     const heads = plan(headsQuery(), JSON.stringify(['時']));
