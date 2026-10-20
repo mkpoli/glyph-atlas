@@ -7,8 +7,8 @@ import { currentPointer } from '../atlas3Gallery';
 import { d1 } from '../forms.test';
 import { redrawLimits } from '../index';
 import { oldRoutes } from './fixtures/runs.old';
-import { bookCharactersQuery, bookNgramsQuery, booksQuery, corpusFormsQuery, ngramsQuery, pageRevsQuery, runCountQuery, runFormsQuery,
-  reviewedQuery, runGraphemesQuery, runHasQuery, runOccurrencesQuery, runProbeQuery, runRangeQuery, runStatQuery, runWorksQuery, runsRoute, siteForms } from './runs';
+import { bookCharactersQuery, bookFormsQuery, booksQuery, corpusFormsQuery, pageRevsQuery, runCountQuery,
+  reviewedQuery, runGraphemesQuery, runHasQuery, runOccurrencesQuery, runProbeQuery, runRangeQuery, runWorksQuery, runsRoute, writtenStatement } from './runs';
 
 type Json = any;
 const databases: Database[] = [];
@@ -70,7 +70,7 @@ function fixture() {
   const runs: [number, number, number, number | null, string, string, number][] = [
     [0, 2, 1, null, 'ん𛁅', 'hk:83b29132c6d01a596a847de5ba3b0b0d', 1], [1, 2, 2, null, '𛁅ん', 'hk:83b29132c6d01a596a847de5ba3b0b0d', 1], [2, 2, 3, null, 'んし', 'hk:83b29132c6d01a596a847de5ba3b0b0d', 1],
     [0, 3, 1, 2, 'ん𛁅ん', 'hk:83b29132c6d01a596a847de5ba3b0b0d', 1], [1, 3, 2, 3, '𛁅んし', 'hk:83b29132c6d01a596a847de5ba3b0b0d', 1],
-    [4, 2, 5, null, 'んし', 'hk:other', 0], [6, 2, 7, null, 'んし', 'ndl:book', 1]];
+    [4, 2, 5, null, 'んし', 'hk:other', 1], [6, 2, 7, null, 'んし', 'ndl:book', 1]];
   const fold = (t: string) => t.replaceAll('𛁅', 'し');
   const shuffle = (i: number) => 1000 - i * 7;
 
@@ -121,19 +121,47 @@ function fixture() {
     const on = at.filter(c => c.page === page);
     objects.set(bundleKey(page, 1), gzipSync(JSON.stringify({ key: page, book: on[0].book, rev: 1, page: null, crops: on.map(c => entry(c, c.id % 2 ** 24)) })));
   }
-  const runRow = runsDb.prepare(`INSERT INTO runs(size,graphemes,hand,shuffle,first,second,third,book,form,vertical) VALUES(?,?,0,?,?,?,?,?,?,?)`);
-  for (const [a, size, b, c, text, document, vertical] of runs)
-    runRow.run(size, fold(text), shuffle(a), at[a].id, at[b].id, c === null ? null : at[c].id, document === 'hk:83b29132c6d01a596a847de5ba3b0b0d' ? 1 : document === 'hk:other' ? 2 : 3,
-      text === fold(text) ? null : text, vertical);
-  runsDb.exec(`INSERT INTO run_stats SELECT size,graphemes,count(*),sum(vertical) FROM runs GROUP BY size,graphemes;
-    INSERT INTO run_forms SELECT size,graphemes,form,count(*),sum(vertical) FROM runs WHERE form IS NOT NULL GROUP BY size,graphemes,form;
-    INSERT INTO run_books SELECT book,size,graphemes,count(*),sum(vertical) FROM runs GROUP BY book,size,graphemes;`);
-
+  const runRow = runsDb.prepare(`INSERT INTO runs(size,graphemes,hand,shuffle,first,second,third,book) VALUES(?,?,0,?,?,?,?,?)`);
+  for (const [a, size, b, c, text, document] of runs)
+    runRow.run(size, fold(text), shuffle(a), at[a].id, at[b].id, c === null ? null : at[c].id, document === 'hk:83b29132c6d01a596a847de5ba3b0b0d' ? 1 : document === 'hk:other' ? 2 : 3);
+  runsDb.exec(`INSERT INTO run_stats SELECT size,graphemes,count(*),count(*) FROM runs GROUP BY size,graphemes`);
+  // The crops written apart from their family head, and the publication's answers (run_answers.py).
+  for (const c of at.filter(c => c.label !== fold(c.label))) runsDb.prepare('INSERT INTO run_written(crop,char) VALUES(?,?)').run(c.id, c.label);
+  writeAnswers(runsDb, objects);
   const media = bucket(objects);
   const oldEnv = { DB: d1(old), MEDIA: media } as unknown as Env;
   const newEnv = { ATLAS: d1(atlas), ATLAS_RUNS: d1(runsDb), MEDIA: media, CATALOGUE_LAG: '0' } as unknown as Env;
   const publicOf = new Map(at.map(c => [c.text, publicId(c.id)]));
   return { old, atlas, runsDb, oldEnv, newEnv, at, publicOf };
+}
+
+// The runs' answers as run_answers.py writes them, from a runs database: each run written as its crops'
+// rows, else the head its graphemes name there.
+function writeAnswers(runsDb: Database, objects: Map<string, Uint8Array>) {
+  const put = (name: string, value: Json) => objects.set(`v3/runs/${name}.json.gz`, gzipSync(JSON.stringify(value)));
+  const written = new Map(runsDb.query('SELECT crop,char FROM run_written').all().map((r: Json) => [r.crop, r.char]));
+  const rows = runsDb.query('SELECT size,graphemes,first,second,third,book FROM runs').all() as Json[];
+  const order = (a: [string, number], b: [string, number]) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+  const forms = new Map<string, Map<string, number>>(), books = new Map<string, Map<string, number>>(), sites = new Map<string, number>();
+  for (const r of rows) {
+    const heads = [...r.graphemes];
+    const text = [r.first, r.second, r.third].slice(0, r.size).map((crop, i) => written.get(crop) ?? heads[i]).join('');
+    const key = `${r.size}|${r.graphemes}`;
+    forms.set(key, (forms.get(key) ?? new Map()).set(text, (forms.get(key)?.get(text) ?? 0) + 1));
+    sites.set(key, (sites.get(key) ?? 0) + 1);
+    const book = `${r.book}-${r.size}`;
+    books.set(book, (books.get(book) ?? new Map()).set(r.graphemes, (books.get(book)?.get(r.graphemes) ?? 0) + 1));
+  }
+  const shards = new Map<string, Json>();
+  for (const [key, counts] of forms) {
+    const [size, graphemes] = key.split('|');
+    const name = `forms/${size}-${graphemes.codePointAt(0)!.toString(16)}`;
+    shards.set(name, { ...shards.get(name), [graphemes]: [counts.size, [...counts].sort(order).slice(0, 24)] });
+  }
+  for (const [name, value] of shards) put(name, value);
+  for (const [book, counts] of books) put(`books/${book}`, [...counts].sort(order).slice(0, 480).map(([g, n]) => [g, n, n]));
+  for (const size of [2, 3]) put(`grid-${size}`, [...sites].filter(([k]) => k.startsWith(`${size}|`)).map(([k, n]) => [k.slice(2), n] as [string, number])
+    .sort(order).slice(0, 480).map(([g, n]) => [g, n, n, forms.get(`${size}|${g}`)!.size]));
 }
 
 const ctx = () => {
@@ -263,11 +291,16 @@ describe('runs on the new layout', () => {
     expect(crops.find((c: Json) => c.id === publicId(flagged))).toMatchObject({ state: 'flagged', revision: 1, issue: 'character' });
   });
 
-  it('give a site form the count its graphemes hold beyond the other forms', () => {
-    expect(siteForms('んし', [{ text: 'ん𛁅', n: 2 }], 5)).toEqual([{ text: 'んし', n: 3 }, { text: 'ん𛁅', n: 2 }]);
-    expect(siteForms('んし', [{ text: 'ん𛁅', n: 2 }], 2)).toEqual([{ text: 'ん𛁅', n: 2 }]);
-    // Ties in code point order, as SQLite orders text: U+1B045 after U+3057.
-    expect(siteForms('んし', [{ text: 'ん𛁅', n: 1 }], 2).map(f => f.text)).toEqual(['んし', 'ん𛁅']);
+  it('show a crop as a review writes it, in the form filter and a book’s forms', async () => {
+    const f = fixture();
+    // A review names ex:o2 (し) as 𛁅: its row says so, and its run moves to that written form at once.
+    await writtenStatement(f.newEnv, f.at[5].id, '𛁅').run();
+    await writtenStatement(f.newEnv, f.at[5].id, '𛁅').run();
+    expect(f.runsDb.query('SELECT char FROM run_written WHERE crop=?').all(f.at[5].id)).toEqual([{ char: '𛁅' }]);
+    const other = await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んし') + '&document=hk%3Aother')).json();
+    expect(other.forms).toEqual([{ text: 'ん𛁅', n: 1 }]);
+    const filtered = await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んし') + '&form=' + encodeURIComponent('ん𛁅'))).json();
+    expect(filtered.items.map((i: Json) => i.crops[0].source_id).sort()).toEqual(['ar:doc:1-l1-0', 'ex:o1']);
   });
 
   it('read every table by its key or an index', () => {
@@ -276,9 +309,8 @@ describe('runs on the new layout', () => {
     // A capped subquery's own rows (`s`, `(subquery-n)`) and a bound list (`j`) are read whole.
     const scans = (details: string[]) => details.filter(d => /^SCAN /.test(d) && !/^SCAN (j|s|json_each|\(subquery-\d+\))( |$)/.test(d));
     const shapes: [Database, string, unknown[]][] = [
-      [f.runsDb, ngramsQuery(), [2]], [f.runsDb, bookNgramsQuery(), [1, 2]],
       [f.runsDb, runRangeQuery(), [3, 'んし', 'んし\u{10FFFF}', '']], [f.runsDb, runHasQuery(), [2, 'んし']],
-      [f.runsDb, runFormsQuery(false), [2, 'んし']], [f.runsDb, runFormsQuery(true), [2, 'んし', 1]], [f.runsDb, runStatQuery(), [2, 'んし']],
+      [f.runsDb, bookFormsQuery(2), ['ん', 'し', 2, 'んし', 1]], [f.runsDb, bookFormsQuery(3), ['ん', 'し', 'ん', 3, 'んしん', 1]],
       [f.runsDb, runProbeQuery(false), ['んしん']], [f.runsDb, runProbeQuery(true), [1, 'んしん']],
       [f.atlas, runGraphemesQuery(), ['["ん"]']], [f.atlas, booksQuery(), ['[1]']], [f.atlas, pageRevsQuery(), ['[1]']],
       [f.atlas, corpusFormsQuery(), ['[1]']], [f.atlas, bookCharactersQuery(), [1, 0, 1000]], [f.atlas, reviewedQuery(), ['[1]']],
@@ -286,7 +318,7 @@ describe('runs on the new layout', () => {
     for (const size of [2, 3, 5]) for (let anchor = 0; anchor + Math.min(size, 3) <= size; anchor++) for (const book of [false, true]) {
       const links = Math.max(0, size - 3);
       const bound = [...Array(links).fill('んし'), ...(book ? [1] : []), Math.min(size, 3), 'んしん'];
-      shapes.push([f.runsDb, runOccurrencesQuery(size, anchor, book, true, 'hand', size <= 3), [...bound, ...(size <= 3 ? ['ん𛁅ん'] : []), 0, 48, 0]]);
+      shapes.push([f.runsDb, runOccurrencesQuery(size, anchor, book, true, 'hand', size <= 3), [...bound, ...(size <= 3 ? Array(size * 2).fill('ん') : []), 0, 48, 0]]);
       shapes.push([f.runsDb, runCountQuery(size, anchor, book), [...bound, 0]]);
       if (!book) {
         shapes.push([f.runsDb, runOccurrencesQuery(size, anchor, false, false, 'source'), [...bound, 48, 0]]);
@@ -303,8 +335,8 @@ describe('runs on the new layout', () => {
     expect(long).toMatch(/INDEX run_first \(first=\?\)/);
     expect(long).toMatch(/INDEX run_second \(second=\?/);
     // A book's rows are its range of `run_book`.
-    for (const sql of [runOccurrencesQuery(2, 0, true, true), runCountQuery(2, 0, true), runFormsQuery(true)])
-      expect(plan(f.runsDb, sql, sql === runFormsQuery(true) ? [2, 'んし', 1] : [1, 2, 'んし', 0, ...(sql.includes('OFFSET') ? [48, 0] : [])]).join('; '))
+    for (const sql of [runOccurrencesQuery(2, 0, true, true), runCountQuery(2, 0, true), bookFormsQuery(2)])
+      expect(plan(f.runsDb, sql, sql === bookFormsQuery(2) ? ['ん', 'し', 2, 'んし', 1] : [1, 2, 'んし', 0, ...(sql.includes('OFFSET') ? [48, 0] : [])]).join('; '))
         .toContain('run_book (size=? AND graphemes=? AND book=?)');
   });
 });
