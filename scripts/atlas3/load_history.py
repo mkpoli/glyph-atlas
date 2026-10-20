@@ -30,7 +30,7 @@ import sqlite3
 import sys
 
 from build import HERE, OUT
-from publish import CF, applied, lit, send, write_parts
+from publish import CF, STATEMENT_BYTES, applied, lit, send, write_parts
 
 SCHEMA = CF / "migrations-atlas"
 # Tables in the order their rows load: who and which request first, then what names them.
@@ -89,7 +89,7 @@ def migrate(history, atlas, mirror, dry):
 # D1 refuses a statement over 100 KB. A row past STATEMENT_BYTES goes in with its long text columns
 # empty, and each is then appended in pieces of CHUNK characters (at most four bytes each), in the same
 # part, so D1 holds the value whole.
-STATEMENT_BYTES, LONG_BYTES, CHUNK = 90_000, 10_000, 20_000
+LONG_BYTES, CHUNK = 10_000, 20_000
 
 
 def row_statements(table, cols, keys, r):

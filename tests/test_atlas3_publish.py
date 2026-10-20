@@ -522,3 +522,16 @@ def test_a_crop_put_back_after_retirement_continues_from_its_cut(layout, monkeyp
                  if e["id"] == "ex:a2")
     assert [(c["cut"], c["box"]) for c in entry["cuts"]] == [(0, {"x": 0, "y": 20, "w": 10, "h": 10}), (1, box_b)]
     assert entry["box"] == box_c and not entry.get("retired")
+
+
+def test_a_publish_needing_a_statement_over_d1s_limit_allocates_nothing(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    row = list(unit("ex:new", "hl:p3", {"x": 0, "y": 0, "w": 10, "h": 10}))
+    row[UNITS.index("visual_group")] = "x" * 100_000
+    db = sqlite3.connect(tmp_path / "c.sqlite")
+    db.execute(f"CREATE TABLE units({','.join(UNITS)})")
+    db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})", row)
+    db.commit()
+    with pytest.raises(SystemExit, match="over D1's limit"):
+        run(publish, monkeypatch, tmp_path / "c.sqlite")
+    assert "ex:new" not in ids(root)

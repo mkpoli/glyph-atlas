@@ -22,6 +22,8 @@ images to the image key map (`media_map.py`).
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes
   (`votes`, migration 0006, in votes.py's shape) for their cut; a reading that is not ready removes them.
 
+A statement over STATEMENT_BYTES stops the publish before anything is allocated.
+
 One publish runs at a time (a lock on out/mirror.lock).
 """
 import argparse
@@ -73,6 +75,8 @@ VOTE_COLS = ("crop", "cut", "models", "visual", "context")
 RUN_KEY = ("size", "graphemes", "hand", "shuffle", "first")
 # D1 takes an imported file whole; parts stay under the size the publication scripts use.
 PART_BYTES = 40 * 1024 ** 2
+# D1 refuses a statement over 100 KB.
+STATEMENT_BYTES = 90_000
 KEEP = object()
 
 
@@ -319,6 +323,8 @@ def write_parts(run, name, groups):
     own); a group is never split. Each file carries its own stamp and is applied in order."""
     parts, current, size = [], [], 0
     for group in groups:
+        if long := [s for s in group if len(s.encode()) > STATEMENT_BYTES]:
+            sys.exit(f"a statement of {len(long[0].encode())} bytes is over D1's limit, nothing sent: {long[0][:200]}")
         n = sum(len(s.encode()) + 1 for s in group)
         if current and size + n > PART_BYTES:
             parts.append(current)
