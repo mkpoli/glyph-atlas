@@ -160,10 +160,11 @@ def ranges(query, table, key, select):
         last = [rows[-1][f"_k{i}"] for i in range(len(key))]
 
 
-def summary(query, db):
-    """Each table's row count and a checksum of its rows: every value as its SQL literal, in key order."""
+def summary(query, db, names=None):
+    """Each table's row count and a checksum of its rows: every value as its SQL literal, in key order.
+    The tables are `names`, or every table of `db`, whose columns and keys the reads follow."""
     out = {}
-    for table in tables(db):
+    for table in names or tables(db):
         cols = columns(db, table)
         row = "||','||".join(f"quote({q(c)})" for c in cols)
         digest, n = hashlib.sha256(), 0
