@@ -142,6 +142,15 @@ function settleWaiters(key, use) {
   for (const waiter of list) use(waiter)
   return list.length > 0
 }
+// The answer the site gives a save naming a crop it no longer holds.
+const GONE = { response: new Response(null, { status: 409 }), value: { code: 'reload' } }
+/** Refuse a gone save to the view waiting on it and drop it, or keep it as gone for the corner. */
+async function refuseGone(entry, answer) {
+  let error
+  try { sender.settle(answer) } catch (refusal) { error = refusal }
+  if (settleWaiters(entry.key, waiter => waiter.reject(error)) || discarded.has(entry.key)) await remove(entry.key)
+  else await put({ ...entry, gone: true })
+}
 async function run() {
   if (!sender) return
   // One tab sends at a time, so two tabs do not send the same save together.
@@ -156,6 +165,8 @@ async function run() {
       // The reader may have discarded it, or another tab sent it or found it gone, since it was read.
       if (discarded.has(entry.key)) continue
       const now = await stored(entry.key)
+      // One another tab found gone, which a view here waits on, is refused to that view.
+      if (now?.gone && waiting.has(entry.key)) { await refuseGone(entry, GONE); continue }
       if (now ? now.gone : !waiting.has(entry.key)) continue
       let answer
       try { answer = await sender.send(entry) } catch (error) {
@@ -173,13 +184,7 @@ async function run() {
       failed.delete(entry.key)
       // A save naming a crop the site no longer holds goes to the view that made it, which shows the
       // refusal; one from an earlier page stays kept as gone, for the reader to see and discard.
-      if (isReload(answer.response, answer.value)) {
-        let error
-        try { sender.settle(answer) } catch (refusal) { error = refusal }
-        if (settleWaiters(entry.key, waiter => waiter.reject(error)) || discarded.has(entry.key)) await remove(entry.key)
-        else await put({ ...entry, gone: true })
-        continue
-      }
+      if (isReload(answer.response, answer.value)) { await refuseGone(entry, answer); continue }
       await remove(entry.key)
       let value
       try { value = sender.settle(answer) } catch (error) {

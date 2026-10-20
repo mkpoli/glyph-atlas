@@ -62,6 +62,20 @@ describe('a kept save naming a crop the site no longer holds', () => {
   })
 })
 
+describe('a save this page waits on that another tab found gone', () => {
+  it('is refused to the view and removed, without being sent', async () => {
+    const path = '/atlas/characters/hk%3A5%3Aa', key = path + '#waited'
+    const answered = deliver(path, { id: 'waited', character: '星' }, null, 5).then(() => null, error => error)
+    while (!kept().some(e => e.key === key)) await Bun.sleep(1)
+    keep(kept().map(e => e.key === key ? { ...e, gone: true } : e))
+    await drain()
+    expect((await answered)?.message).toBe('gone')
+    expect(send).not.toHaveBeenCalled()
+    expect(kept()).toEqual([])
+    expect(outbox.refused).toEqual([])
+  })
+})
+
 describe('a gone save discarded while a pass is running', () => {
   it('is not sent by that pass, nor by a later one', async () => {
     const first = entry('hk:3:a', '火'), later = entry('hk:3:b', '水')
