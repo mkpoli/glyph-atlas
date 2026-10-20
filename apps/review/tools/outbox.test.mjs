@@ -61,3 +61,44 @@ describe('a kept save naming a crop the site no longer holds', () => {
     expect(outbox.refused).toEqual([])
   })
 })
+
+describe('a gone save discarded while a pass is running', () => {
+  it('is not sent by that pass, nor by a later one', async () => {
+    const first = entry('hk:3:a', '火'), later = entry('hk:3:b', '水')
+    keep([first, later])
+    let release
+    send.mockImplementationOnce(() => new Promise(done => { release = () => done(accepted()) }))
+    const running = drain()
+    while (!release) await Bun.sleep(1)
+    // Another tab found the later save gone; this page shows it once it counts again, and the
+    // reader discards it while the first send is still out.
+    keep(kept().map(e => e.key === later.key ? { ...e, gone: true } : e))
+    const fresh = deliver('/atlas/characters/hk%3A3%3Ac', { id: 'fresh', character: '木' }, null)
+    while (!outbox.refused.some(r => r.key === later.key)) await Bun.sleep(1)
+    await dismiss(later.key)
+    release()
+    await running
+    await fresh
+    await drain()
+    const sent = send.mock.calls.map(([e]) => e.key)
+    expect(sent).not.toContain(later.key)
+    expect(sent).toEqual([first.key, '/atlas/characters/hk%3A3%3Ac#fresh'])
+    expect(kept()).toEqual([])
+  })
+
+  it('read by the pass before it was marked gone is still skipped once discarded', async () => {
+    const first = entry('hk:4:a', '金'), later = entry('hk:4:b', '土')
+    keep([first, later])
+    let release
+    send.mockImplementationOnce(() => new Promise(done => { release = () => done(accepted()) }))
+    const running = drain()
+    while (!release) await Bun.sleep(1)
+    // The corner shows it as gone (as after another tab's pass) and the reader discards it.
+    outbox.refused.push({ key: later.key, gone: true, what: '土' })
+    await dismiss(later.key)
+    release()
+    await running
+    expect(send.mock.calls.map(([e]) => e.key)).toEqual([first.key])
+    expect(kept()).toEqual([])
+  })
+})

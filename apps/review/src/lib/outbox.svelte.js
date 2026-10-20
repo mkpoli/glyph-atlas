@@ -45,6 +45,11 @@ async function entries() {
 async function put(entry) {
   if (!(await transaction('readwrite', store => store.put(entry)))) fallback.write([...fallback.all().filter(e => e.key !== entry.key), entry])
 }
+/** The kept save under `key` as stored now, or null. */
+async function stored(key) {
+  const found = await transaction('readonly', store => store.get(key))
+  return (found && typeof found === 'object' ? found : null) ?? fallback.all().find(e => e.key === key) ?? null
+}
 async function remove(key) {
   await transaction('readwrite', store => store.delete(key))
   const rest = fallback.all()
@@ -148,7 +153,10 @@ async function run() {
     const keys = new Set(kept.map(entry => entry.key))
     for (const [key, [{ entry }]] of waiting) if (!keys.has(key)) kept.unshift(entry)
     for (const entry of kept) {
-      if (entry.gone) continue
+      // The reader may have discarded it, or another tab sent it or found it gone, since it was read.
+      if (discarded.has(entry.key)) continue
+      const now = await stored(entry.key)
+      if (now ? now.gone : !waiting.has(entry.key)) continue
       let answer
       try { answer = await sender.send(entry) } catch (error) {
         if (offline(error)) { again(); return }
