@@ -25,7 +25,7 @@ Where the old events keep what (all 1,690 of 19-20 October 2026 are kind 'review
 - the label the reviewer was shown is `evidence.label` in a round and `evidence.snapshot.character.label`
   otherwise (`shown`), the character named is `evidence.suggested_character` (`named`), and the reading
   the crop showed, in records from before readings left them, is `evidence.snapshot.character.reading`,
-  and the reading the review saved `after_data.reading`.
+  and the reading the review saved, as its correction names it, `evidence.correction.reading`.
 
 Corpus glyphs the old site held a `units` row for become `corpus_rows`, numbered in rowid order, and
 the finding of an admin's flag in a record's `flag` becomes a `corpus_flags` row.
@@ -411,7 +411,7 @@ def main():
                        # Typed characters: `suggested_text`, or `suggested_reading` in reviews saved before it.
                        evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
                        graphemes.get(shown) if shown else None, graphemes.get(named) if named else None, reading,
-                       after.get("reading"), r["id"]))
+                       (evidence.get("correction") or {}).get("reading"), r["id"]))
     out.executemany(f'INSERT INTO events({",".join(EVENT_COLUMNS)}) VALUES({",".join("?" * len(EVENT_COLUMNS))})',
                     [(i, *e) for i, e in enumerate(events, 1)])
     report.tables["events"]["out"] = len(events)

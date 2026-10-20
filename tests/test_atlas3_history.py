@@ -239,8 +239,8 @@ def test_events_keep_the_label_shown_and_the_character_named(layout, monkeypatch
         # ex:a2 is at revision 3, so three events fit below it.
         box = {"x": 0, "y": 20, "w": 10, "h": 10}
         return (id, "u1:s1", "ex:a2", "u1", expected, json.dumps({"box": box, "page_id": "hl:p1", "label": "あ"}),
-                json.dumps({"label": label, "state": "checked", "box": box, **({"reading": "ヰ"} if id == "cf:2" else {})}),
-                json.dumps({"evidence": json.dumps(evidence)}), "{}", "review", at, 0)
+                json.dumps({"label": label, "state": "checked", "box": box}), json.dumps({"evidence": json.dumps(evidence)}),
+                "{}", "review", at, 0)
     sources(root, events=[
         # A round names its label; a single review shows the label in its snapshot, and may name a
         # character that leaves the label as it was.
@@ -249,7 +249,8 @@ def test_events_keep_the_label_shown_and_the_character_named(layout, monkeypatch
         reviewed("cf:2", 1, "2026-10-01T00:00:02Z", {"kind": "character-review", "verdict": "wrong", "issue": "character",
                                                      "suggested_character": "U+3044",
                                                      # A record from before readings left them, its reading not its label.
-                                                     "snapshot": {"character": {"label": "い", "reading": "イ"}}}, "い"),
+                                                     "snapshot": {"character": {"label": "い", "reading": "イ"}},
+                                                     "correction": {"unicode": "U+3044", "reading": "ヰ"}}, "い"),
         reviewed("cf:3", 2, "2026-10-01T00:00:03Z", {"kind": "character-review", "verdict": "match", "issue": None,
                                                      "snapshot": {"character": {"label": "い"}}}, "い")])
     code, out = history(monkeypatch, root)
