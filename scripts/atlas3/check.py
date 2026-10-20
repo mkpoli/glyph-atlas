@@ -1,11 +1,12 @@
 """Check the new layout against a copy of the live tables, crop by crop, before the site switches to it.
 
-    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/check.py
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/check.py [--cutover]
 
 Reads the `source-*.sqlite` copies (`pull.py`) and the local copies the publisher keeps (`out/`), and
 nothing remote: every publish is confirmed by its stamp in D1 and replayed on the local copy, so the
 local copy is what D1 holds. Every check covers every crop; a failing one lists up to SHOWN examples
-in `out/check-<stamp>.txt` and the run exits 1.
+in `out/check-<stamp>.txt` and the run exits 1. A check that cannot run yet is skipped; with
+--cutover, for the run before the switch, every skip fails.
 
 - Ids: every live crop, corpus glyph and retired crop has a number, and no number has two crops.
 - Rows: each crop's character, state, style, withheld flag, production, category, visual group,
@@ -20,18 +21,29 @@ in `out/check-<stamp>.txt` and the run exits 1.
 - Images: every live image key is in the image key map, at its live place.
 
 History (decision record 0006), when `out/history.sqlite` exists (history.py):
-- Rows: every source row of the history tables is in it, every translated field equal to one derived
-  again from the source copies (actor and submission keys, times in ms, crop through the mirror, cut
-  from the live record's box and crop_versions), or left out for a reason history-report.txt lists
-  as often; and it holds no other rows.
-- Marks: recomputed from seen marks and skips by the old triggers' rules, they are the live
-  `unit_marks`, which history-marks.json lists; after the load each marked crop that was pending has
-  its mark as state, with an event setting it.
-- Accounts: with `accounts.sqlite`, every `actors.user` and `favourites.user` names a user.
+- Rows: every source row of every history table (actors, submissions, events, seen, skips,
+  favourites, the claim ledger, rejections, form decisions, corpus_follow, written forms, suspects and
+  shapes) is in it, every translated field equal to one derived again from the source copies (actor
+  and submission keys, times in ms, crop through the mirror, cut from the live record's box and
+  crop_versions), or left out for a reason history-report.txt lists exactly as often; and it holds no
+  other rows. An actor with no source row has no user, via or time; actor_stats are recounted as the
+  ranking counts.
+- Cuts: a crop with no collected record is cut 0 only if corpus_units has it, and a tombstone is
+  checked against its retired bundle entry; every crop cited at cut -1 has that cut, with its earlier
+  box, in its bundle once the cuts are published; no event is past its crop's revision.
+- Marks: recomputed from seen marks and skips by the old triggers' rules and compared with the live
+  `unit_marks`; the live ones move where they differ, so the differences are listed, not failed.
+  history-marks.json holds every live mark.
+- After the load: the local copy holds every row load_history.py wrote, equal to history.sqlite's;
+  rows loaded with no marks set fail; each marked crop that was pending has its mark as state, with an
+  event at its revision and cut by the latest round not undone that showed it there.
+- Accounts: with `accounts.sqlite`, every `actors.user` and `favourites.user` names a user, and every
+  row (each session among them) is in the parts accounts.py load wrote for the copy.
 """
 
 from __future__ import annotations
 
+import argparse
 import gzip
 import hashlib
 import itertools
@@ -44,6 +56,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from build import HERE, OUT, PAGE, bundle_entry, char_text
+from load_history import TABLES as LOADED
 
 SHOWN = 20
 
@@ -80,8 +93,8 @@ def applied_marks(atlas, name):
 
 
 class Report:
-    def __init__(self):
-        self.lines, self.failed = [], 0
+    def __init__(self, strict=False):
+        self.lines, self.failed, self.strict = [], 0, strict
 
     def check(self, name, problems):
         problems = list(problems)
@@ -90,8 +103,17 @@ class Report:
         self.failed += bool(problems)
         print(self.lines[-1 - min(len(problems), SHOWN)], flush=True)
 
-    def skip(self, name):
-        self.lines.append(f"skip {name}")
+    def info(self, name, lines):
+        """Lines to read, not a failure: every one is listed."""
+        self.lines.append(f"info {name} ({len(lines)})")
+        self.lines += [f"     {line}" for line in lines]
+        print(self.lines[-1 - len(lines)], flush=True)
+
+    def skip(self, name, why):
+        if self.strict:
+            self.check(name, [f"not run at the cutover: {why}"])
+            return
+        self.lines.append(f"skip {name}: {why}")
         print(self.lines[-1], flush=True)
 
 
@@ -263,13 +285,17 @@ def stream(table, cols, order=""):
 class Cuts:
     """A crop's cut for a box, from the source copies alone: its live record's box is cut 0 (and every
     corpus glyph is), an earlier box crop_versions holds is -1, and a box no recorded version has is the
-    cut below the oldest recorded one. None for a crop with two earlier boxes."""
+    cut below the oldest recorded one. A crop with no collected record is a corpus glyph when
+    corpus_units has it, else a tombstone, whose record is its retired bundle entry. None for a crop
+    that is neither, and for one with two earlier boxes."""
 
-    def __init__(self):
+    def __init__(self, entry):
+        # Text id -> its bundle entry, for tombstones.
+        self.entry = entry
         # The source copies have no indexes: the crops wanted go in a table here, and each source is
         # read once, joined to it.
         self.db = sqlite3.connect(":memory:", uri=True)
-        for t in ("units", "crop_versions"):
+        for t in ("units", "crop_versions", "corpus_units"):
             self.db.execute(f"ATTACH ? AS {t}", (f"file:{HERE / f'source-{t}.sqlite'}?mode=ro",))
         self.db.execute("CREATE TABLE wanted(text TEXT PRIMARY KEY) WITHOUT ROWID")
         self.db.execute("CREATE TABLE refs(ref TEXT PRIMARY KEY) WITHOUT ROWID")
@@ -283,22 +309,28 @@ class Cuts:
     def load(self):
         self.ref_unit = dict(self.db.execute("SELECT id, unit FROM crop_versions.crop_versions WHERE id IN (SELECT ref FROM refs)"))
         self.want(self.ref_unit.values())
-        self.record = {}
+        self.record, self.revision = {}, {}
         # The last copy of a record wins.
-        for text, origin, box in self.db.execute("SELECT id, origin, json_extract(data, '$.box') FROM units.units "
-                                                 "WHERE id IN (SELECT text FROM wanted) ORDER BY _rowid"):
-            self.record[text] = (origin, box4(box))
+        for text, origin, box, revision in self.db.execute("SELECT id, origin, json_extract(data, '$.box'), revision FROM units.units "
+                                                           "WHERE id IN (SELECT text FROM wanted) ORDER BY _rowid"):
+            self.record[text], self.revision[text] = (origin, box4(box)), revision
         self.versions = defaultdict(set)
         for unit, box in self.db.execute("SELECT unit, box FROM crop_versions.crop_versions WHERE unit IN (SELECT text FROM wanted)"):
             if box4(box) is not None:
                 self.versions[unit].add(box4(box))
+        self.corpus = {t for (t,) in self.db.execute("SELECT id FROM corpus_units.corpus_units WHERE id IN (SELECT text FROM wanted)")}
         self.db.close()
 
     def cut(self, text, box):
+        origin, current = self.record.get(text, (None, None))
         # A corpus glyph has no record of its own, or a review overlay with no box.
-        origin, current = self.record.get(text, ("corpus", None))
-        if origin == "corpus":
-            return 0
+        if origin not in ("local", "retired"):
+            if text in self.corpus:
+                return 0
+            e = self.entry(text)
+            if not (e and e.get("retired")):
+                return None
+            current = box4(e.get("box"))
         box = box4(box)
         if box is not None and box == current:
             return 0
@@ -316,10 +348,12 @@ class Cuts:
 
 
 class Table:
-    """One history table: each source row against its translated row, and the rows accounted for."""
+    """One history table: each source row against its translated row, and the rows accounted for.
+    `name` is the source table, which history-report.txt counts under; `target` the translated one."""
 
-    def __init__(self, report, history, name, listed):
+    def __init__(self, report, history, name, listed, target=None):
         self.report, self.history, self.name, self.listed = report, history, name, listed
+        self.target = target or name
         self.problems, self.present, self.gone = [], 0, Counter()
 
     def compare(self, label, want, got):
@@ -335,20 +369,86 @@ class Table:
         self.gone[reason] += 1
 
     def done(self, extra=True):
-        for reason, n in self.gone.items():
-            if n > self.listed[self.name][reason]:
-                self.problems.append(f"{n} rows {reason}, history-report.txt lists {self.listed[self.name][reason]}")
-        total = self.history.execute(f'SELECT count(*) FROM "{self.name}"').fetchone()[0]
+        # The rows left out, per reason, are exactly those the report lists.
+        for reason in self.gone.keys() | self.listed[self.name].keys():
+            if self.gone[reason] != self.listed[self.name][reason]:
+                self.problems.append(f"{self.gone[reason]} rows {reason}, history-report.txt lists {self.listed[self.name][reason]}")
+        total = self.history.execute(f'SELECT count(*) FROM "{self.target}"').fetchone()[0]
         if extra and total != self.present:
             self.problems.append(f"{total} translated rows, {self.present} of them from a source row")
         gone = "; ".join(f"{n} {reason}" for reason, n in self.gone.items())
-        self.report.check(f"every {self.name} row is translated" + (f" or accounted for ({gone})" if gone else ""), self.problems)
+        into = f" into {self.target}" if self.target != self.name else ""
+        self.report.check(f"every {self.name} row is translated{into}" + (f" or accounted for ({gone})" if gone else ""),
+                          self.problems)
+
+
+def keyed_rows(db, table, cols, keys, where=""):
+    """(key, digest of the whole row) for each row of a table in key order, one row at a time."""
+    names = ",".join(f'"{c}"' for c in cols)
+    order = ",".join(f'"{k}"' for k in keys)
+    for r in db.execute(f'SELECT {names} FROM "{table}" {where} ORDER BY {order}'):
+        yield tuple(r[cols.index(k)] for k in keys), hashlib.sha256(repr(tuple(r)).encode()).digest()
+
+
+def compare_loaded(report, history, atlas):
+    """Every table load_history.py wrote, row for row, in the local copy against history.sqlite; events
+    past the translation's last are the marks', returned for their own check."""
+    problems = []
+    last_event = history.execute("SELECT coalesce(max(id), 0) FROM events").fetchone()[0]
+    for table in LOADED:
+        info = list(history.execute(f'PRAGMA table_info("{table}")'))
+        cols = [r[1] for r in info]
+        keys = [r[1] for r in sorted(info, key=lambda r: r[5]) if r[5]]
+        where = f"WHERE id <= {last_event}" if table == "events" else ""
+        ours, theirs = keyed_rows(history, table, cols, keys), keyed_rows(atlas, table, cols, keys, where)
+        a, b = next(ours, None), next(theirs, None)
+        while a or b:
+            if b is None or (a is not None and a[0] < b[0]):
+                problems.append(f"{table} {a[0]}: not in the local copy")
+                a = next(ours, None)
+            elif a is None or b[0] < a[0]:
+                problems.append(f"{table} {b[0]}: in the local copy, not in history.sqlite")
+                b = next(theirs, None)
+            else:
+                if a[1] != b[1]:
+                    problems.append(f"{table} {a[0]}: differs")
+                a, b = next(ours, None), next(theirs, None)
+    report.check("the local copy holds every translated row as history.sqlite has it, and no other", problems)
+    return last_event
+
+
+def check_accounts(report, acc):
+    """The parts accounts.py load wrote for this copy (what glyph-atlas-accounts was sent), replayed:
+    every row of every table of accounts.sqlite, sessions among them, is there by its key."""
+    import accounts
+
+    run = HERE / "accounts-load" / accounts.copy_name(acc)
+    name = "every accounts.sqlite row, every session among them, is in the parts loaded into glyph-atlas-accounts"
+    if not run.is_dir():
+        report.skip(name, f"no {run.relative_to(HERE)}; accounts.py load writes it")
+        return
+    loaded = sqlite3.connect(":memory:")
+    loaded.execute("PRAGMA foreign_keys = ON")
+    for part in sorted(run.glob("*.sql")):
+        loaded.executescript("BEGIN;\n" + part.read_text() + "COMMIT;\n")
+    problems, sessions = [], 0
+    for table in accounts.tables(acc):
+        key = ",".join(accounts.q(k) if k != "rowid" else k for k in accounts.keys(acc, table))
+        ours = {r for r in acc.execute(f"SELECT {key} FROM {accounts.q(table)}")}
+        try:
+            theirs = {r for r in loaded.execute(f"SELECT {key} FROM {accounts.q(table)}")}
+        except sqlite3.OperationalError:
+            theirs = set()
+        sessions += len(ours) if table == "session" else 0
+        problems += [f"{table} {k}: not in the parts" for k in sorted(ours - theirs, key=repr)]
+        problems += [f"{table} {k}: in the parts, not in accounts.sqlite" for k in sorted(theirs - ours, key=repr)]
+    report.check(f"{name} ({sessions} sessions)", problems)
 
 
 def check_history(report, name):
     path = OUT / "history.sqlite"
     if name is None:
-        report.skip("history: no out/history.sqlite; run history.py first")
+        report.skip("history", "no out/history.sqlite; run history.py first")
         return
     history = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     history.row_factory = sqlite3.Row
@@ -385,24 +485,46 @@ def check_history(report, name):
     states = dict(atlas.execute("SELECT code, key FROM codes WHERE field='state'"))
     graphemes = dict(atlas.execute("SELECT id, text FROM graphemes"))
 
-    cuts = Cuts()
+    rev = dict(atlas.execute("SELECT id, rev FROM pages"))
+    pages = {}
+
+    def entry(cid):
+        """A crop's bundle entry; the last page read is kept."""
+        pid = cid // PAGE
+        if pid not in pages:
+            pages.clear()
+            path = OUT / "pages" / f"{pid}-{rev.get(pid)}.json.gz"
+            pages[pid] = {e["slot"]: e for e in json.loads(gzip.decompress(path.read_bytes()))["crops"]} if path.exists() else {}
+        return pages[pid].get(cid % PAGE)
+
+    cuts = Cuts(lambda text: (cid := crop(text)) is not None and entry(cid) or None)
     for t in ("seen", "skips", "events"):
         cuts.want(r[0] for r in source(t).execute(f"SELECT DISTINCT target FROM {t}"))
     cuts.refer(r[0] for r in source("assertion_evidence").execute("SELECT ref FROM assertion_evidence WHERE kind='crop'"))
     cuts.refer(r[0] for r in source("current_claims").execute("SELECT crop_version FROM current_claims WHERE crop_version IS NOT NULL"))
     cuts.load()
 
-    # Actors: the source rows; actors only other tables name have no source row.
-    t = Table(report, history, "actors", listed)
+    # Actors: one per actor text any source table names; those with no source actors row have no
+    # user, via or time.
+    t, named, known = Table(report, history, "actors", listed), set(), set()
+    for table_, column in (("submissions", "actor"), ("events", "actor"), ("skips", "actor"), ("form_decisions", "actor"),
+                           ("ledger_submissions", "actor"), ("assertion_actions", "actor"), ("assertions", "asserted_by")):
+        named |= {k for (k,) in source(table_).execute(f"SELECT DISTINCT {column} FROM {table_}")}
     for r in stream("actors", "actor, user_id, via, at"):
+        known.add(r["actor"])
         t.compare(f"actor {r['actor']}", {"user": r["user_id"], "via": r["via"], "at": ms(r["at"])},
                   one("SELECT user, via, at FROM actors WHERE key=?", r["actor"]))
-    t.done(extra=False)
+    for key_ in sorted(named - known):
+        t.compare(f"actor {key_} (no source row)", {"user": None, "via": None, "at": None},
+                  one("SELECT user, via, at FROM actors WHERE key=?", key_))
+    t.done()
 
-    t, undone = Table(report, history, "submissions", listed), set()
+    t, undone, src_sub = Table(report, history, "submissions", listed), set(), {}
+    undone_ids = {i for (i,) in history.execute("SELECT id FROM submissions WHERE undone")}
     for r in stream("submissions", "id, actor, request, response, at, undone"):
         if r["undone"]:
             undone.add(r["id"])
+        src_sub[r["id"]] = (r["actor"], ms(r["at"]))
         got = one("SELECT actor, request, response, at, undone FROM submissions WHERE key=?", r["id"])
         if got:
             got["actor"] = actor_key.get(got["actor"])
@@ -440,15 +562,31 @@ def check_history(report, name):
             t.compare(f"event {r['id']} on {target} ({cid})", want, got)
     t.done()
 
+    # No event is past its crop's revision: the crops row's, or a retired crop's last live record's.
+    problems, unrecorded = [], 0
+    for cid, revision in history.execute("SELECT crop, max(revision) FROM events GROUP BY crop"):
+        r = atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
+        if r is None:
+            text = mirror.execute("SELECT text FROM ids WHERE id=?", (cid,)).fetchone()
+            r = (cuts.revision[text[0]],) if text and text[0] in cuts.revision else None
+        if r is None:
+            # A tombstone with no record left on the old site has no revision to stay below.
+            unrecorded += 1
+        elif revision > r[0]:
+            problems.append(f"{cid}: event at revision {revision}, crop at {r[0]}")
+    report.check("no event is past its crop's revision" + (f" ({unrecorded} tombstones with no record)" if unrecorded else ""),
+                 problems)
+
     # Seen marks and skips, and the marks the old triggers would give: the crop's current box, a
     # round not undone, two or more skippers for `hard`.
-    t, marked = Table(report, history, "seen", listed), set()
+    t, marked, seen_rows = Table(report, history, "seen", listed), set(), defaultdict(list)
     for r in stream("seen", "target, submission, box, at"):
         cid = crop(r["target"])
         if cid is None:
             t.account("crop unknown")
             continue
         cut = cuts.cut(r["target"], r["box"])
+        seen_rows[r["target"]].append((r["submission"], ms(r["at"]), cut))
         if cut == 0 and r["submission"] not in undone:
             marked.add(r["target"])
         t.compare(f"seen {r['target']} ({cid}) in {r['submission']}", {"cut": cut, "at": ms(r["at"])},
@@ -482,12 +620,13 @@ def check_history(report, name):
     recomputed = {target: "hard" for target, who in skippers.items() if len(who) >= 2}
     for target in marked:
         recomputed.setdefault(target, "seen")
-    problems = []
+    # Where they differ the live mark is the one moved (decision record 0006): listed, not a failure.
+    differ = []
     for target, mark in source("unit_marks").execute("SELECT id, mark FROM unit_marks"):
         if (r := recomputed.pop(target, None)) != mark:
-            problems.append(f"{target}: live {mark}, recomputed {r}")
-    problems += [f"{target}: recomputed {mark}, no live mark" for target, mark in recomputed.items()]
-    report.check("the marks recomputed from seen marks and skips are the live ones", problems)
+            differ.append(f"{target}: live {mark}, recomputed {r}")
+    differ += [f"{target}: recomputed {mark}, no live mark" for target, mark in recomputed.items()]
+    report.info("live marks that differ from those recomputed from seen marks and skips; the live ones move", differ)
 
     marks = json.loads((OUT / "history-marks.json").read_text()) if (OUT / "history-marks.json").exists() else []
     written = Counter((m["crop"], m["state"]) for m in marks)
@@ -502,22 +641,55 @@ def check_history(report, name):
 
     # After the load, a marked crop that was pending has its mark as its state, with an event at
     # that revision; a crop not pending (or retired) keeps its state.
-    if applied_marks(atlas, name) is None:
-        report.skip("every marked crop has its mark as its state: the local copy has not had this translation's marks "
+    loaded = atlas.execute("SELECT 1 FROM imports WHERE stamp LIKE ? LIMIT 1", (f"{name}.rows-%",)).fetchone()
+    last_event = compare_loaded(report, history, atlas) if loaded else None
+    if not loaded:
+        report.skip("the local copy holds every translated row as history.sqlite has it, and no other",
+                    "this translation is not loaded (no rows stamp in imports); load_history.py loads it")
+    if applied_marks(atlas, name) is None and loaded:
+        report.check("every marked crop has its mark as its state",
+                     ["the rows of this translation are loaded and its marks are not set; rerun load_history.py"])
+    elif applied_marks(atlas, name) is None:
+        report.skip("every marked crop has its mark as its state", "the local copy has not had this translation's marks "
                     "applied (no marks stamp in imports); load_history.py applies them, then check again")
     else:
+        # Each mark set on a pending crop has its event: the mark's state at the crop's revision and
+        # cut, written by the latest round not undone that showed the crop at that cut, derived here
+        # from the source seen marks and submissions.
         code = {key: c for c, key in kinds.items()}
-        problems, left = [], 0
+        problems, left, matched = [], 0, set()
         for m in marks:
-            r = atlas.execute("SELECT state, revision FROM crops WHERE id=?", (m["crop"],)).fetchone()
+            r = atlas.execute("SELECT state, revision, cut FROM crops WHERE id=?", (m["crop"],)).fetchone()
             state = r and states.get(r[0])
             if r is None or state not in ("pending", "seen", "hard"):
                 left += 1
-            elif state != m["state"]:
+                continue
+            if state != m["state"]:
                 problems.append(f"{m['crop']}: state {state}, marked {m['state']}")
-            elif not atlas.execute("SELECT 1 FROM events WHERE crop=? AND revision=? AND kind=?",
-                                   (m["crop"], r[1], code[m["state"]])).fetchone():
+                continue
+            e = atlas.execute("SELECT id, cut, gen, actor, submission, at, state FROM events WHERE crop=? AND revision=? AND kind=?",
+                              (m["crop"], r[1], code[m["state"]])).fetchone()
+            if e is None:
                 problems.append(f"{m['crop']}: state {state} with no event setting it at revision {r[1]}")
+                continue
+            matched.add(e[0])
+            text = mirror.execute("SELECT text FROM ids WHERE id=?", (m["crop"],)).fetchone()[0]
+            shown = [(at, key) for key, at, cut in seen_rows[text] if cut == r[2] and key not in undone]
+            latest = max(shown, default=(None, None))[0]
+            rounds = {key for at, key in shown if at == latest}
+            got = {"cut": e[1], "gen": e[2], "actor": actor_key.get(e[3]), "submission": sub_key.get(e[4]), "at": e[5],
+                   "state": states.get(e[6]), "actor id": e[3], "submission at": history.execute(
+                       "SELECT at FROM submissions WHERE id=?", (e[4],)).fetchone()}
+            got["submission at"] = got["submission at"] and got["submission at"][0]
+            submission = got["submission"] if got["submission"] in rounds else min(rounds, default=None)
+            want = {"cut": r[2], "gen": 0, "actor": src_sub.get(submission, (None,))[0], "submission": submission, "at": latest,
+                    "state": m["state"], "actor id": m["actor"], "submission at": m["at"]}
+            differ = [f"{k} {v!r} expected, {got[k]!r} set" for k, v in want.items() if got[k] != v]
+            if differ:
+                problems.append(f"{m['crop']} ({text}): mark event {'; '.join(differ)}")
+        extra = {i for (i,) in atlas.execute("SELECT id FROM events WHERE id > ?", (last_event,))}
+        problems += [f"event {i}: past the translation's events and sets no live mark" for i in sorted(extra - matched)]
+        problems += [f"event {i}: a mark event inside the translation's events" for i in sorted(matched - extra)]
         recorded = OUT / "history-load" / f"{name}-marks" / "left"
         if recorded.exists() and int(recorded.read_text()) != left:
             problems.append(f"{left} marked crops not pending or retired, the load left {recorded.read_text()}")
@@ -614,22 +786,95 @@ def check_history(report, name):
         t.compare(f"written form {r['id']}", want, one("SELECT * FROM written_forms WHERE id=?", r["id"]))
     t.done()
 
+    t = Table(report, history, "assertion_premises", listed)
+    for r in stream("assertion_premises", "assertion, premise, role"):
+        t.compare(f"premise {r['assertion']} {r['premise']}", {"role": r["role"]},
+                  one("SELECT role FROM assertion_premises WHERE assertion=? AND premise=?", r["assertion"], r["premise"]))
+    t.done()
+
+    t = Table(report, history, "rejections", listed)
+    for r in stream("rejections", "submission, by, reason, at"):
+        got = one("SELECT by, reason, at FROM rejections WHERE submission=?", sub_id.get(r["submission"]))
+        t.compare(f"rejection of {r['submission']}", {"by": r["by"], "reason": r["reason"], "at": ms(r["at"])},
+                  got if r["submission"] in sub_id else None)
+    t.done()
+
+    t = Table(report, history, "corpus_follow", listed)
+    for r in stream("corpus_follow", "id"):
+        cid = crop(r["id"])
+        if cid is None:
+            t.account("crop unknown")
+            continue
+        t.compare(f"followed {r['id']} ({cid})", {"crop": cid}, one("SELECT crop FROM corpus_follow WHERE crop=?", cid))
+    t.done()
+
+    # Script facts on a crop the mirror lacks are dropped; every other row keeps its values.
+    for source_, target, cols in (("unit_suspects", "suspects", ("p", "reads_as", "label", "box")),
+                                  ("unit_shapes", "shapes", ("shape_order",))):
+        t = Table(report, history, source_, listed, target)
+        for r in stream(source_, "id, " + ", ".join(cols)):
+            cid = crop(r["id"])
+            if cid is None:
+                t.account("crop no longer exists")
+                continue
+            t.compare(f"{source_} {r['id']} ({cid})", {c: r[c] for c in cols},
+                      one(f"SELECT {', '.join(cols)} FROM {target} WHERE crop=?", cid))
+        t.done()
+
+    # Each actor's totals as the ranking counts them: the reviews whose submission stands, the
+    # submissions that stand, and the time of the latest submission.
+    t = Table(report, history, "actor_stats", listed)
+    reviews, rounds, last = Counter(), Counter(), {}
+    verdicts = {c for c, k in kinds.items() if k in ("match", "wrong", "unsure")}
+    for actor_, kind, submission in history.execute("SELECT actor, kind, submission FROM events"):
+        if kind in verdicts and submission not in undone_ids:
+            reviews[actor_] += 1
+    for actor_, at, is_undone in history.execute("SELECT actor, at, undone FROM submissions"):
+        rounds[actor_] += not is_undone
+        last[actor_] = max(last.get(actor_, at), at)
+    for actor_, key_ in actor_key.items():
+        t.compare(f"stats of {key_}", {"reviews": reviews[actor_], "rounds": rounds[actor_], "at": last.get(actor_)},
+                  one("SELECT reviews, rounds, at FROM actor_stats WHERE actor=?", actor_))
+    t.done()
+
+    # Earlier cuts: every crop a history row cites at cut -1 has that cut in its bundle entry, with the
+    # earlier box crop_versions holds.
+    cited = sorted({cid for table_ in ("events", "seen", "skips", "assertion_evidence", "assertions", "current_claims")
+                    for (cid,) in history.execute(f"SELECT DISTINCT crop FROM {table_} WHERE cut = -1")})
+    problems, published = [], 0
+    for cid in cited:
+        text = mirror.execute("SELECT text FROM ids WHERE id=?", (cid,)).fetchone()[0]
+        current = cuts.record.get(text, (None, None))[1]
+        earlier = cuts.versions[text] - {current}
+        e = entry(cid) or {}
+        have = [box4(c.get("box")) for c in e.get("cuts", []) if c.get("cut") == -1]
+        published += "cuts" in e
+        if len(earlier) != 1 or have != list(earlier):
+            problems.append(f"{text} ({cid}): bundle cut -1 {have}, crop_versions' earlier box {sorted(earlier)}")
+    name_cuts = f"every crop cited at cut -1 has that cut in its bundle with its earlier box ({len(cited)} crops)"
+    if cited and not published:
+        report.skip(name_cuts, "no bundle has earlier cuts yet; publish history-cuts.sqlite (load_history.py writes it)")
+    else:
+        report.check(name_cuts, problems)
+
     # Accounts: every user an actor or favourite names has an account.
     accounts = HERE / "accounts.sqlite"
-    loaded = atlas.execute("SELECT 1 FROM imports WHERE stamp LIKE ? LIMIT 1", (f"{name}.rows-%",)).fetchone()
     where = "the local copy" if loaded else "history.sqlite"
     if not accounts.exists():
-        report.skip("every actors.user and favourites.user names an account: no accounts.sqlite")
+        report.skip("every actors.user and favourites.user names an account", "no accounts.sqlite")
     else:
         db, acc = atlas if loaded else history, sqlite3.connect(f"file:{accounts}?mode=ro", uri=True)
         problems = [f"{table_}.user {user}" for table_, column in (("actors", "key"), ("favourites", "crop"))
                     for _k, user in db.execute(f"SELECT {column}, user FROM {table_} WHERE user IS NOT NULL")
                     if not acc.execute('SELECT 1 FROM "user" WHERE id=?', (user,)).fetchone()]
         report.check(f"every actors.user and favourites.user in {where} names an account", problems)
+        check_accounts(report, acc)
 
 
 def main():
-    report = Report()
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--cutover", action="store_true", help="fail every check that cannot run yet instead of skipping it")
+    report = Report(strict=parser.parse_args().cutover)
     name = translation()
     check_crops(report, name)
     check_history(report, name)
