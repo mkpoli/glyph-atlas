@@ -61,11 +61,11 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   entry with its record, and with `replaced_by` where the catalogue's `unit_redirects` names its
   replacement, so its reviews, claims and links resolve.
 - A catalogue whose `units` carry `visual` and `context`, as `export_cloudflare.py` writes them, sets
-  each published crop's model votes for its cut in its page's object `v3/votes/<page>.json.gz`
-  (`votes.py`), and a reading that is not ready removes them. Only the objects that changed are
-  uploaded, after the bundles; `out/votes/` holds what R2 holds. A retired crop's votes go with it,
-  and a reader takes an entry only while its cut is the crop's. A rebuilt layout starts from an
-  empty `v3/votes/`.
+  each published crop's model votes for its cut in its page's object
+  `v3/votes/<build>/<page>.json.gz` (`votes.py`), and a reading that is not ready removes them. Only
+  the objects that changed are uploaded, once D1 holds the model codes they name; `out/votes/` takes
+  each object as it goes up. A retired crop's votes go with it, and a reader takes an entry only while
+  its cut is the crop's. A rebuilt layout has its own build id, so its objects start a new folder.
 - A statement over 90 KB stops the publish before anything is allocated.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
   keeps its runs.

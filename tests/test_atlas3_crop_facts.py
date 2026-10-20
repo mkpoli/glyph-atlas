@@ -251,3 +251,39 @@ def test_a_publish_keeps_each_crops_votes_for_its_cut(layout, monkeypatch, tmp_p
     gone = unit("ex:a1", "hl:p1", {"x": 1, "y": 1, "w": 9, "h": 9})
     run(publish, monkeypatch, voted(tmp_path / "c4.sqlite", [((gone[0], "retired", *gone[2:]) + (NONE, NO_CONTEXT))]))
     assert held() == {}
+
+
+def test_a_publish_sends_votes_after_its_model_codes_and_keeps_them_by_build(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    a1 = ids(root)["ex:a1"]
+    db = remote.dbs["glyph-atlas-v3"]
+    uploaded = remote.upload
+
+    def checked(files, prefix="v3/pages/"):
+        if prefix.startswith("v3/votes/"):
+            assert db.execute("SELECT 1 FROM codes WHERE field='models'").fetchone()
+        uploaded(files, prefix)
+
+    marked = publish.mark
+
+    def stop(run, line):
+        marked(run, line)
+        if line == "votes uploaded":
+            raise SystemExit("stopped after the votes went up")
+
+    monkeypatch.setattr(publish, "upload", checked)
+    monkeypatch.setattr(publish, "mark", stop)
+    with pytest.raises(SystemExit, match="stopped"):
+        run(publish, monkeypatch, voted(tmp_path / "c1.sqlite", [(*unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}),
+                                                                   visual(), CONTEXT)]))
+    # The local copy holds what went up even though the publish stopped right after.
+    assert a1 % PAGE in votes.read(root / "out" / "votes", a1 // PAGE)
+    # A rebuilt layout numbers crops afresh and starts its own folder of vote objects.
+    old = build_of(root)
+    monkeypatch.setattr(sys, "argv", ["build.py", "--replace"])
+    monkeypatch.setattr(importlib.import_module("build").time, "strftime", lambda _f: "29991231T000000")
+    importlib.import_module("build").main()
+    assert build_of(root) != old and not (root / "out" / "votes").exists()
+    assert sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT key FROM codes WHERE field='build'").fetchone() == (
+        "29991231T000000",)
+    assert votes.prefix(build_of(root)) == "v3/votes/29991231T000000/"

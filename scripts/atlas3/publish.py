@@ -20,8 +20,9 @@ images to the image key map (`media_map.py`).
   applied when its stamp is in that database's `imports`, and is then replayed on the local copy.
 - A publish stopped after allocating is finished by the next run before anything else.
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
-  their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded after the bundles; a
-  reading that is not ready, or a retirement, removes the crop's entry.
+  their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
+  parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
+  crop's entry.
 - A statement over STATEMENT_BYTES stops the publish before anything is allocated.
 
 One publish runs at a time (a lock on out/mirror.lock).
@@ -366,11 +367,6 @@ def deliver(m, run):
     if "uploaded" not in journal(run):
         upload(sorted((run / "pages").iterdir()))
         mark(run, "uploaded")
-    # The vote objects follow the bundles; a reader checks each entry's cut against the crop's.
-    voted = sorted((run / "votes").glob("*.json.gz")) if (run / "votes").exists() else []
-    if voted and "votes uploaded" not in journal(run):
-        upload(voted, votes.prefix(m.build))
-        mark(run, "votes uploaded")
     for database, name, local in (("glyph-atlas-v3", "atlas", m.atlas), ("glyph-atlas-v3-runs", "runs", m.runs)):
         for part in sorted(run.glob(f"{name}-*.sql")):
             stamp = f"{run.name}.{name}.{part.stem.rsplit('-', 1)[1]}"
@@ -400,15 +396,20 @@ def deliver(m, run):
             if refused:
                 print(f"{len(refused)} changes kept D1's newer review instead (ids in {run.name}/refused-by-d1.json)", flush=True)
             mark(run, "read back")
+    # The vote objects go once D1 holds the model codes they name; out/votes/ takes each as it goes up.
+    voted = sorted((run / "votes").glob("*.json.gz")) if (run / "votes").exists() else []
+    if voted and "votes uploaded" not in journal(run):
+        upload(voted, votes.prefix(m.build))
+        (OUT / "votes").mkdir(exist_ok=True)
+        for path in voted:
+            shutil.copy2(path, OUT / "votes" / path.name)
+        mark(run, "votes uploaded")
     for path in (run / "pages").iterdir():
         shutil.copy2(path, OUT / "pages" / path.name)
         page, rev = path.name.split(".")[0].split("-")
         for older in (OUT / "pages").glob(f"{page}-*.json.gz"):
             if int(older.name.split(".")[0].split("-")[1]) < int(rev):
                 older.unlink()
-    (OUT / "votes").mkdir(exist_ok=True)
-    for path in voted:
-        shutil.copy2(path, OUT / "votes" / path.name)
     m.ids.execute("DELETE FROM pending WHERE run=?", (run.name,))
     m.ids.commit()
     mark(run, "done")
