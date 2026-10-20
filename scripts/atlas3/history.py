@@ -19,8 +19,8 @@ Where the old events keep what (all 1,690 of 19-20 October 2026 are kind 'review
 - the verdict, issue and note are top-level fields of the event JSON's `evidence` (a JSON string);
   `evidence.request` repeats them for most reviews, and quiz rounds carry them per answer too;
 - `after_data` is the crop's record after the review: `label` and `state` always, never `style` or
-  `quiz`. A review never changes a crop's style, and `evidence.snapshot.character.style` holds the
-  style before it where the old Worker wrote it, so that is the event's style; no event records quiz;
+  `quiz`. A review sets no style and no withheld flag, so an event's `style` is NULL; no event records
+  quiz;
 - `before_data.box` is the box the reviewer saw, which names the event's cut.
 """
 
