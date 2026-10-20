@@ -23,21 +23,34 @@ export type CropParam = { id: number } | { moved: number } | { retired: number; 
 // public id has one, so the two never meet.
 const textId = (value: string) => value.includes(':');
 
-async function replacement(env: Env, entry: Record<string, unknown> | undefined, ctx?: ExecutionContext): Promise<number | null> {
-  const named = entry?.retired ? entry.replaced_by : undefined;
+// The crop a retired entry names as its replacement: `none` when it names none, null when it names
+// one the alias map does not hold.
+async function replacement(env: Env, entry: Record<string, unknown>, ctx?: ExecutionContext): Promise<number | 'none' | null> {
+  const named = entry.replaced_by;
   if (typeof named === 'number') return named;
-  return typeof named === 'string' && named ? await aliasCrop(env, named, ctx) : null;
+  if (typeof named === 'string' && named) return await aliasCrop(env, named, ctx);
+  return 'none';
 }
 
 /** A path segment as written in the URL, percent-decoded once; null when it does not decode. */
-export function decodedSegment(raw: string): string | null {
+function decodedSegment(raw: string): string | null {
   try { return decodeURIComponent(raw); } catch { return null; }
 }
 
-/** What the path segment `raw`, as written in the URL, names. It is decoded here and nowhere else. */
+/** What a crop id in a URL path names. `raw` is the path segment as written in the URL, still
+ *  percent-encoded; it is decoded here, once. Redirect with `movedPathResponse(url, raw, id)`. */
 export async function cropParam(env: Env, raw: string, ctx?: ExecutionContext): Promise<CropParam> {
   const param = decodedSegment(raw);
-  if (param === null) return null;
+  return param === null ? null : resolved(env, param, ctx);
+}
+
+/** What a crop id in a URL query names. `value` is the decoded value, as `url.searchParams.get`
+ *  gives it, and is not decoded again. Redirect with `movedQueryResponse(url, key, id)`. */
+export function cropQueryParam(env: Env, value: string, ctx?: ExecutionContext): Promise<CropParam> {
+  return resolved(env, value, ctx);
+}
+
+async function resolved(env: Env, param: string, ctx?: ExecutionContext): Promise<CropParam> {
   const named = textId(param) ? await aliasCrop(env, param, ctx) : cropOf(param);
   if (named === null) return null;
   let id = named, replaced = false;
@@ -49,25 +62,35 @@ export async function cropParam(env: Env, raw: string, ctx?: ExecutionContext): 
     if (!entry?.retired) return null;
     if (hop >= REPLACEMENT_HOPS) return null;
     const next = await replacement(env, entry, ctx);
-    if (next === null) return { retired: id, canonical: !replaced && publicId(id) === param };
+    if (next === 'none') return { retired: id, canonical: !replaced && publicId(id) === param };
+    if (next === null) return null;
     id = next; replaced = true;
   }
   return !replaced && publicId(id) === param ? { id } : { moved: id };
 }
 
-/** The URL with the crop's public id in place of the path segment `raw`, written as in the URL, and
- *  of any query value that is that segment decoded. */
-export function cropUrl(url: URL, raw: string, id: number): URL {
-  const target = new URL(url), name = publicId(id), param = decodedSegment(raw);
+/** The URL with the crop's public id in place of the path segment `raw`, as written in the URL. */
+export function cropPathUrl(url: URL, raw: string, id: number): URL {
+  const target = new URL(url), name = publicId(id);
   target.pathname = target.pathname.split('/').map(part => part === raw ? name : part).join('/');
-  for (const [key, value] of [...target.searchParams]) if (value === param) target.searchParams.set(key, name);
   return target;
 }
 
-/** The redirect from an old crop URL to the crop's public id, or 404 when the URL holds no segment
- *  to replace, which would otherwise redirect to itself. */
-export function movedResponse(url: URL, raw: string, id: number): Response {
-  const target = cropUrl(url, raw, id);
+/** The URL with the crop's public id as the value of the query parameter `key`. */
+export function cropQueryUrl(url: URL, key: string, id: number): URL {
+  const target = new URL(url);
+  target.searchParams.set(key, publicId(id));
+  return target;
+}
+
+/** The redirect from an old crop URL to the crop's public id in a path segment. */
+export const movedPathResponse = (url: URL, raw: string, id: number) => moved(url, cropPathUrl(url, raw, id));
+/** The redirect from an old crop URL to the crop's public id in the query parameter `key`. */
+export const movedQueryResponse = (url: URL, key: string, id: number) => moved(url, cropQueryUrl(url, key, id));
+
+// A target equal to the URL asked for would redirect to itself: the parameter was not where the
+// caller said, so nothing is published there.
+function moved(url: URL, target: URL): Response {
   if (target.href === url.href) return Response.json({ detail: 'Nothing is published at this address.' },
     { status: 404, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
   return new Response(null, { status: OLD_URL_STATUS, headers: { location: target.href,

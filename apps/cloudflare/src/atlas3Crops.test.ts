@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from './forms.test';
 import { bundleKey, cropId, publicId } from './atlas3';
-import { OLD_URL_STATUS, STALE_CODE, StaleCrop, cropParam, cropUrl, movedResponse, staleResponse, writtenCropField } from './atlas3Crops';
+import { OLD_URL_STATUS, STALE_CODE, StaleCrop, type CropParam, cropParam, cropPathUrl, cropQueryParam, cropQueryUrl, movedPathResponse,
+  movedQueryResponse, staleResponse, writtenCropField } from './atlas3Crops';
 
 // The Workers cache, as far as alias reads use it.
 const edge = new Map<string, Response>();
@@ -25,14 +26,16 @@ function setup() {
   const page = ++pages, n = page;
   const live = cropId(page, 0), retired = cropId(page, 1), orphan = cropId(page, 2), chained = cropId(page, 3), byNumber = cropId(page, 4);
   db.exec(`INSERT INTO books VALUES(1,'hk:book');
-    INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${page},'hk:book:${n}',1,2,8);
+    INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${page},'hk:book:${n}',1,2,9);
     INSERT INTO crops(id,kind,book,state,quiz,shuffle) VALUES(${live},0,1,0,1,1);`);
   const text = { live: `hk:${n}:live`, retired: `hk:${n}:retired`, orphan: `hk:${n}:orphan`, chained: `hk:${n}:chained`,
-    redirected: `hk:${n}:redirected`, gone: `hk:${n}:gone`, ends: `hk:${n}:ends`, wide: `tsj:s${n}a10７:0` };
+    redirected: `hk:${n}:redirected`, gone: `hk:${n}:gone`, ends: `hk:${n}:ends`, wide: `tsj:s${n}a10７:0`,
+    percent: `ex:${n}:50%`, plus: `ex:${n}:a+b` };
   // The alias map: each mirror id to its crop, and a redirect source to the crop its chain ends at,
   // which for a retired crop is the retired crop itself.
   const aliases: Record<string, number> = { [text.live]: live, [text.retired]: retired, [text.orphan]: orphan,
-    [text.chained]: chained, [text.redirected]: retired, [text.ends]: cropId(page, 7), [text.wide]: live };
+    [text.chained]: chained, [text.redirected]: retired, [text.ends]: cropId(page, 7), [text.wide]: live,
+    [text.percent]: live, [text.plus]: live };
   const shards = new Map<string, Record<string, number>>();
   for (const [t, id] of Object.entries(aliases)) {
     const name = `v3/aliases/${createHash('sha256').update(t).digest('hex').slice(0, 3)}.json.gz`;
@@ -47,7 +50,8 @@ function setup() {
     { slot: 4, id: `hk:${n}:number`, retired: true, replaced_by: live },
     { slot: 5, id: `hk:${n}:loop`, retired: true, replaced_by: cropId(page, 6) },
     { slot: 6, id: `hk:${n}:loop2`, retired: true, replaced_by: cropId(page, 5) },
-    { slot: 7, id: text.ends, retired: true, replaced_by: text.orphan }] })));
+    { slot: 7, id: text.ends, retired: true, replaced_by: text.orphan },
+    { slot: 8, id: `hk:${n}:unmapped`, retired: true, replaced_by: `hk:${n}:nowhere` }] })));
   const MEDIA = { get: async (name: string) => {
     const bytes = objects.get(name);
     return bytes ? { body: new Response(bytes).body!, arrayBuffer: async () => new Uint8Array(bytes).buffer } : null;
@@ -115,28 +119,98 @@ describe('a crop named in a route', () => {
   it('ends with nothing at a loop of replacements or a replacement gone', async () => {
     const { db, env, text, live } = setup();
     expect(await cropParam(env, publicId(cropId(pages, 5)))).toBeNull();
+    // A replacement named by a text id the alias map does not hold is no crop, not a crop with none.
+    expect(await cropParam(env, publicId(cropId(pages, 8)))).toBeNull();
     db.exec(`DELETE FROM crops WHERE id=${live}`);
     expect(await cropParam(env, text.retired)).toBeNull();
   });
 });
 
 describe('an old crop URL', () => {
-  it('is answered with the public id in its place, in the path or the query', () => {
+  it('is answered with the public id in its path segment, left as written elsewhere', () => {
     const id = cropId(7, 3);
     const url = new URL('https://glyphatlas.org/atlas/characters/hk%3Aa%3A1/versions?around=hk:a:1&n=2');
-    expect(cropUrl(url, 'hk%3Aa%3A1', id).href).toBe(`https://glyphatlas.org/atlas/characters/${publicId(id)}/versions?around=${publicId(id)}&n=2`);
-    const response = movedResponse(new URL('https://glyphatlas.org/atlas/characters/ex:1:日本'), 'ex:1:%E6%97%A5%E6%9C%AC', id);
+    expect(cropPathUrl(url, 'hk%3Aa%3A1', id).href).toBe(`https://glyphatlas.org/atlas/characters/${publicId(id)}/versions?around=hk:a:1&n=2`);
+    const response = movedPathResponse(new URL('https://glyphatlas.org/atlas/characters/ex:1:日本'), 'ex:1:%E6%97%A5%E6%9C%AC', id);
     expect(response.status).toBe(OLD_URL_STATUS);
     expect(OLD_URL_STATUS).toBe(302);
     expect(response.headers.get('location')).toBe(`https://glyphatlas.org/atlas/characters/${publicId(id)}`);
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
 
-  it('that holds no segment to replace is answered 404, never a redirect to itself', async () => {
+  it('is answered with the public id as its query value, the other parameters kept', () => {
     const id = cropId(7, 3);
-    const response = movedResponse(new URL('https://glyphatlas.org/atlas/characters?crop=hk:a:2'), 'hk%3Aa%3A1', id);
+    const url = new URL('https://glyphatlas.org/atlas/characters?crop=hk%3Aa%3A1&n=2');
+    expect(cropQueryUrl(url, 'crop', id).href).toBe(`https://glyphatlas.org/atlas/characters?crop=${publicId(id)}&n=2`);
+    expect(movedQueryResponse(url, 'crop', id).headers.get('location')).toBe(`https://glyphatlas.org/atlas/characters?crop=${publicId(id)}&n=2`);
+  });
+
+  it('that holds no segment to replace is answered 404, never a redirect to itself', () => {
+    const id = cropId(7, 3);
+    const response = movedPathResponse(new URL('https://glyphatlas.org/atlas/characters?crop=hk:a:2'), 'hk%3Aa%3A1', id);
     expect(response.status).toBe(404);
     expect(response.headers.get('location')).toBeNull();
+    const same = new URL(`https://glyphatlas.org/atlas/characters?crop=${publicId(id)}`);
+    expect(movedQueryResponse(same, 'crop', id).status).toBe(404);
+  });
+});
+
+// A route as a Worker handler would write one: a crop id in the path, `/crops/<id>`, or in the query,
+// `/crops?crop=<id>`.
+async function route(env: Env, request: Request): Promise<Response> {
+  const url = new URL(request.url), segment = /^\/crops\/([^/]+)$/.exec(url.pathname)?.[1];
+  const value = url.pathname === '/crops' ? url.searchParams.get('crop') : null;
+  let named: CropParam, moved: (id: number) => Response;
+  if (segment !== undefined) { named = await cropParam(env, segment); moved = id => movedPathResponse(url, segment, id); }
+  else if (value !== null) { named = await cropQueryParam(env, value); moved = id => movedQueryResponse(url, 'crop', id); }
+  else return new Response(null, { status: 404 });
+  if (named === null) return new Response(null, { status: 404 });
+  if ('id' in named) return Response.json({ crop: named.id });
+  if ('moved' in named) return moved(named.moved);
+  return named.canonical ? Response.json({ retired: named.retired }, { status: 410 }) : moved(named.retired);
+}
+
+describe('a crop route', () => {
+  const ask = (env: Env, path: string) => route(env, new Request('https://glyphatlas.org' + path));
+  const location = (response: Response) => new URL(response.headers.get('location')!);
+
+  it('answers a crop named by its public id in the path or the query', async () => {
+    const { env, live } = setup();
+    expect(await (await ask(env, `/crops/${publicId(live)}`)).json()).toEqual({ crop: live });
+    expect(await (await ask(env, `/crops?crop=${publicId(live)}`)).json()).toEqual({ crop: live });
+  });
+
+  it('moves an old text id in the path, decoding %25, + and full-width digits once', async () => {
+    const { env, text, live } = setup();
+    for (const old of [text.percent, text.plus, text.wide]) {
+      const response = await ask(env, `/crops/${encodeURIComponent(old)}`);
+      expect(response.status).toBe(OLD_URL_STATUS);
+      expect(location(response).pathname).toBe(`/crops/${publicId(live)}`);
+    }
+    // The path as a browser sends it, with the colons and + as written.
+    expect(location(await ask(env, `/crops/${text.plus}`)).pathname).toBe(`/crops/${publicId(live)}`);
+    expect((await ask(env, `/crops/${encodeURIComponent(encodeURIComponent(text.percent))}`)).status).toBe(404);
+    expect((await ask(env, `/crops/${text.percent}`)).status).toBe(404);
+  });
+
+  it('moves an old text id in the query, decoded once by the query parser', async () => {
+    const { env, text, live } = setup();
+    for (const old of [text.percent, text.plus, text.wide]) {
+      const response = await ask(env, `/crops?n=2&crop=${encodeURIComponent(old)}`);
+      expect(response.status).toBe(OLD_URL_STATUS);
+      expect(location(response).search).toBe(`?n=2&crop=${publicId(live)}`);
+    }
+    // In a query, + is a space, and a value is not decoded a second time.
+    expect((await ask(env, `/crops?crop=${text.plus}`)).status).toBe(404);
+    expect((await ask(env, `/crops?crop=${encodeURIComponent(encodeURIComponent(text.percent))}`)).status).toBe(404);
+  });
+
+  it('shows a retired crop with no replacement at its public id, and moves other spellings there', async () => {
+    const { env, text, orphan } = setup();
+    expect((await ask(env, `/crops/${publicId(orphan)}`)).status).toBe(410);
+    expect(location(await ask(env, `/crops/${encodeURIComponent(text.orphan)}`)).pathname).toBe(`/crops/${publicId(orphan)}`);
+    expect(location(await ask(env, `/crops?crop=${publicId(orphan).toUpperCase()}`)).search).toBe(`?crop=${publicId(orphan)}`);
+    expect((await ask(env, `/crops/${publicId(cropId(pages, 8))}`)).status).toBe(404);
   });
 });
 
