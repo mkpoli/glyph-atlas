@@ -49,7 +49,8 @@ filters on.
   The load stops when a glyph's decision is not its latest glyph decision in the loaded
   `form_decisions`.
 - A decision names the list it was made on (`form_decisions.list`, whose name starts with the
-  cluster's number) in place of copying the cluster's glyphs into `units` and `crops`.
+  cluster's number) in place of copying the cluster's glyphs into `units` and `crops`. A trigger
+  refuses a decision whose list no `form_clusters` row holds, so none names a list already deleted.
 - `form_state` holds `lists`, the load in place (it keys cached forms answers), and `loading`, set
   while a load sends its rows; a trigger refuses decisions meanwhile.
 - The load recomputes each family's `count`, `assigned` and `rejected`. The Worker's recount after a

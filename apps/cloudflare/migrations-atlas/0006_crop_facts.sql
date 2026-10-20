@@ -31,9 +31,14 @@ CREATE TABLE form_glyphs(crop INTEGER PRIMARY KEY, family TEXT NOT NULL, cluster
 CREATE INDEX form_glyph_cluster ON form_glyphs(cluster) WHERE cluster IS NOT NULL;
 
 -- A cluster decision names the list it was made on (`list`) in place of copying its glyphs into `units`
--- and `crops`; a list any decision names is kept in R2.
+-- and `crops`; a list any decision names is kept in R2. A decision names a list some cluster holds now,
+-- so none names a list the cleanup has already deleted.
 ALTER TABLE form_decisions ADD COLUMN list TEXT;
 CREATE INDEX form_decision_list ON form_decisions(list) WHERE list IS NOT NULL;
+CREATE INDEX form_cluster_list ON form_clusters(list);
+CREATE TRIGGER form_decision_list_current BEFORE INSERT ON form_decisions
+  WHEN NEW.list IS NOT NULL AND NOT EXISTS (SELECT 1 FROM form_clusters WHERE list = NEW.list)
+BEGIN SELECT RAISE(ABORT, 'The cluster has changed; reload the forms.'); END;
 
 -- The clustering in place: `lists` names the load (its run) and keys the Worker's cached forms answers;
 -- `loading` is 1 while a load is sending its rows, and no decision is recorded meanwhile.

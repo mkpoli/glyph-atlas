@@ -155,7 +155,8 @@ def drop_0006(root, remote):
     """A layout loaded before migration 0006 (and before builds named themselves in `codes`)."""
     for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
         db.executescript("""
-          DROP TRIGGER form_decision_while_loading; DROP TABLE form_state; DROP INDEX form_decision_list;
+          DROP TRIGGER form_decision_while_loading; DROP TRIGGER form_decision_list_current; DROP TABLE form_state;
+          DROP INDEX form_decision_list;
           ALTER TABLE form_decisions DROP COLUMN list; DROP TABLE form_glyphs; DROP TABLE form_clusters;
           DROP TABLE form_families; DELETE FROM codes WHERE field='build';""")
         db.commit()
@@ -279,6 +280,13 @@ def test_a_list_no_row_or_decision_names_is_deleted_after_the_cache_time(layout,
     manifest = root / "out" / "forms" / "manifest.json.gz"
     held = body(manifest)
     assert held[f"{first}.json.gz"] is None and isinstance(held[f"families/{family}.json.gz"], int)
+    # A decision names only a list some cluster holds now: the first list is no cluster's any more.
+    with pytest.raises(sqlite3.IntegrityError, match="cluster has changed"):
+        db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, cluster, revision, units, crops, note, list) "
+                   "VALUES(2, 'd10', '2026-10-21', 'a', 'cluster', 'U+304B', 'U+304B:c1', 'r1', '[]', '[]', '', ?)", (first,))
+    db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, cluster, revision, units, crops, note, list) "
+               "VALUES(2, 'd10', '2026-10-21', 'a', 'cluster', 'U+304B', 'U+304B:c1', 'r1', '[]', '[]', '', NULL)")
+    db.rollback()
     assert not remote.removed
     # Two hours on, the next load deletes the family index nothing names; the list a decision names stays.
     manifest.write_bytes(gzip.compress(json.dumps({k: v and v - 7200 for k, v in held.items()}).encode()))
