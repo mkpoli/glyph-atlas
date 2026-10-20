@@ -66,6 +66,16 @@ describe('rejecting', () => {
     expect(reverted[0][2]).toEqual({ by: 'admin', reason: '', reviewer: [2, 3] });
     expect(out.next).toBeNull();
     await expect(reject(env, 'admin', { submissions: [] }, tools)).rejects.toMatchObject({ status: 422 });
+  });
+  it('never takes up an admin\'s flag request: one named is refused, and one among a reviewer\'s is passed over', async () => {
+    const db = atlas(); submissions(db);
+    db.prepare('INSERT INTO submissions(id,key,actor,request,response,at,undone) VALUES(6,?,2,?,?,60,0)')
+      .run('u1:f1', JSON.stringify({ target: '@flags', input: { finding: 'x', glyphs: [] } }), '{}');
+    const env = { ATLAS: d1(db) } as unknown as Env;
+    await expect(reject(env, 'admin', { submissions: ['u1:f1', 'u1:s1'] }, tools)).rejects.toMatchObject({ status: 409 });
+    expect(reverted).toEqual([]);
+    await reject(env, 'admin', { user: 'u1' }, tools);
+    expect(reverted.map(r => r[0])).toEqual([5, 2, 1]);
     await expect(reject(env, 'admin', {}, tools)).rejects.toMatchObject({ status: 422 });
   });
 });

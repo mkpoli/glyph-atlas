@@ -146,11 +146,15 @@ const REJECT_PAGE = 40;
 // Each crop a rejection puts back costs a few queries, and one request may make a thousand: a page
 // stops before the crops it has put back pass this many.
 const REJECT_CROPS = 250;
-const SUBMISSION = `id,key,actor,at,undone,(SELECT count(*) FROM events e WHERE e.submission=submissions.id AND e.kind IN ${REVIEW_KINDS}) AS crops`;
+// An admin's flag request is a submission too, but no review: nothing puts a flag back, so a rejection
+// never takes one up.
+const FLAG_REQUEST = `iif(json_valid(request),json_extract(request,'$.target'),NULL)='@flags'`;
+const SUBMISSION = `id,key,actor,at,undone,(SELECT count(*) FROM events e WHERE e.submission=submissions.id AND e.kind IN ${REVIEW_KINDS}) AS crops,
+  ${FLAG_REQUEST} AS flag`;
 export const rejectNamedQuery = () => `SELECT ${SUBMISSION} FROM submissions WHERE key IN (SELECT value FROM json_each(?)) AND undone=0
   ORDER BY at DESC,id DESC`;
 export const rejectReviewerQuery = () => `SELECT ${SUBMISSION} FROM submissions WHERE undone=0 AND actor IN (SELECT value FROM json_each(?1))
-  AND (at,id)<(?2,?3) ORDER BY at DESC,id DESC LIMIT ?4`;
+  AND (at,id)<(?2,?3) AND NOT coalesce(${FLAG_REQUEST},0) ORDER BY at DESC,id DESC LIMIT ?4`;
 
 export async function reject(env: Env, admin: string, input: Json, tools: AdminTools) {
   const reason = tools.text(input.reason ?? '', 500, 'reason') ?? '';
@@ -158,7 +162,8 @@ export async function reject(env: Env, admin: string, input: Json, tools: AdminT
   if (Array.isArray(input.submissions)) {
     const keys = input.submissions.slice(0, REJECT_PAGE).map((key: unknown) => tools.text(key, 256, 'submission', true)!);
     if (!keys.length) throw new Problem(422, 'Name the submissions to reject.');
-    rows = (await env.ATLAS.prepare(rejectNamedQuery()).bind(JSON.stringify(keys)).all<Submission & { crops: number }>()).results;
+    rows = (await env.ATLAS.prepare(rejectNamedQuery()).bind(JSON.stringify(keys)).all<Submission & { crops: number; flag: number }>()).results;
+    if (rows.some(row => (row as { flag?: number }).flag)) throw new Problem(409, 'A flag is not a review, so it cannot be rejected.');
   } else {
     reviewer = await reviewerActors(env, input, tools);
     const before = input.next ? decodeCursor(tools.text(input.next, 512, 'cursor', true)!) : { at: Number.MAX_SAFE_INTEGER, id: 0 };
