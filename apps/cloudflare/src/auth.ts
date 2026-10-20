@@ -8,6 +8,7 @@ import { admin, anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins
 import { passkey } from '@better-auth/passkey';
 import { MAIL, signInMail } from './mail';
 import { recordProfile } from './connections';
+import { writesPaused } from './freeze';
 
 export type Viewer = { id: string; name: string; image: string | null; anonymous: boolean; admin: boolean };
 type Auth = ReturnType<typeof build>;
@@ -44,7 +45,7 @@ export const LEGACY_REVIEWER = /^reviewer-[0-9a-f]{8}$/;
 const GENERATED = /^anon-[0-9a-f]{6}$/;
 const generatedName = () => 'anon-' + crypto.randomUUID().slice(0, 6);
 
-function build(env: Env, origin: string) {
+function build(env: Env, origin: string, paused: boolean) {
   return betterAuth({
     appName: 'Glyph Atlas',
     baseURL: origin,
@@ -64,6 +65,9 @@ function build(env: Env, origin: string) {
       updateAge: 60 * 60 * 24,
       // A signed copy of the session in a cookie answers most requests without reading D1.
       cookieCache: { enabled: true, maxAge: 5 * 60 },
+      // While writes are paused a session is read as it stands: never extended, and an expired one is
+      // not deleted on a read.
+      ...(paused ? { disableSessionRefresh: true, deferSessionRefresh: true } : {}),
     },
     advanced: {
       ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
@@ -71,7 +75,8 @@ function build(env: Env, origin: string) {
       // isolate, which made schema checks the most frequent statement on the database.
       database: { generateId: () => crypto.randomUUID(), validateSchema: false },
     },
-    rateLimit: { enabled: true, storage: 'database', window: 60, max: 60, customRules: {
+    // Paused, the counts are kept in the isolate, since each request would otherwise write one.
+    rateLimit: { enabled: true, storage: paused ? 'memory' : 'database', window: 60, max: 60, customRules: {
       // A code costs a mail; an address gets three a minute and a guess at a code ten.
       '/email-otp/send-verification-otp': { window: 60, max: 3 },
       '/sign-in/email-otp': { window: 60, max: 10 },
@@ -165,11 +170,12 @@ function build(env: Env, origin: string) {
   });
 }
 
-// One instance per origin and isolate: the options are the same for every request.
+// One instance per origin, freeze state and isolate: the options are the same for every request.
 const built = new Map<string, Auth>();
 export function auth(env: Env, origin: string): Auth {
-  let found = built.get(origin);
-  if (!found) built.set(origin, found = build(env, origin));
+  const paused = writesPaused(env), key = `${paused ? 'paused ' : ''}${origin}`;
+  let found = built.get(key);
+  if (!found) built.set(key, found = build(env, origin, paused));
   return found;
 }
 

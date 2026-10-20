@@ -5,6 +5,7 @@
 import { withDating } from './dating';
 import { formProblem, isSequence } from './representation';
 import { refiled } from './category';
+import { writesPaused } from './freeze';
 type Json = Record<string, any>;
 export type FormTools = {
   fail: (status: number, message: string, extra?: Record<string, unknown>) => never;
@@ -400,7 +401,7 @@ export async function formsRoute(env: Env, request: Request, path: string, q: UR
     follow();
     return decided;
   }
-  if (state.following && !state.loading) follow();
+  if (state.following && !state.loading && !writesPaused(env)) follow();
   const url = new URL(request.url);
   if (path === '/atlas/forms/families')
     return (await cached(url, state, 'families', () => families(env), ctx)) ?? tools.fail(404, 'No clustering has been published.');
