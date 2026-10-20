@@ -134,12 +134,13 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
    ones), merge its images into the map (`media_map.py`) and publish the answers (`answers.py`).
 5. **Move the history:** `history.py` translates reviews, submissions, seen marks, skips, favourites,
-   claims, form decisions, suspects and shapes from the copies into `out/history.sqlite`
+   claims, form decisions, the corpus glyphs' characters before a forms decision moved them
+   (`form_bases`, `0013_forms.sql`), suspects and shapes from the copies into `out/history.sqlite`
    (`migrations-atlas/0003_history.sql`), with every text id resolved through `out/mirror.sqlite` and
    never through a redirect, and writes a per-table report; it exits 1 if any row stops the move. It
    also writes the earlier cuts, the tombstones and the marks the publisher applies. An event on a crop
    the mirror lacks stops the run until `publish.py out/history-tombstones.sqlite` has numbered its
-   tombstone. `load_history.py` then applies `0003_history.sql` (which numbers the mark states `seen`
+   tombstone. `load_history.py` then applies `0003_history.sql` and `0013_forms.sql` (the first numbers the mark states `seen`
    and `hard`; the mirror takes the same numbers), loads every translated row in stamped parts, sets
    each pending marked crop's state to its mark one revision on with an event, and writes
    `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut. `answers.py`
@@ -349,7 +350,6 @@ answers:
   `rejections`), including `writes_word` claims;
 - reviews (`events`, `submissions`, `skips`, `seen`, `actors`), accounts (`user`, `session`,
   `account`, `account_profiles`, `passkey`, `verification`, `rateLimit`) and `favourites`;
-- `form_bases` (a corpus glyph's character and family before a form decision moved it);
 - `representations` (form anchors), which form claims write: they move with the forms;
 - search names for characters that first appear after the first build;
 - `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the

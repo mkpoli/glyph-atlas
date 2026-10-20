@@ -94,8 +94,11 @@ From the dry run on 20 October 2026 (110,292 collected crops' readings, the 5828
    `form_bases(crop, char)` table (migration 0013) keeps the character before the first follow so a
    withdrawn form restores it. Built in the Worker: a decision lists its unnamed corpus glyphs (kind 1,
    revision 0), and each drain batch moves up to 500 of them in one transaction, with their counts
-   in `tally` in the current generation. The old database's `form_bases` rows are not moved by the
-   history load yet, and a publication does not yet carry a followed character into its answers.
+   in `tally` in the current generation. The history load moves the old database's `form_bases`
+   rows (crop through the mirror, character as its grapheme). A publish never writes an unnamed
+   corpus glyph's new upstream character over a followed one: a glyph with a `form_bases` row keeps
+   its character and the new one becomes its base, which a withdrawn form restores; any other unnamed
+   glyph takes it. The answers a publication writes do not yet count followed characters.
 6. Republishing the clustering: `form_state` and the trigger are built. After the cutover the
    clustering load reads `work/forms/current` (`clusters.json`, `units.parquet`) in place of the old
    database's copies, and takes glyph-atlas-v3's own `form_decisions`, carrying each cluster decision
