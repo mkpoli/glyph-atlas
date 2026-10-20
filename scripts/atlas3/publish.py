@@ -47,7 +47,7 @@ from pathlib import Path
 
 import media_map
 import votes
-from build import CORPUS_PAGE, PAGE, bundle_entry, char_text, replacement, shuffle
+from build import BOOK_RUNS, CORPUS_PAGE, PAGE, bundle_entry, char_text, replacement, run_form, shuffle
 
 ROOT = Path(__file__).resolve().parents[2]
 # Copies of the live tables and the build output live outside the repository.
@@ -166,7 +166,6 @@ class Mirror:
         self.ids = sqlite3.connect(OUT / "mirror.sqlite")
         self.ids.executescript("""
           CREATE TABLE IF NOT EXISTS book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
-          CREATE TABLE IF NOT EXISTS run_vertical(first INTEGER, size INTEGER, vertical INTEGER, PRIMARY KEY(first, size)) WITHOUT ROWID;
           CREATE TABLE IF NOT EXISTS pending(run TEXT PRIMARY KEY);
           CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
         """)
@@ -177,6 +176,8 @@ class Mirror:
         for db in (self.atlas, self.runs):
             db.execute("CREATE TABLE IF NOT EXISTS imports(stamp TEXT PRIMARY KEY, at INTEGER NOT NULL)")
         self.runs.execute("CREATE INDEX IF NOT EXISTS run_first_all ON runs(first)")
+        # A book's grid is counted again from its runs when a publish changes them (`book_statements`).
+        self.runs.execute("CREATE INDEX IF NOT EXISTS run_book_all ON runs(book, size, graphemes)")
         self.atlas.commit()
         self.runs.commit()
         self.head, self.runs_sql = [], []
@@ -341,6 +342,44 @@ def fits(groups):
     for group in groups:
         if long := [s for s in group if len(s.encode()) > STATEMENT_BYTES]:
             sys.exit(f"a statement of {len(long[0].encode())} bytes is over D1's limit, nothing sent: {long[0][:200]}")
+
+
+def book_statements(runs, changes):
+    """The statements that bring `run_books` to each touched book's grid: its counts from the local
+    runs moved by `changes` ({(book, size, graphemes): [n, down]}), BOOK_RUNS of each length."""
+    touched = sorted({k[0] for k in changes})
+    counted = defaultdict(lambda: [0, 0])
+    for i in range(0, len(touched), 500):
+        chunk = touched[i:i + 500]
+        for book_, size, g, n, down in runs.execute(
+                f"SELECT book, size, graphemes, count(*), sum(vertical) FROM runs WHERE book IN ({','.join('?' * len(chunk))}) "
+                "AND graphemes <> '' GROUP BY book, size, graphemes", chunk):
+            counted[(book_, size, g)] = [n, down]
+    for key, (dn, dd) in changes.items():
+        counted[key][0] += dn
+        counted[key][1] += dd
+    grids = defaultdict(list)
+    for (book_, size, g), (n, down) in counted.items():
+        if n > 0:
+            grids[(book_, size)].append((g, n, down))
+    want = {(book_, size, g): (n, down) for (book_, size), rows in grids.items()
+            for g, n, down in sorted(rows, key=lambda r: (-r[1], r[0]))[:BOOK_RUNS]}
+    have = {}
+    for i in range(0, len(touched), 500):
+        chunk = touched[i:i + 500]
+        for book_, size, g, n, down in runs.execute(
+                f"SELECT book, size, graphemes, n, down FROM run_books WHERE book IN ({','.join('?' * len(chunk))})", chunk):
+            have[(book_, size, g)] = (n, down)
+    out = []
+    for key in sorted(have.keys() | want.keys()):
+        if have.get(key) == want.get(key):
+            continue
+        where = f"book={key[0]} AND size={key[1]} AND graphemes={lit(key[2])}"
+        if key in have:
+            out.append(f"DELETE FROM run_books WHERE {where};")
+        if key in want:
+            out.append(insert("run_books", ("book", "size", "graphemes", "n", "down"), (*key, *want[key])))
+    return out
 
 
 def write_parts(run, name, groups):
@@ -709,6 +748,8 @@ def main():
     # Runs: those starting at this catalogue's crops follow it; those touching a retired crop go.
     runs_note = ""
     if (crop_ids and "unit_ngrams" in tables) or retired:
+        if not {r[1] for r in m.runs.execute("PRAGMA table_info(runs)")} >= {"form", "vertical"}:
+            sys.exit("the local runs lack their written forms; runs.py --send loads them first")
         want, missing = {}, 0
         if "unit_ngrams" in tables:
             for r in src.execute("SELECT * FROM unit_ngrams"):
@@ -724,7 +765,8 @@ def main():
                 if retired & set(members):
                     continue
                 key = (r["size"], r["graphemes"] or "", r["hand_order"], shuffle(first), first)
-                want[key] = (members[1], members[2] if len(members) > 2 else None, m.book(r["document"]), r["vertical"])
+                want[key] = (members[1], members[2] if len(members) > 2 else None, m.book(r["document"]),
+                             run_form(r["text"], r["graphemes"]), r["vertical"])
                 m.runs_seen.add(key)
         if missing:
             sys.exit(f"{missing} runs name crops with no id; nothing published")
@@ -742,25 +784,35 @@ def main():
                 sql += f" OR second IN ({','.join('?' * len(gone))}) OR third IN ({','.join('?' * len(gone))})"
                 args = chunk + gone + gone
             for r in m.runs.execute(sql, args):
-                vertical = m.ids.execute("SELECT vertical FROM run_vertical WHERE first=? AND size=?", (r["first"], r["size"])).fetchone()
-                have[tuple(r[k] for k in RUN_KEY)] = (r["second"], r["third"], r["book"], vertical[0] if vertical else 0)
-        delta = defaultdict(lambda: [0, 0])
+                have[tuple(r[k] for k in RUN_KEY)] = (r["second"], r["third"], r["book"], r["form"], r["vertical"])
+        # Each count a changed run moves: the site's by graphemes, its written form's, its book's.
+        delta, forms, books = defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0])
+
+        def count(key, value, sign):
+            for counts in (delta[key[:2]], *([forms[(*key[:2], value[3])]] if value[3] is not None else []),
+                           *([books[(value[2], *key[:2])]] if key[1] else [])):
+                counts[0] += sign
+                counts[1] += sign * value[4]
         for key, value in have.items():
             if want.get(key) != value:
                 m.runs_sql.append("DELETE FROM runs WHERE " + " AND ".join(f"{c}={lit(v)}" for c, v in zip(RUN_KEY, key)) + ";")
-                delta[key[:2]][0] -= 1
-                delta[key[:2]][1] -= value[3]
+                count(key, value, -1)
         for key, value in want.items():
             if have.get(key) != value:
-                m.runs_sql.append(insert("runs", (*RUN_KEY, "second", "third", "book"), (*key, *value[:3])))
-                m.ids.execute("INSERT OR REPLACE INTO run_vertical VALUES(?,?,?)", (key[4], key[0], value[3]))
-                delta[key[:2]][0] += 1
-                delta[key[:2]][1] += value[3]
+                m.runs_sql.append(insert("runs", (*RUN_KEY, "second", "third", "book", "form", "vertical"), (*key, *value)))
+                count(key, value, 1)
         for (size, graphemes), (dn, dd) in delta.items():
             if dn or dd:
                 m.runs_sql.append(f"INSERT INTO run_stats(size,graphemes,n,down) VALUES({size},{lit(graphemes)},{dn},{dd}) "
                                   "ON CONFLICT(size,graphemes) DO UPDATE SET n=n+excluded.n, down=down+excluded.down;")
                 m.runs_sql.append(f"DELETE FROM run_stats WHERE size={size} AND graphemes={lit(graphemes)} AND n<=0;")
+        for (size, graphemes, form), (dn, dd) in forms.items():
+            if dn or dd:
+                where = f"size={size} AND graphemes={lit(graphemes)} AND form={lit(form)}"
+                m.runs_sql.append(f"INSERT INTO run_forms(size,graphemes,form,n,down) VALUES({size},{lit(graphemes)},{lit(form)},{dn},{dd}) "
+                                  "ON CONFLICT(size,graphemes,form) DO UPDATE SET n=n+excluded.n, down=down+excluded.down;")
+                m.runs_sql.append(f"DELETE FROM run_forms WHERE {where} AND n<=0;")
+        m.runs_sql += book_statements(m.runs, {k: v for k, v in books.items() if v != [0, 0]})
         runs_note = f", {len(m.runs_sql)} run statements"
     # Runs this catalogue cannot rebuild: a relabelled crop that is the second or third of a run
     # anchored on a crop outside the catalogue keeps that run's old text until its first is published.

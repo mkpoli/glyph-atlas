@@ -97,6 +97,30 @@ def replacement(text_id, redirects, live):
         at = redirects[at]
 
 
+def run_form(text, graphemes):
+    """How a run is written where that differs from its graphemes; None where it is written as them,
+    and for a run with no text."""
+    return text if text and graphemes and text != graphemes else None
+
+
+# A book's grid lists this many runs of each length (`/atlas/ngrams`), most frequent first, ties by
+# graphemes in code point order, as SQLite orders text.
+BOOK_RUNS = 480
+
+
+def book_runs(runs, books=None):
+    """Each book's BOOK_RUNS most frequent runs of each length, as `run_books` rows, from the runs
+    table; only `books` when given."""
+    where = "graphemes <> ''" + (f" AND book IN ({','.join('?' * len(books))})" if books is not None else "")
+    counted = defaultdict(list)
+    for book_, size, g, n, down in runs.execute(
+            f"SELECT book, size, graphemes, count(*), sum(vertical) FROM runs WHERE {where} GROUP BY book, size, graphemes",
+            list(books or ())):
+        counted[(book_, size)].append((g, n, down))
+    return [(book_, size, g, n, down) for (book_, size), rows in counted.items()
+            for g, n, down in sorted(rows, key=lambda r: (-r[1], r[0]))[:BOOK_RUNS]]
+
+
 STATE = {"pending": 0, "checked": 1, "flagged": 2}
 STYLE = {"cursive": 0, "running": 1, "unassessed": 2, "mixed": 3, "formal": 4, "printed": 5}
 
@@ -117,7 +141,6 @@ def main():
         next_slot INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE books(key TEXT PRIMARY KEY, id INTEGER NOT NULL UNIQUE) WITHOUT ROWID;
       CREATE TABLE codes(field TEXT, key TEXT, code INTEGER, PRIMARY KEY(field, key)) WITHOUT ROWID;
-      CREATE TABLE run_vertical(first INTEGER, size INTEGER, vertical INTEGER, PRIMARY KEY(first, size)) WITHOUT ROWID;
       CREATE TABLE book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
       CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
     """)
@@ -270,25 +293,25 @@ def main():
     runs = sqlite3.connect(OUT / "atlas-runs.sqlite")
     runs.executescript(schema(RUNS_SCHEMA))
     ngrams = src("unit_ngrams")
-    out, stats, missing, vertical = [], defaultdict(lambda: [0, 0]), 0, []
+    out, stats, forms, missing = [], defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0]), 0
     for r in ngrams.execute("SELECT * FROM unit_ngrams"):
         a, b = ids.get(r["first"]), ids.get(r["second"])
         c = ids.get(r["third"]) if r["third"] else None
         if a is None or b is None or (r["third"] and c is None):
             missing += 1
             continue
-        g = r["graphemes"] or ""
-        out.append((r["size"], g, r["hand_order"], shuffle(a), a, b, c, book(r["document"])))
-        vertical.append((a, r["size"], r["vertical"]))
-        s = stats[(r["size"], g)]
-        s[0] += 1
-        s[1] += r["vertical"]
-    runs.executemany("INSERT OR IGNORE INTO runs(size,graphemes,hand,shuffle,first,second,third,book) VALUES(?,?,?,?,?,?,?,?)", out)
+        g, form = r["graphemes"] or "", run_form(r["text"], r["graphemes"])
+        out.append((r["size"], g, r["hand_order"], shuffle(a), a, b, c, book(r["document"]), form, r["vertical"]))
+        for counts in (stats[(r["size"], g)], *([forms[(r["size"], g, form)]] if form is not None else [])):
+            counts[0] += 1
+            counts[1] += r["vertical"]
+    runs.executemany("INSERT OR IGNORE INTO runs(size,graphemes,hand,shuffle,first,second,third,book,form,vertical) "
+                     "VALUES(?,?,?,?,?,?,?,?,?,?)", out)
     runs.executemany("INSERT INTO run_stats(size,graphemes,n,down) VALUES(?,?,?,?)", [(k[0], k[1], v[0], v[1]) for k, v in stats.items()])
+    runs.executemany("INSERT INTO run_forms(size,graphemes,form,n,down) VALUES(?,?,?,?,?)", [(*k, *v) for k, v in forms.items()])
+    runs.executemany("INSERT INTO run_books(book,size,graphemes,n,down) VALUES(?,?,?,?,?)", book_runs(runs))
     runs.commit()
-    mirror.executemany("INSERT INTO run_vertical VALUES(?,?,?)", vertical)
-    mirror.commit()
-    print(f"runs {len(out)} stats {len(stats)} skipped {missing}", flush=True)
+    print(f"runs {len(out)} stats {len(stats)} forms {len(forms)} skipped {missing}", flush=True)
     if missing:
         sys.exit(f"{missing} runs name crops the build does not have")
     # Runs can name books no crop row did; both copies of the book list take them.
