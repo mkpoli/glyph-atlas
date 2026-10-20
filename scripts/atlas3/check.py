@@ -36,7 +36,8 @@ History (decision record 0006), when `out/history.sqlite` exists (history.py):
   history-marks.json holds every live mark.
 - After the load: the local copy holds every row load_history.py wrote, equal to history.sqlite's;
   rows loaded with no marks set fail; each marked crop that was pending has its mark as state, with an
-  event at its revision and cut by the latest round not undone that showed it there.
+  event at its revision and cut by the latest round not undone that showed it there (of rounds at one
+  time, the highest submission id).
 - Accounts: with `accounts.sqlite`, every `actors.user` and `favourites.user` names a user, and every
   row (each session among them) is in the parts accounts.py load wrote for the copy.
 """
@@ -674,14 +675,13 @@ def check_history(report, name):
                 continue
             matched.add(e[0])
             text = mirror.execute("SELECT text FROM ids WHERE id=?", (m["crop"],)).fetchone()[0]
-            shown = [(at, key) for key, at, cut in seen_rows[text] if cut == r[2] and key not in undone]
-            latest = max(shown, default=(None, None))[0]
-            rounds = {key for at, key in shown if at == latest}
+            # Of rounds at one time, the highest submission id, as history.py and load_history.py pick it.
+            latest, _id, submission = max(((at, sub_id.get(key, -1), key) for key, at, cut in seen_rows[text]
+                                           if cut == r[2] and key not in undone), default=(None, None, None))
             got = {"cut": e[1], "gen": e[2], "actor": actor_key.get(e[3]), "submission": sub_key.get(e[4]), "at": e[5],
                    "state": states.get(e[6]), "actor id": e[3], "submission at": history.execute(
                        "SELECT at FROM submissions WHERE id=?", (e[4],)).fetchone()}
             got["submission at"] = got["submission at"] and got["submission at"][0]
-            submission = got["submission"] if got["submission"] in rounds else min(rounds, default=None)
             want = {"cut": r[2], "gen": 0, "actor": src_sub.get(submission, (None,))[0], "submission": submission, "at": latest,
                     "state": m["state"], "actor id": m["actor"], "submission at": m["at"]}
             differ = [f"{k} {v!r} expected, {got[k]!r} set" for k, v in want.items() if got[k] != v]

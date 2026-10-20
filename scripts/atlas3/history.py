@@ -422,9 +422,11 @@ def main():
     for cid, a, cut, _at, s in all_skips:
         if cut == 0 and s not in undone:
             skippers[cid].add(a)
+    # A mark rests on the latest round that showed the crop; of rounds at one time, the highest
+    # submission id, as load_history.py picks it.
     last_seen = {}
     for s, cid, cut, at in seen:
-        if cut == 0 and s not in undone and (cid not in last_seen or at > last_seen[cid][0]):
+        if cut == 0 and s not in undone and (cid not in last_seen or (at, s) > last_seen[cid]):
             last_seen[cid] = (at, s)
     recomputed = {cid: "hard" for cid, a in skippers.items() if len(a) >= 2}
     recomputed.update({cid: "seen" for cid in last_seen if cid not in recomputed})

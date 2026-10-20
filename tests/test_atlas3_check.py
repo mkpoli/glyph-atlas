@@ -359,3 +359,31 @@ def test_a_mark_event_names_the_latest_round_that_showed_the_crop(layout, monkey
     local.commit()
     assert check(monkeypatch) == 1
     assert line in report(root)
+
+
+def test_tied_rounds_mark_the_crop_by_the_highest_submission_id(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    # r-c:s3 and u1:s1 showed ex:a1 at one time; u1:s1 is numbered after r-c:s3 and is the one.
+    translated(root, monkeypatch, sources, history,
+               submissions=[sub("u1:s1", "u1", "2026-10-01T00:00:02Z"), sub("r-b:s2", "r-b", "2026-10-01T00:00:01Z"),
+                            sub("r-c:s3", "r-c", "2026-10-01T00:00:02Z")],
+               seen=[("ex:a1", "r-c:s3", json.dumps(A1), "p1", "2026-10-01T00:00:02Z"),
+                     ("ex:a1", "u1:s1", json.dumps(A1), "p1", "2026-10-01T00:00:02Z"),
+                     ("codh:g1", "u1:s1", json.dumps(OLD), "x", "2026-10-01T00:00:02Z")])
+    db = sqlite3.connect(root / "out" / "history.sqlite")
+    u1 = db.execute("SELECT id FROM actors WHERE key='u1'").fetchone()[0]
+    s1 = db.execute("SELECT id FROM submissions WHERE key='u1:s1'").fetchone()[0]
+    assert s1 > db.execute("SELECT id FROM submissions WHERE key='r-c:s3'").fetchone()[0]
+    marks = {m["crop"]: m for m in json.loads((root / "out" / "history-marks.json").read_text())}
+    assert marks[ids(root)["ex:a1"]]["actor"] == u1
+    load(publish, remote, monkeypatch)
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert local.execute("SELECT actor, submission FROM events WHERE crop = ? ORDER BY id DESC LIMIT 1",
+                         (ids(root)["ex:a1"],)).fetchone() == (u1, s1)
+    assert check(monkeypatch) == 0
+    # The other tied round fails.
+    rc = db.execute("SELECT id, actor FROM submissions WHERE key='r-c:s3'").fetchone()
+    local.execute("UPDATE events SET submission = ?, actor = ? WHERE crop = ? AND kind = 3", (*rc, ids(root)["ex:a1"]))
+    local.commit()
+    assert check(monkeypatch) == 1
+    assert "submission 'u1:s1' expected, 'r-c:s3' set" in report(root)
