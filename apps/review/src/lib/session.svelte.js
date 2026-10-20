@@ -59,8 +59,10 @@ export function createSession(account = { user: null, providers: [] }) {
       state.user = data?.user ? user(data.user) : null
       return state.user
     },
+    /** Sign out; a refusal leaves the reader signed in, as the browser still is, and throws its message. */
     async signOut() {
-      await (await authClient()).signOut()
+      const { error } = await (await authClient()).signOut()
+      if (error) throw new Error(error.message || t('signIn.error.other'))
       state.user = null
     },
     /** Open the sign-in form over the page. */
