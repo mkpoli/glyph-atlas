@@ -15,6 +15,7 @@
   "app.nav.aria": "主导航",
   "app.saved": "已保存",
   "app.keptHere": "已存于本设备",
+  "app.notSaved": "未能保存",
   "bulk.tileSelected": "，已选中",
   "bulk.tooMany": "短时间内修改过多，请稍候一分钟再试。",
   "bulk.refused.other": "{count}个在页面载入后已被修改或已被确认，已取消选择并显示其当前状态。",

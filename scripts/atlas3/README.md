@@ -210,9 +210,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
       then answers an `expiresAt` 90 days out.
    3. A favourite, set and read back; the history page; an old text-id URL, which answers the crop
       by its integer id.
-   4. A claim: a form claim of a value outside the crop's grapheme (an IDS), which writes the ledger
-      and no review, on a crop with no `current_claims` row (`SELECT count(*) FROM current_claims
-      WHERE crop=:crop` is 0).
+   4. A claim: a form claim of an IDS outside the crop's grapheme whose form already exists
+      (`SELECT count(*) FROM forms f JOIN representations r ON r.id=f.anchor WHERE r.scheme='ids'
+      AND r.value=:ids` is 1), on a crop with no `current_claims` row (`SELECT count(*) FROM
+      current_claims WHERE crop=:crop` is 0). It writes the ledger and the crop's claim, and no
+      review, representation or form.
    5. `POST /api/auth/sign-out` last; the read in 1 then answers null.
 
    The checks write these rows, and nothing else writes in the window. `:test` is the test
@@ -222,6 +224,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    ```sql
    -- glyph-atlas-v3
    DELETE FROM favourites WHERE user = :test;
+   DELETE FROM current_claims WHERE crop = :crop AND predicate = 'has_form'
+     AND subject IN (SELECT subject FROM assertions WHERE asserted_by = :test AND predicate = 'has_form');
    DELETE FROM ledger_submissions WHERE id IN (SELECT submission FROM assertions WHERE asserted_by = :test);
    DELETE FROM ledger_submissions WHERE id IN (SELECT submission FROM assertion_actions
      WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test));
@@ -229,7 +233,6 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    DELETE FROM assertion_evidence WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test);
    DELETE FROM assertion_premises WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test);
    DELETE FROM assertions WHERE asserted_by = :test;
-   DELETE FROM current_claims WHERE crop = :crop;
    DELETE FROM actors WHERE user = :test;
    -- glyph-atlas-accounts
    DELETE FROM rateLimit WHERE key >= '192.0.2.77|' AND key < '192.0.2.77}';
@@ -242,7 +245,9 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 
    The test account had no reviews, so its actor names no submission
    (`SELECT count(*) FROM submissions WHERE actor IN (SELECT id FROM actors WHERE user = :test)` is
-   0). Each delete reads by an index or a key range. Delete `wrangler.check.jsonc` and
+   0). Each delete reads by an index or a key range, and each reaches only the checks' rows: the
+   test account's own and the test account's claim on a crop nothing named before the window. The
+   IDS's form and representation were there before and stay. Delete `wrangler.check.jsonc` and
    `.dev.vars.cutover` after.
 
    Then upload the checked Worker, still paused, and make the version that will be deployed:

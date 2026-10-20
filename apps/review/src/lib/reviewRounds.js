@@ -60,3 +60,21 @@ export function mergeReferences(checked, seen, limit = REFERENCE_LIMIT) {
     .map(item => ({ ...item, referenceState: 'seen' }))
   return [...confirmed, ...others]
 }
+
+/**
+ * A round's first crops, less those in `away` (crops of saves kept on this device): pages from
+ * `page(offset)` until one leaves a crop, so kept crops do not empty a grapheme that holds more. Each
+ * further page reaches past at least one kept crop, so at most `away.size` more are read. Answers the
+ * last page with the crops left as `items` and where it stopped as `next_offset`.
+ */
+export async function firstCrops(page, away) {
+  let offset = 0, result, items = []
+  for (let reads = 0; reads <= away.size; reads++) {
+    result = await page(offset)
+    items = result.items.filter(item => !away.has(item.id))
+    const next = result.next_offset ?? offset + result.items.length
+    if (items.length || !result.items.length || next <= offset || next >= result.total) return { ...result, items, next_offset: next }
+    offset = next
+  }
+  return { ...result, items, next_offset: offset }
+}
