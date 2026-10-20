@@ -116,8 +116,10 @@ function build(env: Env, origin: string, paused: boolean) {
             if (!held) throw new APIError('BAD_REQUEST', { message: 'This name is an old reviewer id another reviewer may hold.' });
           },
         },
-        // A deleted user's rows here go first, then their favourites and links to actors in `ATLAS`. The
-        // mark made before keeps a deletion that stops between the two databases for the next one to finish.
+        // Better Auth deletes the user's sessions and sign-in accounts, runs `before`, which marks the user
+        // and deletes the anonymous users joined to it, then deletes the user. `after` removes their
+        // favourites and links to actors in `ATLAS` and their pictures; a deletion that stops before that
+        // is finished by the next one.
         delete: {
           before: async user => { await startForgetting(env, user.id) },
           after: async () => { await finishForgetting(env).catch(error => console.error(JSON.stringify({ event: 'forget_failed', error: String(error) }))) },
@@ -159,6 +161,9 @@ function build(env: Env, origin: string, paused: boolean) {
         disableDeleteAnonymousUser: true,
         // Signing in with an account from an anonymous session brings that session's work along.
         onLinkAccount: async ({ anonymousUser, newUser }) => {
+          // The link is kept, so that deleting the account deletes the anonymous user too.
+          await env.ACCOUNTS.prepare('INSERT OR IGNORE INTO anonymous_links(anonymous,user,at) VALUES(?,?,?)')
+            .bind(anonymousUser.user.id, newUser.user.id, new Date().toISOString()).run();
           // Its stars too; a crop the account had starred already keeps the account's own.
           await env.ATLAS.batch([
             env.ATLAS.prepare('UPDATE actors SET user=? WHERE user=?').bind(newUser.user.id, anonymousUser.user.id),

@@ -52,14 +52,33 @@ export async function actorPeople(env: Env, actors: Iterable<number | null | und
 // Unfinished deletions taken up at once.
 const RESUME = 20;
 
-/** Mark `user` as being deleted, before its rows in `ACCOUNTS` go. */
+/**
+ * Mark `user` as being deleted, before its rows in `ACCOUNTS` go. The anonymous users joined to it are
+ * marked and deleted with their sessions here, in the same batch.
+ */
 export async function startForgetting(env: Env, user: string) {
-  await env.ACCOUNTS.prepare('INSERT OR IGNORE INTO forgotten(user,at) VALUES(?,?)').bind(user, new Date().toISOString()).run();
+  const at = new Date().toISOString(), linked = 'SELECT anonymous FROM anonymous_links WHERE user=?';
+  await env.ACCOUNTS.batch([
+    env.ACCOUNTS.prepare('INSERT OR IGNORE INTO forgotten(user,at) VALUES(?,?)').bind(user, at),
+    env.ACCOUNTS.prepare(`INSERT OR IGNORE INTO forgotten(user,at) SELECT anonymous,? FROM anonymous_links WHERE user=?`).bind(at, user),
+    env.ACCOUNTS.prepare(`DELETE FROM session WHERE userId IN (${linked})`).bind(user),
+    env.ACCOUNTS.prepare(`DELETE FROM "user" WHERE id IN (${linked})`).bind(user),
+  ]);
+}
+
+/** Delete every picture `user` uploaded. */
+async function dropAvatars(env: Env, user: string) {
+  let cursor: string | undefined;
+  do {
+    const listed = await env.MEDIA.list({ prefix: `avatars/${user}/`, cursor });
+    if (listed.objects.length) await env.MEDIA.delete(listed.objects.map(object => object.key));
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
 }
 
 /**
  * Finish the deletion of every user marked as being deleted, a few at a time: their favourites and their
- * links to actors in `ATLAS` go, then the mark. The actors stay, so the history keeps its rows, unnamed.
+ * links to actors in `ATLAS` go, then their uploaded pictures in `MEDIA`, then the mark. The actors stay, so the history keeps its rows, unnamed.
  * Running it again after a failure repeats only what is left.
  */
 export async function finishForgetting(env: Env) {
@@ -73,6 +92,7 @@ export async function finishForgetting(env: Env) {
     env.ATLAS.prepare('DELETE FROM favourites WHERE user=?').bind(user),
     env.ATLAS.prepare('UPDATE actors SET user=NULL WHERE user=?').bind(user),
   ]));
+  for (const user of gone) await dropAvatars(env, user);
   if (done.length) await env.ACCOUNTS.prepare(`DELETE FROM forgotten WHERE user IN (${marks(done.length)})`).bind(...done).run();
   return gone;
 }
