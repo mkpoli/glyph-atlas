@@ -3,7 +3,8 @@ import { ROUND_MAX } from './rounds';
 import { held } from './held';
 import { RECORD_MAX, readRecords, recordKey, type RecordPointer } from './records';
 export { recordRanges } from './records';
-import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
+import { withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
+import { formsRoute } from './routes/forms';
 import { similarCrops } from './similar';
 import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
@@ -24,7 +25,6 @@ import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, h
 import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
 import { MediaIncomplete, mediaResponse } from './atlas3Media';
-export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 export { dateClaimsQuery, dateStatsQuery, datingQuery, tallyDates } from './dating';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
@@ -1985,9 +1985,7 @@ function text(value: unknown, max: number, name: string, required=false): string
   if(typeof value!=='string'||value.length>max||(required&&!value.trim()))throw new Problem(422,`Invalid ${name}.`);
   return compose(value.trim());
 }
-// A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
-const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp,
-  family:async(env,char)=>(await known(env,char).catch(()=>null))?.data.grapheme?.code_point||cp(char)};
+const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp};
 // What the ledger needs of the rest of the Worker (`ledger.ts`): a crop subject is a crop the site
 // holds, or a corpus glyph whose row a first claim writes, as a first review would.
 const ledgerTools: LedgerTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,canonical:value=>canonical(value),owned,

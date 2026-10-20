@@ -1,0 +1,249 @@
+import { afterEach, describe, expect, it } from 'bun:test';
+import { Database } from 'bun:sqlite';
+import { readdirSync, readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
+import { d1 } from '../forms.test';
+import { cropId, publicId } from '../atlas3';
+import { FOLLOW_BATCH, clusterGlyphsQuery, clusterQuery, familyClustersQuery, familyGlyphsQuery, followCorpus, followStatements,
+  formsRoute, glyphFamiliesQuery, listFollowQuery, memberDatesQuery, memberRowsQuery, recountQuery, stateQuery } from './forms';
+import { followCorpus as oldFollow, formsRoute as oldRoute } from './forms-old.fixture';
+
+const databases: Database[] = [];
+afterEach(() => { for (const db of databases.splice(0)) db.close(); });
+function migrated(dir: string) {
+  const db = new Database(':memory:'); databases.push(db);
+  const migrations = new URL(`../../${dir}/`, import.meta.url);
+  for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+  return db;
+}
+// Each read goes past the edge cache, which a test has none of.
+(globalThis as any).caches = { default: { match: async () => undefined, put: async () => {} } };
+const cp = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
+const tools = {
+  fail: (status: number, message: string): never => { throw new Error(`${status} ${message}`) },
+  body: async (request: Request) => request.json() as Promise<Record<string, any>>,
+  text: (value: unknown) => value as string, codePoints: cp,
+};
+// The old tool read a character's family from its card; these are the family's members.
+const KANA = new Set(['は', '𛂞', '𛂙']);
+const oldTools = { ...tools, family: async (_: Env, char: string) => KANA.has(char) ? 'U+306F' : cp(char) };
+
+const PAGE_ID = 9000, HEAD = 12, TAIL = 24;
+const FAMILY = 'U+306F', FORMS = JSON.stringify([{ char: 'は' }, { char: '𛂞' }, { char: '𛂙' }]);
+// Two clusters of は: A with 40 glyphs, B with 3; every glyph a corpus glyph of one book.
+const CLUSTERS = [{ key: 'U+306F/0', n: 1, size: 40, shape: 0, bySize: 1 }, { key: 'U+306F/1', n: 2, size: 3, shape: 1, bySize: 0 }];
+type Glyph = { old: string; crop: number; cluster: typeof CLUSTERS[number]; rank: number; image: string; split: string };
+const glyphs: Glyph[] = CLUSTERS.flatMap((c, ci) => Array.from({ length: c.size }, (_, rank) => {
+  const slot = ci * 100 + rank;
+  return { old: `codh:${c.n}-${rank}`, crop: cropId(PAGE_ID, slot), cluster: c, rank,
+    image: slot.toString(16).padStart(64, '0'), split: Array.from({ length: 7 }, (_, k) => String((rank * 7 + k) % (k + 2))).join('') };
+}));
+const DATING = { kind: 'copied', start: 1700, end: 1710, precision: 'decade', text: '宝永', label: '1700s', status: 'single', calendar: 'jp' };
+
+function oldDatabase() {
+  const db = migrated('migrations');
+  db.prepare(`INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision,rejected) VALUES(?,'は','は',?,2,?,0,'r1',0)`)
+    .run(FAMILY, glyphs.length, FORMS);
+  for (const c of CLUSTERS) {
+    const members = glyphs.filter(g => g.cluster === c);
+    db.prepare(`INSERT INTO form_clusters(id,family,label,count,coherence,shape_position,size_position,representatives) VALUES(?,?,?,?,0.5,?,?,?)`)
+      .run(c.key, FAMILY, c.key, c.size, c.shape, c.bySize, JSON.stringify(members.slice(0, HEAD).map(g => ({ id: g.old, image: `/atlas/media/${g.image}.webp` }))));
+  }
+  for (const g of glyphs) {
+    db.prepare(`INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES(?,?,?,?,?,?,?)`)
+      .run(g.old, FAMILY, g.cluster.key, g.rank, 1 - g.rank / 100, `/atlas/media/${g.image}.webp`, g.split);
+    db.prepare(`INSERT INTO corpus_units(id,character,family,shuffle,object,offset,size,document) VALUES(?,'は',?,?,'o',0,1,'hk:b')`).run(g.old, FAMILY, g.rank);
+  }
+  db.prepare(`INSERT INTO document_dating(document,axis,kind,start,end,precision,text,label,status,claims,calendar,source,resolver,export)
+    VALUES('hk:b','witness',?,?,?,?,?,?,?,'[]',?,'s','r','e')`).run(DATING.kind, DATING.start, DATING.end, DATING.precision, DATING.text, DATING.label, DATING.status, DATING.calendar);
+  db.exec(`INSERT INTO corpus_characters SELECT character,production,count(*),0 FROM corpus_units GROUP BY 1,2`);
+  return db;
+}
+
+// The objects crop_facts.py writes: each cluster's list, and the family's index of each cluster's
+// first and last glyphs.
+function newDatabase() {
+  const db = migrated('migrations-atlas'), objects = new Map<string, Uint8Array>();
+  db.exec(`INSERT INTO generation VALUES(0,5); INSERT INTO books(id,key) VALUES(1,'hk:b');
+    INSERT INTO graphemes(id,text,head) VALUES(1,'は',1),(2,'𛂞',1),(3,'𛂙',1);
+    INSERT INTO pages(id,key,book,rev) VALUES(${PAGE_ID},'corpus:codh:hk:b:0',1,1);`);
+  db.prepare(`INSERT INTO book_dates(book,axis,kind,start,end,precision,text,label,status,calendar,source) VALUES(1,'witness',?,?,?,?,?,?,?,?,'s')`)
+    .run(DATING.kind, DATING.start, DATING.end, DATING.precision, DATING.text, DATING.label, DATING.status, DATING.calendar);
+  const index: Record<string, any> = { family: FAMILY, clusters: {} };
+  for (const c of CLUSTERS) {
+    const members = glyphs.filter(g => g.cluster === c).map(g => [g.crop, g.rank, 1 - g.rank / 100, g.image, g.split, null, null]);
+    const list = `${c.n}-l${c.n}`;
+    objects.set(`v3/forms/${list}.json.gz`, gzipSync(JSON.stringify({ family: FAMILY, key: c.key, members })));
+    const look = members.map(m => [m[0], m[1], m[3], m[5], m[6]]);
+    index.clusters[String(c.n)] = { list, count: members.length, head: look.slice(0, HEAD), tail: look.slice(Math.max(HEAD, look.length - TAIL)) };
+    db.prepare(`INSERT INTO form_clusters(id,key,family,label,count,coherence,shape_position,size_position,list) VALUES(?,?,?,?,?,0.5,?,?,?)`)
+      .run(c.n, c.key, FAMILY, c.key, c.size, c.shape, c.bySize, list);
+  }
+  objects.set(`v3/forms/families/${FAMILY}-i.json.gz`, gzipSync(JSON.stringify(index)));
+  db.prepare(`INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,rejected,revision,list) VALUES(?,'は','は',?,2,?,0,0,'r1',?)`)
+    .run(FAMILY, glyphs.length, FORMS, `${FAMILY}-i`);
+  for (const g of glyphs)
+    db.prepare(`INSERT INTO crops(id,kind,book,char,cluster,state,quiz,shuffle) VALUES(?,1,1,1,?,0,1,?)`).run(g.crop, g.cluster.n, g.rank);
+  db.exec(`UPDATE form_state SET lists='run-1'`);
+  const bucket = { get: async (key: string) => objects.has(key) ? { body: new Response(objects.get(key)).body! } : null };
+  return { db, env: { ATLAS: d1(db), MEDIA: bucket } as unknown as Env, objects };
+}
+
+// The old answers in the new ids: each old glyph id becomes its crop's public id.
+const byOld = new Map(glyphs.map(g => [g.old, publicId(g.crop)]));
+const mapped = (value: any): any => typeof value === 'string' ? byOld.get(value) ?? value
+  : Array.isArray(value) ? value.map(mapped) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapped(v)])) : value;
+const ctx = (pending: Promise<unknown>[] = []) => ({ waitUntil: (p: Promise<unknown>) => pending.push(p) }) as unknown as ExecutionContext;
+
+function both() {
+  const old = oldDatabase(), fresh = newDatabase(), oldEnv = { DB: d1(old) } as unknown as Env;
+  const get = async (path: string, query = '') => {
+    const url = `https://atlas.test${path}${query ? '?' + query : ''}`, q = new URLSearchParams(query);
+    const p = decodeURI(path);
+    const body = async (r: any) => r instanceof Response ? await r.json() : r;
+    return [mapped(await body(await oldRoute(oldEnv, new Request(url), p, q, oldTools, ctx()))),
+      await body(await formsRoute(fresh.env, new Request(url), p, q, tools, ctx()))];
+  };
+  const decide = async (body: Record<string, any>) => {
+    const send = (b: object) => new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(b) });
+    const pendingOld: Promise<unknown>[] = [], pendingNew: Promise<unknown>[] = [];
+    const a = await oldRoute(oldEnv, send(body), '/atlas/forms/decisions', new URLSearchParams(), oldTools, ctx(pendingOld), 'u1') as any;
+    const units = body.units?.map((u: string) => byOld.get(u));
+    const b = await formsRoute(fresh.env, send(units ? { ...body, units } : body), '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(pendingNew), 'u1') as any;
+    await Promise.all([...pendingOld, ...pendingNew]);
+    // An undo names its glyphs in crop order, the old one in text id order.
+    const strip = ({ id: _id, at: _at, ...rest }: any) => ({ ...rest, undo: rest.undo.map((u: any) => u.units ? { ...u, units: [...u.units].sort() } : u) });
+    return [strip(mapped(a)), strip(b)];
+  };
+  return { old, fresh, get, decide };
+}
+
+async function views(get: ReturnType<typeof both>['get']) {
+  const paths: [string, string][] = [['/atlas/forms/families', ''], ['/atlas/forms/codes', ''],
+    [`/atlas/forms/families/${encodeURIComponent(FAMILY)}`, 'order=shape'], [`/atlas/forms/families/${encodeURIComponent(FAMILY)}`, 'order=size']];
+  for (const c of CLUSTERS) {
+    const key = c.key.split('/').map(encodeURIComponent).join('/');
+    paths.push([`/atlas/forms/clusters/${key}`, 'offset=0&limit=500&order=typical'], [`/atlas/forms/clusters/${key}`, 'offset=5&limit=10&order=unusual'],
+      [`/atlas/forms/split/${key}`, 'k=2'], [`/atlas/forms/split/${key}`, 'k=4&shown=3']);
+  }
+  for (const [path, query] of paths) {
+    const [a, b] = await get(path, query);
+    expect({ path, query, body: b }).toEqual({ path, query, body: a });
+  }
+}
+
+describe('the forms routes on glyph-atlas-v3', () => {
+  it('answer as the old routes did, through cluster, glyph, report, mixed and inherit decisions, and corpus glyphs follow', async () => {
+    const { old, fresh, get, decide } = both();
+    await views(get);
+    const steps: Record<string, any>[] = [
+      { kind: 'cluster', cluster: 'U+306F/0', form: '𛂞' },
+      { kind: 'glyph', units: ['codh:1-3', 'codh:1-20', 'codh:1-39'], form: '𛂙' },
+      { kind: 'glyph', units: ['codh:1-25', 'codh:1-30'], issue: 'crop' },
+      { kind: 'glyph', units: ['codh:1-26'], issue: 'character', character: '川' },
+      { kind: 'cluster', cluster: 'U+306F/1', issue: 'mixed' },
+      { kind: 'cluster', cluster: 'U+306F/1', form: 'は' },
+      { kind: 'inherit', units: ['codh:1-20'] },
+      { kind: 'cluster', cluster: 'U+306F/0', issue: 'character', character: '川' },
+    ];
+    for (const step of steps) {
+      const [a, b] = await decide(step);
+      expect(b).toEqual(a);
+      await views(get);
+    }
+    // Every corpus glyph's character, as the old drain left `corpus_units.character`.
+    const oldChars = Object.fromEntries((old.query('SELECT id,character FROM corpus_units').all() as any[]).map(r => [byOld.get(r.id), r.character]));
+    const newChars = Object.fromEntries((fresh.db.query('SELECT c.id,g.text FROM crops c LEFT JOIN graphemes g ON g.id=c.char').all() as any[])
+      .map(r => [publicId(r.id), r.text]));
+    expect(newChars).toEqual(oldChars);
+    expect(fresh.db.query('SELECT count(*) AS n FROM corpus_follow').get()).toEqual({ n: 0 });
+    // The counts moved in the current generation: one cell per character, nothing left at zero.
+    const tally = Object.fromEntries((fresh.db.query('SELECT g.text,t.n FROM tally t LEFT JOIN graphemes g ON g.id=t.char WHERE t.gen=5').all() as any[]).map(r => [r.text, r.n]));
+    const counted = new Map<string, number>();
+    for (const ch of Object.values(oldChars) as string[]) counted.set(ch, (counted.get(ch) ?? 0) + 1);
+    expect(tally).toEqual(Object.fromEntries([...counted].filter(([ch]) => ch !== 'は').map(([ch, n]) => [ch, n])
+      .concat([['は', (counted.get('は') ?? 0) - glyphs.length]]).filter(([, n]) => n !== 0)));
+  });
+
+  it('give a glyph its character back when no decision names a form for it, and leave a reviewed one alone', async () => {
+    const { fresh } = both();
+    const first = glyphs[0], reviewed = glyphs[1];
+    fresh.db.exec(`UPDATE crops SET revision=2 WHERE id=${reviewed.crop}`);
+    const send = (body: object) => formsRoute(fresh.env, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(body) }),
+      '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1');
+    await send({ kind: 'cluster', cluster: first.cluster.key, form: '𛂞' });
+    await followCorpus(fresh.env);
+    const char = (crop: number) => (fresh.db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(crop) as any).text;
+    expect([char(first.crop), char(reviewed.crop)]).toEqual(['𛂞', 'は']);
+    await send({ kind: 'cluster', cluster: first.cluster.key, form: null });
+    await followCorpus(fresh.env);
+    expect(char(first.crop)).toBe('は');
+    expect(fresh.db.query('SELECT count(*) AS n FROM tally WHERE n<>0').get()).toEqual({ n: 0 });
+  });
+
+  it('move a large decision in batches', async () => {
+    const { fresh } = both();
+    const many = Array.from({ length: FOLLOW_BATCH * 2 + 10 }, (_, i) => cropId(PAGE_ID + 1, i));
+    fresh.db.exec(`INSERT INTO pages(id,key,book,rev) VALUES(${PAGE_ID + 1},'p2',1,1)`);
+    for (const id of many) fresh.db.prepare('INSERT INTO crops(id,kind,book,char,cluster,state,quiz,shuffle) VALUES(?,1,1,1,1,0,1,0)').run(id);
+    fresh.db.exec(`INSERT INTO corpus_follow(crop) SELECT id FROM crops WHERE id>=${cropId(PAGE_ID + 1, 0)};
+      UPDATE form_clusters SET form='𛂞' WHERE id=1`);
+    await followCorpus(fresh.env);
+    expect(fresh.db.query(`SELECT count(*) AS n FROM crops WHERE char=2 AND id>=${cropId(PAGE_ID + 1, 0)}`).get()).toEqual({ n: many.length });
+    expect(fresh.db.query('SELECT count(*) AS n FROM corpus_follow').get()).toEqual({ n: 0 });
+  });
+
+  it('refuse a decision while a load sends its rows, and one on a list a load replaced', async () => {
+    const { fresh } = both();
+    const send = (body: object) => formsRoute(fresh.env, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(body) }),
+      '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1');
+    await expect(send({ kind: 'glyph', units: ['zzzz'], form: '𛂞' })).rejects.toThrow('422 Some glyphs are not in the current clustering.');
+    await expect(send({ kind: 'glyph', units: [publicId(glyphs[0].crop)], form: '只' })).rejects.toThrow('422 只 is not a form of this family.');
+    await expect(send({ kind: 'glyph', units: [publicId(glyphs[0].crop)], form: '⿱日𤴓' })).resolves.toMatchObject({ form: '⿱日𤴓', count: 1 });
+    expect(fresh.db.query('SELECT written_family FROM form_glyphs').get()).toEqual({ written_family: FAMILY });
+    const stale = await send({ kind: 'glyph', units: ['codh:unknown'], form: '𛂞' }) as Response;
+    expect(stale.status).toBe(409);
+    fresh.db.exec(`UPDATE form_state SET loading=1`);
+    await expect(send({ kind: 'cluster', cluster: 'U+306F/0', form: '𛂞' })).rejects.toThrow('503 The forms are being republished.');
+    fresh.db.exec(`UPDATE form_state SET loading=0`);
+    // A load replaced the cluster's list after the decision read the cluster: the trigger refuses it.
+    const atlas = d1(fresh.db), raced = { ...fresh.env, ATLAS: { ...atlas, batch: async (list: any[]) => {
+      fresh.db.exec(`UPDATE form_clusters SET list='1-new' WHERE id=1`);
+      return atlas.batch(list);
+    } } } as unknown as Env;
+    await expect(formsRoute(raced, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify({ kind: 'cluster', cluster: 'U+306F/0', form: '𛂞' }) }),
+      '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1')).rejects.toThrow('409 The cluster has changed; reload the forms.');
+    expect(fresh.db.query(`SELECT count(*) AS n FROM form_decisions WHERE kind='cluster'`).get()).toEqual({ n: 0 });
+  });
+
+  it('log each decision with the glyphs it names, a cluster decision with its list', async () => {
+    const { fresh } = both();
+    const send = (body: object) => formsRoute(fresh.env, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(body) }),
+      '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1');
+    await send({ kind: 'cluster', cluster: 'U+306F/0', form: '𛂞' });
+    await send({ kind: 'glyph', units: [publicId(glyphs[2].crop)], form: '𛂙' });
+    const log = await formsRoute(fresh.env, new Request('https://atlas.test/atlas/forms/decisions.jsonl'), '/atlas/forms/decisions.jsonl',
+      new URLSearchParams(), tools, ctx()) as Response;
+    const lines = (await log.text()).trim().split('\n').map(line => JSON.parse(line));
+    expect(lines.map(({ id: _i, at: _a, ...rest }) => rest)).toEqual([
+      { actor: 'u1', kind: 'cluster', family: FAMILY, form: '𛂞', cluster: 'U+306F/0', revision: 'r1', units: [], note: '', list: '1-l1' },
+      { actor: 'u1', kind: 'glyph', family: FAMILY, form: '𛂙', cluster: null, revision: 'r1', units: [publicId(glyphs[2].crop)], note: '' }]);
+    expect(fresh.db.query('SELECT crops FROM form_decisions WHERE kind=?').get('glyph')).toEqual({ crops: JSON.stringify([glyphs[2].crop]) });
+  });
+
+  it('read every table by an index', () => {
+    const { db } = newDatabase();
+    // The state reads the first row of `form_families` and of `corpus_follow`.
+    const state = (db.query('EXPLAIN QUERY PLAN ' + stateQuery()).all() as { detail: string }[]).map(r => r.detail);
+    expect(state.filter(line => /^SCAN /.test(line))).toEqual(['SCAN form_families', 'SCAN corpus_follow']);
+  const plans: [string, unknown[]][] = [ [familyClustersQuery('shape'), [FAMILY]], [familyClustersQuery('size'), [FAMILY]],
+      [familyGlyphsQuery(), [FAMILY]], [clusterQuery(), ['k']], [memberRowsQuery(), ['[]']], [memberDatesQuery(), ['[]']],
+      [clusterGlyphsQuery(), [1]], [glyphFamiliesQuery(), ['[]']], [recountQuery(), [FAMILY]], [listFollowQuery(), ['[]']],
+      ...followStatements().map(sql => [sql, []] as [string, unknown[]])];
+    for (const [sql, args] of plans) {
+      const scans = (db.query('EXPLAIN QUERY PLAN ' + sql).all(...(args as any[])) as { detail: string }[]).map(r => r.detail)
+        .filter(line => /^SCAN /.test(line) && !/^SCAN (j|json_each|CONSTANT ROW)\b/.test(line) && !/^SCAN (t|w|corpus_follow)\b/.test(line));
+      expect({ sql, scans }).toEqual({ sql, scans: [] });
+    }
+  });
+});
