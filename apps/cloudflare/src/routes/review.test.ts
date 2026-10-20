@@ -247,6 +247,13 @@ describe('an undo', () => {
     expect((await send(env, `/atlas/rounds/${uuid(1)}/undo`, {}, 'u2')).status).toBe(404);
   });
 
+  it('refuses an admin\'s corpus flags, which are no review', async () => {
+    const { db, env } = setup();
+    db.exec(`INSERT OR IGNORE INTO actors(key,user,via) VALUES('u1','u1','account');
+      INSERT INTO submissions(key,actor,request,response,at) SELECT 'u1:${uuid(1)}',id,'{"input":{},"target":"@flags"}','{}',1 FROM actors WHERE key='u1'`);
+    expect(await send(env, `/atlas/rounds/${uuid(1)}/undo`, {})).toEqual({ status: 409, body: { detail: 'A flag is not a review, so it cannot be undone.' } });
+  });
+
   it('restores a mark another round still holds, and a redrawn box it replaced', async () => {
     const { db, env, ids } = setup();
     await send(env, '/atlas/rounds', { id: uuid(1), grapheme: 'U+306F', seen: [local(ids[3])] }, 'u2');

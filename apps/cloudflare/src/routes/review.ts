@@ -522,9 +522,12 @@ export type Submission = { id: number; key: string; actor: number; at: number; u
 /** Undo the user's own submission named by the id its client gave it, under any actor they hold. */
 export async function undo(env: Env, request: Request, user: string, id: string) {
   await body(request);
-  const submission = await env.ATLAS.prepare(`SELECT id,key,actor,at,undone FROM submissions
-    WHERE key IN (SELECT key||':'||?1 FROM actors WHERE user=?2)`).bind(id, user).first<Submission>();
-  if (!submission) throw new Problem(404, 'No saved round belongs to this reviewer.');
+  const found = await env.ATLAS.prepare(`SELECT id,key,actor,at,undone,request FROM submissions
+    WHERE key IN (SELECT key||':'||?1 FROM actors WHERE user=?2)`).bind(id, user).first<Submission & { request: string }>();
+  if (!found) throw new Problem(404, 'No saved round belongs to this reviewer.');
+  // An admin's corpus flags are saved as a submission too; they are no review.
+  if (JSON.parse(found.request).target === '@flags') throw new Problem(409, 'A flag is not a review, so it cannot be undone.');
+  const { request: _, ...submission } = found;
   return { id, ...await revert(env, submission, await actorFor(env, user), undefined) };
 }
 type Reviewed = { id: number; crop: number; revision: number; cut: number; label: number | null; shown: number | null; shown_text: string | null;
