@@ -1,3 +1,14 @@
+<script module>
+  // One submission id per crop, revision and style: the same choice made again (after a failure, or
+  // while an earlier one is kept on this device) is the same submission, which the site records once.
+  const submissions = new Map()
+  function submission(id, revision, style) {
+    const key = id + '\u0000' + revision + '\u0000' + style
+    if (!submissions.has(key)) submissions.set(key, crypto.randomUUID())
+    return submissions.get(key)
+  }
+</script>
+
 <script>
   import { request } from '../lib/client.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -20,11 +31,12 @@
     working?.(true); error = ''
     try {
       const result = await request(`/atlas/characters/${encodeURIComponent(item.id)}/style`,
-        { id: crypto.randomUUID(), revision: item.revision, style })
+        { id: submission(item.id, item.revision, style), revision: item.revision, style })
       saved?.(result)
     } catch (e) {
       error = e.message
-      menu.value = own
+      // A choice kept while writes are paused stays chosen; it is sent once they resume.
+      if (!e.kept) menu.value = own
     } finally { working?.(false) }
   }
 </script>
