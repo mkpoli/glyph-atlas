@@ -116,7 +116,7 @@ describe('shards that fail', () => {
   it('keep no edge copy of a shard in R2 that does not decode', async () => {
     const { env, key, objects } = setup(), name = shardKey(key);
     objects.set(name, gzipSync('{"objects": ['));
-    await expect(mediaPlace(env, key)).rejects.toThrow('does not decode');
+    await expect(mediaPlace(env, key)).rejects.toMatchObject({ status: 503, where: `${name} does not decode` });
     expect(edge.has(`https://glyphatlas.org/_shards/${name}`)).toBe(false);
     // The next request reads R2 again and finds the repaired shard.
     objects.set(name, gzipSync(JSON.stringify({ objects: ['packs/p.bin'], keys: { ['a'.repeat(61)]: [0, 8, 4] } })));
@@ -171,7 +171,7 @@ describe('the image route', () => {
       const response = await get(env, ctx, key);
       expect(response.status).toBe(503);
       expect(response.headers.get('retry-after')).toBe('5');
-      expect(await response.json()).toEqual({ detail: 'Image storage is unavailable. Try again in a moment.', code: 'busy' });
+      expect(await response.json()).toEqual({ detail: 'Storage is unavailable. Try again in a moment.', code: 'busy' });
     }
   });
 });

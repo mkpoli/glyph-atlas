@@ -1,3 +1,5 @@
+import { StorageUnavailable } from './busy';
+
 // Images on the new storage layout: `/atlas/media/<key>.webp` from the image key map in R2
 // (scripts/atlas3/media_map.py), with no D1 read.
 
@@ -9,8 +11,6 @@ export type Place = { object: string; offset: number; size: number; type: string
 const SHARD_SECONDS = 300, SHARDS_HELD = 32, RECHECK_SECONDS = 30;
 // A mapped image whose pack is not in R2: the publication stopped between pack and map.
 export class MediaIncomplete extends Error {}
-// R2 failed, or holds a shard that does not decode. Asking again later may succeed.
-export class StorageUnavailable extends Error {}
 export const shardKey = (key: string) => `v3/media/${key.slice(0, 3)}.json.gz`;
 
 // The edge copy is keyed by a URL on this site that no route answers, and says when it expires.

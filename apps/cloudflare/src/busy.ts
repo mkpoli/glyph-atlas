@@ -34,6 +34,21 @@ export function described(error: unknown): Record<string, string> {
   return out;
 }
 
+/** An error a route answers as JSON `{detail, ...extra}` with `status`; `code: 'busy'` adds retry-after. */
+export class Problem extends Error {
+  constructor(public status: number, message: string, public extra: Record<string, unknown> = {}, options?: ErrorOptions) {
+    super(message, options);
+  }
+}
+
+/** R2 failed, or holds a shard that does not decode: 503 busy, since asking again later may succeed.
+ *  `where` names what failed, for the log only. */
+export class StorageUnavailable extends Problem {
+  constructor(public where: string, options?: ErrorOptions) {
+    super(503, 'Storage is unavailable. Try again in a moment.', { code: 'busy' }, options);
+  }
+}
+
 /** How long a read may keep trying while D1 is busy, counted from its first attempt. */
 export const READ_BUDGET = 4000;
 /** The seconds a busy answer asks a client to wait before trying again. */
