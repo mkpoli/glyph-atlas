@@ -132,22 +132,20 @@ freeze contains no decisions. Each step is resumable and records checksums.
 5. **Copy the accounts last**, then check: every crop check of `check.py`; every history row
    translated or accounted for, compared in full (all events, seen marks, skips, claims, current
    claims, form decisions); recomputed marks equal the live ones; every session row present. The site
-   checks write, so they run on a version that is uploaded and not deployed, against the real new
-   databases, while the deployed Worker stays paused. From `apps/cloudflare`:
-   `wrangler versions upload` uploads the new Worker, which keeps the deployed version's secrets,
-   `WRITES_PAUSED` among them; `wrangler versions secret delete WRITES_PAUSED` then makes a further
-   version from it without the secret, also not deployed, and prints its id. That version answers at
-   its Version URL, `https://<first 8 characters of the id>-glyph-atlas.<subdomain>.workers.dev`.
-   Version URLs are off for this Worker (`preview_urls: false`) and public when on, so they are turned
-   on for the window (Settings, Domains & Routes, Version URLs) and off after it. The checks there: an
-   existing session cookie (sent by hand, since a glyphatlas.org cookie never reaches workers.dev),
-   renewal, logout, a history page, favourites, a claim and an old URL, with a test account's session.
-   A passkey is bound to glyphatlas.org and cannot sign in on workers.dev; it is checked on the site
-   right after the switch.
+   checks write (an existing session, renewal, logout, a history page, favourites, a claim, an old
+   URL), so they run on this machine: `wrangler dev` runs the new Worker locally with remote bindings
+   (`"remote": true` on each D1 and R2 binding) to the real new databases and bucket, with a test
+   account made before the freeze. Nothing answers on a public address, and the deployed Worker stays
+   paused, so every row written in the window is the checks'; they are listed and deleted after
+   (`scripts/atlas3/README.md`, step 8). Version URLs stay off: turned on, they would also open older
+   versions, bound to the old database and not paused. The checked Worker is then uploaded with
+   `wrangler versions upload`, which keeps `WRITES_PAUSED`, and `wrangler versions secret delete
+   WRITES_PAUSED` makes a further version without it; neither deploys.
 6. **Switch** the Worker and the publisher to the new layout and resume writes:
-   `wrangler versions deploy <checked version id>@100%` deploys the version checked in step 5, which
-   has no `WRITES_PAUSED`. A browser tab from before the switch that sends an old text id gets 409 and
-   a prompt to reload.
+   `wrangler versions deploy <id of the version without WRITES_PAUSED>@100%` is the switch, and the
+   paused version answers until it runs. Passkey and provider sign-ins, both bound to glyphatlas.org,
+   are checked right after. A browser tab from before the switch that sends an old text id gets 409
+   and a prompt to reload.
 
 Until writes resume, going back is redeploying the old Worker and lifting the freeze. After that,
 fixes go forward. The old database stays, read-only, with its archive and restore point, for 30 days
