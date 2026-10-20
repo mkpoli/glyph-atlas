@@ -7,8 +7,9 @@
 // `DatabaseStatus` shows what is waiting.
 import { backoff, isBusy, isPaused, retryAfter } from './busy.svelte.js'
 
-// `keys` names this reader's kept saves; `lost` names every kept save the site refused since the page
-// loaded, which stays named after the corner's note is dismissed.
+// `pending` counts this reader's kept saves; `keys` names every save kept on this device, whoever made
+// it; `lost` names every kept save the site refused, in this tab or another, which stays named after
+// the corner's note is dismissed.
 export const outbox = $state({ pending: 0, refused: [], paused: false, keys: [], lost: [] })
 
 // The browser stores saves in IndexedDB; a save IndexedDB would not take goes to localStorage, and
@@ -23,6 +24,13 @@ function database() {
     asked.onerror = () => reject(asked.error)
   }).catch(() => null)
   return opened
+}
+// The keys of kept saves the site refused, shared with the other tabs: the last few hundred.
+const LOST = 'atlas.outbox.lost', LOST_KEPT = 256
+const storedLost = () => { try { const keys = JSON.parse(localStorage.getItem(LOST)); return Array.isArray(keys) ? keys : [] } catch { return [] } }
+function refuse(key) {
+  outbox.lost.push(key)
+  try { localStorage.setItem(LOST, JSON.stringify([...new Set([...storedLost(), key])].slice(-LOST_KEPT))) } catch { /* This tab still knows. */ }
 }
 const memory = new Map()
 const fallback = {
@@ -55,10 +63,19 @@ async function remove(key) {
 // The saves this reader can send now. One made by an account that is not signed in waits for it, and
 // is not counted meanwhile.
 const mine = async () => (await entries()).filter(entry => sender?.mine(entry) !== false)
-// What the corner counts.
-const count = async () => { const kept = await mine(); outbox.pending = kept.length; outbox.keys = kept.map(entry => entry.key) }
+// What the corner counts, what is stored, and what another tab saw refused.
+const count = async () => {
+  const all = await entries()
+  outbox.pending = all.filter(entry => sender?.mine(entry) !== false).length
+  outbox.keys = all.map(entry => entry.key)
+  const lost = storedLost().filter(key => !outbox.lost.includes(key))
+  if (lost.length) outbox.lost.push(...lost)
+}
 
-/** Where a kept save stands, by its key: `kept` while it waits, `refused` once the site refused it, else `sent`. */
+/**
+ * Where a kept save stands, by its key: `kept` while it is stored (also while it waits for an account
+ * that is not signed in), `refused` once the site refused it, else `sent`.
+ */
 export const keptState = key => outbox.lost.includes(key) ? 'refused' : outbox.keys.includes(key) ? 'kept' : 'sent'
 
 /**
@@ -178,7 +195,7 @@ async function run() {
         if (tries < TRIES) { failed.set(entry.key, tries); again(); return }
         failed.delete(entry.key)
         await remove(entry.key)
-        outbox.lost.push(entry.key)
+        refuse(entry.key)
         if (!settleWaiters(entry.key, waiter => waiter.reject(error))) outbox.refused.push({ key: entry.key, message: error.message })
         continue
       }
@@ -197,7 +214,7 @@ async function run() {
       try { value = sender.settle(answer) } catch (error) {
         // A refusal (the crop changed since, say) goes to the view that made the save, which shows it
         // as it shows any refusal; a save from an earlier page is shown in the corner instead.
-        outbox.lost.push(entry.key)
+        refuse(entry.key)
         if (!settleWaiters(entry.key, waiter => waiter.reject(error))) outbox.refused.push({ key: entry.key, message: error.message })
         continue
       }
@@ -207,14 +224,24 @@ async function run() {
   await count()
 }
 
-/** On page load: count what an earlier page left, send it, and send again when the browser is back online. */
+/**
+ * On page load: count what an earlier page left, send it, and send again when the browser is back
+ * online. What another tab sent or saw refused is read again when this one is shown or focused, or
+ * when that tab writes the list it shares.
+ */
 export function resume() {
   count().then(() => { if (outbox.pending) drain() })
   const online = () => drain()
   const visible = () => { if (document.visibilityState === 'visible') count().then(() => { if (outbox.pending) drain() }) }
+  const shared = event => { if (event.key === LOST || event.key === FALLBACK) count() }
   addEventListener('online', online)
+  addEventListener('focus', visible)
+  addEventListener('storage', shared)
   document.addEventListener('visibilitychange', visible)
-  return () => { removeEventListener('online', online); document.removeEventListener('visibilitychange', visible); clearTimeout(timer) }
+  return () => {
+    removeEventListener('online', online); removeEventListener('focus', visible); removeEventListener('storage', shared)
+    document.removeEventListener('visibilitychange', visible); clearTimeout(timer)
+  }
 }
 
 export const dismiss = key => { outbox.refused = outbox.refused.filter(r => r.key !== key) }

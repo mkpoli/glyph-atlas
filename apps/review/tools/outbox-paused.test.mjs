@@ -4,6 +4,10 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 
 globalThis.$state = value => value
 globalThis.window = globalThis
+// One tab's localStorage, which every tab of the site shares; a test plays another tab by writing it.
+const shelf = new Map()
+globalThis.localStorage = { getItem: key => shelf.get(key) ?? null, setItem: (key, value) => shelf.set(key, String(value)), removeItem: key => shelf.delete(key) }
+globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} }
 mock.module('../src/lib/i18n.svelte.js', () => ({ t: key => key, formatNumber: String }))
 // Nobody is signed in, and starting an anonymous session is refused as a write would be.
 const signIns = []
@@ -20,7 +24,7 @@ mock.module('../src/lib/session.svelte.js', () => ({
 
 const { backoff } = await import('../src/lib/busy.svelte.js')
 const { request } = await import('../src/lib/client.js')
-const { outbox, drain, keep, keptCrops, keptState, keyOf, dismiss } = await import('../src/lib/outbox.svelte.js')
+const { outbox, drain, keep, keptCrops, keptState, keyOf, dismiss, resume } = await import('../src/lib/outbox.svelte.js')
 const { correctionBatches, restoredCrops, sendBatches, sendEach } = await import('../src/lib/corrections.js')
 
 const paused = () => Response.json({ error: 'paused', message: 'Changes are paused.' }, { status: 503, headers: { 'retry-after': '300' } })
@@ -230,4 +234,27 @@ test('a run of saves stops at a refusal, and says what came before it', async ()
   expect(error.answered).toEqual([{ item: 'a', result: 1 }, { item: 'c', result: 3 }])
   expect(error.kept).toEqual(['b'])
   expect(error.item).toBe('d')
+})
+
+test('a kept round stays kept while its account is signed out, and reads as refused once another tab saw it refused', async () => {
+  me = { id: 'u7', anonymous: false }
+  answer = paused
+  const key = keyOf('/atlas/rounds', { id: 'round-away' })
+  await keep('/atlas/rounds', { id: 'round-away', grapheme: 'U+304D', seen: [{ id: 'away-crop' }], skipped: [] }, me)
+  expect(keptState(key)).toBe('kept')
+  // Signed out (or the session lapsed), the save waits for its account and is still stored here.
+  me = null
+  await new Promise(resolve => realTimeout(resolve, 10))
+  await drain()
+  expect(outbox.keys).toContain(key)
+  expect(keptState(key)).toBe('kept')
+  // Another tab, signed in as u7, sends it and the site refuses it: that tab drops it and names it.
+  const stop = resume()
+  const stored = JSON.parse(localStorage.getItem('atlas.outbox')).filter(entry => entry.key !== key)
+  localStorage.setItem('atlas.outbox', JSON.stringify(stored))
+  localStorage.setItem('atlas.outbox.lost', JSON.stringify([key]))
+  dispatchEvent(Object.assign(new Event('storage'), { key: 'atlas.outbox.lost' }))
+  await new Promise(resolve => realTimeout(resolve, 10))
+  expect(keptState(key)).toBe('refused')
+  stop()
 })
