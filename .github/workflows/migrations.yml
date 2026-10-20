@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'apps/cloudflare/migrations/**'
+      - 'apps/cloudflare/migrations-atlas/**'
+      - 'apps/cloudflare/migrations-atlas-runs/**'
+      - 'apps/cloudflare/migrations-accounts/**'
       - 'apps/cloudflare/package.json'
       - 'apps/cloudflare/bun.lock'
       - 'apps/cloudflare/wrangler.jsonc'
@@ -24,4 +27,10 @@ jobs:
       # Wrangler splits a migration into statements itself, so a schema SQLite accepts can still fail
       # here; applying every migration to a fresh local database is what a new deployment does.
       - run: bunx wrangler d1 migrations apply glyph-atlas --local
+        working-directory: apps/cloudflare
+      - run: bunx wrangler d1 migrations apply glyph-atlas-v3 --local
+        working-directory: apps/cloudflare
+      - run: bunx wrangler d1 migrations apply glyph-atlas-v3-runs --local
+        working-directory: apps/cloudflare
+      - run: bunx wrangler d1 migrations apply glyph-atlas-accounts --local
         working-directory: apps/cloudflare
