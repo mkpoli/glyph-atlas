@@ -19,7 +19,8 @@ mirror lacks, or a crop no longer live (retired), is dropped and counted.
   is uploaded; each family's first 12 and last 24 glyphs per cluster go to its index object
   `v3/forms/families/<code point>-<digest>.json.gz`. `form_families` and `form_clusters` take the
   copies' rows and the cluster decisions, each of which must be its cluster's latest in the loaded
-  `form_decisions`; `form_glyphs` takes the glyphs with their own decision; `crops.cluster` each live
+  `form_decisions`; `form_glyphs` takes the glyphs with their own decision, each of which must be the
+  glyph's latest glyph decision there; `crops.cluster` each live
   crop's cluster, null outside the clustering. Counts are recomputed from the glyphs kept, and the form
   each glyph ends with is checked against the copy's.
 - An object under `v3/forms/` that no row and no decision names is deleted by a load at least
@@ -143,6 +144,14 @@ def latest_decisions(atlas):
                               "ORDER BY at, seq"))
 
 
+def latest_glyph_decisions(atlas):
+    """Each crop's latest glyph decision in the loaded form_decisions."""
+    if not has(atlas, "form_decisions"):
+        return {}
+    return dict(atlas.execute("SELECT c.value, d.id FROM form_decisions d, json_each(d.crops) c WHERE d.kind='glyph' "
+                              "ORDER BY d.at, d.seq"))
+
+
 class Facts:
     def __init__(self, mirror, atlas, build):
         self.report, self.mirror, self.atlas, self.build = Report(), mirror, atlas, build
@@ -242,6 +251,7 @@ class Facts:
                      f"form_decisions; load the history from the same copy first: {stale[:5]}")
         members, outside, settled, said = {}, [], {}, {}
         undecided = Counter()
+        glyph_last, stale = latest_glyph_decisions(self.atlas), []
         for r in latest("form_units", "id"):
             report.tables["form_units"]["in"] += 1
             crop = self.ids.get(r["id"])
@@ -252,6 +262,8 @@ class Facts:
                 report.drop("form_units", reason)
                 continue
             own = (r["glyph_form"], r["glyph_issue"], r["glyph_character"], r["glyph_family"]) if r["glyph_set"] else None
+            if own is not None and glyph_last.get(crop) != r["glyph_decision"]:
+                stale.append(f"{r['id']}: {r['glyph_decision']} (latest {glyph_last.get(crop)})")
             settled[crop] = (r["form"], r["issue"], r["issue_character"], r["written_family"])
             if r["clustered"]:
                 image = IMAGE.fullmatch(r["image"])[1] if r["image"] else None
@@ -266,6 +278,9 @@ class Facts:
                 undecided["with a form"] += any(v is not None for v in settled[crop])
                 report.drop("form_units", "outside the clustering, no decision of its own")
 
+        if stale:
+            sys.exit(f"{len(stale)} glyphs name a decision that is not their latest glyph decision in the loaded "
+                     f"form_decisions; load the history from the same copy first: {stale[:5]}")
         disagree = sorted(k for k, c in said.items() if len(c) > 1)
         report.note(f"form_clusters: {len(disagree)} clusters whose glyphs name differing cluster characters or families "
                     "(the most common is kept)", disagree)

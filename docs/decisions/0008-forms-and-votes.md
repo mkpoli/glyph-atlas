@@ -46,6 +46,8 @@ filters on.
   load stops when a cluster's decision is not its latest in the loaded `form_decisions`.
 - `form_glyphs` holds only glyphs with their own glyph decision; a glyph's form is its `form_glyphs`
   row's, else its cluster's. A glyph outside the clustering with no decision of its own has no row.
+  The load stops when a glyph's decision is not its latest glyph decision in the loaded
+  `form_decisions`.
 - A decision names the list it was made on (`form_decisions.list`, whose name starts with the
   cluster's number) in place of copying the cluster's glyphs into `units` and `crops`.
 - `form_state` holds `lists`, the load in place (it keys cached forms answers), and `loading`, set

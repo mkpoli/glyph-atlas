@@ -135,6 +135,16 @@ def decisions(root, remote, *rows):
         db.commit()
 
 
+def glyph_decided(root, remote, crops=("ex:a1", "ex:a2"), id="g1", seq=0, at="2025-01-01"):
+    """A glyph decision in the loaded history, on D1 and the local copy, over the crops the sources decide."""
+    known = ids(root)
+    for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
+        db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) "
+                   "VALUES(?, ?, ?, 'a', 'glyph', 'U+304B', 'r1', ?, ?, '')",
+                   (seq, id, at, json.dumps(list(crops)), json.dumps([known[c] for c in crops])))
+        db.commit()
+
+
 def retire(root, remote, crop):
     for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
         db.execute("DELETE FROM crops WHERE id=?", (crop,))
@@ -161,6 +171,7 @@ def build_of(root):
 
 def test_crop_facts_load_votes_to_r2_and_the_forms_by_integer_crop_id(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
+    glyph_decided(root, remote)
     known = ids(root)
     sources(root)
     hash_images(root, {known["ex:a1"]: SHA, known["ex:a2"]: SHA, known["ex:b1"]: SHA})
@@ -220,6 +231,7 @@ def test_crop_facts_load_votes_to_r2_and_the_forms_by_integer_crop_id(layout, mo
 
 def test_a_rerun_after_a_fresh_copy_sends_the_difference(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
+    glyph_decided(root, remote)
     known = ids(root)
     sources(root)
     decisions(root, remote, (1, "d1", "2026-01-01", "U+304B:c1"), (2, "d2", "2026-01-02", "U+304B:c1"))
@@ -250,6 +262,7 @@ def test_a_rerun_after_a_fresh_copy_sends_the_difference(layout, monkeypatch):  
 
 def test_a_list_no_row_or_decision_names_is_deleted_after_the_cache_time(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
+    glyph_decided(root, remote)
     sources(root, decision=None)
     facts(root, remote, monkeypatch, "--send")
     db = remote.dbs["glyph-atlas-v3"]
@@ -288,6 +301,7 @@ def test_a_load_over_decisions_the_site_made_is_refused(layout, monkeypatch):  #
 
 def test_a_decision_made_while_the_rows_are_sent_stops_the_load_and_opens_decisions_again(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
+    glyph_decided(root, remote)
     sources(root, decision=None)
     db = remote.dbs["glyph-atlas-v3"]
     sent = remote.send
@@ -315,6 +329,7 @@ def test_a_decision_made_while_the_rows_are_sent_stops_the_load_and_opens_decisi
 
 def test_a_rerun_of_a_refused_run_sets_loading_again_while_its_rows_go(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
+    glyph_decided(root, remote)
     sources(root, decision=None)
     facts(root, remote, monkeypatch, "--send")
     db, local = remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")
@@ -355,8 +370,21 @@ def test_a_cluster_decision_not_the_latest_loaded_stops_the_load(layout, monkeyp
         facts(root, remote, monkeypatch)
 
 
+def test_a_glyph_decision_not_the_latest_loaded_stops_the_load(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, decision=None)
+    with pytest.raises(SystemExit, match="not their latest glyph decision"):
+        facts(root, remote, monkeypatch)
+    # A later glyph decision over a1 leaves the copy's g1 behind; a2's latest is still g1.
+    glyph_decided(root, remote)
+    glyph_decided(root, remote, crops=("ex:a1",), id="g2", seq=1, at="2025-02-01")
+    with pytest.raises(SystemExit, match=r"1 glyphs .*'ex:a1: g1 \(latest g2\)"):
+        facts(root, remote, monkeypatch)
+
+
 def test_an_oversized_statement_stops_the_load_before_any_number_is_kept(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
+    glyph_decided(root, remote)
     sources(root, decision=None)
     monkeypatch.setattr(importlib.import_module("publish"), "STATEMENT_BYTES", 100)
     with pytest.raises(SystemExit, match="over D1's limit"):
@@ -368,6 +396,7 @@ def test_an_oversized_statement_stops_the_load_before_any_number_is_kept(layout,
 
 def test_a_rerun_after_a_fresh_copy_refreshes_the_loaded_readings_and_keeps_a_publishs(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
+    glyph_decided(root, remote)
     known = ids(root)
     a1, a2 = known["ex:a1"], known["ex:a2"]
     sources(root, decision=None)
@@ -391,6 +420,7 @@ def test_a_rerun_after_a_fresh_copy_refreshes_the_loaded_readings_and_keeps_a_pu
 
 def test_votes_wait_for_their_model_codes_and_reach_out_votes_as_they_go_up(layout, monkeypatch):  # noqa: F811
     root, publish, remote = layout
+    glyph_decided(root, remote)
     a1 = ids(root)["ex:a1"]
     sources(root, decision=None)
     hash_images(root, {a1: SHA})

@@ -147,7 +147,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    `v3/forms/<n>-<digest>.json.gz` (glyphs by rank with tile, tone and size), each family an index
    object under `v3/forms/families/`, clusters numbered by the mirror's `codes`; D1 takes the tables of
    migration 0006, which it applies: families, clusters with their decisions (each must be its
-   cluster's latest in the loaded `form_decisions`), the glyphs with their own decision, and
+   cluster's latest in the loaded `form_decisions`), the glyphs with their own decision (each its
+   latest glyph decision there), and
    `crops.cluster`. Text ids resolve through the mirror and never through a redirect; rows naming a
    crop the mirror lacks or a retired crop, and readings of another image, are dropped and counted in
    `out/crop-facts-report.txt`, and the counts are worked out again from what is kept. D1 takes the
