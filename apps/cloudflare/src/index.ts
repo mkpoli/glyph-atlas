@@ -4,7 +4,9 @@ import { held } from './held';
 import { RECORD_MAX, readRecords, recordKey, type RecordPointer } from './records';
 export { recordRanges } from './records';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
-import { similarCrops } from './similar';
+import { similarCrops, textIdOf } from './similar';
+import { cropItems } from './atlas3';
+import { cropParam, movedPathResponse } from './atlas3Crops';
 import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
@@ -2447,7 +2449,7 @@ const routes = {
         if(text===null)throw new Problem(413,'The search request is too large.');
         let input:Json;try{input=JSON.parse(text)}catch{throw new Problem(400,'The search request is not JSON.')}
         if(!input||typeof input!=='object'||Array.isArray(input))throw new Problem(400,'The search request is not an object.');
-        try{return json(await imageQuery(env,input,itemsFor))}
+        try{return json(await imageQuery(env,input,cropItems,ctx))}
         catch(error){if(error instanceof QueryError)throw new Problem(error.status,error.message,error.extra);throw error}
       }
       if(request.method==='POST'){
@@ -2567,8 +2569,10 @@ const routes = {
         return file;
       }
       const similar=path.match(/^\/atlas\/characters\/([^/]+)\/similar$/);
-      if(similar){let id:string;try{id=decodeURIComponent(similar[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
-        return json(await similarCrops(env,id,integer(q,'limit',12,20),itemsFor))}
+      if(similar){const named=await cropParam(env,similar[1],ctx);
+        if(named&&'moved' in named)return movedPathResponse(url,similar[1],named.moved);
+        const crop=named&&('id' in named?named.id:named.retired);
+        return json(await similarCrops(env,crop===null?null:await textIdOf(env,crop),integer(q,'limit',12,20),cropItems,ctx))}
       const character=path.match(/^\/atlas\/characters\/([^/]+)(\/suggestions(?:\/context)?)?$/);
       if(character){const row=await unit(env,decodeURIComponent(character[1]));
         if(character[2]){
