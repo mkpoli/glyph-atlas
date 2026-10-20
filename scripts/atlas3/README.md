@@ -225,7 +225,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    -- glyph-atlas-v3
    DELETE FROM favourites WHERE user = :test;
    DELETE FROM current_claims WHERE crop = :crop AND predicate = 'has_form'
-     AND EXISTS (SELECT 1 FROM assertions WHERE crop = :crop AND predicate = 'has_form' AND asserted_by = :test);
+     AND subject IN (SELECT subject FROM assertions WHERE asserted_by = :test AND predicate = 'has_form');
    DELETE FROM ledger_submissions WHERE id IN (SELECT submission FROM assertions WHERE asserted_by = :test);
    DELETE FROM ledger_submissions WHERE id IN (SELECT submission FROM assertion_actions
      WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test));
