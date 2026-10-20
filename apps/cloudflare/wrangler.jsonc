@@ -18,7 +18,11 @@
   // scripts/atlas3; the site reads DB until the cutover.
   "d1_databases": [{"binding": "DB", "database_name": "glyph-atlas", "database_id": "556cb20f-db02-4f2a-8044-f7fd86776db6", "migrations_dir": "migrations"},
                    {"binding": "ATLAS", "database_name": "glyph-atlas-v3", "database_id": "0b475d45-dfe4-49a6-8c44-996289e82995", "migrations_dir": "migrations-atlas"},
-                   {"binding": "ATLAS_RUNS", "database_name": "glyph-atlas-v3-runs", "database_id": "61a9e757-1343-4e4e-801b-f9c23f66b531", "migrations_dir": "migrations-atlas-runs"}],
+                   {"binding": "ATLAS_RUNS", "database_name": "glyph-atlas-v3-runs", "database_id": "61a9e757-1343-4e4e-801b-f9c23f66b531", "migrations_dir": "migrations-atlas-runs"},
+                   // ACCOUNTS holds the users, sessions and sign-in accounts. The cutover creates the database
+                   // (`wrangler d1 create glyph-atlas-accounts`, whose id replaces this placeholder), copies the
+                   // auth tables into it with scripts/atlas3/accounts.py, then applies migrations-accounts.
+                   {"binding": "ACCOUNTS", "database_name": "glyph-atlas-accounts", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations-accounts"}],
   "r2_buckets": [{"binding": "MEDIA", "bucket_name": "glyph-atlas"}],
   // Sign-in codes are sent from MAIL_FROM, on a domain onboarded to Email Sending.
   "send_email": [{"name": "EMAIL"}],

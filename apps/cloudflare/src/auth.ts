@@ -1,19 +1,20 @@
 // Accounts. Every write to the journal is made by a user: an anonymous one the browser starts on its
 // first write, which keeps working as it is or is later joined to an account the reader signs in with.
 // The journal stays append-only. Its `actor` column holds whatever id wrote the row, and `actors` says
-// which user each of those ids now belongs to.
+// which user each of those ids now belongs to. Users, sessions and sign-in accounts are in `ACCOUNTS`;
+// `actors` and `favourites` are in `ATLAS` with what was written.
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { admin, anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
 import { MAIL, signInMail } from './mail';
 import { recordProfile } from './connections';
+import { finishForgetting, startForgetting } from './accounts';
 import { writesPaused } from './freeze';
 
 export type Viewer = { id: string; name: string; image: string | null; anonymous: boolean; admin: boolean };
 type Auth = ReturnType<typeof build>;
 
-const now = () => new Date().toISOString();
 
 // The accounts a reader can sign in with. Each is offered once its app's id and secret are set, as
 // `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` for GitHub.
@@ -51,7 +52,7 @@ function build(env: Env, origin: string, paused: boolean) {
     baseURL: origin,
     basePath: '/api/auth',
     secret: env.BETTER_AUTH_SECRET,
-    database: env.DB,
+    database: env.ACCOUNTS,
     // Codes by mail, passkeys and other accounts; there are no passwords.
     emailAndPassword: { enabled: false },
     socialProviders: Object.fromEntries(providers(env).map(name => [name, {
@@ -99,8 +100,8 @@ function build(env: Env, origin: string, paused: boolean) {
             ...(ctx?.path === '/sign-in/email-otp' ? { image: null } : {}) } }),
           // A user writes under their own id first.
           after: async user => {
-            await env.DB.prepare("INSERT OR IGNORE INTO actors(actor,user_id,via,at) VALUES(?,?,'account',?)")
-              .bind(user.id, user.id, now()).run();
+            await env.ATLAS.prepare("INSERT OR IGNORE INTO actors(key,user,via,at) VALUES(?,?,'account',?)")
+              .bind(user.id, user.id, Date.now()).run();
           },
         },
         update: {
@@ -111,9 +112,15 @@ function build(env: Env, origin: string, paused: boolean) {
             // A name shaped like an old reviewer id is only for the user who holds that id.
             if (typeof user.name !== 'string' || !LEGACY_REVIEWER.test(user.name)) return;
             const id = ctx?.context.session?.user.id;
-            const held = id && await env.DB.prepare('SELECT 1 FROM actors WHERE actor=? AND user_id=?').bind(user.name, id).first();
+            const held = id && await env.ATLAS.prepare('SELECT 1 FROM actors WHERE key=? AND user=?').bind(user.name, id).first();
             if (!held) throw new APIError('BAD_REQUEST', { message: 'This name is an old reviewer id another reviewer may hold.' });
           },
+        },
+        // A deleted user's rows here go first, then their favourites and links to actors in `ATLAS`. The
+        // mark made before keeps a deletion that stops between the two databases for the next one to finish.
+        delete: {
+          before: async user => { await startForgetting(env, user.id) },
+          after: async () => { await finishForgetting(env).catch(error => console.error(JSON.stringify({ event: 'forget_failed', error: String(error) }))) },
         },
       },
     },
@@ -152,18 +159,18 @@ function build(env: Env, origin: string, paused: boolean) {
         disableDeleteAnonymousUser: true,
         // Signing in with an account from an anonymous session brings that session's work along.
         onLinkAccount: async ({ anonymousUser, newUser }) => {
-          await env.DB.prepare('UPDATE actors SET user_id=? WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id).run();
           // Its stars too; a crop the account had starred already keeps the account's own.
-          await env.DB.batch([
-            env.DB.prepare('INSERT OR IGNORE INTO favourites(user_id,unit,at) SELECT ?,unit,at FROM favourites WHERE user_id=?').bind(newUser.user.id, anonymousUser.user.id),
-            env.DB.prepare('DELETE FROM favourites WHERE user_id=?').bind(anonymousUser.user.id),
+          await env.ATLAS.batch([
+            env.ATLAS.prepare('UPDATE actors SET user=? WHERE user=?').bind(newUser.user.id, anonymousUser.user.id),
+            env.ATLAS.prepare('INSERT OR IGNORE INTO favourites(user,crop,at) SELECT ?,crop,at FROM favourites WHERE user=?').bind(newUser.user.id, anonymousUser.user.id),
+            env.ATLAS.prepare('DELETE FROM favourites WHERE user=?').bind(anonymousUser.user.id),
           ]);
           // An account made by this sign-in keeps the name the anonymous one wrote under. A name that is
           // an old reviewer id goes with the id, and the anonymous user, left with neither, is renamed.
           if (Date.now() - new Date(newUser.user.createdAt).getTime() < 60_000 && GENERATED.test(newUser.user.name))
-            await env.DB.prepare('UPDATE "user" SET name=? WHERE id=?').bind(anonymousUser.user.name, newUser.user.id).run();
+            await env.ACCOUNTS.prepare('UPDATE "user" SET name=? WHERE id=?').bind(anonymousUser.user.name, newUser.user.id).run();
           if (LEGACY_REVIEWER.test(anonymousUser.user.name))
-            await env.DB.prepare('UPDATE "user" SET name=? WHERE id=?').bind(generatedName(), anonymousUser.user.id).run();
+            await env.ACCOUNTS.prepare('UPDATE "user" SET name=? WHERE id=?').bind(generatedName(), anonymousUser.user.id).run();
         },
       }),
     ],
@@ -180,7 +187,7 @@ export function auth(env: Env, origin: string): Auth {
 }
 
 /**
- * The user a request is signed in as, or null. `fresh` reads the session from D1 past its cached
+ * The user a request is signed in as, or null. `fresh` reads the session from `ACCOUNTS` past its cached
  * copy, so a ban or a change of role holds at once; writes and the admin's pages read it so.
  */
 export async function viewer(env: Env, request: Request, fresh = false): Promise<Viewer | null> {
@@ -202,13 +209,16 @@ const CLAIMS = 5;
  */
 export async function claim(env: Env, user: Viewer, reviewer: string) {
   if (!LEGACY_REVIEWER.test(reviewer)) return { status: 422, body: { detail: 'Not a reviewer id from before accounts.' } };
-  const holder = await env.DB.prepare('SELECT user_id FROM actors WHERE actor=?').bind(reviewer).first<{ user_id: string }>();
-  if (holder) return holder.user_id === user.id ? { status: 200, body: { reviewer, status: 'held' } }
+  const holder = () => env.ATLAS.prepare('SELECT user FROM actors WHERE key=?').bind(reviewer).first<{ user: string | null }>();
+  const answer = (row: { user: string | null } | null) => row?.user === user.id ? { status: 200, body: { reviewer, status: 'held' } }
     : { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
-  const held = await env.DB.prepare("SELECT count(*) AS n FROM actors WHERE user_id=? AND via='legacy'").bind(user.id).first<{ n: number }>();
+  // An actor row with no user is an id whose account was deleted, or one that wrote before any account
+  // took it; the first account to send it takes it.
+  const found = await holder();
+  if (found?.user) return answer(found);
+  const held = await env.ATLAS.prepare("SELECT count(*) AS n FROM actors WHERE user=? AND via='legacy'").bind(user.id).first<{ n: number }>();
   if ((held?.n ?? 0) >= CLAIMS) return { status: 429, body: { detail: 'This account already holds as many old reviewer ids as one may.' } };
-  await env.DB.prepare("INSERT OR IGNORE INTO actors(actor,user_id,via,at) VALUES(?,?,'legacy',?)").bind(reviewer, user.id, now()).run();
-  const now_held = await env.DB.prepare('SELECT user_id FROM actors WHERE actor=?').bind(reviewer).first<{ user_id: string }>();
-  return now_held?.user_id === user.id ? { status: 200, body: { reviewer, status: 'held' } }
-    : { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
+  await env.ATLAS.prepare(`INSERT INTO actors(key,user,via,at) VALUES(?,?,'legacy',?)
+    ON CONFLICT(key) DO UPDATE SET user=excluded.user,via=excluded.via,at=excluded.at WHERE actors.user IS NULL`).bind(reviewer, user.id, Date.now()).run();
+  return answer(await holder());
 }

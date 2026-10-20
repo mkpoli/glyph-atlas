@@ -6,6 +6,7 @@ interface __BaseEnv_Env {
 	DB: D1Database;
 	ATLAS: D1Database;
 	ATLAS_RUNS: D1Database;
+	ACCOUNTS: D1Database;
 	EMAIL: SendEmail;
 	CORRECTIONS: RateLimit;
 	CLAIMS: RateLimit;
