@@ -170,8 +170,9 @@ CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTE
   D1 table can be rebuilt from R2 and the publisher's data.
 - **Kept, with integer ids:** the claim ledger (`assertions` with two indexes, `assertion_*`,
   `current_claims` with `cut`), forms tool decisions, submissions, accounts and favourites. A crop's
-  current form is written into `crops.form` by the claim that sets it. Each publication archives the
-  ledger to R2 as well.
+  current form is its `has_form` slot in `current_claims`, which listings and the inspector read;
+  `crops.form` stays empty, since a form id is text and no query filters on it, and dropping the
+  column would rewrite every `crops` row. Each publication archives the ledger to R2 as well.
 - **Read replication.** A reviewer's reads after a save go through the D1 Sessions API with the
   save's bookmark and bypass the edge cache; only anonymous reads are edge-cached.
 

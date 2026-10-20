@@ -63,6 +63,16 @@ maps by its whole `id@pixels@box`. A box no recorded version has comes from befo
 kept them (one seen mark today) and takes the cut below the oldest recorded one.
 A claim on cut -1 is not live, as the old resolver treated a claim on a crop's earlier version.
 
+A claim rests on the crop's effective cut: its published cut, or the next one while a redrawn box
+waits in `reviews`, as the old site rewrote a crop's record at once when its box was redrawn. Claims
+on the cut the redraw replaces stop holding at once, as the old `current_claim_recut` trigger dropped
+them; claims made while the redraw waits hold through the publication, which gives the crop that
+cut; an undone redraw returns the crop to its published cut and the claims made on it. Two edges
+follow from naming versions by cut:
+
+- A crop cut back to an earlier box gets a new cut. Claims made on that box before do not return.
+- A change of image encoding alone keeps the cut, so the claims on it stay live.
+
 ### Tables in `glyph-atlas-v3`
 
 Integer crop ids are columns, never strings in JSON, so the database can join on them. Public ids are
