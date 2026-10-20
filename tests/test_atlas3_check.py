@@ -46,8 +46,8 @@ def test_a_crop_that_differs_from_its_live_record_fails(layout, monkeypatch, cha
     assert check(monkeypatch) == 1
 
 
-@pytest.mark.parametrize("named", [None, "ex:a1"])
-def test_a_retired_crop_must_name_its_replacement_by_number(layout, monkeypatch, named):  # noqa: F811
+@pytest.mark.parametrize("named", [None, "ex:a1", "ex:b1", "unset"])
+def test_a_retired_crops_replacement_must_reach_a_live_crop(layout, monkeypatch, named):  # noqa: F811
     root, publish, _remote = layout
     (root / "out" / "media").mkdir(exist_ok=True)
     gone = retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})
@@ -63,7 +63,11 @@ def test_a_retired_crop_must_name_its_replacement_by_number(layout, monkeypatch,
             body = json.loads(gzip.decompress(path.read_bytes()))
             for e in body["crops"]:
                 if e["id"] == "ex:b1":
-                    e["replaced_by"] = named
+                    # A text id, the retired crop itself (a loop), or nothing though its redirects reach a1.
+                    if named == "unset":
+                        del e["replaced_by"]
+                    else:
+                        e["replaced_by"] = ids(root)[named] if named == "ex:b1" else named
             path.write_bytes(gzip.compress(json.dumps(body).encode()))
         assert check(monkeypatch) == 1
 
