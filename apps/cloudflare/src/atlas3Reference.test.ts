@@ -14,7 +14,7 @@ function bucket(objects: Record<string, unknown>) {
   const MEDIA = { get: async (name: string) => {
     reads.push(name);
     const value = objects[name];
-    return value === undefined ? null : { arrayBuffer: async () => gzipSync(JSON.stringify(value)).slice().buffer };
+    return value === undefined ? null : { arrayBuffer: async () => new Uint8Array(gzipSync(JSON.stringify(value))).buffer };
   } };
   return { env: { MEDIA } as unknown as Env, reads };
 }
