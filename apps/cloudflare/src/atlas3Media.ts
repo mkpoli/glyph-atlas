@@ -27,8 +27,8 @@ async function readShard<T>(env: Env, name: string, ctx?: ExecutionContext): Pro
 }
 
 // A reader of gzipped JSON shards in R2 MEDIA. The edge and the isolate keep a shard SHARD_SECONDS,
-// the isolate the last SHARDS_HELD it read.
-export function heldShards<T>() {
+// the isolate the last `size` this reader read.
+export function heldShards<T>(size = SHARDS_HELD) {
   const held = new Map<string, { at: number; read: Promise<T | null> }>();
   return (env: Env, name: string, ctx?: ExecutionContext, now = Date.now()): Promise<T | null> => {
     const entry = held.get(name);
@@ -37,7 +37,7 @@ export function heldShards<T>() {
     fresh.read.catch(() => { if (held.get(name) === fresh) held.delete(name); });
     held.delete(name);
     held.set(name, fresh);
-    while (held.size > SHARDS_HELD) held.delete(held.keys().next().value!);
+    while (held.size > size) held.delete(held.keys().next().value!);
     return fresh.read;
   };
 }

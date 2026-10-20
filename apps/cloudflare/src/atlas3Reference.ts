@@ -18,7 +18,11 @@ export const LIST_PAGE = 500;
 
 const PREFIX = 'v3/reference/';
 export const SUMMARY_DIGITS = 3, IDS_DIGITS = 2;
-const read = heldShards<Json>();
+// Each kind of object has its own isolate copies, as many as a request of that kind reads: a character
+// page one card, a search list up to 48 families, a component search up to COMPONENT_PARTS lists.
+const readCard = heldShards<Json>(32), readSummary = heldShards<Json>(64), readIds = heldShards<Json>(16),
+  readNames = heldShards<Json>(1), readList = heldShards<Json>(4), readComponentNames = heldShards<Json>(1),
+  readComponents = heldShards<Json>(COMPONENT_PARTS);
 
 export async function referenceShard(key: string, digits: number): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key)));
@@ -27,7 +31,7 @@ export async function referenceShard(key: string, digits: number): Promise<strin
 
 // A card's object by its URL key (`U+3042`, or code points joined by spaces); null when no card has it.
 export function characterObject(env: Env, codePoint: string, ctx?: ExecutionContext): Promise<CharacterObject | null> {
-  return read(env, `${PREFIX}char/${codePoint.split(' ').join('-')}.json.gz`, ctx);
+  return readCard(env, `${PREFIX}char/${codePoint.split(' ').join('-')}.json.gz`, ctx);
 }
 
 // The `data` of each card in the families of the given heads, by code point, and no other family's:
@@ -35,7 +39,7 @@ export function characterObject(env: Env, codePoint: string, ctx?: ExecutionCont
 export async function familySummaries(env: Env, heads: string[], ctx?: ExecutionContext): Promise<Map<string, Json>> {
   const wanted = [...new Set(heads)], keys = await Promise.all(wanted.map(head => referenceShard(head, SUMMARY_DIGITS)));
   const shards = new Map(await Promise.all([...new Set(keys)].map(async key =>
-    [key, await read(env, `${PREFIX}summary/${key}.json.gz`, ctx)] as const)));
+    [key, await readSummary(env, `${PREFIX}summary/${key}.json.gz`, ctx)] as const)));
   return new Map(wanted.flatMap((head, i) => {
     const shard = shards.get(keys[i]);
     return shard && Object.hasOwn(shard, head) ? Object.entries(shard[head] as Record<string, Json>) : [];
@@ -44,7 +48,7 @@ export async function familySummaries(env: Env, heads: string[], ctx?: Execution
 
 // A character's ideographic descriptions and regional shapes, or null.
 export async function characterStructure(env: Env, char: string, ctx?: ExecutionContext): Promise<{ sequences: string[]; shapes: Json[] | null } | null> {
-  const shard = await read(env, `${PREFIX}ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`, ctx);
+  const shard = await readIds(env, `${PREFIX}ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`, ctx);
   const found = shard && Object.hasOwn(shard, char) ? shard[char] : null;
   return found ? { sequences: found[0], shapes: found[1] } : null;
 }
@@ -57,7 +61,7 @@ const hex = (point: number) => point.toString(16).toUpperCase().padStart(4, '0')
 // The cards whose code point or name holds the term, ignoring case ("4e00", "U+4E00", "hiragana"),
 // most frequent first, then by code point; at most `limit`, with how many there are.
 export async function nameMatches(env: Env, term: string, limit: number, ctx?: ExecutionContext) {
-  const list = await read(env, `${PREFIX}names.json.gz`, ctx) as NameList | null;
+  const list = await readNames(env, `${PREFIX}names.json.gz`, ctx) as NameList | null;
   const wanted = term.trim().toUpperCase(), found: [string, number, number][] = [];
   if (!list || !wanted) return { codes: [] as string[], total: 0 };
   for (const [codePoint, name, occurrences] of list.names)
@@ -76,7 +80,7 @@ export async function nameMatches(env: Env, term: string, limit: number, ctx?: E
 // One page of a card list from `offset`: at most two objects for a page of up to LIST_PAGE.
 export async function cardList(env: Env, list: 'graphemes' | 'ligatures', offset: number, limit: number, ctx?: ExecutionContext) {
   const first = Math.floor(offset / LIST_PAGE), last = Math.floor((offset + Math.max(limit, 1) - 1) / LIST_PAGE);
-  const pages = await Promise.all([...new Set([first, last])].map(n => read(env, `${PREFIX}list/${list}/${n}.json.gz`, ctx)));
+  const pages = await Promise.all([...new Set([first, last])].map(n => readList(env, `${PREFIX}list/${list}/${n}.json.gz`, ctx)));
   const items = pages.flatMap(page => page?.items ?? []), start = offset - first * LIST_PAGE;
   return { items: items.slice(start, start + limit), total: pages[0]?.total ?? 0 };
 }
@@ -122,7 +126,7 @@ function indexOf(points: number[], point: number): number {
 // list, 一, holds 86,700 characters.
 export async function componentMatches(env: Env, wanted: Map<string, number>, limit: number, ctx?: ExecutionContext) {
   const none = { codes: [] as string[], more: false };
-  const names = await read(env, `${PREFIX}components/names.json.gz`, ctx) as ComponentNames | null;
+  const names = await readComponentNames(env, `${PREFIX}components/names.json.gz`, ctx) as ComponentNames | null;
   if (!names || wanted.size > COMPONENT_PARTS) return none;
   // Two typed forms of one component (⺡ and 氵) ask for it twice.
   const parts = new Map<string, number>();
@@ -131,7 +135,7 @@ export async function componentMatches(env: Env, wanted: Map<string, number>, li
     if (!component) return none;
     parts.set(component, (parts.get(component) ?? 0) + n);
   }
-  const lists = await Promise.all([...parts.keys()].map(c => read(env, `${PREFIX}components/${codeKey(c)}.json.gz`, ctx) as Promise<ComponentList | null>));
+  const lists = await Promise.all([...parts.keys()].map(c => readComponents(env, `${PREFIX}components/${codeKey(c)}.json.gz`, ctx) as Promise<ComponentList | null>));
   if (lists.some(list => !list)) return none;
   const [driver, ...others] = [...parts.values()].map((n, i) => ({ n, list: lists[i]! })).sort((a, b) => a.list.total - b.list.total);
   const lookups = others.map(other => ({ n: other.n, group: groupsOf(other.list) }));
