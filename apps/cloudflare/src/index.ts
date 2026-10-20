@@ -1,5 +1,6 @@
 // Catalogue snapshots are published offline. All online review mutations use D1 transactions.
 import { ROUND_MAX } from './rounds';
+import { held } from './held';
 import { RECORD_MAX, readRecords, recordKey, type RecordPointer } from './records';
 export { recordRanges } from './records';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
@@ -456,18 +457,6 @@ const SHUFFLE_RANGE = 268435456;
 // so while reviews come in every copy keyed by them moves once a minute rather than on each review,
 // and most requests ask the database nothing for them.
 type CatalogueStamps = { published: string | null; refreshed: string | null; event: number | null; submission: number | null; undone: number };
-/** A value read at most once per `lag` seconds. Only a value already read is kept: a read still
- *  pending belongs to its request, and workerd cancels it should that request end first. */
-export function held<T>() {
-  let copy: { at: number; value: T } | null = null;
-  return async (read: () => Promise<T>, now: number, lag: number) => {
-    if (copy && now - copy.at < lag * 1000) return copy.value;
-    const value = await read();
-    // A read that started earlier and finished later is older than the one kept.
-    if (!copy || copy.at <= now) copy = { at: now, value };
-    return value;
-  };
-}
 const heldStamps = held<CatalogueStamps | null>();
 function catalogueStamps(env: Env): Promise<CatalogueStamps | null> {
   return heldStamps(() => env.DB.prepare(`SELECT (SELECT value FROM metadata WHERE key='published_at') AS published,

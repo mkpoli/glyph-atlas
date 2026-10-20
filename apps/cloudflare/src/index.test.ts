@@ -1,8 +1,9 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
 import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
-  encodeCursor, decodeCursor, historyItem, historyQuery, moved, held, wroteLately, markWriter, substitutionKey, flagRequest, listingFilter, dealable } from './index';
+  encodeCursor, decodeCursor, historyItem, historyQuery, moved, wroteLately, markWriter, substitutionKey, flagRequest, listingFilter, dealable } from './index';
 import { ROUND_MAX } from './rounds';
+import { held } from './held';
 import { componentTerm, rankMatches } from './components';
 
 describe('historical character identities', () => {

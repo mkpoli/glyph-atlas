@@ -25,9 +25,13 @@ TABLES = {
     "media": ("key,object,offset,size,content_type", ["rowid"], 15000),
     "unit_ngrams": ("first,size,second,third,text,document,vertical,hand_order,shuffle,graphemes", ["first", "size"], 8000),
     "pages": ("id,document,data", ["id"], 2000),
-    "document_dating": ("document,axis,kind,start,end,precision,label,status", ["document", "axis"], 8000),
-    "corpus_documents": ("document,n,title", ["document"], 8000),
+    "document_dating": ("document,axis,kind,start,end,precision,qualifier,uncertain,text,label,status,calendar,conversion,source",
+                        ["document", "axis"], 4000),
     "unit_redirects": ("id,target", ["id"], 8000),
+    # Book facts and the site-wide values books.py moves.
+    "corpus_documents": ("document,title", ["document"], 8000),
+    "document_characters": ("document,ord,unit,data", ["document", "ord"], 2000),
+    "metadata": ("key,value", ["key"], 100),
     # Review history, claims and the crop marks the cutover moves with integer crop ids.
     "submissions": ("id,actor,request,response,at,undone", ["id"], 2000),
     "events": ("id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at,processed", ["id"], 300),

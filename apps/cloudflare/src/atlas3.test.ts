@@ -16,7 +16,7 @@ function bucket(objects: Map<string, Uint8Array>, reads: string[] = []) {
       const bytes = objects.get(key);
       if (!bytes) return null;
       const body = options?.range ? bytes.subarray(options.range.offset, options.range.offset + options.range.length) : bytes;
-      return { body: new Response(body).body!, text: async () => new TextDecoder().decode(body), arrayBuffer: async () => body.slice().buffer };
+      return { body: new Response(body).body!, text: async () => new TextDecoder().decode(body), arrayBuffer: async () => new Uint8Array(body).buffer };
     },
   };
 }
