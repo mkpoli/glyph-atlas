@@ -10,7 +10,9 @@ import { backoff, isBusy, isPaused, isReload, retryAfter } from './busy.svelte.j
 export const outbox = $state({ pending: 0, refused: [] })
 
 // The browser stores saves in IndexedDB; a save IndexedDB would not take goes to localStorage, and
-// failing both, to this page's memory. All three are read together.
+// failing both, to this page's memory. All three are read together. A write leaves one copy: one
+// IndexedDB takes clears the fallback copy, and one it refuses deletes the IndexedDB copy where it
+// can. Where both remain, the fallback copy is the later one.
 const DATABASE = 'atlas-outbox', STORE = 'saves', FALLBACK = 'atlas.outbox'
 let opened = null
 function database() {
@@ -39,21 +41,29 @@ function transaction(mode, use) {
 }
 async function entries() {
   const found = await transaction('readonly', store => store.getAll())
+  // A fallback copy replaces the IndexedDB copy of the same save.
   const all = new Map([...(Array.isArray(found) ? found : []), ...fallback.all()].map(entry => [entry.key, entry]))
   return [...all.values()].sort((a, b) => a.seq - b.seq)
 }
 async function put(entry) {
-  if (!(await transaction('readwrite', store => store.put(entry)))) fallback.write([...fallback.all().filter(e => e.key !== entry.key), entry])
+  if (await transaction('readwrite', store => store.put(entry))) return dropFallback(entry.key)
+  fallback.write([...fallback.all().filter(e => e.key !== entry.key), entry])
+  await transaction('readwrite', store => store.delete(entry.key))
+}
+function dropFallback(key) {
+  const rest = fallback.all()
+  if (rest.some(e => e.key === key)) fallback.write(rest.filter(e => e.key !== key))
 }
 /** The kept save under `key` as stored now, or null. */
 async function stored(key) {
+  const later = fallback.all().find(e => e.key === key)
+  if (later) return later
   const found = await transaction('readonly', store => store.get(key))
-  return (found && typeof found === 'object' ? found : null) ?? fallback.all().find(e => e.key === key) ?? null
+  return found && typeof found === 'object' ? found : null
 }
 async function remove(key) {
   await transaction('readwrite', store => store.delete(key))
-  const rest = fallback.all()
-  if (rest.some(e => e.key === key)) fallback.write(rest.filter(e => e.key !== key))
+  dropFallback(key)
 }
 // Saves the reader discarded on this page: never sent, even by a pass that read them before.
 const discarded = new Set()

@@ -1,8 +1,25 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
-// The outbox outside a browser: no IndexedDB, so kept saves live in this localStorage, which a test
-// may also write as another tab would. `$state` is a plain object here.
+// The outbox outside a browser: kept saves live in this localStorage, which a test may also write as
+// another tab would. IndexedDB is a map that refuses every transaction unless a test opens it, or
+// refuses only writes. `$state` is a plain object here.
 const store = new Map()
+const idb = { saves: new Map(), open: false, refusesPut: false }
+const copy = value => value === undefined ? undefined : structuredClone(value)
+const idbDatabase = {
+  transaction() {
+    if (!idb.open) throw new Error('IndexedDB refused')
+    const run = { objectStore: () => ({
+      getAll: () => ({ result: [...idb.saves.values()].map(copy) }),
+      get: key => ({ result: copy(idb.saves.get(key)) }),
+      put: entry => { if (idb.refusesPut) throw new Error('IndexedDB full'); idb.saves.set(entry.key, copy(entry)); return { result: entry.key } },
+      delete: key => { idb.saves.delete(key); return { result: undefined } },
+    }) }
+    queueMicrotask(() => run.oncomplete?.())
+    return run
+  },
+}
+globalThis.indexedDB = { open() { const asked = { result: idbDatabase }; queueMicrotask(() => asked.onsuccess()); return asked } }
 globalThis.localStorage = { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)) }
 globalThis.$state = value => value
 const FALLBACK = 'atlas.outbox'
@@ -29,6 +46,7 @@ const entry = (crop, character) => {
 let send
 beforeEach(() => {
   store.clear(); outbox.pending = 0; outbox.refused = []
+  idb.saves.clear(); idb.open = false; idb.refusesPut = false
   send = mock(async () => accepted())
   useSender({ send: e => send(e), mine: () => true, settle({ response, value }) {
     if (response.ok) return value
@@ -114,5 +132,43 @@ describe('a gone save discarded while a pass is running', () => {
     await running
     expect(send.mock.calls.map(([e]) => e.key)).toEqual([first.key])
     expect(kept()).toEqual([])
+  })
+})
+
+describe('a save with a copy in IndexedDB and one in localStorage', () => {
+  it('is read as the localStorage copy by both the count and the pass', async () => {
+    idb.open = true
+    const held = entry('hk:6:a', '雨')
+    idb.saves.set(held.key, held)
+    // IndexedDB refused the write that marked it gone, so the gone copy went to localStorage.
+    keep([{ ...held, gone: true }])
+    await drain()
+    expect(send).not.toHaveBeenCalled()
+    expect(outbox.pending).toBe(0)
+    expect(outbox.refused).toEqual([{ key: held.key, gone: true, what: '雨 · hk:6:a' }])
+  })
+
+  it('keeps one copy once marked gone in IndexedDB', async () => {
+    idb.open = true
+    const held = entry('hk:7:a', '雲')
+    keep([held])
+    send.mockImplementation(async () => gone())
+    await drain()
+    expect(kept()).toEqual([])
+    expect(idb.saves.get(held.key)).toEqual({ ...held, gone: true })
+    await drain()
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps one copy once marked gone in localStorage', async () => {
+    idb.open = true; idb.refusesPut = true
+    const held = entry('hk:8:a', '雪')
+    idb.saves.set(held.key, held)
+    send.mockImplementation(async () => gone())
+    await drain()
+    expect(kept()).toEqual([{ ...held, gone: true }])
+    expect(idb.saves.has(held.key)).toBe(false)
+    await drain()
+    expect(send).toHaveBeenCalledTimes(1)
   })
 })
