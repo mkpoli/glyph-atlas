@@ -55,8 +55,8 @@ const count = async () => { outbox.pending = (await entries()).filter(entry => s
 /** Whether any save is kept, in this tab or another: a new save then joins the end of the line. */
 export const anyKept = async () => outbox.pending > 0 || (await entries()).some(entry => sender?.mine(entry) !== false)
 
-// `send(entry)` makes one save and answers `{ response, value }`, or `{ wait: true }` when it cannot
-// be sent yet, or `{ skip: true }` when it belongs to an account that is not signed in. `settle`
+// `send(entry)` makes one save and answers `{ response, value }`, or `{ wait: true, retryAfter }` when it
+// cannot be sent yet (`retryAfter` in seconds, 0 for no particular wait), or `{ skip: true }` when it belongs to an account that is not signed in. `settle`
 // turns an answer into the saved value or the error a view shows; `mine(entry)` says whether the
 // signed-in reader may send it. All three come from `client.js`.
 let sender = null
@@ -139,7 +139,7 @@ async function run() {
         continue
       }
       if (answer.skip) continue
-      if (answer.wait || later(answer)) { again(answer.response ? retryAfter(answer.response) : 0); return }
+      if (answer.wait || later(answer)) { again(answer.response ? retryAfter(answer.response) : answer.retryAfter ?? 0); return }
       failures = 0
       failed.delete(entry.key)
       await remove(entry.key)

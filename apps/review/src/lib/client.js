@@ -64,17 +64,19 @@ async function resend(entry) {
   await sessionStarted()
   const me = signedInUser()
   if (!mine(entry, me)) return { skip: true }
-  if (!me) { try { await ensureSignedIn() } catch { return { wait: true } } }
+  if (!me) { try { await ensureSignedIn() } catch (error) { return later(error) } }
   let answered = await posted(entry.path, entry.body, fetch, {})
   for (const listener of writeListeners) listener()
   if (answered.response.status === 401) {
     // An account whose session ended is asked to sign in again; the save waits for it.
     if (!entry.anonymous) { try { await ensureSignedIn({ again: true }) } catch { /* The sign-in form is open. */ } return { wait: true } }
-    try { await ensureSignedIn({ again: true }) } catch { return { wait: true } }
+    try { await ensureSignedIn({ again: true }) } catch (error) { return later(error) }
     answered = await posted(entry.path, entry.body, fetch, {})
   }
   return answered
 }
+/** A kept save waits; a sign-in refused while writes are paused is not asked again before its `Retry-After`. */
+const later = error => ({ wait: true, retryAfter: error?.code === 'paused' ? error.retryAfter : 0 })
 /** Whether the reader signed in now (or nobody yet) may send a kept save. */
 function mine(entry, me) {
   if (!entry.user) return true
