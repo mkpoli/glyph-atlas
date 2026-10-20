@@ -64,8 +64,13 @@ export function cropUrl(url: URL, raw: string, id: number): URL {
   return target;
 }
 
+/** The redirect from an old crop URL to the crop's public id, or 404 when the URL holds no segment
+ *  to replace, which would otherwise redirect to itself. */
 export function movedResponse(url: URL, raw: string, id: number): Response {
-  return new Response(null, { status: OLD_URL_STATUS, headers: { location: cropUrl(url, raw, id).href,
+  const target = cropUrl(url, raw, id);
+  if (target.href === url.href) return Response.json({ detail: 'Nothing is published at this address.' },
+    { status: 404, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
+  return new Response(null, { status: OLD_URL_STATUS, headers: { location: target.href,
     'cache-control': OLD_URL_STATUS === 301 ? 'public, max-age=86400' : 'no-store' } });
 }
 

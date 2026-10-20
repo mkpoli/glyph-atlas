@@ -131,6 +131,13 @@ describe('an old crop URL', () => {
     expect(response.headers.get('location')).toBe(`https://glyphatlas.org/atlas/characters/${publicId(id)}`);
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
+
+  it('that holds no segment to replace is answered 404, never a redirect to itself', async () => {
+    const id = cropId(7, 3);
+    const response = movedResponse(new URL('https://glyphatlas.org/atlas/characters?crop=hk:a:2'), 'hk%3Aa%3A1', id);
+    expect(response.status).toBe(404);
+    expect(response.headers.get('location')).toBeNull();
+  });
 });
 
 describe('a crop field of a write', () => {
