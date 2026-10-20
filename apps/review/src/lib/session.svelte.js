@@ -46,7 +46,8 @@ export function createSession(account = { user: null, providers: [] }) {
       if (state.user) { await claimLegacy(); return state.user }
       starting ??= (async () => {
         const { data, error } = await (await authClient()).signIn.anonymous()
-        if (error) throw new Error(error.message)
+        // A refusal while writes are paused says so (`code: 'paused'`) and when to ask again.
+        if (error) throw Object.assign(new Error(error.message), { code: error.code, status: error.status, retryAfter: error.retry_after ?? 0 })
         state.user = user(data.user)
         await claimLegacy()
         return state.user
@@ -59,8 +60,10 @@ export function createSession(account = { user: null, providers: [] }) {
       state.user = data?.user ? user(data.user) : null
       return state.user
     },
+    /** Sign out; a refusal leaves the reader signed in, as the browser still is, and throws its message. */
     async signOut() {
-      await (await authClient()).signOut()
+      const { error } = await (await authClient()).signOut()
+      if (error) throw new Error(error.message || t('signIn.error.other'))
       state.user = null
     },
     /** Open the sign-in form over the page. */
@@ -90,6 +93,8 @@ export const ensureSignedIn = options => current?.ensure(options)
 export const sessionStarted = () => current?.started
 /** Whether this browser still holds a reviewer id from before accounts, which `start` claims. */
 export const holdsLegacyReviewer = () => stored(LEGACY, null) !== null
+/** Whether the page knows who reads: it arrived knowing, or it has asked. */
+export const readerKnown = () => Boolean(current && (current.state.ready || current.state.user))
 /** Who is signed in, as far as the page knows, without starting a session. */
 export const signedInUser = () => current?.state.user ?? null
 

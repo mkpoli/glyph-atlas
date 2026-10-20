@@ -68,18 +68,18 @@ export function rereadBudget(rate = REREADS, burst = REREAD_BURST) {
 const rereads = rereadBudget();
 
 // A reader of gzipped JSON shards in R2 MEDIA that answers what `find` takes from one, or null. The
-// isolate keeps the last SHARDS_HELD shards it read until their edge copy expires, at most SHARD_SECONDS.
+// isolate keeps the last `size` shards this reader read until their edge copy expires, at most SHARD_SECONDS.
 // When `find` finds nothing in a copy read from R2 at least RECHECK_SECONDS ago, the shard is read once
 // more straight from R2 if `budget` allows; requests that miss meanwhile wait for that read. Its copy
 // replaces both held ones; when it fails, every waiter gets StorageUnavailable and nothing is kept.
-export function heldShards<T>(budget = rereads) {
+export function heldShards<T>(size = SHARDS_HELD, budget = rereads) {
   type Held = { expires: number; read: Promise<Read<T>> };
   const held = new Map<string, Held>();
   const rereading = new Map<string, Promise<Read<T>>>();
   const keep = (name: string, entry: Held) => {
     held.delete(name);
     held.set(name, entry);
-    while (held.size > SHARDS_HELD) held.delete(held.keys().next().value!);
+    while (held.size > size) held.delete(held.keys().next().value!);
   };
   const hold = (env: Env, name: string, now: number, ctx?: ExecutionContext) => {
     const entry: Held = { expires: Infinity, read: readShard<T>(env, name, now, false, ctx) };
@@ -111,6 +111,13 @@ export function heldShards<T>(budget = rereads) {
     const again = await fresh;
     return (again.shard ? find(again.shard) : undefined) ?? null;
   };
+}
+
+// A reader of whole gzipped JSON objects in R2 MEDIA, held as `heldShards` holds them: a missing object
+// may send one read straight to R2 before the answer is null.
+export function heldObjects<T>(size = SHARDS_HELD, budget = rereads) {
+  const read = heldShards<T>(size, budget);
+  return (env: Env, name: string, ctx?: ExecutionContext, now = Date.now()) => read(env, name, object => object, ctx, now);
 }
 const mediaShard = heldShards<Shard>();
 

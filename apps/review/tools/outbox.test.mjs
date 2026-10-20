@@ -31,7 +31,8 @@ mock.module('../src/lib/busy.svelte.js', () => ({
   isPaused: () => false,
   isReload: (response, value) => response.status === 409 && value?.code === 'reload',
 }))
-const { deliver, dismiss, drain, outbox, useSender } = await import('../src/lib/outbox.svelte.js')
+// A copy of its own: another test file may have loaded the module, with its IndexedDB, before.
+const { deliver, dismiss, drain, outbox, useSender } = await import('../src/lib/outbox.svelte.js?idb')
 afterAll(() => mock.restore())
 
 const answer = (status, value) => ({ response: new Response(null, { status }), value })

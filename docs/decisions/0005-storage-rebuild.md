@@ -203,13 +203,18 @@ CREATE INDEX run_rank ON run_stats(size, n);
 ### R2
 
 - `pages/<page>-<rev>.json.gz`: book, number, credit and rights, page size, IIIF service, lines (text,
-  box, direction, image place), and per crop its source id, line, label, script, votes, gate
-  evidence, repair and every cut's box and image place. Candidates sit in the same list, marked as
-  candidates.
+  box, direction, image place), and per crop its source id, line, label, script, gate evidence,
+  repair and every cut's box and image place. Candidates sit in the same list, marked as candidates.
+- `votes/<build>/<page>.json.gz`: the model votes of the page's crops, each for the cut it was read on
+  (decision record 0008). Kept apart from the bundle, which galleries read, since votes would make
+  it about five times larger.
 - `pub/<pub>/…`, written whole per publication: rendered answers, which are character totals by
   state, counts by style, top books, chronology by decade with capped samples, browse facets and
   totals, the browse sample pool, character cards (variants, derived forms, words, IDS), books with
-  both dating axes and their run counts, run details, forms tool lists and the alias shards.
+  both dating axes and their run counts, run details and the alias shards.
+- `forms/<cluster>-<digest>.json.gz`: each forms tool cluster's glyphs by rank, and
+  `forms/families/<family>-<digest>.json.gz`, each family's first and last glyphs per cluster; both
+  named by their content (decision record 0008).
 - `pointer.json`: `(pub, through_gen)`, moved last.
 - `media/<prefix>.json.gz`: the image key map, one shard per first three hex digits of the key,
   each key's pack, offset and size. A key's place never changes, so shards only grow; a publication

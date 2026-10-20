@@ -1,6 +1,7 @@
 """Publish a catalogue in today's export format into the new layout (decision record 0005).
 
     python3 publish.py <catalogue.sqlite> [--dry-run]
+    python3 publish.py [<catalogue.sqlite>] --replacements [--dry-run]
 
 The catalogue is what export_cloudflare.py / export_cloudflare_corpus.py write: `units`, and when
 present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`, `unit_redirects`. A `media` table also adds its
@@ -19,6 +20,15 @@ images to the image key map (`media_map.py`).
   crops and its revision go together), then the runs to glyph-atlas-v3-runs. Each part counts as
   applied when its stamp is in that database's `imports`, and is then replayed on the local copy.
 - A publish stopped after allocating is finished by the next run before anything else.
+- A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
+  their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
+  parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
+  crop's entry.
+- A statement over STATEMENT_BYTES stops the publish before anything is allocated.
+
+With `--replacements` the publish also reads `source-unit_redirects.sqlite` (the catalogue's own
+`unit_redirects` win) and sets `replaced_by` on every retired bundle entry whose value differs from the
+first live crop on its chain, catalogued or not; without a catalogue it does only that.
 
 One publish runs at a time (a lock on out/mirror.lock).
 """
@@ -36,7 +46,8 @@ from collections import defaultdict
 from pathlib import Path
 
 import media_map
-from build import CORPUS_PAGE, PAGE, bundle_entry, char_text, shuffle
+import votes
+from build import CORPUS_PAGE, PAGE, bundle_entry, char_text, replacement, shuffle
 
 ROOT = Path(__file__).resolve().parents[2]
 # Copies of the live tables and the build output live outside the repository.
@@ -69,7 +80,11 @@ def merged_cuts(*lists):
 RUN_KEY = ("size", "graphemes", "hand", "shuffle", "first")
 # D1 takes an imported file whole; parts stay under the size the publication scripts use.
 PART_BYTES = 40 * 1024 ** 2
+# D1 refuses a statement over 100 KB.
+STATEMENT_BYTES = 90_000
 KEEP = object()
+# A crop facts load (crop_facts.py) names its run in `pending` with this prefix.
+FACTS_RUN = "crop-facts/"
 
 
 def lit(v):
@@ -126,8 +141,10 @@ def send(database, file, stamp):
 
 
 def upload(files, prefix=BUNDLE_PREFIX):
-    """Files to R2 under a prefix, through rclone's S3 interface; an object name is never reused, so a
-    resend is harmless."""
+    """Files to R2 under a prefix, through rclone's S3 interface. A page bundle's name carries its
+    revision and a publication's files sit under its own `v3/pub/<pub>/`, so resending them writes the
+    same bytes again. The image key shards (`v3/media/`), the alias shards (`v3/aliases/`) and
+    `v3/pointer.json` have fixed names: a resend replaces the object with the local file."""
     if not files:
         return
     folder = files[0].parent
@@ -163,6 +180,8 @@ class Mirror:
         self.atlas.commit()
         self.runs.commit()
         self.head, self.runs_sql = [], []
+        # Each page's vote entries by slot, read from out/votes/ when first touched, and the pages changed.
+        self.votes, self.voted = {}, set()
         self.page_sql = defaultdict(list)
         self.touched_pages = defaultdict(dict)
         self.guarded, self.stale, self.relabelled, self.runs_seen = [], [], [], set()
@@ -286,19 +305,48 @@ class Mirror:
         bundle = {k: v for k, v in bundle.items() if v is not None}
         self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
 
-    def retire(self, cid, text_id, mirror_revision, replaced_by):
+    def vote_slots(self, pid):
+        if pid not in self.votes:
+            self.votes[pid] = votes.read(OUT / "votes", pid)
+        return self.votes[pid]
+
+    def vote(self, cid, cut, visual, context):
+        """The crop's votes for its cut from the catalogue's readings; its page object changes only when
+        they differ."""
+        key, stored = votes.visual(visual)
+        new = votes.entry(cut, self.code("models", key), stored, votes.context(context))
+        slots, slot = self.vote_slots(cid // PAGE), cid % PAGE
+        if slots.get(slot) == new:
+            return
+        if new is None:
+            del slots[slot]
+        else:
+            slots[slot] = new
+        self.voted.add(cid // PAGE)
+
+    def retire(self, cid, text_id, mirror_revision):
         pid = cid // PAGE
         # The entry keeps the crop's cut, so a crop put back continues from it.
         cut = self.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()["cut"]
         self.page_sql[pid].append(f"DELETE FROM crops WHERE id={cid} AND revision={mirror_revision};")
+        if self.vote_slots(pid).pop(cid % PAGE, None) is not None:
+            self.voted.add(pid)
         self.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
         self.guarded.append(cid)
-        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut, **replaced_by}, True)
+        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut}, True)
+
+
+def fits(groups):
+    """Stop when a statement is over D1's limit; run before anything is allocated or committed."""
+    for group in groups:
+        if long := [s for s in group if len(s.encode()) > STATEMENT_BYTES]:
+            sys.exit(f"a statement of {len(long[0].encode())} bytes is over D1's limit, nothing sent: {long[0][:200]}")
 
 
 def write_parts(run, name, groups):
     """Groups of statements in files of at most PART_BYTES (a group larger than that is a part of its
     own); a group is never split. Each file carries its own stamp and is applied in order."""
+    fits(groups)
     parts, current, size = [], [], 0
     for group in groups:
         n = sum(len(s.encode()) + 1 for s in group)
@@ -363,6 +411,14 @@ def deliver(m, run):
             if refused:
                 print(f"{len(refused)} changes kept D1's newer review instead (ids in {run.name}/refused-by-d1.json)", flush=True)
             mark(run, "read back")
+    # The vote objects go once D1 holds the model codes they name; out/votes/ takes each as it goes up.
+    voted = sorted((run / "votes").glob("*.json.gz")) if (run / "votes").exists() else []
+    if voted and "votes uploaded" not in journal(run):
+        upload(voted, votes.prefix(m.build))
+        (OUT / "votes").mkdir(exist_ok=True)
+        for path in voted:
+            shutil.copy2(path, OUT / "votes" / path.name)
+        mark(run, "votes uploaded")
     for path in (run / "pages").iterdir():
         shutil.copy2(path, OUT / "pages" / path.name)
         page, rev = path.name.split(".")[0].split("-")
@@ -382,9 +438,13 @@ def finish_unfinished(m):
 
 def main():
     parser = argparse.ArgumentParser(description="Publish a catalogue into the new layout.")
-    parser.add_argument("catalogue", type=Path)
+    parser.add_argument("catalogue", type=Path, nargs="?")
     parser.add_argument("--dry-run", action="store_true", help="write the parts and bundles, publish nothing")
+    parser.add_argument("--replacements", action="store_true",
+                        help="name the replacement of every retired crop from source-unit_redirects.sqlite")
     args = parser.parse_args()
+    if args.catalogue is None and not args.replacements:
+        parser.error("a catalogue, --replacements, or both")
     catalogue, dry = args.catalogue, args.dry_run
     (OUT / "publish").mkdir(parents=True, exist_ok=True)
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
@@ -399,13 +459,17 @@ def main():
     build_id = m.ids.execute("SELECT value FROM meta WHERE key='build'").fetchone()
     if not build_id:
         sys.exit("out/mirror.sqlite names no build; it is not the mirror of glyph-atlas-v3")
+    m.build = build_id[0]
     if not dry and not applied("glyph-atlas-v3", f"build:{build_id[0]}"):
         sys.exit(f"glyph-atlas-v3 was not loaded from build {build_id[0]}; this mirror does not belong to it")
+    # A crop facts load writes the same tables and objects; it finishes first.
+    for (name,) in m.ids.execute("SELECT run FROM pending WHERE run LIKE ?", (FACTS_RUN + "%",)):
+        sys.exit(f"the crop facts load {name.removeprefix(FACTS_RUN)} is unfinished; finish it with crop_facts.py --send first")
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
         sys.exit("an earlier publish is unfinished; run a publish (not a dry run) to finish it first")
-    src = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True)
+    src = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True) if catalogue else sqlite3.connect(":memory:")
     src.row_factory = sqlite3.Row
     tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
@@ -445,6 +509,9 @@ def main():
 
     # Identity checks a publish without the slot matcher can make.
     columns = "id, origin, character, visual_group, production, category, state, revision, quiz, document, style, data"
+    with_votes = "units" in tables and {"visual", "context"} <= {r[1] for r in src.execute("PRAGMA table_info(units)")}
+    if with_votes:
+        columns += ", visual, context"
     units = list(src.execute(f"SELECT {columns} FROM units WHERE origin IN ('local', 'retired') ORDER BY id")) if "units" in tables else []
     overlay = {r["id"]: r for r in src.execute(f"SELECT {columns} FROM units WHERE origin='corpus'")} if "units" in tables else {}
     retiring = {r["id"] for r in units if r["origin"] == "retired"}
@@ -505,35 +572,77 @@ def main():
         report.write_text("\n".join(refused) + "\n")
         sys.exit(f"{len(refused)} crops need the slot matcher or are newer on the site; nothing published. See {report}")
 
-    stamp = time.strftime("%Y%m%dT%H%M%S") + f".{time.time_ns() % 10**9:09d}-{catalogue.parent.name}-{catalogue.stem}"
+    # A retired crop names the crop it was retired in favour of by integer id: the first text id on its
+    # redirect chain that is a live crop after this publish, past retired crops and text ids with no crop.
+    replaced = {}
+    if args.replacements:
+        replaced = dict(sqlite3.connect(f"file:{HERE / 'source-unit_redirects.sqlite'}?mode=ro", uri=True)
+                        .execute("SELECT id, target FROM unit_redirects"))
+    if "unit_redirects" in tables:
+        replaced.update(src.execute("SELECT id, target FROM unit_redirects"))
+    catalogued_live = {r["id"] for r in units if r["origin"] == "local"}
+
+    def live(text):
+        if text in catalogued_live or ("corpus_units" in tables and src.execute("SELECT 1 FROM corpus_units WHERE id=?", (text,)).fetchone()):
+            return True
+        cid = None if text in retiring else m.known(text)
+        return cid is not None and m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone() is not None
+
+    replacing, unresolved = {}, []
+    for r in units:
+        if r["origin"] == "retired" and r["id"] in replaced:
+            try:
+                found = replacement(r["id"], replaced, live)
+            except ValueError as loop:
+                found = None
+                unresolved.append(f"{r['id']}: its redirects loop ({loop})")
+            else:
+                if found is None:
+                    unresolved.append(f"{r['id']}: no live crop on its redirect chain from {replaced[r['id']]}")
+            # A chain with no live crop leaves `replaced_by` unset; the site answers that the crop is retired.
+            replacing[r["id"]] = found
+    naming = []
+    if args.replacements:
+        # Every other retired crop with a redirect: a mirror id with no row and a retired entry.
+        catalogued = {r["id"] for r in units}
+        for text in sorted(replaced.keys() - catalogued):
+            cid = m.known(text)
+            if cid is None or m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone() or not entry(cid).get("retired"):
+                continue
+            try:
+                found = replacement(text, replaced, live)
+            except ValueError as loop:
+                found = None
+                unresolved.append(f"{text}: its redirects loop ({loop})")
+            else:
+                if found is None:
+                    unresolved.append(f"{text}: no live crop on its redirect chain from {replaced[text]}")
+            replacing[text] = found
+            naming.append((cid, text))
+
+    stamp = time.strftime("%Y%m%dT%H%M%S") + f".{time.time_ns() % 10**9:09d}-" + (
+        f"{catalogue.parent.name}-{catalogue.stem}" if catalogue else "replacements")
     run = OUT / "publish" / stamp
     (run / "pages").mkdir(parents=True)
 
-    # A retired crop names the crop it was retired in favour of, where the catalogue says: one hop, so a
-    # reader follows `replaced_by` while the crop it names is retired too.
-    replaced = dict(src.execute("SELECT id, target FROM unit_redirects")) if "unit_redirects" in tables else {}
     n, crop_ids, retired = 0, {}, set()
     for r in units:
         data = json.loads(r["data"])
         if r["origin"] == "retired":
             cid = m.known(r["id"])
             current = cid is not None and m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
-            named = {"replaced_by": replaced[r["id"]]} if r["id"] in replaced else {}
             if current:
-                m.retire(cid, r["id"], current["revision"], named)
+                m.retire(cid, r["id"], current["revision"])
                 retired.add(cid)
                 n += 1
-            elif cid is not None:
-                # Already retired: a replacement named since is added to its entry.
-                if named and entry(cid).get("replaced_by") != named["replaced_by"]:
-                    m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": r["id"], "retired": True, **named}, True)
             elif cid is None:
                 # A crop retired before it reached the new layout still gets a number, kept only in its
                 # page's bundle, so its reviews, claims and links resolve.
                 cid = m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
-                m.touched_pages[cid // PAGE][cid % PAGE] = (
-                    {"id": r["id"], "retired": True, **bundle_entry(data), **named}, True)
+                m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": r["id"], "retired": True, **bundle_entry(data)}, True)
                 n += 1
+            if r["id"] in replacing:
+                naming.append((cid, r["id"]))
             continue
         cid = m.known(r["id"]) or m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
         crop_ids[r["id"]] = cid
@@ -558,6 +667,8 @@ def main():
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
         m.crop(given, bundle, r["revision"], True, suspect=bool(data.get("suspect")))
+        if with_votes:
+            m.vote(cid, given.get("cut", row["cut"] if row else 0), r["visual"], r["context"])
         n += 1
 
     if "corpus_units" in tables:
@@ -584,6 +695,16 @@ def main():
             m.crop(given, {"id": r["id"], "label": r["label"], "record_place": [r["object"], r["offset"], r["size"]]},
                    o["revision"] if o else 0, o is not None)
             n += 1
+
+    # Replacements are numbered once every crop of the catalogue has its id. None removes the field.
+    for cid, text_id in naming:
+        target = m.known(replacing[text_id]) if replacing[text_id] else None
+        retiring_now = m.touched_pages.get(cid // PAGE, {}).get(cid % PAGE)
+        if retiring_now:
+            retiring_now[0]["replaced_by"] = target
+        elif entry(cid).get("replaced_by") != target:
+            # Already retired: a replacement named since, or one the entry holds as a text id, is set.
+            m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": text_id, "retired": True, "replaced_by": target}, True)
 
     # Runs: those starting at this catalogue's crops follow it; those touching a retired crop go.
     runs_note = ""
@@ -671,7 +792,8 @@ def main():
             # A crop's new record replaces its old one, so a field the record no longer has goes. A
             # retired crop keeps its record; an image keeps its pack place when the catalogue could
             # not look it up.
-            new = {**old, **new_entry, "slot": slot} if new_entry.get("retired") else {"slot": slot, **new_entry}
+            new = {k: v for k, v in {**old, **new_entry, "slot": slot}.items() if v is not None} \
+                if new_entry.get("retired") else {"slot": slot, **new_entry}
             for field in ("image", "context_image"):
                 if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
                     new[field + "_place"] = old[field + "_place"]
@@ -702,8 +824,15 @@ def main():
     (run / "guarded.json").write_text(json.dumps(m.guarded))
     statements = sum(len(g) for g in groups)
     (run / "stale.json").write_text(json.dumps(m.stale))
+    voted = [votes.write(run / "votes", pid, m.votes[pid]) for pid in sorted(m.voted)
+             if votes.encode(m.votes[pid]) != ((OUT / "votes" / f"{pid}.json.gz").read_bytes()
+                                              if (OUT / "votes" / f"{pid}.json.gz").exists() else None)]
     print(f"{n} crops read, {statements} statements in {atlas_parts} parts{runs_note} in {runs_parts} parts, "
-          f"{len(files)} pages -> {run}", flush=True)
+          f"{len(files)} pages, {len(voted)} vote objects -> {run}", flush=True)
+    if unresolved:
+        (run / "unreplaced.txt").write_text("\n".join(unresolved) + "\n")
+        print(f"{len(unresolved)} retired crops have no live crop on their redirect chain and name no replacement "
+              f"(all in {run.name}/unreplaced.txt), for example: " + "; ".join(unresolved[:5]), flush=True)
     if m.stale:
         print(f"{len(m.stale)} crops have a newer review on the site than in this catalogue; their review columns were "
               f"left as published (ids in {run.name}/stale.json)", flush=True)
@@ -715,7 +844,7 @@ def main():
         mark(run, "dry run")
         print("dry run: nothing allocated, sent or changed")
         return
-    if not atlas_parts and not runs_parts:
+    if not atlas_parts and not runs_parts and not voted:
         m.ids.rollback()
         mark(run, "nothing to send")
         media_map.send(upload)
