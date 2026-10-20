@@ -80,7 +80,9 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   keeps its runs.
 - A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`
   moves on by one, and its bundle entry takes the new record. Reviews and claims name the cut they
-  were made on, so they stay with the old one. The version it replaced joins the entry's `cuts` (its
+  were made on, so they stay with the old one. A re-cut crop that rounds had marked seen or hard is pending
+  again at its new cut, one revision on, with an event of kind `cut` (actor and submission 0), since the
+  rounds showed its old box. The version it replaced joins the entry's `cuts` (its
   cut number, box, image and pack place), which later records carry along unless they name their own.
 - A known crop on another page, or a new or re-cut box overlapping another crop on its page
   (IoU ≥ 0.5), stops the publish with a report: those need the slot matcher, which is not built yet.

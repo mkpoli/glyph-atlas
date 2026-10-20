@@ -2,6 +2,8 @@
 -- crop had before it; `reverses` names that event, so a reversed review stops counting as the crop's
 -- standing one. A round's mark that its undo clears names the round's mark event, or none.
 INSERT INTO codes(field, code, key) VALUES ('kind', 5, 'undo');
+-- A publication's re-cut of a crop rounds had marked: at its new cut it is pending again (publish.py).
+INSERT INTO codes(field, code, key) VALUES ('kind', 7, 'cut');
 ALTER TABLE events ADD COLUMN reverses INTEGER;
 CREATE INDEX event_reverses ON events(reverses) WHERE reverses IS NOT NULL;
 -- What the crop held before the event, which an undo restores: its state, the issue it was flagged

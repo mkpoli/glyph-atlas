@@ -66,6 +66,10 @@ REVIEW_OWNED = ("char", "state", "style", "quiz", "kind", "flags")
 # What a crop takes when it is new and the catalogue does not say.
 DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0}
 SUSPECT = 1
+# The mark states, the pending state and the event kind of a re-cut that clears a mark, as migrations
+# 0003 and 0009 and the first build number them. The publication's own events name actor and
+# submission 0.
+MARK_STATES, PENDING, RECUT_KIND = (3, 4), 0, 7
 # What a bundle entry keeps of each earlier cut: enough to show and cite its pixels.
 CUT_FIELDS = ("box", "crop_box", "context_box", "image", "image_sha256", "image_size", "image_place",
               "context_image", "context_image_place")
@@ -304,6 +308,19 @@ class Mirror:
                                    [row[c] for c in changed] + [cid])
         bundle = {k: v for k, v in bundle.items() if v is not None}
         self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
+
+    def unmark(self, cid):
+        """A crop re-cut while marked seen or hard: rounds showed or skipped its old box, so at the new
+        cut it is pending again, one revision on, with an event recording it, as the old site judged
+        marks against the current box. Only while it still holds a mark, so a review since stands."""
+        pid, held = cid // PAGE, f"state IN ({','.join(map(str, MARK_STATES))})"
+        self.page_sql[pid] += [
+            f"INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind, label, state) SELECT id, revision + 1, cut, "
+            f"(SELECT gen FROM generation WHERE id = 0), 0, 0, {round(time.time() * 1000)}, {RECUT_KIND}, char, {PENDING} "
+            f"FROM crops WHERE id = {cid} AND {held};",
+            f"UPDATE reviews SET state = {PENDING} WHERE crop = {cid} AND {held};",
+            f"UPDATE crops SET state = {PENDING}, revision = revision + 1 WHERE id = {cid} AND {held};"]
+        self.guarded.append(cid)
 
     def vote_slots(self, pid):
         if pid not in self.votes:
@@ -654,7 +671,7 @@ def main():
                  "state": m.code("state", r["state"]), "quiz": r["quiz"], "year": years.get(r["document"], KEEP),
                  "revision": r["revision"], "shuffle": shuffle(cid)}
         bundle = {"id": r["id"], **bundle_entry(data)}
-        previous, row = entry(cid), m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()
+        previous, row = entry(cid), m.atlas.execute("SELECT cut, state FROM crops WHERE id=?", (cid,)).fetchone()
         old_cut = row["cut"] if row else previous.get("cut", 0)
         if r["id"] in recut:
             # The version the crop had joins its earlier cuts, so a citation of it still finds its pixels.
@@ -667,6 +684,8 @@ def main():
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
         m.crop(given, bundle, r["revision"], True, suspect=bool(data.get("suspect")))
+        if r["id"] in recut and row is not None and row["state"] in MARK_STATES:
+            m.unmark(cid)
         if with_votes:
             m.vote(cid, given.get("cut", row["cut"] if row else 0), r["visual"], r["context"])
         n += 1
