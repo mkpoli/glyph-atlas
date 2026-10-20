@@ -7,8 +7,8 @@ export const IN_LIST = 100;
 // The most ids one request may look up: a page of rows names far fewer.
 export const MAX_IDS = 1000;
 
-export type Person = { name: string; image: string | null };
-export type ActorPerson = { user: string | null; name: string | null; image: string | null };
+export type Person = { name: string; image: string | null; anonymous: boolean };
+export type ActorPerson = { user: string | null; name: string | null; image: string | null; anonymous: boolean };
 
 function groups<T>(values: Iterable<T | null | undefined>): T[][] {
   const unique = [...new Set([...values].filter((value): value is T => value !== null && value !== undefined))];
@@ -19,18 +19,21 @@ function groups<T>(values: Iterable<T | null | undefined>): T[][] {
 }
 const marks = (n: number) => Array(n).fill('?').join(',');
 
-/** The name and picture of each user in `ids` that still has an account. */
+/** The name and picture of each user in `ids` whose row is still in `ACCOUNTS`, and whether it is anonymous. */
 export async function people(env: Env, ids: Iterable<string | null | undefined>): Promise<Map<string, Person>> {
   const parts = groups(ids);
   const out = new Map<string, Person>();
   if (!parts.length) return out;
-  const results = await env.ACCOUNTS.batch<{ id: string; name: string; image: string | null }>(
-    parts.map(part => env.ACCOUNTS.prepare(`SELECT id,name,image FROM "user" WHERE id IN (${marks(part.length)})`).bind(...part)));
-  for (const { results: rows } of results) for (const row of rows) out.set(row.id, { name: row.name, image: row.image });
+  const results = await env.ACCOUNTS.batch<{ id: string; name: string; image: string | null; isAnonymous: number | null }>(
+    parts.map(part => env.ACCOUNTS.prepare(`SELECT id,name,image,isAnonymous FROM "user" WHERE id IN (${marks(part.length)})`).bind(...part)));
+  for (const { results: rows } of results) for (const row of rows) out.set(row.id, { name: row.name, image: row.image, anonymous: Boolean(row.isAnonymous) });
   return out;
 }
 
-/** The user each actor in `actors` belongs to, with that user's name and picture. */
+/**
+ * The user each actor in `actors` belongs to, with that user's name and picture. An actor whose user is
+ * deleted, its links in `ATLAS` not yet removed, belongs to nobody.
+ */
 export async function actorPeople(env: Env, actors: Iterable<number | null | undefined>): Promise<Map<number, ActorPerson>> {
   const parts = groups(actors);
   const out = new Map<number, ActorPerson>();
@@ -41,7 +44,7 @@ export async function actorPeople(env: Env, actors: Iterable<number | null | und
   const named = await people(env, owners.map(row => row.user));
   for (const { id, user } of owners) {
     const person = user ? named.get(user) : undefined;
-    out.set(id, { user, name: person?.name ?? null, image: person?.image ?? null });
+    out.set(id, person ? { user, ...person } : { user: null, name: null, image: null, anonymous: false });
   }
   return out;
 }

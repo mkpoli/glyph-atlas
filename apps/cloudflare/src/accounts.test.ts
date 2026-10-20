@@ -26,8 +26,8 @@ function bounded(db: Database, bound: number[]) {
 function setup() {
   const accounts = migrated('migrations-accounts'), atlas = migrated('migrations-atlas');
   const at = '2026-10-20T00:00:00.000Z';
-  const user = accounts.prepare(`INSERT INTO "user"(id,name,email,emailVerified,image,createdAt,updatedAt) VALUES(?,?,?,1,?,?,?)`);
-  for (let i = 0; i < 250; i++) user.run(`u${i}`, `name ${i}`, `${i}@x`, i % 2 ? `/p/${i}` : null, at, at);
+  const user = accounts.prepare(`INSERT INTO "user"(id,name,email,emailVerified,image,createdAt,updatedAt,isAnonymous) VALUES(?,?,?,1,?,?,?,?)`);
+  for (let i = 0; i < 250; i++) user.run(`u${i}`, `name ${i}`, `${i}@x`, i % 2 ? `/p/${i}` : null, at, at, i === 4 ? 1 : null);
   const actor = atlas.prepare(`INSERT INTO actors(id,key,user,via,at) VALUES(?,?,?,?,1)`);
   for (let i = 0; i < 250; i++) actor.run(i + 1, `k${i}`, i < 240 ? `u${i}` : i < 245 ? `deleted${i}` : null, i < 245 ? 'account' : null);
   const bound: number[] = [];
@@ -40,16 +40,19 @@ describe('names for rows written in ATLAS', () => {
     const { env, bound } = setup();
     const found = await people(env, [...Array.from({ length: 250 }, (_, i) => `u${i}`), 'u3', null, 'nobody']);
     expect(found.size).toBe(250);
-    expect(found.get('u3')).toEqual({ name: 'name 3', image: '/p/3' });
+    expect(found.get('u3')).toEqual({ name: 'name 3', image: '/p/3', anonymous: false });
+    expect(found.get('u4')?.anonymous).toBe(true);
     expect(found.has('nobody')).toBe(false);
     expect(bound).toEqual([IN_LIST, IN_LIST, 51]);
   });
   it('name each actor by its user, and leave an actor with no account unnamed', async () => {
     const { env, bound } = setup();
     const found = await actorPeople(env, Array.from({ length: 250 }, (_, i) => i + 1));
-    expect(found.get(1)).toEqual({ user: 'u0', name: 'name 0', image: null });
-    expect(found.get(242)).toEqual({ user: 'deleted241', name: null, image: null });
-    expect(found.get(250)).toEqual({ user: null, name: null, image: null });
+    expect(found.get(1)).toEqual({ user: 'u0', name: 'name 0', image: null, anonymous: false });
+    expect(found.get(5)).toEqual({ user: 'u4', name: 'name 4', image: null, anonymous: true });
+    // A user deleted in ACCOUNTS whose actor links are not yet removed.
+    expect(found.get(242)).toEqual({ user: null, name: null, image: null, anonymous: false });
+    expect(found.get(250)).toEqual({ user: null, name: null, image: null, anonymous: false });
     expect(bound).toEqual([100, 100, 50, 100, 100, 45]);
     expect(await actorPeople(env, [])).toEqual(new Map());
   });
