@@ -5,7 +5,7 @@
 Reads the `source-*.sqlite` copies (`pull.py`) and the publisher's local copies (`out/mirror.sqlite`,
 `out/atlas.sqlite`, `out/pages/`), never writes them, and writes:
 
-- `out/history.sqlite`: the tables of `0003_history.sql`, with `events`, `skips` and `codes` from
+- `out/history.sqlite`: the tables of `0003_history.sql` and `0009_undo.sql`, with `events`, `skips` and `codes` from
   `0001_init.sql`, holding the translated rows;
 - `out/history-cuts.json`: each crop's earlier version, cut -1, for the publisher to put in its bundle;
 - `out/history-tombstones.json`: crops an event names that the mirror lacks, for the publisher to number;
@@ -123,6 +123,7 @@ def create(db):
         if m and (m[1] or m[2]) in ("events", "skips", "codes", "actor_stats"):
             db.execute(body)
     db.executescript((SCHEMA / "0003_history.sql").read_text())
+    db.executescript((SCHEMA / "0009_undo.sql").read_text())
 
 
 class Crops:
@@ -372,7 +373,11 @@ def main():
                        (evidence.get("note") or None) and evidence["note"][:2000],
                        codes["issue"].get(issue),
                        # Typed characters: `suggested_text`, or `suggested_reading` in reviews saved before it.
-                       evidence.get("suggested_text") or evidence.get("suggested_reading") or None))
+                       evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
+                       # What an undo restores (0009): no event reverses another yet; the state, issue and
+                       # redrawn box before the review.
+                       None, atlas_codes["state"].get(before.get("state")), codes["issue"].get(before.get("issue")),
+                       *((box_of(before.get("box")) if before.get("box_pending") else None) or (None,) * 4)))
     insert("events", [(i, *e) for i, e in enumerate(events, 1)])
     report.tables["events"]["out"] = len(events)
     report.note("events: a review sets no style and no withheld flag, so both are NULL")
