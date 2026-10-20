@@ -11,7 +11,14 @@ export const afterWrite = listener => { writeListeners.add(listener); return () 
 // ahead of the reader.
 export async function request(path, body, { fetch: send = fetch, wait = true, ...options } = {}) {
   if (body !== undefined) return typeof window === 'undefined' ? settle(await posted(path, body, send, options)) : save(path, body, send, options)
-  const answer = async () => { const response = await send(path, options); return { response, value: await response.json() } }
+  const answer = async () => {
+    let response = await send(path, options)
+    // An old crop address answers with the crop's public one. A browser follows it; the page server's
+    // fetch hands the redirect back, so it is followed here, once: the Worker names the final address.
+    const location = [301, 302, 307, 308].includes(response.status) ? response.headers.get('location') : null
+    if (location) { const to = new URL(location, 'https://glyphatlas.org'); response = await send(to.pathname + to.search, options) }
+    return { response, value: await response.json() }
+  }
   let answered = await answer()
   // A read the database is too busy for is asked again in the browser, and the page keeps what it
   // shows meanwhile. A page rendered on the server does not wait: its view reads again itself.
@@ -29,8 +36,6 @@ function settle({ response, value }) {
     : response.status === 409 ? t('client.changed') : t('client.saveFailed'))
   error.code = paused ? 'paused' : value.code
   error.status = response.status
-  // A crop a publication retired names the crop that replaced it.
-  if (typeof value.replaced_by === 'string') error.replacedBy = value.replaced_by
   // A batch the site refused names the crops it refused.
   if (Array.isArray(value.targets)) error.targets = value.targets
   throw error
