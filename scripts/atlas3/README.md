@@ -130,7 +130,50 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    to its integer crop id, and uploads the map as `v3/aliases/<first three hex digits of the text id's
    SHA-256>.json.gz`, read by `aliasCrop` in the Worker. A redirect cycle stops it with examples; a
    chain that ends outside the mirror is counted as gone and left out.
-6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
+6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
+   characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
+   `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`
+   (`migrations-atlas/0005_books.sql`), books by integer id and occurrences by crop through
+   `out/mirror.sqlite`, and writes the parts and their figures to `out/books-report.txt`; facts about
+   a document that is not a book are left out with a count. `books.py --send` applies `0005_books.sql`
+   and loads only what differs from the local copy, in stamped parts. A book's title comes from its
+   first page bundle, else from its corpus publication. The corpus glyphs per book and the homepage
+   sample are derived from the crops by `answers.py` (*not built*), so neither is copied. Keeping the
+   facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
+   ainu-records' character lists and the catalogue's site values still write the old database.
+7. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
+   session changes still frozen. It is created once, before the window:
+   `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:
+
+       python3 scripts/atlas3/accounts.py pull --fresh
+       python3 scripts/atlas3/accounts.py load
+       python3 scripts/atlas3/accounts.py load --send
+       python3 scripts/atlas3/accounts.py check
+
+   `pull` finds the authentication tables in the old database's `sqlite_master`: `user`,
+   `verification`, `rateLimit` and every table whose foreign keys lead to `user` (`session`,
+   `account`, `passkey`, `account_profiles`), less those `pull.py` copies for the history
+   (`favourites`). A table that is neither and is not named, with its reason, in `LEFT` in
+   `accounts.py` stops it. It copies their CREATE statements (with their indexes) and their rows in
+   primary-key ranges into `accounts.sqlite`, then compares the copy with the old database as `check`
+   does; it only reads. `load` writes the tables with those exact statements, the rows (parents
+   first) and then the indexes as parts under `accounts-load/<copy>/`, named by the copy's checksums,
+   and replays them on an empty database to confirm they rebuild the copy. Only `--send` writes to D1:
+   each part is confirmed by its stamp in an `imports` table, and a database holding another copy's
+   rows or tables of its own is refused. If `--send` stops partway, run `load --send` again on the
+   same copy, without `pull --fresh`: it sends only the missing parts, and a copy differing in any
+   row would be refused by the half-loaded database. `check` compares the table set, the schema, row counts and a checksum
+   of every row per table, first between the old database and `accounts.sqlite`, then between
+   `accounts.sqlite` and `glyph-atlas-accounts`, and exits 1 on any difference. Run it before the
+   site checks of step 8: their sign-ins and session
+   renewals write to `glyph-atlas-accounts`, after which it no longer matches.
+
+   `accounts.sqlite` and `accounts-load/` hold sessions and account tokens; the script creates them
+   readable by the owner only. Once `check` passes, delete both, in the Codespace too:
+
+       rm -rf work/atlas-v3/accounts.sqlite* work/atlas-v3/accounts-load
+
+8. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout. The site checks that write (an existing session cookie, renewal,
    logout, a history page, favourites, a claim, an old URL) run against the real new databases on a
    version that is uploaded and not deployed, while the deployed Worker stays paused. From
@@ -145,8 +188,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    The second version answers at `https://<first 8 characters of its id>-glyph-atlas.<subdomain>.workers.dev`.
    A glyphatlas.org cookie is sent there by hand, with a test account's session. Passkeys are bound to
    glyphatlas.org, so a passkey sign-in is checked on the site right after the switch.
-7. **Switch** the Worker's routes to the new layout and resume writes:
-   `wrangler versions deploy <checked version id>@100%` deploys the version checked in step 6, which
+9. **Switch** the Worker's routes to the new layout and resume writes:
+   `wrangler versions deploy <checked version id>@100%` deploys the version checked in step 8, which
    has no `WRITES_PAUSED`. Turn Version URLs off again.
 
 `check.py` compares the copies with the local copy of the new layout, crop by crop: numbers, row
@@ -164,7 +207,7 @@ answers:
 - forms (`forms`, `form_*`), `words`, `word_spellings`;
 - character data (`characters` cards, `character_variants`, `character_derived`,
   `component_variants`, `han_ids`, `han_components`, `han_component_names`, `grapheme_writers`,
-  `document_characters`, `corpus_documents`, `representations`);
+  `representations`);
 - the model votes in `units.visual`, and the text-id alias files;
 - family heads and search names for characters that first appear after the first build;
 - `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
