@@ -204,7 +204,10 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    of their current cut (35 corpus glyphs whose source revision changed under the same box, one collected
    crop) and every crop the old site recorded a version of its `cut_at` (`cut_facts`); that publish
    rewrites the bundle of every page of collected crops once. `answers.py`
-   follows, since marks change the counts. `aliases.py` (counts only without `--send`) maps every text
+   follows, since marks change the counts. Suspects and shape orders computed later go in with
+   `quiz_marks.py --suspects <files> --shapes <quiz-shapes.json>`, which replaces each table it is given
+   by crop through the mirror: without `--send` it only reports the difference from the local copy, and
+   `--send` delivers it. `aliases.py` (counts only without `--send`) maps every text
    id in the mirror, and every source of `unit_redirects` followed to the first text id the mirror has,
    to its integer crop id, and uploads the map as `v3/aliases/<first three hex digits of the text id's
    SHA-256>.json.gz`, read by `aliasCrop` in the Worker. A redirect cycle stops it with examples; a
