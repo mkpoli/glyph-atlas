@@ -89,6 +89,7 @@
   "client.saveFailed": "无法保存审阅结果。",
   "client.busy": "数据库仍在更新，请几分钟后重试。",
   "client.paused": "网站维护中，暂停保存。浏览不受影响，请稍后再试。",
+  "client.pausedKept": "目前暂停接受更改。你保存的内容会留在本设备上，恢复后自动发送。",
   "client.busyRetrying": "数据库正在更新，正在重试…",
   "client.keptSending.other": "已在本设备保存{count}项，正在发送…",
   "client.keptRefused": "本设备保存的一项未被接受：{reason}",

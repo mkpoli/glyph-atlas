@@ -38,7 +38,8 @@
 </script>
 
 <div class="database-status" popover="manual" role="status" bind:this={note}>
-  {#if outbox.pending}<p><span class="spinner" aria-hidden="true"></span>{t('client.keptSending', { count: outbox.pending })}</p>
+  {#if outbox.pending && outbox.paused}<p>{t('client.pausedKept')}</p>
+  {:else if outbox.pending}<p><span class="spinner" aria-hidden="true"></span>{t('client.keptSending', { count: outbox.pending })}</p>
   {:else if reading}<p><span class="spinner" aria-hidden="true"></span>{t('client.busyRetrying')}</p>{/if}
   {#each outbox.refused as refusal (refusal.key)}
     <p class="refused">{t('client.keptRefused', { reason: refusal.message })}

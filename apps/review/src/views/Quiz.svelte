@@ -616,7 +616,10 @@
     return items.filter(i => skipped[i.id] && !failed[i.id] && viewed[i.id] && !recorded[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
   }
   // A round the site refused is reported in the reader's language; the service's messages are English.
-  const roundError = e => e.status === 409 ? t('quiz.roundChanged') : t('quiz.roundNotSaved')
+  const roundError = e => e.status === 409 ? t('quiz.roundChanged') : e.code === 'paused' ? t('client.paused') : t('quiz.roundNotSaved')
+  // A round kept on this device while writes are paused counts as done here, and the next one is dealt:
+  // it is sent once writes resume. Resolves true when kept.
+  const keptWhilePaused = sent => sent.then(() => false, e => { if (e?.kept) return true; throw e })
   // A tab open across a deployment runs the page it loaded, and the site may refuse what that page sends.
   // A refusal while a newer page is out offers the reload (the notice above the round) in place of the error.
   const outdated = async e => e.status >= 400 && e.status < 500 && (updated.current || await updated.check())
@@ -666,10 +669,10 @@
     if (!answers.length && !seen.length && !passed.length) { await load(); return }
     saving = true; error = ''; errorStatus = 0
     try {
-      await request('/atlas/rounds', { id: roundId, grapheme, answers, seen, skipped: passed })
+      const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, answers, seen, skipped: passed }))
       last = { id: roundId, count: answers.length, grapheme, production }
       remember('atlas.last-round', last); completed += answers.length
-      announceSaved(answers.length + seen.length + passed.length, graphemeLabel)
+      if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeLabel)
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       await load()
@@ -687,10 +690,10 @@
     if ((!seen.length && !passed.length) || openSelection.length) return true
     saving = true; error = ''; errorStatus = 0
     try {
-      await request('/atlas/rounds', { id: roundId, grapheme, seen, skipped: passed })
+      const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, seen, skipped: passed }))
       last = { id: roundId, count: 0, grapheme, production }
       remember('atlas.last-round', last)
-      announceSaved(seen.length + passed.length, graphemeLabel)
+      if (!kept) announceSaved(seen.length + passed.length, graphemeLabel)
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       return true
@@ -705,7 +708,7 @@
     if (!last || saving) return
     saving = true; error = ''; errorStatus = 0
     try {
-      await request(`/atlas/rounds/${last.id}/undo`, {})
+      await keptWhilePaused(request(`/atlas/rounds/${last.id}/undo`, {}))
       // A round stored by an older version may name a scope the menu no longer offers.
       const target = last.grapheme, scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
       completed = Math.max(0, completed - last.count); last = null
