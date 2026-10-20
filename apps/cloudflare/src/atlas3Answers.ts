@@ -48,10 +48,22 @@ export async function charsOf(env: Env, known: Record<string, [string, string]>,
   return out;
 }
 
-// The tally's deltas above a generation, one primary-key range (`gen` leads the key).
-export const tallyDeltasQuery = (kind: 0 | 1) => `SELECT char,book,production,state,quiz,sum(n) AS n FROM tally
-  WHERE gen>? AND kind=${kind} GROUP BY char,book,production,state,quiz`;
-type Delta = { char: number; book: number; production: number; state: number; quiz: number; n: number };
+// The tally's deltas above a generation, both kinds in one primary-key range (`gen` leads the key).
+export const tallyDeltasQuery = () => `SELECT kind,char,book,production,state,quiz,sum(n) AS n FROM tally
+  WHERE gen>? GROUP BY kind,char,book,production,state,quiz`;
+type Delta = { kind: number; char: number; book: number; production: number; state: number; quiz: number; n: number };
+// The deltas move only with a review, an undo or a publication, each of which moves the catalogue
+// stamps, so an isolate keeps the last read under the publication, its generation and the stamps' key.
+let deltasHeld: { key: string; read: Promise<Delta[]> } | null = null;
+export function tallyDeltas(env: Env, pub: string, through: number, stamps: string): Promise<Delta[]> {
+  const key = `${pub}|${through}|${stamps}`;
+  if (deltasHeld?.key === key) return deltasHeld.read;
+  const read = env.ATLAS.prepare(tallyDeltasQuery()).bind(through).all<Delta>().then(r => r.results);
+  const held = { key, read };
+  read.catch(() => { if (deltasHeld === held) deltasHeld = null; });
+  deltasHeld = held;
+  return read;
+}
 
 /** A collected crop count: character, book, production and category (-1 unknown; a review's delta has
  *  no category, `null`), review priority (a review's delta has none, `null`), state code and withheld
@@ -59,16 +71,16 @@ type Delta = { char: number; book: number; production: number; state: number; qu
 export type Facet = { char: number; book: number; production: number; category: number | null; priority: number | null;
   state: number; quiz: number; n: number };
 /** The collected crops by character, book, production, category, priority, state and withheld flag,
- *  with the characters they name, as they stand now. */
-export async function collectedCounts(env: Env): Promise<{ pub: string; cells: Facet[]; chars: Map<number, CharInfo> }> {
+ *  with the characters they name, as they stand now. `stamps` is the catalogue key the deltas are held by. */
+export async function collectedCounts(env: Env, stamps: string): Promise<{ pub: string; cells: Facet[]; chars: Map<number, CharInfo> }> {
   const { pub, through_gen } = await currentPointer(env);
-  const [body, deltas, names] = await Promise.all([answer(env, pub, 'facets.json.gz'),
-    env.ATLAS.prepare(tallyDeltasQuery(0)).bind(through_gen).all<Delta>(), codeNames(env)]);
+  const [body, deltas, names] = await Promise.all([answer(env, pub, 'facets.json.gz'), tallyDeltas(env, pub, through_gen, stamps), codeNames(env)]);
   const categories = new Map([...names].filter(([key]) => key.startsWith('category:')).map(([key, name]) => [name, Number(key.slice(9))]));
   const cells: Facet[] = (body.cells as number[][]).map(([char, book, production, category, priority, state, quiz, n]) =>
     ({ char, book, production, category, priority, state, quiz, n }));
-  const chars = await charsOf(env, body.chars, [...cells.map(c => c.char), ...deltas.results.map(d => d.char)]);
-  for (const d of deltas.results) {
+  const collected = deltas.filter(d => d.kind === 0);
+  const chars = await charsOf(env, body.chars, [...cells.map(c => c.char), ...collected.map(d => d.char)]);
+  for (const { kind: _, ...d } of collected) {
     const text = chars.get(d.char)?.text;
     cells.push({ ...d, category: text ? categories.get(categoryOf(text)) ?? null : null, priority: null });
   }
@@ -77,14 +89,13 @@ export async function collectedCounts(env: Env): Promise<{ pub: string; cells: F
 
 /** A corpus glyph count: character, production (-1 unknown), state code and withheld flag. */
 export type GlyphCell = { char: number; production: number; state: number; quiz: number; n: number };
-/** The corpus glyphs with a character by character, production, state and withheld flag. `fresh` adds
- *  the reviews since the publication. */
-export async function corpusCounts(env: Env, fresh: boolean): Promise<{ pub: string; cells: GlyphCell[]; chars: Map<number, CharInfo> }> {
+/** The corpus glyphs with a character by character, production, state and withheld flag. With the
+ *  catalogue key `stamps`, the reviews since the publication are added. */
+export async function corpusCounts(env: Env, stamps: string | null): Promise<{ pub: string; cells: GlyphCell[]; chars: Map<number, CharInfo> }> {
   const { pub, through_gen } = await currentPointer(env);
-  const [body, deltas] = await Promise.all([answer(env, pub, 'corpus.json.gz'),
-    fresh ? env.ATLAS.prepare(tallyDeltasQuery(1)).bind(through_gen).all<Delta>().then(r => r.results) : []]);
+  const [body, deltas] = await Promise.all([answer(env, pub, 'corpus.json.gz'), stamps === null ? [] : tallyDeltas(env, pub, through_gen, stamps)]);
   const cells: GlyphCell[] = (body.cells as number[][]).map(([char, production, state, quiz, n]) => ({ char, production, state, quiz, n }));
-  for (const d of deltas) if (d.char !== -1) cells.push({ char: d.char, production: d.production, state: d.state, quiz: d.quiz, n: d.n });
+  for (const d of deltas) if (d.kind === 1 && d.char !== -1) cells.push({ char: d.char, production: d.production, state: d.state, quiz: d.quiz, n: d.n });
   return { pub, cells, chars: await charsOf(env, body.chars, cells.map(c => c.char)) };
 }
 

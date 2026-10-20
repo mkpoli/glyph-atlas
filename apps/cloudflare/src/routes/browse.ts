@@ -28,12 +28,21 @@ export async function siteValue(env: Env, key: string): Promise<Json> {
 // ISO 8601 time.
 export const publishedAt = (pub: string) =>
   pub.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, '$1-$2-$3T$4:$5:$6+00:00');
-// The pointer is read straight, so a site with no publication yet answers null rather than failing.
-export async function health(env: Env): Promise<Json> {
-  const object = await env.MEDIA.get('v3/pointer.json');
-  if (!object) return { ok: true, published_at: null };
-  const { pub } = await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json() as { pub: string };
-  return { ok: true, published_at: publishedAt(pub) };
+// The pointer is read straight, so a site with no publication yet answers null rather than failing; an
+// isolate keeps what it read for HEALTH_HELD milliseconds.
+const HEALTH_HELD = 5000;
+let healthHeld: { at: number; read: Promise<Json> } | null = null;
+export function health(env: Env, now = Date.now()): Promise<Json> {
+  if (healthHeld && now - healthHeld.at >= 0 && now - healthHeld.at < HEALTH_HELD) return healthHeld.read;
+  const read = env.MEDIA.get('v3/pointer.json').then(async object => {
+    if (!object) return { ok: true, published_at: null };
+    const { pub } = await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json() as { pub: string };
+    return { ok: true, published_at: publishedAt(pub) };
+  });
+  const held = { at: now, read };
+  read.catch(() => { if (healthHeld === held) healthHeld = null; });
+  healthHeld = held;
+  return read;
 }
 
 // ---- Material scopes. A scope is `all`, a node of the production tree (everything under it too), or
@@ -98,15 +107,15 @@ export async function dateStats(env: Env, ctx: ExecutionContext, url: URL): Prom
 // Corpus glyphs by character in the material asked for, with the grapheme each is filed under: what
 // the grapheme browser counts beside the collection's own crops, so a character the site holds only as
 // corpus glyphs (債) is listed too. The answer changes only with a publication, and the edge keeps one
-// copy per publication and material.
+// copy per publication, book-facts or forms load and material.
 export async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
   const production = url.searchParams.get('production') || 'all';
   if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
-  const { pub } = await currentPointer(env);
-  const key = new Request(`${url.origin}/atlas/corpus/characters?production=${encodeURIComponent(production)}&v=${encodeURIComponent(pub)}`);
+  const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]);
+  const key = new Request(`${url.origin}/atlas/corpus/characters?production=${encodeURIComponent(production)}&v=${encodeURIComponent(`${pub}:${publicationKey(stamps)}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return cached.json();
-  const { cells, chars } = await corpusCounts(env, false);
+  const { cells, chars } = await corpusCounts(env, null);
   const keys = await productionKeys(env, cells.map(c => c.production));
   const totals = new Map<number, number>();
   for (const c of cells) if (inScope(production, keys.get(c.production) ?? 'unknown')) totals.set(c.char, (totals.get(c.char) ?? 0) + c.n);
@@ -313,6 +322,21 @@ export const othersSkipsQuery = () => `SELECT DISTINCT c.id,c.kind,c.char,c.book
   CROSS JOIN crops c ON c.id=k.crop WHERE k.cut=c.cut AND c.kind<2 AND c.char IS NOT NULL
   AND k.actor NOT IN (SELECT id FROM actors WHERE user=?)
   AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.id=k.submission AND s.undone=1)`;
+// Skips change only with a round or an undo, each of which moves the catalogue stamps, so an isolate
+// keeps the last read for each reviewer under the publication and the stamps' key.
+type Skipped = Row & { id: number; kind: number; shuffle: number };
+const othersHeld = new Map<string, Promise<Skipped[]>>();
+export async function othersSkips(env: Env, reviewer: string | null, version: string): Promise<Skipped[]> {
+  const scope = `${(await currentPointer(env)).pub}|${version}|`, key = `${scope}${reviewer ?? ''}`, hit = othersHeld.get(key);
+  if (hit) return hit;
+  const read = env.ATLAS.prepare(othersSkipsQuery()).bind(reviewer).all<Skipped>().then(r => r.results);
+  read.catch(() => { if (othersHeld.get(key) === read) othersHeld.delete(key); });
+  for (const held of othersHeld.keys()) if (!held.startsWith(scope)) othersHeld.delete(held);
+  othersHeld.set(key, read);
+  while (othersHeld.size > 256) othersHeld.delete(othersHeld.keys().next().value!);
+  return read;
+}
+
 // A standing review from the character inspector, not a round's own verdict: a review event (match,
 // wrong or unsure) of a submission not undone whose request names its crop (`target`); a round's names none.
 export const REVIEWED_IN_INSPECTOR = `EXISTS(SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission AND s.undone=0
@@ -356,7 +380,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const searched = q.get('q') ? literal(q.get('q')!) : null;
 
   const stamps = await catalogueStamps(env), version = catalogueKey(stamps);
-  const [{ cells, chars }, held] = await Promise.all([collectedCounts(env), codeNames(env)]);
+  const [{ cells, chars }, held] = await Promise.all([collectedCounts(env, version), codeNames(env)]);
   const keys = await productionKeys(env, cells.map(c => c.production));
   // A publication may add a code the isolate does not hold yet: the table is read again, once.
   const names = cells.some(c => !held.has(`state:${c.state}`) || (c.category !== null && c.category !== -1 && !held.has(`category:${c.category}`)))
@@ -387,7 +411,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
 
   // A reviewer's own recent skips are theirs: those crops count as `skipped`, and a round leaves them out.
   const own = review && reviewer ? (await env.ATLAS.prepare(ownSkipsQuery()).bind(reviewer, since).all<Row & { id: number; kind: number }>()).results : [];
-  const glyphs = review ? await corpusCounts(env, true) : null;
+  const glyphs = review ? await corpusCounts(env, version) : null;
   // Counts by character and state, and for browsing by book as well. A round counts only the crops it
   // may deal (named, not withheld) and, naming a grapheme, only its members'.
   const counted: Filter = { chars: members ? new Set(members.ids) : null, book: null, category: null, state: null,
@@ -431,7 +455,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     // A round deals what another reviewer skipped first, then the collected crops, then the corpus
     // glyphs, each crop once. Four seeds in five deal the collected crops by priority, each priority in
     // turn from the seed's point; the fifth deals them all together.
-    const head = review ? (await env.ATLAS.prepare(othersSkipsQuery()).bind(reviewer).all<Row & { id: number; kind: number; shuffle: number }>()).results
+    const head = review && wantsRows ? (await othersSkips(env, reviewer, version))
       .filter(row => !exclude.has(row.id) && (row.kind === 0 ? matches(filter, row) : corpus && matches(corpusFilter, row)))
       .sort((a, b) => (a.shuffle - start(seed) + SHUFFLE_RANGE) % SHUFFLE_RANGE - (b.shuffle - start(seed) + SHUFFLE_RANGE) % SHUFFLE_RANGE || a.id - b.id) : [];
     for (const row of head) exclude.add(row.id);

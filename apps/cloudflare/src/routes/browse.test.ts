@@ -20,13 +20,16 @@ afterEach(() => { for (const db of databases.splice(0)) db.close(); });
 describe('site values', () => {
   it('answer the publication time, the collection status and the corpus summary', async () => {
     const { env, objects, pub } = await setup();
-    expect(await health(env)).toEqual({ ok: true, published_at: publishedAt(pub) });
+    const now = 2e13 + Math.random() * 1e9;
+    expect(await health(env, now)).toEqual({ ok: true, published_at: publishedAt(pub) });
     expect(publishedAt('20261019T130411Z')).toBe('2026-10-19T13:04:11+00:00');
     expect(await siteValue(env, 'collection')).toEqual({ crops: 18 });
     expect(await siteValue(env, 'corpus_index')).toEqual({ sources: 2 });
     expect(await siteValue(env, 'variant_sources')).toBeNull();
     objects.delete('v3/pointer.json');
-    expect(await health(env)).toEqual({ ok: true, published_at: null });
+    // An isolate holds the answer for five seconds.
+    expect((await health(env, now + 4000)).published_at).toBe(publishedAt(pub));
+    expect(await health(env, now + 6000)).toEqual({ ok: true, published_at: null });
   });
 });
 
@@ -330,6 +333,21 @@ describe('a listing ends where the index does', () => {
 });
 
 describe('what an isolate holds', () => {
+  function counted(env: Env) {
+    const sql: string[] = [];
+    const atlas = (env as any).ATLAS;
+    return { sql, env: { ...env, ATLAS: { prepare: (q: string) => (sql.push(q), atlas.prepare(q)), batch: atlas.batch } } as unknown as Env };
+  }
+  it('reads others’ skips only for a page of crops, and the tally once while the catalogue stands', async () => {
+    const { env: base } = await setup();
+    const { sql, env } = counted(base);
+    await get(env, '/atlas?purpose=review&limit=0&state=pending', 'u1');
+    expect(sql.filter(q => q.includes('k.actor NOT IN'))).toEqual([]);
+    for (let i = 0; i < 2; i++) await get(env, '/atlas?purpose=review&grapheme=U%2B306F&state=pending&limit=4', 'u1');
+    expect(sql.filter(q => q.includes('k.actor NOT IN')).length).toBe(1);
+    expect(sql.filter(q => q.includes('FROM tally')).length).toBe(1);
+  });
+
   it('serves a page bundle the edge holds without reading R2, and keeps each one it reads', async () => {
     const { env, objects, a } = await setup();
     const key = bundleKey(a, 1), bytes = objects.get(key)!;
@@ -365,7 +383,7 @@ describe('the queries', () => {
     expect(plan(flagged.sql, flagged.values)).toContain('event_crop');
     for (const [sql, values, wanted] of [
       [ownSkipsQuery(), ['u1', 0], 'SEARCH k USING INDEX skip_actor'], [othersSkipsQuery(), ['u1'], 'SEARCH c USING INTEGER PRIMARY KEY'],
-      [tallyDeltasQuery(0), [3], 'USING PRIMARY KEY (gen>?)'], [tallyDeltasQuery(1), [3], 'USING PRIMARY KEY (gen>?)'],
+      [tallyDeltasQuery(), [3], 'USING PRIMARY KEY (gen>?)'],
       [charsQuery(), ['[1]'], 'SEARCH g USING INTEGER PRIMARY KEY'], [bookDatesQuery(), ['[1]'], 'SEARCH d USING PRIMARY KEY (book=?)'],
       [booksQuery(), ['[1]'], 'SEARCH books USING INTEGER PRIMARY KEY'], [graphemeQuery(), ['は'], 'USING INDEX sqlite_autoindex_graphemes_1'],
       [membersQuery(), [1], 'grapheme_head'], [datingQuery(), ['["hk:a"]'], 'SEARCH d USING PRIMARY KEY (book=?)'],
