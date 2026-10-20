@@ -97,28 +97,18 @@ def replacement(text_id, redirects, live):
         at = redirects[at]
 
 
-def run_form(text, graphemes):
-    """How a run is written where that differs from its graphemes; None where it is written as them,
-    and for a run with no text."""
-    return text if text and graphemes and text != graphemes else None
+# A crop whose character is written apart from its grapheme family's head (𛁅 for し), as the publisher
+# keeps `run_written` for a catalogue's crops: the head stands for the crop in its runs' graphemes, the
+# row for how it is written. A new layout's rows and texts come from runs.py, after the build.
+WRITTEN = """SELECT c.id, g.text FROM crops c JOIN graphemes g ON g.id = c.char
+  WHERE g.head IS NOT NULL AND g.head <> g.id"""
 
 
-# A book's grid lists this many runs of each length (`/atlas/ngrams`), most frequent first, ties by
-# graphemes in code point order, as SQLite orders text.
-BOOK_RUNS = 480
-
-
-def book_runs(runs, books=None):
-    """Each book's BOOK_RUNS most frequent runs of each length, as `run_books` rows, from the runs
-    table; only `books` when given."""
-    where = "graphemes <> ''" + (f" AND book IN ({','.join('?' * len(books))})" if books is not None else "")
-    counted = defaultdict(list)
-    for book_, size, g, n, down in runs.execute(
-            f"SELECT book, size, graphemes, count(*), sum(vertical) FROM runs WHERE {where} GROUP BY book, size, graphemes",
-            list(books or ())):
-        counted[(book_, size)].append((g, n, down))
-    return [(book_, size, g, n, down) for (book_, size), rows in counted.items()
-            for g, n, down in sorted(rows, key=lambda r: (-r[1], r[0]))[:BOOK_RUNS]]
+def horizontal(rows):
+    """Stop on a run written across the page: the layout records no direction, since every run so far
+    is written down it (`run_stats.down` counts them); a column for it comes with the first one."""
+    if n := sum(1 for r in rows if not r["vertical"]):
+        sys.exit(f"{n} runs are written across the page; the layout has no column for their direction yet")
 
 
 STATE = {"pending": 0, "checked": 1, "flagged": 2}
@@ -293,25 +283,23 @@ def main():
     runs = sqlite3.connect(OUT / "atlas-runs.sqlite")
     runs.executescript(schema(RUNS_SCHEMA))
     ngrams = src("unit_ngrams")
-    out, stats, forms, missing = [], defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0]), 0
+    horizontal(ngrams.execute("SELECT vertical FROM unit_ngrams"))
+    out, stats, missing = [], defaultdict(lambda: [0, 0]), 0
     for r in ngrams.execute("SELECT * FROM unit_ngrams"):
         a, b = ids.get(r["first"]), ids.get(r["second"])
         c = ids.get(r["third"]) if r["third"] else None
         if a is None or b is None or (r["third"] and c is None):
             missing += 1
             continue
-        g, form = r["graphemes"] or "", run_form(r["text"], r["graphemes"])
-        out.append((r["size"], g, r["hand_order"], shuffle(a), a, b, c, book(r["document"]), form, r["vertical"]))
-        for counts in (stats[(r["size"], g)], *([forms[(r["size"], g, form)]] if form is not None else [])):
-            counts[0] += 1
-            counts[1] += r["vertical"]
-    runs.executemany("INSERT OR IGNORE INTO runs(size,graphemes,hand,shuffle,first,second,third,book,form,vertical) "
-                     "VALUES(?,?,?,?,?,?,?,?,?,?)", out)
+        g = r["graphemes"] or ""
+        out.append((r["size"], g, r["hand_order"], shuffle(a), a, b, c, book(r["document"])))
+        s = stats[(r["size"], g)]
+        s[0] += 1
+        s[1] += r["vertical"]
+    runs.executemany("INSERT OR IGNORE INTO runs(size,graphemes,hand,shuffle,first,second,third,book) VALUES(?,?,?,?,?,?,?,?)", out)
     runs.executemany("INSERT INTO run_stats(size,graphemes,n,down) VALUES(?,?,?,?)", [(k[0], k[1], v[0], v[1]) for k, v in stats.items()])
-    runs.executemany("INSERT INTO run_forms(size,graphemes,form,n,down) VALUES(?,?,?,?,?)", [(*k, *v) for k, v in forms.items()])
-    runs.executemany("INSERT INTO run_books(book,size,graphemes,n,down) VALUES(?,?,?,?,?)", book_runs(runs))
     runs.commit()
-    print(f"runs {len(out)} stats {len(stats)} forms {len(forms)} skipped {missing}", flush=True)
+    print(f"runs {len(out)} stats {len(stats)} skipped {missing}", flush=True)
     if missing:
         sys.exit(f"{missing} runs name crops the build does not have")
     # Runs can name books no crop row did; both copies of the book list take them.
