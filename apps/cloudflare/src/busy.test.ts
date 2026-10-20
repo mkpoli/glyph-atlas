@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { described, retried, transient } from './busy';
+import { Problem, StorageUnavailable, described, retried, transient } from './busy';
 import worker from './index';
 
 describe('a busy database is told apart from a broken request', () => {
@@ -89,5 +89,15 @@ describe('the Worker answers a busy database with 503 and a retry time', () => {
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ detail: 'The request could not be completed.', code: 'failed' });
     expect(calls()).toBe(1);
+  });
+});
+
+describe('storage that fails is a busy answer wherever it is thrown', () => {
+  it('is a Problem: 503 busy, with what failed kept for the log', () => {
+    const cause = new Error('R2 is unavailable');
+    const error = new StorageUnavailable('v3/aliases/abc.json.gz could not be read', { cause });
+    expect(error).toBeInstanceOf(Problem);
+    expect(error).toMatchObject({ status: 503, extra: { code: 'busy' }, where: 'v3/aliases/abc.json.gz could not be read', cause });
+    expect(error.message).not.toContain('v3/');
   });
 });

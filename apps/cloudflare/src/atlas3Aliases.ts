@@ -15,7 +15,8 @@ export async function aliasShardKey(textId: string): Promise<string> {
 // The crop an old text id names, or null when the alias map does not hold it.
 export async function aliasCrop(env: Env, textId: string, ctx?: ExecutionContext, now = Date.now()): Promise<number | null> {
   if (!textId) return null;
-  const shard = await aliasShard(env, await aliasShardKey(textId), ctx, now);
-  const id = shard && Object.hasOwn(shard, textId) ? shard[textId] : undefined;
-  return typeof id === 'number' ? id : null;
+  return await aliasShard(env, await aliasShardKey(textId), shard => {
+    const id = Object.hasOwn(shard, textId) ? shard[textId] : undefined;
+    return typeof id === 'number' ? id : undefined;
+  }, ctx, now);
 }

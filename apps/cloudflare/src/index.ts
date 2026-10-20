@@ -16,7 +16,7 @@ import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { ranking } from './ranking';
 import { connections } from './connections';
 import { reviewers, submissions } from './admin';
-import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
+import { Problem, READ_BUDGET, RETRY_AFTER, StorageUnavailable, described, retried, transient } from './busy';
 import { pausedResponse, writes, writesPaused } from './freeze';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
 import { honkokuPage } from './honkoku';
@@ -38,9 +38,6 @@ type UnitRow = { id: string; origin: string; character: string | null; state: st
   // A corpus glyph nothing has named yet: it has no `units` row, and this is where it is published.
   fresh?: CorpusRow };
 type CorpusRow = {id:string;character:string|null;family:string|null;visual_group:string|null;production:string;style:string;shuffle:number;object:string;offset:number;size:number};
-class Problem extends Error {
-  constructor(public status: number, message: string, public extra: Json = {}) { super(message) }
-}
 const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Response.json(value, {
   status, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...headers },
 });
@@ -2604,6 +2601,7 @@ const routes = {
       throw new Problem(404,'Unknown endpoint.');
     }catch(error){
       const open=opened(path)?OPEN:{};
+      if(error instanceof StorageUnavailable)console.error(JSON.stringify({event:'storage_unavailable',path,where:error.where,...described(error.cause)}));
       if(error instanceof Problem)return json({detail:error.message,...error.extra},error.status,
         error.extra.code==='busy'?{...open,'retry-after':String(RETRY_AFTER)}:open);
       throw error;
