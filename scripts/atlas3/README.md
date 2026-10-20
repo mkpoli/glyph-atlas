@@ -174,6 +174,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 8. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.
 9. **Switch** the Worker's routes to the new layout and resume writes (`wrangler secret delete WRITES_PAUSED`).
+   Before writes resume, every `v3/aliases/` shard must be uploaded and checked: the shard count
+   `aliases.py --send` printed, and each file in `out/aliases/` present in the bucket with the same
+   size. A write naming a text id whose shard is missing is refused with 409 `reload`, and the review
+   page treats that as final: a save kept on the reader's device is marked gone and never sent again.
+   No script checks the shards yet.
 
 `check.py` compares the copies with the local copy of the new layout, crop by crop: numbers, row
 values, bundle boxes and images, runs and the image map. It reads nothing remote.

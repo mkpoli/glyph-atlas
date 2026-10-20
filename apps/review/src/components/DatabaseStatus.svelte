@@ -41,9 +41,8 @@
   {#if outbox.pending}<p><span class="spinner" aria-hidden="true"></span>{t('client.keptSending', { count: outbox.pending })}</p>
   {:else if reading}<p><span class="spinner" aria-hidden="true"></span>{t('client.busyRetrying')}</p>{/if}
   {#each outbox.refused as refusal (refusal.key)}
-    {#if refusal.reload}
-      <p class="refused">{refusal.message}
-        <button type="button" onclick={() => location.reload()}>{t('client.keptReload')}</button>
+    {#if refusal.gone}
+      <p class="refused">{t('client.keptGone', { what: refusal.what })}
         <button type="button" onclick={() => dismiss(refusal.key)}>{t('client.keptDiscard')}</button></p>
     {:else}
       <p class="refused">{t('client.keptRefused', { reason: refusal.message })}

@@ -205,43 +205,38 @@ try {
   assert(saves(orphan).size === 1, 'only the other review is recorded')
   console.log('PASS a refused save from an earlier page is shown in the corner and can be dismissed')
 
-  // A save an earlier page kept that the site refuses as coming from before an update stays kept, is
-  // shown as needing a reload, and is sent again once the page is reloaded.
-  async function keepEarlier(n) {
-    const crop = await tile(n), path = '/atlas/characters/' + encodeURIComponent(crop)
-    await click(`.glyph-grid [data-unit="${crop}"]`)
-    await browser.waitFor(inspectorReady, 30000)
-    busy = (request, url) => request.method === 'POST' && url.pathname === path
-    await click('.save-character')
-    await browser.waitFor(noteSays('Saved on this device'), 10000)
-    stale = (request, url) => request.method === 'POST' && url.pathname === path
-    busy = () => false
-    await browser.goto(service.base + '/en', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
-    await browser.waitFor(noteSays('site update'), 20000)
-    assert(await browser.evaluate(kept) === 1, 'the save refused for a reload stays kept')
-    return crop
-  }
-  const held = await keepEarlier(7)
-  await browser.screenshot(join(screenshots, 'write-reload-light.png'))
+  // A save an earlier page kept that names a crop the site no longer holds can never be taken: the
+  // site refuses it on every try. It stays on the device marked gone, is shown with what it named,
+  // is not sent again on the next page, and is removed once discarded.
+  const held = await tile(7), heldPath = '/atlas/characters/' + encodeURIComponent(held), recorded = saves(held).size
+  await click(`.glyph-grid [data-unit="${held}"]`)
+  await browser.waitFor(inspectorReady, 30000)
+  busy = (request, url) => request.method === 'POST' && url.pathname === heldPath
+  await click('.save-character')
+  await browser.waitFor(noteSays('Saved on this device'), 10000)
+  let refusedStale = 0
+  stale = (request, url) => request.method === 'POST' && url.pathname === heldPath && Boolean(++refusedStale)
+  busy = () => false
+  await browser.goto(service.base + '/en', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
+  await browser.waitFor(noteSays('no longer exists'), 20000)
+  assert((await browser.evaluate('document.querySelector(".database-status .refused").innerText')).includes(held), 'the note names the crop')
+  assert(await browser.evaluate('document.querySelectorAll(".database-status .refused button").length') === 1, 'the only choice is Discard')
+  assert(await browser.evaluate(kept) === 1, 'the gone save stays kept until discarded')
+  await browser.screenshot(join(screenshots, 'write-gone-light.png'))
   await browser.setColorScheme('dark')
-  await browser.screenshot(join(screenshots, 'write-reload-dark.png'))
+  await browser.screenshot(join(screenshots, 'write-gone-dark.png'))
   await browser.setColorScheme('light')
-  stale = () => false
+  const triesBefore = refusedStale
+  await browser.goto(service.base + '/en', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
+  await browser.waitFor(noteSays('no longer exists'), 20000)
+  await Bun.sleep(1000)
+  assert(refusedStale === triesBefore, `the gone save was sent again after a reload (${refusedStale - triesBefore} times)`)
   await click('.database-status .refused button')
-  await browser.waitFor('document.querySelectorAll(".glyph-tile").length > 0', 30000)
-  for (let waited = 0; waited < 20000 && (await browser.evaluate(kept) !== 0 || saves(held).size === 0); waited += 250) await Bun.sleep(250)
-  await browser.waitFor(`!(${shown})`, 10000)
-  assert(saves(held).size === 1, 'the held save is recorded once after the reload')
-  assert(await browser.evaluate(kept) === 0, 'nothing is left on the device')
-  console.log('PASS a save refused for a reload stays kept and is sent once the page is reloaded')
-
-  const dropped = await keepEarlier(6)
-  await click('.database-status .refused button:last-of-type')
   await browser.waitFor(`!(${shown})`, 5000)
   assert(await browser.evaluate(kept) === 0, 'a discarded save is no longer kept')
-  assert(saves(dropped).size === 0, 'a discarded save is not recorded')
+  assert(saves(held).size === recorded, 'a discarded save is not recorded')
   stale = () => false
-  console.log('PASS a save refused for a reload can be discarded')
+  console.log('PASS a kept save naming a crop that no longer exists is shown once, never sent again, and can be discarded')
   console.log(`screenshots: ${screenshots}`)
 } finally {
   await browser?.close()
