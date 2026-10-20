@@ -212,8 +212,11 @@ export async function viewer(env: Env, request: Request, fresh = false): Promise
   return { id: user.id, name: user.name, image: user.image ?? null, anonymous: Boolean(user.isAnonymous), admin: user.role === 'admin' };
 }
 
-/** The ids a user's rows were written under, as a subquery over `actors`. */
-export const owned = (user: string) => `(SELECT actor FROM actors WHERE user_id='${user.replaceAll("'", "''")}')`;
+const quoted = (user: string) => `'${user.replaceAll("'", "''")}'`;
+/** The actor texts a user's rows were written under (the claim ledger's `asserted_by`), as a subquery over `actors`. */
+export const owned = (user: string) => `(SELECT key FROM actors WHERE user=${quoted(user)})`;
+/** The actors a user's rows were written under, by id (`events`, `submissions`, `skips`), as a subquery over `actors`. */
+export const ownedActors = (user: string) => `(SELECT id FROM actors WHERE user=${quoted(user)})`;
 
 /**
  * Take over a reviewer id a browser made up before accounts. The browser that holds the id sends it,
