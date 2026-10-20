@@ -1,6 +1,10 @@
 """Copy the published tables out of the live D1 into source.sqlite, a bounded keyset read at a time.
 
 Each read is a primary-key range of at most CHUNK rows, so no read scans and the site keeps answering.
+A table of long text (SIZED) is read by bytes instead: a probe reads the keys and byte sizes of the
+next PROBE_ROWS rows, and the read takes as many as fit in READ_BYTES, or one row larger than that.
+Rows of cards run from 1 KB to 93 KB, so a fixed count would make one read twenty times another;
+READ_BYTES keeps each `wrangler d1 execute --json` answer near 4 MB of text (D1 caps a row at 2 MB).
 A rerun continues from the last key copied.
 """
 import json
@@ -57,7 +61,6 @@ TABLES = {
     "unit_shapes": ("id,shape_order", ["id"], 8000),
     "forms": ("id,anchor,created_by,created_at", ["id"], 8000),
     "corpus_follow": ("id", ["id"], 8000),
-    "characters": ("code_point,character,name,json_extract(data,'$.grapheme.code_point') AS head", ["code_point"], 8000),
     "aliases": ("query,code_point,rank", ["rowid"], 15000),
     # The model votes and the image they were read on, and each tile's paper colour and size, apart from
     # `units` so the crops' copy keeps its size; and the forms tool's clustering.
@@ -69,7 +72,27 @@ TABLES = {
     "form_units": (("id,family,cluster,rank,similarity,image,split,clustered,cluster_form,cluster_issue,cluster_character,"
                     "cluster_family,glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_character,glyph_family,form,issue,"
                     "issue_character,written_family"), ["id"], 8000),
+    # Character reference data (reference.py); the chunk of a SIZED table is its probe.
+    "characters": ("code_point,character,name,data,detail,json_extract(data,'$.grapheme.code_point') AS head", ["code_point"], 1000),
+    "character_variants": ("a,b,relation,source,detail,written,widens", ["a", "b", "relation", "source"], 8000),
+    "character_derived": ("a,forms", ["a"], 1000),
+    "component_variants": ("a,b,count,pairs", ["a", "b"], 1000),
+    "grapheme_writers": ("writer,grapheme,own", ["writer", "grapheme"], 8000),
+    "words": ("id,language,reading,class", ["id"], 8000),
+    "word_spellings": ("word,spelling,source,locator,tier,word_by,basis,related,statement,documents,occurrences",
+                       ["word", "spelling", "source", "locator"], 2000),
+    "han_ids": ("char,sequences,shapes", ["char"], 4000),
+    "han_components": ("component,tier,size,code_point,n,direct", ["component", "tier", "size", "code_point"], 8000),
+    "han_component_names": ("query,component,total", ["query"], 8000),
 }
+
+# Tables read by bytes: the expression giving a row's size.
+SIZED = {
+    "characters": "length(CAST(data AS BLOB))+length(CAST(detail AS BLOB))",
+    "character_derived": "length(CAST(forms AS BLOB))",
+    "component_variants": "length(CAST(pairs AS BLOB))",
+}
+READ_BYTES = 4 * 1024 ** 2
 
 
 def query(sql):
@@ -99,7 +122,7 @@ def pull(table, fresh):
     live = live[0] if live else table
     names = [c.split(" AS ")[-1].strip().strip('"') for c in cols.split(",")]
     if table == "characters":
-        names = ["code_point", "character", "name", "head"]
+        names = ["code_point", "character", "name", "data", "detail", "head"]
     keycols = [k for k in keys if k != "rowid"]
     store = (["_rowid"] if keys == ["rowid"] else []) + names
     db.execute(f'CREATE TABLE IF NOT EXISTS "{table}"({",".join(store)})')
@@ -119,7 +142,19 @@ def pull(table, fresh):
             where = f"WHERE {keys[0]} > {json.dumps(last[0]) if isinstance(last[0], (int, float)) else sql_str(last[0])}"
         else:
             where = f"WHERE ({order}) > ({','.join(sql_lit(v) for v in last)})"
-        rows = query(f'SELECT {select} FROM "{live}" {where} ORDER BY {order} LIMIT {chunk}')
+        if table in SIZED:
+            probe = query(f'SELECT {order},{SIZED[table]} AS _bytes FROM "{live}" {where} ORDER BY {order} LIMIT {chunk}')
+            if not probe:
+                break
+            fit, total = 0, 0
+            while fit < len(probe) and (not fit or total + probe[fit]["_bytes"] <= READ_BYTES):
+                total += probe[fit]["_bytes"]
+                fit += 1
+            upto = [probe[fit - 1][k] for k in keys]
+            bound = f"{keys[0]} <= {sql_lit(upto[0])}" if len(keys) == 1 else f"({order}) <= ({','.join(sql_lit(v) for v in upto)})"
+            rows = query(f'SELECT {select} FROM "{live}" {where + " AND " if where else "WHERE "}{bound} ORDER BY {order}')
+        else:
+            rows = query(f'SELECT {select} FROM "{live}" {where} ORDER BY {order} LIMIT {chunk}')
         if not rows:
             break
         db.executemany(f'INSERT INTO "{table}" VALUES({",".join("?" * len(store))})', [[r[c] for c in store] for r in rows])
@@ -129,7 +164,7 @@ def pull(table, fresh):
         db.commit()
         n += len(rows)
         print(f"{table} {n}", flush=True)
-        if len(rows) < chunk:
+        if table not in SIZED and len(rows) < chunk:
             break
     db.execute("INSERT OR REPLACE INTO _progress VALUES(?,?)", (table, json.dumps("done")))
     db.commit()

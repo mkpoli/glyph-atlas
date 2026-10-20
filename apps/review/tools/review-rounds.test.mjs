@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { nextGrapheme, mergeReferences, roundGraphemes, roundAddress } from '../src/lib/reviewRounds.js'
+import { firstCrops, nextGrapheme, mergeReferences, roundGraphemes, roundAddress } from '../src/lib/reviewRounds.js'
 
 const categories = [{ label: '仮', pending: 1 }, { label: '假', pending: 5 },
   { label: 'あ', pending: 6 }, { label: 'い', pending: 12 }, { label: 'う', pending: 8 }]
@@ -63,4 +63,21 @@ test('a round is addressed by its grapheme as the site writes one, and its mater
   assert.equal(roundAddress('U+304B U+309A', 'handwritten'), '/review/U+304B-U+309A?production=handwritten')
   assert.equal(roundAddress('', 'inscribed'), '/review?production=inscribed')
   assert.equal(roundAddress('U+3042'), '/review/U+3042')
+})
+
+test('a first batch of only kept crops reads on, and a grapheme with nothing past them gives way', async () => {
+  const crops = Array.from({ length: 5 }, (_, i) => ({ id: 'p' + i }))
+  let reads
+  const page = async offset => { reads.push(offset); return { items: crops.slice(offset, offset + 2), next_offset: Math.min(offset + 2, crops.length), total: crops.length } }
+  reads = []
+  const round = await firstCrops(page, new Set(['p0', 'p1']))
+  assert.deepEqual(reads, [0, 2])
+  assert.deepEqual(round.items, [{ id: 'p2' }, { id: 'p3' }])
+  assert.equal(round.next_offset, 4)
+  reads = []
+  assert.deepEqual((await firstCrops(page, new Set(crops.map(c => c.id)))).items, [])
+  assert.deepEqual(reads, [0, 2, 4])
+  reads = []
+  assert.deepEqual((await firstCrops(page, new Set())).items, [{ id: 'p0' }, { id: 'p1' }])
+  assert.deepEqual(reads, [0])
 })

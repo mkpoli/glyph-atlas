@@ -14,7 +14,7 @@ Copied from the live database on 19–20 October 2026:
 | `seen`, `skips` | 8,145, 19 | `target` text id, box and image checksum |
 | `actors` | 14 | — (actor text id to user id) |
 | `favourites` | 1 | `unit` text id |
-| `assertions`, `assertion_actions`, `assertion_evidence` | 14,172, 33, 14,140 | 45 `has_form` claims on crops; the rest are date claims on books |
+| `assertions`, `assertion_actions`, `assertion_evidence` | 14,172, 33, 14,140 | 14,095 `date_*` claims on documents (2,097 on books of the new layout, 11,998 on documents that are not), 45 `has_form` claims on crops, 32 `represented_by` |
 | `current_claims` | 9,467 | 43 crop subjects with a `crop_version` string |
 | `ledger_submissions`, `form_decisions`, `forms` | 45, 669, 32 | crop ids inside JSON |
 | `crop_versions` | 532,617 | one row per crop version; 496 crops have an earlier box, none more than one |
@@ -137,7 +137,7 @@ freeze contains no decisions. Each step is resumable and records checksums.
    (`"remote": true` on each D1 and R2 binding) to the real new databases and bucket, with a test
    account made before the freeze. Nothing answers on a public address, and the deployed Worker stays
    paused, so every row written in the window is the checks'; they are listed and deleted after
-   (`scripts/atlas3/README.md`, step 8). Version URLs stay off: turned on, they would also open older
+   (`scripts/atlas3/README.md`, step 9). Version URLs stay off: turned on, they would also open older
    versions, bound to the old database and not paused. The checked Worker is then uploaded with
    `wrangler versions upload`, which keeps `WRITES_PAUSED`, and `wrangler versions secret delete
    WRITES_PAUSED` makes a further version without it; neither deploys.

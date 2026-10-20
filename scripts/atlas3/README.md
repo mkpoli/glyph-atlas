@@ -30,7 +30,9 @@ creates them.
    and it only reads. An interrupted copy resumes; a finished one is copied again only with `--fresh`.
 2. `build.py` writes the new layout and stops unless every source crop has exactly one crop, whose id
    names its record's page, with its page and book, and every run has its crops. It refuses to run
-   over an existing `out/mirror.sqlite`, since a rebuild renumbers every crop.
+   over an existing `out/mirror.sqlite`, since a rebuild renumbers every crop. A rebuild
+   (`--replace`) also renumbers the graphemes, which the reference objects name: `reference.py
+   --send` runs again after it.
 3. `sample.py` compares random crops with their source records field by field.
 4. `load.sh` creates the tables, loads the rows in parts, then builds the indexes, and records the
    build id in `imports`; `publish.py` refuses a mirror whose build the database does not name. A
@@ -58,8 +60,14 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   at a revision no older than the published one. The exporters drop withdrawn crops instead, so a
   withdrawal needs a catalogue that names it. A retired crop the new layout never had (the first
   build left out the 56 live ones, each kept for its history) gets a number and a retired bundle
-  entry with its record, and with `replaced_by` where the catalogue's `unit_redirects` names its
-  replacement, so its reviews, claims and links resolve.
+  entry with its record, so its reviews, claims and links resolve.
+- A retired crop's entry names its replacement in `replaced_by`, as an integer crop id: the first text
+  id on its `unit_redirects` chain that is a live crop after the publish, past retired crops and text
+  ids with no crop, so a reader reaches a live crop in one step. A chain that loops, or ends with no
+  live crop, leaves `replaced_by` unset; the publish counts those crops, prints examples and lists
+  them in `unreplaced.txt` in its run. An entry that holds its replacement as a text id is rewritten
+  by the next publish whose catalogue carries the crop as retired, or by `publish.py --replacements`,
+  which checks every retired entry against `source-unit_redirects.sqlite`.
 - A catalogue whose `units` carry `visual` and `context`, as `export_cloudflare.py` writes them, sets
   each published crop's model votes for its cut in its page's object
   `v3/votes/<build>/<page>.json.gz` (`votes.py`), and a reading that is not ready removes them. Only
@@ -120,7 +128,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    row stays valid until it expires, or until it is revoked from another device after writes resume.
    `wrangler secret put` and `wrangler secret delete` deploy a new
    version at once, and refuse while a newer version is uploaded and not deployed, so the freeze is set
-   before step 8 uploads anything.
+   before step 9 uploads anything.
 3. **Copy** the live tables again, `pull.py --fresh`, from a Codespace with the Cloudflare
    credentials: the copy is about 3 GB and the uploads after it are large.
 4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
@@ -162,15 +170,46 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
    characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
    `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`
-   (`migrations-atlas/0005_books.sql`), books by integer id and occurrences by crop through
+   (`migrations-atlas/0005_books.sql`), books and occurrences by integer id through
    `out/mirror.sqlite`, and writes the parts and their figures to `out/books-report.txt`; facts about
-   a document that is not a book are left out with a count. `books.py --send` applies `0005_books.sql`
+   a document that is not a book are left out with a count. Whether the site shows an occurrence with
+   its review state is not stored, since every round changes it: a route derives it when it reads,
+   from the crop's kind (a collected crop always) and, for a corpus glyph, from `seen`, `skips` and
+   `events` (a round showed, skipped or reviewed it). The query, bounded by the `book_characters` key
+   and the `seen_crop`, `skips` and `event_crop` indexes, is in `0005_books.sql`. `books.py --send` applies `0005_books.sql`
    and loads only what differs from the local copy, in stamped parts. A book's title comes from its
-   first page bundle, else from its corpus publication. The corpus glyphs per book and the homepage
+   first page bundle, else from the source the first of that bundle's crops names, else from its
+   corpus publication. The corpus glyphs per book and the homepage
    sample are derived from the crops by `answers.py` (*not built*), so neither is copied. Keeping the
    facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
    ainu-records' character lists and the catalogue's site values still write the old database.
-7. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
+   The date claims on documents that are not books stay in `assertions` with the history (11,998 of
+   the 14,095), and no `book_dates` row is made for them. When such a document gains crops after the
+   cutover, its dates come from running the resolver, `resolve` in `src/glyph_atlas/dates.py` (the one
+   `scripts/export_dates_cloudflare.py` runs), over its `date_*` assertions in `glyph-atlas-v3`; the
+   step that does so and writes `book_dates` is *not built*.
+7. **Move the reference data:** `pull.py --fresh` copies the character cards, the 異体字 graph and its
+   derived tier, the writers, words and spellings and the component index. `reference.py` (dry run
+   by default) writes the cards with their edges, derived forms and writers as one R2 object per
+   character under `v3/reference/`, beside sharded card summaries, the IDS, the name list, the card
+   lists and one list per component; the rows a query filters, joins or sorts on go to the tables
+   of `migrations-atlas/0004_reference.sql`. A card's character or family head the layout lacks
+   gets the next grapheme id, and every grapheme takes its card's family head. A visual group's
+   samples are crop ids found in the mirror and in `crops`. `--send` applies 0004 once, loads only
+   the rows that differ from the local copy in stamped parts, then uploads the objects whose hash
+   differs from `v3/reference/manifest.json.gz` and deletes the paths that manifest lists and the
+   translation lacks; figures go to `out/reference-report.txt`. A load that stopped partway is
+   finished on the next run, also one whose part D1 applied and the local copy missed: the run
+   checks D1 for the stamps of every load the local copy has not finished.
+
+   The run reads about 1 GB of copies and writes as much again to scratch files and the stage
+   folder; it holds one object at a time (190 MB resident at most on the copies of 19–20 October
+   2026). Run it in the batch slice:
+
+       systemd-run --user --unit atlas3-reference --slice=batch.slice -p MemorySwapMax=0 --same-dir \
+         --setenv=ATLAS3_DIR=$PWD/work/atlas-v3 -- .venv/bin/python scripts/atlas3/reference.py --send
+       journalctl --user -u atlas3-reference -f
+8. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
    session changes still frozen. It is created once, before the window:
    `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:
 
@@ -194,7 +233,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    row would be refused by the half-loaded database. `check` compares the table set, the schema, row counts and a checksum
    of every row per table, first between the old database and `accounts.sqlite`, then between
    `accounts.sqlite` and `glyph-atlas-accounts`, and exits 1 on any difference. Run it before the
-   site checks of step 8: their sign-ins and session
+   site checks of step 9: their sign-ins and session
    renewals write to `glyph-atlas-accounts`, after which it no longer matches.
 
    `accounts.sqlite` and `accounts-load/` hold sessions and account tokens; the script creates them
@@ -202,7 +241,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 
        rm -rf work/atlas-v3/accounts.sqlite* work/atlas-v3/accounts-load
 
-8. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
+9. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout. The site checks that write (an existing session, renewal, logout, a
    history page, favourites, a claim, an old URL) run on this machine: `wrangler dev` runs the new
    Worker locally, with its bindings reaching the real new databases and bucket, and nothing answers
@@ -237,9 +276,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
       then answers an `expiresAt` 90 days out.
    3. A favourite, set and read back; the history page; an old text-id URL, which answers the crop
       by its integer id.
-   4. A claim: a form claim of a value outside the crop's grapheme (an IDS), which writes the ledger
-      and no review, on a crop with no `current_claims` row (`SELECT count(*) FROM current_claims
-      WHERE crop=:crop` is 0).
+   4. A claim: a form claim of an IDS outside the crop's grapheme whose form already exists
+      (`SELECT count(*) FROM forms f JOIN representations r ON r.id=f.anchor WHERE r.scheme='ids'
+      AND r.value=:ids` is 1), on a crop with no `current_claims` row (`SELECT count(*) FROM
+      current_claims WHERE crop=:crop` is 0). It writes the ledger and the crop's claim, and no
+      review, representation or form.
    5. `POST /api/auth/sign-out` last; the read in 1 then answers null.
 
    The checks write these rows, and nothing else writes in the window. `:test` is the test
@@ -249,6 +290,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    ```sql
    -- glyph-atlas-v3
    DELETE FROM favourites WHERE user = :test;
+   DELETE FROM current_claims WHERE crop = :crop AND predicate = 'has_form'
+     AND subject IN (SELECT subject FROM assertions WHERE asserted_by = :test AND predicate = 'has_form');
    DELETE FROM ledger_submissions WHERE id IN (SELECT submission FROM assertions WHERE asserted_by = :test);
    DELETE FROM ledger_submissions WHERE id IN (SELECT submission FROM assertion_actions
      WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test));
@@ -256,7 +299,6 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    DELETE FROM assertion_evidence WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test);
    DELETE FROM assertion_premises WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test);
    DELETE FROM assertions WHERE asserted_by = :test;
-   DELETE FROM current_claims WHERE crop = :crop;
    DELETE FROM actors WHERE user = :test;
    -- glyph-atlas-accounts
    DELETE FROM rateLimit WHERE key >= '192.0.2.77|' AND key < '192.0.2.77}';
@@ -269,7 +311,9 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 
    The test account had no reviews, so its actor names no submission
    (`SELECT count(*) FROM submissions WHERE actor IN (SELECT id FROM actors WHERE user = :test)` is
-   0). Each delete reads by an index or a key range. Delete `wrangler.check.jsonc` and
+   0). Each delete reads by an index or a key range, and each reaches only the checks' rows: the
+   test account's own and the test account's claim on a crop nothing named before the window. The
+   IDS's form and representation were there before and stay. Delete `wrangler.check.jsonc` and
    `.dev.vars.cutover` after.
 
    Then upload the checked Worker, still paused, and make the version that will be deployed:
@@ -282,7 +326,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    `versions upload` adds to the previous version's secrets and deletes none (its `--help`), and
    neither command deploys, so the site keeps answering from the paused version. With Version URLs
    off, the new versions answer nowhere until they are deployed.
-9. **Switch** the Worker's routes to the new layout and resume writes:
+10. **Switch** the Worker's routes to the new layout and resume writes:
    `bunx wrangler versions deploy <id of the version without WRITES_PAUSED>@100%`. This one command
    is the switch: the paused version answers until it runs, and the new one, unpaused, after.
    Passkey sign-in (bound to glyphatlas.org) and a provider sign-in (its callback names
@@ -300,12 +344,9 @@ answers:
   `rejections`), including `writes_word` claims;
 - reviews (`events`, `submissions`, `skips`, `seen`, `actors`), accounts (`user`, `session`,
   `account`, `account_profiles`, `passkey`, `verification`, `rateLimit`) and `favourites`;
-- `words`, `word_spellings`, and `form_bases` (a corpus glyph's character and family before a form
-  decision moved it);
-- character data (`characters` cards, `character_variants`, `character_derived`,
-  `component_variants`, `han_ids`, `han_components`, `han_component_names`, `grapheme_writers`,
-  `representations`);
-- family heads and search names for characters that first appear after the first build;
+- `form_bases` (a corpus glyph's character and family before a form decision moved it);
+- `representations` (form anchors), which form claims write: they move with the forms;
+- search names for characters that first appear after the first build;
 - `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
   new `crops` has no per-crop grapheme column yet, so the read path decides how such a crop joins a
   family gallery before cutover.

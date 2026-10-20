@@ -86,9 +86,9 @@ function mine(entry, me) {
 }
 /** What a caller hears of a save kept while writes are paused: it is not lost, and goes once they resume. */
 const kept = () => Object.assign(new Error(t('client.pausedKept')), { code: 'paused', status: 503, kept: true })
-useSender({ send: resend, settle, mine: entry => mine(entry, currentUser()), kept })
-let currentUser = () => null
-if (typeof window !== 'undefined') import('./session.svelte.js').then(session => { currentUser = session.signedInUser }).catch(() => {})
+useSender({ send: resend, settle, mine: entry => mine(entry, currentUser()), known: () => readerKnown(), kept })
+let currentUser = () => null, readerKnown = () => false
+if (typeof window !== 'undefined') import('./session.svelte.js').then(session => { currentUser = session.signedInUser; readerKnown = session.readerKnown }).catch(() => {})
 
 // A save the site cannot take yet (the database is busy, the browser is offline, writes are paused)
 // is kept on this device and sent in order when it can be; a save made while others wait joins the

@@ -19,8 +19,8 @@ Where the old events keep what (all 1,690 of 19-20 October 2026 are kind 'review
 - the verdict, issue and note are top-level fields of the event JSON's `evidence` (a JSON string);
   `evidence.request` repeats them for most reviews, and quiz rounds carry them per answer too;
 - `after_data` is the crop's record after the review: `label` and `state` always, never `style` or
-  `quiz`. A review never changes a crop's style, and `evidence.snapshot.character.style` holds the
-  style before it where the old Worker wrote it, so that is the event's style; no event records quiz;
+  `quiz`. A review sets no style and no withheld flag, so an event's `style` is NULL; no event records
+  quiz;
 - `before_data.box` is the box the reviewer saw, which names the event's cut.
 """
 
@@ -422,9 +422,11 @@ def main():
     for cid, a, cut, _at, s in all_skips:
         if cut == 0 and s not in undone:
             skippers[cid].add(a)
+    # A mark rests on the latest round that showed the crop; of rounds at one time, the highest
+    # submission id, as load_history.py picks it.
     last_seen = {}
     for s, cid, cut, at in seen:
-        if cut == 0 and s not in undone and (cid not in last_seen or at > last_seen[cid][0]):
+        if cut == 0 and s not in undone and (cid not in last_seen or (at, s) > last_seen[cid]):
             last_seen[cid] = (at, s)
     recomputed = {cid: "hard" for cid, a in skippers.items() if len(a) >= 2}
     recomputed.update({cid: "seen" for cid in last_seen if cid not in recomputed})
@@ -600,8 +602,11 @@ def main():
         cuts[text_of[cid]] = [{"cut": -1, "box": dict(zip("xywh", box)), "pixels": pixels, "image": image}]
     (OUT / "history-cuts.json").write_text(json.dumps(cuts, ensure_ascii=False, indent=1) + "\n")
     (OUT / "history-tombstones.json").write_text(json.dumps(list(tombstones.values()), ensure_ascii=False, indent=1) + "\n")
-    # Each actor's totals, as the review batch keeps them from the cutover on.
-    out.execute("INSERT INTO actor_stats SELECT a.id, (SELECT count(*) FROM events e WHERE e.actor = a.id), "
+    # Each actor's totals, as the review batch keeps them from the cutover on and the ranking counts
+    # them: verdicts only (a mark event is no review), and an undone submission's do not count.
+    out.execute("INSERT INTO actor_stats SELECT a.id, (SELECT count(*) FROM events e JOIN submissions s ON s.id = e.submission "
+                "WHERE e.actor = a.id AND s.undone = 0 AND e.kind IN (SELECT code FROM codes WHERE field = 'kind' "
+                "AND key IN ('match', 'wrong', 'unsure'))), "
                 "(SELECT count(*) FROM submissions s WHERE s.actor = a.id AND s.undone = 0), "
                 "(SELECT max(at) FROM submissions s WHERE s.actor = a.id) FROM actors a")
     out.commit()
