@@ -493,11 +493,14 @@ def clean(run, atlas):
             manifest[name] = now
         elif now - since >= KEEP_UNNAMED:
             gone.append(name)
+    # The local copies go first: after a failed delete any of these may be gone from R2, so a load that
+    # names one again uploads it; the manifest keeps them until the delete succeeds.
+    for name in gone:
+        (OUT / "forms" / name).unlink(missing_ok=True)
     for folder in ("", "families/"):
         remove([g[len(folder):] for g in gone if g.startswith(folder) and "/" not in g[len(folder):]], FORMS_PREFIX + folder)
     for name in gone:
         del manifest[name]
-        (OUT / "forms" / name).unlink(missing_ok=True)
     if manifest != before:
         path = run / "manifest" / MANIFEST
         path.parent.mkdir(exist_ok=True)

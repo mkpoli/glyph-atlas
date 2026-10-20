@@ -296,6 +296,42 @@ def test_a_list_no_row_or_decision_names_is_deleted_after_the_cache_time(layout,
     assert (root / "out" / "forms" / f"{first}.json.gz").exists()
 
 
+class FailingDelete(list):
+    def extend(self, names):
+        raise SystemExit("deleting under v3/forms/ failed; rerun to finish")
+
+
+def test_a_list_whose_delete_failed_goes_up_again_when_a_load_names_it(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    glyph_decided(root, remote)
+    sources(root, decision=None)
+    facts(root, remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    first, family = db.execute("SELECT form_clusters.list, form_families.list FROM form_clusters, form_families").fetchone()
+    sources(root, decision=None, units=[form_unit("ex:a1", "U+304B:c1", 1)])
+    facts(root, remote, monkeypatch, "--send")
+    manifest = root / "out" / "forms" / "manifest.json.gz"
+    aged = {k: v and v - 7200 for k, v in body(manifest).items()}
+    manifest.write_bytes(gzip.compress(json.dumps(aged).encode()))
+    # The delete fails part way: which of the two objects R2 still holds is unknown.
+    remote.removed = FailingDelete()
+    with pytest.raises(SystemExit, match="deleting"):
+        facts(root, remote, monkeypatch, "--send")
+    assert not (root / "out" / "forms" / f"{first}.json.gz").exists()
+    assert not (root / "out" / "forms" / "families" / f"{family}.json.gz").exists()
+    assert body(manifest) == aged
+    # The first clustering again: its list and index go up again, named once more.
+    remote.removed = []
+    uploads = len(remote.uploaded)
+    sources(root, decision=None)
+    facts(root, remote, monkeypatch, "--send")
+    assert {f"{first}.json.gz", f"{family}.json.gz"} <= set(remote.uploaded[uploads:])
+    assert db.execute("SELECT form_clusters.list, form_families.list FROM form_clusters, form_families").fetchone() == (first, family)
+    held = body(manifest)
+    assert held[f"{first}.json.gz"] is None and held[f"families/{family}.json.gz"] is None
+    assert f"v3/forms/{first}.json.gz" not in remote.removed
+
+
 def test_a_load_over_decisions_the_site_made_is_refused(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root, decision=None)
