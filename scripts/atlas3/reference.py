@@ -63,7 +63,6 @@ import fcntl
 import gzip
 import hashlib
 import json
-import os
 import re
 import shutil
 import sqlite3
@@ -205,12 +204,60 @@ def visual_groups(detail, codes, crop_of, notes):
     return compact(card)
 
 
-def translate(atlas, mirror, path):
-    """The D1 tables in `path` and the objects as {path under v3/reference/: gzipped JSON}; also the
-    graphemes to insert, the heads to change and the report's notes."""
+def sort_key(code_point):
+    """Text that orders as the code point tuples do."""
+    return " ".join(f"{p:06X}" for p in code_points(code_point))
+
+
+class Objects:
+    """Takes each object as it is made: its hash goes to the manifest, its figures to the report, and
+    its bytes, when the hash differs from the one R2's manifest gives, to the stage folder."""
+
+    def __init__(self, held, stage):
+        self.held, self.stage, self.manifest = held, stage, {}
+        self.kinds = defaultdict(lambda: [0, 0, 0, 0, 0])  # objects, bytes, largest, to send, bytes to send
+
+    def put(self, rel, text):
+        data = encode(text)
+        h = self.manifest[rel] = digest(data)
+        kind = self.kinds[rel.split("/")[0] if "/" in rel else rel]
+        kind[0] += 1
+        kind[1] += len(data)
+        kind[2] = max(kind[2], len(data))
+        if self.held.get(rel) != h:
+            kind[3] += 1
+            kind[4] += len(data)
+            if self.stage:
+                path = self.stage / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+
+    def changed(self):
+        return sum(k[3] for k in self.kinds.values())
+
+    def gone(self):
+        return sorted(set(self.held) - set(self.manifest))
+
+
+def translate(atlas, mirror, path, objects):
+    """The D1 tables in `path`, each object handed to `objects`; also the graphemes to insert, the heads
+    to change and the report's notes. Cards, edges and derived forms wait in a scratch database on
+    disk, so the run holds one object at a time."""
     path.unlink(missing_ok=True)
-    out = sqlite3.connect(path)
+    out = sqlite3.connect(f"file:{path}", uri=True)
     out.executescript(SCHEMA.read_text())
+    scratch_path = path.with_name(path.stem + "-scratch.sqlite")
+    scratch_path.unlink(missing_ok=True)
+    scratch = sqlite3.connect(scratch_path)
+    scratch.executescript("""
+      CREATE TABLE cards(code_point TEXT PRIMARY KEY, sort TEXT NOT NULL, char TEXT NOT NULL, name TEXT,
+        head TEXT, family TEXT NOT NULL, family_char TEXT NOT NULL, shard TEXT NOT NULL, several INTEGER NOT NULL,
+        ligature INTEGER NOT NULL, occurrences INTEGER NOT NULL, data TEXT NOT NULL);
+      CREATE INDEX card_sort ON cards(sort);
+      CREATE TABLE edges(seq INTEGER PRIMARY KEY, char TEXT NOT NULL, other TEXT NOT NULL, edge TEXT NOT NULL);
+      CREATE INDEX edge_char ON edges(char, seq);
+      CREATE TABLE derived(char TEXT PRIMARY KEY, forms TEXT NOT NULL) WITHOUT ROWID;
+    """)
     notes = defaultdict(int, {"visual groups with no visual_group code, kept by their id": 0,
                               "visual group samples whose crop is not published, left out": 0})
     g = Graphemes(atlas)
@@ -223,27 +270,41 @@ def translate(atlas, mirror, path):
             return None
         return found[0]
 
-    # Each card's light facts, by code point; its data text is kept once, for the summaries and lists.
-    cards, heads = [], {}
-    rows = source("characters").execute("SELECT code_point, character, name, data, head FROM characters")
-    for code_point, character, name, data_text, head in sorted(rows, key=lambda r: code_points(r[0])):
-        char = char_text(character)
-        data = json.loads(data_text)
-        family = data.get("grapheme") or {}
+    def card_rows():
+        for code_point, character, name, data_text, head in source("characters").execute(
+                "SELECT code_point, character, name, data, head FROM characters"):
+            data = json.loads(data_text)
+            family = data.get("grapheme") or {}
+            char = char_text(character)
+            family_point = family.get("code_point") or code_point
+            yield (code_point, sort_key(code_point), char, name, head, family_point, family.get("char") or char,
+                   shard(family_point, SUMMARY_DIGITS), int(len(family.get("members") or []) > 1),
+                   int(data.get("ligature") is not None), int(data.get("occurrence_count") or 0), data_text)
+
+    scratch.executemany("INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", card_rows())
+
+    # Graphemes are numbered in code point order of the cards, as the publisher would.
+    light, heads = {}, {}
+    for code_point, char, head, family_char in scratch.execute(
+            "SELECT code_point, char, head, family_char FROM cards ORDER BY sort"):
         gid = g(char)
         if head:
             heads[gid] = g(head)
-        cards.append((code_point, char, name, data_text, family.get("code_point") or code_point, family.get("char") or char,
-                      len(family.get("members") or []) > 1, data.get("ligature") is not None,
-                      int(data.get("occurrence_count") or 0)))
+        light[code_point] = (char, family_char)
 
-    edges = defaultdict(list)
-    for a, b, relation, src, detail, written, widens in source("character_variants").execute(
-            "SELECT a, b, relation, source, detail, written, widens FROM character_variants ORDER BY a, b, relation, source"):
-        a, b = char_text(a), char_text(b)
-        edges[a].append([b, relation, src, detail, written, widens])
-        edges[b].append([a, relation, src, detail, written, widens])
-    derived = {char_text(a): forms for a, forms in source("character_derived").execute("SELECT a, forms FROM character_derived")}
+    def edge_rows():
+        seq = 0
+        for a, b, relation, src, detail, written, widens in source("character_variants").execute(
+                "SELECT a, b, relation, source, detail, written, widens FROM character_variants ORDER BY a, b, relation, source"):
+            a, b = char_text(a), char_text(b)
+            yield seq, a, b, compact([b, relation, src, detail, written, widens])
+            yield seq + 1, b, a, compact([a, relation, src, detail, written, widens])
+            seq += 2
+
+    scratch.executemany("INSERT INTO edges VALUES(?,?,?,?)", edge_rows())
+    scratch.executemany("INSERT OR REPLACE INTO derived VALUES(?,?)",
+                        ((char_text(a), forms) for a, forms in source("character_derived").execute("SELECT a, forms FROM character_derived")))
+    scratch.commit()
     pairs = {(a, b): [count, json.loads(p)] for a, b, count, p in
              source("component_variants").execute("SELECT a, b, count, pairs FROM component_variants")}
     writes, writers = defaultdict(list), defaultdict(list)
@@ -256,46 +317,51 @@ def translate(atlas, mirror, path):
     for grapheme in writers:
         writers[grapheme].sort()
 
-    objects, by_code = {}, {c[0]: c for c in cards}
     for code_point, data_text, detail in source("characters").execute("SELECT code_point, data, detail FROM characters"):
-        _, char, _name, _data, _family, head, *_ = by_code[code_point]
-        forms_text = derived.get(char, "[]")
+        char, head = light[code_point]
+        found = scratch.execute("SELECT forms FROM derived WHERE char=?", (char,)).fetchone()
+        forms_text = found[0] if found else "[]"
         forms = json.loads(forms_text)
+        edges = scratch.execute("SELECT other, edge FROM edges WHERE char=? ORDER BY seq", (char,)).fetchall()
         subs = sorted({substitution_key(was, became) for _other, routes in forms for route in routes for was, became in route})
-        named = {char, head, *(e[0] for e in edges.get(char, [])), *(w for w, _ in writes.get(char, [])),
+        named = {char, head, *(other for other, _ in edges), *(w for w, _ in writes.get(char, [])),
                  *(w for w, _ in writers.get(head, [])), *(other for other, _ in forms)}
         ids = {c: i for c in sorted(named) if (i := g.get(c)) is not None}
-        objects[f"char/{object_key(code_point)}.json.gz"] = encode(
-            f'{{"grapheme":{g.get(char)},"data":{data_text},"detail":{visual_groups(detail, codes, crop_of, notes)},'
-            f'"variants":{compact(edges.get(char, []))},"derived":{forms_text},'
-            f'"substitutions":{compact([[a, b, *pairs[(a, b)]] for a, b in subs if (a, b) in pairs])},'
-            f'"writes":{compact([[w, own] for w, own in writes.get(char, [])])},'
-            f'"writers":{compact(writers.get(head, []))},"ids":{compact(ids)}}}')
-    del derived
+        objects.put(f"char/{object_key(code_point)}.json.gz",
+                    f'{{"grapheme":{g.get(char)},"data":{data_text},"detail":{visual_groups(detail, codes, crop_of, notes)},'
+                    f'"variants":[{",".join(e for _, e in edges)}],"derived":{forms_text},'
+                    f'"substitutions":{compact([[a, b, *pairs[(a, b)]] for a, b in subs if (a, b) in pairs])},'
+                    f'"writes":{compact([[w, own] for w, own in writes.get(char, [])])},'
+                    f'"writers":{compact(writers.get(head, []))},"ids":{compact(ids)}}}')
 
-    summaries = defaultdict(list)
-    for c in cards:
-        summaries[shard(c[4], SUMMARY_DIGITS)].append(c)
-    for key, members in summaries.items():
-        families = defaultdict(list)
-        for c in members:
-            families[c[4]].append(f"{compact(c[0])}:{c[3]}")
-        objects[f"summary/{key}.json.gz"] = encode(
-            "{" + ",".join(f'{compact(head)}:{{{",".join(entries)}}}' for head, entries in sorted(families.items())) + "}")
+    # A summary shard at a time, its families by head, each family's cards in code point order.
+    key, families = None, {}
+    for shard_key, family, code_point, data_text in scratch.execute(
+            "SELECT shard, family, code_point, data FROM cards ORDER BY shard, family, sort"):
+        if shard_key != key and families:
+            objects.put(f"summary/{key}.json.gz", summary_text(families))
+            families = {}
+        key = shard_key
+        families.setdefault(family, []).append(f"{compact(code_point)}:{data_text}")
+    if families:
+        objects.put(f"summary/{key}.json.gz", summary_text(families))
     structures = defaultdict(dict)
     for char, sequences, shapes in source("han_ids").execute("SELECT char, sequences, shapes FROM han_ids"):
         structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None]
     for key, chars in structures.items():
-        objects[f"ids/{key}.json.gz"] = encode(compact(dict(sorted(chars.items()))))
-    objects["names.json.gz"] = encode(names_list((c[0], c[2], c[8]) for c in cards))
-    lists = {"graphemes": [c[3] for c in cards if c[6]], "ligatures": [c[3] for c in cards if c[7]]}
-    for list_name, items in lists.items():
-        for n in range(0, max(len(items), 1), LIST_PAGE):
-            objects[f"list/{list_name}/{n // LIST_PAGE}.json.gz"] = encode(
-                f'{{"total":{len(items)},"offset":{n},"items":[{",".join(items[n:n + LIST_PAGE])}]}}')
+        objects.put(f"ids/{key}.json.gz", compact(dict(sorted(chars.items()))))
+    objects.put("names.json.gz", names_list(scratch.execute("SELECT code_point, name, occurrences FROM cards ORDER BY sort")))
+    for list_name, column in (("graphemes", "several"), ("ligatures", "ligature")):
+        total = scratch.execute(f"SELECT count(*) FROM cards WHERE {column}").fetchone()[0]
+        rows = scratch.execute(f"SELECT data FROM cards WHERE {column} ORDER BY sort")
+        for n in range(0, max(total, 1), LIST_PAGE):
+            items = [r[0] for r in rows.fetchmany(LIST_PAGE)]
+            objects.put(f"list/{list_name}/{n // LIST_PAGE}.json.gz", f'{{"total":{total},"offset":{n},"items":[{",".join(items)}]}}')
+    scratch.close()
+    scratch_path.unlink()
 
     for rel, text in component_lists():
-        objects[rel] = encode(text)
+        objects.put(rel, text)
 
     out.executemany("INSERT INTO component_variants VALUES(?,?,?)", [(a, b, v[0]) for (a, b), v in pairs.items()])
     for table in ("words", "word_spellings"):
@@ -307,7 +373,11 @@ def translate(atlas, mirror, path):
     changed = {gid: head for gid, head in heads.items() if gid in g.heads and g.heads[gid] != head}
     notes["graphemes of the layout whose family head the cards change"] = len(changed)
     notes["graphemes the layout lacks, numbered by this load"] = len(g.new)
-    return out, objects, g.new, {gid: heads.get(gid) for gid in g.new.values()}, changed, notes
+    return out, g.new, {gid: heads.get(gid) for gid in g.new.values()}, changed, notes
+
+
+def summary_text(families):
+    return "{" + ",".join(f'{compact(head)}:{{{",".join(entries)}}}' for head, entries in families.items()) + "}"
 
 
 def names_list(cards):
@@ -366,36 +436,58 @@ def has(db, table):
     return db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone() is not None
 
 
-def remove_row(table, cols, key, r):
-    return f'DELETE FROM "{table}" WHERE {" AND ".join(f'"{c}" = {lit(r[cols.index(c)])}' for c in key)};'
+def remove_row(table, key, values):
+    return f'DELETE FROM "{table}" WHERE {" AND ".join(f'"{c}" = {lit(v)}' for c, v in zip(key, values, strict=True))};'
 
 
 def statements(ref, atlas, new, new_heads, changed):
-    """Groups of statements that turn the local copy into the translation; a row's statements stay in
-    one group. Also, per table, the rows each writes: statements plus their index entries."""
-    groups, written = [], {}
+    """Groups of statements that turn the local copy into the translation, the rows each table writes
+    (statements plus their index entries), and the digest of the statements. The difference is taken
+    in SQL with the local copy attached: its rows the translation lacks or changed, and the
+    translation's rows it lacks or holds otherwise; a row's statements stay in one group."""
+    groups, written, hashed = [], {}, hashlib.sha256()
 
-    def add(table, rows, indexes):
-        for i in range(0, len(rows), GROUP):
-            groups.append([s for r in rows[i:i + GROUP] for s in r])
-        written[table] = sum(len(r) for r in rows) * (1 + indexes)
+    def add(rows):
+        """Rows' statements in groups of at most GROUP rows; how many statements."""
+        group, n = [], 0
+        for i, r in enumerate(rows, 1):
+            for statement in r:
+                hashed.update(statement.encode() + b"\n")
+            group += r
+            n += len(r)
+            if i % GROUP == 0:
+                groups.append(group)
+                group = []
+        if group:
+            groups.append(group)
+        return n
 
-    add("graphemes", [[f"INSERT INTO graphemes(id, text, head) VALUES({gid}, {lit(text)}, {lit(new_heads[gid])});"]
-                      for text, gid in new.items()]
-        + [[f"UPDATE graphemes SET head = {head} WHERE id = {gid};"] for gid, head in sorted(changed.items())], 1)
+    graphemes = [[f"INSERT INTO graphemes(id, text, head) VALUES({gid}, {lit(text)}, {lit(new_heads[gid])});"]
+                 for text, gid in new.items()] + [[f"UPDATE graphemes SET head = {head} WHERE id = {gid};"]
+                                                  for gid, head in sorted(changed.items())]
+    written["graphemes"] = add(graphemes) * 2
+    held = has(atlas, "words")
+    if held:
+        ref.execute("ATTACH ? AS held", (f"file:{OUT / 'atlas.sqlite'}?mode=ro",))
     for table, (cols, key) in TABLES.items():
         names = ",".join(f'"{c}"' for c in cols)
-        k = [cols.index(c) for c in key]
-        held = {tuple(r[i] for i in k): r for r in atlas.execute(f"SELECT {names} FROM {table}")} if has(atlas, table) else {}
-        wanted = {tuple(r[i] for i in k): r for r in ref.execute(f"SELECT {names} FROM {table}")}
-        rows = [[remove_row(table, cols, key, r)] for kk, r in sorted(held.items()) if kk not in wanted]
-        for kk, r in sorted(wanted.items()):
-            if held.get(kk) != r:
-                rows.append(([remove_row(table, cols, key, r)] if kk in held else [])
-                            + row_statements(table, list(cols), list(key), r))
-        indexes = ref.execute("SELECT count(*) FROM pragma_index_list(?) WHERE origin <> 'pk'", (table,)).fetchone()[0]
-        add(table, rows, indexes)
-    return groups, written
+        order = ",".join(f'"{c}"' for c in key)
+        on = " AND ".join(f'h."{c}" = w."{c}"' for c in key)
+        if held:
+            gone = ref.execute(f'SELECT {order} FROM (SELECT {names} FROM held."{table}" EXCEPT SELECT {names} FROM main."{table}") h '
+                               f'WHERE NOT EXISTS (SELECT 1 FROM main."{table}" w WHERE {on}) ORDER BY {order}')
+            come = ref.execute(f'SELECT {names}, EXISTS (SELECT 1 FROM held."{table}" h WHERE {on}) FROM '
+                               f'(SELECT {names} FROM main."{table}" EXCEPT SELECT {names} FROM held."{table}") w ORDER BY {order}')
+        else:
+            gone, come = [], ref.execute(f'SELECT {names}, 0 FROM "{table}" ORDER BY {order}')
+        rows = ([remove_row(table, key, r)] for r in gone)
+        changes = (([remove_row(table, key, [r[cols.index(c)] for c in key])] if r[-1] else [])
+                   + row_statements(table, list(cols), list(key), r[:-1]) for r in come)
+        indexes = ref.execute("SELECT count(*) FROM pragma_index_list(?, 'main') WHERE origin <> 'pk'", (table,)).fetchone()[0]
+        written[table] = (add(rows) + add(changes)) * (1 + indexes)
+    if held:
+        ref.execute("DETACH held")
+    return groups, written, hashed.hexdigest()[:12]
 
 
 def loads(atlas):
@@ -451,15 +543,6 @@ def fetch_manifest():
     return json.loads(gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data)
 
 
-def differing(objects, held):
-    """The objects whose hash differs from the manifest's, as {path: bytes}; the manifest's paths the
-    translation lacks; and the new manifest."""
-    manifest = {rel: digest(data) for rel, data in objects.items()}
-    changed = {rel: objects[rel] for rel, h in manifest.items() if held.get(rel) != h}
-    gone = sorted(set(held) - set(manifest))
-    return changed, gone, manifest
-
-
 def put_manifest(manifest):
     stage = OUT / "reference-manifest"
     shutil.rmtree(stage, ignore_errors=True)
@@ -469,27 +552,20 @@ def put_manifest(manifest):
     shutil.rmtree(stage)
 
 
-def ship(changed, gone, manifest, held):
-    """List what this load may write in the manifest, upload the changed objects folder by folder,
+def ship(objects, stage, gone):
+    """List what this load may write in the manifest, upload the staged objects folder by folder,
     delete the gone ones, then write the new manifest."""
-    put_manifest({**held, **{rel: "" for rel in manifest if rel not in held}})
-    stage = OUT / "reference-send"
-    shutil.rmtree(stage, ignore_errors=True)
-    folders = defaultdict(list)
-    for rel, data in changed.items():
-        path = stage / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-        folders[os.path.dirname(rel)].append(path)
-    for folder, files in sorted(folders.items()):
-        upload(sorted(files), PREFIX + (folder + "/" if folder else ""))
+    put_manifest({**objects.held, **{rel: "" for rel in objects.manifest if rel not in objects.held}})
+    for folder in sorted({p.parent for p in stage.rglob("*.json.gz")}):
+        prefix = str(folder.relative_to(stage))
+        upload(sorted(folder.glob("*.json.gz")), PREFIX + ("" if prefix == "." else prefix + "/"))
     if gone:
         remove(gone)
-    put_manifest(manifest)
-    shutil.rmtree(stage)
+    put_manifest(objects.manifest)
+    shutil.rmtree(stage, ignore_errors=True)
 
 
-def report(ref, written, objects, changed, gone, notes, parts):
+def report(ref, written, objects, gone, notes, parts):
     """D1 rows and bytes on disk (tables with their indexes) and rows written; R2 objects and bytes by kind."""
     sizes = dict(ref.execute("SELECT coalesce(m.tbl_name, d.name), sum(d.pgsize) FROM dbstat d "
                              "LEFT JOIN sqlite_master m ON m.name = d.name GROUP BY 1"))
@@ -506,16 +582,10 @@ def report(ref, written, objects, changed, gone, notes, parts):
     lines.append(f"{parts} parts; each also writes its stamp in imports (2 rows)")
     lines.append("")
     lines.append(f"{'R2 objects':<22}{'objects':>11}{'bytes':>14}{'largest':>12}{'to send':>10}{'bytes':>14}")
-    kinds = defaultdict(list)
-    for rel in objects:
-        kinds[rel.split("/")[0] if "/" in rel else rel].append(rel)
-    sent = {rel: len(data) for rel, data in changed.items()}
-    whole = {rel: len(data) for rel, data in objects.items()}
-    for kind, rels in sorted(kinds.items()):
-        sizes_ = [whole[r] for r in rels]
-        to_send = [sent[r] for r in rels if r in sent]
-        lines.append(f"{kind:<22}{len(rels):>11,}{sum(sizes_):>14,}{max(sizes_):>12,}{len(to_send):>10,}{sum(to_send):>14,}")
-    lines.append(f"{'total':<22}{len(objects):>11,}{sum(whole.values()):>14,}{'':>12}{len(sent):>10,}{sum(sent.values()):>14,}")
+    for kind, k in sorted(objects.kinds.items()):
+        lines.append(f"{kind:<22}{k[0]:>11,}{k[1]:>14,}{k[2]:>12,}{k[3]:>10,}{k[4]:>14,}")
+    sums = [sum(k[i] for k in objects.kinds.values()) for i in range(5)]
+    lines.append(f"{'total':<22}{sums[0]:>11,}{sums[1]:>14,}{'':>12}{sums[3]:>10,}{sums[4]:>14,}")
     lines.append(f"objects to delete: {len(gone):,}")
     lines += [f"{k}: {v:,}" for k, v in sorted(notes.items())]
     return "\n".join(lines) + "\n"
@@ -552,17 +622,18 @@ def main():
         migrate(atlas)
         finish(atlas)
 
-    ref, objects, new, new_heads, changed_heads, notes = translate(atlas, mirror, OUT / "reference.sqlite")
-    groups, written = statements(ref, atlas, new, new_heads, changed_heads)
-    held = fetch_manifest()
-    changed, gone, manifest = differing(objects, held)
+    stage = OUT / "reference-send"
+    shutil.rmtree(stage, ignore_errors=True)
+    objects = Objects(fetch_manifest(), stage if args.send else None)
+    ref, new, new_heads, changed_heads, notes = translate(atlas, mirror, OUT / "reference.sqlite", objects)
+    groups, written, rows_digest = statements(ref, atlas, new, new_heads, changed_heads)
+    gone = objects.gone()
     run = None
     if groups:
-        digest = hashlib.sha256("\n".join(s for g in groups for s in g).encode()).hexdigest()[:12]
-        run = OUT / "reference-load" / f"reference-{len(loads(atlas)) + 1}-{digest}"
+        run = OUT / "reference-load" / f"reference-{len(loads(atlas)) + 1}-{rows_digest}"
         built(run, "rows", groups)
     parts = len(list(run.glob("*.sql"))) if run else 0
-    text = report(ref, written, objects, changed, gone, notes, parts)
+    text = report(ref, written, objects, gone, notes, parts)
     (OUT / "reference-report.txt").write_text(text)
     print(text + (f"{parts} parts -> {run}" if run else "the local copy already holds these rows"), flush=True)
     if not args.send:
@@ -570,8 +641,8 @@ def main():
         return
     if run:
         deliver(run, atlas)
-    if changed or gone:
-        ship(changed, gone, manifest, held)
+    if objects.changed() or gone:
+        ship(objects, stage, gone)
     print("reference data loaded", flush=True)
 
 
