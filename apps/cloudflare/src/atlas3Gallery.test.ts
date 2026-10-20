@@ -20,7 +20,7 @@ function setup() {
   const migrations = new URL('../migrations-atlas/', import.meta.url);
   for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
   const page = ++pages, ids = Array.from({ length: 10 }, (_, slot) => cropId(page, slot));
-  db.exec(`INSERT INTO books VALUES(1,'hk:book'); INSERT INTO graphemes(id,text) VALUES(7,'所');
+  db.exec(`INSERT INTO books(id,key) VALUES(1,'hk:book'); INSERT INTO graphemes(id,text) VALUES(7,'所');
     INSERT INTO codes VALUES('state',0,'pending'),('state',1,'checked'),('style',0,'cursive'),('style',2,'unassessed');
     INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${page},'hk:book:1',1,1,10);`);
   ids.forEach((id, i) => db.query(`INSERT INTO crops(id,kind,book,char,style,state,quiz,year,shuffle) VALUES(?,0,1,7,?,?,?,?,?)`)
