@@ -2,7 +2,7 @@
 // (`cropItems`), with what the site has said of it since. A corpus glyph shows the form the forms tool
 // decided for it or its cluster, every crop the form a person named for its cut (`has_form`), and every
 // crop its book's dating.
-import { cropItems, publicId, type Entry } from './atlas3';
+import { codeNames, cropItems, publicId, type Entry } from './atlas3';
 import { codePoints } from './atlas3Answers';
 import { axisOf } from './dating';
 import { formed, type UnitForm } from './forms';
@@ -58,33 +58,52 @@ export async function datingOf(env: Env, documents: (string | null | undefined)[
   return found;
 }
 
-/** The listing items of `ids`, in that order, with their forms and dating. A crop `cropItems` leaves
- *  out is left out here. */
+// What reviews have set on a crop since its cut: a redrawn box (`reviews`), which the crop shows until the
+// next publication cuts it, and the issue its last event flagged it with. One primary-key probe and one
+// `event_crop` range per crop.
+export const reviewedQuery = () => `SELECT j.value AS crop,r.x,r.y,r.w,r.h,
+  (SELECT e.issue FROM events e WHERE e.crop=j.value ORDER BY e.revision DESC LIMIT 1) AS issue
+  FROM json_each(?) j LEFT JOIN reviews r ON r.crop=j.value`;
+type Reviewed = { crop: number; x: number | null; y: number | null; w: number | null; h: number | null; issue: number | null };
+// A review saved before the issue was renamed names it `reading`; a record calls it `character`.
+const issueName = (name: string | undefined) => name === 'reading' ? 'character' : name ?? null;
+
+/** The listing items of `ids`, in that order, with what reviews set since the cut (a redrawn box, a
+ *  flagged crop's issue), their forms and dating. A crop `cropItems` leaves out is left out here. */
 export async function listingItems(env: Env, ids: number[], given?: Map<number, Entry>): Promise<Json[]> {
   const items = await cropItems(env, ids, given);
   if (!items.length) return items;
   const crops = new Map(ids.map(id => [publicId(id), id]));
   const listed = items.map(item => crops.get(item.id)!);
   const corpus = items.filter(item => item.origin === 'corpus').map(item => crops.get(item.id)!);
-  const [decided, claimed, dating] = await Promise.all([
+  const [decided, claimed, dating, reviewed] = await Promise.all([
     corpus.length ? env.ATLAS.prepare(corpusFormsQuery()).bind(JSON.stringify(corpus)).all<CorpusForm>().then(r => r.results) : [],
     env.ATLAS.prepare(cropFormsQuery()).bind(JSON.stringify(listed)).all<{ crop: number; status: string; members: string; claims: string; supporting: string }>(),
     datingOf(env, items.map(item => item.document)),
+    env.ATLAS.prepare(reviewedQuery()).bind(JSON.stringify(listed)).all<Reviewed>(),
   ]);
   const forms = new Map(decided.map(row => [row.id, unitForm(row)]));
   const claims = new Map(claimed.results.map(row => [row.crop, formOf(row)]));
+  const since = new Map(reviewed.results.map(row => [row.crop, row]));
+  let names = await codeNames(env);
+  if (reviewed.results.some(row => row.issue !== null && !names.has(`issue:${row.issue}`))) names = await codeNames(env, true);
   return items.map((item, i) => {
     const id = listed[i], shown = item.origin === 'corpus' ? formed(item, forms.get(id) ?? null, { codePoints }) : item;
-    return { ...shown, form: claims.get(id) ?? null, dating: dating.get(item.document) ?? {} };
+    const r = since.get(id);
+    return { ...shown,
+      ...(r && r.x !== null ? { box: { x: r.x, y: r.y, w: r.w, h: r.h }, box_pending: true } : {}),
+      issue: item.state === 'flagged' && r?.issue != null ? issueName(names.get(`issue:${r.issue}`)) : null,
+      form: claims.get(id) ?? null, dating: dating.get(item.document) ?? {} };
   });
 }
 
 // The classifier's doubt about a crop's label, and the quiz's shape order: one primary-key probe each.
+// The doubt is held against the crop as it shows now (`suspectOf`), never read from `crops.flags`.
 export const marksQuery = () => `SELECT j.value AS crop,s.p,s.reads_as,s.label,s.box,h.shape_order FROM json_each(?) j
   LEFT JOIN suspects s ON s.crop=j.value LEFT JOIN shapes h ON h.crop=j.value`;
 export type Suspect = { p: number; reads_as: string | null; label: string; box: Json | null };
-// A mark holds while the crop keeps the label and box the classifier was shown; a crop relabelled or
-// re-cut since is no longer what it judged.
+// A mark holds while the crop keeps the label and box the classifier was shown; a crop relabelled,
+// re-cut or redrawn since is no longer what it judged.
 export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | null {
   if (!mark || mark.label !== item.label) return null;
   const a = mark.box, b = item.box ?? null;

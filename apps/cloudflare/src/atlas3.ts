@@ -56,12 +56,12 @@ export function bundle(env: Env, page: number, rev: number): Promise<Bundle | nu
   return read;
 }
 
-// Small code tables (state, style, category), the same for every request until a publication adds a
+// Small code tables (state, style, category, issue), the same for every request until a publication adds a
 // code: a listing that meets a code the isolate does not hold reads the table again, once.
 let codes: Promise<Map<string, string>> | null = null;
 export function codeNames(env: Env, fresh = false): Promise<Map<string, string>> {
   if (fresh || !codes) {
-    const read = env.ATLAS.prepare(`SELECT field,code,key FROM codes WHERE field IN ('state','style','category')`)
+    const read = env.ATLAS.prepare(`SELECT field,code,key FROM codes WHERE field IN ('state','style','category','issue')`)
       .all<{ field: string; code: number; key: string }>()
       .then(r => new Map(r.results.map(row => [`${row.field}:${row.code}`, row.key])));
     read.catch(() => { if (codes === read) codes = null; });

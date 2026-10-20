@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { cropId, publicId } from '../atlas3';
 import { charsQuery, tallyDeltasQuery } from '../atlas3Answers';
-import { corpusFormsQuery, cropFormsQuery, datingQuery, marksQuery } from '../atlas3Listing';
+import { corpusFormsQuery, cropFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
 import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, dateStats, deal, flaggedQuery, gallery,
   graphemeQuery, health, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter } from './browse';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
@@ -172,6 +172,42 @@ describe('the browse page', () => {
     expect(first.page_id).toBe('hk:a:1');
   });
 
+  it('hold a suspect mark against the crop as it shows now, relabelled or redrawn, as the old site did', async () => {
+    const { env, db, a, crop } = await setup();
+    // The old site's rule (index.ts before the cutover), held against the crop's record as it stood.
+    const oldSuspectOf = (mark: any, item: any) => {
+      if (!mark || mark.label !== item.label) return null;
+      const x = mark.box, y = item.box ?? null;
+      const same = x === null || y === null ? x === y : ['x', 'y', 'w', 'h'].every(k => Math.abs(Number(x[k]) - Number(y[k])) < 1e-6);
+      return same ? { p: mark.p, reads_as: mark.reads_as } : null;
+    };
+    const cut = (slot: number) => ({ x: slot, y: 0, w: 1, h: 1 });
+    const marks = [[0, 'は', cut(0)], [1, 'は', cut(1)], [2, 'は', { x: 9, y: 9, w: 3, h: 3 }], [3, 'ハ', cut(3)]] as const;
+    for (const [slot, label, box] of marks) db.query('INSERT INTO suspects VALUES(?,0.7,?,?,?)').run(crop(a, slot), 'ほ', label, JSON.stringify(box));
+    // a0 relabelled 処; a1 redrawn elsewhere; a2 redrawn onto the box the classifier was shown; a3 as cut.
+    db.exec(`UPDATE crops SET char=6, revision=1 WHERE id=${crop(a, 0)};
+      INSERT INTO reviews(crop,gen,at,char,state,x,y,w,h) VALUES(${crop(a, 1)},1,0,1,0,5,5,2,2),(${crop(a, 2)},1,0,1,1,9,9,3,3);`);
+    const items = (await get(env, '/atlas?document=hk:a&withheld=show&limit=20')).items;
+    const shown = (slot: number) => items.find((i: any) => i.id === publicId(crop(a, slot)));
+    const was = { 0: { label: '処', box: cut(0) }, 1: { label: 'は', box: { x: 5, y: 5, w: 2, h: 2 } },
+      2: { label: 'は', box: { x: 9, y: 9, w: 3, h: 3 } }, 3: { label: 'ハ', box: cut(3) } } as Record<number, any>;
+    for (const [slot, label, box] of marks) expect(shown(slot).suspect).toEqual(oldSuspectOf({ p: 0.7, reads_as: 'ほ', label, box }, was[slot]));
+    expect([0, 1, 2, 3].map(slot => shown(slot).suspect === null)).toEqual([true, true, false, false]);
+    expect(shown(1)).toMatchObject({ box: { x: 5, y: 5, w: 2, h: 2 }, box_pending: true });
+    expect(shown(3).box_pending).toBeUndefined();
+  });
+
+  it('show a flagged crop with the issue its last review gave it', async () => {
+    const { env, db, a, b, crop } = await setup();
+    // a6 flagged for its crop, then for its reading (an older name of the character issue); b3 merged.
+    db.exec(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,issue) VALUES(${crop(a, 6)},1,0,1,2,3,0,1,2),
+      (${crop(a, 6)},2,0,1,2,3,0,1,6),(${crop(b, 3)},1,0,1,2,3,0,1,1),(${crop(a, 2)},1,0,1,2,3,0,0,NULL)`);
+    const items = (await get(env, '/atlas?state=attention&limit=10')).items;
+    const issue = (id: number) => items.find((i: any) => i.id === publicId(id)).issue;
+    expect([issue(crop(a, 6)), issue(crop(b, 3)), issue(crop(a, 9))]).toEqual(['character', 'merged', null]);
+    expect((await get(env, '/atlas?character=は&state=checked&limit=10')).items[0].issue).toBeNull();
+  });
+
   it('count a review at once, before the next publication', async () => {
     const { env, db, a, crop } = await setup();
     db.exec(`UPDATE crops SET state=1, revision=1 WHERE id=${crop(a, 0)};
@@ -285,7 +321,8 @@ describe('the queries', () => {
       [booksQuery(), ['[1]'], 'SEARCH books USING INTEGER PRIMARY KEY'], [graphemeQuery(), ['は'], 'USING INDEX sqlite_autoindex_graphemes_1'],
       [membersQuery(), [1], 'grapheme_head'], [datingQuery(), ['["hk:a"]'], 'SEARCH d USING PRIMARY KEY (book=?)'],
       [cropFormsQuery(), ['[1]'], 'current_claim_crop'], [corpusFormsQuery(), ['[1]'], 'SEARCH g USING INTEGER PRIMARY KEY'],
-      [marksQuery(), ['[1]'], 'SEARCH s USING INTEGER PRIMARY KEY']] as [string, unknown[], string][]) {
+      [marksQuery(), ['[1]'], 'SEARCH s USING INTEGER PRIMARY KEY'], [reviewedQuery(), ['[1]'], 'SEARCH e USING INDEX event_crop (crop=?)'],
+      [reviewedQuery(), ['[1]'], 'SEARCH r USING INTEGER PRIMARY KEY']] as [string, unknown[], string][]) {
       const detail = plan(sql, values);
       expect(detail).toContain(wanted);
       expect(detail).not.toMatch(/SCAN (c|crops|g|graphemes|d|book_dates|books)\b(?! USING)/);
