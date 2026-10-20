@@ -21,7 +21,7 @@ mock.module('../src/lib/session.svelte.js', () => ({
 const { backoff } = await import('../src/lib/busy.svelte.js')
 const { request } = await import('../src/lib/client.js')
 const { outbox, drain, keep, keptCrops, keptState, keyOf, dismiss } = await import('../src/lib/outbox.svelte.js')
-const { correctionBatches, sendBatches, sendEach } = await import('../src/lib/corrections.js')
+const { correctionBatches, restoredCrops, sendBatches, sendEach } = await import('../src/lib/corrections.js')
 
 const paused = () => Response.json({ error: 'paused', message: 'Changes are paused.' }, { status: 503, headers: { 'retry-after': '300' } })
 let posts, sent, timers, realFetch, realTimeout, answer
@@ -141,17 +141,22 @@ test('a batch correction keeps every batch after a kept one, under the same ids 
   expect(outbox.pending).toBe(0)
 })
 
-test('a batch corrected, undone and corrected again is a new submission, which the site records', async () => {
-  // The site answers a repeated submission with its first answer and changes nothing.
-  const answers = new Map(), state = {}
+test('a batch corrected, undone and corrected again is a new submission at the undo\'s revisions, which the site records', async () => {
+  // The site answers a repeated submission with its first answer and changes nothing, and refuses a
+  // crop sent at a revision it has moved past. Each write moves a crop one revision on.
+  const answers = new Map(), state = {}, revision = { u0: 4, u1: 4 }
   globalThis.fetch = async (path, init) => {
     const body = JSON.parse(init.body)
     posts.push(path); sent.push(body.id ?? null)
     const undone = /^\/atlas\/corrections\/([^/]+)\/undo$/.exec(path)?.[1]
-    if (undone) { for (const crop of answers.get(undone).crops) state[crop] = 'before'; return Response.json({ ok: true }) }
+    if (undone) {
+      const results = answers.get(undone).crops.map(crop => { state[crop] = 'before'; return { target_id: crop, revision: ++revision[crop] } })
+      return Response.json({ id: undone, results })
+    }
     if (!answers.has(body.id)) {
-      for (const crop of body.crops) state[crop.id] = body.character
-      answers.set(body.id, { crops: body.crops.map(crop => crop.id), results: body.crops.map(crop => ({ target_id: crop.id })) })
+      if (body.crops.some(crop => crop.revision !== revision[crop.id])) return Response.json({ detail: 'This crop changed.' }, { status: 409 })
+      const results = body.crops.map(crop => { state[crop.id] = body.character; return { target_id: crop.id, revision: ++revision[crop.id] } })
+      answers.set(body.id, { crops: body.crops.map(crop => crop.id), results })
     }
     return Response.json({ results: answers.get(body.id).results })
   }
@@ -159,12 +164,19 @@ test('a batch corrected, undone and corrected again is a new submission, which t
   const send = ({ id, crops: part }) => request('/atlas/corrections', { id, character: 'え', crops: part })
   const first = await sendBatches(correctionBatches('え', crops, 2), send)
   expect(first.answered.length).toBe(1)
-  await sendEach(first.answered.map(({ item }) => item.id), id => request(`/atlas/corrections/${id}/undo`, {}))
+  const undo = await sendEach(first.answered.map(({ item }) => item.id), id => request(`/atlas/corrections/${id}/undo`, {}))
   expect(state).toEqual({ u0: 'before', u1: 'before' })
-  // The view puts the crops back as they were before the correction, at the same revisions.
-  const again = await sendBatches(correctionBatches('え', crops, 2), send)
+  // The view puts the crops back as they were before the correction, at the revisions the undo answered.
+  const before = Object.fromEntries(crops.map(crop => [crop.id, crop]))
+  const restored = restoredCrops(before, undo.answered)
+  expect(restored).toEqual({ u0: { id: 'u0', revision: 6 }, u1: { id: 'u1', revision: 6 } })
+  // At the revisions they had before the correction, the crops are refused.
+  expect((await sendBatches(correctionBatches('え', crops, 2), send).catch(e => e)).status).toBe(409)
+  const again = await sendBatches(correctionBatches('え', Object.values(restored), 2), send)
   expect(again.answered[0].item.id).not.toBe(first.answered[0].item.id)
   expect(state).toEqual({ u0: 'え', u1: 'え' })
+  // An undo answer that names no revision for a crop leaves the view to read it again.
+  expect(restoredCrops(before, [{ result: { results: [] } }])).toBeNull()
 })
 
 test('a batch the site refused with a 4xx is a new submission next time; one met by a 5xx or a failed sending keeps its id', async () => {

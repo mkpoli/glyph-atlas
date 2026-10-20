@@ -43,6 +43,22 @@ export async function sendBatches(batches, send) {
 }
 
 /**
+ * The crops in `before` (by id, as they were before a correction) as its undo put them back: each at
+ * the revision the site's undo answers in `answered` (from `sendEach`) name for it. Null when an
+ * answer names no revision for one of them (an undo the site had already made), so the view reads
+ * them again.
+ */
+export function restoredCrops(before, answered) {
+  const revisions = new Map(answered.flatMap(({ result }) => result?.results ?? []).map(r => [r.target_id, r.revision]))
+  const restored = {}
+  for (const [id, item] of Object.entries(before)) {
+    if (!revisions.has(id)) return null
+    restored[id] = { ...item, revision: revisions.get(id) }
+  }
+  return restored
+}
+
+/**
  * Send `items` in order, one at a time, with `send`; answers `{ answered: [{ item, result }], kept }`.
  * One kept on this device while writes are paused does not stop the run: the rest are kept after it,
  * in order, and all go once writes resume. Any other refusal stops it, and the error carries what came
