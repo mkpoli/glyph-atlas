@@ -69,8 +69,22 @@ def test_a_flag_sends_a_corpus_glyph_to_the_flagged_view_once(glyphs, monkeypatc
     assert remote.query("glyph-atlas-v3", "SELECT crop, finding, realigned, transcribed FROM corpus_flags ORDER BY crop") == [
         {"crop": g2, "finding": "box-relabel", "realigned": None, "transcribed": "シ"},
         {"crop": g3, "finding": "box-relabel", "realigned": "所", "transcribed": "ク"}]
+    # Each flag is an event of kind 'flag' with the wrong-character issue, one revision on, under the publisher's submission.
+    events = remote.query("glyph-atlas-v3", "SELECT e.crop, e.revision, k.key AS kind, e.state, e.issue, e.label = e.shown AS same, "
+                          "s.key AS submission, a.key AS actor FROM events e JOIN codes k ON k.field='kind' AND k.code=e.kind "
+                          "JOIN submissions s ON s.id=e.submission JOIN actors a ON a.id=e.actor ORDER BY e.id")
+    assert [(e["crop"], e["revision"], e["kind"], e["state"], e["issue"], e["same"], e["actor"]) for e in events] == [
+        (g3, 1, "flag", flagged, 0, 1, "publish"), (g2, 1, "flag", flagged, 0, 1, "publish")]
+    assert events[0]["submission"].startswith("publish:") and events[0]["submission"].endswith(":0")
+    request = json.loads(remote.query("glyph-atlas-v3", "SELECT request FROM submissions")[0]["request"])
+    assert request["target"] == "@flags" and [g["id"] for g in request["input"]["glyphs"]] == ["codh:g3", "codh:g2"]
+    assert [(r["crop"], r["state"]) for r in remote.query("glyph-atlas-v3", "SELECT crop, state FROM reviews ORDER BY crop")] == [
+        (g2, flagged), (g3, flagged)]
+    tally = {r["state"]: r["n"] for r in remote.query("glyph-atlas-v3", "SELECT state, sum(n) AS n FROM tally WHERE kind=1 GROUP BY state")}
+    assert tally[flagged] == 2 and sum(tally.values()) == 0
     report = json.loads((max((root / "out" / "publish").glob("*-f")) / "flags.json").read_text())
-    del report["at"]
+    for key in ("at", "state", "cells"):
+        del report[key]
     # codh:g1 is withheld from the quiz by its review overlay; ex:a1 is a collected crop.
     assert report == {"flagged": ["codh:g3", "codh:g2"], "unshowable": ["codh:g1"], "held": ["ex:a1"], "missing": ["codh:g9", "codh:gx"]}
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
@@ -104,3 +118,6 @@ def test_a_glyph_a_round_named_since_keeps_the_sites_rows(glyphs, monkeypatch, t
     assert local.execute("SELECT state, revision FROM crops WHERE id=?", (g2,)).fetchone() == (3, 1)
     assert local.execute("SELECT crop, seq FROM corpus_rows").fetchall() == [(g2, 1)]
     assert local.execute("SELECT count(*) FROM corpus_flags").fetchone() == (0,)
+    assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM events")[0]["n"] == 0
+    assert local.execute("SELECT count(*) FROM events").fetchone() == (0,)
+    assert local.execute("SELECT count(*) FROM tally WHERE n<>0").fetchone() == (0,)
