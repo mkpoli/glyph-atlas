@@ -1,6 +1,8 @@
 // Who a connected sign-in account is at its provider. The provider's own token is fresh at the moment
 // of connecting or signing in, so the profile is read then and kept; an account connected before this
 // record existed is filled in from what the site still holds.
+import { writesPaused } from './freeze';
+
 type Profile = { handle: string | null; name: string | null; email: string | null; image: string | null };
 type AccountRow = { id: string; providerId: string; accountId: string; accessToken: string | null; idToken: string | null; createdAt: string };
 
@@ -90,7 +92,8 @@ export async function connections(env: Env, user: string) {
   const out = [];
   for (const row of rows) {
     let profile: Profile | null = row.handle || row.name || row.email ? row : null;
-    if (!profile) { profile = await read(row); if (profile) await save(env, row, profile) }
+    // A profile read here is kept for next time, unless writes are paused.
+    if (!profile) { profile = await read(row); if (profile && !writesPaused(env)) await save(env, row, profile) }
     out.push({ id: row.id, provider: row.providerId, connected: row.createdAt,
       handle: profile?.handle ?? null, name: profile?.name ?? null, email: profile?.email ?? null, image: profile?.image ?? null });
   }

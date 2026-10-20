@@ -3,7 +3,7 @@
 // that names its submission id is kept, since the server answers a repeat of one with its first
 // result and so records it once; an undo is named by its path, and a repeat of one changes nothing.
 // `DatabaseStatus` shows what is waiting.
-import { backoff, isBusy, retryAfter } from './busy.svelte.js'
+import { backoff, isBusy, isPaused, retryAfter } from './busy.svelte.js'
 
 export const outbox = $state({ pending: 0, refused: [] })
 
@@ -88,7 +88,7 @@ export async function deliver(path, body, user, wait = null) {
 }
 
 /** Whether an answer means "not now": the site will take the same save later. */
-const later = ({ response, value }) => isBusy(response, value) || response.status === 429 || response.status === 502 || response.status === 504
+const later = ({ response, value }) => isBusy(response, value) || isPaused(response, value) || response.status === 429 || response.status === 502 || response.status === 504
 /** Whether a send failed for want of a network, which only time or reconnecting mends. */
 export const offline = error => error instanceof TypeError && /fetch|network|load failed/i.test(error.message)
 
