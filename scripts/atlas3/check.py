@@ -221,10 +221,43 @@ def check_crops(report, name):
             wrong.append(f"{u[0]} ({cid}): no bundle entry")
         else:
             # Earlier cuts are the new layout's own record of a crop's history, not part of the live record.
-            have = {k: v for k, v in e.items() if k not in ("slot", "id", "image_place", "context_image_place", "cuts")}
+            have = {k: v for k, v in e.items() if k not in ("slot", "id", "image_place", "context_image_place", "cuts", "cut_at", "encodings")}
             if e.get("id") != u[0] or have != bundle_entry(data):
                 differ = sorted(k for k in have.keys() | bundle_entry(data).keys() if have.get(k) != bundle_entry(data).get(k))
                 wrong.append(f"{u[0]} ({cid}): bundle entry {e.get('id')} differs in {differ}")
+    # When the old site first recorded each crop's current version, and its other encodings under the same
+    # box, worked out here from crop_versions and the live records: a collected crop's box and checksum, a
+    # corpus glyph's review overlay, whose record crop_versions names.
+    recorded = defaultdict(list)
+    has_versions = (HERE / "source-crop_versions.sqlite").exists()
+    for unit, pixels, box, image, at in source("crop_versions").execute("SELECT unit, pixels, box, image, at FROM crop_versions") \
+            if has_versions else []:
+        if box4(box) is not None:
+            recorded[unit].append((box4(box), pixels, image, at))
+    timed, facts_wrong = 0, []
+    for u in local + list(overlay.values()):
+        cid, versions = id_of.get(u[0]), recorded.get(u[0])
+        if cid is None or not versions or cid not in rows:
+            continue
+        data = json.loads(u[10])
+        box, pixels = box4(data.get("box")), data.get("image_sha256") or data.get("source_revision")
+        here = [v for v in versions if v[0] == box]
+        now = here if pixels is None else [v for v in here if v[1] == pixels]
+        want = {"cut_at": min((v[3] for v in now if v[3]), default=None),
+                "encodings": [{"pixels": v[1], "image": v[2], "at": v[3]} for v in sorted(here, key=lambda v: v[3] or "") if v not in now] or None}
+        e = entry(cid) or {}
+        timed += "cut_at" in e
+        got = {"cut_at": e.get("cut_at"), "encodings": e.get("encodings")}
+        if got != want:
+            facts_wrong.append(f"{u[0]} ({cid}): bundle {got}, crop_versions {want}")
+    name_facts = "every crop's cut_at and other encodings equal crop_versions' record of its current version"
+    if not has_versions:
+        report.skip(name_facts, "no copy of crop_versions")
+    elif not timed:
+        report.skip(name_facts, "no bundle has cut_at yet; publish history-cuts.sqlite (load_history.py writes it)")
+    else:
+        report.check(name_facts, facts_wrong)
+
     # The site follows `replaced_by` through retired entries for up to HOPS steps.
     others = {}
 

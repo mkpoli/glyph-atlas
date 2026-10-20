@@ -7,7 +7,9 @@ Reads the `source-*.sqlite` copies (`pull.py`) and the publisher's local copies 
 
 - `out/history.sqlite`: the tables of `0003_history.sql`, with `events`, `skips` and `codes` from
   `0001_init.sql`, holding the translated rows;
-- `out/history-cuts.json`: each crop's earlier version, cut -1, for the publisher to put in its bundle;
+- `out/history-cuts.json`: per crop the old site recorded versions of, when it first recorded the current one
+  (`cut_at`), its earlier version (cut -1) and the other encodings of its current cut, for the publisher to
+  put in its bundle;
 - `out/history-tombstones.json`: crops an event names that the mirror lacks, for the publisher to number;
 - `out/history-marks.json`: the live crop marks, with the seen row each one rests on;
 - `out/history-report.txt` (and stdout): rows in, out, dropped by rule and stopped, per table.
@@ -135,7 +137,8 @@ class Crops:
         self.ids = dict(self.mirror.execute("SELECT text, id FROM ids"))
         self.rev = dict(self.atlas.execute("SELECT id, rev FROM pages"))
         self.page_keys = dict(self.atlas.execute("SELECT id, key FROM pages"))
-        self.current, self.earlier, self.versions = {}, {}, {}
+        self.current, self.pixels, self.earlier, self.versions, self.cut_at = {}, {}, {}, {}, {}
+        self.overlay_box, self.encodings, self.text_of = {}, {}, {}
 
     def row(self, cid):
         return self.atlas.execute("SELECT kind, revision FROM crops WHERE id=?", (cid,)).fetchone()
@@ -145,7 +148,11 @@ class Crops:
         return r is not None and r[0] == 1
 
     def load_cuts(self):
-        """Each collected crop's current box (its bundle entry's) and earlier version (crop_versions)."""
+        """Each crop's recorded versions (crop_versions) against its current one: a collected crop's bundle
+        entry box and image checksum, a corpus glyph's review overlay record (its published record is in a
+        pack). A version under another box is the crop's earlier cut, -1. One under the current box with
+        other pixels is another encoding of the current cut, which its version id still names
+        (`encodings`). `cut_at` is when the old site first recorded the current version."""
         by_unit, no_box, unknown = defaultdict(list), Counter(), Counter()
         rows = source("crop_versions").execute("SELECT id, unit, pixels, box, image, at FROM crop_versions").fetchall()
         table = self.report.table("crop_versions", len(rows))
@@ -162,6 +169,7 @@ class Crops:
                 no_box["corpus glyph" if self.corpus(cid) else "collected crop"] += 1
                 continue
             by_unit[cid].append((r["id"], box_of(r["box"]), r["pixels"], r["image"], r["at"]))
+            self.text_of[cid] = r["unit"]
         self.report.note(f"crop_versions: rows with no box {dict(no_box)}; "
                          f"{sum(unknown.values())} rows of {len(unknown)} crops the mirror lacks", sorted(unknown)[:SHOWN])
         for pid in sorted({cid // PAGE for cid in by_unit}):
@@ -171,23 +179,44 @@ class Crops:
                 cid = pid * PAGE + e["slot"]
                 if cid in by_unit and box_of(e.get("box")) is not None:
                     self.current[cid] = box_of(e["box"])
+                    self.pixels[cid] = e.get("image_sha256")
+        # A corpus glyph the old site recorded versions of has a review overlay, whose record they name.
+        text_of = {cid: self.text_of[cid] for cid in by_unit if cid not in self.current and self.corpus(cid)}
+        if text_of:
+            want = {t: cid for cid, t in text_of.items()}
+            marks = ",".join("?" * len(want))
+            for text, data in source("units").execute(
+                    f"SELECT id, data FROM units WHERE origin='corpus' AND id IN ({marks}) ORDER BY _rowid", list(want)):
+                d = json.loads(data)
+                if box_of(d.get("box")) is not None:
+                    self.overlay_box[want[text]] = box_of(d["box"])
+                    self.pixels[want[text]] = d.get("image_sha256") or d.get("source_revision")
         no_current, many, orphan = [], [], []
         for cid, versions in by_unit.items():
-            if cid not in self.current:
+            current = self.current.get(cid, self.overlay_box.get(cid))
+            if current is None:
                 no_current.append(cid)
                 continue
-            older = [v for v in versions if v[1] != self.current[cid]]
-            # Versions that differ only in their image encoding share a box and are one cut.
-            if len({v[1] for v in older}) > 1:
+            earlier = [v for v in versions if v[1] != current]
+            here = [v for v in versions if v[1] == current]
+            # A current version with no checksum is named by its box alone.
+            now = here if self.pixels.get(cid) is None else [v for v in here if v[2] == self.pixels[cid]]
+            others = [v for v in here if v not in now]
+            times = [v[4] for v in now if v[4]]
+            if times:
+                self.cut_at[cid] = min(times)
+            if others:
+                self.encodings[cid] = [(v[2], v[3], v[4]) for v in sorted(others, key=lambda v: v[4] or "")]
+            if len({v[1] for v in earlier}) > 1:
                 many.append(cid)
-            elif older:
-                self.earlier[cid] = older[0]
-                if len(older) == len(versions):
+            elif earlier:
+                self.earlier[cid] = earlier[0]
+                if len(earlier) == len(versions):
                     orphan.append(cid)
-        self.report.note(f"crops with an earlier version: {len(self.earlier)}")
-        corpus = [cid for cid in no_current if self.corpus(cid)]
-        self.report.note(f"crop_versions crops with a box whose bundle entry has none: {len(no_current)}, "
-                         f"{len(corpus)} of them corpus glyphs (cut 0)", [c for c in no_current if c not in set(corpus)])
+        self.report.note(f"crops with an earlier version: {len(self.earlier)}; with another encoding of their current "
+                         f"cut: {len(self.encodings)}; with the time their current version was recorded: {len(self.cut_at)}")
+        self.report.note(f"crop_versions crops with a box that neither their bundle entry nor a review overlay has: "
+                         f"{len(no_current)}", no_current[:SHOWN])
         self.report.note(f"crops whose only version differs from their bundle box (cut -1 with no cut 0 row): {len(orphan)}", orphan)
         self.many = set(many)
         # Cut -1 holds one earlier box; a crop with two needs a rule before it can move.
@@ -204,7 +233,8 @@ class Crops:
         return self.current.get(cid)
 
     def cut(self, cid, box):
-        """Cut 0 for the current box (and every corpus glyph), -1 for the earlier one, else None."""
+        """Cut 0 for the current box (and every corpus glyph), -1 for the earlier one, else None. Another
+        encoding under the current box is the current cut."""
         if self.corpus(cid):
             return 0
         box = box_of(box)
@@ -596,12 +626,14 @@ def main():
         counts = dict(out.execute(f"SELECT cut, count(*) FROM {table} WHERE cut IS NOT NULL GROUP BY cut"))
         report.note(f"{table}: rows per cut {counts}")
 
+    # `cut_at` and `at` are when the old site first recorded a version, which a citation of it states.
     cuts = {}
-    text_of = {cid: t for t, cid in crops.ids.items() if cid in crops.earlier}
-    # `at` is when the old site first recorded the version, which a citation of it states.
-    for cid, (_vid, box, pixels, image, at) in sorted(crops.earlier.items()):
-        cuts[text_of[cid]] = [{"cut": -1, "box": dict(zip("xywh", box)), "pixels": pixels, "image": image, "at": at}]
-    (OUT / "history-cuts.json").write_text(json.dumps(cuts, ensure_ascii=False, indent=1) + "\n")
+    for cid in sorted(crops.earlier.keys() | crops.cut_at.keys() | crops.encodings.keys()):
+        cuts[crops.text_of[cid]] = {**({"cut_at": crops.cut_at[cid]} if cid in crops.cut_at else {}),
+            "cuts": [{"cut": -1, "box": dict(zip("xywh", box)), "pixels": pixels, "image": image, "at": at}
+                     for _vid, box, pixels, image, at in [crops.earlier[cid]]] if cid in crops.earlier else [],
+            "encodings": [{"pixels": pixels, "image": image, "at": at} for pixels, image, at in crops.encodings.get(cid, [])]}
+    (OUT / "history-cuts.json").write_text(json.dumps(cuts, ensure_ascii=False, separators=(",", ":")) + "\n")
     (OUT / "history-tombstones.json").write_text(json.dumps(list(tombstones.values()), ensure_ascii=False, indent=1) + "\n")
     # Each actor's totals, as the review batch keeps them from the cutover on and the ranking counts
     # them: verdicts only (a mark event is no review), and an undone submission's do not count.

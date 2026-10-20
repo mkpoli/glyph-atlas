@@ -81,7 +81,11 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
 - A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`
   moves on by one, and its bundle entry takes the new record. Reviews and claims name the cut they
   were made on, so they stay with the old one. The version it replaced joins the entry's `cuts` (its
-  cut number, box, image and pack place), which later records carry along unless they name their own.
+  cut number, box, image, pack place and `at`, when it was recorded), which later records carry along
+  unless they name their own. The entry's `cut_at` is when its own cut was recorded: the publish time of
+  a re-cut, the old site's first record of the version for a cut the history load moved, carried along
+  by later records, as are `encodings`, other encodings of the current cut that a version id names. A
+  catalogue's `cut_facts(id, cut_at, encodings)` sets both on crops it does not otherwise publish.
 - A known crop on another page, or a new or re-cut box overlapping another crop on its page
   (IoU ≥ 0.5), stops the publish with a report: those need the slot matcher, which is not built yet.
 - Order: page bundles to R2 (`v3/pages/`, through rclone's `r2` remote), then the rows in parts of at
@@ -142,7 +146,10 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    tombstone. `load_history.py` then applies `0003_history.sql` (which numbers the mark states `seen`
    and `hard`; the mirror takes the same numbers), loads every translated row in stamped parts, sets
    each pending marked crop's state to its mark one revision on with an event, and writes
-   `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut. `answers.py`
+   `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut, 36 the other encodings
+   of their current cut (35 corpus glyphs whose source revision changed under the same box, one collected
+   crop) and every crop the old site recorded a version of its `cut_at` (`cut_facts`); that publish
+   rewrites the bundle of every page of collected crops once. `answers.py`
    follows, since marks change the counts. `aliases.py` (counts only without `--send`) maps every text
    id in the mirror, and every source of `unit_redirects` followed to the first text id the mirror has,
    to its integer crop id, and uploads the map as `v3/aliases/<first three hex digits of the text id's

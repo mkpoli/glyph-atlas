@@ -42,6 +42,9 @@ def test_history_loads_once_and_a_mark_becomes_the_crops_state(layout, monkeypat
     # The crop with an earlier box comes out as a catalogue naming its cut -1.
     cut = sqlite3.connect(root / "out" / "history-cuts.sqlite").execute("SELECT data FROM units WHERE id='ex:a1'").fetchone()
     assert [(c["cut"], c["box"], c["at"]) for c in json.loads(cut[0])["cuts"]] == [(-1, {"x": 5, "y": 5, "w": 10, "h": 10}, "2026-10-03T00:00:00Z")]
+    # Every crop the old site recorded versions of gets when its current cut was recorded.
+    facts = sqlite3.connect(root / "out" / "history-cuts.sqlite").execute("SELECT id, cut_at, encodings FROM cut_facts ORDER BY id").fetchall()
+    assert facts == [("ex:a1", "2026-10-03T00:00:00Z", "[]"), ("ex:a2", "2026-10-03T00:00:00Z", "[]")]
 
 
 def test_a_dry_run_changes_nothing(layout, monkeypatch):  # noqa: F811

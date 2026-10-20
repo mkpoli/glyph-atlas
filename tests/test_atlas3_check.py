@@ -321,7 +321,17 @@ def test_every_cut_minus_one_a_row_cites_is_in_its_bundle_with_its_earlier_box(l
     publish.main()
     assert check(monkeypatch) == 0
     assert "ok   every crop cited at cut -1 has that cut in its bundle with its earlier box (1 crops)" in report(root)
+    assert "ok   every crop's cut_at and other encodings equal crop_versions' record of its current version" in report(root)
     path = bundle_of(root, ids(root)["ex:a1"])
+    body = json.loads(gzip.decompress(path.read_bytes()))
+    kept = path.read_bytes()
+    for e in body["crops"]:
+        if e["id"] == "ex:a1":
+            e["cut_at"] = "2026-10-04T00:00:00Z"
+    path.write_bytes(gzip.compress(json.dumps(body).encode()))
+    assert check(monkeypatch) == 1
+    assert "ex:a1" in report(root) and "'cut_at': '2026-10-04T00:00:00Z'" in report(root)
+    path.write_bytes(kept)
     body = json.loads(gzip.decompress(path.read_bytes()))
     for e in body["crops"]:
         for c in e.get("cuts", []):

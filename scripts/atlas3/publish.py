@@ -43,6 +43,7 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 import media_map
@@ -624,6 +625,8 @@ def main():
         f"{catalogue.parent.name}-{catalogue.stem}" if catalogue else "replacements")
     run = OUT / "publish" / stamp
     (run / "pages").mkdir(parents=True)
+    # When a re-cut's new cut is recorded (`cut_at`), as the old site timed its crop versions.
+    cut_time = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
     n, crop_ids, retired = 0, {}, set()
     for r in units:
@@ -657,10 +660,13 @@ def main():
         previous, row = entry(cid), m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()
         old_cut = row["cut"] if row else previous.get("cut", 0)
         if r["id"] in recut:
-            # The version the crop had joins its earlier cuts, so a citation of it still finds its pixels.
+            # The version the crop had joins its earlier cuts, with when it was recorded, so a citation of it
+            # still finds its pixels; the new cut is recorded now.
             given["cut"] = old_cut + 1
             bundle["cuts"] = merged_cuts(previous.get("cuts"), bundle.get("cuts"),
-                                         [{"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous}}])
+                                         [{"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous},
+                                           **({"at": previous["cut_at"]} if previous.get("cut_at") else {})}])
+            bundle["cut_at"] = cut_time
         elif row is None and previous.get("retired"):
             given["cut"] = old_cut
         for field in ("image", "context_image"):
@@ -695,6 +701,34 @@ def main():
             m.crop(given, {"id": r["id"], "label": r["label"], "record_place": [r["object"], r["offset"], r["size"]]},
                    o["revision"] if o else 0, o is not None)
             n += 1
+
+    # When each crop's current cut was recorded and its other encodings, from the history load's catalogue:
+    # set on the entry this publish writes for the crop, else on its published entry.
+    if "cut_facts" in tables:
+        unknown, gone = [], 0
+        for r in src.execute("SELECT id, cut_at, encodings FROM cut_facts ORDER BY id"):
+            cid = m.known(r["id"])
+            if cid is None:
+                unknown.append(r["id"])
+                continue
+            facts = {"cut_at": r["cut_at"], "encodings": json.loads(r["encodings"]) or None}
+            pid, slot = cid // PAGE, cid % PAGE
+            if slot in m.touched_pages.get(pid, {}):
+                written, changed = m.touched_pages[pid][slot]
+                if not written.get("retired"):
+                    m.touched_pages[pid][slot] = ({**written, **{k: v for k, v in facts.items() if v is not None}}, changed)
+                continue
+            old = entry(cid)
+            if not old or old.get("retired"):
+                gone += 1
+                continue
+            new = {k: v for k, v in {**old, **facts}.items() if k != "slot" and v is not None}
+            if new != {k: v for k, v in old.items() if k != "slot"}:
+                m.touched_pages[pid][slot] = (new, False)
+        if unknown:
+            sys.exit(f"{len(unknown)} cut_facts rows name crops the mirror lacks: {unknown[:5]}; nothing published")
+        if gone:
+            print(f"cut_facts: {gone} crops retired or without an entry, left as they are", flush=True)
 
     # Replacements are numbered once every crop of the catalogue has its id. None removes the field.
     for cid, text_id in naming:
@@ -797,9 +831,12 @@ def main():
             for field in ("image", "context_image"):
                 if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
                     new[field + "_place"] = old[field + "_place"]
-            # A crop's earlier cuts stay; a record that names cuts sets those it names.
+            # A crop's earlier cuts stay, and when its cut was recorded; a record that names cuts sets those it
+            # names, and a re-cut its new time.
             if "cuts" in old and not new.get("retired"):
                 new["cuts"] = merged_cuts(old["cuts"], new.get("cuts"))
+            if "cut_at" not in new and not new.get("retired"):
+                new.update({k: old[k] for k in ("cut_at", "encodings") if k in old and k not in new})
             touched = touched or row_changed or new != merged.get(slot)
             merged[slot] = new
         if not touched:
