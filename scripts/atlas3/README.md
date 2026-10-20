@@ -335,6 +335,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 `check.py` compares the copies with the local copy of the new layout, crop by crop: numbers, row
 values, bundle boxes and images, runs and the image map. It reads nothing remote.
 
+`parity.py --old <url> --new <url>` asks both Workers the public GET routes about a seeded sample of
+crops, corpus glyphs, characters, runs, documents, pages and images, at 2 requests a second, maps
+text ids to public ids through the mirror before comparing, and writes `out/parity-<stamp>.txt`; it
+exits 1 on any difference outside `CHANGED`.
+
 ## Not in the new databases yet
 
 These stay in the live database until cutover, when they move with integer crop ids or become R2
