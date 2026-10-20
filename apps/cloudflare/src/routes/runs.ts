@@ -7,7 +7,7 @@
 // bundles. A book is named by its key at the URL boundary and by its integer id in both databases. Which
 // runs a crop is in moves at a publication; how its crops are written follows reviews (`run_written`).
 import { bundle, cropItems, pageOf, publicId, slotOf, type Entry } from '../atlas3';
-import { catalogueVersion } from '../atlas3Stamps';
+import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
 import { currentPointer } from '../atlas3Gallery';
 import { Problem } from '../busy';
 import { bookDating } from '../dating';
@@ -46,8 +46,8 @@ async function bookId(env: Env, key: string | null): Promise<number | null> {
 // The pair and trigram frequencies Explore's grid shows: runs of crops and of corpus glyphs that follow
 // each other on a line, counted by their graphemes (ん𛁅 and ん𛁈 together as んし), most frequent first,
 // with how many written forms each gathers. The site's and each book's are the publication's answers
-// (`v3/runs/grid-<n>`, `v3/runs/books/<book>-<n>`); the edge keeps one copy per catalogue version,
-// length and book. A run is shown down the page where most of its occurrences are written that way.
+// (`v3/runs/grid-<n>`, `v3/runs/books/<book>-<n>`), so the edge keeps one copy per publication, length
+// and book. A run is shown down the page where most of its occurrences are written that way.
 const NGRAMS_MAX = 480, NGRAM_SIZES = new Set(['2', '3']);
 export function ngramSize(value: string) {
   if (!NGRAM_SIZES.has(value)) throw new Problem(404, 'Runs of two or three characters are counted.');
@@ -58,9 +58,10 @@ export async function runAnswer(env: Env, name: string): Promise<Json | null> {
   const object = await env.MEDIA.get(`v3/runs/${name}.json.gz`);
   return object ? await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json() : null;
 }
+const publication = async (env: Env) => publicationKey(await catalogueStamps(env));
 async function ngrams(env: Env, ctx: ExecutionContext, url: URL, size: number) {
   const document = text(url.searchParams.get('document'), 256, 'document');
-  const key = new Request(`${url.origin}/atlas/ngrams/${size}?document=${encodeURIComponent(document ?? '')}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const key = new Request(`${url.origin}/atlas/ngrams/${size}?document=${encodeURIComponent(document ?? '')}&v=${encodeURIComponent(await publication(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
   const book = await bookId(env, document);
@@ -384,7 +385,7 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL, timing:
 // (`runGraphemes`), and a prefix is one key range of the site's counts (`run_stats`), a row per grapheme
 // sequence rather than one per occurrence, with the forms each gathers from the publication's forms
 // shard, which all of one length share since they begin alike. The answer is kept at the edge per
-// catalogue version like the counts.
+// publication like the counts.
 export const runRangeQuery = () => `SELECT graphemes AS text,n,2*down>=n AS vertical FROM run_stats
   WHERE size=? AND graphemes>=? AND graphemes<? AND graphemes<>? AND graphemes<>'' ORDER BY n DESC,graphemes LIMIT ${RUN_NEAR_MAX}`;
 export const runHasQuery = () => 'SELECT graphemes AS text FROM run_stats WHERE size=? AND graphemes=?';
@@ -392,7 +393,7 @@ async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
   const value = text(url.searchParams.get('text'), 96, 'text', true)!;
   const parts = runCharacters(value);
   if (parts.length < 2 || parts.length > RUN_MAX) throw new Problem(422, `A run is two to ${RUN_MAX} characters.`);
-  const key = new Request(`${url.origin}/atlas/runs/related?${new URLSearchParams({ text: value, v: await catalogueVersion(env) })}`);
+  const key = new Request(`${url.origin}/atlas/runs/related?${new URLSearchParams({ text: value, v: await publication(env) })}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
   const db = env.ATLAS_RUNS;
