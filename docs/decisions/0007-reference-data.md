@@ -43,7 +43,9 @@ code point(s) (`U+3042`) for a summary, two of the character itself (`好`) for 
 
 **What a query filters, joins or sorts on stays in D1** (`migrations-atlas/0004_reference.sql`):
 `component_variants` without its pairs (the IDS editor's substitutes, read by either end), `words` and
-`word_spellings` (looked up by spelling and validated by claims).
+`word_spellings` (looked up by spelling and validated by claims), and the graphemes the cards name
+that the layout lacks. The component index left D1: as 1.46M rows it was 30 MB and a first load's
+1.46M rows written, and the search reads it by component, which a list per component serves.
 
 - **Characters are `graphemes` ids** wherever crops meet them. A card's character or family head the
   layout lacks is numbered as `publish.py` numbers one, through `char_text`, and every grapheme takes
@@ -51,8 +53,10 @@ code point(s) (`U+3042`) for a summary, two of the character itself (`好`) for 
   rebuild (`build.py --replace`) renumbers graphemes, so the objects are written again after it.
 - **Crops are integer ids.** A visual group is keyed by its `visual_group` code, and its samples name
   crops found in the mirror and in `crops`; a sample whose crop is not published leaves its list.
-- **Only differences are sent.** Rows are diffed against the local copy and sent in stamped parts;
-  each load's stamps carry its generation, so a load that returns to an earlier copy is sent again.
+- **Only differences are sent.** Rows are diffed against the local copy in SQL (the copy attached,
+  `EXCEPT` both ways) and sent in stamped parts; each load's stamps carry its generation, so a load
+  that returns to an earlier copy is sent again. A load D1 started is finished on the next run, by
+  its stamps in D1, even when the local copy holds none of its parts.
   Objects are compared by hash with `manifest.json.gz`, which R2 holds beside them; changed ones are
   uploaded, and the paths the manifest lists and the translation lacks are deleted. The manifest
   lists every path a load may have written before it uploads, so a stopped load leaves nothing
@@ -61,10 +65,14 @@ code point(s) (`U+3042`) for a summary, two of the character itself (`好`) for 
 
 ## Consequences
 
-- On the local copies of 19–20 October 2026, D1 holds 1.47M rows in 30 MB with indexes; a first
-  load writes 1.48M rows, almost all of them `han_components`. R2 holds 118,069 objects, 336 MB
-  gzipped; the largest card object is 14 KB.
+- On the local copies of 19–20 October 2026, D1 holds 2,161 rows in 139 KB with indexes, and a first
+  load writes 4,812 rows (510 for 255 new graphemes) in one part. R2 holds 132,539 objects, 341 MB
+  gzipped: 117,448 cards (largest 14 KB), 4,096 summary shards (largest 10 KB gzipped), 10,630
+  component lists and their names (largest, 一, 134 KB), 256 IDS shards, 108 list pages and the
+  68 KB name list. The translation holds one object at a time: 186 MB resident at most, in 3 min 48 s.
 - A character page reads one reference object; the IDS editor one shard and D1; a name search the
-  name list and the family shards it shows.
+  name list and the family shards it shows; a component search the component names and two to
+  eight lists. A search list reads one summary shard per family it shows: over the 234,391 alias
+  queries, 99.9% read one shard and none more than three.
 - The tools that export these sources (`export_character_variants.py`, `export_components_cloudflare.py`)
   still write the old database; they move to this load with the Worker.
