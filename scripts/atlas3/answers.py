@@ -271,6 +271,11 @@ def gallery(atlas, folder, pub, read):
     return files, pools_index
 
 
+def unabsorbed(through):
+    """Whether glyph-atlas-v3 holds a review event of a generation from 1 to `through`."""
+    return query("glyph-atlas-v3", f"SELECT count(*) AS n FROM events WHERE gen > 0 AND gen <= {through}")[0]["n"] > 0
+
+
 def write(path, body):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(gzip.compress(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()))
@@ -294,6 +299,11 @@ def main(read=None):
     # The sample's records are read before the bump, so a failed read leaves the generation where it was.
     sampled, pool_sizes = gallery(atlas, folder, pub, read or r2_reader())
     through = query("glyph-atlas-v3", "SELECT gen FROM generation WHERE id = 0")[0]["gen"]
+    # Every review up to G is in the answers. None is absorbed yet, so a database holding one is refused,
+    # before the bump and again after it, since a review can land at G until the bump. The history load
+    # writes its events at generation 0, and the local copy holds them: they count as absorbed.
+    if unabsorbed(through):
+        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; nothing published")
     if not args.dry_run:
         # Reviews written after the bump carry the next generation, so the answers stand through G. The
         # bump names G and stamps this publication in the same statement, so a resent statement cannot
@@ -302,9 +312,7 @@ def main(read=None):
                                 f"INSERT INTO imports(stamp, at) SELECT 'pub:{pub}', unixepoch() WHERE changes() = 1")
         if not applied("glyph-atlas-v3", f"pub:{pub}"):
             sys.exit(f"another publication bumped generation {through}; nothing published")
-    # Every review up to G is in the answers. None is absorbed yet, so a database holding one is refused;
-    # the check follows the bump, so no review can land at G after it.
-    if query("glyph-atlas-v3", f"SELECT count(*) AS n FROM events WHERE gen <= {through}")[0]["n"]:
+    if unabsorbed(through):
         sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; the pointer stays")
 
     shards = defaultdict(dict)

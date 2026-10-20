@@ -73,13 +73,36 @@ def test_a_dry_run_bumps_nothing_and_uploads_nothing(layout, monkeypatch):  # no
     assert remote.query("glyph-atlas-v3", "SELECT gen FROM generation")[0]["gen"] == 1
 
 
-def test_review_events_on_the_new_layout_stop_a_publication_before_the_pointer_moves(layout, monkeypatch):  # noqa: F811
+def test_review_events_on_the_new_layout_stop_a_publication_before_the_bump(layout, monkeypatch):  # noqa: F811
     _root, publish, remote = layout
     remote.dbs["glyph-atlas-v3"].execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,0,0)")
     module_uploads = []
     with pytest.raises(SystemExit):
         module_uploads = answers(publish, monkeypatch, sample=0)
     assert module_uploads == []
+    assert remote.query("glyph-atlas-v3", "SELECT gen FROM generation")[0]["gen"] == 1
+
+
+def test_a_review_landing_before_the_bump_keeps_the_pointer(layout, monkeypatch):  # noqa: F811
+    _root, publish, remote = layout
+    real = publish.query
+
+    def racing(database, sql):
+        if sql.startswith("UPDATE generation"):
+            real(database, "INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,0,0)")
+        return real(database, sql)
+
+    monkeypatch.setattr(publish, "query", racing)
+    uploaded = []
+    with pytest.raises(SystemExit):
+        uploaded = answers(publish, monkeypatch, sample=0)
+    assert uploaded == []
+
+
+def test_the_history_load_s_events_count_as_absorbed(layout, monkeypatch):  # noqa: F811
+    _root, publish, remote = layout
+    remote.dbs["glyph-atlas-v3"].execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,0,1,1,0,0)")
+    assert answers(publish, monkeypatch, sample=0)[-1] == ("v3/", ["pointer.json"])
 
 
 def test_a_bump_another_run_made_stops_this_one(layout, monkeypatch):  # noqa: F811
