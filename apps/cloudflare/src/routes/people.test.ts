@@ -465,5 +465,7 @@ describe('corpus flags', () => {
     const after = await flaggedCorpus(env, items);
     expect(after.items.map((i: Json) => [i.id, i.flag ?? null])).toEqual([...before, [publicId(cropId(P, 0)), null]]);
     expect(after.total).toBe(4);
+    const unreadable = await flaggedCorpus(env, async (_env, ids) => ids.filter(id => id !== cropId(P, 7)).map(id => ({ id: publicId(id) })));
+    expect([unreadable.items.length, unreadable.total]).toEqual([3, 3]);
   });
 });

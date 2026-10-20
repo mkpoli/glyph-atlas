@@ -270,5 +270,6 @@ export async function flaggedCorpus(env: Env, items: (env: Env, ids: number[]) =
     if (!item) return [];
     return [row.finding === null ? item : { ...item, flag: { finding: row.finding, realigned: row.realigned, transcribed: row.transcribed, at: iso(row.at) } }];
   });
-  return { items: listed, total: rows.length };
+  // A glyph with no listing item (its record unreadable) is neither shown nor counted.
+  return { items: listed, total: listed.length };
 }
