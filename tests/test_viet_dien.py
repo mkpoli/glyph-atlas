@@ -258,3 +258,57 @@ def test_older_occurrence_file_can_still_be_read(tmp_path, http_server):
     pq.write_table(old, path)
     hits = CorpusIndex(directory, root).occurrences("國")
     assert len(hits) == 2 and all(h.source.source_refs == {} for h in hits)
+
+
+def export_body(numbers=(1, 3), raw=('國𠊛\n 音\n', '')):
+    return ('# Quốc âm\n# 國音\n# Việt Điển text 11 — 2 pages\n'
+            '# https://viet-dien.com/read/11/1\n\n' +
+            '\n'.join(f'--- page {n} ---\n{text}' for n, text in zip(numbers, raw, strict=True))).encode()
+
+
+def test_bulk_export_preserves_text_and_unknown_metadata(tmp_path, http_server):
+    populate(http_server)
+    http_server.script['/api/v1/texts/11/full.txt'] = [Scripted(200, export_body())]
+    assert run(tmp_path, http_server, bulk_text=True, page_limit=0) == {
+        'documents': 1, 'pages': 2, 'page_texts': 2,
+    }
+    out = tmp_path / 'corpora/viet-dien'
+    pages = tables.read(out / 'pages.parquet', Page)
+    texts = tables.read(out / 'page_texts.parquet', PageText)
+    assert [t.text_raw for t in texts] == ['國𠊛\n 音\n', '']
+    assert all(p.image == '' and p.meta['corrected'] is None and p.meta['text_status'] == 'unknown' for p in pages)
+    assert [p.meta['viewer_url'] for p in pages] == [f'{vd.BASE}/t/d8-example/{n}' for n in (1, 3)]
+    assert all(p.meta['text_transport'] == 'full.txt' for p in pages)
+    assert http_server.requests[-1] == 'GET /api/v1/texts/11/full.txt'
+    assert len(http_server.requests) == 3
+    before = {p.name: p.read_bytes() for p in out.glob('*.parquet')}
+    run(tmp_path, http_server, bulk_text=True, page_limit=0)
+    assert len(http_server.requests) == 3
+    assert before == {p.name: p.read_bytes() for p in out.glob('*.parquet')}
+    snapshot = json.loads((out / 'UPSTREAM.json').read_text())
+    assert snapshot['text_transport'] == 'full.txt' and not snapshot['page_limited']
+    idx = CorpusIndex(tmp_path / 'index', out.parent)
+    idx.build_occurrences('國')
+    hit, = idx.occurrences('國')
+    assert hit.meta['page_meta']['corrected'] is None
+    assert hit.meta['page_meta']['text_status'] == 'unknown'
+
+
+@pytest.mark.parametrize('body', [
+    export_body(numbers=(1, 2)), export_body(numbers=(1, 1)),
+    export_body().replace(b'text 11', b'text 12'),
+    export_body().replace(b'2 pages', b'3 pages'),
+    export_body().replace(b'--- page 3 ---\n', b''),
+    b'<html>upstream error</html>',
+])
+def test_bulk_export_rejects_mismatched_snapshot(body):
+    with pytest.raises(ValueError):
+        vd.export_pages(body, detail())
+
+
+def test_bulk_export_checks_unselected_pages(tmp_path, http_server):
+    populate(http_server)
+    http_server.script['/api/v1/texts/11/full.txt'] = [Scripted(200, export_body(numbers=(1, 2)))]
+    with pytest.raises(ValueError, match='markers'):
+        run(tmp_path, http_server, bulk_text=True, page_limit=1)
+    assert not (tmp_path / 'corpora/viet-dien/documents.parquet').exists()

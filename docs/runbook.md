@@ -64,9 +64,23 @@ atlas tables validate work/viet-dien
 Repeat `--text-id` to select several works. Explicit selection reads the catalogue
 to retain the same metadata as a catalogue import. Without explicit ids, `--limit 0`
 selects the whole catalogue; `--page-limit 0` selects every page of each work.
-Requests run sequentially at five-second intervals. A full import of the 98,027
-pages listed on 2026-10-20 takes at least 137 hours, excluding retries and transfer
-time. Cached responses resume interrupted collection without repeating requests.
+For the whole corpus, use the whole-book text exports:
+
+```sh
+atlas import viet-dien --bulk-text --limit 0 --page-limit 0 --out work/viet-dien
+```
+
+The bulk path validates every export's identity and page markers against the
+detail response, including empty pages. It preserves text whitespace and records
+the export hash on each page. Exports omit scan URLs and correction flags:
+those pages have no scan URL, `corrected: null`, and `text_status: unknown`.
+Original page citations and holding-library manifest links remain available.
+Use the per-page mode when scan URLs and correction evidence are needed.
+
+Requests run sequentially at five-second intervals. For the 768 works and 98,027
+pages listed on 2026-10-20, bulk collection requires about 1,544 requests (at least
+2.2 hours, excluding transfer time and retries); per-page collection takes at
+least 137 hours. Cached responses resume interrupted collection without repeating requests.
 Use a new `--cache` directory for a fresh upstream snapshot. Output tables replace
 the selected snapshot; use separate output directories for separate samples.
 `UPSTREAM.json` records response hashes and expected/imported page counts.
@@ -78,7 +92,7 @@ Build a fresh corpus index after collection, including its per-character occurre
 files, so matches include the imported text and page citations. The corpus index
 discovers `viet-dien` beneath its configured corpus root. Imported
 text supports page-level matches. The API supplies no glyph rectangles. Page
-metadata retains the correction flag and stable `/t/<item_id>/<page>` citation
+metadata retains the correction flag when supplied and a stable `/t/<item_id>/<page>` citation
 where a library identifier exists. Local uploads retain their `/read/<id>/<page>`
 viewer URL and an identity based on the API row number;
 processing status such as `complete` does not establish that OCR was corrected.

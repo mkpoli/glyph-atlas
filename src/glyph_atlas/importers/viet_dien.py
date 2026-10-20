@@ -1,7 +1,8 @@
 """Import Việt Điển's page OCR through its public API.
 
 Responses are cached by URL and fingerprinted in the output. Page numbers can have
-holes; each page carries the upstream number, correction flag and citation.
+holes; each page carries the upstream number and citation. The per-page API also
+supplies correction flags and scan URLs; whole-book exports leave these unknown.
 The API supplies no character rectangles. Its image URLs are retained at their
 stated resolution, with unknown dimensions until the image pipeline measures them.
 """
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -38,18 +40,23 @@ class API:
         self.responses: dict[str, str] = {}
 
     def get(self, path: str, **params: Any) -> tuple[dict, str]:
+        body, digest = self.fetch(path, "json", **params)
+        payload = json.loads(body)
+        if not isinstance(payload, dict):
+            raise TypeError(f"{path}: expected a JSON object")
+        return payload, digest
+
+    def fetch(self, path: str, kind: str, **params: Any) -> tuple[bytes, str]:
         url = f"{self.base}/api/v1/{path}"
         if params:
             url += "?" + urlencode(params)
-        target = self.cache / f"{hashlib.sha256(url.encode()).hexdigest()}.json"
-        net.download(url, target, pause=5.0, expected="json", client=self.client)
+        suffix = "json" if kind == "json" else "txt"
+        target = self.cache / f"{hashlib.sha256(url.encode()).hexdigest()}.{suffix}"
+        net.download(url, target, pause=5.0, expected=kind, client=self.client)
         body = target.read_bytes()
-        payload = json.loads(body)
-        if not isinstance(payload, dict):
-            raise TypeError(f"{url}: expected a JSON object")
         digest = hashlib.sha256(body).hexdigest()
         self.responses[url] = digest
-        return payload, digest
+        return body, digest
 
     def texts(self, limit: int) -> list[dict]:
         """Read the catalogue in upstream order; zero means all texts."""
@@ -77,7 +84,34 @@ class API:
         return result
 
 
-def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision: str):
+def export_pages(body: bytes, detail: dict) -> list[dict]:
+    """Split the full.txt format, preserving page text and empty pages.
+
+    The exporter inserts one newline before each separator. The final page has
+    no added newline. Page-level correction and image metadata are not supplied.
+    """
+    text = body.decode("utf-8")
+    markers = list(re.finditer(r"^--- page ([1-9][0-9]*) ---\n", text, re.MULTILINE))
+    numbers = [int(m[1]) for m in markers]
+    if numbers != sorted(detail["page_numbers"]):
+        raise ValueError("Việt Điển export page markers differ from the text's page list")
+    header = text[:markers[0].start()] if markers else text
+    expected = f"# Việt Điển text {detail['id']} — {detail['page_count']} pages"
+    if expected not in header.splitlines():
+        raise ValueError("Việt Điển export header differs from the text's identity/count")
+    rows = []
+    for index, marker in enumerate(markers):
+        end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
+        raw = text[marker.end():end]
+        if index + 1 < len(markers):
+            if not raw.endswith("\n"):
+                raise ValueError("Việt Điển export lacks a page separator newline")
+            raw = raw[:-1]
+        rows.append({"text_id": detail["id"], "page_number": int(marker[1]), "raw_text": raw})
+    return rows
+
+
+def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision: str, *, bulk_text: bool = False):
     """Convert a work without inferring dates, origin, geometry or scan permissions."""
     item = detail.get("item_id")
     key = quote(item, safe="") if isinstance(item, str) and item.strip() else None
@@ -105,7 +139,7 @@ def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision
         number = row["page_number"]
         if row["text_id"] != detail["id"] or number not in detail["page_numbers"]:
             raise ValueError("Việt Điển page identity does not match its text")
-        if type(row.get("corrected")) is not bool:
+        if not bulk_text and type(row.get("corrected")) is not bool:
             raise ValueError("Việt Điển page has no boolean correction status")
         page_id = f"{document_id}:{number}"
         page_records.append(Page(
@@ -114,7 +148,9 @@ def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision
             transcription={"source": SOURCE, "entry": item if key else str(detail["id"]), "revision": digest},
             meta={"viewer_url": f"{citation}/{number}", "upstream_viewer_url": row.get("viewer_url"),
                   "source_url": row.get("source_url"), "page_number": number,
-                  "corrected": row["corrected"], "text_status": "corrected" if row["corrected"] else "ocr"},
+                  "corrected": None if bulk_text else row["corrected"],
+                  "text_status": "unknown" if bulk_text else ("corrected" if row["corrected"] else "ocr"),
+                  "text_transport": "full.txt" if bulk_text else "page-api"},
         ))
         texts.append(PageText(page_id=page_id, source=SOURCE, revision=digest, text_raw=row["raw_text"]))
     return document, page_records, texts
@@ -123,6 +159,7 @@ def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision
 def import_all(
     out: Path, *, cache: Path = Path("cache/viet-dien"), text_ids: list[int] | None = None,
     limit: int = 1, page_limit: int = 10, base: str = BASE, client: httpx.Client | None = None,
+    bulk_text: bool = False,
 ) -> dict[str, int]:
     """Write one selected snapshot; zero limits select all works/pages.
 
@@ -153,12 +190,16 @@ def import_all(
             raise ValueError("Việt Điển page list differs from its advertised count or has invalid numbers")
         expected_pages += len(numbers)
         rows = []
-        for number in sorted(numbers)[:page_limit or None]:
-            row, digest = api.get(f"texts/{detail['id']}/pages/{number}")
-            if row["page_number"] != number:
-                raise ValueError("Việt Điển returned a different page number")
-            rows.append((row, digest))
-        document, work_pages, work_texts = records(detail, listing, rows, revision)
+        if bulk_text:
+            body, digest = api.fetch(f"texts/{detail['id']}/full.txt", "text")
+            rows = [(row, digest) for row in export_pages(body, detail)[:page_limit or None]]
+        else:
+            for number in sorted(numbers)[:page_limit or None]:
+                row, digest = api.get(f"texts/{detail['id']}/pages/{number}")
+                if row["page_number"] != number:
+                    raise ValueError("Việt Điển returned a different page number")
+                rows.append((row, digest))
+        document, work_pages, work_texts = records(detail, listing, rows, revision, bulk_text=bulk_text)
         documents.append(document)
         pages.extend(work_pages)
         texts.extend(work_texts)
@@ -168,9 +209,12 @@ def import_all(
     if text_ids:
         command += "".join(f" --text-id {i}" for i in dict.fromkeys(text_ids))
     command += f" --limit {limit} --page-limit {page_limit}"
+    if bulk_text:
+        command += " --bulk-text"
     snapshot = {"source": SOURCE, "terms_url": TERMS, "text_reuse_terms": REUSE,
                 "responses": api.responses, "expected_pages": expected_pages,
-                "imported_pages": len(pages), "page_limited": len(pages) < expected_pages}
+                "imported_pages": len(pages), "page_limited": len(pages) < expected_pages,
+                "text_transport": "full.txt" if bulk_text else "page-api"}
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with tables.locked(out), tempfile.TemporaryDirectory(prefix=f".{out.name}-", dir=out.parent) as scratch:

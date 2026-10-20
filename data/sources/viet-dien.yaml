@@ -24,6 +24,7 @@ format:
   snapshot: UPSTREAM.json records SHA-256 fingerprints of cached API responses.
 notes:
   - Most page text is uncorrected OCR. The API supplies a corrected flag for each page.
+  - Whole-book full.txt exports omit correction flags and scan URLs; bulk imports retain these as unknown.
   - Scan rights follow the holding libraries; no image licence is inferred from API access.
   - Catalogue dates and language are retained verbatim; neither establishes exemplar origin or production.
   - The API's processing status is separate from the page's correction status.
