@@ -22,6 +22,9 @@ CREATE INDEX submission_label ON submissions(iif(json_valid(request), json_extra
 DROP INDEX favourite_recent;
 CREATE INDEX favourite_newest ON favourites(user, at DESC, crop);
 
+-- The admin's reviewers, the most recently active first: each actor by its latest submission.
+CREATE INDEX actor_stats_recent ON actor_stats(at, actor);
+
 -- The ranking reads each person's claims and actions by index, never the publisher's claims.
 CREATE INDEX assertion_person ON assertions(asserted_by, submission)
   WHERE submission IS NOT NULL AND legacy IS NULL AND predicate <> 'represented_by';

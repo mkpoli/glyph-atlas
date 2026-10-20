@@ -15,7 +15,7 @@ import { FAVOURITES_HELD, FavouriteError, favouriteCountQuery, favouriteCrops, f
   setFavourite } from './favourites';
 import { decodeCursor, encodeCursor, history, historyQuery } from './history';
 import { rankingQuery, rankingRows } from './ranking';
-import { activeUsersQuery, flagRequest, flagRowsQuery, flaggedCorpus, flaggedCorpusQuery, rejectNamedQuery, rejectReviewerQuery,
+import { activeActorsQuery, flagRequest, newerUsersQuery, savedUsersQuery, flagRowsQuery, flaggedCorpus, flaggedCorpusQuery, rejectNamedQuery, rejectReviewerQuery,
   reviewerActors, reviewers, submissions, submissionsQuery, summary, unclaimedQuery, userWorkQuery } from './admin';
 import * as old from './fixtures/history.old';
 import { rankingQuery as oldRankingQuery, rankingRow as oldRankingRow } from './fixtures/ranking.old';
@@ -391,7 +391,7 @@ describe('favourites', () => {
 
 describe('the admin lists', () => {
   for (const params of [{}, { kind: 'accounts' }, { kind: 'anonymous' }, { kind: 'admins' }, { kind: 'banned' }, { q: 'Ada' }, { kind: 'accounts', q: 'bea' },
-    { kind: 'unclaimed' }, { kind: 'unclaimed', q: '0f' }, { kind: 'accounts', offset: '1' }]) it(`list reviewers ${JSON.stringify(params)} as before`, async () => {
+    { kind: 'unclaimed' }, { kind: 'unclaimed', q: '0f' }]) it(`list reviewers ${JSON.stringify(params)} as before`, async () => {
     const { oldDb, oldEnv, env } = setup();
     // Two of them saved nothing in the old site's first week: the third account and a legacy id.
     oldDb.exec(`UPDATE "user" SET banned=1 WHERE id='u2'`);
@@ -399,6 +399,42 @@ describe('the admin lists', () => {
     const before = JSON.parse(JSON.stringify(await oldReviewers(oldEnv, new URLSearchParams(params))));
     const after = JSON.parse(JSON.stringify(await reviewers(env, new URLSearchParams(params))));
     expect(after).toEqual(before);
+  });
+  it('walk the reviewers a page at a time, each once, the active first, bounded in rows read', async () => {
+    const { atlas, accounts, env } = setup();
+    // 120 more accounts: the even ones saved something, at times out of their order of creation.
+    const user = accounts.prepare(`INSERT INTO "user"(id,name,email,emailVerified,createdAt,updatedAt,isAnonymous) VALUES(?,?,?,1,?,?,0)`);
+    for (let i = 0; i < 120; i++) {
+      const id = `p${String(i).padStart(3, '0')}`, created = `2026-09-${String(1 + (i % 28)).padStart(2, '0')}T00:00:${String(i % 60).padStart(2, '0')}.000Z`;
+      user.run(id, `person ${i}`, `${id}@x`, created, created);
+      if (i % 2) continue;
+      atlas.prepare(`INSERT INTO actors(id,key,user,via,at) VALUES(?,?,?,'account',0)`).run(100 + i, id, id);
+      atlas.prepare(`INSERT INTO submissions(key,actor,request,response,at) VALUES(?,?,'{}','{}',?)`).run(`${id}:s`, 100 + i, ms(20) + ((i * 37) % 120) * 1000);
+      atlas.prepare(`INSERT INTO actor_stats(actor,reviews,rounds,at) VALUES(?,0,1,?)`).run(100 + i, ms(20) + ((i * 37) % 120) * 1000);
+    }
+    for (const kind of ['active', 'accounts']) {
+      const seen: Json[] = [];
+      let offset: string | null = '0';
+      do {
+        const page: Json = await reviewers(env, new URLSearchParams({ kind, offset }));
+        expect(page.items.length).toBeLessThanOrEqual(50);
+        seen.push(...page.items);
+        offset = page.next;
+      } while (offset);
+      const ids = seen.map(r => r.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      const active = seen.filter(r => r.last !== null);
+      // u2 is anonymous, so not among the accounts.
+      expect(active.length).toBe(kind === 'active' ? 60 + 2 : 60 + 1);
+      expect(active.map(r => r.last)).toEqual([...active.map(r => r.last)].sort().reverse());
+      expect(seen.slice(0, active.length)).toEqual(active);
+      if (kind === 'accounts') {
+        const rest = seen.slice(active.length);
+        expect(rest.length).toBe(60 + 1);
+        expect(rest.map(r => r.createdAt)).toEqual([...rest.map(r => r.createdAt)].sort().reverse());
+      } else expect(seen.length).toBe(active.length);
+    }
+    await expect(reviewers(env, new URLSearchParams({ offset: 'nonsense' }))).rejects.toMatchObject({ status: 422 });
   });
   for (const who of [{ user: 'u1' }, { user: 'u2' }, { actor: 'reviewer-0000000f' }, { user: 'u3' }]) it(`list ${JSON.stringify(who)}'s submissions as before`, async () => {
     const { oldEnv, env } = setup();
@@ -420,12 +456,16 @@ describe('the admin lists', () => {
   });
   it('read by index', () => {
     const { atlas } = setup();
-    const checks: [string, unknown[]][] = [[activeUsersQuery(), []], [userWorkQuery(), ['["u1"]']], [unclaimedQuery(), ['', 51, 0]],
+    const checks: [string, unknown[]][] = [[activeActorsQuery(), [1e15, 0, 100]], [userWorkQuery(), ['["u1"]']], [unclaimedQuery(), [1e15, 0, '', 51]],
+      [savedUsersQuery(), ['["u1"]']],
       [submissionsQuery(), ['[1,2]', 51, 0]], [rejectNamedQuery(), ['["u1:s1"]']], [rejectReviewerQuery(), ['[1]', 1e15, 0, 40]],
       [flagRowsQuery(), ['[1]']], [flaggedCorpusQuery(), []]];
     for (const [sql, values] of checks)
       expect(scans(plan(atlas, sql, values), ['events', 'submissions', 'crops', 'rejections', 'corpus_rows', 'corpus_flags'])).toEqual([]);
     expect(plan(atlas, flaggedCorpusQuery()).some(d => d.includes('crop_corpus_flagged'))).toBe(true);
+    expect(scans(plan(atlas, activeActorsQuery(), [1e15, 0, 100]), ['actor_stats', 'actors'])).toEqual([]);
+    const { accounts } = setup();
+    expect(scans(plan(accounts, newerUsersQuery('accounts'), ['', '\uffff', '', 100]), ['user'])).toEqual([]);
   });
 });
 

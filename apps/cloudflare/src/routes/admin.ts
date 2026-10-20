@@ -22,16 +22,26 @@ const page = (rows: Json[], offset: number) => ({ items: rows.slice(0, PAGE), ne
 // The kind codes of a person's review: a verdict, never an undo, a mark or a flag.
 export const REVIEW_KINDS = `(SELECT code FROM codes WHERE field='kind' AND key IN ('match','wrong','unsure'))`;
 
-// Each user with saved work, the most recently active first: one row per actor that has a user, its
-// latest submission a seek in `submission_actor`.
-export const activeUsersQuery = () => `SELECT user,max(last) AS last FROM (SELECT user,(SELECT max(at) FROM submissions WHERE actor=actors.id) AS last
-  FROM actors WHERE user IS NOT NULL) GROUP BY user HAVING last IS NOT NULL ORDER BY last DESC,user`;
+// Reviewers are walked by their latest submission, which `actor_stats.at` keeps per actor, along
+// `actor_stats_recent`: an actor with a user stands for that user when it is the user's latest. A
+// request walks at most WALKED rows and returns where it stopped, so the next page starts there.
+const WALKED = 5 * IN_LIST;
+export const activeActorsQuery = () => `SELECT t.actor,t.at,a.user FROM actor_stats t INDEXED BY actor_stats_recent JOIN actors a ON a.id=t.actor
+  WHERE t.at IS NOT NULL AND (t.at,t.actor)<(?1,?2) AND a.user IS NOT NULL
+  AND NOT EXISTS(SELECT 1 FROM actors b JOIN actor_stats u ON u.actor=b.id WHERE b.user=a.user AND (u.at,u.actor)>(t.at,t.actor))
+  ORDER BY t.at DESC,t.actor DESC LIMIT ?3`;
+// Ids from before accounts that nobody holds, by their latest submission.
+export const unclaimedQuery = () => `SELECT t.actor,t.at,a.key,(SELECT count(*) FROM submissions s WHERE s.actor=t.actor) AS submissions
+  FROM actor_stats t INDEXED BY actor_stats_recent JOIN actors a ON a.id=t.actor
+  WHERE t.at IS NOT NULL AND (t.at,t.actor)<(?1,?2) AND a.user IS NULL AND (?3='' OR a.key LIKE '%'||?3||'%')
+  ORDER BY t.at DESC,t.actor DESC LIMIT ?4`;
+// Which of some users saved anything: a seek a user in `actor_user`, a key lookup an actor.
+export const savedUsersQuery = () => `SELECT DISTINCT a.user FROM actors a JOIN actor_stats t ON t.actor=a.id
+  WHERE t.at IS NOT NULL AND a.user IN (SELECT value FROM json_each(?))`;
 // What each user of a page saved, by their actors.
 export const userWorkQuery = () => `SELECT a.user,count(s.id) AS submissions,max(s.at) AS last,count(r.submission) AS rejected
   FROM actors a JOIN submissions s ON s.actor=a.id LEFT JOIN rejections r ON r.submission=s.id
   WHERE a.user IN (SELECT value FROM json_each(?)) GROUP BY a.user`;
-export const unclaimedQuery = () => `SELECT a.key AS actor,count(*) AS submissions,max(s.at) AS last FROM actors a JOIN submissions s ON s.actor=a.id
-  WHERE a.user IS NULL AND (?1='' OR a.key LIKE '%'||?1||'%') GROUP BY a.id ORDER BY last DESC,a.key LIMIT ?2 OFFSET ?3`;
 
 const USER_COLUMNS = 'id,name,email,image,role,banned,banReason,isAnonymous,createdAt,lastLoginMethod';
 function userFilter(kind: string): string {
@@ -42,48 +52,87 @@ function userFilter(kind: string): string {
   if (kind === 'admins') where.push(`role='admin'`);
   return where.join(' AND ');
 }
+// Accounts with no saved work come after, newest first, along `user_created`.
+export const newerUsersQuery = (kind: string) => `SELECT ${USER_COLUMNS} FROM "user" INDEXED BY user_created
+  WHERE (createdAt,id)<(?2,?3) AND ${userFilter(kind)} ORDER BY createdAt DESC,id DESC LIMIT ?4`;
+
+// Where a reviewer list stopped: among the active, at an actor's latest submission; among the accounts
+// with no saved work, at an account.
+type Walk = { active: true; at: number; actor: number } | { active: false; created: string; id: string };
+const START: Walk = { active: true, at: Number.MAX_SAFE_INTEGER, actor: 0 };
+const encodeWalk = (w: Walk) => btoa(JSON.stringify(w.active ? ['a', w.at, w.actor] : ['i', w.created, w.id]));
+function decodeWalk(value: string | null): Walk {
+  if (!value || value === '0') return START;
+  try {
+    const d = JSON.parse(atob(value));
+    if (Array.isArray(d) && d[0] === 'a' && Number.isSafeInteger(d[1]) && Number.isSafeInteger(d[2])) return { active: true, at: d[1], actor: d[2] };
+    if (Array.isArray(d) && d[0] === 'i' && typeof d[1] === 'string' && typeof d[2] === 'string') return { active: false, created: d[1], id: d[2] };
+  } catch { /* refused below */ }
+  throw new Problem(422, 'Invalid offset.');
+}
 
 /**
  * Reviewers, the most recently active first: users that saved something (or every account, for
  * `accounts` and the other kinds, those with no saved work after, newest account first), and the ids
- * from before accounts that nobody has claimed (`unclaimed`).
+ * from before accounts that nobody has claimed (`unclaimed`). A page holds up to PAGE rows; `next`
+ * is where the following page starts, passed back as `offset`.
  */
 export async function reviewers(env: Env, q: URLSearchParams) {
-  const kind = q.get('kind') ?? 'active', offset = Math.max(0, Number(q.get('offset') ?? 0) | 0);
-  const find = (q.get('q') ?? '').trim().slice(0, 64);
+  const kind = q.get('kind') ?? 'active', find = (q.get('q') ?? '').trim().slice(0, 64);
+  let walk = decodeWalk(q.get('offset'));
   if (kind === 'unclaimed') {
-    const rows = await env.ATLAS.prepare(unclaimedQuery()).bind(find, PAGE + 1, offset).all<Json>();
-    return page(rows.results.map(r => ({ actor: r.actor, name: r.actor, submissions: r.submissions, last: iso(r.last) })), offset);
+    if (!walk.active) throw new Problem(422, 'Invalid offset.');
+    const rows = (await env.ATLAS.prepare(unclaimedQuery()).bind(walk.at, walk.actor, find, PAGE + 1).all<Json>()).results;
+    const last = rows.length > PAGE ? rows[PAGE - 1] : null;
+    return { items: rows.slice(0, PAGE).map(r => ({ actor: r.key, name: r.key, submissions: r.submissions, last: iso(r.at) })),
+      next: last ? encodeWalk({ active: true, at: last.at, actor: last.actor }) : null };
   }
-  const wanted = offset + PAGE + 1, filter = userFilter(kind), found: Json[] = [];
-  const active = (await env.ATLAS.prepare(activeUsersQuery()).all<{ user: string; last: number }>()).results;
-  const last = new Map(active.map(row => [row.user, row.last]));
+  const found: Json[] = [];
+  let walked = 0, end = false;
+  const full = () => found.length > PAGE;
   // The active users in order, each part's accounts read under the filter.
-  for (let i = 0; i < active.length && found.length < wanted; i += WALK) {
-    const part = active.slice(i, i + WALK).map(row => row.user);
-    const rows = (await env.ACCOUNTS.prepare(`SELECT ${USER_COLUMNS} FROM "user" WHERE ${filter} AND id IN (SELECT value FROM json_each(?2))`)
-      .bind(find, JSON.stringify(part)).all<Json>()).results;
-    rows.sort((a, b) => last.get(b.id)! - last.get(a.id)! || String(b.createdAt).localeCompare(String(a.createdAt)));
-    found.push(...rows);
+  while (walk.active && !full() && walked < WALKED) {
+    const part = (await env.ATLAS.prepare(activeActorsQuery()).bind(walk.at, walk.actor, IN_LIST).all<{ actor: number; at: number; user: string }>()).results;
+    walked += part.length;
+    const accounts = new Map((await env.ACCOUNTS.prepare(`SELECT ${USER_COLUMNS} FROM "user" WHERE ${userFilter(kind)} AND id IN (SELECT value FROM json_each(?2))`)
+      .bind(find, JSON.stringify(part.map(r => r.user))).all<Json>()).results.map(r => [r.id, r]));
+    for (const row of part) {
+      walk = { active: true, at: row.at, actor: row.actor };
+      const account = accounts.get(row.user);
+      if (account) found.push({ ...account, walk });
+      if (full()) break;
+    }
+    if (part.length < IN_LIST && !full()) {
+      if (kind === 'active') { end = true; break }
+      walk = { active: false, created: '\uffff', id: '' };
+    }
   }
   // Then accounts with no saved work, newest first.
-  if (kind !== 'active') for (let skip = 0; found.length < wanted; skip += WALK) {
-    const rows = (await env.ACCOUNTS.prepare(`SELECT ${USER_COLUMNS} FROM "user" WHERE ${filter} ORDER BY createdAt DESC,id LIMIT ?2 OFFSET ?3`)
-      .bind(find, WALK, skip).all<Json>()).results;
-    found.push(...rows.filter(row => !last.has(row.id)));
-    if (rows.length < WALK) break;
+  while (!walk.active && !full() && walked < WALKED) {
+    const part = (await env.ACCOUNTS.prepare(newerUsersQuery(kind)).bind(find, walk.created, walk.id, IN_LIST).all<Json>()).results;
+    walked += part.length;
+    const saved = new Set(part.length ? (await env.ATLAS.prepare(savedUsersQuery()).bind(JSON.stringify(part.map(r => r.id))).all<{ user: string }>())
+      .results.map(r => r.user) : []);
+    for (const row of part) {
+      walk = { active: false, created: row.createdAt, id: row.id };
+      if (!saved.has(row.id)) found.push({ ...row, walk });
+      if (full()) break;
+    }
+    if (part.length < IN_LIST && !full()) { end = true; break }
   }
-  const shown = found.slice(offset, wanted);
+  const shown = found.slice(0, PAGE);
+  // A full page goes on after its last row; a short one after the last row walked, unless the walk ended.
+  const next = found.length > PAGE ? encodeWalk(shown[PAGE - 1].walk) : end ? null : encodeWalk(walk);
   const work = new Map(shown.length ? (await env.ATLAS.prepare(userWorkQuery()).bind(JSON.stringify(shown.map(r => r.id))).all<Json>())
     .results.map(row => [row.user, row]) : []);
-  return page(shown.map(r => {
+  return { items: shown.map(r => {
     const w = work.get(r.id);
     return { id: r.id, name: r.name,
       // An anonymous user's address is a placeholder, not one anybody reads.
       email: r.isAnonymous ? null : r.email, image: r.image, role: r.role, banned: Boolean(r.banned), banReason: r.banReason,
       createdAt: r.createdAt, lastLoginMethod: r.lastLoginMethod, submissions: w?.submissions ?? 0, last: iso(w?.last ?? null),
       rejected: w?.rejected ?? 0, anonymous: Boolean(r.isAnonymous) };
-  }), offset);
+  }), next };
 }
 
 /** The actor ids of one reviewer: a user's, or one id from before accounts that nobody holds. */
