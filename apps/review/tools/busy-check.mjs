@@ -18,18 +18,23 @@ try {
   // `busy(request, url)` answers the requests it picks with a busy 503 before they reach the service;
   // `busyAfter` answers busy once the service has handled them, as a Worker whose answer was lost
   // would. Every other request goes on as it is. `posts` keeps each POST that reached the service.
-  let busy = () => false, busyAfter = () => false
+  let busy = () => false, busyAfter = () => false, stale = () => false
   const posts = []
   const patterns = ['*/atlas/*', '*/layers/*'].flatMap(urlPattern => [{ urlPattern }, { urlPattern, requestStage: 'Response' }])
   await browser.send('Fetch.enable', { patterns })
   const answerBusy = requestId => browser.send('Fetch.fulfillRequest', { requestId, responseCode: 503, responseHeaders: [
     { name: 'Content-Type', value: 'application/json' }, { name: 'Retry-After', value: '1' }],
     body: Buffer.from(JSON.stringify({ detail: 'The database is updating. Try again in a moment.', code: 'busy' })).toString('base64') })
+  // A Worker refusing a save that names a crop by a name it no longer knows.
+  const answerStale = requestId => browser.send('Fetch.fulfillRequest', { requestId, responseCode: 409, responseHeaders: [
+    { name: 'Content-Type', value: 'application/json' }],
+    body: Buffer.from(JSON.stringify({ detail: 'This page is from before an update. Reload it.', code: 'reload' })).toString('base64') })
   browser.listeners.push(m => {
     if (m.method !== 'Fetch.requestPaused') return
     const { requestId, request, responseStatusCode } = m.params, url = new URL(request.url)
     if (responseStatusCode === undefined) {
       if (busy(request, url)) return answerBusy(requestId)
+      if (stale(request, url)) return answerStale(requestId)
       if (request.method === 'POST') posts.push({ path: url.pathname, body: JSON.parse(request.postData ?? 'null') })
       return browser.send('Fetch.continueRequest', { requestId })
     }
@@ -199,6 +204,44 @@ try {
   await browser.waitFor(`!(${shown})`, 5000)
   assert(saves(orphan).size === 1, 'only the other review is recorded')
   console.log('PASS a refused save from an earlier page is shown in the corner and can be dismissed')
+
+  // A save an earlier page kept that the site refuses as coming from before an update stays kept, is
+  // shown as needing a reload, and is sent again once the page is reloaded.
+  async function keepEarlier(n) {
+    const crop = await tile(n), path = '/atlas/characters/' + encodeURIComponent(crop)
+    await click(`.glyph-grid [data-unit="${crop}"]`)
+    await browser.waitFor(inspectorReady, 30000)
+    busy = (request, url) => request.method === 'POST' && url.pathname === path
+    await click('.save-character')
+    await browser.waitFor(noteSays('Saved on this device'), 10000)
+    stale = (request, url) => request.method === 'POST' && url.pathname === path
+    busy = () => false
+    await browser.goto(service.base + '/en', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
+    await browser.waitFor(noteSays('site update'), 20000)
+    assert(await browser.evaluate(kept) === 1, 'the save refused for a reload stays kept')
+    return crop
+  }
+  const held = await keepEarlier(7)
+  await browser.screenshot(join(screenshots, 'write-reload-light.png'))
+  await browser.setColorScheme('dark')
+  await browser.screenshot(join(screenshots, 'write-reload-dark.png'))
+  await browser.setColorScheme('light')
+  stale = () => false
+  await click('.database-status .refused button')
+  await browser.waitFor('document.querySelectorAll(".glyph-tile").length > 0', 30000)
+  for (let waited = 0; waited < 20000 && (await browser.evaluate(kept) !== 0 || saves(held).size === 0); waited += 250) await Bun.sleep(250)
+  await browser.waitFor(`!(${shown})`, 10000)
+  assert(saves(held).size === 1, 'the held save is recorded once after the reload')
+  assert(await browser.evaluate(kept) === 0, 'nothing is left on the device')
+  console.log('PASS a save refused for a reload stays kept and is sent once the page is reloaded')
+
+  const dropped = await keepEarlier(6)
+  await click('.database-status .refused button:last-of-type')
+  await browser.waitFor(`!(${shown})`, 5000)
+  assert(await browser.evaluate(kept) === 0, 'a discarded save is no longer kept')
+  assert(saves(dropped).size === 0, 'a discarded save is not recorded')
+  stale = () => false
+  console.log('PASS a save refused for a reload can be discarded')
   console.log(`screenshots: ${screenshots}`)
 } finally {
   await browser?.close()
