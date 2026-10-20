@@ -16,7 +16,7 @@ import { ranking } from './ranking';
 import { connections } from './connections';
 import { reviewers, submissions } from './admin';
 import { READ_BUDGET, RETRY_AFTER, described, retried, transient } from './busy';
-import { pausedResponse, pausedSignOut, writes, writesPaused } from './freeze';
+import { pausedCallback, pausedResponse, pausedSignOut, writes, writesPaused } from './freeze';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
 import { honkokuPage } from './honkoku';
 import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
@@ -2463,6 +2463,7 @@ const routes = {
       // The write freeze: one check before any route, so no write is reached while it holds.
       if(writesPaused(env)&&writes(request.method,path)){
         if(request.method==='POST'&&path==='/api/auth/sign-out')return pausedSignOut(request,auth(env,url.origin).options);
+        if(path.startsWith('/api/auth/callback/'))return pausedCallback(url.origin);
         return pausedResponse(opened(path)?OPEN:{});
       }
       if(path.startsWith('/api/auth/'))return await auth(env,url.origin).handler(request);

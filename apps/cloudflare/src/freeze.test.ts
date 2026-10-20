@@ -96,6 +96,13 @@ describe('the write freeze', () => {
     // The browser, holding no cookie now, is signed out.
     expect(await (await send('1', '/api/auth/get-session')).json()).toBeNull();
   });
+  it('sends a provider callback to the sign-in page with the reason', async () => {
+    const { send, statements } = setup();
+    const response = await send('1', '/api/auth/callback/github?code=x&state=y');
+    expect(response.status).toBe(302);
+    expect(new URL(response.headers.get('location')!).pathname + new URL(response.headers.get('location')!).search).toBe('/sign-in?error=paused');
+    expect(written(statements)).toEqual([]);
+  });
   it('counts sign-in routes read by GET as writes, and the session read as a read', () => {
     expect(writes('GET', '/api/auth/callback/github')).toBe(true);
     expect(writes('GET', '/api/auth/passkey/generate-register-options')).toBe(true);

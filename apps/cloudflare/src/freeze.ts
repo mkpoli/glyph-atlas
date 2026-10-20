@@ -1,7 +1,8 @@
 // The write freeze. While `WRITES_PAUSED` is "1" (`wrangler secret put WRITES_PAUSED`), every request
 // that would write to the database is answered 503 `paused`, and everything else reads as usual. A
 // signed-in reader's session keeps reading: it is neither refreshed nor cleaned up while frozen.
-// Signing out still works in the browser.
+// Signing out still works in the browser, and a sign-in that comes back from a provider is sent to
+// the sign-in page with the reason.
 import type { BetterAuthOptions } from 'better-auth';
 import { getCookies } from 'better-auth/cookies';
 
@@ -49,3 +50,7 @@ function expired(name: string, attributes: { path?: string; domain?: string; htt
   return [`${name}=`, 'Max-Age=0', `Path=${attributes.path ?? '/'}`, attributes.domain && `Domain=${attributes.domain}`,
     attributes.httpOnly && 'HttpOnly', attributes.secure && 'Secure', sameSite && `SameSite=${sameSite}`].filter(Boolean).join('; ');
 }
+
+/** A provider's callback while paused goes to the sign-in page, which shows why it did not sign in. */
+export const pausedCallback = (origin: string) => new Response(null, { status: 302,
+  headers: { location: `${origin}/sign-in?error=paused`, 'cache-control': 'no-store' } });
