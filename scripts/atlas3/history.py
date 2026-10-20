@@ -47,6 +47,11 @@ def ms(value):
     return round(datetime.fromisoformat(value).timestamp() * 1000)
 
 
+def legacy_issue(issue):
+    """An issue as the old site's crops name it since its migration 0055: `reading` is `character`."""
+    return "character" if issue == "reading" else issue or None
+
+
 def box_of(value):
     """A box as an integer tuple (x, y, w, h), from JSON {"x":..}, a dict, or "x,y,w,h"."""
     if value is None or value == "":
@@ -358,7 +363,8 @@ def main():
         if state is None:
             problems.append(f"state {after.get('state')!r} has no code")
         verdict = codes["kind"].get(evidence.get("verdict"))
-        issue = evidence.get("issue") or None
+        # Migration 0055 of the old site renamed the crops' issue `reading` to `character`; events kept it.
+        issue = legacy_issue(evidence.get("issue"))
         if issue is not None and issue not in codes["issue"]:
             problems.append(f"issue {issue!r} has no code")
         if verdict is None:
@@ -376,8 +382,8 @@ def main():
                        evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
                        # What an undo restores (0009): no event reverses another yet; the state, issue and
                        # redrawn box before the review.
-                       None, atlas_codes["state"].get(before.get("state")), codes["issue"].get(before.get("issue")),
-                       *((box_of(before.get("box")) if before.get("box_pending") else None) or (None,) * 4)))
+                       None, atlas_codes["state"].get(before.get("state")), codes["issue"].get(legacy_issue(before.get("issue"))),
+                       *((box_of(before.get("box")) if before.get("box_pending") else None) or (None,) * 4), None))
     insert("events", [(i, *e) for i, e in enumerate(events, 1)])
     report.tables["events"]["out"] = len(events)
     report.note("events: a review sets no style and no withheld flag, so both are NULL")

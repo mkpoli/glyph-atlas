@@ -230,3 +230,19 @@ def test_a_box_no_cut_has_on_a_crop_with_two_earlier_boxes_is_not_guessed(layout
     code, out = history(monkeypatch, root)
     assert code == 1
     assert out.execute("SELECT count(*) FROM seen").fetchone()[0] == 0
+
+
+def test_an_event_takes_its_issue_as_the_crops_name_it_and_keeps_what_it_replaced(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    box = {"x": 0, "y": 20, "w": 10, "h": 10}
+    reading = list(event("cf:1", "ex:a2", "u1:s1", "u1", 0, "2026-10-01T00:00:02Z", box, verdict="wrong", issue="reading"))
+    redrawn = {"x": 1, "y": 21, "w": 9, "h": 9}
+    reading[5] = json.dumps({"box": redrawn, "box_pending": True, "state": "flagged", "issue": "reading", "page_id": "hl:p9"})
+    sources(root, events=[tuple(reading)])
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    issue = dict(out.execute("SELECT key, code FROM codes WHERE field='issue'"))
+    state = dict(out.execute("SELECT key, code FROM codes WHERE field='state'"))
+    # The old site renamed the crops' `reading` to `character` (its migration 0055); the events kept it.
+    assert list(out.execute("SELECT issue, reverses, was_state, was_issue, was_x, was_y, was_w, was_h FROM events")) == [
+        (issue["character"], None, state.get("flagged", 2), issue["character"], 1, 21, 9, 9)]
