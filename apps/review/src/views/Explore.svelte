@@ -85,6 +85,10 @@
   let picked = $state(opened?.picked ?? null), expand = $state(opened?.expand ?? 'none'), local = $state(opened?.local ?? []), corpus = $state(opened?.corpus ?? [])
   let visual = $state(opened?.visual ?? ''), analysis = $state(opened?.analysis ?? null), familyTotal = $state(opened?.familyTotal ?? null), unassignedCount = $state(opened?.unassignedCount ?? null)
   let corpusTotal = $state(opened?.corpusTotal ?? 0), corpusOffset = $state(opened?.corpus.length ?? 0), pickId = 0, corpusFault = $state(opened?.corpusFault ?? null)
+  // Where each list's next page starts: the cursor its last page named, or null at its end.
+  let localAfter = $state(opened?.localAfter ?? null), corpusAfter = $state(opened?.corpusAfter ?? null)
+  // Whether the collection's list has answered a page since it was last cleared.
+  let localAnswered = $state(Boolean(opened))
   // The style group the gallery is narrowed to ('' for all), and each list's counts by style group.
   // `styled` is whether the server files crops by style at all.
   let style = $state(opened?.style ?? ''), styled = $state(opened?.styled ?? false)
@@ -300,9 +304,10 @@
   // Placed by date, the two lists merge the same way by their books' years, the undated last.
   const byYear = $derived(dateOrder === 'year' && expand !== 'variants')
   const merged = $derived(styled && !style && expand !== 'variants' && !byYear)
-  const localDone = $derived(Boolean(visual) || local.length >= (data?.total ?? 0))
+  // A list is done once its last page named no next one.
+  const localDone = $derived(Boolean(visual) || local.length >= (data?.total ?? 0) || (localAnswered && !localAfter))
   // The corpus has said nothing until its first page arrives, and may yet bring running and cursive glyphs.
-  const corpusDone = $derived(Boolean(corpusFault) || (corpusAnswered && corpusOffset >= corpusTotal))
+  const corpusDone = $derived(Boolean(corpusFault) || (corpusAnswered && (corpusOffset >= corpusTotal || !corpusAfter)))
   const localNext = $derived(localDone ? Infinity : 2 * (local.length ? styleRank(local.at(-1)) : 0))
   const corpusNext = $derived(corpusDone ? Infinity : 2 * (corpus.length ? styleRank(corpus.at(-1)) : 0) + 1)
   const yearKey = item => { const date = item.dating?.witness; return date ? date.start ?? date.end ?? Infinity : Infinity }
@@ -352,7 +357,7 @@
   let grid = $state(), sentinel = $state(), columns = $state(0), nearEnd = $state(false)
   // While the first page loads, the collage holds placeholders of crops' usual proportions.
   const skeleton = collage(Array.from({ length: 32 }, (_, i) => [1, 1.25, 0.85, 1.1, 1.4, 0.95, 1.2, 0.8][i % 8]))
-  const hasMore = $derived(!choosing && (picked ? (!visual && local.length < (data?.total ?? 0)) || corpusOffset < corpusTotal
+  const hasMore = $derived(!choosing && (picked ? !localDone || (corpusOffset < corpusTotal && Boolean(corpusAfter))
     : Boolean(data) && items.length < data.total))
   // The homepage's runs stand among the crops (`runTiles`), so the rows are counted with those before the cut.
   const whole = $derived.by(() => {
@@ -437,12 +442,12 @@
     const id = ++requestId; loading = true; error = ''
     try {
       if (picked) {
-        if (!append) { local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; localStyles = null; corpusStyles = null; corpusAnswered = false }
+        if (!append) { local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false; localStyles = null; corpusStyles = null; corpusAnswered = false }
         // Local records page by their own count, and they are shown before the corpus is asked:
         // a corpus that cannot answer must not hide the records this collection does hold.
-        const found = await occurrences(picked.code_point, { expand, limit: 60, offset: append ? local.length : 0, style: style || undefined, withheld: withheldParam(), ...dateParams() })
+        const found = await occurrences(picked.code_point, { expand, limit: 60, after: append ? localAfter : null, style: style || undefined, withheld: withheldParam(), ...dateParams() })
         if (closed || id !== requestId) return
-        localWithheld = found.withheld ?? null
+        localWithheld = found.withheld ?? null; localAfter = found.next ?? null; localAnswered = true
         const rows = found.items.map(item => ({ ...item, origin: 'collection' }))
         // A new list is drawn from its start; a further page goes before the corpus glyphs shown after
         // the collection's own crops, so the tiles from the end of those crops on are drawn again.
@@ -463,12 +468,12 @@
         // page of text hits would bury them.
         corpusFault = null
         try {
-          const leads = await layerCandidates(picked.code_point, 60, 0,
+          const leads = await layerCandidates(picked.code_point, 60, null,
             { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dateParams() })
           if (closed || id !== requestId) return
           corpusStyles = leads.styles ?? null; corpusAnswered = true
           corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
-          corpusTotal = leads.glyphs ?? 0; corpusOffset = corpus.length
+          corpusTotal = leads.glyphs ?? 0; corpusOffset = corpus.length; corpusAfter = leads.next ?? null
           analysis = leads.visual_analysis ?? picked.visual_analysis ?? null
           familyTotal = leads.family_total ?? null; unassignedCount = leads.unassigned_count ?? null
         } catch (e) {
@@ -633,7 +638,7 @@
     pickId += 1; requestId += 1
     catalogueRequest?.abort()
     if (picked || expand !== 'none') { picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0 }
-    corpusOffset = 0
+    corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false
     // A direct character search answers its own question, so it drops the grapheme, type and work filters
     // rather than intersecting with them: with シ selected, searching ア used to answer nothing and
     // say there was no such occurrence, when the filter was what excluded it.
@@ -659,7 +664,7 @@
     choosing = false
     clearTimeout(searchTimer); pickId += 1
     visual = ''; analysis = null; familyTotal = null; unassignedCount = null; split = null
-    query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; offset = 0; load()
+    query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false; offset = 0; load()
   }
   /** The next page of corpus leads, kept on its own offset: it is paged by another service. */
   async function moreCorpus() {
@@ -671,11 +676,11 @@
     const id = ++requestId
     loading = true
     try {
-      const page = await layerCandidates(target, 60, corpusOffset,
+      const page = await layerCandidates(target, 60, corpusAfter,
         { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dateParams() })
       if (closed || current !== pickId || id !== requestId || picked?.code_point !== target) return
       const rows = (page.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
-      corpusOffset += rows.length
+      corpusOffset += rows.length; corpusAfter = page.next ?? null
       corpus = [...new Map([...corpus, ...rows].map(row => [row.id, row])).values()]
       corpusTotal = page.glyphs ?? corpusTotal
     } catch (e) {
@@ -700,7 +705,7 @@
     // given the fields the chips read so a half-known character never renders as undefined.
     const bare = { char: '', characters: [], derived: [], jibo: [], expansions: [], candidates: null }
     query = item.char ?? ''; grapheme = ''; filter = 'all'; work = ''; offset = 0; expand = 'none'
-    local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusFault = null
+    local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false; corpusFault = null
     visual = ''; analysis = null; familyTotal = null; unassignedCount = null
     if (item.code_point) {
       try {
@@ -916,7 +921,7 @@
   function chooseGrapheme(key) {
     clearTimeout(searchTimer); pickId += 1; requestId += 1; choosing = false
     visual = ''; analysis = null; familyTotal = null; unassignedCount = null
-    query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0
+    query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false
     openGrapheme(key)
   }
   function shuffle() { seed = randomSeed(); offset = 0; load() }
@@ -937,7 +942,7 @@
       if (!picked && q === query.trim() && g === grapheme && w === work && group === filter) return
       clearTimeout(searchTimer); pickId += 1; choosing = false
       visual = ''; analysis = null; familyTotal = null; unassignedCount = null
-      picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; offset = 0
+      picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false; offset = 0
       split = null; query = q; grapheme = g; work = w; filter = group; load()
     }
   }
