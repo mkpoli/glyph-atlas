@@ -24,6 +24,7 @@ COLUMNS = {
     "rejections": "submission,by,reason,at",
     "form_decisions": "seq,id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,written_family",
     "forms": "id,anchor,created_by,created_at",
+    "representations": "id,scheme,value,namespace,version",
     "corpus_follow": "id",
     "unit_suspects": "id,p,reads_as,label,box",
     "unit_shapes": "id,shape_order",
@@ -194,6 +195,17 @@ def test_a_form_claim_takes_the_cut_its_evidence_names(layout, monkeypatch):  # 
     assert sorted(out.execute("SELECT id, crop, cut FROM assertions")) == [("cf:a", a1, -1), ("cf:b", None, None)]
     assert sorted(out.execute("SELECT kind, crop, cut FROM assertion_evidence")) == [("crop", a1, -1), ("source", None, None)]
     assert sorted(out.execute("SELECT subject, crop, cut FROM current_claims")) == [("book:a", None, None), ("ex:a1", a1, -1)]
+
+
+def test_representations_move_as_they_are(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    rows = [("rp:1", "unicode", "あ", None, None), ("rp:2", "pua", "\ue000", "ns", "1")]
+    sources(root, forms=[("fm:1", "rp:1", "u1", "2026-10-01T00:00:00Z")], representations=rows)
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    assert sorted(out.execute("SELECT * FROM representations")) == rows
+    report = (root / "out" / "history-report.txt").read_text()
+    assert "representations: in 2, out 2" in report
 
 
 def test_script_facts_on_crops_that_no_longer_exist_are_dropped(layout, monkeypatch):  # noqa: F811

@@ -101,7 +101,9 @@ def translated(root, monkeypatch, sources, history, **extra):
             rejections=[("r-b:s2", "user-1", "wrong book", "2026-10-01T00:00:05Z")],
             corpus_follow=[("codh:g1",)],
             unit_suspects=[("ex:a1", 0.9, "い", "あ", "0,0,10,10"), ("ex:gone", 0.8, "う", "え", None)],
-            unit_shapes=[("ex:a2", 3), ("ex:gone", 4)])
+            unit_shapes=[("ex:a2", 3), ("ex:gone", 4)],
+            forms=[("fm:1", "rp:1", "u1", "2026-10-01T00:00:00Z")],
+            representations=[("rp:1", "unicode", "あ", None, None)])
     sources(root, **{**tables, **extra})
     code, _out = history(monkeypatch, root)
     assert code == 0
@@ -526,6 +528,21 @@ def test_a_mark_event_is_no_review_in_actor_stats(layout, monkeypatch):  # noqa:
         "SELECT a.key, s.reviews FROM actor_stats s JOIN actors a ON a.id = s.actor ORDER BY a.key").fetchall()
     assert stats == [("r-b", 1), ("u1", 0)]
     assert check(monkeypatch) == 0
+
+
+@pytest.mark.parametrize(("change", "line"), [
+    ("DELETE FROM representations", "every representations row is translated"),
+    ("UPDATE representations SET value = 'い'", "every representations row is translated"),
+    ("UPDATE forms SET anchor = 'rp:none'", "every form's anchor names a representation"),
+])
+def test_a_representation_must_move_as_it_is_and_name_every_anchor(layout, monkeypatch, change, line):  # noqa: F811
+    root, _publish, _remote = layout
+    translated(root, monkeypatch, sources, history)
+    db = sqlite3.connect(root / "out" / "history.sqlite")
+    # Representations are never changed in the site's database; here a wrong translation is staged.
+    db.executescript(f"DROP TRIGGER representation_kept; DROP TRIGGER representation_kept_delete; {change};")
+    assert check(monkeypatch) == 1
+    assert f"FAIL (1) {line}" in report(root)
 
 
 def test_a_null_key_in_the_local_copy_is_reported_not_raised(layout, monkeypatch):  # noqa: F811

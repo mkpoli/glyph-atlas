@@ -134,13 +134,13 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
    ones), merge its images into the map (`media_map.py`) and publish the answers (`answers.py`).
 5. **Move the history:** `history.py` translates reviews, submissions, seen marks, skips, favourites,
-   claims, form decisions, suspects and shapes from the copies into `out/history.sqlite`
-   (`migrations-atlas/0003_history.sql`), with every text id resolved through `out/mirror.sqlite` and
+   claims, the representations forms name, form decisions, suspects and shapes from the copies into
+   `out/history.sqlite` (`migrations-atlas/0003_history.sql`, `0008_representations.sql`), with every text id resolved through `out/mirror.sqlite` and
    never through a redirect, and writes a per-table report; it exits 1 if any row stops the move. It
    also writes the earlier cuts, the tombstones and the marks the publisher applies. An event on a crop
    the mirror lacks stops the run until `publish.py out/history-tombstones.sqlite` has numbered its
    tombstone. `load_history.py` then applies `0003_history.sql` (which numbers the mark states `seen`
-   and `hard`; the mirror takes the same numbers), loads every translated row in stamped parts, sets
+   and `hard`; the mirror takes the same numbers) and `0008_representations.sql`, loads every translated row in stamped parts, sets
    each pending marked crop's state to its mark one revision on with an event, and writes
    `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut. `answers.py`
    follows, since marks change the counts. `aliases.py` (counts only without `--send`) maps every text

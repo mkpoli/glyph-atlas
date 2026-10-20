@@ -5,7 +5,7 @@
 Reads the `source-*.sqlite` copies (`pull.py`) and the publisher's local copies (`out/mirror.sqlite`,
 `out/atlas.sqlite`, `out/pages/`), never writes them, and writes:
 
-- `out/history.sqlite`: the tables of `0003_history.sql`, with `events`, `skips` and `codes` from
+- `out/history.sqlite`: the tables of `0003_history.sql` and `0008_representations.sql`, with `events`, `skips` and `codes` from
   `0001_init.sql`, holding the translated rows;
 - `out/history-cuts.json`: each crop's earlier version, cut -1, for the publisher to put in its bundle;
 - `out/history-tombstones.json`: crops an event names that the mirror lacks, for the publisher to number;
@@ -38,6 +38,8 @@ from build import HERE, OUT, PAGE, ROOT, char_text
 
 SHOWN = 20
 SCHEMA = ROOT / "apps/cloudflare/migrations-atlas"
+# The migrations whose tables hold translated rows: the history, and the representations forms name.
+MIGRATIONS = ("0003_history.sql", "0008_representations.sql")
 
 
 def ms(value):
@@ -116,13 +118,14 @@ def statements(path):
 
 
 def create(db):
-    """`events`, `skips`, `codes` and `actor_stats` as 0001 creates them, then everything 0003 adds."""
+    """`events`, `skips`, `codes` and `actor_stats` as 0001 creates them, then everything 0003 and 0008 add."""
     for s in statements(SCHEMA / "0001_init.sql"):
         body = "\n".join(line for line in s.splitlines() if not line.startswith("--"))
         m = re.match(r"CREATE (?:TABLE (\w+)|INDEX \w+ ON (\w+))", body)
         if m and (m[1] or m[2]) in ("events", "skips", "codes", "actor_stats"):
             db.execute(body)
-    db.executescript((SCHEMA / "0003_history.sql").read_text())
+    for migration in MIGRATIONS:
+        db.executescript((SCHEMA / migration).read_text())
 
 
 class Crops:
@@ -255,7 +258,8 @@ def main():
         ("assertions", "id", None), ("assertion_actions", "id", None),
         ("assertion_evidence", "assertion, kind, ref", None), ("assertion_premises", "assertion, premise", None),
         ("current_claims", "subject, predicate, scope, slot", None), ("ledger_submissions", "id", None),
-        ("rejections", "submission", None), ("forms", "id", None), ("form_decisions", "seq", None),
+        ("rejections", "submission", None), ("forms", "id", None), ("representations", "id", None),
+        ("form_decisions", "seq", None),
         ("corpus_follow", "id", None), ("written_forms", "id", None), ("unit_suspects", "id", None),
         ("unit_shapes", "id", None), ("unit_marks", "id", None)]}
 
@@ -522,7 +526,7 @@ def main():
     insert("current_claims", claims)
     report.tables["current_claims"]["out"] = len(claims)
 
-    for table in ("assertion_actions", "assertion_premises", "ledger_submissions", "forms"):
+    for table in ("assertion_actions", "assertion_premises", "ledger_submissions", "forms", "representations"):
         report.table(table, len(src[table]))
         insert(table, [tuple(r[c] for c in cols(table)) for r in src[table]])
         report.tables[table]["out"] = len(src[table])

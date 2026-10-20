@@ -28,12 +28,12 @@ remote is read.
 
 History (decision record 0006), when `out/history.sqlite` exists (history.py):
 - Rows: every source row of every history table (actors, submissions, events, seen, skips,
-  favourites, the claim ledger, rejections, form decisions, corpus_follow, written forms, suspects and
-  shapes) is in it, every translated field equal to one derived again from the source copies (actor
+  favourites, the claim ledger, the representations forms name, rejections, form decisions,
+  corpus_follow, written forms, suspects and shapes) is in it, every translated field equal to one derived again from the source copies (actor
   and submission keys, times in ms, crop through the mirror, cut from the live record's box and
   crop_versions), or left out for a reason history-report.txt lists exactly as often; and it holds no
   other rows. An actor with no source row has no user, via or time; actor_stats are recounted as the
-  ranking counts.
+  ranking counts. Every form's anchor names a representation.
 - Cuts: a crop with no collected record is cut 0 only if corpus_units has it, and a tombstone is
   checked against its retired bundle entry; every crop cited at cut -1 has that cut, with its earlier
   box, in its bundle once the cuts are published; no event is past its crop's revision (a tombstone
@@ -876,13 +876,18 @@ def check_history(report, name, query=None):
                       r["subject"], r["predicate"], r["scope"], r["slot"]))
     t.done()
 
-    for name_, key in (("assertion_actions", "id"), ("ledger_submissions", "id"), ("forms", "id")):
+    for name_, key in (("assertion_actions", "id"), ("ledger_submissions", "id"), ("forms", "id"), ("representations", "id")):
         t = Table(report, history, name_, listed)
         for r in stream(name_, "*"):
             want = dict(r)
             want.pop("_rowid", None)
             t.compare(f"{name_} {r[key]}", want, one(f'SELECT * FROM "{name_}" WHERE {key}=?', r[key]))
         t.done()
+
+    # A form claim's name is its form's anchor, so every anchor must be a representation the move holds.
+    report.check("every form's anchor names a representation", [
+        f"form {f}: anchor {a}" for f, a in history.execute(
+            "SELECT id, anchor FROM forms WHERE anchor IS NOT NULL AND anchor NOT IN (SELECT id FROM representations)")])
 
     # A form decision's `crops` are the glyphs of its `units` that still exist, in order.
     t = Table(report, history, "form_decisions", listed)

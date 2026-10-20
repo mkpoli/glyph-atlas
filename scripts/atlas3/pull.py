@@ -60,6 +60,7 @@ TABLES = {
     "unit_suspects": ("id,p,reads_as,label,box", ["id"], 8000),
     "unit_shapes": ("id,shape_order", ["id"], 8000),
     "forms": ("id,anchor,created_by,created_at", ["id"], 8000),
+    "representations": ("id,scheme,value,namespace,version", ["id"], 8000),
     "corpus_follow": ("id", ["id"], 8000),
     "aliases": ("query,code_point,rank", ["rowid"], 15000),
     # The model votes and the image they were read on, and each tile's paper colour and size, apart from
