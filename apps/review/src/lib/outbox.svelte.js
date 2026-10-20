@@ -99,7 +99,9 @@ export async function keep(path, body, user, wait = 0) {
     seq: Date.now() * 1000 + (sequence++ % 1000) })
   outbox.paused = true
   await count()
-  if (!draining) again(wait)
+  // A pass running now may have read the line before this save joined it, and goes round again.
+  if (draining) dirty = true
+  else again(wait)
 }
 
 /** Whether an answer means "not now": the site will take the same save later. */

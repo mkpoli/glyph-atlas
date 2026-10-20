@@ -20,14 +20,14 @@ mock.module('../src/lib/session.svelte.js', () => ({
 
 const { backoff } = await import('../src/lib/busy.svelte.js')
 const { request } = await import('../src/lib/client.js')
-const { outbox, drain } = await import('../src/lib/outbox.svelte.js')
+const { outbox, drain, keep } = await import('../src/lib/outbox.svelte.js')
 
 const paused = () => Response.json({ error: 'paused', message: 'Changes are paused.' }, { status: 503, headers: { 'retry-after': '300' } })
-let posts, timers, realFetch, realTimeout, answer
+let posts, sent, timers, realFetch, realTimeout, answer
 beforeEach(() => {
-  posts = []; timers = []; signIns.length = 0; answer = paused
+  posts = []; sent = []; timers = []; signIns.length = 0; answer = paused
   realFetch = globalThis.fetch; realTimeout = globalThis.setTimeout
-  globalThis.fetch = async (path, init) => { posts.push(path); return answer() }
+  globalThis.fetch = async (path, init) => { posts.push(path); sent.push(init?.body ? JSON.parse(init.body).id : null); return answer() }
   // Timers are recorded, never run: what matters is how long the outbox waits.
   globalThis.setTimeout = (run, ms) => { timers.push(ms); return timers.length }
 })
@@ -84,4 +84,21 @@ test('a signed-in save refused while paused is kept, and one queued behind it is
   expect(posts).toEqual(['/atlas/rounds', '/atlas/rounds'])
   expect(outbox.pending).toBe(2)
   expect(signIns.length).toBe(0)
+})
+
+test('a save kept while a pass is sending is sent by that pass', async () => {
+  answer = () => Response.json({ ok: true })
+  // The first send waits until the save below is kept.
+  let open
+  const gate = new Promise(resolve => { open = resolve })
+  const plain = globalThis.fetch
+  globalThis.fetch = async (path, init) => { const reply = await plain(path, init); if (posts.length === 1) await gate; return reply }
+  const pass = drain()
+  await new Promise(resolve => realTimeout(resolve, 10))
+  expect(posts.length).toBe(1)
+  await keep('/atlas/rounds', { id: 'round-5', grapheme: 'U+304A', seen: [{ id: 'c6' }], skipped: [] }, me)
+  open()
+  await pass
+  expect(sent).toContain('round-5')
+  expect(outbox.pending).toBe(0)
 })
