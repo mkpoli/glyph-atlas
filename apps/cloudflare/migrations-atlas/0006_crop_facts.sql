@@ -1,37 +1,29 @@
--- Crop facts the publisher writes: the model votes the suggestions routes answer and the forms tool's
--- clustering of corpus glyphs, moved from the old database at the cutover (scripts/atlas3/crop_facts.py).
--- publish.py keeps the votes current after it. Crops are named by integer id.
+-- The forms tool in glyph-atlas-v3 (decision record 0008): families and clusters with the decisions the
+-- Worker records on them, and the few glyphs whose form is decided apart from their cluster. Which
+-- glyphs a cluster holds, by rank, is an immutable R2 list per cluster, `v3/forms/<lists>/<cluster>.json.gz`.
+-- Loaded at the cutover by scripts/atlas3/crop_facts.py. Glyphs are crops, named by integer id.
 
--- What the crop models read in a crop's image (`visual`) and the nearby transcription's guesses
--- (`context`), made for the crop's cut `cut`; a crop re-cut since has no reading until the next publish.
--- `models` is the `codes` entry (field 'models', key the engines' JSON) whose engines the votes name by
--- place. The stored shape is scripts/atlas3/votes.py's. A crop with neither reading has no row.
-CREATE TABLE votes(crop INTEGER PRIMARY KEY, cut INTEGER NOT NULL, models INTEGER, visual TEXT, context TEXT);
-
--- One grapheme family the forms tool clusters: `forms` lists the forms a decision may name.
+-- A grapheme family the forms tool clusters: `forms` lists the forms a decision may name, `revision` is
+-- the clustering's and `lists` the R2 folder of its clusters' lists. `count`, `assigned` and `rejected`
+-- count its clustered glyphs, those with a form and those reported.
 CREATE TABLE form_families(code_point TEXT PRIMARY KEY, char TEXT NOT NULL, label TEXT NOT NULL,
   count INTEGER NOT NULL, cluster_count INTEGER NOT NULL, forms TEXT NOT NULL, assigned INTEGER NOT NULL,
-  rejected INTEGER NOT NULL DEFAULT 0, revision TEXT NOT NULL);
+  rejected INTEGER NOT NULL DEFAULT 0, revision TEXT NOT NULL, lists TEXT NOT NULL);
+CREATE INDEX form_family_order ON form_families(count DESC, code_point);
 
--- A cluster, numbered here; `key` is its id in URLs and in `form_decisions.cluster`. Its representatives
--- are its first twelve glyphs by rank in `form_units`. `form`, `issue` and `decision` are its latest
--- cluster decision's.
+-- A cluster, numbered once by the publisher's mirror (`codes`, field 'form_cluster', key `key`); `key` is
+-- its id in URLs and in `form_decisions.cluster`. `form`, `issue`, `character` and `written_family` are
+-- its latest cluster decision's (`decision`), which every glyph of it without its own decision takes;
+-- an issue 'mixed' gives them no issue.
 CREATE TABLE form_clusters(id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, family TEXT NOT NULL,
   label TEXT NOT NULL, count INTEGER NOT NULL, coherence REAL NOT NULL, shape_position INTEGER NOT NULL,
-  size_position INTEGER NOT NULL, form TEXT, decision TEXT, issue TEXT);
-CREATE INDEX form_cluster_family ON form_clusters(family, shape_position);
+  size_position INTEGER NOT NULL, form TEXT, issue TEXT, character TEXT, written_family TEXT, decision TEXT);
+CREATE INDEX form_cluster_shape ON form_clusters(family, shape_position);
+CREATE INDEX form_cluster_size ON form_clusters(family, size_position);
 
--- A corpus glyph in the clustering: its cluster and rank there, its tile's media key (`image`) and its
--- group for every "Split into k" (`split`, k = 2..8). The cluster's decision (`cluster_*`), the glyph's
--- own (`glyph_*`, when `glyph_set`) and the one that applies (`form`, `issue`, `issue_character`,
--- `written_family`) are materialised as decisions are made. A glyph kept only for a decision on it has
--- `clustered` 0, and no cluster when its cluster is not in the clustering.
-CREATE TABLE form_units(crop INTEGER PRIMARY KEY, family TEXT NOT NULL, cluster INTEGER, rank INTEGER NOT NULL,
-  similarity REAL NOT NULL, image TEXT, split TEXT NOT NULL,
-  clustered INTEGER NOT NULL DEFAULT 1 CHECK(clustered IN (0, 1)),
-  cluster_form TEXT, cluster_issue TEXT, cluster_character TEXT, cluster_family TEXT,
-  glyph_set INTEGER NOT NULL DEFAULT 0, glyph_form TEXT, glyph_decision TEXT, glyph_issue TEXT,
-  glyph_character TEXT, glyph_family TEXT,
-  form TEXT, issue TEXT, issue_character TEXT, written_family TEXT);
-CREATE INDEX form_unit_cluster ON form_units(cluster, rank);
-CREATE INDEX form_unit_family ON form_units(family, form);
+-- A glyph whose form is not its cluster's: one with its own glyph decision (`decision`), or one outside
+-- the clustering kept for a decision made on it (no `cluster`; `own` 0 when it keeps what its former
+-- cluster's decision gave it). The applied form is this row's, else the cluster's.
+CREATE TABLE form_glyphs(crop INTEGER PRIMARY KEY, family TEXT NOT NULL, cluster INTEGER,
+  own INTEGER NOT NULL CHECK(own IN (0, 1)), form TEXT, issue TEXT, character TEXT, written_family TEXT, decision TEXT);
+CREATE INDEX form_glyph_cluster ON form_glyphs(cluster) WHERE cluster IS NOT NULL;

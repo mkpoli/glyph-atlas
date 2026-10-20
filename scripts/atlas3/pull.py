@@ -59,10 +59,11 @@ TABLES = {
     "corpus_follow": ("id", ["id"], 8000),
     "characters": ("code_point,character,name,json_extract(data,'$.grapheme.code_point') AS head", ["code_point"], 8000),
     "aliases": ("query,code_point,rank", ["rowid"], 15000),
-    # The model votes, apart from `units` so the crops' copy keeps its size; and the forms tool's clustering.
-    "unit_votes": ("id,origin,visual,context", ["rowid"], 1500, "units"),
+    # The model votes and the image they were read on, apart from `units` so the crops' copy keeps its size;
+    # and the forms tool's clustering.
+    "unit_votes": ("id,origin,visual,context,data->>'$.image_sha256' AS image_sha256", ["rowid"], 1500, "units"),
     "form_families": ("code_point,char,label,count,cluster_count,forms,assigned,rejected,revision", ["code_point"], 1000),
-    "form_clusters": ("id,family,label,count,coherence,shape_position,size_position,representatives,form,decision,issue",
+    "form_clusters": ("id,family,label,count,coherence,shape_position,size_position,form,decision,issue",
                       ["id"], 2000),
     "form_units": (("id,family,cluster,rank,similarity,image,split,clustered,cluster_form,cluster_issue,cluster_character,"
                     "cluster_family,glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_character,glyph_family,form,issue,"

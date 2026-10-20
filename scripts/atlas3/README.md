@@ -139,12 +139,17 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    to its integer crop id, and uploads the map as `v3/aliases/<first three hex digits of the text id's
    SHA-256>.json.gz`, read by `aliasCrop` in the Worker. A redirect cycle stops it with examples; a
    chain that ends outside the mirror is counted as gone and left out.
-   `crop_facts.py` (a dry run without `--send`) applies `migrations-atlas/0006_crop_facts.sql` and
-   loads the crop facts the publisher writes from the copies `unit_votes`, `form_families`,
-   `form_clusters` and `form_units`: each collected crop's model votes (`votes`, for the cut it has
-   now, in `votes.py`'s shape) and the forms tool's clustering, its clusters numbered and each glyph
-   named by its integer crop id. Text ids resolve through the mirror and never through a redirect; a
-   row naming a crop the mirror lacks is dropped and counted in `out/crop-facts-report.txt`.
+   `crop_facts.py` (a dry run without `--send`) moves the crop facts from the copies `unit_votes`,
+   `form_families`, `form_clusters` and `form_units` (decision record 0008). Each collected crop's
+   model votes join its page object in `v3/votes/` when they were read on the image of the crop's
+   current cut. The forms clustering becomes an immutable R2 list per cluster under
+   `v3/forms/<lists>/`, clusters numbered by the mirror's `codes`, and the D1 tables of migration
+   0006, which it applies: families, clusters with their decisions, and only the glyphs decided apart
+   from their cluster. Text ids resolve through the mirror and never through a redirect; rows naming
+   a crop the mirror lacks or a retired crop, and readings of another image, are dropped and counted
+   in `out/crop-facts-report.txt`, and the counts are worked out again from what is kept. D1 takes
+   the difference from the local copy, so a rerun after a fresh copy sends only what changed; `--send`
+   refuses a database holding form decisions the local copy lacks.
 6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
    characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
    `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`

@@ -211,7 +211,9 @@ CREATE INDEX run_rank ON run_stats(size, n);
 - `pub/<pub>/…`, written whole per publication: rendered answers, which are character totals by
   state, counts by style, top books, chronology by decade with capped samples, browse facets and
   totals, the browse sample pool, character cards (variants, derived forms, words, IDS), books with
-  both dating axes and their run counts, run details, forms tool lists and the alias shards.
+  both dating axes and their run counts, run details and the alias shards.
+- `forms/<lists>/<cluster>.json.gz`: each forms tool cluster's glyphs by rank, immutable (decision
+  record 0008).
 - `pointer.json`: `(pub, through_gen)`, moved last.
 - `media/<prefix>.json.gz`: the image key map, one shard per first three hex digits of the key,
   each key's pack, offset and size. A key's place never changes, so shards only grow; a publication

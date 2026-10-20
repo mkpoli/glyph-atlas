@@ -203,8 +203,12 @@ def built(final, label, groups, extra=None):
     n = write_parts(tmp, label, groups)
     for part in tmp.glob("*.sql"):
         part.write_text(part.read_text().replace(f"'{tmp.name}.{label}.", f"'{final.name}.{label}-"))
-    for file, text in (extra or {}).items():
-        (tmp / file).write_text(text)
+    for file, content in (extra or {}).items():
+        (tmp / file).parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, bytes):
+            (tmp / file).write_bytes(content)
+        else:
+            (tmp / file).write_text(content)
     tmp.rename(final)
     return n
 
