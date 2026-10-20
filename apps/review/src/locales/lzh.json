@@ -361,7 +361,6 @@
   "cite.image": "圖：{credit}。",
   "cite.transcription": "釋文：{credit}。",
   "cite.cut.earlier": "此鏈所引，乃{date}所錄舊截；其後重截，今示新截。",
-  "cite.cut.earlierUndated": "此鏈所引，乃舊截；其後重截，今示新截。",
   "cite.cut.missing": "此鏈所引之截，此無所錄；今示新截。",
   "cite.cut.image": "所引之截",
   "ink.bw": "黑白",
