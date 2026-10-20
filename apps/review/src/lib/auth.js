@@ -1,9 +1,12 @@
+import { pausedFetch } from './busy.svelte.js'
+
 // The accounts client, loaded once the page runs in a browser; no page needs it to draw.
 let loaded
 export function authClient() {
   loaded ??= Promise.all([import('better-auth/client'), import('better-auth/client/plugins'), import('@better-auth/passkey/client')])
     .then(([{ createAuthClient }, { adminClient, anonymousClient, emailOTPClient, lastLoginMethodClient }, { passkeyClient }]) => createAuthClient({
       basePath: '/api/auth',
+      fetchOptions: { customFetchImpl: pausedFetch },
       plugins: [anonymousClient(), emailOTPClient(), passkeyClient(), lastLoginMethodClient(), adminClient()],
     }))
   return loaded

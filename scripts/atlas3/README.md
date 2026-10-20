@@ -104,8 +104,11 @@ The site moves to the new layout in one window; the old database stays untouched
 a redeploy of the previous Worker. Steps marked *not built* must exist before the window.
 
 1. **Rehearse** the whole sequence on fresh copies and fix whatever `check.py` reports.
-2. **Freeze.** Every session stops publishing to the old database, and the site pauses review writes
-   (*not built*: a Worker switch that answers review writes with 503 for the window).
+2. **Freeze.** Every session stops publishing to the old database, and the site pauses its writes:
+   `echo 1 | wrangler secret put WRITES_PAUSED` from `apps/cloudflare`, which takes effect without a
+   deploy. Every request that writes (reviews, rounds, corrections, claims, favourites, form decisions,
+   sign-in, passkeys, account and admin changes) then answers 503 `paused` with a Retry-After, while
+   reads and signed-in sessions go on. `wrangler secret delete WRITES_PAUSED` lifts it at step 7.
 3. **Copy** the live tables again, `pull.py --fresh`, from a Codespace with the Cloudflare
    credentials: the copy is about 3 GB and the uploads after it are large.
 4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
@@ -127,7 +130,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    chain that ends outside the mirror is counted as gone and left out.
 6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.
-7. **Switch** the Worker's routes to the new layout and resume reviews.
+7. **Switch** the Worker's routes to the new layout and resume writes (`wrangler secret delete WRITES_PAUSED`).
 
 `check.py` compares the copies with the local copy of the new layout, crop by crop: numbers, row
 values, bundle boxes and images, runs and the image map. It reads nothing remote.
