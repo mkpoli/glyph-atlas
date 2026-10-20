@@ -110,7 +110,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    sign-in, passkeys, account and admin changes) then answers 503 `paused` with a Retry-After, while
    reads and signed-in sessions go on. `wrangler secret put` and `wrangler secret delete` deploy a new
    version at once, and refuse while a newer version is uploaded and not deployed, so the freeze is set
-   before step 6 uploads anything.
+   before step 8 uploads anything.
 3. **Copy** the live tables again, `pull.py --fresh`, from a Codespace with the Cloudflare
    credentials: the copy is about 3 GB and the uploads after it are large.
 4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
