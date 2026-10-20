@@ -363,8 +363,9 @@ def main():
         if state is None:
             problems.append(f"state {after.get('state')!r} has no code")
         verdict = codes["kind"].get(evidence.get("verdict"))
-        # Migration 0055 of the old site renamed the crops' issue `reading` to `character`; events kept it.
-        issue = legacy_issue(evidence.get("issue"))
+        # The issue as the reviewer recorded it: the export hands `reading` on as it was chosen. Migration 0055
+        # of the old site renamed the crops' `reading` to `character`, so what the crop held reads it so.
+        issue = evidence.get("issue") or None
         if issue is not None and issue not in codes["issue"]:
             problems.append(f"issue {issue!r} has no code")
         if verdict is None:
@@ -386,7 +387,7 @@ def main():
                        *((box_of(before.get("box")) if before.get("box_pending") else None) or (None,) * 4),
                        # The issue a batch left a reported crop with: the event's answer names the character.
                        (codes["issue"].get(legacy_issue(after.get("issue")))
-                        if legacy_issue(after.get("issue")) not in (None, issue) else None)))
+                        if legacy_issue(after.get("issue")) not in (None, legacy_issue(issue)) else None)))
     insert("events", [(i, *e) for i, e in enumerate(events, 1)])
     report.tables["events"]["out"] = len(events)
     report.note("events: a review sets no style and no withheld flag, so both are NULL")
