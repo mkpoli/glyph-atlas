@@ -387,3 +387,15 @@ def test_tied_rounds_mark_the_crop_by_the_highest_submission_id(layout, monkeypa
     local.commit()
     assert check(monkeypatch) == 1
     assert "submission 'u1:s1' expected, 'r-c:s3' set" in report(root)
+
+
+def test_a_mark_event_is_no_review_in_actor_stats(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    box = {"x": 0, "y": 20, "w": 10, "h": 10}
+    translated(root, monkeypatch, sources, history,
+               events=[event("cf:1", "ex:a2", "r-b:s2", "r-b", 0, "2026-10-01T00:00:01Z", box),
+                       event("cf:2", "ex:a2", "u1:s1", "u1", 1, "2026-10-01T00:00:02Z", box, verdict="seen")])
+    stats = sqlite3.connect(root / "out" / "history.sqlite").execute(
+        "SELECT a.key, s.reviews FROM actor_stats s JOIN actors a ON a.id = s.actor ORDER BY a.key").fetchall()
+    assert stats == [("r-b", 1), ("u1", 0)]
+    assert check(monkeypatch) == 0

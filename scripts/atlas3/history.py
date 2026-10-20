@@ -603,9 +603,10 @@ def main():
     (OUT / "history-cuts.json").write_text(json.dumps(cuts, ensure_ascii=False, indent=1) + "\n")
     (OUT / "history-tombstones.json").write_text(json.dumps(list(tombstones.values()), ensure_ascii=False, indent=1) + "\n")
     # Each actor's totals, as the review batch keeps them from the cutover on and the ranking counts
-    # them: an undone submission's reviews do not count.
+    # them: verdicts only (a mark event is no review), and an undone submission's do not count.
     out.execute("INSERT INTO actor_stats SELECT a.id, (SELECT count(*) FROM events e JOIN submissions s ON s.id = e.submission "
-                "WHERE e.actor = a.id AND s.undone = 0), "
+                "WHERE e.actor = a.id AND s.undone = 0 AND e.kind IN (SELECT code FROM codes WHERE field = 'kind' "
+                "AND key IN ('match', 'wrong', 'unsure'))), "
                 "(SELECT count(*) FROM submissions s WHERE s.actor = a.id AND s.undone = 0), "
                 "(SELECT max(at) FROM submissions s WHERE s.actor = a.id) FROM actors a")
     out.commit()
