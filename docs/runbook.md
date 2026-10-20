@@ -175,8 +175,11 @@ which there are none until the pilot is annotated.
 
 A document listed in `data/vocab/withdrawn.yaml` keeps its records but gives no crop: extraction
 withdraws its queued pages, and the Cloudflare exports, `prepare_publication.py` and `atlas export`
-leave its crops out. What the site already holds goes with the SQL of
-`scripts/withdraw_documents.py`, applied by hand.
+leave its crops out. What the site already holds goes with a withdrawal publish:
+`scripts/atlas3/withdraw.py <file>` writes a catalogue naming every crop on the document's pages,
+and `scripts/atlas3/publish.py <file>` retires them, keeps only each crop's id and cut in its page
+bundle and takes their images out of the image key map. Their reviews and claims stay with the
+crops' numbers.
 
 ## 8. Audit
 

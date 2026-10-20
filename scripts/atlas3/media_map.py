@@ -5,9 +5,10 @@
 An image's URL is `/atlas/media/<key>.webp`, its key the SHA-256 the exporter named it by. The map
 holds one shard per first three hex digits of the key, `v3/media/<prefix>.json.gz`:
 `{"objects": [pack, ...], "keys": {<rest of key>: [object index, offset, size]}}`, with a fourth
-member for a content type other than image/webp. A key's place never changes, so shards only grow:
-a run merges the keys of a `media` table into the local copies under `out/media/` and uploads the
-shards that changed. The publisher does the same with a catalogue's `media` table.
+member for a content type other than image/webp. A key's place never changes: a run merges the keys
+of a `media` table into the local copies under `out/media/` and uploads the shards that changed. The
+publisher does the same with a catalogue's `media` table, and takes the images of withdrawn crops
+out (`remove`).
 """
 
 from __future__ import annotations
@@ -39,11 +40,10 @@ def read_shard(prefix):
     return json.loads(gzip.decompress(path.read_bytes()))
 
 
-def merge(rows, write=True):
+def merge(rows, save=True):
     """Merge (key, object, offset, size, content_type) rows into the local shards and return the number
     of new keys and of shards they fall in. A key already mapped elsewhere stops the run before any
-    shard is written: a key names one image. Each changed shard is listed in `out/media/unsent` until
-    `send` has uploaded it, so a run that stops between the two leaves it for the next."""
+    shard is written: a key names one image."""
     by_prefix = defaultdict(list)
     for row in rows:
         by_prefix[row[0][:3]].append(row)
@@ -66,16 +66,40 @@ def merge(rows, write=True):
                 sys.exit(f"image {key} is mapped to {shard['objects'][old[0]]} {old[1:]} and now to {obj} {offset} {size}; nothing written")
         if grew:
             grown[prefix] = shard
-    if write and grown:
-        (OUT / "media").mkdir(parents=True, exist_ok=True)
-        with open(OUT / "media" / "unsent", "a") as unsent:
-            unsent.write("".join(f"{prefix}\n" for prefix in grown))
-        for prefix, shard in grown.items():
-            # Whole or not at all: a cut-off shard uploaded later would stop every image in it.
-            part = shard_path(prefix).with_suffix(".part")
-            part.write_bytes(gzip.compress(json.dumps(shard, separators=(",", ":")).encode()))
-            os.replace(part, shard_path(prefix))
+    if save and grown:
+        write(grown)
     return new, len(grown)
+
+
+def write(shards):
+    """Write changed shards to their local copies, each listed in `out/media/unsent` until `send` has
+    uploaded it, so a run that stops between the two leaves it for the next."""
+    (OUT / "media").mkdir(parents=True, exist_ok=True)
+    with open(OUT / "media" / "unsent", "a") as unsent:
+        unsent.write("".join(f"{prefix}\n" for prefix in shards))
+    for prefix, shard in shards.items():
+        # Whole or not at all: a cut-off shard uploaded later would stop every image in it.
+        part = shard_path(prefix).with_suffix(".part")
+        part.write_bytes(gzip.compress(json.dumps(shard, separators=(",", ":")).encode()))
+        os.replace(part, shard_path(prefix))
+
+
+def remove(keys):
+    """Take image keys out of the local shards and return how many were mapped. A pack an image sat in
+    stays in its shard's `objects`, so every other key keeps its index."""
+    by_prefix = defaultdict(list)
+    for key in keys:
+        by_prefix[key[:3]].append(key)
+    changed, gone = {}, 0
+    for prefix, members in sorted(by_prefix.items()):
+        shard = read_shard(prefix)
+        found = [key for key in members if shard["keys"].pop(key[3:], None) is not None]
+        if found:
+            changed[prefix] = shard
+            gone += len(found)
+    if changed:
+        write(changed)
+    return gone
 
 
 def send(upload):
@@ -104,7 +128,7 @@ def main():
     fcntl.flock(lock, fcntl.LOCK_EX)
     src = sqlite3.connect(f"file:{args.media}?mode=ro", uri=True)
     rows = src.execute("SELECT key, object, offset, size, content_type FROM media")
-    new, shards = merge(rows, write=not args.dry_run)
+    new, shards = merge(rows, save=not args.dry_run)
     print(f"{new} new images in {shards} shards", flush=True)
     if args.dry_run:
         print("dry run: nothing written or uploaded", flush=True)
