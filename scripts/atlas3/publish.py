@@ -60,11 +60,11 @@ R2_REMOTE = os.environ.get("ATLAS3_R2_REMOTE", "r2")
 BUCKET = "glyph-atlas"
 BUNDLE_PREFIX = "v3/pages/"
 CROP_COLS = ("id", "kind", "book", "char", "form", "cluster", "visual_group", "production", "category", "style",
-             "state", "quiz", "year", "cut", "revision", "flags", "shuffle")
+             "state", "quiz", "year", "cut", "revision", "flags", "priority", "shuffle")
 # Columns a review owns.
 REVIEW_OWNED = ("char", "state", "style", "quiz", "kind", "flags")
 # What a crop takes when it is new and the catalogue does not say.
-DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0}
+DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0, "priority": 1}
 SUSPECT = 1
 # What a bundle entry keeps of each earlier cut: enough to show and cite its pixels.
 CUT_FIELDS = ("box", "crop_box", "context_box", "image", "image_sha256", "image_size", "image_place",
@@ -469,6 +469,10 @@ def main():
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
         sys.exit("an earlier publish is unfinished; run a publish (not a dry run) to finish it first")
+    # A layout loaded before `crops.priority` takes the column and the crops' values from the cutover's
+    # fill, never from a publish.
+    if "priority" not in {r[1] for r in m.atlas.execute("PRAGMA table_info(crops)")}:
+        sys.exit("the local copy has no crops.priority; run fill.py --send first")
     src = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True) if catalogue else sqlite3.connect(":memory:")
     src.row_factory = sqlite3.Row
     tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -509,7 +513,12 @@ def main():
 
     # Identity checks a publish without the slot matcher can make.
     columns = "id, origin, character, visual_group, production, category, state, revision, quiz, document, style, data"
-    with_votes = "units" in tables and {"visual", "context"} <= {r[1] for r in src.execute("PRAGMA table_info(units)")}
+    unit_columns = {r[1] for r in src.execute("PRAGMA table_info(units)")} if "units" in tables else set()
+    # A catalogue carries each crop's review priority; one that does not keeps the published one.
+    with_priority = "priority" in unit_columns
+    if with_priority:
+        columns += ", priority"
+    with_votes = {"visual", "context"} <= unit_columns
     if with_votes:
         columns += ", visual, context"
     units = list(src.execute(f"SELECT {columns} FROM units WHERE origin IN ('local', 'retired') ORDER BY id")) if "units" in tables else []
@@ -652,7 +661,7 @@ def main():
                  # A crop with no style is unassessed: galleries page by style and hold no crop without one.
                  "style": m.code("style", r["style"] or "unassessed"),
                  "state": m.code("state", r["state"]), "quiz": r["quiz"], "year": years.get(r["document"], KEEP),
-                 "revision": r["revision"], "shuffle": shuffle(cid)}
+                 "revision": r["revision"], "priority": r["priority"] if with_priority else KEEP, "shuffle": shuffle(cid)}
         bundle = {"id": r["id"], **bundle_entry(data)}
         previous, row = entry(cid), m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()
         old_cut = row["cut"] if row else previous.get("cut", 0)

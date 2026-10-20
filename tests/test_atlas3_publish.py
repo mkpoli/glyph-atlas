@@ -12,14 +12,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "atlas3
 PAGE = 1 << 24
 
 
-def unit(id, page, box, character="あ", state="pending", revision=0, quiz=1, document="book:a"):
+def unit(id, page, box, character="あ", state="pending", revision=0, quiz=1, document="book:a", priority=1):
     data = {"page_id": page, "box": box, "image": f"/atlas/media/{id.replace(':', '')}.webp", "label": character}
-    return (id, "local", character, None, "printed", "kana", state, revision, quiz, 1, document, "unassessed", None,
+    return (id, "local", character, None, "printed", "kana", state, revision, quiz, priority, 1, document, "unassessed", None,
             json.dumps(data))
 
 
-UNITS = ("id", "origin", "character", "visual_group", "production", "category", "state", "revision", "quiz", "shuffle",
-         "document", "style", "written_form", "data")
+UNITS = ("id", "origin", "character", "visual_group", "production", "category", "state", "revision", "quiz", "priority",
+         "shuffle", "document", "style", "written_form", "data")
 
 
 def write_source(root, name, cols, rows):
@@ -79,7 +79,7 @@ def layout(tmp_path, monkeypatch):
         unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
         unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", state="checked", revision=3),
         unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う"),
-        ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 2, 0, 1, "codh:b", "unassessed", None, "{}"),
+        ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 2, 0, 1, 1, "codh:b", "unassessed", None, "{}"),
     ])
     write_source(tmp_path, "corpus_units", ("id", "character", "family", "visual_group", "shuffle", "object", "offset",
                                             "size", "production", "named", "style", "document", "label"),
@@ -326,7 +326,7 @@ def test_a_corpus_overlay_sets_the_reviewed_style(layout, monkeypatch, tmp_path)
     db.execute("INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'corpus-0001.bin',0,100,'printed',0,'unassessed','codh:b',NULL)")
     db.execute(f"CREATE TABLE units({','.join(UNITS)})")
     db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})",
-               ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 5, 0, 1, "codh:b", "cursive", None, "{}"))
+               ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 5, 0, 1, 1, "codh:b", "cursive", None, "{}"))
     db.commit()
     run(publish, monkeypatch, path)
     styles = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, code FROM codes WHERE field='style'"))

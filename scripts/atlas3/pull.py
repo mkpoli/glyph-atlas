@@ -24,7 +24,7 @@ db = None
 
 # copy: (columns, key columns, chunk[, live table when the copy has another name])
 TABLES = {
-    "units": ("id,origin,character,family,visual_group,production,category,state,revision,quiz,shuffle,document,style,written_form,data", ["rowid"], 1500),
+    "units": ("id,origin,character,family,visual_group,production,category,state,revision,quiz,priority,shuffle,document,style,written_form,data", ["rowid"], 1500),
     "corpus_units": ("id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label", ["rowid"], 8000),
     "media": ("key,object,offset,size,content_type", ["rowid"], 15000),
     "unit_ngrams": ("first,size,second,third,text,document,vertical,hand_order,shuffle,graphemes", ["first", "size"], 8000),

@@ -37,6 +37,7 @@ def test_a_fresh_build_passes_every_check(layout, monkeypatch):  # noqa: F811
 @pytest.mark.parametrize("change", ["UPDATE crops SET state = 1 WHERE kind = 0 AND state = 0",
                                     "UPDATE crops SET year = 1999 WHERE kind = 0",
                                     "UPDATE crops SET flags = 1 WHERE kind = 0",
+                                    "UPDATE crops SET priority = 0 WHERE kind = 0",
                                     "DELETE FROM crops WHERE kind = 1"])
 def test_a_crop_that_differs_from_its_live_record_fails(layout, monkeypatch, change):  # noqa: F811
     root, _publish, _remote = layout
