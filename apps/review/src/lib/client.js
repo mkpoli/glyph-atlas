@@ -1,6 +1,6 @@
 import { t } from './i18n.svelte.js'
 import { isBusy, isPaused, retryAfter, waitOut } from './busy.svelte.js'
-import { anyKept, deliver, keepable, offline, useSender } from './outbox.svelte.js'
+import { anyKept, deliver, keep, keepable, offline, useSender } from './outbox.svelte.js'
 
 // Whoever keeps records read ahead hears of every write, which may have changed any of them.
 const writeListeners = new Set()
@@ -24,9 +24,10 @@ function settle({ response, value }) {
   if (response.ok) return value
   // FastAPI reports a validation failure as a list of problems; show their messages.
   const listed = Array.isArray(value.detail) ? value.detail.map(problem => problem.msg).filter(Boolean).join('; ') : ''
-  const error = new Error(isBusy(response, value) ? t('client.busy') : isPaused(response, value) ? t('client.paused') : typeof value.detail === 'string' ? value.detail : listed ? listed
+  const paused = isPaused(response, value)
+  const error = new Error(isBusy(response, value) ? t('client.busy') : paused ? t('client.paused') : typeof value.detail === 'string' ? value.detail : listed ? listed
     : response.status === 409 ? t('client.changed') : t('client.saveFailed'))
-  error.code = value.code
+  error.code = paused ? 'paused' : value.code
   error.status = response.status
   // A crop a publication retired names the crop that replaced it.
   if (typeof value.replaced_by === 'string') error.replacedBy = value.replaced_by
@@ -64,38 +65,49 @@ async function resend(entry) {
   await sessionStarted()
   const me = signedInUser()
   if (!mine(entry, me)) return { skip: true }
-  if (!me) { try { await ensureSignedIn() } catch { return { wait: true } } }
+  if (!me) { try { await ensureSignedIn() } catch (error) { return later(error) } }
   let answered = await posted(entry.path, entry.body, fetch, {})
   for (const listener of writeListeners) listener()
   if (answered.response.status === 401) {
     // An account whose session ended is asked to sign in again; the save waits for it.
     if (!entry.anonymous) { try { await ensureSignedIn({ again: true }) } catch { /* The sign-in form is open. */ } return { wait: true } }
-    try { await ensureSignedIn({ again: true }) } catch { return { wait: true } }
+    try { await ensureSignedIn({ again: true }) } catch (error) { return later(error) }
     answered = await posted(entry.path, entry.body, fetch, {})
   }
   return answered
 }
+/** A kept save waits; a sign-in refused while writes are paused is not asked again before its `Retry-After`. */
+const later = error => error?.code === 'paused' ? { wait: true, paused: true, retryAfter: error.retryAfter } : { wait: true, retryAfter: 0 }
 /** Whether the reader signed in now (or nobody yet) may send a kept save. */
 function mine(entry, me) {
   if (!entry.user) return true
   if (!me) return entry.anonymous
   return me.id === entry.user || (entry.anonymous && me.anonymous)
 }
-useSender({ send: resend, settle, mine: entry => mine(entry, currentUser()) })
+/** What a caller hears of a save kept while writes are paused: it is not lost, and goes once they resume. */
+const kept = () => Object.assign(new Error(t('client.pausedKept')), { code: 'paused', status: 503, kept: true })
+useSender({ send: resend, settle, mine: entry => mine(entry, currentUser()), kept })
 let currentUser = () => null
 if (typeof window !== 'undefined') import('./session.svelte.js').then(session => { currentUser = session.signedInUser }).catch(() => {})
 
-// A save the site cannot take yet (the database is busy, the browser is offline) is kept on this
-// device and sent in order when it can be; a save made while others wait joins the end of the line,
-// so none overtakes one made before it. A save that names no submission is never kept: sending it
-// twice could record it twice.
+// A save the site cannot take yet (the database is busy, the browser is offline, writes are paused)
+// is kept on this device and sent in order when it can be; a save made while others wait joins the
+// end of the line, so none overtakes one made before it. A save that names no submission is never
+// kept: sending it twice could record it twice. One kept while writes are paused throws `kept()` at
+// once, since the pause may outlast the page.
 async function save(path, body, send, options) {
-  const kept = keepable(path, body)
-  if (kept && await anyKept()) return deliver(path, body, await reader())
+  const canKeep = keepable(path, body)
+  if (canKeep && await anyKept()) return deliver(path, body, await reader())
   let answered
   try { answered = await write(path, body, { send, options }) }
-  catch (error) { if (kept && offline(error)) return deliver(path, body, await reader(), 0); throw error }
-  if (kept && isBusy(answered.response, answered.value)) return deliver(path, body, answered.user, retryAfter(answered.response))
+  catch (error) {
+    if (canKeep && offline(error)) return deliver(path, body, await reader(), 0)
+    // Nobody was signed in, and starting a session is a write too.
+    if (canKeep && error?.code === 'paused') { await keep(path, body, null, error.retryAfter); throw kept() }
+    throw error
+  }
+  if (canKeep && isBusy(answered.response, answered.value)) return deliver(path, body, answered.user, retryAfter(answered.response))
+  if (canKeep && isPaused(answered.response, answered.value)) { await keep(path, body, answered.user, retryAfter(answered.response)); throw kept() }
   return settle(answered)
 }
 /** Who a save is made by, once the page knows; signing in anonymously if nobody is, as a write does. */
