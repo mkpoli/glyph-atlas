@@ -1,138 +1,77 @@
-"""Write the grapheme families of the character table into the live site, as SQL parts D1 can import.
+"""Keep the character cards of the reference input (`glyph_atlas.reference_input`) in step with the
+character table; `scripts/atlas3/reference.py` loads them onto the site.
 
-    git show origin/main:data/vocab/characters.tsv > work/characters-before.tsv
-    python scripts/export_graphemes.py OUT --previous work/characters-before.tsv
+    python scripts/export_graphemes.py --catalogue work/cloudflare-<date>/catalogue.sqlite [--aliases <file>]
+    python scripts/export_graphemes.py
 
-A character whose family gained or lost a member has its `characters` row rewritten: the family head
-(`data.grapheme`), the default search scope, whether the corpus needs the family scope and how many
-glyphs the family has (`candidates`), the forms of the family (`detail.characters`), the widening a
-reader may choose (`detail.expansions`) and the visual analysis the family is keyed on. Everything else
-in the row is the live row's own, which this reads from D1 (read-only) when it runs: the counts of
-crops and corpus glyphs are the site's, and only a full publication rewrites them.
+With `--catalogue`, the input's cards become those a full export (`export_cloudflare.py`) wrote, with
+its counts of crops and corpus glyphs, and its search names (`aliases`) the export's.
 
-A character the site does not hold yet - a sequence the table now keys, such as 𛂞 + U+3099 - is
-written whole, the way a publication writes it, and gets the aliases a publication gives it (its text
-and its code points). Its crops are not counted: a crop already written as it on the site counts in
-its family's totals from the next full publication on.
+Without it, a card whose family gained or lost a member, or moved to another head, since the card was
+written has its family parts rewritten: the family head (`data.grapheme`), the default search scope,
+whether the corpus needs the family scope and how many glyphs the family has (`candidates`), the forms
+of the family (`detail.characters`), the widening a reader may choose (`detail.expansions`) and the
+visual analysis the family is keyed on. Everything else in the card is its own, so the counts stay
+the export's until the next full export. A character the input lacks - a sequence the table now keys,
+such as 𛂞 + U+3099 - is written whole, the way a full export writes it, with no crops counted.
 
-The parts fill a staging table, `grapheme_rows_next`; the last part swaps the rows in, inserts the
-new ones, moves the crops
-(`units.family`, and a corpus crop's `grapheme` and `family_members`) and the corpus glyphs
-(`corpus_units.family`) of those characters to their new family, remaps the family codes the Forms
-tables store (so a later `FORMS_REAPPLY` does not put an old head back on a decided glyph), and
-bumps `units_refreshed_at` and `corpus_counts_at`, which the Worker keys its cached listings and
-corpus counts on. D1 imports each `--file` as one transaction, so a failure before the last part
-leaves the site as it was, and a rerun starts the staging table again. Every move matches at most a
-batch's characters: the changed families hold ~140,000 local crops and ~547,000 corpus glyphs and
-D1 answers one statement in 30 seconds, and each move skips the rows it has already moved, so a
-rerun after a failure completes what the failed part did not.
-
-What this does not reach, and a corpus re-export does:
-
-- the corpus record packs in R2 and their copies in `corpus_gallery.data`, whose records carry
-  `grapheme`, `family_members` and `written_character` as the corpus export wrote them — until it
-  runs again, a review that materialises one of those records writes its old `grapheme` back into
-  `units.family`;
-- a row with no character to match: the moves look rows up by character, so a corpus glyph the
-  corpus export left unassigned (`units.character` NULL) keeps the family it has until an export
-  names it.
-
-The Forms remap moves stored family codes only — `form_bases.family`, `form_units` `family`,
-`glyph_family`, `cluster_family` and `written_family`, `form_decisions` `family` and
-`written_family`, `form_marks.written_family`, `form_clusters.family`, and `form_families.code_point`,
-whose row folds into the head it joins when it would collide there. The counts and labels in
-`form_families` describe the clustering as it ran; the reclustering that rewrites them stays with
-the session that maintains Forms.
+The crops and corpus glyphs follow without a write of their own: `reference.py` gives every grapheme
+its card's family head (`graphemes.head`), which is where the new layout files a crop under its family.
+What this does not reach: the family codes the forms tables store (`form_families`, `form_clusters`,
+`form_glyphs`), which describe the clustering as it ran, and the `grapheme` and `family_members` that
+published crop records carry, until a publication writes them again.
 """
 from __future__ import annotations
 
 import argparse
-import csv
 import json
-import subprocess
-import time
-from collections import defaultdict
+import sqlite3
 from pathlib import Path
 from typing import Any
 
-from glyph_atlas import refs, visual_families
+from glyph_atlas import reference_input, refs, visual_families
 from glyph_atlas.corpus.identity import NORMALIZED_CORPORA
 from glyph_atlas.review import characters
-
-ROOT = Path(__file__).resolve().parents[1]
-WRANGLER = ROOT / "apps" / "cloudflare"
-PART_BYTES = 40 * 1024 * 1024
-STATEMENT_BYTES = 90 * 1024
-FETCH = 300
-STAGING = "grapheme_rows_next"
-STAMPS = ("units_refreshed_at", "corpus_counts_at")
-
-
-def quote(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
 
 
 def encoded(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
-def previous_families(path: Path) -> dict[str, tuple[str, frozenset[str]]]:
-    """Each code point of an earlier character table mapped to its head and that grapheme's members."""
-    with path.open(encoding="utf-8") as handle:
-        rows = list(csv.DictReader([line for line in handle if not line.startswith("#")], delimiter="\t"))
-    members: dict[str, set[str]] = defaultdict(set)
-    for row in rows:
-        members[row["grapheme"] or row["code_point"]].add(row["code_point"])
-    return {row["code_point"]: (row["grapheme"] or row["code_point"],
-                                frozenset(members[row["grapheme"] or row["code_point"]]))
-            for row in rows}
+def point_order(point: str) -> list[int]:
+    return [int(part.removeprefix("U+"), 16) for part in point.split()]
 
 
-def changed(previous: dict[str, tuple[str, frozenset[str]]]) -> list[str]:
-    """The code points whose head or family is not the one the earlier table gave them.
+def family_of(data: dict[str, Any]) -> tuple[str | None, frozenset[str]]:
+    """A card's family as it was written: its head and the code points of its members."""
+    grapheme = data.get("grapheme") or {}
+    return grapheme.get("code_point"), frozenset(m.get("code_point") for m in grapheme.get("members") or [])
+
+
+def changed(cards: dict[str, dict[str, Any]]) -> list[str]:
+    """The code points whose head or family is not the one their card was written with, and those with
+    no card, in code point order.
 
     The head matters besides the membership: a family that moves to another representative keeps
-    every member but `data.grapheme` and `units.family` still name the old one. A code point the
-    earlier table did not have is new to the site and changed whatever its family.
+    every member but `data.grapheme` still names the old one.
     """
-    now_head: dict[str, str] = {}
-    now_set: dict[str, frozenset[str]] = {}
+    found = []
     for head, points in refs.graphemes().items():
         members = frozenset(points)
-        for point in points:
-            now_head[point] = head
-            now_set[point] = members
-    return sorted(
-        (point for point in now_set
-         if previous.get(point) != (now_head[point], now_set[point])),
-        key=lambda point: [int(part.removeprefix("U+"), 16) for part in point.split()])
+        found += [point for point in points
+                  if point not in cards or family_of(cards[point]["data"]) != (head, members)]
+    return sorted(found, key=point_order)
 
 
-def d1(sql: str, tries: int = 4) -> list[dict[str, Any]]:
-    """A read-only query against the live database, retried: the API refuses a request now and then."""
-    for attempt in range(tries):
-        done = subprocess.run(["bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", sql],
-                              cwd=WRANGLER, capture_output=True, text=True, check=False)
-        if done.returncode == 0:
-            return json.loads(done.stdout)[0]["results"]
-        if attempt < tries - 1:
-            time.sleep(10)
-    raise SystemExit(f"D1 refused {sql[:80]!r} {tries} times: {done.stdout[-400:]}")
-
-
-def live_rows(points: list[str]) -> dict[str, dict[str, Any]]:
-    found = {}
-    for start in range(0, len(points), FETCH):
-        batch = ",".join(quote(point) for point in points[start:start + FETCH])
-        for row in d1(f"SELECT code_point,data,detail FROM characters WHERE code_point IN ({batch})"):
-            found[row["code_point"]] = {"data": json.loads(row["data"]), "detail": json.loads(row["detail"])}
-    return found
+def held_cards(db: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+    return {point: {"data": json.loads(data), "detail": json.loads(detail)}
+            for point, data, detail in db.execute("SELECT code_point, data, detail FROM characters")}
 
 
 def rewritten(point: str, live: dict[str, dict[str, Any]], counts: dict[str, int]) -> tuple[dict, dict]:
-    """The live row of one character with its family parts recomputed.
+    """The card of one character with its family parts recomputed.
 
-    `counts` are the live rows' crop counts. The family's flags are the family's: a row whose own
+    `counts` are the cards' crop counts. The family's flags are the family's: a row whose own
     corpus counts were never loaded still joins a family that has them, and its gallery reads
     `requires_family_scope` and `family_glyphs` like every other member's.
     """
@@ -156,7 +95,7 @@ def rewritten(point: str, live: dict[str, dict[str, Any]], counts: dict[str, int
 
 
 def fresh(point: str) -> dict[str, Any]:
-    """The row a publication writes for a character the site does not hold, before its family parts.
+    """The card a full export writes for a character the input does not hold, before its family parts.
 
     The same fields as `export_cloudflare.py` writes; a character no crop is written as yet has no
     counts, and the corpus index is not read here, so its candidates are what an empty index gives.
@@ -173,8 +112,8 @@ def fresh(point: str) -> dict[str, Any]:
 
 
 def _expansions(row, counts: dict[str, int], detail: dict[str, Any]) -> list[dict[str, Any]]:
-    """The widenings with the family one recomputed. The kana written as a kanji are not among the
-    changed rows, so their counts are unknown here and the live row's `jibo` entry is kept as it is."""
+    """The widenings with the family one recomputed. The kana written as a kanji keep the card's own
+    `jibo` entry: its counts are the export's, which a card's change of family does not move."""
     kept = {entry["key"]: entry for entry in detail.get("expansions") or []}
     return [kept.get("jibo", entry) if entry["key"] == "jibo" else entry
             for entry in characters._expansions(row, counts, expand="none")]
@@ -199,207 +138,47 @@ def _visual_analysis(point: str, head: str, live: dict[str, dict[str, Any]], mem
             "sample_count": 0, "assigned_count": 0, "unassigned_count": 0, "groups": []}
 
 
-#: Characters one swap statement moves. The changed families hold ~140,000 local crops and ~547,000
-#: corpus glyphs (measured against the live site), and each `units` update fires migration 0032's
-#: count trigger, so a statement takes a slice well under the 20,000-row slices this repo has used
-#: for `units` backfills and under D1's 30-second answer time.
-BATCH = 500
+def copy_catalogue(db: sqlite3.Connection, catalogue: Path, aliases: Path | None = None) -> dict[str, int]:
+    """The input's cards and their search names replaced by those of a full export's catalogue; the names
+    from `aliases` instead when the cards come from a file without them."""
+    source = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True)
+    named = sqlite3.connect(f"file:{aliases}?mode=ro", uri=True) if aliases else source
+    n = {"cards": reference_input.replace(db, "characters", source.execute(
+             "SELECT code_point, character, name, data, detail FROM characters ORDER BY code_point")),
+         "aliases": reference_input.replace(db, "aliases", named.execute(
+             "SELECT query, code_point, rank FROM aliases ORDER BY query, code_point"))}
+    named.close()
+    source.close()
+    return n
 
 
-def statements(rows: dict[str, tuple[dict, dict]]) -> list[list[str]]:
-    """The staging fill in statements under D1's statement limit, then the swap as the last group.
-
-    Each move names its batch's characters, so `unit_character (origin, character)` and
-    `corpus_character` are index prefixes with one origin per statement, and every move carries the
-    mismatch guard that makes a rerun skip what it already moved.
-    """
-    fill = [f"DROP TABLE IF EXISTS {STAGING};\n",
-            (f"CREATE TABLE {STAGING} (code_point TEXT PRIMARY KEY, character TEXT NOT NULL, name TEXT NOT NULL,"
-             " family TEXT NOT NULL, data TEXT NOT NULL, detail TEXT NOT NULL) WITHOUT ROWID;\n")]
-    head = f"INSERT OR REPLACE INTO {STAGING}(code_point,character,name,family,data,detail) VALUES"
-    values, size = [], 0
-    for point, (data, detail) in rows.items():
-        value = (f"({quote(point)},{quote(refs.to_char(point))},{quote(refs.character(point).name or '')},"
-                 f"{quote(data['grapheme']['code_point'])},{quote(encoded(data))},{quote(encoded(detail))})")
-        if values and size + len(value.encode()) + 1 > STATEMENT_BYTES - len(head):
-            fill.append(head + ",".join(values) + ";\n")
-            values, size = [], 0
-        values.append(value)
-        size += len(value.encode()) + 1
-    if values:
-        fill.append(head + ",".join(values) + ";\n")
-    # A character the site lacks is inserted, with the aliases a publication gives it; a rerun finds it.
-    # A plain INSERT: a row that collides with another's text fails the part rather than going missing.
-    swap: list[str] = [
-        # The moves join crops to the staging table by character; without this index each crop scans
-        # all of it (about 52k rows), and D1 drops the import.
-        f"CREATE INDEX IF NOT EXISTS {STAGING}_character ON {STAGING}(character);\n",
-        (f"INSERT INTO characters(code_point,character,name,data,detail)"
-         f" SELECT code_point,character,name,data,detail FROM {STAGING} n"
-         " WHERE NOT EXISTS (SELECT 1 FROM characters c WHERE c.code_point=n.code_point);\n"),
-        (f"INSERT OR IGNORE INTO aliases(query,code_point,rank) SELECT character,code_point,0 FROM {STAGING}"
-         " UNION ALL SELECT lower(code_point),code_point,0 FROM " + STAGING + ";\n"),
-    ]
-    points = sorted(rows, key=lambda point: [int(part.removeprefix("U+"), 16) for part in point.split()])
-    for start in range(0, len(points), BATCH):
-        batch = points[start:start + BATCH]
-        cps = ",".join(quote(point) for point in batch)
-        chars = ",".join(quote(refs.to_char(point)) for point in batch)
-        swap += [
-            (f"UPDATE characters SET data=n.data,detail=n.detail FROM {STAGING} n"
-             f" WHERE characters.code_point=n.code_point AND n.code_point IN ({cps});\n"),
-            (f"UPDATE units SET family=n.family FROM {STAGING} n WHERE units.origin='local'"
-             f" AND units.character=n.character AND n.character IN ({chars})"
-             " AND units.family IS NOT n.family;\n"),
-            (f"UPDATE units SET family=n.family FROM {STAGING} n WHERE units.origin='corpus'"
-             f" AND units.character=n.character AND n.character IN ({chars})"
-             " AND units.family IS NOT n.family;\n"),
-            # No mismatch guard: the head can already be right while `family_members` still names
-            # the family before it grew, and the statement is idempotent either way.
-            ("UPDATE units SET data=json_set(units.data,'$.grapheme',n.family,"
-             "'$.family_members',json_extract(n.data,'$.grapheme.members')) "
-             f"FROM {STAGING} n WHERE units.origin='corpus' AND units.character=n.character"
-             f" AND n.character IN ({chars}) AND json_type(units.data,'$.grapheme') IS NOT NULL;\n"),
-            # A local crop's record carries `grapheme` too (95 of them do on the live site), and a
-            # review's `event_apply` restores family from it; those follow the new head as well.
-            ("UPDATE units SET data=json_set(units.data,'$.grapheme',n.family) "
-             f"FROM {STAGING} n WHERE units.origin='local' AND units.character=n.character"
-             f" AND n.character IN ({chars}) AND json_type(units.data,'$.grapheme') IS NOT NULL"
-             " AND json_extract(units.data,'$.grapheme') IS NOT n.family;\n"),
-            (f"UPDATE corpus_units SET family=n.family FROM {STAGING} n WHERE corpus_units.character=n.character"
-             f" AND n.character IN ({chars}) AND corpus_units.family IS NOT n.family;\n"),
-        ]
-    # The Forms tables store family codes, and FORMS_REAPPLY writes form_units.written_family and
-    # form_bases.family back onto corpus_units at the next corpus or forms publication: the codes
-    # move with the characters here (measured: 1,640 + 249 + 221 rows to move now), the clustering
-    # that counts them follows the reclustering.
-    swap += [
-        (f"UPDATE form_units SET family=n.family FROM {STAGING} n WHERE form_units.family=n.code_point"
-         " AND n.family IS NOT n.code_point AND form_units.family IS NOT n.family;\n"),
-        (f"UPDATE form_units SET glyph_family=n.family FROM {STAGING} n"
-         " WHERE form_units.glyph_family=n.code_point AND n.family IS NOT n.code_point"
-         " AND form_units.glyph_family IS NOT n.family;\n"),
-        (f"UPDATE form_units SET cluster_family=n.family FROM {STAGING} n"
-         " WHERE form_units.cluster_family=n.code_point AND n.family IS NOT n.code_point"
-         " AND form_units.cluster_family IS NOT n.family;\n"),
-        (f"UPDATE form_units SET written_family=n.family FROM {STAGING} n"
-         " WHERE form_units.written_family=n.code_point AND n.family IS NOT n.code_point"
-         " AND form_units.written_family IS NOT n.family;\n"),
-        (f"UPDATE form_decisions SET family=n.family FROM {STAGING} n WHERE form_decisions.family=n.code_point"
-         " AND n.family IS NOT n.code_point AND form_decisions.family IS NOT n.family;\n"),
-        (f"UPDATE form_decisions SET written_family=n.family FROM {STAGING} n"
-         " WHERE form_decisions.written_family=n.code_point AND n.family IS NOT n.code_point"
-         " AND form_decisions.written_family IS NOT n.family;\n"),
-        (f"UPDATE form_marks SET written_family=n.family FROM {STAGING} n"
-         " WHERE form_marks.written_family=n.code_point AND n.family IS NOT n.code_point"
-         " AND form_marks.written_family IS NOT n.family;\n"),
-        (f"UPDATE form_clusters SET family=n.family FROM {STAGING} n WHERE form_clusters.family=n.code_point"
-         " AND n.family IS NOT n.code_point AND form_clusters.family IS NOT n.family;\n"),
-        (f"UPDATE form_bases SET family=n.family FROM {STAGING} n WHERE form_bases.family=n.code_point"
-         " AND n.family IS NOT n.code_point AND form_bases.family IS NOT n.family;\n"),
-        # A moved head's own row rekeys onto the head it joins; where that key already exists the
-        # rekey is ignored and the leftover row goes, its clusters having moved with it.
-        (f"UPDATE OR IGNORE form_families SET code_point=n.family FROM {STAGING} n"
-         " WHERE form_families.code_point=n.code_point AND n.family IS NOT n.code_point;\n"),
-        (f"DELETE FROM form_families WHERE EXISTS (SELECT 1 FROM {STAGING} n"
-         " WHERE form_families.code_point=n.code_point AND n.family IS NOT form_families.code_point);\n"),
-        f"DROP TABLE {STAGING};\n",
-        *(f"INSERT OR REPLACE INTO metadata(key,value) VALUES('{stamp}',"
-          "json_quote(strftime('%Y-%m-%dT%H:%M:%fZ','now')));\n" for stamp in STAMPS),
-    ]
-    return [fill, swap]
-
-
-def write_parts(out: Path, groups: list[list[str]]) -> list[Path]:
-    """The fill split into parts under D1's upload size; the swap always a part of its own, last."""
-    directory = out / "sql"
-    directory.mkdir(parents=True, exist_ok=True)
-    for old in directory.glob("*.sql"):
-        old.unlink()
-    fill, swap = groups
-    parts, part, size = [], [], 0
-    for statement in fill:
-        length = len(statement.encode())
-        if length > STATEMENT_BYTES + 1024:
-            raise SystemExit(f"a statement of {length} bytes is over D1's limit")
-        if part and size + length > PART_BYTES:
-            parts.append(part)
-            part, size = [], 0
-        part.append(statement)
-        size += length
-    parts += [part, swap] if part else [swap]
-    paths = []
-    for index, lines in enumerate(parts, 1):
-        path = directory / f"part-{index:02d}.sql"
-        path.write_text("".join(lines), encoding="utf-8")
-        paths.append(path)
-    return paths
-
-
-APPLY = """#!/usr/bin/env bash
-# Move the site's characters, crops and corpus glyphs to the grapheme families of this export. Each
-# part is one D1 transaction; the parts fill a staging table and the last one swaps it in. Every
-# statement repeats safely, so a failed run is rerun from the start (the undo line above restores
-# the site outright).
-set -uo pipefail
-here="$(cd "$(dirname "$0")" && pwd)"
-cd {wrangler}
-q() {{ bunx wrangler d1 execute glyph-atlas --remote --json --command "$1" 2>/dev/null | jq -c '.[0].results[0]'; }}
-started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-echo "undo: bunx wrangler d1 time-travel restore glyph-atlas --timestamp=$started"
-published=$(q "SELECT value FROM metadata WHERE key='published_at'")
-[ "$published" = '{published}' ] || {{ echo "the site was published again since this export read it ($published); export again" >&2; exit 1; }}
-check="SELECT count(*) AS rows FROM characters WHERE json_extract(data,'$.grapheme.code_point')='{probe_head}'"
-check_units="SELECT count(*) AS wrong FROM units WHERE character IN ({probe_chars}) AND family IS NOT '{probe_head}'"
-echo "before: $(q "$check"), crops not under the head: $(q "$check_units")"
-for part in "$here"/sql/part-*.sql; do
-  {importer} "$part" || {{ echo "$(basename "$part") did not apply; rerun the apply — every part repeats safely." >&2; exit 1; }}
-done
-after=$(q "$check")
-echo "after: $after"
-[ "$after" = '{{"rows":{probe_rows}}}' ] || {{ echo 'expected {{"rows":{probe_rows}}}' >&2; exit 1; }}
-units_after=$(q "$check_units")
-echo "crops not under the head: $units_after"
-[ "$units_after" = '{{"wrong":0}}' ] || {{ echo 'expected every crop of the family to be filed under {probe_head}' >&2; exit 1; }}
-echo "done"
-"""
+def rewrite(db: sqlite3.Connection) -> dict[str, int]:
+    """The cards whose family changed rewritten, the new ones added; figures of what changed."""
+    cards = held_cards(db)
+    points = changed(cards)
+    created = [point for point in points if point not in cards]
+    cards.update({point: fresh(point) for point in created})
+    counts = {point: found["data"].get("occurrence_count", 0) for point, found in cards.items()}
+    rows = {point: rewritten(point, cards, counts) for point in points}
+    db.executemany("INSERT OR REPLACE INTO characters(code_point, character, name, data, detail) VALUES(?,?,?,?,?)",
+                   [(point, refs.to_char(point), refs.character(point).name or "", encoded(data), encoded(detail))
+                    for point, (data, detail) in rows.items()])
+    return {"changed": len(points), "created": len(created),
+            "families": len({data["grapheme"]["code_point"] for data, _ in rows.values()})}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("output", type=Path)
-    parser.add_argument("--previous", type=Path, required=True, help="the character table the site was published from")
-    parser.add_argument("--probe", default="還", help="a character whose family apply.sh checks (default 還)")
+    parser.add_argument("--catalogue", type=Path, help="a full export's catalogue.sqlite, whose cards the input takes")
+    parser.add_argument("--aliases", type=Path,
+                        help="with --catalogue, a file holding the search names when the catalogue does not")
+    parser.add_argument("--input", type=Path, help="the reference input to write (default: reference-input.sqlite in ATLAS3_DIR)")
     arguments = parser.parse_args()
-    out = arguments.output
-    previous = previous_families(arguments.previous)
-    points = changed(previous)
-    head = refs.grapheme(refs.to_code_point(arguments.probe))
-    if head not in points:
-        raise SystemExit(f"--probe {arguments.probe}: its family has not changed")
-    published = d1("SELECT value FROM metadata WHERE key='published_at'")[0]
-    live = live_rows(points)
-    created = [point for point in points if point not in live]
-    stale = [point for point in live
-             if {member["code_point"] for member in live[point]["data"]["grapheme"]["members"]}
-             != previous.get(point, (point, frozenset({point})))[1]]
-    if stale:
-        raise SystemExit(f"{len(stale)} live rows disagree with --previous, e.g. {stale[:5]}; "
-                         "pass the table the site was published from")
-    counts = {point: found["data"].get("occurrence_count", 0) for point, found in live.items()}
-    live.update({point: fresh(point) for point in created})
-    rows = {point: rewritten(point, live, counts) for point in points}
-    paths = write_parts(out, statements(rows))
-    apply = out / "apply.sh"
-    apply.write_text(APPLY.format(
-        wrangler=WRANGLER, importer=ROOT / "scripts" / "d1_import.sh", published=encoded(published), probe_head=head,
-        probe_chars=",".join(quote(refs.to_char(point)) for point in refs.graphemes()[head]),
-        probe_rows=sum(point in rows for point in refs.graphemes()[head])),
-        encoding="utf-8")
-    apply.chmod(0o755)
-    print(json.dumps({"changed": len(points), "rows": len(rows), "created": len(created),
-                      "families": len({data["grapheme"]["code_point"] for data, _ in rows.values()}),
-                      "parts": [str(path.relative_to(out)) for path in paths]}))
+    with reference_input.writing(arguments.input) as db:
+        if arguments.catalogue:
+            print(json.dumps(copy_catalogue(db, arguments.catalogue, arguments.aliases)))
+        else:
+            print(json.dumps(rewrite(db)))
 
 
 if __name__ == "__main__":

@@ -6,9 +6,9 @@ import sqlite3
 import sys
 
 import pytest
-from test_atlas3_publish import ids, layout, write_source  # noqa: F401 -- `layout` is the fixture
+from test_atlas3_publish import ids, layout  # noqa: F401 -- `layout` is the fixture
 
-CARD = ("code_point", "character", "name", "data", "detail", "head")
+from glyph_atlas import reference_input
 
 
 def card(char, head=None, detail=None, members=None, occurrences=0, name=None):
@@ -18,7 +18,7 @@ def card(char, head=None, detail=None, members=None, occurrences=0, name=None):
             "grapheme": {"code_point": f"U+{ord(family):04X}", "char": family,
                          "members": [{"char": m} for m in (members or [char])]}}
     return (point, char, name or f"NAME {point}", json.dumps(data, ensure_ascii=False),
-            json.dumps(detail or {"char": char}, ensure_ascii=False), f"U+{ord(family):04X}")
+            json.dumps(detail or {"char": char}, ensure_ascii=False))
 
 
 def group(*crops):
@@ -27,32 +27,31 @@ def group(*crops):
             "anchors": [{"id": crops[0], "position": 1}]}
 
 
-# The readings table the load reads, written by `sources` beside the copies.
+# The readings table the load reads, written by `sources` beside the input.
 READINGS = {}
 
 
 def sources(root, cards=(), variants=(), derived=(), writers=(), substitutions=(("氵", "水", 3, "[]"),), words=None,
-            readings=None, aliases=()):
+            readings=None, aliases=(),
+            cited=(("variant_sources", '{"cjkvi-variants":"x"}'), ("word_sources", '{"honkoku-ruby":"y"}'))):
+    """The reference input, every table written."""
     READINGS["path"] = root / "kanji-readings.json"
     READINGS["path"].write_text(json.dumps({"readings": readings or {}}, ensure_ascii=False))
-    for table in ("characters", "character_variants", "character_derived", "grapheme_writers", "component_variants", "words",
-                  "word_spellings", "han_ids", "han_components", "han_component_names", "aliases"):
-        (root / f"source-{table}.sqlite").unlink(missing_ok=True)
-    write_source(root, "characters", CARD, cards)
-    write_source(root, "character_variants", ("a", "b", "relation", "source", "detail", "written", "widens"), variants)
-    write_source(root, "character_derived", ("a", "forms"), derived)
-    write_source(root, "grapheme_writers", ("writer", "grapheme", "own"), writers)
-    write_source(root, "component_variants", ("a", "b", "count", "pairs"), substitutions)
-    write_source(root, "words", ("id", "language", "reading", "class"),
-                 [("ja/ばかり/副助詞", "ja", "ばかり", "副助詞")] if words is None else words)
-    write_source(root, "word_spellings", ("word", "spelling", "source", "locator", "tier", "word_by", "basis", "related",
-                                          "statement", "documents", "occurrences"),
-                 [("ja/ばかり/副助詞", "許", "dictionary", "x", "attested", "source", "", "", "許（ばかり）", None, None)])
-    write_source(root, "han_ids", ("char", "sequences", "shapes"), [("好", '["⿰女子"]', None)])
-    write_source(root, "aliases", ("query", "code_point", "rank"), aliases)
-    write_source(root, "han_components", ("component", "tier", "size", "code_point", "n", "direct"),
-                 [("女", 0, 2, "U+597D", 1, 1), ("女", 1, 3, "U+5973", 1, 1), ("女", 0, 2, "U+5982", 2, 0)])
-    write_source(root, "han_component_names", ("query", "component", "total"), [("女", "女", 3), ("⼥", "女", 3)])
+    path = root / "reference-input.sqlite"
+    path.unlink(missing_ok=True)
+    with reference_input.writing(path) as db:
+        for table, rows in (
+                ("characters", cards), ("aliases", aliases), ("character_variants", variants), ("character_derived", derived),
+                ("grapheme_writers", writers), ("component_variants", substitutions),
+                ("words", [("ja/ばかり/副助詞", "ja", "ばかり", "副助詞")] if words is None else words),
+                ("word_spellings", [("ja/ばかり/副助詞", "許", "dictionary", "x", "attested", "source", "", "", "許（ばかり）",
+                                     None, None)]),
+                ("han_ids", [("好", '["⿰女子"]', None)]),
+                ("han_components", [("女", 0, 2, "U+597D", 1, 1), ("女", 1, 3, "U+5973", 1, 1), ("女", 0, 2, "U+5982", 2, 0)]),
+                ("han_component_names", [("女", "女", 3), ("⼥", "女", 3)])):
+            reference_input.replace(db, table, rows)
+        for key, value in cited:
+            reference_input.put_source(db, key, value)
 
 
 class Bucket:
@@ -357,3 +356,26 @@ def test_migration_0004_is_applied_once_where_the_layout_lacks_it(layout, monkey
     db = remote.dbs["glyph-atlas-v3"]
     assert db.execute("SELECT count(*) FROM imports WHERE stamp='migration:0004'").fetchone() == (1,)
     assert db.execute("SELECT count(*) FROM words").fetchone() == (1,)
+
+
+def test_the_citations_load_into_site_beside_the_values_books_writes(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    both(root, remote, """INSERT INTO site VALUES('collection', '{"books": 2}');""")
+    sources(root, cards=[card("あ")])
+    bucket = load(remote, monkeypatch, "--send")
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        assert dict(db.execute("SELECT key, value FROM site")) == {
+            "collection": '{"books": 2}', "variant_sources": '{"cjkvi-variants":"x"}', "word_sources": '{"honkoku-ruby":"y"}'}
+    # A citation the input no longer holds leaves site; `collection` stays, being books.py's.
+    sources(root, cards=[card("あ")], cited=[("variant_sources", '{"cjkvi-variants":"z"}')])
+    load(remote, monkeypatch, "--send", bucket=bucket)
+    assert dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, value FROM site")) == {
+        "collection": '{"books": 2}', "variant_sources": '{"cjkvi-variants":"z"}'}
+
+
+def test_a_table_no_generator_wrote_stops_the_load(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    with reference_input.writing(root / "reference-input.sqlite") as db:
+        reference_input.replace(db, "characters", [card("あ")])
+    with pytest.raises(SystemExit, match="export_character_variants.py writes it"):
+        load(remote, monkeypatch)

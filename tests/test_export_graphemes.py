@@ -1,12 +1,13 @@
-"""The grapheme export's SQL runs on the migrated D1 schema and moves crops and glyphs to their family."""
+"""The cards of the reference input follow the character table's families."""
 import importlib
 import json
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
 
-from glyph_atlas import refs
+from glyph_atlas import reference_input, refs
 
 
 @pytest.fixture
@@ -15,47 +16,87 @@ def module(monkeypatch):
     return importlib.import_module("export_graphemes")
 
 
-def schema():
-    db = sqlite3.connect(":memory:")
-    for migration in sorted(Path("apps/cloudflare/migrations").glob("*.sql")):
-        db.executescript(migration.read_text())
-    return db
+def card(point, char, head, members):
+    grapheme = {"code_point": head, "members": [{"code_point": m} for m in members]}
+    return (point, char, "", json.dumps({"grapheme": grapheme, "occurrence_count": 1}), "{}")
 
 
-def unit(db, id_, origin, character, family, data):
-    db.execute("INSERT INTO units(id,origin,character,family,visual_group,production,category,state,revision,"
-               "quiz,priority,shuffle,data,snapshot,context,visual) VALUES(?,?,?,?,NULL,'unknown','han',"
-               "'unreviewed',1,0,0,0,?,'{}','{}','{}')", (id_, origin, character, family, json.dumps(data)))
+def test_a_family_that_only_moves_its_head_is_still_a_change(module, monkeypatch):
+    cards = {p: {"data": json.loads(card(p, "", "U+0041", ["U+0041", "U+0042"])[3])} for p in ("U+0041", "U+0042")}
+    monkeypatch.setattr(module.refs, "graphemes", lambda: {"U+0041": ["U+0041", "U+0042"]})
+    assert module.changed(cards) == []
+    monkeypatch.setattr(module.refs, "graphemes", lambda: {"U+0042": ["U+0041", "U+0042"]})
+    assert module.changed(cards) == ["U+0041", "U+0042"]
 
 
-def test_the_swap_moves_the_characters_crops_and_glyphs_of_a_family(module):
-    db = schema()
-    for point, char in (("U+9084", "還"), ("U+2E7C3", "𮟃")):
-        grapheme = {"code_point": point, "members": [{"code_point": point, "char": char}]}
-        db.execute("INSERT INTO characters VALUES(?,?,'',?,'{}')", (point, char, json.dumps({"grapheme": grapheme})))
-    unit(db, "l1", "local", "𮟃", "U+2E7C3", {})
-    unit(db, "c1", "corpus", "𮟃", "U+2E7C3", {"grapheme": "U+2E7C3", "family_members": []})
-    db.execute("INSERT INTO corpus_units(id,character,family,visual_group,shuffle,object,offset,size) "
-               "VALUES('g1','𮟃','U+2E7C3',NULL,0,'o',0,1)")
-    members = [{"code_point": "U+9084", "char": "還"}, {"code_point": "U+2E7C3", "char": "𮟃"}]
-    data = {"grapheme": {"code_point": "U+9084", "members": members}}
-    fill, swap = module.statements({"U+9084": (data, {}), "U+2E7C3": (data, {})})
-    for sql in [*fill, *swap]:
-        assert len(sql.encode()) < 100_000
-    db.executescript("".join(fill))
-    for sql in swap:
-        if sql.startswith(("UPDATE units", "UPDATE corpus_units")):
-            plan = " ".join(row[-1] for row in db.execute("EXPLAIN QUERY PLAN " + sql))
-            assert "SCAN" not in plan, plan
-        db.executescript(sql)
-    assert db.execute("SELECT family FROM units ORDER BY id").fetchall() == [("U+9084",), ("U+9084",)]
-    corpus = json.loads(db.execute("SELECT data FROM units WHERE id='c1'").fetchone()[0])
-    assert corpus == {"grapheme": "U+9084", "family_members": members}
-    assert db.execute("SELECT family FROM corpus_units").fetchone() == ("U+9084",)
-    assert db.execute("SELECT count(*) FROM metadata WHERE key IN ('units_refreshed_at','corpus_counts_at')").fetchone() == (2,)
-    assert db.execute("SELECT count(*) FROM sqlite_master WHERE name=?", (module.STAGING,)).fetchone() == (0,)
-    db.executescript("".join(fill) + "".join(swap))  # a rerun changes nothing further
-    assert db.execute("SELECT family FROM corpus_units").fetchone() == ("U+9084",)
+def test_a_character_with_no_card_is_a_change(module, monkeypatch):
+    cards = {"U+0041": {"data": json.loads(card("U+0041", "A", "U+0041", ["U+0041"])[3])}}
+    monkeypatch.setattr(module.refs, "graphemes", lambda: {"U+0041": ["U+0041"], "U+17000": ["U+17000"]})
+    assert module.changed(cards) == ["U+17000"]
+
+
+def run(module, monkeypatch, path, *flags):
+    monkeypatch.setattr(sys, "argv", ["export_graphemes.py", "--input", str(path), *flags])
+    module.main()
+    return sqlite3.connect(path)
+
+
+def test_the_cards_of_a_catalogue_replace_the_inputs(module, monkeypatch, tmp_path):
+    catalogue = tmp_path / "catalogue.sqlite"
+    db = sqlite3.connect(catalogue)
+    db.execute("CREATE TABLE characters(code_point TEXT PRIMARY KEY, character TEXT, name TEXT, data TEXT, detail TEXT)")
+    db.execute("INSERT INTO characters VALUES(?,?,?,?,?)", card("U+9084", "還", "U+9084", ["U+9084"]))
+    db.execute("CREATE TABLE aliases(query TEXT, code_point TEXT, rank INTEGER, PRIMARY KEY(query, code_point))")
+    db.execute("INSERT INTO aliases VALUES('かえる','U+9084',1)")
+    db.commit()
+    path = tmp_path / "reference-input.sqlite"
+    with reference_input.writing(path) as held:
+        reference_input.replace(held, "characters", [card("U+3042", "あ", "U+3042", ["U+3042"])])
+        reference_input.replace(held, "aliases", [("あ", "U+3042", 0)])
+    got = run(module, monkeypatch, path, "--catalogue", str(catalogue))
+    assert got.execute("SELECT code_point, character FROM characters").fetchall() == [("U+9084", "還")]
+    assert got.execute("SELECT * FROM aliases").fetchall() == [("かえる", "U+9084", 1)]
+
+
+def test_the_search_names_come_from_their_own_copy_when_the_cards_file_lacks_them(module, monkeypatch, tmp_path):
+    cards, names = tmp_path / "source-characters.sqlite", tmp_path / "source-aliases.sqlite"
+    db = sqlite3.connect(cards)
+    db.execute("CREATE TABLE characters(code_point TEXT PRIMARY KEY, character TEXT, name TEXT, data TEXT, detail TEXT)")
+    db.execute("INSERT INTO characters VALUES(?,?,?,?,?)", card("U+9084", "還", "U+9084", ["U+9084"]))
+    db.commit()
+    db = sqlite3.connect(names)
+    db.execute("CREATE TABLE aliases(query, code_point, rank)")
+    db.execute("INSERT INTO aliases VALUES('u+9084','U+9084',0)")
+    db.commit()
+    got = run(module, monkeypatch, tmp_path / "reference-input.sqlite", "--catalogue", str(cards), "--aliases", str(names))
+    assert got.execute("SELECT * FROM aliases").fetchall() == [("u+9084", "U+9084", 0)]
+
+
+def test_a_family_that_grew_is_rewritten_and_a_sequence_the_input_lacks_is_added(module, monkeypatch, tmp_path):
+    """Every card is in step with the table but ば's, whose family the cards hold as ば alone, and
+    𛂞 + U+3099 has no card yet."""
+    path = tmp_path / "reference-input.sqlite"
+    family = refs.graphemes()["U+3070"]
+    kept = [card(p, refs.to_char(p), head, members) for head, members in refs.graphemes().items()
+            for p in members if head != "U+3070"]
+    held = [card("U+3070", "ば", "U+3070", ["U+3070"])] + [
+        card(p, refs.to_char(p), "U+3070", family) for p in family if p not in ("U+3070", "U+1B09E U+3099")]
+    with reference_input.writing(path) as db:
+        reference_input.replace(db, "characters", held + kept)
+    got = run(module, monkeypatch, path)
+    rows = {p: json.loads(d) for p, d in got.execute(
+        f"SELECT code_point, data FROM characters WHERE code_point IN ({','.join('?' * len(family))})", family)}
+    assert set(rows) == set(family)
+    assert all(rows[p]["grapheme"]["code_point"] == "U+3070" for p in family)
+    assert all({m["code_point"] for m in rows[p]["grapheme"]["members"]} == set(family) for p in family)
+    assert got.execute("SELECT character FROM characters WHERE code_point='U+1B09E U+3099'").fetchone() == ("\U0001B09E゙",)
+    assert got.execute("SELECT count(*) FROM characters").fetchone() == (len(kept) + len(family),)
+    assert sorted(got.execute(f"SELECT * FROM characters WHERE code_point NOT IN ({','.join('?' * len(family))})",
+                              family)) == sorted(kept), "the other cards stay as they were"
+    got.close()
+    # A rerun finds every card in step with the table.
+    with reference_input.writing(path) as db:
+        assert module.changed(module.held_cards(db)) == []
 
 
 def family_members() -> list[str]:
@@ -94,83 +135,6 @@ def test_a_stored_analysis_from_before_the_family_grew_is_not_reused(module, mon
     live = {"U+9084": {"detail": {"visual_analysis": covered}}}
     reused = module._visual_analysis("U+2E7C3", "U+9084", live, members)
     assert reused["members"] == members and reused["status"] == "ready"
-
-
-def test_a_family_that_only_moves_its_head_is_still_a_change(module, tmp_path, monkeypatch):
-    path = tmp_path / "before.tsv"
-    path.write_text("code_point\tgrapheme\nU+0041\tU+0041\nU+0042\tU+0041\n", encoding="utf-8")
-    previous = module.previous_families(path)
-    monkeypatch.setattr(module.refs, "graphemes", lambda: {"U+0041": ["U+0041", "U+0042"]})
-    assert module.changed(previous) == []
-    monkeypatch.setattr(module.refs, "graphemes", lambda: {"U+0042": ["U+0041", "U+0042"]})
-    assert module.changed(previous) == ["U+0041", "U+0042"]
-
-
-def test_a_character_the_earlier_table_lacked_is_a_change(module, tmp_path, monkeypatch):
-    path = tmp_path / "before.tsv"
-    path.write_text("code_point\tgrapheme\nU+0041\tU+0041\n", encoding="utf-8")
-    previous = module.previous_families(path)
-    monkeypatch.setattr(module.refs, "graphemes", lambda: {"U+0041": ["U+0041"], "U+17000": ["U+17000"]})
-    assert module.changed(previous) == ["U+17000"]
-
-
-def insert_forms(db):
-    db.execute("INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision) "
-               "VALUES('U+2E7C3','𮟃','x',0,0,'{}',0,'r'),('U+9084','還','y',0,0,'{}',0,'r')")
-    db.execute("INSERT INTO form_clusters(id,family,label,count,coherence,shape_position,size_position,"
-               "representatives) VALUES('k1','U+2E7C3','c',1,0.9,0,0,'[]')")
-    db.execute("INSERT INTO form_units(id,family,cluster,rank,similarity,split) "
-               "VALUES('f1','U+2E7C3','k1',0,1.0,'')")
-    db.execute("INSERT INTO form_decisions(seq,id,at,actor,kind,family,revision,units,note) "
-               "VALUES(1,'d1','a','x','set','U+2E7C3','r','[]','')")
-    db.execute("INSERT INTO form_bases(id,character,family) VALUES('g1','𮟃','U+2E7C3')")
-
-
-def test_the_swap_moves_forms_codes_and_a_local_records_grapheme(module):
-    db = schema()
-    for point, char in (("U+9084", "還"), ("U+2E7C3", "𮟃")):
-        grapheme = {"code_point": "U+9084", "members": [{"code_point": "U+9084", "char": "還"},
-                                                        {"code_point": "U+2E7C3", "char": "𮟃"}]}
-        db.execute("INSERT INTO characters VALUES(?,?,'',?,'{}')", (point, char, json.dumps({"grapheme": grapheme})))
-    unit(db, "l1", "local", "𮟃", "U+2E7C3", {"grapheme": "U+2E7C3"})
-    # the head was already right on this corpus row, but its family_members still names the old family
-    unit(db, "c2", "corpus", "還", "U+9084", {"grapheme": "U+9084", "family_members": []})
-    insert_forms(db)
-    members = [{"code_point": "U+9084", "char": "還"}, {"code_point": "U+2E7C3", "char": "𮟃"}]
-    data = {"grapheme": {"code_point": "U+9084", "members": members}}
-    fill, swap = module.statements({"U+9084": (data, {}), "U+2E7C3": (data, {})})
-    db.executescript("".join(fill) + "".join(swap))
-    assert json.loads(db.execute("SELECT data FROM units WHERE id='l1'").fetchone()[0]) == {"grapheme": "U+9084"}
-    corpus = json.loads(db.execute("SELECT data FROM units WHERE id='c2'").fetchone()[0])
-    assert corpus == {"grapheme": "U+9084", "family_members": members}
-    assert db.execute("SELECT family FROM form_units").fetchone() == ("U+9084",)
-    assert db.execute("SELECT family FROM form_clusters").fetchone() == ("U+9084",)
-    assert db.execute("SELECT family FROM form_decisions").fetchone() == ("U+9084",)
-    assert db.execute("SELECT family FROM form_bases").fetchone() == ("U+9084",)
-    # the moved head's row folds into the head it joins, whose row stays
-    assert db.execute("SELECT code_point FROM form_families").fetchall() == [("U+9084",)]
-
-
-def test_a_sequence_the_site_lacks_is_inserted_and_its_crops_follow(module):
-    """𛂞 + U+3099 has no row on the site yet: the swap writes it with its aliases, and files a crop
-    written as it, and the バ crops, under ば."""
-    db = schema()
-    ha = "\U0001B09E゙"
-    for point, char in (("U+3070", "ば"), ("U+30D0", "バ")):
-        db.execute("INSERT INTO characters VALUES(?,?,'',?,'{}')", (point, char, json.dumps({"grapheme": {"code_point": point}})))
-    unit(db, "l1", "local", "バ", "U+30D0", {})
-    unit(db, "l2", "local", ha, "U+1B09E U+3099", {})
-    data = {"grapheme": {"code_point": "U+3070", "members": refs.grapheme_info("U+3070")["members"]}}
-    rows = {point: (data, {}) for point in ("U+3070", "U+30D0", "U+1B09E U+3099")}
-    fill, swap = module.statements(rows)
-    db.executescript("".join(fill) + "".join(swap))
-    assert db.execute("SELECT character,json_extract(data,'$.grapheme.code_point') FROM characters"
-                      " WHERE code_point='U+1B09E U+3099'").fetchone() == (ha, "U+3070")
-    assert {row[0] for row in db.execute("SELECT query FROM aliases WHERE code_point='U+1B09E U+3099'")} == {
-        ha, "u+1b09e u+3099"}
-    assert db.execute("SELECT family FROM units ORDER BY id").fetchall() == [("U+3070",), ("U+3070",)]
-    db.executescript("".join(fill) + "".join(swap))  # a rerun inserts nothing twice
-    assert db.execute("SELECT count(*) FROM characters").fetchone() == (3,)
 
 
 def test_a_fresh_row_is_shaped_like_a_published_one(module):

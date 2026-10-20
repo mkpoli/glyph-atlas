@@ -74,25 +74,14 @@ TABLES = {
     "form_units": (("id,family,cluster,rank,similarity,image,split,clustered,cluster_form,cluster_issue,cluster_character,"
                     "cluster_family,glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_character,glyph_family,form,issue,"
                     "issue_character,written_family"), ["id"], 8000),
-    # Character reference data (reference.py); the chunk of a SIZED table is its probe.
+    # The cards, which build.py numbers graphemes from and `export_graphemes.py --catalogue` seeds the reference
+    # input with at the cutover; the chunk of a SIZED table is its probe.
     "characters": ("code_point,character,name,data,detail,json_extract(data,'$.grapheme.code_point') AS head", ["code_point"], 1000),
-    "character_variants": ("a,b,relation,source,detail,written,widens", ["a", "b", "relation", "source"], 8000),
-    "character_derived": ("a,forms", ["a"], 1000),
-    "component_variants": ("a,b,count,pairs", ["a", "b"], 1000),
-    "grapheme_writers": ("writer,grapheme,own", ["writer", "grapheme"], 8000),
-    "words": ("id,language,reading,class", ["id"], 8000),
-    "word_spellings": ("word,spelling,source,locator,tier,word_by,basis,related,statement,documents,occurrences",
-                       ["word", "spelling", "source", "locator"], 2000),
-    "han_ids": ("char,sequences,shapes", ["char"], 4000),
-    "han_components": ("component,tier,size,code_point,n,direct", ["component", "tier", "size", "code_point"], 8000),
-    "han_component_names": ("query,component,total", ["query"], 8000),
 }
 
 # Tables read by bytes: the expression giving a row's size.
 SIZED = {
     "characters": "length(CAST(data AS BLOB))+length(CAST(detail AS BLOB))",
-    "character_derived": "length(CAST(forms AS BLOB))",
-    "component_variants": "length(CAST(pairs AS BLOB))",
 }
 READ_BYTES = 4 * 1024 ** 2
 

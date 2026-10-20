@@ -15,8 +15,8 @@ read:
 - `book_characters`: each occurrence by its integer crop id; one whose unit the site never had (the
   mirror lacks it) keeps its text id in `unit`, as the old site listed it. Whether the site shows it with its review state is derived when a route reads it
   (the query is in 0005), since every round changes it;
-- `site`: the publication's `collection`, `corpus_index`, `review_epoch`, `variant_sources` and
-  `word_sources`.
+- `site`: the publication's `collection`, `corpus_index` and `review_epoch`; the citations
+  `variant_sources` and `word_sources` are `reference.py`'s.
 
 Facts about a document that is not a book of the new layout are left out with a count. Only what
 differs from the local copy is sent, in parts named by their content and confirmed by their stamps in
@@ -45,13 +45,13 @@ from build import HERE, OUT
 from load_history import GROUP, SCHEMA, built, deliver, row_statements, stamped
 from publish import applied, lit, query, send
 
-SITE_KEYS = ("collection", "corpus_index", "review_epoch", "variant_sources", "word_sources")
+SITE_KEYS = ("collection", "corpus_index", "review_epoch")
 DATE_COLS = ("book", "axis", "kind", "start", "end", "precision", "qualifier", "uncertain", "text", "label", "status",
              "calendar", "conversion", "source")
 CHARACTER_COLS = ("book", "ord", "crop", "unit", "data")
-# Each table books.py owns, with its key.
-TABLES = {"book_dates": (DATE_COLS, ("book", "axis")), "book_characters": (CHARACTER_COLS, ("book", "ord")),
-          "site": (("key", "value"), ("key",))}
+# Each table books.py writes, with its key and the rows of it books.py owns.
+TABLES = {"book_dates": (DATE_COLS, ("book", "axis"), ""), "book_characters": (CHARACTER_COLS, ("book", "ord"), ""),
+          "site": (("key", "value"), ("key",), f" WHERE key IN ({','.join(repr(k) for k in SITE_KEYS)})")}
 SOURCES = {"document_dating": ("document", *DATE_COLS[1:]), "corpus_documents": ("document", "title"),
            "document_characters": ("document", "ord", "unit", "data"), "metadata": ("key", "value")}
 
@@ -105,7 +105,7 @@ def translate(atlas, mirror):
     out = sqlite3.connect(path)
     out.executescript("CREATE TABLE books(id INTEGER PRIMARY KEY, title TEXT NOT NULL, origin TEXT NOT NULL);\n"
                       + "\n".join(f"CREATE TABLE {t}({','.join(cols)}, PRIMARY KEY({','.join(key)})) WITHOUT ROWID;"
-                                  for t, (cols, key) in TABLES.items()))
+                                  for t, (cols, key, _) in TABLES.items()))
     books = dict(atlas.execute("SELECT key, id FROM books"))
     left = {}
 
@@ -178,10 +178,10 @@ def statements(books, atlas):
     wanted = dict(books.execute("SELECT id, title FROM books"))
     add("books", [[f"UPDATE books SET title = {lit(wanted.get(b))} WHERE id = {b};"]
                   for b in sorted(now) if now[b] != wanted.get(b)])
-    for table, (cols, key) in TABLES.items():
+    for table, (cols, key, owned) in TABLES.items():
         names = ",".join(f'"{c}"' for c in cols)
         k = [cols.index(c) for c in key]
-        held = {tuple(r[i] for i in k): r for r in atlas.execute(f"SELECT {names} FROM {table}")} if has(atlas, table) else {}
+        held = {tuple(r[i] for i in k): r for r in atlas.execute(f"SELECT {names} FROM {table}{owned}")} if has(atlas, table) else {}
         new = {tuple(r[i] for i in k): r for r in books.execute(f"SELECT {names} FROM {table}")}
         rows = [[remove(table, cols, key, r)] for kk, r in sorted(held.items()) if kk not in new]
         removed = len(rows)

@@ -3,7 +3,8 @@
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/reference.py          # translate, report, send nothing
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/reference.py --send   # and load it
 
-Reads the copies `source-<table>.sqlite` (pull.py) and writes two things.
+Reads the reference input (`glyph_atlas.reference_input`, which `export_graphemes.py`,
+`export_character_variants.py` and `export_components_cloudflare.py` write) and writes two things.
 
 R2 objects under `v3/reference/`, gzipped JSON, each read by key:
 
@@ -41,7 +42,8 @@ A shard is the first hex digits of the SHA-256 of its key as UTF-8 text: the hea
 
 D1 rows (`migrations-atlas/0004_reference.sql`) for what a query filters, joins or sorts on:
 `component_variants`, `words`, `word_spellings` and the search's `names` (from `aliases`, each name
-under its card's one code point). Cards name characters by `graphemes` id: a
+under its card's one code point); and the citations of the sources behind them, `variant_sources` and
+`word_sources` in `site` (0005), whose other keys `books.py` writes. Cards name characters by `graphemes` id: a
 card's character or family head the layout lacks is numbered as the publisher numbers one, and every grapheme takes its card's family head.
 Graphemes are written as `publish.py` writes them, through `char_text`.
 
@@ -76,9 +78,11 @@ import subprocess
 import sys
 from collections import defaultdict
 
-from build import HERE, OUT, ROOT, char_text
+from build import OUT, ROOT, char_text
 from load_history import built, deliver, row_statements, stamped
 from publish import BUCKET, CF, R2_REMOTE, applied, lit, send, upload
+
+from glyph_atlas import reference_input
 
 SCHEMA = CF / "migrations-atlas" / "0004_reference.sql"
 PREFIX = "v3/reference/"
@@ -88,27 +92,20 @@ LIST_PAGE = 500
 SUMMARY_DIGITS, IDS_DIGITS = 3, 2
 # Rows per group of statements; a group is never split across parts.
 GROUP = 500
-SOURCES = {
-    "characters": ("code_point", "character", "name", "data", "detail", "head"),
-    "character_variants": ("a", "b", "relation", "source", "detail", "written", "widens"),
-    "character_derived": ("a", "forms"),
-    "grapheme_writers": ("writer", "grapheme", "own"),
-    "component_variants": ("a", "b", "count", "pairs"),
-    "words": ("id", "language", "reading", "class"),
-    "word_spellings": ("word", "spelling", "source", "locator", "tier", "word_by", "basis", "related", "statement",
-                       "documents", "occurrences"),
-    "han_ids": ("char", "sequences", "shapes"),
-    "han_components": ("component", "tier", "size", "code_point", "n", "direct"),
-    "han_component_names": ("query", "component", "total"),
-    "aliases": ("query", "code_point", "rank"),
-}
-# The tables reference.py owns, with their keys, in the order their rows load.
+SOURCES = reference_input.COLUMNS
+# The site values reference.py owns; `books.py` writes the other keys of `site`.
+SITE_KEYS = ("variant_sources", "word_sources")
+# The tables reference.py owns, with their keys and the rows of them it owns, in the order their rows load.
 TABLES = {
-    "component_variants": (("a", "b", "count"), ("a", "b")),
-    "words": (SOURCES["words"], ("id",)),
-    "word_spellings": (SOURCES["word_spellings"], ("word", "spelling", "source", "locator")),
-    "names": (("text", "code_point", "rank"), ("text", "code_point")),
+    "component_variants": (("a", "b", "count"), ("a", "b"), None),
+    "words": (SOURCES["words"], ("id",), None),
+    "word_spellings": (SOURCES["word_spellings"], ("word", "spelling", "source", "locator"), None),
+    "names": (("text", "code_point", "rank"), ("text", "code_point"), None),
+    "site": (("key", "value"), ("key",), f"key IN ({','.join(repr(k) for k in SITE_KEYS)})"),
 }
+SITE = "CREATE TABLE site(key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;"
+# A card's family head, as the cards were read from the site.
+CARD_HEAD = "json_extract(data, '$.grapheme.code_point')"
 SAMPLE_LISTS = ("representatives", "anchors")
 # The Japanese readings a kana search finds kanji by (scripts/build_kanji_readings.py).
 READINGS = ROOT / "data" / "vocab" / "kanji-readings.json"
@@ -118,15 +115,23 @@ READING_CARDS = 49
 PLAIN_NAME = re.compile(r"^(.*IDEOGRAPH-)([0-9A-F]{4,6})$")
 
 
+INPUT = None
+
+
 def source(table):
-    path = HERE / f"source-{table}.sqlite"
-    if not path.exists():
-        sys.exit(f"{path.name} is missing; pull.py {table} copies it")
-    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    have = {r[1] for r in db.execute(f'PRAGMA table_info("{table}")')}
-    if lacking := [c for c in SOURCES[table] if c not in have]:
-        sys.exit(f"{path.name} lacks {', '.join(lacking)}; pull.py --fresh {table} copies it again")
-    return db
+    """The reference input, once its table is known to be written."""
+    global INPUT
+    if INPUT is None:
+        INPUT = reference_input.reading()
+    if INPUT.execute("SELECT 1 FROM written WHERE name=?", (table,)).fetchone() is None:
+        sys.exit(f"no generator has written {table} into the reference input; {GENERATORS[table]} writes it")
+    return INPUT
+
+
+GENERATORS = {"characters": "export_graphemes.py --catalogue", "aliases": "export_graphemes.py --catalogue", "han_components": "export_components_cloudflare.py",
+              "han_component_names": "export_components_cloudflare.py",
+              **{t: "export_character_variants.py" for t in ("character_variants", "character_derived", "component_variants",
+                                                            "grapheme_writers", "words", "word_spellings", "han_ids", "sources")}}
 
 
 def shard(key, digits):
@@ -258,7 +263,7 @@ def translate(atlas, mirror, path, objects):
     disk, so the run holds one object at a time."""
     path.unlink(missing_ok=True)
     out = sqlite3.connect(f"file:{path}", uri=True)
-    out.executescript(SCHEMA.read_text())
+    out.executescript(SCHEMA.read_text() + SITE)
     scratch_path = path.with_name(path.stem + "-scratch.sqlite")
     scratch_path.unlink(missing_ok=True)
     scratch = sqlite3.connect(scratch_path)
@@ -287,7 +292,7 @@ def translate(atlas, mirror, path, objects):
 
     def card_rows():
         for code_point, character, name, data_text, head in source("characters").execute(
-                "SELECT code_point, character, name, data, head FROM characters"):
+                f"SELECT code_point, character, name, data, {CARD_HEAD} FROM characters"):
             data = json.loads(data_text)
             family = data.get("grapheme") or {}
             char = char_text(character)
@@ -393,6 +398,11 @@ def translate(atlas, mirror, path, objects):
         cols = SOURCES[table]
         out.executemany(f'INSERT INTO "{table}" VALUES({",".join("?" * len(cols))})',
                         source(table).execute(f'SELECT {",".join(cols)} FROM "{table}"'))
+    cited = dict(source("sources").execute("SELECT key, value FROM sources"))
+    out.executemany("INSERT INTO site VALUES(?,?)", [(k, cited[k]) for k in SITE_KEYS if k in cited])
+    for k in SITE_KEYS:
+        if k not in cited:
+            notes[f"site value {k} absent from the reference input"] += 1
     out.commit()
 
     changed = {gid: head for gid, head in heads.items() if gid in g.heads and g.heads[gid] != head}
@@ -515,18 +525,19 @@ def statements(ref, atlas, new, new_heads, changed):
                  for text, gid in new.items()] + [[f"UPDATE graphemes SET head = {head} WHERE id = {gid};"]
                                                   for gid, head in sorted(changed.items())]
     written["graphemes"] = add(graphemes) * 2
-    held = has(atlas, "words")
-    if held:
+    attached = has(atlas, "words") or has(atlas, "site")
+    if attached:
         ref.execute("ATTACH ? AS held", (f"file:{OUT / 'atlas.sqlite'}?mode=ro",))
-    for table, (cols, key) in TABLES.items():
+    for table, (cols, key, owned) in TABLES.items():
         names = ",".join(f'"{c}"' for c in cols)
         order = ",".join(f'"{c}"' for c in key)
         on = " AND ".join(f'h."{c}" = w."{c}"' for c in key)
-        if held:
-            gone = ref.execute(f'SELECT {order} FROM (SELECT {names} FROM held."{table}" EXCEPT SELECT {names} FROM main."{table}") h '
+        if has(atlas, table):
+            mine = f'(SELECT * FROM held."{table}" WHERE {owned})' if owned else f'held."{table}"'
+            gone = ref.execute(f'SELECT {order} FROM (SELECT {names} FROM {mine} EXCEPT SELECT {names} FROM main."{table}") h '
                                f'WHERE NOT EXISTS (SELECT 1 FROM main."{table}" w WHERE {on}) ORDER BY {order}')
-            come = ref.execute(f'SELECT {names}, EXISTS (SELECT 1 FROM held."{table}" h WHERE {on}) FROM '
-                               f'(SELECT {names} FROM main."{table}" EXCEPT SELECT {names} FROM held."{table}") w ORDER BY {order}')
+            come = ref.execute(f'SELECT {names}, EXISTS (SELECT 1 FROM {mine} h WHERE {on}) FROM '
+                               f'(SELECT {names} FROM main."{table}" EXCEPT SELECT {names} FROM {mine}) w ORDER BY {order}')
         else:
             gone, come = [], ref.execute(f'SELECT {names}, 0 FROM "{table}" ORDER BY {order}')
         rows = ([remove_row(table, key, r)] for r in gone)
@@ -534,7 +545,7 @@ def statements(ref, atlas, new, new_heads, changed):
                    + row_statements(table, list(cols), list(key), r[:-1]) for r in come)
         indexes = ref.execute("SELECT count(*) FROM pragma_index_list(?, 'main') WHERE origin <> 'pk'", (table,)).fetchone()[0]
         written[table] = (add(rows) + add(changes)) * (1 + indexes)
-    if held:
+    if attached:
         ref.execute("DETACH held")
     return groups, written, hashed.hexdigest()[:12]
 
@@ -668,6 +679,8 @@ def main():
         build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
+        if not has(atlas, "site"):
+            sys.exit("the local copy lacks site (migration 0005); books.py --send applies it")
         migrate(atlas)
         finish(atlas)
 

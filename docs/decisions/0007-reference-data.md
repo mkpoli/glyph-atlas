@@ -88,5 +88,9 @@ layout lacks. The component index left D1: as 1.46M rows it was 30 MB and a firs
   fewer. Reading every card from its family's shard took up to 8 shards a query at 8 and 47 at 48,
   the kana readings the most. The variant families add 51 MB gzipped to the card objects (largest
   19 KB without its detail) and the readings 2,839 shards, 14 MB (largest 63 KB).
-- The tools that export these sources (`export_character_variants.py`, `export_components_cloudflare.py`)
-  still write the old database; they move to this load with the Worker.
+- The generators write one local input, `reference-input.sqlite` (`glyph_atlas.reference_input`), and
+  this load reads it: `export_graphemes.py` the cards and their search aliases (a full export's, then
+  the family parts the character table changes), `export_character_variants.py` the graph, its derived
+  tier, the writers, the words and spellings, the IDS and their citations, `export_components_cloudflare.py`
+  the component index. None of them reads or writes the old database. The citations load into `site`
+  (`variant_sources`, `word_sources`), the only rows of it this load owns.
