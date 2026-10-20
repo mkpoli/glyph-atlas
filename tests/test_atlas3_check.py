@@ -103,7 +103,9 @@ def translated(root, monkeypatch, sources, history, **extra):
             unit_suspects=[("ex:a1", 0.9, "い", "あ", "0,0,10,10"), ("ex:gone", 0.8, "う", "え", None)],
             unit_shapes=[("ex:a2", 3), ("ex:gone", 4)],
             forms=[("fm:1", "rp:1", "u1", "2026-10-01T00:00:00Z")],
-            representations=[("rp:1", "unicode", "あ", None, None)])
+            representations=[("rp:1", "unicode", "あ", None, None)],
+            ledger_submissions=[("u1:a", "u1", "{}", json.dumps({"submission": "u1:a", "subject": "ex:a1", "replaced": None}),
+                                 "2026-10-01T00:00:00Z")])
     sources(root, **{**tables, **extra})
     code, _out = history(monkeypatch, root)
     assert code == 0
@@ -136,6 +138,7 @@ def test_a_correct_history_translation_passes(layout, monkeypatch):  # noqa: F81
     ("UPDATE events SET actor = 3 - actor WHERE id = 1", "every events row is translated"),
     ("UPDATE submissions SET actor = 3 - actor WHERE id = 1", "every submissions row is translated"),
     ("UPDATE assertion_premises SET role = 'other'", "every assertion_premises row is translated"),
+    ("UPDATE ledger_submissions SET response = json_remove(response, '$.crop')", "every ledger_submissions row is translated"),
     ("DELETE FROM rejections", "every rejections row is translated"),
     ("UPDATE rejections SET at = at + 1", "every rejections row is translated"),
     ("DELETE FROM corpus_follow", "every corpus_follow row is translated"),
