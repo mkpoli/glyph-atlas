@@ -1,5 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte'
+  import { page } from '$app/state'
   import { addPasskey as registerPasskey, authClient, passkeys } from '../lib/auth.js'
   import { useSession } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -9,7 +10,8 @@
   const session = useSession()
   const NAMES = { github: 'GitHub', google: 'Google', discord: 'Discord', line: 'LINE', kakao: 'Kakao' }
   const COOLDOWN = 30
-  let stage = $state('start'), email = $state(''), code = $state(''), busy = $state(''), error = $state('')
+  // A sign-in through another site that came back while saving was paused lands here with the reason.
+  let stage = $state('start'), email = $state(''), code = $state(''), busy = $state(''), error = $state(page.url.searchParams.get('error') === 'paused' ? t('client.paused') : '')
   let last = $state(null), passkey = $state({ supported: false, autofill: false }), wait = $state(0)
   let codeInput = $state(), timer
   const carried = $derived(session.state.user?.anonymous ? session.state.user.name : null)
