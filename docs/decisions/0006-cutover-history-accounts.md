@@ -89,6 +89,12 @@ written only at the URL boundary.
   an event recording it. The marks are recomputed from `seen` and `skips` by the old triggers' rules
   (current box, submission not undone, two or more skippers for `hard`) and compared with every live
   `unit_marks` row; where they differ, the live mark is moved.
+  A client's revision check passes over mark events: a crop whose revision moved since the client read
+  it only by marks still stands as it saw it, as the old site, whose revision marks never moved.
+- **An undo is an event** of kind `undo` (0009) naming the event it reverses in `reverses`, and setting
+  what the crop held before that event, which each event keeps beside its own values (`was_state`,
+  `was_issue`, `was_x`..`was_h`; the label before is `shown`). A restored pending state takes the
+  crop's mark as it is now, and an undone round's seen and skipped crops take theirs without it.
 - `favourites(user, crop, at)`.
 - The claim ledger keeps its tables. A claim on a crop gains `crop INTEGER` and `cut INTEGER` beside its
   `subject`; crop evidence becomes `(crop, cut)`. `current_claims` is translated row for row, then the
