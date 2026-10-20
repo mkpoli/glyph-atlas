@@ -9,7 +9,7 @@ import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
 import { formsFor, setForm, withForms } from './cropForms';
-import { setWord, withWords, wordChoices } from './cropWords';
+import { setWord, wordChoices } from './cropWords';
 import { categoryOf, idsCharacter, isGugyeol } from './category';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
@@ -20,13 +20,15 @@ import { Problem, READ_BUDGET, RETRY_AFTER, StorageUnavailable, described, retri
 import { pausedCallback, pausedResponse, pausedSignOut, writes, writesPaused } from './freeze';
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
 import { honkokuPage } from './honkoku';
-import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
-import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
+import { FORMATS, KINDS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from './citation';
+import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
 import { MediaIncomplete, mediaResponse } from './atlas3Media';
+import { cropRoute } from './routes/crop';
+import { cropVersion, redrawLimits } from './cropRecords';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
-export { dateClaimsQuery, dateStatsQuery, datingQuery, tallyDates } from './dating';
+export { dateStatsQuery, datingQuery, tallyDates } from './dating';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
 export { cropFormsQuery, formNamesQuery } from './cropForms';
 type Json = Record<string, any>;
@@ -192,82 +194,30 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
 function compact(row: UnitRow): Json {
   return { ...listing(parse(row.data)), ...(row.document ? { document: row.document } : {}), ...(row.style ? { style: row.style } : {}) };
 }
-// A crop's record with its evidence version (0047).
-const record = (row: UnitRow): Json => {
-  const data = parse(row.data);
-  return { ...data, crop_version: row.crop_version ?? cropVersion(row.id, data), crop_editable: row.origin !== 'corpus' && Boolean(redrawLimits(data)) };
-};
-// A crop's evidence version as `units.crop_version` computes it, for a corpus glyph that has no row yet:
-// its id, its image checksum and its box in whole pixels; a box of anything else has none. JSON.parse
-// reads a whole number written as a real (`1.0`) as an integer, which SQLite does not, so a claim names
-// the version its row gives once the row is written.
-export function cropVersion(id: string, data: Json): string | null {
-  const pixels = data.image_sha256 ?? data.source_revision ?? null;
-  if (typeof pixels !== 'string') return null;
-  const box = data.box;
-  if (box == null) return `${id}@${pixels}@`;
-  const values = ['x', 'y', 'w', 'h'].map(key => box[key]);
-  return values.every(Number.isSafeInteger) ? `${id}@${pixels}@${values.join(',')}` : null;
-}
-// Every evidence version a crop has had here, oldest first (0047); `current` is the one it has now.
-// One range of `crop_version_unit`, and a crop recut more often than this lists its first ones.
-const VERSIONS_LISTED = 200;
-export const cropVersionsQuery = () => `SELECT id,pixels,box,document,image,at FROM crop_versions WHERE unit=? ORDER BY at,id LIMIT ${VERSIONS_LISTED}`;
-async function cropVersions(env: Env, id: string) {
-  const row = await unit(env, id);
-  const versions = (await env.DB.prepare(cropVersionsQuery()).bind(row.id).all<Json>()).results;
-  return { id: row.id, current: record(row).crop_version, versions };
-}
-// A citation of a crop at one of its evidence versions (`?v=`, as `versionToken` names it; the current
-// one without), a grapheme or a form, as CSL-JSON, BibTeX or Hayagriva (`?format=`). It is read again
+// A citation of a grapheme or a form as CSL-JSON, BibTeX or Hayagriva (`?format=`). It is read again
 // once the catalogue version moves (`catalogueStamps`), and on each new day (in UTC), the date it was accessed.
 const CITE_TTL = 3600;
 const CITABLE_CHARACTER = /^U\+[0-9A-Fa-f]{4,6}(-U\+[0-9A-Fa-f]{4,6})*$/;
 const CITE_TYPES: Record<Format, string> = { csl: 'application/vnd.citationstyles.csl+json; charset=utf-8',
   bibtex: 'application/x-bibtex; charset=utf-8', hayagriva: 'application/yaml; charset=utf-8' };
 async function cite(env: Env, ctx: ExecutionContext, url: URL, kind: string, raw: string): Promise<Response> {
-  if (!(KINDS as readonly string[]).includes(kind)) throw new Problem(404, 'Unknown endpoint.');
+  if (kind === 'crop' || !(KINDS as readonly string[]).includes(kind)) throw new Problem(404, 'Unknown endpoint.');
   let id: string;
   try { id = decodeURIComponent(raw) } catch { throw new Problem(404, 'Nothing is published at this address.') }
   const token = url.searchParams.get('v'), format = (url.searchParams.get('format') ?? 'csl') as Format;
   if (id.length > 512 || (token !== null && !/^[0-9a-z]{6}$/.test(token)) || !FORMATS.includes(format)) throw new Problem(422, 'Invalid citation address.');
-  if (kind !== 'crop' && !CITABLE_CHARACTER.test(id)) throw new Problem(404, 'Character not found.');
+  if (!CITABLE_CHARACTER.test(id)) throw new Problem(404, 'Character not found.');
   const now = new Date(), day: Day = [now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate()];
   const key = new Request(`${url.origin}/atlas/cite/${kind}/${encodeURIComponent(id)}?v=${token ?? ''}&f=${format}&d=${day.join('-')}&c=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return new Response(cached.body, { headers: { ...Object.fromEntries(cached.headers), 'cache-control': 'no-cache' } });
-  let entry: Entry;
-  if (kind === 'crop') {
-    const row = await unit(env, id), data = record(row);
-    const honkoku = honkokuPage(data, row.document ?? data.source?.document_id ?? null);
-    let version: string | null = data.crop_version ?? null;
-    if (token !== null) {
-      const versions = (await env.DB.prepare(cropVersionsQuery()).bind(row.id).all<{ id: string }>()).results.map(r => r.id);
-      version = citedVersion(row.id, token, version ? [...versions, version] : versions);
-      if (!version) throw new Problem(404, 'This crop has no version by that name.');
-    }
-    entry = cropEntry({ ...data, ...(honkoku ? { honkoku_url: honkoku } : {}) }, row.origin === 'corpus' ? 'corpus' : 'collection', version);
-  } else entry = characterEntry(kind as 'grapheme' | 'form', (await known(env, id.split('-').join(' '))).detail);
+  const entry = characterEntry(kind as 'grapheme' | 'form', (await known(env, id.split('-').join(' '))).detail);
   const body = format === 'bibtex' ? bibtex(entry, url.origin, day) + '\n' : format === 'hayagriva' ? hayagriva(entry, url.origin, day)
     : JSON.stringify([csl(entry, url.origin, day)], null, 2);
   // The edge keeps a copy for the day it is dated; a browser asks again, so a citation is never dated a day late.
   const headers = { 'content-type': CITE_TYPES[format], 'x-content-type-options': 'nosniff', ...OPEN };
   ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { ...headers, 'cache-control': `public, max-age=${CITE_TTL}` } })));
   return new Response(body, { headers: { ...headers, 'cache-control': 'no-cache' } });
-}
-// A crop's record for its inspector, with its form, word, book's dates and the claims they rest on.
-const inspected = async (env: Env, row: UnitRow): Promise<Json> => {
-  const found = (await withWords(env, await withForms(env, [record(row)])))[0];
-  const document = row.document ?? found.source?.document_id ?? null;
-  const honkoku = honkokuPage(found, document);
-  return { ...found, ...(honkoku ? { honkoku_url: honkoku } : {}), ...await documentDates(env, document) };
-};
-// The page rectangle a reviewer may redraw a local crop's box in, in page pixels: the context the
-// inspector shows, which lies inside the page. A corpus glyph's box belongs to its source, so it has none.
-export function redrawLimits(data: Json): { x: number; y: number; w: number; h: number } | null {
-  const c = data?.context_box, s = data?.source_scale;
-  if (!data?.context || !c || !data.crop_box || !Array.isArray(s) || !(s[0] > 0) || !(s[1] > 0)) return null;
-  return { x: Math.floor(c.x / s[0]), y: Math.floor(c.y / s[1]), w: Math.ceil((c.x + c.w) / s[0]) - Math.floor(c.x / s[0]), h: Math.ceil((c.y + c.h) / s[1]) - Math.floor(c.y / s[1]) };
 }
 // A redrawn box as the inspector sends it: whole page pixels, at least two each way, inside the page view.
 export function redrawnBox(value: Json, data: Json): { x: number; y: number; w: number; h: number } {
@@ -897,70 +847,6 @@ async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
   const body = { text: value, size, lead, inside: held.flatMap(result => result.results.map((row: Json) => row.text as string)),
     longer: size === 2 ? shown(longer.results) : [], siblings: size === 2 || size === 3 ? shown(siblings.results) : [], limit: RUN_NEAR_MAX };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
-  return body;
-}
-// A crop's neighbours on its line, in reading order: the pairs `unit_ngrams` holds are followed forward
-// by their first crop (the primary key) and backward by their second (`unit_ngram_second`), at most
-// `LINE_REACH` steps each way, one row a step. The length test is kept off the backward step's index (`+`), or the planner would start from every pair. No sort is asked of SQLite; the offsets order them.
-const LINE_REACH = 4;
-export const lineQuery = () => `WITH RECURSIVE ahead(id,d) AS (SELECT ?1,0 UNION ALL
-    SELECT p.second,a.d+1 FROM ahead a CROSS JOIN unit_ngrams p ON p.first=a.id AND p.size=2 WHERE a.d<${LINE_REACH}),
-  behind(id,d) AS (SELECT ?1,0 UNION ALL
-    SELECT p.first,b.d-1 FROM behind b CROSS JOIN unit_ngrams p ON p.second=b.id AND +p.size=2 WHERE b.d>-${LINE_REACH})
-  SELECT n.d AS d,u.id AS id,u.data AS data FROM (SELECT * FROM ahead UNION ALL SELECT * FROM behind WHERE d<0) n
-    CROSS JOIN units u ON u.id=n.id AND +u.origin='local'`;
-// What the inspector's line strip needs of each neighbour: the crop as the review path judges it
-// (revision and pixels), the label it carries now, and what is painted in its place until it loads. A crop with no neighbours has an empty line.
-export function lineItems(rows: { d: number; id: string; data: string }[]): Json[] {
-  const seen = new Set<string>();
-  const items = [...rows].sort((a, b) => a.d - b.d).flatMap(row => {
-    if (seen.has(row.id)) return [];
-    seen.add(row.id);
-    const d = parse(row.data);
-    return [{ id: row.id, offset: row.d, label: d.label ?? null, image: d.image ?? null, revision: d.revision, image_sha256: d.image_sha256 ?? null,
-      state: d.state ?? null, issue: d.issue ?? null, tone: d.tone ?? null, image_size: d.image_size ?? null }];
-  });
-  return items.length > 1 ? items : [];
-}
-// The edge keeps a copy per catalogue version, as for a book's characters; a review or an undo makes a new key.
-async function line(env: Env, ctx: ExecutionContext, url: URL, id: string) {
-  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
-  const cached = await caches.default.match(key);
-  if (cached) return await cached.json() as Json;
-  const rows = await env.DB.prepare(lineQuery()).bind(id).all<{ d: number; id: string; data: string }>();
-  const body = { id, reach: LINE_REACH, items: lineItems(rows.results) };
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
-  return body;
-}
-// A page as the page view shows it: its published record (0078) with each of its crops as the site holds
-// it now, label and box, so a review or a redrawn box shows on the page once the catalogue version moves. The crops are read by id in
-// the record's order, one primary-key lookup each; a crop retired or not yet on the site is left out. The
-// photo is a request of the holder's IIIF image service, its longer side at most PAGE_IMAGE pixels, laid
-// over the page pixels the boxes are given in; a page no service serves is shown as its boxes alone.
-const PAGE_IMAGE = 3000;
-export const pageCropsQuery = () => `SELECT u.id AS id,u.character AS label,u.data AS data FROM json_each(?1) j
-  CROSS JOIN units u ON u.id=j.value AND +u.origin='local' ORDER BY j.key`;
-export function pageView(record: Json, rows: { id: string; label: string | null; data: string }[]): Json {
-  const { crops: _, service, page_number, document, title, ...rest } = record;
-  return { ...rest, document_id: document, document_title: title, seq: page_number - 1, service: service ?? null,
-    image_url: service ? `${service}/full/!${PAGE_IMAGE},${PAGE_IMAGE}/0/default.jpg` : null, drawable: false,
-    units: rows.map(row => {
-      const d = parse(row.data);
-      return { id: row.id, line_id: d.line_id ?? null, box: d.box ?? null, character: row.label, code_point: null,
-        image: d.image ?? null, state: d.state ?? null, issue: d.issue ?? null, tone: d.tone ?? null, image_size: d.image_size ?? null };
-    }) };
-}
-// The edge keeps a copy per catalogue version, as for a crop's line.
-async function sourcePage(env: Env, ctx: ExecutionContext, url: URL, id: string) {
-  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
-  const cached = await caches.default.match(key);
-  if (cached) return await cached.json() as Json;
-  const row = await env.DB.prepare('SELECT data FROM pages WHERE id=?').bind(id).first<{ data: string }>();
-  if (!row) throw new Problem(404, 'This page is not in the published collection.');
-  const record = parse(row.data);
-  const rows = await env.DB.prepare(pageCropsQuery()).bind(JSON.stringify(record.crops ?? [])).all<{ id: string; label: string | null; data: string }>();
-  const body = pageView(record, rows.results);
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
   return body;
 }
 async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: string | null) {
@@ -2420,13 +2306,6 @@ async function reviews(env:Env,all:boolean){
       expected_revision:r.expected_revision,publication_snapshot:parse(r.publication_snapshot)}
   }),publication:await meta(env,'published_at')};
 }
-/** Whether a suggestions request names the pixels the unit holds now: a corpus glyph by its source
- *  revision, a crop by its page hash, and a crop published without a hash by its image. */
-export function samePixels(q: URLSearchParams, origin: string, data: Json): boolean {
-  if (origin === 'corpus') return q.get('source_revision') === data.source_revision;
-  return data.image_sha256 ? q.get('image_sha256') === data.image_sha256 : q.get('image') === data.image;
-}
-
 const routes = {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     const url=new URL(request.url),path=url.pathname,q=url.searchParams;
@@ -2529,32 +2408,20 @@ const routes = {
       if(path==='/atlas/runs/related')return json(await runRelated(env,ctx,url));
       if(path==='/atlas/runs'){const timing=new Timing();const body=await runOccurrences(env,ctx,url,timing);return json(body,200,{'server-timing':timing.header()});}
       if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
-      if(path==='/atlas/corpus/character')return json(await inspected(env,await unit(env,q.get('id')||'')));
+      const cropped=await cropRoute(env,ctx,url);
+      if(cropped)return cropped;
       if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
       if(path==='/atlas/dates/stats')return json(await dateStats(env,ctx,url));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
       if(document){let id:string;try{id=decodeURIComponent(document[1])}catch{throw new Problem(404,'No characters are published for this document.')}
         return await documentCharacters(env,url,id,ctx)}
-      const visualSample=path.match(/^\/layers\/visual-groups\/samples\/([^/]+)\/image$/);
-      if(visualSample){const data=parse((await unit(env,decodeURIComponent(visualSample[1]))).data);
-        if(!data.image)throw new Problem(404,'Image not found.');
-        return Response.redirect(new URL(data.image,url).href,302)}
       if(path==='/atlas/claims')return json(await claimsOf(env,text(q.get('subject'),512,'subject',true)!));
       if(path==='/atlas/ledger'||path==='/atlas/ledger.json')return json(await ledgerPage(env,q,integer),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-ledger.json"'}:{});
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviews(env,q.get('include_processed')==='true'),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-character-reviews.json"'}:{});
-      const neighbours=path.match(/^\/atlas\/characters\/([^/]+)\/line$/);
-      if(neighbours){let id:string;try{id=decodeURIComponent(neighbours[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
-        return json(await line(env,ctx,url,id),200,{'cache-control':'no-cache'})}
-      const shown=path.match(/^\/atlas\/pages\/([^/]+)$/);
-      if(shown){let id:string;try{id=decodeURIComponent(shown[1])}catch{throw new Problem(404,'This page is not in the published collection.')}
-        return json(await sourcePage(env,ctx,url,id),200,{'cache-control':'no-cache'})}
       const cited=path.match(/^\/atlas\/cite\/([^/]+)\/([^/]+)$/);
       if(cited)return await cite(env,ctx,url,cited[1],cited[2]);
-      const versions=path.match(/^\/atlas\/characters\/([^/]+)\/versions$/);
-      if(versions){let id:string;try{id=decodeURIComponent(versions[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
-        return json(await cropVersions(env,id))}
       if(path==='/atlas/similar/model')return json(await modelInfo(env));
       if(path.startsWith('/atlas/ids/')){
         const drawing=await drawingFile(env,path.slice('/atlas/ids/'.length),request,ctx);
@@ -2569,15 +2436,6 @@ const routes = {
       const similar=path.match(/^\/atlas\/characters\/([^/]+)\/similar$/);
       if(similar){let id:string;try{id=decodeURIComponent(similar[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
         return json(await similarCrops(env,id,integer(q,'limit',12,20),itemsFor))}
-      const character=path.match(/^\/atlas\/characters\/([^/]+)(\/suggestions(?:\/context)?)?$/);
-      if(character){const row=await unit(env,decodeURIComponent(character[1]));
-        if(character[2]){
-          const data=parse(row.data);
-          if(q.get('revision')!==String(row.revision)||!samePixels(q,row.origin,data))throw new Problem(409,'Character changed.');
-          return json(parse(character[2].endsWith('/context')?row.context:row.visual));
-        }
-        return json(await inspected(env,row));
-      }
       if(path==='/layers/word-choices')return json({items:await wordChoices(env,text(q.get('q')??'',128,'reading')??'',[...(q.get('c')??'')].slice(0,4))});
       if(path==='/layers/suggest')return json(await suggest(env,q));
       if(path==='/layers/structure')return json(await structureOf(env,ctx,url.origin,q.get('c')||''));

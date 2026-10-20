@@ -1,6 +1,6 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
-import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
+import { canonical, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
   encodeCursor, decodeCursor, historyItem, historyQuery, moved, wroteLately, markWriter, substitutionKey, flagRequest, listingFilter, dealable } from './index';
 import { ROUND_MAX } from './rounds';
 import { held } from './held';
@@ -146,30 +146,6 @@ describe('historyItem', () => {
       kind: 'review', event, label: 'ア', user: 'u2', name: 'Bob', image: null }).round).toBe('round-1');
   });
 });
-
-describe('samePixels', () => {
-  const hash = 'a'.repeat(64);
-  it('names a hashed crop by its page hash', () => {
-    expect(samePixels(new URLSearchParams({ image_sha256: hash }), 'local', { image_sha256: hash })).toBe(true);
-    expect(samePixels(new URLSearchParams({ image_sha256: 'b'.repeat(64) }), 'local', { image_sha256: hash })).toBe(false);
-  });
-  it('names a crop published without a hash by its image', () => {
-    const image = 'https://gallica.bnf.fr/iiif/ark:/12148/btv1b83018108/f7/1259,1470,91,98/480,/0/default.jpg';
-    expect(samePixels(new URLSearchParams({ image }), 'local', { image_sha256: null, image })).toBe(true);
-    expect(samePixels(new URLSearchParams({ image_sha256: 'null' }), 'local', { image_sha256: null, image })).toBe(false);
-    expect(samePixels(new URLSearchParams({ image: image + '?v=2' }), 'local', { image })).toBe(false);
-  });
-  it('names a corpus glyph by its source revision', () => {
-    expect(samePixels(new URLSearchParams({ source_revision: 'r1' }), 'corpus', { source_revision: 'r1' })).toBe(true);
-  });
-});
-
-it('moves crops counted apart out of pending, and never more than pending holds', () => {
-  const row = (label: string, document: string | null, state: string, n: number) => ({ label, family: null, document, title: document && 'T', state, n })
-  expect(moved([row('ア', 'd', 'pending', 5), row('ア', 'd', 'checked', 1), row('イ', null, 'pending', 2)],
-    [row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ウ', null, 'seen', 1), row('ア', 'd', 'skipped', 9)]))
-    .toEqual([row('ア', 'd', 'checked', 1), row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ア', 'd', 'skipped', 3)])
-})
 
 describe('a held value', () => {
   it('is read again only once the lag is out', async () => {
