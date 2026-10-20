@@ -253,6 +253,7 @@ def test_an_event_on_a_tombstone_takes_its_cut_from_the_tombstone_record(layout,
     assert history(monkeypatch, root)[0] == 0
     (root / "out" / "media").mkdir(exist_ok=True)
     assert check(monkeypatch) == 0
+    assert "info tombstones with no record, so no revision to check their events against (1)" in report(root)
     db = sqlite3.connect(root / "out" / "history.sqlite")
     db.execute("UPDATE events SET cut = -1")
     db.commit()
@@ -359,6 +360,18 @@ def test_a_mark_event_names_the_latest_round_that_showed_the_crop(layout, monkey
     local.commit()
     assert check(monkeypatch) == 1
     assert line in report(root)
+
+
+def test_at_the_cutover_the_count_of_marks_left_must_be_recorded(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    translated(root, monkeypatch, sources, history)
+    load(publish, remote, monkeypatch)
+    for left in (root / "out" / "history-load").glob("*-marks/left"):
+        left.unlink()
+    assert check(monkeypatch) == 0
+    check(monkeypatch, "--cutover")
+    assert "FAIL (1) every marked crop has its mark as its state" in report(root)
+    assert "-marks/left, the count of marks the load left" in report(root)
 
 
 def test_tied_rounds_mark_the_crop_by_the_highest_submission_id(layout, monkeypatch):  # noqa: F811

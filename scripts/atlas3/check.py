@@ -30,14 +30,15 @@ History (decision record 0006), when `out/history.sqlite` exists (history.py):
   ranking counts.
 - Cuts: a crop with no collected record is cut 0 only if corpus_units has it, and a tombstone is
   checked against its retired bundle entry; every crop cited at cut -1 has that cut, with its earlier
-  box, in its bundle once the cuts are published; no event is past its crop's revision.
+  box, in its bundle once the cuts are published; no event is past its crop's revision (a tombstone
+  with no record has none, and is listed).
 - Marks: recomputed from seen marks and skips by the old triggers' rules and compared with the live
   `unit_marks`; the live ones move where they differ, so the differences are listed, not failed.
   history-marks.json holds every live mark.
 - After the load: the local copy holds every row load_history.py wrote, equal to history.sqlite's;
   rows loaded with no marks set fail; each marked crop that was pending has its mark as state, with an
   event at its revision and cut by the latest round not undone that showed it there (of rounds at one
-  time, the highest submission id).
+  time, the highest submission id); at the cutover the count of marks the load left must be recorded.
 - Accounts: with `accounts.sqlite`, every `actors.user` and `favourites.user` names a user, and every
   row (each session among them) is in the parts accounts.py load wrote for the copy.
 """
@@ -582,7 +583,7 @@ def check_history(report, name):
     t.done()
 
     # No event is past its crop's revision: the crops row's, or a retired crop's last live record's.
-    problems, unrecorded = [], 0
+    problems, unrecorded = [], []
     for cid, revision in history.execute("SELECT crop, max(revision) FROM events GROUP BY crop"):
         r = atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
         if r is None:
@@ -590,11 +591,11 @@ def check_history(report, name):
             r = (cuts.revision[text[0]],) if text and text[0] in cuts.revision else None
         if r is None:
             # A tombstone with no record left on the old site has no revision to stay below.
-            unrecorded += 1
+            unrecorded.append(f"{cid}: events up to revision {revision}")
         elif revision > r[0]:
             problems.append(f"{cid}: event at revision {revision}, crop at {r[0]}")
-    report.check("no event is past its crop's revision" + (f" ({unrecorded} tombstones with no record)" if unrecorded else ""),
-                 problems)
+    report.check("no event is past its crop's revision", problems)
+    report.info("tombstones with no record, so no revision to check their events against", unrecorded)
 
     # Seen marks and skips, and the marks the old triggers would give: the crop's current box, a
     # round not undone, two or more skippers for `hard`.
@@ -711,6 +712,8 @@ def check_history(report, name):
         recorded = OUT / "history-load" / f"{name}-marks" / "left"
         if recorded.exists() and int(recorded.read_text()) != left:
             problems.append(f"{left} marked crops not pending or retired, the load left {recorded.read_text()}")
+        elif not recorded.exists() and report.strict:
+            problems.append(f"no {recorded.relative_to(HERE)}, the count of marks the load left")
         report.check(f"every marked crop has its mark as its state ({left} not pending at the load keep theirs)", problems)
 
     t = Table(report, history, "favourites", listed)
