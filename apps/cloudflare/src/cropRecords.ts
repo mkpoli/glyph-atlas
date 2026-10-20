@@ -50,12 +50,13 @@ export const MARKS = (c: string) => `(SELECT count(*) FROM events e WHERE e.crop
     FROM events f WHERE f.crop=${c}.id AND NOT ${MARKED('f')}),-1))`;
 // One crop's row with everything its record takes from D1, every join a key lookup and every event read a
 // range of `event_crop`. Each event holds the crop's values after it, undos (`reverses`) included, so a
-// flagged crop's issue is its last event's. A pending redraw was made by the first event of the run that holds its box (`redrawn_at`). A verdict (kind below 3: match, wrong, unsure, 0003) that no undo
+// flagged crop's issue is its last event's: the one a batch correction left it with (`kept_issue`), else its
+// answer's. A pending redraw was made by the first event of the run that holds its box (`redrawn_at`). A verdict (kind below 3: match, wrong, unsure, 0003) that no undo
 // reverses gives the record its category; the latest such event that named a character (`named`) makes the
 // crop's label its written character.
 export const recordQuery = () => `SELECT c.id,c.kind,c.book,s.key AS state,c.revision,c.cut,k.key AS category,g.text AS char,
   h.text AS head,p.key AS production,pg.rev,pg.key AS page_key,b.key AS document,r.x,r.y,r.w,r.h,
-  CASE WHEN s.key='flagged' THEN (SELECT i.key FROM events e LEFT JOIN codes i ON i.field='issue' AND i.code=e.issue
+  CASE WHEN s.key='flagged' THEN (SELECT i.key FROM events e LEFT JOIN codes i ON i.field='issue' AND i.code=coalesce(e.kept_issue,e.issue)
     WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) END AS issue,
   CASE WHEN r.x IS NOT NULL THEN (SELECT min(e.at) FROM events e WHERE e.crop=c.id AND e.x=r.x AND e.y=r.y AND e.w=r.w AND e.h=r.h
     AND e.revision>coalesce((SELECT max(f.revision) FROM events f WHERE f.crop=c.id
