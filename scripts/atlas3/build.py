@@ -237,6 +237,8 @@ def main():
 
     # Page bundles.
     shutil.rmtree(OUT / "pages", ignore_errors=True)
+    # A new layout starts with no vote objects; `v3/votes/` in R2 is emptied with it.
+    shutil.rmtree(OUT / "votes", ignore_errors=True)
     (OUT / "pages").mkdir()
     for key, p in pages.items():
         facts = page_facts.get(key)
