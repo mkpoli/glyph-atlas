@@ -1,6 +1,9 @@
 // Catalogue snapshots are published offline. All online review mutations use D1 transactions.
 import { ROUND_MAX } from './rounds';
 import { held } from './held';
+import { body, canonical, compose, graphemeKey, graphemeText, literal, single, text, writtenCharacter } from './input';
+export { canonical, compose, literal, single } from './input';
+export { GRAPHEME_KEY, graphemeKey, graphemeText, writtenCharacter } from './input';
 import { RECORD_MAX, readRecords, recordKey, type RecordPointer } from './records';
 export { recordRanges } from './records';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
@@ -70,27 +73,9 @@ export const jamoSyllable = (value: string) => {
   if (i < chars.length && toneMark(chars[i])) i++;
   return i === chars.length;
 };
-// NFC composes a voiced kana, but it also maps each CJK compatibility ideograph to its unified twin,
-// and those are characters of their own here; they are kept as written.
-const COMPATIBILITY = /[\uF900-\uFAFF\u{2F800}-\u{2FA1F}]/u;
-export function compose(value: string): string {
-  let out = '', run = '';
-  for (const c of value) { if (COMPATIBILITY.test(c)) { out += run.normalize('NFC') + c; run = '' } else run += c }
-  return out + run.normalize('NFC');
-}
-export function literal(value: string): string {
-  const trimmed = value.trim();
-  // A key is written with spaces in the API and with hyphens in a page address.
-  if (/^(U\+[0-9a-f]{4,6})([\s-]+U\+[0-9a-f]{4,6})*$/i.test(trimmed)) {
-    try { return compose(trimmed.split(/[\s-]+/).map(v => String.fromCodePoint(parseInt(v.slice(2), 16))).join('')) }
-    catch { throw new Problem(422, 'Invalid code point.') }
-  }
-  return compose(trimmed);
-}
 export const hira = (value: string) => [...literal(value)].map(c => {
   const n = c.codePointAt(0)!; return n >= 0x30a1 && n <= 0x30f6 ? String.fromCodePoint(n - 0x60) : c;
 }).join('');
-export const single = (value: string) => [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(value)].length === 1;
 function integer(q: URLSearchParams, key: string, fallback: number, max = 1000000) {
   const n = Number(q.get(key) ?? fallback);
   if (!Number.isSafeInteger(n) || n < 0 || n > max) throw new Problem(422, `Invalid ${key}.`);
@@ -400,15 +385,6 @@ export function judgeBatch(batch: { character: string | null; line: boolean }, a
   }
   return { chosen, refused, unchanged };
 }
-// A written character a reviewer names: one character, which may carry combining marks or a variation
-// selector, and may be a private-use code point (구결자 are encoded there). Control, format, surrogate
-// and separator code points are refused, as is a combining mark with no base.
-export function writtenCharacter(value: string): string {
-  const written = literal(value);
-  if (!written || /[\p{Cc}\p{Cf}\p{Cs}\p{Z}]/u.test(written) || /^\p{M}/u.test(written) || !single(written))
-    throw new Problem(422, 'Choose one written character.');
-  return written;
-}
 /** Units by id, read eight at a time; an id the collection does not hold maps to its 404. */
 async function unitsById(env: Env, ids: string[]): Promise<Map<string, UnitRow | Problem>> {
   const found = new Map<string, UnitRow | Problem>();
@@ -518,16 +494,6 @@ async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL) {
 async function corpusGraphemes(env: Env, ctx: ExecutionContext, origin: string) {
   const { items } = await corpusCharacters(env, ctx, new URL(`${origin}/atlas/corpus/characters?production=all`)) as { items: [string, string, number][] };
   return new Map(items.map(([label, grapheme]) => [label, grapheme]));
-}
-export const GRAPHEME_KEY = /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/;
-// A grapheme key (`U+306F`) as the text it names.
-export const graphemeText = (key: string) => key.split(' ').map(point => String.fromCodePoint(parseInt(point.slice(2), 16))).join('');
-// A grapheme key as a request names it, upper-cased with single spaces, or null when none is named.
-export function graphemeKey(value: string | null | undefined): string | null {
-  const key = text(value, 256, 'grapheme')?.toUpperCase().split(/\s+/).join(' ');
-  if (!key) return null;
-  if (!GRAPHEME_KEY.test(key) || key.split(' ').some(p => parseInt(p.slice(2), 16) > 0x10FFFF)) throw new Problem(422, 'Invalid grapheme.');
-  return key;
 }
 // The characters a grapheme is written as, by the character table: は's family is は, ハ and its
 // hentaigana, and ば's is ば, バ and each hentaigana of は with U+3099. A key that names no family
@@ -1968,23 +1934,6 @@ async function documentCharacters(env: Env, url: URL, document: string, ctx: Exe
   ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60' } })));
   return served(body);
 }
-async function body(request: Request): Promise<Json> {
-  const origin=request.headers.get('origin');
-  if(origin && origin!==new URL(request.url).origin) throw new Problem(403,'Use the review form on this site.');
-  if(!request.headers.get('content-type')?.startsWith('application/json')) throw new Problem(415,'Expected JSON.');
-  const reader=request.body?.getReader();
-  if(!reader) throw new Problem(422,'Empty request.');
-  let size=0; const chunks:Uint8Array[]=[];
-  while(true) {const {done,value}=await reader.read();if(done)break;size+=value.length;
-    if(size>128*1024){await reader.cancel();throw new Problem(413,'Review is too large.')}chunks.push(value)}
-  const bytes=new Uint8Array(size);let pos=0;for(const part of chunks){bytes.set(part,pos);pos+=part.length}
-  try{return JSON.parse(new TextDecoder().decode(bytes))}catch{throw new Problem(422,'Invalid JSON.')}
-}
-function text(value: unknown, max: number, name: string, required=false): string | null {
-  if(value==null && !required) return null;
-  if(typeof value!=='string'||value.length>max||(required&&!value.trim()))throw new Problem(422,`Invalid ${name}.`);
-  return compose(value.trim());
-}
 // A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
 const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp,
   family:async(env,char)=>(await known(env,char).catch(()=>null))?.data.grapheme?.code_point||cp(char)};
@@ -2000,11 +1949,6 @@ const ledgerTools: LedgerTools = {fail:(status,message)=>{throw new Problem(stat
       await materialise(env,row as UnitRow&{fresh:CorpusRow}).run();row=await unit(env,row.id);
     }
     return {id:row.id,version:row.crop_version??null}}};
-export function canonical(value: unknown): string {
-  if(value===null||typeof value!=='object')return JSON.stringify(value);
-  if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
-  return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical((value as Json)[k])).join(',')+'}';
-}
 function validateAnswer(answer: Json, current: Json, round: boolean, corpus=false, batch=false, line=false) {
   if(!Number.isSafeInteger(answer.revision)||answer.revision!==current.revision)throw new Problem(409,'This character changed. Reload it.');
   if(corpus?answer.source_revision!==current.source_revision:answer.image_sha256!==current.image_sha256)throw new Problem(409,'The source image changed. Reload it.');
