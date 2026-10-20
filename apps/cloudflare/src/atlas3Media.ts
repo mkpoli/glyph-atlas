@@ -2,55 +2,88 @@
 // (scripts/atlas3/media_map.py), with no D1 read.
 
 // A shard maps the rest of each key, after its first three hex digits, to [object index, offset, size]
-// and a content type when it is not WebP. Shards only grow, so a copy may lack an image published in
-// the last few minutes.
+// and a content type when it is not WebP. Shards only grow, so a held copy may lack an image published
+// since it was read: a key it lacks sends one read straight to R2 before the answer is 404.
 type Shard = { objects: string[]; keys: Record<string, [number, number, number, string?]> };
 export type Place = { object: string; offset: number; size: number; type: string };
-const SHARD_SECONDS = 300, SHARDS_HELD = 32;
+const SHARD_SECONDS = 300, SHARDS_HELD = 32, RECHECK_SECONDS = 30;
 // A mapped image whose pack is not in R2: the publication stopped between pack and map.
 export class MediaIncomplete extends Error {}
 export const shardKey = (key: string) => `v3/media/${key.slice(0, 3)}.json.gz`;
 
-async function readShard<T>(env: Env, name: string, ctx?: ExecutionContext): Promise<T | null> {
-  // The edge copy is keyed by a URL on this site that no route answers.
-  const cacheKey = new Request(`https://glyphatlas.org/_shards/${name}`);
-  let bytes: ArrayBuffer | null = null;
-  const cached = await caches.default.match(cacheKey);
-  if (cached) bytes = await cached.arrayBuffer();
-  else {
-    const object = await env.MEDIA.get(name);
-    if (!object) return null;
-    bytes = await object.arrayBuffer();
-    const copy = new Response(bytes, { headers: { 'cache-control': `public, max-age=${SHARD_SECONDS}` } });
-    const put = caches.default.put(cacheKey, copy);
-    if (ctx) ctx.waitUntil(put); else await put;
-  }
+// The edge copy is keyed by a URL on this site that no route answers, and says when it expires.
+const edgeKey = (name: string) => new Request(`https://glyphatlas.org/_shards/${name}`);
+const EXPIRES = 'x-shard-expires';
+type Read<T> = { shard: T | null; expires: number };
+
+async function decoded<T>(bytes: ArrayBuffer): Promise<T> {
   return await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json() as T;
 }
 
-// A reader of gzipped JSON shards in R2 MEDIA. The edge and the isolate keep a shard SHARD_SECONDS,
-// the isolate the last SHARDS_HELD it read.
+const settle = (put: Promise<unknown>, ctx?: ExecutionContext) => ctx ? (ctx.waitUntil(put), undefined) : put;
+
+// A shard from the edge copy, or from R2 when there is none, it has expired, or when `direct`.
+async function readShard<T>(env: Env, name: string, now: number, direct: boolean, ctx?: ExecutionContext): Promise<Read<T>> {
+  const cacheKey = edgeKey(name);
+  if (!direct) {
+    const cached = await caches.default.match(cacheKey);
+    const expires = Number(cached?.headers.get(EXPIRES));
+    if (cached && expires > now) return { shard: await decoded<T>(await cached.arrayBuffer()), expires };
+  }
+  const bytes = await (await env.MEDIA.get(name))?.arrayBuffer() ?? null;
+  const expires = now + SHARD_SECONDS * 1000;
+  if (!bytes) return { shard: null, expires };
+  const shard = await decoded<T>(bytes);
+  await settle(caches.default.put(cacheKey, new Response(bytes, { headers: {
+    'cache-control': `public, max-age=${SHARD_SECONDS}`, [EXPIRES]: String(expires) } })), ctx);
+  return { shard, expires };
+}
+
+// A reader of gzipped JSON shards in R2 MEDIA that answers what `find` takes from one, or null. The
+// isolate keeps the last SHARDS_HELD shards it read until their edge copy expires, at most SHARD_SECONDS.
+// When `find` finds nothing, the shard is read once more straight from R2, at most once per shard per
+// RECHECK_SECONDS in this isolate, and that copy replaces both held ones.
 export function heldShards<T>() {
-  const held = new Map<string, { at: number; read: Promise<T | null> }>();
-  return (env: Env, name: string, ctx?: ExecutionContext, now = Date.now()): Promise<T | null> => {
-    const entry = held.get(name);
-    if (entry && now - entry.at < SHARD_SECONDS * 1000) { held.delete(name); held.set(name, entry); return entry.read; }
-    const fresh = { at: now, read: readShard<T>(env, name, ctx) };
-    fresh.read.catch(() => { if (held.get(name) === fresh) held.delete(name); });
+  const held = new Map<string, { expires: number; read: Promise<Read<T>> }>();
+  const rechecked = new Map<string, { at: number; done: Promise<unknown> }>();
+  const hold = (env: Env, name: string, now: number, direct: boolean, ctx?: ExecutionContext) => {
+    const entry = { expires: Infinity, read: readShard<T>(env, name, now, direct, ctx) };
+    entry.read.then(read => { entry.expires = read.expires; }, () => { if (held.get(name) === entry) held.delete(name); });
     held.delete(name);
-    held.set(name, fresh);
+    held.set(name, entry);
     while (held.size > SHARDS_HELD) held.delete(held.keys().next().value!);
-    return fresh.read;
+    return entry;
+  };
+  return async <R>(env: Env, name: string, find: (shard: T) => R | undefined, ctx?: ExecutionContext,
+    now = Date.now()): Promise<R | null> => {
+    let entry = held.get(name);
+    if (entry && now < entry.expires) { held.delete(name); held.set(name, entry); }
+    else entry = hold(env, name, now, false, ctx);
+    const { shard } = await entry.read;
+    const found = shard ? find(shard) : undefined;
+    if (found !== undefined) return found;
+    const last = rechecked.get(name);
+    if (last && now - last.at < RECHECK_SECONDS * 1000) await last.done.catch(() => {});
+    else {
+      if (rechecked.size >= 4096) for (const [k, v] of rechecked) if (now - v.at >= RECHECK_SECONDS * 1000) rechecked.delete(k);
+      const fresh = hold(env, name, now, true, ctx);
+      rechecked.set(name, { at: now, done: fresh.read });
+      await fresh.read;
+    }
+    const again = await held.get(name)?.read.catch(() => null);
+    return (again?.shard ? find(again.shard) : undefined) ?? null;
   };
 }
 const mediaShard = heldShards<Shard>();
 
 export async function mediaPlace(env: Env, key: string, ctx?: ExecutionContext, now = Date.now()): Promise<Place | null> {
   if (!/^[a-f0-9]{64}$/.test(key)) return null;
-  const shard = await mediaShard(env, shardKey(key), ctx, now), found = shard?.keys[key.slice(3)];
-  if (!shard || !found) return null;
-  const [index, offset, size, type] = found;
-  return { object: shard.objects[index], offset, size, type: type ?? 'image/webp' };
+  const rest = key.slice(3);
+  return await mediaShard(env, shardKey(key), shard => {
+    if (!Object.hasOwn(shard.keys ?? {}, rest)) return undefined;
+    const [index, offset, size, type] = shard.keys[rest];
+    return { object: shard.objects[index], offset, size, type: type ?? 'image/webp' };
+  }, ctx, now);
 }
 
 // The image as the live route answers it: immutable under its key, with its key as the ETag. Null

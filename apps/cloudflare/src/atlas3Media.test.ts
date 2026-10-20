@@ -8,6 +8,7 @@ const edge = new Map<string, Response>();
 (globalThis as any).caches = { default: {
   match: async (request: Request) => edge.get(request.url)?.clone(),
   put: async (request: Request, response: Response) => { edge.set(request.url, response.clone()); },
+  delete: async (request: Request) => edge.delete(request.url),
 } };
 beforeEach(() => edge.clear());
 
@@ -16,12 +17,13 @@ function setup() {
   // Each test takes its own prefix, since shards are held per isolate.
   const prefix = (0x100 + ++n).toString(16), key = prefix + 'a'.repeat(61), png = prefix + 'b'.repeat(61);
   const pack = new Uint8Array(64).map((_, i) => i);
-  const reads: string[] = [];
+  const reads: string[] = [], failing = new Set<string>();
   const objects = new Map<string, Uint8Array>([
     [shardKey(key), gzipSync(JSON.stringify({ objects: ['packs/p.bin'], keys: { ['a'.repeat(61)]: [0, 8, 4], ['b'.repeat(61)]: [0, 16, 2, 'image/png'] } }))],
     ['packs/p.bin', pack]]);
   const MEDIA = { get: async (name: string, options?: { range?: { offset: number; length: number } }) => {
     reads.push(name);
+    if (failing.has(name)) throw new Error('R2 is unavailable');
     const bytes = objects.get(name);
     if (!bytes) return null;
     const body = options?.range ? bytes.slice(options.range.offset, options.range.offset + options.range.length) : bytes;
@@ -30,7 +32,7 @@ function setup() {
   } };
   const waits: Promise<unknown>[] = [];
   const ctx = { waitUntil: (p: Promise<unknown>) => waits.push(p) } as unknown as ExecutionContext;
-  return { env: { MEDIA } as unknown as Env, key, png, reads, ctx, waits };
+  return { env: { MEDIA } as unknown as Env, key, png, reads, ctx, waits, objects, failing };
 }
 
 describe('new-layout images', () => {
@@ -65,6 +67,38 @@ describe('new-layout images', () => {
     edge.clear();
     await mediaPlace(env, key, undefined, Date.now() + 301_000);
     expect(reads.filter(name => name === shardKey(key))).toHaveLength(2);
+  });
+
+  it('serve a key published after the shard was read, from one read straight to R2', async () => {
+    const { env, key, reads, objects } = setup(), name = shardKey(key), later = key.slice(0, 3) + 'd'.repeat(61);
+    const now = Date.now();
+    await mediaPlace(env, key, undefined, now);
+    objects.set(name, gzipSync(JSON.stringify({ objects: ['packs/p.bin'], keys: { ['a'.repeat(61)]: [0, 8, 4], ['d'.repeat(61)]: [0, 24, 3] } })));
+    expect(await mediaPlace(env, later, undefined, now + 1000)).toEqual({ object: 'packs/p.bin', offset: 24, size: 3, type: 'image/webp' });
+    expect(reads.filter(r => r === name)).toHaveLength(2);
+    // The edge copy is the new one, and the isolate holds it.
+    expect(await mediaPlace(env, later, undefined, now + 2000)).not.toBeNull();
+    expect(reads.filter(r => r === name)).toHaveLength(2);
+  });
+
+  it('read a shard straight from R2 for missing keys at most once per 30 seconds', async () => {
+    const { env, key, reads } = setup(), name = shardKey(key), bogus = (c: string) => key.slice(0, 3) + c.repeat(61);
+    const now = Date.now();
+    await mediaPlace(env, key, undefined, now);
+    expect(await Promise.all(['c', 'e', 'f'].map(c => mediaPlace(env, bogus(c), undefined, now + 1000)))).toEqual([null, null, null]);
+    expect(await mediaPlace(env, bogus('9'), undefined, now + 20_000)).toBeNull();
+    expect(reads.filter(r => r === name)).toHaveLength(2);
+    expect(await mediaPlace(env, bogus('9'), undefined, now + 32_000)).toBeNull();
+    expect(reads.filter(r => r === name)).toHaveLength(3);
+  });
+
+  it('hold a shard read from the edge only until the edge copy expires', async () => {
+    const { env, key, reads, objects } = setup(), name = shardKey(key), now = Date.now();
+    edge.set(`https://glyphatlas.org/_shards/${name}`, new Response(objects.get(name)!.slice(), { headers: { 'x-shard-expires': String(now + 60_000) } }));
+    await mediaPlace(env, key, undefined, now);
+    expect(reads.filter(r => r === name)).toHaveLength(0);
+    await mediaPlace(env, key, undefined, now + 61_000);
+    expect(reads.filter(r => r === name)).toHaveLength(1);
   });
 });
 
