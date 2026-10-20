@@ -3,17 +3,15 @@
 
 // A shard maps the rest of each key, after its first three hex digits, to [object index, offset, size]
 // and a content type when it is not WebP. Shards only grow, so a copy may lack an image published in
-// the last few minutes: the edge and an isolate keep a shard SHARD_SECONDS, an isolate the last
-// SHARDS_HELD.
+// the last few minutes.
 type Shard = { objects: string[]; keys: Record<string, [number, number, number, string?]> };
 export type Place = { object: string; offset: number; size: number; type: string };
 const SHARD_SECONDS = 300, SHARDS_HELD = 32;
 // A mapped image whose pack is not in R2: the publication stopped between pack and map.
 export class MediaIncomplete extends Error {}
-const held = new Map<string, { at: number; read: Promise<Shard | null> }>();
 export const shardKey = (key: string) => `v3/media/${key.slice(0, 3)}.json.gz`;
 
-async function readShard(env: Env, name: string, ctx?: ExecutionContext): Promise<Shard | null> {
+async function readShard<T>(env: Env, name: string, ctx?: ExecutionContext): Promise<T | null> {
   // The edge copy is keyed by a URL on this site that no route answers.
   const cacheKey = new Request(`https://glyphatlas.org/_shards/${name}`);
   let bytes: ArrayBuffer | null = null;
@@ -27,23 +25,29 @@ async function readShard(env: Env, name: string, ctx?: ExecutionContext): Promis
     const put = caches.default.put(cacheKey, copy);
     if (ctx) ctx.waitUntil(put); else await put;
   }
-  return await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json() as Shard;
+  return await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json() as T;
 }
 
-export async function mediaPlace(env: Env, key: string, ctx?: ExecutionContext, now = Date.now()): Promise<Place | null> {
-  if (!/^[a-f0-9]{64}$/.test(key)) return null;
-  const name = shardKey(key);
-  let entry = held.get(name);
-  if (entry && now - entry.at < SHARD_SECONDS * 1000) { held.delete(name); held.set(name, entry); }
-  else {
-    const fresh = { at: now, read: readShard(env, name, ctx) };
+// A reader of gzipped JSON shards in R2 MEDIA. The edge and the isolate keep a shard SHARD_SECONDS,
+// the isolate the last SHARDS_HELD it read.
+export function heldShards<T>() {
+  const held = new Map<string, { at: number; read: Promise<T | null> }>();
+  return (env: Env, name: string, ctx?: ExecutionContext, now = Date.now()): Promise<T | null> => {
+    const entry = held.get(name);
+    if (entry && now - entry.at < SHARD_SECONDS * 1000) { held.delete(name); held.set(name, entry); return entry.read; }
+    const fresh = { at: now, read: readShard<T>(env, name, ctx) };
     fresh.read.catch(() => { if (held.get(name) === fresh) held.delete(name); });
     held.delete(name);
     held.set(name, fresh);
     while (held.size > SHARDS_HELD) held.delete(held.keys().next().value!);
-    entry = fresh;
-  }
-  const shard = await entry.read, found = shard?.keys[key.slice(3)];
+    return fresh.read;
+  };
+}
+const mediaShard = heldShards<Shard>();
+
+export async function mediaPlace(env: Env, key: string, ctx?: ExecutionContext, now = Date.now()): Promise<Place | null> {
+  if (!/^[a-f0-9]{64}$/.test(key)) return null;
+  const shard = await mediaShard(env, shardKey(key), ctx, now), found = shard?.keys[key.slice(3)];
   if (!shard || !found) return null;
   const [index, offset, size, type] = found;
   return { object: shard.objects[index], offset, size, type: type ?? 'image/webp' };
