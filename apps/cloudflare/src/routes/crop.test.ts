@@ -100,7 +100,7 @@ function setup() {
     -- d: a review redrew its box, then a round marked it seen, which moved its revision; the old site's
     -- revision did not count marks.
     INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state,x,y,w,h) VALUES
-      (7,${d},1,0,0,1,7,1760000000000,0,5,0,101,11,22,33),(6,${d},2,0,0,1,6,1760000100000,3,5,3,NULL,NULL,NULL,NULL);
+      (8,${d},0,-1,0,1,8,1750000000000,0,5,0,101,11,22,33),(7,${d},1,0,0,1,7,1760000000000,0,5,0,101,11,22,33),(6,${d},2,0,0,1,6,1760000100000,3,5,3,NULL,NULL,NULL,NULL);
     INSERT INTO reviews(crop,gen,at,state,x,y,w,h) VALUES(${d},1,1,3,101,11,22,33);
     INSERT INTO form_clusters(id,key,family,label,count,coherence,shape_position,size_position,list,form,issue,character,written_family,decision)
       VALUES(9,'U+7FC1:35ced6e49b','U+7FC1','翁',1,1,0,0,'9-x','𦐈',NULL,NULL,'U+7FC1','dec');

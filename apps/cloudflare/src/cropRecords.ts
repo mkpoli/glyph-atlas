@@ -55,15 +55,15 @@ export const MARKS = (c: string) => `(SELECT count(*) FROM events e WHERE e.crop
 // range of `event_crop`. Each event holds the crop's values after it, undos (`reverses`) included, so a
 // flagged crop's issue is its last event's: the one a batch correction left it with (`kept_issue`), else its
 // answer's. Only an event that sets a redrawn box carries x..h (a redraw, or an undo that restores one); a
-// pending redraw is dated by the first that set its box (`redrawn_at`), as the old site kept a version's
-// first record. A verdict (kind below 3: match, wrong, unsure, 0003) that no undo
+// pending redraw is dated by the first that set its box on the crop's cut (`redrawn_at`), as the old site kept a
+// version's first record; the same box drawn on an earlier cut was another version. A verdict (kind below 3: match, wrong, unsure, 0003) that no undo
 // reverses gives the record its category; the latest such event that named a character (`named`) makes the
 // crop's label its written character.
 export const recordQuery = () => `SELECT c.id,c.kind,c.book,s.key AS state,c.revision,c.cut,k.key AS category,g.text AS char,
   h.text AS head,p.key AS production,pg.rev,pg.key AS page_key,b.key AS document,r.x,r.y,r.w,r.h,
   CASE WHEN s.key='flagged' THEN (SELECT i.key FROM events e LEFT JOIN codes i ON i.field='issue' AND i.code=coalesce(e.kept_issue,e.issue)
     WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) END AS issue,
-  CASE WHEN r.x IS NOT NULL THEN (SELECT min(e.at) FROM events e WHERE e.crop=c.id AND e.x=r.x AND e.y=r.y AND e.w=r.w AND e.h=r.h)
+  CASE WHEN r.x IS NOT NULL THEN (SELECT min(e.at) FROM events e WHERE e.crop=c.id AND e.cut=c.cut AND e.x=r.x AND e.y=r.y AND e.w=r.w AND e.h=r.h)
     END AS redrawn_at,
   EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.kind<3 AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id)) AS reviewed,
   EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.named IS NOT NULL AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id)) AS written,
