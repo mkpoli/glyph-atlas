@@ -24,6 +24,7 @@ const issueCode = (issue: string | null | undefined) => issue == null ? null : I
 const issueName = (code: number | null) => code == null ? null : code === 6 ? 'character' : ISSUES[code] ?? null;
 // A crop's state as the old site named it: a mark (seen, hard) is a pending crop that rounds made something of.
 const stateName = (code: number) => code === STATE.checked ? 'checked' : code === STATE.flagged ? 'flagged' : 'pending';
+const codePoints = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 const markable = (code: number) => code === STATE.pending || code === STATE.seen || code === STATE.hard;
 
 // --- The crops a review reads ---
@@ -505,8 +506,13 @@ async function corpusAnswer(env: Env, stored: Json): Promise<Json> {
   const [current] = crop === null ? [] : [(await reviewCrops(env, [crop])).get(crop)];
   const [item] = crop === null ? [] : await cropItems(env, [crop]);
   if (!item || !current || current instanceof Problem) throw new Problem(404, 'This character is not in the published collection.');
+  // A glyph a review named is filed under the named character's family, and leaves its visual group.
+  const named = current.data.identity_basis === 'human_review' ? current.label : null;
+  const head = named ? await env.ATLAS.prepare('SELECT h.text FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head WHERE g.text=?')
+    .bind(named).first<{ text: string | null }>() : null;
   const [formed] = await withForms(env, [{ ...item, issue: current.data.issue, written_character: current.data.written_character,
-    ...(current.data.identity_status ? { identity_status: current.data.identity_status } : {}) }]);
+    ...(current.data.identity_status ? { identity_status: current.data.identity_status } : {}),
+    ...(named ? { grapheme: codePoints(head?.text ?? named), visual_group: null } : {}) }]);
   return { ...formed, origin: 'corpus', event: { id: saved.id, revision: saved.revision, state: saved.state } };
 }
 

@@ -58,7 +58,8 @@ function setup() {
     box: { x: 10 * slot, y: 0, w: 10, h: 10 }, context: true, context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 10 * slot, y: 0, w: 10, h: 10 },
     source_scale: [1, 1] });
   const records = [6, 7, 8].map(slot => JSON.stringify({ id: `hng:${page}:${slot}`, label: 'は', written_character: 'は', identity_status: 'assigned',
-    proxyable: true, source_revision: G, image: `https://example.org/${slot}.jpg`, box: { x: 1, y: 1, w: 5, h: 5 } }));
+    proxyable: true, source_revision: G, image: `https://example.org/${slot}.jpg`, box: { x: 1, y: 1, w: 5, h: 5 },
+    grapheme: 'U+306F', visual_group: { id: 'U+306F:01' } }));
   let offset = 0;
   const places = records.map(r => { const place = ['packs/p.bin', offset, Buffer.byteLength(r)]; offset += Buffer.byteLength(r); return place; });
   const objects = new Map<string, Uint8Array>([
@@ -337,7 +338,7 @@ describe('a corpus glyph\'s review', () => {
       verdict: 'wrong', issue: 'character', character: 'ハ' });
     expect(reviewed.status).toBe(200);
     expect(reviewed.body).toMatchObject({ id: publicId(ids[6]), origin: 'corpus', label: 'ハ', state: 'checked', revision: 1,
-      written_character: 'ハ', identity_status: 'assigned', form: null, event: { revision: 1, state: 'checked' } });
+      written_character: 'ハ', identity_status: 'assigned', grapheme: 'U+306F', visual_group: null, form: null, event: { revision: 1, state: 'checked' } });
     await send(env, '/atlas/rounds', { id: uuid(2), grapheme: 'U+306F', answers: [glyph(ids[8], { verdict: 'unsure' })],
       seen: [glyph(ids[7])], skipped: [glyph(ids[6], { revision: 1 })] });
     expect(db.query('SELECT crop FROM corpus_rows ORDER BY seq').all().map((r: any) => r.crop)).toEqual([ids[6], ids[8], ids[7]]);
