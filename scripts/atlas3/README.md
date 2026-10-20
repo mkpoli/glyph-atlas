@@ -192,15 +192,16 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    derived tier, the writers, words and spellings and the component index. `reference.py` (dry run
    by default) writes the cards with their edges, derived forms and writers as one R2 object per
    character under `v3/reference/`, beside sharded card summaries, the IDS, the name list, the card
-   lists and one list per component; the rows a query filters, joins or sorts on go to the tables
-   of `migrations-atlas/0004_reference.sql`. A card's character or family head the layout lacks
-   gets the next grapheme id, and every grapheme takes its card's family head. A visual group's
-   samples are crop ids found in the mirror and in `crops`. `--send` applies 0004 once, loads only
-   the rows that differ from the local copy in stamped parts, then uploads the objects whose hash
-   differs from `v3/reference/manifest.json.gz` and deletes the paths that manifest lists and the
-   translation lacks; figures go to `out/reference-report.txt`. A load that stopped partway is
-   finished on the next run, also one whose part D1 applied and the local copy missed: the run
-   checks D1 for the stamps of every load the local copy has not finished.
+   lists, one list per component and the kana readings of `data/vocab/kanji-readings.json` with
+   their kanji's families (run it again after `scripts/build_kanji_readings.py`); the rows a query
+   filters, joins or sorts on go to the tables of `migrations-atlas/0004_reference.sql`. A card's
+   character or family head the layout lacks gets the next grapheme id, and every grapheme takes its
+   card's family head. A visual group's samples are crop ids found in the mirror and in `crops`.
+   `--send` applies 0004 once, loads only the rows that differ from the local copy in stamped parts,
+   then uploads the objects whose hash differs from `v3/reference/manifest.json.gz` and deletes the
+   paths that manifest lists and the translation lacks; figures go to `out/reference-report.txt`. A
+   load that stopped partway is finished on the next run, also one whose part D1 applied and the
+   local copy missed: the run checks D1 for the stamps of every load the local copy has not finished.
 
    The run reads about 1 GB of copies and writes as much again to scratch files and the stage
    folder; it holds one object at a time (190 MB resident at most on the copies of 19–20 October
