@@ -7,6 +7,8 @@
 type Shard = { objects: string[]; keys: Record<string, [number, number, number, string?]> };
 export type Place = { object: string; offset: number; size: number; type: string };
 const SHARD_SECONDS = 300, SHARDS_HELD = 32;
+// A mapped image whose pack is not in R2: the publication stopped between pack and map.
+export class MediaIncomplete extends Error {}
 export const shardKey = (key: string) => `v3/media/${key.slice(0, 3)}.json.gz`;
 
 async function readShard<T>(env: Env, name: string, ctx?: ExecutionContext): Promise<T | null> {
@@ -60,7 +62,7 @@ export async function mediaResponse(env: Env, request: Request, key: string, ctx
   if (!place) return null;
   if (request.headers.get('if-none-match') === `"${key}"`) return new Response(null, { status: 304 });
   const object = await env.MEDIA.get(place.object, { range: { offset: place.offset, length: place.size } });
-  if (!object) throw new Error(`${place.object} is missing`);
+  if (!object) throw new MediaIncomplete(`${place.object} is missing`);
   const response = new Response(object.body, { headers: { 'content-type': place.type, 'content-length': String(place.size),
     'cache-control': 'public, max-age=31536000, immutable', 'etag': `"${key}"`, 'x-content-type-options': 'nosniff' } });
   ctx.waitUntil(caches.default.put(request, response.clone()));

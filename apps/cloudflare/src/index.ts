@@ -23,6 +23,7 @@ import { honkokuPage } from './honkoku';
 import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
 import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
+import { MediaIncomplete, mediaResponse } from './atlas3Media';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 export { dateClaimsQuery, dateStatsQuery, datingQuery, tallyDates } from './dating';
@@ -1970,22 +1971,6 @@ async function documentCharacters(env: Env, url: URL, document: string, ctx: Exe
   ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60' } })));
   return served(body);
 }
-async function media(env: Env, request: Request, key: string, ctx: ExecutionContext) {
-  const cache = caches.default;
-  const cached = await cache.match(request);
-  if (cached) return cached;
-  if (!/^[a-f0-9]{64}$/.test(key)) throw new Problem(404,'Image not found.');
-  const row = await env.DB.prepare('SELECT * FROM media WHERE key=?').bind(key)
-    .first<{ object:string;offset:number;size:number;content_type:string }>();
-  if(!row) throw new Problem(404,'Image not found.');
-  if(request.headers.get('if-none-match')===`"${key}"`) return new Response(null,{status:304});
-  const object=await env.MEDIA.get(row.object,{range:{offset:row.offset,length:row.size}});
-  if(!object) throw new Problem(503,'Image publication is incomplete.');
-  const response=new Response(object.body,{headers:{'content-type':row.content_type,'content-length':String(row.size),
-    'cache-control':'public, max-age=31536000, immutable','etag':`"${key}"`,'x-content-type-options':'nosniff'}});
-  ctx.waitUntil(cache.put(request,response.clone()));
-  return response;
-}
 async function body(request: Request): Promise<Json> {
   const origin=request.headers.get('origin');
   if(origin && origin!==new URL(request.url).origin) throw new Problem(403,'Use the review form on this site.');
@@ -2529,7 +2514,11 @@ const routes = {
       if(path==='/api/account')return json({user:await viewer(env,request,true),providers:providers(env)});
       if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);
-      if(image)return await media(env,request,image[1],ctx);
+      if(image){
+        try{const found=await mediaResponse(env,request,image[1],ctx);if(found)return found}
+        catch(error){if(error instanceof MediaIncomplete)throw new Problem(503,'Image publication is incomplete.');throw error}
+        throw new Problem(404,'Image not found.');
+      }
       // A round leaves out what its reviewer skipped lately, so it reads who is asking.
       if(path==='/atlas')return json(await catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null));
       if(path==='/api/ranking')return await ranking(env,url,ctx);
