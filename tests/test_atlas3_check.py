@@ -7,7 +7,15 @@ import sys
 import pytest
 from test_atlas3_history import A1, OLD, event, history, sources, sub, version
 from test_atlas3_load import load
-from test_atlas3_publish import ids, layout, write_source  # noqa: F401 -- the fixture
+from test_atlas3_publish import (  # noqa: F401 -- layout is the fixture
+    UNITS,
+    ids,
+    layout,
+    retired_catalogue,
+    retired_unit,
+    run,
+    write_source,
+)
 
 
 def check(monkeypatch, *flags):
@@ -37,6 +45,32 @@ def test_a_crop_that_differs_from_its_live_record_fails(layout, monkeypatch, cha
     db.execute(change)
     db.commit()
     assert check(monkeypatch) == 1
+
+
+@pytest.mark.parametrize("named", [None, "ex:a1", "ex:b1", "unset"])
+def test_a_retired_crops_replacement_must_reach_a_live_crop(layout, monkeypatch, named):  # noqa: F811
+    root, publish, _remote = layout
+    (root / "out" / "media").mkdir(exist_ok=True)
+    gone = retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})
+    run(publish, monkeypatch, retired_catalogue(root / "c.sqlite", [gone], [("ex:b1", "ex:gone"), ("ex:gone", "ex:a1")]))
+    db = sqlite3.connect(root / "source-units.sqlite")
+    db.execute(f"INSERT INTO units VALUES(100,{','.join('?' * len(UNITS))})", gone)
+    db.commit()
+    write_source(root, "unit_redirects", ("id", "target"), [("ex:b1", "ex:gone"), ("ex:gone", "ex:a1")])
+    assert check(monkeypatch) == 0
+    if named:
+        rev = sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT max(rev) FROM pages").fetchone()[0]
+        for path in (root / "out" / "pages").glob(f"*-{rev}.json.gz"):
+            body = json.loads(gzip.decompress(path.read_bytes()))
+            for e in body["crops"]:
+                if e["id"] == "ex:b1":
+                    # A text id, the retired crop itself (a loop), or nothing though its redirects reach a1.
+                    if named == "unset":
+                        del e["replaced_by"]
+                    else:
+                        e["replaced_by"] = ids(root)[named] if named == "ex:b1" else named
+            path.write_bytes(gzip.compress(json.dumps(body).encode()))
+        assert check(monkeypatch) == 1
 
 
 def translated(root, monkeypatch, sources, history, **extra):

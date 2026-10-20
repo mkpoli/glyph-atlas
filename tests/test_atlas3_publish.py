@@ -449,7 +449,7 @@ def test_a_crop_retired_before_the_new_layout_gets_a_number_and_a_retired_entry(
     assert old // PAGE == ids(root)["ex:a1"] // PAGE and old not in crops(remote)
     entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{old // PAGE}-2.json.gz").read_bytes()))["crops"]
                  if e["id"] == "ex:old")
-    assert entry["retired"] is True and entry["replaced_by"] == "ex:a1" and entry["box"] == {"x": 40, "y": 40, "w": 10, "h": 10}
+    assert entry["retired"] is True and entry["replaced_by"] == ids(root)["ex:a1"] and entry["box"] == {"x": 40, "y": 40, "w": 10, "h": 10}
 
 
 def test_a_crop_retired_later_names_its_replacement(layout, monkeypatch, tmp_path):
@@ -466,7 +466,111 @@ def test_a_crop_retired_later_names_its_replacement(layout, monkeypatch, tmp_pat
     b1 = ids(root)["ex:b1"]
     entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{b1 // PAGE}-3.json.gz").read_bytes()))["crops"]
                  if e["id"] == "ex:b1")
-    assert entry["retired"] is True and entry["replaced_by"] == "ex:a1"
+    assert entry["retired"] is True and entry["replaced_by"] == ids(root)["ex:a1"]
+
+
+def retired_catalogue(path, units, redirects):
+    path = catalogue(path, units)
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE unit_redirects(id, target)")
+    db.executemany("INSERT INTO unit_redirects VALUES(?, ?)", redirects)
+    db.commit()
+    return path
+
+
+def retired_unit(id, page, box, character="う"):
+    row = list(unit(id, page, box, character))
+    row[UNITS.index("origin")] = "retired"
+    return tuple(row)
+
+
+def bundle_entry_of(root, text_id):
+    cid = ids(root)[text_id]
+    rev = sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT rev FROM pages WHERE id=?", (cid // PAGE,)).fetchone()[0]
+    path = root / "out" / "pages" / f"{cid // PAGE}-{rev}.json.gz"
+    return next(e for e in json.loads(gzip.decompress(path.read_bytes()))["crops"] if e["id"] == text_id), path
+
+
+def test_a_crop_retired_for_a_crop_new_in_the_same_catalogue_names_its_number(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    path = retired_catalogue(tmp_path / "c.sqlite", [
+        retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}),
+        unit("ex:z9", "hl:p9", {"x": 0, "y": 0, "w": 10, "h": 10})], [("ex:b1", "ex:z9")])
+    run(publish, monkeypatch, path)
+    entry, _ = bundle_entry_of(root, "ex:b1")
+    assert entry["replaced_by"] == ids(root)["ex:z9"]
+
+
+def test_a_replacement_is_found_along_the_redirect_chain(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    path = retired_catalogue(tmp_path / "c.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})],
+                             [("ex:b1", "ex:gone"), ("ex:gone", "ex:a1")])
+    run(publish, monkeypatch, path)
+    entry, _ = bundle_entry_of(root, "ex:b1")
+    assert entry["replaced_by"] == ids(root)["ex:a1"]
+
+
+def test_a_replacement_passes_a_retired_crop_on_the_chain(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    run(publish, monkeypatch, retired_catalogue(tmp_path / "c1.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})], []))
+    path = retired_catalogue(tmp_path / "c2.sqlite", [retired_unit("ex:old", "hl:p2", {"x": 40, "y": 40, "w": 10, "h": 10})],
+                             [("ex:old", "ex:b1"), ("ex:b1", "ex:a1")])
+    run(publish, monkeypatch, path)
+    entry, _ = bundle_entry_of(root, "ex:old")
+    assert entry["replaced_by"] == ids(root)["ex:a1"]
+
+
+@pytest.mark.parametrize("redirects", [[("ex:b1", "ex:nowhere")], [("ex:b1", "ex:x"), ("ex:x", "ex:y"), ("ex:y", "ex:x")]])
+def test_a_chain_with_no_live_crop_leaves_the_replacement_unset(layout, monkeypatch, tmp_path, capsys, redirects):
+    root, publish, remote = layout
+    path = retired_catalogue(tmp_path / "c.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})], redirects)
+    run(publish, monkeypatch, path)
+    entry, _ = bundle_entry_of(root, "ex:b1")
+    assert entry["retired"] is True and "replaced_by" not in entry and ids(root)["ex:b1"] not in crops(remote)
+    assert "1 retired crops have no live crop on their redirect chain" in capsys.readouterr().out
+
+
+def test_a_replacement_whose_chain_lost_its_live_crop_is_removed(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    run(publish, monkeypatch, retired_catalogue(tmp_path / "c1.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})],
+                                                [("ex:b1", "ex:a1")]))
+    run(publish, monkeypatch, retired_catalogue(tmp_path / "c2.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})],
+                                                [("ex:b1", "ex:nowhere")]))
+    entry, _ = bundle_entry_of(root, "ex:b1")
+    assert entry["retired"] is True and "replaced_by" not in entry
+
+
+def test_the_replacements_pass_names_a_retired_crop_no_catalogue_carries(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    run(publish, monkeypatch, retired_catalogue(tmp_path / "c.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})], []))
+    assert "replaced_by" not in bundle_entry_of(root, "ex:b1")[0]
+    write_source(root, "unit_redirects", ("id", "target"), [("ex:b1", "ex:gone"), ("ex:gone", "ex:a1"), ("ex:a2", "ex:a1")])
+    sent = len(remote.uploaded)
+    monkeypatch.setattr(sys, "argv", ["publish.py", "--replacements"])
+    publish.main()
+    entry, _ = bundle_entry_of(root, "ex:b1")
+    assert entry["replaced_by"] == ids(root)["ex:a1"] and len(remote.uploaded) == sent + 1
+    publish.main()
+    assert len(remote.uploaded) == sent + 1
+
+
+def test_a_replacement_held_as_a_text_id_is_rewritten_as_a_number(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    path = retired_catalogue(tmp_path / "c.sqlite", [retired_unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10})],
+                             [("ex:b1", "ex:a1")])
+    run(publish, monkeypatch, path)
+    entry, bundle = bundle_entry_of(root, "ex:b1")
+    body = json.loads(gzip.decompress(bundle.read_bytes()))
+    for e in body["crops"]:
+        if e["id"] == "ex:b1":
+            e["replaced_by"] = "ex:a1"
+    bundle.write_bytes(gzip.compress(json.dumps(body).encode()))
+    sent = len(remote.uploaded)
+    run(publish, monkeypatch, path)
+    entry, again = bundle_entry_of(root, "ex:b1")
+    assert again != bundle and entry["replaced_by"] == ids(root)["ex:a1"] and len(remote.uploaded) == sent + 1
+    run(publish, monkeypatch, path)
+    assert len(remote.uploaded) == sent + 1
 
 
 def test_two_crops_trading_glyphs_stop_the_publish(layout, monkeypatch, tmp_path):

@@ -19,8 +19,9 @@ remote is read.
   columns come from its review overlay. Once load_history.py has set the marks, a pending crop with a
   live mark has the mark as its state, one revision on.
 - Bundles: each collected crop's entry is its live record (less the fields its row holds), a corpus
-  glyph's points at its live record, and a retired crop's is marked retired, names its replacement
-  and has no row.
+  glyph's points at its live record, and a retired crop's is marked retired and has no row. Its
+  `replaced_by`, followed through retired entries, reaches a live crop within 8 steps; it has none
+  only when its redirects reach no live crop.
 - Runs: the runs of two and three crops are the live ones, crop for crop, with their graphemes, hand
   and book.
 - Images: every live image key is in the image key map, at its live place.
@@ -69,6 +70,8 @@ from build import HERE, OUT, PAGE, bundle_entry, char_text
 from load_history import TABLES as LOADED
 
 SHOWN = 20
+# How many `replaced_by` steps the site follows from a retired crop.
+HOPS = 8
 
 
 def source(table):
@@ -222,12 +225,51 @@ def check_crops(report, name):
             if e.get("id") != u[0] or have != bundle_entry(data):
                 differ = sorted(k for k in have.keys() | bundle_entry(data).keys() if have.get(k) != bundle_entry(data).get(k))
                 wrong.append(f"{u[0]} ({cid}): bundle entry {e.get('id')} differs in {differ}")
+    # The site follows `replaced_by` through retired entries for up to HOPS steps.
+    others = {}
+
+    def other_entry(cid):
+        pid = cid // PAGE
+        if pid not in others:
+            path = OUT / "pages" / f"{pid}-{rev.get(pid)}.json.gz"
+            others[pid] = {e["slot"]: e for e in json.loads(gzip.decompress(path.read_bytes()))["crops"]} if path.exists() else {}
+        return others[pid].get(cid % PAGE, {})
+
+    def reaches_live(cid):
+        for _ in range(HOPS):
+            if not isinstance(cid, int) or isinstance(cid, bool):
+                return False
+            if cid in rows:
+                return True
+            e = other_entry(cid)
+            if not e.get("retired"):
+                return False
+            cid = e.get("replaced_by")
+        return False
+
+    def redirects_to_live(text):
+        # Walked here on the redirect copy, apart from the publisher's walk.
+        seen, at = {text}, redirects.get(text)
+        while at is not None and at not in seen:
+            if id_of.get(at) in rows:
+                return True
+            seen.add(at)
+            at = redirects.get(at)
+        return False
+
     for u in sorted(retired, key=lambda u: id_of.get(u[0], -1)):
         cid = id_of.get(u[0])
-        e = (entry(cid) or {}) if cid is not None else {}
-        if cid is not None and (cid in rows or not e.get("retired") or e.get("id") != u[0] or e.get("replaced_by") != redirects.get(u[0])):
+        if cid is None:
+            continue
+        e = entry(cid) or {}
+        named = e.get("replaced_by")
+        if cid in rows or not e.get("retired") or e.get("id") != u[0]:
             wrong.append(f"{u[0]} ({cid}): retired on the live site; new layout row {cid in rows}, entry {e.get('id')} "
-                         f"retired {e.get('retired')} replaced by {e.get('replaced_by')}, live {redirects.get(u[0])}")
+                         f"retired {e.get('retired')}")
+        elif named is not None and not reaches_live(named):
+            wrong.append(f"{u[0]} ({cid}): replaced by {named!r}, which reaches no live crop in {HOPS} steps")
+        elif named is None and redirects_to_live(u[0]):
+            wrong.append(f"{u[0]} ({cid}): names no replacement, though its redirects reach a live crop")
     report.check("every collected and retired crop's bundle entry is its live record", wrong)
 
     wrong = []
