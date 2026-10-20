@@ -91,7 +91,7 @@
   "client.changed": "This character changed. Reload to review the current version.",
   "client.saveFailed": "The review could not be saved.",
   "client.busy": "The database is still updating. Try again in a few minutes.",
-  "client.paused": "Saving is paused while the site is under maintenance. Everything can still be read; try again later.",
+  "client.paused": "Changes are paused for now. Everything can still be read; try again later.",
   "client.pausedKept": "Changes are paused for now. What you save is kept on this device and sent once they resume.",
   "client.busyRetrying": "The database is updating; trying again…",
   "client.keptSending.one": "Saved on this device; sending…",

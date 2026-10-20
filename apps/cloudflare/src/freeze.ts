@@ -8,7 +8,7 @@ import { getCookies } from 'better-auth/cookies';
 
 /** How long a refused write is told to wait, in seconds. */
 export const PAUSED_RETRY = 300;
-export const PAUSED_MESSAGE = 'Saving is paused while the site is under maintenance. Everything can still be read; try again later.';
+export const PAUSED_MESSAGE = 'Changes are paused for now. Everything can still be read; try again later.';
 
 export const writesPaused = (env: Env) => (env as unknown as Record<string, string | undefined>).WRITES_PAUSED === '1';
 

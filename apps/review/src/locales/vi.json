@@ -85,7 +85,7 @@
   "client.changed": "Chữ này đã thay đổi. Tải lại để duyệt bản mới nhất.",
   "client.saveFailed": "Không lưu được kết quả duyệt.",
   "client.busy": "Cơ sở dữ liệu vẫn đang cập nhật. Hãy thử lại sau vài phút.",
-  "client.paused": "Trang đang bảo trì nên tạm thời chưa lưu được. Bạn vẫn xem được mọi nội dung; hãy thử lưu lại sau.",
+  "client.paused": "Hiện đang tạm dừng nhận thay đổi. Bạn vẫn xem được mọi nội dung; hãy thử lại sau.",
   "client.pausedKept": "Hiện đang tạm dừng nhận thay đổi. Nội dung bạn lưu được giữ trên thiết bị này và sẽ được gửi khi trang nhận thay đổi trở lại.",
   "client.busyRetrying": "Cơ sở dữ liệu đang cập nhật; đang thử lại…",
   "client.keptSending.other": "Đã lưu {count} mục trên thiết bị này; đang gửi…",
