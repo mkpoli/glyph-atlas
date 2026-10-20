@@ -60,11 +60,11 @@ R2_REMOTE = os.environ.get("ATLAS3_R2_REMOTE", "r2")
 BUCKET = "glyph-atlas"
 BUNDLE_PREFIX = "v3/pages/"
 CROP_COLS = ("id", "kind", "book", "char", "form", "cluster", "visual_group", "production", "category", "style",
-             "state", "quiz", "year", "cut", "revision", "flags", "shuffle")
+             "state", "quiz", "year", "cut", "revision", "flags", "family", "shuffle")
 # Columns a review owns.
 REVIEW_OWNED = ("char", "state", "style", "quiz", "kind", "flags")
 # What a crop takes when it is new and the catalogue does not say.
-DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0}
+DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0, "family": None}
 SUSPECT = 1
 # What a bundle entry keeps of each earlier cut: enough to show and cite its pixels.
 CUT_FIELDS = ("box", "crop_box", "context_box", "image", "image_sha256", "image_size", "image_place",
@@ -469,6 +469,9 @@ def main():
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
         sys.exit("an earlier publish is unfinished; run a publish (not a dry run) to finish it first")
+    # The columns the cutover adds are filled once by fill.py, which a publish never repeats.
+    if "family" not in {r[1] for r in m.atlas.execute("PRAGMA table_info(crops)")}:
+        sys.exit("the local copy has no crops.family; run fill.py --send first")
     src = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True) if catalogue else sqlite3.connect(":memory:")
     src.row_factory = sqlite3.Row
     tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -509,6 +512,10 @@ def main():
 
     # Identity checks a publish without the slot matcher can make.
     columns = "id, origin, character, visual_group, production, category, state, revision, quiz, document, style, data"
+    # A catalogue that names each crop's family files its crops under it.
+    with_family = "units" in tables and "family" in {r[1] for r in src.execute("PRAGMA table_info(units)")}
+    if with_family:
+        columns += ", family"
     with_votes = "units" in tables and {"visual", "context"} <= {r[1] for r in src.execute("PRAGMA table_info(units)")}
     if with_votes:
         columns += ", visual, context"
@@ -646,7 +653,9 @@ def main():
             continue
         cid = m.known(r["id"]) or m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
         crop_ids[r["id"]] = cid
-        given = {"id": cid, "kind": 0, "book": m.book(r["document"]), "char": m.grapheme(r["character"]),
+        char = m.grapheme(r["character"])
+        given = {"id": cid, "kind": 0, "book": m.book(r["document"]), "char": char,
+                 "family": m.grapheme(r["family"]) if with_family else KEEP,
                  "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
                  "category": m.code("category", r["category"]),
                  # A crop with no style is unassessed: galleries page by style and hold no crop without one.
@@ -686,8 +695,10 @@ def main():
             crop_ids[r["id"]] = cid
             o = overlay.get(r["id"])
             # An upstream glyph speaks for the review columns only through its review overlay.
-            given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source),
-                     "char": m.grapheme((o["character"] if o else None) or r["character"]),
+            char = m.grapheme((o["character"] if o else None) or r["character"])
+            filed = o["family"] if o and with_family else r["family"]
+            given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source), "char": char,
+                     "family": m.grapheme(filed),
                      "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
                      "style": m.code("style", (o["style"] if o else None) or r["style"] or "unassessed"),
                      "state": m.code("state", o["state"] if o else "pending"), "quiz": o["quiz"] if o else 1,

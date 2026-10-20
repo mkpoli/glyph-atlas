@@ -106,7 +106,9 @@ CREATE TABLE names(text TEXT, code_point INTEGER, rank INTEGER, PRIMARY KEY(text
   partial-index condition (`kind < 2`) literally, or SQLite scans the table.
 - **Families.** A grapheme family has no column. Its gallery reads one bounded range per member
   character and merges them in the Worker, so regrouping characters rewrites no crop. Family
-  galleries are about 1% of gallery reads.
+  galleries are about 1% of gallery reads. Every crop keeps the family its source names
+  (`crops.family`, migration 0012); a crop with no character is listed with that family, and a family's
+  gallery reads its members' crops with no character as one more range each.
 - **The review queue** reads `crop_pending` for one production and `crop_backlog`, in shuffle order
   with the production as a filter and named by `INDEXED BY`, for the whole backlog or a large
   subtree.

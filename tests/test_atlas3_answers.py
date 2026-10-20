@@ -71,3 +71,15 @@ def test_a_bump_another_run_made_stops_this_one(layout, monkeypatch):  # noqa: F
     monkeypatch.setattr(publish, "query", racing)
     with pytest.raises(SystemExit):
         answers(publish, monkeypatch)
+
+
+def test_crops_with_no_character_are_counted_under_the_family_they_are_filed_under(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, _remote = layout
+    from test_atlas3_publish import corpus_catalogue, run
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "corpus.sqlite", [("codh:m1", None, "U+3082", "も")]))
+    answers(publish, monkeypatch)
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    family = atlas.execute("SELECT id FROM graphemes WHERE text='も'").fetchone()[0]
+    body = shard_of(root, family)
+    assert [cell[0] for cell in body["families"][str(family)]] == [1] and body["families"][str(family)][0][-1] == 1
+    assert str(family) not in body["chars"]

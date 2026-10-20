@@ -140,7 +140,7 @@ def check_crops(report, name):
     graphemes = dict(atlas.execute("SELECT id, text FROM graphemes"))
     productions = dict(atlas.execute("SELECT id, key FROM productions"))
     rows = {r[0]: r for r in atlas.execute("SELECT id, kind, char, state, style, quiz, production, category, visual_group, revision, "
-                                           "book, year, flags FROM crops")}
+                                           "book, year, flags, family FROM crops")}
     books = dict(atlas.execute("SELECT id, key FROM books"))
     book_ids = {key: bid for bid, key in books.items()}
     years = dict(source("document_dating").execute("SELECT document, start FROM document_dating WHERE axis='witness'"))
@@ -149,8 +149,9 @@ def check_crops(report, name):
     rev = dict(atlas.execute("SELECT id, rev FROM pages"))
 
     units = list(latest(source("units"), "units",
-                        "id, origin, character, state, style, quiz, production, category, visual_group, revision, data, document"))
-    corpus = list(latest(source("corpus_units"), "corpus_units", "id, character, production, style, visual_group, document, object, offset, size, label"))
+                        "id, origin, character, state, style, quiz, production, category, visual_group, revision, data, document, family"))
+    corpus = list(latest(source("corpus_units"), "corpus_units",
+                         "id, character, production, style, visual_group, document, object, offset, size, label, family"))
     overlay = {u[0]: u for u in units if u[1] == "corpus"}
     local = [u for u in units if u[1] == "local"]
     retired = [u for u in units if u[1] == "retired"]
@@ -172,7 +173,12 @@ def check_crops(report, name):
     def got(cid):
         r = rows[cid]
         return (r[1], graphemes.get(r[2]), names["state"].get(r[3]), names["style"].get(r[4]), r[5], productions.get(r[6]),
-                names["category"].get(r[7]), names["visual_group"].get(r[8]), r[9], books.get(r[10]), r[11], r[12] & 1)
+                names["category"].get(r[7]), names["visual_group"].get(r[8]), r[9], books.get(r[10]), r[11], r[12] & 1,
+                graphemes.get(r[13]))
+
+    # Every crop is filed under the family its source names.
+    def filed(_character, family):
+        return char_text(family) or None
 
     # A pending crop with a live mark takes the mark as its state, one revision on, once the marks are set.
     marks = applied_marks(atlas, name) or {}
@@ -183,7 +189,8 @@ def check_crops(report, name):
     diffs = []
     for u in local:
         cid = id_of.get(u[0])
-        w = marked(cid, want(*u[2:10], 0) + (u[11] or "unknown", years.get(u[11]), int(bool(json.loads(u[10]).get("suspect")))))
+        w = marked(cid, want(*u[2:10], 0) + (u[11] or "unknown", years.get(u[11]), int(bool(json.loads(u[10]).get("suspect"))),
+                                              filed(u[2], u[12])))
         if cid in rows and got(cid) != w:
             diffs.append(f"{u[0]} ({cid}): live {w}, new layout {got(cid)}")
     for c in corpus:
@@ -192,7 +199,8 @@ def check_crops(report, name):
             continue
         book = c[5] or c[0].split("|")[0].split(":")[0]
         w = want((o[2] if o else None) or c[1], o[3] if o else "pending", (o[4] if o else None) or c[3], o[5] if o else 1,
-                 c[2], None, c[4], o[9] if o else 0, 1) + (book, years.get(c[5]), 0)
+                 c[2], None, c[4], o[9] if o else 0, 1) + (book, years.get(c[5]), 0,
+                                                          filed((o[2] if o else None) or c[1], o[12] if o else c[10]))
         w, g = marked(cid, w), got(cid)
         # A corpus glyph has no category of its own.
         if g[:6] + g[7:] != w[:6] + w[7:]:

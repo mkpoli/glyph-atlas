@@ -13,10 +13,12 @@ refused.
 - `counts/<shard>.json.gz`: per character (grapheme id, in shard id % SHARDS), one cell per kind,
   style, state, withheld, witness decade and visual group, with its number of crops. Codes are the
   `codes` table's; a null is unknown.
+- `counts/<shard>.json.gz` also holds `families`: the same cells for crops with no character, per
+  family their source names (`crops.family`, grapheme id, in shard id % SHARDS).
 - `unread.json.gz`: the same cells for crops with no character, per script category (-1 for none).
 
-The `tally` rows a review writes carry no decade or visual group, so counts by either stand at the
-publication until the next one.
+The `tally` rows a review writes carry the crop's family and witness decade but no visual group, so
+counts by visual group stand at the publication until the next one.
 """
 
 from __future__ import annotations
@@ -40,10 +42,10 @@ CELL = ("kind", "style", "state", "quiz", "decade", "visual_group", "n")
 DECADE = "CASE WHEN year IS NULL THEN NULL WHEN year < 0 THEN (year - 9) / 10 * 10 ELSE year / 10 * 10 END"
 
 
-def cells(atlas, key):
+def cells(atlas, key, where):
     out = defaultdict(list)
     for row in atlas.execute(f"SELECT {key}, kind, style, state, quiz, {DECADE}, visual_group, count(*) FROM crops "
-                             f"WHERE kind < 2 AND char IS {'NOT ' if key == 'char' else ''}NULL GROUP BY 1, 2, 3, 4, 5, 6, 7"):
+                             f"WHERE kind < 2 AND {where} GROUP BY 1, 2, 3, 4, 5, 6, 7"):
         out[row[0]].append(list(row[1:]))
     return out
 
@@ -83,17 +85,22 @@ def main():
     atlas = sqlite3.connect(OUT / "atlas.sqlite")
     folder = OUT / "pub" / pub
     shards = defaultdict(dict)
-    for char, rows in cells(atlas, "char").items():
+    for char, rows in cells(atlas, "char", "char IS NOT NULL").items():
         shards[char % SHARDS][char] = rows
-    files = [write(folder / "counts" / f"{shard}.json.gz", {"pub": pub, "cell": CELL, "chars": shards.get(shard, {})})
+    families = defaultdict(dict)
+    for family, rows in cells(atlas, "family", "char IS NULL AND family IS NOT NULL").items():
+        families[family % SHARDS][family] = rows
+    files = [write(folder / "counts" / f"{shard}.json.gz", {"pub": pub, "cell": CELL, "chars": shards.get(shard, {}),
+                                                            "families": families.get(shard, {})})
              for shard in range(SHARDS)]
-    unread = cells(atlas, "category")
+    unread = cells(atlas, "category", "char IS NULL")
     # A crop with no category is filed under -1, as `tally` writes unknown.
     files.append(write(folder / "unread.json.gz", {"pub": pub, "cell": CELL,
                                                    "categories": {str(-1 if k is None else k): v for k, v in unread.items()}}))
     pointer = write(OUT / "pub" / f"pointer-{pub}" / "pointer.json", {"pub": pub, "through_gen": through})
     characters = sum(len(s) for s in shards.values())
     print(f"pub {pub} through generation {through}: {characters} characters in {SHARDS} shards, "
+          f"{sum(len(s) for s in families.values())} families of crops with no character, "
           f"{sum(len(v) for v in unread.values())} unread cells -> {folder}", flush=True)
     if args.dry_run:
         print("dry run: nothing uploaded; the generation was not bumped", flush=True)

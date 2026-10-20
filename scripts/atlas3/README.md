@@ -78,6 +78,15 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
 - A statement over 90 KB stops the publish before anything is allocated.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
   keeps its runs.
+- A crop joins the family gallery of its character's family (`graphemes.head`). Every crop also keeps
+  the family its source names (`crops.family`, migration 0012), and a crop with no character is listed
+  with that family: a corpus glyph transcribed も, which may be も or one of its hentaigana, is listed
+  with the も family, and so is a crop whose character a review clears. On the 19 October copies this
+  lists 6,252 `codh-omt` glyphs and 1,333 collected crops whose source named no family with their
+  character's family, which the old galleries left out, and the 24 crops whose record named a family
+  other than their character's (21 汙, 2 匘, 1 撿) with their character's family. The ledger holds no
+  `has_grapheme` claim. `fill.py` fills the column once at the cutover; a publish refuses a local copy
+  without it.
 - A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`
   moves on by one, and its bundle entry takes the new record. Reviews and claims name the cut they
   were made on, so they stay with the old one. The version it replaced joins the entry's `cuts` (its
@@ -100,7 +109,8 @@ in `glyph-atlas-v3` from G to G + 1, writes per-character counts from the local 
 `v3/pub/<pub>/counts/<char % 256>.json.gz` and the unread crops' counts per script to
 `v3/pub/<pub>/unread.json.gz`, then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A cell
 counts the crops of one kind, style, state, withheld flag, witness decade and visual group, in the
-codes of the `codes` table. It runs after a publish, under the same lock, and refuses while a publish
+codes of the `codes` table. Each shard also counts, under `families`, the crops with no character by the
+family they are filed under. It runs after a publish, under the same lock, and refuses while a publish
 is unfinished or while the database holds review events, which it cannot absorb yet. Each run costs
 one D1 row and 258 R2 objects.
 
@@ -133,6 +143,14 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    credentials: the copy is about 3 GB and the uploads after it are large.
 4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
    ones), merge its images into the map (`media_map.py`) and publish the answers (`answers.py`).
+   Before it, `fill.py --send` adds the columns the cutover gives `crops` (`family`, migration 0012,
+   which also gives `tally` a family and a witness decade), fills them with one UPDATE per crop that
+   needs one, and then builds every index of `migrations-atlas/indexes-cutover.sql` the database lacks,
+   each once over the filled rows; a rerun sends only what differs. For `family`, on the 19–20 October
+   copies: about 2.11M crop rows written (526,318 collected crops and 1,582,510 corpus glyphs whose
+   record names a family), then `crop_family` (299,331 entries, 11.5 MB) and `crop_family_year`
+   (162,857, 5.9 MB). The publish that follows finds the values in
+   place and writes none.
 5. **Move the history:** `history.py` translates reviews, submissions, seen marks, skips, favourites,
    claims, form decisions, suspects and shapes from the copies into `out/history.sqlite`
    (`migrations-atlas/0003_history.sql`), with every text id resolved through `out/mirror.sqlite` and
@@ -352,9 +370,6 @@ answers:
 - `form_bases` (a corpus glyph's character and family before a form decision moved it);
 - `representations` (form anchors), which form claims write: they move with the forms;
 - search names for characters that first appear after the first build;
-- `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
-  new `crops` has no per-crop grapheme column yet, so the read path decides how such a crop joins a
-  family gallery before cutover.
 
 The Worker read path builds on the catalogue stamps of #763 (`catalogueStamps`, `catalogueKey`), so a
 reviewer's own save still shows at once.
