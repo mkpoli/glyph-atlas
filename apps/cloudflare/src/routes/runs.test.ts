@@ -303,6 +303,21 @@ describe('runs on the new layout', () => {
     expect(filtered.items.map((i: Json) => i.crops[0].source_id).sort()).toEqual(['ar:doc:1-l1-0', 'ex:o1']);
   });
 
+  it('guard the mark count by state without changing what it counts', () => {
+    const f = fixture();
+    f.atlas.exec(`INSERT INTO codes VALUES('state',3,'seen'),('state',4,'hard');
+      INSERT INTO book_characters(book,ord,crop,data) VALUES(1,2,${f.at[2].id},'{}'),(1,3,${f.at[3].id},'{}');
+      UPDATE crops SET state=3,revision=2 WHERE id=${f.at[0].id}; UPDATE crops SET state=2,revision=2 WHERE id=${f.at[1].id};
+      UPDATE crops SET state=4,revision=1 WHERE id=${f.at[2].id};
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(${f.at[0].id},1,0,0,1,1,0,1),(${f.at[0].id},2,0,0,1,2,0,3),
+        (${f.at[1].id},1,0,0,1,1,0,3),(${f.at[1].id},2,0,0,1,2,0,1),(${f.at[2].id},1,0,0,1,1,0,4)`);
+    const unguarded = bookCharactersQuery().replace(/CASE WHEN s\.key IN \('seen','hard'\) THEN (\(SELECT count\(\*\)[\s\S]*?,-1\)\)) ELSE 0 END/, '$1');
+    expect(unguarded).not.toBe(bookCharactersQuery());
+    const read = (sql: string) => f.atlas.query(sql).all(1, 0, 1000).map((r: Json) => [r.crop, r.state, r.revision]);
+    expect(read(bookCharactersQuery())).toEqual(read(unguarded));
+    expect(read(bookCharactersQuery()).map(r => r[2])).toEqual([1, 2, 0, 0]);
+  });
+
   it('read every table by its key or an index', () => {
     const f = fixture();
     const plan = (db: Database, sql: string, values: unknown[]) => db.query('EXPLAIN QUERY PLAN ' + sql).all(...(values as any[])).map((r: Json) => r.detail as string);

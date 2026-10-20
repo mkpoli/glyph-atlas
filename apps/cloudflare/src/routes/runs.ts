@@ -246,7 +246,9 @@ const ISSUE = (crop: string) => `(SELECT i.key FROM events e LEFT JOIN codes i O
     WHERE e.crop=${crop} ORDER BY e.revision DESC LIMIT 1)`;
 const issueName = (issue: string | null) => issue === 'reading' ? 'character' : issue;
 // What reviews say of the flagged and marked crops of a page: one `event_crop` range each.
-export const reviewedQuery = () => `SELECT j.value AS crop,${MARKS('j.value')} AS marks,${ISSUE('j.value')} AS issue FROM json_each(?) j`;
+export const reviewedQuery = () => `SELECT j.value AS crop,CASE WHEN s.key IN ('seen','hard') THEN ${MARKS('j.value')} ELSE 0 END AS marks,
+  CASE WHEN s.key='flagged' THEN ${ISSUE('j.value')} END AS issue
+  FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN codes s ON s.field='state' AND s.code=c.state`;
 
 /** Each crop as a run's page shows it, by id: its listing item, its box on the page, and its record's
  *  place on the page (`runPage`). A crop with no listing item is absent. */
@@ -427,7 +429,7 @@ async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
 // a flagged crop's issue is its last event's (`reading`, the name before the rename, as `character`).
 // One page costs a key range of `book_characters`, one `crops` row per occurrence and those probes.
 const CHARACTERS_PAGE = 1000;
-export const bookCharactersQuery = () => `SELECT c.ord,c.crop,c.data,g.text AS character,s.key AS state,k.revision-${MARKS('c.crop')} AS revision,
+export const bookCharactersQuery = () => `SELECT c.ord,c.crop,c.data,g.text AS character,s.key AS state,k.revision-CASE WHEN s.key IN ('seen','hard') THEN ${MARKS('c.crop')} ELSE 0 END AS revision,
   CASE WHEN s.key='flagged' THEN ${ISSUE('c.crop')} END AS issue,
   (k.kind=0 OR (k.kind=1 AND (EXISTS (SELECT 1 FROM seen WHERE crop=c.crop) OR EXISTS (SELECT 1 FROM skips WHERE crop=c.crop)
     OR EXISTS (SELECT 1 FROM events WHERE crop=c.crop)))) AS shown
