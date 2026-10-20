@@ -30,6 +30,7 @@
   import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, stored, remember } from '../lib/client.js'
+  import { correctionBatches, sendEach } from '../lib/corrections.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
   import { characterAddress, collectionAddress, corpusScope, expandFor, graphemeAddress, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
@@ -821,32 +822,36 @@
     let kept = chosen.length - crops.length
     bulkBusy = true; bulkError = ''
     const saved = [], before = {}, after = {}
-    let refused = []
+    let refused = [], answered = [], waiting = []
     try {
-      for (let at = 0; at < crops.length; at += BATCH) {
-        const part = crops.slice(at, at + BATCH), id = crypto.randomUUID()
-        const result = await request('/atlas/corrections', { id, character: target,
+      ({ answered, kept: waiting } = await sendEach(correctionBatches(target, crops, BATCH), ({ id, crops: part }) =>
+        request('/atlas/corrections', { id, character: target,
           crops: part.map(item => ({ id: item.id, revision: item.revision,
-            ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) })
-        saved.push(id)
-        const byId = Object.fromEntries((result.results ?? []).map(r => [r.target_id, r]))
-        kept += (result.unchanged ?? []).length
-        for (const item of part) if (byId[item.id]) { before[item.id] = item; after[item.id] = corrected(item, byId[item.id]) }
-      }
+            ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) })))
     } catch (e) {
+      answered = e.answered ?? []; waiting = e.kept ?? []
       refused = (e.targets ?? []).map(target => target.id)
       bulkError = refused.length ? t('bulk.refused', { count: refused.length }) : e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
     } finally {
       bulkBusy = false
     }
-    // Crops in a saved batch, tiles with nothing to change, and refused crops are done with.
-    const handled = new Set([...crops.slice(0, saved.length * BATCH), ...chosen.filter(item => !crops.includes(item))].map(item => item.id).concat(refused))
+    for (const { item: { id, crops: part }, result } of answered) {
+      saved.push(id)
+      const byId = Object.fromEntries((result.results ?? []).map(r => [r.target_id, r]))
+      kept += (result.unchanged ?? []).length
+      for (const item of part) if (byId[item.id]) { before[item.id] = item; after[item.id] = corrected(item, byId[item.id]) }
+    }
+    // Batches kept while writes are paused go once they resume; their tiles change then.
+    if (waiting.length && !bulkError) bulkError = t('client.pausedKept')
+    // Crops in a saved or kept batch, tiles with nothing to change, and refused crops are done with.
+    const handled = new Set([...answered.map(({ item }) => item), ...waiting].flatMap(batch => batch.crops)
+      .concat(chosen.filter(item => !crops.includes(item))).map(item => item.id).concat(refused))
     if (saved.length) {
       patch(after)
       bulkDone = { batches: saved, count: Object.keys(after).length, char: target, before, kept }
       runsChanged()
     }
-    // What was saved or refused leaves the selection; what a later batch never reached stays selected.
+    // What was saved, kept or refused leaves the selection; what a later batch never reached stays selected.
     selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
     if (refused.length) await refresh(refused)
   }
@@ -855,10 +860,14 @@
     if (!done || bulkBusy) return
     bulkBusy = true; bulkError = ''
     try {
-      for (const id of [...done.batches].reverse()) await request(`/atlas/corrections/${id}/undo`, {})
+      const { answered, kept: waiting } = await sendEach([...done.batches].reverse(), id => request(`/atlas/corrections/${id}/undo`, {}))
       bulkDone = null
+      // Undos kept while writes are paused go once they resume; until then the site still shows those
+      // batches' crops corrected, so the view is read again.
+      if (waiting.length) bulkError = t('client.pausedKept')
+      if (!answered.length) return
       const shown = new Set([...items, ...local, ...corpus, ...sample].map(item => item.id))
-      if (Object.keys(done.before).every(id => shown.has(id))) patch(done.before)
+      if (!waiting.length && Object.keys(done.before).every(id => shown.has(id))) patch(done.before)
       else await load()
       runsChanged()
     } catch (e) { bulkError = e.message }

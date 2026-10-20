@@ -29,9 +29,9 @@ function setup() {
   const env = (paused?: string) => ({ DB: d1(db, statements), BETTER_AUTH_SECRET: 'freeze-test-secret-freeze-test-secret-01', MAIL_FROM: 'sign-in@example.org',
     CATALOGUE_LAG: '60', ...(paused === undefined ? {} : { WRITES_PAUSED: paused }) }) as unknown as Env;
   const jar = new Map<string, string>();
-  const send = async (paused: string | undefined, path: string, method = 'GET', body?: unknown) => {
+  const send = async (paused: string | undefined, path: string, method = 'GET', body?: unknown, origin: string | null = ORIGIN) => {
     const response = await worker.fetch(new Request(ORIGIN + path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: {
-      origin: ORIGIN, 'content-type': 'application/json', 'cf-connecting-ip': '192.0.2.10', cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') } }), env(paused), ctx);
+      ...(origin === null ? {} : { origin }), 'content-type': 'application/json', 'cf-connecting-ip': '192.0.2.10', cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') } }), env(paused), ctx);
     for (const cookie of response.headers.getSetCookie()) { const [k, v] = cookie.split(';')[0].split(/=(.*)/); jar.set(k, v) }
     return response;
   };
@@ -80,6 +80,41 @@ describe('the write freeze', () => {
     expect((await session.json())?.user).toBeTruthy();
     expect(written(statements)).toEqual([]);
     expect(db.query('SELECT expiresAt FROM session').get()).toEqual(before);
+  });
+  it('signs out in the browser by expiring the session cookies, writing nothing', async () => {
+    const { db, send, statements } = setup();
+    expect((await send(undefined, '/api/auth/sign-in/anonymous', 'POST', {})).status).toBe(200);
+    statements.length = 0;
+    const response = await send('1', '/api/auth/sign-out', 'POST', {});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
+    const cookies = response.headers.getSetCookie();
+    for (const name of ['__Secure-better-auth.session_token', '__Secure-better-auth.session_data', '__Secure-better-auth.dont_remember'])
+      expect(cookies).toContain(`${name}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`);
+    expect(written(statements)).toEqual([]);
+    expect(db.query('SELECT count(*) AS n FROM session').get()).toEqual({ n: 1 });
+    // The browser, holding no cookie now, is signed out.
+    expect(await (await send('1', '/api/auth/get-session')).json()).toBeNull();
+  });
+  it('refuses a paused sign-out from another origin, or with none', async () => {
+    const { send, statements } = setup();
+    expect((await send(undefined, '/api/auth/sign-in/anonymous', 'POST', {})).status).toBe(200);
+    statements.length = 0;
+    for (const origin of ['https://elsewhere.example', null]) {
+      const response = await send('1', '/api/auth/sign-out', 'POST', {}, origin);
+      expect(response.status).toBe(403);
+      expect(response.headers.getSetCookie()).toEqual([]);
+    }
+    expect(written(statements)).toEqual([]);
+    // The browser is still signed in.
+    expect((await (await send('1', '/api/auth/get-session')).json())?.user).toBeTruthy();
+  });
+  it('sends a provider callback to the sign-in page with the reason', async () => {
+    const { send, statements } = setup();
+    const response = await send('1', '/api/auth/callback/github?code=x&state=y');
+    expect(response.status).toBe(302);
+    expect(new URL(response.headers.get('location')!).pathname + new URL(response.headers.get('location')!).search).toBe('/sign-in?error=paused');
+    expect(written(statements)).toEqual([]);
   });
   it('counts sign-in routes read by GET as writes, and the session read as a read', () => {
     expect(writes('GET', '/api/auth/callback/github')).toBe(true);
