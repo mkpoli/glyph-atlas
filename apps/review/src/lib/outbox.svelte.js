@@ -7,7 +7,9 @@
 // `DatabaseStatus` shows what is waiting.
 import { backoff, isBusy, isPaused, retryAfter } from './busy.svelte.js'
 
-export const outbox = $state({ pending: 0, refused: [], paused: false })
+// `keys` names this reader's kept saves; `lost` names every kept save the site refused since the page
+// loaded, which stays named after the corner's note is dismissed.
+export const outbox = $state({ pending: 0, refused: [], paused: false, keys: [], lost: [] })
 
 // The browser stores saves in IndexedDB; a save IndexedDB would not take goes to localStorage, and
 // failing both, to this page's memory. All three are read together.
@@ -54,7 +56,10 @@ async function remove(key) {
 // is not counted meanwhile.
 const mine = async () => (await entries()).filter(entry => sender?.mine(entry) !== false)
 // What the corner counts.
-const count = async () => { outbox.pending = (await mine()).length }
+const count = async () => { const kept = await mine(); outbox.pending = kept.length; outbox.keys = kept.map(entry => entry.key) }
+
+/** Where a kept save stands, by its key: `kept` while it waits, `refused` once the site refused it, else `sent`. */
+export const keptState = key => outbox.lost.includes(key) ? 'refused' : outbox.keys.includes(key) ? 'kept' : 'sent'
 
 /**
  * The crops this reader's kept saves decide, by id: the crops of a kept round (flagged, seen or skipped)
@@ -87,7 +92,8 @@ export function useSender(value) { sender = value }
 
 /** Whether a save can be kept: it names its submission, so sending it twice records it once. */
 export const keepable = (path, body) => typeof body?.id === 'string' || /\/undo$/.test(path)
-const keyOf = (path, body) => path + '#' + (typeof body?.id === 'string' ? body.id : '')
+/** The key a save is kept under. */
+export const keyOf = (path, body) => path + '#' + (typeof body?.id === 'string' ? body.id : '')
 
 // The page's own callers wait for their save; one kept from an earlier page has nobody waiting.
 const waiting = new Map()
@@ -172,6 +178,7 @@ async function run() {
         if (tries < TRIES) { failed.set(entry.key, tries); again(); return }
         failed.delete(entry.key)
         await remove(entry.key)
+        outbox.lost.push(entry.key)
         if (!settleWaiters(entry.key, waiter => waiter.reject(error))) outbox.refused.push({ key: entry.key, message: error.message })
         continue
       }
@@ -190,6 +197,7 @@ async function run() {
       try { value = sender.settle(answer) } catch (error) {
         // A refusal (the crop changed since, say) goes to the view that made the save, which shows it
         // as it shows any refusal; a save from an earlier page is shown in the corner instead.
+        outbox.lost.push(entry.key)
         if (!settleWaiters(entry.key, waiter => waiter.reject(error))) outbox.refused.push({ key: entry.key, message: error.message })
         continue
       }

@@ -20,7 +20,7 @@ mock.module('../src/lib/session.svelte.js', () => ({
 
 const { backoff } = await import('../src/lib/busy.svelte.js')
 const { request } = await import('../src/lib/client.js')
-const { outbox, drain, keep, keptCrops } = await import('../src/lib/outbox.svelte.js')
+const { outbox, drain, keep, keptCrops, keptState, keyOf, dismiss } = await import('../src/lib/outbox.svelte.js')
 const { correctionBatches, sendBatches, sendEach } = await import('../src/lib/corrections.js')
 
 const paused = () => Response.json({ error: 'paused', message: 'Changes are paused.' }, { status: 503, headers: { 'retry-after': '300' } })
@@ -178,6 +178,28 @@ test('a batch the site refused is a new submission next time; one whose sending 
   globalThis.fetch = async () => { throw new Error('connection reset') }
   expect((await sendBatches(correctionBatches('お', crops, 1), send).catch(e => e)).message).toBe('connection reset')
   expect(correctionBatches('お', crops, 1)[0].id).toBe(next)
+})
+
+test('a kept round reads as kept while it waits, as sent once taken, and as refused once refused, even after the note is dismissed', async () => {
+  me = { id: 'u1', anonymous: false }
+  answer = () => Response.json({ ok: true })
+  await new Promise(resolve => realTimeout(resolve, 10))
+  await drain()
+  answer = paused
+  const taken = keyOf('/atlas/rounds', { id: 'round-taken' }), refused = keyOf('/atlas/rounds', { id: 'round-refused' })
+  for (const id of ['round-taken', 'round-refused']) await keep('/atlas/rounds', { id, grapheme: 'U+304B', seen: [{ id: id + '-crop' }], skipped: [] }, me)
+  expect([keptState(taken), keptState(refused)]).toEqual(['kept', 'kept'])
+  // Writes resume; the site takes one round and refuses the other.
+  await new Promise(resolve => realTimeout(resolve, 10))
+  globalThis.fetch = async (path, init) => {
+    const { id } = JSON.parse(init.body)
+    return id === 'round-refused' ? Response.json({ detail: 'This crop changed.' }, { status: 409 }) : Response.json({ ok: true })
+  }
+  await drain()
+  expect([keptState(taken), keptState(refused)]).toEqual(['sent', 'refused'])
+  expect(outbox.refused.map(r => r.key)).toContain(refused)
+  dismiss(refused)
+  expect(keptState(refused)).toBe('refused')
 })
 
 test('a run of saves stops at a refusal, and says what came before it', async () => {
