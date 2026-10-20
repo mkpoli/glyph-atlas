@@ -9,6 +9,8 @@ export type Place = { object: string; offset: number; size: number; type: string
 const SHARD_SECONDS = 300, SHARDS_HELD = 32, RECHECK_SECONDS = 30;
 // A mapped image whose pack is not in R2: the publication stopped between pack and map.
 export class MediaIncomplete extends Error {}
+// R2 failed, or holds a shard that does not decode. Asking again later may succeed.
+export class StorageUnavailable extends Error {}
 export const shardKey = (key: string) => `v3/media/${key.slice(0, 3)}.json.gz`;
 
 // The edge copy is keyed by a URL on this site that no route answers, and says when it expires.
@@ -17,23 +19,33 @@ const EXPIRES = 'x-shard-expires';
 type Read<T> = { shard: T | null; expires: number };
 
 async function decoded<T>(bytes: ArrayBuffer): Promise<T> {
-  return await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json() as T;
+  const value = await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json();
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('A shard is not a JSON object.');
+  return value as T;
 }
 
 const settle = (put: Promise<unknown>, ctx?: ExecutionContext) => ctx ? (ctx.waitUntil(put), undefined) : put;
 
-// A shard from the edge copy, or from R2 when there is none, it has expired, or when `direct`.
+// A shard from the edge copy, or from R2 when there is none, it has expired or it does not decode, or
+// when `direct`. A copy read from R2 is decoded before it replaces the edge copy.
 async function readShard<T>(env: Env, name: string, now: number, direct: boolean, ctx?: ExecutionContext): Promise<Read<T>> {
   const cacheKey = edgeKey(name);
   if (!direct) {
     const cached = await caches.default.match(cacheKey);
     const expires = Number(cached?.headers.get(EXPIRES));
-    if (cached && expires > now) return { shard: await decoded<T>(await cached.arrayBuffer()), expires };
+    if (cached && expires > now) {
+      try { return { shard: await decoded<T>(await cached.arrayBuffer()), expires }; }
+      catch { await settle(caches.default.delete(cacheKey), ctx); }
+    }
   }
-  const bytes = await (await env.MEDIA.get(name))?.arrayBuffer() ?? null;
+  let bytes: ArrayBuffer | null;
+  try { bytes = await (await env.MEDIA.get(name))?.arrayBuffer() ?? null; }
+  catch (error) { throw new StorageUnavailable(`${name} could not be read`, { cause: error }); }
   const expires = now + SHARD_SECONDS * 1000;
   if (!bytes) return { shard: null, expires };
-  const shard = await decoded<T>(bytes);
+  let shard: T;
+  try { shard = await decoded<T>(bytes); }
+  catch (error) { throw new StorageUnavailable(`${name} does not decode`, { cause: error }); }
   await settle(caches.default.put(cacheKey, new Response(bytes, { headers: {
     'cache-control': `public, max-age=${SHARD_SECONDS}`, [EXPIRES]: String(expires) } })), ctx);
   return { shard, expires };
@@ -94,7 +106,9 @@ export async function mediaResponse(env: Env, request: Request, key: string, ctx
   const place = await mediaPlace(env, key, ctx);
   if (!place) return null;
   if (request.headers.get('if-none-match') === `"${key}"`) return new Response(null, { status: 304 });
-  const object = await env.MEDIA.get(place.object, { range: { offset: place.offset, length: place.size } });
+  let object: R2ObjectBody | null;
+  try { object = await env.MEDIA.get(place.object, { range: { offset: place.offset, length: place.size } }); }
+  catch (error) { throw new StorageUnavailable(`${place.object} could not be read`, { cause: error }); }
   if (!object) throw new MediaIncomplete(`${place.object} is missing`);
   const response = new Response(object.body, { headers: { 'content-type': place.type, 'content-length': String(place.size),
     'cache-control': 'public, max-age=31536000, immutable', 'etag': `"${key}"`, 'x-content-type-options': 'nosniff' } });

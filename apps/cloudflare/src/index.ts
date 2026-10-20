@@ -22,7 +22,7 @@ import { honkokuPage } from './honkoku';
 import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
 import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
-import { MediaIncomplete, mediaResponse } from './atlas3Media';
+import { MediaIncomplete, StorageUnavailable, mediaResponse } from './atlas3Media';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
 export { dateClaimsQuery, dateStatsQuery, datingQuery, tallyDates } from './dating';
@@ -2527,7 +2527,9 @@ const routes = {
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);
       if(image){
         try{const found=await mediaResponse(env,request,image[1],ctx);if(found)return found}
-        catch(error){if(error instanceof MediaIncomplete)throw new Problem(503,'Image publication is incomplete.');throw error}
+        catch(error){if(error instanceof MediaIncomplete)throw new Problem(503,'Image publication is incomplete.');
+          if(error instanceof StorageUnavailable){console.error(JSON.stringify({event:'media_unavailable',path,...described(error)}));
+            throw new Problem(503,'Image storage is unavailable. Try again in a moment.',{code:'busy'})}throw error}
         throw new Problem(404,'Image not found.');
       }
       // A round leaves out what its reviewer skipped lately, so it reads who is asking.

@@ -102,6 +102,28 @@ describe('new-layout images', () => {
   });
 });
 
+describe('shards that fail', () => {
+  it('replace an edge copy that does not decode with the copy in R2', async () => {
+    const { env, key, reads } = setup(), name = shardKey(key), url = `https://glyphatlas.org/_shards/${name}`;
+    edge.set(url, new Response('not gzip', { headers: { 'x-shard-expires': String(Date.now() + 60_000) } }));
+    expect(await mediaPlace(env, key)).not.toBeNull();
+    expect(reads.filter(r => r === name)).toHaveLength(1);
+    expect(edge.get(url)!.headers.get('x-shard-expires')).not.toBeNull();
+    const { gunzipSync } = await import('node:zlib');
+    expect(JSON.parse(gunzipSync(new Uint8Array(await edge.get(url)!.arrayBuffer())).toString()).objects).toEqual(['packs/p.bin']);
+  });
+
+  it('keep no edge copy of a shard in R2 that does not decode', async () => {
+    const { env, key, objects } = setup(), name = shardKey(key);
+    objects.set(name, gzipSync('{"objects": ['));
+    await expect(mediaPlace(env, key)).rejects.toThrow('does not decode');
+    expect(edge.has(`https://glyphatlas.org/_shards/${name}`)).toBe(false);
+    // The next request reads R2 again and finds the repaired shard.
+    objects.set(name, gzipSync(JSON.stringify({ objects: ['packs/p.bin'], keys: { ['a'.repeat(61)]: [0, 8, 4] } })));
+    expect(await mediaPlace(env, key)).not.toBeNull();
+  });
+});
+
 // The route itself, with no `DB` binding: a read of the old database would fail the request.
 describe('the image route', () => {
   const get = (env: Env, ctx: ExecutionContext, key: string, headers: HeadersInit = {}) =>
@@ -138,5 +160,18 @@ describe('the image route', () => {
     const response = await get(broken, ctx, key);
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ detail: 'Image publication is incomplete.' });
+  });
+
+  it('answers 503 busy with retry-after when R2 fails or a shard does not decode', async () => {
+    for (const fault of ['shard', 'corrupt', 'pack'] as const) {
+      const { env, key, ctx, failing, objects } = setup();
+      if (fault === 'shard') failing.add(shardKey(key));
+      if (fault === 'corrupt') objects.set(shardKey(key), new Uint8Array([1, 2, 3]));
+      if (fault === 'pack') failing.add('packs/p.bin');
+      const response = await get(env, ctx, key);
+      expect(response.status).toBe(503);
+      expect(response.headers.get('retry-after')).toBe('5');
+      expect(await response.json()).toEqual({ detail: 'Image storage is unavailable. Try again in a moment.', code: 'busy' });
+    }
   });
 });
