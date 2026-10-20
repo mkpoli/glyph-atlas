@@ -93,6 +93,8 @@ export const ensureSignedIn = options => current?.ensure(options)
 export const sessionStarted = () => current?.started
 /** Whether this browser still holds a reviewer id from before accounts, which `start` claims. */
 export const holdsLegacyReviewer = () => stored(LEGACY, null) !== null
+/** Whether the page knows who reads: it arrived knowing, or it has asked. */
+export const readerKnown = () => Boolean(current && (current.state.ready || current.state.user))
 /** Who is signed in, as far as the page knows, without starting a session. */
 export const signedInUser = () => current?.state.user ?? null
 

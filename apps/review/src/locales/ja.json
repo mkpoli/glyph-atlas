@@ -12,6 +12,7 @@
   "app.nav.aria": "メインナビゲーション",
   "app.saved": "保存しました",
   "app.keptHere": "この端末に保存",
+  "app.notSaved": "保存されませんでした",
   "bulk.tileSelected": "、選択中",
   "bulk.tooMany": "短時間の修正が多すぎます。1分ほど待ってから、もう一度お試しください。",
   "bulk.refused.other": "{count}件は読み込み後に変更されたか、すでに確認済みでした。選択を外し、最新の状態を表示しました。",

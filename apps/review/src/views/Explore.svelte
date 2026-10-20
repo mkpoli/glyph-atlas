@@ -30,7 +30,7 @@
   import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, stored, remember } from '../lib/client.js'
-  import { correctionBatches, sendEach } from '../lib/corrections.js'
+  import { correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
   import { characterAddress, collectionAddress, corpusScope, expandFor, graphemeAddress, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
@@ -824,7 +824,7 @@
     const saved = [], before = {}, after = {}
     let refused = [], answered = [], waiting = []
     try {
-      ({ answered, kept: waiting } = await sendEach(correctionBatches(target, crops, BATCH), ({ id, crops: part }) =>
+      ({ answered, kept: waiting } = await sendBatches(correctionBatches(target, crops, BATCH), ({ id, crops: part }) =>
         request('/atlas/corrections', { id, character: target,
           crops: part.map(item => ({ id: item.id, revision: item.revision,
             ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) })))
@@ -866,8 +866,10 @@
       // batches' crops corrected, so the view is read again.
       if (waiting.length) bulkError = t('client.pausedKept')
       if (!answered.length) return
+      // Tiles go back at the revision each undo answered, so correcting them again is not refused.
       const shown = new Set([...items, ...local, ...corpus, ...sample].map(item => item.id))
-      if (!waiting.length && Object.keys(done.before).every(id => shown.has(id))) patch(done.before)
+      const restored = waiting.length ? null : restoredCrops(done.before, answered)
+      if (restored && Object.keys(restored).every(id => shown.has(id))) patch(restored)
       else await load()
       runsChanged()
     } catch (e) { bulkError = e.message }

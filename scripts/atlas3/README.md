@@ -141,14 +141,24 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
    characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
    `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`
-   (`migrations-atlas/0005_books.sql`), books by integer id and occurrences by crop through
+   (`migrations-atlas/0005_books.sql`), books and occurrences by integer id through
    `out/mirror.sqlite`, and writes the parts and their figures to `out/books-report.txt`; facts about
-   a document that is not a book are left out with a count. `books.py --send` applies `0005_books.sql`
+   a document that is not a book are left out with a count. Whether the site shows an occurrence with
+   its review state is not stored, since every round changes it: a route derives it when it reads,
+   from the crop's kind (a collected crop always) and, for a corpus glyph, from `seen`, `skips` and
+   `events` (a round showed, skipped or reviewed it). The query, bounded by the `book_characters` key
+   and the `seen_crop`, `skips` and `event_crop` indexes, is in `0005_books.sql`. `books.py --send` applies `0005_books.sql`
    and loads only what differs from the local copy, in stamped parts. A book's title comes from its
-   first page bundle, else from its corpus publication. The corpus glyphs per book and the homepage
+   first page bundle, else from the source the first of that bundle's crops names, else from its
+   corpus publication. The corpus glyphs per book and the homepage
    sample are derived from the crops by `answers.py` (*not built*), so neither is copied. Keeping the
    facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
    ainu-records' character lists and the catalogue's site values still write the old database.
+   The date claims on documents that are not books stay in `assertions` with the history (11,998 of
+   the 14,095), and no `book_dates` row is made for them. When such a document gains crops after the
+   cutover, its dates come from running the resolver, `resolve` in `src/glyph_atlas/dates.py` (the one
+   `scripts/export_dates_cloudflare.py` runs), over its `date_*` assertions in `glyph-atlas-v3`; the
+   step that does so and writes `book_dates` is *not built*.
 7. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
    session changes still frozen. It is created once, before the window:
    `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:
@@ -216,9 +226,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
       then answers an `expiresAt` 90 days out.
    3. A favourite, set and read back; the history page; an old text-id URL, which answers the crop
       by its integer id.
-   4. A claim: a form claim of a value outside the crop's grapheme (an IDS), which writes the ledger
-      and no review, on a crop with no `current_claims` row (`SELECT count(*) FROM current_claims
-      WHERE crop=:crop` is 0).
+   4. A claim: a form claim of an IDS outside the crop's grapheme whose form already exists
+      (`SELECT count(*) FROM forms f JOIN representations r ON r.id=f.anchor WHERE r.scheme='ids'
+      AND r.value=:ids` is 1), on a crop with no `current_claims` row (`SELECT count(*) FROM
+      current_claims WHERE crop=:crop` is 0). It writes the ledger and the crop's claim, and no
+      review, representation or form.
    5. `POST /api/auth/sign-out` last; the read in 1 then answers null.
 
    The checks write these rows, and nothing else writes in the window. `:test` is the test
@@ -228,6 +240,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    ```sql
    -- glyph-atlas-v3
    DELETE FROM favourites WHERE user = :test;
+   DELETE FROM current_claims WHERE crop = :crop AND predicate = 'has_form'
+     AND subject IN (SELECT subject FROM assertions WHERE asserted_by = :test AND predicate = 'has_form');
    DELETE FROM ledger_submissions WHERE id IN (SELECT submission FROM assertions WHERE asserted_by = :test);
    DELETE FROM ledger_submissions WHERE id IN (SELECT submission FROM assertion_actions
      WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test));
@@ -235,7 +249,6 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    DELETE FROM assertion_evidence WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test);
    DELETE FROM assertion_premises WHERE assertion IN (SELECT id FROM assertions WHERE asserted_by = :test);
    DELETE FROM assertions WHERE asserted_by = :test;
-   DELETE FROM current_claims WHERE crop = :crop;
    DELETE FROM actors WHERE user = :test;
    -- glyph-atlas-accounts
    DELETE FROM rateLimit WHERE key >= '192.0.2.77|' AND key < '192.0.2.77}';
@@ -248,7 +261,9 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 
    The test account had no reviews, so its actor names no submission
    (`SELECT count(*) FROM submissions WHERE actor IN (SELECT id FROM actors WHERE user = :test)` is
-   0). Each delete reads by an index or a key range. Delete `wrangler.check.jsonc` and
+   0). Each delete reads by an index or a key range, and each reaches only the checks' rows: the
+   test account's own and the test account's claim on a crop nothing named before the window. The
+   IDS's form and representation were there before and stay. Delete `wrangler.check.jsonc` and
    `.dev.vars.cutover` after.
 
    Then upload the checked Worker, still paused, and make the version that will be deployed:
