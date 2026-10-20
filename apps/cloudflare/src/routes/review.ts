@@ -534,7 +534,7 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     results.push({ crop: r.crop, revision: current.revision + 1, reverses: r.id });
   }
   const shownOrSkipped = (await env.ATLAS.prepare(`SELECT crop FROM seen WHERE submission=?1
-    UNION SELECT crop FROM skips WHERE actor=?2 AND submission=?1`).bind(submission.id, submission.actor).all<{ crop: number }>()).results
+    UNION SELECT crop FROM skips WHERE submission=?1`).bind(submission.id).all<{ crop: number }>()).results
     .map(row => row.crop).filter(crop => !changes.some(c => c.crop === crop));
   const statements = [env.ATLAS.prepare('UPDATE submissions SET undone=1 WHERE id=?').bind(submission.id),
     ...eventStatements(env, actor, submission.key, at, changes),

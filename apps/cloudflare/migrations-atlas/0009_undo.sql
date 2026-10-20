@@ -12,3 +12,5 @@ ALTER TABLE events ADD COLUMN was_x INTEGER;
 ALTER TABLE events ADD COLUMN was_y INTEGER;
 ALTER TABLE events ADD COLUMN was_w INTEGER;
 ALTER TABLE events ADD COLUMN was_h INTEGER;
+-- An undo finds the crops its round skipped.
+CREATE INDEX skip_submission ON skips(submission) WHERE submission IS NOT NULL;
