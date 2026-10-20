@@ -21,8 +21,9 @@ read:
 Facts about a document that is not a book of the new layout are left out with a count. Only what
 differs from the local copy is sent, in parts named by their content and confirmed by their stamps in
 `imports`, then replayed on the local copy; a rerun after a fresh copy sends the difference. Every part
-removes each row before writing it, so it applies again harmlessly, and `--send` first replays the
-parts of earlier runs whose stamps D1 holds and the local copy lacks (one read of `imports`). A dry run
+removes each row before writing it, so its data rows apply again harmlessly; a whole part sent again
+fails on its `imports` stamp, which D1 already holds, and D1 rolls the part back. `--send` first
+replays the parts of earlier runs whose stamps D1 holds and the local copy lacks (one read of `imports`). A dry run
 (the default) writes the parts and the figures to `out/books-report.txt` and sends nothing. `--send`
 also applies migration 0005 (stamp `migration:0005`) where the local copy lacks it.
 
@@ -186,7 +187,7 @@ def statements(books, atlas):
         new = {tuple(r[i] for i in k): r for r in books.execute(f"SELECT {names} FROM {table}")}
         rows = [[remove(table, cols, key, r)] for kk, r in sorted(held.items()) if kk not in new]
         removed = len(rows)
-        # Each row is removed before it is written, so a part applies again without a conflict.
+        # Each row is removed before it is written, so its statements apply again without a conflict.
         rows += [[remove(table, cols, key, r), *row_statements(table, list(cols), list(key), r)]
                  for kk, r in sorted(new.items()) if held.get(kk) != r]
         add(table, rows, removed, sum(kk not in held for kk, r in new.items()))
