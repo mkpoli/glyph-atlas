@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { auth, viewer } from './auth';
+import { auth, claim, viewer } from './auth';
+import { hourly as run } from './accounts';
 
 // The auth library reads through D1's whole statement API, `raw` and `run`'s row id included.
 class Statement {
@@ -34,7 +35,17 @@ function setup(origin = 'https://glyphatlas.org', accounts = migrated('migration
   const statements: string[] = [];
   // SIGN_IN_MAIL's two a minute, by key.
   const sent = new Map<string, number>();
-  const env = { ACCOUNTS: d1(accounts, statements), ATLAS: d1(atlas), BETTER_AUTH_SECRET: 'auth-test-secret-auth-test-secret-0123', MAIL_FROM: 'sign-in@example.org',
+  // MEDIA's objects by key, listed by prefix a page of two at a time.
+  const media = new Map<string, string>();
+  const MEDIA = {
+    list: async ({ prefix, cursor }: { prefix: string; cursor?: string }) => {
+      // As in R2, the cursor stands after the last key listed.
+      const keys = [...media.keys()].filter(key => key.startsWith(prefix) && key > (cursor ?? '')).sort();
+      return { objects: keys.slice(0, 2).map(key => ({ key })), truncated: keys.length > 2, cursor: keys[1] };
+    },
+    delete: async (keys: string | string[]) => { for (const key of [keys].flat()) media.delete(key) },
+  };
+  const env = { ACCOUNTS: d1(accounts, statements), ATLAS: d1(atlas), MEDIA, BETTER_AUTH_SECRET: 'auth-test-secret-auth-test-secret-0123', MAIL_FROM: 'sign-in@example.org',
     EMAIL: { send: async (mail: { subject: string }) => { code = mail.subject.match(/\d{6}/)?.[0] ?? '' } },
     SIGN_IN_MAIL: { limit: async ({ key }: { key: string }) => { sent.set(key, (sent.get(key) ?? 0) + 1); return { success: sent.get(key)! <= 2 } } } } as unknown as Env;
   const handler = auth(env, origin).handler, jar = new Map<string, string>();
@@ -54,7 +65,7 @@ function setup(origin = 'https://glyphatlas.org', accounts = migrated('migration
     expect(await call('/sign-in/email-otp', { email, otp: code })).toBe(200);
     return (accounts.query('SELECT id FROM "user" WHERE email=?').get(email) as { id: string }).id;
   };
-  return { env, accounts, atlas, call, send, jar, image, signIn, code: () => code, statements };
+  return { env, accounts, atlas, media, call, send, jar, image, signIn, code: () => code, statements };
 }
 
 describe('a reader\'s picture through the auth API', () => {
@@ -136,6 +147,32 @@ describe('users and what they wrote, in two databases', () => {
     expect(atlas.query('SELECT user,crop,at FROM favourites ORDER BY crop').all()).toEqual([
       { user: kept, crop: 7, at: 1 }, { user: kept, crop: 8, at: 1 }, { user: kept, crop: 9, at: 2 }]);
   });
+  it('bring an anonymous user\'s old reviewer ids only up to the account\'s five, the earliest first', async () => {
+    const { atlas, accounts, call, jar, code, signIn } = setup('https://cap.glyphatlas.org');
+    const kept = await signIn('kept@example.org');
+    atlas.exec(`INSERT INTO actors(key,user,via,at) VALUES('reviewer-00000001','${kept}','legacy',1),('reviewer-00000002','${kept}','legacy',1),('reviewer-00000003','${kept}','legacy',1)`);
+    jar.clear();
+    expect(await call('/sign-in/anonymous', {}, '192.0.2.11')).toBe(200);
+    const anon = (accounts.query('SELECT id FROM "user" WHERE isAnonymous=1').get() as { id: string }).id;
+    atlas.exec(`INSERT INTO actors(key,user,via,at) VALUES('reviewer-0000000c','${anon}','legacy',30),('reviewer-0000000a','${anon}','legacy',10),('reviewer-0000000b','${anon}','legacy',20)`);
+    expect(await call('/email-otp/send-verification-otp', { email: 'kept@example.org', type: 'sign-in' }, '192.0.2.11')).toBe(200);
+    expect(await call('/sign-in/email-otp', { email: 'kept@example.org', otp: code() }, '192.0.2.11')).toBe(200);
+    expect(atlas.query("SELECT key,user FROM actors WHERE key LIKE 'reviewer-0000000_' AND key>'reviewer-00000009' ORDER BY key").all()).toEqual([
+      { key: 'reviewer-0000000a', user: kept }, { key: 'reviewer-0000000b', user: kept }, { key: 'reviewer-0000000c', user: anon }]);
+    expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user=? AND via='legacy'").get(kept)).toEqual({ n: 5 });
+    expect(atlas.query('SELECT user FROM actors WHERE key=?').get(anon)).toEqual({ user: kept });
+  });
+  it('keep the stars of a sign-in that lands on the anonymous user itself, and record no link', async () => {
+    const { env, atlas, accounts, call } = setup('https://same.glyphatlas.org');
+    expect(await call('/sign-in/anonymous', {})).toBe(200);
+    const anon = accounts.query('SELECT id,name FROM "user" WHERE isAnonymous=1').get() as { id: string; name: string };
+    atlas.exec(`INSERT INTO favourites VALUES('${anon.id}',9,2)`);
+    const plugin = (auth(env, 'https://same.glyphatlas.org').options.plugins as any[]).find(p => p.id === 'anonymous');
+    const user = { id: anon.id, name: anon.name, createdAt: new Date() };
+    await plugin.options.onLinkAccount({ anonymousUser: { user }, newUser: { user } });
+    expect(atlas.query('SELECT user,crop FROM favourites').all()).toEqual([{ user: anon.id, crop: 9 }]);
+    expect(accounts.query('SELECT count(*) AS n FROM anonymous_links').get()).toEqual({ n: 0 });
+  });
   it('let a user take a name shaped like an old reviewer id only when they hold that id', async () => {
     const { atlas, call, signIn } = setup('https://names.glyphatlas.org');
     const id = await signIn('ada@example.org');
@@ -181,7 +218,7 @@ describe('deleting a user', () => {
     return { ...s, gone, stays, rows };
   }
   it('removes its rows in ACCOUNTS, then its stars and actor links in ATLAS, and keeps the actors', async () => {
-    const { call, accounts, atlas, gone, stays, rows } = await seeded('https://delete.glyphatlas.org');
+    const { call, accounts, atlas, env, gone, stays, rows } = await seeded('https://delete.glyphatlas.org');
     expect(rows(gone)).toEqual({ session: 1, account: 1, passkey: 1 });
     expect(await call('/admin/remove-user', { userId: gone })).toBe(200);
     expect(accounts.query('SELECT count(*) AS n FROM "user" WHERE id=?').get(gone)).toEqual({ n: 0 });
@@ -192,6 +229,57 @@ describe('deleting a user', () => {
     expect(atlas.query(`SELECT key,user FROM actors WHERE key IN (?, 'reviewer-0000000a') ORDER BY key`).all(gone))
       .toEqual([{ key: gone, user: null }, { key: 'reviewer-0000000a', user: null }]);
     expect(rows(stays).session).toBe(1);
+    // The deleted user's old reviewer id is nobody's to claim.
+    const other = { id: stays, name: 'stays', image: null, anonymous: false, admin: false };
+    expect((await claim(env, other, 'reviewer-0000000a')).status).toBe(409);
+  });
+  it('deletes its uploaded pictures and the anonymous users joined to it, with their sessions', async () => {
+    const { call, send, jar, code, accounts, atlas, media, gone, stays, rows } = await seeded('https://joined.glyphatlas.org');
+    for (const name of ['a', 'b', 'c']) media.set(`avatars/${gone}/${name}.webp`, name);
+    media.set(`avatars/${stays}/a.webp`, 'a');
+    // An anonymous session, then a sign-in to the account that is deleted.
+    const admin = new Map(jar);
+    jar.clear();
+    expect(await call('/sign-in/anonymous', {}, '192.0.2.11')).toBe(200);
+    const anon = (accounts.query('SELECT id FROM "user" WHERE isAnonymous=1').get() as { id: string }).id;
+    expect(await call('/email-otp/send-verification-otp', { email: 'gone@example.org', type: 'sign-in' }, '192.0.2.11')).toBe(200);
+    expect(await call('/sign-in/email-otp', { email: 'gone@example.org', otp: code() }, '192.0.2.11')).toBe(200);
+    expect(accounts.query('SELECT anonymous,user FROM anonymous_links').all()).toEqual([{ anonymous: anon, user: gone }]);
+    expect(rows(anon).session).toBe(1);
+    jar.clear();
+    for (const [k, v] of admin) jar.set(k, v);
+    expect(await call('/admin/remove-user', { userId: gone })).toBe(200);
+    expect(accounts.query('SELECT count(*) AS n FROM "user" WHERE id IN (?,?)').get(gone, anon)).toEqual({ n: 0 });
+    expect(rows(anon)).toEqual({ session: 0, account: 0, passkey: 0 });
+    expect(accounts.query('SELECT count(*) AS n FROM anonymous_links').get()).toEqual({ n: 0 });
+    expect(accounts.query('SELECT count(*) AS n FROM forgotten').get()).toEqual({ n: 0 });
+    expect(atlas.query('SELECT count(*) AS n FROM actors WHERE user IN (?,?)').get(gone, anon)).toEqual({ n: 0 });
+    expect([...media.keys()]).toEqual([`avatars/${stays}/a.webp`]);
+    expect((await send('/get-session', undefined)).ok).toBe(true);
+  });
+  it('deletes no account linked to it as if anonymous', async () => {
+    const { call, accounts, atlas, gone, stays } = await seeded('https://linked.glyphatlas.org');
+    accounts.exec(`INSERT INTO anonymous_links(anonymous,user,at) VALUES('${stays}','${gone}','2026-10-20T00:00:00.000Z')`);
+    expect(await call('/admin/remove-user', { userId: gone })).toBe(200);
+    expect(accounts.query('SELECT count(*) AS n FROM "user" WHERE id=?').get(stays)).toEqual({ n: 1 });
+    expect(accounts.query('SELECT count(*) AS n FROM session WHERE userId=?').get(stays)).toEqual({ n: 1 });
+    expect(atlas.query('SELECT user,crop FROM favourites').all()).toEqual([{ user: stays, crop: 7 }]);
+    expect(atlas.query('SELECT user FROM actors WHERE key=?').get(stays)).toEqual({ user: stays });
+  });
+  it('is finished by the hourly run, which waits while writes are paused', async () => {
+    const { call, accounts, atlas, env, gone } = await seeded('https://hourly.glyphatlas.org');
+    const batch = env.ATLAS.batch;
+    (env.ATLAS as any).batch = async () => { throw new Error('D1_ERROR: unavailable') };
+    expect(await call('/admin/remove-user', { userId: gone })).toBe(200);
+    (env.ATLAS as any).batch = batch;
+    const hourly = (more: Record<string, string>) => run({ ...env, ...more } as Env);
+    await hourly({ WRITES_PAUSED: '1' });
+    expect(accounts.query('SELECT user FROM forgotten').all()).toEqual([{ user: gone }]);
+    expect(atlas.query('SELECT count(*) AS n FROM favourites WHERE user=?').get(gone)).toEqual({ n: 1 });
+    await hourly({});
+    expect(accounts.query('SELECT count(*) AS n FROM forgotten').get()).toEqual({ n: 0 });
+    expect(atlas.query('SELECT count(*) AS n FROM favourites WHERE user=?').get(gone)).toEqual({ n: 0 });
+    expect(atlas.query('SELECT count(*) AS n FROM actors WHERE user=?').get(gone)).toEqual({ n: 0 });
   });
   it('is finished by the next deletion when ATLAS fails between the two databases', async () => {
     const { call, accounts, atlas, env, gone, stays } = await seeded('https://retry.glyphatlas.org');

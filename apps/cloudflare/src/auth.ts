@@ -45,6 +45,9 @@ export const LEGACY_REVIEWER = /^reviewer-[0-9a-f]{8}$/;
 // A user who gives no name is called `anon-` and six hex digits, a shape no reviewer id had.
 const GENERATED = /^anon-[0-9a-f]{6}$/;
 const generatedName = () => 'anon-' + crypto.randomUUID().slice(0, 6);
+// How many old reviewer ids one user may hold: a browser held one, a reader with a few browsers a few.
+// The cap holds when an anonymous user is joined to an account too.
+export const CLAIMS = 5;
 
 function build(env: Env, origin: string, paused: boolean) {
   return betterAuth({
@@ -116,8 +119,10 @@ function build(env: Env, origin: string, paused: boolean) {
             if (!held) throw new APIError('BAD_REQUEST', { message: 'This name is an old reviewer id another reviewer may hold.' });
           },
         },
-        // A deleted user's rows here go first, then their favourites and links to actors in `ATLAS`. The
-        // mark made before keeps a deletion that stops between the two databases for the next one to finish.
+        // Better Auth deletes the user's sessions and sign-in accounts, runs `before`, which marks the user
+        // and deletes the anonymous users joined to it, then deletes the user. `after` removes their
+        // favourites and links to actors in `ATLAS` and their pictures; a deletion that stops before that
+        // is finished by the next one or by the hourly `scheduled` run.
         delete: {
           before: async user => { await startForgetting(env, user.id) },
           after: async () => { await finishForgetting(env).catch(error => console.error(JSON.stringify({ event: 'forget_failed', error: String(error) }))) },
@@ -159,9 +164,18 @@ function build(env: Env, origin: string, paused: boolean) {
         disableDeleteAnonymousUser: true,
         // Signing in with an account from an anonymous session brings that session's work along.
         onLinkAccount: async ({ anonymousUser, newUser }) => {
+          // A sign-in that lands on the anonymous user itself has nothing to bring.
+          if (anonymousUser.user.id === newUser.user.id) return;
+          // The link is kept, so that deleting the account deletes the anonymous user too.
+          await env.ACCOUNTS.prepare('INSERT OR IGNORE INTO anonymous_links(anonymous,user,at) VALUES(?,?,?)')
+            .bind(anonymousUser.user.id, newUser.user.id, new Date().toISOString()).run();
+          // Its old reviewer ids come along up to the account's CLAIMS, the earliest claimed first; the rest
+          // stay with the anonymous user, unclaimable, and are unlinked when the account is deleted.
           // Its stars too; a crop the account had starred already keeps the account's own.
           await env.ATLAS.batch([
-            env.ATLAS.prepare('UPDATE actors SET user=? WHERE user=?').bind(newUser.user.id, anonymousUser.user.id),
+            env.ATLAS.prepare(`UPDATE actors SET user=?1 WHERE id IN (SELECT id FROM actors WHERE user=?2 AND via='legacy' ORDER BY at,id
+              LIMIT max(0, ?3 - (SELECT count(*) FROM actors WHERE user=?1 AND via='legacy')))`).bind(newUser.user.id, anonymousUser.user.id, CLAIMS),
+            env.ATLAS.prepare("UPDATE actors SET user=? WHERE user=? AND via IS NOT 'legacy'").bind(newUser.user.id, anonymousUser.user.id),
             env.ATLAS.prepare('INSERT OR IGNORE INTO favourites(user,crop,at) SELECT ?,crop,at FROM favourites WHERE user=?').bind(newUser.user.id, anonymousUser.user.id),
             env.ATLAS.prepare('DELETE FROM favourites WHERE user=?').bind(anonymousUser.user.id),
           ]);
@@ -201,24 +215,21 @@ export async function viewer(env: Env, request: Request, fresh = false): Promise
 /** The ids a user's rows were written under, as a subquery over `actors`. */
 export const owned = (user: string) => `(SELECT actor FROM actors WHERE user_id='${user.replaceAll("'", "''")}')`;
 
-// How many old reviewer ids one user may take: a browser held one, a reader with a few browsers a few.
-const CLAIMS = 5;
 /**
  * Take over a reviewer id a browser made up before accounts. The browser that holds the id sends it,
- * and the first account to send an id holds it from then on.
+ * and the first account to send an id holds it from then on, past that account's deletion.
  */
 export async function claim(env: Env, user: Viewer, reviewer: string) {
   if (!LEGACY_REVIEWER.test(reviewer)) return { status: 422, body: { detail: 'Not a reviewer id from before accounts.' } };
-  const holder = () => env.ATLAS.prepare('SELECT user FROM actors WHERE key=?').bind(reviewer).first<{ user: string | null }>();
-  const answer = (row: { user: string | null } | null) => row?.user === user.id ? { status: 200, body: { reviewer, status: 'held' } }
-    : { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
-  // An actor row with no user is an id whose account was deleted, or one that wrote before any account
-  // took it; the first account to send it takes it.
-  const found = await holder();
-  if (found?.user) return answer(found);
-  const held = await env.ATLAS.prepare("SELECT count(*) AS n FROM actors WHERE user=? AND via='legacy'").bind(user.id).first<{ n: number }>();
-  if ((held?.n ?? 0) >= CLAIMS) return { status: 429, body: { detail: 'This account already holds as many old reviewer ids as one may.' } };
-  await env.ATLAS.prepare(`INSERT INTO actors(key,user,via,at) VALUES(?,?,'legacy',?)
-    ON CONFLICT(key) DO UPDATE SET user=excluded.user,via=excluded.via,at=excluded.at WHERE actors.user IS NULL`).bind(reviewer, user.id, Date.now()).run();
-  return answer(await holder());
+  // An actor row with neither user nor `via` is an id that wrote before any account took it, and the
+  // first account to send it takes it. One with `via` set was held by an account since deleted, and
+  // stays with nobody. The cap is checked in the same statement, so that claims sent at once stop at it.
+  await env.ATLAS.prepare(`INSERT INTO actors(key,user,via,at) SELECT ?1,?2,'legacy',?3
+    WHERE (SELECT count(*) FROM actors WHERE user=?2 AND via='legacy') < ?4
+    ON CONFLICT(key) DO UPDATE SET user=excluded.user,via=excluded.via,at=excluded.at WHERE actors.user IS NULL AND actors.via IS NULL`)
+    .bind(reviewer, user.id, Date.now(), CLAIMS).run();
+  const found = await env.ATLAS.prepare('SELECT user,via FROM actors WHERE key=?').bind(reviewer).first<{ user: string | null; via: string | null }>();
+  if (found?.user === user.id) return { status: 200, body: { reviewer, status: 'held' } };
+  if (found?.user || found?.via) return { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
+  return { status: 429, body: { detail: 'This account already holds as many old reviewer ids as one may.' } };
 }

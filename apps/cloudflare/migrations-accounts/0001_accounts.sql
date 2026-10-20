@@ -27,3 +27,12 @@ CREATE TABLE IF NOT EXISTS account_profiles (
 -- is written before the user's rows here are deleted and removed once glyph-atlas-v3 is clear, so a
 -- deletion that stops between the two databases is finished by the next one.
 CREATE TABLE IF NOT EXISTS forgotten (user TEXT PRIMARY KEY, at TEXT NOT NULL) WITHOUT ROWID;
+
+-- An anonymous user joined to an account by signing in from its session. Its actors and favourites
+-- moved to the account; deleting the account deletes the anonymous user and its sessions too.
+CREATE TABLE IF NOT EXISTS anonymous_links (
+  anonymous TEXT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
+  user TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS anonymous_link_user ON anonymous_links(user);
