@@ -3,6 +3,7 @@ import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { canonical, history, historyQuery } from './index';
 import { summary } from './admin';
+import { owned } from './auth';
 import { d1 } from './forms.test';
 
 function migrated() {
@@ -80,6 +81,13 @@ describe('journal actors', () => {
       expect(plan.filter(d => d.startsWith('SEARCH events')).length).toBe(3);
       expect(plan.some(d => d.includes('TEMP B-TREE'))).toBe(false);
     }
+    db.close();
+  });
+  it('move with an anonymous user who signs in to an account', () => {
+    const { db } = migrated();
+    db.exec(`UPDATE actors SET user_id='u1' WHERE user_id='u2'`);
+    expect(db.query(`SELECT actor FROM ${owned('u1')} ORDER BY 1`).all()).toEqual(
+      [{ actor: 'reviewer-0000000a' }, { actor: 'u1' }, { actor: 'u2' }]);
     db.close();
   });
 });

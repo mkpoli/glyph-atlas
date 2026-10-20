@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from '../forms.test';
 import { bundleKey, cropId, publicId } from '../atlas3';
-import { owned, ownedActors } from '../auth';
+import { ownedActors, ownedKeys } from '../auth';
 import { Problem } from '../busy';
 import { STALE_CODE } from '../atlas3Crops';
 import { cropChanges, reviewCropsQuery, reviewRoute, revert, roundMembersQuery, type Submission } from './review';
@@ -306,7 +306,7 @@ describe('the statements', () => {
     const db = new Database(':memory:'); databases.push(db);
     schema(db);
     db.exec(`INSERT INTO actors(id,key,user,via) VALUES(1,'u1','u1','account'),(2,'reviewer-0000000a','u1','legacy'),(3,'u2','u2','account')`);
-    expect(db.query(`SELECT key FROM ${owned('u1')} ORDER BY 1`).all()).toEqual([{ key: 'reviewer-0000000a' }, { key: 'u1' }]);
+    expect(db.query(`SELECT key FROM ${ownedKeys('u1')} ORDER BY 1`).all()).toEqual([{ key: 'reviewer-0000000a' }, { key: 'u1' }]);
     expect(db.query(`SELECT id FROM ${ownedActors('u1')} ORDER BY 1`).all()).toEqual([{ id: 1 }, { id: 2 }]);
   });
 });
