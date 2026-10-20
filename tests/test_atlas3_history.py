@@ -271,3 +271,22 @@ def test_corpus_rows_follow_the_old_rows_and_keep_each_flag(layout, monkeypatch)
     assert list(out.execute("SELECT crop, seq FROM corpus_rows")) == [(g1, 1)]
     assert list(out.execute("SELECT crop, finding, realigned, transcribed, at FROM corpus_flags")) == [
         (g1, "box-relabel", "所", None, 1790899200000)]
+
+
+def test_a_submissions_events_are_numbered_in_its_requests_order(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    at = "2026-10-01T00:00:03Z"
+    request = json.dumps({"input": {"answers": [{"id": "ex:b1"}, {"id": "ex:a2"}, {"id": "ex:a1"}]}, "target": None})
+    a2 = {"x": 0, "y": 20, "w": 10, "h": 10}
+    # The event ids sort the other way round from the answers, as random ids may.
+    sources(root, submissions=[sub("u1:s1", "u1", "2026-10-01T00:00:02Z"), ("u1:r", "u1", request, "{}", at, 0)],
+            events=[event("cf:a", "ex:a1", "u1:r", "u1", 0, at), event("cf:b", "ex:a2", "u1:r", "u1", 0, at, a2),
+                    event("cf:c", "ex:b1", "u1:r", "u1", 0, at)])
+    i = ids(root)
+    # Each crop reviewed once since its publication.
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    atlas.execute("UPDATE crops SET revision=1 WHERE id IN (?, ?)", (i["ex:a1"], i["ex:b1"]))
+    atlas.commit()
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    assert [c for (c,) in out.execute("SELECT crop FROM events ORDER BY id")] == [i["ex:b1"], i["ex:a2"], i["ex:a1"]]

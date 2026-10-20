@@ -351,6 +351,15 @@ def main():
             retired_revision[crops.ids[text]] = revision_now
         report.note(f"events: {len(unrowed)} crops with no crops row (retired); revision checked against the source units row")
 
+    # Events are numbered in the order the old site wrote them: by time, and within one submission in
+    # the order its request lists the crops (a round's answers, a batch's crops), as its rows went in.
+    listed = {}
+    for r in subs:
+        input_ = json.loads(r["request"]).get("input") or {}
+        crops_ = input_.get("answers") if isinstance(input_.get("answers"), list) else input_.get("crops")
+        listed[r["id"]] = {c.get("id"): i for i, c in enumerate(crops_ or []) if isinstance(c, dict)}
+    parsed.sort(key=lambda p: (ms(p[0]["at"]), sub.get(p[0]["submission"], 0),
+                               listed.get(p[0]["submission"], {}).get(p[0]["target"], 0)))
     events, unrecorded = [], 0
     for r, cid, before, after, evidence in parsed:
         problems = []

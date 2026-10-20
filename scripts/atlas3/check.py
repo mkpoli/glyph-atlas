@@ -690,6 +690,30 @@ def check_history(report, name, query=None):
             t.compare(f"event {r['id']} on {target} ({cid})", want, got)
     t.done()
 
+    # Within one submission, events are numbered in the order its request lists the crops, the order the
+    # old site wrote their rows in; and across submissions, by time.
+    text_of = {}
+    problems, previous = [], None
+    by_submission = defaultdict(list)
+    for eid, submission, cid, at in history.execute("SELECT id, submission, crop, at FROM events ORDER BY id"):
+        if previous is not None and at < previous:
+            problems.append(f"event {eid}: at {at} before the event numbered just below it")
+        previous = at
+        by_submission[sub_key[submission]].append(cid)
+    for key_, request in source("submissions").execute("SELECT id, request FROM submissions"):
+        got = by_submission.get(key_)
+        if not got or len(got) < 2:
+            continue
+        input_ = json.loads(request).get("input") or {}
+        named = [c["id"] for c in (input_.get("answers") or input_.get("crops") or []) if isinstance(c, dict)]
+        for cid in got:
+            if cid not in text_of:
+                text_of[cid] = mirror.execute("SELECT text FROM ids WHERE id=?", (cid,)).fetchone()[0]
+        order = [text_of[c] for c in got]
+        if order != [t for t in named if t in order]:
+            problems.append(f"submission {key_}: events in the order {order[:5]}, the request lists {named[:5]}")
+    report.check("events are numbered by time and, within a submission, in its request's order", problems)
+
     # No event is past its crop's revision: the crops row's, or a retired crop's last live record's.
     problems, unrecorded = [], []
     for cid, revision in history.execute("SELECT crop, max(revision) FROM events GROUP BY crop"):
