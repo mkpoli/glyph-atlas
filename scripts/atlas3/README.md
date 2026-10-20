@@ -137,9 +137,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`
    (`migrations-atlas/0005_books.sql`), books and occurrences by integer id through
    `out/mirror.sqlite`, and writes the parts and their figures to `out/books-report.txt`; facts about
-   a document that is not a book are left out with a count. It runs after the history is loaded: an
-   occurrence counts as shown with its review state (`book_characters.atlas`) when it is a collected
-   crop or a corpus glyph that a round showed, skipped or reviewed, the crops the old `units` held. `books.py --send` applies `0005_books.sql`
+   a document that is not a book are left out with a count. Whether the site shows an occurrence with
+   its review state is not stored, since every round changes it: a route derives it when it reads,
+   from the crop's kind (a collected crop always) and, for a corpus glyph, from `seen`, `skips` and
+   `events` (a round showed, skipped or reviewed it). The query, bounded by the `book_characters` key
+   and the `seen_crop`, `skips` and `event_crop` indexes, is in `0005_books.sql`. `books.py --send` applies `0005_books.sql`
    and loads only what differs from the local copy, in stamped parts. A book's title comes from its
    first page bundle, else from the source the first of that bundle's crops names, else from its
    corpus publication. The corpus glyphs per book and the homepage

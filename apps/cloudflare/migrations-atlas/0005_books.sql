@@ -16,11 +16,17 @@ CREATE TABLE book_dates(book INTEGER NOT NULL, axis TEXT NOT NULL CHECK (axis IN
   PRIMARY KEY(book, axis), CHECK (start IS NULL OR end IS NULL OR start <= end)) WITHOUT ROWID;
 
 -- A book's characters in source order, for another site that shows each occurrence where it stands on
--- its page. `crop` is the occurrence's integer id. `atlas` is 1 for an occurrence the site shows with its
--- review state: a collected crop, or a corpus glyph a round showed, skipped or reviewed. `data` is what
--- the source knows of it: page, line, block, position, context, box, label and where the label came from.
+-- its page. `crop` is the occurrence's integer id. `data` is what the source knows of it: page, line,
+-- block, position, context, box, label and where the label came from.
+-- Whether the site shows an occurrence with its review state changes with every round, so a route
+-- derives it when it reads: a collected crop (kind 0) always, a corpus glyph (kind 1) once a round
+-- showed, skipped or reviewed it. One page of a book costs the PRIMARY KEY range here, one crops row
+-- per occurrence and at most three index probes (`seen_crop`, the `skips` key, `event_crop`):
+--   SELECT c.ord, c.crop, c.data, (k.kind = 0 OR (k.kind = 1 AND (EXISTS (SELECT 1 FROM seen WHERE crop = c.crop)
+--       OR EXISTS (SELECT 1 FROM skips WHERE crop = c.crop) OR EXISTS (SELECT 1 FROM events WHERE crop = c.crop)))) AS shown
+--   FROM book_characters c JOIN crops k ON k.id = c.crop WHERE c.book = ?1 AND c.ord >= ?2 ORDER BY c.ord LIMIT ?3;
 CREATE TABLE book_characters(book INTEGER NOT NULL, ord INTEGER NOT NULL, crop INTEGER NOT NULL,
-  atlas INTEGER NOT NULL CHECK (atlas IN (0, 1)), data TEXT NOT NULL, PRIMARY KEY(book, ord)) WITHOUT ROWID;
+  data TEXT NOT NULL, PRIMARY KEY(book, ord)) WITHOUT ROWID;
 
 -- Values a publication states about the whole site: `collection` (the collection's status),
 -- `corpus_index` (the corpus summary), `review_epoch` (moves when review history was reset, so
