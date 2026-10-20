@@ -8,16 +8,22 @@ The copies `source-document_dating`, `source-corpus_documents`, `source-document
 in the local copy and every published occurrence by its crop through `out/mirror.sqlite`, which is only
 read:
 
-- `books.title`: the title on the book's first page bundle, else the one its corpus publication gave;
+- `books.title`: the title on the book's first page bundle, else the source its first crop there names,
+  else the one its corpus publication gave;
 - `book_dates`: both dating axes of each book, less the claim list and the export stamp (the claims
   stay in `assertions`);
-- `book_characters`: each occurrence names its crop, or keeps the source's id when no crop has it;
+- `book_characters`: each occurrence by its integer crop id; a character whose unit the mirror lacks
+  stops the run. Whether the site shows it with its review state is derived when a route reads it
+  (the query is in 0005), since every round changes it;
 - `site`: the publication's `collection`, `corpus_index`, `review_epoch`, `variant_sources` and
   `word_sources`.
 
 Facts about a document that is not a book of the new layout are left out with a count. Only what
 differs from the local copy is sent, in parts named by their content and confirmed by their stamps in
-`imports`, then replayed on the local copy; a rerun after a fresh copy sends the difference. A dry run
+`imports`, then replayed on the local copy; a rerun after a fresh copy sends the difference. Every part
+removes each row before writing it, so its data rows apply again harmlessly; a whole part sent again
+fails on its `imports` stamp, which D1 already holds, and D1 rolls the part back. `--send` first
+replays the parts of earlier runs whose stamps D1 holds and the local copy lacks (one read of `imports`). A dry run
 (the default) writes the parts and the figures to `out/books-report.txt` and sends nothing. `--send`
 also applies migration 0005 (stamp `migration:0005`) where the local copy lacks it.
 
@@ -37,12 +43,12 @@ import sys
 
 from build import HERE, OUT
 from load_history import GROUP, SCHEMA, built, deliver, row_statements, stamped
-from publish import applied, lit, send
+from publish import applied, lit, query, send
 
 SITE_KEYS = ("collection", "corpus_index", "review_epoch", "variant_sources", "word_sources")
 DATE_COLS = ("book", "axis", "kind", "start", "end", "precision", "qualifier", "uncertain", "text", "label", "status",
              "calendar", "conversion", "source")
-CHARACTER_COLS = ("book", "ord", "crop", "unit", "data")
+CHARACTER_COLS = ("book", "ord", "crop", "data")
 # Each table books.py owns, with its key.
 TABLES = {"book_dates": (DATE_COLS, ("book", "axis")), "book_characters": (CHARACTER_COLS, ("book", "ord")),
           "site": (("key", "value"), ("key",))}
@@ -61,15 +67,31 @@ def source(table):
     return db
 
 
+def source_title(value):
+    """A crop's `source`: the title itself, or an object (or its JSON) that holds one."""
+    if isinstance(value, str) and value.startswith("{"):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value.get("title") if isinstance(value, dict) else value
+
+
 def titles(atlas, corpus):
-    """Each book's title: its first page bundle's, else its corpus publication's."""
+    """Each book's title: its first page bundle's, else the source of the first of that bundle's crops
+    that names one, else its corpus publication's."""
     found, first = {}, {}
     for pid, book, rev in atlas.execute("SELECT id, book, rev FROM pages WHERE rev > 0 ORDER BY id"):
         first.setdefault(book, (pid, rev))
     for book, (pid, rev) in first.items():
         path = OUT / "pages" / f"{pid}-{rev}.json.gz"
-        if path.exists() and (title := (json.loads(gzip.decompress(path.read_bytes())).get("page") or {}).get("title")):
+        if not path.exists():
+            continue
+        bundle = json.loads(gzip.decompress(path.read_bytes()))
+        if title := (bundle.get("page") or {}).get("title"):
             found[book] = ("pages", title)
+        elif title := next((t for c in bundle.get("crops", []) if (t := source_title(c.get("source")))), None):
+            found[book] = ("crops", title)
     for book, title in corpus.items():
         if title and book not in found:
             found[book] = ("corpus", title)
@@ -77,7 +99,7 @@ def titles(atlas, corpus):
 
 
 def translate(atlas, mirror):
-    """out/books.sqlite from the copies, and how many rows were left out or kept without a crop, by reason."""
+    """out/books.sqlite from the copies, and how many rows were left out, by reason."""
     path = OUT / "books.sqlite"
     path.unlink(missing_ok=True)
     out = sqlite3.connect(path)
@@ -108,19 +130,20 @@ def translate(atlas, mirror):
             rows.append((b, *r[1:6], r[6], int(bool(r[7])), *r[8:]))
     out.executemany(f"INSERT INTO book_dates VALUES({','.join('?' * len(DATE_COLS))})", rows)
 
-    published = {r[0] for r in atlas.execute("SELECT id FROM crops")}
-    rows = []
-    for document, ord_, unit, data in source("document_characters").execute(
-            "SELECT document, ord, unit, data FROM document_characters ORDER BY document, ord"):
+    characters = source("document_characters").execute(
+        "SELECT document, ord, unit, data FROM document_characters ORDER BY document, ord").fetchall()
+    rows, unknown = [], []
+    for document, ord_, unit, data in characters:
         if (b := book(document, "characters")) is None:
             continue
         crop = mirror.execute("SELECT id FROM ids WHERE text=?", (unit,)).fetchone()
-        if crop is None or crop[0] not in published:
-            count("characters with no published crop, kept by their source id")
-            rows.append((b, ord_, None, unit, data))
-        else:
-            rows.append((b, ord_, crop[0], None, data))
-    out.executemany("INSERT INTO book_characters VALUES(?,?,?,?,?)", rows)
+        if crop is None:
+            unknown.append(unit)
+            continue
+        rows.append((b, ord_, crop[0], data))
+    if unknown:
+        sys.exit(f"{len(unknown)} characters name no crop of the mirror: {unknown[:5]}")
+    out.executemany("INSERT INTO book_characters VALUES(?,?,?,?)", rows)
 
     meta = dict(source("metadata").execute("SELECT key, value FROM metadata"))
     out.executemany("INSERT INTO site VALUES(?,?)", [(k, meta[k]) for k in SITE_KEYS if k in meta])
@@ -141,13 +164,15 @@ def remove(table, cols, key, r):
 
 def statements(books, atlas):
     """Groups of statements that turn the local copy's book facts into the translation's; a row's
-    statements stay in one group. Also the rows each table writes."""
-    groups, written = [], {}
+    statements stay in one group. Also, per table, the rows removed, added and changed, and the rows
+    written: one per statement that finds its row, so the DELETE ahead of a new row counts nothing."""
+    groups, changes = [], {}
 
-    def add(table, rows):
+    def add(table, rows, removed=0, added=0):
         for i in range(0, len(rows), GROUP):
             groups.append([s for r in rows[i:i + GROUP] for s in r])
-        written[table] = sum(len(r) for r in rows)
+        changes[table] = {"removed": removed, "added": added, "changed": len(rows) - removed - added,
+                          "written": sum(len(r) for r in rows) - added}
 
     columns = {r[1] for r in atlas.execute("PRAGMA table_info(books)")}
     now = dict(atlas.execute("SELECT id, title FROM books")) if "title" in columns else \
@@ -161,26 +186,45 @@ def statements(books, atlas):
         held = {tuple(r[i] for i in k): r for r in atlas.execute(f"SELECT {names} FROM {table}")} if has(atlas, table) else {}
         new = {tuple(r[i] for i in k): r for r in books.execute(f"SELECT {names} FROM {table}")}
         rows = [[remove(table, cols, key, r)] for kk, r in sorted(held.items()) if kk not in new]
-        for kk, r in sorted(new.items()):
-            if held.get(kk) != r:
-                rows.append(([remove(table, cols, key, r)] if kk in held else [])
-                            + row_statements(table, list(cols), list(key), r))
-        add(table, rows)
-    return groups, written
+        removed = len(rows)
+        # Each row is removed before it is written, so its statements apply again without a conflict.
+        rows += [[remove(table, cols, key, r), *row_statements(table, list(cols), list(key), r)]
+                 for kk, r in sorted(new.items()) if held.get(kk) != r]
+        add(table, rows, removed, sum(kk not in held for kk, r in new.items()))
+    return groups, changes
 
 
-def figures(books, written, left):
-    """Rows and bytes per table of the translation, and the rows a load writes."""
-    lines = ["table\trows\tbytes\tstatements"]
+def figures(books, changes, left):
+    """Rows and bytes per table of the translation, and what a load changes and writes."""
+    kinds = ("removed", "added", "changed", "written")
+    lines = ["table\trows\tbytes\t" + "\t".join(kinds)]
     for table in ("books", *TABLES):
         cols = ["title"] if table == "books" else list(TABLES[table][0])
         size = " + ".join(f"coalesce(length(CAST(\"{c}\" AS BLOB)), 0)" for c in cols)
         n, b = books.execute(f"SELECT count(*), coalesce(sum({size}), 0) FROM {table}").fetchone()
-        lines.append(f"{'books.title' if table == 'books' else table}\t{n}\t{b}\t{written.get(table, 0)}")
-    lines.append(f"statements to send (each writes a row or removes one): {sum(written.values())}")
+        got = changes.get(table, {})
+        lines.append(f"{'books.title' if table == 'books' else table}\t{n}\t{b}\t"
+                     + "\t".join(str(got.get(k, 0)) for k in kinds))
+    lines.append(f"rows written: {sum(c['written'] for c in changes.values())} (a removed row 1; a new row its INSERT "
+                 "and the UPDATE per piece of a long value; a changed row its DELETE and those)")
     for reason, n in sorted(left.items()):
         lines.append(f"{n} {reason}")
     return "\n".join(lines) + "\n"
+
+
+def catch_up(atlas):
+    """Replay on the local copy the parts of earlier runs that D1 holds and the local copy lacks, as a
+    run stopped between the two leaves them, so the difference is taken from what D1 holds."""
+    local = {r[0] for r in atlas.execute("SELECT stamp FROM imports WHERE stamp LIKE 'books-%'")}
+    for r in query("glyph-atlas-v3", "SELECT stamp FROM imports WHERE stamp LIKE 'books-%' ORDER BY at, stamp"):
+        if r["stamp"] in local:
+            continue
+        run, part = r["stamp"].split(".", 1)
+        path = OUT / "books-load" / run / f"{part}.sql"
+        if not path.exists():
+            sys.exit(f"glyph-atlas-v3 holds {r['stamp']}, whose part {path} is gone; the local copy cannot follow it")
+        atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+        print(f"replayed {r['stamp']} from D1's imports", flush=True)
 
 
 def migrate(atlas):
@@ -211,9 +255,10 @@ def main():
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
         migrate(atlas)
+        catch_up(atlas)
     books, left = translate(atlas, mirror)
-    groups, written = statements(books, atlas)
-    report = figures(books, written, left)
+    groups, changes = statements(books, atlas)
+    report = figures(books, changes, left)
     (OUT / "books-report.txt").write_text(report)
     print(report, end="", flush=True)
     if not groups:

@@ -135,14 +135,24 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
    characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
    `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`
-   (`migrations-atlas/0005_books.sql`), books by integer id and occurrences by crop through
+   (`migrations-atlas/0005_books.sql`), books and occurrences by integer id through
    `out/mirror.sqlite`, and writes the parts and their figures to `out/books-report.txt`; facts about
-   a document that is not a book are left out with a count. `books.py --send` applies `0005_books.sql`
+   a document that is not a book are left out with a count. Whether the site shows an occurrence with
+   its review state is not stored, since every round changes it: a route derives it when it reads,
+   from the crop's kind (a collected crop always) and, for a corpus glyph, from `seen`, `skips` and
+   `events` (a round showed, skipped or reviewed it). The query, bounded by the `book_characters` key
+   and the `seen_crop`, `skips` and `event_crop` indexes, is in `0005_books.sql`. `books.py --send` applies `0005_books.sql`
    and loads only what differs from the local copy, in stamped parts. A book's title comes from its
-   first page bundle, else from its corpus publication. The corpus glyphs per book and the homepage
+   first page bundle, else from the source the first of that bundle's crops names, else from its
+   corpus publication. The corpus glyphs per book and the homepage
    sample are derived from the crops by `answers.py` (*not built*), so neither is copied. Keeping the
    facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
    ainu-records' character lists and the catalogue's site values still write the old database.
+   The date claims on documents that are not books stay in `assertions` with the history (11,998 of
+   the 14,095), and no `book_dates` row is made for them. When such a document gains crops after the
+   cutover, its dates come from running the resolver, `resolve` in `src/glyph_atlas/dates.py` (the one
+   `scripts/export_dates_cloudflare.py` runs), over its `date_*` assertions in `glyph-atlas-v3`; the
+   step that does so and writes `book_dates` is *not built*.
 7. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
    session changes still frozen. It is created once, before the window:
    `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:
