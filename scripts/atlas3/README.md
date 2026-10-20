@@ -50,7 +50,7 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   that the publish is pending are one transaction, saved before anything is sent.
 - Only what differs from the local copy is sent; pages whose crops and facts did not change keep
   their revision. A field the catalogue does not carry (form, cluster, cut, other flag bits, a corpus
-  label) keeps its published value. Witness years come from the catalogue's dating, else from the
+  label, model votes) keeps its published value. Witness years come from the catalogue's dating, else from the
   dating already published.
 - Review-owned columns (`char`, `state`, `style`, `quiz`, `kind`, `flags`) change only when the
   catalogue's revision is at least the published one, and in D1 only while the crop's revision is
@@ -68,6 +68,14 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   them in `unreplaced.txt` in its run. An entry that holds its replacement as a text id is rewritten
   by the next publish whose catalogue carries the crop as retired, or by `publish.py --replacements`,
   which checks every retired entry against `source-unit_redirects.sqlite`.
+- A catalogue whose `units` carry `visual` and `context`, as `export_cloudflare.py` writes them, sets
+  each published crop's model votes for its cut in its page's object
+  `v3/votes/<build>/<page>.json.gz` (`votes.py`), and a reading that is not ready removes them. Only
+  the objects that changed are uploaded, once D1 holds the model codes they name; `out/votes/` takes
+  each object as it goes up. A retired crop's votes go with it, and a reader takes an entry only while
+  its cut is the crop's. A rebuilt layout has its own build id, so its objects start a new folder.
+- A crop facts load left unfinished (`crop_facts.py --send`) stops the publish until it is finished.
+- A statement over 90 KB stops the publish before anything is allocated.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
   keeps its runs.
 - A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`
@@ -140,6 +148,25 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    to its integer crop id, and uploads the map as `v3/aliases/<first three hex digits of the text id's
    SHA-256>.json.gz`, read by `aliasCrop` in the Worker. A redirect cycle stops it with examples; a
    chain that ends outside the mirror is counted as gone and left out.
+   `crop_facts.py` (a dry run without `--send`) moves the crop facts from the copies `unit_facts`,
+   `form_families`, `form_clusters` and `form_units` (decision record 0008). Each collected crop's
+   model votes join its page object in `v3/votes/<build>/` when they were read on the image of the
+   crop's current cut. Each forms cluster becomes an R2 list named by its content,
+   `v3/forms/<n>-<digest>.json.gz` (glyphs by rank with tile, tone and size), each family an index
+   object under `v3/forms/families/`, clusters numbered by the mirror's `codes`; D1 takes the tables of
+   migration 0006, which it applies: families, clusters with their decisions (each must be its
+   cluster's latest in the loaded `form_decisions`), the glyphs with their own decision (each its
+   latest glyph decision there), and
+   `crops.cluster`. Text ids resolve through the mirror and never through a redirect; rows naming a
+   crop the mirror lacks or a retired crop, and readings of another image, are dropped and counted in
+   `out/crop-facts-report.txt`, and the counts are worked out again from what is kept. D1 takes the
+   difference from the local copy, so a rerun after a fresh copy sends only what changed, and readings
+   an earlier load wrote are written again from the fresh copy. `--send` refuses a database holding
+   form decisions the local copy lacks, holds decisions (`form_state.loading`) while its rows go, and
+   deletes an object under `v3/forms/` that nothing names once a load two hours or more after the one
+   that first found it unnamed runs. **The first `--send`
+   writes about 1.33M `crops` rows (`crops.cluster`); it needs the owner's approval with the dry run's
+   figures.**
 6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
    characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
    `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`
@@ -317,9 +344,8 @@ answers:
   `rejections`), including `writes_word` claims;
 - reviews (`events`, `submissions`, `skips`, `seen`, `actors`), accounts (`user`, `session`,
   `account`, `account_profiles`, `passkey`, `verification`, `rateLimit`) and `favourites`;
-- forms (`forms`, `form_*`);
+- `form_bases` (a corpus glyph's character and family before a form decision moved it);
 - `representations` (form anchors), which form claims write: they move with the forms;
-- the model votes in `units.visual`, and the text-id alias files;
 - search names for characters that first appear after the first build;
 - `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
   new `crops` has no per-crop grapheme column yet, so the read path decides how such a crop joins a

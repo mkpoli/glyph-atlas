@@ -20,6 +20,11 @@ images to the image key map (`media_map.py`).
   crops and its revision go together), then the runs to glyph-atlas-v3-runs. Each part counts as
   applied when its stamp is in that database's `imports`, and is then replayed on the local copy.
 - A publish stopped after allocating is finished by the next run before anything else.
+- A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
+  their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
+  parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
+  crop's entry.
+- A statement over STATEMENT_BYTES stops the publish before anything is allocated.
 
 With `--replacements` the publish also reads `source-unit_redirects.sqlite` (the catalogue's own
 `unit_redirects` win) and sets `replaced_by` on every retired bundle entry whose value differs from the
@@ -41,6 +46,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import media_map
+import votes
 from build import CORPUS_PAGE, PAGE, bundle_entry, char_text, replacement, shuffle
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,7 +80,11 @@ def merged_cuts(*lists):
 RUN_KEY = ("size", "graphemes", "hand", "shuffle", "first")
 # D1 takes an imported file whole; parts stay under the size the publication scripts use.
 PART_BYTES = 40 * 1024 ** 2
+# D1 refuses a statement over 100 KB.
+STATEMENT_BYTES = 90_000
 KEEP = object()
+# A crop facts load (crop_facts.py) names its run in `pending` with this prefix.
+FACTS_RUN = "crop-facts/"
 
 
 def lit(v):
@@ -170,6 +180,8 @@ class Mirror:
         self.atlas.commit()
         self.runs.commit()
         self.head, self.runs_sql = [], []
+        # Each page's vote entries by slot, read from out/votes/ when first touched, and the pages changed.
+        self.votes, self.voted = {}, set()
         self.page_sql = defaultdict(list)
         self.touched_pages = defaultdict(dict)
         self.guarded, self.stale, self.relabelled, self.runs_seen = [], [], [], set()
@@ -293,19 +305,48 @@ class Mirror:
         bundle = {k: v for k, v in bundle.items() if v is not None}
         self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
 
+    def vote_slots(self, pid):
+        if pid not in self.votes:
+            self.votes[pid] = votes.read(OUT / "votes", pid)
+        return self.votes[pid]
+
+    def vote(self, cid, cut, visual, context):
+        """The crop's votes for its cut from the catalogue's readings; its page object changes only when
+        they differ."""
+        key, stored = votes.visual(visual)
+        new = votes.entry(cut, self.code("models", key), stored, votes.context(context))
+        slots, slot = self.vote_slots(cid // PAGE), cid % PAGE
+        if slots.get(slot) == new:
+            return
+        if new is None:
+            del slots[slot]
+        else:
+            slots[slot] = new
+        self.voted.add(cid // PAGE)
+
     def retire(self, cid, text_id, mirror_revision):
         pid = cid // PAGE
         # The entry keeps the crop's cut, so a crop put back continues from it.
         cut = self.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()["cut"]
         self.page_sql[pid].append(f"DELETE FROM crops WHERE id={cid} AND revision={mirror_revision};")
+        if self.vote_slots(pid).pop(cid % PAGE, None) is not None:
+            self.voted.add(pid)
         self.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
         self.guarded.append(cid)
         self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut}, True)
 
 
+def fits(groups):
+    """Stop when a statement is over D1's limit; run before anything is allocated or committed."""
+    for group in groups:
+        if long := [s for s in group if len(s.encode()) > STATEMENT_BYTES]:
+            sys.exit(f"a statement of {len(long[0].encode())} bytes is over D1's limit, nothing sent: {long[0][:200]}")
+
+
 def write_parts(run, name, groups):
     """Groups of statements in files of at most PART_BYTES (a group larger than that is a part of its
     own); a group is never split. Each file carries its own stamp and is applied in order."""
+    fits(groups)
     parts, current, size = [], [], 0
     for group in groups:
         n = sum(len(s.encode()) + 1 for s in group)
@@ -370,6 +411,14 @@ def deliver(m, run):
             if refused:
                 print(f"{len(refused)} changes kept D1's newer review instead (ids in {run.name}/refused-by-d1.json)", flush=True)
             mark(run, "read back")
+    # The vote objects go once D1 holds the model codes they name; out/votes/ takes each as it goes up.
+    voted = sorted((run / "votes").glob("*.json.gz")) if (run / "votes").exists() else []
+    if voted and "votes uploaded" not in journal(run):
+        upload(voted, votes.prefix(m.build))
+        (OUT / "votes").mkdir(exist_ok=True)
+        for path in voted:
+            shutil.copy2(path, OUT / "votes" / path.name)
+        mark(run, "votes uploaded")
     for path in (run / "pages").iterdir():
         shutil.copy2(path, OUT / "pages" / path.name)
         page, rev = path.name.split(".")[0].split("-")
@@ -410,8 +459,12 @@ def main():
     build_id = m.ids.execute("SELECT value FROM meta WHERE key='build'").fetchone()
     if not build_id:
         sys.exit("out/mirror.sqlite names no build; it is not the mirror of glyph-atlas-v3")
+    m.build = build_id[0]
     if not dry and not applied("glyph-atlas-v3", f"build:{build_id[0]}"):
         sys.exit(f"glyph-atlas-v3 was not loaded from build {build_id[0]}; this mirror does not belong to it")
+    # A crop facts load writes the same tables and objects; it finishes first.
+    for (name,) in m.ids.execute("SELECT run FROM pending WHERE run LIKE ?", (FACTS_RUN + "%",)):
+        sys.exit(f"the crop facts load {name.removeprefix(FACTS_RUN)} is unfinished; finish it with crop_facts.py --send first")
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
@@ -456,6 +509,9 @@ def main():
 
     # Identity checks a publish without the slot matcher can make.
     columns = "id, origin, character, visual_group, production, category, state, revision, quiz, document, style, data"
+    with_votes = "units" in tables and {"visual", "context"} <= {r[1] for r in src.execute("PRAGMA table_info(units)")}
+    if with_votes:
+        columns += ", visual, context"
     units = list(src.execute(f"SELECT {columns} FROM units WHERE origin IN ('local', 'retired') ORDER BY id")) if "units" in tables else []
     overlay = {r["id"]: r for r in src.execute(f"SELECT {columns} FROM units WHERE origin='corpus'")} if "units" in tables else {}
     retiring = {r["id"] for r in units if r["origin"] == "retired"}
@@ -611,6 +667,8 @@ def main():
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
         m.crop(given, bundle, r["revision"], True, suspect=bool(data.get("suspect")))
+        if with_votes:
+            m.vote(cid, given.get("cut", row["cut"] if row else 0), r["visual"], r["context"])
         n += 1
 
     if "corpus_units" in tables:
@@ -766,8 +824,11 @@ def main():
     (run / "guarded.json").write_text(json.dumps(m.guarded))
     statements = sum(len(g) for g in groups)
     (run / "stale.json").write_text(json.dumps(m.stale))
+    voted = [votes.write(run / "votes", pid, m.votes[pid]) for pid in sorted(m.voted)
+             if votes.encode(m.votes[pid]) != ((OUT / "votes" / f"{pid}.json.gz").read_bytes()
+                                              if (OUT / "votes" / f"{pid}.json.gz").exists() else None)]
     print(f"{n} crops read, {statements} statements in {atlas_parts} parts{runs_note} in {runs_parts} parts, "
-          f"{len(files)} pages -> {run}", flush=True)
+          f"{len(files)} pages, {len(voted)} vote objects -> {run}", flush=True)
     if unresolved:
         (run / "unreplaced.txt").write_text("\n".join(unresolved) + "\n")
         print(f"{len(unresolved)} retired crops have no live crop on their redirect chain and name no replacement "
@@ -783,7 +844,7 @@ def main():
         mark(run, "dry run")
         print("dry run: nothing allocated, sent or changed")
         return
-    if not atlas_parts and not runs_parts:
+    if not atlas_parts and not runs_parts and not voted:
         m.ids.rollback()
         mark(run, "nothing to send")
         media_map.send(upload)

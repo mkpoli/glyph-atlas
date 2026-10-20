@@ -22,7 +22,7 @@ HERE = Path(os.environ.get("ATLAS3_DIR", ROOT / "work/atlas-v3"))
 CF = ROOT / "apps/cloudflare"
 db = None
 
-# table: (columns, key columns, chunk)
+# copy: (columns, key columns, chunk[, live table when the copy has another name])
 TABLES = {
     "units": ("id,origin,character,family,visual_group,production,category,state,revision,quiz,shuffle,document,style,written_form,data", ["rowid"], 1500),
     "corpus_units": ("id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label", ["rowid"], 8000),
@@ -62,6 +62,16 @@ TABLES = {
     "forms": ("id,anchor,created_by,created_at", ["id"], 8000),
     "corpus_follow": ("id", ["id"], 8000),
     "aliases": ("query,code_point,rank", ["rowid"], 15000),
+    # The model votes and the image they were read on, and each tile's paper colour and size, apart from
+    # `units` so the crops' copy keeps its size; and the forms tool's clustering.
+    "unit_facts": (("id,origin,visual,context,data->>'$.image_sha256' AS image_sha256,data->>'$.tone' AS tone,"
+                    "data->>'$.image_size' AS image_size"), ["rowid"], 1500, "units"),
+    "form_families": ("code_point,char,label,count,cluster_count,forms,assigned,rejected,revision", ["code_point"], 1000),
+    "form_clusters": ("id,family,label,count,coherence,shape_position,size_position,form,decision,issue",
+                      ["id"], 2000),
+    "form_units": (("id,family,cluster,rank,similarity,image,split,clustered,cluster_form,cluster_issue,cluster_character,"
+                    "cluster_family,glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_character,glyph_family,form,issue,"
+                    "issue_character,written_family"), ["id"], 8000),
     # Character reference data (reference.py); the chunk of a SIZED table is its probe.
     "characters": ("code_point,character,name,data,detail,json_extract(data,'$.grapheme.code_point') AS head", ["code_point"], 1000),
     "character_variants": ("a,b,relation,source,detail,written,widens", ["a", "b", "relation", "source"], 8000),
@@ -108,7 +118,8 @@ def pull(table, fresh):
     if fresh:
         path.unlink(missing_ok=True)
     db = sqlite3.connect(path)
-    cols, keys, chunk = TABLES[table]
+    cols, keys, chunk, *live = TABLES[table]
+    live = live[0] if live else table
     names = [c.split(" AS ")[-1].strip().strip('"') for c in cols.split(",")]
     if table == "characters":
         names = ["code_point", "character", "name", "data", "detail", "head"]
@@ -132,7 +143,7 @@ def pull(table, fresh):
         else:
             where = f"WHERE ({order}) > ({','.join(sql_lit(v) for v in last)})"
         if table in SIZED:
-            probe = query(f'SELECT {order},{SIZED[table]} AS _bytes FROM "{table}" {where} ORDER BY {order} LIMIT {chunk}')
+            probe = query(f'SELECT {order},{SIZED[table]} AS _bytes FROM "{live}" {where} ORDER BY {order} LIMIT {chunk}')
             if not probe:
                 break
             fit, total = 0, 0
@@ -141,9 +152,9 @@ def pull(table, fresh):
                 fit += 1
             upto = [probe[fit - 1][k] for k in keys]
             bound = f"{keys[0]} <= {sql_lit(upto[0])}" if len(keys) == 1 else f"({order}) <= ({','.join(sql_lit(v) for v in upto)})"
-            rows = query(f'SELECT {select} FROM "{table}" {where + " AND " if where else "WHERE "}{bound} ORDER BY {order}')
+            rows = query(f'SELECT {select} FROM "{live}" {where + " AND " if where else "WHERE "}{bound} ORDER BY {order}')
         else:
-            rows = query(f'SELECT {select} FROM "{table}" {where} ORDER BY {order} LIMIT {chunk}')
+            rows = query(f'SELECT {select} FROM "{live}" {where} ORDER BY {order} LIMIT {chunk}')
         if not rows:
             break
         db.executemany(f'INSERT INTO "{table}" VALUES({",".join("?" * len(store))})', [[r[c] for c in store] for r in rows])
