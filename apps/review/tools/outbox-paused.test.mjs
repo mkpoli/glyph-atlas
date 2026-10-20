@@ -167,7 +167,7 @@ test('a batch corrected, undone and corrected again is a new submission, which t
   expect(state).toEqual({ u0: 'え', u1: 'え' })
 })
 
-test('a batch the site refused is a new submission next time; one whose sending failed keeps its id', async () => {
+test('a batch the site refused with a 4xx is a new submission next time; one met by a 5xx or a failed sending keeps its id', async () => {
   const crops = [{ id: 'r0', revision: 1 }]
   const send = ({ id, crops: part }) => request('/atlas/corrections', { id, character: 'お', crops: part })
   answer = () => Response.json({ detail: 'changed' }, { status: 409 })
@@ -175,6 +175,10 @@ test('a batch the site refused is a new submission next time; one whose sending 
   expect((await sendBatches(correctionBatches('お', crops, 1), send).catch(e => e)).status).toBe(409)
   const next = correctionBatches('お', crops, 1)[0].id
   expect(next).not.toBe(refused)
+  // A 5xx may come after the site recorded the batch: sent again, it must be the same submission.
+  answer = () => Response.json({ detail: 'internal' }, { status: 500 })
+  expect((await sendBatches(correctionBatches('お', crops, 1), send).catch(e => e)).status).toBe(500)
+  expect(correctionBatches('お', crops, 1)[0].id).toBe(next)
   globalThis.fetch = async () => { throw new Error('connection reset') }
   expect((await sendBatches(correctionBatches('お', crops, 1), send).catch(e => e)).message).toBe('connection reset')
   expect(correctionBatches('お', crops, 1)[0].id).toBe(next)

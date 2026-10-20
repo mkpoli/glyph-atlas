@@ -3,8 +3,9 @@
 
 // One submission id per batch: the character and each crop at its revision. The same batch sent again
 // while its first sending is kept or went unanswered is the same submission, which the site records
-// once. A batch the site answered or refused is done with, and the same crops sent later (after an
-// undo, say) are a new submission.
+// once. A batch the site answered or refused (a 4xx) is done with, and the same crops sent later
+// (after an undo, say) are a new submission. After a 5xx the site may have recorded it, so it keeps
+// its id.
 const submissions = new Map()
 
 /** `crops` cut into batches of `size`, each `{ id, key, crops }` with the submission id its contents name. */
@@ -26,7 +27,8 @@ const forget = batch => { if (submissions.get(batch.key) === batch.id) submissio
 
 /**
  * Send `batches` from `correctionBatches` with `sendEach`. Each batch answered, and one the site
- * refused, gives up its id; a kept one, or one whose sending failed before the site answered, keeps it.
+ * refused with a 4xx, gives up its id; a kept one, one answered with a 5xx, or one whose sending failed
+ * before the site answered, keeps it.
  */
 export async function sendBatches(batches, send) {
   try {
@@ -35,7 +37,7 @@ export async function sendBatches(batches, send) {
     return done
   } catch (error) {
     error.answered.forEach(({ item }) => forget(item))
-    if (typeof error.status === 'number') forget(error.item)
+    if (error.status >= 400 && error.status < 500) forget(error.item)
     throw error
   }
 }
