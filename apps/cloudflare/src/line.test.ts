@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { judgeBatch, lineItems, lineQuery, validBatch } from './index';
+import { lineItems, lineQuery } from './index';
+import { judgeBatch, validBatch } from './routes/review';
 
 const hash = 'a'.repeat(64);
 function migrated() {
@@ -60,7 +61,7 @@ describe('a crop\'s line', () => {
 
 describe('a line\'s correction', () => {
   const crop = (id: string, character?: string, extra = {}) => ({ id, revision: 0, image_sha256: hash, ...(character ? { character } : {}), ...extra });
-  const row = (id: string, label: string, state = 'pending') => [id, { id, origin: 'local', data: data(id, label, state) } as any] as const;
+  const row = (id: string, label: string, state = 'pending') => [id, { id, kind: 0, revision: 0, settled: 0, data: JSON.parse(data(id, label, state)) } as any] as const;
   it('names a character for each crop, or a box as no character', () => {
     const ok = validBatch({ id: 'i', line: true, crops: [crop('a', 'き'), crop('b', undefined, { issue: 'blank' })] });
     expect(ok.line).toBe(true);
