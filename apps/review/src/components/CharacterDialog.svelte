@@ -81,10 +81,10 @@
   // Results stored before votes were recorded carry NDL's reading only among the candidates.
   const lineReading = $derived([...(suggestions?.votes || []), ...(suggestions?.candidates || [])].find(vote => vote.engine === 'NDLkotenOCR'))
   const suggestedIssue = $derived(lineReading && lineReading.score >= .65 && !isSingle(lineReading.text) ? 'merged' : null)
-  let replaced = $state(false)
+  let replaced = $state(false), swapped = false
   async function load(target, preloaded = null) {
     const current = ++generation
-    replaced = false
+    replaced = false; swapped = false
     dialog?.scrollTo({ top: 0 })
     // The list's row stands in until the record arrives; nothing can be saved from it.
     data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded); asked = false
@@ -96,11 +96,13 @@
     try {
       const result = preloaded ?? await readCrop(target)
       if (closed || current !== generation) return
-      // A link by an old id, or to a retired crop, opens the crop it names now, and the address follows. A
-      // round's tile does not move: its verdict belongs to the crop it was dealt.
+      // A link by an old id, or to a retired crop, opens the crop it names now, and the address follows; a
+      // retired crop's link says it was replaced. A round's tile does not move: its verdict belongs to the
+      // crop it was dealt.
       if (result.id !== target && !onVerdict) {
-        if (location.pathname === cropAddress(target)) inspector.replaced(result.id)
-        replaced = true
+        if (location.pathname === cropAddress(target)) inspector.replaced(result.id, result.source_id)
+        swapped = true
+        replaced = result.source_id !== target && result.id !== target.toLowerCase()
       }
       // A record the dialog already moved past (a field saved meanwhile) is not put back.
       if (data?.id === result.id && data.revision > result.revision) { fresh = true; return }
@@ -129,8 +131,8 @@
   })
   // Only the first load, of the crop the page was rendered for, starts from `initial`.
   let preloaded = first
-  // The entry of a replaced crop is rewritten to the crop on screen, which is already loaded.
-  $effect(() => { const target = id; untrack(() => { if (replaced && target === data?.id) return; load(target, preloaded); preloaded = null }) })
+  // An entry rewritten to the crop on screen (`swapped`) needs no second read.
+  $effect(() => { const target = id; untrack(() => { if (swapped && target === data?.id) return; load(target, preloaded); preloaded = null }) })
   // The server renders the dialog open, so the page reads whole before any script runs; once it does,
   // the dialog is reopened as a modal.
   onMount(() => { if (dialog.open) dialog.close(); dialog.showModal(); return () => { closed = true; generation++ } })
