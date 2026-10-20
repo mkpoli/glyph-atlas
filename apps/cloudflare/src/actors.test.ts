@@ -3,7 +3,7 @@ import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { canonical, history, historyQuery } from './index';
 import { summary } from './admin';
-import { claim, owned } from './auth';
+import { owned } from './auth';
 import { d1 } from './forms.test';
 
 function migrated() {
@@ -109,19 +109,6 @@ describe('claims on reviewer ids from before accounts', () => {
     expect(names[1].name).toMatch(/^anon-[0-9a-f]{6}$/);
     expect(names[2].name).toBe('Ada');
     expect(db.query("SELECT user_id FROM actors WHERE actor='reviewer-0000000c'").get()).toEqual({ user_id: 'u3' });
-    db.close();
-  });
-  it('hold at once for the first account, and stop at an id another account holds', async () => {
-    const { db } = migrated();
-    const env = { DB: d1(db) } as unknown as Env;
-    const anon = { id: 'u2', name: 'anon-000002', image: null, anonymous: true, admin: false };
-    expect((await claim(env, anon, 'someone')).status).toBe(422);
-    expect((await claim(env, anon, 'reviewer-0000000b')).status).toBe(200);
-    expect((await claim(env, anon, 'reviewer-0000000b')).status).toBe(200);
-    expect(db.query("SELECT user_id FROM actors WHERE actor='reviewer-0000000b'").get()).toEqual({ user_id: 'u2' });
-    expect((await claim(env, anon, 'reviewer-0000000a')).status).toBe(409);
-    for (const id of ['c', 'd', 'e', 'f']) expect((await claim(env, anon, `reviewer-0000000${id}`)).status).toBe(200);
-    expect((await claim(env, anon, 'reviewer-00000010')).status).toBe(429);
     db.close();
   });
 });

@@ -6,14 +6,14 @@ import { setAvatar } from './avatar';
 
 function setup() {
   const db = new Database(':memory:');
-  const migrations = new URL('../migrations/', import.meta.url);
+  const migrations = new URL('../migrations-accounts/', import.meta.url);
   for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
   const at = '2026-10-02T00:00:00.000Z';
   db.exec(`INSERT INTO "user"(id,name,email,emailVerified,createdAt,updatedAt) VALUES('00000000-0000-0000-0000-000000000001','Ada','Ada@Example.org ',1,'${at}','${at}');
     INSERT INTO account(id,accountId,providerId,userId,createdAt,updatedAt) VALUES('a1','583231','github','00000000-0000-0000-0000-000000000001','${at}','${at}');`);
   const stored = new Map<string, Uint8Array>();
   const MEDIA = { put: async (key: string, bytes: Uint8Array) => { stored.set(key, bytes) }, delete: async (key: string) => { stored.delete(key) } };
-  const env = { DB: d1(db), MEDIA } as unknown as Env;
+  const env = { ACCOUNTS: d1(db), MEDIA } as unknown as Env;
   const me = { id: '00000000-0000-0000-0000-000000000001', name: 'Ada', image: null, anonymous: false, admin: false };
   const image = () => (db.query('SELECT image FROM "user"').get() as { image: string | null }).image;
   return { db, env, me, stored, image };
