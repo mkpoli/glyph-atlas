@@ -14,6 +14,7 @@
   "app.menu": "選單",
   "app.nav.aria": "主導覽",
   "app.saved": "已儲存",
+  "app.keptHere": "已存於此裝置",
   "bulk.tileSelected": "，已選取",
   "bulk.tooMany": "短時間內修改過多，請稍候一分鐘再試。",
   "bulk.refused.other": "{count}個在頁面載入後已被修改或已被確認，已取消選擇並顯示其目前狀態。",

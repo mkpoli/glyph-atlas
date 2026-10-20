@@ -11,6 +11,7 @@
   "app.menu": "메뉴",
   "app.nav.aria": "주 메뉴",
   "app.saved": "저장됨",
+  "app.keptHere": "이 기기에 보관됨",
   "bulk.tileSelected": ", 선택됨",
   "bulk.tooMany": "짧은 시간에 수정이 너무 많습니다. 1분쯤 기다린 뒤 다시 해 보세요.",
   "bulk.refused.other": "{count}개는 불러온 뒤 바뀌었거나 이미 확인되었습니다. 선택을 풀고 지금 상태를 보여 줍니다.",

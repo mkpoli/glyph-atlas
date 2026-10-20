@@ -18,7 +18,7 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
-  import { keptCrops } from '../lib/outbox.svelte.js'
+  import { keptCrops, outbox } from '../lib/outbox.svelte.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
   import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
@@ -34,6 +34,8 @@
   // What this round already saved, by crop: 'seen', 'skip' or 'flagged'. A saved crop stays in its
   // round, so going back through the history shows it, but it is never sent a second time.
   let recorded = $state({})
+  // Crops of `recorded` whose save is kept on this device while writes are paused, not yet sent.
+  let keptHere = $state({})
   // A crop this round already decided, by a saved problem or a form it was marked as, is not judged again.
   const decidedHere = id => recorded[id] === 'flagged' || recorded[id] === 'assigned'
   // Crops at least half of which have been on screen this round. Only these can be recorded as seen:
@@ -141,7 +143,7 @@
   const stale = $derived(Boolean(error) && errorStatus === 409)
   const canNext = $derived(rounds.some(c => c.pending > 0 && c.label !== grapheme))
   function snapshot() {
-    return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, suggestions, contextSuggestions,
+    return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, keptHere, suggestions, contextSuggestions,
       roundId, roundSeed, hasMore, nextOffset, production, summary: data, entry })
   }
   function checkpoint() {
@@ -150,7 +152,7 @@
   function restoreRound(round) {
     production = round.production; data = round.summary
     grapheme = round.grapheme; members = round.members; items = round.items; choices = round.choices; selected = round.selected
-    skipped = round.skipped; recorded = round.recorded ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
+    skipped = round.skipped; recorded = round.recorded ?? {}; keptHere = round.keptHere ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
     roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextOffset = round.nextOffset ?? 0
     entry = round.entry ?? null
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
@@ -656,6 +658,7 @@
     choices = here(round.choices); selected = here(round.selected); skipped = here(round.skipped)
   }
   function markRecorded(crops, how) { recorded = { ...recorded, ...Object.fromEntries(crops.map(crop => [crop.id, how])) } }
+  function markKept(crops) { keptHere = { ...keptHere, ...Object.fromEntries(crops.map(crop => [crop.id, true])) } }
   async function submit() {
     if (saving || loadingMore || !ready) return
     if (step === 'select') return
@@ -680,6 +683,7 @@
       remember('atlas.last-round', last); completed += answers.length
       if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeLabel)
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
+      if (kept) markKept([...answers, ...seen, ...passed])
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       await load()
     } catch (e) { if (!(await outdated(e))) { error = roundError(e); errorStatus = e.status ?? 0 } }
@@ -701,6 +705,7 @@
       remember('atlas.last-round', last)
       if (!kept) announceSaved(seen.length + passed.length, graphemeLabel)
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
+      if (kept) markKept([...seen, ...passed])
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       return true
     } catch (e) { if (!(await outdated(e))) { error = roundError(e); errorStatus = e.status ?? 0 }; return false }
@@ -797,7 +802,7 @@
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
           <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
           <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
-          <div class="quiz-production">{#if item.label !== graphemeLabel}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge">✓ {t('app.saved')}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+          <div class="quiz-production">{#if item.label !== graphemeLabel}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge">{keptHere[item.id] && outbox.pending ? t('app.keptHere') : '✓ ' + t('app.saved')}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
     </div>

@@ -11,6 +11,7 @@
   "app.menu": "Menu",
   "app.nav.aria": "Main navigation",
   "app.saved": "Saved",
+  "app.keptHere": "Kept on this device",
   "bulk.tileSelected": ", selected",
   "bulk.tooMany": "Too many corrections at once. Wait a minute and try again.",
   "bulk.refused.other": "{count} crops changed since the page loaded or were already checked by someone; they were deselected and shown as they are now.",
