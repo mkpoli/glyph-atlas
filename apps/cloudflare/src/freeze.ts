@@ -31,10 +31,13 @@ export const pausedResponse = (headers: Record<string, string> = {}) => Response
 
 /**
  * A sign-out while paused: the browser's session cookies are expired, with the names and attributes
- * Better Auth gives them (the `__Secure-` prefix on https), and the session's row stays in the
- * database until it expires. The cached session may be split into numbered cookies; each one sent goes.
+ * Better Auth gives them (the `__Secure-` prefix on https). The cached session may be split into
+ * numbered cookies; each one sent goes. Only a page of this site may ask: a request whose Origin is
+ * another one, or missing, is refused 403.
  */
 export function pausedSignOut(request: Request, options: BetterAuthOptions): Response {
+  if (request.headers.get('origin') !== new URL(request.url).origin)
+    return Response.json({ error: 'forbidden', message: 'Sign out from this site.' }, { status: 403, headers: { 'cache-control': 'no-store' } });
   const { sessionToken, sessionData, dontRememberToken } = getCookies(options);
   const sent = (request.headers.get('cookie') ?? '').split(';').map(pair => pair.split('=')[0].trim());
   const chunks = sent.filter(name => name.startsWith(sessionData.name + '.') && /^\d+$/.test(name.slice(sessionData.name.length + 1)));
