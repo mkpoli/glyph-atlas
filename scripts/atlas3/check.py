@@ -23,7 +23,8 @@ remote is read.
   `replaced_by`, followed through retired entries, reaches a live crop within 8 steps; it has none
   only when its redirects reach no live crop.
 - Runs: the runs of two and three crops are the live ones, crop for crop, with their graphemes, hand
-  and book.
+  and book; once runs.py has loaded them, each is written and runs as its live row, and the site's
+  written forms and each book's grid count the live runs as the old `ngram_forms` and `ngram_counts` did.
 - Images: every live image key is in the image key map, at its live place.
 
 History (decision record 0006), when `out/history.sqlite` exists (history.py):
@@ -66,7 +67,7 @@ import time
 from collections import Counter, defaultdict
 from datetime import datetime
 
-from build import HERE, OUT, PAGE, bundle_entry, char_text
+from build import BOOK_RUNS, HERE, OUT, PAGE, bundle_entry, char_text
 from load_history import TABLES as LOADED
 
 SHOWN = 20
@@ -294,6 +295,8 @@ def check_crops(report, name):
     report.check("the runs are the live ones", [f"{k}: live {live_runs[k]}, new layout {new_runs[k]}"
                                                 for k in (live_runs.keys() | new_runs.keys()) if live_runs[k] != new_runs[k]])
 
+    check_run_forms(report, runs_db, id_of, book_ids)
+
     # Images.
     missing, shard_cache = [], {}
     # In key order, so each shard is read once.
@@ -307,6 +310,62 @@ def check_crops(report, name):
         if not place or [s["objects"][place[0]], place[1], place[2]] != [obj, offset, size]:
             missing.append(k)
     report.check("every live image is in the image key map at its place", missing)
+
+
+def check_run_forms(report, runs_db, id_of, book_ids):
+    """Each run's written form and direction, and the counts of forms and of each book's runs, against
+    the live runs, as the old triggers counted them (`ngram_forms`, `ngram_counts`, migration 0074)."""
+    names = ("each run is written as its live row, in its direction",
+             "the site's written forms count the live runs (ngram_forms)",
+             f"each book's grid is its first {BOOK_RUNS} live runs of each length (ngram_counts)")
+    if not any(r[1] == "form" for r in runs_db.execute("PRAGMA table_info(runs)")):
+        for check_name in names:
+            report.skip(check_name, "the local runs have no written forms yet; runs.py --send loads them")
+        return
+    have = {(r[0], r[1]): (r[2], r[3], r[4]) for r in runs_db.execute("SELECT first, size, graphemes, form, vertical FROM runs")}
+    wrong, forms, books = [], Counter(), Counter()
+    for first, size, text, graphemes, vertical, document in source("unit_ngrams").execute(
+            "SELECT first, size, text, graphemes, vertical, document FROM unit_ngrams"):
+        got = have.get((id_of.get(first), size))
+        if got is not None and ((got[1] or got[0] or None) != (text if graphemes else None) or got[2] != vertical):
+            wrong.append(f"{first} size {size}: live {text!r} vertical {vertical}, new layout {got[1] or got[0]!r} vertical {got[2]}")
+        if text is None or graphemes is None:
+            continue
+        forms[(size, graphemes, text)] += 1
+        forms[(size, graphemes, text, "down")] += vertical
+        if document:
+            books[(book_ids.get(document), size, graphemes)] += 1
+            books[(book_ids.get(document), size, graphemes, "down")] += vertical
+    del have
+    report.check(names[0], wrong)
+
+    stats = {(r[0], r[1]): (r[2], r[3]) for r in runs_db.execute("SELECT size, graphemes, n, down FROM run_stats WHERE graphemes <> ''")}
+    held = {(r[0], r[1], r[2]): (r[3], r[4]) for r in runs_db.execute("SELECT size, graphemes, form, n, down FROM run_forms")}
+    rest = {k: list(v) for k, v in stats.items()}
+    for (size, graphemes, _form), (n, down) in held.items():
+        rest.setdefault((size, graphemes), [0, 0])
+        rest[(size, graphemes)][0] -= n
+        rest[(size, graphemes)][1] -= down
+    problems = []
+    for key in sorted(k for k in forms if len(k) == 3):
+        live = (forms[key], forms[(*key, "down")])
+        got = tuple(rest.get(key[:2], (0, 0))) if key[1] == key[2] else held.get(key, (0, 0))
+        if got != live:
+            problems.append(f"{key}: live {live}, new layout {got}")
+    problems += [f"{key}: in run_forms, not live" for key in held if key not in forms or key[1] == key[2]]
+    problems += [f"{key}: run_stats counts {n} runs written as the graphemes, none live"
+                 for key, (n, _d) in rest.items() if n and (*key, key[1]) not in forms]
+    report.check(names[1], problems)
+
+    grids = defaultdict(list)
+    for key, n in books.items():
+        if len(key) == 3:
+            grids[key[:2]].append((key[2], n, books[(*key, "down")]))
+    want = {(b, size, g): (n, down) for (b, size), rows_ in grids.items()
+            for g, n, down in sorted(rows_, key=lambda r: (-r[1], r[0]))[:BOOK_RUNS]}
+    got = {(r[0], r[1], r[2]): (r[3], r[4]) for r in runs_db.execute("SELECT book, size, graphemes, n, down FROM run_books")}
+    report.check(names[2], [f"{key}: live {want.get(key)}, new layout {got.get(key)}"
+                            for key in sorted(want.keys() | got.keys(), key=str) if want.get(key) != got.get(key)])
 
 
 # History (decision record 0006): `out/history.sqlite` against the source copies, row by row.
