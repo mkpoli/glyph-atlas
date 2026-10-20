@@ -16,11 +16,11 @@ CREATE TABLE book_dates(book INTEGER NOT NULL, axis TEXT NOT NULL CHECK (axis IN
   PRIMARY KEY(book, axis), CHECK (start IS NULL OR end IS NULL OR start <= end)) WITHOUT ROWID;
 
 -- A book's characters in source order, for another site that shows each occurrence where it stands on
--- its page. An occurrence the site publishes names its crop; one it does not keeps the source's own id
--- in `unit`. `data` is what the source knows of it: page, line, block, position, context, box, label and
--- where the label came from.
-CREATE TABLE book_characters(book INTEGER NOT NULL, ord INTEGER NOT NULL, crop INTEGER, unit TEXT, data TEXT NOT NULL,
-  PRIMARY KEY(book, ord), CHECK ((crop IS NULL) <> (unit IS NULL))) WITHOUT ROWID;
+-- its page. `crop` is the occurrence's integer id. `atlas` is 1 for an occurrence the site shows with its
+-- review state: a collected crop, or a corpus glyph a round showed, skipped or reviewed. `data` is what
+-- the source knows of it: page, line, block, position, context, box, label and where the label came from.
+CREATE TABLE book_characters(book INTEGER NOT NULL, ord INTEGER NOT NULL, crop INTEGER NOT NULL,
+  atlas INTEGER NOT NULL CHECK (atlas IN (0, 1)), data TEXT NOT NULL, PRIMARY KEY(book, ord)) WITHOUT ROWID;
 
 -- Values a publication states about the whole site: `collection` (the collection's status),
 -- `corpus_index` (the corpus summary), `review_epoch` (moves when review history was reset, so

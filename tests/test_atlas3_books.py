@@ -16,17 +16,27 @@ def dated(document, axis="witness", start=1700):
             json.dumps({"query": "https://ap.hutime.org/cal/"}), "source:test")
 
 
-def sources(root, dating=None, titles=None, characters=None, metadata=None):
+def sources(root, dating=None, titles=None, characters=None, metadata=None, loaded=True):
+    if loaded:
+        history(root)
     for table in ("document_dating", "corpus_documents", "document_characters", "metadata"):
         (root / f"source-{table}.sqlite").unlink(missing_ok=True)
     write_source(root, "document_dating", DATING, dating if dating is not None else [dated("book:a"), dated("nowhere")])
     write_source(root, "corpus_documents", ("document", "title"), titles if titles is not None else [("codh:b", "鼎左秘録")])
     write_source(root, "document_characters", ("document", "ord", "unit", "data"), characters if characters is not None else [
         ("book:a", 0, "ex:a1", json.dumps({"label": "あ", "page": 1})),
-        ("book:a", 1, "ar:gone", json.dumps({"label": "い", "page": 1}))])
+        ("codh:b", 0, "codh:g1", json.dumps({"label": "が", "page": 1}))])
     write_source(root, "metadata", ("key", "value"), metadata if metadata is not None else [
         ("review_epoch", '"2026-10-01"'), ("collection", '{"books": 2}'), ("corpus_index", '{"glyphs": 1}'),
         ("variant_sources", "{}"), ("word_sources", "{}"), ("published_at", '"2026-10-19"')])
+
+
+def history(root, seen=()):
+    """The local copy as load_history.py leaves it, with a seen mark on each crop of `seen`."""
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    local.execute("INSERT OR IGNORE INTO imports(stamp, at) VALUES('history-test.rows-0000', 0)")
+    local.executemany("INSERT INTO seen(submission, crop, cut, at) VALUES(1, ?, 0, 0)", [(ids(root)[t],) for t in seen])
+    local.commit()
 
 
 def books(remote, monkeypatch, *flags, send=None):
@@ -47,7 +57,7 @@ def facts(db):
     db.row_factory = None
     return {"titles": dict(db.execute("SELECT key, title FROM books")),
             "dates": db.execute("SELECT b.key, d.axis, d.start, d.calendar FROM book_dates d JOIN books b ON b.id = d.book").fetchall(),
-            "characters": db.execute("SELECT book, ord, crop, unit FROM book_characters ORDER BY book, ord").fetchall(),
+            "characters": db.execute("SELECT book, ord, crop, atlas FROM book_characters ORDER BY book, ord").fetchall(),
             "site": dict(db.execute("SELECT key, value FROM site"))}
 
 
@@ -60,14 +70,14 @@ def test_book_facts_load_once_by_book_and_crop(layout, monkeypatch):  # noqa: F8
     assert db.execute("SELECT count(*) FROM book_dates").fetchone() == (0,)
     report = (root / "out" / "books-report.txt").read_text()
     assert "1 dates of documents that are not books, left out" in report
-    assert "1 characters with no published crop, kept by their source id" in report
+    assert "1 characters the site shows without a review state" in report
 
     books(remote, monkeypatch, "--send")
     book = dict(db.execute("SELECT key, id FROM books"))
     got = facts(db)
     assert got["titles"] == {"book:a": None, "codh:b": "鼎左秘録"}
     assert got["dates"] == [("book:a", "witness", 1700, "gregorian")]
-    assert got["characters"] == [(book["book:a"], 0, ids(root)["ex:a1"], None), (book["book:a"], 1, None, "ar:gone")]
+    assert sorted(got["characters"]) == sorted([(book["book:a"], 0, ids(root)["ex:a1"], 1), (book["codh:b"], 0, ids(root)["codh:g1"], 0)])
     assert set(got["site"]) == {"review_epoch", "collection", "corpus_index", "variant_sources", "word_sources"}
     # The local copy replays the same parts.
     assert facts(sqlite3.connect(root / "out" / "atlas.sqlite")) == got
@@ -181,3 +191,21 @@ def test_a_book_without_a_page_title_takes_its_crops_source(layout, monkeypatch)
     sources(root, titles=[("codh:b", "鼎左秘録")])
     books(remote, monkeypatch, "--send")
     assert facts(remote.dbs["glyph-atlas-v3"])["titles"] == {"book:a": "凌煙閣功臣圖", "codh:b": "羣書治要"}
+
+
+def test_a_corpus_glyph_a_round_showed_counts_as_shown(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root)
+    history(root, seen=["codh:g1"])
+    books(remote, monkeypatch, "--send")
+    assert [r[3] for r in facts(remote.dbs["glyph-atlas-v3"])["characters"]] == [1, 1]
+
+
+def test_characters_wait_for_the_history_and_name_known_crops(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, loaded=False)
+    with pytest.raises(SystemExit, match="load_history.py first"):
+        books(remote, monkeypatch)
+    sources(root, characters=[("book:a", 0, "ar:gone", json.dumps({"label": "い"}))])
+    with pytest.raises(SystemExit, match="1 characters name no crop of the mirror"):
+        books(remote, monkeypatch)

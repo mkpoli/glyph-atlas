@@ -12,7 +12,9 @@ read:
   else the one its corpus publication gave;
 - `book_dates`: both dating axes of each book, less the claim list and the export stamp (the claims
   stay in `assertions`);
-- `book_characters`: each occurrence names its crop, or keeps the source's id when no crop has it;
+- `book_characters`: each occurrence by its integer crop id, marked when the site shows it with its
+  review state (a collected crop, or a corpus glyph a round showed, skipped or reviewed); a character
+  whose unit the mirror lacks stops the run, and so does a character list before the history is loaded;
 - `site`: the publication's `collection`, `corpus_index`, `review_epoch`, `variant_sources` and
   `word_sources`.
 
@@ -45,7 +47,7 @@ from publish import applied, lit, query, send
 SITE_KEYS = ("collection", "corpus_index", "review_epoch", "variant_sources", "word_sources")
 DATE_COLS = ("book", "axis", "kind", "start", "end", "precision", "qualifier", "uncertain", "text", "label", "status",
              "calendar", "conversion", "source")
-CHARACTER_COLS = ("book", "ord", "crop", "unit", "data")
+CHARACTER_COLS = ("book", "ord", "crop", "atlas", "data")
 # Each table books.py owns, with its key.
 TABLES = {"book_dates": (DATE_COLS, ("book", "axis")), "book_characters": (CHARACTER_COLS, ("book", "ord")),
           "site": (("key", "value"), ("key",))}
@@ -95,6 +97,17 @@ def titles(atlas, corpus):
     return found
 
 
+def shows(atlas, crop):
+    """Whether the site shows a crop with its review state, as the old site's `units` held it: every
+    collected crop, and a corpus glyph once a round showed, skipped or reviewed it."""
+    kind = atlas.execute("SELECT kind FROM crops WHERE id=?", (crop,)).fetchone()
+    if kind is None or kind[0] not in (0, 1):
+        return False
+    return kind[0] == 0 or atlas.execute(
+        "SELECT EXISTS(SELECT 1 FROM seen WHERE crop=?1) OR EXISTS(SELECT 1 FROM skips WHERE crop=?1) "
+        "OR EXISTS(SELECT 1 FROM events WHERE crop=?1)", (crop,)).fetchone()[0] == 1
+
+
 def translate(atlas, mirror):
     """out/books.sqlite from the copies, and how many rows were left out or kept without a crop, by reason."""
     path = OUT / "books.sqlite"
@@ -127,18 +140,24 @@ def translate(atlas, mirror):
             rows.append((b, *r[1:6], r[6], int(bool(r[7])), *r[8:]))
     out.executemany(f"INSERT INTO book_dates VALUES({','.join('?' * len(DATE_COLS))})", rows)
 
-    published = {r[0] for r in atlas.execute("SELECT id FROM crops")}
-    rows = []
-    for document, ord_, unit, data in source("document_characters").execute(
-            "SELECT document, ord, unit, data FROM document_characters ORDER BY document, ord"):
+    characters = source("document_characters").execute(
+        "SELECT document, ord, unit, data FROM document_characters ORDER BY document, ord").fetchall()
+    if characters and not atlas.execute("SELECT 1 FROM imports WHERE stamp LIKE 'history-%'").fetchone():
+        sys.exit("the history is not loaded; load_history.py first, since its rounds decide which corpus glyphs count")
+    rows, unknown = [], []
+    for document, ord_, unit, data in characters:
         if (b := book(document, "characters")) is None:
             continue
         crop = mirror.execute("SELECT id FROM ids WHERE text=?", (unit,)).fetchone()
-        if crop is None or crop[0] not in published:
-            count("characters with no published crop, kept by their source id")
-            rows.append((b, ord_, None, unit, data))
-        else:
-            rows.append((b, ord_, crop[0], None, data))
+        if crop is None:
+            unknown.append(unit)
+            continue
+        shown = int(shows(atlas, crop[0]))
+        if not shown:
+            count("characters the site shows without a review state")
+        rows.append((b, ord_, crop[0], shown, data))
+    if unknown:
+        sys.exit(f"{len(unknown)} characters name no crop of the mirror: {unknown[:5]}")
     out.executemany("INSERT INTO book_characters VALUES(?,?,?,?,?)", rows)
 
     meta = dict(source("metadata").execute("SELECT key, value FROM metadata"))

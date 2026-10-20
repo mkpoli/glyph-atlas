@@ -131,9 +131,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
    characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
    `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`
-   (`migrations-atlas/0005_books.sql`), books by integer id and occurrences by crop through
+   (`migrations-atlas/0005_books.sql`), books and occurrences by integer id through
    `out/mirror.sqlite`, and writes the parts and their figures to `out/books-report.txt`; facts about
-   a document that is not a book are left out with a count. `books.py --send` applies `0005_books.sql`
+   a document that is not a book are left out with a count. It runs after the history is loaded: an
+   occurrence counts as shown with its review state (`book_characters.atlas`) when it is a collected
+   crop or a corpus glyph that a round showed, skipped or reviewed, the crops the old `units` held. `books.py --send` applies `0005_books.sql`
    and loads only what differs from the local copy, in stamped parts. A book's title comes from its
    first page bundle, else from the source the first of that bundle's crops names, else from its
    corpus publication. The corpus glyphs per book and the homepage
