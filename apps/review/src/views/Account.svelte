@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation'
   import { addPasskey, authClient, deviceName, passkeys } from '../lib/auth.js'
   import { useSession } from '../lib/session.svelte.js'
+  import { isPaused } from '../lib/busy.svelte.js'
   import { t, formatDateTime, localize } from '../lib/i18n.svelte.js'
   import ProviderIcon from '$components/ProviderIcon.svelte'
   import SignIn from '$components/SignIn.svelte'
@@ -45,7 +46,8 @@
       const response = await fetch('/api/account/avatar?source=' + source, { method: 'POST',
         headers: { 'content-type': bytes ? 'image/webp' : 'application/json' }, body: bytes ?? '{}' })
       const value = await response.json()
-      if (!response.ok) throw new Error(source === 'gravatar' && response.status === 404 ? t('account.picture.noGravatar') : value.detail)
+      if (!response.ok) throw new Error(isPaused(response, value) ? t('client.paused')
+        : source === 'gravatar' && response.status === 404 ? t('account.picture.noGravatar') : value.detail)
       await session.refresh()
       notice = t('account.picture.saved')
     } catch (failure) { error = failure.message || t('signIn.error.other') } finally { busy = '' }

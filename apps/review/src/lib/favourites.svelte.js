@@ -1,4 +1,6 @@
 import { ensureSignedIn } from './session.svelte.js'
+import { isPaused } from './busy.svelte.js'
+import { t } from './i18n.svelte.js'
 
 // The crops the signed-in user has starred. Read once the page knows who is signed in, and again
 // whenever that changes; a browser that has never signed in has starred nothing.
@@ -42,7 +44,10 @@ export async function setFavourite(id, favourite) {
     state.user = user?.id ?? null
     const response = await fetch('/api/favourites', { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ crop: id, favourite }) })
-    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail ?? response.statusText)
+    if (!response.ok) {
+      const value = await response.json().catch(() => ({}))
+      throw new Error(isPaused(response, value) ? t('client.paused') : value.detail ?? response.statusText)
+    }
   } catch (error) {
     const ids = new Set(state.ids)
     favourite ? ids.delete(id) : ids.add(id)
