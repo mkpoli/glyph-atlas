@@ -15,8 +15,9 @@ export const standingQuery = () => `SELECT (SELECT 1 FROM crops WHERE id=?1) AS 
 
 /** What a route parameter names: a live crop (`id`, the parameter being its public id as written),
  *  a live crop under another spelling or an old text id, or a crop retired in favour of it (`moved`),
- *  a retired crop that names no replacement (`retired`), or nothing. */
-export type CropParam = { id: number } | { moved: number } | { retired: number } | null;
+ *  a retired crop that names no replacement, where a chain of replacements ends too (`retired`, with
+ *  `canonical` when the parameter is that crop's public id as written), or nothing. */
+export type CropParam = { id: number } | { moved: number } | { retired: number; canonical: boolean } | null;
 
 // Every old text id has a colon (2,128,966 mirror ids and 7,200 redirect sources at the cutover) and no
 // public id has one, so the two never meet.
@@ -46,8 +47,9 @@ export async function cropParam(env: Env, raw: string, ctx?: ExecutionContext): 
     if (row?.rev == null) return null;
     const entry = (await bundle(env, pageOf(id), row.rev))?.bySlot.get(slotOf(id));
     if (!entry?.retired) return null;
-    const next: number | null = hop < REPLACEMENT_HOPS ? await replacement(env, entry, ctx) : null;
-    if (next === null) return replaced ? null : { retired: id };
+    if (hop >= REPLACEMENT_HOPS) return null;
+    const next = await replacement(env, entry, ctx);
+    if (next === null) return { retired: id, canonical: !replaced && publicId(id) === param };
     id = next; replaced = true;
   }
   return !replaced && publicId(id) === param ? { id } : { moved: id };

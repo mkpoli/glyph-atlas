@@ -88,11 +88,18 @@ describe('a crop named in a route', () => {
 
   it('retired with no replacement is told apart from no crop', async () => {
     const { env, text, orphan } = setup();
-    expect(await cropParam(env, text.orphan)).toEqual({ retired: orphan });
-    expect(await cropParam(env, publicId(orphan))).toEqual({ retired: orphan });
+    expect(await cropParam(env, publicId(orphan))).toEqual({ retired: orphan, canonical: true });
+    expect(await cropParam(env, text.orphan)).toEqual({ retired: orphan, canonical: false });
+    expect(await cropParam(env, publicId(orphan).toUpperCase())).toEqual({ retired: orphan, canonical: false });
     expect(await cropParam(env, text.gone)).toBeNull();
     expect(await cropParam(env, publicId(cropId(pages + 1000, 0)))).toBeNull();
     expect(await cropParam(env, 'not an id')).toBeNull();
+  });
+
+  it('retired in favour of a crop retired with no replacement is that crop, to be moved to', async () => {
+    const { env, text, orphan } = setup();
+    expect(await cropParam(env, text.ends)).toEqual({ retired: orphan, canonical: false });
+    expect(await cropParam(env, publicId(cropId(pages, 7)))).toEqual({ retired: orphan, canonical: false });
   });
 
   it('is percent-decoded once, as written in the path', async () => {
