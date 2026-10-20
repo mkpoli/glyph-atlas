@@ -14,7 +14,7 @@ Copied from the live database on 19–20 October 2026:
 | `seen`, `skips` | 8,145, 19 | `target` text id, box and image checksum |
 | `actors` | 14 | — (actor text id to user id) |
 | `favourites` | 1 | `unit` text id |
-| `assertions`, `assertion_actions`, `assertion_evidence` | 14,172, 33, 14,140 | 45 `has_form` claims on crops; the rest are date claims on books |
+| `assertions`, `assertion_actions`, `assertion_evidence` | 14,172, 33, 14,140 | 14,095 `date_*` claims on documents (2,097 on books of the new layout, 11,998 on documents that are not), 45 `has_form` claims on crops, 32 `represented_by` |
 | `current_claims` | 9,467 | 43 crop subjects with a `crop_version` string |
 | `ledger_submissions`, `form_decisions`, `forms` | 45, 669, 32 | crop ids inside JSON |
 | `crop_versions` | 532,617 | one row per crop version; 496 crops have an earlier box, none more than one |
@@ -121,7 +121,8 @@ freeze contains no decisions. Each step is resumable and records checksums.
 
 1. **Freeze every writer:** review, claim, favourite and form-decision writes, sign-in, sign-up, passkey
    and session changes answer 503 with a message the client shows; publishing to the old database
-   stops; in-flight requests drain.
+   stops; in-flight requests drain. A sign-out expires the browser's cookies and leaves the session
+   row valid until it expires or is revoked from another device after writes resume.
 2. **Archive** the old database's tables verbatim, from the fresh copies, to a private R2 location with
    checksums. D1 Time Travel keeps a restore point as well.
 3. **Copy** the live tables (from the Codespace) and publish the crops into `glyph-atlas-v3`; publish
@@ -130,11 +131,21 @@ freeze contains no decisions. Each step is resumable and records checksums.
    decisions, suspects and shapes; write the tombstones, cuts and alias shards.
 5. **Copy the accounts last**, then check: every crop check of `check.py`; every history row
    translated or accounted for, compared in full (all events, seen marks, skips, claims, current
-   claims, form decisions); recomputed marks equal the live ones; every session row present; then, on
-   the deployed new Worker with writes still paused, an existing session cookie, renewal, logout and a
-   passkey sign-in, a history page, favourites, a claim and an old URL.
-6. **Switch** the Worker and the publisher to the new layout and resume writes. A browser tab from
-   before the switch that sends an old text id gets 409 and a prompt to reload.
+   claims, form decisions); recomputed marks equal the live ones; every session row present. The site
+   checks write (an existing session, renewal, logout, a history page, favourites, a claim, an old
+   URL), so they run on this machine: `wrangler dev` runs the new Worker locally with remote bindings
+   (`"remote": true` on each D1 and R2 binding) to the real new databases and bucket, with a test
+   account made before the freeze. Nothing answers on a public address, and the deployed Worker stays
+   paused, so every row written in the window is the checks'; they are listed and deleted after
+   (`scripts/atlas3/README.md`, step 9). Version URLs stay off: turned on, they would also open older
+   versions, bound to the old database and not paused. The checked Worker is then uploaded with
+   `wrangler versions upload`, which keeps `WRITES_PAUSED`, and `wrangler versions secret delete
+   WRITES_PAUSED` makes a further version without it; neither deploys.
+6. **Switch** the Worker and the publisher to the new layout and resume writes:
+   `wrangler versions deploy <id of the version without WRITES_PAUSED>@100%` is the switch, and the
+   paused version answers until it runs. Passkey and provider sign-ins, both bound to glyphatlas.org,
+   are checked right after. A browser tab from before the switch that sends an old text id gets 409
+   and a prompt to reload.
 
 Until writes resume, going back is redeploying the old Worker and lifting the freeze. After that,
 fixes go forward. The old database stays, read-only, with its archive and restore point, for 30 days

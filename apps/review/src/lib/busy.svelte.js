@@ -14,25 +14,31 @@ export const isPaused = (response, value) => response.status === 503 && value?.e
  *  longer knows by that name (409 `reload`). */
 export const isReload = (response, value) => response.status === 409 && value?.code === 'reload'
 
-/** `fetch`, with a refused write's message in the reader's language, for clients that show `message`. */
+/**
+ * `fetch`, with a refused write's message in the reader's language, for clients that show `message`.
+ * The refusal also carries `code: 'paused'` and the `Retry-After` as `retry_after`, since such a
+ * client passes on the body and not the headers.
+ */
 export async function pausedFetch(input, init) {
   const response = await fetch(input, init)
   if (response.status !== 503) return response
   const value = await response.clone().json().catch(() => null)
   if (!isPaused(response, value)) return response
-  return new Response(JSON.stringify({ ...value, message: t('client.paused') }), { status: response.status, statusText: response.statusText, headers: response.headers })
+  return new Response(JSON.stringify({ ...value, code: 'paused', retry_after: retryAfter(response), message: t('client.paused') }),
+    { status: response.status, statusText: response.statusText, headers: response.headers })
 }
 
 /** How many times a read is tried again: about three minutes, past most imports. */
 const READ_TRIES = 10
 
 /**
- * The wait before try `n` (from 0): the server's `Retry-After`, doubling from a second and capped at
- * 30 s, give or take a quarter, so readers who were turned away together do not return together.
+ * The wait before try `n` (from 0): doubling from a second and capped at 30 s, give or take a quarter,
+ * so readers who were turned away together do not return together. The server's `Retry-After` (in
+ * seconds) is a floor, uncapped: a try comes up to a quarter after it, never before.
  */
 export function backoff(n, retryAfter = 0) {
-  const base = Math.min(30000, Math.max(retryAfter * 1000, 1000 * 2 ** n))
-  return base * (0.75 + Math.random() / 2)
+  const doubling = Math.min(30000, 1000 * 2 ** n) * (0.75 + Math.random() / 2)
+  return Math.max(doubling, retryAfter * 1000 * (1 + Math.random() / 4))
 }
 
 export const retryAfter = response => Number(response.headers.get('retry-after')) || 0

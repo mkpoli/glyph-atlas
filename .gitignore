@@ -25,3 +25,5 @@ logs/
 
 # Local Worker secrets.
 .dev.vars*
+# The cutover checks' local Worker config, with remote bindings (scripts/atlas3/README.md, step 8).
+apps/cloudflare/wrangler.check.jsonc

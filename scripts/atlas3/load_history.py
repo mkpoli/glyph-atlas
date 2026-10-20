@@ -30,7 +30,7 @@ import sqlite3
 import sys
 
 from build import HERE, OUT
-from publish import CF, applied, lit, send, write_parts
+from publish import CF, STATEMENT_BYTES, applied, lit, send, write_parts
 
 SCHEMA = CF / "migrations-atlas"
 # Tables in the order their rows load: who and which request first, then what names them.
@@ -89,7 +89,7 @@ def migrate(history, atlas, mirror, dry):
 # D1 refuses a statement over 100 KB. A row past STATEMENT_BYTES goes in with its long text columns
 # empty, and each is then appended in pieces of CHUNK characters (at most four bytes each), in the same
 # part, so D1 holds the value whole.
-STATEMENT_BYTES, LONG_BYTES, CHUNK = 90_000, 10_000, 20_000
+LONG_BYTES, CHUNK = 10_000, 20_000
 
 
 def row_statements(table, cols, keys, r):
@@ -131,7 +131,8 @@ def rows(history):
 
 def marks(history, atlas):
     """Each pending marked crop takes its mark as state, one revision past its own, with the event of
-    the latest round that showed it unflagged."""
+    the latest round that showed it unflagged; of rounds at one time, the highest submission id, as
+    history.py picks it."""
     kinds = dict(history.execute("SELECT key, code FROM codes WHERE field='kind'"))
     states = dict(history.execute("SELECT key, code FROM codes WHERE field='state'"))
     pending = dict(atlas.execute("SELECT key, code FROM codes WHERE field='state'"))["pending"]
@@ -143,7 +144,7 @@ def marks(history, atlas):
             continue
         state, revision, cut = states[m["state"]], crop[1], crop[2]
         shown = history.execute("SELECT s.submission, s.at, b.actor FROM seen s JOIN submissions b ON b.id = s.submission "
-                                "WHERE s.crop = ? AND s.cut = ? AND b.undone = 0 ORDER BY s.at DESC LIMIT 1",
+                                "WHERE s.crop = ? AND s.cut = ? AND b.undone = 0 ORDER BY s.at DESC, s.submission DESC LIMIT 1",
                                 (m["crop"], cut)).fetchone()
         if shown is None:
             sys.exit(f"crop {m['crop']} is marked {m['state']} with no round that showed it at its cut {cut}")
@@ -203,8 +204,12 @@ def built(final, label, groups, extra=None):
     n = write_parts(tmp, label, groups)
     for part in tmp.glob("*.sql"):
         part.write_text(part.read_text().replace(f"'{tmp.name}.{label}.", f"'{final.name}.{label}-"))
-    for file, text in (extra or {}).items():
-        (tmp / file).write_text(text)
+    for file, content in (extra or {}).items():
+        (tmp / file).parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, bytes):
+            (tmp / file).write_bytes(content)
+        else:
+            (tmp / file).write_text(content)
     tmp.rename(final)
     return n
 

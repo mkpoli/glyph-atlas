@@ -37,9 +37,11 @@
   // WRITES_PAUSED is the write freeze (`src/freeze.ts`): while it is "1", every request that writes to the
   // database (reviews, rounds, corrections, claims, favourites, form decisions, sign-in and sign-up, passkeys,
   // account and admin changes) answers 503 `paused` with a Retry-After, and reads go on, a signed-in
-  // session's included. It is a secret so that it takes effect without a deploy: `echo 1 | wrangler secret
-  // put WRITES_PAUSED` to freeze, `wrangler secret delete WRITES_PAUSED` to lift it. It is never a var here,
-  // since a var of the same name would block the secret.
+  // session's included. It is a secret so that it takes effect without a build: `echo 1 | wrangler secret
+  // put WRITES_PAUSED` to freeze, `wrangler secret delete WRITES_PAUSED` to lift it. Each of these deploys a
+  // new version at once, and refuses while a newer version is uploaded and not deployed; such a version gets
+  // `wrangler versions secret put/delete` instead, which makes another version without deploying it. It is
+  // never a var here, since a var of the same name would block the secret.
   // Batch corrections change up to 144 crops a request; one address gets 20 of them a minute. A claim,
   // an action on one or a crop's form names one crop, and one address gets 30 a minute.
   "ratelimits": [{"name": "CORRECTIONS", "namespace_id": "4401", "simple": {"limit": 20, "period": 60}},

@@ -147,7 +147,7 @@ function shardSet(count: number) {
 
 describe('reads straight to R2', () => {
   it('stay within the budget when bogus keys arrive for many shards at once', async () => {
-    const { env, reads, find } = shardSet(60), lookup = heldShards<Record<string, number>>(rereadBudget(2, 4));
+    const { env, reads, find } = shardSet(60), lookup = heldShards<Record<string, number>>(32, rereadBudget(2, 4));
     const now = Date.now(), names = Array.from({ length: 30 }, (_, i) => `s${i}`);
     await Promise.all(names.map(name => lookup(env, name, find('nothing'), undefined, now)));
     expect(reads).toHaveLength(30);
@@ -163,7 +163,7 @@ describe('reads straight to R2', () => {
   });
 
   it('answer every request waiting on a read that fails with StorageUnavailable, and try again on the next miss', async () => {
-    const { env, objects, reads, failing, find } = shardSet(1), lookup = heldShards<Record<string, number>>(rereadBudget(100, 100));
+    const { env, objects, reads, failing, find } = shardSet(1), lookup = heldShards<Record<string, number>>(32, rereadBudget(100, 100));
     const now = Date.now();
     expect(await lookup(env, 's0', find('k0'), undefined, now)).toBe(0);
     objects.set('s0', gzipSync(JSON.stringify({ k0: 0, later: 9 })));
@@ -182,7 +182,7 @@ describe('reads straight to R2', () => {
   });
 
   it('answer from the copy they read even when the isolate has dropped it since', async () => {
-    const { env, objects, gates, find } = shardSet(40), lookup = heldShards<Record<string, number>>(rereadBudget(100, 100));
+    const { env, objects, gates, find } = shardSet(40), lookup = heldShards<Record<string, number>>(32, rereadBudget(100, 100));
     const now = Date.now();
     await lookup(env, 's0', find('k0'), undefined, now);
     objects.set('s0', gzipSync(JSON.stringify({ k0: 0, later: 9 })));

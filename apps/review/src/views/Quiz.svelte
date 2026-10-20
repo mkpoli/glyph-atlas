@@ -18,8 +18,10 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
+  import { keptCrops, keptState, keyOf } from '../lib/outbox.svelte.js'
+  import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
-  import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
+  import { firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
   import { unslug } from '../lib/gallery.js'
   import { useSession } from '../lib/session.svelte.js'
@@ -33,6 +35,8 @@
   // What this round already saved, by crop: 'seen', 'skip' or 'flagged'. A saved crop stays in its
   // round, so going back through the history shows it, but it is never sent a second time.
   let recorded = $state({})
+  // Crops of `recorded` whose save is kept on this device while writes are paused, not yet sent.
+  let keptHere = $state({})
   // A crop this round already decided, by a saved problem or a form it was marked as, is not judged again.
   const decidedHere = id => recorded[id] === 'flagged' || recorded[id] === 'assigned'
   // Crops at least half of which have been on screen this round. Only these can be recorded as seen:
@@ -140,7 +144,7 @@
   const stale = $derived(Boolean(error) && errorStatus === 409)
   const canNext = $derived(rounds.some(c => c.pending > 0 && c.label !== grapheme))
   function snapshot() {
-    return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, suggestions, contextSuggestions,
+    return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, keptHere, suggestions, contextSuggestions,
       roundId, roundSeed, hasMore, nextOffset, production, summary: data, entry })
   }
   function checkpoint() {
@@ -149,7 +153,7 @@
   function restoreRound(round) {
     production = round.production; data = round.summary
     grapheme = round.grapheme; members = round.members; items = round.items; choices = round.choices; selected = round.selected
-    skipped = round.skipped; recorded = round.recorded ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
+    skipped = round.skipped; recorded = round.recorded ?? {}; keptHere = round.keptHere ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
     roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextOffset = round.nextOffset ?? 0
     entry = round.entry ?? null
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
@@ -223,13 +227,16 @@
         remember('atlas.last-round', null)
         remember(epochKey, summary.review_epoch ?? null)
       }
+      // Crops of rounds kept on this device read as pending until they are sent, and are not dealt again.
+      const away = await keptCrops()
       // A grapheme whose count promised crops that cannot be dealt gives way to the next one.
       let available = roundGraphemes(summary.categories).filter(c => c.pending > 0), chosen = null, seed = dealt ?? randomSeed(), result = null
       for (let tries = 0; tries < 8; tries++) {
         chosen = tries === 0 && target && available.some(c => c.label === target) ? target
           : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
         if (!chosen) break
-        result = await catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed })
+        result = await firstCrops(offset => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,
+          ...(offset ? { offset } : {}) }), away)
         if (closed || id !== requestId) return
         if (result.items.length) break
         available = available.filter(c => c.label !== chosen)
@@ -274,6 +281,8 @@
     let offset = Math.max(0, nextOffset - MORE_BATCH), additions = [], more = false
     try {
       const batchLimit = Math.min(MORE_BATCH, roundLimit - items.length)
+      // A crop of a kept round is left out as one on screen is.
+      for (const kept of await keptCrops()) seen.add(kept)
       while (additions.length < batchLimit) {
         const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: 48, offset, seed: roundSeed })
         if (closed || id !== requestId || round !== roundId) return
@@ -370,28 +379,36 @@
     const chosen = openSelection.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
     if (!chosen.length) return
     const crops = chosen.filter(i => !((i.written_character || i.label) === form && i.state === 'checked'))
-    let kept = chosen.length - crops.length, refused = []
+    let kept = chosen.length - crops.length, refused = [], answered = [], waiting = []
     const saved = [], before = {}, after = {}
     saving = true; formError = ''
     try {
-      for (let from = 0; from < crops.length; from += CORRECTION_BATCH) {
-        const part = crops.slice(from, from + CORRECTION_BATCH), id = crypto.randomUUID()
-        const result = await request('/atlas/corrections', { id, client_id: session.state.clientId, character: form,
-          crops: part.map(i => ({ id: i.id, revision: i.revision, ...pixels(i) })) })
-        const byId = Object.fromEntries((result.results ?? []).map(r => [r.target_id, r]))
-        saved.push({ id, ids: part.filter(i => byId[i.id]).map(i => i.id) })
-        kept += (result.unchanged ?? []).length
-        for (const i of part) if (byId[i.id]) {
-          before[i.id] = i
-          after[i.id] = { ...i, label: form, char: form, written_character: form, identity_status: 'assigned',
-            state: byId[i.id].state ?? 'checked', revision: byId[i.id].revision ?? i.revision + 1 }
-        }
-      }
+      ({ answered, kept: waiting } = await sendBatches(correctionBatches(form, crops, CORRECTION_BATCH), ({ id, crops: part }) =>
+        request('/atlas/corrections', { id, client_id: session.state.clientId, character: form,
+          crops: part.map(i => ({ id: i.id, revision: i.revision, ...pixels(i) })) })))
     } catch (e) {
+      answered = e.answered ?? []; waiting = e.kept ?? []
       refused = (e.targets ?? []).map(target => target.id)
       formError = refused.length ? t('bulk.refused', { count: refused.length }) : e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
     } finally { saving = false }
-    const handled = [...Object.keys(after), ...chosen.filter(i => !crops.includes(i)).map(i => i.id), ...refused]
+    for (const { item: { id, crops: part }, result } of answered) {
+      const byId = Object.fromEntries((result.results ?? []).map(r => [r.target_id, r]))
+      saved.push({ id, ids: part.filter(i => byId[i.id]).map(i => i.id) })
+      kept += (result.unchanged ?? []).length
+      for (const i of part) if (byId[i.id]) {
+        before[i.id] = i
+        after[i.id] = { ...i, label: form, char: form, written_character: form, identity_status: 'assigned',
+          state: byId[i.id].state ?? 'checked', revision: byId[i.id].revision ?? i.revision + 1 }
+      }
+    }
+    // Batches kept while writes are paused go once they resume: their crops are decided here meanwhile.
+    const waited = waiting.flatMap(batch => batch.crops)
+    if (waited.length) {
+      markRecorded(waited, 'assigned')
+      for (const batch of waiting) markKept(batch.crops, keyOf('/atlas/corrections', batch))
+      if (!formError) formError = t('client.pausedKept')
+    }
+    const handled = [...Object.keys(after), ...waited.map(i => i.id), ...chosen.filter(i => !crops.includes(i)).map(i => i.id), ...refused]
     if (saved.length) {
       items = items.map(i => after[i.id] ?? i)
       markRecorded(Object.values(after), 'assigned')
@@ -405,22 +422,24 @@
     if (!done || saving) return
     saving = true; formError = ''
     const left = [...done.batches]
+    const gone = batch => left.splice(left.indexOf(batch), 1)
     try {
       // Newest batch first. An undo is a change of its own, so a batch's crops are read again for the
       // revision they now have as soon as it is undone; a batch that fails leaves only itself and the
-      // older ones to undo.
-      while (left.length) {
-        const batch = left.at(-1)
+      // older ones to undo. An undo kept while writes are paused goes once they resume.
+      const { kept: waiting } = await sendEach([...done.batches].reverse(), async batch => {
         await request(`/atlas/corrections/${batch.id}/undo`, { client_id: session.state.clientId })
-        left.pop()
+        gone(batch)
         const now = Object.fromEntries(await Promise.all(batch.ids.map(async id => {
           const i = done.before[id]
           return [id, { ...i, ...(i.origin === 'corpus' ? await corpusCharacter(id) : await character(id)) }]
         })))
         items = items.map(i => now[i.id] ?? i)
         recorded = without(recorded, batch.ids)
-      }
-    } catch (e) { formError = e.message }
+      })
+      waiting.forEach(gone)
+      if (waiting.length) formError = t('client.pausedKept')
+    } catch (e) { (e.kept ?? []).forEach(gone); formError = e.message }
     finally {
       saving = false
       formDone = left.length ? { ...done, batches: left, count: left.reduce((n, batch) => n + batch.ids.length, 0) } : null
@@ -616,7 +635,10 @@
     return items.filter(i => skipped[i.id] && !failed[i.id] && viewed[i.id] && !recorded[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
   }
   // A round the site refused is reported in the reader's language; the service's messages are English.
-  const roundError = e => e.status === 409 ? t('quiz.roundChanged') : t('quiz.roundNotSaved')
+  const roundError = e => e.status === 409 ? t('quiz.roundChanged') : e.code === 'paused' ? t('client.paused') : t('quiz.roundNotSaved')
+  // A round kept on this device while writes are paused counts as done here, and the next one is dealt:
+  // it is sent once writes resume. Resolves true when kept.
+  const keptWhilePaused = sent => sent.then(() => false, e => { if (e?.kept) return true; throw e })
   // A tab open across a deployment runs the page it loaded, and the site may refuse what that page sends.
   // A refusal while a newer page is out offers the reload (the notice above the round) in place of the error.
   const outdated = async e => e.status >= 400 && e.status < 500 && (updated.current || await updated.check())
@@ -647,6 +669,13 @@
     choices = here(round.choices); selected = here(round.selected); skipped = here(round.skipped)
   }
   function markRecorded(crops, how) { recorded = { ...recorded, ...Object.fromEntries(crops.map(crop => [crop.id, how])) } }
+  /** Mark `crops` as decided by the save kept under `key`, until it is sent or refused. */
+  function markKept(crops, key) { keptHere = { ...keptHere, ...Object.fromEntries(crops.map(crop => [crop.id, key])) } }
+  // A crop decided here reads as saved once its kept save is sent, and as not saved if the site refused it.
+  function recordedLabel(id) {
+    const state = keptHere[id] ? keptState(keptHere[id]) : 'sent'
+    return state === 'refused' ? t('app.notSaved') : state === 'kept' ? t('app.keptHere') : '✓ ' + t('app.saved')
+  }
   async function submit() {
     if (saving || loadingMore || !ready) return
     if (step === 'select') return
@@ -666,11 +695,12 @@
     if (!answers.length && !seen.length && !passed.length) { await load(); return }
     saving = true; error = ''; errorStatus = 0
     try {
-      await request('/atlas/rounds', { id: roundId, grapheme, answers, seen, skipped: passed })
+      const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, answers, seen, skipped: passed }))
       last = { id: roundId, count: answers.length, grapheme, production }
       remember('atlas.last-round', last); completed += answers.length
-      announceSaved(answers.length + seen.length + passed.length, graphemeLabel)
+      if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeLabel)
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
+      if (kept) markKept([...answers, ...seen, ...passed], keyOf('/atlas/rounds', { id: roundId }))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       await load()
     } catch (e) { if (!(await outdated(e))) { error = roundError(e); errorStatus = e.status ?? 0 } }
@@ -687,11 +717,12 @@
     if ((!seen.length && !passed.length) || openSelection.length) return true
     saving = true; error = ''; errorStatus = 0
     try {
-      await request('/atlas/rounds', { id: roundId, grapheme, seen, skipped: passed })
+      const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, seen, skipped: passed }))
       last = { id: roundId, count: 0, grapheme, production }
       remember('atlas.last-round', last)
-      announceSaved(seen.length + passed.length, graphemeLabel)
+      if (!kept) announceSaved(seen.length + passed.length, graphemeLabel)
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
+      if (kept) markKept([...seen, ...passed], keyOf('/atlas/rounds', { id: roundId }))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       return true
     } catch (e) { if (!(await outdated(e))) { error = roundError(e); errorStatus = e.status ?? 0 }; return false }
@@ -705,7 +736,7 @@
     if (!last || saving) return
     saving = true; error = ''; errorStatus = 0
     try {
-      await request(`/atlas/rounds/${last.id}/undo`, {})
+      await keptWhilePaused(request(`/atlas/rounds/${last.id}/undo`, {}))
       // A round stored by an older version may name a scope the menu no longer offers.
       const target = last.grapheme, scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
       completed = Math.max(0, completed - last.count); last = null
@@ -788,7 +819,7 @@
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
           <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
           <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
-          <div class="quiz-production">{#if item.label !== graphemeLabel}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge">✓ {t('app.saved')}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+          <div class="quiz-production">{#if item.label !== graphemeLabel}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
     </div>
@@ -892,6 +923,7 @@
   .save-toast.quiz-saved { bottom:108px; }
   /* A crop this round already saved: still shown, marked, and never sent again. */
   .recorded-badge { font-size:9px; color:var(--muted); white-space:nowrap; }
+  .recorded-badge.refused { color:var(--wrong); }
   .suspect-badge { font-size:9px; color:var(--wrong); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .suspect-toggle[aria-pressed="true"] { color:var(--wrong); }
   .no-suspects { margin:18px 0 0; font-size:13px; color:var(--muted); text-align:center; }
