@@ -1,9 +1,23 @@
+import { t } from './i18n.svelte.js'
+
 // While the site's database takes an import, the Worker answers 503 with `code: 'busy'` and a
 // `Retry-After`. A read is then tried again here, and `DatabaseStatus` shows that it is waiting.
 export const busy = $state({ reads: 0 })
 
 /** Whether an answer is the database being busy, as opposed to a request that failed. */
 export const isBusy = (response, value) => response.status === 503 && value?.code === 'busy'
+
+/** Whether an answer is the site refusing writes for a while (`WRITES_PAUSED`); reads still work. */
+export const isPaused = (response, value) => response.status === 503 && value?.error === 'paused'
+
+/** `fetch`, with a refused write's message in the reader's language, for clients that show `message`. */
+export async function pausedFetch(input, init) {
+  const response = await fetch(input, init)
+  if (response.status !== 503) return response
+  const value = await response.clone().json().catch(() => null)
+  if (!isPaused(response, value)) return response
+  return new Response(JSON.stringify({ ...value, message: t('client.paused') }), { status: response.status, statusText: response.statusText, headers: response.headers })
+}
 
 /** How many times a read is tried again: about three minutes, past most imports. */
 const READ_TRIES = 10
