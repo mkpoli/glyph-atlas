@@ -29,13 +29,14 @@ def sources(root, dating=None, titles=None, characters=None, metadata=None):
         ("variant_sources", "{}"), ("word_sources", "{}"), ("published_at", '"2026-10-19"')])
 
 
-def books(remote, monkeypatch, *flags):
+def books(remote, monkeypatch, *flags, send=None):
     for name in ("books", "load_history"):
         sys.modules.pop(name, None)
     module = importlib.import_module("books")
     load_history = importlib.import_module("load_history")
     for target in (module, load_history):
-        monkeypatch.setattr(target, "send", remote.send)
+        monkeypatch.setattr(target, "send", send or remote.send)
+    monkeypatch.setattr(module, "query", remote.query)
     monkeypatch.setattr(module, "applied", lambda database, stamp: bool(
         remote.query(database, f"SELECT 1 AS n FROM imports WHERE stamp = '{stamp}'")))
     monkeypatch.setattr(sys, "argv", ["books.py", *flags])
@@ -88,6 +89,37 @@ def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F
     assert sorted(got["dates"]) == [("book:a", "witness", 1701, "gregorian"), ("codh:b", "composed", 1600, "gregorian")]
     assert len(got["characters"]) == 1
     assert "books.title\t0\t0\t1" in (root / "out" / "books-report.txt").read_text()
+
+
+def test_a_run_stopped_after_d1_applied_a_part_is_followed_on_rerun(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, dating=[dated("book:a"), dated("codh:b", "composed", 1600)])
+
+    def stopped(database, file, stamp):
+        remote.send(database, file, stamp)
+        if ".rows-" in stamp:
+            raise KeyboardInterrupt  # D1 holds the part; the local copy never replays it
+
+    with pytest.raises(KeyboardInterrupt):
+        books(remote, monkeypatch, "--send", send=stopped)
+    db, local = remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert len(facts(db)["dates"]) == 2 and facts(local)["dates"] == []
+    # A fresh copy changes one date and drops the other: the rerun follows D1 first, then sends the difference.
+    sources(root, dating=[dated("book:a", start=1701)])
+    books(remote, monkeypatch, "--send")
+    assert facts(db)["dates"] == [("book:a", "witness", 1701, "gregorian")]
+    assert facts(local) == facts(db)
+
+
+def test_a_part_applies_twice_without_a_conflict(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root)
+    books(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    got = facts(db)
+    for part in (root / "out" / "books-load").glob("books-*/rows-*.sql"):
+        db.executescript("BEGIN;\n" + part.read_text().rsplit("INSERT INTO imports", 1)[0] + "COMMIT;\n")
+    assert facts(db) == got
 
 
 def test_a_long_value_arrives_whole(layout, monkeypatch):  # noqa: F811

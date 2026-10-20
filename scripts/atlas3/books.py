@@ -18,7 +18,9 @@ read:
 
 Facts about a document that is not a book of the new layout are left out with a count. Only what
 differs from the local copy is sent, in parts named by their content and confirmed by their stamps in
-`imports`, then replayed on the local copy; a rerun after a fresh copy sends the difference. A dry run
+`imports`, then replayed on the local copy; a rerun after a fresh copy sends the difference. Every part
+removes each row before writing it, so it applies again harmlessly, and `--send` first replays the
+parts of earlier runs whose stamps D1 holds and the local copy lacks (one read of `imports`). A dry run
 (the default) writes the parts and the figures to `out/books-report.txt` and sends nothing. `--send`
 also applies migration 0005 (stamp `migration:0005`) where the local copy lacks it.
 
@@ -38,7 +40,7 @@ import sys
 
 from build import HERE, OUT
 from load_history import GROUP, SCHEMA, built, deliver, row_statements, stamped
-from publish import applied, lit, send
+from publish import applied, lit, query, send
 
 SITE_KEYS = ("collection", "corpus_index", "review_epoch", "variant_sources", "word_sources")
 DATE_COLS = ("book", "axis", "kind", "start", "end", "precision", "qualifier", "uncertain", "text", "label", "status",
@@ -178,10 +180,9 @@ def statements(books, atlas):
         held = {tuple(r[i] for i in k): r for r in atlas.execute(f"SELECT {names} FROM {table}")} if has(atlas, table) else {}
         new = {tuple(r[i] for i in k): r for r in books.execute(f"SELECT {names} FROM {table}")}
         rows = [[remove(table, cols, key, r)] for kk, r in sorted(held.items()) if kk not in new]
-        for kk, r in sorted(new.items()):
-            if held.get(kk) != r:
-                rows.append(([remove(table, cols, key, r)] if kk in held else [])
-                            + row_statements(table, list(cols), list(key), r))
+        # Each row is removed before it is written, so a part applies again without a conflict.
+        rows += [[remove(table, cols, key, r), *row_statements(table, list(cols), list(key), r)]
+                 for kk, r in sorted(new.items()) if held.get(kk) != r]
         add(table, rows)
     return groups, written
 
@@ -198,6 +199,21 @@ def figures(books, written, left):
     for reason, n in sorted(left.items()):
         lines.append(f"{n} {reason}")
     return "\n".join(lines) + "\n"
+
+
+def catch_up(atlas):
+    """Replay on the local copy the parts of earlier runs that D1 holds and the local copy lacks, as a
+    run stopped between the two leaves them, so the difference is taken from what D1 holds."""
+    local = {r[0] for r in atlas.execute("SELECT stamp FROM imports WHERE stamp LIKE 'books-%'")}
+    for r in query("glyph-atlas-v3", "SELECT stamp FROM imports WHERE stamp LIKE 'books-%' ORDER BY at, stamp"):
+        if r["stamp"] in local:
+            continue
+        run, part = r["stamp"].split(".", 1)
+        path = OUT / "books-load" / run / f"{part}.sql"
+        if not path.exists():
+            sys.exit(f"glyph-atlas-v3 holds {r['stamp']}, whose part {path} is gone; the local copy cannot follow it")
+        atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+        print(f"replayed {r['stamp']} from D1's imports", flush=True)
 
 
 def migrate(atlas):
@@ -228,6 +244,7 @@ def main():
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
         migrate(atlas)
+        catch_up(atlas)
     books, left = translate(atlas, mirror)
     groups, written = statements(books, atlas)
     report = figures(books, written, left)
