@@ -2,7 +2,7 @@
 // `/atlas` (the browse page, the review rounds and the Flagged view), `/atlas/corpus/characters`,
 // `/layers/gallery`, `/atlas/dates/stats`, `/atlas/collection/status`, `/layers/summary` and
 // `/health`. Counts come from the publication's answers plus the reviews since (`atlas3Answers.ts`);
-// listings deal crops in shuffle order from the indexes of migration 0010.
+// listings deal crops in shuffle order from the indexes of migration 0011.
 import { codeNames, publicId, type Entry } from '../atlas3';
 import { bookCounts, codePoints, collectedCounts, corpusCounts, galleryIndex, galleryShard, productionKeys, type SampleEntry } from '../atlas3Answers';
 import { currentPointer } from '../atlas3Gallery';
