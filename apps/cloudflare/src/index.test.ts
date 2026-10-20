@@ -1,7 +1,7 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
 import { canonical, samePixels, literal, hira, single, validRound, describedCard, jamoCard, jamoSyllable,
-  encodeCursor, decodeCursor, historyItem, historyQuery, moved, wroteLately, markWriter, substitutionKey, flagRequest, listingFilter, dealable } from './index';
+  encodeCursor, decodeCursor, historyItem, historyQuery, wroteLately, markWriter, substitutionKey, flagRequest, dealable } from './index';
 import { ROUND_MAX } from './rounds';
 import { held } from './held';
 import { componentTerm, rankMatches } from './components';
@@ -164,13 +164,6 @@ describe('samePixels', () => {
   });
 });
 
-it('moves crops counted apart out of pending, and never more than pending holds', () => {
-  const row = (label: string, document: string | null, state: string, n: number) => ({ label, family: null, document, title: document && 'T', state, n })
-  expect(moved([row('ア', 'd', 'pending', 5), row('ア', 'd', 'checked', 1), row('イ', null, 'pending', 2)],
-    [row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ウ', null, 'seen', 1), row('ア', 'd', 'skipped', 9)]))
-    .toEqual([row('ア', 'd', 'checked', 1), row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ア', 'd', 'skipped', 3)])
-})
-
 describe('a held value', () => {
   it('is read again only once the lag is out', async () => {
     const hold = held<number>()
@@ -293,14 +286,6 @@ describe('corpus flags', () => {
     for (const input of [{ glyphs: [glyph] }, { finding: 'x', glyphs: [] }, { finding: 'x', glyphs: [glyph, glyph] },
       { finding: 'x', glyphs: [{ id: 'hl:a:1' }] }, { finding: 'x', glyphs: Array.from({ length: 97 }, (_, i) => ({ id: `g${i}`, character: 'と' })) }])
       expect(() => flagRequest(input)).toThrow();
-  });
-});
-
-describe('unread crops', () => {
-  it('are browsed and never dealt in a round', () => {
-    expect(listingFilter(true, 'all', null).where).toContain("character<>''");
-    expect(listingFilter(false, 'all', null).where).not.toContain("character<>''");
-    expect(listingFilter(false, 'all', null).where).toContain('+quiz=1');
   });
 });
 

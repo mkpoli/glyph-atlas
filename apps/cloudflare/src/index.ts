@@ -21,12 +21,13 @@ import { pausedCallback, pausedResponse, pausedSignOut, writes, writesPaused } f
 import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
 import { honkokuPage } from './honkoku';
 import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
-import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
+import { YEAR_KEY, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
 import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
 import { MediaIncomplete, mediaResponse } from './atlas3Media';
+import * as browse from './routes/browse';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
-export { dateClaimsQuery, dateStatsQuery, datingQuery, tallyDates } from './dating';
+export { dateClaimsQuery, datingQuery, tallyDates } from './dating';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
 export { cropFormsQuery, formNamesQuery } from './cropForms';
 type Json = Record<string, any>;
@@ -91,7 +92,7 @@ export const hira = (value: string) => [...literal(value)].map(c => {
   const n = c.codePointAt(0)!; return n >= 0x30a1 && n <= 0x30f6 ? String.fromCodePoint(n - 0x60) : c;
 }).join('');
 export const single = (value: string) => [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(value)].length === 1;
-function integer(q: URLSearchParams, key: string, fallback: number, max = 1000000) {
+export function integer(q: URLSearchParams, key: string, fallback: number, max = 1000000) {
   const n = Number(q.get(key) ?? fallback);
   if (!Number.isSafeInteger(n) || n < 0 || n > max) throw new Problem(422, `Invalid ${key}.`);
   return n;
@@ -134,7 +135,6 @@ async function unit(env: Env, id: string): Promise<UnitRow> {
 const blank=(data:Json)=>Array.isArray(data.geometry?.flags)&&data.geometry.flags.includes('sparse-ink')
   &&['x','y','w','h'].every(k=>data.geometry.box?.[k]===data.box?.[k]);
 export const dealable=(origin:string,data:Json)=>origin==='corpus'?Boolean(data.proxyable&&data.written_character):data.repair?.quiz!==false&&!blank(data);
-const productionOf=(data:Json)=>typeof data.production==='string'?data.production:'unknown';
 // The first round or review that names a corpus glyph writes its `units` row from the published record,
 // in the same batch and before the rows that reference it.
 function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
@@ -285,47 +285,6 @@ function listing(d: Json): Json {
   const { text, line, context_image, context_box, crop_box, ...rest } = d;
   return rest;
 }
-// Skips that still count: from a round that was not undone, at the crop's current box.
-const SKIPS = `FROM skips k JOIN submissions b ON b.id=k.submission AND b.undone=0
-  WHERE k.target=units.id AND k.box IS json_extract(units.data,'$.box')`;
-// What rounds made of a crop at its current box (`unit_marks`): a pending crop two reviewers skipped is
-// `hard` and leaves the rounds for its own list; one a round showed and left unflagged is `seen`, out
-// of the queue with no decision.
-const MARK = `(SELECT mark FROM unit_marks m WHERE m.id=units.id)`;
-// A standing review from the character inspector (`character-review`), not a round's own verdict;
-// an undone review stops counting.
-export const reviewedInInspectorQuery = () => `EXISTS(SELECT 1 FROM events e JOIN submissions f ON f.id=e.submission AND f.undone=0
-  WHERE e.target=units.id AND e.kind='review' AND json_extract(json_extract(e.event,'$.evidence'),'$.kind')='character-review')`;
-const REVIEWED_IN_INSPECTOR = reviewedInInspectorQuery();
-// The classifier's doubt about a crop's label, as `atlas review suspects` computed it, or null.
-const SUSPECT = `(SELECT json_object('p',m.p,'reads_as',m.reads_as,'label',m.label,'box',json(m.box)) FROM unit_suspects m WHERE m.id=units.id)`;
-type Suspect = { p: number; reads_as: string | null; label: string; box: Json | null };
-// A mark holds while the crop keeps the label and box the classifier was shown; a crop relabelled or
-// re-cut since is no longer what it judged.
-export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | null {
-  if (!mark || mark.label !== item.label) return null;
-  const a = mark.box, b = item.box ?? null;
-  const same = a === null || b === null ? a === b : ['x', 'y', 'w', 'h'].every(k => Math.abs(Number(a[k]) - Number(b[k])) < 1e-6);
-  return same ? { p: mark.p, reads_as: mark.reads_as } : null;
-}
-// The crops that can be flagged or hard: those stored as flagged (`unit_state`), and those marked hard
-// (`unit_mark`). Every crop the effective state calls flagged or hard is among them.
-export const attentionCandidatesQuery = () => `id IN (SELECT id FROM units WHERE origin='local' AND state='flagged'
-  UNION SELECT id FROM unit_marks WHERE mark='hard')`;
-const ATTENTION_CANDIDATES = attentionCandidatesQuery();
-const EFFECTIVE_STATE = `iif(state='pending',coalesce(${MARK},state),state)`;
-// How long a crop a reviewer skipped stays out of that reviewer's own rounds.
-const SKIP_REST_MS = 3 * 24 * 60 * 60 * 1000;
-const quoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
-const restSince = () => new Date(Date.now() - SKIP_REST_MS).toISOString();
-// A reviewer's own skip that still rests, under any id they have written as: at the crop's current box, from a round not undone.
-const OWN_SKIP = (reviewer: string, since: string) => `EXISTS(SELECT 1 ${SKIPS} AND k.actor IN ${owned(reviewer)} AND k.at>${quoted(since)})`;
-// The state as one reviewer sees it: a crop they skipped lately is `skipped` for them.
-export function stateFor(reviewer: string | null, since = restSince()): string {
-  if (!reviewer) return EFFECTIVE_STATE;
-  // The reviewer's own recent skip is tested first: it is one indexed probe and false for most rows.
-  return `iif(state='pending' AND ${OWN_SKIP(reviewer, since)} AND ${MARK} IS NULL,'skipped',${EFFECTIVE_STATE})`;
-}
 // What a shown crop's pixels are named by: a local crop's page hash, a corpus glyph's source revision.
 const pixels = (crop: Json) => crop.image_sha256 ?? crop.source_revision;
 // The crops a round names: flagged answers, and crops it showed and left unflagged. A round carries
@@ -418,35 +377,6 @@ async function unitsById(env: Env, ids: string[]): Promise<Map<string, UnitRow |
   }
   return found;
 }
-// A production is a node of the tree in `data/vocab/production.yaml`, written as its path
-// (`printed/type/wood`); `tests/test_production.py` holds this list to the file. A material scope is
-// `all`, a node with everything under it, or `not:` and a node.
-export const PRODUCTIONS = ['handwritten','inscribed','inscribed/stone','inscribed/metal','inscribed/bone','inscribed/wood','printed','printed/woodblock','printed/type','printed/type/wood','printed/type/ceramic','printed/type/metal','printed/type/metal/copper','printed/type/metal/iron','printed/type/metal/lead','printed/engraved','printed/lithograph','printed/stencil','printed/phototype','printed/digital','typewritten','mixed','unknown'];
-// A Quick review round leaves movable type out unless asked: it fills whole books with near-identical glyphs.
-const REVIEW_SCOPE = 'not:printed/type';
-const validScope = (scope: string) => scope === 'all' || PRODUCTIONS.includes(scope.replace(/^not:/, ''));
-const within = (value: string, node: string) => value === node || value.startsWith(node + '/');
-// A material filter on a `production` column. A node and everything under it are one index range, from
-// `node` up to `node0`: ids are lower-case letters and '/', and '0' sorts right after '/', so nothing
-// else falls in it.
-function material(scope: string, column: string): [string, string[]] {
-  if (scope === 'all') return ['1=1', []];
-  const negated = scope.startsWith('not:'), node = negated ? scope.slice(4) : scope;
-  const test = `${column}>=? AND ${column}<?`;
-  return [negated ? `NOT (${test})` : `(${test})`, [node, node + '0']];
-}
-const inMaterial = (scope: string, value: string) =>
-  scope === 'all' || (scope.startsWith('not:') ? !within(value, scope.slice(4)) : within(value, scope));
-// How far a round pages. Rounds are dealt from the front and a saved crop leaves the queue, so a
-// reader never gets this deep; the bound keeps a crawler from reading a character's whole corpus.
-const ROUND_OFFSET_MAX = 4096;
-// Named corpus glyphs come back due after an undo, or when a skip's rest ends. Only a round of their
-// own character deals them, from its most recently named pending rows, and the category counts leave
-// them out: either way no request reads every named glyph. Should a character hold more named
-// pending rows than this, mostly glyphs already seen, an older one that is due again waits outside it.
-const NAMED_WINDOW = 256;
-// `shuffle` is the first 28 bits of the id's SHA-256.
-const SHUFFLE_RANGE = 268435456;
 // What the cached listings are keyed by: every way `units` and the review tables change moves it. A
 // publication stamps `published_at`, `refresh_published_units.py` stamps `units_refreshed_at`, a
 // review or undo adds an event, a round adds a submission, and an undo of a round with no review
@@ -466,58 +396,12 @@ const catalogueKey = (version: CatalogueStamps | null) =>
 async function catalogueVersion(env: Env): Promise<string> {
   return catalogueKey(await catalogueStamps(env));
 }
-// The publication and refresh the collection's crops come from, without the reviews since.
-const publicationKey = (version: CatalogueStamps | null) => [version?.published ?? '', version?.refreshed ?? ''].join(':');
-// Browse counts every local crop by character and state, which reads the whole table and takes
-// seconds, and every visitor gets the same answer. The edge keeps one copy per catalogue version.
+// How long the edge keeps a copy of an answer every visitor shares, under its catalogue version.
 const FACETS_TTL = 3600;
-// The grapheme a label is filed under: its family, or its own code points when it has none. The
-// publication writes `family` from the same rule (`atlas.grapheme_of`).
-export const graphemeOf = (label: string, family: string | null) => family || cp(label) || null;
-type Facet = { label: string | null; family: string | null; document: string | null; title: string | null; state: string; n: number };
-async function browseFacets(env: Env, ctx: ExecutionContext, url: URL, production: string, withheld: boolean, stored: D1PreparedStatement, marked: D1PreparedStatement, version: Promise<string>) {
-  const key = new Request(`${url.origin}/atlas/facets?by=character,family,document&production=${encodeURIComponent(production)}&withheld=${withheld ? 'show' : 'hide'}&v=${encodeURIComponent(await version)}`);
-  const cached = await caches.default.match(key);
-  if (cached) return await cached.json() as Facet[];
-  const [counted, marks] = await env.DB.batch<Facet>([stored, marked]);
-  const groups = moved(counted.results, marks.results);
-  ctx.waitUntil(caches.default.put(key, Response.json(groups, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
-  return groups;
-}
-// Corpus glyphs by character in the material asked for, with the grapheme the character table files each
-// under: what the grapheme browser counts beside the collection's own crops, so a character the site
-// holds only as corpus glyphs (債) is listed too. It is its own request, which the browser makes when
-// it opens, so catalogue pages carry none of it. `corpus_characters` is read whole (one row per
-// character and material), and the edge keeps one copy per `corpus_counts_at`: every recount a
-// publication runs (`CORPUS_REFRESH`, which a forms reload runs too) stamps it with the recount, and
-// the forms drain stamps it once a decision has moved glyphs between characters. The browser keeps
-// its copy for five minutes.
+// The corpus recount a cached corpus answer is keyed by: every recount a publication runs stamps
+// `corpus_counts_at`, and so does the forms drain once a decision has moved glyphs between characters.
 async function corpusVersion(env: Env) {
   return (await env.DB.prepare("SELECT value FROM metadata WHERE key='corpus_counts_at'").first<{ value: string }>())?.value ?? '';
-}
-export function browseCorpusQuery(production: string) {
-  const [materials, values] = material(production, 'cc.production');
-  return { sql: `SELECT cc.character AS label,sum(cc.n) AS n,json_extract(ch.data,'$.grapheme.code_point') AS family
-    FROM corpus_characters cc LEFT JOIN characters ch ON ch.character=cc.character WHERE ${materials} GROUP BY cc.character`, values };
-}
-async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL) {
-  const production = url.searchParams.get('production') || 'all';
-  if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
-  const key = new Request(`${url.origin}/atlas/corpus/characters?production=${encodeURIComponent(production)}&v=${encodeURIComponent(await corpusVersion(env))}`);
-  const cached = await caches.default.match(key);
-  if (cached) return await cached.json() as Json;
-  const { sql, values } = browseCorpusQuery(production);
-  const rows = (await env.DB.prepare(sql).bind(...values).all<{ label: string; n: number; family: string | null }>()).results;
-  // [label, grapheme, glyphs], one per character that has any.
-  const body = { items: rows.filter(row => row.label && row.n > 0).map(row => [row.label, graphemeOf(row.label, row.family), row.n]) };
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
-  return body;
-}
-// The grapheme each corpus character is filed under, from the browser's cached counts: a character
-// the collection holds only as corpus glyphs (𛂞) joins its family's round (は's) in the round menu.
-async function corpusGraphemes(env: Env, ctx: ExecutionContext, origin: string) {
-  const { items } = await corpusCharacters(env, ctx, new URL(`${origin}/atlas/corpus/characters?production=all`)) as { items: [string, string, number][] };
-  return new Map(items.map(([label, grapheme]) => [label, grapheme]));
 }
 export const GRAPHEME_KEY = /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/;
 // A grapheme key (`U+306F`) as the text it names.
@@ -539,63 +423,6 @@ export async function graphemeMembers(env: Env, key: string): Promise<string[]> 
   const family = row?.grapheme ? parse(row.grapheme) as { code_point: string; char: string; members?: { char: string }[] } : null;
   if (family && family.code_point !== key) throw new Problem(422, `${graphemeText(key)} is filed under ${family.char}.`);
   return family?.members?.length ? family.members.map(member => member.char) : [compose(graphemeText(key))];
-}
-// The crops a listing starts from: local ones, those a round may deal, in the material asked for.
-// A round and its reference strips name their grapheme's characters, and read each through
-// `unit_character`: the review filter is kept off its index (`+`), which would otherwise drive the
-// query over every crop that can be dealt. Browsing leaves withheld crops out the same way unless
-// `withheld` asks for them. A crop no one has read yet has no character to ask about, so a round
-// leaves it out; browsing shows it.
-export function listingFilter(review: boolean, production: string, characters: string[] | null, withheld = false) {
-  const [materials, materialValues] = material(production, 'production');
-  const where = ["origin='local'", ...(review ? (characters === null ? ['quiz=1', "character<>''"] : ['+quiz=1']) : withheld ? [] : ['+quiz=1']), materials];
-  const values: (string | number)[] = [...materialValues];
-  if (characters !== null) { where.push('character IN (SELECT value FROM json_each(?))'); values.push(JSON.stringify(characters)) }
-  return { where, values };
-}
-// Counts by character and state, and for browsing by book as well; a book's title is the one its
-// crops were published with. A round asks only for its own character's: a review response that names
-// a character carries that character's `categories` and `counts` alone.
-// Every character's counts by stored state are read from `unit_counts`, which the triggers keep in
-// step with `units`. The few pending crops rounds made something of (`unit_marks`), and those the
-// reviewer skipped during the rest, are counted apart and moved out of `pending`: working out every
-// crop's state as it is counted reads each crop twice. A named character's few crops work out their
-// own state as they are counted.
-export function facetsQueries(review: boolean, reviewer: string | null, where: string[], named: boolean, since = restSince()) {
-  const filter = where.join(' AND '), book = review ? 'NULL' : 'document';
-  if (named) return { stored: `SELECT character AS label,max(family) AS family,NULL AS document,NULL AS title,${stateFor(reviewer, since)} AS state,count(*) AS n
-    FROM units WHERE ${filter} GROUP BY 1,5`, marked: null, skipped: null };
-  // `unit_counts` keeps a missing key as ''.
-  const stored = review
-    ? `SELECT nullif(character,'') AS label,nullif(max(family),'') AS family,NULL AS document,NULL AS title,state,sum(n) AS n
-    FROM unit_counts WHERE ${filter} GROUP BY character,state`
-    : `SELECT nullif(character,'') AS label,nullif(max(family),'') AS family,nullif(document,'') AS document,nullif(max(title),'') AS title,state,sum(n) AS n
-    FROM unit_counts WHERE ${filter} GROUP BY character,document,state`;
-  // Every mark is read once, and its crop by id.
-  const marked = `SELECT character AS label,${book} AS document,m.mark AS state,count(*) AS n
-    FROM unit_marks m CROSS JOIN units ON units.id=m.id WHERE ${filter} AND state='pending' GROUP BY 1,2,3`;
-  if (!reviewer) return { stored, marked, skipped: null };
-  const skipped = `SELECT character AS label,${book} AS document,'skipped' AS state,count(*) AS n FROM units
-    WHERE id IN (SELECT target FROM skips WHERE actor IN ${owned(reviewer)} AND at>${quoted(since)}) AND ${filter}
-    AND state='pending' AND ${MARK} IS NULL AND ${OWN_SKIP(reviewer, since)} GROUP BY 1,2`;
-  return { stored, marked, skipped };
-}
-// Stored counts with the crops counted apart moved from `pending` to the state they are in. A
-// reviewer's skips are counted now and browse's counts may be the edge's copy of this catalogue
-// version, so a move never takes more than `pending` holds.
-export function moved(stored: Facet[], moves: Facet[]): Facet[] {
-  const key = (row: { label: string | null; document: string | null }, state: string) => JSON.stringify([row.label, row.document, state]);
-  const rows = new Map(stored.map(row => [key(row, row.state), { ...row }]));
-  for (const move of moves) {
-    const pending = rows.get(key(move, 'pending'));
-    const n = Math.min(move.n, pending?.n ?? 0);
-    if (!pending || !n) continue;
-    pending.n -= n;
-    const target = rows.get(key(move, move.state)) ?? { ...pending, state: move.state, n: 0 };
-    target.n += n;
-    rows.set(key(move, move.state), target);
-  }
-  return [...rows.values()].filter(row => row.n > 0);
 }
 // The pair and trigram frequencies Explore's grid shows: runs of crops and of corpus glyphs that follow
 // each other on a line (`unit_ngrams`), counted by their graphemes (0071), most frequent first, so ん𛁅 and
@@ -962,275 +789,6 @@ async function sourcePage(env: Env, ctx: ExecutionContext, url: URL, id: string)
   const body = pageView(record, rows.results);
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
   return body;
-}
-async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: string | null) {
-  const q = url.searchParams;
-  const purpose = q.get('purpose') || 'browse';
-  const production = q.get('production') || (purpose === 'review' ? REVIEW_SCOPE : 'all');
-  if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
-  const review = purpose === 'review';
-  const seed = integer(q, 'seed', 0, 2147483647);
-  const limit = integer(q, 'limit', 60, 96), offset = integer(q, 'offset', 0);
-  if (review && offset > ROUND_OFFSET_MAX) throw new Problem(404, 'A round does not page this far.');
-  // One rest window for the counts and the listing.
-  const since = restSince(), state = stateFor(reviewer, since);
-  // An empty `character` names none. A round names its grapheme, and deals every character of it.
-  const character = q.get('character') || null;
-  const grapheme = graphemeKey(q.get('grapheme'));
-  const scoped = review && grapheme !== null;
-  const members = scoped ? await graphemeMembers(env, grapheme) : null;
-  // The Flagged view shows every crop waiting for a person, withheld or not.
-  const flaggedView = ['flagged', 'attention'].includes(q.get('state') ?? '');
-  const withheld = flaggedView || q.get('withheld') === 'show';
-  const { where, values } = listingFilter(review, production, members, withheld);
-  const [materials, materialValues] = material(production, 'production');
-  const queries = facetsQueries(review, reviewer, where, scoped, since);
-  const [stored, marked, skipped] = [queries.stored, queries.marked, queries.skipped].map(sql => sql ? env.DB.prepare(sql).bind(...values) : null);
-  // Only counts that are the same for every visitor are cached; a reviewer's own skips are theirs.
-  let groups: Facet[], published: D1Result<{ label: string; n: number }> | null = null;
-  // Asked once a request: the facets and the withheld total key their copies by it.
-  let stamps: Promise<CatalogueStamps | null> | null = null;
-  const stampsOnce = () => stamps ??= catalogueStamps(env);
-  if (review) {
-    const corpus = corpusCountQuery(production, members);
-    const results = await env.DB.batch<any>([...[stored, marked, skipped].filter(s => s !== null), env.DB.prepare(corpus.sql).bind(...corpus.values)]);
-    published = results.pop()!;
-    groups = moved(results[0].results, results.slice(1).flatMap(result => result.results));
-  } else {
-    groups = await browseFacets(env, ctx, url, production, withheld, stored!, marked!, stampsOnce().then(catalogueKey));
-    if (skipped) groups = moved(groups, (await skipped.all<Facet>()).results);
-  }
-  const categories = new Map<string, Json>(), documents = new Map<string, Json>();
-  const counts: Json = { pending: 0, seen: 0, flagged: 0, checked: 0, hard: 0, skipped: 0 };
-  const empty = { total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, hard: 0, skipped: 0 };
-  // A crop no one has read yet counts towards its book, under no character.
-  const add = (label: string | null, state: string, n: number, document: string | null = null, title: string | null = null, family: string | null = null) => {
-    counts[state] += n;
-    if (label) {
-      const category = categories.get(label) || { label, grapheme: graphemeOf(label, family), ...empty };
-      category.total += n; category[state] += n;
-      categories.set(label, category);
-    }
-    if (!document) return;
-    const book = documents.get(document) || { id: document, title, ...empty };
-    book.total += n; book[state] += n;
-    documents.set(document, book);
-  };
-  for (const row of groups) add(row.label, row.state, row.n, row.document, row.title, row.family);
-  // A corpus glyph nothing has named is pending for everyone, and the table counts them per character,
-  // each under the grapheme its family files it under.
-  const corpus = new Map<string, number>();
-  const families = published && !scoped ? await corpusGraphemes(env, ctx, url.origin) : null;
-  if (published) for (const row of published.results) if (row.n > 0) {
-    corpus.set(row.label, row.n); add(row.label, 'pending', row.n, null, null, scoped ? grapheme : families!.get(row.label) ?? null)
-  }
-  // Browse's counts are grouped by character, book and state, so a browse listing filtered by those
-  // alone takes its total from them; counting it again would read every crop it holds on each page.
-  // Any other filter clears this, and the listing is counted.
-  let tally: ((row: Facet) => boolean)[] | null = review ? null : [];
-  if (character) { where.push('character=?'); values.push(character); tally?.push(row => row.label === character) }
-  const document = text(q.get('document'), 256, 'document');
-  if (document) { where.push('document=?'); values.push(document); tally?.push(row => row.document === document) }
-  // A grapheme is a family's representative code point, or a label's own code points. Every named crop
-  // has a family (its own code points when the character table gives none), so browsing one is one
-  // lookup that `unit_family_sample` serves in shuffle order.
-  if (grapheme && !scoped) { where.push('family=?'); values.push(grapheme); tally = null }
-  // A search finds a local crop by its written character, one range of `unit_character`. Typed kana
-  // such as トモ reach a character through the alias index first (`/atlas/suggest`).
-  if (q.get('q')) {
-    where.push('character=?');
-    values.push(literal(q.get('q')!)); tally = null;
-  }
-  // With a character, a grapheme or a search named, its own index finds the few crops and the script only filters
-  // them (`+`); the script's index would read every crop of that script.
-  if (q.get('group') && q.get('group') !== 'all') { where.push(character || grapheme || q.get('q') ? '+category=?' : 'category=?'); values.push(q.get('group')!); tally = null }
-  // `attention` is the Flagged view: every crop waiting for a person, flagged or hard to read. The
-  // review state is worked out per crop, so the query starts from the few that can qualify.
-  if (q.get('state') === 'attention') { where[0] = "+origin='local'"; where.push(ATTENTION_CANDIDATES, `${state} IN ('flagged','hard')`); tally = null }
-  else if (q.get('state') && q.get('state') !== 'all') { const wanted = q.get('state')!; where.push(`${state}=?`); values.push(wanted); tally?.push(row => row.state === wanted) }
-  // The Flagged view hides crops already looked at in the inspector by default; `reported=show`
-  // (the default for every other caller) leaves them in. `reportedCountWhere` is captured before the
-  // hide filter, so the count is of what is hidden, not what remains.
-  const reportedCountWhere = flaggedView ? [...where, REVIEWED_IN_INSPECTOR] : null;
-  if (flaggedView && q.get('reported') === 'hide') { where.push(`NOT ${REVIEWED_IN_INSPECTOR}`); tally = null }
-  // How many withheld crops browsing left out, from `unit_counts`, which keys them by character, family
-  // and book but not by script: with a script chosen the number is not known.
-  const hiddenCount = !review && !withheld && !(q.get('group') && q.get('group') !== 'all') && (!q.get('state') || q.get('state') === 'all')
-    ? withheldCountQuery(materials, { character: character ?? (q.get('q') ? literal(q.get('q')!) : null), document, family: grapheme && !scoped ? grapheme : null })
-    : null;
-  // A grapheme's round deals its named and then its untouched corpus glyphs after its local crops.
-  // Corpus glyphs belong to no work of the collection, so a round narrowed to one work deals none.
-  const dealt = scoped && !character && !document && ['all', 'pending'].includes(q.get('state') || 'all') && !q.get('q')
-    && (!q.get('group') || q.get('group') === 'all' || members!.every(member => categoryOf(member) === q.get('group')));
-  const named = dealt ? { sql: namedRoundQuery(materials, state), values: [JSON.stringify(members), ...materialValues] } : null;
-  const from = named ? `(SELECT * FROM units WHERE ${where.join(' AND ')} UNION ALL ${named.sql}) AS units` : `units WHERE ${where.join(' AND ')}`;
-  const fromValues = named ? [...values, ...named.values] : values;
-  // A crop another reviewer skipped comes first in a round: it needs a second pair of eyes. Then a
-  // character's local crops, then its named corpus glyphs.
-  const others = review ? `EXISTS(SELECT 1 ${SKIPS}${reviewer ? ` AND k.actor NOT IN ${owned(reviewer)}` : ''}) DESC,origin='corpus',` : '';
-  const order = others + (review && seed % 5 ? 'priority,' : '');
-  // Flagged view: a crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
-  const reviewedLast = flaggedView ? `${REVIEWED_IN_INSPECTOR},` : '';
-  // What a tile shows (`compact`): the record without the review snapshot, context and model votes.
-  const columns = `id,origin,data,document,style,${state} AS effective,(SELECT shape_order FROM unit_shapes s WHERE s.id=units.id) AS shape_order,${SUSPECT} AS suspect`;
-  // Browse deals crops in `shuffle` order from a point the seed picks, and wraps round past the
-  // highest: an index serves that order, where a seed-scrambled order sorts every row on each visit.
-  // A named character is found through `unit_character` instead, and its few crops sort in memory.
-  const rotated = !review && !flaggedView && !character && !q.get('q');
-  const start = seed % SHUFFLE_RANGE;
-  const side = (test: '>=' | '<') => `SELECT ${columns} FROM units WHERE ${where.join(' AND ')} AND shuffle${test}? ORDER BY shuffle,rowid LIMIT ? OFFSET ?`;
-  // Past the crops from the seed's point up, the listing wraps round to those below it, and needs how
-  // many lie above. The page that reaches the end knows; the client hands it back on later pages
-  // (`above`), and a page past it reads only the crops below: skipping those above would read each of
-  // them once withheld ones are left out, as would counting them.
-  const told = rotated && q.get('above') !== null ? integer(q, 'above', 0) : null;
-  const below = told !== null && offset >= told;
-  // Unnarrowed, every visitor asks for the same total, which sums the whole of `unit_counts`; the edge
-  // keeps one per publication and material for `FACETS_TTL`. Reviews leave a local crop's `quiz` alone, and
-  // a publication or refresh that changes it stamps a new key.
-  const totalKey = hiddenCount && !hiddenCount.values.length ? new Request(`${url.origin}/atlas/withheld-total?production=${
-    encodeURIComponent(production)}&v=${encodeURIComponent(publicationKey(await stampsOnce()))}`) : null;
-  const cachedTotal = totalKey ? await caches.default.match(totalKey).then(hit => hit ? hit.json() as Promise<number> : null) : null;
-  const counting = cachedTotal === null ? hiddenCount : null;
-  // `limit=0` asks for the counts alone, as a round does to choose its character: the listing is neither
-  // counted nor read, and a round's count of every crop it could deal reads each of them.
-  const wantsRows = limit > 0;
-  const statements = [
-    ...(tally || !wantsRows ? [] : [env.DB.prepare(`SELECT count(*) AS n FROM ${from}`).bind(...fromValues)]),
-    ...(!wantsRows ? [] : [below ? env.DB.prepare(side('<')).bind(...values, start, limit, offset - told!)
-      : rotated ? env.DB.prepare(side('>=')).bind(...values, start, limit, offset)
-      : env.DB.prepare(`SELECT ${columns} FROM ${from} ORDER BY ${order}${reviewedLast} ((shuffle * ?) % 2147483647),id LIMIT ? OFFSET ?`).bind(...fromValues, seed + 1, limit, offset)]),
-    ...(reportedCountWhere ? [env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${reportedCountWhere.join(' AND ')}`).bind(...values)] : []),
-    ...(counting ? [env.DB.prepare(counting.sql).bind(...materialValues, ...counting.values)] : []),
-  ];
-  const results = statements.length ? await env.DB.batch(statements) : [];
-  const count = tally || !wantsRows ? null : results.shift()!, window = wantsRows ? results.shift()! : null;
-  const reportedCount = reportedCountWhere ? results.shift()! : null, hiddenCounted = counting ? results.shift()! : null;
-  const withheldCount = cachedTotal ?? (hiddenCounted ? (hiddenCounted.results[0] as { n: number }).n : null);
-  if (totalKey && cachedTotal === null && withheldCount !== null)
-    ctx.waitUntil(caches.default.put(totalKey, Response.json(withheldCount, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
-  const listed = tally ? groups.filter(row => tally!.every(test => test(row))).reduce((n, row) => n + row.n, 0)
-    : count ? (count.results[0] as { n: number }).n : null;
-  const rows = (window?.results ?? []) as (UnitRow & { effective: string; shape_order: number | null; suspect: string | null })[];
-  let above: number | null = below ? told : null;
-  if (wantsRows && rotated && !below && rows.length < limit) {
-    above = rows.length ? offset + rows.length : told ?? (await env.DB.prepare(`SELECT count(*) AS n FROM units WHERE ${where.join(' AND ')} AND shuffle>=?`)
-      .bind(...values, start).first<{ n: number }>())!.n;
-    const wrapped = await env.DB.prepare(side('<')).bind(...values, start, limit - rows.length, Math.max(offset - above, 0)).all();
-    rows.push(...wrapped.results as typeof rows);
-  }
-  const items: Json[] = await withForms(env, rows
-    .map(row => { const item = compact(row); return { ...item, state: row.effective, shape_order: row.shape_order,
-      suspect: suspectOf(row.suspect ? parse(row.suspect) as Suspect : null, item) } }));
-  // Positions run through the `units` rows and then the untouched corpus glyphs. A glyph its record
-  // keeps out still takes its position, so `next_offset` can run ahead of the items, and once the
-  // glyphs run out `total` is what was there to deal.
-  let total: number | null = listed, next = offset + items.length;
-  const unnamed = dealt ? members!.reduce((n, member) => n + (corpus.get(member) || 0), 0) : 0;
-  if (dealt && unnamed && listed !== null) {
-    total = listed + unnamed;
-    if (items.length < limit) {
-      const round = await corpusRound(env, members!, production, seed, Math.max(offset - listed, 0), limit - items.length);
-      // A glyph is one crop whichever list deals it, even should its published row read as untouched.
-      const shown = new Set(items.map(item => item.id));
-      items.push(...round.items.filter(item => !shown.has(item.id))); next += round.read;
-      if (round.exhausted) total = next;
-    }
-  }
-  return { total, next_offset: next, available: Object.values(counts).reduce((a:number,b:any) => a+b,0),
-    counts, purpose, production, review_limit:ROUND_MAX, review_epoch: await meta(env, 'review_epoch') || 0, query: q.get('q'),
-    ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members } } : {}),
-    categories: [...categories.values()].sort((a,b) => b.total-a.total || a.label.localeCompare(b.label)),
-    documents: [...documents.values()].sort((a,b) => b.total-a.total || (a.title ?? '').localeCompare(b.title ?? '') || a.id.localeCompare(b.id)),
-    reported_count: reportedCount ? (reportedCount.results[0] as { n: number }).n : 0,
-    withheld_count: withheldCount, above,
-    items: await withDating(env, items) };
-}
-// The withheld crops in this material, of a character, a book or a family where one is named.
-export function withheldCountQuery(materials: string, named: { character: string | null; document: string | null; family: string | null }) {
-  const keys = (['character', 'document', 'family'] as const).filter(key => named[key] !== null);
-  return { sql: `SELECT coalesce(sum(n),0) AS n FROM unit_counts WHERE origin='local' AND quiz=0 AND ${materials}${keys.map(key => ` AND ${key}=?`).join('')}`,
-    values: keys.map(key => named[key]!) };
-}
-// Untouched assigned corpus glyphs per character in this material, of every character or of a grapheme's.
-export function corpusCountQuery(production: string, characters: string[] | null = null) {
-  const [materials, values] = material(production, 'production');
-  return { sql: `SELECT character AS label,sum(n-named) AS n FROM corpus_characters WHERE ${characters === null ? '' : 'character IN (SELECT value FROM json_each(?)) AND '}${materials} GROUP BY character`,
-    values: characters === null ? values : [JSON.stringify(characters), ...values] };
-}
-// The named corpus glyphs of a round's characters that are due, from each one's most recently named
-// pending rows.
-export function namedRoundQuery(materials: string, state: string) {
-  return `SELECT * FROM (SELECT u.* FROM json_each(?) m JOIN units u ON u.rowid IN
-    (SELECT rowid FROM units WHERE origin='corpus' AND character=m.value AND state='pending' ORDER BY rowid DESC LIMIT ${NAMED_WINDOW})) AS units
-    WHERE quiz=1 AND ${materials} AND ${state}='pending'`;
-}
-// One character's untouched corpus glyphs of one material, or of every material, in shuffle order
-// from a point the seed picks.
-export function corpusRoundQuery(production: string | null, side: '>=' | '<') {
-  return `SELECT * FROM corpus_units WHERE character=?${production ? ' AND production=?' : ''} AND named=0 AND shuffle${side}?
-    ORDER BY shuffle LIMIT ?`;
-}
-// The glyphs wrap round from the seeded point, so each seed deals a different but stable order that
-// the index serves as it stands. Each character of the grapheme, and in a scope short of `all` each
-// production a character holds in it, is read through its own index range, and they are merged.
-async function corpusRound(env: Env, characters: string[], production: string, seed: number, offset: number, limit: number) {
-  const start = seed % SHUFFLE_RANGE, wanted = offset + limit;
-  const held = (await env.DB.prepare('SELECT character,production FROM corpus_characters WHERE character IN (SELECT value FROM json_each(?))')
-    .bind(JSON.stringify(characters)).all<{ character: string; production: string }>()).results;
-  const ranges = production === 'all' ? [...new Set(held.map(row => row.character))].map(character => ({ character, kind: null as string | null }))
-    : held.filter(row => inMaterial(production, row.production)).map(row => ({ character: row.character, kind: row.production as string | null }));
-  if (!ranges.length) return { items: [], read: 0, exhausted: true };
-  const page = async (side: '>=' | '<', n: number) => {
-    const results = await env.DB.batch(ranges.map(({ character, kind }) => env.DB.prepare(corpusRoundQuery(kind, side))
-      .bind(character, ...(kind ? [kind] : []), start, n)));
-    return results.flatMap(r => r.results as CorpusRow[]).sort((a, b) => a.shuffle - b.shuffle || (a.id < b.id ? -1 : 1)).slice(0, n);
-  };
-  const rows = await page('>=', wanted);
-  if (rows.length < wanted) rows.push(...await page('<', wanted - rows.length));
-  const read = rows.slice(offset), items: Json[] = [];
-  const records = await corpusRecords(env, read);
-  for (const row of read) {
-    const data = await recordOf(env, records, row);
-    // The record decides: a glyph whose image this site may not serve, or whose record disagrees
-    // with its published row about the character or the material, is not dealt.
-    if (dealable('corpus', data) && data.label === row.character && inMaterial(production, productionOf(data)))
-      items.push({ ...listing(data), origin: 'corpus', state: 'pending', shape_order: null, suspect: null });
-  }
-  if (items.length) {
-    const marks = await env.DB.prepare('SELECT id,p,reads_as,label,box FROM unit_suspects WHERE id IN (SELECT value FROM json_each(?))')
-      .bind(JSON.stringify(items.map(item => item.id))).all<{ id: string; p: number; reads_as: string | null; label: string; box: string | null }>()
-    const found = new Map(marks.results.map(row => [row.id, { ...row, box: row.box === null ? null : parse(row.box) }]))
-    for (const item of items) item.suspect = suspectOf(found.get(item.id), item)
-  }
-  return { items, read: read.length, exhausted: rows.length < wanted };
-}
-// The homepage gallery is dealt from `corpus_gallery`: records copied out of the R2 packs for the corpus
-// glyphs whose `shuffle` falls below SAMPLE_RANGE, so a page is one query where reading its records
-// from the packs took one R2 request each. Packs are content-addressed, so a copy is current exactly
-// while `corpus_units` still names the object and offset it came from; `scripts/fill_corpus_gallery.py`
-// copies the rest after a publication. A glyph a review has named shows its `units` row.
-// A script group deals the copies of its category (0079). The scripts the corpus holds few glyphs of
-// are copied whole (WHOLE_GROUPS), so their seed's point falls anywhere in the shuffle range, and the
-// unchosen gallery keeps to the sample below SAMPLE_RANGE, where every script is copied alike.
-const SAMPLE_RANGE = 4194304;
-const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol', 'tangut'];
-export const gallerySampleQuery = (side: '>=' | '<', grouped = false) => `SELECT s.data,u.data AS current,${FORM_COLUMNS.split(',').map(c => `f.${c}`).join(',')}
-  FROM corpus_gallery s JOIN corpus_units c ON c.id=s.id AND c.object=s.object AND c.offset=s.offset
-  LEFT JOIN units u ON u.id=s.id LEFT JOIN form_units f ON f.id=s.id
-  WHERE ${grouped ? 's.category=?' : `s.shuffle<${SAMPLE_RANGE}`} AND s.shuffle${side}? ORDER BY s.shuffle LIMIT ?`;
-async function gallery(env: Env, q: URLSearchParams) {
-  const group = q.get('group') && q.get('group') !== 'all' ? q.get('group')! : null;
-  if (group && !GALLERY_GROUPS.includes(group)) throw new Problem(400, 'Invalid group.');
-  const limit = integer(q, 'limit', 24, 96), start = integer(q, 'seed', 0, 2147483647) % (group && WHOLE_GROUPS.includes(group) ? SHUFFLE_RANGE : SAMPLE_RANGE);
-  type Row = UnitForm & { data: string; current: string | null };
-  const read = (side: '>=' | '<', n: number) => env.DB.prepare(gallerySampleQuery(side, !!group)).bind(...(group ? [group] : []), start, n).all<Row>();
-  const rows = (await read('>=', limit)).results;
-  if (rows.length < limit) rows.push(...(await read('<', limit - rows.length)).results);
-  // A review may have moved a glyph to another script since its copy was filed.
-  const items = (await withForms(env, rows.map(r => r.current ? parse(r.current) : formed(parse(r.data), r.id ? r : null, formTools))))
-    .filter(item => !group || categoryOf(String(item.label ?? '')) === group);
-  return { status: 'ok', available: items.length, items: await withDating(env, items) };
 }
 function chunks<T>(list: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -1980,7 +1538,7 @@ async function body(request: Request): Promise<Json> {
   const bytes=new Uint8Array(size);let pos=0;for(const part of chunks){bytes.set(part,pos);pos+=part.length}
   try{return JSON.parse(new TextDecoder().decode(bytes))}catch{throw new Problem(422,'Invalid JSON.')}
 }
-function text(value: unknown, max: number, name: string, required=false): string | null {
+export function text(value: unknown, max: number, name: string, required=false): string | null {
   if(value==null && !required) return null;
   if(typeof value!=='string'||value.length>max||(required&&!value.trim()))throw new Problem(422,`Invalid ${name}.`);
   return compose(value.trim());
@@ -2513,7 +2071,7 @@ const routes = {
         return json(me?await favouriteCrops(env,me.id,integer(q,'offset',0),integer(q,'limit',60,60),itemsFor,replacement):{items:[],total:0,offset:0,next:null},200,{'cache-control':'private, no-store'});
       }
       if(path==='/api/account')return json({user:await viewer(env,request,true),providers:providers(env)});
-      if(path==='/health')return json({ok:true,published_at:await meta(env,'published_at')});
+      if(path==='/health')return json(await browse.health(env));
       const image=path.match(/^\/atlas\/media\/([a-f0-9]{64})\.webp$/);
       if(image){
         try{const found=await mediaResponse(env,request,image[1],ctx);if(found)return found}
@@ -2521,17 +2079,17 @@ const routes = {
         throw new Problem(404,'Image not found.');
       }
       // A round leaves out what its reviewer skipped lately, so it reads who is asking.
-      if(path==='/atlas')return json(await catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null));
+      if(path==='/atlas')return json(await browse.catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null));
       if(path==='/api/ranking')return await ranking(env,url,ctx);
       if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null));
       const counted=path.match(/^\/atlas\/ngrams\/(\d+)$/);
       if(counted)return json(await ngrams(env,ctx,url,ngramSize(counted[1])));
       if(path==='/atlas/runs/related')return json(await runRelated(env,ctx,url));
       if(path==='/atlas/runs'){const timing=new Timing();const body=await runOccurrences(env,ctx,url,timing);return json(body,200,{'server-timing':timing.header()});}
-      if(path==='/atlas/corpus/characters')return json(await corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
+      if(path==='/atlas/corpus/characters')return json(await browse.corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
       if(path==='/atlas/corpus/character')return json(await inspected(env,await unit(env,q.get('id')||'')));
-      if(path==='/atlas/collection/status')return json(await meta(env,'collection'));
-      if(path==='/atlas/dates/stats')return json(await dateStats(env,ctx,url));
+      if(path==='/atlas/collection/status')return json(await browse.siteValue(env,'collection'));
+      if(path==='/atlas/dates/stats')return json(await browse.dateStats(env,ctx,url));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
       if(document){let id:string;try{id=decodeURIComponent(document[1])}catch{throw new Problem(404,'No characters are published for this document.')}
         return await documentCharacters(env,url,id,ctx)}
@@ -2589,10 +2147,10 @@ const routes = {
       if(path==='/layers/occurrences')return json(await occurrences(env,q.get('code_point')||'',q));
       if(path==='/layers/candidates'){const found=await corpusOccurrences(env,ctx,url,await known(env,q.get('code_point')||''),q);
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
-      if(path==='/layers/gallery')return json(await gallery(env,q));
+      if(path==='/layers/gallery')return json(await browse.gallery(env,q));
       if(path==='/layers/decades')return json(await decades(env,ctx,url));
       if(path==='/layers/chronology')return json(await chronology(env,ctx,url));
-      if(path==='/layers/summary')return json(await meta(env,'corpus_index'));
+      if(path==='/layers/summary')return json(await browse.siteValue(env,'corpus_index'));
       if(path==='/layers/graphemes'||path==='/layers/ligatures'){
         const selector=path.endsWith('ligatures')?"json_extract(data,'$.ligature') IS NOT NULL":"json_array_length(json_extract(data,'$.grapheme.members'))>1";
         const rows=await env.DB.prepare(`SELECT data FROM characters WHERE ${selector} LIMIT ? OFFSET ?`).bind(integer(q,'limit',200,500),integer(q,'offset',0)).all<{data:string}>();
