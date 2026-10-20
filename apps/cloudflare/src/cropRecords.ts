@@ -45,7 +45,10 @@ export type RecordRow = { id: number; kind: number; book: number; state: string 
 // that took one away. The old site kept marks beside the crop and never moved its revision for them.
 const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id=${e}.reverses),3) IN (3,4)))`;
 /** How many mark events follow a crop's last other event: its revision less these is the one the old site
- *  gave it (`settled`). */
+ *  gave it (`settled`). Only trailing marks are taken off: a mark made before a later review or re-cut
+ *  (kind 7) stays in the revision, so such a crop shows one more than the old site would have per earlier
+ *  mark. Reviews compare revisions in the same terms (the review port's `standing`), so this is the
+ *  revision a client must send back; it is not the old site's count for those crops. */
 export const MARKS = (c: string) => `(SELECT count(*) FROM events e WHERE e.crop=${c}.id AND ${MARKED('e')} AND e.revision>coalesce((SELECT max(f.revision)
     FROM events f WHERE f.crop=${c}.id AND NOT ${MARKED('f')}),-1))`;
 // One crop's row with everything its record takes from D1, every join a key lookup and every event read a
