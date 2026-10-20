@@ -103,6 +103,51 @@ def test_pull_stops_on_a_table_nothing_copies(accounts):
     assert not module.COPY.exists()
 
 
+def test_pull_keeps_no_copy_that_differs_from_the_source(accounts, monkeypatch):
+    module, old, _, _ = accounts
+    query = module.remote(module.OLD)
+
+    def changing(sql):
+        # A sign-in lands between the copy and its comparison.
+        if "quote(" in sql and '"session"' in sql:
+            old.execute("UPDATE session SET expiresAt = '2027-01-01'")
+        return query(sql)
+    with pytest.raises(SystemExit, match="differs from glyph-atlas"):
+        module.pull(changing, False)
+    assert not module.COPY.exists()
+
+
+def test_check_compares_the_copy_with_the_old_database(accounts, capsys):
+    module, old, target, _ = accounts
+    pull(module)
+    module.load(True, module.local(target))
+    module.check()
+    out = capsys.readouterr().out
+    assert "glyph-atlas matches" in out and "glyph-atlas-accounts matches" in out
+    old.execute("INSERT INTO rateLimit VALUES('r2', '/sign-up', 1, 1760000000001)")
+    old.commit()
+    with pytest.raises(SystemExit) as stop:
+        module.check()
+    assert stop.value.code == 1
+    out = capsys.readouterr().out
+    assert "glyph-atlas: rateLimit: 1 rows here, 2 there" in out
+    assert "glyph-atlas-accounts matches" in out
+    old.execute("CREATE TABLE twoFactor(id TEXT PRIMARY KEY, userId TEXT REFERENCES user(id))")
+    with pytest.raises(SystemExit):
+        module.check()
+    assert "glyph-atlas: twoFactor: not in the copy" in capsys.readouterr().out
+
+
+def test_pull_reads_in_key_ranges(accounts, monkeypatch):
+    module, old, _, _ = accounts
+    monkeypatch.setattr(module, "CHUNK", 1)
+    reads = []
+    query = module.local(old)
+    module.pull(lambda sql: reads.append(sql) or query(sql), fresh=False)
+    assert any("WHERE (\"id\") > ('u1')" in r for r in reads)
+    assert sqlite3.connect(module.COPY).execute("SELECT count(*) FROM user").fetchone() == (2,)
+
+
 def test_a_dry_run_writes_parts_that_rebuild_the_copy_and_sends_nothing(accounts):
     module, _old, target, sent = accounts
     pull(module)
@@ -119,7 +164,7 @@ def test_load_sends_once_and_check_passes(accounts, capsys):
     module.load(True, module.local(target))
     assert len(sent) == 3
     module.check()
-    assert "matches" in capsys.readouterr().out
+    assert "glyph-atlas-accounts matches" in capsys.readouterr().out
     assert target.execute("SELECT count(*) FROM imports").fetchone() == (3,)
     # A rerun finds every stamp and sends nothing.
     module.load(True, module.local(target))
@@ -135,7 +180,7 @@ def test_check_reports_a_changed_row(accounts, capsys):
     with pytest.raises(SystemExit) as stop:
         module.check()
     assert stop.value.code == 1
-    assert "session: 1 rows here, 1 there" in capsys.readouterr().out
+    assert "glyph-atlas-accounts: session: 1 rows here, 1 there" in capsys.readouterr().out
 
 
 def test_load_refuses_a_target_holding_another_copy(accounts):

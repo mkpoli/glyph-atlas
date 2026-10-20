@@ -7,14 +7,16 @@
 pull   finds the authentication tables in the old database's sqlite_master: `user`, `verification`,
        `rateLimit` and every table whose foreign keys lead to `user`, less those pull.py copies for the
        history. A table that is neither, nor named in LEFT, stops it. It creates them (tables, indexes,
-       triggers) in `accounts.sqlite`, copies their rows in primary-key ranges, It only reads.
+       triggers) in `accounts.sqlite`, copies their rows in primary-key ranges, then compares the copy
+       with the old database as `check` does. It only reads.
 load   writes the schema, the rows (parents before the rows that reference them) and then the indexes
        as SQL parts under `accounts-load/<copy>/`, named by the copy's checksums, and replays them on an
        empty database to confirm they rebuild the copy exactly. With --send each part goes to
        glyph-atlas-accounts and is confirmed by its stamp in `imports`; a rerun sends only what is
        missing, and a database holding another copy's rows or any table of its own is refused.
-check  compares the schema, the row count and a checksum of every row of each table between
-       `accounts.sqlite` and glyph-atlas-accounts, and exits 1 on any difference. It only reads.
+check  compares the table set, the schema, the row count and a checksum of every row of each table of
+       `accounts.sqlite` with the old database, then with glyph-atlas-accounts, and exits 1 on any
+       difference. It only reads.
 """
 
 from __future__ import annotations
@@ -194,9 +196,12 @@ def pull(query, fresh):
         n += insert(db, table, cols, batch)
         db.commit()
         print(f"{table} {n}", flush=True)
+    print(f"{len(entries)} statements and the rows of {len(names)} tables", flush=True)
+    if not compare(db, query, OLD):
+        sys.exit(f"the copy differs from {OLD}; {tmp} is kept for a look, and a rerun copies again")
     db.close()
     tmp.replace(COPY)
-    print(f"{len(entries)} statements and the rows of {len(names)} tables -> {COPY}", flush=True)
+    print(f"-> {COPY}", flush=True)
 
 
 def insert(db, table, cols, rows):
@@ -307,33 +312,48 @@ def load(do_send, query=None):
     deliver(run, query or remote(DATABASE))
 
 
-def differences(db, query):
-    """Lines naming each table whose schema, row count or checksum differs from the copy, and the copy's
-    counts and checksums."""
-    out = []
-    ours = {(e["type"], e["name"]): e["sql"] for e in schema(local(db), tables(db))}
-    theirs = {(e["type"], e["name"]): e["sql"] for e in schema(query, tables(db))}
+def differences(db, query, names=None):
+    """Lines naming each table missing on either side or whose schema, row count or checksum differs
+    from the copy, and the copy's counts and checksums. `names` is the table set the other side should
+    hold; without it, the copy's."""
+    ours_names = tables(db)
+    out = [f"{t}: {'only in the copy' if t in ours_names else 'not in the copy'}"
+           for t in sorted(set(ours_names) ^ set(names or ours_names))]
+    ours = {(e["type"], e["name"]): e["sql"] for e in schema(local(db), ours_names)}
+    theirs = {(e["type"], e["name"]): e["sql"] for e in schema(query, ours_names)}
     for k in sorted(ours.keys() | theirs.keys()):
         if ours.get(k) != theirs.get(k):
             out.append(f"{k[0]} {k[1]}: schema differs")
-    here, there = summary(local(db), db), summary(query, db)
-    for table in tables(db):
+    here = summary(local(db), db)
+    if out:
+        return out, here
+    there = summary(query, db)
+    for table in ours_names:
         if here[table] != there[table]:
             out.append(f"{table}: {here[table][0]} rows here, {there[table][0]} there, checksums "
                        f"{here[table][1][:12]} and {there[table][1][:12]}")
     return out, here
 
 
-def check(query=None):
-    db = sqlite3.connect(f"file:{COPY}?mode=ro", uri=True)
-    found, here = differences(db, query or remote(DATABASE))
-    for table, (n, sha) in here.items():
-        print(f"{table}: {n} rows, {sha[:12]}", flush=True)
+def compare(db, query, name):
+    """Print how the copy compares with a database; True when they match. Against the old database the
+    table set is the one auth_tables finds there now."""
+    found, here = differences(db, query, auth_tables(query) if name == OLD else None)
     for line in found:
-        print(line, flush=True)
-    if found:
+        print(f"{name}: {line}", flush=True)
+    if not found:
+        print(f"{name} matches {COPY.name}: " + ", ".join(f"{t} {n} rows {sha[:12]}" for t, (n, sha) in here.items()),
+              flush=True)
+    return not found
+
+
+def check(query=None, old=None):
+    """The chain old database -> copy -> accounts database, each link compared."""
+    db = sqlite3.connect(f"file:{COPY}?mode=ro", uri=True)
+    source = compare(db, old or remote(OLD), OLD)
+    target = compare(db, query or remote(DATABASE), DATABASE)
+    if not (source and target):
         sys.exit(1)
-    print(f"{DATABASE} matches {COPY.name}", flush=True)
 
 
 def main():
