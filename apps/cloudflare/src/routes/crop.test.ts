@@ -96,6 +96,8 @@ function setup() {
     -- c: written as ム in review, and a later match keeps it.
     INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state,issue,named) VALUES (4,${c},1,0,0,1,4,4,1,4,1,0,4);
     INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state) VALUES (5,${glyph},1,0,0,1,5,5,0,6,1);
+    -- d: a round marked it seen, which moved its revision; the old site's revision did not count marks.
+    INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state) VALUES (6,${d},1,0,0,1,6,6,3,5,3);
     INSERT INTO reviews(crop,gen,at,state,x,y,w,h) VALUES(${d},1,1,3,101,11,22,33);
     INSERT INTO form_clusters(id,key,family,label,count,coherence,shape_position,size_position,list,form,issue,character,written_family,decision)
       VALUES(9,'U+7FC1:35ced6e49b','U+7FC1','翁',1,1,0,0,'9-x','𦐈',NULL,NULL,'U+7FC1','dec');
@@ -174,11 +176,11 @@ describe('a crop\'s record', () => {
       identity_basis: 'human_review', script: 'katakana', grapheme: 'U+3080', visual_group: null, state: 'checked', issue: null });
   });
 
-  it('shows a marked crop as pending, with its redrawn box until a publication cuts it', async () => {
+  it('shows a marked crop as pending at the revision before its mark, with its redrawn box until a publication cuts it', async () => {
     const { get, ids } = setup();
     const record = await (await get(`/atlas/characters/${publicId(ids.d)}`)).json() as any;
     const pub = publicId(ids.d);
-    expect(record).toMatchObject({ state: 'pending', box: { x: 101, y: 11, w: 22, h: 33 }, box_pending: true, crop_version: `${pub}@${hash}@101,11,22,33` });
+    expect(record).toMatchObject({ state: 'pending', revision: 0, box: { x: 101, y: 11, w: 22, h: 33 }, box_pending: true, crop_version: `${pub}@${hash}@101,11,22,33` });
   });
 
   it('reads a corpus glyph\'s published record under its row and its cluster\'s form', async () => {
@@ -251,6 +253,7 @@ describe('a crop\'s line', () => {
     expect(body.id).toBe(publicId(ids.b));
     expect(body.items.map((i: any) => [i.offset, i.label, i.state, i.issue])).toEqual([[-1, '一', 'pending', null], [0, '二', 'flagged', 'crop'],
       [1, 'ム', 'checked', null], [2, '四', 'pending', null]]);
+    expect(body.items[3].revision).toBe(0);
     expect(body.items[0]).toEqual({ id: publicId(ids.a), offset: -1, label: '一', image: '/atlas/media/19968.webp', revision: 0, image_sha256: hash,
       state: 'pending', issue: null, tone: '#c7b9a2', image_size: [20, 30] });
   });
@@ -289,6 +292,9 @@ describe('a crop\'s model votes', () => {
     expect(await (await get(`/atlas/characters/${pub}/suggestions/context${q}`)).json()).toEqual({ status: 'ready', basis: 'transcription',
       line_id: 'l', anchor: 1, source_text: '一', candidates: [{ text: '一', engine: 'Nearby transcription', offset: 0, before: '', after: '二' }] });
     expect((await get(`/atlas/characters/${pub}/suggestions?revision=1&image_sha256=${hash}`)).status).toBe(409);
+    // A marked crop is asked for at its revision before the mark, or after it.
+    for (const revision of [0, 1]) expect((await get(`/atlas/characters/${publicId(ids.d)}/suggestions?revision=${revision}&image_sha256=${hash}`)).status).toBe(200);
+    expect((await get(`/atlas/characters/${publicId(ids.d)}/suggestions?revision=2&image_sha256=${hash}`)).status).toBe(409);
     expect(await (await get(`/atlas/characters/${publicId(ids.b)}/suggestions?revision=2&image_sha256=${hash}`)).json())
       .toEqual({ status: 'unavailable', candidates: [] });
   });

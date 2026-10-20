@@ -31,16 +31,23 @@ export function cropVersion(id: string, data: Json): string | null {
 // Entry fields that are the bundle's own bookkeeping, never the record's.
 const INTERNAL = ['slot', 'id', 'image_place', 'context_image_place', 'record_place', 'cuts', 'retired', 'replaced_by'];
 // A mark (`seen`, `hard`) is the review queue's: the record of a marked crop is still pending.
-const MARKS = new Set(['seen', 'hard']);
+const MARK_STATES = new Set(['seen', 'hard']);
 // A review saved before the issue was renamed names it `reading`; a record calls it `character`.
 export const recordIssue = (issue: string | null) => issue === 'reading' ? 'character' : issue;
-export const recordState = (state: string | null) => state === null || MARKS.has(state) ? 'pending' : state;
+export const recordState = (state: string | null) => state === null || MARK_STATES.has(state) ? 'pending' : state;
 
 export type RecordRow = { id: number; kind: number; book: number; state: string | null; revision: number; cut: number;
   category: string | null; char: string | null; head: string | null; production: string | null; rev: number; page_key: string;
   document: string; x: number | null; y: number | null; w: number | null; h: number | null; issue: string | null;
-  reviewed: number; written: number; cluster_key: string | null; glyph_set: number; form: string | null; form_issue: string | null;
+  reviewed: number; written: number; settled: number; cluster_key: string | null; glyph_set: number; form: string | null; form_issue: string | null;
   form_character: string | null; written_family: string | null };
+// An event that only moved a mark: a round's seen or hard (kinds 3 and 4), or an undo (kind 5) of a round
+// that took one away. The old site kept marks beside the crop and never moved its revision for them.
+const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id=${e}.reverses),3) IN (3,4)))`;
+/** How many mark events follow a crop's last other event: its revision less these is the one the old site
+ *  gave it (`settled`). */
+export const MARKS = (c: string) => `(SELECT count(*) FROM events e WHERE e.crop=${c}.id AND ${MARKED('e')} AND e.revision>coalesce((SELECT max(f.revision)
+    FROM events f WHERE f.crop=${c}.id AND NOT ${MARKED('f')}),-1))`;
 // One crop's row with everything its record takes from D1, every join a key lookup and every event read a
 // range of `event_crop`. Each event holds the crop's values after it, undos (`reverses`) included, so a
 // flagged crop's issue is its last event's. A verdict (kind below 3: match, wrong, unsure, 0003) that no undo
@@ -52,6 +59,7 @@ export const recordQuery = () => `SELECT c.id,c.kind,c.book,s.key AS state,c.rev
     WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) END AS issue,
   EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.kind<3 AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id)) AS reviewed,
   EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.named IS NOT NULL AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id)) AS written,
+  c.revision-${MARKS('c')} AS settled,
   fc.key AS cluster_key,fg.crop IS NOT NULL AS glyph_set,iif(fg.crop IS NULL,fc.form,fg.form) AS form,
   iif(fg.crop IS NULL,nullif(fc.issue,'mixed'),fg.issue) AS form_issue,iif(fg.crop IS NULL,fc.character,fg.character) AS form_character,
   iif(fg.crop IS NULL,fc.written_family,fg.written_family) AS written_family
@@ -82,7 +90,7 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   if (corpus) record = formed(record, formRow(row), { codePoints });
   Object.assign(record, { id: publicId(row.id), source_id: source });
   if (!corpus) Object.assign(record, { label: row.char ?? record.label, production: row.production ?? 'unknown', page_id: row.page_key });
-  Object.assign(record, { state: recordState(row.state), revision: row.revision });
+  Object.assign(record, { state: recordState(row.state), revision: row.settled });
   // A review keeps the crop's category on its record, and the issue it stands flagged for.
   if (row.reviewed) record.category = row.category ?? categoryOf(record.label ?? '');
   if (row.reviewed || row.issue !== null) record.issue = record.state !== 'flagged' ? null : recordIssue(row.issue);

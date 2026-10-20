@@ -11,7 +11,7 @@ import { bibtex, citedVersion, cropEntry, csl, FORMATS, hayagriva, type Day, typ
 import { axisOf } from '../dating';
 import { honkokuPage } from '../honkoku';
 import { cropForms, cropWords } from '../cropPanels';
-import { cropVersions, foundCrop, recordIssue, recordState, type FoundCrop } from '../cropRecords';
+import { MARKS, cropVersions, foundCrop, recordIssue, recordState, type FoundCrop } from '../cropRecords';
 
 type Json = Record<string, any>;
 const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Response.json(value, {
@@ -73,7 +73,9 @@ export function samePixels(q: URLSearchParams, origin: string, data: Json): bool
 }
 async function suggestions(env: Env, ctx: ExecutionContext, found: FoundCrop, q: URLSearchParams, context: boolean) {
   const { row, record } = found;
-  if (q.get('revision') !== String(row.revision) || !samePixels(q, row.kind === 1 ? 'corpus' : 'local', record)) throw new Problem(409, 'Character changed.');
+  // A client that read the crop before marks moved its revision still holds what is shown (`settled`).
+  const revision = Number(q.get('revision') ?? NaN);
+  if (!(Number.isSafeInteger(revision) && revision >= row.settled && revision <= row.revision) || !samePixels(q, row.kind === 1 ? 'corpus' : 'local', record)) throw new Problem(409, 'Character changed.');
   const votes = await cropVotes(env, row.id, row.cut, ctx);
   const engines = votes?.models == null ? null : await env.ATLAS.prepare(`SELECT key FROM codes WHERE field='models' AND code=?`)
     .bind(votes.models).first<{ key: string }>().then(found => found ? JSON.parse(found.key) as { name: string }[] : null);
@@ -122,10 +124,11 @@ async function cite(env: Env, ctx: ExecutionContext, url: URL, raw: string): Pro
   return new Response(body, { headers: { ...headers, 'cache-control': 'no-cache' } });
 }
 
-// Collected crops as a line or a page lists them: each crop's row, its page's revision, and the issue it
+// Collected crops as a line or a page lists them: each crop's row with the revision the old site gave it
+// (`recordQuery`), its page's revision, and the issue it
 // stands flagged for, its last event's (`recordQuery`). One primary-key lookup per crop, and for a flagged
 // one the last entry of its `event_crop` range.
-export const listedCropsQuery = () => `SELECT c.id,s.key AS state,c.revision,g.text AS char,pg.rev,r.x,r.y,r.w,r.h,
+export const listedCropsQuery = () => `SELECT c.id,s.key AS state,c.revision-${MARKS('c')} AS revision,g.text AS char,pg.rev,r.x,r.y,r.w,r.h,
   CASE WHEN s.key='flagged' THEN (SELECT i.key FROM events e LEFT JOIN codes i ON i.field='issue' AND i.code=e.issue
     WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) END AS issue
   FROM json_each(?1) j JOIN crops c ON c.id=j.value AND c.kind=0 JOIN pages pg ON pg.id=c.id>>24
