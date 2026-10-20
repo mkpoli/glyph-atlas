@@ -778,17 +778,24 @@ def main():
                 scope["books"].add(value[2])
                 scope["shards"].add((key[0], ord(key[1][0])))
         for key, value in have.items():
-            if want.get(key) != value:
-                if key not in want:
-                    texts.setdefault((key[4], key[0]), None)
+            if key not in want:
+                texts.setdefault((key[4], key[0]), None)
                 m.runs_sql.append("DELETE FROM runs WHERE " + " AND ".join(f"{c}={lit(v)}" for c, v in zip(RUN_KEY, key)) + ";")
                 delta[key[:2]] -= 1
                 touch(key, value)
         for key, value in want.items():
-            if have.get(key) != value:
+            old = have.get(key)
+            if old is None:
                 m.runs_sql.append(insert("runs", (*RUN_KEY, "second", "third", "book"), (*key, *value)))
                 delta[key[:2]] += 1
-                touch(key, value)
+            elif old != value:
+                # The same run with other crops or another book: only what changed is written.
+                changed = ", ".join(f"{c}={lit(v)}" for c, v, w in zip(("second", "third", "book"), value, old) if v != w)
+                m.runs_sql.append(f"UPDATE runs SET {changed} WHERE " + " AND ".join(f"{c}={lit(v)}" for c, v in zip(RUN_KEY, key)) + ";")
+                touch(key, old)
+            else:
+                continue
+            touch(key, value)
         # A run written anew counts again in its shard, though its row is unchanged.
         has_texts = m.runs.execute("SELECT 1 FROM sqlite_master WHERE name='run_text'").fetchone()
         for key in want:

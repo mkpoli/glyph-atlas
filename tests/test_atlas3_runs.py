@@ -194,6 +194,16 @@ def test_a_publish_keeps_the_written_crops_and_answers(layout, monkeypatch, tmp_
     assert {"v3/runs/", "v3/runs/books/", "v3/runs/forms/"} <= set(remote.prefixes)
 
 
+def test_a_run_with_other_crops_is_updated_in_place(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    path = catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ")],
+                     [("ex:a1", 2, "ex:b1", None, "あい", "book:a", 1, 1, 0, "あい")])
+    run(publish, monkeypatch, path)
+    parts = "".join(p.read_text() for p in (root / "out" / "publish").glob("*/runs-*.sql"))
+    assert f"UPDATE runs SET second={ids(root)['ex:b1']} WHERE" in parts and "DELETE FROM runs" not in parts
+    assert remote.dbs["glyph-atlas-v3-runs"].execute("SELECT second FROM runs").fetchall() == [(ids(root)["ex:b1"],)]
+
+
 def test_a_run_across_the_page_is_refused(layout, monkeypatch, tmp_path):  # noqa: F811
     _root, publish, _remote = layout
     path = catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ")],
