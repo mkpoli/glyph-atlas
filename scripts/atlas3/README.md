@@ -121,9 +121,27 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    each pending marked crop's state to its mark one revision on with an event, and writes
    `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut. `answers.py`
    follows, since marks change the counts. The alias files for old URLs are *not built*.
-6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
+6. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
+   session changes still frozen. It is created once, before the window:
+   `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:
+
+       python3 scripts/atlas3/accounts.py pull --fresh
+       python3 scripts/atlas3/accounts.py load
+       python3 scripts/atlas3/accounts.py load --send
+       python3 scripts/atlas3/accounts.py check
+
+   `pull` reads the CREATE statements of `user`, `session`, `account`, `passkey`, `verification`,
+   `account_profiles` and `rateLimit` (with their indexes) from the old database's `sqlite_master` and
+   copies their rows in primary-key ranges into `accounts.sqlite`; it only reads. `load` writes the
+   tables with those exact statements, the rows (parents first) and then the indexes as parts under
+   `accounts-load/<copy>/`, named by the copy's checksums, and replays them on an empty database to
+   confirm they rebuild the copy. Only `--send` writes to D1: each part is confirmed by its stamp in an
+   `imports` table, a rerun sends what is missing, and a database holding another copy's rows or tables
+   of its own is refused. `check` compares the schema, row counts and a checksum of every row per table
+   and exits 1 on any difference.
+7. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.
-7. **Switch** the Worker's routes to the new layout and resume reviews.
+8. **Switch** the Worker's routes to the new layout and resume reviews.
 
 `check.py` compares the copies with the local copy of the new layout, crop by crop: numbers, row
 values, bundle boxes and images, runs and the image map. It reads nothing remote.
