@@ -21,7 +21,7 @@ mock.module('../src/lib/session.svelte.js', () => ({
 const { backoff } = await import('../src/lib/busy.svelte.js')
 const { request } = await import('../src/lib/client.js')
 const { outbox, drain, keep, keptCrops } = await import('../src/lib/outbox.svelte.js')
-const { correctionBatches, sendEach } = await import('../src/lib/corrections.js')
+const { correctionBatches, sendBatches, sendEach } = await import('../src/lib/corrections.js')
 
 const paused = () => Response.json({ error: 'paused', message: 'Changes are paused.' }, { status: 503, headers: { 'retry-after': '300' } })
 let posts, sent, timers, realFetch, realTimeout, answer
@@ -138,6 +138,45 @@ test('a batch correction keeps every batch after a kept one, under the same ids 
   expect(outbox.pending).toBe(0)
 })
 
+test('a batch corrected, undone and corrected again is a new submission, which the site records', async () => {
+  // The site answers a repeated submission with its first answer and changes nothing.
+  const answers = new Map(), state = {}
+  globalThis.fetch = async (path, init) => {
+    const body = JSON.parse(init.body)
+    posts.push(path); sent.push(body.id ?? null)
+    const undone = /^\/atlas\/corrections\/([^/]+)\/undo$/.exec(path)?.[1]
+    if (undone) { for (const crop of answers.get(undone).crops) state[crop] = 'before'; return Response.json({ ok: true }) }
+    if (!answers.has(body.id)) {
+      for (const crop of body.crops) state[crop.id] = body.character
+      answers.set(body.id, { crops: body.crops.map(crop => crop.id), results: body.crops.map(crop => ({ target_id: crop.id })) })
+    }
+    return Response.json({ results: answers.get(body.id).results })
+  }
+  const crops = [{ id: 'u0', revision: 4 }, { id: 'u1', revision: 4 }]
+  const send = ({ id, crops: part }) => request('/atlas/corrections', { id, character: 'え', crops: part })
+  const first = await sendBatches(correctionBatches('え', crops, 2), send)
+  expect(first.answered.length).toBe(1)
+  await sendEach(first.answered.map(({ item }) => item.id), id => request(`/atlas/corrections/${id}/undo`, {}))
+  expect(state).toEqual({ u0: 'before', u1: 'before' })
+  // The view puts the crops back as they were before the correction, at the same revisions.
+  const again = await sendBatches(correctionBatches('え', crops, 2), send)
+  expect(again.answered[0].item.id).not.toBe(first.answered[0].item.id)
+  expect(state).toEqual({ u0: 'え', u1: 'え' })
+})
+
+test('a batch the site refused is a new submission next time; one whose sending failed keeps its id', async () => {
+  const crops = [{ id: 'r0', revision: 1 }]
+  const send = ({ id, crops: part }) => request('/atlas/corrections', { id, character: 'お', crops: part })
+  answer = () => Response.json({ detail: 'changed' }, { status: 409 })
+  const refused = correctionBatches('お', crops, 1)[0].id
+  expect((await sendBatches(correctionBatches('お', crops, 1), send).catch(e => e)).status).toBe(409)
+  const next = correctionBatches('お', crops, 1)[0].id
+  expect(next).not.toBe(refused)
+  globalThis.fetch = async () => { throw new Error('connection reset') }
+  expect((await sendBatches(correctionBatches('お', crops, 1), send).catch(e => e)).message).toBe('connection reset')
+  expect(correctionBatches('お', crops, 1)[0].id).toBe(next)
+})
+
 test('a run of saves stops at a refusal, and says what came before it', async () => {
   const refusal = Object.assign(new Error('refused'), { status: 409 })
   const results = { a: 1, c: 3 }
@@ -149,4 +188,5 @@ test('a run of saves stops at a refusal, and says what came before it', async ()
   expect(error).toBe(refusal)
   expect(error.answered).toEqual([{ item: 'a', result: 1 }, { item: 'c', result: 3 }])
   expect(error.kept).toEqual(['b'])
+  expect(error.item).toBe('d')
 })

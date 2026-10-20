@@ -19,7 +19,7 @@
   import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
   import { keptCrops, outbox } from '../lib/outbox.svelte.js'
-  import { correctionBatches, sendEach } from '../lib/corrections.js'
+  import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
   import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
@@ -383,7 +383,7 @@
     const saved = [], before = {}, after = {}
     saving = true; formError = ''
     try {
-      ({ answered, kept: waiting } = await sendEach(correctionBatches(form, crops, CORRECTION_BATCH), ({ id, crops: part }) =>
+      ({ answered, kept: waiting } = await sendBatches(correctionBatches(form, crops, CORRECTION_BATCH), ({ id, crops: part }) =>
         request('/atlas/corrections', { id, client_id: session.state.clientId, character: form,
           crops: part.map(i => ({ id: i.id, revision: i.revision, ...pixels(i) })) })))
     } catch (e) {

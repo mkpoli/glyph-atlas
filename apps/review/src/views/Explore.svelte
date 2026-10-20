@@ -30,7 +30,7 @@
   import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, randomSeed, number, stored, remember } from '../lib/client.js'
-  import { correctionBatches, sendEach } from '../lib/corrections.js'
+  import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
   import { characterAddress, collectionAddress, corpusScope, expandFor, graphemeAddress, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
@@ -824,7 +824,7 @@
     const saved = [], before = {}, after = {}
     let refused = [], answered = [], waiting = []
     try {
-      ({ answered, kept: waiting } = await sendEach(correctionBatches(target, crops, BATCH), ({ id, crops: part }) =>
+      ({ answered, kept: waiting } = await sendBatches(correctionBatches(target, crops, BATCH), ({ id, crops: part }) =>
         request('/atlas/corrections', { id, character: target,
           crops: part.map(item => ({ id: item.id, revision: item.revision,
             ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) })))
