@@ -131,8 +131,23 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    SHA-256>.json.gz`, read by `aliasCrop` in the Worker. A redirect cycle stops it with examples; a
    chain that ends outside the mirror is counted as gone and left out.
 6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
-   local Worker on each layout.
-7. **Switch** the Worker's routes to the new layout and resume writes (`wrangler secret delete WRITES_PAUSED`).
+   local Worker on each layout. The site checks that write (an existing session cookie, renewal,
+   logout, a history page, favourites, a claim, an old URL) run against the real new databases on a
+   version that is uploaded and not deployed, while the deployed Worker stays paused. From
+   `apps/cloudflare`, with Version URLs turned on for the window (Settings, Domains & Routes, Version
+   URLs; `preview_urls` is false here, and the URLs are public while on):
+
+   ```sh
+   wrangler versions upload                         # the new Worker; keeps WRITES_PAUSED from the deployed one
+   wrangler versions secret delete WRITES_PAUSED    # a further version without it, not deployed; prints its id
+   ```
+
+   The second version answers at `https://<first 8 characters of its id>-glyph-atlas.<subdomain>.workers.dev`.
+   A glyphatlas.org cookie is sent there by hand, with a test account's session. Passkeys are bound to
+   glyphatlas.org, so a passkey sign-in is checked on the site right after the switch.
+7. **Switch** the Worker's routes to the new layout and resume writes:
+   `wrangler versions deploy <checked version id>@100%` deploys the version checked in step 6, which
+   has no `WRITES_PAUSED`. Turn Version URLs off again.
 
 `check.py` compares the copies with the local copy of the new layout, crop by crop: numbers, row
 values, bundle boxes and images, runs and the image map. It reads nothing remote.

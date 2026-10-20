@@ -130,11 +130,23 @@ freeze contains no decisions. Each step is resumable and records checksums.
    decisions, suspects and shapes; write the tombstones, cuts and alias shards.
 5. **Copy the accounts last**, then check: every crop check of `check.py`; every history row
    translated or accounted for, compared in full (all events, seen marks, skips, claims, current
-   claims, form decisions); recomputed marks equal the live ones; every session row present; then, on
-   the deployed new Worker with writes still paused, an existing session cookie, renewal, logout and a
-   passkey sign-in, a history page, favourites, a claim and an old URL.
-6. **Switch** the Worker and the publisher to the new layout and resume writes. A browser tab from
-   before the switch that sends an old text id gets 409 and a prompt to reload.
+   claims, form decisions); recomputed marks equal the live ones; every session row present. The site
+   checks write, so they run on a version that is uploaded and not deployed, against the real new
+   databases, while the deployed Worker stays paused. From `apps/cloudflare`:
+   `wrangler versions upload` uploads the new Worker, which keeps the deployed version's secrets,
+   `WRITES_PAUSED` among them; `wrangler versions secret delete WRITES_PAUSED` then makes a further
+   version from it without the secret, also not deployed, and prints its id. That version answers at
+   its Version URL, `https://<first 8 characters of the id>-glyph-atlas.<subdomain>.workers.dev`.
+   Version URLs are off for this Worker (`preview_urls: false`) and public when on, so they are turned
+   on for the window (Settings, Domains & Routes, Version URLs) and off after it. The checks there: an
+   existing session cookie (sent by hand, since a glyphatlas.org cookie never reaches workers.dev),
+   renewal, logout, a history page, favourites, a claim and an old URL, with a test account's session.
+   A passkey is bound to glyphatlas.org and cannot sign in on workers.dev; it is checked on the site
+   right after the switch.
+6. **Switch** the Worker and the publisher to the new layout and resume writes:
+   `wrangler versions deploy <checked version id>@100%` deploys the version checked in step 5, which
+   has no `WRITES_PAUSED`. A browser tab from before the switch that sends an old text id gets 409 and
+   a prompt to reload.
 
 Until writes resume, going back is redeploying the old Worker and lifting the freeze. After that,
 fixes go forward. The old database stays, read-only, with its archive and restore point, for 30 days
