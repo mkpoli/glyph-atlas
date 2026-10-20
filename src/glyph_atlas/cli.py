@@ -967,6 +967,23 @@ def import_ndl_minhon(
     typer.echo(f"-> {out}")
 
 
+@import_app.command("viet-dien")
+def import_viet_dien(
+    text_id: Annotated[list[int] | None, typer.Option(min=1, help="upstream text id; repeat for several works")] = None,
+    limit: Annotated[int, typer.Option(min=0, help="work limit; 0 selects all; text ids override this")] = 1,
+    page_limit: Annotated[int, typer.Option(min=0, help="pages per work; 0 selects all")] = 10,
+    cache: Annotated[Path, typer.Option(help="API snapshot cache; use a new directory to refresh")] = Path("cache/viet-dien"),
+    out: Annotated[Path, typer.Option(help="directory for this selection's tables")] = Path("work/viet-dien"),
+) -> None:
+    """Import Việt Điển Hán-Nôm page text and scan links."""
+    from .importers import viet_dien
+
+    counts = viet_dien.import_all(out, cache=cache, text_ids=text_id, limit=limit, page_limit=page_limit)
+    for name, rows in counts.items():
+        typer.echo(f"{name:<12} {rows:>10}")
+    typer.echo(f"-> {out}")
+
+
 @import_app.command("honkoku-data")
 def import_honkoku_data(
     clone: Annotated[Path | None, typer.Option(help="a clone of honkoku-data")] = None,

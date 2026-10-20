@@ -148,6 +148,11 @@ ID_FAMILIES = {
 #: ``note`` is what the gallery shows next to a source filter.
 KNOWN: tuple[dict[str, Any], ...] = (
     {
+        "name": "viet-dien",
+        "note": "Việt Điển Hán-Nôm page text with source scan links. Most OCR is uncorrected; "
+                "page metadata records correction status. Text reuse is limited to attributed research.",
+    },
+    {
         "name": "honkoku-lines",
         "note": "1.17M transcribed lines with per-line image rectangles; the only "
         "broad corpus that carries line geometry, so it is the preferred "

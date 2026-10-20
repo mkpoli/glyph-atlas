@@ -785,6 +785,7 @@ class CorpusAPI:
             descriptor["reason"] = f"no located rectangle; this is a {occurrence.tier} match, not a crop"
             descriptor["fallback"] = {
                 "canvas": occurrence.source.canvas,
+                "viewer_url": occurrence.source.source_refs.get("viewer"),
                 "holder": occurrence.source.holder,
                 "region_url": occurrence.source.iiif_region_url,
             }

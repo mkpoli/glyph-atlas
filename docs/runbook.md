@@ -52,6 +52,40 @@ for d in codh-full honkoku-lines kokatsuji ndl-minhon hilab honkoku-data honkoku
 done
 ```
 
+`atlas import viet-dien` imports Hán-Nôm page text and scan links from
+[Việt Điển](https://viet-dien.com/ai). The default selects ten pages of one work.
+A complete ten-page work can be collected with:
+
+```sh
+atlas import viet-dien --text-id 856 --page-limit 0 --out work/viet-dien
+atlas tables validate work/viet-dien
+```
+
+Repeat `--text-id` to select several works. Explicit selection reads the catalogue
+to retain the same metadata as a catalogue import. Without explicit ids, `--limit 0`
+selects the whole catalogue; `--page-limit 0` selects every page of each work.
+Requests run sequentially at five-second intervals. A full import of the 98,027
+pages listed on 2026-10-20 takes at least 137 hours, excluding retries and transfer
+time. Cached responses resume interrupted collection without repeating requests.
+Use a new `--cache` directory for a fresh upstream snapshot. Output tables replace
+the selected snapshot; use separate output directories for separate samples.
+`UPSTREAM.json` records response hashes and expected/imported page counts.
+Tables are staged and validated before replacing the output directory. If the
+process is killed during the directory replacement, the previous snapshot remains
+in a sibling `.<output>-<temporary-id>-previous` directory for recovery.
+
+Build a fresh corpus index after collection, including its per-character occurrence
+files, so matches include the imported text and page citations. The corpus index
+discovers `viet-dien` beneath its configured corpus root. Imported
+text supports page-level matches. The API supplies no glyph rectangles. Page
+metadata retains the correction flag and stable `/t/<item_id>/<page>` citation
+where a library identifier exists. Local uploads retain their `/read/<id>/<page>`
+viewer URL and an identity based on the API row number;
+processing status such as `complete` does not establish that OCR was corrected.
+The OCR and catalogue are offered for attributed research use and carry a
+`restricted` text licence. Scan permissions remain unstated until checked against
+the holding library. API access supplies no reuse licence for the images.
+
 `atlas import hilab --download` extracts the 325,261 crops instead of only listing them; it is needed
 before a release can materialise HI Lab crops.
 
