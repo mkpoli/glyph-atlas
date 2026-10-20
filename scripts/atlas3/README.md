@@ -121,9 +121,20 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    each pending marked crop's state to its mark one revision on with an event, and writes
    `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut. `answers.py`
    follows, since marks change the counts. The alias files for old URLs are *not built*.
-6. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
+6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
+   characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
+   `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`
+   (`migrations-atlas/0005_books.sql`), books by integer id and occurrences by crop through
+   `out/mirror.sqlite`, and writes the parts and their figures to `out/books-report.txt`; facts about
+   a document that is not a book are left out with a count. `books.py --send` applies `0005_books.sql`
+   and loads only what differs from the local copy, in stamped parts. A book's title comes from its
+   first page bundle, else from its corpus publication. The corpus glyphs per book and the homepage
+   sample are derived from the crops by `answers.py` (*not built*), so neither is copied. Keeping the
+   facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
+   ainu-records' character lists and the catalogue's site values still write the old database.
+7. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout.
-7. **Switch** the Worker's routes to the new layout and resume reviews.
+8. **Switch** the Worker's routes to the new layout and resume reviews.
 
 `check.py` compares the copies with the local copy of the new layout, crop by crop: numbers, row
 values, bundle boxes and images, runs and the image map. It reads nothing remote.
@@ -140,7 +151,7 @@ answers:
 - forms (`forms`, `form_*`), `words`, `word_spellings`;
 - character data (`characters` cards, `character_variants`, `character_derived`,
   `component_variants`, `han_ids`, `han_components`, `han_component_names`, `grapheme_writers`,
-  `document_characters`, `corpus_documents`, `representations`);
+  `representations`);
 - the model votes in `units.visual`, and the text-id alias files;
 - family heads and search names for characters that first appear after the first build;
 - `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
