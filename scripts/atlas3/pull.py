@@ -18,7 +18,7 @@ HERE = Path(os.environ.get("ATLAS3_DIR", ROOT / "work/atlas-v3"))
 CF = ROOT / "apps/cloudflare"
 db = None
 
-# table: (columns, key columns, chunk)
+# copy: (columns, key columns, chunk[, live table when the copy has another name])
 TABLES = {
     "units": ("id,origin,character,family,visual_group,production,category,state,revision,quiz,shuffle,document,style,written_form,data", ["rowid"], 1500),
     "corpus_units": ("id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label", ["rowid"], 8000),
@@ -55,6 +55,14 @@ TABLES = {
     "corpus_follow": ("id", ["id"], 8000),
     "characters": ("code_point,character,name,json_extract(data,'$.grapheme.code_point') AS head", ["code_point"], 8000),
     "aliases": ("query,code_point,rank", ["rowid"], 15000),
+    # The model votes, apart from `units` so the crops' copy keeps its size; and the forms tool's clustering.
+    "unit_votes": ("id,origin,visual,context", ["rowid"], 1500, "units"),
+    "form_families": ("code_point,char,label,count,cluster_count,forms,assigned,rejected,revision", ["code_point"], 1000),
+    "form_clusters": ("id,family,label,count,coherence,shape_position,size_position,representatives,form,decision,issue",
+                      ["id"], 2000),
+    "form_units": (("id,family,cluster,rank,similarity,image,split,clustered,cluster_form,cluster_issue,cluster_character,"
+                    "cluster_family,glyph_set,glyph_form,glyph_decision,glyph_issue,glyph_character,glyph_family,form,issue,"
+                    "issue_character,written_family"), ["id"], 8000),
 }
 
 
@@ -81,7 +89,8 @@ def pull(table, fresh):
     if fresh:
         path.unlink(missing_ok=True)
     db = sqlite3.connect(path)
-    cols, keys, chunk = TABLES[table]
+    cols, keys, chunk, *live = TABLES[table]
+    live = live[0] if live else table
     names = [c.split(" AS ")[-1].strip().strip('"') for c in cols.split(",")]
     if table == "characters":
         names = ["code_point", "character", "name", "head"]
@@ -104,7 +113,7 @@ def pull(table, fresh):
             where = f"WHERE {keys[0]} > {json.dumps(last[0]) if isinstance(last[0], (int, float)) else sql_str(last[0])}"
         else:
             where = f"WHERE ({order}) > ({','.join(sql_lit(v) for v in last)})"
-        rows = query(f'SELECT {select} FROM "{table}" {where} ORDER BY {order} LIMIT {chunk}')
+        rows = query(f'SELECT {select} FROM "{live}" {where} ORDER BY {order} LIMIT {chunk}')
         if not rows:
             break
         db.executemany(f'INSERT INTO "{table}" VALUES({",".join("?" * len(store))})', [[r[c] for c in store] for r in rows])
