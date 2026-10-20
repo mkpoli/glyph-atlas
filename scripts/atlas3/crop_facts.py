@@ -7,7 +7,7 @@ form_units`).
 Every text id resolves through out/mirror.sqlite, never through a redirect. A row naming a crop the
 mirror lacks, or a crop no longer live (retired), is dropped and counted.
 
-- Votes: each collected crop's latest copied reading joins its page object `v3/votes/<page>.json.gz`
+- Votes: each collected crop's latest copied reading joins its page object `v3/votes/<build>/<page>.json.gz`
   (votes.py) for the crop's cut, when the image it was read on (`image_sha256`) is that cut's image in
   the crop's bundle; a reading of another image is dropped and counted. An entry a publish has already
   written for the crop's cut is kept.
@@ -76,13 +76,16 @@ def has(db, table):
     return db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone() is not None
 
 
-def migrate(atlas):
-    """Migration 0006 on D1 and the local copy, once; a layout built with it already has its tables."""
+def migrate(atlas, build):
+    """Migration 0006 on D1 and the local copy, once, with the build id the Worker finds the vote
+    objects by; a layout built with it already has both."""
     if has(atlas, "form_families"):
         return
     path = OUT / "crop-facts" / "0006.sql"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(stamped((SCHEMA / "0006_crop_facts.sql").read_text(), "migration:0006"))
+    sql = (SCHEMA / "0006_crop_facts.sql").read_text()
+    sql += f"\nINSERT OR IGNORE INTO codes(field, code, key) VALUES('build', 0, {lit(build)});\n"
+    path.write_text(stamped(sql, "migration:0006"))
     if not applied("glyph-atlas-v3", "migration:0006") and not send("glyph-atlas-v3", path, "migration:0006"):
         sys.exit("migration 0006 did not apply; rerun")
     atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
@@ -312,12 +315,12 @@ def main():
     if mirror.execute("SELECT 1 FROM sqlite_master WHERE name='pending'").fetchone() and \
             mirror.execute("SELECT 1 FROM pending").fetchone():
         sys.exit("a publish is unfinished; finish it with publish.py first")
+    build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
     if not dry:
-        build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
         guard(atlas)
-        migrate(atlas)
+        migrate(atlas, build)
 
     facts = Facts(mirror, atlas)
     facts.votes()
@@ -350,7 +353,7 @@ def main():
     if dry:
         print(f"dry run: nothing sent; run in {run}", flush=True)
         return
-    deliver_objects(run)
+    deliver_objects(run, build)
     deliver(run, atlas)
     for kind in ("votes", "forms"):
         for path in sorted((run / kind).rglob("*.json.gz")) if (run / kind).exists() else []:
@@ -365,7 +368,7 @@ def journal(run):
     return path.read_text().split("\n") if path.exists() else []
 
 
-def deliver_objects(run):
+def deliver_objects(run, build):
     """The lists before the rows that name their folder, and the vote objects; each step once."""
     for folder in sorted((run / "forms").iterdir()) if (run / "forms").exists() else []:
         if f"uploaded forms/{folder.name}" not in journal(run):
@@ -373,7 +376,7 @@ def deliver_objects(run):
             with (run / "journal").open("a") as f:
                 f.write(f"uploaded forms/{folder.name}\n")
     if (run / "votes").exists() and "uploaded votes" not in journal(run):
-        upload(sorted((run / "votes").iterdir()), votes.PREFIX)
+        upload(sorted((run / "votes").iterdir()), votes.prefix(build))
         with (run / "journal").open("a") as f:
             f.write("uploaded votes\n")
 

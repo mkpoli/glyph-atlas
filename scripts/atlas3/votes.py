@@ -10,7 +10,9 @@ since every one names the same engine. A reading that is not ready is not stored
 
 A page object maps each slot with a reading to `{cut, models, visual, context}`, `visual` and `context`
 present only when ready. The reading was made on cut `cut`; a reader takes it only while the crop's
-`crops.cut` is that cut. Objects are replaced whole; the local copy of what R2 holds is `out/votes/`.
+`crops.cut` is that cut. Objects sit under the layout's build id (`v3/votes/<build>/`, the `codes`
+entry field 'build'), so a rebuilt layout, which numbers crops afresh, never reads another build's.
+Objects are replaced whole; the local copy of what R2 holds is `out/votes/`.
 
 `restore` gives back what the suggestions routes answered, less `input_image`.
 """
@@ -19,9 +21,12 @@ import gzip
 import json
 import os
 
-PREFIX = "v3/votes/"
 CONTEXT_ENGINE = "Nearby transcription"
 CONTEXT_KEYS = {"text", "engine", "offset", "before", "after"}
+
+
+def prefix(build):
+    return f"v3/votes/{build}/"
 
 
 def compact(value):

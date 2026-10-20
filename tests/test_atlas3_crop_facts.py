@@ -117,6 +117,10 @@ def sources(root, decided="か", units=None):
         form_unit("ex:a2", "U+304B:old", 0, clustered=0, own="か", image=None)])
 
 
+def build_of(root):
+    return sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
+
+
 def retire(root, remote, crop):
     for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
         db.execute("DELETE FROM crops WHERE id=?", (crop,))
@@ -128,6 +132,7 @@ def drop_0006(root, remote):
     for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
         for table in ("form_glyphs", "form_clusters", "form_families"):
             db.execute(f"DROP TABLE {table}")
+        db.execute("DELETE FROM codes WHERE field='build'")
         db.commit()
 
 
@@ -153,7 +158,8 @@ def test_crop_facts_load_votes_to_r2_and_the_forms_by_integer_crop_id(layout, mo
     page = votes.read(root / "out" / "votes", a1 // PAGE)
     assert list(page) == [a1 % PAGE] and page[a1 % PAGE]["cut"] == 0 and page[a1 % PAGE]["models"] == code
     assert votes.restore(ENGINES, page[a1 % PAGE])["context"] == json.loads(CONTEXT)
-    assert f"{a1 // PAGE}.json.gz" in remote.uploaded and "v3/votes/" in remote.prefixes
+    assert f"{a1 // PAGE}.json.gz" in remote.uploaded and f"v3/votes/{build_of(root)}/" in remote.prefixes
+    assert db.execute("SELECT key FROM codes WHERE field='build'").fetchone() == (build_of(root),)
     report = (root / "out" / "crop-facts-report.txt").read_text()
     assert "dropped (1) crop the mirror lacks" in report and "dropped (1) read on another image" in report
     # Forms: the cluster's number is the mirror's; the list holds its glyphs by rank; the counts leave out
@@ -230,7 +236,7 @@ def test_a_publish_keeps_each_crops_votes_for_its_cut(layout, monkeypatch, tmp_p
     run(publish, monkeypatch, voted(tmp_path / "c1.sqlite", [(*unit("ex:a1", "hl:p1", box1), visual(), CONTEXT),
                                                              (*unit("ex:a2", "hl:p1", box2, "い", "checked", 3), visual("二"), NO_CONTEXT)]))
     assert {s: ("context" in e, e["cut"]) for s, e in held().items()} == {a1 % PAGE: (True, 0), a2 % PAGE: (False, 0)}
-    assert remote.prefixes[-1] == "v3/votes/" and remote.uploaded[-1] == f"{page}.json.gz"
+    assert remote.prefixes[-1] == f"v3/votes/{build_of(root)}/" and remote.uploaded[-1] == f"{page}.json.gz"
     # The same readings change nothing.
     uploads = len(remote.uploaded)
     run(publish, monkeypatch, voted(tmp_path / "c2.sqlite", [(*unit("ex:a1", "hl:p1", box1), visual(), CONTEXT)]))

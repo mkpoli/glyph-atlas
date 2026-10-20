@@ -18,14 +18,18 @@ const STORED = { cut: 1, models: 3,
 let page = 100;
 function setup() {
   // Each test takes its own page, since objects are held per isolate.
-  const p = ++page, objects = new Map([[votesKey(p), gzipSync(JSON.stringify({ 5: STORED, 6: { cut: 0, models: null, context: STORED.context } }))]]);
+  const p = ++page, objects = new Map([[votesKey('20261020T120000', p), gzipSync(JSON.stringify({ 5: STORED, 6: { cut: 0, models: null, context: STORED.context } }))]]);
   const reads: string[] = [];
   const MEDIA = { get: async (name: string) => {
     reads.push(name);
     const bytes = objects.get(name);
     return bytes ? { arrayBuffer: async () => bytes.slice().buffer } : null;
   } };
-  return { env: { MEDIA } as unknown as Env, id: (slot: number) => p * 2 ** 24 + slot, reads };
+  const ATLAS = { prepare: (sql: string) => ({ first: async () => {
+    expect(sql).toContain("field='build'");
+    return { key: '20261020T120000' };
+  } }) };
+  return { env: { MEDIA, ATLAS } as unknown as Env, id: (slot: number) => p * 2 ** 24 + slot, reads };
 }
 
 describe('model votes', () => {
@@ -35,6 +39,12 @@ describe('model votes', () => {
     expect(await cropVotes(env, id(5), 2)).toBeNull();
     expect(await cropVotes(env, id(7), 0)).toBeNull();
     expect(reads).toHaveLength(1);
+  });
+
+  it('read the objects of the layout’s build', async () => {
+    const { env, id, reads } = setup();
+    await cropVotes(env, id(5), 1);
+    expect(reads[0]).toBe(`v3/votes/20261020T120000/${Math.floor(id(5) / 2 ** 24)}.json.gz`);
   });
 
   it('answer null for a page with no object', async () => {

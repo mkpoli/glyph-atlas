@@ -20,7 +20,7 @@ images to the image key map (`media_map.py`).
   applied when its stamp is in that database's `imports`, and is then replayed on the local copy.
 - A publish stopped after allocating is finished by the next run before anything else.
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
-  their cut in the page objects `v3/votes/<page>.json.gz` (votes.py), uploaded after the bundles; a
+  their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded after the bundles; a
   reading that is not ready, or a retirement, removes the crop's entry.
 - A statement over STATEMENT_BYTES stops the publish before anything is allocated.
 
@@ -369,7 +369,7 @@ def deliver(m, run):
     # The vote objects follow the bundles; a reader checks each entry's cut against the crop's.
     voted = sorted((run / "votes").glob("*.json.gz")) if (run / "votes").exists() else []
     if voted and "votes uploaded" not in journal(run):
-        upload(voted, votes.PREFIX)
+        upload(voted, votes.prefix(m.build))
         mark(run, "votes uploaded")
     for database, name, local in (("glyph-atlas-v3", "atlas", m.atlas), ("glyph-atlas-v3-runs", "runs", m.runs)):
         for part in sorted(run.glob(f"{name}-*.sql")):
@@ -439,6 +439,7 @@ def main():
     build_id = m.ids.execute("SELECT value FROM meta WHERE key='build'").fetchone()
     if not build_id:
         sys.exit("out/mirror.sqlite names no build; it is not the mirror of glyph-atlas-v3")
+    m.build = build_id[0]
     if not dry and not applied("glyph-atlas-v3", f"build:{build_id[0]}"):
         sys.exit(f"glyph-atlas-v3 was not loaded from build {build_id[0]}; this mirror does not belong to it")
     if not dry:

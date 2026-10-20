@@ -105,7 +105,8 @@ def main():
       CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
     """)
     # The build id ties this allocation to the databases loaded from it (load.sh writes it to D1).
-    mirror.execute("INSERT INTO meta VALUES('build', ?)", (time.strftime("%Y%m%dT%H%M%S"),))
+    build_id = time.strftime("%Y%m%dT%H%M%S")
+    mirror.execute("INSERT INTO meta VALUES('build', ?)", (build_id,))
     code = Codes({"state": STATE, "style": STYLE})
 
     # Graphemes: every character the site knows, with its family head.
@@ -220,6 +221,8 @@ def main():
                       [(v, k, productions.get(k.rsplit("/", 1)[0]) if "/" in k else None) for k, v in productions.items()])
     atlas.executemany("INSERT INTO codes(field,code,key) VALUES(?,?,?)",
                       [(f, c, k) for f, t in code.codes.items() for k, c in t.items()])
+    # The Worker reads the build id here to find the build's R2 objects (`v3/votes/<build>/`).
+    atlas.execute("INSERT INTO codes(field,code,key) VALUES('build',0,?)", (build_id,))
     aliases = src("aliases")
     atlas.executemany("INSERT OR IGNORE INTO names(text,code_point,rank) VALUES(?,?,?)",
                       [(r["query"], int(r["code_point"].split()[0].removeprefix("U+"), 16), r["rank"])
@@ -237,7 +240,7 @@ def main():
 
     # Page bundles.
     shutil.rmtree(OUT / "pages", ignore_errors=True)
-    # A new layout starts with no vote objects; `v3/votes/` in R2 is emptied with it.
+    # A new layout starts with no vote objects; its objects go under its own `v3/votes/<build>/`.
     shutil.rmtree(OUT / "votes", ignore_errors=True)
     (OUT / "pages").mkdir()
     for key, p in pages.items():
