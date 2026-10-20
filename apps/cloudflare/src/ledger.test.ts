@@ -46,7 +46,7 @@ test('an attestation names a word or a gloss, how the sense is known, and how su
 
 test('the resolver names its version and compares crop evidence by crop and cut', () => {
   expect(resolveWriteQuery()).toContain(`'${RESOLVER}' AS resolver`)
-  expect(resolveWriteQuery()).toContain('e.cut IS NOT (SELECT c.cut FROM crops c WHERE c.id=a.crop)')
+  expect(resolveWriteQuery()).toContain('e.cut IS NOT (SELECT c.cut+EXISTS(SELECT 1 FROM reviews rv WHERE rv.crop=c.id AND rv.x IS NOT NULL)')
   expect(resolveWriteQuery()).not.toContain('crop_now')
   expect(resolveWriteQuery()).not.toMatch(/^\s*--/m)
 })

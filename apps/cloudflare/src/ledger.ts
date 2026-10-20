@@ -16,17 +16,21 @@ const ACTIONS = new Set<string>(catalogue.actions);
 const COLUMNS = 'subject,predicate,scope,slot,status,object,value,members,supporting,claims,crop,cut,resolver,at';
 const BODY = (catalogue.resolve as string[]).filter(line => !line.trimStart().startsWith('--')).join('\n');
 
+/** A crop's cut as a claim on it sees it: the published cut, or the next one while a redrawn box waits
+ *  in `reviews` for the publication that cuts it (which gives the crop that cut). Two key lookups. */
+export const effectiveCut = (crop: string) => `(SELECT c.cut+EXISTS(SELECT 1 FROM reviews rv WHERE rv.crop=c.id AND rv.x IS NOT NULL)
+    FROM crops c WHERE c.id=${crop})`;
 // The catalogue's resolver compares a claim's crop evidence with the crop's current version, which its
 // caller gives as `crop_now`. Here a crop's evidence is its (crop, cut): a claim is live while its
-// evidence names its own crop at the cut that crop has now, so a claim on cut -1 never is, and a slot
-// names its crop and that crop's cut beside its key.
+// evidence names its own crop at the crop's effective cut, so a claim on cut -1 never is, nor one on the
+// cut a pending redraw replaces; a slot names its crop and that cut beside its key.
 const SLOT_CROP = `(SELECT a.crop FROM assertions a WHERE a.subject=k.subject AND a.predicate=k.predicate AND a.scope=k.scope
     AND a.slot=k.slot AND a.crop IS NOT NULL LIMIT 1)`;
 const CROP_PARTS: [string, string][] = [
   ['e.ref IS NOT (SELECT c.version FROM crop_now c WHERE c.unit=a.subject)',
-    '(e.crop IS NOT a.crop OR e.cut IS NOT (SELECT c.cut FROM crops c WHERE c.id=a.crop))'],
+    `(e.crop IS NOT a.crop OR e.cut IS NOT ${effectiveCut('a.crop')})`],
   ['(SELECT c.version FROM crop_now c WHERE c.unit=k.subject) AS crop_version,',
-    `${SLOT_CROP} AS crop,\n  (SELECT c.cut FROM crops c WHERE c.id=${SLOT_CROP}) AS cut,`],
+    `${SLOT_CROP} AS crop,\n  ${effectiveCut(SLOT_CROP)} AS cut,`],
 ];
 const RESOLVE = CROP_PARTS.reduce((sql, [from, to]) => {
   if (sql.split(from).length !== 2) throw new Error(`data/ledger.json's resolver changed: ${from}`);
@@ -54,6 +58,8 @@ export type LedgerTools = {
   crop: (env: Env, named: unknown) => Promise<CropNow>;
   // The actor keys one user holds (`actors`), as SQL.
   owned: (user: string) => string;
+  // The crop an old text id names, through the alias map, or null.
+  alias: (text: string) => Promise<number | null>;
 };
 export type Member = { object: string | null; value: unknown; confidence: number | null; confidence_scheme: string | null };
 
@@ -114,7 +120,7 @@ export type Subject = { crop: number } | { subject: string };
 // A subject's resolved slots that hold now; a crop's rows resolved on another cut do not. A crop's are
 // one range of `current_claim_crop`, another subject's one of the primary key.
 export const currentCropClaimsQuery = () => `SELECT c.* FROM current_claims c WHERE c.crop=?1
-  AND c.cut IS (SELECT cut FROM crops WHERE id=?1) ORDER BY c.predicate,c.scope,c.slot`;
+  AND c.cut IS ${effectiveCut('?1')} ORDER BY c.predicate,c.scope,c.slot`;
 export const currentClaimsQuery = () => `SELECT c.* FROM current_claims c WHERE c.subject=? AND c.crop IS NULL
   ORDER BY c.predicate,c.scope,c.slot`;
 async function currentOf(env: Env, of: Subject) {
@@ -131,13 +137,20 @@ export function submissionId(input: Json, tools: Pick<LedgerTools, 'text' | 'fai
   if (!/^[0-9a-f-]{36}$/i.test(id)) tools.fail(422, 'Invalid submission id.');
   return id;
 }
-// A saved response names its crop by integer id (`crop`), its other subject by key (`subject`); out
-// of the Worker, a crop's subject is its public id.
+// A saved response names its crop by integer id and cut (`crop`, `cut`), its other subject by key
+// (`subject`); out of the Worker, a crop's subject is its public id.
 const subjectOf = (saved: Json): Subject => saved.crop != null ? { crop: saved.crop } : { subject: saved.subject };
 const answered = (saved: Json) => {
-  const { crop, ...rest } = saved;
+  const { crop, cut: _cut, ...rest } = saved;
   return crop == null ? rest : { ...rest, subject: publicId(crop) };
 };
+/** A saved response with its crop: one saved before the cutover that lacks it names its crop by text
+ *  id, read through the alias map; a subject the map lacks is no crop. */
+export async function withCrop(env: Env, saved: Json, alias: (text: string) => Promise<number | null>): Promise<Json> {
+  if (saved.crop != null || typeof saved.subject !== 'string' || !saved.subject.includes(':')) return saved;
+  const crop = await alias(saved.subject);
+  return crop === null ? saved : { ...saved, crop };
+}
 
 // A random id in the shape of a UUID, made in SQL for rows a batch writes by selecting them.
 const SQL_UUID = `lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(6)))`;
@@ -240,8 +253,8 @@ export function sameVersion(crop: CropNow, seen: unknown, fail: LedgerTools['fai
  *  refused. A new claim in a slot that takes one value retracts the actor's own earlier ones there. */
 export async function writeClaim(env: Env, input: Json, actor: string, tools: LedgerTools) {
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical(input);
-  const previous = await repeat(env, key, signature, tools.fail);
-  if (previous) return { ...answered(previous), current: await currentOf(env, subjectOf(previous)) };
+  const found = await repeat(env, key, signature, tools.fail);
+  if (found) { const previous = await withCrop(env, found, tools.alias); return { ...answered(previous), current: await currentOf(env, subjectOf(previous)) }; }
   const predicate = tools.text(input.predicate, 64, 'predicate', true)!;
   const spec = PREDICATES[predicate] ?? tools.fail(422, `Unknown predicate ${predicate}.`);
   const scope = tools.text(input.scope ?? '', 128, 'scope') ?? '';
@@ -263,15 +276,15 @@ export async function writeClaim(env: Env, input: Json, actor: string, tools: Le
   sameVersion(crop, input.crop_version, tools.fail);
   const at = new Date().toISOString();
   const plan = await planClaim(env, { key, actor, crop, predicate, scope, members, at, method, evidence }, tools);
-  const saved = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, assertions: plan.assertions }, tools);
+  const saved = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, cut: crop.cut, assertions: plan.assertions }, tools);
   return { ...answered(saved), current: await currentOf(env, { crop: crop.id }) };
 }
 
 /** Accept, reject, retract or adjudicate one claim as `actor` (`planAction`). */
 export async function actOnClaim(env: Env, input: Json, target: string, actor: string, admin: boolean, tools: LedgerTools) {
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ target, input });
-  const previous = await repeat(env, key, signature, tools.fail);
-  if (previous) return { ...answered(previous), current: await currentOf(env, subjectOf(previous)) };
+  const found = await repeat(env, key, signature, tools.fail);
+  if (found) { const previous = await withCrop(env, found, tools.alias); return { ...answered(previous), current: await currentOf(env, subjectOf(previous)) }; }
   const at = new Date().toISOString();
   const plan = await planAction(env, { key, actor, target, action: tools.text(input.action, 16, 'action', true)!,
     reason: tools.text(input.reason ?? '', 500, 'reason') ?? '', admin, at }, tools);

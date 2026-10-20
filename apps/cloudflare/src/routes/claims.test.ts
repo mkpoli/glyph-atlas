@@ -8,7 +8,7 @@ import { d1 } from '../forms.test';
 import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
-import { bookDateClaimsQuery, bookDates, bookDatesQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
+import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
   formOfCrop, ownClaimQuery, setForm, setWord, wordMethodsQuery, wordNamesQuery, wordOfCrop } from './claims';
 
 // The Workers cache, as far as alias reads use it.
@@ -56,7 +56,9 @@ function setup() {
     { slot: 1, id: text.corpus, source_revision: 'rev1', box: BOX },
     { slot: 2, id: text.retired, retired: true, replaced_by: local },
     { slot: 3, id: `ex:${n}:orphan`, retired: true }] })));
+  const reads: string[] = [];
   const MEDIA = { get: async (name: string) => {
+    reads.push(name);
     const bytes = objects.get(name);
     return bytes ? { body: new Response(bytes).body!, arrayBuffer: async () => new Uint8Array(bytes).buffer } : null;
   } };
@@ -80,7 +82,7 @@ function setup() {
     { id: crypto.randomUUID(), crop_version: version(crop, crop === corpus ? 'rev1' : 'px'), subject: publicId(crop), predicate: 'writes_word', method, claims: members },
     { id: actor, admin: false }) as Promise<any>;
   const read = (path: string) => claimRead(env, new URL('https://x' + path), tools);
-  return { db, env, tools, text, local, corpus, retired, gone, version, input, save, post, claim, read };
+  return { db, env, tools, text, local, corpus, retired, gone, version, input, save, post, claim, read, reads, page };
 }
 
 describe('the crop word picker', () => {
@@ -197,6 +199,14 @@ describe('a crop a claim names', () => {
     expect(db.query('SELECT count(*) AS n FROM assertions').get()).toEqual({ n: 1 });
   });
 
+  it('as a candidate takes no claim', async () => {
+    const { db, page, post, version } = setup();
+    const candidate = cropId(page, 4);
+    db.exec(`INSERT INTO crops(id,kind,book,state,quiz,shuffle) VALUES(${candidate},2,1,0,1,3)`);
+    await expect(post(`/atlas/characters/${publicId(candidate)}/word`, { id: crypto.randomUUID(), crop_version: version(candidate), word: W, method: 'ruby', form: 'certain' }))
+      .rejects.toThrow('404 This character is not in the published collection.');
+  });
+
   it('retired in favour of another answers with that crop, as the old site did', async () => {
     const { retired, gone, local, post, version } = setup();
     const body = { id: crypto.randomUUID(), crop_version: version(local), word: W, method: 'ruby', form: 'certain' };
@@ -229,9 +239,55 @@ describe('a crop a claim names', () => {
   });
 });
 
+describe('a saved submission', () => {
+  it('from before the cutover answers again, its crop read from its text id', async () => {
+    const { db, env, tools, local, text, input, post } = setup();
+    const first = input(), named = publicId(local);
+    db.query('INSERT INTO ledger_submissions VALUES(?,?,?,?,?)').run('reader:' + first.id, 'reader', JSON.stringify({ crop: named, input: first }),
+      JSON.stringify({ submission: 'reader:' + first.id, subject: text.local, replaced: null, retracted: [] }), 't');
+    expect(await setWord(env, first, named, 'reader', tools)).toEqual({ id: named, word: null, replaced: null });
+    const body = { id: crypto.randomUUID(), subject: named, predicate: 'writes_word', claims: [] };
+    db.query('INSERT INTO ledger_submissions VALUES(?,?,?,?,?)').run('reader:' + body.id, 'reader', JSON.stringify(body),
+      JSON.stringify({ submission: 'reader:' + body.id, subject: text.local, crop: local, cut: 0, assertions: ['cf:x'], retracted: [] }), 't');
+    expect(await post('/atlas/claims', body)).toEqual({ submission: 'reader:' + body.id, subject: named, assertions: ['cf:x'], retracted: [], current: [] });
+    const other = { id: crypto.randomUUID(), action: 'accept' };
+    db.query('INSERT INTO ledger_submissions VALUES(?,?,?,?,?)').run('reader:' + other.id, 'reader', JSON.stringify({ target: 'cf:d', input: other }),
+      JSON.stringify({ submission: 'reader:' + other.id, subject: 'book:x', actions: ['cf:y'], retracted: [] }), 't');
+    expect(await post('/atlas/claims/cf:d/actions', other)).toEqual({ submission: 'reader:' + other.id, subject: 'book:x', actions: ['cf:y'], retracted: [], current: [] });
+  });
+});
+
+describe('a pending redraw', () => {
+  const pending = (db: Database, crop: number) => db.exec(`INSERT INTO reviews(crop,gen,at,state,x,y,w,h) VALUES(${crop},0,0,0,1,2,3,4)`);
+  it('moves a crop to its next cut at once: claims made meanwhile hold through the publication', async () => {
+    const { db, env, local, save } = setup();
+    await save({}, 'before');
+    pending(db, local);
+    expect(await wordOfCrop(env, local)).toBeNull();
+    const redrawn = `${publicId(local)}@px@1,2,3,4`;
+    await expect(save({ crop_version: `${publicId(local)}@px@0,0,10,10` })).rejects.toThrow('409 This crop was cut again. Reload it.');
+    expect((await save({ crop_version: redrawn, word: OTHER })).word).toMatchObject({ status: 'asserted', values: [{ word: OTHER }], by: ['reader'] });
+    expect(db.query("SELECT DISTINCT cut FROM assertion_evidence WHERE kind='crop' AND assertion IN (SELECT id FROM assertions WHERE asserted_by='reader')").all()).toEqual([{ cut: 1 }]);
+    // The publication cuts the redrawn box: the crop takes cut 1 and the pending row goes.
+    db.exec(`UPDATE crops SET cut=1 WHERE id=${local}; DELETE FROM reviews WHERE crop=${local}`);
+    expect((await wordOfCrop(env, local))?.values).toMatchObject([{ word: OTHER }]);
+  });
+
+  it('undone, returns the crop to its published cut and the claims made on it', async () => {
+    const { db, env, local, save } = setup();
+    await save({}, 'before');
+    pending(db, local);
+    await save({ crop_version: `${publicId(local)}@px@1,2,3,4`, word: OTHER });
+    db.exec(`UPDATE reviews SET x=NULL,y=NULL,w=NULL,h=NULL WHERE crop=${local}`);
+    const subject = (db.query('SELECT subject FROM assertions LIMIT 1').get() as { subject: string }).subject;
+    await env.ATLAS.batch(resolveSlots(env, [[subject, 'writes_word', '', '']]));
+    expect(await wordOfCrop(env, local)).toMatchObject({ values: [{ word: W }], by: ['before'] });
+  });
+});
+
 describe('the ledger read', () => {
   it('names a crop by public id, moves an old text id there, and reads a book by its key', async () => {
-    const { db, local, text, claim, read, post } = setup();
+    const { db, local, text, claim, read, post, reads } = setup();
     const made = await claim([{ object: W, confidence: 1, confidence_scheme: 'form' }], 'reader', 'ruby'), claimed = made.assertions[0];
     expect(typeof claimed).toBe('string');
     expect(made).toMatchObject({ subject: publicId(local), assertions: [expect.any(String)], retracted: [],
@@ -245,7 +301,13 @@ describe('the ledger read', () => {
     const moved = await read(`/atlas/claims?subject=${encodeURIComponent(text.local)}`) as Response;
     expect([moved.status, moved.headers.get('location')]).toEqual([302, `https://x/atlas/claims?subject=${publicId(local)}`]);
     db.exec(`INSERT INTO assertions(id,subject,predicate,value,tier,asserted_by,asserted_at) VALUES('cf:d','book:x','date_produced','{"text":"1700"}','attested','export','t')`);
+    db.exec("INSERT INTO books(id,key) VALUES(2,'book:x')");
+    reads.length = 0;
     expect(await read('/atlas/claims?subject=book:x')).toMatchObject({ subject: 'book:x', current: [], history: [{ id: 'cf:d', crop: null }] });
+    expect(await read('/atlas/claims?subject=fm:1')).toMatchObject({ subject: 'fm:1', history: [] });
+    expect(await read(`/atlas/claims?subject=${encodeURIComponent(W)}`)).toMatchObject({ subject: W, history: [] });
+    // A book, form or word never reads the alias map.
+    expect(reads).toEqual([]);
     const exported = await read('/atlas/ledger.json?limit=1') as Response;
     expect(exported.headers.get('content-disposition')).toBe('attachment; filename="atlas-ledger.json"');
     expect(await exported.json()).toMatchObject({ kind: 'atlas-ledger', assertions: [{ seq: 1, subject: publicId(local), crop: publicId(local) }],
@@ -342,7 +404,7 @@ describe('the ledger queries', () => {
       [wordNamesQuery(), ['["w"]']], [wordMethodsQuery(), ['["a"]']], [ownClaimQuery('has_form', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']],
       [ownClaimQuery('writes_word', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [currentCropClaimsQuery(), [1]], [currentClaimsQuery(), ['s']],
       [claimHistoryQuery('crop'), [1]], [claimHistoryQuery('subject'), ['s']], [ledgerClaimsQuery(), [0, 10]], [ledgerActionsQuery(), [0, 10]],
-      [bookDatesQuery(), [1]], [bookDateClaimsQuery(), [1]], [resolveClearQuery(), ['[["s","p","",""]]']], [corpusRowQuery(), [1]],
+      [bookDatesQuery(), [1]], [bookKeyQuery(), ['k']], [bookDateClaimsQuery(), [1]], [resolveClearQuery(), ['[["s","p","",""]]']], [corpusRowQuery(), [1]],
     ];
     for (const [sql, args] of plans) {
       const detail = (db.query('EXPLAIN QUERY PLAN ' + sql).all(...(args as any[])) as { detail: string }[]).map(r => r.detail);

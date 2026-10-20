@@ -2,12 +2,13 @@
 // form and word as the pickers set them, the ledger's reads and export, and a book's dates with the
 // claims they rest on. Crops are named by public id at this boundary and by integer id inside.
 import { bundle, pageOf, publicId, slotOf as cropSlot } from '../atlas3';
+import { aliasCrop } from '../atlas3Aliases';
 import { StaleCrop, cropQueryParam, movedQueryResponse, staleResponse, writtenCropField } from '../atlas3Crops';
 import { formSlot } from '../cropForms';
 import { formOf, slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
-import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, ledgerPage, type LedgerTools, type Member, ownedActors, planAction, planClaim,
-  PREDICATES, type Plan, sameVersion, savedSubmission, submissionId, writeClaim } from '../ledger';
+import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, ledgerPage, type LedgerTools, type Member, ownedActors, planAction, planClaim,
+  PREDICATES, type Plan, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
 import { readRecords, recordKey } from '../records';
 import { anchoredForm, representationId, typed, type FormProblem } from '../representation';
 
@@ -22,11 +23,12 @@ export type ClaimTools = {
 };
 
 // A crop's row, its page's revision and a redrawn box waiting for the next publication: primary-key
-// lookups of `crops`, `pages` and `reviews`.
+// lookups of `crops`, `pages` and `reviews`. A candidate takes no claim.
 export const cropNowQuery = () => `SELECT c.cut,c.kind,p.rev,r.x,r.y,r.w,r.h FROM crops c JOIN pages p ON p.id=c.id>>24
-  LEFT JOIN reviews r ON r.crop=c.id WHERE c.id=?`;
-/** A crop's cut, its evidence version as its record shows it (`<public id>@<pixels>@<x,y,w,h>`, with
- *  the redrawn box while one waits), its text id and its kind; null for a crop with no row or entry. */
+  LEFT JOIN reviews r ON r.crop=c.id WHERE c.id=? AND c.kind<2`;
+/** A crop's effective cut (the next one while a redrawn box waits, `effectiveCut`), its evidence
+ *  version as its record shows it (`<public id>@<pixels>@<x,y,w,h>`, with the redrawn box), its text id
+ *  and its kind; null for a crop with no row, no entry, or a candidate. */
 export async function cropNow(env: Env, id: number): Promise<CropNow | null> {
   const row = await env.ATLAS.prepare(cropNowQuery()).bind(id).first<{ cut: number; kind: number; rev: number; x: number | null; y: number | null; w: number | null; h: number | null }>();
   if (!row) return null;
@@ -40,7 +42,7 @@ export async function cropNow(env: Env, id: number): Promise<CropNow | null> {
   const values = box == null ? null : ['x', 'y', 'w', 'h'].map(key => box[key]);
   const version = typeof pixels !== 'string' ? null : values === null ? `${publicId(id)}@${pixels}@`
     : values.every(Number.isSafeInteger) ? `${publicId(id)}@${pixels}@${values.join(',')}` : null;
-  return { id, cut: row.cut, version, text: entry.id, kind: row.kind };
+  return { id, cut: row.cut + (row.x !== null ? 1 : 0), version, text: entry.id, kind: row.kind };
 }
 
 const NOT_HERE = 'This character is not in the published collection.';
@@ -56,13 +58,13 @@ async function namedCrop(env: Env, named: unknown, fail: ClaimTools['fail'], ctx
   return fail(404, NOT_HERE);
 }
 
-const ledgerTools = (tools: ClaimTools, ctx?: ExecutionContext): LedgerTools => ({ fail: tools.fail, text: tools.text, canonical: tools.canonical,
-  owned: ownedActors, crop: (env, named) => namedCrop(env, named, tools.fail, ctx) });
+const ledgerTools = (env: Env, tools: ClaimTools, ctx?: ExecutionContext): LedgerTools => ({ fail: tools.fail, text: tools.text, canonical: tools.canonical,
+  owned: ownedActors, crop: (env, named) => namedCrop(env, named, tools.fail, ctx), alias: text => aliasCrop(env, text, ctx) });
 
-// A crop's slot that holds on its cut now: one key of `current_claims` per crop, by `current_claim_crop`.
+// A crop's slot that holds on its effective cut: one key of `current_claims` per crop, by `current_claim_crop`.
 export const cropSlotsQuery = (predicate: 'has_form' | 'writes_word') => `SELECT c.crop,c.status,c.object,c.value,c.members,c.claims,c.supporting
-  FROM json_each(?) j JOIN current_claims c ON c.crop=j.value AND c.predicate='${predicate}' JOIN crops k ON k.id=c.crop
-  WHERE c.scope='' AND c.slot='' AND c.cut=k.cut`;
+  FROM json_each(?) j JOIN current_claims c ON c.crop=j.value AND c.predicate='${predicate}'
+  WHERE c.scope='' AND c.slot='' AND c.cut=${effectiveCut('c.crop')}`;
 export const formNamesQuery = () => `SELECT f.id,r.scheme,r.value FROM forms f JOIN representations r ON r.id=f.anchor
   WHERE f.id IN (SELECT value FROM json_each(?))`;
 export const wordNamesQuery = () => 'SELECT id,reading,class FROM words WHERE id IN (SELECT value FROM json_each(?))';
@@ -113,10 +115,14 @@ type Own = { id: string; object: string | null; method: string; confidence: numb
  *  A value the reviewer picks or types names a representation and that value's broad form, which the
  *  first such choice creates together with the claim that the representation names it. */
 export async function setForm(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
-  const ledger = ledgerTools(tools, ctx);
+  const ledger = ledgerTools(env, tools, ctx);
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ crop: named, input });
   const saved = await savedSubmission(env, key, signature, tools.fail);
-  if (saved) return { id: publicId(saved.crop), form: await formOfCrop(env, saved.crop), replaced: saved.replaced ?? null };
+  if (saved) {
+    const { crop } = await withCrop(env, saved, ledger.alias);
+    if (crop == null) tools.fail(404, NOT_HERE);
+    return { id: publicId(crop), form: await formOfCrop(env, crop), replaced: saved.replaced ?? null };
+  }
   if (input.review != null && !(typeof input.review === 'string' && /^[0-9a-f-]{36}$/i.test(input.review))) tools.fail(422, 'Invalid review id.');
   const typedForm = input.form == null ? null : tools.text(input.form, 256, 'form');
   const representation = typedForm ? typed(tools.literal(typedForm)) : null;
@@ -146,7 +152,7 @@ export async function setForm(env: Env, input: Json, named: string, actor: strin
     plan.statements.push(...cleared.statements); plan.keys.push(...cleared.keys);
   }
   const replaced = own?.text ?? null;
-  await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, replaced }, ledger);
+  await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, cut: crop.cut, replaced }, ledger);
   return { id: publicId(crop.id), form: await formOfCrop(env, crop.id), replaced };
 }
 
@@ -160,10 +166,14 @@ async function namingId(form: string) {
 
 /** Set the reader's word for one crop (decision 0004), or retract their own latest claim with `word: null`. */
 export async function setWord(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
-  const ledger = ledgerTools(tools, ctx), spec = PREDICATES.writes_word;
+  const ledger = ledgerTools(env, tools, ctx), spec = PREDICATES.writes_word;
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ crop: named, input });
   const saved = await savedSubmission(env, key, signature, tools.fail);
-  if (saved) return { id: publicId(saved.crop), word: await wordOfCrop(env, saved.crop), replaced: saved.replaced ?? null };
+  if (saved) {
+    const { crop } = await withCrop(env, saved, ledger.alias);
+    if (crop == null) tools.fail(404, NOT_HERE);
+    return { id: publicId(crop), word: await wordOfCrop(env, crop), replaced: saved.replaced ?? null };
+  }
   let member: Member | null = null;
   if (input.word !== null) {
     if (typeof input.word !== 'string' || !await env.ATLAS.prepare('SELECT 1 FROM words WHERE id=?').bind(input.word).first()) tools.fail(422, 'No such word.');
@@ -179,7 +189,7 @@ export async function setWord(env: Env, input: Json, named: string, actor: strin
   const plan = member ? await planClaim(env, { key, actor, crop, predicate: 'writes_word', scope: '', members: [member], at, method: input.method }, ledger)
     : await planAction(env, { key, actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, ledger);
   const replaced = own ? { word: own.object, method: own.method, form: formOf(own.confidence, own.confidence_scheme) } : null;
-  const result = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, replaced }, ledger);
+  const result = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, cut: crop.cut, replaced }, ledger);
   return { id: publicId(crop.id), word: await wordOfCrop(env, crop.id), replaced: result.replaced ?? null };
 }
 
@@ -220,12 +230,19 @@ export async function claimWrite(env: Env, request: Request, path: string, me: {
   try { target = decodeURIComponent((acted ?? picked)?.[1] ?? '') } catch { tools.fail(404, acted ? 'No such claim.' : NOT_HERE) }
   try {
     if (picked) return picked[2] === 'word' ? await setWord(env, input, target, me.id, tools, ctx) : await setForm(env, input, target, me.id, tools, ctx);
-    const ledger = ledgerTools(tools, ctx);
+    const ledger = ledgerTools(env, tools, ctx);
     return acted ? await actOnClaim(env, input, target, me.id, me.admin, ledger) : await writeClaim(env, input, me.id, ledger);
   } catch (error) {
     if (error instanceof StaleCrop) return staleResponse();
     throw error;
   }
+}
+
+// Subjects that are no crop by their shape: form and representation ids, word ids, and book keys.
+export const bookKeyQuery = () => 'SELECT 1 FROM books WHERE key=?';
+async function cropShaped(env: Env, subject: string) {
+  if (/^(fm|rp):/.test(subject) || subject.includes('/')) return false;
+  return !subject.includes(':') || !await env.ATLAS.prepare(bookKeyQuery()).bind(subject).first();
 }
 
 /** A read of the ledger: a subject's claims, or the export a page at a time. `null` for another path. */
@@ -238,7 +255,9 @@ export async function claimRead(env: Env, url: URL, tools: ClaimTools, ctx?: Exe
   }
   if (path !== '/atlas/claims') return null;
   const subject = tools.text(q.get('subject'), 512, 'subject', true)!;
-  // A crop is named by public id; its old text id moves there. Any other subject is a key of its own.
+  // A crop is named by public id; its old text id moves there. A book, form, representation or word is
+  // a key of its own and never reads the alias map.
+  if (!await cropShaped(env, subject)) return claimsOf(env, { subject });
   const named = await cropQueryParam(env, subject, ctx);
   if (named && 'moved' in named) return movedQueryResponse(url, 'subject', named.moved);
   if (named) return claimsOf(env, { crop: 'id' in named ? named.id : named.retired });
