@@ -25,7 +25,7 @@ function setup() {
   const page = ++pages, n = page;
   const live = cropId(page, 0), retired = cropId(page, 1), orphan = cropId(page, 2), chained = cropId(page, 3), byNumber = cropId(page, 4);
   db.exec(`INSERT INTO books VALUES(1,'hk:book');
-    INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${page},'hk:book:${n}',1,2,8);
+    INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${page},'hk:book:${n}',1,2,9);
     INSERT INTO crops(id,kind,book,state,quiz,shuffle) VALUES(${live},0,1,0,1,1);`);
   const text = { live: `hk:${n}:live`, retired: `hk:${n}:retired`, orphan: `hk:${n}:orphan`, chained: `hk:${n}:chained`,
     redirected: `hk:${n}:redirected`, gone: `hk:${n}:gone`, ends: `hk:${n}:ends`, wide: `tsj:s${n}a10７:0` };
@@ -47,7 +47,8 @@ function setup() {
     { slot: 4, id: `hk:${n}:number`, retired: true, replaced_by: live },
     { slot: 5, id: `hk:${n}:loop`, retired: true, replaced_by: cropId(page, 6) },
     { slot: 6, id: `hk:${n}:loop2`, retired: true, replaced_by: cropId(page, 5) },
-    { slot: 7, id: text.ends, retired: true, replaced_by: text.orphan }] })));
+    { slot: 7, id: text.ends, retired: true, replaced_by: text.orphan },
+    { slot: 8, id: `hk:${n}:unmapped`, retired: true, replaced_by: `hk:${n}:nowhere` }] })));
   const MEDIA = { get: async (name: string) => {
     const bytes = objects.get(name);
     return bytes ? { body: new Response(bytes).body!, arrayBuffer: async () => new Uint8Array(bytes).buffer } : null;
@@ -115,6 +116,8 @@ describe('a crop named in a route', () => {
   it('ends with nothing at a loop of replacements or a replacement gone', async () => {
     const { db, env, text, live } = setup();
     expect(await cropParam(env, publicId(cropId(pages, 5)))).toBeNull();
+    // A replacement named by a text id the alias map does not hold is no crop, not a crop with none.
+    expect(await cropParam(env, publicId(cropId(pages, 8)))).toBeNull();
     db.exec(`DELETE FROM crops WHERE id=${live}`);
     expect(await cropParam(env, text.retired)).toBeNull();
   });

@@ -23,10 +23,13 @@ export type CropParam = { id: number } | { moved: number } | { retired: number; 
 // public id has one, so the two never meet.
 const textId = (value: string) => value.includes(':');
 
-async function replacement(env: Env, entry: Record<string, unknown> | undefined, ctx?: ExecutionContext): Promise<number | null> {
-  const named = entry?.retired ? entry.replaced_by : undefined;
+// The crop a retired entry names as its replacement: `none` when it names none, null when it names
+// one the alias map does not hold.
+async function replacement(env: Env, entry: Record<string, unknown>, ctx?: ExecutionContext): Promise<number | 'none' | null> {
+  const named = entry.replaced_by;
   if (typeof named === 'number') return named;
-  return typeof named === 'string' && named ? await aliasCrop(env, named, ctx) : null;
+  if (typeof named === 'string' && named) return await aliasCrop(env, named, ctx);
+  return 'none';
 }
 
 /** A path segment as written in the URL, percent-decoded once; null when it does not decode. */
@@ -49,7 +52,8 @@ export async function cropParam(env: Env, raw: string, ctx?: ExecutionContext): 
     if (!entry?.retired) return null;
     if (hop >= REPLACEMENT_HOPS) return null;
     const next = await replacement(env, entry, ctx);
-    if (next === null) return { retired: id, canonical: !replaced && publicId(id) === param };
+    if (next === 'none') return { retired: id, canonical: !replaced && publicId(id) === param };
+    if (next === null) return null;
     id = next; replaced = true;
   }
   return !replaced && publicId(id) === param ? { id } : { moved: id };
