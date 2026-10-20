@@ -144,9 +144,9 @@ GLYPHS = [("codh:k1", "か", "printed", "codh:b"), ("codh:k2", "か", None, "cod
 def corpus_layout(tmp_path, monkeypatch):
     monkeypatch.setenv("ATLAS3_DIR", str(tmp_path))
     write_source(tmp_path, "units", UNITS, [
-        unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
+        unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ", priority=0),
         unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "ア", state="checked", revision=3, quiz=0),
-        unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う", document="book:b"),
+        unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う", document="book:b", priority=2),
     ])
     pack, rows = b"", []
     for i, (gid, char, production, document) in enumerate(GLYPHS):
@@ -188,11 +188,11 @@ def test_browse_corpus_and_book_counts_name_characters_by_grapheme(corpus_layout
     book = dict(atlas.execute("SELECT key, id FROM books"))
     production = dict(atlas.execute("SELECT key, id FROM productions"))
     facets = answer(root, "facets.json.gz")
-    assert facets["cell"] == ["char", "book", "production", "category", "state", "quiz", "n"]
+    assert facets["cell"] == ["char", "book", "production", "category", "priority", "state", "quiz", "n"]
     kana = code("category", "kana")
-    assert facets["cells"] == sorted([[char["あ"], book["book:a"], production["printed"], kana, code("state", "pending"), 1, 1],
-                                      [char["ア"], book["book:a"], production["printed"], kana, code("state", "checked"), 0, 1],
-                                      [char["う"], book["book:b"], production["printed"], kana, code("state", "pending"), 1, 1]])
+    assert facets["cells"] == sorted([[char["あ"], book["book:a"], production["printed"], kana, 0, code("state", "pending"), 1, 1],
+                                      [char["ア"], book["book:a"], production["printed"], kana, 1, code("state", "checked"), 0, 1],
+                                      [char["う"], book["book:b"], production["printed"], kana, 2, code("state", "pending"), 1, 1]])
     assert facets["chars"][str(char["ア"])] == ["ア", "U+3042"]
     assert facets["chars"][str(char["う"])] == ["う", "U+3046"]
     glyphs = answer(root, "corpus.json.gz")

@@ -14,8 +14,8 @@ refused.
   style, state, withheld, witness decade and visual group, with its number of crops. Codes are the
   `codes` table's; a null is unknown.
 - `unread.json.gz`: the same cells for crops with no character, per script category (-1 for none).
-- `facets.json.gz`: the collected crops (kind 0) per character, book, production, category, state and
-  withheld flag, -1 for an unknown value, with each character's text and grapheme key: the browse
+- `facets.json.gz`: the collected crops (kind 0) per character, book, production, category, review
+  priority, state and withheld flag, -1 for an unknown value, with each character's text and grapheme key: the browse
   page's counts by character and book, and the review rounds' counts.
 - `corpus.json.gz`: the corpus glyphs (kind 1) per character, production, state and withheld flag, with
   each character's text and grapheme key: the corpus counts by character and material.
@@ -70,7 +70,7 @@ SHARDS = 256
 PUB_PREFIX = "v3/pub/"
 POINTER_PREFIX = "v3/"
 CELL = ("kind", "style", "state", "quiz", "decade", "visual_group", "n")
-FACET_CELL = ("char", "book", "production", "category", "state", "quiz", "n")
+FACET_CELL = ("char", "book", "production", "category", "priority", "state", "quiz", "n")
 CORPUS_CELL = ("char", "production", "state", "quiz", "n")
 # Floor division, so a year before 1 CE falls in its own decade: SQLite's division truncates.
 DECADE = "CASE WHEN year IS NULL THEN NULL WHEN year < 0 THEN (year - 9) / 10 * 10 ELSE year / 10 * 10 END"
@@ -114,8 +114,8 @@ def characters(atlas, ids):
 
 def facets(atlas):
     rows = [list(r) for r in atlas.execute(
-        "SELECT coalesce(char, -1), book, coalesce(production, -1), coalesce(category, -1), state, quiz, count(*) "
-        "FROM crops WHERE kind = 0 GROUP BY 1, 2, 3, 4, 5, 6 ORDER BY 1, 2, 3, 4, 5, 6")]
+        "SELECT coalesce(char, -1), book, coalesce(production, -1), coalesce(category, -1), priority, state, quiz, count(*) "
+        "FROM crops WHERE kind = 0 GROUP BY 1, 2, 3, 4, 5, 6, 7 ORDER BY 1, 2, 3, 4, 5, 6, 7")]
     return rows, characters(atlas, {r[0] for r in rows if r[0] != -1})
 
 
