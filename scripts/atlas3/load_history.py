@@ -6,7 +6,7 @@ Decision record 0006. Every step writes SQL parts under `out/history-load/<name>
 content of `out/history.sqlite`, so a rerun on the same translation skips what D1 already holds; each
 part is confirmed by its stamp in `imports` and replayed on the local copy.
 
-1. Migration 0003 (stamp `migration:0003`), on D1 and the local copy; the mirror's `codes` take the
+1. Migrations 0003 and 0013 (stamps `migration:0003`, `migration:0013`), on D1 and the local copy; the mirror's `codes` take the
    two mark states the migration numbers, so the publisher never numbers them differently.
 2. The rows of every history table.
 3. Marks: a pending crop with a mark takes the mark as its state, one revision past its own, with an
@@ -36,7 +36,7 @@ SCHEMA = CF / "migrations-atlas"
 # Tables in the order their rows load: who and which request first, then what names them.
 TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats", "suspects", "shapes",
           "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "current_claims",
-          "ledger_submissions", "rejections", "forms", "form_decisions", "corpus_follow", "written_forms")
+          "ledger_submissions", "rejections", "forms", "form_decisions", "corpus_follow", "form_bases", "written_forms")
 GROUP = 500
 
 
@@ -62,7 +62,8 @@ def stamped(sql, stamp):
 
 
 def migrate(history, atlas, mirror, dry):
-    """Migration 0003 on D1 and the local copy, once; a layout built with it already has its tables."""
+    """Migrations 0003 and 0013 on D1 and the local copy, once each; a layout built with them already has
+    their tables."""
     # The mirror numbers new codes after the highest it holds; the two mark states must be the
     # migration's numbers before anything else claims them.
     taken = dict(mirror.execute("SELECT key, code FROM codes WHERE field='state'"))
@@ -75,15 +76,16 @@ def migrate(history, atlas, mirror, dry):
     mirror.executemany("INSERT OR IGNORE INTO codes(field, key, code) VALUES(?, ?, ?)",
                        history.execute("SELECT field, key, code FROM codes WHERE field='state'").fetchall())
     mirror.commit()
-    if atlas.execute("SELECT 1 FROM sqlite_master WHERE name='actors'").fetchone():
-        return
-    path = OUT / "history-load" / "0003.sql"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(stamped((SCHEMA / "0003_history.sql").read_text(), "migration:0003"))
-    if not applied("glyph-atlas-v3", "migration:0003") and not send("glyph-atlas-v3", path, "migration:0003"):
-        sys.exit("migration 0003 did not apply; rerun")
-    atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
-    print("migration 0003 applied", flush=True)
+    for number, name, table in (("0003", "0003_history.sql", "actors"), ("0013", "0013_forms.sql", "form_bases")):
+        if atlas.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
+            continue
+        path = OUT / "history-load" / f"{number}.sql"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(stamped((SCHEMA / name).read_text(), f"migration:{number}"))
+        if not applied("glyph-atlas-v3", f"migration:{number}") and not send("glyph-atlas-v3", path, f"migration:{number}"):
+            sys.exit(f"migration {number} did not apply; rerun")
+        atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+        print(f"migration {number} applied", flush=True)
 
 
 # D1 refuses a statement over 100 KB. A row past STATEMENT_BYTES goes in with its long text columns

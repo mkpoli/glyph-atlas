@@ -100,6 +100,7 @@ def translated(root, monkeypatch, sources, history, **extra):
             assertion_premises=[("cf:a", "cf:b", "premise")],
             rejections=[("r-b:s2", "user-1", "wrong book", "2026-10-01T00:00:05Z")],
             corpus_follow=[("codh:g1",)],
+            form_bases=[("codh:g1", "か", "U+304B")],
             unit_suspects=[("ex:a1", 0.9, "い", "あ", "0,0,10,10"), ("ex:gone", 0.8, "う", "え", None)],
             unit_shapes=[("ex:a2", 3), ("ex:gone", 4)])
     sources(root, **{**tables, **extra})
@@ -137,6 +138,7 @@ def test_a_correct_history_translation_passes(layout, monkeypatch):  # noqa: F81
     ("DELETE FROM rejections", "every rejections row is translated"),
     ("UPDATE rejections SET at = at + 1", "every rejections row is translated"),
     ("DELETE FROM corpus_follow", "every corpus_follow row is translated"),
+    ("UPDATE form_bases SET char = NULL", "every form_bases row is translated"),
     ("UPDATE suspects SET p = 0.1", "every unit_suspects row is translated into suspects"),
     ("DELETE FROM shapes", "every unit_shapes row is translated into shapes"),
     ("UPDATE actors SET via = 'account' WHERE user IS NULL", "every actors row is translated"),

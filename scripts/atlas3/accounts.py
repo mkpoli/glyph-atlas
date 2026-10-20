@@ -50,7 +50,7 @@ JOB = "the lock or progress of a job that runs on the old database"
 LEFT = {
     **dict.fromkeys(("character_derived", "character_variants", "component_variants", "document_characters",
                      "grapheme_writers", "han_component_names", "han_components", "han_ids", "word_spellings",
-                     "words", "form_bases", "form_clusters", "form_families", "form_units"), EXPORTED),
+                     "words", "form_clusters", "form_families", "form_units"), EXPORTED),
     **dict.fromkeys(("unit_counts", "unit_count_keys", "ngram_counts", "ngram_forms", "corpus_characters",
                      "corpus_gallery"), DERIVED),
     **dict.fromkeys(("form_loading", "corpus_follow_drain", "graphemes_backfill", "hand_order_backfill",
