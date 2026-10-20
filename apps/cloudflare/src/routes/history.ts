@@ -14,8 +14,12 @@ export type HistoryTools = {
 
 // A round's label, as `submission_label` indexes it.
 const ROUND_LABEL = `iif(json_valid(request), json_extract(request, '$.input.label'), NULL)`;
-// Events the history lists: verdicts and undos. A mark (seen, hard) or an admin's flag is no person's review.
-const LISTED = ['match', 'wrong', 'unsure', 'undo'];
+// Events the history lists: verdicts, and the undos of verdicts. A mark (seen, hard), the undo that
+// clears one, and an admin's flag are no person's review. Codes are read with the query, so a code a
+// migration adds is seen at once.
+const VERDICTS = `(SELECT code FROM codes WHERE field='kind' AND key IN ('match','wrong','unsure'))`;
+const UNDO = `(SELECT code FROM codes WHERE field='kind' AND key='undo')`;
+const LISTED = `(kind IN ${VERDICTS} OR (kind=${UNDO} AND EXISTS(SELECT 1 FROM events p WHERE p.id=events.reverses AND p.kind IN ${VERDICTS})))`;
 // D1 takes at most five terms in a compound SELECT and each id is two arms (its reviews, its passed
 // rounds), so a user holding more ids than that is read two ids to a statement, in one batch, each
 // statement bounded by the LIMIT, and the statements' pages merged here.
@@ -37,16 +41,14 @@ export function decodeCursor(value: string): Cursor {
  * One page of the history, newest first, keyset-paged on (at, src, id). Given `actors`, the rows are
  * those written under any of those ids: one arm per id and kind of row, each read along its index
  * (`event_actor_history`, `submission_actor`), merged by the compound ORDER BY so the read stops at the
- * LIMIT. Given `shown`, events read `event_shown` and rounds `submission_label`. `kinds` are the event
- * kind codes listed. Parameters are numbered so each value is bound once for every arm; the LIMIT is
- * the parameter after `values`.
+ * LIMIT. Given `shown`, events read `event_shown` and rounds `submission_label`. Parameters are
+ * numbered so each value is bound once for every arm; the LIMIT is the parameter after `values`.
  */
 export function historyQuery(actors: number[] | null, label: { text: string; shown: number | null } | null,
-  cursor: Cursor | null, kinds: number[]): { sql: string; values: (string | number)[] } {
+  cursor: Cursor | null): { sql: string; values: (string | number)[] } {
   const values: (string | number)[] = [];
   const bind = (value: string | number) => `?${values.push(value)}`;
-  const listed = `kind IN (${kinds.map(Number).join(',')})`;
-  const events = [listed];
+  const events = [LISTED];
   const rounds = ['undone=0', 'EXISTS(SELECT 1 FROM seen k WHERE k.submission=submissions.id)'];
   if (label) {
     // A label no grapheme has was shown in no event.
@@ -66,13 +68,15 @@ export function historyQuery(actors: number[] | null, label: { text: string; sho
     ${ROUND_LABEL} AS label FROM submissions WHERE ${filter.join(' AND ')}`;
   const arms = actors === null ? [event(events), round(rounds)]
     : actors.flatMap(actor => { const a = bind(actor); return [event([...events, `actor=${a}`]), round([...rounds, `actor=${a}`])]; });
-  // Each row's request is read for its kind (round, batch or one crop) and id, its labels by key, and its
-  // crop's book by the page the crop id names.
+  // Each row's request is read for its kind (round, batch or one crop) and id, its kind, issue and
+  // labels by key, and its crop's book by the page the crop id names.
   const sql = `SELECT h.*,s.key,json_type(s.request,'$.target') AS target_type,json_extract(s.request,'$.target') AS target,
-    json_extract(s.request,'$.input.id') AS request_id,gs.text AS shown_text,gn.text AS named_text,pg.book
+    json_extract(s.request,'$.input.id') AS request_id,kc.key AS kind_key,ic.key AS issue_key,gs.text AS shown_text,
+    gn.text AS named_text,pg.book
     FROM (${arms.join(' UNION ALL ')} ORDER BY at DESC,src DESC,id DESC LIMIT ?${values.length + 1}) h
-    LEFT JOIN submissions s ON s.id=h.submission LEFT JOIN graphemes gs ON gs.id=h.shown LEFT JOIN graphemes gn ON gn.id=h.named
-    LEFT JOIN pages pg ON pg.id=h.crop>>24 ORDER BY h.at DESC,h.src DESC,h.id DESC`;
+    LEFT JOIN submissions s ON s.id=h.submission LEFT JOIN codes kc ON kc.field='kind' AND kc.code=h.kind
+    LEFT JOIN codes ic ON ic.field='issue' AND ic.code=h.issue LEFT JOIN graphemes gs ON gs.id=h.shown
+    LEFT JOIN graphemes gn ON gn.id=h.named LEFT JOIN pages pg ON pg.id=h.crop>>24 ORDER BY h.at DESC,h.src DESC,h.id DESC`;
   return { sql, values };
 }
 
@@ -83,25 +87,24 @@ export const recordedIssue = (issue: unknown) => issue === 'reading' ? 'characte
 export type HistoryRow = { src: 0 | 1; id: number; at: number; actor: number; crop: number | null; kind: number | null;
   issue: number | null; text: string | null; reverses: number | null; passed: number | null; label: string | null;
   key: string | null; target_type: string | null; target: string | null; request_id: string | null;
-  shown_text: string | null; named_text: string | null; book: number | null };
+  kind_key: string | null; issue_key: string | null; shown_text: string | null; named_text: string | null; book: number | null };
 export type Reviewer = { user: string | null; name: string; image: string | null };
 
 /** A history row as the page shows it. A round's or batch's id is the request's own, as its undo
  *  names it; a passed round is named by its submission key. */
-export function historyItem(row: HistoryRow, codes: { kind: Map<number, string>; issue: Map<number, string> }, reviewer: Reviewer,
-  me: string | null = null): Json {
+export function historyItem(row: HistoryRow, reviewer: Reviewer, me: string | null = null): Json {
   const who = { ...reviewer, mine: Boolean(me && reviewer.user === me) };
   const at = new Date(row.at).toISOString();
   if (row.src === 1) return { id: row.key, at, target: null, label: row.label, kind: 'passed', reviewer: who,
     passed: Number(row.passed), verdict: null, issue: null, character: null, text: null, round: row.key, batch: null, undoes: null };
-  const kind = codes.kind.get(row.kind!), undo = kind === 'undo';
+  const kind = row.kind_key, undo = kind === 'undo';
   // A round's request has no target, a batch's names '@batch', a single review's names its crop.
   const round = !undo && row.target_type === 'null', batch = !undo && row.target === '@batch';
   return {
     id: String(row.id), at, target: publicId(row.crop!), label: row.shown_text, kind: undo ? 'undo' : 'review',
     reviewer: who,
     verdict: undo ? null : kind ?? null,
-    issue: undo ? null : recordedIssue(row.issue === null ? null : codes.issue.get(row.issue)),
+    issue: undo ? null : recordedIssue(row.issue_key),
     character: undo ? null : row.named_text,
     text: undo ? null : row.text,
     round: round ? row.request_id : null,
@@ -110,36 +113,21 @@ export function historyItem(row: HistoryRow, codes: { kind: Map<number, string>;
   };
 }
 
-let held: Promise<{ kind: Map<number, string>; issue: Map<number, string> }> | null = null;
-/** The event kind and issue codes, the same until a migration adds one; a failed read is not kept. */
-function eventCodes(env: Env) {
-  if (!held) {
-    const read = env.ATLAS.prepare(`SELECT field,code,key FROM codes WHERE field IN ('kind','issue')`).all<{ field: string; code: number; key: string }>()
-      .then(r => ({ kind: new Map(r.results.filter(c => c.field === 'kind').map(c => [c.code, c.key])),
-        issue: new Map(r.results.filter(c => c.field === 'issue').map(c => [c.code, c.key])) }));
-    read.catch(() => { if (held === read) held = null; });
-    held = read;
-  }
-  return held;
-}
-
 export async function history(env: Env, q: URLSearchParams, me: string | null, tools: HistoryTools) {
   const limit = Math.max(1, tools.integer(q, 'limit', 40, 100));
   if (q.get('mine') === 'true' && !me) return { items: [], next: null };
   const user = q.get('mine') === 'true' ? me : q.get('user') ? tools.text(q.get('user'), 64, 'user', true) : null;
   const text = q.get('label') ? tools.text(q.get('label'), 32, 'label', true)! : null;
   const before = q.get('before') ? decodeCursor(q.get('before')!) : null;
-  const [codes, actors, shown] = await Promise.all([
-    eventCodes(env),
+  const [actors, shown] = await Promise.all([
     user ? env.ATLAS.prepare('SELECT id FROM actors WHERE user=? ORDER BY key').bind(user).all<{ id: number }>().then(r => r.results.map(a => a.id)) : null,
     text === null ? null : env.ATLAS.prepare('SELECT id FROM graphemes WHERE text=?').bind(text).first<{ id: number }>(),
   ]);
-  const kinds = [...codes.kind].filter(([, key]) => LISTED.includes(key)).map(([code]) => code);
   const label = text === null ? null : { text, shown: shown?.id ?? null };
   const groups = actors === null ? [null] : Array.from({ length: Math.ceil(actors.length / HISTORY_IDS) }, (_, i) => actors.slice(i * HISTORY_IDS, (i + 1) * HISTORY_IDS));
   if (!groups.length) return { items: [], next: null };
   const pages = await env.ATLAS.batch<HistoryRow>(groups.map(group => {
-    const { sql, values } = historyQuery(group, label, before, kinds);
+    const { sql, values } = historyQuery(group, label, before);
     return env.ATLAS.prepare(sql).bind(...values, limit + 1);
   }));
   const rows = pages.flatMap(page => page.results);
@@ -150,7 +138,7 @@ export async function history(env: Env, q: URLSearchParams, me: string | null, t
     const person = people.get(row.actor);
     // A reviewer id nobody holds is shown by itself.
     const reviewer = { user: person?.user ?? null, name: person?.name ?? person?.key ?? String(row.actor), image: person?.image ?? null };
-    return { ...historyItem(row, codes, reviewer, me), dating: (row.book !== null && dating.get(row.book)) || {} };
+    return { ...historyItem(row, reviewer, me), dating: (row.book !== null && dating.get(row.book)) || {} };
   });
   // The cursor is the last row returned; the next page starts strictly after it.
   const last = rows.length > limit ? rows[limit - 1] : null;

@@ -237,10 +237,9 @@ describe('the history', () => {
 
   it('reads each page by index, never the whole journal', () => {
     const { atlas } = setup();
-    const kinds = [0, 1, 2, 5];
     for (const [actors, label, cursor] of [[null, null, null], [[1, 2], null, { at: 5, src: 0, id: 3 }], [null, { text: 'あ', shown: 1 }, null],
       [[1], { text: 'い', shown: 2 }, { at: 5, src: 1, id: 3 }]] as const) {
-      const { sql, values } = historyQuery(actors as number[] | null, label, cursor, kinds);
+      const { sql, values } = historyQuery(actors as number[] | null, label, cursor);
       const details = plan(atlas, sql, [...values, 41]);
       expect(scans(details, ['events', 'submissions', 'seen', 'graphemes', 'pages'])).toEqual([]);
       if (actors) expect(details.some(d => /SEARCH events USING INDEX event_actor_history/.test(d) || /SEARCH events USING INDEX event_shown/.test(d))).toBe(true);
@@ -268,6 +267,22 @@ describe('the history', () => {
   it('keeps a cursor to its three numbers', () => {
     expect(decodeCursor(encodeCursor({ at: 5, src: 1, id: 9 }))).toEqual({ at: 5, src: 1, id: 9 });
     for (const bad of ['not-base64!!', btoa('[1,2]'), btoa('[1,2,3]'), btoa('["1",0,3]')]) expect(() => decodeCursor(bad)).toThrow('Invalid cursor.');
+  });
+
+  it('lists the undo of a review and leaves out a mark and the undo that clears it', async () => {
+    const { atlas, env } = setup();
+    // An undone round (#812's shape): its verdict, the seen mark it set on a crop it showed, and on undo
+    // one event reversing each, all under the round's submission; a mark cleared with no event to name.
+    const round = 6;
+    atlas.exec(`UPDATE submissions SET undone=1 WHERE id=${round};
+      INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state,shown) VALUES
+        (20,${crops.a.id},10,0,0,1,${round},${ms(6)},3,1,3,1),
+        (21,${crops.a.id},11,0,0,1,${round},${ms(10)},5,1,0,1),
+        (22,${crops.c.id},10,0,0,1,${round},${ms(10)},5,2,0,2),
+        (23,${crops.b.id},10,0,0,1,${round},${ms(10)},5,2,0,2);
+      UPDATE events SET reverses=20 WHERE id=21; UPDATE events SET reverses=6 WHERE id=22;`);
+    const { items } = await history(env, new URLSearchParams({ user: 'u1', limit: '3' }), 'u1', tools);
+    expect(items.map((i: Json) => [i.id, i.kind, i.undoes])).toEqual([['22', 'undo', '6'], ['6', 'review', null], ['5', 'review', null]]);
   });
 });
 
