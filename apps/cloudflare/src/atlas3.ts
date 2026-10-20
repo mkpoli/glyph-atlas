@@ -59,7 +59,7 @@ export function bundle(env: Env, page: number, rev: number): Promise<Bundle | nu
 // Small code tables (state, style, category), the same for every request until a publication adds a
 // code: a listing that meets a code the isolate does not hold reads the table again, once.
 let codes: Promise<Map<string, string>> | null = null;
-function codeNames(env: Env, fresh = false): Promise<Map<string, string>> {
+export function codeNames(env: Env, fresh = false): Promise<Map<string, string>> {
   if (fresh || !codes) {
     const read = env.ATLAS.prepare(`SELECT field,code,key FROM codes WHERE field IN ('state','style','category')`)
       .all<{ field: string; code: number; key: string }>()
@@ -86,14 +86,16 @@ const UNLISTED = ['text', 'line', 'context_image', 'context_box', 'crop_box', 'i
 // The item a listing shows for each crop, in the order asked: the bundle's record under the row's
 // current values. A crop with no row, a candidate, or one its bundle does not hold is left out, and so
 // is a corpus glyph whose record (at `record_place` in a pack) is missing or does not parse. A storage
-// error fails the call, as `readRecords` explains.
-export async function cropItems(env: Env, ids: number[]): Promise<Json[]> {
+// error fails the call, as `readRecords` explains. A caller that holds a crop's entry already, with
+// its record in place of `record_place` (the homepage sample), passes it in `given`, and that crop's
+// bundle is not read.
+export async function cropItems(env: Env, ids: number[], given: Map<number, Entry> = new Map()): Promise<Json[]> {
   if (!ids.length) return [];
   const rows = (await env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>()).results;
   const byId = new Map(rows.map(row => [row.id, row]));
-  const pages = new Map(rows.map(row => [pageOf(row.id), row.rev]));
+  const pages = new Map(rows.filter(row => !given.has(row.id)).map(row => [pageOf(row.id), row.rev]));
   const bundles = new Map(await Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev)] as const)));
-  const entries = new Map(ids.map(id => [id, byId.has(id) ? bundles.get(pageOf(id))?.bySlot.get(slotOf(id)) : undefined]));
+  const entries = new Map(ids.map(id => [id, !byId.has(id) ? undefined : given.get(id) ?? bundles.get(pageOf(id))?.bySlot.get(slotOf(id))]));
   const pointer = (entry: Entry) => ({ object: entry.record_place[0], offset: entry.record_place[1], size: entry.record_place[2] });
   const records = await readRecords(env, [...entries.values()].filter(entry => entry?.record_place).map(entry => pointer(entry!)));
   const keys = rows.flatMap(row => [`state:${row.state}`, `style:${row.style}`, `category:${row.category}`]).filter(key => !key.endsWith(':null'));
