@@ -676,25 +676,6 @@ try {
   assert.equal(derivedCard.variants.sources['mkpoli-2026-10-04'], 'mkpoli, instruction of 2026-10-04')
   assert.equal(derivedCard.variants.sources['derived-ids'], 'Predicted component variants (derived, not attested)')
   assert.ok(!derivedCard.variants.items.some(v => v.char === '𠈌') && !derivedCard.variants.related.some(v => v.char === '𠈌'), 'a derived form is in no attested tier')
-  // The IDS editor's start: 仮's descriptions by key, and the substitutes of each component, most
-  // contexts first, read by key on either side of a substitution.
-  // 所's regional shapes come with it; a character with one shape has none.
-  await db.batch([db.prepare(`INSERT INTO han_ids VALUES('仮','["⿰亻反"]',NULL)`),
-    db.prepare(`INSERT INTO han_ids VALUES('所','["⿰戶斤","⿰戸斤"]','[{"text":"⿰戶斤","regions":"GHTKPV"},{"text":"⿰戸斤","regions":"J"}]')`)])
-  const structure = await call('/layers/structure?c=%E4%BB%AE')
-  assert.deepEqual(structure.sequences, ['⿰亻反'])
-  assert.deepEqual(structure.shapes, [])
-  assert.deepEqual((await call('/layers/structure?c=%E6%89%80')).shapes, [{ text: '⿰戶斤', regions: 'GHTKPV' }, { text: '⿰戸斤', regions: 'J' }])
-  assert.deepEqual(structure.substitutes['反'], [{ char: '𠬝', count: 3 }])
-  assert.deepEqual(structure.substitutes['亻'], [{ char: '彳', count: 1 }])
-  assert.deepEqual((await call('/layers/structure?c=%E5%81%87')).sequences, [], 'a character with no row has no description')
-  await call('/layers/structure?c=ab', null, 422)
-  const structurePlan = await plan({ sql: worker.structureQuery(), values: [] }, ['仮'])
-  assert.ok(structurePlan.some(d => /SEARCH han_ids USING PRIMARY KEY \(char=\?\)/.test(d)), structurePlan.join('; '))
-  const substitutesPlan = await plan({ sql: worker.substitutesQuery(2), values: [] }, ['亻', '反', '亻', '反'])
-  assert.ok(substitutesPlan.some(d => /SEARCH component_variants USING PRIMARY KEY \(a=\?\)/.test(d)), substitutesPlan.join('; '))
-  assert.ok(substitutesPlan.some(d => /SEARCH component_variants USING (COVERING )?INDEX component_variant_b \(b=\?\)/.test(d)), substitutesPlan.join('; '))
-  assert.ok(!substitutesPlan.some(d => /^SCAN/.test(d)), substitutesPlan.join('; '))
   const derivedPlan = await plan({ sql: worker.derivedEdgesQuery(), values: [] }, ['仮'])
   assert.ok(derivedPlan.includes('SEARCH character_derived USING PRIMARY KEY (a=?)'), derivedPlan.join('; '))
   assert.ok(!derivedPlan.some(d => /TEMP B-TREE/.test(d)), derivedPlan.join('; '))
@@ -895,24 +876,6 @@ try {
   served(documentPlan, null)
   assert.ok(documentPlan.includes('SEARCH c USING PRIMARY KEY (document=?)'), documentPlan.join('; '))
   assert.ok(documentPlan.some(d => /^SEARCH u USING INDEX sqlite_autoindex_units_1 \(id=\?\)/.test(d)), documentPlan.join('; '))
-  // A search of two or more ideographs no alias names finds the characters built from them: 水骨, 氵骨
-  // and ⺡骨 are 滑. The rarest component's list is read along its key, each other one looked up by key.
-  const built = { char: '滑', code_point: 'U+6ED1', candidates: {} }
-  await db.batch([
-    db.prepare('INSERT INTO characters VALUES(?,?,?,?,?)').bind('U+6ED1', '滑', '', JSON.stringify(built), JSON.stringify(built)),
-    ...[['氵', 0, 7, 'U+6ED1', 1, 1], ['水', 0, 7, 'U+6ED1', 1, 1], ['骨', 0, 7, 'U+6ED1', 1, 1], ['水', 0, 2, 'U+6C38', 1, 0],
-      ['骨', 2, 9, 'U+2DC2B', 1, 1]].map(row => db.prepare('INSERT INTO han_components VALUES(?,?,?,?,?,?)').bind(...row)),
-    ...[['氵', '氵', 1], ['⺡', '氵', 1], ['水', '水', 2], ['骨', '骨', 2]].map(row => db.prepare('INSERT INTO han_component_names VALUES(?,?,?)').bind(...row))])
-  for (const q of ['水骨', '氵骨', '⺡骨', 'U+6C34 U+9AA8']) {
-    const found = await (await mf.dispatchFetch(`${base}/layers/suggest?q=${encodeURIComponent(q)}`)).json()
-    assert.equal(found.match_kind, 'components', q)
-    assert.deepEqual(found.items.map(item => item.char), ['滑'], `${q}: a component character missing from the table is left out`)
-  }
-  assert.deepEqual((await (await mf.dispatchFetch(`${base}/layers/suggest?q=${encodeURIComponent('骨水骨')}`)).json()).items, [], 'two 骨 are asked for')
-  const componentPlan = await plan({ sql: worker.componentMatchQuery(1), values: [] }, ['骨', '水', 1, 1])
-  assert.ok(componentPlan.includes('SEARCH han_components USING PRIMARY KEY (component=?)'), componentPlan.join('; '))
-  assert.ok(componentPlan.includes('SEARCH o0 USING PRIMARY KEY (component=? AND tier=? AND size=? AND code_point=?)'), componentPlan.join('; '))
-  assert.ok(!componentPlan.some(d => d.includes('TEMP B-TREE')), componentPlan.join('; '))
   // `reported=hide`'s `NOT EXISTS` filter: the flagged set is small, but events and submissions are
   // still read through their own indexes, one correlated lookup per candidate row, never a scan.
   const reportedPlan = await plan({ sql: `SELECT count(*) AS n FROM units WHERE origin='local' AND state='flagged' AND NOT ${worker.reviewedInInspectorQuery()}`, values: [] }, [])

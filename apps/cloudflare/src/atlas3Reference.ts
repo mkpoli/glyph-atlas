@@ -57,24 +57,51 @@ export async function characterStructure(env: Env, char: string, ctx?: Execution
 // the hex of the code point as [prefix, code points as steps, occurrences].
 type NameList = { names: [string, string, number][]; plain: [string, number[], number[]][] };
 const hex = (point: number) => point.toString(16).toUpperCase().padStart(4, '0');
+export type NameIndex = { occurrences: Map<string, number>; named: (term: string, limit: number) => string[] };
 
-// The cards whose code point or name holds the term, ignoring case ("4e00", "U+4E00", "hiragana"),
-// most frequent first, then by code point; at most `limit`, with how many there are.
-export async function nameMatches(env: Env, term: string, limit: number, ctx?: ExecutionContext) {
-  const list = await readNames(env, `${PREFIX}names.json.gz`, ctx) as NameList | null;
-  const wanted = term.trim().toUpperCase(), found: [string, number, number][] = [];
-  if (!list || !wanted) return { codes: [] as string[], total: 0 };
-  for (const [codePoint, name, occurrences] of list.names)
-    if (codePoint.includes(wanted) || name.toUpperCase().includes(wanted)) found.push([codePoint, occurrences, parseInt(codePoint.slice(2), 16)]);
-  for (const [prefix, steps, occurrences] of list.plain) {
+// Upper case for ASCII letters only, the case SQL LIKE ignores.
+const asciiUpper = (text: string) => text.replace(/[a-z]/g, c => c.toUpperCase());
+const byPoints = (a: number[], b: number[]) => {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return a.length - b.length;
+};
+// Each copy of the list the isolate holds is decoded once.
+const decodedNames = new WeakMap<NameList, NameIndex>();
+function decodeNames(list: NameList): NameIndex {
+  const occurrences = new Map<string, number>(), cards: [number[], string, string][] = [];
+  for (const [codePoint, name, n] of list.names) {
+    occurrences.set(codePoint, n);
+    cards.push([codePoint.split(' ').map(p => parseInt(p.slice(2), 16)), codePoint, asciiUpper(name)]);
+  }
+  for (const [prefix, steps, counts] of list.plain) {
     for (let k = 0, point = 0; k < steps.length; k++) {
       point = k ? point + steps[k] : steps[0];
       const code = hex(point);
-      if (`U+${code}`.includes(wanted) || (prefix + code).includes(wanted)) found.push([`U+${code}`, occurrences[k], point]);
+      occurrences.set(`U+${code}`, counts[k]);
+      cards.push([[point], `U+${code}`, asciiUpper(prefix) + code]);
     }
   }
-  found.sort((a, b) => b[1] - a[1] || a[2] - b[2] || (a[0] < b[0] ? -1 : 1));
-  return { codes: found.slice(0, limit).map(f => f[0]), total: found.length };
+  cards.sort((a, b) => byPoints(a[0], b[0]));
+  // The cards whose name holds the term, ignoring ASCII case as SQL LIKE does, in code point order.
+  const named = (term: string, limit: number) => {
+    const wanted = asciiUpper(term), found: string[] = [];
+    for (const [, codePoint, name] of cards) {
+      if (found.length >= limit) break;
+      if (name.includes(wanted)) found.push(codePoint);
+    }
+    return found;
+  };
+  return { occurrences, named };
+}
+
+// Every card by its code point(s) with how often the character occurs, and a search of the names in
+// code point order; null when the list is not in R2.
+export async function nameIndex(env: Env, ctx?: ExecutionContext): Promise<NameIndex | null> {
+  const list = await readNames(env, `${PREFIX}names.json.gz`, ctx) as NameList | null;
+  if (!list) return null;
+  let index = decodedNames.get(list);
+  if (!index) decodedNames.set(list, index = decodeNames(list));
+  return index;
 }
 
 // One page of a card list from `offset`: at most two objects for a page of up to LIST_PAGE.
