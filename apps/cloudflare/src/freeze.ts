@@ -32,8 +32,10 @@ export const pausedResponse = (headers: Record<string, string> = {}) => Response
 /**
  * A sign-out while paused: the browser's session cookies are expired, with the names and attributes
  * Better Auth gives them (the `__Secure-` prefix on https). The cached session may be split into
- * numbered cookies; each one sent goes. Only a page of this site may ask: a request whose Origin is
- * another one, or missing, is refused 403.
+ * numbered cookies; each one sent goes. The session's row is not touched, so the session stays valid
+ * until it expires or, once writes resume, is revoked from another device: a copy of its token taken
+ * before the sign-out still signs in meanwhile. Only a page of this site may ask: a request whose
+ * Origin is another one, or missing, is refused 403.
  */
 export function pausedSignOut(request: Request, options: BetterAuthOptions): Response {
   if (request.headers.get('origin') !== new URL(request.url).origin)

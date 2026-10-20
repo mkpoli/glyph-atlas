@@ -121,7 +121,8 @@ freeze contains no decisions. Each step is resumable and records checksums.
 
 1. **Freeze every writer:** review, claim, favourite and form-decision writes, sign-in, sign-up, passkey
    and session changes answer 503 with a message the client shows; publishing to the old database
-   stops; in-flight requests drain.
+   stops; in-flight requests drain. A sign-out expires the browser's cookies and leaves the session
+   row valid until it expires or is revoked from another device after writes resume.
 2. **Archive** the old database's tables verbatim, from the fresh copies, to a private R2 location with
    checksums. D1 Time Travel keeps a restore point as well.
 3. **Copy** the live tables (from the Codespace) and publish the crops into `glyph-atlas-v3`; publish

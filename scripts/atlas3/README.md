@@ -108,7 +108,9 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    `echo 1 | wrangler secret put WRITES_PAUSED` from `apps/cloudflare`, which takes effect without a
    deploy. Every request that writes (reviews, rounds, corrections, claims, favourites, form decisions,
    sign-in, passkeys, account and admin changes) then answers 503 `paused` with a Retry-After, while
-   reads and signed-in sessions go on. `wrangler secret put` and `wrangler secret delete` deploy a new
+   reads and signed-in sessions go on. Signing out then only expires the browser's cookies: the session
+   row stays valid until it expires, or until it is revoked from another device after writes resume.
+   `wrangler secret put` and `wrangler secret delete` deploy a new
    version at once, and refuse while a newer version is uploaded and not deployed, so the freeze is set
    before step 8 uploads anything.
 3. **Copy** the live tables again, `pull.py --fresh`, from a Codespace with the Cloudflare
