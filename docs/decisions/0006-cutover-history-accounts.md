@@ -14,7 +14,7 @@ Copied from the live database on 19–20 October 2026:
 | `seen`, `skips` | 8,145, 19 | `target` text id, box and image checksum |
 | `actors` | 14 | — (actor text id to user id) |
 | `favourites` | 1 | `unit` text id |
-| `assertions`, `assertion_actions`, `assertion_evidence` | 14,172, 33, 14,140 | 45 `has_form` claims on crops; the rest are date claims on books |
+| `assertions`, `assertion_actions`, `assertion_evidence` | 14,172, 33, 14,140 | 14,095 `date_*` claims on documents (2,097 on books of the new layout, 11,998 on documents that are not), 45 `has_form` claims on crops, 32 `represented_by` |
 | `current_claims` | 9,467 | 43 crop subjects with a `crop_version` string |
 | `ledger_submissions`, `form_decisions`, `forms` | 45, 669, 32 | crop ids inside JSON |
 | `crop_versions` | 532,617 | one row per crop version; 496 crops have an earlier box, none more than one |

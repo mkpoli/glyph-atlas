@@ -131,7 +131,8 @@ def rows(history):
 
 def marks(history, atlas):
     """Each pending marked crop takes its mark as state, one revision past its own, with the event of
-    the latest round that showed it unflagged."""
+    the latest round that showed it unflagged; of rounds at one time, the highest submission id, as
+    history.py picks it."""
     kinds = dict(history.execute("SELECT key, code FROM codes WHERE field='kind'"))
     states = dict(history.execute("SELECT key, code FROM codes WHERE field='state'"))
     pending = dict(atlas.execute("SELECT key, code FROM codes WHERE field='state'"))["pending"]
@@ -143,7 +144,7 @@ def marks(history, atlas):
             continue
         state, revision, cut = states[m["state"]], crop[1], crop[2]
         shown = history.execute("SELECT s.submission, s.at, b.actor FROM seen s JOIN submissions b ON b.id = s.submission "
-                                "WHERE s.crop = ? AND s.cut = ? AND b.undone = 0 ORDER BY s.at DESC LIMIT 1",
+                                "WHERE s.crop = ? AND s.cut = ? AND b.undone = 0 ORDER BY s.at DESC, s.submission DESC LIMIT 1",
                                 (m["crop"], cut)).fetchone()
         if shown is None:
             sys.exit(f"crop {m['crop']} is marked {m['state']} with no round that showed it at its cut {cut}")

@@ -25,7 +25,7 @@ function setup() {
   const MEDIA = { get: async (name: string) => {
     reads.push(name);
     const bytes = objects.get(name);
-    return bytes ? { arrayBuffer: async () => bytes.slice().buffer } : null;
+    return bytes ? { arrayBuffer: async () => new Uint8Array(bytes).buffer } : null;
   } };
   return { env: { MEDIA } as unknown as Env, ids, reads };
 }

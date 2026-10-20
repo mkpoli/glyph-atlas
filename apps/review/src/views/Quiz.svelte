@@ -18,10 +18,10 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
-  import { keptCrops, outbox } from '../lib/outbox.svelte.js'
-  import { correctionBatches, sendEach } from '../lib/corrections.js'
+  import { keptCrops, keptState, keyOf } from '../lib/outbox.svelte.js'
+  import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
-  import { nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
+  import { firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
   import { unslug } from '../lib/gallery.js'
   import { useSession } from '../lib/session.svelte.js'
@@ -235,9 +235,9 @@
         chosen = tries === 0 && target && available.some(c => c.label === target) ? target
           : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
         if (!chosen) break
-        result = await catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed })
+        result = await firstCrops(offset => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,
+          ...(offset ? { offset } : {}) }), away)
         if (closed || id !== requestId) return
-        result = { ...result, items: result.items.filter(item => !away.has(item.id)) }
         if (result.items.length) break
         available = available.filter(c => c.label !== chosen)
         chosen = null
@@ -383,7 +383,7 @@
     const saved = [], before = {}, after = {}
     saving = true; formError = ''
     try {
-      ({ answered, kept: waiting } = await sendEach(correctionBatches(form, crops, CORRECTION_BATCH), ({ id, crops: part }) =>
+      ({ answered, kept: waiting } = await sendBatches(correctionBatches(form, crops, CORRECTION_BATCH), ({ id, crops: part }) =>
         request('/atlas/corrections', { id, client_id: session.state.clientId, character: form,
           crops: part.map(i => ({ id: i.id, revision: i.revision, ...pixels(i) })) })))
     } catch (e) {
@@ -404,7 +404,8 @@
     // Batches kept while writes are paused go once they resume: their crops are decided here meanwhile.
     const waited = waiting.flatMap(batch => batch.crops)
     if (waited.length) {
-      markRecorded(waited, 'assigned'); markKept(waited)
+      markRecorded(waited, 'assigned')
+      for (const batch of waiting) markKept(batch.crops, keyOf('/atlas/corrections', batch))
       if (!formError) formError = t('client.pausedKept')
     }
     const handled = [...Object.keys(after), ...waited.map(i => i.id), ...chosen.filter(i => !crops.includes(i)).map(i => i.id), ...refused]
@@ -668,7 +669,13 @@
     choices = here(round.choices); selected = here(round.selected); skipped = here(round.skipped)
   }
   function markRecorded(crops, how) { recorded = { ...recorded, ...Object.fromEntries(crops.map(crop => [crop.id, how])) } }
-  function markKept(crops) { keptHere = { ...keptHere, ...Object.fromEntries(crops.map(crop => [crop.id, true])) } }
+  /** Mark `crops` as decided by the save kept under `key`, until it is sent or refused. */
+  function markKept(crops, key) { keptHere = { ...keptHere, ...Object.fromEntries(crops.map(crop => [crop.id, key])) } }
+  // A crop decided here reads as saved once its kept save is sent, and as not saved if the site refused it.
+  function recordedLabel(id) {
+    const state = keptHere[id] ? keptState(keptHere[id]) : 'sent'
+    return state === 'refused' ? t('app.notSaved') : state === 'kept' ? t('app.keptHere') : '✓ ' + t('app.saved')
+  }
   async function submit() {
     if (saving || loadingMore || !ready) return
     if (step === 'select') return
@@ -693,7 +700,7 @@
       remember('atlas.last-round', last); completed += answers.length
       if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeLabel)
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
-      if (kept) markKept([...answers, ...seen, ...passed])
+      if (kept) markKept([...answers, ...seen, ...passed], keyOf('/atlas/rounds', { id: roundId }))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       await load()
     } catch (e) { if (!(await outdated(e))) { error = roundError(e); errorStatus = e.status ?? 0 } }
@@ -715,7 +722,7 @@
       remember('atlas.last-round', last)
       if (!kept) announceSaved(seen.length + passed.length, graphemeLabel)
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
-      if (kept) markKept([...seen, ...passed])
+      if (kept) markKept([...seen, ...passed], keyOf('/atlas/rounds', { id: roundId }))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
       return true
     } catch (e) { if (!(await outdated(e))) { error = roundError(e); errorStatus = e.status ?? 0 }; return false }
@@ -812,7 +819,7 @@
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
           <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
           <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
-          <div class="quiz-production">{#if item.label !== graphemeLabel}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge">{keptHere[item.id] && outbox.pending ? t('app.keptHere') : '✓ ' + t('app.saved')}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+          <div class="quiz-production">{#if item.label !== graphemeLabel}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
     </div>
@@ -916,6 +923,7 @@
   .save-toast.quiz-saved { bottom:108px; }
   /* A crop this round already saved: still shown, marked, and never sent again. */
   .recorded-badge { font-size:9px; color:var(--muted); white-space:nowrap; }
+  .recorded-badge.refused { color:var(--wrong); }
   .suspect-badge { font-size:9px; color:var(--wrong); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .suspect-toggle[aria-pressed="true"] { color:var(--wrong); }
   .no-suspects { margin:18px 0 0; font-size:13px; color:var(--muted); text-align:center; }

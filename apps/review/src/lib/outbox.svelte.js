@@ -7,7 +7,10 @@
 // `DatabaseStatus` shows what is waiting.
 import { backoff, isBusy, isPaused, retryAfter } from './busy.svelte.js'
 
-export const outbox = $state({ pending: 0, refused: [], paused: false })
+// `pending` counts this reader's kept saves; `keys` names every save kept on this device, whoever made
+// it; `lost` names every kept save the site refused, in this tab or another, which stays named after
+// the corner's note is dismissed.
+export const outbox = $state({ pending: 0, refused: [], paused: false, keys: [], lost: [] })
 
 // The browser stores saves in IndexedDB; a save IndexedDB would not take goes to localStorage, and
 // failing both, to this page's memory. All three are read together.
@@ -21,6 +24,13 @@ function database() {
     asked.onerror = () => reject(asked.error)
   }).catch(() => null)
   return opened
+}
+// The keys of kept saves the site refused, shared with the other tabs: the last few hundred.
+const LOST = 'atlas.outbox.lost', LOST_KEPT = 256
+const storedLost = () => { try { const keys = JSON.parse(localStorage.getItem(LOST)); return Array.isArray(keys) ? keys : [] } catch { return [] } }
+function refuse(key) {
+  outbox.lost.push(key)
+  try { localStorage.setItem(LOST, JSON.stringify([...new Set([...storedLost(), key])].slice(-LOST_KEPT))) } catch { /* This tab still knows. */ }
 }
 const memory = new Map()
 const fallback = {
@@ -50,17 +60,33 @@ async function remove(key) {
   const rest = fallback.all()
   if (rest.some(e => e.key === key)) fallback.write(rest.filter(e => e.key !== key))
 }
-// What the corner counts: the saves this reader can send now. One made by an account that is not
-// signed in waits for it, and is not counted meanwhile.
-const count = async () => { outbox.pending = (await entries()).filter(entry => sender?.mine(entry) !== false).length }
+// The saves this reader can send now. One made by an account that is not signed in waits for it, and
+// is not counted meanwhile.
+const mine = async () => (await entries()).filter(entry => sender?.mine(entry) !== false)
+// What the corner counts, what is stored, and what another tab saw refused.
+const count = async () => {
+  const all = await entries()
+  outbox.pending = all.filter(entry => sender?.mine(entry) !== false).length
+  outbox.keys = all.map(entry => entry.key)
+  const lost = storedLost().filter(key => !outbox.lost.includes(key))
+  if (lost.length) outbox.lost.push(...lost)
+}
 
 /**
- * The crops kept saves decide, by id: the crops of a kept round (flagged, seen or skipped) and of a kept
- * correction. They still read as pending until the saves are sent, so a round dealt meanwhile leaves
- * them out. A save whose undo is kept too decides nothing.
+ * Where a kept save stands, by its key: `kept` while it is stored (also while it waits for an account
+ * that is not signed in), `refused` once the site refused it, else `sent`.
+ */
+export const keptState = key => outbox.lost.includes(key) ? 'refused' : outbox.keys.includes(key) ? 'kept' : 'sent'
+
+/**
+ * The crops this reader's kept saves decide, by id: the crops of a kept round (flagged, seen or skipped)
+ * and of a kept correction. They still read as pending until the saves are sent, so a round dealt
+ * meanwhile leaves them out. A save whose undo is kept too decides nothing, and one another account
+ * made leaves its crops to this reader. Until the page knows who reads, every kept save's crops are
+ * left out.
  */
 export async function keptCrops() {
-  const kept = await entries()
+  const kept = sender && !sender.known() ? await entries() : await mine()
   const undone = new Set(kept.map(entry => /\/([^/]+)\/undo$/.exec(entry.path)?.[1]).filter(Boolean))
   const crops = new Set()
   for (const { body } of kept) {
@@ -72,19 +98,21 @@ export async function keptCrops() {
 }
 
 /** Whether any save is kept, in this tab or another: a new save then joins the end of the line. */
-export const anyKept = async () => outbox.pending > 0 || (await entries()).some(entry => sender?.mine(entry) !== false)
+export const anyKept = async () => outbox.pending > 0 || (await mine()).length > 0
 
 // `send(entry)` makes one save and answers `{ response, value }`, or `{ wait: true, retryAfter, paused }`
 // when it cannot be sent yet (`retryAfter` in seconds, 0 for no particular wait), or `{ skip: true }`
 // when it belongs to an account that is not signed in. `settle` turns an answer into the saved value
-// or the error a view shows; `mine(entry)` says whether the signed-in reader may send it; `kept()` is
-// the error a caller gets for a save kept while writes are paused. All four come from `client.js`.
+// or the error a view shows; `mine(entry)` says whether the signed-in reader may send it; `known()`
+// whether the page knows yet who reads; `kept()` is the error a caller gets for a save kept while
+// writes are paused. All five come from `client.js`.
 let sender = null
 export function useSender(value) { sender = value }
 
 /** Whether a save can be kept: it names its submission, so sending it twice records it once. */
 export const keepable = (path, body) => typeof body?.id === 'string' || /\/undo$/.test(path)
-const keyOf = (path, body) => path + '#' + (typeof body?.id === 'string' ? body.id : '')
+/** The key a save is kept under. */
+export const keyOf = (path, body) => path + '#' + (typeof body?.id === 'string' ? body.id : '')
 
 // The page's own callers wait for their save; one kept from an earlier page has nobody waiting.
 const waiting = new Map()
@@ -169,6 +197,7 @@ async function run() {
         if (tries < TRIES) { failed.set(entry.key, tries); again(); return }
         failed.delete(entry.key)
         await remove(entry.key)
+        refuse(entry.key)
         if (!settleWaiters(entry.key, waiter => waiter.reject(error))) outbox.refused.push({ key: entry.key, message: error.message })
         continue
       }
@@ -187,6 +216,7 @@ async function run() {
       try { value = sender.settle(answer) } catch (error) {
         // A refusal (the crop changed since, say) goes to the view that made the save, which shows it
         // as it shows any refusal; a save from an earlier page is shown in the corner instead.
+        refuse(entry.key)
         if (!settleWaiters(entry.key, waiter => waiter.reject(error))) outbox.refused.push({ key: entry.key, message: error.message })
         continue
       }
@@ -196,14 +226,24 @@ async function run() {
   await count()
 }
 
-/** On page load: count what an earlier page left, send it, and send again when the browser is back online. */
+/**
+ * On page load: count what an earlier page left, send it, and send again when the browser is back
+ * online. What another tab sent or saw refused is read again when this one is shown or focused, or
+ * when that tab writes the list it shares.
+ */
 export function resume() {
   count().then(() => { if (outbox.pending) drain() })
   const online = () => drain()
   const visible = () => { if (document.visibilityState === 'visible') count().then(() => { if (outbox.pending) drain() }) }
+  const shared = event => { if (event.key === LOST || event.key === FALLBACK) count() }
   addEventListener('online', online)
+  addEventListener('focus', visible)
+  addEventListener('storage', shared)
   document.addEventListener('visibilitychange', visible)
-  return () => { removeEventListener('online', online); document.removeEventListener('visibilitychange', visible); clearTimeout(timer) }
+  return () => {
+    removeEventListener('online', online); removeEventListener('focus', visible); removeEventListener('storage', shared)
+    document.removeEventListener('visibilitychange', visible); clearTimeout(timer)
+  }
 }
 
 export const dismiss = key => { outbox.refused = outbox.refused.filter(r => r.key !== key) }
