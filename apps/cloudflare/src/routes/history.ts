@@ -32,6 +32,10 @@ export const encodeCursor = (c: Cursor) => btoa(JSON.stringify([c.at, c.src, c.i
 export function decodeCursor(value: string): Cursor {
   try {
     const d = JSON.parse(atob(value));
+    // A page loaded before the cutover holds the old cursor, its last row's time and text id: the list
+    // goes on from before that time.
+    if (Array.isArray(d) && d.length === 2 && typeof d[0] === 'string' && typeof d[1] === 'string' && Number.isSafeInteger(Date.parse(d[0])))
+      return { at: Date.parse(d[0]), src: 0, id: 0 };
     if (!Array.isArray(d) || d.length !== 3 || !d.every(Number.isSafeInteger) || (d[1] !== 0 && d[1] !== 1)) throw 0;
     return { at: d[0], src: d[1], id: d[2] };
   } catch { throw new Problem(422, 'Invalid cursor.') }

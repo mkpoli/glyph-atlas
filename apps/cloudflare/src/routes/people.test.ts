@@ -266,7 +266,15 @@ describe('the history', () => {
 
   it('keeps a cursor to its three numbers', () => {
     expect(decodeCursor(encodeCursor({ at: 5, src: 1, id: 9 }))).toEqual({ at: 5, src: 1, id: 9 });
-    for (const bad of ['not-base64!!', btoa('[1,2]'), btoa('[1,2,3]'), btoa('["1",0,3]')]) expect(() => decodeCursor(bad)).toThrow('Invalid cursor.');
+    for (const bad of ['not-base64!!', btoa('[1,2]'), btoa('[1,2,3]'), btoa('["1",0,3]'), btoa('["soon","cf:x"]')]) expect(() => decodeCursor(bad)).toThrow('Invalid cursor.');
+  });
+
+  it('goes on from a page loaded before the cutover, from before its last row\'s time', async () => {
+    const { env } = setup();
+    const legacy = old.encodeCursor(minute(5), 'cf:e5');
+    expect(decodeCursor(legacy)).toEqual({ at: ms(5), src: 0, id: 0 });
+    const { items } = await history(env, new URLSearchParams({ before: legacy }), null, tools);
+    expect(items.map((i: Json) => i.id)).toEqual(['4', '3', '2', 'reviewer-0000000a:r1', '1']);
   });
 
   it('lists the undo of a review and leaves out a mark and the undo that clears it', async () => {
