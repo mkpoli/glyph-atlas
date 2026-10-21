@@ -232,6 +232,36 @@ def test_a_box_no_cut_has_on_a_crop_with_two_earlier_boxes_is_not_guessed(layout
     assert out.execute("SELECT count(*) FROM seen").fetchone()[0] == 0
 
 
+def test_an_event_keeps_its_recorded_issue_and_what_it_replaced(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    box = {"x": 0, "y": 20, "w": 10, "h": 10}
+    reading = list(event("cf:1", "ex:a2", "u1:s1", "u1", 0, "2026-10-01T00:00:02Z", box, verdict="wrong", issue="reading"))
+    redrawn = {"x": 1, "y": 21, "w": 9, "h": 9}
+    reading[5] = json.dumps({"box": redrawn, "box_pending": True, "state": "flagged", "issue": "reading", "page_id": "hl:p9"})
+    sources(root, events=[tuple(reading)])
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    issue = dict(out.execute("SELECT key, code FROM codes WHERE field='issue'"))
+    state = dict(out.execute("SELECT key, code FROM codes WHERE field='state'"))
+    # The event keeps the issue as recorded; what the crop held before reads `reading` as `character`, as the
+    # old site renamed it (its migration 0055).
+    assert list(out.execute("SELECT issue, reverses, was_state, was_issue, was_x, was_y, was_w, was_h, kept_issue FROM events")) == [
+        (issue["reading"], None, state.get("flagged", 2), issue["character"], 1, 21, 9, 9, None)]
+
+
+def test_a_batch_that_left_a_reported_crop_reported_moves_with_its_kept_issue(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    box = {"x": 0, "y": 20, "w": 10, "h": 10}
+    kept = list(event("cf:1", "ex:a2", "u1:s1", "u1", 0, "2026-10-01T00:00:02Z", box, verdict="match"))
+    kept[6] = json.dumps({"label": "あ", "state": "flagged", "issue": "crop", "box": box})
+    sources(root, events=[tuple(kept)])
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    issue = dict(out.execute("SELECT key, code FROM codes WHERE field='issue'"))
+    # The answer matched; the crop stays reported for its box.
+    assert list(out.execute("SELECT issue, kept_issue FROM events")) == [(None, issue["crop"])]
+
+
 def test_events_keep_the_label_shown_and_the_character_named(layout, monkeypatch):  # noqa: F811
     root, _publish, _remote = layout
 

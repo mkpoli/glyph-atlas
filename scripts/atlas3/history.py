@@ -5,7 +5,7 @@
 Reads the `source-*.sqlite` copies (`pull.py`) and the publisher's local copies (`out/mirror.sqlite`,
 `out/atlas.sqlite`, `out/pages/`), never writes them, and writes:
 
-- `out/history.sqlite`: the tables of `0003_history.sql`, with `events`, `skips` and `codes` from
+- `out/history.sqlite`: the tables of `0003_history.sql` and `0009_undo.sql`, with `events`, `skips` and `codes` from
   `0001_init.sql`, holding the translated rows;
 - `out/history-cuts.json`: each crop's earlier version, cut -1, for the publisher to put in its bundle;
 - `out/history-tombstones.json`: crops an event names that the mirror lacks, for the publisher to number;
@@ -52,6 +52,11 @@ def ms(value):
     if value is None:
         return None
     return round(datetime.fromisoformat(value).timestamp() * 1000)
+
+
+def legacy_issue(issue):
+    """An issue as the old site's crops name it since its migration 0055: `reading` is `character`."""
+    return "character" if issue == "reading" else issue or None
 
 
 def box_of(value):
@@ -131,6 +136,7 @@ def create(db):
         if m and (m[1] or m[2]) in ("events", "skips", "codes", "actor_stats"):
             db.execute(body)
     db.executescript((SCHEMA / "0003_history.sql").read_text())
+    db.executescript((SCHEMA / "0009_undo.sql").read_text())
     for s in statements(SCHEMA / "0010_people.sql"):
         body = "\n".join(line for line in s.splitlines() if not line.startswith("--"))
         m = re.match(r"CREATE (?:UNIQUE )?INDEX \w+ ON (\w+)", body)
@@ -141,7 +147,8 @@ def create(db):
 
 # The columns of a translated event, in the order history rows give them.
 EVENT_COLUMNS = ("id", "crop", "revision", "cut", "gen", "actor", "submission", "at", "kind", "label", "state", "style", "quiz",
-                 "x", "y", "w", "h", "note", "issue", "text", "shown", "named", "reading", "saved_reading", "legacy")
+                 "x", "y", "w", "h", "note", "issue", "text", "reverses", "was_state", "was_issue", "was_x", "was_y",
+                 "was_w", "was_h", "kept_issue", "shown", "named", "reading", "saved_reading", "legacy")
 
 
 class Crops:
@@ -394,6 +401,8 @@ def main():
         if state is None:
             problems.append(f"state {after.get('state')!r} has no code")
         verdict = codes["kind"].get(evidence.get("verdict"))
+        # The issue as the reviewer recorded it: the export hands `reading` on as it was chosen. Migration 0055
+        # of the old site renamed the crops' `reading` to `character`, so what the crop held reads it so.
         issue = evidence.get("issue") or None
         if issue is not None and issue not in codes["issue"]:
             problems.append(f"issue {issue!r} has no code")
@@ -410,6 +419,13 @@ def main():
                        codes["issue"].get(issue),
                        # Typed characters: `suggested_text`, or `suggested_reading` in reviews saved before it.
                        evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
+                       # What an undo restores (0009): no event reverses another yet; the state, issue and
+                       # redrawn box before the review.
+                       None, atlas_codes["state"].get(before.get("state")), codes["issue"].get(legacy_issue(before.get("issue"))),
+                       *((box_of(before.get("box")) if before.get("box_pending") else None) or (None,) * 4),
+                       # The issue a batch left a reported crop with: the event's answer names the character.
+                       (codes["issue"].get(legacy_issue(after.get("issue")))
+                        if legacy_issue(after.get("issue")) not in (None, legacy_issue(issue)) else None),
                        graphemes.get(shown) if shown else None, graphemes.get(named) if named else None, reading,
                        (evidence.get("correction") or {}).get("reading"), r["id"]))
     out.executemany(f'INSERT INTO events({",".join(EVENT_COLUMNS)}) VALUES({",".join("?" * len(EVENT_COLUMNS))})',
