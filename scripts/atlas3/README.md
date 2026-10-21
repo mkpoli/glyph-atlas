@@ -167,9 +167,9 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    before step 9 uploads anything.
 3. **Copy** the live tables again, `pull.py --fresh`, from a Codespace with the Cloudflare
    credentials: the copy is about 3 GB and the uploads after it are large.
-4. **Publish** the copy (`catalogue.py` writes it from the copies as `catalogue.sqlite`, then
-   `publish.py work/atlas-v3/catalogue.sqlite`, which re-cuts crops whose box changed and numbers retired
-   ones), merge its images into the map (`media_map.py`) and publish the answers (`answers.py`).
+4. **Publish** the copy (`catalogue.py --parts 6` writes it from the copies as `catalogue-<k>.sqlite`,
+   whole books in each, then `publish.py work/atlas-v3/catalogue-<k>.sqlite` for each k: one publish of
+   the whole copy outgrows 16 GB; it re-cuts crops whose box changed and numbers retired ones), merge its images into the map (`media_map.py`) and publish the answers (`answers.py`).
    Before publishing, load the history and crop facts described below, using
    `crop_facts.py --send --defer-crops`. Then `fill.py --send` adds `priority` (0011) and `family`
    (0012, which also gives the empty `tally` a family and witness decade). It fills family, priority
