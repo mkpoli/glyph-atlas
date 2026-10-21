@@ -5,7 +5,7 @@ L2-normalised. On HI Lab crops (2026-09-27) they found a crop's nearest other cr
 character 81% of the time for characters the classifier knows and 46% for the 689 it has no class
 for, in a gallery of 242,841 crops; a general-purpose DINOv2-S found 2–4%.
 
-Two kinds of crop are embedded, keyed by the ids the site serves:
+Two kinds of crop are embedded, keyed by their source ids:
 
 - corpus glyphs, from the corpus datasets under `root` (`corpus.index.UNIT_CORPORA`): every active
   character unit whose page scan or crop file is on disk (`form_clusters.Pixels`). CODH glyphs, whose
@@ -309,13 +309,37 @@ def shard_of(identity: str, digits: int = SHARD_DIGITS) -> str:
     return hashlib.sha256(identity.encode()).hexdigest()[:digits]
 
 
+def public_crop_ids(source_ids: list[str], mirror: Path) -> dict[str, str]:
+    """Public ids from the migration mirror; refuse unknown crops before writing a plan."""
+    if not source_ids:
+        return {}
+    if not mirror.is_file():
+        raise ValueError("the v3 mirror is required to publish new similarity entries")
+    digits = "0123456789abcdefghjkmnpqrstvwxyz"
+    result = {}
+    with sqlite3.connect(f"file:{mirror}?mode=ro", uri=True) as db:
+        for source in source_ids:
+            row = db.execute("SELECT id FROM ids WHERE text=?", (source,)).fetchone()
+            if row is None or not isinstance(row[0], int) or not 2**24 <= row[0] < 2**53:
+                raise ValueError(f"crop {source!r} has no valid v3 id; publish the crop first")
+            number, encoded = row[0], ""
+            while number:
+                number, digit = divmod(number, 32)
+                encoded = digits[digit] + encoded
+            result[source] = encoded
+    if len(set(result.values())) != len(result):
+        raise ValueError("similarity entries name the same v3 crop more than once")
+    return result
+
+
 def neighbours(directory: Path, *, k: int = NEIGHBOURS, block: int = 1024, gallery: int = 262144,
-               digits: int = SHARD_DIGITS) -> dict:
+               digits: int = SHARD_DIGITS, mirror: Path) -> dict:
     """Each crop's nearest crops, and its nearest crops filed under another label, as shards.
 
     Writes `<directory>/neighbours/<shard>.json`, each `{id: {"similar": [[id, score], ...],
     "filed_differently": [[id, score], ...]}}` with cosine scores to three places, and
-    `neighbours/manifest.json` naming the shard width. `filed_differently` is its own search over the
+    `neighbours/manifest.json` naming the shard width and public id format. The mirror maps source
+    ids to public crop ids before the GPU calculation starts. `filed_differently` is its own search over the
     crops with another label, so a common character still gets one. A crop without a label is listed
     in `similar` only and has no `filed_differently` list.
 
@@ -326,7 +350,8 @@ def neighbours(directory: Path, *, k: int = NEIGHBOURS, block: int = 1024, galle
     import torch
 
     rows = pq.read_table(directory / "units.parquet", columns=["id", "label"]).to_pydict()
-    ids, labels = rows["id"], rows["label"]
+    mapped = public_crop_ids(rows["id"], mirror)
+    ids, labels = [mapped[source] for source in rows["id"]], rows["label"]
     vectors = torch.from_numpy(np.load(directory / "vectors.npy")).cuda()
     codes: dict[str, int] = {}
     label_codes = torch.tensor([codes.setdefault(label, len(codes)) if label else -1 for label in labels],
@@ -388,7 +413,7 @@ def neighbours(directory: Path, *, k: int = NEIGHBOURS, block: int = 1024, galle
     if shard is not None:
         write(shard, entries)
         written += 1
-    manifest = {"crops": len(ids), "k": k, "shard_digits": digits, "shards": written}
+    manifest = {"crops": len(ids), "k": k, "shard_digits": digits, "shards": written, "id_format": "public"}
     (staging / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
     shutil.rmtree(target, ignore_errors=True)
     os.replace(staging, target)
@@ -407,11 +432,13 @@ def vectorize_index_name(encoder: str) -> str:
     return f"glyph-atlas-similar-{encoder[:8]}"
 
 
-def vectorize_plan(directory: Path, state: Path, out: Path) -> dict:
+def vectorize_plan(directory: Path, state: Path, out: Path, *, mirror: Path) -> dict:
     """What a Vectorize index needs to hold `directory`'s crops, given what `state` says it holds.
 
     `state` is the parquet `publish_reverse.sh` keeps beside the index after each upload (`id`,
-    `fingerprint`, `label`, `origin`); it is absent for a new index. Writes to `out`:
+    `source_id`, `fingerprint`, `label`, `origin`); it is absent for a new index.
+    Existing entries keep their deployed ids; new entries use the crop’s public id from `mirror`.
+    Older state files used the source id as their deployed id. Writes to `out`:
 
     - `upsert-NNNN.ndjson`: every crop that is new, or whose vector, label or origin changed, as
       Vectorize records `{"id", "values", "metadata": {"label", "origin"}}`, `VECTORIZE_BATCH` a
@@ -420,26 +447,29 @@ def vectorize_plan(directory: Path, state: Path, out: Path) -> dict:
     - `state.parquet`: what the index holds once both are applied;
     - `plan.json`: the index name, the encoder, the revision and the counts.
 
-    A crop id longer than Vectorize allows stops the run before anything is written.
+    Missing crop mappings or invalid deployed ids stop the run before anything is written.
     """
     manifest = json.loads((directory / "manifest.json").read_text())
     encoder = manifest["encoder"]
     rows = pq.read_table(directory / "units.parquet", columns=["id", "label", "origin", "fingerprint"]).to_pydict()
-    long = [i for i in rows["id"] if len(i.encode()) > VECTORIZE_ID_BYTES]
-    if long:
-        raise ValueError(f"{len(long)} crop ids are longer than {VECTORIZE_ID_BYTES} bytes, such as {long[0]!r}")
     held: dict[str, tuple] = {}
     if state.is_file():
         old = pq.read_table(state).to_pydict()
         if old.get("encoder") and set(old["encoder"]) != {encoder}:
             raise ValueError(f"{state} holds another encoder's vectors; a new encoder takes a new index")
-        held = {i: (f, label, o) for i, f, label, o in
-                zip(old["id"], old["fingerprint"], old["label"], old["origin"], strict=True)}
+        held = {source: (i, f, label, origin) for source, i, f, label, origin in
+                zip(old.get("source_id", old["id"]), old["id"], old["fingerprint"], old["label"], old["origin"], strict=True)}
+    fresh = public_crop_ids([source for source in rows["id"] if source not in held], mirror)
+    deployed = [held[source][0] if source in held else fresh[source] for source in rows["id"]]
+    if len(set(deployed)) != len(deployed):
+        raise ValueError("similarity entries reuse a deployed vector id")
+    if any(len(identity.encode()) > VECTORIZE_ID_BYTES for identity in deployed):
+        raise ValueError(f"a deployed vector id is longer than {VECTORIZE_ID_BYTES} bytes")
     vectors = np.load(directory / "vectors.npy", mmap_mode="r")
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     changed = [n for n, i in enumerate(rows["id"])
-               if held.get(i) != (rows["fingerprint"][n], rows["label"][n], rows["origin"][n])]
+               if i not in held or held[i][1:] != (rows["fingerprint"][n], rows["label"][n], rows["origin"][n])]
     for start in range(0, len(changed), VECTORIZE_BATCH):
         lines = []
         for n in changed[start:start + VECTORIZE_BATCH]:
@@ -448,14 +478,15 @@ def vectorize_plan(directory: Path, state: Path, out: Path) -> dict:
                 metadata["label"] = rows["label"][n]
             # Four significant digits: within 5e-4 of the float16 value, which a cosine search does not notice.
             values = "[" + ",".join(f"{v:.4g}" for v in vectors[n].astype(np.float32).tolist()) + "]"
-            lines.append(f'{{"id":{json.dumps(rows["id"][n])},"values":{values},'
+            lines.append(f'{{"id":{json.dumps(deployed[n])},"values":{values},'
                          f'"metadata":{json.dumps(metadata, ensure_ascii=False)}}}')
         (out / f"upsert-{start // VECTORIZE_BATCH:04d}.ndjson").write_text("\n".join(lines) + "\n", encoding="utf-8")
     current = set(rows["id"])
-    gone = sorted(i for i in held if i not in current)
+    gone = sorted(held[source][0] for source in held if source not in current)
     (out / "delete.txt").write_text("".join(f"{i}\n" for i in gone))
-    pq.write_table(pa.table({**{k: rows[k] for k in ("id", "fingerprint", "label", "origin")},
-                             "encoder": [encoder] * len(rows["id"])}), out / "state.parquet")
+    pq.write_table(pa.table({"id": deployed, "source_id": rows["id"],
+                            **{k: rows[k] for k in ("fingerprint", "label", "origin")},
+                            "encoder": [encoder] * len(rows["id"])}), out / "state.parquet")
     plan = {"index": vectorize_index_name(encoder), "encoder": encoder, "revision": manifest["revision"],
             "crops": len(rows["id"]), "dimensions": int(vectors.shape[1]), "upsert": len(changed),
             "delete": len(gone), "files": -(-len(changed) // VECTORIZE_BATCH)}

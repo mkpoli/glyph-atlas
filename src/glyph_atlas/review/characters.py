@@ -11,11 +11,11 @@ The routes are read-only except for one write, and that write keeps the layers a
     GET  /layers/summary
     GET  /layers/search?q=&expand=none|grapheme&limit=&offset=
     GET  /layers/characters/{code_point}?expand=&state=&limit=&offset=
-    GET  /layers/occurrences?code_point=&expand=&state=&limit=&offset=
+    GET  /layers/occurrences?code_point=&expand=&state=&limit=&after=
     GET  /layers/graphemes?q=&group=&forms=&limit=&offset=
     GET  /layers/graphemes/{code_point}
     GET  /layers/ligatures
-    GET  /layers/candidates?code_point=&limit=
+    GET  /layers/candidates?code_point=&limit=&after=
     POST /layers/units/{unit_id}
 
 Search is exact by default: a query that names a character answers that character and nothing else,
@@ -1017,9 +1017,11 @@ def router(store: Store) -> APIRouter:
         expand: str = Query("none", pattern=r"^(none|grapheme|jibo|variants)(,(grapheme|jibo|variants))*$"),
         state: Literal["all", "pending", "checked", "flagged"] = "all",
         limit: Annotated[int, Query(ge=1, le=96)] = 48,
-        offset: Annotated[int, Query(ge=0)] = 0,
+        after: Annotated[str | None, Query(pattern=r"^\d{1,9}$")] = None,
     ) -> dict[str, Any]:
-        """The ink of one character, paged: the tiles the collection draws, filtered by form."""
+        """The ink of one character, paged: the tiles the collection draws, filtered by form. A page
+        starts where the page before said its `next` one does, as the site's galleries page."""
+        offset = int(after or 0)
         row = known(code_point)
         current = layer()
         rows = current.rows(row.code_point, expand=expand, state=state)
@@ -1031,7 +1033,8 @@ def router(store: Store) -> APIRouter:
                                  for unit, *_ in page})
         return {"query": row.code_point, "expand": expand, "counts": counts,
                 "items": [{**current.item(unit, revision, form, exact), "form": forms.get(unit.id)}
-                          for unit, revision, form, exact in page]}
+                          for unit, revision, form, exact in page],
+                "next": str(offset + limit) if offset + limit < len(rows) else None}
 
     @api.get("/layers/graphemes")
     def grapheme_list(
@@ -1096,7 +1099,7 @@ def router(store: Store) -> APIRouter:
     def candidates(
         code_point: str,
         limit: Annotated[int, Query(ge=1, le=200)] = 24,
-        offset: Annotated[int, Query(ge=0)] = 0,
+        after: Annotated[str | None, Query(pattern=r"^\d{1,9}$")] = None,
         scope: Literal["character", "grapheme", "variants"] = "character",
         visual_group: Annotated[str | None, Query(max_length=160)] = None,
     ) -> dict[str, Any]:
@@ -1104,8 +1107,10 @@ def router(store: Store) -> APIRouter:
 
         Reads the glyph reading and the cached character summary only. The text matches a corpus
         holds are counted here but not fetched — reading them walks every occurrence in every indexed
-        transcription — and a reader who wants to see them asks `/layers/candidates/hits`.
+        transcription — and a reader who wants to see them asks `/layers/candidates/hits`. A page
+        starts where the page before said its `next` one does.
         """
+        offset = int(after or 0)
         row = known(code_point)
         current = layer()
         counts, _ = corpus_source.safe(corpus_source.counts, [row.char])
@@ -1135,7 +1140,8 @@ def router(store: Store) -> APIRouter:
                 "unassigned_count": payload.get("unassigned_count"),
                 "visual_analysis": visual_families.family_analysis(row.code_point),
                 "retry": fault == "not-loaded", "available": len(glyphs),
-                "glyph_items": glyphs, "items": glyphs}
+                "glyph_items": glyphs, "items": glyphs,
+                "next": str(offset + len(glyphs)) if glyphs and offset + len(glyphs) < payload.get("total", 0) else None}
 
     @api.get("/layers/visual-groups/samples/{identity:path}/image")
     def visual_sample(identity: str) -> FileResponse:

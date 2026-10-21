@@ -22,6 +22,7 @@
   import { onMount, untrack, tick } from 'svelte'
   import { request } from '../lib/client.js'
   import { readCrop } from '../lib/cropCache.js'
+  import { cropAddress, useInspector } from '../lib/inspector.svelte.js'
   import { isSingle, offersSuggestions, greetSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   import CropReview from './CropReview.svelte'
@@ -32,7 +33,7 @@
   // `cited` is the cut the page's address cites (`citedCut`), noted over the glyph when it is not the one shown.
   let { id, close, saved, changed = null, previous = null, next = null, position = '', initial = null, preview = null, cited = null } = $props()
   const first = untrack(() => initial)
-  const session = useSession()
+  const session = useSession(), inspector = useInspector()
   // Going on to the next crop disables the focused save button while it loads, which drops its focus;
   // once the crop is ready, focus returns to the button the reader was pressing. The save names the
   // crop it leaves, and the load of another crop arms the return.
@@ -45,10 +46,11 @@
   // The form the reviewer chose for the glyph, held until the save; null keeps the one it has.
   let form = $state(null)
   let loaded = $state(false), imageFailed = $state(false), suggestionsElement = $state(null)
-  let generation = 0, closed = false, submission = null, fresh = $state(Boolean(first))
+  let generation = 0, closed = false, submission = null, fresh = $state(Boolean(first)), swapped = false
   const sourceName = $derived(data?.source?.corpus === 'codh-full' ? 'CODH' : data?.source?.corpus || t('corpus.genericName'))
   async function load(target, preloaded = null) {
     const current = ++generation
+    swapped = false
     // The list's row stands in until the record arrives; nothing can be saved from it.
     data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded)
     error = ''; form = null; issue = null; correction = null; noneSelected = false
@@ -57,12 +59,20 @@
     dialog?.scrollTo({ top: 0 })
     try {
       const result = preloaded ?? await readCrop(target, 'corpus')
-      if (!closed && current === generation) { if (result.image !== data?.image) loaded = false; data = result; fresh = true }
+      if (!closed && current === generation) {
+        // A link by an old id opens the glyph it names now, and the address follows.
+        if (result.id !== target) {
+          if (location.pathname === cropAddress(target, 'corpus')) inspector.replaced(result.id, result.source_id, 'corpus')
+          swapped = true
+        }
+        if (result.image !== data?.image) loaded = false; data = result; fresh = true
+      }
     } catch (e) { if (!closed && current === generation) error = e.message }
   }
   // Only the first load, of the crop the page was rendered for, starts from `initial`.
   let preloaded = first
-  $effect(() => { const target = id; untrack(() => { load(target, preloaded); preloaded = null }) })
+  // An entry rewritten to the glyph on screen (`swapped`) needs no second read.
+  $effect(() => { const target = id; untrack(() => { if (swapped && target === data?.id) return; load(target, preloaded); preloaded = null }) })
   // Rendered open on the server, reopened as a modal once the script runs.
   onMount(() => { if (dialog.open) dialog.close(); dialog.showModal(); return () => { closed = true; generation++ } })
   // A skip goes where a save would: on to the next crop when the reader goes through the list in a row.

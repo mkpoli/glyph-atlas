@@ -1,16 +1,16 @@
 // Similar crops: the neighbour lists `atlas similar neighbours` computes are published to R2 by
 // scripts/publish_similar.sh as gzipped shards, `similar/<revision>/<shard>.json.gz`, where a crop's
 // shard is the first `shard_digits` hex digits of the SHA-256 of its id. `similar/current.json`
-// names the revision the site reads. The lists name crops by the text ids they had when the lists
-// were made: a crop is found by its text id in the alias map, and is its bundle entry's `id`. A
-// neighbour the site no longer holds is left out.
-import { bundle, pageOf, slotOf } from './atlas3';
+// names the revision the site reads. New lists use public crop ids. Older lists use source ids,
+// resolved through the frozen alias map and checked against each crop's bundle entry. A neighbour
+// the site no longer holds is left out.
+import { bundle, cropOf, pageOf, publicId, slotOf } from './atlas3';
 import { aliasCrops } from './atlas3Aliases';
 
 type Json = Record<string, any>;
 export type Neighbour = [string, number];
 type Entry = { similar?: Neighbour[]; filed_differently?: Neighbour[] };
-type Pointer = { revision: string; shard_digits: number };
+type Pointer = { revision: string; shard_digits: number; id_format?: 'public' };
 /** Listing items for crops by integer id, in the order asked; a crop that has none is left out. */
 export type Items = (env: Env, ids: number[]) => Promise<Json[]>;
 
@@ -23,7 +23,7 @@ async function current(env: Env): Promise<Pointer | null> {
   const object = await env.MEDIA.get('similar/current.json');
   if (!object) return null;
   const value = await object.json<Pointer>();
-  pointer = { revision: value.revision, shard_digits: value.shard_digits, read: Date.now() };
+  pointer = { ...value, read: Date.now() };
   return pointer;
 }
 
@@ -47,11 +47,12 @@ export async function textIdOf(env: Env, crop: number): Promise<string | null> {
   return typeof entry?.id === 'string' ? entry.id : null;
 }
 
-/** The neighbour lists of the crop whose text id is `id`; null names no crop, and has none. */
-export async function similarCrops(env: Env, id: string | null, limit: number, items: Items, ctx?: ExecutionContext): Promise<Json> {
+/** Neighbour lists use public crop ids, or the original source id for an older publication. */
+export async function similarCrops(env: Env, crop: number | null, limit: number, items: Items, ctx?: ExecutionContext): Promise<Json> {
   const empty = { revision: null, similar: [], filed_differently: [] };
   const at = await current(env);
   if (!at) return empty;
+  const id = crop === null ? null : at.id_format === 'public' ? publicId(crop) : await textIdOf(env, crop);
   if (id === null) return { ...empty, revision: at.revision };
   const object = await env.MEDIA.get(`similar/${at.revision}/${await shardOf(id, at.shard_digits)}.json.gz`);
   if (!object) return { ...empty, revision: at.revision };
@@ -63,15 +64,22 @@ export async function similarCrops(env: Env, id: string | null, limit: number, i
     filed_differently: await resolveNeighbours(env, entry.filed_differently ?? [], limit, items, known, undefined, ctx) };
 }
 
-/** Listing items for old text ids, keyed by text id. A text id is the crop it names only when that
- *  crop's entry carries it, so a redirect source, which named no crop of its own, is left out as
- *  before. One alias shard read per shard and one `items` call for the batch. */
-export async function itemsByTextId(env: Env, textIds: string[], items: Items, ctx?: ExecutionContext): Promise<Map<string, Json>> {
-  const crops = await aliasCrops(env, textIds, ctx);
+/** Resolve public crop ids directly and legacy source ids through the frozen alias map.
+ * A legacy id must still be the crop's source id; redirect aliases do not add duplicate results. */
+export async function itemsById(env: Env, names: string[], items: Items, ctx?: ExecutionContext): Promise<Map<string, Json>> {
+  const unique = [...new Set(names)], crops = new Map<string, number>(), legacy: string[] = [];
+  for (const name of unique) {
+    const crop = cropOf(name);
+    if (crop === null) legacy.push(name); else crops.set(name, crop);
+  }
+  for (const [name, crop] of await aliasCrops(env, legacy, ctx)) crops.set(name, crop);
   const ids = [...new Set(crops.values())];
+  const records = new Map((ids.length ? await items(env, ids) : []).map(item => [cropOf(item.id), item]));
   const found = new Map<string, Json>();
-  for (const item of ids.length ? await items(env, ids) : [])
-    if (crops.get(item.source_id) !== undefined) found.set(item.source_id, item);
+  for (const [name, crop] of crops) {
+    const item = records.get(crop);
+    if (item && (cropOf(name) !== null || name === item.source_id)) found.set(name, item);
+  }
   return found;
 }
 
@@ -87,7 +95,7 @@ export async function resolveNeighbours(env: Env, list: Neighbour[], limit: numb
   for (let start = 0; start < list.length && shown.length < limit; start += limit) {
     const batch = list.slice(start, start + limit);
     const wanted = batch.map(([n]) => n).filter(n => !known.has(n));
-    const found = wanted.length ? await itemsByTextId(env, wanted, items, ctx) : new Map();
+    const found = wanted.length ? await itemsById(env, wanted, items, ctx) : new Map();
     for (const n of wanted) known.set(n, found.get(n) ?? null);
     for (const [n, score] of batch) {
       const item = known.get(n);

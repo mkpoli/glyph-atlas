@@ -97,6 +97,20 @@ def replacement(text_id, redirects, live):
         at = redirects[at]
 
 
+# A crop whose character is written apart from its grapheme family's head (𛁅 for し), as the publisher
+# keeps `run_written` for a catalogue's crops: the head stands for the crop in its runs' graphemes, the
+# row for how it is written. A new layout's rows and texts come from runs.py, after the build.
+WRITTEN = """SELECT c.id, g.text FROM crops c JOIN graphemes g ON g.id = c.char
+  WHERE g.head IS NOT NULL AND g.head <> g.id"""
+
+
+def horizontal(rows):
+    """Stop on a run written across the page: the layout records no direction, since every run so far
+    is written down it (`run_stats.down` counts them); a column for it comes with the first one."""
+    if n := sum(1 for r in rows if not r["vertical"]):
+        sys.exit(f"{n} runs are written across the page; the layout has no column for their direction yet")
+
+
 STATE = {"pending": 0, "checked": 1, "flagged": 2}
 STYLE = {"cursive": 0, "running": 1, "unassessed": 2, "mixed": 3, "formal": 4, "printed": 5}
 
@@ -117,7 +131,6 @@ def main():
         next_slot INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE books(key TEXT PRIMARY KEY, id INTEGER NOT NULL UNIQUE) WITHOUT ROWID;
       CREATE TABLE codes(field TEXT, key TEXT, code INTEGER, PRIMARY KEY(field, key)) WITHOUT ROWID;
-      CREATE TABLE run_vertical(first INTEGER, size INTEGER, vertical INTEGER, PRIMARY KEY(first, size)) WITHOUT ROWID;
       CREATE TABLE book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
       CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
     """)
@@ -184,6 +197,8 @@ def main():
 
     # Collected crops: their page from the record, in id order within the page.
     units = src("units")
+    if "priority" not in {c[1] for c in units.execute("PRAGMA table_info(units)")}:
+        sys.exit("source-units.sqlite has no priority; pull.py --fresh units copies it")
     by_page = defaultdict(list)
     corpus_overlay = {}
     for r in units.execute("SELECT * FROM units WHERE _rowid IN (SELECT max(_rowid) FROM units GROUP BY id) AND origin <> 'retired' ORDER BY id"):
@@ -197,9 +212,11 @@ def main():
             pg = page(key, r["document"])
             year = years.get(r["document"])
             flags = 1 if data.get("suspect") else 0
-            row = (grapheme(r["character"]), None, None, code("visual_group", r["visual_group"]),
+            char = grapheme(r["character"])
+            row = (char, None, None, code("visual_group", r["visual_group"]),
                    production(r["production"]), code("category", r["category"]), code("style", r["style"]),
-                   code("state", r["state"]), r["quiz"], year, 0, r["revision"], flags)
+                   code("state", r["state"]), r["quiz"], year, 0, r["revision"], flags, r["priority"],
+                   grapheme(r["family"]))
             bundle = bundle_entry(data)
             for field in ("image", "context_image"):
                 image_key = (data.get(field) or "").rsplit("/", 1)[-1].split(".")[0]
@@ -220,15 +237,16 @@ def main():
                 o = corpus_overlay.get(r["id"])
                 state = code("state", o["state"]) if o else STATE["pending"]
                 quiz = o["quiz"] if o else 1
-                row = (grapheme((o["character"] if o else None) or r["character"]), None, None,
+                char = grapheme((o["character"] if o else None) or r["character"])
+                row = (char, None, None,
                        code("visual_group", r["visual_group"]), production(r["production"]), None,
                        code("style", r["style"]), state, quiz, years.get(r["document"]), 0,
-                       o["revision"] if o else 0, 0)
+                       o["revision"] if o else 0, 0, 1, grapheme(o["family"] if o else r["family"]))
                 add(r["id"], pg, 1, row, {"label": r["label"], "record_place": [r["object"], r["offset"], r["size"]]})
 
     print(f"crops {len(crops)} pages {len(pages)} books {len(books)} graphemes {len(graphemes)}", flush=True)
     atlas.executemany("INSERT INTO crops(id,kind,book,char,form,cluster,visual_group,production,category,style,"
-                      "state,quiz,year,cut,revision,flags,shuffle) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", crops)
+                      "state,quiz,year,cut,revision,flags,priority,family,shuffle) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", crops)
     atlas.executemany("INSERT INTO pages(id,key,book,rev,next_slot) VALUES(?,?,?,1,?)",
                       [(p["id"], k, p["book"], p["next"]) for k, p in pages.items()])
     atlas.executemany("INSERT INTO books(id,key) VALUES(?,?)", [(v, k) for k, v in books.items()])
@@ -270,7 +288,8 @@ def main():
     runs = sqlite3.connect(OUT / "atlas-runs.sqlite")
     runs.executescript(schema(RUNS_SCHEMA))
     ngrams = src("unit_ngrams")
-    out, stats, missing, vertical = [], defaultdict(lambda: [0, 0]), 0, []
+    horizontal(ngrams.execute("SELECT vertical FROM unit_ngrams"))
+    out, stats, missing = [], defaultdict(lambda: [0, 0]), 0
     for r in ngrams.execute("SELECT * FROM unit_ngrams"):
         a, b = ids.get(r["first"]), ids.get(r["second"])
         c = ids.get(r["third"]) if r["third"] else None
@@ -279,15 +298,12 @@ def main():
             continue
         g = r["graphemes"] or ""
         out.append((r["size"], g, r["hand_order"], shuffle(a), a, b, c, book(r["document"])))
-        vertical.append((a, r["size"], r["vertical"]))
         s = stats[(r["size"], g)]
         s[0] += 1
         s[1] += r["vertical"]
     runs.executemany("INSERT OR IGNORE INTO runs(size,graphemes,hand,shuffle,first,second,third,book) VALUES(?,?,?,?,?,?,?,?)", out)
     runs.executemany("INSERT INTO run_stats(size,graphemes,n,down) VALUES(?,?,?,?)", [(k[0], k[1], v[0], v[1]) for k, v in stats.items()])
     runs.commit()
-    mirror.executemany("INSERT INTO run_vertical VALUES(?,?,?)", vertical)
-    mirror.commit()
     print(f"runs {len(out)} stats {len(stats)} skipped {missing}", flush=True)
     if missing:
         sys.exit(f"{missing} runs name crops the build does not have")

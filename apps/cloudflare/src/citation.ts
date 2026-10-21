@@ -101,6 +101,10 @@ export function characterEntry(kind: 'grapheme' | 'form', card: Json): Entry {
 
 export const FORMATS = ['csl', 'bibtex', 'hayagriva'] as const;
 export type Format = typeof FORMATS[number];
+// How long the edge keeps a citation, and the type each format is served as.
+export const CITE_TTL = 3600;
+export const CITE_TYPES: Record<Format, string> = { csl: 'application/vnd.citationstyles.csl+json; charset=utf-8',
+  bibtex: 'application/x-bibtex; charset=utf-8', hayagriva: 'application/yaml; charset=utf-8' };
 /** The address that serves an entry in a format. */
 export const citeAddress = (entry: Entry, format: Format = 'csl') =>
   `/atlas/cite/${entry.kind}/${idPath(entry.id)}` + (entry.token ? '?v=' + entry.token : '')

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from './forms.test';
 import { bundleKey, cropId, cropItems, publicId } from './atlas3';
 import { aliasCrops } from './atlas3Aliases';
-import { pageRevQuery, resetPointer, shardOf, similarCrops, textIdOf } from './similar';
+import { itemsById, pageRevQuery, resetPointer, shardOf, similarCrops, textIdOf } from './similar';
 import { resetPointer as resetOldPointer, similarCrops as oldSimilarCrops } from './routes/fixtures/similar.old';
 
 // The Workers cache, as far as alias reads use it.
@@ -35,12 +35,13 @@ let pages = 7000;
 // published: a live crop, a retired one, one named only by a redirect, and one the alias map lacks.
 async function setup() {
   const db = new Database(':memory:'); databases.push(db);
-  db.exec(readFileSync(new URL('../migrations-atlas/0001_init.sql', import.meta.url), 'utf8'));
+  const migrations = new URL('../migrations-atlas/', import.meta.url);
+  for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
   // Each test takes a page and text ids of its own, since bundles and alias shards are held per isolate.
   const page = ++pages, n = page;
   const crop = (slot: number) => cropId(page, slot);
   const text = (name: string) => `hk:${n}:${name}`;
-  db.exec(`INSERT INTO books VALUES(1,'hk:book'); INSERT INTO graphemes(id,text) VALUES(1,'あ'),(2,'い');
+  db.exec(`INSERT INTO books(id,key) VALUES(1,'hk:book'); INSERT INTO graphemes(id,text) VALUES(1,'あ'),(2,'い');
     INSERT INTO codes VALUES('state',0,'pending');
     INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${page},'hk:book:${n}',1,3,5);
     INSERT INTO crops(id,kind,book,char,state,quiz,shuffle) VALUES(${crop(0)},0,1,1,0,1,1),(${crop(1)},0,1,2,0,1,2),
@@ -70,7 +71,7 @@ describe('similar crops', () => {
   it('finds the crop’s lists by its text id and answers each neighbour by public id, with its score', async () => {
     const { env, crop, text } = await setup();
     expect(await textIdOf(env, crop(0))).toBe(text('self'));
-    const result = await similarCrops(env, text('self'), 12, cropItems);
+    const result = await similarCrops(env, crop(0), 12, cropItems);
     expect(result.revision).toBe('r1');
     // A retired crop, a redirect source and a text id the map lacks are left out, as the old route left out
     // ids it held no unit for.
@@ -82,7 +83,7 @@ describe('similar crops', () => {
     const { env, crop, text } = await setup();
     const asked: number[][] = [];
     const items = async (e: Env, ids: number[]) => { asked.push([...ids]); return cropItems(e, ids); };
-    const one = await similarCrops(env, text('self'), 1, items);
+    const one = await similarCrops(env, crop(0), 1, items);
     expect(one.similar.map((i: any) => i.id)).toEqual([publicId(crop(1))]);
     // The first list's first id answers it; the second list's only id is already known.
     expect(asked).toEqual([[crop(1)]]);
@@ -91,24 +92,43 @@ describe('similar crops', () => {
   });
 
   it('answers empty lists before any revision is published, and for a crop no shard lists', async () => {
-    const { env, text, objects } = await setup();
+    const { env, crop, objects } = await setup();
     expect(await similarCrops(env, null, 12, cropItems)).toEqual({ revision: 'r1', similar: [], filed_differently: [] });
-    expect(await similarCrops(env, text('far'), 12, cropItems)).toEqual({ revision: 'r1', similar: [], filed_differently: [] });
+    expect(await similarCrops(env, crop(99), 12, cropItems)).toEqual({ revision: 'r1', similar: [], filed_differently: [] });
     resetPointer();
     objects.delete('similar/current.json');
-    expect(await similarCrops(env, text('self'), 12, cropItems)).toEqual({ revision: null, similar: [], filed_differently: [] });
+    expect(await similarCrops(env, crop(0), 12, cropItems)).toEqual({ revision: null, similar: [], filed_differently: [] });
   });
 
   it('answers as the old reader did, after its text ids are mapped to public ids', async () => {
-    const { env, text } = await setup();
+    const { env, crop, text } = await setup();
     // The old database held a unit for each crop the new layout holds live, by text id.
     const live = new Set([text('self'), text('near'), text('far')]);
     const old = await oldSimilarCrops(env, text('self'), 12, async (_, ids) =>
       new Map(ids.filter(id => live.has(id)).map(id => [id, { id }])));
-    const now = await similarCrops(env, text('self'), 12, cropItems);
+    const now = await similarCrops(env, crop(0), 12, cropItems);
     const mapped = await aliasCrops(env, [...live]);
     for (const list of ['similar', 'filed_differently'])
       expect(now[list].map((i: any) => [i.id, i.score])).toEqual(old[list].map((i: any) => [publicId(mapped.get(i.id)!), i.score]));
+  });
+
+  it('reads new public-id neighbours without the frozen alias map', async () => {
+    const { env, crop, objects, reads } = await setup();
+    for (const key of objects.keys()) if (key.startsWith('v3/aliases/')) objects.delete(key);
+    const name = publicId(crop(0));
+    objects.set('similar/current.json', new TextEncoder().encode(JSON.stringify({ revision: 'public', shard_digits: 2, id_format: 'public' })));
+    objects.set(`similar/public/${await shardOf(name, 2)}.json.gz`, gz({ [name]: { similar: [[publicId(crop(1)), .91]], filed_differently: [] } }));
+    expect((await similarCrops(env, crop(0), 2, cropItems)).similar.map((item: any) => [item.id, item.score]))
+      .toEqual([[publicId(crop(1)), .91]]);
+    expect(reads.some(key => key.startsWith('v3/aliases/'))).toBe(false);
+  });
+
+  it('resolves a mixed vector index while excluding redirected legacy ids', async () => {
+    const { env, crop, text } = await setup();
+    const names = [text('near'), publicId(crop(3)), text('redirected'), publicId(crop(9))];
+    const found = await itemsById(env, names, cropItems);
+    expect([...found.keys()]).toEqual([publicId(crop(3)), text('near')]);
+    expect(found.get(text('near'))?.id).toBe(publicId(crop(1)));
   });
 
   it('is routed by public id, and an old text id moves to it', async () => {

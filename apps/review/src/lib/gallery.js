@@ -72,11 +72,11 @@ export async function characterGallery(codePoint, { scope = null, visual = '', s
   order = expand === 'variants' ? '' : orderParam(order); years = expand === 'variants' ? '' : yearsParam(years)
   const dated = { order: order || undefined, years: years || undefined }
   const [found, widened, leads] = await Promise.all([
-    occurrences(codePoint, { expand, limit: 60, offset: 0, style: style || undefined, ...dated }, options),
+    occurrences(codePoint, { expand, limit: 60, style: style || undefined, ...dated }, options),
     // The chips read which widening is in force from the card fetched with it; a variants widening
     // changes no field of the card.
     expand === 'none' || expand === 'variants' ? card : layerCharacter(codePoint, expand, options).catch(() => card),
-    layerCandidates(codePoint, 60, 0, { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dated }, options)
+    layerCandidates(codePoint, 60, null, { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dated }, options)
       .catch(error => ({ fault: error.status === 502 ? 'error' : 'not-loaded' })),
   ])
   const corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
@@ -92,11 +92,13 @@ export async function characterGallery(codePoint, { scope = null, visual = '', s
     localStyles: found.styles ?? null,
     corpusStyles: leads.fault ? {} : leads.styles ?? null,
     local: found.items.map(item => ({ ...item, origin: 'collection' })),
+    localAfter: found.next ?? null,
     total: found.counts.total,
     available: found.counts.exact_total,
     withheld: found.withheld ?? null,
     corpus,
     corpusTotal: leads.glyphs ?? 0,
+    corpusAfter: leads.next ?? null,
     corpusFault: leads.fault ?? null,
     analysis: leads.visual_analysis ?? card.visual_analysis ?? null,
     familyTotal: leads.family_total ?? null,
