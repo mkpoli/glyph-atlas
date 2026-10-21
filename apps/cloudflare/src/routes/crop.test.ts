@@ -1,3 +1,4 @@
+import { nextPage } from './fixtures/pageIds';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
@@ -30,11 +31,6 @@ function schema(folder: string) {
 }
 function atlasSchema() {
   const db = schema('migrations-atlas');
-  // Columns and a table other ports add (people: `events.named`; review: `events.reverses`, `events.kept_issue`; claims:
-  // `representations`), until their migrations land in cutover.
-  db.exec(`ALTER TABLE events ADD COLUMN named INTEGER; ALTER TABLE events ADD COLUMN reverses INTEGER; ALTER TABLE events ADD COLUMN kept_issue INTEGER;
-    CREATE INDEX event_reverses ON events(reverses) WHERE reverses IS NOT NULL;
-    CREATE TABLE representations(id TEXT PRIMARY KEY, scheme TEXT NOT NULL, value TEXT NOT NULL, namespace TEXT, version TEXT) WITHOUT ROWID;`);
   return db;
 }
 
@@ -56,10 +52,9 @@ const old = (id: string, label: string, x: number, extra: object = {}) => ({ id,
 
 // An isolate holds the layout's build id for a minute; every test file names the same one.
 const BUILD = '20261020T120000';
-let pages = 7000;
 function setup() {
   const db = atlasSchema(), runs = schema('migrations-atlas-runs');
-  const page = ++pages, corpusPage = ++pages, book = 'hk:0123456789abcdef0123456789abcdef', pageKey = `${book}:4`;
+  const page = nextPage(), corpusPage = nextPage(), book = 'hk:0123456789abcdef0123456789abcdef', pageKey = `${book}:4`;
   const [a, b, c, d, r, x] = [0, 1, 2, 3, 4, 5].map(slot => cropId(page, slot));
   const glyph = cropId(corpusPage, 0);
   const text = { a: `hk:${page}:a`, b: `hk:${page}:b`, c: `hk:${page}:c`, d: `hk:${page}:d`, r: `hk:${page}:r`, x: `hk:${page}:x`, glyph: `codh:${page}:g` };
@@ -177,6 +172,8 @@ describe('a crop\'s record', () => {
     const { db, get, ids } = setup();
     db.exec('UPDATE events SET kept_issue=3 WHERE id=3');
     expect((await (await get(`/atlas/characters/${publicId(ids.b)}`)).json() as any).issue).toBe('blank');
+    const line = await (await get(`/atlas/characters/${publicId(ids.b)}/line`)).json() as any;
+    expect(line.items.find((item: any) => item.id === publicId(ids.b)).issue).toBe('blank');
   });
 
   it('shows a character a review wrote as its written identity', async () => {

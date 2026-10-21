@@ -48,11 +48,11 @@ describe('names for rows written in ATLAS', () => {
   it('name each actor by its user, and leave an actor with no account unnamed', async () => {
     const { env, bound } = setup();
     const found = await actorPeople(env, Array.from({ length: 250 }, (_, i) => i + 1));
-    expect(found.get(1)).toEqual({ user: 'u0', name: 'name 0', image: null, anonymous: false });
-    expect(found.get(5)).toEqual({ user: 'u4', name: 'name 4', image: null, anonymous: true });
+    expect(found.get(1)).toEqual({ key: 'k0', user: 'u0', name: 'name 0', image: null, anonymous: false });
+    expect(found.get(5)).toEqual({ key: 'k4', user: 'u4', name: 'name 4', image: null, anonymous: true });
     // A user deleted in ACCOUNTS whose actor links are not yet removed.
-    expect(found.get(242)).toEqual({ user: null, name: null, image: null, anonymous: false });
-    expect(found.get(250)).toEqual({ user: null, name: null, image: null, anonymous: false });
+    expect(found.get(242)).toEqual({ key: 'k241', user: null, name: null, image: null, anonymous: false });
+    expect(found.get(250)).toEqual({ key: 'k249', user: null, name: null, image: null, anonymous: false });
     expect(bound).toEqual([100, 100, 50, 100, 100, 45]);
     expect(await actorPeople(env, [])).toEqual(new Map());
   });

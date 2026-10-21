@@ -21,21 +21,34 @@ def load(publish, remote, monkeypatch, *flags):
 def test_history_loads_once_and_a_mark_becomes_the_crops_state(layout, monkeypatch):  # noqa: F811
     root, publish, remote = layout
     sources(root, events=[event("cf:1", "ex:a2", "u1:s1", "u1", 1, "2026-10-01T00:00:02Z", {"x": 0, "y": 20, "w": 10, "h": 10})],
-            seen=[("ex:a1", "u1:s1", json.dumps(A1), "p1", "2026-10-01T00:00:02Z")], unit_marks=[("ex:a1", "seen")])
+            seen=[("ex:a1", "u1:s1", json.dumps(A1), "p1", "2026-10-01T00:00:02Z")], unit_marks=[("ex:a1", "seen")],
+            forms=[("fm:1", "rp:1", "u1", "2026-10-01T00:00:00Z")], representations=[("rp:1", "ids", "⿰亻木", None, None)])
     assert history(monkeypatch, root)[0] == 0
     a1 = ids(root)["ex:a1"]
     before = crops(remote)[a1]
+    # A layout built before migration 0008 lacks `representations`; the load applies it.
+    for built_ in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        built_.execute("DROP TABLE representations")
+        built_.commit()
     load(publish, remote, monkeypatch)
     db = remote.dbs["glyph-atlas-v3"]
     seen_state = db.execute("SELECT code FROM codes WHERE field='state' AND key='seen'").fetchone()[0]
     assert crops(remote)[a1]["state"] == seen_state and crops(remote)[a1]["revision"] == before["revision"] + 1
     assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 2
     assert db.execute("SELECT count(*) FROM seen").fetchone()[0] == 1
+    # Migration 0008 is applied once, and the representations forms name arrive with the forms.
+    assert [tuple(r) for r in db.execute("SELECT * FROM representations")] == [("rp:1", "ids", "⿰亻木", None, None)]
+    assert db.execute("SELECT count(*) FROM imports WHERE stamp = 'migration:0008'").fetchone()[0] == 1
     # The local copy replays the same parts, and the mirror holds the mark states.
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
     assert local.execute("SELECT state, revision FROM crops WHERE id=?", (a1,)).fetchone() == (seen_state, before["revision"] + 1)
     assert sqlite3.connect(root / "out" / "mirror.sqlite").execute(
         "SELECT code FROM codes WHERE field='state' AND key='seen'").fetchone() == (seen_state,)
+    # D1 and the local copy hold every migration the rows need.
+    for copy in (db, local):
+        assert tuple(copy.execute("SELECT 1 FROM pragma_table_info('events') WHERE name='shown'").fetchone()) == (1,)
+        assert tuple(copy.execute("SELECT 1 FROM pragma_table_info('events') WHERE name='reverses'").fetchone()) == (1,)
+        assert tuple(copy.execute("SELECT 1 FROM sqlite_master WHERE name='corpus_rows'").fetchone()) == (1,)
     # A second run sends nothing.
     load(publish, remote, monkeypatch)
     assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 2

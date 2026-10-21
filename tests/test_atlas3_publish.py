@@ -306,6 +306,27 @@ def test_a_known_crop_with_another_box_is_re_cut_under_its_own_id(layout, monkey
     assert entry["box"] == {"x": 2, "y": 22, "w": 12, "h": 9}
 
 
+def test_a_re_cut_takes_a_marked_crop_back_to_pending_with_its_event(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1 = ids(root)["ex:a1"]
+    # A round marked the crop seen at its first cut: its state is the mark, one revision on.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("UPDATE crops SET state=3, revision=1 WHERE id=?", (a1,))
+        db.execute("INSERT INTO reviews(crop, gen, at, char, state) SELECT id, 0, 0, char, 3 FROM crops WHERE id=?", (a1,))
+        db.commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 1, "y": 1, "w": 9, "h": 9})]))
+    after = crops(remote)[a1]
+    assert (after["cut"], after["state"], after["revision"]) == (1, 0, 2)
+    db = remote.dbs["glyph-atlas-v3"]
+    assert [tuple(r) for r in db.execute("SELECT crop, revision, cut, actor, submission, kind, state FROM events")] == [(a1, 2, 1, 0, 0, 7, 0)]
+    assert [tuple(r) for r in db.execute("SELECT state FROM reviews")] == [(0,)]
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert local.execute("SELECT state, revision FROM crops WHERE id=?", (a1,)).fetchone() == (0, 2)
+    # A crop that is not marked keeps its state through a re-cut.
+    run(publish, monkeypatch, catalogue(tmp_path / "d.sqlite", [unit("ex:a1", "hl:p1", {"x": 2, "y": 2, "w": 8, "h": 8})]))
+    assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
+
+
 def test_fields_a_catalogue_does_not_carry_keep_their_values(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     a1 = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["ex:a1"]

@@ -35,6 +35,21 @@ export async function datingOf(env: Env, documents: (string | null | undefined)[
   return found;
 }
 
+// A book's axes in glyph-atlas-v3, by its integer id: one primary-key range a book.
+export const bookDatingQuery = () =>
+  `SELECT book,axis,kind,start,end,precision,qualifier,uncertain,text,label,status,calendar,conversion,source
+  FROM book_dates WHERE book IN (SELECT value FROM json_each(?))`;
+
+/** Each named book's axes, from `ATLAS.book_dates`, as `datingOf` gives a document's. */
+export async function bookDating(env: Env, books: (number | null | undefined)[]): Promise<Map<number, Json>> {
+  const wanted = [...new Set(books.filter((b): b is number => typeof b === 'number'))];
+  const found = new Map<number, Json>();
+  if (!wanted.length) return found;
+  const rows = await env.ATLAS.prepare(bookDatingQuery()).bind(JSON.stringify(wanted)).all<Json>();
+  for (const row of rows.results) found.set(row.book, { ...found.get(row.book), [row.axis]: axisOf(row) });
+  return found;
+}
+
 /** `items`, each with its document's `dating`: its axes, or `{}` for a book no source dates. */
 export async function withDating<T extends Json>(env: Env, items: T[], documentFor: (item: T) => string | null = documentOf): Promise<T[]> {
   const dating = await datingOf(env, items.map(documentFor));

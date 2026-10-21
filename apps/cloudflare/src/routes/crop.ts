@@ -130,7 +130,7 @@ async function cite(env: Env, ctx: ExecutionContext, url: URL, raw: string): Pro
 // stands flagged for, its last event's (`recordQuery`). One primary-key lookup per crop, and for a flagged
 // one the last entry of its `event_crop` range.
 export const listedCropsQuery = () => `SELECT c.id,s.key AS state,c.revision-${MARKS('c')} AS revision,g.text AS char,pg.rev,r.x,r.y,r.w,r.h,
-  CASE WHEN s.key='flagged' THEN (SELECT i.key FROM events e LEFT JOIN codes i ON i.field='issue' AND i.code=e.issue
+  CASE WHEN s.key='flagged' THEN (SELECT i.key FROM events e LEFT JOIN codes i ON i.field='issue' AND i.code=coalesce(e.kept_issue,e.issue)
     WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) END AS issue
   FROM json_each(?1) j JOIN crops c ON c.id=j.value AND c.kind=0 JOIN pages pg ON pg.id=c.id>>24
   LEFT JOIN codes s ON s.field='state' AND s.code=c.state LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN reviews r ON r.crop=c.id`;
