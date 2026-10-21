@@ -18,7 +18,7 @@ def module():
     return importlib.import_module("answers")
 
 
-def answers(publish, monkeypatch, *flags, packs=None, reads=None, sample=None):
+def answers(publish, monkeypatch, *flags, packs=None, reads=None, sample=None, collection=True):
     """Run answers.py with the fake D1 and uploads; R2 holds `packs` ({object: bytes}), each read counted in `reads`."""
     answers_module = module()
     uploaded = []
@@ -33,6 +33,7 @@ def answers(publish, monkeypatch, *flags, packs=None, reads=None, sample=None):
         return (packs or {})[key][offset:offset + size]
     monkeypatch.setattr(answers_module, "r2_reader", lambda: read)
     monkeypatch.setattr(answers_module, "status", lambda: {"crops": 3})
+    monkeypatch.setattr(answers_module, "COLLECTION", publish.OUT if collection else publish.OUT / "no-collection")
     monkeypatch.setattr(answers_module, "CORPUS_INDEX", publish.OUT / "corpus-index.json")
     monkeypatch.setattr(sys, "argv", ["answers.py", *flags])
     answers_module.main()
@@ -95,6 +96,13 @@ def test_unchanged_answers_publish_nothing(layout, monkeypatch):  # noqa: F811
     atlas.commit()
     time.sleep(1.1)
     assert answers(publish, monkeypatch, sample=0)[-1] == ("v3/", ["pointer.json"])
+
+
+def test_without_the_collection_s_folders_its_status_stays_as_published(layout, monkeypatch):  # noqa: F811
+    _root, publish, remote = layout
+    remote.dbs["glyph-atlas-v3"].execute("INSERT INTO site VALUES('collection', '{\"crops\":7}')")
+    answers(publish, monkeypatch, sample=0, collection=False)
+    assert dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, value FROM site"))["collection"] == '{"crops":7}'
 
 
 def test_a_dry_run_bumps_nothing_and_uploads_nothing(layout, monkeypatch):  # noqa: F811
