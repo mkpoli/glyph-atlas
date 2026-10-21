@@ -44,8 +44,9 @@ test('an attestation names a word or a gloss, how the sense is known, and how su
   expect(refused([member({ value: { gloss: 'herring ' }, confidence: 1, confidence_scheme: 'form' })], 'gloss')).toContain('is not a value')
 })
 
-test('the resolver names its version and runs over the site\'s own crops', () => {
+test('the resolver names its version and compares crop evidence by crop and cut', () => {
   expect(resolveWriteQuery()).toContain(`'${RESOLVER}' AS resolver`)
-  expect(resolveWriteQuery()).toContain('SELECT id,crop_version FROM units')
+  expect(resolveWriteQuery()).toContain('e.cut IS NOT (SELECT c.cut+EXISTS(SELECT 1 FROM reviews rv WHERE rv.crop=c.id AND rv.x IS NOT NULL)')
+  expect(resolveWriteQuery()).not.toContain('crop_now')
   expect(resolveWriteQuery()).not.toMatch(/^\s*--/m)
 })

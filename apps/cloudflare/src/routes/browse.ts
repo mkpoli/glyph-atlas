@@ -11,7 +11,7 @@ import { catalogueKey, catalogueStamps, publicationKey } from '../atlas3Stamps';
 import { Problem } from '../busy';
 import { categoryOf } from '../category';
 import { tallyDates } from '../dating';
-import { compose, graphemeKey, graphemeText, integer, literal, text } from '../index';
+import { compose, graphemeKey, graphemeText, integer, literal, text } from '../input';
 import { ROUND_MAX } from '../rounds';
 
 type Json = any;

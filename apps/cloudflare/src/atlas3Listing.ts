@@ -1,3 +1,4 @@
+import { cropForms } from './cropPanels';
 // Listing items on the new storage layout: each crop's bundle record under its row's values
 // (`cropItems`), with what the site has said of it since. A corpus glyph shows the form the forms tool
 // decided for it or its cluster, every crop the form a person named for its cut (`has_form`), and every
@@ -29,22 +30,6 @@ const unitForm = (row: CorpusForm): UnitForm => {
     written_family: own ? row.glyph_family : row.cluster_family };
 };
 
-// The form claims that hold on each crop's current cut: one `current_claim_crop` probe per crop. The
-// names of forms live with the representations, which the new layout does not hold yet.
-export const cropFormsQuery = () => `SELECT c.crop,c.status,c.members,c.claims,c.supporting FROM json_each(?) j
-  JOIN current_claims c ON c.crop=j.value AND c.predicate='has_form' JOIN crops k ON k.id=c.crop
-  WHERE c.scope='' AND c.slot='' AND c.cut=k.cut`;
-function formOf(row: { status: string; members: string; claims: string; supporting: string }): Json {
-  const members: Json[] = JSON.parse(row.members), claims: Json[] = JSON.parse(row.claims), supporting: string[] = JSON.parse(row.supporting);
-  // The values a slot holds: its current members, or, disputed, each standing claim's.
-  const values = members.length ? members : row.status === 'disputed' ? claims.filter(c => c.standing).flatMap(c => c.members) : [];
-  return { status: row.status,
-    values: values.map(m => m.object ? { form: m.object, scheme: null, text: null, confidence: m.confidence } : { state: m.value, confidence: m.confidence }),
-    supporting,
-    by: [...new Set(claims.filter(c => row.status === 'disputed' ? c.standing : c.members.some((m: Json) => supporting.includes(m.assertion)))
-      .map(c => c.asserted_by))] };
-}
-
 // Each book's dating on both axes, by book key: one unique-key and one primary-key probe per book.
 export const datingQuery = () => `SELECT b.key AS document,d.axis,d.kind,d.start,d.end,d.precision,d.qualifier,d.uncertain,
   d.text,d.label,d.status,d.calendar,d.conversion,d.source FROM json_each(?) j JOIN books b ON b.key=j.value
@@ -62,7 +47,7 @@ export async function datingOf(env: Env, documents: (string | null | undefined)[
 // next publication cuts it, and the issue its last event flagged it with. One primary-key probe and one
 // `event_crop` range per crop.
 export const reviewedQuery = () => `SELECT j.value AS crop,r.x,r.y,r.w,r.h,
-  (SELECT e.issue FROM events e WHERE e.crop=j.value ORDER BY e.revision DESC LIMIT 1) AS issue
+  (SELECT coalesce(e.kept_issue,e.issue) FROM events e WHERE e.crop=j.value ORDER BY e.revision DESC LIMIT 1) AS issue
   FROM json_each(?) j LEFT JOIN reviews r ON r.crop=j.value`;
 type Reviewed = { crop: number; x: number | null; y: number | null; w: number | null; h: number | null; issue: number | null };
 // A review saved before the issue was renamed names it `reading`; a record calls it `character`.
@@ -78,12 +63,12 @@ export async function listingItems(env: Env, ids: number[], given?: Map<number, 
   const corpus = items.filter(item => item.origin === 'corpus').map(item => crops.get(item.id)!);
   const [decided, claimed, dating, reviewed] = await Promise.all([
     corpus.length ? env.ATLAS.prepare(corpusFormsQuery()).bind(JSON.stringify(corpus)).all<CorpusForm>().then(r => r.results) : [],
-    env.ATLAS.prepare(cropFormsQuery()).bind(JSON.stringify(listed)).all<{ crop: number; status: string; members: string; claims: string; supporting: string }>(),
+    cropForms(env, listed),
     datingOf(env, items.map(item => item.document)),
     env.ATLAS.prepare(reviewedQuery()).bind(JSON.stringify(listed)).all<Reviewed>(),
   ]);
   const forms = new Map(decided.map(row => [row.id, unitForm(row)]));
-  const claims = new Map(claimed.results.map(row => [row.crop, formOf(row)]));
+  const claims = claimed;
   const since = new Map(reviewed.results.map(row => [row.crop, row]));
   let names = await codeNames(env);
   if (reviewed.results.some(row => row.issue !== null && !names.has(`issue:${row.issue}`))) names = await codeNames(env, true);

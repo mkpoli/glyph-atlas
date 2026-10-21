@@ -1,6 +1,8 @@
 // Catalogue snapshots are published offline. All online review mutations use D1 transactions.
 import { ROUND_MAX } from './rounds';
 import { held } from './held';
+import { body, canonical, compose, graphemeKey, graphemeText, integer, literal, single, text } from './input';
+export { canonical, compose, literal, single } from './input';
 import { RECORD_MAX, readRecords, recordKey, type RecordPointer } from './records';
 export { recordRanges } from './records';
 import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
@@ -8,26 +10,31 @@ import { similarCrops } from './similar';
 import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
-import { formsFor, setForm, withForms } from './cropForms';
-import { setWord, withWords, wordChoices } from './cropWords';
-import { categoryOf, idsCharacter, isGugyeol } from './category';
+import { formsFor, withForms } from './cropForms';
+import { wordChoices } from './cropWords';
+import { categoryOf, idsCharacter } from './category';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
-import { ranking } from './ranking';
+import { ranking } from './routes/ranking';
 import { connections } from './connections';
-import { reviewers, submissions } from './admin';
+import { flagCorpus, flaggedCorpus, reject, reviewerActors, reviewers, submissions } from './routes/admin';
+import { history } from './routes/history';
+import { listingItems } from './atlas3Listing';
+import { StaleCrop, staleResponse } from './atlas3Crops';
 import { Problem, READ_BUDGET, RETRY_AFTER, StorageUnavailable, described, retried, transient } from './busy';
+import { dealable, reviewRoute } from './routes/review';
 import { pausedCallback, pausedResponse, pausedSignOut, writes, writesPaused } from './freeze';
-import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
+import { claimRead, claimWrite, type ClaimTools } from './routes/claims';
 import { honkokuPage } from './honkoku';
-import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
-import { YEAR_KEY, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
-import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './favourites';
+import { FORMATS, KINDS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from './citation';
+import { YEAR_KEY, datingJoin, datingOf, decadeColumn, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
+import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './routes/favourites';
 import { MediaIncomplete, mediaResponse } from './atlas3Media';
-import * as browse from './routes/browse';
+import { cropRoute } from './routes/crop';
 export { leastTypicalQuery } from './forms';
 export { componentMatchQuery } from './components';
-export { dateClaimsQuery, datingQuery, tallyDates } from './dating';
+export { datingQuery, tallyDates } from './dating';
+import * as browse from './routes/browse';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
 export { cropFormsQuery, formNamesQuery } from './cropForms';
 type Json = Record<string, any>;
@@ -71,32 +78,9 @@ export const jamoSyllable = (value: string) => {
   if (i < chars.length && toneMark(chars[i])) i++;
   return i === chars.length;
 };
-// NFC composes a voiced kana, but it also maps each CJK compatibility ideograph to its unified twin,
-// and those are characters of their own here; they are kept as written.
-const COMPATIBILITY = /[\uF900-\uFAFF\u{2F800}-\u{2FA1F}]/u;
-export function compose(value: string): string {
-  let out = '', run = '';
-  for (const c of value) { if (COMPATIBILITY.test(c)) { out += run.normalize('NFC') + c; run = '' } else run += c }
-  return out + run.normalize('NFC');
-}
-export function literal(value: string): string {
-  const trimmed = value.trim();
-  // A key is written with spaces in the API and with hyphens in a page address.
-  if (/^(U\+[0-9a-f]{4,6})([\s-]+U\+[0-9a-f]{4,6})*$/i.test(trimmed)) {
-    try { return compose(trimmed.split(/[\s-]+/).map(v => String.fromCodePoint(parseInt(v.slice(2), 16))).join('')) }
-    catch { throw new Problem(422, 'Invalid code point.') }
-  }
-  return compose(trimmed);
-}
 export const hira = (value: string) => [...literal(value)].map(c => {
   const n = c.codePointAt(0)!; return n >= 0x30a1 && n <= 0x30f6 ? String.fromCodePoint(n - 0x60) : c;
 }).join('');
-export const single = (value: string) => [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(value)].length === 1;
-export function integer(q: URLSearchParams, key: string, fallback: number, max = 1000000) {
-  const n = Number(q.get(key) ?? fallback);
-  if (!Number.isSafeInteger(n) || n < 0 || n > max) throw new Problem(422, `Invalid ${key}.`);
-  return n;
-}
 async function meta(env: Env, key: string): Promise<any> {
   const row = await env.DB.prepare('SELECT value FROM metadata WHERE key=?').bind(key).first<{ value: string }>();
   return row ? JSON.parse(row.value) : null;
@@ -128,13 +112,6 @@ async function unit(env: Env, id: string): Promise<UnitRow> {
     category:categoryOf(data.label),data:JSON.stringify(data),snapshot:JSON.stringify(data),
     context:JSON.stringify(unavailable),visual:JSON.stringify(unavailable),fresh:pointer};
 }
-// Whether a crop may be dealt in Quick review at all; its review state says whether it is due now.
-// A local crop is withheld by the alignment repair, or when ainu-records measured almost no ink in its
-// box (`geometry`, while the box is still the measured one). A corpus glyph needs an image this site may
-// serve and a written character, since a round asks whether the crop is that character.
-const blank=(data:Json)=>Array.isArray(data.geometry?.flags)&&data.geometry.flags.includes('sparse-ink')
-  &&['x','y','w','h'].every(k=>data.geometry.box?.[k]===data.box?.[k]);
-export const dealable=(origin:string,data:Json)=>origin==='corpus'?Boolean(data.proxyable&&data.written_character):data.repair?.quiz!==false&&!blank(data);
 // The first round or review that names a corpus glyph writes its `units` row from the published record,
 // in the same batch and before the rows that reference it.
 function materialise(env:Env,row:UnitRow&{fresh:CorpusRow}){
@@ -192,62 +169,24 @@ async function itemsFor(env: Env, ids: string[]): Promise<Map<string, Json>> {
 function compact(row: UnitRow): Json {
   return { ...listing(parse(row.data)), ...(row.document ? { document: row.document } : {}), ...(row.style ? { style: row.style } : {}) };
 }
-// A crop's record with its evidence version (0047).
-const record = (row: UnitRow): Json => {
-  const data = parse(row.data);
-  return { ...data, crop_version: row.crop_version ?? cropVersion(row.id, data), crop_editable: row.origin !== 'corpus' && Boolean(redrawLimits(data)) };
-};
-// A crop's evidence version as `units.crop_version` computes it, for a corpus glyph that has no row yet:
-// its id, its image checksum and its box in whole pixels; a box of anything else has none. JSON.parse
-// reads a whole number written as a real (`1.0`) as an integer, which SQLite does not, so a claim names
-// the version its row gives once the row is written.
-export function cropVersion(id: string, data: Json): string | null {
-  const pixels = data.image_sha256 ?? data.source_revision ?? null;
-  if (typeof pixels !== 'string') return null;
-  const box = data.box;
-  if (box == null) return `${id}@${pixels}@`;
-  const values = ['x', 'y', 'w', 'h'].map(key => box[key]);
-  return values.every(Number.isSafeInteger) ? `${id}@${pixels}@${values.join(',')}` : null;
-}
-// Every evidence version a crop has had here, oldest first (0047); `current` is the one it has now.
-// One range of `crop_version_unit`, and a crop recut more often than this lists its first ones.
-const VERSIONS_LISTED = 200;
-export const cropVersionsQuery = () => `SELECT id,pixels,box,document,image,at FROM crop_versions WHERE unit=? ORDER BY at,id LIMIT ${VERSIONS_LISTED}`;
-async function cropVersions(env: Env, id: string) {
-  const row = await unit(env, id);
-  const versions = (await env.DB.prepare(cropVersionsQuery()).bind(row.id).all<Json>()).results;
-  return { id: row.id, current: record(row).crop_version, versions };
-}
-// A citation of a crop at one of its evidence versions (`?v=`, as `versionToken` names it; the current
-// one without), a grapheme or a form, as CSL-JSON, BibTeX or Hayagriva (`?format=`). It is read again
+// A citation of a grapheme or a form as CSL-JSON, BibTeX or Hayagriva (`?format=`). It is read again
 // once the catalogue version moves (`catalogueStamps`), and on each new day (in UTC), the date it was accessed.
 const CITE_TTL = 3600;
 const CITABLE_CHARACTER = /^U\+[0-9A-Fa-f]{4,6}(-U\+[0-9A-Fa-f]{4,6})*$/;
 const CITE_TYPES: Record<Format, string> = { csl: 'application/vnd.citationstyles.csl+json; charset=utf-8',
   bibtex: 'application/x-bibtex; charset=utf-8', hayagriva: 'application/yaml; charset=utf-8' };
 async function cite(env: Env, ctx: ExecutionContext, url: URL, kind: string, raw: string): Promise<Response> {
-  if (!(KINDS as readonly string[]).includes(kind)) throw new Problem(404, 'Unknown endpoint.');
+  if (kind === 'crop' || !(KINDS as readonly string[]).includes(kind)) throw new Problem(404, 'Unknown endpoint.');
   let id: string;
   try { id = decodeURIComponent(raw) } catch { throw new Problem(404, 'Nothing is published at this address.') }
   const token = url.searchParams.get('v'), format = (url.searchParams.get('format') ?? 'csl') as Format;
   if (id.length > 512 || (token !== null && !/^[0-9a-z]{6}$/.test(token)) || !FORMATS.includes(format)) throw new Problem(422, 'Invalid citation address.');
-  if (kind !== 'crop' && !CITABLE_CHARACTER.test(id)) throw new Problem(404, 'Character not found.');
+  if (!CITABLE_CHARACTER.test(id)) throw new Problem(404, 'Character not found.');
   const now = new Date(), day: Day = [now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate()];
   const key = new Request(`${url.origin}/atlas/cite/${kind}/${encodeURIComponent(id)}?v=${token ?? ''}&f=${format}&d=${day.join('-')}&c=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return new Response(cached.body, { headers: { ...Object.fromEntries(cached.headers), 'cache-control': 'no-cache' } });
-  let entry: Entry;
-  if (kind === 'crop') {
-    const row = await unit(env, id), data = record(row);
-    const honkoku = honkokuPage(data, row.document ?? data.source?.document_id ?? null);
-    let version: string | null = data.crop_version ?? null;
-    if (token !== null) {
-      const versions = (await env.DB.prepare(cropVersionsQuery()).bind(row.id).all<{ id: string }>()).results.map(r => r.id);
-      version = citedVersion(row.id, token, version ? [...versions, version] : versions);
-      if (!version) throw new Problem(404, 'This crop has no version by that name.');
-    }
-    entry = cropEntry({ ...data, ...(honkoku ? { honkoku_url: honkoku } : {}) }, row.origin === 'corpus' ? 'corpus' : 'collection', version);
-  } else entry = characterEntry(kind as 'grapheme' | 'form', (await known(env, id.split('-').join(' '))).detail);
+  const entry = characterEntry(kind as 'grapheme' | 'form', (await known(env, id.split('-').join(' '))).detail);
   const body = format === 'bibtex' ? bibtex(entry, url.origin, day) + '\n' : format === 'hayagriva' ? hayagriva(entry, url.origin, day)
     : JSON.stringify([csl(entry, url.origin, day)], null, 2);
   // The edge keeps a copy for the day it is dated; a browser asks again, so a citation is never dated a day late.
@@ -255,118 +194,10 @@ async function cite(env: Env, ctx: ExecutionContext, url: URL, kind: string, raw
   ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { ...headers, 'cache-control': `public, max-age=${CITE_TTL}` } })));
   return new Response(body, { headers: { ...headers, 'cache-control': 'no-cache' } });
 }
-// A crop's record for its inspector, with its form, word, book's dates and the claims they rest on.
-const inspected = async (env: Env, row: UnitRow): Promise<Json> => {
-  const found = (await withWords(env, await withForms(env, [record(row)])))[0];
-  const document = row.document ?? found.source?.document_id ?? null;
-  const honkoku = honkokuPage(found, document);
-  return { ...found, ...(honkoku ? { honkoku_url: honkoku } : {}), ...await documentDates(env, document) };
-};
-// The page rectangle a reviewer may redraw a local crop's box in, in page pixels: the context the
-// inspector shows, which lies inside the page. A corpus glyph's box belongs to its source, so it has none.
-export function redrawLimits(data: Json): { x: number; y: number; w: number; h: number } | null {
-  const c = data?.context_box, s = data?.source_scale;
-  if (!data?.context || !c || !data.crop_box || !Array.isArray(s) || !(s[0] > 0) || !(s[1] > 0)) return null;
-  return { x: Math.floor(c.x / s[0]), y: Math.floor(c.y / s[1]), w: Math.ceil((c.x + c.w) / s[0]) - Math.floor(c.x / s[0]), h: Math.ceil((c.y + c.h) / s[1]) - Math.floor(c.y / s[1]) };
-}
-// A redrawn box as the inspector sends it: whole page pixels, at least two each way, inside the page view.
-export function redrawnBox(value: Json, data: Json): { x: number; y: number; w: number; h: number } {
-  const limits = redrawLimits(data);
-  if (!limits) throw new Problem(422, 'This crop cannot be redrawn.');
-  if (!value || typeof value !== 'object' || Object.keys(value).sort().join() !== 'h,w,x,y' || !['x', 'y', 'w', 'h'].every(k => Number.isSafeInteger(value[k])))
-    throw new Problem(422, 'A box is four whole pixels: x, y, w, h.');
-  const { x, y, w, h } = value;
-  if (w < 2 || h < 2 || x < limits.x || y < limits.y || x + w > limits.x + limits.w || y + h > limits.y + limits.h)
-    throw new Problem(422, 'The crop must stay inside the source image.');
-  return { x, y, w, h };
-}
 // A record as a listing shows it, without the fields only its inspector needs.
 function listing(d: Json): Json {
   const { text, line, context_image, context_box, crop_box, ...rest } = d;
   return rest;
-}
-// What a shown crop's pixels are named by: a local crop's page hash, a corpus glyph's source revision.
-const pixels = (crop: Json) => crop.image_sha256 ?? crop.source_revision;
-// The crops a round names: flagged answers, and crops it showed and left unflagged. A round carries
-// either or both; a single-crop review carries only its answer.
-export function validRound(input: Json, target?: string): { answers: Json[]; seen: Json[]; skipped: Json[] } {
-  const round = !target;
-  if (!round && (input.seen !== undefined || input.skipped !== undefined)) throw new Problem(422, 'Only a round records seen or skipped crops.');
-  const answers = round ? (input.answers ?? []) : [{ ...input, id: target }];
-  const seen = round ? (input.seen ?? []) : [];
-  const skipped = round ? (input.skipped ?? []) : [];
-  if (!Array.isArray(answers) || !Array.isArray(seen) || !Array.isArray(skipped)) throw new Problem(422, `A round needs 1–${ROUND_MAX} distinct crops.`);
-  const ids = [...answers, ...seen, ...skipped].map(crop => crop?.id);
-  if (ids.length < 1 || ids.length > ROUND_MAX || new Set(ids).size !== ids.length) throw new Problem(422, `A round needs 1–${ROUND_MAX} distinct crops.`);
-  for (const crop of [...seen, ...skipped]) {
-    text(crop?.id, 512, 'character id', true);
-    if (typeof pixels(crop) !== 'string' || !/^[a-f0-9]{64}$/.test(pixels(crop))) throw new Problem(422, 'Invalid image hash.');
-    // A crop's image is compared with its record, never stored. Corpus glyphs link their source's own
-    // file, and an HNG file name percent-encodes Japanese, so the address can run past 256 characters.
-    if (crop.image !== undefined) text(crop.image, 2048, 'crop image', true);
-  }
-  return { answers, seen, skipped };
-}
-// A batch correction names one written character and the crops a reader selected as that character:
-// each crop becomes a `wrong`/`character` answer, checked against its own revision and pixels.
-// A line's correction (`line: true`) names a character for each crop instead, or `issue: 'blank'` for
-// a box that is no character; a crop that changed or was checked meanwhile is skipped and reported.
-export function validBatch(input: Json): { character: string | null; line: boolean; crops: Json[] } {
-  if (input.line !== undefined && typeof input.line !== 'boolean') throw new Problem(422, 'A line correction is true or absent.');
-  const line = input.line === true;
-  if (line && input.character !== undefined) throw new Problem(422, 'A line correction names a character for each crop.');
-  const character = line ? null : writtenCharacter(text(input.character, 32, 'character', true)!);
-  const crops = input.crops;
-  if (!Array.isArray(crops) || crops.length < 1 || crops.length > ROUND_MAX || new Set(crops.map(crop => crop?.id)).size !== crops.length)
-    throw new Problem(422, `A correction needs 1–${ROUND_MAX} distinct crops.`);
-  for (const crop of crops) {
-    text(crop?.id, 512, 'crop id', true);
-    // A batch names a character only; a crop is redrawn one at a time, in its own review. A line's crop may
-    // carry its redrawn box beside its character: the box is checked against the crop itself later.
-    if (crop.box !== undefined && (!line || crop.issue !== undefined || crop.box === null || typeof crop.box !== 'object')) throw new Problem(422, 'A correction of many crops cannot redraw one.');
-    if (!line && (crop.character !== undefined || crop.issue !== undefined)) throw new Problem(422, 'Only a line correction names a character for each crop.');
-    if (line) {
-      if (crop.issue !== undefined && (crop.issue !== 'blank' || crop.character !== undefined)) throw new Problem(422, 'A box is marked as no character by itself.');
-      if (crop.issue === undefined) crop.character = writtenCharacter(text(crop.character, 32, 'character', true)!);
-    }
-  }
-  return { character, line, crops };
-}
-// What a batch does to each crop it names: the crops to write, the crops refused (changed since the
-// reader loaded them, without an image to judge, missing, or already checked as another character) and
-// the crops already written as the character, which need no write. A one-character correction refuses
-// as a whole; a line's skips them (`validBatch`).
-export function judgeBatch(batch: { character: string | null; line: boolean }, answers: Json[], rows: Map<string, UnitRow | Problem>) {
-  const refused: Json[] = [], chosen: Json[] = [], unchanged: string[] = [];
-  for (const crop of answers) {
-    const row = rows.get(crop.id)!;
-    if (row instanceof Problem) { refused.push({ id: crop.id, reason: 'missing' }); continue }
-    const data = parse(row.data), glyph = row.origin === 'corpus';
-    if (!Number.isSafeInteger(crop.revision) || crop.revision !== data.revision || (glyph ? crop.source_revision !== data.source_revision : crop.image_sha256 !== data.image_sha256)) { refused.push({ id: crop.id, reason: 'changed' }); continue }
-    if (glyph && !data.proxyable) { refused.push({ id: crop.id, reason: 'unavailable' }); continue }
-    if (crop.issue === 'blank') {
-      if (data.state === 'checked') refused.push({ id: crop.id, reason: 'checked' });
-      else chosen.push({ ...crop, verdict: 'wrong', issue: 'blank' });
-      continue;
-    }
-    const character = crop.character ?? batch.character;
-    const identity = glyph ? data.written_character : (data.written_character || data.label);
-    if (identity === character) {
-      if (data.state === 'checked') unchanged.push(crop.id);
-      else chosen.push({ id: crop.id, revision: crop.revision, image_sha256: crop.image_sha256, source_revision: crop.source_revision, verdict: 'match', ...(crop.box ? { box: crop.box } : {}) });
-    } else if (data.state === 'checked') refused.push({ id: crop.id, reason: 'checked' });
-    else chosen.push({ ...crop, verdict: 'wrong', issue: 'character', character });
-  }
-  return { chosen, refused, unchanged };
-}
-// A written character a reviewer names: one character, which may carry combining marks or a variation
-// selector, and may be a private-use code point (구결자 are encoded there). Control, format, surrogate
-// and separator code points are refused, as is a combining mark with no base.
-export function writtenCharacter(value: string): string {
-  const written = literal(value);
-  if (!written || /[\p{Cc}\p{Cf}\p{Cs}\p{Z}]/u.test(written) || /^\p{M}/u.test(written) || !single(written))
-    throw new Problem(422, 'Choose one written character.');
-  return written;
 }
 /** Units by id, read eight at a time; an id the collection does not hold maps to its 404. */
 async function unitsById(env: Env, ids: string[]): Promise<Map<string, UnitRow | Problem>> {
@@ -402,16 +233,6 @@ const FACETS_TTL = 3600;
 // `corpus_counts_at`, and so does the forms drain once a decision has moved glyphs between characters.
 async function corpusVersion(env: Env) {
   return (await env.DB.prepare("SELECT value FROM metadata WHERE key='corpus_counts_at'").first<{ value: string }>())?.value ?? '';
-}
-export const GRAPHEME_KEY = /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/;
-// A grapheme key (`U+306F`) as the text it names.
-export const graphemeText = (key: string) => key.split(' ').map(point => String.fromCodePoint(parseInt(point.slice(2), 16))).join('');
-// A grapheme key as a request names it, upper-cased with single spaces, or null when none is named.
-export function graphemeKey(value: string | null | undefined): string | null {
-  const key = text(value, 256, 'grapheme')?.toUpperCase().split(/\s+/).join(' ');
-  if (!key) return null;
-  if (!GRAPHEME_KEY.test(key) || key.split(' ').some(p => parseInt(p.slice(2), 16) > 0x10FFFF)) throw new Problem(422, 'Invalid grapheme.');
-  return key;
 }
 // The characters a grapheme is written as, by the character table: は's family is は, ハ and its
 // hentaigana, and ば's is ば, バ and each hentaigana of は with U+3099. A key that names no family
@@ -724,70 +545,6 @@ async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
   const body = { text: value, size, lead, inside: held.flatMap(result => result.results.map((row: Json) => row.text as string)),
     longer: size === 2 ? shown(longer.results) : [], siblings: size === 2 || size === 3 ? shown(siblings.results) : [], limit: RUN_NEAR_MAX };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
-  return body;
-}
-// A crop's neighbours on its line, in reading order: the pairs `unit_ngrams` holds are followed forward
-// by their first crop (the primary key) and backward by their second (`unit_ngram_second`), at most
-// `LINE_REACH` steps each way, one row a step. The length test is kept off the backward step's index (`+`), or the planner would start from every pair. No sort is asked of SQLite; the offsets order them.
-const LINE_REACH = 4;
-export const lineQuery = () => `WITH RECURSIVE ahead(id,d) AS (SELECT ?1,0 UNION ALL
-    SELECT p.second,a.d+1 FROM ahead a CROSS JOIN unit_ngrams p ON p.first=a.id AND p.size=2 WHERE a.d<${LINE_REACH}),
-  behind(id,d) AS (SELECT ?1,0 UNION ALL
-    SELECT p.first,b.d-1 FROM behind b CROSS JOIN unit_ngrams p ON p.second=b.id AND +p.size=2 WHERE b.d>-${LINE_REACH})
-  SELECT n.d AS d,u.id AS id,u.data AS data FROM (SELECT * FROM ahead UNION ALL SELECT * FROM behind WHERE d<0) n
-    CROSS JOIN units u ON u.id=n.id AND +u.origin='local'`;
-// What the inspector's line strip needs of each neighbour: the crop as the review path judges it
-// (revision and pixels), the label it carries now, and what is painted in its place until it loads. A crop with no neighbours has an empty line.
-export function lineItems(rows: { d: number; id: string; data: string }[]): Json[] {
-  const seen = new Set<string>();
-  const items = [...rows].sort((a, b) => a.d - b.d).flatMap(row => {
-    if (seen.has(row.id)) return [];
-    seen.add(row.id);
-    const d = parse(row.data);
-    return [{ id: row.id, offset: row.d, label: d.label ?? null, image: d.image ?? null, revision: d.revision, image_sha256: d.image_sha256 ?? null,
-      state: d.state ?? null, issue: d.issue ?? null, tone: d.tone ?? null, image_size: d.image_size ?? null }];
-  });
-  return items.length > 1 ? items : [];
-}
-// The edge keeps a copy per catalogue version, as for a book's characters; a review or an undo makes a new key.
-async function line(env: Env, ctx: ExecutionContext, url: URL, id: string) {
-  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
-  const cached = await caches.default.match(key);
-  if (cached) return await cached.json() as Json;
-  const rows = await env.DB.prepare(lineQuery()).bind(id).all<{ d: number; id: string; data: string }>();
-  const body = { id, reach: LINE_REACH, items: lineItems(rows.results) };
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
-  return body;
-}
-// A page as the page view shows it: its published record (0078) with each of its crops as the site holds
-// it now, label and box, so a review or a redrawn box shows on the page once the catalogue version moves. The crops are read by id in
-// the record's order, one primary-key lookup each; a crop retired or not yet on the site is left out. The
-// photo is a request of the holder's IIIF image service, its longer side at most PAGE_IMAGE pixels, laid
-// over the page pixels the boxes are given in; a page no service serves is shown as its boxes alone.
-const PAGE_IMAGE = 3000;
-export const pageCropsQuery = () => `SELECT u.id AS id,u.character AS label,u.data AS data FROM json_each(?1) j
-  CROSS JOIN units u ON u.id=j.value AND +u.origin='local' ORDER BY j.key`;
-export function pageView(record: Json, rows: { id: string; label: string | null; data: string }[]): Json {
-  const { crops: _, service, page_number, document, title, ...rest } = record;
-  return { ...rest, document_id: document, document_title: title, seq: page_number - 1, service: service ?? null,
-    image_url: service ? `${service}/full/!${PAGE_IMAGE},${PAGE_IMAGE}/0/default.jpg` : null, drawable: false,
-    units: rows.map(row => {
-      const d = parse(row.data);
-      return { id: row.id, line_id: d.line_id ?? null, box: d.box ?? null, character: row.label, code_point: null,
-        image: d.image ?? null, state: d.state ?? null, issue: d.issue ?? null, tone: d.tone ?? null, image_size: d.image_size ?? null };
-    }) };
-}
-// The edge keeps a copy per catalogue version, as for a crop's line.
-async function sourcePage(env: Env, ctx: ExecutionContext, url: URL, id: string) {
-  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
-  const cached = await caches.default.match(key);
-  if (cached) return await cached.json() as Json;
-  const row = await env.DB.prepare('SELECT data FROM pages WHERE id=?').bind(id).first<{ data: string }>();
-  if (!row) throw new Problem(404, 'This page is not in the published collection.');
-  const record = parse(row.data);
-  const rows = await env.DB.prepare(pageCropsQuery()).bind(JSON.stringify(record.crops ?? [])).all<{ id: string; label: string | null; data: string }>();
-  const body = pageView(record, rows.results);
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
   return body;
 }
 function chunks<T>(list: T[], size: number): T[][] {
@@ -1526,210 +1283,11 @@ async function documentCharacters(env: Env, url: URL, document: string, ctx: Exe
   ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60' } })));
   return served(body);
 }
-async function body(request: Request): Promise<Json> {
-  const origin=request.headers.get('origin');
-  if(origin && origin!==new URL(request.url).origin) throw new Problem(403,'Use the review form on this site.');
-  if(!request.headers.get('content-type')?.startsWith('application/json')) throw new Problem(415,'Expected JSON.');
-  const reader=request.body?.getReader();
-  if(!reader) throw new Problem(422,'Empty request.');
-  let size=0; const chunks:Uint8Array[]=[];
-  while(true) {const {done,value}=await reader.read();if(done)break;size+=value.length;
-    if(size>128*1024){await reader.cancel();throw new Problem(413,'Review is too large.')}chunks.push(value)}
-  const bytes=new Uint8Array(size);let pos=0;for(const part of chunks){bytes.set(part,pos);pos+=part.length}
-  try{return JSON.parse(new TextDecoder().decode(bytes))}catch{throw new Problem(422,'Invalid JSON.')}
-}
-export function text(value: unknown, max: number, name: string, required=false): string | null {
-  if(value==null && !required) return null;
-  if(typeof value!=='string'||value.length>max||(required&&!value.trim()))throw new Problem(422,`Invalid ${name}.`);
-  return compose(value.trim());
-}
 // A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
 const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp,
   family:async(env,char)=>(await known(env,char).catch(()=>null))?.data.grapheme?.code_point||cp(char)};
-// What the ledger needs of the rest of the Worker (`ledger.ts`): a crop subject is a crop the site
-// holds, or a corpus glyph whose row a first claim writes, as a first review would.
-const ledgerTools: LedgerTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,canonical:value=>canonical(value),owned,
-  // A corpus glyph nothing has named gets its row first, as its first review would give it one, so the
-  // claim names the version SQLite gives the row (`units.crop_version`); a client that saw another
-  // version is refused before anything is written.
-  crop:async(env,id,expected)=>{let row=await unit(env,id);
-    if(row.fresh){
-      if(cropVersion(row.id,parse(row.data))!==expected)return {id:row.id,version:cropVersion(row.id,parse(row.data))};
-      await materialise(env,row as UnitRow&{fresh:CorpusRow}).run();row=await unit(env,row.id);
-    }
-    return {id:row.id,version:row.crop_version??null}}};
-export function canonical(value: unknown): string {
-  if(value===null||typeof value!=='object')return JSON.stringify(value);
-  if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
-  return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical((value as Json)[k])).join(',')+'}';
-}
-function validateAnswer(answer: Json, current: Json, round: boolean, corpus=false, batch=false, line=false) {
-  if(!Number.isSafeInteger(answer.revision)||answer.revision!==current.revision)throw new Problem(409,'This character changed. Reload it.');
-  if(corpus?answer.source_revision!==current.source_revision:answer.image_sha256!==current.image_sha256)throw new Problem(409,'The source image changed. Reload it.');
-  if(!['match','wrong','unsure'].includes(answer.verdict))throw new Problem(422,'Choose a review decision.');
-  if(answer.issue!=null&&!['character','merged','crop','blank','other','unclear'].includes(answer.issue))throw new Problem(422,'Unknown issue.');
-  if(answer.verdict==='match'&&(answer.character||answer.correction||answer.issue))
-    throw new Problem(422,'A matching crop cannot also have an issue.');
-  if(answer.verdict==='wrong'&&!answer.issue)throw new Problem(422,'Choose an issue.');
-  for(const field of ['character','correction'])text(answer[field],32,field);
-  // Typed characters describe a joined crop; one character is named as `character`.
-  if(answer.correction&&answer.issue!=='merged')throw new Problem(422,'Typed characters belong to a joined-character issue.');
-  text(answer.note,2000,'note');
-  if(answer.character)writtenCharacter(answer.character);
-  if(answer.verdict==='wrong' && answer.character && literal(answer.character)===current.written_character)
-    throw new Problem(422,'Choose a different character or a different issue.');
-  if(answer.box!==undefined){
-    // A redrawn box is the crop's fix: saved as a match on the pixels it names, never in a round. A line's
-    // crop may also be relabelled in the same save.
-    if(round||corpus||(batch&&!line))throw new Problem(422,'This crop cannot be redrawn here.');
-    const fixed=answer.verdict==='match'&&answer.issue==null&&!answer.character&&!answer.correction;
-    const relabelled=line&&answer.verdict==='wrong'&&answer.issue==='character'&&answer.character&&!answer.correction;
-    if(!fixed&&!relabelled)throw new Problem(422,'A redrawn crop is saved as fixed.');
-    answer.box=redrawnBox(answer.box,current);
-  }
-}
-async function submit(env: Env, request: Request, actor: string, target?: string) {
-  const input=await body(request);
-  const corpus=target==='@corpus', batch=target==='@batch';
-  if(corpus)target=text(input.identity,512,'corpus identity',true)!;
-  if(batch)target=undefined;
-  const id=text(input.id,64,'submission id',true)!;
-  if(!/^[0-9a-f-]{36}$/i.test(id))throw new Problem(422,'Invalid submission id.');
-  // A retry is the same submission whatever else came on screen meanwhile: the seen crops are left
-  // out of the signature, as the local server compares only the answers, and the first result stands.
-  const {seen:_,skipped:__,...signed}=input;
-  const signature=canonical({target:batch?'@batch':target||null,input:signed});
-  const key=actor+':'+id;
-  // A corpus glyph's inspector shows the record it gets back, with the form its ledger holds now.
-  const answered=async(value:Json)=>corpus?(await withForms(env,[value]))[0]:value;
-  const previous=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
-  if(previous){if(previous.request!==signature)throw new Problem(409,'This submission was already saved with different answers.');return answered(parse(previous.response))}
-  const round=!target&&!batch;
-  // A round names its grapheme; each crop it answers or saw is one of the grapheme's characters.
-  const grapheme=round?graphemeKey(input.grapheme):null;
-  if(round&&!grapheme)throw new Problem(422,'A round names its grapheme.');
-  const members=grapheme?await graphemeMembers(env,grapheme):null;
-  if(batch&&(input.seen!==undefined||input.skipped!==undefined))throw new Problem(422,'Only a round records seen or skipped crops.');
-  const correction=batch?validBatch(input):null;
-  const {answers,seen,skipped}=batch?{answers:correction!.crops,seen:[],skipped:[]}:validRound(input,target);
-  // A redrawn box is held to the rate batch corrections are, by address.
-  if(!batch&&answers.some(answer=>answer.box!==undefined)){
-    const {success}=await env.CORRECTIONS.limit({key:addressKey(request.headers.get('cf-connecting-ip'))});
-    if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
-  }
-  const rows=await unitsById(env,answers.map(answer=>text(answer.id,512,'character id',true)!));
-  // A correction names crops a reader selected on the grid, so each is judged here: one that changed
-  // since the page loaded, one whose image cannot be shown, or one a person already checked as another
-  // character is refused (all are named, and nothing is saved); one already written as the character
-  // is confirmed, unless a person already checked it, when it is left as it is.
-  let unchanged:string[]=[];
-  const skippedCrops:Json[]=[];
-  if(batch){
-    const judged=judgeBatch(correction!,answers,rows);
-    // A line's correction saves the crops that still stand and reports the rest; a crop that changed is never overwritten.
-    if(judged.refused.length&&!correction!.line)throw new Problem(409,'Some of these crops changed or were already checked. Reload them.',{targets:judged.refused});
-    skippedCrops.push(...judged.refused);
-    unchanged=judged.unchanged;
-    answers.splice(0,answers.length,...judged.chosen);
-  }
-  // One round usually corrects many crops to the same few characters; each is read once.
-  const lookups=new Map<string,Promise<{data:Json;detail:Json}|null>>();
-  const lookup=(value:string)=>{let key:string;try{key=cp(literal(value))}catch{key='\u0000'+value}if(!lookups.has(key))lookups.set(key,known(env,value).catch(()=>null));return lookups.get(key)!};
-  const changes=[];
-  // Corpus glyphs this submission names for the first time; each gets its `units` row first.
-  const fresh:(UnitRow&{fresh:CorpusRow})[]=[];
-  const at=new Date().toISOString();
-  for(const answer of answers){
-    const found=rows.get(answer.id)!;
-    if(found instanceof Problem)throw found;
-    const row=found, stored=parse(row.data), glyph=row.origin==='corpus';
-    const current:Json={...stored,category:row.category||categoryOf(stored.label)};
-    row.data=JSON.stringify(current);
-    validateAnswer(answer,current,round,glyph,batch,Boolean(correction?.line));
-    if(glyph&&(!current.proxyable||(current.identity_status==='unassigned'&&answer.verdict==='match')))
-      throw new Problem(422,'Choose a written character or report an issue.');
-    if(round&&(!row.quiz||!members!.includes(current.label)))throw new Problem(409,'This round changed. Reload it.');
-    const written=answer.character?literal(answer.character):null;
-    // A batch names the character only: a crop reported for its box, a blank or a merge stays reported.
-    const kept=batch&&current.state==='flagged'&&current.issue&&current.issue!=='character'?current.issue:null;
-    const resolved=!kept&&(answer.verdict==='match'||Boolean(answer.issue==='character'&&written));
-    const family=written?(await lookup(written))?.data.grapheme?.code_point:null;
-    const next:Json={...current,revision:current.revision+1,state:resolved?'checked':'flagged',
-      ...(written?{label:written,char:written,code_point:cp(written),written_character:written,identity_status:'assigned',identity_basis:'human_review',script:/\p{Script=Katakana}/u.test(written)?'katakana':/\p{Script=Hiragana}/u.test(written)?'hiragana':/\p{Script=Han}/u.test(written)?'han':/\p{Script=Hangul}/u.test(written)?'hangul':/\p{Script=Tangut}/u.test(written)?'tangut':isGugyeol(written)?'gugyeol':'symbol'}:{}),
-      ...(written?{grapheme:family||cp(written),visual_group:null,category:categoryOf(written)}:{}),
-      issue:resolved?null:kept??answer.issue,
-      // A redrawn box is the crop's until the next publication cuts it; the image shown is still the old cut.
-      ...(answer.box?{box:answer.box,box_pending:true}:{})};
-    const snapshot={...parse(row.snapshot),character:compact(row)};
-    // A round or batch keeps its request once, on the submission; each event names it and carries only its
-    // own answer, so a submission of many crops stays well inside D1's row size. A single crop's review
-    // keeps its request whole: it is that one answer.
-    const evidence={kind:round?'visual-quiz':'character-review',...(round?{round:id,grapheme,label:current.label}:{}),...(batch?{batch:id}:round?{answer}:{request:input}),
-      verdict:answer.verdict,issue:answer.issue||null,note:answer.note||'',
-      suggested_character:written?cp(written):null,suggested_text:answer.correction||null,snapshot,
-      correction:{unicode:cp(next.label),box:next.box},
-      // The box claim and the evidence it was made on: the pixels and the box the crop was cut with.
-      ...(answer.box?{recrop:{from:current.box??null,to:answer.box,pixels:current.image_sha256}}:{})};
-    const event={id:'cf:'+crypto.randomUUID(),target_type:'unit',target_id:row.id,field:'review',
-      old:current.state==='checked'?'reviewed':current.state==='flagged'?'disputed':'machine',
-      new:resolved?'reviewed':'disputed',role:'reviewer',actor,evidence:JSON.stringify(evidence),at};
-    changes.push({row,next,event,snapshot});
-    if(row.fresh)fresh.push(row as UnitRow&{fresh:CorpusRow});
-  }
-  // A crop that left the queue, changed its pixels or moved to another character since the round
-  // was dealt was not seen as it stands, so it is skipped rather than failing the round.
-  const shown:Json[]=[];
-  const passed:Json[]=[];
-  const named=[...seen.map(crop=>[crop,shown]),...skipped.map(crop=>[crop,passed])] as [Json,Json[]][];
-  for(const batch of chunks(named,8)){
-    const rows=await Promise.all(batch.map(([crop])=>unit(env,crop.id).catch(error=>{if(error instanceof Problem&&error.status===404)return null;throw error})));
-    batch.forEach(([crop,list],i)=>{
-      const row=rows[i];
-      if(!row||!row.quiz)return;
-      const data=parse(row.data);
-      // `image_sha256` names the page here, so a crop re-cut on the same page would still match it;
-      // the crop's own image is what the reader saw. A client that does not send it is held to the rest.
-      // A corpus glyph's source revision covers its box and image reference.
-      const same=row.origin==='corpus'?data.source_revision===crop.source_revision:data.image_sha256===crop.image_sha256;
-      if(same&&members!.includes(data.label)&&(crop.image===undefined||crop.image===data.image)){
-        list.push(crop);
-        if(row.fresh)fresh.push(row as UnitRow&{fresh:CorpusRow});
-      }
-    });
-  }
-  const result=corpus?{...(changes[0].next),origin:'corpus',event:changes[0].event}
-    :batch?{id,results:changes.map(c=>({target_id:c.row.id,revision:c.next.revision,state:c.next.state})),unchanged,...(correction!.line?{skipped:skippedCrops}:{})}
-    :{id,results:[...changes.map(c=>({id:c.event.id,target_id:c.row.id,field:'review',revision:c.next.revision,state:c.next.state})),
-      ...shown.map(crop=>({target_id:crop.id,field:'seen'})),...passed.map(crop=>({target_id:crop.id,field:'skip'}))]};
-  const statements=[env.DB.prepare('INSERT INTO submissions(id,actor,request,response,at) VALUES (?,?,?,?,?)').bind(key,actor,signature,JSON.stringify(result),at)];
-  for(const row of fresh)statements.push(materialise(env,row));
-  for(const c of changes){
-    statements.push(env.DB.prepare(`INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(c.event.id,key,c.row.id,actor,c.row.revision,c.row.data,JSON.stringify(c.next),JSON.stringify(c.event),c.row.origin==='corpus'?c.row.snapshot:JSON.stringify(c.snapshot),'review',at));
-  }
-  // The box is copied from the row itself, so the queue compares it with the same JSON text. A corpus
-  // glyph is recorded with its source revision in place of the page hash.
-  for(const crop of shown)statements.push(env.DB.prepare(
-    "INSERT INTO seen(target,submission,box,image_sha256,at) SELECT id,?,json_extract(data,'$.box'),?,? FROM units WHERE id=?")
-    .bind(key,pixels(crop),at,crop.id));
-  for(const crop of passed)statements.push(env.DB.prepare(
-    "INSERT INTO skips(target,submission,actor,box,image_sha256,at) SELECT id,?,?,json_extract(data,'$.box'),?,? FROM units WHERE id=?")
-    .bind(key,actor,pixels(crop),at,crop.id));
-  try{await env.DB.batch(statements)}catch(error){
-    const repeat=await env.DB.prepare('SELECT request,response FROM submissions WHERE id=?').bind(key).first<{request:string;response:string}>();
-    if(repeat?.request===signature)return answered(parse(repeat.response));
-    if(String(error).includes('review_revision_conflict'))throw new Problem(409,'Another review changed this crop. Reload it.');
-    throw error;
-  }
-  return answered(result);
-}
-// A submission is keyed by the id it was written under, so a user's own is found under any of theirs.
-async function undo(env:Env,request:Request,actor:string,id:string){
-  await body(request);
-  const submission=await env.DB.prepare("SELECT * FROM submissions WHERE id IN (SELECT actor||':'||? FROM actors WHERE user_id=?)").bind(id,actor).first<Json>();
-  if(!submission)throw new Problem(404,'No saved round belongs to this reviewer.');
-  return {id,...await revert(env,submission,actor)};
-}
+// What the ledger's routes need of the rest of the Worker (`routes/claims.ts`).
+const claimTools: ClaimTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,canonical:value=>canonical(value),literal,integer};
 // Undo a submission as `actor`: each crop goes back to what it was before, unless a later review has
 // changed it since. A rejection is the same undo made by an admin, recorded with its reason.
 async function revert(env:Env,submission:Json,actor:string,rejection?:{reason:string;reviewer?:[string,string[]]}){
@@ -1763,205 +1321,10 @@ async function revert(env:Env,submission:Json,actor:string,rejection?:{reason:st
   try{await env.DB.batch(statements)}catch(error){if(String(error).includes('review_revision_conflict'))throw new Problem(409,'A later review changed this crop.');throw error}
   return {results};
 }
-// Reject an admin's selection: the named submissions, or all of one reviewer's a page at a time.
-// They go newest first, so a crop two of them touched goes back step by step. One that a later
-// review by someone else has built on is left as it is and reported; `next` continues after the page.
-const REJECT_PAGE=40;
-// Each crop a rejection puts back costs a few queries, and one request may make a thousand: a page
-// stops before the crops it has put back pass this many.
-const REJECT_CROPS=250;
-async function reject(env:Env,admin:string,input:Json){
-  const reason=text(input.reason??'',500,'reason')??'';
-  const crops='(SELECT count(*) FROM events WHERE submission=submissions.id AND kind=\'review\') AS crops';
-  let rows:Json[],reviewer:[string,string[]]|undefined;
-  if(Array.isArray(input.submissions)){
-    const keys=input.submissions.slice(0,REJECT_PAGE).map((key:unknown)=>text(key,256,'submission',true)!);
-    if(!keys.length)throw new Problem(422,'Name the submissions to reject.');
-    rows=(await env.DB.prepare(`SELECT *,${crops} FROM submissions WHERE id IN (${keys.map(()=>'?').join(',')}) AND undone=0 ORDER BY at DESC,id DESC`).bind(...keys).all<Json>()).results;
-  }else{
-    reviewer=reviewerActors(input);
-    const [actors,values]=reviewer,before=input.next?decodeCursor(text(input.next,512,'cursor',true)!):{at:'9999',id:''};
-    rows=(await env.DB.prepare(`SELECT *,${crops} FROM submissions WHERE undone=0 AND actor IN ${actors} AND (at,id)<(?,?) ORDER BY at DESC,id DESC LIMIT ?`)
-      .bind(...values,before.at,before.id,REJECT_PAGE).all<Json>()).results;
-  }
-  let rejected=0,spent=0;const conflicts:string[]=[],unavailable:string[]=[],done:Json[]=[];
-  for(const submission of rows){
-    if(spent&&spent+submission.crops>REJECT_CROPS)break;
-    spent+=submission.crops;done.push(submission);
-    try{await revert(env,submission,admin,{reason,reviewer});rejected++}
-    catch(error){
-      // A crop someone else has changed since stays as it is; a crop no longer in the collection
-      // cannot be put back. Either way the rest go on.
-      if(error instanceof Problem&&error.status===409)conflicts.push(submission.id);
-      else if(error instanceof Problem&&error.status===404)unavailable.push(submission.id);
-      else throw error;
-    }
-  }
-  const last=done.at(-1),more=done.length<rows.length||(!Array.isArray(input.submissions)&&rows.length===REJECT_PAGE);
-  return {rejected,conflicts,unavailable,
-    next:!Array.isArray(input.submissions)&&more&&last?encodeCursor(last.at,last.id):null,
-    left:Array.isArray(input.submissions)?rows.slice(done.length).map(row=>row.id):[]};
-}
-// Corpus glyphs a check made outside the site found in doubt, sent to the Flagged view by an admin: the
-// boxes `atlas repair relabel` would label otherwise than a form a person decided (its `review` units).
-// Each is written as a round would write it (`materialise`), flagged with a wrong-character issue and the
-// finding in `flag`, so it waits among the corpus glyphs `/atlas/corpus/reviews` lists until a person
-// settles it. No event is written: the flag is a finding, not a person's review. A glyph that already has
-// a `units` row is left as it is (`held`), so what a round or a review said stands and a list sent again
-// writes nothing. One whose shown character is no longer the one the finding was made against
-// (`changed`), or whose image this site may not serve (`unshowable`), is left out.
-const FLAG_MAX=96;
-export function flagRequest(input:Json){
-  const finding=text(input?.finding,64,'finding',true)!;
-  if(!Array.isArray(input.glyphs)||!input.glyphs.length||input.glyphs.length>FLAG_MAX)throw new Problem(422,`Name 1 to ${FLAG_MAX} glyphs.`);
-  const glyphs=input.glyphs.map((g:Json)=>({id:text(g?.id,512,'glyph id',true)!,character:text(g?.character,16,'character',true)!,
-    realigned:text(g?.realigned,16,'realigned character'),transcribed:text(g?.transcribed,16,'transcribed character')}));
-  if(new Set(glyphs.map((g:Json)=>g.id)).size!==glyphs.length)throw new Problem(422,'A glyph is named twice.');
-  return {finding,glyphs} as {finding:string;glyphs:{id:string;character:string;realigned:string|null;transcribed:string|null}[]};
-}
-async function flagCorpus(env:Env,input:Json){
-  const {finding,glyphs}=flagRequest(input);
-  const rows=await unitsById(env,glyphs.map(g=>g.id));
-  const at=new Date().toISOString(),out:Record<string,string[]>={flagged:[],held:[],changed:[],unshowable:[],missing:[]};
-  const statements:D1PreparedStatement[]=[];
-  for(const g of glyphs){
-    const row=rows.get(g.id)!;
-    if(row instanceof Problem){out.missing.push(g.id);continue}
-    if(!row.fresh){out.held.push(g.id);continue}
-    const data=parse(row.data);
-    if(data.written_character!==g.character){out.changed.push(g.id);continue}
-    if(!dealable('corpus',data)){out.unshowable.push(g.id);continue}
-    // A new revision, so a page that still holds the unflagged glyph saves against a row that moved on.
-    const next={...data,state:'flagged',issue:'character',revision:data.revision+1,
-      flag:{finding,realigned:g.realigned,transcribed:g.transcribed,at}};
-    statements.push(materialise(env,{...row,data:JSON.stringify(next),fresh:row.fresh}));
-    out.flagged.push(g.id);
-  }
-  const results=statements.length?await env.DB.batch(statements):[];
-  // A round may have named a glyph since it was read; INSERT OR IGNORE leaves that row, and it is held.
-  const written=new Set(out.flagged.filter((_,i)=>results[i].meta.changes>0));
-  out.held.push(...out.flagged.filter(id=>!written.has(id)));
-  out.flagged=out.flagged.filter(id=>written.has(id));
-  return {...out,rows_written:results.reduce((n,r)=>n+(r.meta.rows_written??0),0)};
-}
-// The corpus glyphs waiting for a person, in the order their rows were written (a row a round made earlier
-// keeps its place when it is flagged later): `unit_state` holds them in rowid order, so a page reads its own
-// rows and sorts nothing, however many wait.
-export const flaggedCorpusQuery=()=>"SELECT * FROM units WHERE origin='corpus' AND state='flagged' ORDER BY rowid LIMIT 96";
-// The journal ids of one reviewer: a user's, or one id from before accounts that nobody holds.
-export function reviewerActors(input:Json):[string,string[]]{
-  if(typeof input.user==='string')return ['(SELECT actor FROM actors WHERE user_id=?)',[text(input.user,64,'user',true)!]];
-  if(typeof input.actor==='string')return ['(?)',[text(input.actor,128,'actor',true)!]];
-  throw new Problem(422,'Name a user or a reviewer id.');
-}
-// A review's label sits in evidence.label (a round) or evidence.snapshot.character.label (a single
-// correction); evidence is itself a JSON string, parsed once. An undo's own evidence is the plain string
-// 'undo of <event id>', not JSON, so its label comes from the row's own snapshot column instead — the
-// CASE only evaluates the branch for the row's own kind, so a future kind touches neither column.
-// This text is repeated verbatim in migration 0011's expression index; keep the two in sync.
-export const historyLabelExpr = () => `(CASE kind WHEN 'review' THEN coalesce(json_extract(json_extract(event,'$.evidence'),'$.label'),json_extract(json_extract(event,'$.evidence'),'$.snapshot.character.label')) WHEN 'undo' THEN json_extract(snapshot,'$.character.label') END)`;
-// Newest first, keyset-paged on (at,id): `before` is strictly older than that pair, in index order.
-// Given `actors`, the rows are those written under any of those ids: one arm per id, each read in
-// event_actor_history order, merged by the compound ORDER BY so the read stops at the LIMIT instead of
-// sorting everything the ids ever wrote. Each row names the user who holds its id now, or none for a
-// reviewer id from before accounts that nobody has claimed. Parameters are numbered so the label and
-// cursor are bound once for every arm; the LIMIT is the parameter after `values`.
-export function historyQuery(actors: string[] | null, label: string | null, cursor: { at: string; id: string } | null): { sql: string; values: (string | number)[] } {
-  const values: (string | number)[] = [];
-  const bind = (value: string) => `?${values.push(value)}`;
-  const where = [`kind IN ('review','undo')`];
-  if (label !== null) where.push(`${historyLabelExpr()}=${bind(label)}`);
-  if (cursor) where.push(`(at,id)<(${bind(cursor.at)},${bind(cursor.id)})`);
-  const select = (filter: string[]) => `SELECT id,at,actor,target,kind,event,${historyLabelExpr()} AS label FROM events WHERE ${filter.join(' AND ')}`;
-  // A standing round is listed once more for the crops it passed: a pass is not a review of the crop,
-  // so it is its own row, with how many crops it passed and the round's character.
-  const passedWhere = ['undone=0', `EXISTS(SELECT 1 FROM seen k WHERE k.submission=submissions.id)`];
-  if (label !== null) passedWhere.push(`json_extract(request,'$.input.label')=${bind(label)}`);
-  if (cursor) passedWhere.push(`(at,id)<(${bind(cursor.at)},${bind(cursor.id)})`);
-  const passed = (filter: string[]) => `SELECT id,at,actor,NULL AS target,'passed' AS kind,
-    (SELECT count(*) FROM seen k WHERE k.submission=submissions.id) AS event,json_extract(request,'$.input.label') AS label
-    FROM submissions WHERE ${filter.join(' AND ')}`;
-  const arms = actors === null ? [select(where), passed(passedWhere)]
-    : actors.flatMap(actor => [select([...where, `actor=${bind(actor)}`]), passed([...passedWhere, `actor=${bind(actor)}`])]);
-  const sql = `SELECT h.*,a.user_id AS user,u.name AS name,u.image AS image FROM (${arms.join(' UNION ALL ')}
-    ORDER BY at DESC,id DESC LIMIT ?${values.length + 1}) h
-    LEFT JOIN actors a ON a.actor=h.actor LEFT JOIN "user" u ON u.id=a.user_id ORDER BY h.at DESC,h.id DESC`;
-  return { sql, values };
-}
-// D1 takes at most five terms in a compound SELECT and each id is two arms (its reviews, its passed
-// rounds), so a user holding more ids than that is read two ids to a statement, in one batch, each
-// statement bounded by the LIMIT, and the statements' pages merged here.
-const HISTORY_IDS = 2;
-export function encodeCursor(at: string, id: string): string {
-  return btoa(JSON.stringify([at, id]));
-}
-export function decodeCursor(value: string): { at: string; id: string } {
-  try {
-    const decoded = JSON.parse(atob(value));
-    if (!Array.isArray(decoded) || decoded.length !== 2 || typeof decoded[0] !== 'string' || typeof decoded[1] !== 'string') throw 0;
-    return { at: decoded[0], id: decoded[1] };
-  } catch { throw new Problem(422, 'Invalid cursor.') }
-}
-// A review keeps the words it was saved with. One saved while crops carried a reading names the
-// wrong-character issue `reading` and its typed characters `suggested_reading`.
-export const recordedIssue = (issue: unknown) => issue === 'reading' ? 'character' : issue ?? null;
+// A review keeps the words it was saved with: one saved while crops carried a reading names its typed
+// characters `suggested_reading`.
 export const typedText = (evidence: Json | null | undefined): string | null =>
   evidence?.suggested_text ?? evidence?.suggested_reading ?? null;
-type HistoryRow = { id: string; at: string; actor: string; target: string; kind: string; event: string; label: string | null;
-  user: string | null; name: string | null; image: string | null };
-// A review's evidence names its own verdict, issue and correction; an undo's evidence is only the id
-// of the event it reverses, so those fields stay null and `undoes` names that event instead.
-export function historyItem(row: HistoryRow, me: string | null = null): Json {
-  const reviewer = { user: row.user, name: row.name ?? row.actor, image: row.image, mine: Boolean(me && row.user === me) };
-  if (row.kind === 'passed') return { id: row.id, at: row.at, target: null, label: row.label, kind: 'passed', reviewer,
-    passed: Number(row.event), verdict: null, issue: null, character: null, text: null, round: row.id, batch: null, undoes: null };
-  const undo = row.kind === 'undo';
-  const parsedEvent = parse(row.event);
-  const evidence = undo ? null : parse(parsedEvent.evidence);
-  return {
-    id: row.id, at: row.at, target: row.target, label: row.label, kind: row.kind as 'review' | 'undo',
-    reviewer,
-    verdict: evidence?.verdict ?? null,
-    issue: recordedIssue(evidence?.issue),
-    character: evidence?.suggested_character ? literal(evidence.suggested_character) : null,
-    text: typedText(evidence),
-    round: evidence?.round ?? null,
-    batch: evidence?.batch ?? null,
-    undoes: undo ? String(parsedEvent.evidence).replace(/^undo of /, '') : null,
-  };
-}
-// Each decision with the dates of the book its crop comes from: a local crop's row names the book, a
-// named corpus glyph's record its source.
-export const historyDocumentsQuery = (n: number) => `SELECT id,coalesce(document,json_extract(data,'$.source.document_id')) AS document
-  FROM units WHERE id IN (${Array(n).fill('?').join(',')})`;
-async function historyDating(env: Env, items: Json[]): Promise<Json[]> {
-  const targets = [...new Set(items.map(item => item.target).filter(Boolean))] as string[];
-  if (!targets.length) return items;
-  const documents = new Map<string, string>();
-  for (const part of chunks(targets, 90))
-    for (const row of (await env.DB.prepare(historyDocumentsQuery(part.length)).bind(...part).all<{ id: string; document: string | null }>()).results)
-      if (row.document) documents.set(row.id, row.document);
-  return withDating(env, items, item => documents.get(item.target) ?? null);
-}
-export async function history(env: Env, q: URLSearchParams, me: string | null) {
-  const limit = Math.max(1, integer(q, 'limit', 40, 100));
-  if (q.get('mine') === 'true' && !me) return { items: [], next: null };
-  const user = q.get('mine') === 'true' ? me : q.get('user') ? text(q.get('user'), 64, 'user', true) : null;
-  const label = q.get('label') ? text(q.get('label'), 32, 'label', true) : null;
-  const before = q.get('before') ? decodeCursor(q.get('before')!) : null;
-  const actors = user ? (await env.DB.prepare('SELECT actor FROM actors WHERE user_id=? ORDER BY actor').bind(user).all<{ actor: string }>()).results.map(r => r.actor) : null;
-  const groups = actors === null ? [null] : Array.from({ length: Math.ceil(actors.length / HISTORY_IDS) }, (_, i) => actors.slice(i * HISTORY_IDS, (i + 1) * HISTORY_IDS));
-  const pages = await env.DB.batch<HistoryRow>(groups.map(group => {
-    const { sql, values } = historyQuery(group, label, before);
-    return env.DB.prepare(sql).bind(...values, limit + 1);
-  }));
-  const rows = pages.flatMap(page => page.results);
-  if (pages.length > 1) rows.sort((a, b) => a.at === b.at ? (a.id < b.id ? 1 : a.id > b.id ? -1 : 0) : a.at < b.at ? 1 : -1);
-  const items = await historyDating(env, rows.slice(0, limit).map(row => historyItem(row, me)));
-  // The cursor is the last row returned; the next page starts strictly after it.
-  const next = rows.length > limit ? encodeCursor(rows[limit - 1].at, rows[limit - 1].id) : null;
-  return { items, next };
-}
 async function reviews(env:Env,all:boolean){
   const rows=await env.DB.prepare(`SELECT e.event,e.snapshot,e.expected_revision,u.revision,u.origin,e.id,u.snapshot AS publication_snapshot,
     EXISTS(SELECT 1 FROM events newer WHERE newer.target=e.target AND newer.expected_revision>e.expected_revision) AS superseded
@@ -1978,13 +1341,6 @@ async function reviews(env:Env,all:boolean){
       expected_revision:r.expected_revision,publication_snapshot:parse(r.publication_snapshot)}
   }),publication:await meta(env,'published_at')};
 }
-/** Whether a suggestions request names the pixels the unit holds now: a corpus glyph by its source
- *  revision, a crop by its page hash, and a crop published without a hash by its image. */
-export function samePixels(q: URLSearchParams, origin: string, data: Json): boolean {
-  if (origin === 'corpus') return q.get('source_revision') === data.source_revision;
-  return data.image_sha256 ? q.get('image_sha256') === data.image_sha256 : q.get('image') === data.image;
-}
-
 const routes = {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     const url=new URL(request.url),path=url.pathname,q=url.searchParams;
@@ -2015,41 +1371,24 @@ const routes = {
         if(!me)throw new Problem(401,'Sign in to save.');
         // An admin's page: rejecting what a reviewer saved. Banning and roles are Better Auth's own.
         if(path.startsWith('/api/admin/')&&!me.admin)throw new Problem(403,'Only an admin can do this.');
-        if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request)));
-        if(path==='/api/admin/corpus-flags')return json(await flagCorpus(env,await body(request)));
+        if(path==='/api/admin/reject')return json(await reject(env,me.id,await body(request),{text}));
+        if(path==='/api/admin/corpus-flags')return json(await flagCorpus(env,me.id,await body(request),{text}));
         if(path==='/api/account/avatar'){
           const origin=request.headers.get('origin');
           if(origin&&origin!==url.origin)throw new Problem(403,'Use the account page on this site.');
           const {status,body:out}=await setAvatar(env,me,q.get('source')??'',request);return json(out,status);
         }
         if(path==='/api/favourites'){
-          try{return json(await setFavourite(env,me.id,await body(request)))}
-          catch(error){if(error instanceof FavouriteError)throw new Problem(error.status,error.message);throw error}
+          try{return json(await setFavourite(env,me.id,await body(request),ctx))}
+          catch(error){if(error instanceof FavouriteError)throw new Problem(error.status,error.message);if(error instanceof StaleCrop)return staleResponse();throw error}
         }
         if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''));return json(out,status)}
-        if(path==='/atlas/corpus/reviews')return json(await submit(env,request,me.id,'@corpus'));
-        if(path==='/atlas/rounds')return json(await submit(env,request,me.id));
-        if(path==='/atlas/corrections'){
-          // A batch changes many crops at once, so each address is held to a rate.
-          const {success}=await env.CORRECTIONS.limit({key:addressKey(request.headers.get('cf-connecting-ip'))});
-          if(!success)throw new Problem(429,'Too many corrections at once. Wait a minute and try again.');
-          return json(await submit(env,request,me.id,'@batch'));
-        }
-        const acted=path.match(/^\/atlas\/claims\/([^/]+)\/actions$/),picked=path.match(/^\/atlas\/characters\/([^/]+)\/(form|word)$/);
-        if(path==='/atlas/claims'||acted||picked){
-          // A claim, an action or a crop's form is a few small rows, and one address is held to a rate.
+        const reviewed=await reviewRoute(env,request,path,me.id);
+        if(reviewed)return reviewed;
+        const claimed=await claimWrite(env,request,path,me,claimTools,async()=>{
           const {success}=await env.CLAIMS.limit({key:addressKey(request.headers.get('cf-connecting-ip'))});
-          if(!success)throw new Problem(429,'Too many claims at once. Wait a minute and try again.');
-          const input=await body(request);
-          let target='';
-          try{target=decodeURIComponent((acted??picked)?.[1]??'')}catch{throw new Problem(404,acted?'No such claim.':'This character is not in the published collection.')}
-          if(picked)return json(picked[2]==='word'?await setWord(env,input,target,me.id,ledgerTools):await setForm(env,input,target,me.id,{...ledgerTools,literal}));
-          return json(acted?await actOnClaim(env,input,target,me.id,me.admin,ledgerTools):await writeClaim(env,input,me.id,ledgerTools));
-        }
-        const undone=path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
-        if(undone)return json(await undo(env,request,me.id,decodeURIComponent(undone[1])));
-        const edit=path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);
-        if(edit)return json(await submit(env,request,me.id,decodeURIComponent(edit[1])));
+          if(!success)throw new Problem(429,'Too many claims at once. Wait a minute and try again.')},ctx);
+        if(claimed)return claimed instanceof Response?claimed:json(claimed);
         const formed=await formsRoute(env,request,path,q,formTools,ctx,me.id);
         if(formed)return formed instanceof Response?formed:json(formed);
         throw new Problem(404,'Unknown endpoint.');
@@ -2058,7 +1397,7 @@ const routes = {
       if(path.startsWith('/api/admin/')){
         if(!(await viewer(env,request,true))?.admin)throw new Problem(403,'Only an admin can see this.');
         if(path==='/api/admin/reviewers')return json(await reviewers(env,q));
-        if(path==='/api/admin/submissions')return json(await submissions(env,q,reviewerActors(Object.fromEntries(q))));
+        if(path==='/api/admin/submissions')return json(await submissions(env,q,await reviewerActors(env,Object.fromEntries(q),{text})));
         throw new Problem(404,'Unknown endpoint.');
       }
       const picture=path.match(AVATAR_PATH);
@@ -2068,7 +1407,7 @@ const routes = {
         // A browser that has never signed in has starred nothing, and reading starts no session.
         const me=await viewer(env,request);
         if(path==='/api/favourites')return json(me?await favouriteIds(env,me.id):{ids:[]},200,{'cache-control':'private, no-store'});
-        return json(me?await favouriteCrops(env,me.id,integer(q,'offset',0),integer(q,'limit',60,60),itemsFor,replacement):{items:[],total:0,offset:0,next:null},200,{'cache-control':'private, no-store'});
+        return json(me?await favouriteCrops(env,me.id,integer(q,'offset',0),integer(q,'limit',60,60),listingItems):{items:[],total:0,offset:0,next:null},200,{'cache-control':'private, no-store'});
       }
       if(path==='/api/account')return json({user:await viewer(env,request,true),providers:providers(env)});
       if(path==='/health')return json(await browse.health(env));
@@ -2081,38 +1420,25 @@ const routes = {
       // A round leaves out what its reviewer skipped lately, so it reads who is asking.
       if(path==='/atlas')return json(await browse.catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null));
       if(path==='/api/ranking')return await ranking(env,url,ctx);
-      if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null));
+      if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null,{text,integer}));
       const counted=path.match(/^\/atlas\/ngrams\/(\d+)$/);
       if(counted)return json(await ngrams(env,ctx,url,ngramSize(counted[1])));
       if(path==='/atlas/runs/related')return json(await runRelated(env,ctx,url));
       if(path==='/atlas/runs'){const timing=new Timing();const body=await runOccurrences(env,ctx,url,timing);return json(body,200,{'server-timing':timing.header()});}
       if(path==='/atlas/corpus/characters')return json(await browse.corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
-      if(path==='/atlas/corpus/character')return json(await inspected(env,await unit(env,q.get('id')||'')));
+      const cropped=await cropRoute(env,ctx,url);
+      if(cropped)return cropped;
       if(path==='/atlas/collection/status')return json(await browse.siteValue(env,'collection'));
       if(path==='/atlas/dates/stats')return json(await browse.dateStats(env,ctx,url));
       const document=path.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
       if(document){let id:string;try{id=decodeURIComponent(document[1])}catch{throw new Problem(404,'No characters are published for this document.')}
         return await documentCharacters(env,url,id,ctx)}
-      const visualSample=path.match(/^\/layers\/visual-groups\/samples\/([^/]+)\/image$/);
-      if(visualSample){const data=parse((await unit(env,decodeURIComponent(visualSample[1]))).data);
-        if(!data.image)throw new Problem(404,'Image not found.');
-        return Response.redirect(new URL(data.image,url).href,302)}
-      if(path==='/atlas/claims')return json(await claimsOf(env,text(q.get('subject'),512,'subject',true)!));
-      if(path==='/atlas/ledger'||path==='/atlas/ledger.json')return json(await ledgerPage(env,q,integer),200,
-        path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-ledger.json"'}:{});
+      const read=await claimRead(env,url,claimTools,ctx);
+      if(read)return read instanceof Response?read:json(read);
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviews(env,q.get('include_processed')==='true'),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-character-reviews.json"'}:{});
-      const neighbours=path.match(/^\/atlas\/characters\/([^/]+)\/line$/);
-      if(neighbours){let id:string;try{id=decodeURIComponent(neighbours[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
-        return json(await line(env,ctx,url,id),200,{'cache-control':'no-cache'})}
-      const shown=path.match(/^\/atlas\/pages\/([^/]+)$/);
-      if(shown){let id:string;try{id=decodeURIComponent(shown[1])}catch{throw new Problem(404,'This page is not in the published collection.')}
-        return json(await sourcePage(env,ctx,url,id),200,{'cache-control':'no-cache'})}
       const cited=path.match(/^\/atlas\/cite\/([^/]+)\/([^/]+)$/);
       if(cited)return await cite(env,ctx,url,cited[1],cited[2]);
-      const versions=path.match(/^\/atlas\/characters\/([^/]+)\/versions$/);
-      if(versions){let id:string;try{id=decodeURIComponent(versions[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
-        return json(await cropVersions(env,id))}
       if(path==='/atlas/similar/model')return json(await modelInfo(env));
       if(path.startsWith('/atlas/ids/')){
         const drawing=await drawingFile(env,path.slice('/atlas/ids/'.length),request,ctx);
@@ -2127,15 +1453,6 @@ const routes = {
       const similar=path.match(/^\/atlas\/characters\/([^/]+)\/similar$/);
       if(similar){let id:string;try{id=decodeURIComponent(similar[1])}catch{throw new Problem(404,'This character is not in the published collection.')}
         return json(await similarCrops(env,id,integer(q,'limit',12,20),itemsFor))}
-      const character=path.match(/^\/atlas\/characters\/([^/]+)(\/suggestions(?:\/context)?)?$/);
-      if(character){const row=await unit(env,decodeURIComponent(character[1]));
-        if(character[2]){
-          const data=parse(row.data);
-          if(q.get('revision')!==String(row.revision)||!samePixels(q,row.origin,data))throw new Problem(409,'Character changed.');
-          return json(parse(character[2].endsWith('/context')?row.context:row.visual));
-        }
-        return json(await inspected(env,row));
-      }
       if(path==='/layers/word-choices')return json({items:await wordChoices(env,text(q.get('q')??'',128,'reading')??'',[...(q.get('c')??'')].slice(0,4))});
       if(path==='/layers/suggest')return json(await suggest(env,q));
       if(path==='/layers/structure')return json(await structureOf(env,ctx,url.origin,q.get('c')||''));
@@ -2155,9 +1472,7 @@ const routes = {
         const selector=path.endsWith('ligatures')?"json_extract(data,'$.ligature') IS NOT NULL":"json_array_length(json_extract(data,'$.grapheme.members'))>1";
         const rows=await env.DB.prepare(`SELECT data FROM characters WHERE ${selector} LIMIT ? OFFSET ?`).bind(integer(q,'limit',200,500),integer(q,'offset',0)).all<{data:string}>();
         return json({items:rows.results.map(r=>parse(r.data)),total:rows.results.length})}
-      if(path==='/atlas/corpus/reviews'){
-        const rows=await env.DB.prepare(flaggedCorpusQuery()).all<UnitRow>();
-        return json({items:await withDating(env,await withForms(env,rows.results.map(compact))),total:rows.results.length})}
+      if(path==='/atlas/corpus/reviews')return json(await flaggedCorpus(env,listingItems));
       if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);
         if(formed)return formed instanceof Response?formed:json(formed)}
       throw new Problem(404,'Unknown endpoint.');

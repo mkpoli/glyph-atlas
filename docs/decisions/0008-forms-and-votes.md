@@ -55,8 +55,9 @@ filters on.
   while a load sends its rows; a trigger refuses decisions meanwhile.
 - The load recomputes each family's `count`, `assigned` and `rejected`. The Worker's recount after a
   decision is not built yet.
-- The forms tool's form of a glyph is not `crops.form`. `crops.form` is a crop's written form, set by
-  the claim that names it (decision record 0005); a forms decision never writes it.
+- The forms tool's form of a glyph is not a crop's written form, which is its `has_form` slot in
+  `current_claims` (decision record 0005); a forms decision never writes it, and `crops.form` stays
+  empty.
 
 ## List retention
 

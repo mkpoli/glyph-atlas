@@ -1,7 +1,8 @@
+import { cropSlotsQuery } from '../cropPanels';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { bundle, bundleKey, cropId, publicId } from '../atlas3';
 import { charsQuery, tallyDeltasQuery } from '../atlas3Answers';
-import { corpusFormsQuery, cropFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
+import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
 import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, cursorOf, cursorText, dateStats, flaggedQuery, gallery, page, type Stage,
   graphemeQuery, health, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter } from './browse';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
@@ -157,6 +158,8 @@ describe('the browse page', () => {
     const { env, db, a, crop } = await setup();
     db.exec(`INSERT INTO suspects VALUES(${crop(a, 0)},0.9,'ほ','は','{"x":0,"y":0,"w":1,"h":1}'),(${crop(a, 1)},0.8,'ほ','あ',NULL);
       INSERT INTO shapes VALUES(${crop(a, 0)},4);
+      INSERT INTO representations(id,scheme,value) VALUES('r:1','unicode','𛂞');
+      INSERT INTO forms(id,anchor,created_by,created_at) VALUES('f:1','r:1','u1','');
       INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) VALUES
         ('x','has_form','','',${crop(a, 0)},0,'single','f:1','[{"object":"f:1","confidence":null,"assertion":"c1"}]','["c1"]',
          '[{"asserted_by":"u1","standing":true,"members":[{"assertion":"c1"}]}]','r',''),
@@ -165,7 +168,7 @@ describe('the browse page', () => {
     const first = items.find((i: any) => i.id === publicId(crop(a, 0))), second = items.find((i: any) => i.id === publicId(crop(a, 1)));
     expect(first.suspect).toEqual({ p: 0.9, reads_as: 'ほ' });
     expect(first.shape_order).toBe(4);
-    expect(first.form).toEqual({ status: 'single', values: [{ form: 'f:1', scheme: null, text: null, confidence: null }], supporting: ['c1'], by: ['u1'] });
+    expect(first.form).toEqual({ status: 'single', values: [{ form: 'f:1', scheme: 'unicode', text: '𛂞', confidence: null }], supporting: ['c1'], by: ['u1'] });
     expect(first.dating.witness.label).toBe('1712');
     expect(first.dating.composed.label).toBe('1600-1650');
     // A mark on another label, and a claim on an earlier cut, no longer hold.
@@ -173,6 +176,11 @@ describe('the browse page', () => {
     expect(second.form).toBeNull();
     expect(first.document).toBe('hk:a');
     expect(first.page_id).toBe('hk:a:1');
+    // A redraw exposes the next cut immediately; only claims made on that cut remain visible.
+    db.exec(`INSERT INTO reviews(crop,gen,at,state,x,y,w,h) VALUES(${crop(a, 0)},1,0,0,2,2,3,3);
+      UPDATE current_claims SET cut=1 WHERE crop=${crop(a, 0)}`);
+    const redrawn = (await get(env, '/atlas?character=は&limit=10')).items.find((i: any) => i.id === publicId(crop(a, 0)));
+    expect(redrawn.form).toEqual(first.form);
   });
 
   it('hold a suspect mark against the crop as it shows now, relabelled or redrawn, as the old site did', async () => {
@@ -209,6 +217,9 @@ describe('the browse page', () => {
     const issue = (id: number) => items.find((i: any) => i.id === publicId(id)).issue;
     expect([issue(crop(a, 6)), issue(crop(b, 3)), issue(crop(a, 9))]).toEqual(['character', 'merged', null]);
     expect((await get(env, '/atlas?character=は&state=checked&limit=10')).items[0].issue).toBeNull();
+    db.exec(`UPDATE events SET issue=NULL,kept_issue=3 WHERE crop=${crop(b, 3)}`);
+    const kept = (await get(env, '/atlas?state=attention&limit=10')).items.find((i: any) => i.id === publicId(crop(b, 3)));
+    expect(kept.issue).toBe('blank');
   });
 
   it('count a review at once, before the next publication', async () => {
@@ -387,7 +398,7 @@ describe('the queries', () => {
       [charsQuery(), ['[1]'], 'SEARCH g USING INTEGER PRIMARY KEY'], [bookDatesQuery(), ['[1]'], 'SEARCH d USING PRIMARY KEY (book=?)'],
       [booksQuery(), ['[1]'], 'SEARCH books USING INTEGER PRIMARY KEY'], [graphemeQuery(), ['は'], 'USING INDEX sqlite_autoindex_graphemes_1'],
       [membersQuery(), [1], 'grapheme_head'], [datingQuery(), ['["hk:a"]'], 'SEARCH d USING PRIMARY KEY (book=?)'],
-      [cropFormsQuery(), ['[1]'], 'current_claim_crop'], [corpusFormsQuery(), ['[1]'], 'SEARCH g USING INTEGER PRIMARY KEY'],
+      [cropSlotsQuery(), ['[1]', 'has_form'], 'current_claim_crop'], [corpusFormsQuery(), ['[1]'], 'SEARCH g USING INTEGER PRIMARY KEY'],
       [marksQuery(), ['[1]'], 'SEARCH s USING INTEGER PRIMARY KEY'], [reviewedQuery(), ['[1]'], 'SEARCH e USING INDEX event_crop (crop=?)'],
       [reviewedQuery(), ['[1]'], 'SEARCH r USING INTEGER PRIMARY KEY']] as [string, unknown[], string][]) {
       const detail = plan(sql, values);
