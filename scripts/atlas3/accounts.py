@@ -381,6 +381,9 @@ def deliver(run, query, base):
     unknown = sorted(stamps - stamps_of(base) - ours)
     if unknown:
         sys.exit(f"{DATABASE} holds {unknown[0]}, which {LOADED.name} lacks; it no longer describes the database")
+    lost = sorted(stamps_of(base) - stamps)
+    if lost:
+        sys.exit(f"{LOADED.name} holds {lost[0]}, which {DATABASE} lacks; it no longer describes the database")
     sent = 0
     for part in sorted(run.glob("*.sql")):
         if stamp(run, part) in stamps_of(base):
