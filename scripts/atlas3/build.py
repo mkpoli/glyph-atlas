@@ -97,6 +97,20 @@ def replacement(text_id, redirects, live):
         at = redirects[at]
 
 
+# A crop whose character is written apart from its grapheme family's head (𛁅 for し), as the publisher
+# keeps `run_written` for a catalogue's crops: the head stands for the crop in its runs' graphemes, the
+# row for how it is written. A new layout's rows and texts come from runs.py, after the build.
+WRITTEN = """SELECT c.id, g.text FROM crops c JOIN graphemes g ON g.id = c.char
+  WHERE g.head IS NOT NULL AND g.head <> g.id"""
+
+
+def horizontal(rows):
+    """Stop on a run written across the page: the layout records no direction, since every run so far
+    is written down it (`run_stats.down` counts them); a column for it comes with the first one."""
+    if n := sum(1 for r in rows if not r["vertical"]):
+        sys.exit(f"{n} runs are written across the page; the layout has no column for their direction yet")
+
+
 STATE = {"pending": 0, "checked": 1, "flagged": 2}
 STYLE = {"cursive": 0, "running": 1, "unassessed": 2, "mixed": 3, "formal": 4, "printed": 5}
 
@@ -117,7 +131,6 @@ def main():
         next_slot INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE books(key TEXT PRIMARY KEY, id INTEGER NOT NULL UNIQUE) WITHOUT ROWID;
       CREATE TABLE codes(field TEXT, key TEXT, code INTEGER, PRIMARY KEY(field, key)) WITHOUT ROWID;
-      CREATE TABLE run_vertical(first INTEGER, size INTEGER, vertical INTEGER, PRIMARY KEY(first, size)) WITHOUT ROWID;
       CREATE TABLE book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
       CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
     """)
@@ -275,7 +288,8 @@ def main():
     runs = sqlite3.connect(OUT / "atlas-runs.sqlite")
     runs.executescript(schema(RUNS_SCHEMA))
     ngrams = src("unit_ngrams")
-    out, stats, missing, vertical = [], defaultdict(lambda: [0, 0]), 0, []
+    horizontal(ngrams.execute("SELECT vertical FROM unit_ngrams"))
+    out, stats, missing = [], defaultdict(lambda: [0, 0]), 0
     for r in ngrams.execute("SELECT * FROM unit_ngrams"):
         a, b = ids.get(r["first"]), ids.get(r["second"])
         c = ids.get(r["third"]) if r["third"] else None
@@ -284,15 +298,12 @@ def main():
             continue
         g = r["graphemes"] or ""
         out.append((r["size"], g, r["hand_order"], shuffle(a), a, b, c, book(r["document"])))
-        vertical.append((a, r["size"], r["vertical"]))
         s = stats[(r["size"], g)]
         s[0] += 1
         s[1] += r["vertical"]
     runs.executemany("INSERT OR IGNORE INTO runs(size,graphemes,hand,shuffle,first,second,third,book) VALUES(?,?,?,?,?,?,?,?)", out)
     runs.executemany("INSERT INTO run_stats(size,graphemes,n,down) VALUES(?,?,?,?)", [(k[0], k[1], v[0], v[1]) for k, v in stats.items()])
     runs.commit()
-    mirror.executemany("INSERT INTO run_vertical VALUES(?,?,?)", vertical)
-    mirror.commit()
     print(f"runs {len(out)} stats {len(stats)} skipped {missing}", flush=True)
     if missing:
         sys.exit(f"{missing} runs name crops the build does not have")

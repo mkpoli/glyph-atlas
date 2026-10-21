@@ -92,7 +92,7 @@ def layout(tmp_path, monkeypatch):
                  [("book:a", "witness", "printed", 1700, 1700, "year", "1700", "single")])
     write_source(tmp_path, "characters", ("code_point", "character", "name", "head"), [])
     write_source(tmp_path, "aliases", ("query", "code_point", "rank"), [])
-    for name in ("build", "publish", "media_map"):
+    for name in ("build", "publish", "media_map", "run_answers"):
         sys.modules.pop(name, None)
     build = importlib.import_module("build")
     build.main()
@@ -244,7 +244,7 @@ def test_runs_of_a_published_crop_follow_its_catalogue(layout, monkeypatch, tmp_
     _root, publish, remote = layout
     path = catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
                                              unit("ex:a3", "hl:p1", {"x": 0, "y": 40, "w": 10, "h": 10}, "え")],
-                     [("ex:a1", 2, "ex:a3", None, "あえ", "book:a", 0, 1, 0, "あえ")])
+                     [("ex:a1", 2, "ex:a3", None, "あえ", "book:a", 1, 1, 0, "あえ")])
     run(publish, monkeypatch, path)
     runs = remote.query("glyph-atlas-v3-runs", "SELECT graphemes FROM runs")
     stats = {r["graphemes"]: r["n"] for r in remote.query("glyph-atlas-v3-runs", "SELECT graphemes, n FROM run_stats")}
