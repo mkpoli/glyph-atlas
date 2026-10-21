@@ -323,7 +323,9 @@ def check_run_forms(report, book_ids):
              "each book's grid counts its live runs", "the forms shards count the live runs' written forms",
              "each run's graphemes are its crops' family heads in the layout's graphemes")
     runs_db = sqlite3.connect(f"file:{OUT / 'atlas-runs.sqlite'}?mode=ro", uri=True)
-    if not runs_db.execute("SELECT 1 FROM sqlite_master WHERE name='run_written'").fetchone():
+    # runs.py --send stamps the local copy once it has loaded; a build has `run_written` empty until then.
+    if not runs_db.execute("SELECT 1 FROM sqlite_master WHERE name='imports'").fetchone() or \
+            not runs_db.execute("SELECT 1 FROM imports WHERE stamp LIKE 'runs-%.answers'").fetchone():
         for check_name in names:
             report.skip(check_name, "the local runs have no written crops yet; runs.py --send loads them")
         return

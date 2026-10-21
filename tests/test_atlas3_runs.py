@@ -150,7 +150,6 @@ def test_a_part_applies_twice_without_a_conflict(layout, monkeypatch):  # noqa: 
 def test_check_compares_the_written_forms_and_answers_with_the_live_runs(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     hentaigana(root)
-    runs(remote, monkeypatch, "--send")
     sys.modules.pop("check", None)
     check = importlib.import_module("check")
 
@@ -169,6 +168,9 @@ def test_check_compares_the_written_forms_and_answers_with_the_live_runs(layout,
         check.check_run_forms(report, dict(sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT key, id FROM books")))
         return sorted(name for name, problems in report.failed.items() if problems)
 
+    # A schema alone has no loaded answer snapshot; all five checks must report it as unavailable.
+    assert len(checked()) == 5
+    runs(remote, monkeypatch, "--send")
     assert checked() == []
     # A crop written otherwise than its live runs say, and a shard that counts otherwise.
     local = sqlite3.connect(root / "out" / "atlas-runs.sqlite")
