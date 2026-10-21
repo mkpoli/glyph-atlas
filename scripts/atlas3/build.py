@@ -258,11 +258,6 @@ def main():
                       [(f, c, k) for f, t in code.codes.items() for k, c in t.items()])
     # The Worker reads the build id here to find the build's R2 objects (`v3/votes/<build>/`).
     atlas.execute("INSERT INTO codes(field,code,key) VALUES('build',0,?)", (build_id,))
-    aliases = src("aliases")
-    atlas.executemany("INSERT OR IGNORE INTO names(text,code_point,rank) VALUES(?,?,?)",
-                      [(r["query"], int(r["code_point"].split()[0].removeprefix("U+"), 16), r["rank"])
-                       # A name for a sequence of code points has no single code point to file under.
-                       for r in aliases.execute("SELECT * FROM aliases") if r["code_point"].startswith("U+") and " " not in r["code_point"]])
     atlas.execute("INSERT INTO generation VALUES(0, 1)")
     atlas.commit()
 

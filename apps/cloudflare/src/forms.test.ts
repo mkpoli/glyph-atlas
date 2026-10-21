@@ -2,6 +2,9 @@ import { describe, expect, it } from 'bun:test';
 import type { Database } from 'bun:sqlite';
 import { formed } from './forms';
 
+// The shared D1 fixtures read R2 directly unless a test supplies an edge cache.
+(globalThis as any).caches = { default: { match: async () => undefined, put: async () => {} } };
+
 describe('form decisions outside cluster membership', () => {
   it('keeps the corrected identity without linking to a removed cluster', () => {
     const result = formed({ id: 'u', label: 'は', form_cluster: { id: 'old' } }, {

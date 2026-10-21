@@ -64,7 +64,7 @@ function oldDatabase() {
 // first and last glyphs.
 function newDatabase() {
   const db = migrated('migrations-atlas'), objects = new Map<string, Uint8Array>();
-  db.exec(`UPDATE generation SET gen=5; INSERT INTO books(id,key) VALUES(1,'hk:b');
+  db.exec(`INSERT INTO generation(id,gen) VALUES(0,5); INSERT INTO books(id,key) VALUES(1,'hk:b');
     INSERT INTO graphemes(id,text,head) VALUES(1,'は',1),(2,'𛂞',1),(3,'𛂙',1);
     INSERT INTO pages(id,key,book,rev) VALUES(${PAGE_ID},'corpus:codh:hk:b:0',1,1);`);
   db.prepare(`INSERT INTO book_dates(book,axis,kind,start,end,precision,text,label,status,calendar,source) VALUES(1,'witness',?,?,?,?,?,?,?,?,'s')`)
