@@ -125,9 +125,10 @@ def row_statements(table, cols, keys, r):
 
 def changes(history, atlas):
     """Statements in groups that turn the local copy's history rows into the translation's, and the count
-    of new, changed and gone rows per table; a row's statements stay in one group. Events the load wrote
-    for marks (no `legacy`) are left out of the comparison."""
-    groups, counts = [], {}
+    of new, changed and gone rows per table; a row's statements stay in one group. Rows gone are deleted
+    first, last table first, so a new row never meets a gone one on a unique column. Events the load
+    wrote for marks (no `legacy`) are left out of the comparison."""
+    groups, gone, counts = [], [], {}
     for table in TABLES:
         info = list(history.execute(f'PRAGMA table_info("{table}")'))
         cols = [r[1] for r in info]
@@ -157,13 +158,13 @@ def changes(history, atlas):
             if len(batch) >= GROUP:
                 groups.append(batch)
                 batch = []
-        for key in old:
-            n["gone"] += 1
-            batch.append(remove(key))
         if batch:
             groups.append(batch)
+        n["gone"] = len(old)
+        gone.append([remove(key) for key in old])
         counts[table] = n
-    return groups, counts
+    deletes = [g for table in reversed(gone) for g in (table[i:i + GROUP] for i in range(0, len(table), GROUP))]
+    return deletes + groups, counts
 
 
 def marks(history, atlas):
@@ -279,6 +280,13 @@ def main():
     migrate(history, atlas, mirror, args.dry_run)
     name = "history-" + hashlib.sha256((OUT / "history.sqlite").read_bytes()).hexdigest()[:12]
     run = OUT / "history-load" / name
+    # The ids history.py kept and gave are those of the loads it saw; another load since would clash.
+    base = {r[0] for r in history.execute("SELECT stamp FROM base")}
+    since = {r[0] for r in atlas.execute("SELECT stamp FROM imports WHERE stamp LIKE 'history-%'")
+             if not r[0].startswith((f"{name}.", f"{name}-marks."))}
+    if since != base:
+        sys.exit(f"the local copy holds history loads the translation did not see ({sorted(since ^ base)[:3]}); "
+                 "run history.py again")
     if not run.exists():
         groups, counts = changes(history, atlas)
         figures = "".join(f"{t}: {c['new']} new, {c['changed']} changed, {c['gone']} gone\n" for t, c in counts.items())

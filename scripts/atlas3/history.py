@@ -799,6 +799,11 @@ def main():
                 "AND key IN ('match', 'wrong', 'unsure'))), "
                 "(SELECT count(*) FROM submissions s WHERE s.actor = a.id AND s.undone = 0), "
                 "(SELECT max(at) FROM submissions s WHERE s.actor = a.id) FROM actors a")
+    # The history loads the local copy held, whose ids this translation kept: load_history.py loads it
+    # only over the same ones.
+    out.execute("CREATE TABLE base(stamp TEXT PRIMARY KEY)")
+    out.executemany("INSERT INTO base VALUES(?)", [(k,) for k in crops.loaded(
+        "SELECT stamp, 1 FROM imports WHERE stamp LIKE 'history-%'")])
     out.commit()
     # The same crops as a catalogue of retired crops, which publish.py numbers.
     catalogue = OUT / "history-tombstones.sqlite"

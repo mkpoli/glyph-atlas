@@ -957,6 +957,9 @@ def check_history(report, name, query=None):
         # from the source seen marks and submissions.
         code = {key: c for c, key in kinds.items()}
         problems, left, matched = [], 0, set()
+        # The crops this translation's load marked; the rest were marked by an earlier one.
+        set_now = {int(x) for part in (OUT / "history-load" / f"{name}-marks").glob("*.sql")
+                   for x in re.findall(r"^UPDATE crops SET .* WHERE id = (\d+) AND", part.read_text(), re.MULTILINE)}
         for m in marks:
             r = atlas.execute("SELECT state, revision, cut FROM crops WHERE id=?", (m["crop"],)).fetchone()
             state = r and states.get(r[0])
@@ -974,14 +977,19 @@ def check_history(report, name, query=None):
             matched.add(e[0])
             text = mirror.execute("SELECT text FROM ids WHERE id=?", (m["crop"],)).fetchone()[0]
             # Of rounds at one time, the highest submission id, as history.py and load_history.py pick it.
-            latest, _id, submission = max(((at, sub_id.get(key, -1), key) for key, at, cut in seen_rows[text]
-                                           if cut == r[2] and key not in undone), default=(None, None, None))
+            shown = [(at, sub_id.get(key, -1), key) for key, at, cut in seen_rows[text] if cut == r[2] and key not in undone]
+            latest, _id, submission = max(shown, default=(None, None, None))
+            earlier = m["crop"] not in set_now and [s for s in shown if s[2] == sub_key.get(e[4])]
+            if earlier:
+                # Set by an earlier load, from the latest round of its copy: a later round leaves it.
+                latest, _id, submission = earlier[0]
             got = {"cut": e[1], "gen": e[2], "actor": actor_key.get(e[3]), "submission": sub_key.get(e[4]), "at": e[5],
                    "state": states.get(e[6]), "actor id": e[3], "submission at": history.execute(
                        "SELECT at FROM submissions WHERE id=?", (e[4],)).fetchone()}
             got["submission at"] = got["submission at"] and got["submission at"][0]
             want = {"cut": r[2], "gen": 0, "actor": src_sub.get(submission, (None,))[0], "submission": submission, "at": latest,
-                    "state": m["state"], "actor id": m["actor"], "submission at": m["at"]}
+                    "state": m["state"], "actor id": actor_id.get(src_sub[submission][0]) if earlier else m["actor"],
+                    "submission at": src_sub[submission][1] if earlier else m["at"]}
             differ = [f"{k} {v!r} expected, {got[k]!r} set" for k, v in want.items() if got[k] != v]
             if differ:
                 problems.append(f"{m['crop']} ({text}): mark event {'; '.join(differ)}")
