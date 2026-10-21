@@ -15,7 +15,8 @@ images to the image key map (`media_map.py`).
   revision is unchanged; the outcome is read back.
 - A known crop with another box or image on its own page is re-cut: same id, its cut moves on.
 - A publish that would move a known crop to another page, or add or re-cut a box overlapping another
-  crop on its page (IoU >= 0.5), is refused with a report: those need the slot matcher.
+  crop on its page (IoU >= 0.5), is refused with a report: those need the slot matcher. A box a
+  reviewer redrew on the site (`box_pending`) names its crop by itself and is published as it is.
 - Order: page bundles to R2, then the rows to glyph-atlas-v3 in parts that never split a page (its
   crops and its revision go together), then the runs to glyph-atlas-v3-runs. Each part counts as
   applied when its stamp is in that database's `imports`, and is then replayed on the local copy.
@@ -626,8 +627,9 @@ def main():
                     refused.append(f"{r['id']}: retired at revision {r['revision']}, reviewed since (revision {current['revision']})")
             elif m.page_key(cid // PAGE) != page_key:
                 refused.append(f"{r['id']}: page {m.page_key(cid // PAGE)} -> {page_key}")
-            elif r["id"] in recut and data.get("box"):
+            elif r["id"] in recut and data.get("box") and not data.get("box_pending"):
                 # Against every other crop's published box, re-cut ones too, so two crops cannot trade glyphs.
+                # A box a reviewer redrew on the site (`box_pending`) is the crop's own, whatever it covers.
                 for e in bundle_of(cid // PAGE)["crops"]:
                     if e["id"] != r["id"] and not e.get("retired") and e["id"] not in retiring \
                             and iou(data["box"], e.get("box")) >= 0.5:

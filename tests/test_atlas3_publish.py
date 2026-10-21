@@ -295,6 +295,18 @@ def test_a_re_cut_onto_another_crops_glyph_stops_the_publish(layout, monkeypatch
         run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10})]))
 
 
+def test_a_box_a_reviewer_redrew_onto_another_crops_glyph_is_published_as_the_site_holds_it(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    a1 = unit("ex:a1", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10})
+    data = {**json.loads(a1[-1]), "box_pending": True}
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [(*a1[:-1], json.dumps(data))]))
+    page = ids(root)["ex:a1"] // PAGE
+    rev = sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT rev FROM pages WHERE id=?", (page,)).fetchone()[0]
+    entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{page}-{rev}.json.gz").read_bytes()))["crops"]
+                 if e["id"] == "ex:a1")
+    assert entry["box"] == {"x": 0, "y": 20, "w": 10, "h": 10}
+
+
 def test_a_known_crop_with_another_box_is_re_cut_under_its_own_id(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     a2 = ids(root)["ex:a2"]
