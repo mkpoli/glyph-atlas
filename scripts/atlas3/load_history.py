@@ -6,9 +6,10 @@ Decision record 0006. Every step writes SQL parts under `out/history-load/<name>
 content of `out/history.sqlite`, so a rerun on the same translation skips what D1 already holds; each
 part is confirmed by its stamp in `imports` and replayed on the local copy.
 
-1. Migrations 0003 and 0008 (stamps `migration:0003`, `migration:0008`), on D1 and the local copy;
+1. Each migration in MIGRATIONS (stamps `migration:<number>`), on D1 and the local copy, once;
    the mirror's `codes` take the two mark states 0003 numbers, so the publisher never numbers them
-   differently.
+   differently. 0008 holds form anchors. 0009 gives events what an undo restores; 0010 the labels each showed and named, and
+   the corpus rows and flags.
 2. The rows of every history table.
 3. Marks: a pending crop with a mark takes the mark as its state, one revision past its own, with an
    event at the round that marked it. A mark on a crop that is not pending is left out, as the old
@@ -37,9 +38,13 @@ SCHEMA = CF / "migrations-atlas"
 # Tables in the order their rows load: who and which request first, then what names them.
 TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats", "suspects", "shapes",
           "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "current_claims",
-          "ledger_submissions", "rejections", "representations", "forms", "form_decisions", "corpus_follow", "written_forms")
-# Each migration whose tables the rows fill, and a table that tells whether the local copy has it.
-MIGRATIONS = (("0003", "0003_history.sql", "actors"), ("0008", "0008_representations.sql", "representations"))
+          "ledger_submissions", "rejections", "representations", "forms", "form_decisions", "corpus_follow", "written_forms", "corpus_rows",
+          "corpus_flags")
+# Each migration the translated rows need, in order, and a query that finds it in the local copy.
+MIGRATIONS = (("0003", "0003_history.sql", "SELECT 1 FROM sqlite_master WHERE name='actors'"),
+              ("0008", "0008_representations.sql", "SELECT 1 FROM sqlite_master WHERE name='representations'"),
+              ("0009", "0009_undo.sql", "SELECT 1 FROM pragma_table_info('events') WHERE name='reverses'"),
+              ("0010", "0010_people.sql", "SELECT 1 FROM sqlite_master WHERE name='corpus_rows'"))
 GROUP = 500
 
 
@@ -65,7 +70,7 @@ def stamped(sql, stamp):
 
 
 def migrate(history, atlas, mirror, dry):
-    """Migrations 0003 and 0008 on D1 and the local copy, once each; a layout built with one already has its tables."""
+    """Each migration in MIGRATIONS on D1 and the local copy, once; a layout built with one already has it."""
     # The mirror numbers new codes after the highest it holds; the two mark states must be the
     # migration's numbers before anything else claims them.
     taken = dict(mirror.execute("SELECT key, code FROM codes WHERE field='state'"))
@@ -73,13 +78,13 @@ def migrate(history, atlas, mirror, dry):
         if taken.get(key, code) != code or (key not in taken and code in taken.values()):
             sys.exit(f"the mirror numbers states {taken}; migration 0003 numbers {key} {code}")
     if dry:
-        print("dry run: migrations 0003 and 0008 and the mirror's mark states not written", flush=True)
+        print("dry run: the migrations and the mirror's mark states not written", flush=True)
         return
     mirror.executemany("INSERT OR IGNORE INTO codes(field, key, code) VALUES(?, ?, ?)",
                        history.execute("SELECT field, key, code FROM codes WHERE field='state'").fetchall())
     mirror.commit()
-    for number, file, table in MIGRATIONS:
-        if atlas.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
+    for number, file, present in MIGRATIONS:
+        if atlas.execute(present).fetchone():
             continue
         stamp = f"migration:{number}"
         path = OUT / "history-load" / f"{number}.sql"
@@ -124,7 +129,7 @@ def rows(history):
         batch = []
         for r in history.execute(f'SELECT {names} FROM "{table}" ORDER BY rowid' if table not in
                                  ("seen", "skips", "favourites", "assertion_evidence", "assertion_premises", "current_claims",
-                                  "representations")
+                                  "representations", "corpus_flags")
                                  else f'SELECT {names} FROM "{table}"'):
             batch += row_statements(table, cols, keys, r)
             if len(batch) >= GROUP:

@@ -254,3 +254,99 @@ def test_a_box_no_cut_has_on_a_crop_with_two_earlier_boxes_is_not_guessed(layout
     code, out = history(monkeypatch, root)
     assert code == 1
     assert out.execute("SELECT count(*) FROM seen").fetchone()[0] == 0
+
+
+def test_an_event_keeps_its_recorded_issue_and_what_it_replaced(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    box = {"x": 0, "y": 20, "w": 10, "h": 10}
+    reading = list(event("cf:1", "ex:a2", "u1:s1", "u1", 0, "2026-10-01T00:00:02Z", box, verdict="wrong", issue="reading"))
+    redrawn = {"x": 1, "y": 21, "w": 9, "h": 9}
+    reading[5] = json.dumps({"box": redrawn, "box_pending": True, "state": "flagged", "issue": "reading", "page_id": "hl:p9"})
+    sources(root, events=[tuple(reading)])
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    issue = dict(out.execute("SELECT key, code FROM codes WHERE field='issue'"))
+    state = dict(out.execute("SELECT key, code FROM codes WHERE field='state'"))
+    # The event keeps the issue as recorded; what the crop held before reads `reading` as `character`, as the
+    # old site renamed it (its migration 0055).
+    assert list(out.execute("SELECT issue, reverses, was_state, was_issue, was_x, was_y, was_w, was_h, kept_issue FROM events")) == [
+        (issue["reading"], None, state.get("flagged", 2), issue["character"], 1, 21, 9, 9, None)]
+
+
+def test_a_batch_that_left_a_reported_crop_reported_moves_with_its_kept_issue(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    box = {"x": 0, "y": 20, "w": 10, "h": 10}
+    kept = list(event("cf:1", "ex:a2", "u1:s1", "u1", 0, "2026-10-01T00:00:02Z", box, verdict="match"))
+    kept[6] = json.dumps({"label": "あ", "state": "flagged", "issue": "crop", "box": box})
+    sources(root, events=[tuple(kept)])
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    issue = dict(out.execute("SELECT key, code FROM codes WHERE field='issue'"))
+    # The answer matched; the crop stays reported for its box.
+    assert list(out.execute("SELECT issue, kept_issue FROM events")) == [(None, issue["crop"])]
+
+
+def test_events_keep_the_label_shown_and_the_character_named(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+
+    def reviewed(id, expected, at, evidence, label):
+        # ex:a2 is at revision 3, so three events fit below it.
+        box = {"x": 0, "y": 20, "w": 10, "h": 10}
+        return (id, "u1:s1", "ex:a2", "u1", expected, json.dumps({"box": box, "page_id": "hl:p1", "label": "あ"}),
+                json.dumps({"label": label, "state": "checked", "box": box}), json.dumps({"evidence": json.dumps(evidence)}),
+                "{}", "review", at, 0)
+    sources(root, events=[
+        # A round names its label; a single review shows the label in its snapshot, and may name a
+        # character that leaves the label as it was.
+        reviewed("cf:1", 0, "2026-10-01T00:00:01Z", {"kind": "visual-quiz", "label": "あ", "verdict": "wrong", "issue": "character",
+                                                     "suggested_character": "U+3044"}, "い"),
+        reviewed("cf:2", 1, "2026-10-01T00:00:02Z", {"kind": "character-review", "verdict": "wrong", "issue": "character",
+                                                     "suggested_character": "U+3044",
+                                                     # A record from before readings left them, its reading not its label.
+                                                     "snapshot": {"character": {"label": "い", "reading": "イ"}},
+                                                     "correction": {"unicode": "U+3044", "reading": "ヰ"}}, "い"),
+        reviewed("cf:3", 2, "2026-10-01T00:00:03Z", {"kind": "character-review", "verdict": "match", "issue": None,
+                                                     "snapshot": {"character": {"label": "い"}}}, "い")])
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    text = dict(sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT id, text FROM graphemes"))
+    rows = [(r, text.get(s), text.get(n), text.get(label), reading)
+            for r, s, n, label, reading in out.execute("SELECT revision, shown, named, label, reading FROM events ORDER BY revision")]
+    assert rows == [(1, "あ", "い", "い", None), (2, "い", "い", "い", "イ"), (3, "い", None, "い", None)]
+    assert [r for (r,) in out.execute("SELECT saved_reading FROM events ORDER BY revision")] == [None, "ヰ", None]
+    # Each keeps the old journal's id, which the review export names it by.
+    assert [i for (i,) in out.execute("SELECT legacy FROM events ORDER BY revision")] == ["cf:1", "cf:2", "cf:3"]
+
+
+def test_corpus_rows_follow_the_old_rows_and_keep_each_flag(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    sources(root)
+    flag = {"finding": "box-relabel", "realigned": "所", "transcribed": None, "at": "2026-10-02T00:00:00Z"}
+    db = sqlite3.connect(root / "source-units.sqlite")
+    db.execute("UPDATE units SET data=? WHERE id='codh:g1'", (json.dumps({"flag": flag}),))
+    db.commit()
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    g1 = ids(root)["codh:g1"]
+    assert list(out.execute("SELECT crop, seq FROM corpus_rows")) == [(g1, 1)]
+    assert list(out.execute("SELECT crop, finding, realigned, transcribed, at FROM corpus_flags")) == [
+        (g1, "box-relabel", "所", None, 1790899200000)]
+
+
+def test_a_submissions_events_are_numbered_in_its_requests_order(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    at = "2026-10-01T00:00:03Z"
+    request = json.dumps({"input": {"answers": [{"id": "ex:b1"}, {"id": "ex:a2"}, {"id": "ex:a1"}]}, "target": None})
+    a2 = {"x": 0, "y": 20, "w": 10, "h": 10}
+    # The event ids sort the other way round from the answers, as random ids may.
+    sources(root, submissions=[sub("u1:s1", "u1", "2026-10-01T00:00:02Z"), ("u1:r", "u1", request, "{}", at, 0)],
+            events=[event("cf:a", "ex:a1", "u1:r", "u1", 0, at), event("cf:b", "ex:a2", "u1:r", "u1", 0, at, a2),
+                    event("cf:c", "ex:b1", "u1:r", "u1", 0, at)])
+    i = ids(root)
+    # Each crop reviewed once since its publication.
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    atlas.execute("UPDATE crops SET revision=1 WHERE id IN (?, ?)", (i["ex:a1"], i["ex:b1"]))
+    atlas.commit()
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    assert [c for (c,) in out.execute("SELECT crop FROM events ORDER BY id")] == [i["ex:b1"], i["ex:a2"], i["ex:a1"]]

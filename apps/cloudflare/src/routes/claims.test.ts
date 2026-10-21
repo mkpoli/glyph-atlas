@@ -23,12 +23,9 @@ afterEach(() => { for (const db of databases.splice(0)) db.close(); });
 
 const W = 'ja/ばかり/副助詞', OTHER = 'ja/のみ/副助詞';
 const BOX = { x: 0, y: 0, w: 10, h: 10 };
-// The table the corpus port's migration 0010 makes: when a corpus glyph was first written.
-const CORPUS_ROWS = 'CREATE TABLE corpus_rows(crop INTEGER PRIMARY KEY, seq INTEGER NOT NULL UNIQUE)';
 const atlasSchema = (db: Database) => {
   const folder = new URL('../../migrations-atlas/', import.meta.url);
   for (const file of readdirSync(folder).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, folder), 'utf8'));
-  db.exec(CORPUS_ROWS);
 };
 
 let pages = 7000;

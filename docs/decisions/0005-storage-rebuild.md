@@ -154,9 +154,11 @@ CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTE
     `ON CONFLICT DO UPDATE SET n = n + excluded.n`;
   - bump `actor_stats`.
 
-  The batch also clears flags whose premise it changed: a new label or box clears `suspect` and
-  `irregular`. A redrawn box is fetched once from the page's IIIF image service and stored in R2
-  under `overrides/<id>-<revision>.jpg`, which galleries show until the next publication cuts it.
+  The batch leaves `flags` as they are: a suspect mark holds while the crop keeps the label and box the
+  classifier was shown, which a reader judges against `suspects` and the crop's label and redrawn box,
+  so an undo that puts them back brings the mark back too. A redrawn box is fetched once from the
+  page's IIIF image service and stored in R2 under `overrides/<id>-<revision>.jpg`, which galleries
+  show until the next publication cuts it.
 - **Absorbing a publication.** The publication bumps `generation` from G to G + 1 in one statement,
   then reads every event with `gen ≤ G`. Batches run in order on the primary, so no review writes
   generation G after the bump. The publication builds its answers and bundles from those events,

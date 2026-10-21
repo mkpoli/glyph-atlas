@@ -36,6 +36,9 @@ History (decision record 0006), when `out/history.sqlite` exists (history.py):
   ranking counts. Every form's anchor names a representation. Every claim whose catalogue subject
   is a crop names its crop and cut, and a saved claim response on a crop names it by integer id and
   the cut its claims rest on.
+  An event's shown label and named character are read from its evidence as the old
+  history page read them; corpus rows follow the source units' corpus rows in rowid order, with each
+  admin's flag.
 - Cuts: a crop with no collected record is cut 0 only if corpus_units has it, and a tombstone is
   checked against its retired bundle entry; every crop cited at cut -1 has that cut, with its earlier
   box, in its bundle once the cuts are published; no event is past its crop's revision (a tombstone
@@ -656,8 +659,15 @@ def check_history(report, name, query=None):
 
     # Events: a crop's revisions follow expected_revision, or time where two share one.
     t = Table(report, history, "events", listed)
+    # The label a review showed, as the old history page read it, and the character it named.
+    evidence_sql = "json_extract(event, '$.evidence')"
     for target, rows_ in itertools.groupby(stream("events", "id, submission, target, actor, expected_revision, before_data, "
-                                                  "after_data, event, at", "target"), key=lambda r: r["target"]):
+                                                  f"after_data, event, at, coalesce(json_extract({evidence_sql}, '$.label'), "
+                                                  f"json_extract({evidence_sql}, '$.snapshot.character.label')) AS shown_label, "
+                                                  f"json_extract({evidence_sql}, '$.suggested_character') AS named_code, "
+                                                  f"json_extract({evidence_sql}, '$.snapshot.character.reading') AS snapshot_reading, "
+                                                  f"json_extract({evidence_sql}, '$.correction.reading') AS saved", "target"),
+                                           key=lambda r: r["target"]):
         group, cid = list(rows_), crop(target)
         if cid is None:
             for _r in group:
@@ -675,14 +685,41 @@ def check_history(report, name, query=None):
                     "label": char_text(after.get("label")) or None, "state": after.get("state"), "style": None,
                     "quiz": after.get("quiz"), "box": box4(after.get("box")) or (None,) * 4,
                     "note": (evidence.get("note") or None) and evidence["note"][:2000], "issue": evidence.get("issue") or None,
-                    "text": evidence.get("suggested_text") or evidence.get("suggested_reading") or None}
+                    "text": evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
+                    "shown": char_text(r["shown_label"]) or None, "named": char_text(r["named_code"]) or None,
+                    "reading": r["snapshot_reading"] or None, "saved_reading": r["saved"], "legacy": r["id"]}
             got = one("SELECT * FROM events WHERE crop=? AND revision=?", cid, revision)
             if got:
                 got.update(actor=actor_key.get(got["actor"]), submission=sub_key.get(got["submission"]), kind=kinds.get(got["kind"]),
                            label=graphemes.get(got["label"]), state=states.get(got["state"]), issue=issues.get(got["issue"]),
+                           shown=graphemes.get(got["shown"]), named=graphemes.get(got["named"]),
                            box=(got["x"], got["y"], got["w"], got["h"]))
             t.compare(f"event {r['id']} on {target} ({cid})", want, got)
     t.done()
+
+    # Within one submission, events are numbered in the order its request lists the crops, the order the
+    # old site wrote their rows in; and across submissions, by time.
+    text_of = {}
+    problems, previous = [], None
+    by_submission = defaultdict(list)
+    for eid, submission, cid, at in history.execute("SELECT id, submission, crop, at FROM events ORDER BY id"):
+        if previous is not None and at < previous:
+            problems.append(f"event {eid}: at {at} before the event numbered just below it")
+        previous = at
+        by_submission[sub_key[submission]].append(cid)
+    for key_, request in source("submissions").execute("SELECT id, request FROM submissions"):
+        got = by_submission.get(key_)
+        if not got or len(got) < 2:
+            continue
+        input_ = json.loads(request).get("input") or {}
+        named = [c["id"] for c in (input_.get("answers") or input_.get("crops") or []) if isinstance(c, dict)]
+        for cid in got:
+            if cid not in text_of:
+                text_of[cid] = mirror.execute("SELECT text FROM ids WHERE id=?", (cid,)).fetchone()[0]
+        order = [text_of[c] for c in got]
+        if order != [t for t in named if t in order]:
+            problems.append(f"submission {key_}: events in the order {order[:5]}, the request lists {named[:5]}")
+    report.check("events are numbered by time and, within a submission, in its request's order", problems)
 
     # No event is past its crop's revision: the crops row's, or a retired crop's last live record's.
     problems, unrecorded = [], []
@@ -958,6 +995,30 @@ def check_history(report, name, query=None):
             continue
         t.compare(f"followed {r['id']} ({cid})", {"crop": cid}, one("SELECT crop FROM corpus_follow WHERE crop=?", cid))
     t.done()
+
+    # Corpus glyphs the old site held a row for, numbered in the order of those rows, with any flag an
+    # admin set on one.
+    t, flags_t = Table(report, history, "corpus_rows", listed), Table(report, history, "corpus_flags", listed)
+    # A keyset copy can hold a row twice; the copy at the later rowid is the row as it stands.
+    corpus_units = {}
+    for text_, data in source("units").execute("SELECT id, data FROM units WHERE origin='corpus' ORDER BY _rowid"):
+        corpus_units.pop(text_, None)
+        corpus_units[text_] = data
+    seq = 0
+    for text_, data in corpus_units.items():
+        cid = crop(text_)
+        if cid is None:
+            t.account("crop unknown")
+            continue
+        seq += 1
+        t.compare(f"corpus row {text_} ({cid})", {"seq": seq}, one("SELECT seq FROM corpus_rows WHERE crop=?", cid))
+        flag = json.loads(data).get("flag")
+        if flag:
+            flags_t.compare(f"flag on {text_} ({cid})", {"finding": flag["finding"], "realigned": flag.get("realigned"),
+                            "transcribed": flag.get("transcribed"), "at": ms(flag["at"])},
+                            one("SELECT finding, realigned, transcribed, at FROM corpus_flags WHERE crop=?", cid))
+    t.done()
+    flags_t.done()
 
     # Script facts on a crop the mirror lacks are dropped; every other row keeps its values.
     for source_, target, cols in (("unit_suspects", "suspects", ("p", "reads_as", "label", "box")),

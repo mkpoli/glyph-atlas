@@ -9,7 +9,7 @@ export const IN_LIST = 100;
 export const MAX_IDS = 1000;
 
 export type Person = { name: string; image: string | null; anonymous: boolean };
-export type ActorPerson = { user: string | null; name: string | null; image: string | null; anonymous: boolean };
+export type ActorPerson = { key: string; user: string | null; name: string | null; image: string | null; anonymous: boolean };
 
 function groups<T>(values: Iterable<T | null | undefined>): T[][] {
   const unique = [...new Set([...values].filter((value): value is T => value !== null && value !== undefined))];
@@ -32,20 +32,20 @@ export async function people(env: Env, ids: Iterable<string | null | undefined>)
 }
 
 /**
- * The user each actor in `actors` belongs to, with that user's name and picture. An actor whose user is
- * deleted, its links in `ATLAS` not yet removed, belongs to nobody.
+ * The user each actor in `actors` belongs to, with that user's name and picture, and the actor's own
+ * text (`key`). An actor whose user is deleted, its links in `ATLAS` not yet removed, belongs to nobody.
  */
 export async function actorPeople(env: Env, actors: Iterable<number | null | undefined>): Promise<Map<number, ActorPerson>> {
   const parts = groups(actors);
   const out = new Map<number, ActorPerson>();
   if (!parts.length) return out;
-  const results = await env.ATLAS.batch<{ id: number; user: string | null }>(
-    parts.map(part => env.ATLAS.prepare(`SELECT id,user FROM actors WHERE id IN (${marks(part.length)})`).bind(...part)));
+  const results = await env.ATLAS.batch<{ id: number; key: string; user: string | null }>(
+    parts.map(part => env.ATLAS.prepare(`SELECT id,key,user FROM actors WHERE id IN (${marks(part.length)})`).bind(...part)));
   const owners = results.flatMap(result => result.results);
   const named = await people(env, owners.map(row => row.user));
-  for (const { id, user } of owners) {
+  for (const { id, key, user } of owners) {
     const person = user ? named.get(user) : undefined;
-    out.set(id, person ? { user, ...person } : { user: null, name: null, image: null, anonymous: false });
+    out.set(id, person ? { key, user, ...person } : { key, user: null, name: null, image: null, anonymous: false });
   }
   return out;
 }
