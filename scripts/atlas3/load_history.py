@@ -212,7 +212,7 @@ def cuts_catalogue():
           "publish it with publish.py", flush=True)
 
 
-def built(final, label, groups, extra=None):
+def built(final, label, groups, extra=None, *, manifest=False):
     """Write a run's parts under a temporary name and rename the folder once complete, so a folder
     that exists holds every part; stamps name the final folder. None when it was already built."""
     if final.exists():
@@ -229,6 +229,9 @@ def built(final, label, groups, extra=None):
             (tmp / file).write_bytes(content)
         else:
             (tmp / file).write_text(content)
+    if manifest:
+        hashes = {part.name: hashlib.sha256(part.read_bytes()).hexdigest() for part in sorted(tmp.glob("*.sql"))}
+        (tmp / "manifest.json").write_text(json.dumps(hashes, sort_keys=True))
     tmp.rename(final)
     return n
 

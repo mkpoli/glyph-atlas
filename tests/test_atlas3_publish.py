@@ -14,11 +14,11 @@ PAGE = 1 << 24
 
 def unit(id, page, box, character="あ", state="pending", revision=0, quiz=1, document="book:a", priority=1):
     data = {"page_id": page, "box": box, "image": f"/atlas/media/{id.replace(':', '')}.webp", "label": character}
-    return (id, "local", character, None, "printed", "kana", state, revision, quiz, priority, 1, document, "unassessed", None,
+    return (id, "local", character, None, None, "printed", "kana", state, revision, quiz, priority, 1, document, "unassessed", None,
             json.dumps(data))
 
 
-UNITS = ("id", "origin", "character", "visual_group", "production", "category", "state", "revision", "quiz", "priority",
+UNITS = ("id", "origin", "character", "family", "visual_group", "production", "category", "state", "revision", "quiz", "priority",
          "shuffle", "document", "style", "written_form", "data")
 
 
@@ -79,7 +79,7 @@ def layout(tmp_path, monkeypatch):
         unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
         unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", state="checked", revision=3),
         unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う"),
-        ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 2, 0, 1, 1, "codh:b", "unassessed", None, "{}"),
+        ("codh:g1", "corpus", "か", None, None, "printed", "kana", "checked", 2, 0, 1, 1, "codh:b", "unassessed", None, "{}"),
     ])
     write_source(tmp_path, "corpus_units", ("id", "character", "family", "visual_group", "shuffle", "object", "offset",
                                             "size", "production", "named", "style", "document", "label"),
@@ -350,7 +350,7 @@ def test_a_corpus_overlay_sets_the_reviewed_style(layout, monkeypatch, tmp_path)
     db.execute("INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'corpus-0001.bin',0,100,'printed',0,'unassessed','codh:b',NULL)")
     db.execute(f"CREATE TABLE units({','.join(UNITS)})")
     db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})",
-               ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 5, 0, 1, 1, "codh:b", "cursive", None, "{}"))
+               ("codh:g1", "corpus", "か", None, None, "printed", "kana", "checked", 5, 0, 1, 1, "codh:b", "cursive", None, "{}"))
     db.commit()
     run(publish, monkeypatch, path)
     styles = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, code FROM codes WHERE field='style'"))
@@ -663,6 +663,50 @@ def test_a_publish_needing_a_statement_over_d1s_limit_allocates_nothing(layout, 
     with pytest.raises(SystemExit, match="over D1's limit"):
         run(publish, monkeypatch, tmp_path / "c.sqlite")
     assert "ex:new" not in ids(root)
+
+
+def corpus_catalogue(path, rows):
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.executemany("INSERT INTO corpus_units VALUES(?,?,?,NULL,7,'corpus-0003.bin',0,100,'printed',0,'unassessed','codh:b',?)", rows)
+    db.commit()
+    return path
+
+
+def test_a_glyph_is_filed_under_the_family_its_source_names(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "corpus.sqlite",
+                                               [("codh:m1", None, "U+3082", "も"), ("codh:m2", "𛄝", "U+3082", "も")]))
+    graphemes = dict(remote.dbs["glyph-atlas-v3"].execute("SELECT text, id FROM graphemes"))
+    found = crops(remote)
+    assert (found[ids(root)["codh:m1"]]["char"], found[ids(root)["codh:m1"]]["family"]) == (None, graphemes["も"])
+    # A glyph with a character keeps its source's family too: it joins its character's family, and the
+    # family it is filed under should a review clear its character.
+    assert (found[ids(root)["codh:m2"]]["char"], found[ids(root)["codh:m2"]]["family"]) == (graphemes["𛄝"], graphemes["も"])
+
+
+def test_a_build_files_a_glyph_with_no_character_under_its_family(layout, monkeypatch, tmp_path):
+    root, _publish, _remote = layout
+    (tmp_path / "source-corpus_units.sqlite").unlink()
+    write_source(tmp_path, "corpus_units", ("id", "character", "family", "visual_group", "shuffle", "object", "offset",
+                                            "size", "production", "named", "style", "document", "label"),
+                 [("codh:m1", None, "U+3082", None, 7, "corpus-0001.bin", 0, 100, "printed", 0, "unassessed", "codh:b", "も")])
+    sys.modules.pop("build", None)
+    monkeypatch.setattr(sys, "argv", ["build.py", "--replace"])
+    importlib.import_module("build").main()
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    family, char = atlas.execute("SELECT family, char FROM crops WHERE kind=1").fetchone()
+    assert char is None and atlas.execute("SELECT text FROM graphemes WHERE id=?", (family,)).fetchone()[0] == "も"
+
+
+def test_a_layout_without_the_family_column_is_refused_by_a_publish(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    local.executescript("".join(f"DROP INDEX {name};" for (name,) in local.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND sql LIKE '%family%'").fetchall()) + "ALTER TABLE crops DROP COLUMN family;")
+    local.close()
+    with pytest.raises(SystemExit, match="fill.py"):
+        run(publish, monkeypatch, corpus_catalogue(tmp_path / "corpus.sqlite", [("codh:m1", None, "U+3082", "も")]))
 
 
 def test_a_publish_that_sent_something_publishes_the_answers_after(layout, monkeypatch, tmp_path):

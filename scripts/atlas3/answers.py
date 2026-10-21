@@ -15,6 +15,8 @@ refused.
 - `counts/<shard>.json.gz`: per character (grapheme id, in shard id % SHARDS), one cell per kind,
   style, state, withheld, witness decade and visual group, with its number of crops. Codes are the
   `codes` table's; a null is unknown.
+- `counts/<shard>.json.gz` also holds `families`: the same cells for crops with no character, per
+  family their source names (`crops.family`, grapheme id, in shard id % SHARDS).
 - `unread.json.gz`: the same cells for crops with no character, per script category (-1 for none).
 - `facets.json.gz`: the collected crops (kind 0) per character, book, production, category, review
   priority, state and withheld flag, -1 for an unknown value, with each character's text and grapheme key: the browse
@@ -36,8 +38,8 @@ A glyph's record is read once from its pack in R2 (an S3 ranged GET with the key
 remote) and kept in out/records.sqlite under its place, which names it for good: packs are written
 once and never changed.
 
-The `tally` rows a review writes carry no decade, visual group or category, so counts by those stand at
-the publication until the next one.
+The `tally` rows a review writes carry the crop's family and witness decade but no visual group, so
+counts by visual group stand at the publication until the next one.
 """
 
 from __future__ import annotations
@@ -91,10 +93,10 @@ READS = 32
 READ_ATTEMPTS = 4
 
 
-def cells(atlas, key):
+def cells(atlas, key, where):
     out = defaultdict(list)
     for row in atlas.execute(f"SELECT {key}, kind, style, state, quiz, {DECADE}, visual_group, count(*) FROM crops "
-                             f"WHERE kind < 2 AND char IS {'NOT ' if key == 'char' else ''}NULL GROUP BY 1, 2, 3, 4, 5, 6, 7"):
+                             f"WHERE kind < 2 AND {where} GROUP BY 1, 2, 3, 4, 5, 6, 7"):
         out[row[0]].append(list(row[1:]))
     return out
 
@@ -328,11 +330,15 @@ def publication(dry_run, read=None):
         sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; the pointer stays")
 
     shards = defaultdict(dict)
-    for char, rows in cells(atlas, "char").items():
+    for char, rows in cells(atlas, "char", "char IS NOT NULL").items():
         shards[char % SHARDS][char] = rows
-    files = [write(folder / "counts" / f"{shard}.json.gz", {"pub": pub, "cell": CELL, "chars": shards.get(shard, {})})
+    families = defaultdict(dict)
+    for family, rows in cells(atlas, "family", "char IS NULL AND family IS NOT NULL").items():
+        families[family % SHARDS][family] = rows
+    files = [write(folder / "counts" / f"{shard}.json.gz", {"pub": pub, "cell": CELL, "chars": shards.get(shard, {}),
+                                                            "families": families.get(shard, {})})
              for shard in range(SHARDS)]
-    unread = cells(atlas, "category")
+    unread = cells(atlas, "category", "char IS NULL")
     # A crop with no category is filed under -1, as `tally` writes unknown.
     top = [write(folder / "unread.json.gz", {"pub": pub, "cell": CELL,
                                               "categories": {str(-1 if k is None else k): v for k, v in unread.items()}})]
@@ -346,6 +352,7 @@ def publication(dry_run, read=None):
     pointer = write(OUT / "pub" / f"pointer-{pub}" / "pointer.json", {"pub": pub, "through_gen": through})
     characters_counted = sum(len(s) for s in shards.values())
     print(f"pub {pub} through generation {through}: {characters_counted} characters in {SHARDS} shards, "
+          f"{sum(len(s) for s in families.values())} families of crops with no character, "
           f"{sum(len(v) for v in unread.values())} unread cells, {len(browse)} browse cells, {len(glyphs)} corpus cells, "
           f"gallery {', '.join(f'{k} {v['glyphs']}' for k, v in pool_sizes.items())} -> {folder}", flush=True)
     if dry_run:

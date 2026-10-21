@@ -17,3 +17,9 @@ CREATE INDEX crop_deal ON crops(char, kind, priority, shuffle, id, quiz, state, 
 
 -- The Flagged view: every collected crop flagged or hard to read (state 2 or 4), withheld or not.
 CREATE INDEX crop_flagged ON crops(shuffle, id) WHERE kind = 0 AND state IN (2, 4);
+
+-- A family's crops with no character (`crops.family`, 0012), in the orders a gallery shows them: by
+-- style, and by witness year. A review that gives such a crop a character takes it out of both, as
+-- `crop_char` takes it in; `char` and `book` are held so a range reads no crop row.
+CREATE INDEX crop_family ON crops(family, kind, style, shuffle, id, quiz, state, year, char, book) WHERE family IS NOT NULL AND char IS NULL;
+CREATE INDEX crop_family_year ON crops(family, kind, year, shuffle, id, style, quiz, state, char) WHERE family IS NOT NULL AND char IS NULL AND year IS NOT NULL;

@@ -265,3 +265,15 @@ def test_a_record_is_read_by_its_byte_range(http_server, monkeypatch, tmp_path):
     http_server.put("glyph-atlas/packs/p1.bin", b"0123456789")
     read = module().s3_reader(http_server.base_url, "key", "secret")
     assert read("packs/p1.bin", 3, 4) == b"3456"
+
+
+def test_crops_with_no_character_are_counted_under_the_family_they_are_filed_under(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, _remote = layout
+    from test_atlas3_publish import corpus_catalogue, run
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "corpus.sqlite", [("codh:m1", None, "U+3082", "も")]))
+    answers(publish, monkeypatch, sample=0)
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    family = atlas.execute("SELECT id FROM graphemes WHERE text='も'").fetchone()[0]
+    body = shard_of(root, family)
+    assert [cell[0] for cell in body["families"][str(family)]] == [1] and body["families"][str(family)][0][-1] == 1
+    assert str(family) not in body["chars"]

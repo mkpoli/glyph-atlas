@@ -305,10 +305,10 @@ function applyStatements(env: Env, key: string, at: number, kinds: number[], cha
   const list = JSON.stringify(changes.map(c => ({ crop: c.crop, category: c.category, box: c.box === undefined ? 0 : 1 })));
   // ?1 the changes, ?2 the submission's key, ?3 the time.
   const mine = `e.submission=(SELECT id FROM submissions WHERE key=?2) AND e.at=?3 AND e.kind IN (${kinds.map(Number).join(',')})`;
-  const cell = 'c.kind,coalesce(c.char,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),c.state,c.quiz';
+  const cell = 'c.kind,coalesce(c.char,-1),coalesce(c.family,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),c.state,c.quiz,coalesce((c.year-CASE WHEN c.year<0 THEN 9 ELSE 0 END)/10*10,-1)';
   const named = (field: string) => `(SELECT j.value->>'${field}' FROM json_each(?1) j WHERE j.value->>'crop'=c.id)`;
   const box = (k: string) => `iif(coalesce(${named('box')},0)=1,e.${k},r.${k})`;
-  const tally = (sign: string, step: string) => env.ATLAS.prepare(`INSERT INTO tally(gen,kind,char,book,production,style,state,quiz,n)
+  const tally = (sign: string, step: string) => env.ATLAS.prepare(`INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n)
     SELECT ${GEN},${cell},${sign}count(*) FROM events e JOIN crops c ON c.id=e.crop AND c.revision${step}=e.revision WHERE ${mine.replaceAll('?2', '?1').replaceAll('?3', '?2')}
     GROUP BY ${cell} ON CONFLICT DO UPDATE SET n=n+excluded.n`).bind(key, at);
   return [

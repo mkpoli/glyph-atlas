@@ -62,11 +62,11 @@ R2_REMOTE = os.environ.get("ATLAS3_R2_REMOTE", "r2")
 BUCKET = "glyph-atlas"
 BUNDLE_PREFIX = "v3/pages/"
 CROP_COLS = ("id", "kind", "book", "char", "form", "cluster", "visual_group", "production", "category", "style",
-             "state", "quiz", "year", "cut", "revision", "flags", "priority", "shuffle")
+             "state", "quiz", "year", "cut", "revision", "flags", "priority", "family", "shuffle")
 # Columns a review owns.
 REVIEW_OWNED = ("char", "state", "style", "quiz", "kind", "flags")
 # What a crop takes when it is new and the catalogue does not say.
-DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0, "priority": 1}
+DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0, "priority": 1, "family": None}
 SUSPECT = 1
 # The mark states, the pending state and the event kind of a re-cut that clears a mark, as migrations
 # 0003 and 0009 and the first build number them. The publication's own events name actor and
@@ -482,16 +482,18 @@ def main():
     if not dry and not applied("glyph-atlas-v3", f"build:{build_id[0]}"):
         sys.exit(f"glyph-atlas-v3 was not loaded from build {build_id[0]}; this mirror does not belong to it")
     # A crop facts load writes the same tables and objects; it finishes first.
+    if m.ids.execute("SELECT 1 FROM pending WHERE run LIKE 'fill/%'").fetchone():
+        sys.exit("the crop fill is unfinished; finish it with fill.py --send first")
     for (name,) in m.ids.execute("SELECT run FROM pending WHERE run LIKE ?", (FACTS_RUN + "%",)):
         sys.exit(f"the crop facts load {name.removeprefix(FACTS_RUN)} is unfinished; finish it with crop_facts.py --send first")
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
         sys.exit("an earlier publish is unfinished; run a publish (not a dry run) to finish it first")
-    # A layout loaded before `crops.priority` takes the column and the crops' values from the cutover's
-    # fill, never from a publish.
-    if "priority" not in {r[1] for r in m.atlas.execute("PRAGMA table_info(crops)")}:
-        sys.exit("the local copy has no crops.priority; run fill.py --send first")
+    # The cutover fills these columns once, before publications resume.
+    missing = {"family", "priority"} - {r[1] for r in m.atlas.execute("PRAGMA table_info(crops)")}
+    if missing:
+        sys.exit(f"the local copy lacks crops columns {sorted(missing)}; run fill.py --send first")
     src = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True) if catalogue else sqlite3.connect(":memory:")
     src.row_factory = sqlite3.Row
     tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -537,6 +539,9 @@ def main():
     with_priority = "priority" in unit_columns
     if with_priority:
         columns += ", priority"
+    with_family = "family" in unit_columns
+    if with_family:
+        columns += ", family"
     with_votes = {"visual", "context"} <= unit_columns
     if with_votes:
         columns += ", visual, context"
@@ -676,7 +681,9 @@ def main():
             continue
         cid = m.known(r["id"]) or m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
         crop_ids[r["id"]] = cid
-        given = {"id": cid, "kind": 0, "book": m.book(r["document"]), "char": m.grapheme(r["character"]),
+        char = m.grapheme(r["character"])
+        given = {"id": cid, "kind": 0, "book": m.book(r["document"]), "char": char,
+                 "family": m.grapheme(r["family"]) if with_family else KEEP,
                  "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
                  "category": m.code("category", r["category"]),
                  # A crop with no style is unassessed: galleries page by style and hold no crop without one.
@@ -721,8 +728,10 @@ def main():
             crop_ids[r["id"]] = cid
             o = overlay.get(r["id"])
             # An upstream glyph speaks for the review columns only through its review overlay.
-            given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source),
-                     "char": m.grapheme((o["character"] if o else None) or r["character"]),
+            char = m.grapheme((o["character"] if o else None) or r["character"])
+            filed = o["family"] if o and with_family else r["family"]
+            given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source), "char": char,
+                     "family": m.grapheme(filed),
                      "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
                      "style": m.code("style", (o["style"] if o else None) or r["style"] or "unassessed"),
                      "state": m.code("state", o["state"] if o else "pending"), "quiz": o["quiz"] if o else 1,

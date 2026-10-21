@@ -101,7 +101,7 @@ def test_another_encoding_under_the_same_box_is_the_current_cut_still_named_by_i
     # image, and the old site recorded both; the overlay names the newer.
     from test_atlas3_publish import UNITS, unit
     box = {"x": 3054, "y": 1048, "w": 91, "h": 102}
-    overlay = ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 2, 0, 1, "codh:b", "unassessed", None,
+    overlay = ("codh:g1", "corpus", "か", None, None, "printed", "kana", "checked", 2, 0, 1, 1, "codh:b", "unassessed", None,
                json.dumps({"box": box, "source_revision": "51174cc2", "image": "/atlas/media/0ecf.webp"}))
     (root / "source-units.sqlite").unlink()
     write_source(root, "units", UNITS, [unit("ex:a1", "hl:p1", A1, "あ"), overlay])

@@ -98,7 +98,8 @@ describe('new-layout character galleries', () => {
 describe('new-layout counts', () => {
   it('add the reviews since the publication to its answer', async () => {
     const { db, env } = setup();
-    db.exec(`INSERT INTO tally VALUES(3,0,7,1,-1,0,0,1,5),(4,0,7,1,-1,0,0,1,-1),(4,0,7,1,-1,0,1,1,1)`);
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) VALUES(3,0,7,-1,1,-1,0,0,1,-1,5),
+      (4,0,7,-1,1,-1,0,0,1,-1,-1),(4,0,7,-1,1,-1,0,1,1,-1,1)`);
     const cells = (await characterCounts(env, [7, 9])).get(7)!;
     expect(cells.filter(c => !c.fresh).map(c => c.n)).toEqual([3, 2]);
     // Only generation 4 counts: generation 3 is in the answer already.

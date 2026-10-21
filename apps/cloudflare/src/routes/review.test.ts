@@ -95,6 +95,20 @@ const crop = (db: Database, id: number) => db.query('SELECT char,state,revision,
 const tally = (db: Database) => Object.fromEntries((db.query('SELECT char,state,sum(n) AS n FROM tally GROUP BY char,state HAVING sum(n)<>0').all() as any[])
   .map(r => [`${r.char}:${r.state}`, r.n]));
 
+describe('review count dimensions', () => {
+  it('keeps source families and witness decades through a review and undo', async () => {
+    const { db, env, ids } = setup();
+    db.exec(`UPDATE crops SET family=1,year=-11 WHERE id=${ids[0]}`);
+    const reviewed = await send(env, '/atlas/rounds', { id: uuid(501), grapheme: 'U+306F',
+      answers: [local(ids[0], { verdict: 'wrong', issue: 'character', character: 'あ' })] });
+    expect(reviewed.status).toBe(200);
+    expect(db.query('SELECT char,family,decade,n FROM tally ORDER BY char').all()).toEqual([
+      { char: 1, family: 1, decade: -20, n: -1 }, { char: 4, family: 1, decade: -20, n: 1 }]);
+    expect((await send(env, `/atlas/rounds/${uuid(501)}/undo`, {})).status).toBe(200);
+    expect(db.query('SELECT sum(abs(n)) AS n FROM tally').get()).toEqual({ n: 0 });
+  });
+});
+
 describe('a round', () => {
   it('reviews its answers, marks what it showed, and answers as the old site did', async () => {
     const { db, env, ids } = setup();

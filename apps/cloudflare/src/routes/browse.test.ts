@@ -225,9 +225,9 @@ describe('the browse page', () => {
   it('count a review at once, before the next publication', async () => {
     const { env, db, a, crop } = await setup();
     db.exec(`UPDATE crops SET state=1, revision=1 WHERE id=${crop(a, 0)};
-      INSERT INTO tally VALUES(1,0,1,1,2,0,0,1,-1),(1,0,1,1,2,0,1,1,1);
+      INSERT INTO tally VALUES(1,0,1,-1,1,2,0,0,1,-1,-1),(1,0,1,-1,1,2,0,1,1,-1,1);
       UPDATE crops SET char=6, revision=1 WHERE id=${crop(a, 8)};
-      INSERT INTO tally VALUES(1,0,-1,1,2,0,0,1,-1),(1,0,6,1,2,0,0,1,1);`);
+      INSERT INTO tally VALUES(1,0,-1,-1,1,2,0,0,1,-1,-1),(1,0,6,-1,1,2,0,0,1,-1,1);`);
     const body = await get(env, '/atlas?limit=0');
     expect(body.counts.checked).toBe(3);
     expect(body.categories.find((c: any) => c.label === 'は')).toMatchObject({ total: 5, pending: 3, checked: 2 });
