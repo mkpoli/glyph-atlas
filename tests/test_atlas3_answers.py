@@ -82,6 +82,21 @@ def test_a_publication_writes_the_site_values_the_status_pages_serve(layout, mon
     assert dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, value FROM site"))["corpus_index"] == '{"sources":2}'
 
 
+def test_unchanged_answers_publish_nothing(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    answers(publish, monkeypatch, sample=0)
+    time.sleep(1.1)  # a publication is named by its second
+    assert answers(publish, monkeypatch, sample=0) == []
+    assert remote.query("glyph-atlas-v3", "SELECT gen FROM generation")[0]["gen"] == 2
+    # A crop that changes state changes the answers, which are published again.
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    atlas.execute("UPDATE crops SET state = (SELECT code FROM codes WHERE field='state' AND key='pending') "
+                  "WHERE char = (SELECT id FROM graphemes WHERE text='い')")
+    atlas.commit()
+    time.sleep(1.1)
+    assert answers(publish, monkeypatch, sample=0)[-1] == ("v3/", ["pointer.json"])
+
+
 def test_a_dry_run_bumps_nothing_and_uploads_nothing(layout, monkeypatch):  # noqa: F811
     _root, publish, remote = layout
     assert answers(publish, monkeypatch, "--dry-run", sample=0) == []
