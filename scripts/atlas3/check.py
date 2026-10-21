@@ -54,6 +54,11 @@ History (decision record 0006), when `out/history.sqlite` exists (history.py):
   event at its revision and cut by the latest round not undone that showed it there (of rounds at one
   time, the highest submission id); at the cutover the count of marks the load left must be recorded.
   With --cutover, glyph-atlas-v3 equals the local copy in all of this.
+- Written: every row the old site wrote to a history table (reviews, rounds, undos, seen marks, skips,
+  favourites, claims and actions, form decisions, rejections) is in the local copy by its id or legacy
+  id, less exactly the rows history-report.txt leaves out, and each table's newest time agrees; with
+  --cutover glyph-atlas-v3 has each table's row count and newest time. Run on a copy taken after the
+  freeze, this gates the switch.
 - Accounts: with `accounts.sqlite`, every `actors.user` and `favourites.user` names a user, and the
   parts accounts.py load sent (`accounts-loaded.sqlite`) rebuild it, each session among them. With --cutover, the
   copy equals the old database's auth tables and glyph-atlas-accounts equals the copy, as accounts.py
@@ -703,6 +708,89 @@ def check_accounts(report, acc, query=None):
                  accounts.differences(acc, query(accounts.DATABASE))[0])
 
 
+# What the old site wrote, table by table: (source table, its key and time, the new layout's key and time
+# for the same row, whether the new time is in ms). A key names the row as the old site did: its id, or
+# the legacy id the translation keeps, through `submissions.key`, `actors.key` and the mirror's text ids.
+WRITTEN = (
+    ("submissions", "id, at", "SELECT key, at FROM submissions", True),
+    ("events", "id, at", "SELECT legacy, at FROM events WHERE legacy IS NOT NULL", True),
+    ("seen", "target, submission, at", ("SELECT t.text, s.key, n.at FROM seen n JOIN submissions s ON s.id = n.submission "
+                                        "JOIN mirror.ids t ON t.id = n.crop"), True),
+    # One skip per crop and actor: the newest.
+    ("skips", "target, actor, max(at)", ("SELECT t.text, a.key, k.at FROM skips k JOIN actors a ON a.id = k.actor "
+                                         "JOIN mirror.ids t ON t.id = k.crop"), True),
+    ("favourites", "user_id, unit, at", "SELECT f.user, t.text, f.at FROM favourites f JOIN mirror.ids t ON t.id = f.crop", True),
+    ("actors", "actor, at", "SELECT key, at FROM actors WHERE at IS NOT NULL", True),
+    ("assertions", "id, asserted_at", "SELECT id, asserted_at FROM assertions", False),
+    ("assertion_actions", "id, at", "SELECT id, at FROM assertion_actions", False),
+    ("assertion_evidence", "assertion, kind, ref, NULL", "SELECT assertion, kind, ref, NULL FROM assertion_evidence", False),
+    ("assertion_premises", "assertion, premise, NULL", "SELECT assertion, premise, NULL FROM assertion_premises", False),
+    ("current_claims", "subject, predicate, scope, slot, at", "SELECT subject, predicate, scope, slot, at FROM current_claims", False),
+    ("ledger_submissions", "id, at", "SELECT id, at FROM ledger_submissions", False),
+    ("rejections", "submission, at", "SELECT s.key, r.at FROM rejections r JOIN submissions s ON s.id = r.submission", True),
+    ("forms", "id, created_at", "SELECT id, created_at FROM forms", False),
+    ("representations", "id, NULL", "SELECT id, NULL FROM representations", False),
+    ("form_decisions", "id, at", "SELECT id, at FROM form_decisions", False),
+    ("corpus_follow", "id, NULL", "SELECT t.text, NULL FROM corpus_follow c JOIN mirror.ids t ON t.id = c.crop", False),
+    ("written_forms", "id, at", "SELECT id, at FROM written_forms", False),
+)
+
+
+def check_written(report, query=None):
+    """Every row the old site wrote to a history table before the copy (reviews, rounds, undos, seen marks,
+    skips, favourites, claims and their actions, form decisions, rejections) is in the new layout, matched
+    by its id or the legacy id the translation keeps, and the newest time agrees; rows history.py leaves out
+    are those its report lists. With `query` (the cutover), glyph-atlas-v3's row count and newest time of
+    each table equal the local copy's. Gates the switch: after the freeze, a fresh copy and the loads."""
+    atlas = sqlite3.connect(f"file:{OUT / 'atlas.sqlite'}?mode=ro", uri=True)
+    if not atlas.execute("SELECT 1 FROM imports WHERE stamp LIKE 'history-%.rows-%' LIMIT 1").fetchone():
+        report.skip("every row the old site wrote is in the new layout", "the history is not loaded; load_history.py loads it")
+        return
+    absent = [t for t, *_ in WRITTEN if not (HERE / f"source-{t}.sqlite").exists()]
+    if absent:
+        report.skip("every row the old site wrote is in the new layout", f"no copy of {', '.join(absent)}; pull.py copies them")
+        return
+    atlas.execute("ATTACH ? AS mirror", (f"file:{OUT / 'mirror.sqlite'}?mode=ro",))
+    text = (OUT / "history-report.txt").read_text() if (OUT / "history-report.txt").exists() else ""
+    dropped, table = Counter(), None
+    for line in text.splitlines():
+        if m := re.match(r"(\w+): in \d+, out \d+", line):
+            table = m[1]
+        elif table and (m := re.match(r"\s+dropped \((\d+)\) (.+)$", line)) and "older skip" not in m[2]:
+            dropped[table] += int(m[1])
+    figures, problems = [], []
+    for table, cols, sql, in_ms in WRITTEN:
+        group = " GROUP BY target, actor" if table == "skips" else ""
+        old = {tuple(r[:-1]): r[-1] for r in source(table).execute(f'SELECT {cols} FROM "{table}"{group}')}
+        new = {tuple(r[:-1]): r[-1] for r in atlas.execute(sql)}
+        missing = [k for k in old if k not in new]
+        if len(missing) != dropped[table]:
+            problems += [f"{table} {k}: written on the old site, not in the new layout" for k in missing[:SHOWN]]
+            problems.append(f"{table}: {len(missing)} rows missing, history-report.txt leaves out {dropped[table]}")
+        # The newest time among the old rows the layout keeps.
+        times = [ms(v) if in_ms else v for k, v in old.items() if v is not None and k in new]
+        newest_old, newest_new = max(times, default=None), max((v for v in new.values() if v is not None), default=None)
+        if newest_old != newest_new:
+            problems.append(f"{table}: newest time {newest_old} on the old site, {newest_new} in the new layout")
+        figures.append(f"{table}: {len(old)} old, {len(new)} new, {len(missing)} left out; newest {newest_old}")
+    report.info("rows the old site wrote, and the new layout's", figures)
+    report.check("every row the old site wrote to a history table is in the new layout, by id or legacy id", problems)
+    if query is None:
+        return
+    remote_ = query("glyph-atlas-v3")
+    problems = []
+    for table, *_ in WRITTEN:
+        target = table
+        at = {"assertions": "asserted_at", "forms": "created_at", "assertion_evidence": None, "assertion_premises": None,
+              "representations": None, "corpus_follow": None}.get(table, "at")
+        sql = f'SELECT count(*) AS n{f", max({at}) AS t" if at else ", NULL AS t"} FROM "{target}"'
+        here = atlas.execute(sql).fetchone()
+        there = remote_(sql)[0]
+        if (there["n"], there["t"]) != tuple(here):
+            problems.append(f"{target}: {tuple(here)} in the local copy, ({there['n']}, {there['t']}) in glyph-atlas-v3")
+    report.check("glyph-atlas-v3 has each history table's row count and newest time as the local copy", problems)
+
+
 def check_history(report, name, query=None):
     path = OUT / "history.sqlite"
     if name is None:
@@ -1252,6 +1340,7 @@ def main():
     name = translation()
     check_crops(report, name)
     check_history(report, name, remote if cutover else None)
+    check_written(report, remote if cutover else None)
     path = OUT / f"check-{time.strftime('%Y%m%dT%H%M%S')}.txt"
     path.write_text("\n".join(report.lines) + "\n")
     print(f"{'all checks pass' if not report.failed else f'{report.failed} checks fail'}; report in {path}", flush=True)

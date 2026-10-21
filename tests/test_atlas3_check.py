@@ -595,3 +595,18 @@ def test_a_tombstones_current_box_is_its_retired_bundle_entrys(layout, monkeypat
     assert cuts.current("ex:a1") == (0, 0, 10, 10)
     assert cuts.current("ex:nothing") is None
     assert cuts.cut("ex:gone", {"x": 1, "y": 2, "w": 3, "h": 4}) == 0
+
+
+def test_every_row_the_old_site_wrote_is_in_the_new_layout(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    translated(root, monkeypatch, sources, history, favourites=[("user-1", "ex:a1", "2026-10-01T00:00:03Z")])
+    assert check(monkeypatch) == 0
+    assert "skip every row the old site wrote is in the new layout" in report(root)
+    load(publish, remote, monkeypatch)
+    assert check(monkeypatch) == 0
+    assert "ok   every row the old site wrote to a history table is in the new layout, by id or legacy id" in report(root)
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    local.execute("DELETE FROM favourites")
+    local.commit()
+    assert check(monkeypatch) == 1
+    assert "favourites: 1 rows missing, history-report.txt leaves out 0" in report(root)
