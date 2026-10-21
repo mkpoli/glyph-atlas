@@ -5,7 +5,7 @@
   "scripts": {
     "types": "wrangler types",
     "check": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --isolate",
     "deploy": "bun run --cwd ../review build && wrangler deploy",
     "dev": "bun run --cwd ../review build && wrangler dev"
   },

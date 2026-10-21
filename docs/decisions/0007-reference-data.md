@@ -17,18 +17,28 @@ character. Only a small part is filtered, joined or sorted in SQL.
 `scripts/atlas3/reference.py` and read through the Worker's shard reader (`atlas3Reference.ts`):
 
 - `char/<code points>.json.gz`, one per card: `data` and `detail`, the card's grapheme id, its 異体字
-  edges from both ends, its derived forms with the component pairs their substitutions rest on, the
+  edges from both ends with the families of the cards they name (`variant_families`, as a summary
+  shard holds them), its derived forms with the component pairs their substitutions rest on, the
   graphemes it writes, and the writers of its family head with `shared` worked out. `ids` gives the
   grapheme id of each character the object names that has one, for the count shards. A character
   page reads this one object.
 - `summary/<shard>.json.gz`: each card's `data` under its family head, in the shard of the head, so a
   family's members are one read and a reader takes only the families it asks for. 4,096 shards keep
   one near 41 KB of JSON. `graphemeMembers` reads its key's shard; a search list reads one per family
-  it shows.
+  the query names.
+- `readings/<shard>.json.gz`: each kana reading of `data/vocab/kanji-readings.json` with its kanji,
+  most attested first, and the families of the first 49 of them, in the shard of the reading. A kana
+  search takes at most 49 of a reading's kanji, the ones the query names skipped, so the kanji it
+  lists and their other forms come in this one read; a one-character search finds its 異体字 and
+  theirs in the character's own object. Without them a list read one summary shard per kanji or
+  variant family it showed, up to the 48 a list shows.
 - `names.json.gz`: every card's Unicode name and how often the character occurs. A name that is a
   prefix and the hex of its code point (`CJK UNIFIED IDEOGRAPH-4E00`) is kept as the prefix and the
-  code point, so a search for `4e00` or `U+4E00` still finds it; the Worker ranks what a name search
-  finds by occurrences.
+  code point, so a search for `4e00` still finds it. The list also gives the code points that have a
+  card and how often each occurs, which ranks a search's hits; a name search answers in code point
+  order, the order of the old table's rows. A card of several code points (か゚) has no row in
+  `names`, which files a name under one code point; it is named by its own text and by its code
+  points in lower case, as every alias of such a card in the old table was, and the list answers both.
 - `ids/<shard>.json.gz` (descriptions and regional shapes by character) and
   `list/graphemes/<n>.json.gz`, `list/ligatures/<n>.json.gz` (the card lists, 500 to an object, so a
   page of the list reads at most two).
@@ -43,8 +53,9 @@ code point(s) (`U+3042`) for a summary, two of the character itself (`好`) for 
 
 **What a query filters, joins or sorts on stays in D1** (`migrations-atlas/0004_reference.sql`):
 `component_variants` without its pairs (the IDS editor's substitutes, read by either end), `words` and
-`word_spellings` (looked up by spelling and validated by claims), and the graphemes the cards name
-that the layout lacks. The component index left D1: as 1.46M rows it was 30 MB and a first load's
+`word_spellings` (looked up by spelling and validated by claims), the search's `names` (the cards'
+aliases, by text, each under the card's one code point), and the graphemes the cards name that the
+layout lacks. The component index left D1: as 1.46M rows it was 30 MB and a first load's
 1.46M rows written, and the search reads it by component, which a list per component serves.
 
 - **Characters are `graphemes` ids** wherever crops meet them. A card's character or family head the
@@ -72,7 +83,10 @@ that the layout lacks. The component index left D1: as 1.46M rows it was 30 MB a
   68 KB name list. The translation holds one object at a time: 186 MB resident at most, in 3 min 48 s.
 - A character page reads one reference object; the IDS editor one shard and D1; a name search the
   name list and the family shards it shows; a component search the component names and two to
-  eight lists. A search list reads one summary shard per family it shows: over the 234,391 alias
-  queries, 99.9% read one shard and none more than three.
+  eight lists. Over the 234,391 alias queries, at 8 and at 48 a list, a search reads at most three
+  summary shards and one reading or card object besides: four objects in all at most, 99.8% two or
+  fewer. Reading every card from its family's shard took up to 8 shards a query at 8 and 47 at 48,
+  the kana readings the most. The variant families add 51 MB gzipped to the card objects (largest
+  19 KB without its detail) and the readings 2,839 shards, 14 MB (largest 63 KB).
 - The tools that export these sources (`export_character_variants.py`, `export_components_cloudflare.py`)
   still write the old database; they move to this load with the Worker.

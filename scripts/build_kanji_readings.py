@@ -1,4 +1,4 @@
-"""Build apps/review/static/refs/kanji-readings.json, the Japanese readings the search box finds kanji by.
+"""Build data/vocab/kanji-readings.json, the Japanese readings the search box finds kanji by.
 
 A reader who types とき is shown 時 and 刻 as well as the kana 𛄤. The readings are Unihan's
 `kJapanese` (Unihan_Readings.txt): 音読み in katakana and 訓読み in hiragana, as the dictionaries
@@ -14,7 +14,8 @@ The order of a kanji's own readings in `kJapanese` says nothing of how common ea
 first), so it is not used. Rebuild after the corpus grows much; the readings themselves change only
 with a Unicode release.
 
-The file is a static asset, so the readings cost the site's database no rows.
+scripts/atlas3/reference.py writes the table into the reference objects with the cards of the first
+kanji of each reading, so a kana search reads one object for the kanji it lists; run it after this.
 
     uv run python scripts/build_kanji_readings.py
 """
@@ -36,7 +37,7 @@ from glyph_atlas.refs import to_hiragana
 ROOT = Path(__file__).resolve().parents[1]
 UNICODE_VERSION = "18.0.0"
 UNIHAN_URL = f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/Unihan.zip"
-TARGET = ROOT / "apps" / "review" / "static" / "refs" / "kanji-readings.json"
+TARGET = ROOT / "data" / "vocab" / "kanji-readings.json"
 SOURCE = ROOT / "data" / "sources" / "unihan.yaml"
 
 
