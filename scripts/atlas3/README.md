@@ -77,7 +77,12 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
 - A crop facts load left unfinished (`crop_facts.py --send`) stops the publish until it is finished.
 - A statement over 90 KB stops the publish before anything is allocated.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
-  keeps its runs.
+  keeps its runs; a run whose crops change in place is updated, not replaced. Every run is written down
+  the page: a catalogue run written across it stops the publish, since the layout has no column for its
+  direction yet. The publish keeps `run_written` for the catalogue's crops and, once the runs have
+  landed, writes again the R2 answers of the books and forms shards it changed and Explore's grids
+  (`run_answers.py`), uploading those whose bytes R2 lacks. It refuses a local copy without
+  `run_written` (`runs.py`).
 - A crop joins the family gallery of its character's family (`graphemes.head`). Every crop also keeps
   the family its source names (`crops.family`, migration 0012), and a crop with no character is listed
   with that family: a corpus glyph transcribed も, which may be も or one of its hentaigana, is listed
@@ -237,6 +242,18 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    cutover, its dates come from running the resolver, `resolve` in `src/glyph_atlas/dates.py` (the one
    `scripts/export_dates_cloudflare.py` runs), over its `date_*` assertions in `glyph-atlas-v3`; the
    step that does so and writes `book_dates` is *not built*.
+   `runs.py` (a dry run without `--send`) adds how the runs are written
+   (`migrations-atlas-runs/0002_forms.sql`, which `--send` applies to `glyph-atlas-v3-runs`):
+   `run_written` holds each crop written apart from its grapheme family's head, with its character, so a
+   run's written form is its crops' rows, else their heads; a review that changes a crop's written
+   character writes its row. The counts go to R2 under `v3/runs/` (`run_answers.py`): Explore's grid of
+   each length with the forms each run gathers, each book's grid, and every run's forms sharded by length
+   and first code point. `--send` loads the rows in stamped parts, uploads the objects whose bytes R2
+   lacks, then inserts one stamp into `glyph-atlas-v3`'s `imports`, which moves the publication key the
+   runs' cached answers are kept under. Figures go to `out/runs-report.txt`; `check.py` compares each run's
+   written form and every answer with the live runs. **The first `--send` writes 297,905 rows of
+   `glyph-atlas-v3-runs` and 1 of `glyph-atlas-v3`, and uploads 12,153 objects (6.3 MB) on the copies of 19 October 2026; it needs the owner's
+   approval with the dry run's figures.**
 7. **Move the reference data:** `pull.py --fresh` copies the character cards, the 異体字 graph and its
    derived tier, the writers, words and spellings and the component index. `reference.py` (dry run
    by default) writes the cards with their edges, derived forms and writers as one R2 object per

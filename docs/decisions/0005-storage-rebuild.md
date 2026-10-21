@@ -197,8 +197,14 @@ CREATE TABLE run_stats(size INTEGER, graphemes TEXT, n INTEGER, down INTEGER,
 CREATE INDEX run_rank ON run_stats(size, n);
 ```
 
-- A run's line text and direction come from its page bundle. Hands, works, written forms and
-  related runs are R2 answers per run, and book-scope counts are in each book's R2 answer.
+- A run's written form is its crops' characters: `run_written` (crop, character) names each crop
+  written apart from its grapheme family's head, and a crop without a row is written as its head. A
+  review that changes a crop's written character writes its row, so forms follow reviews, while which
+  runs a crop is in, by graphemes, moves at the next publication. Every run is written down the page; a
+  column for the direction comes with the first run that is not. Hands, works and related runs are
+  read from the runs and `run_stats`. Explore's grids with the forms each run gathers, each book's
+  grid and every run's forms (sharded by length and first code point) are R2 answers under
+  `v3/runs/`, which the publisher writes again where its runs changed.
 - **Runs of four to eight** anchor on their rarest three-crop run by `run_stats.n`, then extend pair
   by pair in both directions through `run_first` and `run_second`, joining on crop ids. Their
   counts are capped, as today.

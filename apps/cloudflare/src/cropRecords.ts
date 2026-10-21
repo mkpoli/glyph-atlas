@@ -51,6 +51,9 @@ const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND coalesce(
  *  revision a client must send back; it is not the old site's count for those crops. */
 export const MARKS = (c: string) => `(SELECT count(*) FROM events e WHERE e.crop=${c}.id AND ${MARKED('e')} AND e.revision>coalesce((SELECT max(f.revision)
     FROM events f WHERE f.crop=${c}.id AND NOT ${MARKED('f')}),-1))`;
+// Whether a standing review explicitly named the crop's written character.
+export const WRITTEN = (crop: string) => `EXISTS(SELECT 1 FROM events e WHERE e.crop=${crop} AND e.named IS NOT NULL
+  AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id))`;
 // One crop's row with everything its record takes from D1, every join a key lookup and every event read a
 // range of `event_crop`. Each event holds the crop's values after it, undos (`reverses`) included, so a
 // flagged crop's issue is its last event's: the one a batch correction left it with (`kept_issue`), else its
@@ -66,7 +69,7 @@ export const recordQuery = () => `SELECT c.id,c.kind,c.book,s.key AS state,c.rev
   CASE WHEN r.x IS NOT NULL THEN (SELECT min(e.at) FROM events e WHERE e.crop=c.id AND e.cut=c.cut AND e.x=r.x AND e.y=r.y AND e.w=r.w AND e.h=r.h)
     END AS redrawn_at,
   EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.kind<3 AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id)) AS reviewed,
-  EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.named IS NOT NULL AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id)) AS written,
+  ${WRITTEN('c.id')} AS written,
   c.revision-${MARKS('c')} AS settled,
   fc.key AS cluster_key,fg.crop IS NOT NULL AS glyph_set,iif(fg.crop IS NULL,fc.form,fg.form) AS form,
   iif(fg.crop IS NULL,nullif(fc.issue,'mixed'),fg.issue) AS form_issue,iif(fg.crop IS NULL,fc.character,fg.character) AS form_character,
@@ -89,6 +92,13 @@ const scriptOf = (written: string) => /\p{Script=Katakana}/u.test(written) ? 'ka
   : /\p{Script=Han}/u.test(written) ? 'han' : /\p{Script=Hangul}/u.test(written) ? 'hangul' : /\p{Script=Tangut}/u.test(written) ? 'tangut'
   : isGugyeol(written) ? 'gugyeol' : 'symbol';
 
+/** A human reading takes precedence over an older forms-tool decision. */
+export function writtenRecord(record: Json, written: string, head: string | null): Json {
+  return { ...record, label: written, char: written, code_point: codePoints(written), written_character: written,
+    identity_status: 'assigned', identity_basis: 'human_review', script: scriptOf(written),
+    grapheme: codePoints(head ?? written), visual_group: null, category: categoryOf(written) };
+}
+
 /** The record of a crop from its row and the published fields (`base`: the bundle entry, or the corpus
  *  glyph's published record). `source_id` is the id the crop had before the cutover, which listings carry
  *  too (`cropItems`), so an address written with it (a citation's version token) is still read. */
@@ -102,12 +112,7 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   // A review keeps the crop's category on its record, and the issue it stands flagged for.
   if (row.reviewed) record.category = row.category ?? categoryOf(record.label ?? '');
   if (row.reviewed || row.issue !== null) record.issue = record.state !== 'flagged' ? null : recordIssue(row.issue);
-  if (row.written && row.char) {
-    const written = row.char;
-    Object.assign(record, { label: written, char: written, code_point: codePoints(written), written_character: written,
-      identity_status: 'assigned', identity_basis: 'human_review', script: scriptOf(written),
-      grapheme: codePoints(row.head ?? written), visual_group: null, category: categoryOf(written) });
-  }
+  if (row.written && row.char) record = writtenRecord(record, row.char, row.head);
   // A redrawn box is the crop's until the next publication cuts it; the image shown is still the old cut.
   if (row.x !== null) Object.assign(record, { box: { x: row.x, y: row.y, w: row.w, h: row.h }, box_pending: true });
   return { ...record, crop_version: cropVersion(record.id, record), crop_editable: !corpus && Boolean(redrawLimits(record)) };

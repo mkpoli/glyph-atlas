@@ -23,7 +23,10 @@ remote is read.
   `replaced_by`, followed through retired entries, reaches a live crop within 8 steps; it has none
   only when its redirects reach no live crop.
 - Runs: the runs of two and three crops are the live ones, crop for crop, with their graphemes, hand
-  and book.
+  and book; once runs.py has loaded them, each is written as its live row (its crops' `run_written`
+  rows, else their family heads), its graphemes are its crops' family heads in the layout's
+  `graphemes` (the fold a query of it takes), and Explore's grids, each book's grid and the forms shards
+  in out/runs-answers/ count the live runs as the old `ngram_counts` and `ngram_forms` did.
 - Images: every live image key is in the image key map, at its live place.
 
 History (decision record 0006), when `out/history.sqlite` exists (history.py):
@@ -74,6 +77,8 @@ from datetime import datetime
 from build import HERE, OUT, PAGE, bundle_entry, char_text
 from history import CROP_PREDICATES
 from load_history import TABLES as LOADED
+from run_answers import FORMS_LISTED
+from run_answers import GRID as BOOK_GRID
 
 SHOWN = 20
 # How many `replaced_by` steps the site follows from a retired crop.
@@ -350,6 +355,8 @@ def check_crops(report, name):
     report.check("the runs are the live ones", [f"{k}: live {live_runs[k]}, new layout {new_runs[k]}"
                                                 for k in (live_runs.keys() | new_runs.keys()) if live_runs[k] != new_runs[k]])
 
+    check_run_forms(report, book_ids)
+
     # Images.
     missing, shard_cache = [], {}
     # In key order, so each shard is read once.
@@ -363,6 +370,80 @@ def check_crops(report, name):
         if not place or [s["objects"][place[0]], place[1], place[2]] != [obj, offset, size]:
             missing.append(k)
     report.check("every live image is in the image key map at its place", missing)
+
+
+def check_run_forms(report, book_ids):
+    """Each run's written form against its live row, and the runs' R2 answers against the live runs, as
+    the old triggers counted them (`ngram_forms`, `ngram_counts`, migration 0074)."""
+    names = ("each run is written as its live row", "Explore's grids count the live runs",
+             "each book's grid counts its live runs", "the forms shards count the live runs' written forms",
+             "each run's graphemes are its crops' family heads in the layout's graphemes")
+    runs_db = sqlite3.connect(f"file:{OUT / 'atlas-runs.sqlite'}?mode=ro", uri=True)
+    # runs.py --send stamps the local copy once it has loaded; a build has `run_written` empty until then.
+    if not runs_db.execute("SELECT 1 FROM sqlite_master WHERE name='imports'").fetchone() or \
+            not runs_db.execute("SELECT 1 FROM imports WHERE stamp LIKE 'runs-%.answers'").fetchone():
+        for check_name in names:
+            report.skip(check_name, "the local runs have no written crops yet; runs.py --send loads them")
+        return
+    db = sqlite3.connect("file::memory:", uri=True)
+    for name, path in (("s", HERE / "source-unit_ngrams.sqlite"), ("m", OUT / "mirror.sqlite"), ("a", OUT / "atlas.sqlite"),
+                       ("r", OUT / "atlas-runs.sqlite"), ("u", HERE / "source-units.sqlite"), ("k", HERE / "source-corpus_units.sqlite")):
+        db.execute("ATTACH ? AS " + name, (f"file:{path}?mode=ro",))
+    # Each run crop's written character as the old triggers wrote it into its runs' text (0063), and its
+    # family head in the layout; the Worker writes a crop as its run_written row, else that head.
+    db.executescript("""
+      CREATE TEMP TABLE members(t TEXT PRIMARY KEY) WITHOUT ROWID;
+      INSERT OR IGNORE INTO members SELECT first FROM s.unit_ngrams UNION SELECT second FROM s.unit_ngrams
+        UNION SELECT third FROM s.unit_ngrams WHERE third IS NOT NULL;
+      CREATE TEMP TABLE uc(t TEXT PRIMARY KEY, c TEXT) WITHOUT ROWID;
+      INSERT OR REPLACE INTO uc SELECT id, character FROM u.units WHERE id IN (SELECT t FROM members) ORDER BY _rowid;
+      CREATE TEMP TABLE kc(t TEXT PRIMARY KEY, c TEXT, l TEXT) WITHOUT ROWID;
+      INSERT OR REPLACE INTO kc SELECT id, character, label FROM k.corpus_units WHERE id IN (SELECT t FROM members) ORDER BY _rowid;
+      CREATE TEMP TABLE crop(t TEXT PRIMARY KEY, shown TEXT, head TEXT) WITHOUT ROWID;
+      INSERT INTO crop SELECT x.t, coalesce(w.char, x.h), x.h FROM (SELECT v.t, i.id,
+          coalesce((SELECT hh.text FROM a.graphemes g JOIN a.graphemes hh ON hh.id = g.head WHERE g.text = v.w), v.w) AS h
+        FROM (SELECT c.t, coalesce(iif(uc.t IS NOT NULL, uc.c, kc.c), kc.l) AS w FROM members c
+          LEFT JOIN uc ON uc.t = c.t LEFT JOIN kc ON kc.t = c.t) v LEFT JOIN m.ids i ON i.text = v.t) x
+        LEFT JOIN r.run_written w ON w.crop = x.id;
+    """)
+    concat = "{0}.{1} || {2}.{1} || iif(u.third IS NULL, '', {3}.{1})"
+    joins = "FROM s.unit_ngrams u JOIN crop a0 ON a0.t = u.first JOIN crop a1 ON a1.t = u.second LEFT JOIN crop a2 ON a2.t = u.third"
+    shown, heads = concat.format("a0", "shown", "a1", "a2"), concat.format("a0", "head", "a1", "a2")
+    report.check(names[0], [f"{first} size {size}: live {text!r}, new layout {got!r}" for first, size, text, got in db.execute(
+        f"SELECT u.first, u.size, u.text, {shown} {joins} WHERE u.text IS NOT NULL AND u.text IS NOT {shown}")])
+    report.check(names[4], [f"{first} size {size}: {graphemes!r}, heads {got!r}" for first, size, graphemes, got in db.execute(
+        f"SELECT u.first, u.size, u.graphemes, {heads} {joins} WHERE u.graphemes IS NOT NULL AND u.graphemes IS NOT {heads}")])
+
+    forms, sites, books = defaultdict(Counter), Counter(), defaultdict(Counter)
+    for size, graphemes, text, document in source("unit_ngrams").execute(
+            "SELECT size, graphemes, text, document FROM unit_ngrams WHERE text IS NOT NULL AND graphemes IS NOT NULL"):
+        forms[(size, graphemes)][text] += 1
+        sites[(size, graphemes)] += 1
+        if document:
+            books[(book_ids.get(document), size)][graphemes] += 1
+
+    def read(path):
+        return json.loads(gzip.decompress(path.read_bytes())) if path.exists() else None
+    answers = OUT / "runs-answers"
+
+    def ranked(counts, n):
+        return [list(x) for x in sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:n]]
+    problems = []
+    for size in (2, 3):
+        want = [[g, n, n, len(forms[(size, g)])] for g, n in ranked(Counter({g: n for (s, g), n in sites.items() if s == size}), BOOK_GRID)]
+        if (got := read(answers / f"grid-{size}.json.gz")) != want:
+            problems.append(f"grid of {size}: {len(want)} live rows, {None if got is None else len(got)} in the answer")
+    report.check(names[1], problems)
+    problems = []
+    for (book, size), counts in sorted(books.items(), key=str):
+        want = [[g, n, n] for g, n in ranked(counts, BOOK_GRID)]
+        if (got := read(answers / "books" / f"{book}-{size}.json.gz")) != want:
+            problems.append(f"book {book} size {size}: live {want[:3]}, answer {None if got is None else got[:3]}")
+    report.check(names[2], problems)
+    shards = defaultdict(dict)
+    for (size, graphemes), counts in forms.items():
+        shards[f"{size}-{ord(graphemes[0]):x}"][graphemes] = [len(counts), ranked(counts, FORMS_LISTED)]
+    report.check(names[3], [f"shard {name}" for name, want in sorted(shards.items()) if read(answers / "forms" / f"{name}.json.gz") != want])
 
 
 # History (decision record 0006): `out/history.sqlite` against the source copies, row by row.

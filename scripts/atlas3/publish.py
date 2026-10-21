@@ -49,7 +49,9 @@ from pathlib import Path
 
 import media_map
 import votes
-from build import CORPUS_PAGE, PAGE, bundle_entry, char_text, replacement, shuffle
+from build import CORPUS_PAGE, PAGE, WRITTEN, bundle_entry, char_text, horizontal, replacement, shuffle
+from run_answers import PREFIX as ANSWER_PREFIX
+from run_answers import RUN_TEXT, Answers, pending, uploaded
 
 ROOT = Path(__file__).resolve().parents[2]
 # Copies of the live tables and the build output live outside the repository.
@@ -172,7 +174,6 @@ class Mirror:
         self.ids = sqlite3.connect(OUT / "mirror.sqlite")
         self.ids.executescript("""
           CREATE TABLE IF NOT EXISTS book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
-          CREATE TABLE IF NOT EXISTS run_vertical(first INTEGER, size INTEGER, vertical INTEGER, PRIMARY KEY(first, size)) WITHOUT ROWID;
           CREATE TABLE IF NOT EXISTS pending(run TEXT PRIMARY KEY);
           CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
         """)
@@ -183,6 +184,9 @@ class Mirror:
         for db in (self.atlas, self.runs):
             db.execute("CREATE TABLE IF NOT EXISTS imports(stamp TEXT PRIMARY KEY, at INTEGER NOT NULL)")
         self.runs.execute("CREATE INDEX IF NOT EXISTS run_first_all ON runs(first)")
+        # The runs' answers are written again for the books and crops a publish changes (run_answers.py).
+        for name, cols in (("run_book_all", "book, size, graphemes"), ("run_second_all", "second"), ("run_third_all", "third")):
+            self.runs.execute(f"CREATE INDEX IF NOT EXISTS {name} ON runs({cols})")
         self.atlas.commit()
         self.runs.commit()
         self.head, self.runs_sql = [], []
@@ -430,6 +434,26 @@ def deliver(m, run):
             if refused:
                 print(f"{len(refused)} changes kept D1's newer review instead (ids in {run.name}/refused-by-d1.json)", flush=True)
             mark(run, "read back")
+    # The runs' answers, once both databases hold what they count: the books and shards the publish
+    # changed, and Explore's grids, written again from the local copies; those whose bytes R2 lacks go up.
+    if "run answers" not in journal(run):
+        if (run / "run-answers.json").exists() and m.runs.execute("SELECT 1 FROM sqlite_master WHERE name='run_written'").fetchone():
+            touched = json.loads((run / "run-answers.json").read_text())
+            # The runs' texts, which the local copy alone holds, then the answers they count.
+            m.runs.execute(RUN_TEXT)
+            m.runs.executemany("DELETE FROM run_text WHERE first=? AND size=?", [t[:2] for t in touched["texts"] if t[2] is None])
+            m.runs.executemany("INSERT OR REPLACE INTO run_text VALUES(?,?,?)", [t for t in touched["texts"] if t[2] is not None])
+            m.runs.commit()
+            if touched["books"] or touched["shards"]:
+                written = Answers()
+                written.books(touched["books"])
+                written.shards({tuple(k) for k in touched["shards"]})
+                written.grids()
+                written.close()
+        for folder, paths in sorted(pending().items()):
+            upload(paths, ANSWER_PREFIX + (folder + "/" if folder else ""))
+            uploaded(paths)
+        mark(run, "run answers")
     # The vote objects go once D1 holds the model codes they name; out/votes/ takes each as it goes up.
     voted = sorted((run / "votes").glob("*.json.gz")) if (run / "votes").exists() else []
     if voted and "votes uploaded" not in journal(run):
@@ -779,10 +803,11 @@ def main():
             m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": text_id, "retired": True, "replaced_by": target}, True)
 
     # Runs: those starting at this catalogue's crops follow it; those touching a retired crop go.
-    runs_note = ""
+    runs_note, scope, texts = "", {"books": set(), "shards": set()}, {}
     if (crop_ids and "unit_ngrams" in tables) or retired:
         want, missing = {}, 0
         if "unit_ngrams" in tables:
+            horizontal(src.execute("SELECT vertical FROM unit_ngrams"))
             for r in src.execute("SELECT * FROM unit_ngrams"):
                 first = crop_ids.get(r["first"])
                 if first is None:
@@ -796,7 +821,9 @@ def main():
                 if retired & set(members):
                     continue
                 key = (r["size"], r["graphemes"] or "", r["hand_order"], shuffle(first), first)
-                want[key] = (members[1], members[2] if len(members) > 2 else None, m.book(r["document"]), r["vertical"])
+                want[key] = (members[1], members[2] if len(members) > 2 else None, m.book(r["document"]))
+                if r["text"] is not None:
+                    texts[(first, r["size"])] = r["text"]
                 m.runs_seen.add(key)
         if missing:
             sys.exit(f"{missing} runs name crops with no id; nothing published")
@@ -814,26 +841,72 @@ def main():
                 sql += f" OR second IN ({','.join('?' * len(gone))}) OR third IN ({','.join('?' * len(gone))})"
                 args = chunk + gone + gone
             for r in m.runs.execute(sql, args):
-                vertical = m.ids.execute("SELECT vertical FROM run_vertical WHERE first=? AND size=?", (r["first"], r["size"])).fetchone()
-                have[tuple(r[k] for k in RUN_KEY)] = (r["second"], r["third"], r["book"], vertical[0] if vertical else 0)
-        delta = defaultdict(lambda: [0, 0])
+                have[tuple(r[k] for k in RUN_KEY)] = (r["second"], r["third"], r["book"])
+        # Every run is written down the page, so each counts once in `n` and in `down`.
+        delta = defaultdict(int)
+
+        def touch(key, value):
+            if key[1]:
+                scope["books"].add(value[2])
+                scope["shards"].add((key[0], ord(key[1][0])))
         for key, value in have.items():
-            if want.get(key) != value:
+            if key not in want:
+                texts.setdefault((key[4], key[0]), None)
                 m.runs_sql.append("DELETE FROM runs WHERE " + " AND ".join(f"{c}={lit(v)}" for c, v in zip(RUN_KEY, key)) + ";")
-                delta[key[:2]][0] -= 1
-                delta[key[:2]][1] -= value[3]
+                delta[key[:2]] -= 1
+                touch(key, value)
         for key, value in want.items():
-            if have.get(key) != value:
-                m.runs_sql.append(insert("runs", (*RUN_KEY, "second", "third", "book"), (*key, *value[:3])))
-                m.ids.execute("INSERT OR REPLACE INTO run_vertical VALUES(?,?,?)", (key[4], key[0], value[3]))
-                delta[key[:2]][0] += 1
-                delta[key[:2]][1] += value[3]
-        for (size, graphemes), (dn, dd) in delta.items():
-            if dn or dd:
-                m.runs_sql.append(f"INSERT INTO run_stats(size,graphemes,n,down) VALUES({size},{lit(graphemes)},{dn},{dd}) "
+            old = have.get(key)
+            if old is None:
+                m.runs_sql.append(insert("runs", (*RUN_KEY, "second", "third", "book"), (*key, *value)))
+                delta[key[:2]] += 1
+            elif old != value:
+                # The same run with other crops or another book: only what changed is written.
+                changed = ", ".join(f"{c}={lit(v)}" for c, v, w in zip(("second", "third", "book"), value, old) if v != w)
+                m.runs_sql.append(f"UPDATE runs SET {changed} WHERE " + " AND ".join(f"{c}={lit(v)}" for c, v in zip(RUN_KEY, key)) + ";")
+                touch(key, old)
+            else:
+                continue
+            touch(key, value)
+        # A run written anew counts again in its shard, though its row is unchanged.
+        has_texts = m.runs.execute("SELECT 1 FROM sqlite_master WHERE name='run_text'").fetchone()
+        for key in want:
+            text = texts.get((key[4], key[0]))
+            held_text = m.runs.execute("SELECT text FROM run_text WHERE first=? AND size=?", (key[4], key[0])).fetchone() if has_texts else None
+            if key[1] and text != (held_text[0] if held_text else None):
+                scope["shards"].add((key[0], ord(key[1][0])))
+        for (size, graphemes), dn in delta.items():
+            if dn:
+                m.runs_sql.append(f"INSERT INTO run_stats(size,graphemes,n,down) VALUES({size},{lit(graphemes)},{dn},{dn}) "
                                   "ON CONFLICT(size,graphemes) DO UPDATE SET n=n+excluded.n, down=down+excluded.down;")
                 m.runs_sql.append(f"DELETE FROM run_stats WHERE size={size} AND graphemes={lit(graphemes)} AND n<=0;")
         runs_note = f", {len(m.runs_sql)} run statements"
+    # How this catalogue's crops are written: a crop written apart from its family head has its row in
+    # run_written, and the runs it is in are counted again in the answers. A crop with no character (a
+    # corpus glyph known by its label) keeps its row, which only runs.py derives.
+    published = sorted((set(crop_ids.values()) | retired) - {None})
+    if published and not m.runs.execute("SELECT 1 FROM sqlite_master WHERE name='run_written'").fetchone():
+        sys.exit("the local runs have no written crops yet; runs.py --send loads them first")
+    if published:
+        written, held = {}, {}
+        for i in range(0, len(published), 500):
+            chunk = published[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            written.update(m.atlas.execute(f"{WRITTEN} AND c.id IN ({marks})", chunk).fetchall())
+            named = {r[0] for r in m.atlas.execute(f"SELECT id FROM crops WHERE char IS NOT NULL AND id IN ({marks})", chunk)}
+            held.update((c, w) for c, w in m.runs.execute(f"SELECT crop, char FROM run_written WHERE crop IN ({marks})", chunk)
+                        if c in named or c in retired)
+        moved = sorted(c for c in held.keys() | written.keys() if held.get(c) != written.get(c))
+        m.runs_sql += [f"DELETE FROM run_written WHERE crop={c};" if c not in written else
+                       f"INSERT INTO run_written(crop,char) VALUES({c},{lit(written[c])}) ON CONFLICT(crop) DO UPDATE "
+                       "SET char=excluded.char WHERE char<>excluded.char;" for c in moved]
+        for i in range(0, len(moved), 300):
+            chunk = moved[i:i + 300]
+            marks = ",".join("?" * len(chunk))
+            for size, graphemes in m.runs.execute(f"SELECT size, graphemes FROM runs WHERE first IN ({marks}) OR second IN ({marks}) "
+                                                  f"OR third IN ({marks})", chunk * 3):
+                if graphemes:
+                    scope["shards"].add((size, ord(graphemes[0])))
     # Runs this catalogue cannot rebuild: a relabelled crop that is the second or third of a run
     # anchored on a crop outside the catalogue keeps that run's old text until its first is published.
     rebuilt = {k[4] for k in m.runs_seen}
@@ -897,6 +970,8 @@ def main():
     atlas_parts = write_parts(run, "atlas", [g for g in groups if g])
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))
+    (run / "run-answers.json").write_text(json.dumps({"books": sorted(scope["books"]), "shards": sorted(scope["shards"]),
+                                                      "texts": [[*k, v] for k, v in sorted(texts.items())]}))
     statements = sum(len(g) for g in groups)
     (run / "stale.json").write_text(json.dumps(m.stale))
     voted = [votes.write(run / "votes", pid, m.votes[pid]) for pid in sorted(m.voted)
@@ -919,7 +994,7 @@ def main():
         mark(run, "dry run")
         print("dry run: nothing allocated, sent or changed")
         return
-    if not atlas_parts and not runs_parts and not voted:
+    if not atlas_parts and not runs_parts and not voted and not pending():
         m.ids.rollback()
         mark(run, "nothing to send")
         media_map.send(upload)
