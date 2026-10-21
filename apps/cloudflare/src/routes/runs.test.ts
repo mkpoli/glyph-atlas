@@ -202,6 +202,13 @@ describe('runs on the new layout keep their answers', () => {
 });
 
 describe('runs on the new layout', () => {
+  it('list an occurrence of a unit the site never had by its text id', async () => {
+    const f = fixture();
+    f.atlas.exec(`INSERT INTO book_characters(book,ord,crop,unit,data) VALUES(2,9,NULL,'ar:gone','{"label":"い"}')`);
+    const book = await (await ask(f.newEnv, '/atlas/documents/' + encodeURIComponent('hk:other') + '/characters')).json();
+    expect(book.characters).toEqual([{ label: 'い', unit: 'ar:gone', atlas: false }]);
+  });
+
   it('refuse lengths and pages they do not serve', async () => {
     const f = fixture();
     await expect(ask(f.newEnv, '/atlas/ngrams/4')).rejects.toMatchObject({ status: 404 });

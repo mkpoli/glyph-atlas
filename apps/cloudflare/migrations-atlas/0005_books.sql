@@ -25,8 +25,10 @@ CREATE TABLE book_dates(book INTEGER NOT NULL, axis TEXT NOT NULL CHECK (axis IN
 --   SELECT c.ord, c.crop, c.data, (k.kind = 0 OR (k.kind = 1 AND (EXISTS (SELECT 1 FROM seen WHERE crop = c.crop)
 --       OR EXISTS (SELECT 1 FROM skips WHERE crop = c.crop) OR EXISTS (SELECT 1 FROM events WHERE crop = c.crop)))) AS shown
 --   FROM book_characters c JOIN crops k ON k.id = c.crop WHERE c.book = ?1 AND c.ord >= ?2 ORDER BY c.ord LIMIT ?3;
-CREATE TABLE book_characters(book INTEGER NOT NULL, ord INTEGER NOT NULL, crop INTEGER NOT NULL,
-  data TEXT NOT NULL, PRIMARY KEY(book, ord)) WITHOUT ROWID;
+-- An occurrence whose unit the site never had, which a source's list still names, keeps that text id in
+-- `unit`, with no `crop`.
+CREATE TABLE book_characters(book INTEGER NOT NULL, ord INTEGER NOT NULL, crop INTEGER, unit TEXT,
+  data TEXT NOT NULL, PRIMARY KEY(book, ord), CHECK ((crop IS NULL) <> (unit IS NULL))) WITHOUT ROWID;
 
 -- Values a publication states about the whole site: `collection` (the collection's status),
 -- `corpus_index` (the corpus summary), `review_epoch` (moves when review history was reset, so
