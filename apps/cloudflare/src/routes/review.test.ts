@@ -198,6 +198,48 @@ describe('a round', () => {
     expect((await send(env, `/atlas/characters/${publicId(ids[1])}`, { ...local(ids[1]), id: uuid(2), verdict: 'unsure' })).status).toBe(409);
   });
 
+  it.each(['batch', 'corpus'])('keeps the %s response when a mark forces a retry', async mode => {
+    const { db, env, ids } = setup();
+    const id = ids[mode === 'batch' ? 0 : 6], batch = env.ATLAS.batch.bind(env.ATLAS);
+    let raced = false;
+    (env.ATLAS as any).batch = async (list: any[]) => {
+      if (!raced) {
+        raced = true;
+        db.exec(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,state) VALUES(${id},1,0,3,9,9,1,3,3);
+          UPDATE crops SET state=3,revision=1 WHERE id=${id}`);
+      }
+      return batch(list);
+    };
+    const path = mode === 'batch' ? '/atlas/corrections' : '/atlas/corpus/reviews';
+    const input = mode === 'batch' ? { id: uuid(1), character: 'は', crops: [local(id)] }
+      : { id: uuid(1), identity: publicId(id), revision: 0, source_revision: G, verdict: 'match' };
+    const saved = await send(env, path, input);
+    expect(saved.status).toBe(200);
+    if (mode === 'batch') expect(saved.body).toMatchObject({ id: uuid(1), unchanged: [], results: [{ target_id: publicId(id), state: 'checked' }] });
+    else expect(saved.body).toMatchObject({ id: publicId(id), origin: 'corpus', event: { state: 'checked', revision: 2 } });
+    expect((await send(env, path, input)).body).toEqual(saved.body);
+  });
+
+  it('drops observations if a cut, character or eligibility changes before commit', async () => {
+    const { db, env, ids } = setup();
+    const batch = env.ATLAS.batch.bind(env.ATLAS);
+    let raced = false;
+    (env.ATLAS as any).batch = async (list: any[]) => {
+      if (!raced) {
+        raced = true;
+        db.exec(`UPDATE crops SET cut=1 WHERE id=${ids[0]}; UPDATE crops SET quiz=0 WHERE id=${ids[1]};
+          UPDATE crops SET char=4 WHERE id=${ids[2]}`);
+      }
+      return batch(list);
+    };
+    const saved = await send(env, '/atlas/rounds', { id: uuid(1), grapheme: 'U+306F',
+      seen: [local(ids[0]), local(ids[1]), local(ids[3])], skipped: [local(ids[2])] });
+    expect(saved).toEqual({ status: 200, body: { id: uuid(1), results: [{ target_id: publicId(ids[3]), field: 'seen' }] } });
+    expect(db.query('SELECT crop FROM seen').all()).toEqual([{ crop: ids[3] }]);
+    expect(db.query('SELECT crop FROM skips').all()).toEqual([]);
+    expect(db.query('SELECT crop,cut FROM events').all()).toEqual([{ crop: ids[3], cut: 0 }]);
+  });
+
   it('answers a retired crop with the one that replaced it', async () => {
     const { env, ids, page } = setup();
     const retired = publicId(cropId(page, 9));
@@ -217,6 +259,28 @@ describe('a round', () => {
 });
 
 describe('an undo', () => {
+  it.each(['marks', 'unchanged'])('counts concurrent undo only once for a %s-only submission', async mode => {
+    const { db, env, ids } = setup();
+    if (mode === 'marks') await send(env, '/atlas/rounds', { id: uuid(1), grapheme: 'U+306F', seen: [local(ids[0])] });
+    else {
+      db.query('UPDATE crops SET state=1 WHERE id=?').run(ids[0]);
+      await send(env, '/atlas/corrections', { id: uuid(1), character: 'は', crops: [local(ids[0])] });
+    }
+    const batch = env.ATLAS.batch.bind(env.ATLAS), other = { ...env, ATLAS: { ...env.ATLAS, batch } } as Env;
+    const path = `/atlas/rounds/${uuid(1)}/undo`;
+    let raced = false;
+    (env.ATLAS as any).batch = async (list: any[]) => {
+      if (!raced) {
+        raced = true;
+        expect((await send(other, path, {})).status).toBe(200);
+      }
+      return batch(list);
+    };
+    expect(await send(env, path, {})).toEqual({ status: 200, body: { id: uuid(1), results: [], duplicate: true } });
+    expect(db.query('SELECT reviews,rounds FROM actor_stats').all()).toEqual([{ reviews: 0, rounds: 0 }]);
+    expect(db.query('SELECT count(*) AS n FROM events WHERE kind=5').get()).toEqual({ n: mode === 'marks' ? 1 : 0 });
+  });
+
   it('puts back what the round changed, and its marks', async () => {
     const { db, env, ids } = setup();
     await send(env, '/atlas/rounds', { id: uuid(2), grapheme: 'U+306F', skipped: [local(ids[2])] }, 'u2');
