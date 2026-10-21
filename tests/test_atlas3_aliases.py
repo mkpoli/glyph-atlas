@@ -61,6 +61,16 @@ def test_a_shard_is_named_by_the_first_three_hex_digits_of_the_text_ids_sha256(d
     assert not list((root / "out" / "aliases").glob("*.part"))
 
 
+def test_a_rerun_uploads_only_the_shards_that_changed(data):
+    root, run = data
+    run([], "--send")
+    _aliases, sent = run([], "--send")
+    assert sent == [([], "v3/aliases/")]
+    aliases, sent = run([("hk:d", "ex:a1")], "--send")
+    assert sent == [([f"{aliases.shard_name('hk:d')}.json.gz"], "v3/aliases/")]
+    assert not (root / "out" / "aliases" / "unsent").exists()
+
+
 def test_a_chain_resolves_to_the_first_text_id_the_mirror_has(data, capsys):
     root, run = data
     # hk:c -> hk:b -> ex:old, which the mirror has; ex:old's own redirect is not followed.
