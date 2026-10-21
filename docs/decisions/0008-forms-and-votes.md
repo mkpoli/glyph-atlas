@@ -56,8 +56,9 @@ filters on.
 - The load recomputes each family's `count`, `assigned` and `rejected`. A decision recounts its
   family's `assigned` and `rejected` in its own batch, from `form_clusters` and `form_glyphs`
   (`apps/cloudflare/src/routes/forms.ts`).
-- The forms tool's form of a glyph is not `crops.form`. `crops.form` is a crop's written form, set by
-  the claim that names it (decision record 0005); a forms decision never writes it.
+- The forms tool's form of a glyph is not a crop's written form, which is its `has_form` slot in
+  `current_claims` (decision record 0005); a forms decision never writes it, and `crops.form` stays
+  empty.
 
 ## List retention
 

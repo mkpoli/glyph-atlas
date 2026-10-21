@@ -40,7 +40,8 @@ function setup() {
   const pack = new Uint8Array(100 + record.length); pack.set(record, 100);
   const objects = new Map<string, Uint8Array>([
     [bundleKey(page, 3), gzipSync(JSON.stringify({ key: 'hk:book:1', book: 1, rev: 3, page: { width: 10 }, crops: [
-      { slot: 0, id: 'hk:a', label: '所', image: '/atlas/media/a.webp', context_box: { x: 0 }, production_evidence: ['colophon'] },
+      { slot: 0, id: 'hk:a', label: '所', image: '/atlas/media/a.webp', context_box: { x: 0 }, production_evidence: ['colophon'],
+        cuts: [{ cut: -1, box: { x: 1 } }], cut_at: '2026-10-03T00:00:00Z', encodings: [] },
       { slot: 1, id: 'hk:b', label: '所', image: '/atlas/media/b.webp' },
       { slot: 2, id: 'hk:c', label: '所', image: '/atlas/media/c.webp' }] }))],
     [bundleKey(corpusPage, 1), gzipSync(JSON.stringify({ key: 'corpus:x:corpus-book:0', book: 2, rev: 1, page: null, crops: [
@@ -81,6 +82,7 @@ describe('new-layout listing items', () => {
       production: 'handwritten', revision: 4, cut: 0, document: 'hk:book', year: 1790, withheld: false, flags: 1,
       image: '/atlas/media/a.webp', production_evidence: ['colophon'], origin: 'local' });
     expect(items[1].context_box).toBeUndefined();
+    expect([items[1].cuts, items[1].cut_at, items[1].encodings]).toEqual([undefined, undefined, undefined]);
     expect(items[1].page_id).toBe('hk:book:1');
     expect(items[0]).toMatchObject({ state: 'pending', withheld: true, year: null });
   });

@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from '../forms.test';
 import { cropId, publicId } from '../atlas3';
-import { FOLLOW_BATCH, clusterGlyphsQuery, clusterQuery, familyClustersQuery, familyGlyphsQuery, followCorpus, followStatements,
+import { FOLLOW_BATCH, describedClaimsQuery, clusterGlyphsQuery, clusterQuery, familyClustersQuery, familyGlyphsQuery, followCorpus, followStatements,
   formsRoute, glyphFamiliesQuery, listFollowQuery, memberDatesQuery, memberRowsQuery, recountQuery, stateQuery } from './forms';
 import { followCorpus as oldFollow, formsRoute as oldRoute } from './forms-old.fixture';
 
@@ -64,7 +64,7 @@ function oldDatabase() {
 // first and last glyphs.
 function newDatabase() {
   const db = migrated('migrations-atlas'), objects = new Map<string, Uint8Array>();
-  db.exec(`INSERT INTO generation VALUES(0,5); INSERT INTO books(id,key) VALUES(1,'hk:b');
+  db.exec(`UPDATE generation SET gen=5; INSERT INTO books(id,key) VALUES(1,'hk:b');
     INSERT INTO graphemes(id,text,head) VALUES(1,'は',1),(2,'𛂞',1),(3,'𛂙',1);
     INSERT INTO pages(id,key,book,rev) VALUES(${PAGE_ID},'corpus:codh:hk:b:0',1,1);`);
   db.prepare(`INSERT INTO book_dates(book,axis,kind,start,end,precision,text,label,status,calendar,source) VALUES(1,'witness',?,?,?,?,?,?,?,?,'s')`)
@@ -183,6 +183,50 @@ describe('the forms routes on glyph-atlas-v3', () => {
     
   });
 
+  it('keeps the source family and negative decade in form-follow tallies', async () => {
+    const { db, env } = newDatabase(), crop = glyphs[0].crop;
+    db.exec(`UPDATE crops SET char=NULL,family=1,year=-11 WHERE id=${crop};
+      UPDATE form_clusters SET form='𛂞' WHERE id=1; INSERT INTO corpus_follow VALUES(${crop});`);
+    await followCorpus(env);
+    expect(db.query('SELECT char,family,decade,n FROM tally ORDER BY char').all())
+      .toEqual([{ char: -1, family: 1, decade: -20, n: -1 }, { char: 2, family: 1, decade: -20, n: 1 }]);
+    expect(db.query('SELECT revision FROM crops WHERE id=?').get(crop)).toEqual({ revision: 0 });
+    db.exec(`UPDATE form_clusters SET form=NULL WHERE id=1; INSERT INTO corpus_follow VALUES(${crop});`);
+    await followCorpus(env);
+    expect(db.query('SELECT * FROM tally').all()).toEqual([]);
+    expect(db.query('SELECT char FROM crops WHERE id=?').get(crop)).toEqual({ char: null });
+  });
+
+  it('offers description claims only on the effective crop cut and refreshes the palette', async () => {
+    const { db, env } = newDatabase(), crop = glyphs[0].crop;
+    const cache = new Map<string, Response>();
+    (globalThis as any).caches = { default: { match: async (r: Request) => cache.get(r.url)?.clone(),
+      put: async (r: Request, value: Response) => { cache.set(r.url, value); } } };
+    const get = async () => {
+      const pending: Promise<unknown>[] = [], path = '/atlas/forms/families/U%2B306F';
+      const result = await formsRoute(env, new Request('https://atlas.test' + path), path, new URLSearchParams(), tools, ctx(pending)) as any;
+      await Promise.all(pending); return result.described;
+    };
+    try {
+      expect(await get()).toEqual([]);
+      db.exec(`INSERT INTO representations(id,scheme,value) VALUES('r:ids','ids','⿱日𤴓');
+        INSERT INTO forms VALUES('f:ids','r:ids','u','t');
+        INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+          VALUES('claim-crop','has_form','','',${crop},0,'single','f:ids','[]','[]','[]','r','t');
+        INSERT INTO ledger_submissions VALUES('claim','u','{}','{}','t');`);
+      expect(await get()).toEqual([{ char: '⿱日𤴓', count: 1 }]);
+      db.exec(`INSERT INTO reviews(crop,gen,at,state,x,y,w,h) VALUES(${crop},5,0,0,1,2,3,4);
+        INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(${crop},1,0,5,1,1,1,6);`);
+      expect(await get()).toEqual([]);
+      db.exec(`UPDATE current_claims SET cut=1; INSERT INTO ledger_submissions VALUES('claim2','u','{}','{}','t');`);
+      expect(await get()).toEqual([{ char: '⿱日𤴓', count: 1 }]);
+      db.exec(`UPDATE current_claims SET status='rejected'; INSERT INTO ledger_submissions VALUES('retract','u','{}','{}','t');`);
+      expect(await get()).toEqual([]);
+    } finally {
+      (globalThis as any).caches = { default: { match: async () => undefined, put: async () => {} } };
+    }
+  });
+
   it('move a large decision in batches', async () => {
     const { fresh } = both();
     const many = Array.from({ length: FOLLOW_BATCH * 2 + 10 }, (_, i) => cropId(PAGE_ID + 1, i));
@@ -239,12 +283,12 @@ describe('the forms routes on glyph-atlas-v3', () => {
     const state = (db.query('EXPLAIN QUERY PLAN ' + stateQuery()).all() as { detail: string }[]).map(r => r.detail);
     expect(state.filter(line => /^SCAN /.test(line))).toEqual(['SCAN form_families', 'SCAN corpus_follow']);
   const plans: [string, unknown[]][] = [ [familyClustersQuery('shape'), [FAMILY]], [familyClustersQuery('size'), [FAMILY]],
-      [familyGlyphsQuery(), [FAMILY]], [clusterQuery(), ['k']], [memberRowsQuery(), ['[]']], [memberDatesQuery(), ['[]']],
+      [familyGlyphsQuery(), [FAMILY]], [describedClaimsQuery(), [FAMILY]], [clusterQuery(), ['k']], [memberRowsQuery(), ['[]']], [memberDatesQuery(), ['[]']],
       [clusterGlyphsQuery(), [1]], [glyphFamiliesQuery(), ['[]']], [recountQuery(), [FAMILY]], [listFollowQuery(), ['[]']],
       ...followStatements().map(sql => [sql, []] as [string, unknown[]])];
     for (const [sql, args] of plans) {
       const scans = (db.query('EXPLAIN QUERY PLAN ' + sql).all(...(args as any[])) as { detail: string }[]).map(r => r.detail)
-        .filter(line => /^SCAN /.test(line) && !/^SCAN (j|json_each|CONSTANT ROW)\b/.test(line) && !/^SCAN (t|w|corpus_follow)\b/.test(line));
+        .filter(line => /^SCAN /.test(line) && !/^SCAN (r|j|json_each|CONSTANT ROW)\b/.test(line) && !/^SCAN (t|w|corpus_follow)\b/.test(line));
       expect({ sql, scans }).toEqual({ sql, scans: [] });
     }
   });

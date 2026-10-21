@@ -32,20 +32,29 @@ export function cropOf(text: string): number | null {
 }
 
 // A page bundle: the page's facts and one entry per crop, by slot. Bundles are immutable under their
-// revision, so an isolate keeps the last few it read.
+// revision, so an isolate keeps the last few it read, and the edge keeps each one it served for a day
+// under a URL of this site that no route answers: an isolate new to a page reads it from R2 once per
+// location.
 export type Entry = Json & { slot: number; id: string };
 export type Bundle = { key: string; book: number; rev: number; page: Json | null; bySlot: Map<number, Entry> };
 export const bundleKey = (page: number, rev: number) => `v3/pages/${page}-${rev}.json.gz`;
-const BUNDLES_HELD = 64;
+const BUNDLES_HELD = 64, BUNDLE_EDGE_SECONDS = 86400;
 const held = new Map<string, Promise<Bundle | null>>();
 export function bundle(env: Env, page: number, rev: number): Promise<Bundle | null> {
   const key = bundleKey(page, rev), hit = held.get(key);
   if (hit) { held.delete(key); held.set(key, hit); return hit; }
   const read = (async () => {
-    const object = await env.MEDIA.get(key);
-    if (!object) return null;
+    const edge = new Request(`https://glyphatlas.org/_bundles/${key}`);
+    let bytes = await caches.default.match(edge).then(hit => hit?.arrayBuffer() ?? null);
+    if (!bytes) {
+      const object = await env.MEDIA.get(key);
+      if (!object) return null;
+      bytes = await new Response(object.body).arrayBuffer();
+      await caches.default.put(edge, new Response(bytes, { headers: { 'cache-control': `public, max-age=${BUNDLE_EDGE_SECONDS}, immutable` } }))
+        .catch(() => {});
+    }
     // Bundles are stored gzipped and served with that encoding; the binding hands back the stored bytes.
-    const body = await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json() as Json;
+    const body = await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json() as Json;
     return { key: body.key, book: body.book, rev: body.rev, page: body.page ?? null,
       bySlot: new Map((body.crops as Entry[]).map(entry => [entry.slot, entry])) };
   })();
@@ -56,12 +65,12 @@ export function bundle(env: Env, page: number, rev: number): Promise<Bundle | nu
   return read;
 }
 
-// Small code tables (state, style, category), the same for every request until a publication adds a
+// Small code tables (state, style, category, issue), the same for every request until a publication adds a
 // code: a listing that meets a code the isolate does not hold reads the table again, once.
 let codes: Promise<Map<string, string>> | null = null;
-function codeNames(env: Env, fresh = false): Promise<Map<string, string>> {
+export function codeNames(env: Env, fresh = false): Promise<Map<string, string>> {
   if (fresh || !codes) {
-    const read = env.ATLAS.prepare(`SELECT field,code,key FROM codes WHERE field IN ('state','style','category')`)
+    const read = env.ATLAS.prepare(`SELECT field,code,key FROM codes WHERE field IN ('state','style','category','issue')`)
       .all<{ field: string; code: number; key: string }>()
       .then(r => new Map(r.results.map(row => [`${row.field}:${row.code}`, row.key])));
     read.catch(() => { if (codes === read) codes = null; });
@@ -80,20 +89,23 @@ export const cropRowsQuery = () => `SELECT c.id,c.kind,g.text AS char,p.key AS p
   FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN pages pg ON pg.id=c.id>>24 JOIN books b ON b.id=c.book
   LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN productions p ON p.id=c.production`;
 
-// Fields only a crop's inspector reads, and where the images sit in their packs, which only the image
-// route reads.
-const UNLISTED = ['text', 'line', 'context_image', 'context_box', 'crop_box', 'image_place', 'context_image_place', 'record_place', 'slot'];
+// Fields only a crop's inspector reads, where the images sit in their packs, which only the image route
+// reads, and the cuts a crop has had, which only its versions read.
+const UNLISTED = ['text', 'line', 'context_image', 'context_box', 'crop_box', 'image_place', 'context_image_place', 'record_place', 'slot',
+  'cuts', 'cut_at', 'encodings'];
 // The item a listing shows for each crop, in the order asked: the bundle's record under the row's
 // current values. A crop with no row, a candidate, or one its bundle does not hold is left out, and so
 // is a corpus glyph whose record (at `record_place` in a pack) is missing or does not parse. A storage
-// error fails the call, as `readRecords` explains.
-export async function cropItems(env: Env, ids: number[]): Promise<Json[]> {
+// error fails the call, as `readRecords` explains. A caller that holds a crop's entry already, with
+// its record in place of `record_place` (the homepage sample), passes it in `given`, and that crop's
+// bundle is not read.
+export async function cropItems(env: Env, ids: number[], given: Map<number, Entry> = new Map()): Promise<Json[]> {
   if (!ids.length) return [];
   const rows = (await env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>()).results;
   const byId = new Map(rows.map(row => [row.id, row]));
-  const pages = new Map(rows.map(row => [pageOf(row.id), row.rev]));
+  const pages = new Map(rows.filter(row => !given.has(row.id)).map(row => [pageOf(row.id), row.rev]));
   const bundles = new Map(await Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev)] as const)));
-  const entries = new Map(ids.map(id => [id, byId.has(id) ? bundles.get(pageOf(id))?.bySlot.get(slotOf(id)) : undefined]));
+  const entries = new Map(ids.map(id => [id, !byId.has(id) ? undefined : given.get(id) ?? bundles.get(pageOf(id))?.bySlot.get(slotOf(id))]));
   const pointer = (entry: Entry) => ({ object: entry.record_place[0], offset: entry.record_place[1], size: entry.record_place[2] });
   const records = await readRecords(env, [...entries.values()].filter(entry => entry?.record_place).map(entry => pointer(entry!)));
   const keys = rows.flatMap(row => [`state:${row.state}`, `style:${row.style}`, `category:${row.category}`]).filter(key => !key.endsWith(':null'));
@@ -107,7 +119,8 @@ export async function cropItems(env: Env, ids: number[]): Promise<Json[]> {
     const whole = entry.record_place ? records.get(recordKey(pointer(entry))) : entry;
     if (!whole) continue;
     const record = Object.fromEntries(Object.entries(whole).filter(([k]) => !UNLISTED.includes(k)));
-    items.push({ ...record, id: publicId(id), source_id: entry.id, label: row.char ?? '',
+    // A corpus glyph with no character yet keeps the label its source gave it.
+    items.push({ ...record, id: publicId(id), source_id: entry.id, label: row.char ?? (row.kind === 1 ? whole.label ?? '' : ''),
       origin: row.kind === 1 ? 'corpus' : 'local', production: row.production ?? 'unknown',
       category: name('category', row.category), style: name('style', row.style), state: name('state', row.state),
       revision: row.revision, cut: row.cut, page_id: row.page_key, document: row.document, year: row.year, withheld: row.quiz === 0, flags: row.flags });

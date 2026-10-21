@@ -85,6 +85,16 @@ export const familyClustersQuery = (order: 'shape' | 'size') =>
 export const familyGlyphsQuery = () => `SELECT g.crop,g.cluster,g.form,g.issue,g.character FROM form_clusters c
   CROSS JOIN form_glyphs g ON g.cluster=c.id WHERE c.family=?`;
 
+// Description claims on the crop's effective cut, read from indexed description ranges.
+export const describedClaimsQuery = () => `SELECT r.value AS form,count(*) AS n FROM
+  (SELECT id,value FROM representations WHERE value>='⿰' AND value<'　' AND scheme='ids'
+   UNION ALL SELECT id,value FROM representations WHERE value>='〾' AND value<'〿' AND scheme='ids'
+   UNION ALL SELECT id,value FROM representations WHERE value>='㇯' AND value<'ㇰ' AND scheme='ids') r
+  CROSS JOIN forms f ON f.anchor=r.id CROSS JOIN current_claims c ON c.predicate='has_form' AND c.object=f.id
+  CROSS JOIN crops k ON k.id=c.crop CROSS JOIN form_clusters g ON g.id=k.cluster
+  LEFT JOIN reviews v ON v.crop=k.id
+  WHERE g.family=? AND c.status<>'rejected' AND c.cut=k.cut+(v.x IS NOT NULL) GROUP BY r.value`;
+
 const mostUsed = (counts: Map<string, number>) =>
   [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([char, count]) => ({ char, count }));
 
@@ -92,9 +102,10 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
   const found = await env.ATLAS.prepare('SELECT * FROM form_families WHERE code_point=?').bind(codePoint).first<Json>();
   if (!found) tools.fail(404, 'This family was not clustered.');
   const order = q.get('order') === 'size' ? 'size' : 'shape';
-  const [clusterRows, ownRows] = await env.ATLAS.batch([
+  const [clusterRows, ownRows, claimRows] = await env.ATLAS.batch([
     env.ATLAS.prepare(familyClustersQuery(order)).bind(codePoint),
     env.ATLAS.prepare(familyGlyphsQuery()).bind(codePoint),
+    env.ATLAS.prepare(describedClaimsQuery()).bind(codePoint),
   ]);
   const clusters = clusterRows.results as ClusterRow[];
   const index = await object<FamilyIndex>(env, `v3/forms/families/${found!.list}.json.gz`) ?? tools.fail(503, 'The forms publication is incomplete.', { code: 'busy' });
@@ -111,13 +122,15 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
     const [majority, majorityCount] = [...forms].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0] ?? [null, 0];
     return [c.id, { own: mine.length, assigned, rejected, forms, majority, majorityCount, form: c.form ?? majority }];
   }));
-  // The descriptions already named in the family by forms decisions, most used first: the palette
+  // The descriptions named by forms decisions or current crop claims, most used first: the palette
   // offers them after the encoded forms. How many of the family's glyphs each form names, most used first.
   const described = new Map<string, number>(), usage = new Map<string, number>();
   for (const t of tallies.values()) for (const [form, n] of t.forms) {
     usage.set(form, (usage.get(form) ?? 0) + n);
     if (isDescription(form)) described.set(form, (described.get(form) ?? 0) + n);
   }
+  for (const row of claimRows.results as Json[]) if (isDescription(row.form))
+    described.set(row.form, (described.get(row.form) ?? 0) + row.n);
   // A cluster's glyphs named otherwise, by form, twelve a form, most typical first; a cluster reported
   // as a whole has none. Only a glyph with its own decision can differ, and its rank is in the list.
   // Each cluster's twelve glyphs least like its centre, past the twelve most typical, leaving out
@@ -341,8 +354,8 @@ const writtenAs = `SELECT c.id,CASE WHEN g.crop IS NOT NULL THEN coalesce(g.char
   (g.crop IS NOT NULL OR k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue<>'mixed')) AS decided
   FROM crops c LEFT JOIN form_glyphs g ON g.crop=c.id LEFT JOIN form_clusters k ON k.id=c.cluster
   WHERE c.id IN (${following}) AND c.kind=1 AND c.revision=0`;
-const cell = 'c.kind,coalesce(c.char,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),c.state,c.quiz';
-const tallied = (sign: string) => `INSERT INTO tally(gen,kind,char,book,production,style,state,quiz,n)
+const cell = 'c.kind,coalesce(c.char,-1),coalesce(c.family,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),c.state,c.quiz,coalesce((c.year-CASE WHEN c.year<0 THEN 9 ELSE 0 END)/10*10,-1)';
+const tallied = (sign: string) => `INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n)
   SELECT ${GEN},${cell},${sign}count(*) ${movable} GROUP BY ${cell} ON CONFLICT DO UPDATE SET n=n+excluded.n`;
 export const followStatements = () => [
   `INSERT OR IGNORE INTO graphemes(text) SELECT DISTINCT text FROM (${writtenAs}) WHERE decided AND text IS NOT NULL`,
@@ -387,9 +400,11 @@ function decoded(segment: string, tools: FormTools) {
 const FORMS_TTL = 3600;
 // The shape of what `family` and `families` answer; a change to it leaves the older copies behind.
 const FORMS_SHAPE = 4;
-type FormsState = { loading: number; lists: string; revision: string | null; decision: number | null; following: number };
+type FormsState = { loading: number; lists: string; revision: string | null; decision: number | null; following: number; ledger: number | null; event: number | null; publication: number | null };
 export const stateQuery = () => `SELECT s.loading,s.lists,(SELECT revision FROM form_families LIMIT 1) AS revision,
-  (SELECT max(seq) FROM form_decisions) AS decision,EXISTS(SELECT 1 FROM corpus_follow) AS following FROM form_state s WHERE s.id=0`;
+  (SELECT max(seq) FROM form_decisions) AS decision,EXISTS(SELECT 1 FROM corpus_follow) AS following,
+  (SELECT max(rowid) FROM ledger_submissions) AS ledger,(SELECT max(id) FROM events) AS event,
+  (SELECT max(rowid) FROM imports) AS publication FROM form_state s WHERE s.id=0`;
 async function cached(url: URL, state: FormsState, key: string, read: () => Promise<Json | null>, ctx: ExecutionContext) {
   const request = new Request(`${url.origin}/atlas/forms/cached/${key}?v=${encodeURIComponent(`${FORMS_SHAPE}:${state.lists}:${state.revision}:${state.decision ?? 0}`)}`);
   const hit = await caches.default.match(request);
@@ -427,7 +442,7 @@ export async function formsRoute(env: Env, request: Request, path: string, q: UR
   const familyPath = path.match(/^\/atlas\/forms\/families\/([^/]+)$/);
   if (familyPath) {
     const code = decoded(familyPath[1], tools), order = q.get('order') === 'size' ? 'size' : 'shape';
-    return cached(url, state, `family/${encodeURIComponent(code)}/${order}`, () => family(env, code, q, tools), ctx);
+    return cached(url, state, `family/${encodeURIComponent(code)}/${order}/${state.ledger ?? 0}:${state.event ?? 0}:${state.publication ?? 0}`, () => family(env, code, q, tools), ctx);
   }
   const clusterPath = path.match(/^\/atlas\/forms\/clusters\/(.+)$/);
   if (clusterPath) return members(env, decoded(clusterPath[1], tools), q, tools);

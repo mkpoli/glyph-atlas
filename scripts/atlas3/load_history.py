@@ -6,14 +6,16 @@ Decision record 0006. Every step writes SQL parts under `out/history-load/<name>
 content of `out/history.sqlite`, so a rerun on the same translation skips what D1 already holds; each
 part is confirmed by its stamp in `imports` and replayed on the local copy.
 
-1. Migrations 0003 and 0013 (stamps `migration:0003`, `migration:0013`), on D1 and the local copy; the mirror's `codes` take the
-   two mark states the migration numbers, so the publisher never numbers them differently.
+1. Each migration in MIGRATIONS (stamps `migration:<number>`), on D1 and the local copy, once;
+   the mirror's `codes` take the two mark states 0003 numbers, so the publisher never numbers them
+   differently. 0008 holds form anchors. 0009 gives events what an undo restores; 0010 the labels each showed and named, and
+   the corpus rows and flags; 0013 keeps the character before a forms decision.
 2. The rows of every history table.
 3. Marks: a pending crop with a mark takes the mark as its state, one revision past its own, with an
    event at the round that marked it. A mark on a crop that is not pending is left out, as the old
    site showed it only on pending crops.
-4. Earlier cuts: `out/history-cuts.sqlite`, a catalogue of the crops with an earlier box, their
-   records naming their cuts, for `publish.py`.
+4. Cuts: `out/history-cuts.sqlite`, a catalogue for `publish.py`: the records of the crops with an earlier
+   box, naming their cuts, and `cut_facts`, when each crop's current cut was recorded and its other encodings.
 
 Run `answers.py` afterwards: marks change the counts by state.
 """
@@ -36,7 +38,14 @@ SCHEMA = CF / "migrations-atlas"
 # Tables in the order their rows load: who and which request first, then what names them.
 TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats", "suspects", "shapes",
           "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "current_claims",
-          "ledger_submissions", "rejections", "forms", "form_decisions", "corpus_follow", "form_bases", "written_forms")
+          "ledger_submissions", "rejections", "representations", "forms", "form_decisions", "corpus_follow", "form_bases", "written_forms", "corpus_rows",
+          "corpus_flags")
+# Each migration the translated rows need, in order, and a query that finds it in the local copy.
+MIGRATIONS = (("0003", "0003_history.sql", "SELECT 1 FROM sqlite_master WHERE name='actors'"),
+              ("0008", "0008_representations.sql", "SELECT 1 FROM sqlite_master WHERE name='representations'"),
+              ("0009", "0009_undo.sql", "SELECT 1 FROM pragma_table_info('events') WHERE name='reverses'"),
+              ("0010", "0010_people.sql", "SELECT 1 FROM sqlite_master WHERE name='corpus_rows'"),
+              ("0013", "0013_forms.sql", "SELECT 1 FROM sqlite_master WHERE name='form_bases'"))
 GROUP = 500
 
 
@@ -62,8 +71,7 @@ def stamped(sql, stamp):
 
 
 def migrate(history, atlas, mirror, dry):
-    """Migrations 0003 and 0013 on D1 and the local copy, once each; a layout built with them already has
-    their tables."""
+    """Each migration in MIGRATIONS on D1 and the local copy, once; a layout built with one already has it."""
     # The mirror numbers new codes after the highest it holds; the two mark states must be the
     # migration's numbers before anything else claims them.
     taken = dict(mirror.execute("SELECT key, code FROM codes WHERE field='state'"))
@@ -71,18 +79,19 @@ def migrate(history, atlas, mirror, dry):
         if taken.get(key, code) != code or (key not in taken and code in taken.values()):
             sys.exit(f"the mirror numbers states {taken}; migration 0003 numbers {key} {code}")
     if dry:
-        print("dry run: migration 0003 and the mirror's mark states not written", flush=True)
+        print("dry run: the migrations and the mirror's mark states not written", flush=True)
         return
     mirror.executemany("INSERT OR IGNORE INTO codes(field, key, code) VALUES(?, ?, ?)",
                        history.execute("SELECT field, key, code FROM codes WHERE field='state'").fetchall())
     mirror.commit()
-    for number, name, table in (("0003", "0003_history.sql", "actors"), ("0013", "0013_forms.sql", "form_bases")):
-        if atlas.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
+    for number, file, present in MIGRATIONS:
+        if atlas.execute(present).fetchone():
             continue
+        stamp = f"migration:{number}"
         path = OUT / "history-load" / f"{number}.sql"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(stamped((SCHEMA / name).read_text(), f"migration:{number}"))
-        if not applied("glyph-atlas-v3", f"migration:{number}") and not send("glyph-atlas-v3", path, f"migration:{number}"):
+        path.write_text(stamped((SCHEMA / file).read_text(), stamp))
+        if not applied("glyph-atlas-v3", stamp) and not send("glyph-atlas-v3", path, stamp):
             sys.exit(f"migration {number} did not apply; rerun")
         atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
         print(f"migration {number} applied", flush=True)
@@ -120,7 +129,8 @@ def rows(history):
         names = ",".join(f'"{c}"' for c in cols)
         batch = []
         for r in history.execute(f'SELECT {names} FROM "{table}" ORDER BY rowid' if table not in
-                                 ("seen", "skips", "favourites", "assertion_evidence", "assertion_premises", "current_claims")
+                                 ("seen", "skips", "favourites", "assertion_evidence", "assertion_premises", "current_claims",
+                                  "representations", "corpus_flags")
                                  else f'SELECT {names} FROM "{table}"'):
             batch += row_statements(table, cols, keys, r)
             if len(batch) >= GROUP:
@@ -158,7 +168,9 @@ def marks(history, atlas):
 
 
 def cuts_catalogue():
-    """The crops with an earlier box, as a catalogue whose records name their cuts."""
+    """The cuts history-cuts.json names, as a catalogue for publish.py: a `units` record naming its earlier
+    cuts for each collected crop with one, and `cut_facts`, when each crop's current cut was recorded and
+    the other encodings of it, for every crop the old site recorded versions of."""
     cuts = json.loads((OUT / "history-cuts.json").read_text())
     shards = {}
 
@@ -177,14 +189,19 @@ def cuts_catalogue():
     units = source("units")
     cols = [r[1] for r in units.execute("PRAGMA table_info(units)") if r[1] != "_rowid"]
     out.execute(f"CREATE TABLE units({','.join(cols)})")
+    out.execute("CREATE TABLE cut_facts(id TEXT PRIMARY KEY, cut_at TEXT, encodings TEXT NOT NULL)")
+    out.executemany("INSERT INTO cut_facts VALUES(?,?,?)",
+                    [(text, v.get("cut_at"), json.dumps(v["encodings"], ensure_ascii=False)) for text, v in sorted(cuts.items())])
+    earlier = {text: v["cuts"] for text, v in cuts.items() if v["cuts"]}
     missing = []
-    for text, versions in cuts.items():
+    for text, versions in earlier.items():
         r = units.execute("SELECT * FROM units WHERE id=? ORDER BY _rowid DESC LIMIT 1", (text,)).fetchone()
         if r is None:
             missing.append(text)
             continue
         data = json.loads(r["data"])
         data["cuts"] = [{"cut": v["cut"], "box": v["box"], "image_sha256": v["pixels"], "image": v["image"],
+                         **({"at": v["at"]} if v.get("at") else {}),
                          **({"image_place": place(v["image"])} if v.get("image") and place(v["image"]) else {})}
                         for v in versions]
         out.execute(f"INSERT INTO units VALUES({','.join('?' * len(cols))})",
@@ -192,10 +209,11 @@ def cuts_catalogue():
     out.commit()
     if missing:
         sys.exit(f"{len(missing)} crops with an earlier box have no live record: {missing[:5]}")
-    print(f"{len(cuts)} crops with an earlier box -> {path}; publish it with publish.py", flush=True)
+    print(f"{len(earlier)} crops with an earlier box, {len(cuts)} with recorded versions -> {path}; "
+          "publish it with publish.py", flush=True)
 
 
-def built(final, label, groups, extra=None):
+def built(final, label, groups, extra=None, *, manifest=False):
     """Write a run's parts under a temporary name and rename the folder once complete, so a folder
     that exists holds every part; stamps name the final folder. None when it was already built."""
     if final.exists():
@@ -212,6 +230,9 @@ def built(final, label, groups, extra=None):
             (tmp / file).write_bytes(content)
         else:
             (tmp / file).write_text(content)
+    if manifest:
+        hashes = {part.name: hashlib.sha256(part.read_bytes()).hexdigest() for part in sorted(tmp.glob("*.sql"))}
+        (tmp / "manifest.json").write_text(json.dumps(hashes, sort_keys=True))
     tmp.rename(final)
     return n
 
