@@ -3,8 +3,7 @@ import json
 import sqlite3
 import sys
 
-import pytest
-from test_atlas3_history import A1, COLUMNS, event, history, sources
+from test_atlas3_history import A1, COLUMNS, event, history, sources, sub
 from test_atlas3_publish import crops, ids, layout  # noqa: F401 -- `layout` is the fixture
 
 
@@ -80,19 +79,40 @@ def test_a_row_past_d1s_statement_limit_arrives_whole(layout, monkeypatch):  # n
     assert remote.dbs["glyph-atlas-v3"].execute("SELECT request FROM submissions WHERE key='u1:s1'").fetchone() == (big,)
 
 
-def test_another_translation_partly_loaded_needs_replace(layout, monkeypatch):  # noqa: F811
+def test_a_later_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F811
     root, publish, remote = layout
-    sources(root)
+    first = {"events": [event("cf:1", "ex:a2", "u1:s1", "u1", 1, "2026-10-01T00:00:02Z", {"x": 0, "y": 20, "w": 10, "h": 10})],
+             "seen": [("ex:a1", "u1:s1", json.dumps(A1), "p1", "2026-10-01T00:00:02Z")], "unit_marks": [("ex:a1", "seen")]}
+    sources(root, **first)
     assert history(monkeypatch, root)[0] == 0
-    module = importlib.import_module("load_history")
-    # Rows of one translation loaded, its marks not yet set.
-    monkeypatch.setattr(module, "marks", lambda history, atlas: ([], 0))
     load(publish, remote, monkeypatch)
+    db = remote.dbs["glyph-atlas-v3"]
+    tables = ("actors", "submissions", "events", "seen", "crops")
+    before = {t: [tuple(r) for r in db.execute(f'SELECT * FROM "{t}" ORDER BY 1')] for t in tables}
+    stamps = {r[0] for r in db.execute("SELECT stamp FROM imports")}
+    # A later copy: a favourite and a round by a new actor, stamped before the others, so neither its
+    # actor key nor its time sorts it last.
     for table in COLUMNS:
         (root / f"source-{table}.sqlite").unlink()
-    sources(root, favourites=[("user-1", "ex:a1", "2026-10-01T00:00:03Z")])
+    sources(root, **first, favourites=[("user-1", "ex:a1", "2026-10-01T00:00:03Z")],
+            submissions=[sub("u1:s1", "u1", "2026-10-01T00:00:02Z"), sub("r-b:s2", "r-b", "2026-10-01T00:00:01Z"),
+                         sub("r-a:s3", "r-a", "2026-10-01T00:00:00Z")])
     assert history(monkeypatch, root)[0] == 0
-    with pytest.raises(SystemExit):
-        load(publish, remote, monkeypatch)
-    load(publish, remote, monkeypatch, "--replace")
-    assert remote.dbs["glyph-atlas-v3"].execute("SELECT count(*) FROM favourites").fetchone() == (1,)
+    load(publish, remote, monkeypatch)
+    sent = {r[0] for r in db.execute("SELECT stamp FROM imports")} - stamps
+    # One part of rows, and no marks: the mark was set by the first load.
+    assert len(sent) == 1 and ".rows-" in next(iter(sent))
+    (run,) = [p for p in (root / "out" / "history-load").glob("history-*") if p.is_dir() and next(iter(sent)).startswith(p.name + ".")]
+    figures = dict(line.split(": ", 1) for line in (run / "figures.txt").read_text().splitlines())
+    changed = {t: f for t, f in figures.items() if f != "0 new, 0 changed, 0 gone"}
+    assert changed == {"actors": "1 new, 0 changed, 0 gone", "submissions": "1 new, 0 changed, 0 gone",
+                       "favourites": "1 new, 0 changed, 0 gone", "actor_stats": "1 new, 0 changed, 0 gone"}
+    # Every row loaded before keeps its id; the new ones follow.
+    after = {t: [tuple(r) for r in db.execute(f'SELECT * FROM "{t}" ORDER BY 1')] for t in tables}
+    for t in tables:
+        assert after[t][:len(before[t])] == before[t]
+    assert db.execute("SELECT id FROM actors WHERE key='r-a'").fetchone()[0] == max(r[0] for r in before["actors"]) + 1
+    assert db.execute("SELECT id FROM submissions WHERE key='r-a:s3'").fetchone()[0] == max(r[0] for r in before["submissions"]) + 1
+    # The same copy again sends nothing.
+    load(publish, remote, monkeypatch)
+    assert {r[0] for r in db.execute("SELECT stamp FROM imports")} - stamps == sent
