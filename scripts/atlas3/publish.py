@@ -315,9 +315,9 @@ class Mirror:
         marks against the current box. Only while it still holds a mark, so a review since stands."""
         pid, held = cid // PAGE, f"state IN ({','.join(map(str, MARK_STATES))})"
         self.page_sql[pid] += [
-            f"INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind, label, state) SELECT id, revision + 1, cut, "
-            f"(SELECT gen FROM generation WHERE id = 0), 0, 0, {round(time.time() * 1000)}, {RECUT_KIND}, char, {PENDING} "
-            f"FROM crops WHERE id = {cid} AND {held};",
+            (f"INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind, label, state) SELECT id, revision + 1, cut, "
+             f"(SELECT gen FROM generation WHERE id = 0), 0, 0, {round(time.time() * 1000)}, {RECUT_KIND}, char, {PENDING} "
+             f"FROM crops WHERE id = {cid} AND {held};"),
             f"UPDATE reviews SET state = {PENDING} WHERE crop = {cid} AND {held};",
             f"UPDATE crops SET state = {PENDING}, revision = revision + 1 WHERE id = {cid} AND {held};"]
         self.guarded.append(cid)

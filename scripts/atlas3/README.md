@@ -142,7 +142,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    also writes the earlier cuts, the tombstones and the marks the publisher applies. An event on a crop
    the mirror lacks stops the run until `publish.py out/history-tombstones.sqlite` has numbered its
    tombstone. `load_history.py` then applies `0003_history.sql` (which numbers the mark states `seen`
-   and `hard`; the mirror takes the same numbers), loads every translated row in stamped parts, sets
+   and `hard`; the mirror takes the same numbers) and `0010_people.sql` (the label each event showed and
+   the character it named, the corpus rows in their old order, the admins' flags), loads every translated row in stamped parts, sets
    each pending marked crop's state to its mark one revision on with an event, and writes
    `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut. `answers.py`
    follows, since marks change the counts. `aliases.py` (counts only without `--send`) maps every text

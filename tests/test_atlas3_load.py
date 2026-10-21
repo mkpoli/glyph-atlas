@@ -36,6 +36,11 @@ def test_history_loads_once_and_a_mark_becomes_the_crops_state(layout, monkeypat
     assert local.execute("SELECT state, revision FROM crops WHERE id=?", (a1,)).fetchone() == (seen_state, before["revision"] + 1)
     assert sqlite3.connect(root / "out" / "mirror.sqlite").execute(
         "SELECT code FROM codes WHERE field='state' AND key='seen'").fetchone() == (seen_state,)
+    # D1 and the local copy hold every migration the rows need.
+    for copy in (db, local):
+        assert tuple(copy.execute("SELECT 1 FROM pragma_table_info('events') WHERE name='shown'").fetchone()) == (1,)
+        assert tuple(copy.execute("SELECT 1 FROM pragma_table_info('events') WHERE name='reverses'").fetchone()) == (1,)
+        assert tuple(copy.execute("SELECT 1 FROM sqlite_master WHERE name='corpus_rows'").fetchone()) == (1,)
     # A second run sends nothing.
     load(publish, remote, monkeypatch)
     assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 2
