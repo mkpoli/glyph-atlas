@@ -12,14 +12,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "atlas3
 PAGE = 1 << 24
 
 
-def unit(id, page, box, character="あ", state="pending", revision=0, quiz=1, document="book:a"):
+def unit(id, page, box, character="あ", state="pending", revision=0, quiz=1, document="book:a", priority=1):
     data = {"page_id": page, "box": box, "image": f"/atlas/media/{id.replace(':', '')}.webp", "label": character}
-    return (id, "local", character, None, "printed", "kana", state, revision, quiz, 1, document, "unassessed", None,
+    return (id, "local", character, None, None, "printed", "kana", state, revision, quiz, priority, 1, document, "unassessed", None,
             json.dumps(data))
 
 
-UNITS = ("id", "origin", "character", "visual_group", "production", "category", "state", "revision", "quiz", "shuffle",
-         "document", "style", "written_form", "data")
+UNITS = ("id", "origin", "character", "family", "visual_group", "production", "category", "state", "revision", "quiz", "priority",
+         "shuffle", "document", "style", "written_form", "data")
 
 
 def write_source(root, name, cols, rows):
@@ -79,7 +79,7 @@ def layout(tmp_path, monkeypatch):
         unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
         unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", state="checked", revision=3),
         unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う"),
-        ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 2, 0, 1, "codh:b", "unassessed", None, "{}"),
+        ("codh:g1", "corpus", "か", None, None, "printed", "kana", "checked", 2, 0, 1, 1, "codh:b", "unassessed", None, "{}"),
     ])
     write_source(tmp_path, "corpus_units", ("id", "character", "family", "visual_group", "shuffle", "object", "offset",
                                             "size", "production", "named", "style", "document", "label"),
@@ -100,6 +100,9 @@ def layout(tmp_path, monkeypatch):
     monkeypatch.setattr(publish, "send", remote.send)
     monkeypatch.setattr(publish, "query", remote.query)
     monkeypatch.setattr(publish, "upload", remote.upload)
+    # A publish ends by publishing its answers; test_atlas3_answers.py runs them.
+    remote.answered = 0
+    monkeypatch.setattr(publish, "answer", lambda: setattr(remote, "answered", remote.answered + 1))
     return tmp_path, publish, remote
 
 
@@ -305,6 +308,27 @@ def test_a_known_crop_with_another_box_is_re_cut_under_its_own_id(layout, monkey
     assert entry["box"] == {"x": 2, "y": 22, "w": 12, "h": 9}
 
 
+def test_a_re_cut_takes_a_marked_crop_back_to_pending_with_its_event(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1 = ids(root)["ex:a1"]
+    # A round marked the crop seen at its first cut: its state is the mark, one revision on.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("UPDATE crops SET state=3, revision=1 WHERE id=?", (a1,))
+        db.execute("INSERT INTO reviews(crop, gen, at, char, state) SELECT id, 0, 0, char, 3 FROM crops WHERE id=?", (a1,))
+        db.commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 1, "y": 1, "w": 9, "h": 9})]))
+    after = crops(remote)[a1]
+    assert (after["cut"], after["state"], after["revision"]) == (1, 0, 2)
+    db = remote.dbs["glyph-atlas-v3"]
+    assert [tuple(r) for r in db.execute("SELECT crop, revision, cut, actor, submission, kind, state FROM events")] == [(a1, 2, 1, 0, 0, 7, 0)]
+    assert [tuple(r) for r in db.execute("SELECT state FROM reviews")] == [(0,)]
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert local.execute("SELECT state, revision FROM crops WHERE id=?", (a1,)).fetchone() == (0, 2)
+    # A crop that is not marked keeps its state through a re-cut.
+    run(publish, monkeypatch, catalogue(tmp_path / "d.sqlite", [unit("ex:a1", "hl:p1", {"x": 2, "y": 2, "w": 8, "h": 8})]))
+    assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
+
+
 def test_fields_a_catalogue_does_not_carry_keep_their_values(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     a1 = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["ex:a1"]
@@ -325,7 +349,7 @@ def test_a_corpus_overlay_sets_the_reviewed_style(layout, monkeypatch, tmp_path)
     db.execute("INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'corpus-0001.bin',0,100,'printed',0,'unassessed','codh:b',NULL)")
     db.execute(f"CREATE TABLE units({','.join(UNITS)})")
     db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})",
-               ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 5, 0, 1, "codh:b", "cursive", None, "{}"))
+               ("codh:g1", "corpus", "か", None, None, "printed", "kana", "checked", 5, 0, 1, 1, "codh:b", "cursive", None, "{}"))
     db.commit()
     run(publish, monkeypatch, path)
     styles = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, code FROM codes WHERE field='style'"))
@@ -638,3 +662,89 @@ def test_a_publish_needing_a_statement_over_d1s_limit_allocates_nothing(layout, 
     with pytest.raises(SystemExit, match="over D1's limit"):
         run(publish, monkeypatch, tmp_path / "c.sqlite")
     assert "ex:new" not in ids(root)
+
+
+def corpus_catalogue(path, rows):
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.executemany("INSERT INTO corpus_units VALUES(?,?,?,NULL,7,'corpus-0003.bin',0,100,'printed',0,'unassessed','codh:b',?)", rows)
+    db.commit()
+    return path
+
+
+def test_a_glyph_is_filed_under_the_family_its_source_names(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "corpus.sqlite",
+                                               [("codh:m1", None, "U+3082", "も"), ("codh:m2", "𛄝", "U+3082", "も")]))
+    graphemes = dict(remote.dbs["glyph-atlas-v3"].execute("SELECT text, id FROM graphemes"))
+    found = crops(remote)
+    assert (found[ids(root)["codh:m1"]]["char"], found[ids(root)["codh:m1"]]["family"]) == (None, graphemes["も"])
+    # A glyph with a character keeps its source's family too: it joins its character's family, and the
+    # family it is filed under should a review clear its character.
+    assert (found[ids(root)["codh:m2"]]["char"], found[ids(root)["codh:m2"]]["family"]) == (graphemes["𛄝"], graphemes["も"])
+
+
+def test_a_build_files_a_glyph_with_no_character_under_its_family(layout, monkeypatch, tmp_path):
+    root, _publish, _remote = layout
+    (tmp_path / "source-corpus_units.sqlite").unlink()
+    write_source(tmp_path, "corpus_units", ("id", "character", "family", "visual_group", "shuffle", "object", "offset",
+                                            "size", "production", "named", "style", "document", "label"),
+                 [("codh:m1", None, "U+3082", None, 7, "corpus-0001.bin", 0, 100, "printed", 0, "unassessed", "codh:b", "も")])
+    sys.modules.pop("build", None)
+    monkeypatch.setattr(sys, "argv", ["build.py", "--replace"])
+    importlib.import_module("build").main()
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    family, char = atlas.execute("SELECT family, char FROM crops WHERE kind=1").fetchone()
+    assert char is None and atlas.execute("SELECT text FROM graphemes WHERE id=?", (family,)).fetchone()[0] == "も"
+
+
+def test_a_layout_without_the_family_column_is_refused_by_a_publish(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    local.executescript("".join(f"DROP INDEX {name};" for (name,) in local.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND sql LIKE '%family%'").fetchall()) + "ALTER TABLE crops DROP COLUMN family;")
+    local.close()
+    with pytest.raises(SystemExit, match="fill.py"):
+        run(publish, monkeypatch, corpus_catalogue(tmp_path / "corpus.sqlite", [("codh:m1", None, "U+3082", "も")]))
+
+
+def test_a_publish_that_sent_something_publishes_the_answers_after(layout, monkeypatch, tmp_path):
+    _root, publish, remote = layout
+    run(publish, monkeypatch, catalogue(tmp_path / "dry.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お")]), "--dry-run")
+    run(publish, monkeypatch, catalogue(tmp_path / "same.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ")]))
+    assert remote.answered == 0
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お")]))
+    assert remote.answered == 1
+
+
+def entry_of(root, cid):
+    rev = sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT rev FROM pages WHERE id=?", (cid // PAGE,)).fetchone()[0]
+    return next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{cid // PAGE}-{rev}.json.gz").read_bytes()))["crops"]
+                if e["slot"] == cid % PAGE)
+
+
+def test_a_cut_keeps_when_it_was_recorded_and_hands_it_to_its_earlier_cut_on_a_re_cut(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    a2, g1 = ids(root)["ex:a2"], ids(root)["codh:g1"]
+    encodings = [{"pixels": "r0", "image": "/atlas/media/g.webp", "at": "2026-09-26T10:58:08.863Z"}]
+    # The history load's facts: set on entries this catalogue does not otherwise publish, a corpus glyph's too.
+    path = tmp_path / "facts.sqlite"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE cut_facts(id TEXT PRIMARY KEY, cut_at TEXT, encodings TEXT NOT NULL)")
+    db.executemany("INSERT INTO cut_facts VALUES(?,?,?)", [("ex:a2", "2026-10-03T00:00:00.000Z", "[]"),
+                                                          ("codh:g1", "2026-10-13T16:53:07.985Z", json.dumps(encodings))])
+    db.commit()
+    run(publish, monkeypatch, path)
+    assert entry_of(root, a2)["cut_at"] == "2026-10-03T00:00:00.000Z" and "encodings" not in entry_of(root, a2)
+    assert entry_of(root, g1)["cut_at"] == "2026-10-13T16:53:07.985Z" and entry_of(root, g1)["encodings"] == encodings
+    assert "record_place" in entry_of(root, g1)
+    # A record with the same box carries both along.
+    run(publish, monkeypatch, catalogue(tmp_path / "same.sqlite", [unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "う",
+                                                                        state="checked", revision=3)]))
+    assert entry_of(root, a2)["cut_at"] == "2026-10-03T00:00:00.000Z"
+    # A re-cut gives the cut it replaced that time, and its own cut the time of the publish.
+    run(publish, monkeypatch, catalogue(tmp_path / "recut.sqlite", [unit("ex:a2", "hl:p1", {"x": 2, "y": 22, "w": 12, "h": 9}, "う",
+                                                                         state="checked", revision=3)]))
+    e = entry_of(root, a2)
+    assert [(c["cut"], c.get("at")) for c in e["cuts"]] == [(0, "2026-10-03T00:00:00.000Z")]
+    assert e["cut_at"] > "2026-10-03" and e["cut_at"].endswith("Z")

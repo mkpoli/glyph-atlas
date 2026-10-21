@@ -78,10 +78,25 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
 - A statement over 90 KB stops the publish before anything is allocated.
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
   keeps its runs.
+- A crop joins the family gallery of its character's family (`graphemes.head`). Every crop also keeps
+  the family its source names (`crops.family`, migration 0012), and a crop with no character is listed
+  with that family: a corpus glyph transcribed も, which may be も or one of its hentaigana, is listed
+  with the も family, and so is a crop whose character a review clears. On the 19 October copies this
+  lists 6,252 `codh-omt` glyphs and 1,333 collected crops whose source named no family with their
+  character's family, which the old galleries left out, and the 24 crops whose record named a family
+  other than their character's (21 汙, 2 匘, 1 撿) with their character's family. The ledger holds no
+  `has_grapheme` claim. `fill.py` fills the column once at the cutover; a publish refuses a local copy
+  without it.
 - A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`
   moves on by one, and its bundle entry takes the new record. Reviews and claims name the cut they
-  were made on, so they stay with the old one. The version it replaced joins the entry's `cuts` (its
-  cut number, box, image and pack place), which later records carry along unless they name their own.
+  were made on, so they stay with the old one. A re-cut crop that rounds had marked seen or hard is pending
+  again at its new cut, one revision on, with an event of kind `cut` (actor and submission 0), since the
+  rounds showed its old box. The version it replaced joins the entry's `cuts` (its
+  cut number, box, image, pack place and `at`, when it was recorded), which later records carry along
+  unless they name their own. The entry's `cut_at` is when its own cut was recorded: the publish time of
+  a re-cut, the old site's first record of the version for a cut the history load moved, carried along
+  by later records, as are `encodings`, other encodings of the current cut that a version id names. A
+  catalogue's `cut_facts(id, cut_at, encodings)` sets both on crops it does not otherwise publish.
 - A known crop on another page, or a new or re-cut box overlapping another crop on its page
   (IoU ≥ 0.5), stops the publish with a report: those need the slot matcher, which is not built yet.
 - Order: page bundles to R2 (`v3/pages/`, through rclone's `r2` remote), then the rows in parts of at
@@ -95,14 +110,30 @@ One publish runs at a time. The first build's bundles went to R2 with
 
 ## Publication answers
 
-`answers.py` (dry run with `--dry-run`) publishes what the galleries count. It bumps `generation`
-in `glyph-atlas-v3` from G to G + 1, writes per-character counts from the local copy to
-`v3/pub/<pub>/counts/<char % 256>.json.gz` and the unread crops' counts per script to
-`v3/pub/<pub>/unread.json.gz`, then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A cell
-counts the crops of one kind, style, state, withheld flag, witness decade and visual group, in the
-codes of the `codes` table. It runs after a publish, under the same lock, and refuses while a publish
-is unfinished or while the database holds review events, which it cannot absorb yet. Each run costs
-one D1 row and 258 R2 objects.
+`answers.py` (dry run with `--dry-run`) publishes what the galleries, the browse page and the homepage
+count. It bumps `generation` in `glyph-atlas-v3` from G to G + 1, writes from the local copy, under
+`v3/pub/<pub>/`:
+
+- `counts/<char % 256>.json.gz`, per character, and `unread.json.gz`, the unread crops per script: one
+  cell per kind, style, state, withheld flag, witness decade and visual group, in the codes of the
+  `codes` table. Each count shard also groups crops with no character under their source family;
+- `facets.json.gz`: the collected crops per character, book, production, category, review priority,
+  state and withheld flag, with each character's text and grapheme key (the browse page's and the
+  rounds' counts);
+- `corpus.json.gz`: the corpus glyphs per character, production, state and withheld flag;
+- `books.json.gz`: each book's collected crops and corpus glyphs (the statistics of the dates);
+- `gallery/`: the homepage sample, the corpus glyphs below 1 in 64 of the shuffle range and every
+  glyph of Hangul, 구결 and Tangut, records copied in, in shards by shuffle;
+- the `site` values `collection` (the collection's status, as `publish_collection_status.py` also
+  writes between publications) and `corpus_index` (work/corpus-index/index.json).
+
+then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A sample glyph's record is read once from
+its pack through R2's S3 endpoint (the rclone remote's keys) and kept in `out/records.sqlite`; the
+reads come before the bump, so a failed read changes nothing. `publish.py` runs it under its lock
+after every publish that sent something, so the counts follow each publish. It refuses while a publish
+is unfinished or while the database holds review events of a generation above 0 (the history load's are
+absorbed), which it cannot absorb yet, and checks before the bump and again after it. On the local copy of 20 October a run costs one D1 row and 399 R2 objects, and
+the sample holds 24,868 glyphs and the Hangul pool 1,750.
 
 ## Image key map
 
@@ -133,16 +164,34 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    credentials: the copy is about 3 GB and the uploads after it are large.
 4. **Publish** the copy (`publish.py`, which re-cuts crops whose box changed and numbers retired
    ones), merge its images into the map (`media_map.py`) and publish the answers (`answers.py`).
+   Before publishing, load the history and crop facts described below, using
+   `crop_facts.py --send --defer-crops`. Then `fill.py --send` adds `priority` (0011) and `family`
+   (0012, which also gives the empty `tally` a family and witness decade). It fills family, priority
+   and cluster in one UPDATE per affected crop, then builds every missing index in
+   `migrations-atlas/indexes-cutover.sql`. A retry verifies and resumes the same saved plan, including
+   its final release of form decisions. Keep the global write freeze in place throughout.
+   The deferred facts load blocks publications and further facts loads until fill finishes. For `family`, on the 19–20 October
+   copies: about 2.11M crop rows written (526,318 collected crops and 1,582,510 corpus glyphs whose
+   record names a family). The character routes' indexes: about 3.40M entries, as many rows written,
+   123 MB: `crop_char_book` 1,815,749 entries (66.2 MB), `crop_undated_corpus` 816,602 (27.7 MB),
+   `crop_family` 299,331 (11.5 MB), `crop_family_book` 299,331 (11.4 MB), `crop_family_year` 162,857
+   (5.9 MB), `crop_visual` 1,715 and `book_date_axis` 1,078. The publish that follows finds the values in
+   place and writes none.
 5. **Move the history:** `history.py` translates reviews, submissions, seen marks, skips, favourites,
-   claims, form decisions, suspects and shapes from the copies into `out/history.sqlite`
-   (`migrations-atlas/0003_history.sql`), with every text id resolved through `out/mirror.sqlite` and
+   claims, the representations forms name, form decisions, suspects and shapes from the copies into
+   `out/history.sqlite` (`migrations-atlas/0003_history.sql`, `0008_representations.sql`), with every text id resolved through `out/mirror.sqlite` and
    never through a redirect, and writes a per-table report; it exits 1 if any row stops the move. It
    also writes the earlier cuts, the tombstones and the marks the publisher applies. An event on a crop
    the mirror lacks stops the run until `publish.py out/history-tombstones.sqlite` has numbered its
    tombstone. `load_history.py` then applies `0003_history.sql` (which numbers the mark states `seen`
-   and `hard`; the mirror takes the same numbers), loads every translated row in stamped parts, sets
+   and `hard`; the mirror takes the same numbers), `0008_representations.sql` (form anchors),
+   `0009_undo.sql` (what an undo restores), and `0010_people.sql` (the labels each event showed and
+   named, the corpus rows and flags). It loads every translated row in stamped parts, sets
    each pending marked crop's state to its mark one revision on with an event, and writes
-   `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut. `answers.py`
+   `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut, 36 the other encodings
+   of their current cut (35 corpus glyphs whose source revision changed under the same box, one collected
+   crop) and every crop the old site recorded a version of its `cut_at` (`cut_facts`); that publish
+   rewrites the bundle of every page of collected crops once. `answers.py`
    follows, since marks change the counts. `aliases.py` (counts only without `--send`) maps every text
    id in the mirror, and every source of `unit_redirects` followed to the first text id the mirror has,
    to its integer crop id, and uploads the map as `v3/aliases/<first three hex digits of the text id's
@@ -164,9 +213,9 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    an earlier load wrote are written again from the fresh copy. `--send` refuses a database holding
    form decisions the local copy lacks, holds decisions (`form_state.loading`) while its rows go, and
    deletes an object under `v3/forms/` that nothing names once a load two hours or more after the one
-   that first found it unnamed runs. **The first `--send`
-   writes about 1.33M `crops` rows (`crops.cluster`); it needs the owner's approval with the dry run's
-   figures.**
+   that first found it unnamed runs. At cutover use `--send --defer-crops`: the metadata and lists
+   load first, while the shared fill handles the approximately 1.33M cluster assignments together
+   with family and priority. Review the combined dry-run figures before sending the fill.
 6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
    characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
    `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`
@@ -180,7 +229,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    and loads only what differs from the local copy, in stamped parts. A book's title comes from its
    first page bundle, else from the source the first of that bundle's crops names, else from its
    corpus publication. The corpus glyphs per book and the homepage
-   sample are derived from the crops by `answers.py` (*not built*), so neither is copied. Keeping the
+   sample are derived from the crops by `answers.py`, so neither is copied. Keeping the
    facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
    ainu-records' character lists and the catalogue's site values still write the old database.
    The date claims on documents that are not books stay in `assertions` with the history (11,998 of
@@ -353,9 +402,6 @@ answers:
   `account`, `account_profiles`, `passkey`, `verification`, `rateLimit`) and `favourites`;
 - `form_bases` (a corpus glyph's character and family before a form decision moved it);
 - `representations` (form anchors), which form claims write: they move with the forms;
-- `has_grapheme` claims, which file a crop under a grapheme other than its character's family: the
-  new `crops` has no per-crop grapheme column yet, so the read path decides how such a crop joins a
-  family gallery before cutover.
 
 The Worker read path builds on the catalogue stamps of #763 (`catalogueStamps`, `catalogueKey`), so a
 reviewer's own save still shows at once.

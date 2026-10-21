@@ -3,7 +3,9 @@
 import { Problem } from '../../busy';
 import { idsCharacter } from '../../category';
 import { COMPONENT_SCAN, componentTerm, rankMatches, type Match } from '../../components';
-import { describedCard, hira, literal } from '../../index';
+import { hira } from '../../index';
+import { literal } from '../../input';
+import { describedCard } from '../character';
 
 type Json = any;
 type OldEnv = { DB: D1Database; ASSETS: Fetcher };

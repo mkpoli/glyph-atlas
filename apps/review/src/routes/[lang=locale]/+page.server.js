@@ -28,7 +28,7 @@ export async function load({ fetch, params, url }) {
   const [result, sample, collection, runs] = await Promise.all([
     // The rows are on the path to the first byte, so a collection that stalls must not hold the page
     // open: the view loads and reports them itself, with the same filters.
-    catalogue({ q, grapheme, document: work, group, state: 'all', seed, offset: 0, limit: 60 }, { fetch, signal: AbortSignal.timeout(READ_TIMEOUT) }).catch(() => null),
+    catalogue({ q, grapheme, document: work, group, state: 'all', seed, limit: 60 }, { fetch, signal: AbortSignal.timeout(READ_TIMEOUT) }).catch(() => null),
     // A sample that cannot answer says so rather than reading as an empty corpus, as the client path
     // does when it draws one after the page is up. `gallery` bounds its own read.
     sampled ? gallery(60, seed, group, { fetch }).catch(error => ({ items: [], status: error?.status === 502 ? 'error' : 'not-loaded' })) : null,

@@ -63,6 +63,16 @@ maps by its whole `id@pixels@box`. A box no recorded version has comes from befo
 kept them (one seen mark today) and takes the cut below the oldest recorded one.
 A claim on cut -1 is not live, as the old resolver treated a claim on a crop's earlier version.
 
+A claim rests on the crop's effective cut: its published cut, or the next one while a redrawn box
+waits in `reviews`, as the old site rewrote a crop's record at once when its box was redrawn. Claims
+on the cut the redraw replaces stop holding at once, as the old `current_claim_recut` trigger dropped
+them; claims made while the redraw waits hold through the publication, which gives the crop that
+cut; an undone redraw returns the crop to its published cut and the claims made on it. Two edges
+follow from naming versions by cut:
+
+- A crop cut back to an earlier box gets a new cut. Claims made on that box before do not return.
+- A change of image encoding alone keeps the cut, so the claims on it stay live.
+
 ### Tables in `glyph-atlas-v3`
 
 Integer crop ids are columns, never strings in JSON, so the database can join on them. Public ids are
@@ -76,7 +86,18 @@ written only at the URL boundary.
 - `events`: the 0005 table. Each old event becomes one row, its `revision` the per-crop sequence by
   time, checked to end at or below the crop's current revision, with the verdict, issue, label, state
   and box it set, and the characters the reviewer typed (`text`); a review sets no style or withheld
-  flag. Whether it came from a round, a batch or a single review is its submission's.
+  flag. Each event also keeps the label the reviewer was shown (`shown`; an undo shows what the event it
+  reverses showed), the character the reviewer named (`named`, null when none) and, for a moved review
+  whose record still carried one, the reading the crop showed (`reading`; crops have had none since the
+  old site's migration 0056) and the reading it saved (`saved_reading`), and the old journal's id
+  (`legacy`, `cf:<uuid>`), by which the review export names it to the offline tools that imported it.
+  The history and the review export list a review by what it showed, and a named character can leave the
+  label as it was. Whether it came from a round, a batch or a single review is its submission's.
+- `corpus_rows(crop, seq)`: the corpus glyphs anything was written about, numbered in the order the
+  first write named each (the old `units` rowid order). A review, a round that showed or skipped a
+  glyph, a claim on it and an admin's flag add its row in their batch, in that order; the Flagged view
+  lists flagged glyphs by it, and a flag leaves a glyph with a row as it is. An admin's flag is an event
+  of kind `flag` with its finding in `corpus_flags`.
 - `seen(submission, crop, cut, at)` and `skips(crop, actor, cut, at, submission)`, so an undone round
   stops counting its skips.
 - The kinds of event (verdicts and marks), issues and the two mark states are numbered once, in the
@@ -89,6 +110,12 @@ written only at the URL boundary.
   an event recording it. The marks are recomputed from `seen` and `skips` by the old triggers' rules
   (current box, submission not undone, two or more skippers for `hard`) and compared with every live
   `unit_marks` row; where they differ, the live mark is moved.
+  A client's revision check passes over mark events: a crop whose revision moved since the client read
+  it only by marks still stands as it saw it, as the old site, whose revision marks never moved.
+- **An undo is an event** of kind `undo` (0009) naming the event it reverses in `reverses`, and setting
+  what the crop held before that event, which each event keeps beside its own values (`was_state`,
+  `was_issue`, `was_x`..`was_h`; the label before is `shown`). A restored pending state takes the
+  crop's mark as it is now, and an undone round's seen and skipped crops take theirs without it.
 - `favourites(user, crop, at)`.
 - The claim ledger keeps its tables. A claim on a crop gains `crop INTEGER` and `cut INTEGER` beside its
   `subject`; crop evidence becomes `(crop, cut)`. `current_claims` is translated row for row, then the

@@ -28,12 +28,17 @@ remote is read.
 
 History (decision record 0006), when `out/history.sqlite` exists (history.py):
 - Rows: every source row of every history table (actors, submissions, events, seen, skips,
-  favourites, the claim ledger, rejections, form decisions, corpus_follow, written forms, suspects and
-  shapes) is in it, every translated field equal to one derived again from the source copies (actor
+  favourites, the claim ledger, the representations forms name, rejections, form decisions,
+  corpus_follow, written forms, suspects and shapes) is in it, every translated field equal to one derived again from the source copies (actor
   and submission keys, times in ms, crop through the mirror, cut from the live record's box and
   crop_versions), or left out for a reason history-report.txt lists exactly as often; and it holds no
   other rows. An actor with no source row has no user, via or time; actor_stats are recounted as the
-  ranking counts.
+  ranking counts. Every form's anchor names a representation. Every claim whose catalogue subject
+  is a crop names its crop and cut, and a saved claim response on a crop names it by integer id and
+  the cut its claims rest on.
+  An event's shown label and named character are read from its evidence as the old
+  history page read them; corpus rows follow the source units' corpus rows in rowid order, with each
+  admin's flag.
 - Cuts: a crop with no collected record is cut 0 only if corpus_units has it, and a tombstone is
   checked against its retired bundle entry; every crop cited at cut -1 has that cut, with its earlier
   box, in its bundle once the cuts are published; no event is past its crop's revision (a tombstone
@@ -67,6 +72,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from build import HERE, OUT, PAGE, bundle_entry, char_text
+from history import CROP_PREDICATES
 from load_history import TABLES as LOADED
 
 SHOWN = 20
@@ -140,7 +146,7 @@ def check_crops(report, name):
     graphemes = dict(atlas.execute("SELECT id, text FROM graphemes"))
     productions = dict(atlas.execute("SELECT id, key FROM productions"))
     rows = {r[0]: r for r in atlas.execute("SELECT id, kind, char, state, style, quiz, production, category, visual_group, revision, "
-                                           "book, year, flags FROM crops")}
+                                           "book, year, flags, family FROM crops")}
     books = dict(atlas.execute("SELECT id, key FROM books"))
     book_ids = {key: bid for bid, key in books.items()}
     years = dict(source("document_dating").execute("SELECT document, start FROM document_dating WHERE axis='witness'"))
@@ -149,8 +155,9 @@ def check_crops(report, name):
     rev = dict(atlas.execute("SELECT id, rev FROM pages"))
 
     units = list(latest(source("units"), "units",
-                        "id, origin, character, state, style, quiz, production, category, visual_group, revision, data, document"))
-    corpus = list(latest(source("corpus_units"), "corpus_units", "id, character, production, style, visual_group, document, object, offset, size, label"))
+                        "id, origin, character, state, style, quiz, production, category, visual_group, revision, data, document, family"))
+    corpus = list(latest(source("corpus_units"), "corpus_units",
+                         "id, character, production, style, visual_group, document, object, offset, size, label, family"))
     overlay = {u[0]: u for u in units if u[1] == "corpus"}
     local = [u for u in units if u[1] == "local"]
     retired = [u for u in units if u[1] == "retired"]
@@ -172,7 +179,12 @@ def check_crops(report, name):
     def got(cid):
         r = rows[cid]
         return (r[1], graphemes.get(r[2]), names["state"].get(r[3]), names["style"].get(r[4]), r[5], productions.get(r[6]),
-                names["category"].get(r[7]), names["visual_group"].get(r[8]), r[9], books.get(r[10]), r[11], r[12] & 1)
+                names["category"].get(r[7]), names["visual_group"].get(r[8]), r[9], books.get(r[10]), r[11], r[12] & 1,
+                graphemes.get(r[13]))
+
+    # Every crop is filed under the family its source names.
+    def filed(_character, family):
+        return char_text(family) or None
 
     # A pending crop with a live mark takes the mark as its state, one revision on, once the marks are set.
     marks = applied_marks(atlas, name) or {}
@@ -183,7 +195,8 @@ def check_crops(report, name):
     diffs = []
     for u in local:
         cid = id_of.get(u[0])
-        w = marked(cid, want(*u[2:10], 0) + (u[11] or "unknown", years.get(u[11]), int(bool(json.loads(u[10]).get("suspect")))))
+        w = marked(cid, want(*u[2:10], 0) + (u[11] or "unknown", years.get(u[11]), int(bool(json.loads(u[10]).get("suspect"))),
+                                              filed(u[2], u[12])))
         if cid in rows and got(cid) != w:
             diffs.append(f"{u[0]} ({cid}): live {w}, new layout {got(cid)}")
     for c in corpus:
@@ -192,12 +205,22 @@ def check_crops(report, name):
             continue
         book = c[5] or c[0].split("|")[0].split(":")[0]
         w = want((o[2] if o else None) or c[1], o[3] if o else "pending", (o[4] if o else None) or c[3], o[5] if o else 1,
-                 c[2], None, c[4], o[9] if o else 0, 1) + (book, years.get(c[5]), 0)
+                 c[2], None, c[4], o[9] if o else 0, 1) + (book, years.get(c[5]), 0,
+                                                          filed((o[2] if o else None) or c[1], o[12] if o else c[10]))
         w, g = marked(cid, w), got(cid)
         # A corpus glyph has no category of its own.
         if g[:6] + g[7:] != w[:6] + w[7:]:
             diffs.append(f"{c[0]} ({cid}): live {w}, new layout {g}")
     report.check("every crop's row equals its live record", diffs)
+    if "priority" not in {c[1] for c in source("units").execute("PRAGMA table_info(units)")}:
+        report.skip("every collected crop has its live unit's review priority", "the units copy has no priority; pull.py --fresh units")
+    elif "priority" not in {c[1] for c in atlas.execute("PRAGMA table_info(crops)")}:
+        report.skip("every collected crop has its live unit's review priority", "the local copy lacks migration 0011; the next publish applies it")
+    else:
+        priority = dict(atlas.execute("SELECT id, priority FROM crops WHERE kind = 0"))
+        report.check("every collected crop has its live unit's review priority",
+                     (f"{t} ({id_of[t]}): live {p}, new layout {priority[id_of[t]]}" for t, p in latest(source("units"), "units", "id, priority")
+                      if t in id_of and id_of[t] in priority and priority[id_of[t]] != p))
 
     # Bundles.
     bundles = {}
@@ -221,10 +244,43 @@ def check_crops(report, name):
             wrong.append(f"{u[0]} ({cid}): no bundle entry")
         else:
             # Earlier cuts are the new layout's own record of a crop's history, not part of the live record.
-            have = {k: v for k, v in e.items() if k not in ("slot", "id", "image_place", "context_image_place", "cuts")}
+            have = {k: v for k, v in e.items() if k not in ("slot", "id", "image_place", "context_image_place", "cuts", "cut_at", "encodings")}
             if e.get("id") != u[0] or have != bundle_entry(data):
                 differ = sorted(k for k in have.keys() | bundle_entry(data).keys() if have.get(k) != bundle_entry(data).get(k))
                 wrong.append(f"{u[0]} ({cid}): bundle entry {e.get('id')} differs in {differ}")
+    # When the old site first recorded each crop's current version, and its other encodings under the same
+    # box, worked out here from crop_versions and the live records: a collected crop's box and checksum, a
+    # corpus glyph's review overlay, whose record crop_versions names.
+    recorded = defaultdict(list)
+    has_versions = (HERE / "source-crop_versions.sqlite").exists()
+    for unit, pixels, box, image, at in source("crop_versions").execute("SELECT unit, pixels, box, image, at FROM crop_versions") \
+            if has_versions else []:
+        if box4(box) is not None:
+            recorded[unit].append((box4(box), pixels, image, at))
+    timed, facts_wrong = 0, []
+    for u in local + list(overlay.values()):
+        cid, versions = id_of.get(u[0]), recorded.get(u[0])
+        if cid is None or not versions or cid not in rows:
+            continue
+        data = json.loads(u[10])
+        box, pixels = box4(data.get("box")), data.get("image_sha256") or data.get("source_revision")
+        here = [v for v in versions if v[0] == box]
+        now = here if pixels is None else [v for v in here if v[1] == pixels]
+        want = {"cut_at": min((v[3] for v in now if v[3]), default=None),
+                "encodings": [{"pixels": v[1], "image": v[2], "at": v[3]} for v in sorted(here, key=lambda v: v[3] or "") if v not in now] or None}
+        e = entry(cid) or {}
+        timed += "cut_at" in e
+        got = {"cut_at": e.get("cut_at"), "encodings": e.get("encodings")}
+        if got != want:
+            facts_wrong.append(f"{u[0]} ({cid}): bundle {got}, crop_versions {want}")
+    name_facts = "every crop's cut_at and other encodings equal crop_versions' record of its current version"
+    if not has_versions:
+        report.skip(name_facts, "no copy of crop_versions")
+    elif not timed:
+        report.skip(name_facts, "no bundle has cut_at yet; publish history-cuts.sqlite (load_history.py writes it)")
+    else:
+        report.check(name_facts, facts_wrong)
+
     # The site follows `replaced_by` through retired entries for up to HOPS steps.
     others = {}
 
@@ -653,8 +709,15 @@ def check_history(report, name, query=None):
 
     # Events: a crop's revisions follow expected_revision, or time where two share one.
     t = Table(report, history, "events", listed)
+    # The label a review showed, as the old history page read it, and the character it named.
+    evidence_sql = "json_extract(event, '$.evidence')"
     for target, rows_ in itertools.groupby(stream("events", "id, submission, target, actor, expected_revision, before_data, "
-                                                  "after_data, event, at", "target"), key=lambda r: r["target"]):
+                                                  f"after_data, event, at, coalesce(json_extract({evidence_sql}, '$.label'), "
+                                                  f"json_extract({evidence_sql}, '$.snapshot.character.label')) AS shown_label, "
+                                                  f"json_extract({evidence_sql}, '$.suggested_character') AS named_code, "
+                                                  f"json_extract({evidence_sql}, '$.snapshot.character.reading') AS snapshot_reading, "
+                                                  f"json_extract({evidence_sql}, '$.correction.reading') AS saved", "target"),
+                                           key=lambda r: r["target"]):
         group, cid = list(rows_), crop(target)
         if cid is None:
             for _r in group:
@@ -672,14 +735,41 @@ def check_history(report, name, query=None):
                     "label": char_text(after.get("label")) or None, "state": after.get("state"), "style": None,
                     "quiz": after.get("quiz"), "box": box4(after.get("box")) or (None,) * 4,
                     "note": (evidence.get("note") or None) and evidence["note"][:2000], "issue": evidence.get("issue") or None,
-                    "text": evidence.get("suggested_text") or evidence.get("suggested_reading") or None}
+                    "text": evidence.get("suggested_text") or evidence.get("suggested_reading") or None,
+                    "shown": char_text(r["shown_label"]) or None, "named": char_text(r["named_code"]) or None,
+                    "reading": r["snapshot_reading"] or None, "saved_reading": r["saved"], "legacy": r["id"]}
             got = one("SELECT * FROM events WHERE crop=? AND revision=?", cid, revision)
             if got:
                 got.update(actor=actor_key.get(got["actor"]), submission=sub_key.get(got["submission"]), kind=kinds.get(got["kind"]),
                            label=graphemes.get(got["label"]), state=states.get(got["state"]), issue=issues.get(got["issue"]),
+                           shown=graphemes.get(got["shown"]), named=graphemes.get(got["named"]),
                            box=(got["x"], got["y"], got["w"], got["h"]))
             t.compare(f"event {r['id']} on {target} ({cid})", want, got)
     t.done()
+
+    # Within one submission, events are numbered in the order its request lists the crops, the order the
+    # old site wrote their rows in; and across submissions, by time.
+    text_of = {}
+    problems, previous = [], None
+    by_submission = defaultdict(list)
+    for eid, submission, cid, at in history.execute("SELECT id, submission, crop, at FROM events ORDER BY id"):
+        if previous is not None and at < previous:
+            problems.append(f"event {eid}: at {at} before the event numbered just below it")
+        previous = at
+        by_submission[sub_key[submission]].append(cid)
+    for key_, request in source("submissions").execute("SELECT id, request FROM submissions"):
+        got = by_submission.get(key_)
+        if not got or len(got) < 2:
+            continue
+        input_ = json.loads(request).get("input") or {}
+        named = [c["id"] for c in (input_.get("answers") or input_.get("crops") or []) if isinstance(c, dict)]
+        for cid in got:
+            if cid not in text_of:
+                text_of[cid] = mirror.execute("SELECT text FROM ids WHERE id=?", (cid,)).fetchone()[0]
+        order = [text_of[c] for c in got]
+        if order != [t for t in named if t in order]:
+            problems.append(f"submission {key_}: events in the order {order[:5]}, the request lists {named[:5]}")
+    report.check("events are numbered by time and, within a submission, in its request's order", problems)
 
     # No event is past its crop's revision: the crops row's, or a retired crop's last live record's.
     problems, unrecorded = [], []
@@ -844,17 +934,20 @@ def check_history(report, name, query=None):
                       r["assertion"], r["kind"], r["ref"]))
     t.done()
 
-    t = Table(report, history, "assertions", listed)
+    t, claim_on, by_submission = Table(report, history, "assertions", listed), {}, defaultdict(set)
     for r in stream("assertions", "*"):
         want = dict(r)
         want.pop("_rowid", None)
         want["crop"] = want["cut"] = None
-        if r["predicate"] == "has_form":
+        if r["predicate"] in CROP_PREDICATES:
             want["crop"] = crop(r["subject"])
             if want["crop"] is None:
                 t.account("crop unknown")
                 continue
             want["cut"] = -1 if -1 in {c for i, c in named[r["id"]] if i == want["crop"]} else 0
+        claim_on[r["id"]] = (want["crop"], want["cut"])
+        if r["submission"]:
+            by_submission[r["submission"]].add(r["id"])
         t.compare(f"assertion {r['id']}", want, one("SELECT * FROM assertions WHERE id=?", r["id"]))
     t.done()
 
@@ -864,7 +957,7 @@ def check_history(report, name, query=None):
         want.pop("_rowid", None)
         version = want.pop("crop_version")
         want["crop"] = want["cut"] = None
-        if r["predicate"] == "has_form":
+        if r["predicate"] in CROP_PREDICATES:
             want["crop"] = crop(r["subject"])
             if want["crop"] is None:
                 t.account("crop unknown")
@@ -876,13 +969,36 @@ def check_history(report, name, query=None):
                       r["subject"], r["predicate"], r["scope"], r["slot"]))
     t.done()
 
-    for name_, key in (("assertion_actions", "id"), ("ledger_submissions", "id"), ("forms", "id")):
+    # A saved response on a crop names it by integer id and the cut its claims rest on, beside the old text id.
+    for r in source("assertion_actions").execute("SELECT submission, assertion FROM assertion_actions WHERE submission IS NOT NULL"):
+        by_submission[r[0]].add(r[1])
+    t = Table(report, history, "ledger_submissions", listed)
+    for r in stream("ledger_submissions", "*"):
+        want = dict(r)
+        want.pop("_rowid", None)
+        want["response"] = json.loads(r["response"])
+        cid = crop(want["response"].get("subject"))
+        if cid is not None:
+            cut = {claim_on[a][1] for a in by_submission[r["id"]] if claim_on.get(a, (None,))[0] == cid}
+            want["response"].update(crop=cid, cut=max(cut) if cut else None)
+        got = one("SELECT * FROM ledger_submissions WHERE id=?", r["id"])
+        if got:
+            got["response"] = json.loads(got["response"])
+        t.compare(f"ledger_submissions {r['id']}", want, got)
+    t.done()
+
+    for name_, key in (("assertion_actions", "id"), ("forms", "id"), ("representations", "id")):
         t = Table(report, history, name_, listed)
         for r in stream(name_, "*"):
             want = dict(r)
             want.pop("_rowid", None)
             t.compare(f"{name_} {r[key]}", want, one(f'SELECT * FROM "{name_}" WHERE {key}=?', r[key]))
         t.done()
+
+    # A form claim's name is its form's anchor, so every anchor must be a representation the move holds.
+    report.check("every form's anchor names a representation", [
+        f"form {f}: anchor {a}" for f, a in history.execute(
+            "SELECT id, anchor FROM forms WHERE anchor IS NOT NULL AND anchor NOT IN (SELECT id FROM representations)")])
 
     # A form decision's `crops` are the glyphs of its `units` that still exist, in order.
     t = Table(report, history, "form_decisions", listed)
@@ -929,6 +1045,30 @@ def check_history(report, name, query=None):
             continue
         t.compare(f"followed {r['id']} ({cid})", {"crop": cid}, one("SELECT crop FROM corpus_follow WHERE crop=?", cid))
     t.done()
+
+    # Corpus glyphs the old site held a row for, numbered in the order of those rows, with any flag an
+    # admin set on one.
+    t, flags_t = Table(report, history, "corpus_rows", listed), Table(report, history, "corpus_flags", listed)
+    # A keyset copy can hold a row twice; the copy at the later rowid is the row as it stands.
+    corpus_units = {}
+    for text_, data in source("units").execute("SELECT id, data FROM units WHERE origin='corpus' ORDER BY _rowid"):
+        corpus_units.pop(text_, None)
+        corpus_units[text_] = data
+    seq = 0
+    for text_, data in corpus_units.items():
+        cid = crop(text_)
+        if cid is None:
+            t.account("crop unknown")
+            continue
+        seq += 1
+        t.compare(f"corpus row {text_} ({cid})", {"seq": seq}, one("SELECT seq FROM corpus_rows WHERE crop=?", cid))
+        flag = json.loads(data).get("flag")
+        if flag:
+            flags_t.compare(f"flag on {text_} ({cid})", {"finding": flag["finding"], "realigned": flag.get("realigned"),
+                            "transcribed": flag.get("transcribed"), "at": ms(flag["at"])},
+                            one("SELECT finding, realigned, transcribed, at FROM corpus_flags WHERE crop=?", cid))
+    t.done()
+    flags_t.done()
 
     # Script facts on a crop the mirror lacks are dropped; every other row keeps its values.
     for source_, target, cols in (("unit_suspects", "suspects", ("p", "reads_as", "label", "box")),

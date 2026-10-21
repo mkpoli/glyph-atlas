@@ -10,16 +10,13 @@ import { catalogueVersion } from '../atlas3Stamps';
 import { Problem } from '../busy';
 import { idsCharacter } from '../category';
 import { componentTerm } from '../components';
-import { describedCard, hira, literal } from '../index';
+import { hira } from '../index';
+import { integer, literal } from '../input';
+import { describedCard } from './character';
 
 type Json = any;
 const cp = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 const textOf = (codePoint: string) => String.fromCodePoint(...codePoint.split(' ').map(p => parseInt(p.slice(2), 16)));
-function integer(q: URLSearchParams, key: string, fallback: number, max = 1000000) {
-  const n = Number(q.get(key) ?? fallback);
-  if (!Number.isSafeInteger(n) || n < 0 || n > max) throw new Problem(422, `Invalid ${key}.`);
-  return n;
-}
 // Text in code point order, as SQLite compares it.
 export const byCodePoint = (a: string, b: string) => {
   const x = [...a], y = [...b];

@@ -25,6 +25,7 @@ images to the image key map (`media_map.py`).
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
   crop's entry.
 - A statement over STATEMENT_BYTES stops the publish before anything is allocated.
+- A publish that sent something ends by publishing the answers (`answers.py`), so the counts follow it.
 
 With `--replacements` the publish also reads `source-unit_redirects.sqlite` (the catalogue's own
 `unit_redirects` win) and sets `replaced_by` on every retired bundle entry whose value differs from the
@@ -43,6 +44,7 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 import media_map
@@ -60,12 +62,16 @@ R2_REMOTE = os.environ.get("ATLAS3_R2_REMOTE", "r2")
 BUCKET = "glyph-atlas"
 BUNDLE_PREFIX = "v3/pages/"
 CROP_COLS = ("id", "kind", "book", "char", "form", "cluster", "visual_group", "production", "category", "style",
-             "state", "quiz", "year", "cut", "revision", "flags", "shuffle")
+             "state", "quiz", "year", "cut", "revision", "flags", "priority", "family", "shuffle")
 # Columns a review owns.
 REVIEW_OWNED = ("char", "state", "style", "quiz", "kind", "flags")
 # What a crop takes when it is new and the catalogue does not say.
-DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0}
+DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0, "priority": 1, "family": None}
 SUSPECT = 1
+# The mark states, the pending state and the event kind of a re-cut that clears a mark, as migrations
+# 0003 and 0009 and the first build number them. The publication's own events name actor and
+# submission 0.
+MARK_STATES, PENDING, RECUT_KIND = (3, 4), 0, 7
 # What a bundle entry keeps of each earlier cut: enough to show and cite its pixels.
 CUT_FIELDS = ("box", "crop_box", "context_box", "image", "image_sha256", "image_size", "image_place",
               "context_image", "context_image_place")
@@ -305,6 +311,19 @@ class Mirror:
         bundle = {k: v for k, v in bundle.items() if v is not None}
         self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
 
+    def unmark(self, cid):
+        """A crop re-cut while marked seen or hard: rounds showed or skipped its old box, so at the new
+        cut it is pending again, one revision on, with an event recording it, as the old site judged
+        marks against the current box. Only while it still holds a mark, so a review since stands."""
+        pid, held = cid // PAGE, f"state IN ({','.join(map(str, MARK_STATES))})"
+        self.page_sql[pid] += [
+            (f"INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind, label, state) SELECT id, revision + 1, cut, "
+             f"(SELECT gen FROM generation WHERE id = 0), 0, 0, {round(time.time() * 1000)}, {RECUT_KIND}, char, {PENDING} "
+             f"FROM crops WHERE id = {cid} AND {held};"),
+            f"UPDATE reviews SET state = {PENDING} WHERE crop = {cid} AND {held};",
+            f"UPDATE crops SET state = {PENDING}, revision = revision + 1 WHERE id = {cid} AND {held};"]
+        self.guarded.append(cid)
+
     def vote_slots(self, pid):
         if pid not in self.votes:
             self.votes[pid] = votes.read(OUT / "votes", pid)
@@ -463,12 +482,18 @@ def main():
     if not dry and not applied("glyph-atlas-v3", f"build:{build_id[0]}"):
         sys.exit(f"glyph-atlas-v3 was not loaded from build {build_id[0]}; this mirror does not belong to it")
     # A crop facts load writes the same tables and objects; it finishes first.
+    if m.ids.execute("SELECT 1 FROM pending WHERE run LIKE 'fill/%'").fetchone():
+        sys.exit("the crop fill is unfinished; finish it with fill.py --send first")
     for (name,) in m.ids.execute("SELECT run FROM pending WHERE run LIKE ?", (FACTS_RUN + "%",)):
         sys.exit(f"the crop facts load {name.removeprefix(FACTS_RUN)} is unfinished; finish it with crop_facts.py --send first")
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
         sys.exit("an earlier publish is unfinished; run a publish (not a dry run) to finish it first")
+    # The cutover fills these columns once, before publications resume.
+    missing = {"family", "priority"} - {r[1] for r in m.atlas.execute("PRAGMA table_info(crops)")}
+    if missing:
+        sys.exit(f"the local copy lacks crops columns {sorted(missing)}; run fill.py --send first")
     src = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True) if catalogue else sqlite3.connect(":memory:")
     src.row_factory = sqlite3.Row
     tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -509,7 +534,15 @@ def main():
 
     # Identity checks a publish without the slot matcher can make.
     columns = "id, origin, character, visual_group, production, category, state, revision, quiz, document, style, data"
-    with_votes = "units" in tables and {"visual", "context"} <= {r[1] for r in src.execute("PRAGMA table_info(units)")}
+    unit_columns = {r[1] for r in src.execute("PRAGMA table_info(units)")} if "units" in tables else set()
+    # A catalogue carries each crop's review priority; one that does not keeps the published one.
+    with_priority = "priority" in unit_columns
+    if with_priority:
+        columns += ", priority"
+    with_family = "family" in unit_columns
+    if with_family:
+        columns += ", family"
+    with_votes = {"visual", "context"} <= unit_columns
     if with_votes:
         columns += ", visual, context"
     units = list(src.execute(f"SELECT {columns} FROM units WHERE origin IN ('local', 'retired') ORDER BY id")) if "units" in tables else []
@@ -624,6 +657,8 @@ def main():
         f"{catalogue.parent.name}-{catalogue.stem}" if catalogue else "replacements")
     run = OUT / "publish" / stamp
     (run / "pages").mkdir(parents=True)
+    # When a re-cut's new cut is recorded (`cut_at`), as the old site timed its crop versions.
+    cut_time = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
     n, crop_ids, retired = 0, {}, set()
     for r in units:
@@ -646,27 +681,34 @@ def main():
             continue
         cid = m.known(r["id"]) or m.allocate(r["id"], data.get("page_id") or f"book:{r['document']}", r["document"])
         crop_ids[r["id"]] = cid
-        given = {"id": cid, "kind": 0, "book": m.book(r["document"]), "char": m.grapheme(r["character"]),
+        char = m.grapheme(r["character"])
+        given = {"id": cid, "kind": 0, "book": m.book(r["document"]), "char": char,
+                 "family": m.grapheme(r["family"]) if with_family else KEEP,
                  "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
                  "category": m.code("category", r["category"]),
                  # A crop with no style is unassessed: galleries page by style and hold no crop without one.
                  "style": m.code("style", r["style"] or "unassessed"),
                  "state": m.code("state", r["state"]), "quiz": r["quiz"], "year": years.get(r["document"], KEEP),
-                 "revision": r["revision"], "shuffle": shuffle(cid)}
+                 "revision": r["revision"], "priority": r["priority"] if with_priority else KEEP, "shuffle": shuffle(cid)}
         bundle = {"id": r["id"], **bundle_entry(data)}
-        previous, row = entry(cid), m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()
+        previous, row = entry(cid), m.atlas.execute("SELECT cut, state FROM crops WHERE id=?", (cid,)).fetchone()
         old_cut = row["cut"] if row else previous.get("cut", 0)
         if r["id"] in recut:
-            # The version the crop had joins its earlier cuts, so a citation of it still finds its pixels.
+            # The version the crop had joins its earlier cuts, with when it was recorded, so a citation of it
+            # still finds its pixels; the new cut is recorded now.
             given["cut"] = old_cut + 1
             bundle["cuts"] = merged_cuts(previous.get("cuts"), bundle.get("cuts"),
-                                         [{"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous}}])
+                                         [{"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous},
+                                           **({"at": previous["cut_at"]} if previous.get("cut_at") else {})}])
+            bundle["cut_at"] = cut_time
         elif row is None and previous.get("retired"):
             given["cut"] = old_cut
         for field in ("image", "context_image"):
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
         m.crop(given, bundle, r["revision"], True, suspect=bool(data.get("suspect")))
+        if r["id"] in recut and row is not None and row["state"] in MARK_STATES:
+            m.unmark(cid)
         if with_votes:
             m.vote(cid, given.get("cut", row["cut"] if row else 0), r["visual"], r["context"])
         n += 1
@@ -686,8 +728,10 @@ def main():
             crop_ids[r["id"]] = cid
             o = overlay.get(r["id"])
             # An upstream glyph speaks for the review columns only through its review overlay.
-            given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source),
-                     "char": m.grapheme((o["character"] if o else None) or r["character"]),
+            char = m.grapheme((o["character"] if o else None) or r["character"])
+            filed = o["family"] if o and with_family else r["family"]
+            given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source), "char": char,
+                     "family": m.grapheme(filed),
                      "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
                      "style": m.code("style", (o["style"] if o else None) or r["style"] or "unassessed"),
                      "state": m.code("state", o["state"] if o else "pending"), "quiz": o["quiz"] if o else 1,
@@ -695,6 +739,34 @@ def main():
             m.crop(given, {"id": r["id"], "label": r["label"], "record_place": [r["object"], r["offset"], r["size"]]},
                    o["revision"] if o else 0, o is not None)
             n += 1
+
+    # When each crop's current cut was recorded and its other encodings, from the history load's catalogue:
+    # set on the entry this publish writes for the crop, else on its published entry.
+    if "cut_facts" in tables:
+        unknown, gone = [], 0
+        for r in src.execute("SELECT id, cut_at, encodings FROM cut_facts ORDER BY id"):
+            cid = m.known(r["id"])
+            if cid is None:
+                unknown.append(r["id"])
+                continue
+            facts = {"cut_at": r["cut_at"], "encodings": json.loads(r["encodings"]) or None}
+            pid, slot = cid // PAGE, cid % PAGE
+            if slot in m.touched_pages.get(pid, {}):
+                written, changed = m.touched_pages[pid][slot]
+                if not written.get("retired"):
+                    m.touched_pages[pid][slot] = ({**written, **{k: v for k, v in facts.items() if v is not None}}, changed)
+                continue
+            old = entry(cid)
+            if not old or old.get("retired"):
+                gone += 1
+                continue
+            new = {k: v for k, v in {**old, **facts}.items() if k != "slot" and v is not None}
+            if new != {k: v for k, v in old.items() if k != "slot"}:
+                m.touched_pages[pid][slot] = (new, False)
+        if unknown:
+            sys.exit(f"{len(unknown)} cut_facts rows name crops the mirror lacks: {unknown[:5]}; nothing published")
+        if gone:
+            print(f"cut_facts: {gone} crops retired or without an entry, left as they are", flush=True)
 
     # Replacements are numbered once every crop of the catalogue has its id. None removes the field.
     for cid, text_id in naming:
@@ -797,9 +869,12 @@ def main():
             for field in ("image", "context_image"):
                 if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
                     new[field + "_place"] = old[field + "_place"]
-            # A crop's earlier cuts stay; a record that names cuts sets those it names.
+            # A crop's earlier cuts stay, and when its cut was recorded; a record that names cuts sets those it
+            # names, and a re-cut its new time.
             if "cuts" in old and not new.get("retired"):
                 new["cuts"] = merged_cuts(old["cuts"], new.get("cuts"))
+            if "cut_at" not in new and not new.get("retired"):
+                new.update({k: old[k] for k in ("cut_at", "encodings") if k in old and k not in new})
             touched = touched or row_changed or new != merged.get(slot)
             merged[slot] = new
         if not touched:
@@ -856,6 +931,13 @@ def main():
     mark(run, "allocated")
     deliver(m, run)
     print(f"published {stamp}")
+    answer()
+
+
+def answer():
+    """The publication's answers, so the counts follow this publish (answers.py); the lock is held."""
+    import answers
+    answers.publication(False)
 
 
 if __name__ == "__main__":

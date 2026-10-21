@@ -21,3 +21,15 @@ describe('the cut an address cites', () => {
     expect(await citedCut(record, 'zzzzzz', versions(503, {}))).toBeNull()
   })
 })
+
+describe('a cut cited before the cutover', () => {
+  const pixels = 'a'.repeat(64), other = 'b'.repeat(64)
+  const record = { id: '3dh00000', source_id: 'hk:1:a', crop_version: `3dh00000@${pixels}@10,10,20,30` }
+  const earlier = { id: `3dh00000@${other}@5,10,20,30`, at: '2026-10-03T15:27:32.712Z' }
+  const fetch = versions(200, { versions: [earlier, { id: record.crop_version, at: null }] })
+  it('is found by a token of the id the crop had then, as by one of its public id', async () => {
+    expect((await citedCut(record, versionToken(record.id, earlier.id), fetch)).version).toEqual(earlier)
+    expect((await citedCut(record, versionToken('hk:1:a', `hk:1:a@${other}@5,10,20,30`), fetch)).version).toEqual(earlier)
+    expect((await citedCut(record, versionToken('hk:1:a', `hk:1:a@${pixels}@10,10,20,30`), fetch)).current).toBe(true)
+  })
+})
