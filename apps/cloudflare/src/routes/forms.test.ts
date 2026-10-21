@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { d1 } from '../forms.test';
 import { cropId, publicId } from '../atlas3';
 import { FOLLOW_BATCH, describedClaimsQuery, clusterGlyphsQuery, clusterQuery, familyClustersQuery, familyGlyphsQuery, followCorpus, followStatements,
   formsRoute, glyphFamiliesQuery, listFollowQuery, memberDatesQuery, memberRowsQuery, recountQuery, stateQuery } from './forms';
-import { followCorpus as oldFollow, formsRoute as oldRoute } from './forms-old.fixture';
 
 const databases: Database[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); });
@@ -24,9 +24,6 @@ const tools = {
   body: async (request: Request) => request.json() as Promise<Record<string, any>>,
   text: (value: unknown) => value as string, codePoints: cp,
 };
-// The old tool read a character's family from its card; these are the family's members.
-const KANA = new Set(['は', '𛂞', '𛂙']);
-const oldTools = { ...tools, family: async (_: Env, char: string) => KANA.has(char) ? 'U+306F' : cp(char) };
 
 const PAGE_ID = 9000, HEAD = 12, TAIL = 24;
 const FAMILY = 'U+306F', FORMS = JSON.stringify([{ char: 'は' }, { char: '𛂞' }, { char: '𛂙' }]);
@@ -39,26 +36,6 @@ const glyphs: Glyph[] = CLUSTERS.flatMap((c, ci) => Array.from({ length: c.size 
     image: slot.toString(16).padStart(64, '0'), split: Array.from({ length: 7 }, (_, k) => String((rank * 7 + k) % (k + 2))).join('') };
 }));
 const DATING = { kind: 'copied', start: 1700, end: 1710, precision: 'decade', text: '宝永', label: '1700s', status: 'single', calendar: 'jp' };
-
-function oldDatabase() {
-  const db = migrated('migrations');
-  db.prepare(`INSERT INTO form_families(code_point,char,label,count,cluster_count,forms,assigned,revision,rejected) VALUES(?,'は','は',?,2,?,0,'r1',0)`)
-    .run(FAMILY, glyphs.length, FORMS);
-  for (const c of CLUSTERS) {
-    const members = glyphs.filter(g => g.cluster === c);
-    db.prepare(`INSERT INTO form_clusters(id,family,label,count,coherence,shape_position,size_position,representatives) VALUES(?,?,?,?,0.5,?,?,?)`)
-      .run(c.key, FAMILY, c.key, c.size, c.shape, c.bySize, JSON.stringify(members.slice(0, HEAD).map(g => ({ id: g.old, image: `/atlas/media/${g.image}.webp` }))));
-  }
-  for (const g of glyphs) {
-    db.prepare(`INSERT INTO form_units(id,family,cluster,rank,similarity,image,split) VALUES(?,?,?,?,?,?,?)`)
-      .run(g.old, FAMILY, g.cluster.key, g.rank, 1 - g.rank / 100, `/atlas/media/${g.image}.webp`, g.split);
-    db.prepare(`INSERT INTO corpus_units(id,character,family,shuffle,object,offset,size,document) VALUES(?,'は',?,?,'o',0,1,'hk:b')`).run(g.old, FAMILY, g.rank);
-  }
-  db.prepare(`INSERT INTO document_dating(document,axis,kind,start,end,precision,text,label,status,claims,calendar,source,resolver,export)
-    VALUES('hk:b','witness',?,?,?,?,?,?,?,'[]',?,'s','r','e')`).run(DATING.kind, DATING.start, DATING.end, DATING.precision, DATING.text, DATING.label, DATING.status, DATING.calendar);
-  db.exec(`INSERT INTO corpus_characters SELECT character,production,count(*),0 FROM corpus_units GROUP BY 1,2`);
-  return db;
-}
 
 // The objects crop_facts.py writes: each cluster's list, and the family's index of each cluster's
 // first and last glyphs.
@@ -89,33 +66,27 @@ function newDatabase() {
   return { db, env: { ATLAS: d1(db), MEDIA: bucket } as unknown as Env, objects };
 }
 
-// The old answers in the new ids: each old glyph id becomes its crop's public id.
+// A glyph's text id in the fixture, as a decision below names it, becomes its crop's public id.
 const byOld = new Map(glyphs.map(g => [g.old, publicId(g.crop)]));
-const mapped = (value: any): any => typeof value === 'string' ? byOld.get(value) ?? value
-  : Array.isArray(value) ? value.map(mapped) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapped(v)])) : value;
 const ctx = (pending: Promise<unknown>[] = []) => ({ waitUntil: (p: Promise<unknown>) => pending.push(p) }) as unknown as ExecutionContext;
 
 function both() {
-  const old = oldDatabase(), fresh = newDatabase(), oldEnv = { DB: d1(old) } as unknown as Env;
+  const fresh = newDatabase();
   const get = async (path: string, query = '') => {
     const url = `https://atlas.test${path}${query ? '?' + query : ''}`, q = new URLSearchParams(query);
-    const p = decodeURI(path);
-    const body = async (r: any) => r instanceof Response ? await r.json() : r;
-    return [mapped(await body(await oldRoute(oldEnv, new Request(url), p, q, oldTools, ctx()))),
-      await body(await formsRoute(fresh.env, new Request(url), p, q, tools, ctx()))];
+    const r = await formsRoute(fresh.env, new Request(url), decodeURI(path), q, tools, ctx());
+    return r instanceof Response ? await r.json() : r;
   };
   const decide = async (body: Record<string, any>) => {
     const send = (b: object) => new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(b) });
-    const pendingOld: Promise<unknown>[] = [], pendingNew: Promise<unknown>[] = [];
-    const a = await oldRoute(oldEnv, send(body), '/atlas/forms/decisions', new URLSearchParams(), oldTools, ctx(pendingOld), 'u1') as any;
+    const pending: Promise<unknown>[] = [];
     const units = body.units?.map((u: string) => byOld.get(u));
-    const b = await formsRoute(fresh.env, send(units ? { ...body, units } : body), '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(pendingNew), 'u1') as any;
-    await Promise.all([...pendingOld, ...pendingNew]);
-    // An undo names its glyphs in crop order, the old one in text id order.
-    const strip = ({ id: _id, at: _at, ...rest }: any) => ({ ...rest, undo: rest.undo.map((u: any) => u.units ? { ...u, units: [...u.units].sort() } : u) });
-    return [strip(mapped(a)), strip(b)];
+    const b = await formsRoute(fresh.env, send(units ? { ...body, units } : body), '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(pending), 'u1') as any;
+    await Promise.all(pending);
+    const { id: _id, at: _at, ...rest } = b;
+    return rest;
   };
-  return { old, fresh, get, decide };
+  return { fresh, get, decide };
 }
 
 async function views(get: ReturnType<typeof both>['get']) {
@@ -126,16 +97,16 @@ async function views(get: ReturnType<typeof both>['get']) {
     paths.push([`/atlas/forms/clusters/${key}`, 'offset=0&limit=500&order=typical'], [`/atlas/forms/clusters/${key}`, 'offset=5&limit=10&order=unusual'],
       [`/atlas/forms/split/${key}`, 'k=2'], [`/atlas/forms/split/${key}`, 'k=4&shown=3']);
   }
-  for (const [path, query] of paths) {
-    const [a, b] = await get(path, query);
-    expect({ path, query, body: b }).toEqual({ path, query, body: a });
-  }
+  const found = [];
+  for (const [path, query] of paths) found.push({ path, query, body: await get(path, query) });
+  return found;
 }
 
 describe('the forms routes on glyph-atlas-v3', () => {
-  it('answer as the old routes did, through cluster, glyph, report, mixed and inherit decisions, and corpus glyphs follow', async () => {
-    const { old, fresh, get, decide } = both();
-    await views(get);
+  // Each answer as the old database's routes gave it at the cutover, pinned in __snapshots__.
+  it('keep their answers through cluster, glyph, report, mixed and inherit decisions, and corpus glyphs follow', async () => {
+    const { fresh, get, decide } = both();
+    const answers: any[] = [await views(get)];
     const steps: Record<string, any>[] = [
       { kind: 'cluster', cluster: 'U+306F/0', form: '𛂞' },
       { kind: 'glyph', units: ['codh:1-3', 'codh:1-20', 'codh:1-39'], form: '𛂙' },
@@ -146,21 +117,20 @@ describe('the forms routes on glyph-atlas-v3', () => {
       { kind: 'inherit', units: ['codh:1-20'] },
       { kind: 'cluster', cluster: 'U+306F/0', issue: 'character', character: '川' },
     ];
-    for (const step of steps) {
-      const [a, b] = await decide(step);
-      expect(b).toEqual(a);
-      await views(get);
-    }
-    // Every corpus glyph's character, as the old drain left `corpus_units.character`.
-    const oldChars = Object.fromEntries((old.query('SELECT id,character FROM corpus_units').all() as any[]).map(r => [byOld.get(r.id), r.character]));
-    const newChars = Object.fromEntries((fresh.db.query('SELECT c.id,g.text FROM crops c LEFT JOIN graphemes g ON g.id=c.char').all() as any[])
+    // The views between decisions are pinned by digest, the last in full.
+    for (const step of steps) answers.push({ step, decision: await decide(step),
+      views: createHash('sha256').update(JSON.stringify(await views(get))).digest('hex') });
+    answers.push(await views(get));
+    expect(answers).toMatchSnapshot();
+    // Every corpus glyph's character once the decisions are followed.
+    const chars = Object.fromEntries((fresh.db.query('SELECT c.id,g.text FROM crops c LEFT JOIN graphemes g ON g.id=c.char').all() as any[])
       .map(r => [publicId(r.id), r.text]));
-    expect(newChars).toEqual(oldChars);
+    expect(chars).toMatchSnapshot();
     expect(fresh.db.query('SELECT count(*) AS n FROM corpus_follow').get()).toEqual({ n: 0 });
     // The counts moved in the current generation: one cell per character, nothing left at zero.
     const tally = Object.fromEntries((fresh.db.query('SELECT g.text,t.n FROM tally t LEFT JOIN graphemes g ON g.id=t.char WHERE t.gen=5').all() as any[]).map(r => [r.text, r.n]));
     const counted = new Map<string, number>();
-    for (const ch of Object.values(oldChars) as string[]) counted.set(ch, (counted.get(ch) ?? 0) + 1);
+    for (const ch of Object.values(chars) as string[]) counted.set(ch, (counted.get(ch) ?? 0) + 1);
     expect(tally).toEqual(Object.fromEntries([...counted].filter(([ch]) => ch !== 'は').map(([ch, n]) => [ch, n])
       .concat([['は', (counted.get('は') ?? 0) - glyphs.length]]).filter(([, n]) => n !== 0)));
   });

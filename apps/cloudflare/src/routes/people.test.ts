@@ -1,6 +1,6 @@
-// The people routes on ATLAS and ACCOUNTS: favourites, the history, the ranking and the admin lists.
-// Each is checked against the route as origin/main answered it (fixtures/*.old.ts), on one set of
-// reviews built into the old schema and into the new one, the answers compared after mapping the ids.
+// The people routes on ATLAS and ACCOUNTS: favourites, the history, the ranking and the admin lists,
+// on one set of reviews. Answers pinned in __snapshots__ are those the old database's routes gave at
+// the cutover.
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -17,10 +17,6 @@ import { decodeCursor, encodeCursor, history, historyQuery } from './history';
 import { rankingQuery, rankingRows } from './ranking';
 import { activeActorsQuery, flagRequest, newerUsersQuery, savedUsersQuery, flagRowsQuery, flaggedCorpus, flaggedCorpusQuery, rejectNamedQuery, rejectReviewerQuery,
   reviewerActors, reviewers, submissions, submissionsQuery, summary, unclaimedQuery, userWorkQuery } from './admin';
-import * as old from './fixtures/history.old';
-import { rankingQuery as oldRankingQuery, rankingRow as oldRankingRow } from './fixtures/ranking.old';
-import { reviewers as oldReviewers, submissions as oldSubmissions } from './fixtures/admin.old';
-import { favouriteCrops as oldFavouriteCrops, favouriteIds as oldFavouriteIds } from './fixtures/favourites.old';
 
 type Json = Record<string, any>;
 const edge = new Map<string, Response>();
@@ -61,7 +57,7 @@ const plan = (db: Database, sql: string, values: unknown[] = []) =>
 // A full read of a table that grows with the site: never in a request.
 const scans = (details: string[], tables: string[]) => details.filter(d => tables.some(t => new RegExp(`^SCAN ${t}\\b`).test(d) && !/COVERING INDEX|USING INDEX/.test(d)));
 
-// One set of people, crops and reviews, written into both schemas.
+// One set of people, crops and reviews.
 const minute = (m: number) => `2026-10-01T00:${String(m).padStart(2, '0')}:00.000Z`;
 const ms = (m: number) => Date.parse(minute(m));
 // Pages no other test file takes: bundles are held per isolate.
@@ -104,38 +100,6 @@ const events: Ev[] = [
 const cp = (c: string) => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0');
 const dating = { kind: 'copied', start: 1700, end: 1710, precision: 'decade', qualifier: null, uncertain: 0, text: '宝永', label: '1700s',
   status: 'single', calendar: 'gregorian', conversion: '{"query":"q"}', source: 'src:1' };
-
-function oldDatabase() {
-  const db = migrated('migrations');
-  // The rows stand alone here, without the crops a review applies to.
-  db.exec('DROP TRIGGER event_revision_guard; DROP TRIGGER event_apply; PRAGMA foreign_keys=OFF;');
-  const user = db.prepare(`INSERT INTO "user"(id,name,email,emailVerified,image,createdAt,updatedAt,isAnonymous,role) VALUES(?,?,?,1,?,?,?,?,?)`);
-  for (const u of users) user.run(u.id, u.name, u.email, u.image, u.created, u.created, u.anonymous, u.role);
-  for (const a of actors) if (a.user) db.prepare('INSERT INTO actors VALUES(?,?,?,?)').run(a.key, a.user, a.via, minute(0));
-  const unit = db.prepare(`INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document)
-    VALUES(?,'local',?,'handwritten','kana','pending',0,1,1,0,'{}','{}','{}','{}',?)`);
-  for (const c of Object.values(crops)) unit.run(c.text, c.label, `book${c.book}`);
-  db.prepare(`INSERT INTO document_dating(document,axis,kind,start,end,precision,qualifier,uncertain,text,label,status,claims,calendar,conversion,source,resolver,export)
-    VALUES('book1','witness',?,?,?,?,?,?,?,?,?,'[]',?,?,?,'r','e')`).run(dating.kind, dating.start, dating.end, dating.precision, dating.qualifier,
-    dating.uncertain, dating.text, dating.label, dating.status, dating.calendar, dating.conversion, dating.source);
-  for (const s of subs) {
-    db.prepare('INSERT INTO submissions(id,actor,request,response,at,undone) VALUES(?,?,?,?,?,?)')
-      .run(s.key, s.actor, canonical({ target: s.target, input: s.input }), '{}', minute(s.m), s.undone ?? 0);
-    for (const c of s.seen ?? []) db.prepare(`INSERT INTO seen(target,submission,box,image_sha256,at) VALUES(?,?,NULL,'h',?)`).run(crops[c].text, s.key, minute(s.m));
-  }
-  events.forEach((e, i) => {
-    const s = subs.find(x => x.key === e.sub)!, snapshot = { character: { label: e.shown } };
-    const evidence = e.undoes ? `undo of cf:e${e.undoes}` : JSON.stringify({ kind: s.target === null ? 'visual-quiz' : 'character-review',
-      ...(s.target === null ? { round: s.input.id, label: e.shown } : s.target === '@batch' ? { batch: s.input.id } : { request: s.input }),
-      verdict: e.verdict, issue: e.issue ?? null, note: '', suggested_character: e.named ? cp(e.named) : null,
-      ...(e.issue === 'reading' ? { suggested_reading: e.text } : { suggested_text: e.text ?? null }), snapshot });
-    db.prepare(`INSERT INTO events(id,submission,target,actor,expected_revision,before_data,after_data,event,snapshot,kind,at) VALUES(?,?,?,?,0,?,?,?,?,?,?)`)
-      .run(`cf:e${i + 1}`, e.sub, crops[e.crop].text, e.actor, JSON.stringify({ label: e.shown }), JSON.stringify({ label: e.after }),
-        JSON.stringify({ id: `cf:e${i + 1}`, evidence }), JSON.stringify(snapshot), e.undoes ? 'undo' : 'review', minute(e.m));
-  });
-  db.prepare(`INSERT INTO rejections(submission,by,reason,at) VALUES('u2:b1','u3','spam',?)`).run(minute(9));
-  return db;
-}
 
 function newDatabases() {
   const atlas = withUndo(migrated('migrations-atlas')), accounts = migrated('migrations-accounts');
@@ -185,20 +149,13 @@ function media(entries: Record<number, Json[]>) {
   } };
 }
 function setup() {
-  const oldDb = oldDatabase(), fresh = newDatabases();
+  const fresh = newDatabases();
   const MEDIA = media({ [P]: [{ slot: 0, id: 'hk:a' }, { slot: 1, id: 'hk:b' }, { slot: 2, id: 'hk:gone', retired: true, replaced_by: crops.b.id }],
     [Q]: [{ slot: 0, id: 'hk:c' }] });
-  return { oldDb, ...fresh, oldEnv: { DB: d1(oldDb) } as unknown as Env,
+  return { ...fresh,
     env: { ATLAS: d1(fresh.atlas), ACCOUNTS: d1(fresh.accounts), MEDIA } as unknown as Env };
 }
 
-// The old answer with its ids as the new layout writes them: crops by public id, events by number.
-const textToPublic = new Map(Object.values(crops).map(c => [c.text, publicId(c.id)]));
-const eventId = (id: string | null) => id === null ? null : id.replace(/^cf:e/, '');
-function mappedHistory(item: Json): Json {
-  return { ...item, id: item.kind === 'passed' ? item.id : eventId(item.id), target: item.target === null ? null : textToPublic.get(item.target),
-    undoes: eventId(item.undoes) };
-}
 async function pages(read: (before: string | null) => Promise<{ items: Json[]; next: string | null }>) {
   const out: Json[][] = [];
   let before: string | null = null;
@@ -210,12 +167,9 @@ describe('the history', () => {
   const queries = [{}, { user: 'u1' }, { mine: 'true' }, { label: 'あ' }, { label: 'い', user: 'u1' }, { label: 'ん' }, { user: 'u3' },
     { user: 'nobody' }];
   for (const params of queries) it(`answers ${JSON.stringify(params)} as before, page for page`, async () => {
-    const { oldEnv, env } = setup();
-    for (const limit of ['40', '2']) {
-      const before = await pages(b => old.history(oldEnv, new URLSearchParams({ ...params, limit, ...(b ? { before: b } : {}) }), 'u1'));
-      const after = await pages(b => history(env, new URLSearchParams({ ...params, limit, ...(b ? { before: b } : {}) }), 'u1', tools));
-      expect(after).toEqual(before.map(page => page.map(mappedHistory)));
-    }
+    const { env } = setup();
+    for (const limit of ['40', '2'])
+      expect(await pages(b => history(env, new URLSearchParams({ ...params, limit, ...(b ? { before: b } : {}) }), 'u1', tools))).toMatchSnapshot();
   });
 
   it('names reviewers, dates their books, and maps each kind of row', async () => {
@@ -271,7 +225,8 @@ describe('the history', () => {
 
   it('goes on from a page loaded before the cutover, from before its last row\'s time', async () => {
     const { env } = setup();
-    const legacy = old.encodeCursor(minute(5), 'cf:e5');
+    // The old cursor: the last row's time and its event id.
+    const legacy = btoa(JSON.stringify([minute(5), 'cf:e5']));
     expect(decodeCursor(legacy)).toEqual({ at: ms(5), src: 0, id: 0 });
     const { items } = await history(env, new URLSearchParams({ before: legacy }), null, tools);
     expect(items.map((i: Json) => i.id)).toEqual(['4', '3', '2', 'reviewer-0000000a:r1', '1']);
@@ -295,15 +250,15 @@ describe('the history', () => {
 });
 
 describe('the ranking', () => {
-  function ledger(db: Database, fresh: boolean) {
+  function ledger(db: Database) {
     // u2 claims a form, then another, which retracts the first; renames a crop by a review its claim
     // names; u1 claims one under its legacy id and u2 accepts it twice; a source's and a model's claims
     // are nobody's, and so is the one moved from a written form.
-    const at = fresh ? ms(1) : `'${minute(1)}'`;
-    db.exec(`INSERT INTO written_forms(id,submission,${fresh ? 'crop' : 'target'},actor,revision,pixels,label,form,request,at)
-        VALUES('w1','u2:w',${fresh ? 1 : "'t'"},'u2',1,'p','あ','あ','{}',${at});
-      INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note${fresh ? ',crops' : ''})
-        VALUES('d1','${minute(1)}','reviewer-0000000a','cluster','U+3042','𛀂','c','r','[]',''${fresh ? ",'[]'" : ''});
+    const at = ms(1);
+    db.exec(`INSERT INTO written_forms(id,submission,crop,actor,revision,pixels,label,form,request,at)
+        VALUES('w1','u2:w',1,'u2',1,'p','あ','あ','{}',${at});
+      INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,note,crops)
+        VALUES('d1','${minute(1)}','reviewer-0000000a','cluster','U+3042','𛀂','c','r','[]','','[]');
       INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES
         ('u2:f1','u2','{"input":{"form":"x"}}','{}','${minute(1)}'),('u2:f2','u2','{"input":{"form":"y"}}','{}','${minute(1)}'),
         ('u2:f3','u2','{"input":{"form":"z","review":"rename"}}','{}','${minute(1)}'),('u1:c','u1','{}','{}','${minute(1)}');`);
@@ -321,15 +276,12 @@ describe('the ranking', () => {
       ('x1','u2:f2','a1','retract','u2','${minute(1)}'),('x2','u2:ok','a6','accept','u2','${minute(1)}'),('x3','u2:ok2','a6','accept','u2','${minute(1)}');`);
   }
   it('ranks as before, names from ACCOUNTS', async () => {
-    const { oldDb, atlas, env, subId } = setup();
-    ledger(oldDb, false);
-    ledger(atlas, true);
+    const { atlas, env, subId } = setup();
+    ledger(atlas);
     // The renaming review the claim names, standing.
-    oldDb.exec(`INSERT INTO submissions(id,actor,request,response,at) VALUES('u2:rename','u2','{}','{}','${minute(1)}')`);
     atlas.exec(`INSERT INTO submissions(id,key,actor,request,response,at) VALUES(${subId.size + 1},'u2:rename',3,'{}','{}',${ms(1)})`);
-    const before = oldDb.query(oldRankingQuery()).all().map((row, i) => oldRankingRow(row as Json, i + 1));
     const after = await rankingRows(env);
-    expect(after).toEqual(before);
+    expect(after).toMatchSnapshot();
     expect(after.map(r => [r.name, r.total])).toEqual([['Ada', 6], ['anon-00aa11', 3], ['reviewer-0000000f', 1]]);
   });
   it('reads each table by index, the reviews from the running totals', () => {
@@ -342,25 +294,23 @@ describe('the ranking', () => {
 });
 
 describe('favourites', () => {
-  function starred(oldDb: Database, atlas: Database) {
+  function starred(atlas: Database) {
     const rows: [string, CropName | 'gone', number][] = [['u1', 'a', 1], ['u1', 'gone', 2], ['u1', 'c', 3], ['u2', 'b', 4]];
     for (const [user, crop, m] of rows) {
-      oldDb.prepare('INSERT INTO favourites(user_id,unit,at) VALUES(?,?,?)').run(user, crop === 'gone' ? 'hk:gone' : crops[crop].text, minute(m));
       atlas.prepare('INSERT INTO favourites(user,crop,at) VALUES(?,?,?)').run(user, crop === 'gone' ? cropId(P, 2) : crops[crop].id, ms(m));
     }
-    oldDb.exec(`INSERT INTO unit_redirects(id,target) VALUES('hk:gone','hk:b')`);
   }
   it('list the same crops, newest first, a retired one as its replacement', async () => {
-    const { oldDb, atlas, oldEnv, env } = setup();
-    starred(oldDb, atlas);
-    const oldItems = async (_env: Env, ids: string[]) => new Map(ids.filter(id => id !== 'hk:gone').map(id => [id, { id }]));
-    const oldReplacement = async (_env: Env, id: string) => id === 'hk:gone' ? 'hk:b' : null;
-    expect((await favouriteIds(env, 'u1')).ids).toEqual((await oldFavouriteIds(oldEnv, 'u1')).ids.map(id => textToPublic.get(id) ?? publicId(cropId(P, 2))));
+    const { atlas, env } = setup();
+    starred(atlas);
+    expect((await favouriteIds(env, 'u1')).ids).toEqual([crops.c.id, cropId(P, 2), crops.a.id].map(publicId));
+    const read = [];
     for (const [offset, limit] of [[0, 60], [0, 2], [2, 2]]) {
-      const before = await oldFavouriteCrops(oldEnv, 'u1', offset, limit, oldItems, oldReplacement);
       const after = await favouriteCrops(env, 'u1', offset, limit, cropItems);
-      expect({ ...after, items: after.items.map(i => i.source_id) }).toEqual({ ...before, items: before.items.map(i => i.id) });
+      read.push({ ...after, items: after.items.map(i => i.source_id) });
     }
+    expect(read).toEqual([{ items: ['hk:c', 'hk:b', 'hk:a'], total: 3, offset: 0, next: null }, { items: ['hk:c', 'hk:b'], total: 3, offset: 0, next: 2 },
+      { items: ['hk:a'], total: 3, offset: 2, next: null }]);
     expect((await favouriteCrops(env, 'u3', 0, 60, cropItems))).toEqual({ items: [], total: 0, offset: 0, next: null });
   });
   it('star and unstar by public id, refuse an unknown crop, and send a stale text id to reload', async () => {
@@ -392,13 +342,10 @@ describe('favourites', () => {
 describe('the admin lists', () => {
   for (const params of [{}, { kind: 'accounts' }, { kind: 'anonymous' }, { kind: 'admins' }, { kind: 'banned' }, { q: 'Ada' }, { kind: 'accounts', q: 'bea' },
     { kind: 'unclaimed' }, { kind: 'unclaimed', q: '0f' }]) it(`list reviewers ${JSON.stringify(params)} as before`, async () => {
-    const { oldDb, oldEnv, env } = setup();
+    const { env } = setup();
     // Two of them saved nothing in the old site's first week: the third account and a legacy id.
-    oldDb.exec(`UPDATE "user" SET banned=1 WHERE id='u2'`);
     (env as any).ACCOUNTS.prepare(`UPDATE "user" SET banned=1 WHERE id='u2'`).run();
-    const before = JSON.parse(JSON.stringify(await oldReviewers(oldEnv, new URLSearchParams(params))));
-    const after = JSON.parse(JSON.stringify(await reviewers(env, new URLSearchParams(params))));
-    expect(after).toEqual(before);
+    expect(JSON.parse(JSON.stringify(await reviewers(env, new URLSearchParams(params))))).toMatchSnapshot();
   });
   it('walk the reviewers a page at a time, each once, the active first, bounded in rows read', async () => {
     const { atlas, accounts, env } = setup();
@@ -437,12 +384,8 @@ describe('the admin lists', () => {
     await expect(reviewers(env, new URLSearchParams({ offset: 'nonsense' }))).rejects.toMatchObject({ status: 422 });
   });
   for (const who of [{ user: 'u1' }, { user: 'u2' }, { actor: 'reviewer-0000000f' }, { user: 'u3' }]) it(`list ${JSON.stringify(who)}'s submissions as before`, async () => {
-    const { oldEnv, env } = setup();
-    const actorsOld = 'user' in who ? ['(SELECT actor FROM actors WHERE user_id=?)', [who.user]] as [string, string[]] : ['(?)', [who.actor]] as [string, string[]];
-    const before = await oldSubmissions(oldEnv, new URLSearchParams(), actorsOld);
-    const after = await submissions(env, new URLSearchParams(), await reviewerActors(env, who, tools));
-    expect(after).toEqual({ ...before, items: before.items.map((s: Json) => ({ ...s,
-      targets: s.targets.map((t: Json) => ({ ...t, id: textToPublic.get(t.id) })) })) });
+    const { env } = setup();
+    expect(await submissions(env, new URLSearchParams(), await reviewerActors(env, who, tools))).toMatchSnapshot();
   });
   it('say what each kind of submission asked for', () => {
     expect(summary(canonical({ target: null, input: { label: 'あ', answers: [{ verdict: 'match' }, { verdict: 'wrong' }, { verdict: 'match' }], skipped: [{}] } })))
@@ -481,7 +424,7 @@ describe('corpus flags', () => {
       expect(() => flagRequest(input, tools)).toThrow();
   });
   it('list flagged corpus glyphs in the order their rows were first written, as before', async () => {
-    const oldDb = migrated('migrations'), atlas = withUndo(migrated('migrations-atlas'));
+    const atlas = withUndo(migrated('migrations-atlas'));
     atlas.exec(`INSERT INTO books(id,key) VALUES(1,'b'); INSERT INTO pages(id,key,book,rev) VALUES(${P},'p',1,1);`);
     // Glyphs named in this order; some flagged since, one flagged by a review before the others.
     const named = [{ slot: 3, state: 'flagged', flag: null }, { slot: 1, state: 'checked', flag: null }, { slot: 7, state: 'flagged', flag: 'box-relabel' },
@@ -489,17 +432,14 @@ describe('corpus flags', () => {
     const states: Record<string, number> = { pending: 0, checked: 1, flagged: 2 };
     named.forEach((g, i) => {
       const id = cropId(P, g.slot);
-      oldDb.prepare(`INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual)
-        VALUES(?,'corpus','あ','handwritten','kana',?,1,1,1,0,?,'{}','{}','{}')`).run(`c:${g.slot}`, g.state,
-        JSON.stringify(g.flag ? { flag: { finding: g.flag, realigned: 'い', transcribed: null, at: minute(i) } } : {}));
       atlas.prepare('INSERT INTO crops(id,kind,book,state,quiz,shuffle) VALUES(?,1,1,?,1,0)').run(id, states[g.state]);
       atlas.prepare('INSERT INTO corpus_rows(crop,seq) VALUES(?,?)').run(id, i + 1);
       if (g.flag) atlas.prepare(`INSERT INTO corpus_flags(crop,finding,realigned,transcribed,at) VALUES(?,?,'い',NULL,?)`).run(id, g.flag, ms(i));
     });
     // A flagged corpus glyph never named before, which the old site could not hold: it lists last.
     atlas.prepare('INSERT INTO crops(id,kind,book,state,quiz,shuffle) VALUES(?,1,1,2,1,0)').run(cropId(P, 0));
-    const before = (oldDb.query(`SELECT id,data FROM units WHERE origin='corpus' AND state='flagged' ORDER BY rowid LIMIT 96`).all() as Json[])
-      .map(r => [publicId(cropId(P, Number(r.id.split(':')[1]))), JSON.parse(r.data).flag ?? null]);
+    const flag = (at: number) => ({ finding: 'box-relabel', realigned: 'い', transcribed: null, at: minute(at) });
+    const before = [[publicId(cropId(P, 3)), null], [publicId(cropId(P, 7)), flag(2)], [publicId(cropId(P, 5)), flag(4)]];
     const env = { ATLAS: d1(atlas) } as unknown as Env;
     const items = async (_env: Env, ids: number[]) => ids.map(id => ({ id: publicId(id) }));
     const after = await flaggedCorpus(env, items);

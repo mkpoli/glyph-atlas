@@ -7,7 +7,6 @@ import { currentPointer } from '../atlas3Gallery';
 import { listingItems } from '../atlas3Listing';
 import { d1 } from '../forms.test';
 import { redrawLimits } from '../cropRecords';
-import { oldRoutes } from './fixtures/runs.old';
 import { bookCharactersQuery, bookFormsQuery, booksQuery, corpusFormsQuery, pageRevsQuery, runCountQuery,
   reviewedQuery, runGraphemesQuery, runHasQuery, runOccurrencesQuery, runProbeQuery, runRangeQuery, runWorksQuery, runsRoute, writtenStatement } from './runs';
 
@@ -54,20 +53,20 @@ function fixture() {
   const at = crops.map((c, i) => ({ ...c, y: (i % 4) * 20 }));
   const pageKey = (c: typeof at[number]) => c.page === doc ? DOC_PAGE : c.page === other ? 'ex:other:1' : 'ndl:book:7';
   const source = (c: typeof at[number]) => c.book === 1 ? '藻汐草' : c.book === 2 ? '別書' : undefined;
-  // A crop's record as the old database held it (`units.data`), and the corpus glyphs' published records.
+  // A crop's record as the publication wrote it, and the corpus glyphs' published records.
   const record = (c: typeof at[number]): Json => withEditable(c, { id: c.text, label: c.label, production: c.kind === 1 ? 'printed' : 'handwritten', state: 'pending', revision: 0,
     page_id: pageKey(c), box: { x: c.x, y: c.y, w: 10, h: 10 }, crop_box: { x: c.x, y: c.y, w: 10, h: 10 }, image: `/atlas/media/${c.id}.webp`,
     context_image: `/atlas/media/ctx${c.page}.webp`, context_box: { x: 0, y: 0, w: 100, h: 200 }, page_number: 4,
     ...(c.kind === 1 ? { source: { document_id: 'ndl:book', corpus: 'codh', page_id: pageKey(c) } }
       : { source: source(c), context: true, source_scale: [1, 1] }) });
-  // The old export wrote whether a reviewer may redraw a collected crop's box, by the Worker's rule.
+  // The export writes whether a reviewer may redraw a collected crop's box, by the Worker's rule.
   const withEditable = (c: typeof at[number], r: Json) => c.kind === 1 ? r : { ...r, crop_editable: Boolean(redrawLimits(r)) };
   const packed = at.filter(c => c.kind === 1).map(c => new TextEncoder().encode(JSON.stringify(record(c))));
   const pack = new Uint8Array(packed.reduce((n, b) => n + b.length, 0));
   const places: [number, number][] = [];
   packed.reduce((offset, b) => { pack.set(b, offset); places.push([offset, b.length]); return offset + b.length; }, 0);
   const place = (c: typeof at[number]) => places[at.filter(x => x.kind === 1).indexOf(c)];
-  // Runs as the old export wrote them: first crop, size, the crops, text, book, direction and graphemes.
+  // Runs as the export writes them: first crop, size, the crops, text, book, direction and graphemes.
   const runs: [number, number, number, number | null, string, string, number][] = [
     [0, 2, 1, null, 'ん𛁅', 'hk:83b29132c6d01a596a847de5ba3b0b0d', 1], [1, 2, 2, null, '𛁅ん', 'hk:83b29132c6d01a596a847de5ba3b0b0d', 1], [2, 2, 3, null, 'んし', 'hk:83b29132c6d01a596a847de5ba3b0b0d', 1],
     [0, 3, 1, 2, 'ん𛁅ん', 'hk:83b29132c6d01a596a847de5ba3b0b0d', 1], [1, 3, 2, 3, '𛁅んし', 'hk:83b29132c6d01a596a847de5ba3b0b0d', 1],
@@ -75,28 +74,9 @@ function fixture() {
   const fold = (t: string) => t.replaceAll('𛁅', 'し');
   const shuffle = (i: number) => 1000 - i * 7;
 
-  // The old database.
-  const old = schema('migrations');
-  old.exec(`INSERT INTO characters(code_point,character,name,data,detail) VALUES
-    ('U+3093','ん','','{"grapheme":{"code_point":"U+3093"}}','{}'),('U+3057','し','','{"grapheme":{"code_point":"U+3057"}}','{}'),
-    ('U+1B045','𛁅','','{"grapheme":{"code_point":"U+3057"}}','{}')`);
-  const units = old.prepare(`INSERT INTO units(id,origin,character,family,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual,document)
-    VALUES(?,'local',?,NULL,'handwritten','kana','pending',0,1,1,?,?,'{}','{}','{}',?)`);
-  for (const c of at.filter(c => c.kind === 0)) units.run(c.text, c.label, shuffle(at.indexOf(c)), JSON.stringify(record(c)), c.book === 1 ? 'hk:83b29132c6d01a596a847de5ba3b0b0d' : 'hk:other');
-  const corpusRow = old.prepare(`INSERT INTO corpus_units(id,character,shuffle,object,offset,size,production,document) VALUES(?,?,?,'packs/c.bin',?,?,'printed','ndl:book')`);
-  for (const c of at.filter(c => c.kind === 1)) corpusRow.run(c.text, c.label, shuffle(at.indexOf(c)), ...place(c));
-  const ngram = old.prepare(`INSERT INTO unit_ngrams(first,size,second,third,text,document,vertical,hand_order,shuffle,graphemes) VALUES(?,?,?,?,?,?,?,0,?,?)`);
-  for (const [a, size, b, c, text, document, vertical] of runs)
-    ngram.run(at[a].text, size, at[b].text, c === null ? null : at[c].text, text, document, vertical, shuffle(a), fold(text));
-  old.exec(`INSERT INTO document_dating(document,axis,kind,start,end,precision,uncertain,text,label,status,claims,calendar,source,resolver,export)
-      VALUES('hk:83b29132c6d01a596a847de5ba3b0b0d','witness','copied',1790,1790,'year',0,'寛政二年','1790','single','[]','japanese','source:test','r','e');
-    INSERT INTO corpus_documents(document,n,title) VALUES('ndl:book',2,'源氏物語');
-    INSERT INTO metadata(key,value) VALUES('published_at','"2026-10-19T13:04:11+00:00"');`);
   const occurrence = (page: number, position: number, label: string) => JSON.stringify({ sample: `${page}-l1-${position}`, page, line: 1,
     block: 'l1', position, context: 'ん𛁅', source: 'transcription', label, box: [1, 2, 3, 4] });
   const characters = [['hk:83b29132c6d01a596a847de5ba3b0b0d', 0, 0, occurrence(1, 0, 'ん')], ['hk:83b29132c6d01a596a847de5ba3b0b0d', 1, 1, occurrence(1, 1, '𛁅')], ['ndl:book', 0, 6, occurrence(7, 0, 'ん')]] as const;
-  for (const [document, ord, c, data] of characters)
-    old.prepare('INSERT INTO document_characters(document,ord,unit,data) VALUES(?,?,?,?)').run(document, ord, at[c].text, data);
 
   // The new layout.
   const atlas = schema('migrations-atlas'), runsDb = schema('migrations-atlas-runs');
@@ -130,10 +110,8 @@ function fixture() {
   for (const c of at.filter(c => c.label !== fold(c.label))) runsDb.prepare('INSERT INTO run_written(crop,char) VALUES(?,?)').run(c.id, c.label);
   writeAnswers(runsDb, objects);
   const media = bucket(objects);
-  const oldEnv = { DB: d1(old), MEDIA: media } as unknown as Env;
   const newEnv = { ATLAS: d1(atlas), ATLAS_RUNS: d1(runsDb), MEDIA: media, CATALOGUE_LAG: '0' } as unknown as Env;
-  const publicOf = new Map(at.map(c => [c.text, publicId(c.id)]));
-  return { old, atlas, runsDb, oldEnv, newEnv, at, publicOf };
+  return { atlas, runsDb, newEnv, at };
 }
 
 // The runs' answers as run_answers.py writes them, from a runs database: each run written as its crops'
@@ -181,64 +159,45 @@ async function ask(env: Env, path: string): Promise<Response> {
   await Promise.all(waits);
   return response;
 }
-async function askOld(env: Env, path: string): Promise<Json> {
-  freshCache();
-  const { waits, ctx: c } = ctx();
-  const url = new URL('https://glyphatlas.org' + path);
-  const counted = url.pathname.match(/^\/atlas\/ngrams\/(\d+)$/);
-  const document = url.pathname.match(/^\/atlas\/documents\/([^/]+)\/characters$/);
-  const body = counted ? await oldRoutes.ngrams(env, c, url, oldRoutes.ngramSize(counted[1]))
-    : url.pathname === '/atlas/runs/related' ? await oldRoutes.runRelated(env, c, url)
-    : url.pathname === '/atlas/runs' ? await oldRoutes.runOccurrences(env, c, url, new oldRoutes.Timing())
-    : await (await oldRoutes.documentCharacters(env, url, decodeURIComponent(document![1]), c)).json();
-  await Promise.all(waits);
-  return body;
-}
-// Old text ids become public ids, as the new routes name crops.
-const mapped = (value: Json, publicOf: Map<string, string>): Json => typeof value === 'string' ? publicOf.get(value) ?? value
-  : Array.isArray(value) ? value.map(v => mapped(v, publicOf)) : value && typeof value === 'object'
-    ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapped(v, publicOf)])) : value;
-// Fields a listing item carries on the new layout that the old record did not (`cropItems`).
-const ADDED = ['source_id', 'origin', 'category', 'style', 'cut', 'document', 'year', 'withheld', 'flags'];
-const withoutAdded = (body: Json) => ({ ...body, items: body.items?.map((item: Json) => ({ ...item,
-  crops: item.crops.map((c: Json) => Object.fromEntries(Object.entries(c).filter(([k]) => !ADDED.includes(k)))) })) });
-
-describe('runs on the new layout answer as origin/main did', () => {
+// Each answer as the old database's routes gave it at the cutover, pinned in __snapshots__.
+describe('runs on the new layout keep their answers', () => {
   it('count pairs and trigrams on the site and in a book', async () => {
-    const f = fixture();
+    const f = fixture(), found: Json[] = [];
     for (const path of ['/atlas/ngrams/2', '/atlas/ngrams/3', '/atlas/ngrams/2?document=hk%3Aother', '/atlas/ngrams/2?document=hk%3A83b29132c6d01a596a847de5ba3b0b0d', '/atlas/ngrams/2?document=none'])
-      expect(await (await ask(f.newEnv, path)).json()).toEqual(await askOld(f.oldEnv, path));
+      found.push([path, await (await ask(f.newEnv, path)).json()]);
+    expect(found).toMatchSnapshot();
     expect((await (await ask(f.newEnv, '/atlas/ngrams/2')).json()).items[0]).toEqual({ text: 'んし', n: 4, vertical: true, forms: 2 });
   });
 
   it('list a run’s occurrences, forms, hands and books', async () => {
-    const f = fixture();
+    const f = fixture(), found: Json[] = [];
     for (const query of ['text=んし', 'text=ん𛁅', 'text=んし&form=ん𛁅', 'text=んし&form=んし', 'text=んし&document=hk%3A83b29132c6d01a596a847de5ba3b0b0d', 'text=んし&sort=source',
       'text=んし&hand=hand', 'text=んし&offset=1&limit=1', 'text=んしん', 'text=んしんし', 'text=しんし&document=hk%3A83b29132c6d01a596a847de5ba3b0b0d', 'text=んし&document=none']) {
       const path = '/atlas/runs?' + new URLSearchParams(Object.fromEntries(new URLSearchParams(query)));
       const response = await ask(f.newEnv, path);
       expect(response.headers.get('server-timing')).toContain('total;dur=');
-      expect(withoutAdded(await response.json())).toEqual(mapped(await askOld(f.oldEnv, path), f.publicOf));
+      found.push([query, await response.json()]);
     }
+    expect(found).toMatchSnapshot();
   });
 
   it('name the runs near one', async () => {
-    const f = fixture();
+    const f = fixture(), found: Json[] = [];
     for (const text of ['んし', 'しん', 'んしん', 'んしんし'])
-      expect(await (await ask(f.newEnv, '/atlas/runs/related?text=' + encodeURIComponent(text))).json()).toEqual(
-        await askOld(f.oldEnv, '/atlas/runs/related?text=' + encodeURIComponent(text)));
+      found.push([text, await (await ask(f.newEnv, '/atlas/runs/related?text=' + encodeURIComponent(text))).json()]);
+    expect(found).toMatchSnapshot();
   });
 
   it('list a book’s characters for other sites', async () => {
-    const f = fixture();
+    const f = fixture(), found: Json[] = [];
     for (const document of ['hk%3A83b29132c6d01a596a847de5ba3b0b0d', 'ndl%3Abook']) {
       const response = await ask(f.newEnv, `/atlas/documents/${document}/characters`);
       expect([response.headers.get('access-control-allow-origin'), response.headers.get('cache-control')]).toEqual(['*', 'no-cache']);
       // The publication is named by the pointer, which an isolate holds for a while: it may be another test's.
-      const pub = (await currentPointer(f.newEnv)).pub;
-      expect(await response.json()).toEqual({ ...mapped(await askOld(f.oldEnv, `/atlas/documents/${document}/characters`), f.publicOf),
-        ...(pub === '20261019T130411Z' ? {} : { published_at: pub }) });
+      const { published_at: _published, ...body } = await response.json() as Json;
+      found.push([document, body]);
     }
+    expect(found).toMatchSnapshot();
   });
 });
 

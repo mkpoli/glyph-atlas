@@ -1,38 +1,15 @@
-// When the book a crop comes from was written, copied or printed (migration 0052, `glyph_atlas.dates`).
-// A listing gives each crop its document's `dating`: the date of the copy itself (`witness`) and of the
+// When the book a crop comes from was written, copied or printed (`book_dates` in glyph-atlas-v3).
+// A listing gives each crop its book's `dating`: the date of the copy itself (`witness`) and of the
 // text it carries (`composed`), as the publication resolved them from the ledger's `date_*` claims.
 type Json = Record<string, any>;
 
-const AXIS_COLUMNS = 'document,axis,kind,start,end,precision,qualifier,uncertain,text,label,status,calendar,conversion,source';
-// D1 binds at most 100 values a statement.
-const CHUNK = 90;
-
-/** The document a listing item comes from: a crop's row, or a corpus record's source. */
-export const documentOf = (item: Json): string | null => item.document ?? item.source?.document_id ?? null;
-export const datingQuery = (n: number) =>
-  `SELECT ${AXIS_COLUMNS} FROM document_dating WHERE document IN (${Array(n).fill('?').join(',')})`;
 const parsed = (value: string | null) => { if (!value) return null; try { return JSON.parse(value) } catch { return null } };
 
-/** One axis of `document_dating` as a listing carries it: the date, its words, and the HuTime query that converted it. */
+/** One axis of a book's dates as a listing carries it: the date, its words, and the HuTime query that converted it. */
 export function axisOf(row: Json): Json {
   return { kind: row.kind, start: row.start, end: row.end, precision: row.precision, qualifier: row.qualifier ?? null,
     uncertain: Boolean(row.uncertain), text: row.text, label: row.label, status: row.status, calendar: row.calendar,
     source: row.source, hutime: parsed(row.conversion)?.query ?? null };
-}
-
-/** Each named document's axes, read in as few statements as D1 allows. */
-export async function datingOf(env: Env, documents: (string | null | undefined)[]): Promise<Map<string, Json>> {
-  const wanted = [...new Set(documents.filter((d): d is string => Boolean(d)))];
-  const found = new Map<string, Json>();
-  if (!wanted.length) return found;
-  const statements = [];
-  for (let i = 0; i < wanted.length; i += CHUNK) {
-    const part = wanted.slice(i, i + CHUNK);
-    statements.push(env.DB.prepare(datingQuery(part.length)).bind(...part));
-  }
-  for (const result of await env.DB.batch(statements))
-    for (const row of result.results as Json[]) found.set(row.document, { ...found.get(row.document), [row.axis]: axisOf(row) });
-  return found;
 }
 
 // A book's axes in glyph-atlas-v3, by its integer id: one primary-key range a book.
@@ -40,7 +17,7 @@ export const bookDatingQuery = () =>
   `SELECT book,axis,kind,start,end,precision,qualifier,uncertain,text,label,status,calendar,conversion,source
   FROM book_dates WHERE book IN (SELECT value FROM json_each(?))`;
 
-/** Each named book's axes, from `ATLAS.book_dates`, as `datingOf` gives a document's. */
+/** Each named book's axes, from `ATLAS.book_dates`. */
 export async function bookDating(env: Env, books: (number | null | undefined)[]): Promise<Map<number, Json>> {
   const wanted = [...new Set(books.filter((b): b is number => typeof b === 'number'))];
   const found = new Map<number, Json>();
@@ -48,12 +25,6 @@ export async function bookDating(env: Env, books: (number | null | undefined)[])
   const rows = await env.ATLAS.prepare(bookDatingQuery()).bind(JSON.stringify(wanted)).all<Json>();
   for (const row of rows.results) found.set(row.book, { ...found.get(row.book), [row.axis]: axisOf(row) });
   return found;
-}
-
-/** `items`, each with its document's `dating`: its axes, or `{}` for a book no source dates. */
-export async function withDating<T extends Json>(env: Env, items: T[], documentFor: (item: T) => string | null = documentOf): Promise<T[]> {
-  const dating = await datingOf(env, items.map(documentFor));
-  return items.map(item => ({ ...item, dating: dating.get(documentFor(item) ?? '') ?? {} }));
 }
 
 // A gallery placed or narrowed by date: `order=year` lists its crops oldest first, undated last;

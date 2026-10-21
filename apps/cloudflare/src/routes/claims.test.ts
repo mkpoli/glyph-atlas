@@ -4,7 +4,6 @@ import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
-import catalogue from '../../../../data/ledger.json';
 import { d1 } from '../forms.test';
 import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
@@ -327,72 +326,6 @@ describe('the ledger read', () => {
     expect(await bookDates(env, 1)).toMatchObject({ dating: { witness: { kind: 'copied', start: 1700, text: '元禄十三年' } },
       dates: [{ id: 'cf:d1', kind: 'copied', text: '元禄十三年', start: 1700, source: 'src:1', locator: 'f. 3', tier: 'attested' }] });
     expect(await bookDates(env, null)).toEqual({ dating: {} });
-  });
-});
-
-describe('the resolver over the moved ledger', () => {
-  // The old resolver over the old schema, as the old Worker ran it.
-  const BODY = (catalogue.resolve as string[]).filter(line => !line.trimStart().startsWith('--')).join('\n');
-  const OLD = `INSERT INTO current_claims(subject,predicate,scope,slot,status,object,value,members,supporting,claims,crop_version,resolver,at)
-    WITH crop_now(unit,version) AS (SELECT id,crop_version FROM units WHERE id IN (SELECT json_extract(value,'$[0]') FROM json_each(?1))),\n${BODY}`;
-
-  it('gives the rows the old one gave, a crop version becoming the crop and its cut', () => {
-    const old = new Database(':memory:'); databases.push(old);
-    const folder = new URL('../../migrations/', import.meta.url);
-    for (const file of readdirSync(folder).filter(f => f.endsWith('.sql')).sort()) old.exec(readFileSync(new URL(file, folder), 'utf8'));
-    const now = new Database(':memory:'); databases.push(now);
-    atlasSchema(now);
-    const crops = { 'ex:a': cropId(9, 0), 'ex:b': cropId(9, 1) };
-    old.exec(`INSERT INTO units(id,origin,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual) VALUES
-      ('ex:a','local','p','kanji','pending',0,0,0,0,'{"image_sha256":"pa"}','{}','{}','{}'),
-      ('ex:b','local','p','kanji','pending',0,0,0,0,'{"image_sha256":"pb"}','{}','{}','{}')`);
-    now.exec(`INSERT INTO crops(id,kind,book,state,quiz,shuffle,cut) VALUES(${crops['ex:a']},0,1,0,1,1,0),(${crops['ex:b']},0,1,0,1,2,0)`);
-    let n = 0;
-    // One claim in both ledgers: on a crop at its current version (cut 0) or an earlier one (cut -1).
-    const add = (subject: string, predicate: string, members: [string | null, string | null][], by: string, at: string, cut: 0 | -1 | null = 0, slot = '') => {
-      const set = members.length > 1 ? `set${++n}` : null, ids: string[] = [];
-      for (const [object, value] of members) {
-        const id = `cf:${++n}`; ids.push(id);
-        const crop = cut === null ? null : crops[subject as keyof typeof crops];
-        for (const [db, extra] of [[old, ''], [now, `,${crop},${cut}`]] as const)
-          db.query(`INSERT INTO assertions(id,subject,predicate,scope,slot,object,value,alternative_set,tier,asserted_by,asserted_at${extra ? ',crop,cut' : ''})
-            VALUES(?,?,?,'',?,?,?,?,'observed',?,?${extra})`).run(id, subject, predicate, slot, object, value, set, by, at);
-        if (cut !== null) {
-          old.query("INSERT INTO assertion_evidence(assertion,kind,ref) VALUES(?,'crop',?)").run(id, cut === 0 ? `${subject}@p${subject.at(-1)}@` : `${subject}@older@`);
-          now.query("INSERT INTO assertion_evidence(assertion,kind,ref,crop,cut) VALUES(?,'crop','v',?,?)").run(id, crop, cut);
-        }
-      }
-      return ids;
-    };
-    const act = (assertion: string, action: string, actor: string, at: string) => {
-      for (const db of [old, now]) db.query('INSERT INTO assertion_actions(id,assertion,action,actor,at) VALUES(?,?,?,?,?)').run(`x${++n}`, assertion, action, actor, at);
-    };
-    const [a1] = add('ex:a', 'has_form', [['fm:1', null]], 'r1', '2026-10-01T00:00:01Z');
-    add('ex:a', 'has_form', [['fm:2', null]], 'r2', '2026-10-01T00:00:02Z');
-    act(a1, 'accept', 'r3', '2026-10-01T00:00:03Z');
-    const [b1] = add('ex:b', 'has_form', [['fm:1', null], [null, '"unresolved"']], 'r1', '2026-10-01T00:00:01Z');
-    add('ex:b', 'has_form', [['fm:3', null]], 'r2', '2026-10-01T00:00:04Z', -1);
-    act(b1, 'reject', 'r2', '2026-10-01T00:00:05Z');
-    act(b1, 'reject', 'r3', '2026-10-01T00:00:06Z');
-    const [w1] = add('ex:b', 'writes_word', [[W, null]], 'r1', '2026-10-01T00:00:07Z');
-    add('ex:b', 'writes_word', [[OTHER, null]], 'r2', '2026-10-01T00:00:08Z');
-    act(w1, 'adjudicate', 'admin', '2026-10-01T00:00:09Z');
-    add('ex:a', 'writes_word', [[W, null]], 'r1', '2026-10-01T00:00:01Z', -1);
-    add('fm:1', 'represented_by', [['rp:1', null]], 'r1', '2026-10-01T00:00:01Z', null, 'rp:1');
-    add('book:a', 'date_produced', [[null, '{"text":"1700"}']], 'export', '2026-10-01T00:00:01Z', null, '{"text":"1700"}');
-    const keys = JSON.stringify(old.query('SELECT DISTINCT subject,predicate,scope,slot FROM assertions').all().map((r: any) => [r.subject, r.predicate, r.scope, r.slot]));
-    old.query(OLD).run(keys);
-    now.query(resolveWriteQuery()).run(keys);
-    const version = new Map((old.query('SELECT id,crop_version FROM units').all() as { id: string; crop_version: string }[]).map(r => [r.crop_version, r.id]));
-    const before = (old.query('SELECT * FROM current_claims ORDER BY subject,predicate,slot').all() as any[]).map(({ crop_version, ...row }) => ({ ...row,
-      crop: crop_version === null ? null : crops[version.get(crop_version) as keyof typeof crops], cut: crop_version === null ? null : 0 }));
-    const after = now.query('SELECT * FROM current_claims ORDER BY subject,predicate,slot').all();
-    expect(before.length).toBe(5);
-    expect(after).toEqual(before);
-    expect(after.map((r: any) => r.status).sort()).toEqual(['adjudicated', 'asserted', 'asserted', 'disputed', 'rejected']);
-    // Clearing finds the slots by key.
-    now.query(resolveClearQuery()).run(keys);
-    expect(now.query('SELECT count(*) AS n FROM current_claims').get()).toEqual({ n: 0 });
   });
 });
 

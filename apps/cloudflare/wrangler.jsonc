@@ -14,10 +14,8 @@
     "binding": "ASSETS"
   },
   "observability": {"enabled": true, "head_sampling_rate": 0.1},
-  // ATLAS and ATLAS_RUNS are the new storage layout (docs/decisions/0005-storage-rebuild.md), filled by
-  // scripts/atlas3; the site reads DB until the cutover.
-  "d1_databases": [{"binding": "DB", "database_name": "glyph-atlas", "database_id": "556cb20f-db02-4f2a-8044-f7fd86776db6", "migrations_dir": "migrations"},
-                   {"binding": "ATLAS", "database_name": "glyph-atlas-v3", "database_id": "0b475d45-dfe4-49a6-8c44-996289e82995", "migrations_dir": "migrations-atlas"},
+  // ATLAS and ATLAS_RUNS are the storage layout (docs/decisions/0005-storage-rebuild.md), filled by scripts/atlas3.
+  "d1_databases": [{"binding": "ATLAS", "database_name": "glyph-atlas-v3", "database_id": "0b475d45-dfe4-49a6-8c44-996289e82995", "migrations_dir": "migrations-atlas"},
                    {"binding": "ATLAS_RUNS", "database_name": "glyph-atlas-v3-runs", "database_id": "61a9e757-1343-4e4e-801b-f9c23f66b531", "migrations_dir": "migrations-atlas-runs"},
                    // ACCOUNTS holds the users, sessions and sign-in accounts. The cutover creates the database
                    // (`wrangler d1 create glyph-atlas-accounts`, whose id replaces this placeholder), copies the

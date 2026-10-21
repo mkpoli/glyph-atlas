@@ -3,11 +3,9 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { IDS_DIGITS, SUMMARY_DIGITS, componentMatches, referenceShard } from '../atlas3Reference';
-import { COMPONENT_SCAN, rankMatches } from '../components';
-import * as old from './fixtures/search.old';
 import { choiceSpellingsQuery, headsQuery, namesQuery, structureOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
 
-// The edge cache, shared by the old and new handlers; each asks under its own origin.
+// The edge cache.
 const edge = new Map<string, Response>();
 (globalThis as any).caches = { default: {
   match: async (request: Request) => edge.get(request.url)?.clone(),
@@ -41,8 +39,7 @@ const byPoints = (a: string, b: string) => {
   return x.length - y.length;
 };
 
-// ---- One universe of reference data, written to the old tables and as reference.py writes the new
-// layout. The isolate holds every reference object a test file reads, so this file reads one set,
+// ---- One universe of reference data, as reference.py writes the layout. The isolate holds every reference object a test file reads, so this file reads one set,
 // apart from the objects atlas3Reference.test.ts reads (checked below).
 type Card = { char: string; occurrences: number; name?: string; family?: string[]; ligature?: string };
 const cards: Card[] = [
@@ -101,7 +98,7 @@ const structures: [string, string[], { text: string; regions: string }[] | null]
 const substitutions: [string, string, number][] = [['氵', '水', 40], ['月', '⺼', 12], ['骨', '𩨗', 3], ['冂', '月', 2]];
 
 // The component spread of atlas3Reference.test.ts's component tests: five components over the
-// spread of characters, 一 past COMPONENT_SCAN, and 滑 with its parts.
+// spread of characters, 一 past the component scan limit, and 滑 with its parts.
 type Row = [string, number, number, number, number, number];
 let seed = 7;
 const random = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
@@ -115,23 +112,6 @@ for (let point = 0x4E00; point < 0x4E00 + 5000; point++) {
 }
 const W = 'ja/ばかり/副助詞', OTHER = 'ja/のみ/副助詞';
 
-// The old database.
-const oldDb = migrated('migrations');
-for (const card of cards) oldDb.query('INSERT INTO characters(code_point,character,name,data,detail) VALUES(?,?,?,?,?)')
-  .run(cp(card.char), card.char, card.name!, JSON.stringify(dataOf(card)), '{}');
-for (const [query, code, rank] of aliases) oldDb.query('INSERT OR IGNORE INTO aliases(query,code_point,rank) VALUES(?,?,?)').run(query, code, rank);
-for (const [a, b, relation, source, widens] of edges)
-  oldDb.query("INSERT INTO character_variants(a,b,relation,source,detail,written,widens) VALUES(?,?,?,?,'',1,?)").run(a, b, relation, source, widens);
-for (const [char, sequences, shapes] of structures)
-  oldDb.query('INSERT INTO han_ids(char,sequences,shapes) VALUES(?,?,?)').run(char, JSON.stringify(sequences), shapes ? JSON.stringify(shapes) : null);
-for (const [a, b, count] of substitutions) oldDb.query("INSERT INTO component_variants(a,b,count,pairs) VALUES(?,?,?,'[]')").run(a, b, count);
-const totals = new Map<string, number>();
-for (const [c, tier, size, point, n, direct] of rows) {
-  oldDb.query('INSERT INTO han_components VALUES(?,?,?,?,?,?)').run(c, tier, size, `U+${point.toString(16).toUpperCase()}`, n, direct);
-  totals.set(c, (totals.get(c) ?? 0) + 1);
-}
-for (const [c, total] of totals) oldDb.query('INSERT INTO han_component_names VALUES(?,?,?)').run(c, c, total);
-oldDb.query('INSERT INTO han_component_names VALUES(?,?,?)').run('⺡', '氵', totals.get('氵')!);
 
 // The new layout: graphemes numbered in code point order with their family heads, the single code
 // point names, 0004's tables, and the R2 objects.
@@ -214,10 +194,8 @@ const MEDIA = { get: async (name: string) => {
   const value = objects[name];
   return value === undefined ? null : { arrayBuffer: async () => new Uint8Array(gzipSync(JSON.stringify(value))).buffer };
 } };
-const ASSETS = { fetch: async () => Response.json({ readings }) };
 const statements: string[] = [];
 const newEnv = { ATLAS: d1(atlasDb, statements), MEDIA, CATALOGUE_LAG: '0' } as unknown as Env;
-const oldEnv = { DB: d1(oldDb), ASSETS } as unknown as Parameters<typeof old.suggest>[0];
 const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
 const ask = (q: string, limit?: number) => new URLSearchParams(limit === undefined ? { q } : { q, limit: String(limit) });
 
@@ -231,12 +209,6 @@ describe('the search fixture', () => {
 });
 
 describe('a character search', () => {
-  const queries = ['ね', 'ネ', '𛄧', 'ぬ', 'ねこ', 'とき', 'トキ', 'こく', 'コク', 'じ', '時', '时', '鯡', '𩹉', '鮓', '蚱', '鮨', 'か', 'か゚', 'U+304B U+309A',
-    'u+304b u+309a', 'U+304B-U+309A', 'ア゙', 'U+30A2 U+3099', 'u+30a2 u+3099', 'u+30a2  u+3099', 'U+3061', 'u+306d', 'U+306D', 'ne', 'NE',
-    'hiragana', 'letter', 'katakana letter', 'ideograph-4e0', '4e00', 'fa11', 'compatibility', 'zzz', '-', '1', 'CJK UNIFIED', 'unified ideograph',
-    '口木', '一口', '木木', 'U+6C34 U+9AA8', 'U+6C35 U+9AA8', '骨氵骨', '骨⺡', '一水𠂉', '口木水𠂉', '⺡骨', '水骨', '⺡月', '氵', '⿰氵骨', '⿱⿵冂⿰丨𠃌月', '⿰木', '  ね  ', '', ' ', '一', '丁', '𠀀', 'ﾈ',
-    'ﾈ ', 'た', 'A'];
-
   // First in the file, so the isolate holds none of the objects yet.
   it('reads the name list, the summary shards of the families the query names, and one object for its kanji or 異体字', async () => {
     const summary = async (chars: string[]) => new Set(await Promise.all(chars.map(async c => `v3/reference/summary/${await referenceShard(cp(c), SUMMARY_DIGITS)}.json.gz`)));
@@ -251,16 +223,8 @@ describe('a character search', () => {
     expect(new Set(reads.filter(r => r.includes('/summary/')))).toEqual(await summary(['鮓']));
   });
 
-  it('answers every query, at every limit, as the old database did', async () => {
-    for (const q of queries) for (const limit of [undefined, 1, 2, 3, 8, 48]) {
-      const was = await old.suggest(oldEnv, ask(q, limit)), now = await suggest(newEnv, ask(q, limit), ctx);
-      expect({ q, limit, now }).toEqual({ q, limit, now: was });
-    }
-  });
-
-  it('refuses a limit past 48 as before', async () => {
+  it('refuses a limit past 48', async () => {
     await expect(suggest(newEnv, ask('ね', 49), ctx)).rejects.toThrow('Invalid limit.');
-    await expect(old.suggest(oldEnv, ask('ね', 49))).rejects.toThrow('Invalid limit.');
   });
 
   it('lists each grapheme with all its forms, the forms the query found first', async () => {
@@ -289,23 +253,6 @@ describe('a character search', () => {
 });
 
 describe('a component search', () => {
-  const sql = (wanted: Map<string, number>, limit: number) => {
-    const [driver, ...rest] = [...wanted].sort((a, b) => totals.get(a[0])! - totals.get(b[0])!);
-    const found = oldDb.query(old.componentMatchQuery(rest.length)).all(driver[0], ...rest.flatMap(([c, n]) => [c, n]), driver[1]) as any[];
-    const ranked = rankMatches(found);
-    return { codes: ranked.slice(0, limit).map(r => r.code_point), more: ranked.length > limit || totals.get(driver[0])! > COMPONENT_SCAN };
-  };
-
-  it('finds characters by their components as the D1 search found them', async () => {
-    for (const asked of [['口', '木'], ['一', '口'], ['木', '木'], ['一', '水', '𠂉'], ['口', '木', '水', '𠂉']]) {
-      const wanted = new Map<string, number>();
-      for (const c of asked) wanted.set(c, (wanted.get(c) ?? 0) + 1);
-      for (const limit of [8, 48]) expect(await componentMatches(newEnv, wanted, limit)).toEqual(sql(wanted, limit));
-    }
-    expect(sql(new Map([['一', 1], ['口', 1]]), 8).more).toBe(true);
-    expect(sql(new Map([['口', 1], ['木', 1], ['水', 1]]), 48).codes.length).toBeGreaterThan(8);
-  });
-
   it('reads a typed form as its component and finds nothing for a component no name gives', async () => {
     expect(await componentMatches(newEnv, new Map([['⺡', 1], ['骨', 1]]), 8)).toEqual({ codes: ['U+6ED1'], more: false });
     expect(await componentMatches(newEnv, new Map([['⺡', 1], ['月', 1]]), 8)).toEqual({ codes: [], more: false });
@@ -313,11 +260,7 @@ describe('a component search', () => {
 });
 
 describe("the IDS editor's structure", () => {
-  it('answers as the old database did, kept at the edge by the catalogue version', async () => {
-    for (const c of ['滑', '骨', '月', '鮓']) {
-      const was = await old.structureOf(oldEnv, ctx, 'https://old.test', c, '1'), now = await structureOf(newEnv, ctx, 'https://new.test', c);
-      expect(now).toEqual(was);
-    }
+  it('answers with its sequences, shapes and substitutes, kept at the edge by the catalogue version', async () => {
     expect(await structureOf(newEnv, ctx, 'https://new.test', '滑')).toEqual({ char: '滑', sequences: ['⿰氵骨'],
       shapes: [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }],
       substitutes: { '氵': [{ char: '水', count: 40 }], '骨': [{ char: '𩨗', count: 3 }] } });

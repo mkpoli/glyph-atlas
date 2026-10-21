@@ -213,7 +213,6 @@ export async function viewer(env: Env, request: Request, fresh = false): Promise
 }
 
 /** The ids a user's rows were written under, as a subquery over the old database's `actors`. */
-export const owned = (user: string) => `(SELECT actor FROM actors WHERE user_id='${user.replaceAll("'", "''")}')`;
 const quoted = (user: string) => `'${user.replaceAll("'", "''")}'`;
 /** The actor texts a user's rows were written under (the claim ledger's `asserted_by`), as a subquery over `actors` in `ATLAS`. */
 export const ownedKeys = (user: string) => `(SELECT key FROM actors WHERE user=${quoted(user)})`;

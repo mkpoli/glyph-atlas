@@ -27,10 +27,10 @@ function setup() {
     for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
     return db;
   };
-  const old = migrated('migrations'), db = migrated('migrations-accounts'), atlas = migrated('migrations-atlas');
+  const db = migrated('migrations-accounts'), atlas = migrated('migrations-atlas');
   atlas.exec(`INSERT INTO site(key,value) VALUES('collection','"2026-10-01"')`);
   const statements: string[] = [];
-  const env = (paused?: string) => ({ DB: d1(old, statements), ACCOUNTS: d1(db, statements), ATLAS: d1(atlas, statements), BETTER_AUTH_SECRET: 'freeze-test-secret-freeze-test-secret-01', MAIL_FROM: 'sign-in@example.org',
+  const env = (paused?: string) => ({ ACCOUNTS: d1(db, statements), ATLAS: d1(atlas, statements), BETTER_AUTH_SECRET: 'freeze-test-secret-freeze-test-secret-01', MAIL_FROM: 'sign-in@example.org',
     CATALOGUE_LAG: '60', ...(paused === undefined ? {} : { WRITES_PAUSED: paused }) }) as unknown as Env;
   const jar = new Map<string, string>();
   const send = async (paused: string | undefined, path: string, method = 'GET', body?: unknown, origin: string | null = ORIGIN) => {
