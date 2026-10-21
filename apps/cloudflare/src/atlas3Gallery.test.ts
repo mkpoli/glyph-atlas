@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from './forms.test';
 import { bundleKey, cropId, publicId } from './atlas3';
-import { SHARDS, characterCounts, characterGallery, currentPointer, cursorOf, galleryQuery, tallyQuery } from './atlas3Gallery';
+import { SHARDS, characterCounts, currentPointer, cursorOf, filedCounts, galleryPage, rangeQuery, tallyQuery, type GalleryQuery } from './atlas3Gallery';
 
 const databases: Database[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); });
@@ -38,53 +38,67 @@ function setup() {
 }
 
 describe('new-layout character galleries', () => {
+  const page = (env: Env, q: Partial<GalleryQuery>) => galleryPage(env, { kind: 0, segments: [[{ by: 'char', key: 7 }]], limit: 20, ...q });
+  const slots = (found: { ids: number[] }) => found.ids.map(id => id % 2 ** 24);
   it('page through one index range by style, shuffle and id, leaving withheld crops out', async () => {
     const { env, ids } = setup();
-    const seen: string[] = [];
+    const seen: number[] = [];
     let after: string | null = null;
     do {
-      const page = await characterGallery(env, { char: 7, limit: 3, after });
-      seen.push(...page.items.map(item => item.source_id));
-      after = page.next;
+      const found = await page(env, { limit: 3, after });
+      seen.push(...slots(found));
+      after = found.next;
     } while (after);
     // Shown: slots 1, 2, 4 (cursive) then 5, 7, 8 (unassessed), each style by shuffle, which falls with the slot.
-    expect(seen).toEqual(['hk:4', 'hk:2', 'hk:1', 'hk:8', 'hk:7', 'hk:5']);
-    expect((await characterGallery(env, { char: 7, limit: 20, withheld: true })).items).toHaveLength(ids.length);
+    expect(seen).toEqual([4, 2, 1, 8, 7, 5]);
+    expect((await page(env, { withheld: true })).ids).toHaveLength(ids.length);
   });
 
   it('filter by style group and state, and order by witness year with the undated last', async () => {
     const { env } = setup();
-    expect((await characterGallery(env, { char: 7, limit: 20, group: 'unassessed', state: 1 })).items.map(i => i.source_id)).toEqual(['hk:7', 'hk:5']);
-    expect((await characterGallery(env, { char: 7, limit: 20, group: 'formal' })).items).toEqual([]);
-    expect((await characterGallery(env, { char: 7, limit: 20, order: 'year' })).items.map(i => i.year)).toEqual([1710, 1720, 1740, 1750, 1770, null]);
-    expect((await characterGallery(env, { char: 7, limit: 20, order: 'year', from: 1720, to: 1750 })).items.map(i => i.year)).toEqual([1720, 1740, 1750]);
+    expect(slots(await page(env, { group: 'unassessed', state: 1 }))).toEqual([7, 5]);
+    expect((await page(env, { group: 'formal' })).ids).toEqual([]);
+    expect(slots(await page(env, { order: 'year' }))).toEqual([1, 2, 4, 5, 7, 8]);
+    expect(slots(await page(env, { order: 'year', years: { from: 1720, to: 1750 } }))).toEqual([2, 4, 5]);
+    // A year range in style order is sorted from the range of `crop_year`.
+    expect(slots(await page(env, { years: { from: 1720, to: 1750 } }))).toEqual([4, 2, 5]);
+    expect(slots(await page(env, { years: 'undated', withheld: true }))).toEqual([9, 8]);
     // Page by page across the dated and undated ranges.
-    const seen: (number | null)[] = [];
+    const seen: number[] = [];
     let after: string | null = null;
     do {
-      const page = await characterGallery(env, { char: 7, limit: 2, order: 'year', withheld: true, after });
-      seen.push(...page.items.map(item => item.year));
-      after = page.next;
+      const found = await page(env, { limit: 2, order: 'year', withheld: true, after });
+      seen.push(...slots(found));
+      after = found.next;
     } while (after);
-    expect(seen).toEqual([1700, 1710, 1720, 1730, 1740, 1750, 1760, 1770, null, null]);
+    expect(seen).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 9, 8]);
+  });
+
+  it('merge the ranges of several sources, and list segments one after another', async () => {
+    const { env } = setup();
+    // Two segments of the same character list it twice, each in full before the next.
+    const twice = await page(env, { segments: [[{ by: 'char', key: 7 }], [{ by: 'char', key: 7 }]], limit: 4 });
+    expect(slots(twice)).toEqual([4, 2, 1, 8]);
+    expect(slots(await page(env, { segments: [[{ by: 'char', key: 7 }], [{ by: 'char', key: 7 }]], limit: 4, after: twice.next }))).toEqual([7, 5, 4, 2]);
+    expect(await page(env, { segments: [] })).toEqual({ ids: [], next: null });
   });
 
   it('refuse a cursor it did not write', async () => {
     const { env, ids } = setup();
     expect(() => cursorOf('x')).toThrow('Invalid cursor.');
-    expect(() => cursorOf(`null.98.${publicId(ids[1])}`)).toThrow('Invalid cursor.');
-    expect(() => galleryQuery({ char: 7, limit: 0 }, 'style', null)).toThrow('Invalid limit.');
-    expect((await characterGallery(env, { char: 7, limit: 3, after: `s0.993.${publicId(ids[1])}` })).items.map(i => i.source_id)).toEqual(['hk:8', 'hk:7', 'hk:5']);
+    expect(() => cursorOf(`0Snull.98.${publicId(ids[1])}`)).toThrow('Invalid cursor.');
+    expect(() => rangeQuery({ kind: 0, segments: [], limit: 1 }, 'S', { by: 'char', key: 7 }, null, 0)).toThrow('Invalid limit.');
+    await expect(page(env, { after: `3S0.993.${publicId(ids[1])}` })).rejects.toThrow('Invalid cursor.');
+    expect(slots(await page(env, { limit: 3, after: `0S0.993.${publicId(ids[1])}` }))).toEqual([8, 7, 5]);
   });
 
   it('read every gallery query from a covering index', () => {
     const { db } = setup();
     const after: [number, number, number] = [2, 1, cropId(1, 1)];
-    for (const [q, phase, index] of [[{ char: 7, limit: 3 }, 'style', 'crop_char'], [{ char: 7, limit: 3, group: 'unassessed', state: 1 }, 'style', 'crop_char'],
-      [{ char: 7, limit: 3, group: 'formal' }, 'style', 'crop_char'], [{ char: 7, limit: 3, from: 1700, to: 1800 }, 'dated', 'crop_year'],
-      [{ char: 7, limit: 3, withheld: true }, 'undated', 'crop_undated']] as const) {
+    for (const [q, phase, index] of [[{}, 'S', 'crop_char'], [{ group: 'unassessed', state: 1 }, 'S', 'crop_char'], [{ group: 'formal' }, 'S', 'crop_char'],
+      [{ years: { from: 1700, to: 1800 } }, 'Y', 'crop_year'], [{ withheld: true }, 'U', 'crop_undated']] as const) {
       for (const from of [null, after]) {
-        const { sql, values } = galleryQuery(q, phase, from);
+        const { sql, values } = rangeQuery({ kind: 0, segments: [], limit: 3, ...q } as GalleryQuery, phase, { by: 'char', key: 7 }, from, 4)!;
         const plan = (db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...values) as { detail: string }[]).map(r => r.detail).join(' | ');
         expect(plan).toContain(`COVERING INDEX ${index}`);
         expect(plan).not.toContain('TEMP B-TREE');
@@ -92,19 +106,25 @@ describe('new-layout character galleries', () => {
     }
     const tally = (db.query(`EXPLAIN QUERY PLAN ${tallyQuery()}`).all(3, '[7]') as { detail: string }[]).map(r => r.detail).join(' | ');
     expect(tally).toContain('USING PRIMARY KEY (gen=? AND char=?)');
+    const filed = (db.query(`EXPLAIN QUERY PLAN ${tallyQuery('family')}`).all(3, '[9]') as { detail: string }[]).map(r => r.detail).join(' | ');
+    expect(filed).toContain('USING PRIMARY KEY (gen=? AND char=? AND family=?)');
   });
 });
 
 describe('new-layout counts', () => {
   it('add the reviews since the publication to its answer', async () => {
     const { db, env } = setup();
-    db.exec(`INSERT INTO tally VALUES(3,0,7,1,-1,0,0,1,5),(4,0,7,1,-1,0,0,1,-1),(4,0,7,1,-1,0,1,1,1)`);
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) VALUES(3,0,7,-1,1,-1,0,0,1,1700,5),(4,0,7,-1,1,-1,0,0,1,1700,-1),
+      (4,0,7,-1,1,-1,0,1,1,-1,1),(4,1,-1,9,1,-1,2,0,1,-1,2)`);
     const cells = (await characterCounts(env, [7, 9])).get(7)!;
     expect(cells.filter(c => !c.fresh).map(c => c.n)).toEqual([3, 2]);
     // Only generation 4 counts: generation 3 is in the answer already.
-    expect(cells.filter(c => c.fresh).map(c => [c.state, c.n])).toEqual([[0, -1], [1, 1]]);
+    expect(cells.filter(c => c.fresh).map(c => [c.state, c.decade, c.n])).toEqual([[0, 1700, -1], [1, null, 1]]);
     expect(cells.reduce((sum, c) => sum + c.n, 0)).toBe(5);
     expect((await characterCounts(env, [9])).get(9)).toEqual([]);
+    expect((await filedCounts(env, [7])).get(7)).toEqual([]);
+    // The crops with no character are read by family from the rows of character -1.
+    expect((await filedCounts(env, [9])).get(9)!.map(c => [c.kind, c.n, c.fresh])).toEqual([[1, 2, true]]);
   });
 
   it('read the pointer again after a minute', async () => {

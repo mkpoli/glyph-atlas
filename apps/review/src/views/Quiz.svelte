@@ -52,7 +52,7 @@
   // round on screen. Loaded after the round itself, and a failure here never blocks the round.
   let references = $state([])
   let history = $state([]), historyIndex = $state(-1)
-  let loadingMore = $state(false), hasMore = $state(false), nextOffset = $state(0), loadMoreFailed = $state(false)
+  let loadingMore = $state(false), hasMore = $state(false), nextCursor = $state(null), loadMoreFailed = $state(false)
   // A saved round says so, since the next character replaces it at once.
   let savedNotice = $state(''), savedTimer
   function announceSaved(count, label) {
@@ -145,7 +145,7 @@
   const canNext = $derived(rounds.some(c => c.pending > 0 && c.label !== grapheme))
   function snapshot() {
     return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, keptHere, suggestions, contextSuggestions,
-      roundId, roundSeed, hasMore, nextOffset, production, summary: data, entry })
+      roundId, roundSeed, hasMore, nextCursor, production, summary: data, entry })
   }
   function checkpoint() {
     if (historyIndex >= 0) history[historyIndex] = snapshot()
@@ -154,7 +154,7 @@
     production = round.production; data = round.summary
     grapheme = round.grapheme; members = round.members; items = round.items; choices = round.choices; selected = round.selected
     skipped = round.skipped; recorded = round.recorded ?? {}; keptHere = round.keptHere ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
-    roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextOffset = round.nextOffset ?? 0
+    roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextCursor = round.nextCursor ?? null
     entry = round.entry ?? null
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
     anchor = null; formDone = null; formError = ''; lastMark = null
@@ -235,8 +235,8 @@
         chosen = tries === 0 && target && available.some(c => c.label === target) ? target
           : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
         if (!chosen) break
-        result = await firstCrops(offset => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,
-          ...(offset ? { offset } : {}) }), away)
+        result = await firstCrops(cursor => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,
+          ...(cursor ? { cursor } : {}) }), away)
         if (closed || id !== requestId) return
         if (result.items.length) break
         available = available.filter(c => c.label !== chosen)
@@ -259,7 +259,7 @@
       }
       restoreRound({ grapheme: chosen, members: result.grapheme?.members ?? [graphemeText(chosen)], items: arranged(numbered(unique(result.items))), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
-        hasMore: (result.next_offset ?? result.items.length) < result.total, nextOffset: result.next_offset ?? result.items.length,
+        hasMore: Boolean(result.next), nextCursor: result.next ?? null,
         production: scope, summary })
       entry = kept ?? crypto.randomUUID()
       address(how)
@@ -276,32 +276,26 @@
     const id = requestId, round = roundId
     loadingMore = true; loadMoreFailed = false; error = ''; errorStatus = 0
     const seen = new Set(items.map(item => item.id))
-    // Continue from where the last load stopped, a batch early: reviews saved meanwhile may have moved
-    // rows forward. Crops already on screen are dropped by occurrence, so the overlap costs nothing.
-    let offset = Math.max(0, nextOffset - MORE_BATCH), additions = [], more = false
+    // Continue from the cursor the last load handed back: a page goes on after the last crop it dealt, so
+    // reviews saved meanwhile move nothing.
+    let cursor = nextCursor, additions = [], more = false
     try {
       const batchLimit = Math.min(MORE_BATCH, roundLimit - items.length)
       // A crop of a kept round is left out as one on screen is.
       for (const kept of await keptCrops()) seen.add(kept)
-      while (additions.length < batchLimit) {
-        const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: 48, offset, seed: roundSeed })
+      // A page asks for no more than the batch has room for, since the cursor moves past every crop dealt.
+      while (additions.length < batchLimit && cursor) {
+        const room = batchLimit - additions.length
+        const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: room, cursor, seed: roundSeed })
         if (closed || id !== requestId || round !== roundId) return
         const fresh = unique(result.items).filter(item => !seen.has(item.id))
-        const room = batchLimit - additions.length
-        const batch = fresh.slice(0, room)
-        additions.push(...batch)
-        batch.forEach(item => seen.add(item.id))
-        // The service may pass over crops it will not deal, so its next offset can run ahead of the items.
-        const next = result.next_offset ?? offset + result.items.length, moved = next > offset
-        offset = next
-        if (additions.length >= batchLimit) {
-          more = fresh.length > room || offset < result.total
-          break
-        }
-        if (!moved || offset >= result.total) { more = false; break }
+        additions.push(...fresh)
+        fresh.forEach(item => seen.add(item.id))
+        cursor = result.next ?? null
       }
+      more = Boolean(cursor)
       // Added crops follow the ones already on screen, so nothing the reviewer is looking at moves.
-      items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more; nextOffset = offset
+      items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more; nextCursor = cursor
     } catch (e) { if (id === requestId) { error = e.message; errorStatus = e.status ?? 0; loadMoreFailed = true } }
     finally { if (id === requestId) loadingMore = false }
   }

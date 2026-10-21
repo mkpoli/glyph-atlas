@@ -1,4 +1,5 @@
 import { t } from './i18n.svelte.js'
+import { isReload } from './busy.svelte.js'
 
 /** The character layer's API: candidate search, exact characters, graphemes and ligatures. */
 async function get(path, params = {}, { fetch: send = fetch, ...options } = {}) {
@@ -9,7 +10,8 @@ async function get(path, params = {}, { fetch: send = fetch, ...options } = {}) 
   })
   const value = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const error = new Error(typeof value.detail === 'string' ? value.detail : t('layers.readError'))
+    // A page this tab asked for in a way the site no longer answers asks for a reload.
+    const error = new Error(isReload(response, value) ? t('client.reload') : typeof value.detail === 'string' ? value.detail : t('layers.readError'))
     error.status = response.status
     error.code = value.code
     throw error
@@ -28,7 +30,8 @@ export const graphemes = (params = {}) => get('/layers/graphemes', params)
 export const ligatures = () => get('/layers/ligatures')
 /** Copies of corpus glyphs from a seed's point of their shuffle, of one script group or of every one ('all'). */
 export const gallery = (limit = 24, seed = 0, group = 'all', options) => get('/layers/gallery', { limit, seed, group: group === 'all' ? '' : group }, options)
-export const candidates = (codePoint, limit = 24, offset = 0, params = {}, options) => get('/layers/candidates', { code_point: codePoint, limit, offset: offset || '', ...params }, options)
+/** A page of a character's corpus glyphs, from the cursor the page before named (`next`), or the first. */
+export const candidates = (codePoint, limit = 24, after = null, params = {}, options) => get('/layers/candidates', { code_point: codePoint, limit, after, ...params }, options)
 export const decades = (codePoint, params = {}, options) => get('/layers/decades', { code_point: codePoint, ...params }, options)
 export const layerSummary = () => get('/layers/summary')
 

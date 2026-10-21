@@ -28,9 +28,10 @@ mirror lacks, or a crop no longer live (retired), is dropped and counted.
   (local copy out/forms/manifest.json.gz).
 
 Rows go to D1 as the difference from the local copy (out/atlas.sqlite), as books.py sends them: a
-rerun after a fresh copy inserts, updates and removes only what changed. The first load writes about
-1.33M `crops` rows (one per clustered glyph), so it waits for the owner's approval with the dry run's
-figures. `--send` refuses a database holding form decisions the local copy lacks, sets
+rerun after a fresh copy inserts, updates and removes only what changed. The ordinary first load writes about
+1.33M `crops` rows (one per clustered glyph). At cutover, `--defer-crops` leaves those updates to
+`fill.py --send`, which fills cluster, family and priority in one pass. It keeps form decisions
+paused and records a durable handoff; finish fill before publishing or loading facts again. `--send` refuses a database holding form decisions the local copy lacks, sets
 `form_state.loading` (no decision is recorded meanwhile) and checks again before the rows go, and
 names its run in the mirror's `pending`, so publish.py waits for it. A dry run (the default) writes the
 run under `out/crop-facts/<name>-dry/` and sends nothing; the report, with rows, statement bytes and
@@ -354,7 +355,7 @@ class Facts:
             if not (OUT / "forms" / "families" / f"{name}.json.gz").exists():
                 self.objects[f"forms/families/{name}.json.gz"] = data
 
-    def groups(self):
+    def groups(self, defer_crops=False):
         """The statements that turn the local copy's tables into these, in groups; per table the statements,
         their bytes and the rows they change."""
         groups, written = [], {}
@@ -370,10 +371,10 @@ class Facts:
             tables.append((table, out, len(out)))
         # Each live crop's cluster, null outside the clustering.
         moves = {}
-        for crop, n in self.cluster_of.items():
+        for crop, n in ([] if defer_crops else self.cluster_of.items()):
             if self.clustered.get(crop) != n:
                 moves.setdefault(n, []).append(crop)
-        cleared = sorted(crop for crop in self.clustered if crop not in self.cluster_of)
+        cleared = [] if defer_crops else sorted(crop for crop in self.clustered if crop not in self.cluster_of)
         out = []
         for n, crops in [(None, cleared)] + sorted(moves.items()):
             crops = sorted(crops)
@@ -470,6 +471,8 @@ def deliver(run, atlas, mirror, build):
         copy_out(run, files)
         mark(run, "uploaded votes")
     clean(run, atlas)
+    if (run / "defer-crops").exists():
+        mirror.execute("INSERT OR IGNORE INTO pending VALUES(?)", ("fill/source/" + run.name,))
     mirror.execute("DELETE FROM pending WHERE run=?", (FACTS_RUN + run.name,))
     mirror.commit()
 
@@ -515,6 +518,7 @@ def clean(run, atlas):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--send", action="store_true", help="apply migration 0006, upload the objects and send the rows")
+    parser.add_argument("--defer-crops", action="store_true", help="leave cluster updates to fill.py with family and priority")
     args = parser.parse_args()
     dry = not args.send
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
@@ -525,6 +529,8 @@ def main():
     mirror.commit()
     build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
     pending = [r[0] for r in mirror.execute("SELECT run FROM pending ORDER BY run")]
+    if any(p.startswith("fill/") for p in pending):
+        sys.exit("the crop fill is unfinished; finish it with fill.py --send first")
     if any(not p.startswith(FACTS_RUN) for p in pending):
         sys.exit("a publish is unfinished; finish it with publish.py first")
     if pending and dry:
@@ -541,6 +547,9 @@ def main():
             else:
                 mirror.execute("DELETE FROM pending WHERE run=?", (name,))
                 mirror.commit()
+        if mirror.execute("SELECT 1 FROM pending WHERE run LIKE 'fill/%'").fetchone():
+            print("crop facts loaded; finish the deferred crop fill with fill.py --send", flush=True)
+            return
         if problem := guard(atlas):
             sys.exit(problem)
         migrate(atlas, build)
@@ -548,24 +557,30 @@ def main():
     facts = Facts(mirror, atlas, build)
     facts.votes()
     facts.forms()
-    groups, written = facts.groups()
-    digest = hashlib.sha256()
+    groups, written = facts.groups(args.defer_crops)
+    digest = hashlib.sha256(b"defer-crops" if args.defer_crops else b"")
     for g in groups:
         digest.update("\n".join(g).encode())
     for name in sorted(facts.objects):
         digest.update(name.encode() + hashlib.sha256(facts.objects[name]).digest())
     name = "facts-" + digest.hexdigest()[:12]
     run = OUT / "crop-facts" / (name + "-dry" if dry else name)
+    if args.defer_crops and not dry and not groups and not facts.objects and atlas.execute(
+            "SELECT 1 FROM imports WHERE stamp=?", (f"{name}.end",)).fetchone():
+        print("the identical deferred load already completed; nothing to send", flush=True)
+        return
     # Every statement fits D1 before the numbers the rows name are kept.
     fits(groups)
     extra = dict(facts.objects)
-    if groups:
-        extra["end.sql"] = stamped(f"UPDATE form_state SET lists = {lit(run.name)}, loading = 0 WHERE id = 0;",
+    if args.defer_crops:
+        extra["defer-crops"] = "fill.py owns the remaining crop updates\n"
+    if groups or args.defer_crops:
+        extra["end.sql"] = stamped(f"UPDATE form_state SET lists = {lit(run.name)}, loading = {int(args.defer_crops)} WHERE id = 0;",
                                    f"{run.name}.end")
     if dry:
         shutil.rmtree(run, ignore_errors=True)
         mirror.rollback()
-    elif groups or facts.objects:
+    elif groups or facts.objects or args.defer_crops:
         # The numbers the rows name, and that this load is pending, are kept before anything is sent.
         mirror.execute("INSERT OR IGNORE INTO pending VALUES(?)", (FACTS_RUN + run.name,))
         mirror.commit()
