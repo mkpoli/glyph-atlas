@@ -27,8 +27,9 @@ refused.
   each character's text and grapheme key: the corpus counts by character and material.
 - `books.json.gz`: each book's collected crops and corpus glyphs, which the statistics of the
   collection's dates count by period.
-- `site` in glyph-atlas-v3: the collection's status (`collection`) and the corpus summary
-  (`corpus_index`, from work/corpus-index/index.json), which the status pages serve.
+- `site` in glyph-atlas-v3: the collection's status (`collection`, read from the collection's working
+  folders where they are) and the corpus summary (`corpus_index`, from work/corpus-index/index.json),
+  which the status pages serve; a value whose source is not here stays as published.
 - `gallery/`: the homepage sample. `sample/<k>.json.gz` holds the corpus glyphs whose shuffle falls
   below SAMPLE_RANGE (1 in 64) and `<group>/<k>.json.gz` every glyph of a script the corpus holds few
   of (WHOLE), each glyph with its record copied out of its pack, so a page of the gallery is one or
@@ -70,6 +71,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cloudflare_schema import category_of
 from publish_collection_status import site_row, status
 
+# The collection's working folders, which its status is read from.
+COLLECTION = Path(__file__).resolve().parents[2] / "work/honkoku-collection"
 # The corpus summary `/layers/summary` serves, as the corpus index build writes it.
 CORPUS_INDEX = Path(__file__).resolve().parents[2] / "work/corpus-index/index.json"
 
@@ -346,7 +349,10 @@ def publication(dry_run, read=None):
     top.append(write(folder / "corpus.json.gz", {"pub": pub, "cell": CORPUS_CELL, "cells": glyphs, "chars": glyph_chars}))
     top.append(write(folder / "books.json.gz", {"pub": pub, "cell": ["collected", "corpus"], "books": books(atlas)}))
     # The site's values the status pages show: the collection's progress and the corpus summary.
-    site = {"collection": status(), **({"corpus_index": json.loads(CORPUS_INDEX.read_text())} if CORPUS_INDEX.exists() else {})}
+    # Each only where its source is: a run away from the collection's working folders (a Codespace) keeps
+    # the published collection status rather than one read from no folders.
+    site = {**({"collection": status()} if COLLECTION.is_dir() else {}),
+            **({"corpus_index": json.loads(CORPUS_INDEX.read_text())} if CORPUS_INDEX.exists() else {})}
     digest = answers_digest(folder, site)
     last = OUT / "answers-published.json"
     published = json.loads(last.read_text()) if last.exists() else {}
