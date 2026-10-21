@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
+import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
+import { publicId } from './atlas3';
 import { CANDIDATE_LIMIT, QueryError, addressKey, boundedText, decodeCandidates, decodeVector, modelFile, modelInfo, query, resetPointers } from './reverse';
 
 const encoder = 'a'.repeat(64);
@@ -6,9 +9,24 @@ const model = { version: '0123456789abcdef', encoder, features: 4, preprocessing
   files: { model: { name: 'classifier.onnx', bytes: 10, sha256: 'm' }, classes: { name: 'classes.json', bytes: 2, sha256: 'c' } } };
 const pointer = { index: 'glyph-atlas-similar-aaaaaaaa', encoder, revision: 'r1', crops: 3, dimensions: 4 };
 
+// The Workers cache, as far as alias reads use it.
+(globalThis as any).caches = { default: { match: async () => undefined, put: async () => {}, delete: async () => {} } };
+
+// The crops the index names by text id, each with its label, and the alias map from those text ids.
+const crops = ['x:字', 'y:宇', 'z:國', 'x:宇', 'y:字'];
+const cropOfText = (text: string) => 2 ** 24 + crops.indexOf(text);
+const shards = new Map<string, Record<string, number>>();
+for (const text of crops) {
+  const name = `v3/aliases/${createHash('sha256').update(text).digest('hex').slice(0, 3)}.json.gz`;
+  shards.set(name, { ...shards.get(name), [text]: cropOfText(text) });
+}
+const aliases = new Map([...shards].map(([name, shard]) => [name, gzipSync(JSON.stringify(shard))]));
+
 function bucket(objects: Record<string, string>) {
   return {
     async get(key: string) {
+      const alias = aliases.get(key);
+      if (alias) return { arrayBuffer: async () => new Uint8Array(alias).buffer };
       const value = objects[key];
       if (value === undefined) return null;
       const bytes = new TextEncoder().encode(value);
@@ -38,7 +56,8 @@ function environment(matches: Record<string, [string, number][]>, asked: any[] =
   } as unknown as Env;
 }
 
-const held = async (_: Env, ids: string[]) => new Map(ids.filter(i => !i.startsWith('gone')).map(i => [i, { id: i, label: i.slice(-1) }]));
+const held = async (_: Env, ids: number[]) => ids.map(id => crops[id - 2 ** 24]).map(text => ({ id: publicId(cropOfText(text)), source_id: text, label: text.slice(-1) }));
+const shown = (text: string) => publicId(cropOfText(text));
 
 describe('image search', () => {
   beforeEach(() => resetPointers());
@@ -66,9 +85,9 @@ describe('image search', () => {
       '"字"': [['x:字', 0.91]], '{"$in":["国","國"]}': [['z:國', 0.7]] }, asked);
     const vector = [0.5, 0.5, 0.5, 0.5];
     const result = await query(env, { encoder, vector: encode(vector), candidates: [['字'], ['国', '國', '国']] }, held);
-    expect(result.similar.map((c: any) => [c.id, c.score])).toEqual([['x:字', 0.91], ['y:宇', 0.8]]);
+    expect(result.similar.map((c: any) => [c.id, c.score])).toEqual([[shown('x:字'), 0.91], [shown('y:宇'), 0.8]]);
     expect(result.candidates.map((c: any) => [c.characters, c.crops.map((i: any) => i.id)]))
-      .toEqual([[['字'], ['x:字']], [['国', '國'], ['z:國']]]);
+      .toEqual([[['字'], [shown('x:字')]], [['国', '國'], [shown('z:國')]]]);
     expect(asked[1].options).toMatchObject({ topK: CANDIDATE_LIMIT * 3, returnMetadata: 'none', filter: { label: '字' } });
     expect(asked[0].vector).toEqual(vector);
   });
@@ -76,7 +95,7 @@ describe('image search', () => {
   it('leaves out a candidate’s crop relabelled since the index was filled', async () => {
     const env = environment({ '"字"': [['x:宇', 0.9], ['y:字', 0.8]] });
     const result = await query(env, { encoder, vector: encode([1, 0, 0, 0]), candidates: [['字']] }, held);
-    expect(result.candidates[0].crops.map((c: any) => c.id)).toEqual(['y:字']);
+    expect(result.candidates[0].crops.map((c: any) => c.id)).toEqual([shown('y:字')]);
   });
 
   it('reads the pointer of the index it is bound to, and answers 503 when Vectorize fails', async () => {

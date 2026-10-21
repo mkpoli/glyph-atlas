@@ -75,7 +75,7 @@ publish)
   if [ -f "$plan/plan.json" ]; then apply_plan; fi
   wanted="$(jq -r '.revision' "$out/current/manifest.json")"
   if [ ! -f "$state/index.json" ] || [ "$(jq -r '.revision' "$state/index.json")" != "$wanted" ]; then
-    (cd "$root" && uv run --no-sync atlas similar vectorize --out "$out" --state "$state/state.parquet" --plan "$plan")
+    (cd "$root" && uv run --no-sync atlas similar vectorize --out "$out" --state "$state/state.parquet" --plan "$plan" --mirror "${ATLAS3_DIR:-$root/work/atlas-v3}/out/mirror.sqlite")
     apply_plan
   else
     echo "$index is at revision $wanted"

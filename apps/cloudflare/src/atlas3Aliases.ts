@@ -20,3 +20,19 @@ export async function aliasCrop(env: Env, textId: string, ctx?: ExecutionContext
     return typeof id === 'number' ? id : undefined;
   }, ctx, now);
 }
+
+// The crops a list of old text ids name, as `aliasCrop` reads each, with one shard read per shard the
+// list touches. An id the map does not hold is left out, with no reread of its shard.
+export async function aliasCrops(env: Env, textIds: string[], ctx?: ExecutionContext, now = Date.now()): Promise<Map<string, number>> {
+  const byShard = new Map<string, string[]>();
+  for (const textId of new Set(textIds.filter(Boolean))) {
+    const key = await aliasShardKey(textId);
+    byShard.set(key, [...byShard.get(key) ?? [], textId]);
+  }
+  const found = new Map<string, number>();
+  await Promise.all([...byShard].map(([key, ids]) => aliasShard(env, key, shard => {
+    for (const textId of ids) if (Object.hasOwn(shard, textId) && typeof shard[textId] === 'number') found.set(textId, shard[textId]);
+    return true;
+  }, ctx, now)));
+  return found;
+}
