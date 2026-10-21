@@ -172,8 +172,10 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    its final release of form decisions. Keep the global write freeze in place throughout.
    The deferred facts load blocks publications and further facts loads until fill finishes. For `family`, on the 19–20 October
    copies: about 2.11M crop rows written (526,318 collected crops and 1,582,510 corpus glyphs whose
-   record names a family), then `crop_family` (299,331 entries, 11.5 MB) and `crop_family_year`
-   (162,857, 5.9 MB). The publish that follows finds the values in
+   record names a family). The character routes' indexes: about 3.40M entries, as many rows written,
+   123 MB: `crop_char_book` 1,815,749 entries (66.2 MB), `crop_undated_corpus` 816,602 (27.7 MB),
+   `crop_family` 299,331 (11.5 MB), `crop_family_book` 299,331 (11.4 MB), `crop_family_year` 162,857
+   (5.9 MB), `crop_visual` 1,715 and `book_date_axis` 1,078. The publish that follows finds the values in
    place and writes none.
 5. **Move the history:** `history.py` translates reviews, submissions, seen marks, skips, favourites,
    claims, the representations forms name, form decisions, suspects and shapes from the copies into

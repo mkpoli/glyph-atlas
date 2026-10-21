@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { d1 } from './forms.test';
 import { bibtex, characterEntry, citationKey, citeAddress, citedVersion, cropEntry, csl, hayagriva, linkedData, versionToken } from './citation';
 import worker from './index';
@@ -126,13 +127,18 @@ describe('GET /atlas/cite/grapheme and /atlas/cite/form', () => {
     const db = new Database(':memory:');
     const migrations = new URL('../migrations/', import.meta.url);
     for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
-    db.prepare('INSERT INTO characters(code_point,character,name,data,detail) VALUES(?,?,?,?,?)').run('U+1B002', '𛀂', 'HENTAIGANA LETTER A-1', '{}',
-      JSON.stringify({ code_point: 'U+1B002', char: '𛀂', grapheme: { code_point: 'U+3042', char: 'あ' } }));
+    // Characters are cited from their reference objects in the new layout (decision record 0007).
+    const atlas = new Database(':memory:');
+    const layout = new URL('../migrations-atlas/', import.meta.url);
+    for (const file of readdirSync(layout).filter(f => f.endsWith('.sql')).sort()) atlas.exec(readFileSync(new URL(file, layout), 'utf8'));
+    const reference = new Map([['v3/reference/char/U+1B002.json.gz', gzipSync(JSON.stringify({ grapheme: 1, data: {}, ids: {},
+      detail: { code_point: 'U+1B002', char: '𛀂', grapheme: { code_point: 'U+3042', char: 'あ' } } }))]]);
+    const MEDIA = { get: async (name: string) => { const bytes = reference.get(name); return bytes ? { arrayBuffer: async () => new Uint8Array(bytes).buffer } : null } };
     const stored = new Map<string, Response>();
     (globalThis as any).caches = { default: { match: async (key: Request) => stored.get(key.url)?.clone(), put: async (key: Request, value: Response) => { stored.set(key.url, value) } } };
     const waits: Promise<unknown>[] = [];
     const ctx = { waitUntil: (p: Promise<unknown>) => waits.push(p), passThroughOnException() {} } as unknown as ExecutionContext;
-    const get = async (path: string) => { const response = await worker.fetch(new Request('https://glyphatlas.org' + path), { DB: d1(db) } as unknown as Env, ctx); await Promise.all(waits); return response };
+    const get = async (path: string) => { const response = await worker.fetch(new Request('https://glyphatlas.org' + path), { DB: d1(db), ATLAS: d1(atlas), MEDIA, CATALOGUE_LAG: '0' } as unknown as Env, ctx); await Promise.all(waits); return response };
     return { db, get, stored };
   }
   it('serves Hayagriva on request, and refuses another format', async () => {

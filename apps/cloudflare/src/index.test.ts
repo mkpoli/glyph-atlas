@@ -1,7 +1,7 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
-import { canonical, literal, hira, single, describedCard, jamoCard, jamoSyllable,
-  wroteLately, markWriter, substitutionKey } from './index';
+import { canonical, literal, hira, single, jamoSyllable, wroteLately, markWriter } from './index';
+import { describedCard, jamoCard, substitutionKey } from './routes/character';
 import { dealable, validRound } from './routes/review';
 import { ROUND_MAX } from './rounds';
 import { held } from './held';

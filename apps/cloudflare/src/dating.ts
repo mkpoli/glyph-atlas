@@ -73,21 +73,6 @@ export function yearOptions(q: URLSearchParams, fail: (status: number, message: 
   }
   return order === 'year' || years || axis === 'composed' ? { axis, order, years } : null;
 }
-/** The join that gives each crop of `column`'s book its date on the chosen axis, as `d`. */
-export const datingJoin = (column: string, axis: YearOptions['axis']) =>
-  ` LEFT JOIN document_dating d ON d.document=${column} AND d.axis='${axis === 'composed' ? 'composed' : 'witness'}'`;
-// A dated crop's first year; for a date with only an end (`before 1600`), that end.
-export const YEAR_KEY = 'coalesce(d.start,d.end)';
-/** The condition `years` puts on the joined date, and its values. */
-export function yearCondition(years: YearOptions['years']): { sql: string; values: number[] } {
-  if (years === null) return { sql: '', values: [] };
-  if (years === 'undated') return { sql: ` AND ${YEAR_KEY} IS NULL`, values: [] };
-  return { sql: ` AND ${YEAR_KEY} BETWEEN ? AND ?`, values: [years.from, years.to] };
-}
-/** Oldest first, undated last, then `rest`. */
-export const yearOrder = (rest: string) => `${YEAR_KEY} IS NULL,${YEAR_KEY},coalesce(d.end,d.start),${rest}`;
-// How many crops each decade holds, `decade` null for the undated.
-export const decadeColumn = `CASE WHEN ${YEAR_KEY} IS NULL THEN NULL ELSE (${YEAR_KEY} - (((${YEAR_KEY} % 10) + 10) % 10)) END`;
 // The collection's dates in numbers (`/atlas/dates/stats`, routes/browse.ts): how many crops and works
 // are dated, by hundred years and by decade of the year a work's copy is dated from, and by what the
 // date dates. A work is a book.
