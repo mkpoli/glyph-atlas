@@ -106,7 +106,9 @@ CREATE TABLE names(text TEXT, code_point INTEGER, rank INTEGER, PRIMARY KEY(text
   partial-index condition (`kind < 2`) literally, or SQLite scans the table.
 - **Families.** A grapheme family has no column. Its gallery reads one bounded range per member
   character and merges them in the Worker, so regrouping characters rewrites no crop. Family
-  galleries are about 1% of gallery reads.
+  galleries are about 1% of gallery reads. Every crop keeps the family its source names
+  (`crops.family`, migration 0012); a crop with no character is listed with that family, and a family's
+  gallery reads its members' crops with no character as one more range each.
 - **The review queue** reads `crop_pending` for one production and `crop_backlog`, in shuffle order
   with the production as a filter and named by `INDEXED BY`, for the whole backlog or a large
   subtree.
@@ -154,9 +156,11 @@ CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTE
     `ON CONFLICT DO UPDATE SET n = n + excluded.n`;
   - bump `actor_stats`.
 
-  The batch also clears flags whose premise it changed: a new label or box clears `suspect` and
-  `irregular`. A redrawn box is fetched once from the page's IIIF image service and stored in R2
-  under `overrides/<id>-<revision>.jpg`, which galleries show until the next publication cuts it.
+  The batch leaves `flags` as they are: a suspect mark holds while the crop keeps the label and box the
+  classifier was shown, which a reader judges against `suspects` and the crop's label and redrawn box,
+  so an undo that puts them back brings the mark back too. A redrawn box is fetched once from the
+  page's IIIF image service and stored in R2 under `overrides/<id>-<revision>.jpg`, which galleries
+  show until the next publication cuts it.
 - **Absorbing a publication.** The publication bumps `generation` from G to G + 1 in one statement,
   then reads every event with `gen ≤ G`. Batches run in order on the primary, so no review writes
   generation G after the bump. The publication builds its answers and bundles from those events,
@@ -170,8 +174,9 @@ CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTE
   D1 table can be rebuilt from R2 and the publisher's data.
 - **Kept, with integer ids:** the claim ledger (`assertions` with two indexes, `assertion_*`,
   `current_claims` with `cut`), forms tool decisions, submissions, accounts and favourites. A crop's
-  current form is written into `crops.form` by the claim that sets it. Each publication archives the
-  ledger to R2 as well.
+  current form is its `has_form` slot in `current_claims`, which listings and the inspector read;
+  `crops.form` stays empty, since a form id is text and no query filters on it, and dropping the
+  column would rewrite every `crops` row. Each publication archives the ledger to R2 as well.
 - **Read replication.** A reviewer's reads after a save go through the D1 Sessions API with the
   save's bookmark and bypass the edge cache; only anonymous reads are edge-cached.
 

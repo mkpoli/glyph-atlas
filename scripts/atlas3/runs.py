@@ -217,6 +217,9 @@ def main():
         if not send("glyph-atlas-v3", path, stamp):
             sys.exit("the publication stamp did not apply; rerun")
         atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+    # The local runs copy takes the same stamp: check.py compares the forms once it is there.
+    runs.execute("INSERT OR IGNORE INTO imports(stamp, at) VALUES(?, unixepoch())", (stamp,))
+    runs.commit()
     print("written forms and run answers loaded", flush=True)
 
 

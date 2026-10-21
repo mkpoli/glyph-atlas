@@ -4,8 +4,9 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { bundleKey, cropId, publicId } from '../atlas3';
 import { currentPointer } from '../atlas3Gallery';
+import { listingItems } from '../atlas3Listing';
 import { d1 } from '../forms.test';
-import { redrawLimits } from '../index';
+import { redrawLimits } from '../cropRecords';
 import { oldRoutes } from './fixtures/runs.old';
 import { bookCharactersQuery, bookFormsQuery, booksQuery, corpusFormsQuery, pageRevsQuery, runCountQuery,
   reviewedQuery, runGraphemesQuery, runHasQuery, runOccurrencesQuery, runProbeQuery, runRangeQuery, runWorksQuery, runsRoute, writtenStatement } from './runs';
@@ -291,6 +292,60 @@ describe('runs on the new layout', () => {
     expect(crops.find((c: Json) => c.id === publicId(flagged))).toMatchObject({ state: 'flagged', revision: 1, issue: 'character' });
   });
 
+  it('keep a flagged crop’s issue after a later event preserves it', async () => {
+    const f = fixture(), crop = f.at[0].id;
+    f.atlas.exec(`INSERT INTO codes VALUES('issue',6,'reading'),('issue',7,'other');
+      UPDATE crops SET state=2,revision=2 WHERE id=${crop};
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,issue,kept_issue)
+        VALUES(${crop},1,0,0,1,1,0,1,6,NULL),(${crop},2,0,0,1,2,0,2,7,6)`);
+    const body = await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んし'))).json();
+    expect(body.items.flatMap((item: Json) => item.crops).find((item: Json) => item.id === publicId(crop)))
+      .toMatchObject({ state: 'flagged', revision: 2, issue: 'character' });
+    const book = await (await ask(f.newEnv, '/atlas/documents/' + encodeURIComponent('hk:83b29132c6d01a596a847de5ba3b0b0d') + '/characters')).json();
+    expect(book.characters[0]).toMatchObject({ state: 'flagged', revision: 2, issue: 'character' });
+  });
+
+  it('shows a pending redraw without moving the published run geometry', async () => {
+    const f = fixture(), crop = f.at[0].id;
+    const path = '/atlas/runs?text=' + encodeURIComponent('んし');
+    const before = (await (await ask(f.newEnv, path)).json()).items.find((item: Json) => item.crops[0].id === publicId(crop));
+    f.atlas.exec(`INSERT INTO reviews(crop,gen,at,state,x,y,w,h) VALUES(${crop},1,0,0,1,2,7,8)`);
+    const after = (await (await ask(f.newEnv, path)).json()).items.find((item: Json) => item.crops[0].id === publicId(crop));
+    expect(after.crops[0]).toMatchObject({ box: { x: 1, y: 2, w: 7, h: 8 }, box_pending: true });
+    expect(after.crops[0].crop_box).toEqual(before.crops[0].crop_box);
+    expect(after.page).toEqual(before.page);
+  });
+
+  it('keeps a human reading over an older form decision in runs and listings until undone', async () => {
+    const f = fixture(), crop = f.at[6].id;
+    f.atlas.exec(`INSERT INTO form_glyphs(crop,family,cluster,form,issue,character,written_family,decision)
+        VALUES(${crop},'U+3093',NULL,'ん',NULL,NULL,'U+3093','old');
+      UPDATE crops SET char=3,state=1,revision=1 WHERE id=${crop};
+      INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,named) VALUES(1,${crop},1,0,0,1,1,0,1,3)`);
+    const shown = async () => {
+      const body = await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んし'))).json();
+      return [body.items.flatMap((item: Json) => item.crops).find((item: Json) => item.id === publicId(crop)),
+        ...(await listingItems(f.newEnv, [crop]))];
+    };
+    for (const item of await shown()) expect(item).toMatchObject({ label: '𛁅', char: '𛁅', written_character: '𛁅',
+      code_point: 'U+1B045', grapheme: 'U+3057', identity_basis: 'human_review', identity_status: 'assigned', visual_group: null });
+    f.atlas.exec(`UPDATE crops SET char=1,state=0,revision=2 WHERE id=${crop};
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,reverses) VALUES(${crop},2,0,0,1,2,1,5,1)`);
+    for (const item of await shown()) expect(item).toMatchObject({ label: 'ん', identity_basis: 'form_glyph' });
+  });
+
+  it('does not add review revisions when a round mark is undone', async () => {
+    const f = fixture(), crop = f.at[0].id;
+    f.atlas.exec(`UPDATE crops SET revision=2 WHERE id=${crop};
+      INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,reverses)
+        VALUES(1,${crop},1,0,0,1,1,0,3,NULL),(2,${crop},2,0,0,1,2,1,5,1)`);
+    const runs = await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んし'))).json();
+    expect(runs.items.flatMap((item: Json) => item.crops).find((item: Json) => item.id === publicId(crop)))
+      .toMatchObject({ state: 'pending', revision: 0 });
+    const book = await (await ask(f.newEnv, '/atlas/documents/' + encodeURIComponent('hk:83b29132c6d01a596a847de5ba3b0b0d') + '/characters')).json();
+    expect(book.characters[0]).toMatchObject({ state: 'pending', revision: 0 });
+  });
+
   it('show a crop as a review writes it, in the form filter and a book’s forms', async () => {
     const f = fixture();
     // A review names ex:o2 (し) as 𛁅: its row says so, and its run moves to that written form at once.
@@ -303,7 +358,7 @@ describe('runs on the new layout', () => {
     expect(filtered.items.map((i: Json) => i.crops[0].source_id).sort()).toEqual(['ar:doc:1-l1-0', 'ex:o1']);
   });
 
-  it('guard the mark count by state without changing what it counts', () => {
+  it('counts only trailing marks for each book character', () => {
     const f = fixture();
     f.atlas.exec(`INSERT INTO codes VALUES('state',3,'seen'),('state',4,'hard');
       INSERT INTO book_characters(book,ord,crop,data) VALUES(1,2,${f.at[2].id},'{}'),(1,3,${f.at[3].id},'{}');
@@ -311,10 +366,7 @@ describe('runs on the new layout', () => {
       UPDATE crops SET state=4,revision=1 WHERE id=${f.at[2].id};
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(${f.at[0].id},1,0,0,1,1,0,1),(${f.at[0].id},2,0,0,1,2,0,3),
         (${f.at[1].id},1,0,0,1,1,0,3),(${f.at[1].id},2,0,0,1,2,0,1),(${f.at[2].id},1,0,0,1,1,0,4)`);
-    const unguarded = bookCharactersQuery().replace(/CASE WHEN s\.key IN \('seen','hard'\) THEN (\(SELECT count\(\*\)[\s\S]*?,-1\)\)) ELSE 0 END/, '$1');
-    expect(unguarded).not.toBe(bookCharactersQuery());
     const read = (sql: string) => f.atlas.query(sql).all(1, 0, 1000).map((r: Json) => [r.crop, r.state, r.revision]);
-    expect(read(bookCharactersQuery())).toEqual(read(unguarded));
     expect(read(bookCharactersQuery()).map(r => r[2])).toEqual([1, 2, 0, 0]);
   });
 

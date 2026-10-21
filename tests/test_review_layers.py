@@ -366,6 +366,8 @@ def test_occurrences_are_the_ink_and_samples_name_their_form(dataset):
     paged = api.get("/layers/occurrences", params={"code_point": "U+1B127", "limit": 1}).json()
     assert paged["counts"]["total"] == 2 and len(paged["items"]) == 1
     assert paged["counts"]["by_character"] == [{"code_point": "U+1B127", "count": 2}]
+    rest = api.get("/layers/occurrences", params={"code_point": "U+1B127", "limit": 1, "after": paged["next"]}).json()
+    assert len(rest["items"]) == 1 and rest["items"][0]["id"] != paged["items"][0]["id"] and rest["next"] is None
 
 
 def test_graphemes_and_ligatures_are_browsable(dataset):
@@ -792,7 +794,7 @@ def test_normalized_family_candidates_use_scoped_identity_counts(dataset, monkey
     assert card["default_scope"] == "grapheme"
     assert api.get("/layers/characters/U+30CD").json()["default_scope"] == "character"
     reply = api.get("/layers/candidates", params={"code_point": "U+5047", "scope": "grapheme",
-                    "visual_group": "shape:one", "limit": 20, "offset": 10}).json()
+                    "visual_group": "shape:one", "limit": 20, "after": "10"}).json()
     assert calls == [("假", 20, 10, "grapheme", "shape:one")]
     assert reply["glyphs"] == reply["total"] == 1 and reply["family_total"] == 12
     assert reply["unassigned_count"] == 9 and reply["assigned_count"] == 3

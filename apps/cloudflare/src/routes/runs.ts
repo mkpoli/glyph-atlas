@@ -13,7 +13,8 @@ import { Problem } from '../busy';
 import { bookDating } from '../dating';
 import { formed, type UnitForm } from '../forms';
 import { honkokuPage } from '../honkoku';
-import { integer, redrawLimits, text } from '../index';
+import { MARKS, WRITTEN, redrawLimits, writtenRecord } from '../cropRecords';
+import { integer, text } from '../input';
 import { readRecords, recordKey } from '../records';
 
 type Json = any;
@@ -239,16 +240,18 @@ export const corpusFormsQuery = () => `SELECT c.id,coalesce(g.cluster,c.cluster)
 // A round's mark (`seen`, `hard`) keeps a crop in the review queue: its listing shows it pending, at the
 // revision before the marks that follow its last other event, as the old site never counted marks.
 const shownState = (state: string | null) => state === 'seen' || state === 'hard' ? 'pending' : state;
-const MARKS = (crop: string) => `(SELECT count(*) FROM events e WHERE e.crop=${crop} AND e.kind IN (3,4)
-    AND e.revision>coalesce((SELECT max(f.revision) FROM events f WHERE f.crop=${crop} AND f.kind NOT IN (3,4)),-1))`;
 // A flagged crop's issue is its last event's; `reading` is the name before the rename, `character`.
-const ISSUE = (crop: string) => `(SELECT i.key FROM events e LEFT JOIN codes i ON i.field='issue' AND i.code=e.issue
+const ISSUE = (crop: string) => `(SELECT i.key FROM events e LEFT JOIN codes i ON i.field='issue' AND i.code=coalesce(e.kept_issue,e.issue)
     WHERE e.crop=${crop} ORDER BY e.revision DESC LIMIT 1)`;
 const issueName = (issue: string | null) => issue === 'reading' ? 'character' : issue;
 // What reviews say of the flagged and marked crops of a page: one `event_crop` range each.
-export const reviewedQuery = () => `SELECT j.value AS crop,CASE WHEN s.key IN ('seen','hard') THEN ${MARKS('j.value')} ELSE 0 END AS marks,
+export const reviewedQuery = () => `SELECT j.value AS crop,${MARKS('c')} AS marks,r.x,r.y,r.w,r.h,
+  g.text AS char,h.text AS head,${WRITTEN('c.id')} AS written,
   CASE WHEN s.key='flagged' THEN ${ISSUE('j.value')} END AS issue
-  FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN codes s ON s.field='state' AND s.code=c.state`;
+  FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN codes s ON s.field='state' AND s.code=c.state
+  LEFT JOIN reviews r ON r.crop=c.id LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN graphemes h ON h.id=g.head`;
+type Reviewed = { crop: number; marks: number; issue: string | null; x: number | null; y: number | null; w: number | null; h: number | null;
+  char: string | null; head: string | null; written: number };
 
 /** Each crop as a run's page shows it, by id: its listing item, its box on the page, and its record's
  *  place on the page (`runPage`). A crop with no listing item is absent. */
@@ -276,15 +279,17 @@ async function runCrops(env: Env, ids: number[]): Promise<Map<number, { item: Js
     env.ATLAS.prepare(corpusFormsQuery()).bind(JSON.stringify(listed)).all<Omit<UnitForm, 'id'> & { id: number }>()]);
   const forms = new Map(decided.results.map(row => [row.id, { ...row, id: publicId(row.id) } as UnitForm]));
   const crop = new Map(listed.map(id => [publicId(id), id]));
-  const reviewed = items.filter(item => ['flagged', 'seen', 'hard'].includes(item.state)).map(item => crop.get(item.id)!);
+  const reviewed = items.map(item => crop.get(item.id)!);
   const since = new Map(reviewed.length ? (await env.ATLAS.prepare(reviewedQuery()).bind(JSON.stringify(reviewed))
-    .all<{ crop: number; marks: number; issue: string | null }>()).results.map(row => [row.crop, row]) : []);
+    .all<Reviewed>()).results.map(row => [row.crop, row]) : []);
   for (const item of items) {
     const id = crop.get(item.id)!, whole = given.get(id)!, review = since.get(id);
-    const shown = item.origin === 'corpus' ? formed(item, forms.get(id) ?? null, { codePoints }) : item;
+    let shown = item.origin === 'corpus' ? formed(item, forms.get(id) ?? null, { codePoints }) : item;
+    if (review?.written && review.char) shown = writtenRecord(shown, review.char, review.head);
     found.set(id, { whole, item: { ...shown, state: shownState(shown.state), revision: shown.revision - (review?.marks ?? 0),
       // A corpus glyph's record names the page of its source; its row names the page the layout files it on.
       page_id: whole.page_id ?? shown.page_id,
+      ...(review && review.x !== null ? { box: { x: review.x, y: review.y, w: review.w, h: review.h }, box_pending: true } : {}),
       ...(item.state === 'flagged' ? { issue: issueName(review?.issue ?? null) } : {}),
       ...(item.origin === 'local' ? { crop_editable: Boolean(redrawLimits(whole)) } : {}) } });
   }
@@ -429,7 +434,7 @@ async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
 // a flagged crop's issue is its last event's (`reading`, the name before the rename, as `character`).
 // One page costs a key range of `book_characters`, one `crops` row per occurrence and those probes.
 const CHARACTERS_PAGE = 1000;
-export const bookCharactersQuery = () => `SELECT c.ord,c.crop,c.data,g.text AS character,s.key AS state,k.revision-CASE WHEN s.key IN ('seen','hard') THEN ${MARKS('c.crop')} ELSE 0 END AS revision,
+export const bookCharactersQuery = () => `SELECT c.ord,c.crop,c.data,g.text AS character,s.key AS state,k.revision-${MARKS('k')} AS revision,
   CASE WHEN s.key='flagged' THEN ${ISSUE('c.crop')} END AS issue,
   (k.kind=0 OR (k.kind=1 AND (EXISTS (SELECT 1 FROM seen WHERE crop=c.crop) OR EXISTS (SELECT 1 FROM skips WHERE crop=c.crop)
     OR EXISTS (SELECT 1 FROM events WHERE crop=c.crop)))) AS shown
