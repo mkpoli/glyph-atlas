@@ -1,3 +1,4 @@
+import { WRITTEN, writtenRecord } from './cropRecords';
 import { cropForms } from './cropPanels';
 // Listing items on the new storage layout: each crop's bundle record under its row's values
 // (`cropItems`), with what the site has said of it since. A corpus glyph shows the form the forms tool
@@ -46,10 +47,11 @@ export async function datingOf(env: Env, documents: (string | null | undefined)[
 // What reviews have set on a crop since its cut: a redrawn box (`reviews`), which the crop shows until the
 // next publication cuts it, and the issue its last event flagged it with. One primary-key probe and one
 // `event_crop` range per crop.
-export const reviewedQuery = () => `SELECT j.value AS crop,r.x,r.y,r.w,r.h,
+export const reviewedQuery = () => `SELECT j.value AS crop,r.x,r.y,r.w,r.h,g.text AS char,h.text AS head,${WRITTEN('c.id')} AS written,
   (SELECT coalesce(e.kept_issue,e.issue) FROM events e WHERE e.crop=j.value ORDER BY e.revision DESC LIMIT 1) AS issue
-  FROM json_each(?) j LEFT JOIN reviews r ON r.crop=j.value`;
-type Reviewed = { crop: number; x: number | null; y: number | null; w: number | null; h: number | null; issue: number | null };
+  FROM json_each(?) j JOIN crops c ON c.id=j.value LEFT JOIN reviews r ON r.crop=c.id
+  LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN graphemes h ON h.id=g.head`;
+type Reviewed = { crop: number; x: number | null; y: number | null; w: number | null; h: number | null; issue: number | null; char: string | null; head: string | null; written: number };
 // A review saved before the issue was renamed names it `reading`; a record calls it `character`.
 const issueName = (name: string | undefined) => name === 'reading' ? 'character' : name ?? null;
 
@@ -75,7 +77,7 @@ export async function listingItems(env: Env, ids: number[], given?: Map<number, 
   return items.map((item, i) => {
     const id = listed[i], shown = item.origin === 'corpus' ? formed(item, forms.get(id) ?? null, { codePoints }) : item;
     const r = since.get(id);
-    return { ...shown,
+    return { ...(r?.written && r.char ? writtenRecord(shown, r.char, r.head) : shown),
       ...(r && r.x !== null ? { box: { x: r.x, y: r.y, w: r.w, h: r.h }, box_pending: true } : {}),
       issue: item.state === 'flagged' && r?.issue != null ? issueName(names.get(`issue:${r.issue}`)) : null,
       form: claims.get(id) ?? null, dating: dating.get(item.document) ?? {} };
