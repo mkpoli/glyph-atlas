@@ -338,6 +338,8 @@ export function cropChanges(env: Env, actor: number, key: string, at: number, ch
 // mark's kind; an undo's names the round's mark event on the crop, if it made one.
 function markStatement(env: Env, actor: number, key: string, at: number, crops: number[], undo: boolean): D1PreparedStatement {
   const submission = '(SELECT id FROM submissions WHERE key=?2)';
+  const accepted = `EXISTS(SELECT 1 FROM seen s WHERE s.submission=${submission} AND s.crop=m.id)
+      OR EXISTS(SELECT 1 FROM skips s WHERE s.submission=${submission} AND s.crop=m.id)`;
   const reverses = undo ? `(SELECT p.id FROM events p WHERE p.crop=m.id AND p.submission=${submission} AND p.kind IN (3,4) ORDER BY p.revision DESC LIMIT 1)` : 'NULL';
   return env.ATLAS.prepare(`INSERT INTO events(${EVENT_COLUMNS})
     SELECT id,revision+1,cut,${GEN},?1,${submission},?3,${undo ? KIND.undo : 'mark'},char,mark,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,char,NULL,${reverses},
@@ -345,7 +347,7 @@ function markStatement(env: Env, actor: number, key: string, at: number, crops: 
     FROM (SELECT c.*,${MARK('c')} AS mark,(SELECT coalesce(p.kept_issue,p.issue) FROM events p WHERE p.crop=c.id ORDER BY p.revision DESC LIMIT 1) AS was_issue,
       r.x AS rx,r.y AS ry,r.w AS rw,r.h AS rh
       FROM json_each(?4) j JOIN crops c ON c.id=j.value LEFT JOIN reviews r ON r.crop=c.id ORDER BY j.key) m
-    WHERE state IN (0,3,4) AND mark<>state${undo ? '' : ' AND mark>0'}`).bind(actor, key, at, JSON.stringify(crops));
+    WHERE state IN (0,3,4) AND mark<>state${undo ? '' : ` AND mark>0 AND (${accepted})`}`).bind(actor, key, at, JSON.stringify(crops));
 }
 /** A reviewer's totals: verdicts and submissions that stand, and when they last saved. */
 export function actorStats(env: Env, actor: number, reviews: number, rounds: number, at: number): D1PreparedStatement {
@@ -354,10 +356,13 @@ export function actorStats(env: Env, actor: number, reviews: number, rounds: num
     at=max(coalesce(at,0),excluded.at)`).bind(actor, reviews, rounds, at);
 }
 // A corpus glyph's first write, in the order the old site gave its `units` row.
-function corpusRows(env: Env, crops: number[]): D1PreparedStatement[] {
+function corpusRows(env: Env, crops: number[], verdicts: number[], key: string): D1PreparedStatement[] {
   return crops.length ? [env.ATLAS.prepare(`INSERT OR IGNORE INTO corpus_rows(crop,seq)
-    SELECT c.id,(SELECT coalesce(max(seq),0) FROM corpus_rows)+j.key+1 FROM json_each(?) j JOIN crops c ON c.id=j.value AND c.kind=1 ORDER BY j.key`)
-    .bind(JSON.stringify(crops))] : [];
+    SELECT c.id,(SELECT coalesce(max(seq),0) FROM corpus_rows)+j.key+1 FROM json_each(?1) j JOIN crops c ON c.id=j.value AND c.kind=1
+    WHERE c.id IN (SELECT value FROM json_each(?2))
+      OR EXISTS(SELECT 1 FROM seen s WHERE s.submission=(SELECT id FROM submissions WHERE key=?3) AND s.crop=c.id)
+      OR EXISTS(SELECT 1 FROM skips s WHERE s.submission=(SELECT id FROM submissions WHERE key=?3) AND s.crop=c.id)
+    ORDER BY j.key`).bind(JSON.stringify(crops), JSON.stringify(verdicts), key)] : [];
 }
 // A batch that failed on a crop's revision: another write moved it first.
 const conflict = (error: unknown) => /NOT NULL constraint failed: events\.revision|UNIQUE constraint failed: events\.crop/.test(String(error));
@@ -382,6 +387,7 @@ export async function submit(env: Env, request: Request, user: string, target?: 
 async function save(env: Env, sent: Json, address: string | null, user: string, target: string | undefined, again: boolean): Promise<Json> {
   // The checks below normalise what they read in place; a second attempt starts from what was sent.
   const input = structuredClone(sent);
+  const mode = target;
   const corpus = target === '@corpus', batch = target === '@batch';
   if (corpus) target = text(input.identity, 512, 'corpus identity', true)!;
   if (batch) target = undefined;
@@ -469,19 +475,34 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   const result = batch ? { id, results, unchanged, ...(correction!.line ? { skipped: skippedCrops } : {}) }
     : { id, results: [...results.map(r => ({ id: null, target_id: r.target_id, field: 'review', revision: r.revision, state: r.state })),
       ...shown.map(crop => ({ target_id: publicId(crop), field: 'seen' })), ...passed.map(crop => ({ target_id: publicId(crop), field: 'skip' }))] };
+  // Observations must still name the cut and character seen during validation when the batch commits.
+  const observations = (ids: number[]) => JSON.stringify(ids.map(id => {
+    const row = read.get(id) as Current;
+    return { crop: id, cut: row.cut, char: row.char, target_id: publicId(id) };
+  }));
+  const shownRows = observations(shown), passedRows = observations(passed);
+  const observed = `c.id=j.value->>'crop' AND c.cut=j.value->>'cut' AND c.char IS j.value->>'char' AND c.quiz=1 AND c.kind<2`;
   const actor = await actorFor(env, user);
   const statements = [env.ATLAS.prepare('INSERT INTO submissions(key,actor,request,response,at) VALUES (?,?,?,?,?)').bind(key, actor, signature, JSON.stringify(result), at),
-    ...corpusRows(env, [...first, ...shown, ...passed]),
     ...eventStatements(env, actor, key, at, changes)];
   if (shown.length) statements.push(env.ATLAS.prepare(`INSERT INTO seen(submission,crop,cut,at)
-    SELECT ${SUBMISSION},c.id,c.cut,? FROM json_each(?) j JOIN crops c ON c.id=j.value`).bind(key, at, JSON.stringify(shown)));
+    SELECT ${SUBMISSION},c.id,c.cut,? FROM json_each(?) j JOIN crops c ON ${observed}`).bind(key, at, shownRows));
   // One skip per reviewer and crop: the newest.
   if (passed.length) statements.push(env.ATLAS.prepare(`INSERT INTO skips(crop,actor,cut,at,submission)
-    SELECT c.id,?,c.cut,?,${SUBMISSION} FROM json_each(?) j JOIN crops c ON c.id=j.value WHERE true
-    ON CONFLICT(crop,actor) DO UPDATE SET cut=excluded.cut,at=excluded.at,submission=excluded.submission`).bind(actor, at, key, JSON.stringify(passed)));
+    SELECT c.id,?,c.cut,?,${SUBMISSION} FROM json_each(?) j JOIN crops c ON ${observed} WHERE true
+    ON CONFLICT(crop,actor) DO UPDATE SET cut=excluded.cut,at=excluded.at,submission=excluded.submission`).bind(actor, at, key, passedRows));
+  statements.push(...corpusRows(env, [...first, ...shown, ...passed], first, key));
   if (shown.length || passed.length) statements.push(markStatement(env, actor, key, at, [...shown, ...passed], false));
   statements.push(...applyStatements(env, key, at, [...VERDICTS, KIND.seen, KIND.hard], changes));
   statements.push(actorStats(env, actor, changes.length, 1, at));
+  if (shown.length || passed.length) statements.push(env.ATLAS.prepare(`UPDATE submissions SET response=json_set(response,'$.results',json((
+    SELECT json_group_array(json(value)) FROM (
+      SELECT value FROM json_each(?2)
+      UNION ALL SELECT json_object('target_id',j.value->>'target_id','field','seen') AS value
+        FROM json_each(?3) j JOIN seen s ON s.crop=j.value->>'crop' AND s.submission=(SELECT id FROM submissions WHERE key=?1)
+      UNION ALL SELECT json_object('target_id',j.value->>'target_id','field','skip') AS value
+        FROM json_each(?4) j JOIN skips s ON s.crop=j.value->>'crop' AND s.submission=(SELECT id FROM submissions WHERE key=?1)
+    ) m))) WHERE key=?1`).bind(key, JSON.stringify(result.results.filter(r => r.field !== 'seen' && r.field !== 'skip')), shownRows, passedRows));
   // The response names each review's event, which the batch numbers.
   if (!batch && changes.length) statements.push(env.ATLAS.prepare(`UPDATE submissions SET response=json_set(response,${changes.map((c, i) =>
     `'$.results[${i}].id',(SELECT e.id FROM events e WHERE e.submission=submissions.id AND e.crop=${Number(c.crop)} AND e.kind IN (0,1,2))`).join(',')}) WHERE key=?`).bind(key));
@@ -493,7 +514,7 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   } catch (error) {
     const repeat = await previous();
     if (repeat?.request === signature) return answered(JSON.parse(repeat.response));
-    if (conflict(error) && again && await marksOnly(env, changes)) return await save(env, sent, address, user, target, false);
+    if (conflict(error) && again && await marksOnly(env, changes)) return await save(env, sent, address, user, mode, false);
     if (conflict(error)) throw new Problem(409, 'Another review changed this crop. Reload it.');
     throw error;
   }
@@ -551,7 +572,11 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     const later = current.revision !== r.revision && (!rejection?.reviewer || await env.ATLAS.prepare(`SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission
       WHERE e.crop=? AND e.revision>? AND e.kind NOT IN (3,4) AND (s.actor NOT IN (SELECT value FROM json_each(?)) OR (s.undone=0 AND e.kind IN (0,1,2))) LIMIT 1`)
       .bind(r.crop, r.revision, JSON.stringify(rejection.reviewer)).first());
-    if (later) throw new Problem(409, 'A later review changed this crop. It cannot be undone.');
+    if (later) {
+      if (await env.ATLAS.prepare('SELECT 1 FROM submissions WHERE id=? AND undone=1').bind(submission.id).first())
+        return { results: [], duplicate: true };
+      throw new Problem(409, 'A later review changed this crop. It cannot be undone.');
+    }
     const glyph = current.kind === 1, label = r.shown_text;
     const box = r.was_x != null && r.cut === current.cut ? { x: r.was_x, y: r.was_y!, w: r.was_w!, h: r.was_h! } : null;
     // Queue eligibility from the record the undo restores, with the repair verdict it holds now.
@@ -565,7 +590,8 @@ export async function revert(env: Env, submission: Submission, actor: number, re
   const shownOrSkipped = (await env.ATLAS.prepare(`SELECT crop FROM seen WHERE submission=?1
     UNION SELECT crop FROM skips WHERE submission=?1`).bind(submission.id).all<{ crop: number }>()).results
     .map(row => row.crop).filter(crop => !changes.some(c => c.crop === crop));
-  const statements = [env.ATLAS.prepare('UPDATE submissions SET undone=1 WHERE id=?').bind(submission.id),
+  // The NOT NULL guard claims this undo atomically; a second claimant rolls back its whole batch.
+  const statements = [env.ATLAS.prepare('UPDATE submissions SET undone=CASE WHEN undone=0 THEN 1 END WHERE id=?').bind(submission.id),
     ...eventStatements(env, actor, submission.key, at, changes),
     ...(shownOrSkipped.length ? [markStatement(env, actor, submission.key, at, shownOrSkipped, true)] : []),
     ...applyStatements(env, submission.key, at, [KIND.undo], changes),
@@ -577,6 +603,8 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     const out = await env.ATLAS.batch<{ id: number; crop: number }>(statements);
     ids = new Map(out[out.length - 1].results.map(row => [row.crop, row.id]));
   } catch (error) {
+    if (await env.ATLAS.prepare('SELECT 1 FROM submissions WHERE id=? AND undone=1').bind(submission.id).first())
+      return { results: [], duplicate: true };
     if (conflict(error) && again && await marksOnly(env, changes)) return await revert(env, submission, actor, rejection, false);
     if (conflict(error)) throw new Problem(409, 'A later review changed this crop.');
     throw error;
