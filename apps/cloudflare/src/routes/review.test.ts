@@ -6,6 +6,8 @@ import { d1 } from '../forms.test';
 import { bundleKey, cropId, publicId } from '../atlas3';
 import { ownedActors, ownedKeys } from '../auth';
 import { Problem } from '../busy';
+import { body, canonical, literal, text } from '../input';
+import { setForm, type ClaimTools } from './claims';
 import { STALE_CODE } from '../atlas3Crops';
 import { cropChanges, reviewCrops, reviewCropsQuery, reviewRoute, revert, roundMembersQuery, type Submission } from './review';
 
@@ -73,9 +75,7 @@ function setup() {
     const part = options?.range ? bytes.subarray(options.range.offset, options.range.offset + options.range.length) : bytes;
     return { body: new Response(part).body!, arrayBuffer: async () => new Uint8Array(part).buffer };
   } };
-  // The form overlay still reads the old database until the claims port moves it: it holds no form here.
-  const DB = { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }) }) }) };
-  const env = { ATLAS: planned(db), MEDIA, DB, CORRECTIONS: { limit: async () => ({ success: true }) } } as unknown as Env;
+  const env = { ATLAS: planned(db), MEDIA, CORRECTIONS: { limit: async () => ({ success: true }) } } as unknown as Env;
   return { db, env, ids, page };
 }
 const ORIGIN = 'https://glyphatlas.org';
@@ -402,6 +402,23 @@ describe('a crop\'s issue', () => {
 });
 
 describe('a corpus glyph\'s review', () => {
+  it('keeps a saved form in the review response and its submission retry', async () => {
+    const { db, env, ids } = setup();
+    const tools: ClaimTools = { body, canonical: value => canonical(value), literal, text,
+      fail: (status, message, extra) => { throw new Problem(status, message, extra); },
+      integer: () => { throw new Error('No pagination in a form write.'); } };
+    // Claims have their own query-plan checks; this suite tracks the review response's reads.
+    const picked = await setForm({ ...env, ATLAS: d1(db) }, { id: uuid(10), form: '𛂞', crop_version: `${publicId(ids[6])}@${G}@1,1,5,5` },
+      publicId(ids[6]), 'u1', tools);
+    expect(picked.form?.values[0].text).toBe('𛂞');
+    const input = { id: uuid(11), identity: publicId(ids[6]), revision: 0, source_revision: G, verdict: 'match' };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const reviewed = await send(env, '/atlas/corpus/reviews', input);
+      expect(reviewed.status).toBe(200);
+      expect(reviewed.body.form).toEqual(picked.form);
+    }
+  });
+
   it('answers with the glyph as listings show it, and numbers corpus glyphs in the order the old site wrote their rows', async () => {
     const { db, env, ids } = setup();
     const glyph = (id: number, extra = {}) => ({ id: publicId(id), revision: 0, source_revision: G, ...extra });

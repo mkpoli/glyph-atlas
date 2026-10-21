@@ -8,7 +8,7 @@ part is confirmed by its stamp in `imports` and replayed on the local copy.
 
 1. Each migration in MIGRATIONS (stamps `migration:<number>`), on D1 and the local copy, once;
    the mirror's `codes` take the two mark states 0003 numbers, so the publisher never numbers them
-   differently. 0009 gives events what an undo restores; 0010 the labels each showed and named, and
+   differently. 0008 holds form anchors. 0009 gives events what an undo restores; 0010 the labels each showed and named, and
    the corpus rows and flags.
 2. The rows of every history table.
 3. Marks: a pending crop with a mark takes the mark as its state, one revision past its own, with an
@@ -38,10 +38,11 @@ SCHEMA = CF / "migrations-atlas"
 # Tables in the order their rows load: who and which request first, then what names them.
 TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats", "suspects", "shapes",
           "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "current_claims",
-          "ledger_submissions", "rejections", "forms", "form_decisions", "corpus_follow", "written_forms", "corpus_rows",
+          "ledger_submissions", "rejections", "representations", "forms", "form_decisions", "corpus_follow", "written_forms", "corpus_rows",
           "corpus_flags")
 # Each migration the translated rows need, in order, and a query that finds it in the local copy.
 MIGRATIONS = (("0003", "0003_history.sql", "SELECT 1 FROM sqlite_master WHERE name='actors'"),
+              ("0008", "0008_representations.sql", "SELECT 1 FROM sqlite_master WHERE name='representations'"),
               ("0009", "0009_undo.sql", "SELECT 1 FROM pragma_table_info('events') WHERE name='reverses'"),
               ("0010", "0010_people.sql", "SELECT 1 FROM sqlite_master WHERE name='corpus_rows'"))
 GROUP = 500
@@ -128,7 +129,7 @@ def rows(history):
         batch = []
         for r in history.execute(f'SELECT {names} FROM "{table}" ORDER BY rowid' if table not in
                                  ("seen", "skips", "favourites", "assertion_evidence", "assertion_premises", "current_claims",
-                                  "corpus_flags")
+                                  "representations", "corpus_flags")
                                  else f'SELECT {names} FROM "{table}"'):
             batch += row_statements(table, cols, keys, r)
             if len(batch) >= GROUP:

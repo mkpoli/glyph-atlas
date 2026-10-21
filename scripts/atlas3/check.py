@@ -28,12 +28,15 @@ remote is read.
 
 History (decision record 0006), when `out/history.sqlite` exists (history.py):
 - Rows: every source row of every history table (actors, submissions, events, seen, skips,
-  favourites, the claim ledger, rejections, form decisions, corpus_follow, written forms, suspects and
-  shapes) is in it, every translated field equal to one derived again from the source copies (actor
+  favourites, the claim ledger, the representations forms name, rejections, form decisions,
+  corpus_follow, written forms, suspects and shapes) is in it, every translated field equal to one derived again from the source copies (actor
   and submission keys, times in ms, crop through the mirror, cut from the live record's box and
   crop_versions), or left out for a reason history-report.txt lists exactly as often; and it holds no
   other rows. An actor with no source row has no user, via or time; actor_stats are recounted as the
-  ranking counts. An event's shown label and named character are read from its evidence as the old
+  ranking counts. Every form's anchor names a representation. Every claim whose catalogue subject
+  is a crop names its crop and cut, and a saved claim response on a crop names it by integer id and
+  the cut its claims rest on.
+  An event's shown label and named character are read from its evidence as the old
   history page read them; corpus rows follow the source units' corpus rows in rowid order, with each
   admin's flag.
 - Cuts: a crop with no collected record is cut 0 only if corpus_units has it, and a tombstone is
@@ -69,6 +72,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from build import HERE, OUT, PAGE, bundle_entry, char_text
+from history import CROP_PREDICATES
 from load_history import TABLES as LOADED
 
 SHOWN = 20
@@ -880,17 +884,20 @@ def check_history(report, name, query=None):
                       r["assertion"], r["kind"], r["ref"]))
     t.done()
 
-    t = Table(report, history, "assertions", listed)
+    t, claim_on, by_submission = Table(report, history, "assertions", listed), {}, defaultdict(set)
     for r in stream("assertions", "*"):
         want = dict(r)
         want.pop("_rowid", None)
         want["crop"] = want["cut"] = None
-        if r["predicate"] == "has_form":
+        if r["predicate"] in CROP_PREDICATES:
             want["crop"] = crop(r["subject"])
             if want["crop"] is None:
                 t.account("crop unknown")
                 continue
             want["cut"] = -1 if -1 in {c for i, c in named[r["id"]] if i == want["crop"]} else 0
+        claim_on[r["id"]] = (want["crop"], want["cut"])
+        if r["submission"]:
+            by_submission[r["submission"]].add(r["id"])
         t.compare(f"assertion {r['id']}", want, one("SELECT * FROM assertions WHERE id=?", r["id"]))
     t.done()
 
@@ -900,7 +907,7 @@ def check_history(report, name, query=None):
         want.pop("_rowid", None)
         version = want.pop("crop_version")
         want["crop"] = want["cut"] = None
-        if r["predicate"] == "has_form":
+        if r["predicate"] in CROP_PREDICATES:
             want["crop"] = crop(r["subject"])
             if want["crop"] is None:
                 t.account("crop unknown")
@@ -912,13 +919,36 @@ def check_history(report, name, query=None):
                       r["subject"], r["predicate"], r["scope"], r["slot"]))
     t.done()
 
-    for name_, key in (("assertion_actions", "id"), ("ledger_submissions", "id"), ("forms", "id")):
+    # A saved response on a crop names it by integer id and the cut its claims rest on, beside the old text id.
+    for r in source("assertion_actions").execute("SELECT submission, assertion FROM assertion_actions WHERE submission IS NOT NULL"):
+        by_submission[r[0]].add(r[1])
+    t = Table(report, history, "ledger_submissions", listed)
+    for r in stream("ledger_submissions", "*"):
+        want = dict(r)
+        want.pop("_rowid", None)
+        want["response"] = json.loads(r["response"])
+        cid = crop(want["response"].get("subject"))
+        if cid is not None:
+            cut = {claim_on[a][1] for a in by_submission[r["id"]] if claim_on.get(a, (None,))[0] == cid}
+            want["response"].update(crop=cid, cut=max(cut) if cut else None)
+        got = one("SELECT * FROM ledger_submissions WHERE id=?", r["id"])
+        if got:
+            got["response"] = json.loads(got["response"])
+        t.compare(f"ledger_submissions {r['id']}", want, got)
+    t.done()
+
+    for name_, key in (("assertion_actions", "id"), ("forms", "id"), ("representations", "id")):
         t = Table(report, history, name_, listed)
         for r in stream(name_, "*"):
             want = dict(r)
             want.pop("_rowid", None)
             t.compare(f"{name_} {r[key]}", want, one(f'SELECT * FROM "{name_}" WHERE {key}=?', r[key]))
         t.done()
+
+    # A form claim's name is its form's anchor, so every anchor must be a representation the move holds.
+    report.check("every form's anchor names a representation", [
+        f"form {f}: anchor {a}" for f, a in history.execute(
+            "SELECT id, anchor FROM forms WHERE anchor IS NOT NULL AND anchor NOT IN (SELECT id FROM representations)")])
 
     # A form decision's `crops` are the glyphs of its `units` that still exist, in order.
     t = Table(report, history, "form_decisions", listed)

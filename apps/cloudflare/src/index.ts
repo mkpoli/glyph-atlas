@@ -10,8 +10,8 @@ import { similarCrops } from './similar';
 import { drawingFile } from './drawings';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { componentSearch, componentTerm } from './components';
-import { formsFor, setForm, withForms } from './cropForms';
-import { setWord, withWords, wordChoices } from './cropWords';
+import { formsFor, withForms } from './cropForms';
+import { withWords, wordChoices } from './cropWords';
 import { categoryOf, idsCharacter } from './category';
 import { auth, claim, owned, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
@@ -24,7 +24,7 @@ import { StaleCrop, staleResponse } from './atlas3Crops';
 import { Problem, READ_BUDGET, RETRY_AFTER, StorageUnavailable, described, retried, transient } from './busy';
 import { dealable, redrawLimits, reviewRoute } from './routes/review';
 import { pausedCallback, pausedResponse, pausedSignOut, writes, writesPaused } from './freeze';
-import { actOnClaim, claimsOf, ledgerPage, writeClaim, type LedgerTools } from './ledger';
+import { claimRead, claimWrite, type ClaimTools } from './routes/claims';
 import { honkokuPage } from './honkoku';
 import { FORMATS, KINDS, bibtex, characterEntry, citedVersion, cropEntry, csl, hayagriva, type Day, type Entry, type Format } from './citation';
 import { YEAR_KEY, dateStats, datingJoin, datingOf, decadeColumn, documentDates, documentOf, withDating, yearCondition, yearOptions, yearOrder, type YearOptions } from './dating';
@@ -1841,18 +1841,8 @@ async function documentCharacters(env: Env, url: URL, document: string, ctx: Exe
 // A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
 const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp,
   family:async(env,char)=>(await known(env,char).catch(()=>null))?.data.grapheme?.code_point||cp(char)};
-// What the ledger needs of the rest of the Worker (`ledger.ts`): a crop subject is a crop the site
-// holds, or a corpus glyph whose row a first claim writes, as a first review would.
-const ledgerTools: LedgerTools = {fail:(status,message)=>{throw new Problem(status,message)},body,text,canonical:value=>canonical(value),owned,
-  // A corpus glyph nothing has named gets its row first, as its first review would give it one, so the
-  // claim names the version SQLite gives the row (`units.crop_version`); a client that saw another
-  // version is refused before anything is written.
-  crop:async(env,id,expected)=>{let row=await unit(env,id);
-    if(row.fresh){
-      if(cropVersion(row.id,parse(row.data))!==expected)return {id:row.id,version:cropVersion(row.id,parse(row.data))};
-      await materialise(env,row as UnitRow&{fresh:CorpusRow}).run();row=await unit(env,row.id);
-    }
-    return {id:row.id,version:row.crop_version??null}}};
+// What the ledger's routes need of the rest of the Worker (`routes/claims.ts`).
+const claimTools: ClaimTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,canonical:value=>canonical(value),literal,integer};
 // Undo a submission as `actor`: each crop goes back to what it was before, unless a later review has
 // changed it since. A rejection is the same undo made by an admin, recorded with its reason.
 async function revert(env:Env,submission:Json,actor:string,rejection?:{reason:string;reviewer?:[string,string[]]}){
@@ -1957,17 +1947,10 @@ const routes = {
         if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''));return json(out,status)}
         const reviewed=await reviewRoute(env,request,path,me.id);
         if(reviewed)return reviewed;
-        const acted=path.match(/^\/atlas\/claims\/([^/]+)\/actions$/),picked=path.match(/^\/atlas\/characters\/([^/]+)\/(form|word)$/);
-        if(path==='/atlas/claims'||acted||picked){
-          // A claim, an action or a crop's form is a few small rows, and one address is held to a rate.
+        const claimed=await claimWrite(env,request,path,me,claimTools,async()=>{
           const {success}=await env.CLAIMS.limit({key:addressKey(request.headers.get('cf-connecting-ip'))});
-          if(!success)throw new Problem(429,'Too many claims at once. Wait a minute and try again.');
-          const input=await body(request);
-          let target='';
-          try{target=decodeURIComponent((acted??picked)?.[1]??'')}catch{throw new Problem(404,acted?'No such claim.':'This character is not in the published collection.')}
-          if(picked)return json(picked[2]==='word'?await setWord(env,input,target,me.id,ledgerTools):await setForm(env,input,target,me.id,{...ledgerTools,literal}));
-          return json(acted?await actOnClaim(env,input,target,me.id,me.admin,ledgerTools):await writeClaim(env,input,me.id,ledgerTools));
-        }
+          if(!success)throw new Problem(429,'Too many claims at once. Wait a minute and try again.')},ctx);
+        if(claimed)return claimed instanceof Response?claimed:json(claimed);
         const formed=await formsRoute(env,request,path,q,formTools,ctx,me.id);
         if(formed)return formed instanceof Response?formed:json(formed);
         throw new Problem(404,'Unknown endpoint.');
@@ -2015,9 +1998,8 @@ const routes = {
       if(visualSample){const data=parse((await unit(env,decodeURIComponent(visualSample[1]))).data);
         if(!data.image)throw new Problem(404,'Image not found.');
         return Response.redirect(new URL(data.image,url).href,302)}
-      if(path==='/atlas/claims')return json(await claimsOf(env,text(q.get('subject'),512,'subject',true)!));
-      if(path==='/atlas/ledger'||path==='/atlas/ledger.json')return json(await ledgerPage(env,q,integer),200,
-        path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-ledger.json"'}:{});
+      const read=await claimRead(env,url,claimTools,ctx);
+      if(read)return read instanceof Response?read:json(read);
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviews(env,q.get('include_processed')==='true'),200,
         path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-character-reviews.json"'}:{});
       const neighbours=path.match(/^\/atlas\/characters\/([^/]+)\/line$/);

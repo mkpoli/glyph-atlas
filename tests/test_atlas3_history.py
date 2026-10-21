@@ -24,6 +24,7 @@ COLUMNS = {
     "rejections": "submission,by,reason,at",
     "form_decisions": "seq,id,at,actor,kind,family,form,cluster,revision,units,note,issue,character,written_family",
     "forms": "id,anchor,created_by,created_at",
+    "representations": "id,scheme,value,namespace,version",
     "corpus_follow": "id",
     "unit_suspects": "id,p,reads_as,label,box",
     "unit_shapes": "id,shape_order",
@@ -179,21 +180,44 @@ def test_a_form_claim_takes_the_cut_its_evidence_names(layout, monkeypatch):  # 
     root, _publish, _remote = layout
     old_ref = version("ex:a1", "p0", OLD)[0]
 
-    def claim(id, subject, predicate):
-        return (id, None, subject, predicate, "", "", "fm:1", None, None, "observed", "u1", "2026-10-01T00:00:00Z",
+    def claim(id, subject, predicate, submission=None):
+        return (id, submission, subject, predicate, "", "", "fm:1", None, None, "observed", "u1", "2026-10-01T00:00:00Z",
                 None, None, None, None, None)
 
+    current_ref = version("ex:a2", "p2", {"x": 0, "y": 20, "w": 10, "h": 10})[0]
+    saved = json.dumps({"submission": "u1:w", "subject": "ex:a2", "replaced": None, "retracted": []})
     sources(root,
-            assertions=[claim("cf:a", "ex:a1", "has_form"), claim("cf:b", "book:a", "date_produced")],
-            assertion_evidence=[("cf:a", "crop", old_ref, None), ("cf:b", "source", "src:1", None)],
+            assertions=[claim("cf:a", "ex:a1", "has_form"), claim("cf:b", "book:a", "date_produced"),
+                        claim("cf:w", "ex:a2", "writes_word", "u1:w")],
+            assertion_evidence=[("cf:a", "crop", old_ref, None), ("cf:b", "source", "src:1", None),
+                                ("cf:w", "crop", current_ref, None)],
+            ledger_submissions=[("u1:w", "u1", "{}", saved, "2026-10-01T00:00:00Z"),
+                                ("u1:d", "u1", "{}", json.dumps({"submission": "u1:d", "subject": "book:a"}), "2026-10-01T00:00:00Z")],
             current_claims=[("ex:a1", "has_form", "", "", "accepted", "fm:1", None, "[]", "[]", "[]", old_ref, "r", "t"),
                             ("book:a", "date_produced", "", "", "accepted", None, "1700", "[]", "[]", "[]", None, "r", "t")])
     code, out = history(monkeypatch, root)
     assert code == 0
     a1 = ids(root)["ex:a1"]
-    assert sorted(out.execute("SELECT id, crop, cut FROM assertions")) == [("cf:a", a1, -1), ("cf:b", None, None)]
-    assert sorted(out.execute("SELECT kind, crop, cut FROM assertion_evidence")) == [("crop", a1, -1), ("source", None, None)]
+    a2 = ids(root)["ex:a2"]
+    # Every predicate whose subject is a crop takes the crop and cut, a word claim as a form claim does.
+    assert sorted(out.execute("SELECT id, crop, cut FROM assertions")) == [("cf:a", a1, -1), ("cf:b", None, None), ("cf:w", a2, 0)]
+    assert sorted(out.execute("SELECT kind, crop, cut FROM assertion_evidence")) == [("crop", a1, -1), ("crop", a2, 0), ("source", None, None)]
+    # A saved response on a crop names it by integer id and the cut its claims rest on; another subject keeps its key only.
+    responses = {k: json.loads(v) for k, v in out.execute("SELECT id, response FROM ledger_submissions")}
+    assert responses["u1:w"] == {"submission": "u1:w", "subject": "ex:a2", "replaced": None, "retracted": [], "crop": a2, "cut": 0}
+    assert responses["u1:d"] == {"submission": "u1:d", "subject": "book:a"}
     assert sorted(out.execute("SELECT subject, crop, cut FROM current_claims")) == [("book:a", None, None), ("ex:a1", a1, -1)]
+
+
+def test_representations_move_as_they_are(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    rows = [("rp:1", "unicode", "あ", None, None), ("rp:2", "pua", "\ue000", "ns", "1")]
+    sources(root, forms=[("fm:1", "rp:1", "u1", "2026-10-01T00:00:00Z")], representations=rows)
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    assert sorted(out.execute("SELECT * FROM representations")) == rows
+    report = (root / "out" / "history-report.txt").read_text()
+    assert "representations: in 2, out 2" in report
 
 
 def test_script_facts_on_crops_that_no_longer_exist_are_dropped(layout, monkeypatch):  # noqa: F811
