@@ -6,7 +6,9 @@ publish.py runs it after every publish that sent something, so the counts follow
 
 A publication bumps `generation` in glyph-atlas-v3 from G to G + 1, writes its answers under
 `v3/pub/<pub>/`, and then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A count is the
-answer plus the `tally` rows above `through_gen` (decision record 0005).
+answer plus the `tally` rows above `through_gen` (decision record 0005). Answers equal to the last
+publication's (out/answers-published.json, a digest of every file less its `pub` and of the site values)
+publish nothing: no bump, no object, no row.
 
 The counts come from the local copy of glyph-atlas-v3, which every publish replays. Reviews on the
 new layout are absorbed by reading their events; until that exists, a database holding events is
@@ -50,6 +52,7 @@ import gzip
 import hashlib
 import hmac
 import json
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -286,6 +289,18 @@ def unabsorbed(through):
     return query("glyph-atlas-v3", f"SELECT count(*) AS n FROM events WHERE gen > 0 AND gen <= {through}")[0]["n"] > 0
 
 
+def answers_digest(folder, site):
+    """A digest of a publication's answers: every file under `folder` by its path, less its `pub`, and the
+    site values."""
+    digest = hashlib.sha256(json.dumps(site, ensure_ascii=False, sort_keys=True).encode())
+    for path in sorted(folder.rglob("*.json.gz")):
+        body = json.loads(gzip.decompress(path.read_bytes()))
+        body.pop("pub", None)
+        digest.update(f"{path.relative_to(folder)}\n".encode())
+        digest.update(json.dumps(body, ensure_ascii=False, sort_keys=True).encode() + b"\n")
+    return digest.hexdigest()
+
+
 def write(path, body):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(gzip.compress(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()))
@@ -312,23 +327,6 @@ def publication(dry_run, read=None):
     folder = OUT / "pub" / pub
     # The sample's records are read before the bump, so a failed read leaves the generation where it was.
     sampled, pool_sizes = gallery(atlas, folder, pub, read or r2_reader())
-    through = query("glyph-atlas-v3", "SELECT gen FROM generation WHERE id = 0")[0]["gen"]
-    # Every review up to G is in the answers. None is absorbed yet, so a database holding one is refused,
-    # before the bump and again after it, since a review can land at G until the bump. The history load
-    # writes its events at generation 0, and the local copy holds them: they count as absorbed.
-    if unabsorbed(through):
-        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; nothing published")
-    if not dry_run:
-        # Reviews written after the bump carry the next generation, so the answers stand through G. The
-        # bump names G and stamps this publication in the same statement, so a resent statement cannot
-        # bump twice and only the run whose stamp is there made it.
-        query("glyph-atlas-v3", f"UPDATE generation SET gen = {through + 1} WHERE id = 0 AND gen = {through}; "
-                                f"INSERT INTO imports(stamp, at) SELECT 'pub:{pub}', unixepoch() WHERE changes() = 1")
-        if not applied("glyph-atlas-v3", f"pub:{pub}"):
-            sys.exit(f"another publication bumped generation {through}; nothing published")
-    if unabsorbed(through):
-        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; the pointer stays")
-
     shards = defaultdict(dict)
     for char, rows in cells(atlas, "char", "char IS NOT NULL").items():
         shards[char % SHARDS][char] = rows
@@ -349,6 +347,30 @@ def publication(dry_run, read=None):
     top.append(write(folder / "books.json.gz", {"pub": pub, "cell": ["collected", "corpus"], "books": books(atlas)}))
     # The site's values the status pages show: the collection's progress and the corpus summary.
     site = {"collection": status(), **({"corpus_index": json.loads(CORPUS_INDEX.read_text())} if CORPUS_INDEX.exists() else {})}
+    digest = answers_digest(folder, site)
+    last = OUT / "answers-published.json"
+    published = json.loads(last.read_text()) if last.exists() else {}
+    if published.get("digest") == digest:
+        shutil.rmtree(folder)
+        print(f"the answers equal publication {published['pub']}'s; nothing published", flush=True)
+        return
+    through = query("glyph-atlas-v3", "SELECT gen FROM generation WHERE id = 0")[0]["gen"]
+    # Every review up to G is in the answers. None is absorbed yet, so a database holding one is refused,
+    # before the bump and again after it, since a review can land at G until the bump. The history load
+    # writes its events at generation 0, and the local copy holds them: they count as absorbed.
+    if unabsorbed(through):
+        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; nothing published")
+    if not dry_run:
+        # Reviews written after the bump carry the next generation, so the answers stand through G. The
+        # bump names G and stamps this publication in the same statement, so a resent statement cannot
+        # bump twice and only the run whose stamp is there made it.
+        query("glyph-atlas-v3", f"UPDATE generation SET gen = {through + 1} WHERE id = 0 AND gen = {through}; "
+                                f"INSERT INTO imports(stamp, at) SELECT 'pub:{pub}', unixepoch() WHERE changes() = 1")
+        if not applied("glyph-atlas-v3", f"pub:{pub}"):
+            sys.exit(f"another publication bumped generation {through}; nothing published")
+    if unabsorbed(through):
+        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; the pointer stays")
+
     pointer = write(OUT / "pub" / f"pointer-{pub}" / "pointer.json", {"pub": pub, "through_gen": through})
     characters_counted = sum(len(s) for s in shards.values())
     print(f"pub {pub} through generation {through}: {characters_counted} characters in {SHARDS} shards, "
@@ -366,6 +388,7 @@ def publication(dry_run, read=None):
     query("glyph-atlas-v3", "; ".join(site_row(k, v) for k, v in site.items()))
     # The pointer moves last, once everything it names is in place.
     upload([pointer], POINTER_PREFIX)
+    last.write_text(json.dumps({"pub": pub, "digest": digest}) + "\n")
     print(f"v3/pointer.json names {pub}", flush=True)
 
 
