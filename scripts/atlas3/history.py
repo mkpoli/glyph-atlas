@@ -389,15 +389,22 @@ def main():
             revision[p[0]["id"]] = n
     report.note(f"events: {len(resequenced)} crops with two events at one expected revision, numbered by time instead",
                 resequenced)
-    retired_revision = {}
+    # Each crop's revision in the copy: a crop reviewed since the local copy was published is ahead of
+    # its row until the next publish, and a retired crop has no row. An event stays at or below the
+    # higher of the two.
+    source_revision = {}
+    texts = sorted({p[0]["target"] for p in parsed})
+    for i in range(0, len(texts), 500):
+        chunk = texts[i:i + 500]
+        for text, revision_now in source("units").execute(
+                f"SELECT id, revision FROM units WHERE id IN ({','.join('?' * len(chunk))}) ORDER BY _rowid", chunk):
+            source_revision[crops.ids[text]] = revision_now
     unrowed = {p[1] for p in parsed if crops.row(p[1]) is None}
     if unrowed:
-        # A retired crop has no row; its revision is its last source record's.
-        texts = sorted(t for t, i in crops.ids.items() if i in unrowed)
-        for text, revision_now in source("units").execute(
-                f"SELECT id, revision FROM units WHERE id IN ({','.join('?' * len(texts))}) ORDER BY _rowid", texts):
-            retired_revision[crops.ids[text]] = revision_now
         report.note(f"events: {len(unrowed)} crops with no crops row (retired); revision checked against the source units row")
+    ahead = sorted(cid for cid, rev in source_revision.items() if crops.row(cid) and rev > crops.row(cid)[1])
+    report.note(f"events: {len(ahead)} crops reviewed since the local copy was published; the next publish brings their rows",
+                ahead)
 
     # Events are numbered in the order the old site wrote them: by time, and within one submission in
     # the order its request lists the crops (a round's answers, a batch's crops), as its rows went in.
@@ -415,7 +422,7 @@ def main():
         if sub_id is None:
             problems.append(f"submission {r['submission']} unknown")
         current = crops.row(cid)
-        current_revision = current[1] if current else retired_revision.get(cid)
+        current_revision = max((v for v in (current and current[1], source_revision.get(cid)) if v is not None), default=None)
         # A tombstone with no record left on the old site has no revision to stay below.
         if current_revision is not None and revision[r["id"]] > current_revision:
             problems.append(f"revision {revision[r['id']]} above the crop's {current_revision}")

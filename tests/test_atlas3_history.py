@@ -185,6 +185,19 @@ def test_an_event_past_the_crops_revision_stops_the_move(layout, monkeypatch):  
     assert "revision 1 above the crop's 0" in (root / "out" / "history-report.txt").read_text()
 
 
+def test_an_event_on_a_crop_reviewed_since_the_last_publish_is_kept(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    sources(root, events=[event("cf:1", "ex:a1", "u1:s1", "u1", 0, "2026-10-01T00:00:02Z")])
+    # The copy holds the review; the local copy's row waits for the next publish.
+    db = sqlite3.connect(root / "source-units.sqlite")
+    db.execute("UPDATE units SET revision = 1 WHERE id = 'ex:a1'")
+    db.commit()
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    assert list(out.execute("SELECT revision FROM events")) == [(1,)]
+    assert "1 crops reviewed since the local copy was published" in (root / "out" / "history-report.txt").read_text()
+
+
 def test_marks_are_recomputed_and_the_live_ones_written(layout, monkeypatch):  # noqa: F811
     root, _publish, _remote = layout
     sources(root,
