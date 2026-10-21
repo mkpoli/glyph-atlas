@@ -192,7 +192,11 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    and `hard`; the mirror takes the same numbers), `0008_representations.sql` (form anchors),
    `0009_undo.sql` (what an undo restores), and `0010_people.sql` (the labels each event showed and
    named, the corpus rows and flags), and `0013_forms.sql` (`form_bases`, the character before a
-   forms decision moved a glyph). It loads every translated row in stamped parts, sets
+   forms decision moved a glyph). It loads, in stamped parts, the rows that differ from the local
+   copy: everything on the first load, and after a later copy only the new rows, the changed ones
+   (a DELETE and the INSERT) and the DELETE of rows gone, since `history.py` keeps every id an
+   earlier load gave (actors, submissions, events by their old id, corpus rows) and numbers only
+   what is new after them. It sets
    each pending marked crop's state to its mark one revision on with an event, and writes
    `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut, 36 the other encodings
    of their current cut (35 corpus glyphs whose source revision changed under the same box, one collected

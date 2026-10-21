@@ -441,7 +441,7 @@ def test_the_loaded_copy_equals_the_translation_row_for_row(layout, monkeypatch,
     ("UPDATE events SET at = at + 1 WHERE id > 2", "at 1790812802000 expected, 1790812802001 set"),
     ("UPDATE events SET cut = -1 WHERE id > 2", "cut 0 expected, -1 set"),
     ("INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind, state) VALUES(1, 99, 0, 0, 1, 1, 0, 3, 3)",
-     "past the translation's events and sets no live mark"),
+     "an event no source event names that sets no live mark"),
 ])
 def test_a_mark_event_names_the_latest_round_that_showed_the_crop(layout, monkeypatch, change, line):  # noqa: F811
     root, publish, remote = layout

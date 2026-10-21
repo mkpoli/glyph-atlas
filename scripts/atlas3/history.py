@@ -155,6 +155,22 @@ def create(db):
             db.execute(body)
 
 
+def numbered(loaded, keys, last=None):
+    """key -> integer id for `keys` in their order: a key an earlier load numbered keeps its id, and the
+    rest take the next ids after the highest in use (`last`, else the highest loaded), so a translation of
+    a later copy numbers only what is new and a load sends only the difference."""
+    taken = {k: loaded[k] for k in keys if k in loaded}
+    n = max([last or 0, *loaded.values()], default=0)
+    out = {}
+    for k in keys:
+        if k in taken:
+            out[k] = taken[k]
+        else:
+            n += 1
+            out[k] = n
+    return out
+
+
 # The columns of a translated event, in the order history rows give them.
 EVENT_COLUMNS = ("id", "crop", "revision", "cut", "gen", "actor", "submission", "at", "kind", "label", "state", "style", "quiz",
                  "x", "y", "w", "h", "note", "issue", "text", "reverses", "was_state", "was_issue", "was_x", "was_y",
@@ -173,6 +189,13 @@ class Crops:
         self.page_keys = dict(self.atlas.execute("SELECT id, key FROM pages"))
         self.current, self.pixels, self.earlier, self.versions, self.cut_at = {}, {}, {}, {}, {}
         self.overlay_box, self.encodings, self.text_of = {}, {}, {}
+
+    def loaded(self, sql):
+        """key -> id of the rows an earlier load put in the local copy; empty before the first."""
+        try:
+            return dict(self.atlas.execute(sql))
+        except sqlite3.OperationalError:
+            return {}
 
     def row(self, cid):
         return self.atlas.execute("SELECT kind, revision FROM crops WHERE id=?", (cid,)).fetchone()
@@ -329,7 +352,7 @@ def main():
                                  "assertion_actions") for r in src[t]}
     keys |= {r["asserted_by"] for r in src["assertions"]}
     known = {r["actor"]: r for r in src["actors"]}
-    actor = {k: i for i, k in enumerate(sorted(keys), 1)}
+    actor = numbered(crops.loaded("SELECT key, id FROM actors"), sorted(keys))
     report.table("actors", len(src["actors"]))
     insert("actors", [(i, k, known[k]["user_id"] if k in known else None, known[k]["via"] if k in known else None,
                        ms(known[k]["at"]) if k in known else None) for k, i in actor.items()])
@@ -339,7 +362,7 @@ def main():
     # Submissions, in (at, key) order.
     report.table("submissions", len(src["submissions"]))
     subs = sorted(src["submissions"], key=lambda r: (ms(r["at"]), r["id"]))
-    sub = {r["id"]: i for i, r in enumerate(subs, 1)}
+    sub = numbered(crops.loaded("SELECT key, id FROM submissions"), [r["id"] for r in subs])
     undone = {sub[r["id"]] for r in subs if r["undone"]}
     sub_actor = {sub[r["id"]]: actor[r["actor"]] for r in subs}
     sub_at = {sub[r["id"]]: ms(r["at"]) for r in subs}
@@ -468,7 +491,9 @@ def main():
                        graphemes.get(shown) if shown else None, graphemes.get(named) if named else None, reading,
                        (evidence.get("correction") or {}).get("reading"), r["id"]))
     out.executemany(f'INSERT INTO events({",".join(EVENT_COLUMNS)}) VALUES({",".join("?" * len(EVENT_COLUMNS))})',
-                    [(i, *e) for i, e in enumerate(events, 1)])
+                    [(i, *e) for i, e in zip(numbered(crops.loaded("SELECT legacy, id FROM events WHERE legacy IS NOT NULL"),
+                                                       [e[-1] for e in events],
+                                                       crops.loaded("SELECT 0, max(id) FROM events").get(0)).values(), events)])
     report.tables["events"]["out"] = len(events)
     report.note("events: a review sets no style and no withheld flag, so both are NULL")
     report.note(f"events: codes {json.dumps(codes, ensure_ascii=False)}")
@@ -710,12 +735,13 @@ def main():
         "SELECT id, max(_rowid) AS r, json_extract(data, '$.flag') AS flag FROM units WHERE origin = 'corpus' GROUP BY id ORDER BY r"))
     report.table("corpus_rows", len(corpus))
     corpus_rows, flags = [], []
+    seq = numbered(crops.loaded("SELECT crop, seq FROM corpus_rows"), [crops.ids.get(r["id"]) for r in corpus if r["id"] in crops.ids])
     for r in corpus:
         cid = crops.ids.get(r["id"])
         if cid is None:
             report.stop("corpus_rows", "crop unknown", r["id"])
             continue
-        corpus_rows.append((cid, len(corpus_rows) + 1))
+        corpus_rows.append((cid, seq[cid]))
         if r["flag"]:
             flag = json.loads(r["flag"])
             flags.append((cid, flag["finding"], flag.get("realigned"), flag.get("transcribed"), ms(flag["at"])))
@@ -773,6 +799,11 @@ def main():
                 "AND key IN ('match', 'wrong', 'unsure'))), "
                 "(SELECT count(*) FROM submissions s WHERE s.actor = a.id AND s.undone = 0), "
                 "(SELECT max(at) FROM submissions s WHERE s.actor = a.id) FROM actors a")
+    # The history loads the local copy held, whose ids this translation kept: load_history.py loads it
+    # only over the same ones.
+    out.execute("CREATE TABLE base(stamp TEXT PRIMARY KEY)")
+    out.executemany("INSERT INTO base VALUES(?)", [(k,) for k in crops.loaded(
+        "SELECT stamp, 1 FROM imports WHERE stamp LIKE 'history-%'")])
     out.commit()
     # The same crops as a catalogue of retired crops, which publish.py numbers.
     catalogue = OUT / "history-tombstones.sqlite"

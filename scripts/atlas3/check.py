@@ -40,8 +40,8 @@ History (decision record 0006), when `out/history.sqlite` exists (history.py):
   is a crop names its crop and cut, and a saved claim response on a crop names it by integer id and
   the cut its claims rest on.
   An event's shown label and named character are read from its evidence as the old
-  history page read them; corpus rows follow the source units' corpus rows in rowid order, with each
-  admin's flag.
+  history page read them; every source corpus row has a corpus row with a number of its own (kept
+  from the load that first wrote it), with each admin's flag.
 - Cuts: a crop with no collected record is cut 0 only if corpus_units has it, and a tombstone is
   checked against its retired bundle entry; every crop cited at cut -1 has that cut, with its earlier
   box, in its bundle once the cuts are published; no event is past its crop's revision (a tombstone
@@ -108,10 +108,19 @@ def translation():
     return "history-" + file_digest(path)[:12] if path.exists() else None
 
 
+def delivered(atlas, run):
+    """Whether load_history.py built the run folder and the local copy holds the stamp of each of its parts
+    (a run with nothing to send has none)."""
+    if not run.is_dir():
+        return False
+    stamps = {r[0] for r in atlas.execute("SELECT stamp FROM imports WHERE stamp LIKE ?", (f"{run.name}.%",))}
+    return len(stamps) == len(list(run.glob("*.sql")))
+
+
 def applied_marks(atlas, name):
     """Crop -> mark of history-marks.json once load_history.py has set this translation's marks on the
     local copy, else None."""
-    if name is None or not atlas.execute("SELECT 1 FROM imports WHERE stamp LIKE ? LIMIT 1", (f"{name}-marks.%",)).fetchone():
+    if name is None or not delivered(atlas, OUT / "history-load" / f"{name}-marks"):
         return None
     return {m["crop"]: m["state"] for m in json.loads((OUT / "history-marks.json").read_text())}
 
@@ -595,18 +604,17 @@ def keyed_rows(db, table, cols, keys, where=""):
 
 def compare_loaded(report, history, atlas):
     """Every table load_history.py wrote, row for row, in the local copy against history.sqlite; events
-    past the translation's last are the marks', returned for their own check."""
+    with no `legacy` are the marks', left for their own check."""
     problems = []
 
     def shown(key):
         return tuple(v for _rank, v in key)
 
-    last_event = history.execute("SELECT coalesce(max(id), 0) FROM events").fetchone()[0]
     for table in LOADED:
         info = list(history.execute(f'PRAGMA table_info("{table}")'))
         cols = [r[1] for r in info]
         keys = [r[1] for r in sorted(info, key=lambda r: r[5]) if r[5]]
-        where = f"WHERE id <= {last_event}" if table == "events" else ""
+        where = "WHERE legacy IS NOT NULL" if table == "events" else ""
         ours, theirs = keyed_rows(history, table, cols, keys), keyed_rows(atlas, table, cols, keys, where)
         a, b = next(ours, None), next(theirs, None)
         while a or b:
@@ -621,7 +629,6 @@ def compare_loaded(report, history, atlas):
                     problems.append(f"{table} {shown(a[0])}: differs")
                 a, b = next(ours, None), next(theirs, None)
     report.check("the local copy holds every translated row as history.sqlite has it, and no other", problems)
-    return last_event
 
 
 def remote(database):
@@ -635,7 +642,7 @@ def remote(database):
 
 
 def remote_atlas(report, name, atlas, query):
-    """glyph-atlas-v3 against the local copy every load replays: this translation's load stamps, each
+    """glyph-atlas-v3 against the local copy every load replays: the history loads' stamps, each
     loaded table's row count and checksum (accounts.py's summary on both sides), and each marked crop's
     state and revision."""
     import accounts
@@ -646,12 +653,11 @@ def remote_atlas(report, name, atlas, query):
     print(f"glyph-atlas-v3: about {rows + len(marked):,} rows to read ({rows:,} in {len(LOADED)} tables, "
           f"{len(marked):,} marked crops)", flush=True)
     here = accounts.local(atlas)
-    stamps = (f"SELECT stamp FROM imports WHERE stamp LIKE {accounts.lit(name + '.rows-%')} "
-              f"OR stamp LIKE {accounts.lit(name + '-marks.%')}")
+    stamps = "SELECT stamp FROM imports WHERE stamp LIKE 'history-%'"
     ours, theirs = ({r["stamp"] for r in q(stamps)} for q in (here, query))
     problems = [f"{s}: in the local copy, not in glyph-atlas-v3" for s in sorted(ours - theirs)]
     problems += [f"{s}: in glyph-atlas-v3, not in the local copy" for s in sorted(theirs - ours)]
-    report.check(f"glyph-atlas-v3 holds the {len(ours)} load stamps of this translation the local copy holds, and no other",
+    report.check(f"glyph-atlas-v3 holds the {len(ours)} history load stamps the local copy holds, and no other",
                  problems)
 
     ours, theirs = accounts.summary(here, atlas, LOADED), accounts.summary(query, atlas, LOADED)
@@ -931,13 +937,14 @@ def check_history(report, name, query=None):
 
     # After the load, a marked crop that was pending has its mark as its state, with an event at
     # that revision; a crop not pending (or retired) keeps its state.
-    loaded = atlas.execute("SELECT 1 FROM imports WHERE stamp LIKE ? LIMIT 1", (f"{name}.rows-%",)).fetchone()
-    last_event = compare_loaded(report, history, atlas) if loaded else None
+    loaded = delivered(atlas, OUT / "history-load" / name)
     if not loaded:
         report.skip("the local copy holds every translated row as history.sqlite has it, and no other",
-                    "this translation is not loaded (no rows stamp in imports); load_history.py loads it")
-    elif query is not None:
-        remote_atlas(report, name, atlas, query("glyph-atlas-v3"))
+                    "this translation is not loaded; load_history.py loads it")
+    else:
+        compare_loaded(report, history, atlas)
+        if query is not None:
+            remote_atlas(report, name, atlas, query("glyph-atlas-v3"))
     if applied_marks(atlas, name) is None and loaded:
         report.check("every marked crop has its mark as its state",
                      ["the rows of this translation are loaded and its marks are not set; rerun load_history.py"])
@@ -950,6 +957,9 @@ def check_history(report, name, query=None):
         # from the source seen marks and submissions.
         code = {key: c for c, key in kinds.items()}
         problems, left, matched = [], 0, set()
+        # The crops this translation's load marked; the rest were marked by an earlier one.
+        set_now = {int(x) for part in (OUT / "history-load" / f"{name}-marks").glob("*.sql")
+                   for x in re.findall(r"^UPDATE crops SET .* WHERE id = (\d+) AND", part.read_text(), re.MULTILINE)}
         for m in marks:
             r = atlas.execute("SELECT state, revision, cut FROM crops WHERE id=?", (m["crop"],)).fetchone()
             state = r and states.get(r[0])
@@ -967,20 +977,25 @@ def check_history(report, name, query=None):
             matched.add(e[0])
             text = mirror.execute("SELECT text FROM ids WHERE id=?", (m["crop"],)).fetchone()[0]
             # Of rounds at one time, the highest submission id, as history.py and load_history.py pick it.
-            latest, _id, submission = max(((at, sub_id.get(key, -1), key) for key, at, cut in seen_rows[text]
-                                           if cut == r[2] and key not in undone), default=(None, None, None))
+            shown = [(at, sub_id.get(key, -1), key) for key, at, cut in seen_rows[text] if cut == r[2] and key not in undone]
+            latest, _id, submission = max(shown, default=(None, None, None))
+            earlier = m["crop"] not in set_now and [s for s in shown if s[2] == sub_key.get(e[4])]
+            if earlier:
+                # Set by an earlier load, from the latest round of its copy: a later round leaves it.
+                latest, _id, submission = earlier[0]
             got = {"cut": e[1], "gen": e[2], "actor": actor_key.get(e[3]), "submission": sub_key.get(e[4]), "at": e[5],
                    "state": states.get(e[6]), "actor id": e[3], "submission at": history.execute(
                        "SELECT at FROM submissions WHERE id=?", (e[4],)).fetchone()}
             got["submission at"] = got["submission at"] and got["submission at"][0]
             want = {"cut": r[2], "gen": 0, "actor": src_sub.get(submission, (None,))[0], "submission": submission, "at": latest,
-                    "state": m["state"], "actor id": m["actor"], "submission at": m["at"]}
+                    "state": m["state"], "actor id": actor_id.get(src_sub[submission][0]) if earlier else m["actor"],
+                    "submission at": src_sub[submission][1] if earlier else m["at"]}
             differ = [f"{k} {v!r} expected, {got[k]!r} set" for k, v in want.items() if got[k] != v]
             if differ:
                 problems.append(f"{m['crop']} ({text}): mark event {'; '.join(differ)}")
-        extra = {i for (i,) in atlas.execute("SELECT id FROM events WHERE id > ?", (last_event,))}
-        problems += [f"event {i}: past the translation's events and sets no live mark" for i in sorted(extra - matched)]
-        problems += [f"event {i}: a mark event inside the translation's events" for i in sorted(matched - extra)]
+        extra = {i for (i,) in atlas.execute("SELECT id FROM events WHERE legacy IS NULL")}
+        problems += [f"event {i}: an event no source event names that sets no live mark" for i in sorted(extra - matched)]
+        problems += [f"event {i}: a mark event that names a source event" for i in sorted(matched - extra)]
         recorded = OUT / "history-load" / f"{name}-marks" / "left"
         if recorded.exists() and int(recorded.read_text()) != left:
             problems.append(f"{left} marked crops not pending or retired, the load left {recorded.read_text()}")
@@ -1149,14 +1164,17 @@ def check_history(report, name, query=None):
     for text_, data in source("units").execute("SELECT id, data FROM units WHERE origin='corpus' ORDER BY _rowid"):
         corpus_units.pop(text_, None)
         corpus_units[text_] = data
-    seq = 0
+    # A row keeps the number its first load gave it; rows new since then follow, in rowid order.
+    seqs = []
     for text_, data in corpus_units.items():
         cid = crop(text_)
         if cid is None:
             t.account("crop unknown")
             continue
-        seq += 1
-        t.compare(f"corpus row {text_} ({cid})", {"seq": seq}, one("SELECT seq FROM corpus_rows WHERE crop=?", cid))
+        got = one("SELECT seq FROM corpus_rows WHERE crop=?", cid)
+        t.compare(f"corpus row {text_} ({cid})", {"seq": got and got["seq"]}, got)
+        if got:
+            seqs.append(got["seq"])
         flag = json.loads(data).get("flag")
         if flag:
             flags_t.compare(f"flag on {text_} ({cid})", {"finding": flag["finding"], "realigned": flag.get("realigned"),
@@ -1164,6 +1182,8 @@ def check_history(report, name, query=None):
                             one("SELECT finding, realigned, transcribed, at FROM corpus_flags WHERE crop=?", cid))
     t.done()
     flags_t.done()
+    report.check("every corpus row has a number of its own",
+                 [f"{len(seqs) - len(set(seqs))} corpus rows share a number"] if len(set(seqs)) != len(seqs) else [])
 
     # Script facts on a crop the mirror lacks are dropped; every other row keeps its values.
     for source_, target, cols in (("unit_suspects", "suspects", ("p", "reads_as", "label", "box")),
