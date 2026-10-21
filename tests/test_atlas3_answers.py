@@ -105,6 +105,19 @@ def test_without_the_collection_s_folders_its_status_stays_as_published(layout, 
     assert dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, value FROM site"))["collection"] == '{"crops":7}'
 
 
+def test_with_no_site_value_here_the_pointer_still_moves(layout, monkeypatch):  # noqa: F811
+    _root, publish, remote = layout
+    real = publish.query
+
+    def no_empty(database, sql):
+        assert sql.strip(), "an empty statement"
+        return real(database, sql)
+
+    monkeypatch.setattr(publish, "query", no_empty)
+    assert answers(publish, monkeypatch, sample=0, collection=False)[-1] == ("v3/", ["pointer.json"])
+    assert dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, value FROM site")) == {}
+
+
 def test_a_dry_run_bumps_nothing_and_uploads_nothing(layout, monkeypatch):  # noqa: F811
     _root, publish, remote = layout
     assert answers(publish, monkeypatch, "--dry-run", sample=0) == []
