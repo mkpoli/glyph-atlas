@@ -6,7 +6,7 @@ import { Problem } from '../busy';
 import { bundle, cropItems, pageOf, publicId, slotOf } from '../atlas3';
 import { STALE_CODE, StaleCrop, cropParam, writtenCropField } from '../atlas3Crops';
 import { categoryOf } from '../category';
-import { withForms } from '../cropForms';
+import { formOfCrop } from './claims';
 import { body, canonical, compose, graphemeKey, graphemeText, literal, text, writtenCharacter } from '../input';
 import { readRecords, recordKey } from '../records';
 import { addressKey } from '../reverse';
@@ -510,9 +510,9 @@ async function corpusAnswer(env: Env, stored: Json): Promise<Json> {
   const named = current.data.identity_basis === 'human_review' ? current.label : null;
   const head = named ? await env.ATLAS.prepare('SELECT h.text FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head WHERE g.text=?')
     .bind(named).first<{ text: string | null }>() : null;
-  const [formed] = await withForms(env, [{ ...item, issue: current.data.issue, written_character: current.data.written_character,
+  const formed = { ...item, form: await formOfCrop(env, crop!), issue: current.data.issue, written_character: current.data.written_character,
     ...(current.data.identity_status ? { identity_status: current.data.identity_status } : {}),
-    ...(named ? { grapheme: codePoints(head?.text ?? named), visual_group: null } : {}) }]);
+    ...(named ? { grapheme: codePoints(head?.text ?? named), visual_group: null } : {}) };
   return { ...formed, origin: 'corpus', event: { id: saved.id, revision: saved.revision, state: saved.state } };
 }
 
