@@ -124,9 +124,6 @@ describe('a character’s citation', () => {
 
 describe('GET /atlas/cite/grapheme and /atlas/cite/form', () => {
   function setup() {
-    const db = new Database(':memory:');
-    const migrations = new URL('../migrations/', import.meta.url);
-    for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
     // Characters are cited from their reference objects in the new layout (decision record 0007).
     const atlas = new Database(':memory:');
     const layout = new URL('../migrations-atlas/', import.meta.url);
@@ -138,8 +135,8 @@ describe('GET /atlas/cite/grapheme and /atlas/cite/form', () => {
     (globalThis as any).caches = { default: { match: async (key: Request) => stored.get(key.url)?.clone(), put: async (key: Request, value: Response) => { stored.set(key.url, value) } } };
     const waits: Promise<unknown>[] = [];
     const ctx = { waitUntil: (p: Promise<unknown>) => waits.push(p), passThroughOnException() {} } as unknown as ExecutionContext;
-    const get = async (path: string) => { const response = await worker.fetch(new Request('https://glyphatlas.org' + path), { DB: d1(db), ATLAS: d1(atlas), MEDIA, CATALOGUE_LAG: '0' } as unknown as Env, ctx); await Promise.all(waits); return response };
-    return { db, get, stored };
+    const get = async (path: string) => { const response = await worker.fetch(new Request('https://glyphatlas.org' + path), { ATLAS: d1(atlas), MEDIA, CATALOGUE_LAG: '0' } as unknown as Env, ctx); await Promise.all(waits); return response };
+    return { db: atlas, get, stored };
   }
   it('serves Hayagriva on request, and refuses another format', async () => {
     const { db, get } = setup();
