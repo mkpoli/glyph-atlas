@@ -143,6 +143,16 @@ def test_index_embeds_new_crops_and_reuses_unchanged_ones(tmp_path, monkeypatch)
     assert pq.read_table(out/"current"/"units.parquet").to_pydict()["label"] == ["飍", "字", "字"]
 
 
+def crop_mirror(tmp_path, names):
+    import sqlite3
+
+    path = tmp_path / "mirror.sqlite"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE ids(text TEXT PRIMARY KEY, id INTEGER UNIQUE)")
+        db.executemany("INSERT INTO ids VALUES(?,?)", [(name, 2**24 + n) for n, name in enumerate(names, 1)])
+    return path
+
+
 def test_neighbours_list_the_nearest_and_the_nearest_filed_differently(tmp_path):
     import pyarrow as pa
     import pytest
@@ -157,11 +167,16 @@ def test_neighbours_list_the_nearest_and_the_nearest_filed_differently(tmp_path)
     pq.write_table(pa.table({"id": ["a", "b", "c", "d", "e", "f", "g"], "label": ["字", "字", "宇", "字", None, "字", "字"]}),
                    directory/"units.parquet")
     # A gallery chunk of two forces the merge across chunks.
-    manifest = similar.neighbours(directory, k=2, block=2, gallery=2, digits=1)
+    mirror = crop_mirror(tmp_path, list("abcdefg"))
+    manifest = similar.neighbours(directory, k=2, block=2, gallery=2, digits=1, mirror=mirror)
     entries = {}
     for shard in (directory/"neighbours").glob("?.json"):
         entries.update(json.loads(shard.read_text()))
-    assert manifest["crops"] == 7 and set(entries) == {"a", "b", "c", "d", "e", "f", "g"}
+    assert manifest["id_format"] == "public"
+    reverse = {f"g000{n}": name for n, name in enumerate("abcdefg", 1)}
+    entries = {reverse[key]: {kind: [[reverse[name], score] for name, score in values] for kind, values in entry.items()}
+               for key, entry in entries.items()}
+    assert manifest["crops"] == 7 and set(entries) == set("abcdefg")
     assert [n for n, _ in entries["a"]["similar"]] == ["f", "g"]
     # Its nearest crops are all 字, and the differently filed list is searched on its own.
     assert [n for n, _ in entries["a"]["filed_differently"]] == ["c"]
@@ -185,28 +200,65 @@ def revision(directory: Path, rows: list[tuple[str, str | None, str]], encoder: 
 
 
 def test_vectorize_plans_only_what_changed(tmp_path):
+    mirror = crop_mirror(tmp_path, ["a:1", "a:2", "a:3"])
     first = revision(tmp_path/"r1", [("a:1", "字", "f1"), ("a:2", None, "f2"), ("a:3", "宇", "f3")])
-    plan = similar.vectorize_plan(first, tmp_path/"state.parquet", tmp_path/"plan")
+    plan = similar.vectorize_plan(first, tmp_path/"state.parquet", tmp_path/"plan", mirror=mirror)
     assert plan["index"] == "glyph-atlas-similar-eeeeeeee"
     assert (plan["upsert"], plan["delete"], plan["files"], plan["dimensions"]) == (3, 0, 1, 4)
     records = [json.loads(line) for line in (tmp_path/"plan"/"upsert-0000.ndjson").read_text().splitlines()]
-    assert records[0] == {"id": "a:1", "values": [1, 0, 0, 0], "metadata": {"origin": "local", "label": "字"}}
+    assert records[0] == {"id": "g0001", "values": [1, 0, 0, 0], "metadata": {"origin": "local", "label": "字"}}
     assert records[1]["metadata"] == {"origin": "local"}, "a crop filed under nothing has no label"
     (tmp_path/"plan"/"state.parquet").replace(tmp_path/"state.parquet")
     # A relabel and a new fingerprint are sent again; a crop the revision dropped is deleted.
     second = revision(tmp_path/"r2", [("a:1", "学", "f1"), ("a:2", None, "f2b")])
-    plan = similar.vectorize_plan(second, tmp_path/"state.parquet", tmp_path/"plan")
+    plan = similar.vectorize_plan(second, tmp_path/"state.parquet", tmp_path/"plan", mirror=mirror)
     assert (plan["upsert"], plan["delete"]) == (2, 1)
-    assert (tmp_path/"plan"/"delete.txt").read_text() == "a:3\n"
+    assert (tmp_path/"plan"/"delete.txt").read_text() == "g0003\n"
 
 
-def test_vectorize_refuses_another_encoder_and_long_ids(tmp_path):
+def test_vectorize_refuses_another_encoder_or_missing_mapping(tmp_path):
     import pytest
+
+    mirror = crop_mirror(tmp_path, ["a:1"])
     first = revision(tmp_path/"r1", [("a:1", "字", "f1")])
-    similar.vectorize_plan(first, tmp_path/"none.parquet", tmp_path/"plan")
+    similar.vectorize_plan(first, tmp_path/"none.parquet", tmp_path/"plan", mirror=mirror)
     other = revision(tmp_path/"r2", [("a:1", "字", "f1")], encoder="d" * 64)
     with pytest.raises(ValueError, match="another encoder"):
-        similar.vectorize_plan(other, tmp_path/"plan"/"state.parquet", tmp_path/"plan2")
-    long = revision(tmp_path/"r3", [("a:" + "x" * 63, "字", "f1")])
-    with pytest.raises(ValueError, match="longer than 64 bytes"):
-        similar.vectorize_plan(long, tmp_path/"none.parquet", tmp_path/"plan3")
+        similar.vectorize_plan(other, tmp_path/"plan"/"state.parquet", tmp_path/"plan2", mirror=mirror)
+    missing = revision(tmp_path/"r3", [("a:new", "字", "f1")])
+    with pytest.raises(ValueError, match="publish the crop first"):
+        similar.vectorize_plan(missing, tmp_path/"none.parquet", tmp_path/"plan3", mirror=mirror)
+    assert not (tmp_path/"plan3").exists()
+
+
+def test_vectorize_keeps_legacy_ids_and_deletes_by_deployed_id(tmp_path):
+    import pyarrow as pa
+
+    mirror = crop_mirror(tmp_path, ["a:old", "a:new"])
+    state = tmp_path / "state.parquet"
+    pq.write_table(pa.table({"id": ["a:old"], "fingerprint": ["old"], "label": ["字"], "origin": ["local"]}), state)
+    source = revision(tmp_path/"r1", [("a:old", "字", "old"), ("a:new", "学", "new")])
+    plan = similar.vectorize_plan(source, state, tmp_path/"plan", mirror=mirror)
+    assert plan["upsert"] == 1 and plan["delete"] == 0
+    saved = pq.read_table(tmp_path/"plan"/"state.parquet").to_pydict()
+    assert saved["id"] == ["a:old", "g0002"] and saved["source_id"] == ["a:old", "a:new"]
+    (tmp_path/"plan"/"state.parquet").replace(state)
+    changed = revision(tmp_path/"r2", [("a:old", "語", "old")])
+    plan = similar.vectorize_plan(changed, state, tmp_path/"plan", mirror=mirror)
+    assert plan["upsert"] == 1 and plan["delete"] == 1
+    upsert = json.loads((tmp_path/"plan"/"upsert-0000.ndjson").read_text())
+    assert upsert["id"] == "a:old" and upsert["metadata"]["label"] == "語"
+    assert (tmp_path/"plan"/"delete.txt").read_text() == "g0002\n"
+    (tmp_path/"plan"/"state.parquet").replace(state)
+    unchanged = similar.vectorize_plan(changed, state, tmp_path/"plan", mirror=tmp_path/"absent.sqlite")
+    assert unchanged["upsert"] == unchanged["delete"] == 0
+
+
+def test_public_crop_ids_refuse_missing_mirror_and_accept_long_source_ids(tmp_path):
+    import pytest
+
+    source = "a:" + "x" * 100
+    mirror = crop_mirror(tmp_path, [source])
+    assert similar.public_crop_ids([source], mirror) == {source: "g0001"}
+    with pytest.raises(ValueError, match="mirror is required"):
+        similar.public_crop_ids([source], tmp_path/"missing.sqlite")
