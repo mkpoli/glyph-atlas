@@ -1,6 +1,6 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
-import { canonical, samePixels, literal, hira, single, describedCard, jamoCard, jamoSyllable,
+import { canonical, literal, hira, single, describedCard, jamoCard, jamoSyllable,
   moved, wroteLately, markWriter, substitutionKey, listingFilter } from './index';
 import { dealable, validRound } from './routes/review';
 import { ROUND_MAX } from './rounds';
@@ -76,23 +76,6 @@ describe('a round names flagged answers, seen crops, or both', () => {
 describe('categoryOf', () => {
   it('names a label by the script of its first character', () => {
     expect(['ア', '仮', 'ㅿ', 'ᄫ', '한', '', 'A', ''].map(categoryOf)).toEqual(['kana', 'kanji', 'hangul', 'hangul', 'hangul', 'gugyeol', 'other', 'other']);
-  });
-});
-
-describe('samePixels', () => {
-  const hash = 'a'.repeat(64);
-  it('names a hashed crop by its page hash', () => {
-    expect(samePixels(new URLSearchParams({ image_sha256: hash }), 'local', { image_sha256: hash })).toBe(true);
-    expect(samePixels(new URLSearchParams({ image_sha256: 'b'.repeat(64) }), 'local', { image_sha256: hash })).toBe(false);
-  });
-  it('names a crop published without a hash by its image', () => {
-    const image = 'https://gallica.bnf.fr/iiif/ark:/12148/btv1b83018108/f7/1259,1470,91,98/480,/0/default.jpg';
-    expect(samePixels(new URLSearchParams({ image }), 'local', { image_sha256: null, image })).toBe(true);
-    expect(samePixels(new URLSearchParams({ image_sha256: 'null' }), 'local', { image_sha256: null, image })).toBe(false);
-    expect(samePixels(new URLSearchParams({ image: image + '?v=2' }), 'local', { image })).toBe(false);
-  });
-  it('names a corpus glyph by its source revision', () => {
-    expect(samePixels(new URLSearchParams({ source_revision: 'r1' }), 'corpus', { source_revision: 'r1' })).toBe(true);
   });
 });
 

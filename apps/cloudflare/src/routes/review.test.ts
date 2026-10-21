@@ -1,3 +1,4 @@
+import { nextPage } from './fixtures/pageIds';
 import { afterEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -41,12 +42,11 @@ function schema(db: Database) {
     db.exec('CREATE TABLE corpus_rows(crop INTEGER PRIMARY KEY, seq INTEGER NOT NULL UNIQUE)');
 }
 
-let pages = 7000;
 // One page: local crops 0–5 (は, ハ, は, は, あ, あ), corpus glyphs 6–8 (は), all pending and dealt.
 function setup() {
   const db = new Database(':memory:'); databases.push(db);
   schema(db);
-  const page = ++pages, ids = Array.from({ length: 9 }, (_, slot) => cropId(page, slot));
+  const page = nextPage(), ids = Array.from({ length: 9 }, (_, slot) => cropId(page, slot));
   db.exec(`INSERT INTO generation VALUES(0,3);
     INSERT INTO codes(field,code,key) VALUES('state',0,'pending'),('state',1,'checked'),('state',2,'flagged'),
       ('category',2,'kanji'),('category',3,'kana'),('category',4,'other'),('style',0,'cursive');

@@ -660,3 +660,36 @@ def test_a_publish_needing_a_statement_over_d1s_limit_allocates_nothing(layout, 
     with pytest.raises(SystemExit, match="over D1's limit"):
         run(publish, monkeypatch, tmp_path / "c.sqlite")
     assert "ex:new" not in ids(root)
+
+
+def entry_of(root, cid):
+    rev = sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT rev FROM pages WHERE id=?", (cid // PAGE,)).fetchone()[0]
+    return next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{cid // PAGE}-{rev}.json.gz").read_bytes()))["crops"]
+                if e["slot"] == cid % PAGE)
+
+
+def test_a_cut_keeps_when_it_was_recorded_and_hands_it_to_its_earlier_cut_on_a_re_cut(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    a2, g1 = ids(root)["ex:a2"], ids(root)["codh:g1"]
+    encodings = [{"pixels": "r0", "image": "/atlas/media/g.webp", "at": "2026-09-26T10:58:08.863Z"}]
+    # The history load's facts: set on entries this catalogue does not otherwise publish, a corpus glyph's too.
+    path = tmp_path / "facts.sqlite"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE cut_facts(id TEXT PRIMARY KEY, cut_at TEXT, encodings TEXT NOT NULL)")
+    db.executemany("INSERT INTO cut_facts VALUES(?,?,?)", [("ex:a2", "2026-10-03T00:00:00.000Z", "[]"),
+                                                          ("codh:g1", "2026-10-13T16:53:07.985Z", json.dumps(encodings))])
+    db.commit()
+    run(publish, monkeypatch, path)
+    assert entry_of(root, a2)["cut_at"] == "2026-10-03T00:00:00.000Z" and "encodings" not in entry_of(root, a2)
+    assert entry_of(root, g1)["cut_at"] == "2026-10-13T16:53:07.985Z" and entry_of(root, g1)["encodings"] == encodings
+    assert "record_place" in entry_of(root, g1)
+    # A record with the same box carries both along.
+    run(publish, monkeypatch, catalogue(tmp_path / "same.sqlite", [unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "う",
+                                                                        state="checked", revision=3)]))
+    assert entry_of(root, a2)["cut_at"] == "2026-10-03T00:00:00.000Z"
+    # A re-cut gives the cut it replaced that time, and its own cut the time of the publish.
+    run(publish, monkeypatch, catalogue(tmp_path / "recut.sqlite", [unit("ex:a2", "hl:p1", {"x": 2, "y": 22, "w": 12, "h": 9}, "う",
+                                                                         state="checked", revision=3)]))
+    e = entry_of(root, a2)
+    assert [(c["cut"], c.get("at")) for c in e["cuts"]] == [(0, "2026-10-03T00:00:00.000Z")]
+    assert e["cut_at"] > "2026-10-03" and e["cut_at"].endswith("Z")

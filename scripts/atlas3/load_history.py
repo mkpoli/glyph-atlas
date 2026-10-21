@@ -14,8 +14,8 @@ part is confirmed by its stamp in `imports` and replayed on the local copy.
 3. Marks: a pending crop with a mark takes the mark as its state, one revision past its own, with an
    event at the round that marked it. A mark on a crop that is not pending is left out, as the old
    site showed it only on pending crops.
-4. Earlier cuts: `out/history-cuts.sqlite`, a catalogue of the crops with an earlier box, their
-   records naming their cuts, for `publish.py`.
+4. Cuts: `out/history-cuts.sqlite`, a catalogue for `publish.py`: the records of the crops with an earlier
+   box, naming their cuts, and `cut_facts`, when each crop's current cut was recorded and its other encodings.
 
 Run `answers.py` afterwards: marks change the counts by state.
 """
@@ -167,7 +167,9 @@ def marks(history, atlas):
 
 
 def cuts_catalogue():
-    """The crops with an earlier box, as a catalogue whose records name their cuts."""
+    """The cuts history-cuts.json names, as a catalogue for publish.py: a `units` record naming its earlier
+    cuts for each collected crop with one, and `cut_facts`, when each crop's current cut was recorded and
+    the other encodings of it, for every crop the old site recorded versions of."""
     cuts = json.loads((OUT / "history-cuts.json").read_text())
     shards = {}
 
@@ -186,14 +188,19 @@ def cuts_catalogue():
     units = source("units")
     cols = [r[1] for r in units.execute("PRAGMA table_info(units)") if r[1] != "_rowid"]
     out.execute(f"CREATE TABLE units({','.join(cols)})")
+    out.execute("CREATE TABLE cut_facts(id TEXT PRIMARY KEY, cut_at TEXT, encodings TEXT NOT NULL)")
+    out.executemany("INSERT INTO cut_facts VALUES(?,?,?)",
+                    [(text, v.get("cut_at"), json.dumps(v["encodings"], ensure_ascii=False)) for text, v in sorted(cuts.items())])
+    earlier = {text: v["cuts"] for text, v in cuts.items() if v["cuts"]}
     missing = []
-    for text, versions in cuts.items():
+    for text, versions in earlier.items():
         r = units.execute("SELECT * FROM units WHERE id=? ORDER BY _rowid DESC LIMIT 1", (text,)).fetchone()
         if r is None:
             missing.append(text)
             continue
         data = json.loads(r["data"])
         data["cuts"] = [{"cut": v["cut"], "box": v["box"], "image_sha256": v["pixels"], "image": v["image"],
+                         **({"at": v["at"]} if v.get("at") else {}),
                          **({"image_place": place(v["image"])} if v.get("image") and place(v["image"]) else {})}
                         for v in versions]
         out.execute(f"INSERT INTO units VALUES({','.join('?' * len(cols))})",
@@ -201,7 +208,8 @@ def cuts_catalogue():
     out.commit()
     if missing:
         sys.exit(f"{len(missing)} crops with an earlier box have no live record: {missing[:5]}")
-    print(f"{len(cuts)} crops with an earlier box -> {path}; publish it with publish.py", flush=True)
+    print(f"{len(earlier)} crops with an earlier box, {len(cuts)} with recorded versions -> {path}; "
+          "publish it with publish.py", flush=True)
 
 
 def built(final, label, groups, extra=None):

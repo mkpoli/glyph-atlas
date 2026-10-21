@@ -90,7 +90,34 @@ def test_seen_and_skips_map_to_the_cut_their_box_names(layout, monkeypatch):  # 
         [(2, i["ex:a1"], 0, 1790812802000), (1, i["ex:a1"], -1, 1790812801000), (2, i["codh:g1"], 0, 1790812802000)])
     assert list(out.execute("SELECT crop, cut FROM skips")) == [(i["ex:a1"], -1)]
     cuts = json.loads((root / "out" / "history-cuts.json").read_text())
-    assert cuts == {"ex:a1": [{"cut": -1, "box": OLD, "pixels": "p0", "image": "/atlas/media/p0.webp"}]}
+    assert cuts == {"ex:a1": {"cut_at": "2026-10-03T00:00:00Z", "encodings": [],
+                              "cuts": [{"cut": -1, "box": OLD, "pixels": "p0", "image": "/atlas/media/p0.webp", "at": "2026-10-03T00:00:00Z"}]},
+                    "ex:a2": {"cut_at": "2026-10-03T00:00:00Z", "cuts": [], "encodings": []}}
+
+
+def test_another_encoding_under_the_same_box_is_the_current_cut_still_named_by_its_version(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    # As the 35 corpus glyphs of the 19 October copy: a source revision changed under the same box and
+    # image, and the old site recorded both; the overlay names the newer.
+    from test_atlas3_publish import UNITS, unit
+    box = {"x": 3054, "y": 1048, "w": 91, "h": 102}
+    overlay = ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 2, 0, 1, "codh:b", "unassessed", None,
+               json.dumps({"box": box, "source_revision": "51174cc2", "image": "/atlas/media/0ecf.webp"}))
+    (root / "source-units.sqlite").unlink()
+    write_source(root, "units", UNITS, [unit("ex:a1", "hl:p1", A1, "あ"), overlay])
+    text = ",".join(str(box[k]) for k in "xywh")
+    pair = [(f"codh:g1@51174cc2@{text}", "codh:g1", "51174cc2", text, "codh:b", "/atlas/media/0ecf.webp", "2026-10-13T16:53:07.985Z"),
+            (f"codh:g1@7a90147c@{text}", "codh:g1", "7a90147c", text, "codh:b", "/atlas/media/0ecf.webp", "2026-09-26T10:58:08.863Z")]
+    sources(root, crop_versions=pair, assertion_evidence=[("c1", "crop", f"codh:g1@7a90147c@{text}", None)],
+            assertions=[("c1", None, "codh:g1", "has_form", "", "", "f:1", None, None, "observed", "u1", "2026-10-01T00:00:00Z",
+                         None, None, "form-picker", None, None)])
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    cuts = json.loads((root / "out" / "history-cuts.json").read_text())
+    assert cuts["codh:g1"] == {"cut_at": "2026-10-13T16:53:07.985Z", "cuts": [],
+                               "encodings": [{"pixels": "7a90147c", "image": "/atlas/media/0ecf.webp", "at": "2026-09-26T10:58:08.863Z"}]}
+    # Evidence on the older encoding names the current cut.
+    assert out.execute("SELECT cut FROM assertion_evidence").fetchall() == [(0,)]
 
 
 def test_a_box_no_recorded_version_has_takes_the_cut_below_the_oldest(layout, monkeypatch):  # noqa: F811

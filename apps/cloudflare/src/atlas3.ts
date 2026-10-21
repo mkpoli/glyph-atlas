@@ -80,9 +80,10 @@ export const cropRowsQuery = () => `SELECT c.id,c.kind,g.text AS char,p.key AS p
   FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN pages pg ON pg.id=c.id>>24 JOIN books b ON b.id=c.book
   LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN productions p ON p.id=c.production`;
 
-// Fields only a crop's inspector reads, and where the images sit in their packs, which only the image
-// route reads.
-const UNLISTED = ['text', 'line', 'context_image', 'context_box', 'crop_box', 'image_place', 'context_image_place', 'record_place', 'slot'];
+// Fields only a crop's inspector reads, where the images sit in their packs, which only the image route
+// reads, and the cuts a crop has had, which only its versions read.
+const UNLISTED = ['text', 'line', 'context_image', 'context_box', 'crop_box', 'image_place', 'context_image_place', 'record_place', 'slot',
+  'cuts', 'cut_at', 'encodings'];
 // The item a listing shows for each crop, in the order asked: the bundle's record under the row's
 // current values. A crop with no row, a candidate, or one its bundle does not hold is left out, and so
 // is a corpus glyph whose record (at `record_place` in a pack) is missing or does not parse. A storage

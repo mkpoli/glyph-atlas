@@ -1,3 +1,4 @@
+import { nextPage } from './fixtures/pageIds';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
@@ -28,12 +29,11 @@ const atlasSchema = (db: Database) => {
   for (const file of readdirSync(folder).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, folder), 'utf8'));
 };
 
-let pages = 7000;
 function setup() {
   const db = new Database(':memory:'); databases.push(db);
   atlasSchema(db);
   // Each test takes a page and text ids of its own, since bundles and alias shards are held per isolate.
-  const page = ++pages, n = page;
+  const page = nextPage(), n = page;
   const local = cropId(page, 0), corpus = cropId(page, 1), retired = cropId(page, 2), gone = cropId(page, 3);
   const text = { local: `ex:${n}:a`, corpus: `hng:${n}:g`, retired: `ex:${n}:old`, unmapped: `ex:${n}:unmapped` };
   db.exec(`INSERT INTO books(id,key) VALUES(1,'book:${n}');
@@ -138,9 +138,13 @@ describe('the crop word picker', () => {
     await save({ word: null }, 'glosser');
     await save();
     const disputed = await save({ word: OTHER, form: 'probable', method: 'note' }, 'other');
-    expect(disputed.word).toMatchObject({ status: 'disputed', values: [
+    expect(disputed.word).toMatchObject({ status: 'disputed', supporting: [], methods: ['ruby', 'note'] });
+    // Competing claims can share a millisecond; their generated ids break the tie in either order.
+    expect(disputed.word.values).toHaveLength(2);
+    expect(disputed.word.values).toEqual(expect.arrayContaining([
       { word: W, reading: 'ばかり', class: '副助詞', form: 'certain' }, { word: OTHER, reading: 'のみ', class: '副助詞', form: 'probable' },
-    ], supporting: [], methods: ['ruby', 'note'], by: ['reader', 'other'] });
+    ]));
+    expect([...disputed.word.by].sort()).toEqual(['other', 'reader']);
     await save({ word: null }, 'other');
     await save({ method: 'context' }, 'context');
     await save({ method: 'gloss' }, 'gloss');
