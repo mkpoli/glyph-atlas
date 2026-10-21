@@ -55,7 +55,7 @@ History (decision record 0006), when `out/history.sqlite` exists (history.py):
   time, the highest submission id); at the cutover the count of marks the load left must be recorded.
   With --cutover, glyph-atlas-v3 equals the local copy in all of this.
 - Accounts: with `accounts.sqlite`, every `actors.user` and `favourites.user` names a user, and the
-  parts accounts.py load wrote for the copy rebuild it, each session among them. With --cutover, the
+  parts accounts.py load sent (`accounts-loaded.sqlite`) rebuild it, each session among them. With --cutover, the
   copy equals the old database's auth tables and glyph-atlas-accounts equals the copy, as accounts.py
   check compares them.
 """
@@ -679,22 +679,18 @@ def remote_atlas(report, name, atlas, query):
 
 
 def check_accounts(report, acc, query=None):
-    """The parts accounts.py load wrote for this copy (what glyph-atlas-accounts was sent), replayed and
+    """Every part accounts.py load sent to glyph-atlas-accounts, as replayed in accounts-loaded.sqlite,
     compared with accounts.sqlite table by table, schema, row count and checksum. With `query` (the
     cutover), the chain old database -> accounts.sqlite -> glyph-atlas-accounts as accounts.py check
     compares it."""
     import accounts
 
     sessions = acc.execute('SELECT count(*) FROM "session"').fetchone()[0] if "session" in accounts.tables(acc) else 0
-    run = HERE / "accounts-load" / accounts.copy_name(acc)
     name = f"the parts loaded into glyph-atlas-accounts rebuild accounts.sqlite, every session among them ({sessions} sessions)"
-    if not run.is_dir():
-        report.skip(name, f"no {run.relative_to(HERE)}; accounts.py load writes it")
+    if not accounts.LOADED.exists():
+        report.skip(name, f"no {accounts.LOADED.name}; accounts.py load --send writes it")
     else:
-        loaded = sqlite3.connect(":memory:")
-        loaded.execute("PRAGMA foreign_keys = ON")
-        for part in sorted(run.glob("*.sql")):
-            loaded.executescript("BEGIN;\n" + part.read_text() + "COMMIT;\n")
+        loaded = sqlite3.connect(f"file:{accounts.LOADED}?mode=ro", uri=True)
         report.check(name, accounts.differences(acc, accounts.local(loaded))[0])
     if query is None:
         return
