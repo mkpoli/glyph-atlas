@@ -180,6 +180,7 @@ describe('the forms routes on glyph-atlas-v3', () => {
     await send({ kind: 'cluster', cluster: first.cluster.key, form: null });
     await followCorpus(fresh.env);
     expect(char(first.crop)).toBe('ほ');
+    expect(fresh.db.query('SELECT * FROM form_bases WHERE crop=?').all(first.crop)).toEqual([]);
     
   });
 
@@ -260,6 +261,70 @@ describe('the forms routes on glyph-atlas-v3', () => {
     await expect(formsRoute(raced, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify({ kind: 'cluster', cluster: 'U+306F/0', form: '𛂞' }) }),
       '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1')).rejects.toThrow('409 The cluster has changed; reload the forms.');
     expect(fresh.db.query(`SELECT count(*) AS n FROM form_decisions WHERE kind='cluster'`).get()).toEqual({ n: 0 });
+  });
+
+  it('keeps queued follows pending while clustering rows are being replaced', async () => {
+    const { db, env } = newDatabase(), crop = glyphs[0].crop;
+    db.exec(`UPDATE form_clusters SET form='𛂞' WHERE id=1;
+      INSERT INTO corpus_follow VALUES(${crop}); UPDATE form_state SET loading=1;`);
+    await followCorpus(env);
+    expect(db.query('SELECT char FROM crops WHERE id=?').get(crop)).toEqual({ char: 1 });
+    expect(db.query('SELECT crop FROM corpus_follow').all()).toEqual([{ crop }]);
+    expect(db.query('SELECT * FROM form_bases').all()).toEqual([]);
+    db.exec('UPDATE form_state SET loading=0');
+    await followCorpus(env);
+    expect(db.query('SELECT char FROM crops WHERE id=?').get(crop)).toEqual({ char: 2 });
+    expect(db.query('SELECT * FROM corpus_follow').all()).toEqual([]);
+  });
+
+  it('refuses glyph and inherit decisions when a reload finishes after validation', async () => {
+    for (const kind of ['glyph', 'inherit']) for (const change of [
+      "UPDATE form_state SET lists='run-2'",
+      "UPDATE form_families SET revision='r2'",
+      `UPDATE crops SET cluster=NULL WHERE id=${glyphs[0].crop}`,
+      "UPDATE form_clusters SET family='U+3042' WHERE id=1",
+    ]) {
+      const { db, env } = newDatabase(), atlas = d1(db);
+      const raced = { ...env, ATLAS: { ...atlas, batch: async (list: any[]) => {
+        db.exec(change); return atlas.batch(list);
+      } } } as unknown as Env;
+      const body = { kind, units: [publicId(glyphs[0].crop)], ...(kind === 'glyph' ? { form: '𛂞' } : {}) };
+      await expect(formsRoute(raced, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(body) }),
+        '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1')).rejects.toThrow('409 The cluster has changed');
+      expect(db.query('SELECT * FROM form_decisions').all()).toEqual([]);
+      expect(db.query('SELECT * FROM form_glyphs').all()).toEqual([]);
+      expect(db.query('SELECT * FROM corpus_follow').all()).toEqual([]);
+    }
+  });
+
+  it('refuses a reload between membership validation and reading the allowed forms', async () => {
+    for (const kind of ['glyph', 'inherit']) {
+      const { db, env } = newDatabase(), atlas = d1(db);
+      const raced = { ...env, ATLAS: { ...atlas, prepare: (sql: string) => {
+        const statement = atlas.prepare(sql);
+        if (sql !== glyphFamiliesQuery()) return statement;
+        return { bind: (...args: any[]) => ({ first: async () => {
+          const found = await statement.bind(...args).first();
+          db.exec(`UPDATE crops SET cluster=2 WHERE id=${glyphs[0].crop};
+            UPDATE form_families SET revision='r2'; UPDATE form_state SET lists='run-2';`);
+          return found;
+        } }) };
+      } } } as unknown as Env;
+      const body = { kind, units: [publicId(glyphs[0].crop)], ...(kind === 'glyph' ? { form: '𛂞' } : {}) };
+      await expect(formsRoute(raced, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(body) }),
+        '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1')).rejects.toThrow('409 The cluster has changed');
+      expect(db.query('SELECT * FROM form_decisions').all()).toEqual([]);
+      expect(db.query('SELECT * FROM form_glyphs').all()).toEqual([]);
+      expect(db.query('SELECT * FROM corpus_follow').all()).toEqual([]);
+    }
+  });
+
+  it('asks for a reload when the validated family has disappeared', async () => {
+    const { db, env } = newDatabase();
+    db.exec('DELETE FROM form_families');
+    await expect(formsRoute(env, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST',
+      body: JSON.stringify({ kind: 'glyph', units: [publicId(glyphs[0].crop)], form: '𛂞' }) }),
+      '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1')).rejects.toThrow('409 The cluster has changed');
   });
 
   it('log each decision with the glyphs it names, a cluster decision with its list', async () => {

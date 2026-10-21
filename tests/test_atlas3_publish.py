@@ -681,6 +681,7 @@ def test_a_corpus_republish_keeps_a_followed_character_and_moves_its_base(layout
     grapheme = lambda text: db.execute("SELECT id FROM graphemes WHERE text=?", (text,)).fetchone()[0]
     # A forms decision moved x1 to か in the Worker; its base is き.
     db.execute("INSERT INTO form_bases(crop, char) VALUES(?, ?)", (x1, grapheme("き")))
+    db.execute("INSERT INTO form_glyphs(crop,family,form,decision) VALUES(?, 'U+304B', 'か', 'd')", (x1,))
     db.execute("UPDATE crops SET char=? WHERE id=?", (grapheme("か"), x1))
     db.commit()
     run(publish, monkeypatch, corpus_catalogue(tmp_path / "c2.sqlite", [("codh:x1", "く", None, None), ("codh:x2", "く", None, None)]))
@@ -692,6 +693,51 @@ def test_a_corpus_republish_keeps_a_followed_character_and_moves_its_base(layout
     assert local.execute("SELECT char FROM crops WHERE id=?", (x2,)).fetchone()[0] == grapheme("く")
     run(publish, monkeypatch, corpus_catalogue(tmp_path / "c3.sqlite", [("codh:x1", "く", None, None), ("codh:x2", "く", None, None)]))
     assert crops(remote)[x1]["char"] == grapheme("か")
+
+
+def test_a_followed_run_keeps_its_written_variant_when_upstream_changes_to_the_head(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "c1.sqlite", [("codh:x1", "き", None, None)]))
+    crop = ids(root)["codh:x1"]
+    atlas, runs = remote.dbs["glyph-atlas-v3"], remote.dbs["glyph-atlas-v3-runs"]
+    chars = dict(atlas.execute("SELECT text,id FROM graphemes"))
+    atlas.execute("UPDATE graphemes SET head=? WHERE id=?", (chars["あ"], chars["か"]))
+    atlas.execute("INSERT INTO form_bases VALUES(?,?)", (crop, chars["き"]))
+    atlas.execute("INSERT INTO form_glyphs(crop,family,form,decision) VALUES(?, 'U+3042', 'か', 'd')", (crop,))
+    atlas.execute("UPDATE crops SET char=? WHERE id=?", (chars["か"], crop))
+    atlas.commit()
+    runs.execute("INSERT INTO run_written(crop,char) VALUES(?, 'か')", (crop,))
+    runs.execute("INSERT INTO runs(size,graphemes,hand,shuffle,first,second,third,book) VALUES(2,'ああ',0,0,?,?,NULL,1)",
+                 (crop, ids(root)["ex:a1"]))
+    runs.commit()
+    # The live decisions have reached the local baseline before publication.
+    for name, db in (("atlas.sqlite", atlas), ("atlas-runs.sqlite", runs)):
+        with sqlite3.connect(root / "out" / name) as local:
+            db.backup(local)
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "c2.sqlite", [("codh:x1", "あ", None, None)]))
+    assert atlas.execute("SELECT char FROM crops WHERE id=?", (crop,)).fetchone()[0] == chars["か"]
+    assert runs.execute("SELECT char FROM run_written WHERE crop=?", (crop,)).fetchone()[0] == "か"
+    with sqlite3.connect(root / "out" / "atlas.sqlite") as local:
+        assert local.execute("SELECT char FROM crops WHERE id=?", (crop,)).fetchone()[0] == chars["か"]
+    # A base equal to the followed character still advances, so withdrawing the decision restores it.
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "c3.sqlite", [("codh:x1", "か", None, None)]))
+    assert atlas.execute("SELECT char FROM form_bases WHERE crop=?", (crop,)).fetchone()[0] == chars["か"]
+
+
+def test_a_republish_releases_an_inactive_legacy_base_before_upstream_correction(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "c1.sqlite", [("codh:x1", "き", None, None)]))
+    crop = ids(root)["codh:x1"]
+    atlas = remote.dbs["glyph-atlas-v3"]
+    base = atlas.execute("SELECT char FROM crops WHERE id=?", (crop,)).fetchone()[0]
+    # The old drain restored this character but kept its base; no decision or queued follow remains.
+    atlas.execute("INSERT INTO form_bases VALUES(?,?)", (crop, base))
+    atlas.commit()
+    with sqlite3.connect(root / "out" / "atlas.sqlite") as local:
+        atlas.backup(local)
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "c2.sqlite", [("codh:x1", "く", None, None)]))
+    assert atlas.execute("SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?", (crop,)).fetchone()[0] == "く"
+    assert atlas.execute("SELECT * FROM form_bases WHERE crop=?", (crop,)).fetchall() == []
 
 
 def test_a_glyph_is_filed_under_the_family_its_source_names(layout, monkeypatch, tmp_path):

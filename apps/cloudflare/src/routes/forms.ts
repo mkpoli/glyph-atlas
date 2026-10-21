@@ -235,8 +235,9 @@ export const recountQuery = () => `UPDATE form_families SET
     FROM form_clusters c WHERE c.family=?1)
   WHERE code_point=?1`;
 // How many of a decision's crops are clustered, and in how many families, by primary key.
-export const glyphFamiliesQuery = () => `SELECT count(*) AS n,count(DISTINCT k.family) AS families,min(k.family) AS family
-  FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN form_clusters k ON k.id=c.cluster`;
+export const glyphFamiliesQuery = () => `SELECT count(*) AS n,count(DISTINCT k.family) AS families,min(k.family) AS family,
+  min(f.revision) AS revision,(SELECT lists FROM form_state WHERE id=0) AS lists
+  FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN form_clusters k ON k.id=c.cluster LEFT JOIN form_families f ON f.code_point=k.family`;
 // The unnamed corpus glyphs among a decision's crops, listed for `followCorpus`.
 export const listFollowQuery = () => `INSERT OR IGNORE INTO corpus_follow(crop) SELECT c.id FROM json_each(?) j
   JOIN crops c ON c.id=j.value WHERE c.kind=1 AND c.revision=0`;
@@ -260,7 +261,7 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
   // is reported as. A kana form keeps its family (𛂞 is は's); a kanji variant has its own (仿 is not 倣's).
   // A description is a form of the family it is named in.
   const written = form ?? character, described = form != null && isDescription(form);
-  let family: string, cluster: ClusterRow | null = null, crops: number[] = [];
+  let family: string, cluster: ClusterRow | null = null, crops: number[] = [], validated: Json | null = null;
   if (kind === 'cluster') {
     cluster = await env.ATLAS.prepare(clusterQuery()).bind(tools.text(input.cluster, 200, 'cluster', true)).first<ClusterRow>();
     if (!cluster) tools.fail(422, 'Unknown cluster.');
@@ -281,8 +282,11 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
     if (found!.n !== crops.length) tools.fail(422, 'Some glyphs are not in the current clustering.');
     if (found!.families !== 1) tools.fail(422, 'A decision covers glyphs of one family.');
     family = found!.family;
+    validated = found;
   }
-  const allowed = await env.ATLAS.prepare('SELECT forms,revision FROM form_families WHERE code_point=?').bind(family!).first<Json>();
+  const allowed = await env.ATLAS.prepare('SELECT forms,revision,(SELECT lists FROM form_state WHERE id=0) AS lists FROM form_families WHERE code_point=?').bind(family!).first<Json>();
+  if (!allowed || (validated && (validated.lists !== allowed.lists || validated.revision !== allowed.revision)))
+    tools.fail(409, 'The cluster has changed; reload the forms.');
   if (form != null && !described && !JSON.parse(allowed!.forms).some((f: Json) => f.char === form)) tools.fail(422, `${form} is not a form of this family.`);
   const writtenFamily = described ? family! : written ? await familyOf(env, written, tools) : null;
   const id = crypto.randomUUID(), at = new Date().toISOString().replace(/\.\d+Z$/, '+00:00');
@@ -296,9 +300,13 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
   const units = kind === 'cluster' ? '[]' : JSON.stringify(crops.map(publicId));
   const statements = [
     before,
-    env.ATLAS.prepare('INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,crops,note,issue,character,written_family,list) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    env.ATLAS.prepare(`INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,crops,note,issue,character,written_family,list)
+      VALUES(?1,?2,?3,?4,?5,?6,?7,
+        (SELECT revision FROM form_families WHERE code_point=?5 AND revision=?8 AND (SELECT lists FROM form_state WHERE id=0)=?16
+          AND (?4='cluster' OR NOT EXISTS(SELECT 1 FROM json_each(?10) j LEFT JOIN crops c ON c.id=j.value
+            LEFT JOIN form_clusters k ON k.id=c.cluster WHERE k.family IS NOT ?5))),?9,?10,?11,?12,?13,?14,?15)`)
       .bind(id, at, actor, kind, family!, form, cluster?.key ?? null, allowed!.revision, units, kind === 'cluster' ? '[]' : target,
-        note, issue, character, writtenFamily, cluster?.list ?? null),
+        note, issue, character, writtenFamily, cluster?.list ?? null, allowed!.lists),
     kind === 'cluster'
       ? env.ATLAS.prepare('UPDATE form_clusters SET form=?,issue=?,character=?,written_family=?,decision=? WHERE id=?')
         .bind(form, issue, character, writtenFamily, id, cluster!.id)
@@ -319,7 +327,7 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
     const message = String((error as Error)?.message ?? error);
     // A load began, or replaced the cluster's list, since the reads above (the migration's triggers).
     if (message.includes('The forms are being republished')) tools.fail(503, 'The forms are being republished. Try again in a few minutes.', { code: 'busy' });
-    if (message.includes('The cluster has changed')) tools.fail(409, 'The cluster has changed; reload the forms.');
+    if (message.includes('The cluster has changed') || message.includes('form_decisions.revision')) tools.fail(409, 'The cluster has changed; reload the forms.');
     throw error;
   }
   return { id, at, kind, family: family!, form, cluster: cluster?.key ?? null, count: kind === 'cluster' ? cluster!.count : crops.length,
@@ -346,7 +354,7 @@ function restoreGlyphs(rows: Json[]) {
 // Glyphs a corpus batch moves. Each rewrites the crop's index entries, so a batch takes a fraction of a
 // second on D1.
 export const FOLLOW_BATCH = 500;
-const following = `SELECT crop FROM corpus_follow ORDER BY crop LIMIT ${FOLLOW_BATCH}`;
+const following = `SELECT crop FROM corpus_follow WHERE (SELECT loading FROM form_state WHERE id=0)=0 ORDER BY crop LIMIT ${FOLLOW_BATCH}`;
 const movable = `FROM crops c WHERE c.id IN (${following}) AND c.kind=1 AND c.revision=0`;
 // What each listed unnamed glyph is written as: its own decision's character or form, else its
 // cluster's; `decided` is 0 when no decision names a form or report for it.
@@ -365,6 +373,7 @@ export const followStatements = () => [
     FROM (${writtenAs}) w JOIN form_bases b ON b.crop=w.id) AS t WHERE crops.id=t.id AND crops.char IS NOT t.char`,
   tallied(''),
   `DELETE FROM tally WHERE gen=${GEN} AND n=0`,
+  `DELETE FROM form_bases WHERE crop IN (SELECT id FROM (${writtenAs}) WHERE NOT decided)`,
   `DELETE FROM corpus_follow WHERE crop IN (${following})`,
 ];
 // Unnamed corpus glyphs take their decided form as their character, or, with none decided, the
