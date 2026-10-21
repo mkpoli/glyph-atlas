@@ -8,7 +8,7 @@
 import { cropOf, publicId } from '../atlas3';
 import { STYLE_GROUPS, STYLE_NAMES, characterCounts, composedBooks, cursorOf, filedCounts, galleryPage, groupOf, phasesOf, rangeCountQuery,
   type Cell, type GalleryQuery, type Phase, type Source, type StyleGroup } from '../atlas3Gallery';
-import { listingItems } from '../atlas3Items';
+import { listingItems } from '../atlas3Listing';
 import { cardList, characterObject, type CharacterObject } from '../atlas3Reference';
 import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
 import { Problem } from '../busy';

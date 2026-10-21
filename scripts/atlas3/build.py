@@ -184,6 +184,8 @@ def main():
 
     # Collected crops: their page from the record, in id order within the page.
     units = src("units")
+    if "priority" not in {c[1] for c in units.execute("PRAGMA table_info(units)")}:
+        sys.exit("source-units.sqlite has no priority; pull.py --fresh units copies it")
     by_page = defaultdict(list)
     corpus_overlay = {}
     for r in units.execute("SELECT * FROM units WHERE _rowid IN (SELECT max(_rowid) FROM units GROUP BY id) AND origin <> 'retired' ORDER BY id"):
@@ -200,7 +202,7 @@ def main():
             char = grapheme(r["character"])
             row = (char, None, None, code("visual_group", r["visual_group"]),
                    production(r["production"]), code("category", r["category"]), code("style", r["style"]),
-                   code("state", r["state"]), r["quiz"], year, 0, r["revision"], flags,
+                   code("state", r["state"]), r["quiz"], year, 0, r["revision"], flags, r["priority"],
                    grapheme(r["family"]))
             bundle = bundle_entry(data)
             for field in ("image", "context_image"):
@@ -226,12 +228,12 @@ def main():
                 row = (char, None, None,
                        code("visual_group", r["visual_group"]), production(r["production"]), None,
                        code("style", r["style"]), state, quiz, years.get(r["document"]), 0,
-                       o["revision"] if o else 0, 0, grapheme(o["family"] if o else r["family"]))
+                       o["revision"] if o else 0, 0, 1, grapheme(o["family"] if o else r["family"]))
                 add(r["id"], pg, 1, row, {"label": r["label"], "record_place": [r["object"], r["offset"], r["size"]]})
 
     print(f"crops {len(crops)} pages {len(pages)} books {len(books)} graphemes {len(graphemes)}", flush=True)
     atlas.executemany("INSERT INTO crops(id,kind,book,char,form,cluster,visual_group,production,category,style,"
-                      "state,quiz,year,cut,revision,flags,family,shuffle) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", crops)
+                      "state,quiz,year,cut,revision,flags,priority,family,shuffle) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", crops)
     atlas.executemany("INSERT INTO pages(id,key,book,rev,next_slot) VALUES(?,?,?,1,?)",
                       [(p["id"], k, p["book"], p["next"]) for k, p in pages.items()])
     atlas.executemany("INSERT INTO books(id,key) VALUES(?,?)", [(v, k) for k, v in books.items()])

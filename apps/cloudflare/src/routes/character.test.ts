@@ -4,8 +4,9 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from '../forms.test';
 import { bundleKey, cropId, publicId } from '../atlas3';
-import { SHARDS, phasesOf, rangeCountQuery, rangeQuery, type GalleryQuery, type Phase, type Source } from '../atlas3Gallery';
-import { datesQuery, formClaimsQuery, overlayQuery } from '../atlas3Items';
+import { SHARDS, currentPointer, phasesOf, rangeCountQuery, rangeQuery, type GalleryQuery, type Phase, type Source } from '../atlas3Gallery';
+import { corpusFormsQuery, datingQuery } from '../atlas3Listing';
+import { cropSlotsQuery } from '../cropPanels';
 import { composedCountQuery, composedQuery, chronologyQueries, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery,
   wordSpellingsQuery, writtenVariants } from './character';
 import worker from '../index';
@@ -234,6 +235,23 @@ describe('a gallery of the collection', () => {
   });
 });
 
+describe('character gallery metadata', () => {
+  it('shows named forms on the effective cut, pending redraws and book dates', async () => {
+    const cid = cropId(PAGE_A, 0);
+    db.exec(`INSERT INTO representations(id,scheme,value) VALUES('r:gallery','unicode','時');
+      INSERT INTO forms(id,anchor,created_by,created_at) VALUES('f:gallery','r:gallery','u1','');
+      INSERT INTO reviews(crop,gen,at,char,state,x,y,w,h) VALUES(${cid},6,0,300,1,1,2,3,4);
+      INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) VALUES
+        ('gallery','has_form','','',${cid},1,'single','f:gallery',
+         '[{"object":"f:gallery","confidence":null,"assertion":"c:gallery"}]','["c:gallery"]','[]','r','');`);
+    const found = (await get('/layers/occurrences?code_point=U%2B6642')).body.items.find((item: any) => item.id === publicId(cid));
+    expect(found.form.values).toEqual([{ form: 'f:gallery', scheme: 'unicode', text: '時', confidence: null }]);
+    expect(found.box).toEqual({ x: 1, y: 2, w: 3, h: 4 });
+    expect(found.box_pending).toBe(true);
+    expect(found.dating.witness.start).toBe(1700);
+  });
+});
+
 describe('a gallery of the corpus', () => {
   it('lists a family’s glyphs with those filed under it with no character, and counts the family', async () => {
     const own = await get('/layers/candidates?code_point=U%2B306D');
@@ -334,7 +352,7 @@ describe('every query of the character routes', () => {
     }
     for (const [sql, values, index] of [[membersQuery(), [G.時], 'grapheme_head'], [groupKeysQuery(), ['[1]'], 'PRIMARY KEY'],
       [visualQuery(), [1], 'crop_visual'], [composedQuery(), [], 'book_date_axis'], [graphemeIdsQuery(), ['["時"]'], 'sqlite_autoindex_graphemes'],
-      [overlayQuery(), ['[1]'], 'INTEGER PRIMARY KEY'], [datesQuery(), ['[1]'], 'PRIMARY KEY'], [formClaimsQuery(), ['[[1,0]]'], 'current_claim_crop'],
+      [corpusFormsQuery(), ['[1]'], 'INTEGER PRIMARY KEY'], [datingQuery(), ['["a"]'], 'PRIMARY KEY'], [cropSlotsQuery(), ['[1]', 'has_form'], 'current_claim_crop'],
       [wordSpellingsQuery(), ['時'], 'word_spelling_spelling'], [productionsQuery(), ['printed', 8, 'printed/'], 'SCAN productions']] as [string, unknown[], string][]) {
       const found = plan(sql, values);
       expect(found).toContain(index);
@@ -347,7 +365,10 @@ describe('every query of the character routes', () => {
 describe('a review of a glyph filed under its family', () => {
   // Runs last: it changes the collection the other tests read.
   const [, filed] = [0, CROPS.find(c => c.slot === 4 && c.page === PAGE_C)!];
-  const review = (crop: Crop, char: number | null, gen: number) => {
+  const review = async (crop: Crop, char: number | null) => {
+    // Other fixtures may have warmed the shared pointer; these events belong after that publication.
+    const gen = (await currentPointer(env)).through_gen + 1;
+    db.query('UPDATE generation SET gen=?').run(gen);
     db.query('UPDATE crops SET char=? WHERE id=?').run(char, id(crop));
     // The cell moves from the crop's old character to its new one, both under its family.
     const cell = (c: number | null, n: number) => db.query(`INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n)
@@ -357,7 +378,7 @@ describe('a review of a glyph filed under its family', () => {
     crop.char = char === null ? null : Object.keys(G).find(k => G[k] === char)!;
   };
   it('moves it to its character once, and counts it there and not also as unassigned', async () => {
-    review(filed, G['𛂒'], 5);
+    await review(filed, G['𛂒']);
     const family = await get('/layers/candidates?code_point=U%2B306D&scope=grapheme');
     expect(ids(family.body.glyph_items).filter(i => i === crop(PAGE_C, 4))).toHaveLength(1);
     expect([family.body.glyphs, family.body.family_total, family.body.unassigned_count]).toEqual([4, 4, 2]);
@@ -366,7 +387,7 @@ describe('a review of a glyph filed under its family', () => {
   });
   it('keeps a crop whose character a review clears in its family, as unassigned', async () => {
     const glyph = CROPS.find(c => c.slot === 1 && c.page === PAGE_C)!;
-    review(glyph, null, 5);
+    await review(glyph, null);
     const unassigned = await get('/layers/candidates?code_point=U%2B306D&scope=grapheme&visual_group=unassigned');
     expect(ids(unassigned.body.glyph_items)).toContain(crop(PAGE_C, 1));
     expect(unassigned.body.unassigned_count).toBe(3);
