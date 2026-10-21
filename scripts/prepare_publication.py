@@ -1,7 +1,7 @@
 """Turn an `export_cloudflare.py` output into a publication `publish_cloudflare.sh` can upload and apply.
 
     python scripts/prepare_publication.py EXPORT OUTPUT --prefix ar: --prefix hk: \\
-        [--live LIVE.jsonl | --ids IDS.txt] [--extra retire.sql ...] [--status]
+        [--live LIVE.jsonl | --ids IDS.txt] [--extra retire.sql ...]
 
 1. The export's catalogue is copied, and every image row is checked against the pack it points into.
    An export stopped mid-write leaves rows past the end of its last pack; the crops using them are
@@ -21,9 +21,9 @@
    uploaded; the rest are already on the site.
 4. The SQL parts hold, in order: image rows, new units, the refresh, the pairs and trigrams of crops
    starting at every unit kept (`glyph_atlas.ngrams`, which need all their crops on the site), the
-   ledger rows made locally with the resolution of their slots, each `--extra` file whole, and
-   with `--status` the collection status row, and last the row the Worker keys its cached listings
-   on (`units_refreshed_at`), so they change once the rest has. Each part stays under D1's upload size and every
+   ledger rows made locally with the resolution of their slots, each `--extra` file whole, and last
+   the row the Worker keys its cached listings on (`units_refreshed_at`), so they change once the rest
+   has. Each part stays under D1's upload size and every
    statement under its statement limit; `publication.json` lists the parts.
 
 With `--ids`, a file of unit ids one per line, only those of them the site already holds are refreshed:
@@ -299,15 +299,6 @@ def statements(text: str) -> list[str]:
     return found
 
 
-def status_row() -> str:
-    from export_cloudflare import public_status
-
-    from glyph_atlas.review import collection
-    value = json.dumps(public_status(collection.status((ROOT / "work").resolve())), ensure_ascii=False, separators=(",", ":"))
-    return ("INSERT INTO metadata(key, value) VALUES('collection', " + refresh.quote(value)
-            + ") ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n")
-
-
 def write_parts(sealed: Path, groups: list[list[str]]) -> list[str]:
     directory = sealed / "sql"
     directory.mkdir(exist_ok=True)
@@ -370,7 +361,6 @@ def main() -> None:
     parser.add_argument("--live", type=Path, help="live units as JSON lines, instead of reading D1")
     parser.add_argument("--ids", type=Path, help="publish only these unit ids, one per line, read by primary key")
     parser.add_argument("--extra", type=Path, action="append", default=[], help="SQL file applied after the refresh")
-    parser.add_argument("--status", action="store_true", help="also write the collection status row")
     args = parser.parse_args()
     if not args.prefix:
         raise SystemExit("name the unit prefixes to publish with --prefix")
@@ -442,7 +432,7 @@ def main() -> None:
     extras = [statements(path.read_text(encoding="utf-8")) for path in args.extra]
     # The version row goes last, so the Worker's cached listings change only once every row has.
     # The ledger after the crops: a claim's slot is resolved against the crop's version on the site.
-    groups = [media, units, updates, pages, ngrams, claims, *extras] + ([[status_row()]] if args.status else []) + [[refresh.VERSION_BUMP]]
+    groups = [media, units, updates, pages, ngrams, claims, *extras] + [[refresh.VERSION_BUMP]]
     parts = write_parts(sealed, groups)
 
     manifest = json.loads((sealed / "publication.json").read_text())
@@ -452,7 +442,7 @@ def main() -> None:
     referenced = sum(MEDIA_KEY.match(line).group(1) in published for line in media)
     print(json.dumps({"lost": len(lost["units"]), "new": len(units), "pages": len(pages), "ledger": len(claims), "overlapping": len(overlapping), "media": len(media),
                       "media_on_site": referenced, "media_packed": len(media) - referenced, "refresh": counts,
-                      "held": len(held), "extra": [str(p) for p in args.extra], "status": args.status,
+                      "held": len(held), "extra": [str(p) for p in args.extra],
                       "objects": len(manifest["objects"]), "parts": parts, "publication": str(sealed)}, ensure_ascii=False))
 
 

@@ -5,9 +5,9 @@
 
 Every bulk write to D1 happens once and only where needed:
 
-- COLUMNS names each column the cutover adds and the migration that adds it, which adds nothing else.
+- COLUMNS names each column the cutover adds and the migration that adds it; 0012 also extends the empty cutover tally.
   `--send` applies a migration (stamp `migration:<number>`) where the local copy lacks its column.
-- FILLS names each column's values, worked out from the local copy, `out/mirror.sqlite` (only read)
+- FILLS names each column's values, worked out from the local copy, `out/mirror.sqlite`
   and the copies. One UPDATE per crop whose values differ from the local copy sets every filled
   column at once, so a crop row is written once however many columns change.
 - Then each index of `migrations-atlas/indexes-cutover.sql` the local copy lacks, in the file's order,
@@ -18,9 +18,15 @@ names (`units.family`, a reviewed corpus glyph's overlay before `corpus_units.fa
 a crop with a character joins its character's family, and one with none, or whose character a review
 clears, joins this one. A family the layout has no grapheme for stops the run.
 
+`priority` (0011) comes from collected units, with 1 for other crops. `cluster` comes from the
+validated lists loaded by `crop_facts.py --send --defer-crops`. That load keeps form decisions paused
+and records its handoff in the mirror. Fill releases them after every crop update and index succeeds.
+Keep the site's global write freeze throughout this cutover operation.
+
 Parts are named by their content, confirmed by their stamps in `imports` and replayed on the local
 copy (as books.py loads them), so a rerun sends only what differs and, once everything is in place,
-nothing. Figures go to `out/fill-report.txt`. Run it before the cutover's publish, which then finds
+nothing. A pending run resumes its saved SQL plan after verifying its file hashes and the remote
+build stamp. Figures go to `out/fill-report.txt`. Run it before the cutover's publish, which then finds
 every value in place; `publish.py` refuses a local copy without the columns.
 """
 
@@ -28,7 +34,9 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import gzip
 import hashlib
+import json
 import re
 import sqlite3
 import sys
@@ -37,7 +45,7 @@ from build import HERE, OUT, char_text
 from load_history import GROUP, SCHEMA, built, deliver, stamped
 from publish import applied, lit, send
 
-COLUMNS = {"family": "0012_family.sql"}
+COLUMNS = {"priority": "0011_browse.sql", "family": "0012_family.sql"}
 INDEXES = SCHEMA / "indexes-cutover.sql"
 
 
@@ -84,7 +92,44 @@ def families(atlas, mirror):
     return wanted
 
 
-FILLS = {"family": families}
+def priorities(atlas, mirror):
+    """Collected crops keep the copied priority; every other crop defaults to one."""
+    wanted = dict(atlas.execute("SELECT id, 1 FROM crops"))
+    for row in latest(source("units"), "units", "id, priority", " AND origin='local'"):
+        crop = mirror.execute("SELECT id FROM ids WHERE text=?", (row["id"],)).fetchone()
+        if crop and crop[0] in wanted:
+            if row["priority"] not in (0, 1, 2):
+                sys.exit(f"invalid review priority for {row['id']}")
+            wanted[crop[0]] = row["priority"]
+    return wanted
+
+
+def clusters(atlas, mirror):
+    """Use the validated lists that crop_facts loaded, before deriving any clearing updates."""
+    wanted = {}
+    live = {r[0] for r in atlas.execute("SELECT id FROM crops")}
+    for number, key, family, count, name in atlas.execute("SELECT id,key,family,count,list FROM form_clusters"):
+        path = OUT / "forms" / f"{name}.json.gz"
+        if not path.exists():
+            sys.exit(f"missing cluster list {path.name}; finish crop_facts.py --send --defer-crops first")
+        try:
+            raw = gzip.decompress(path.read_bytes())
+            body = json.loads(raw)
+            valid = (name == f"{number}-{hashlib.sha256(raw).hexdigest()[:12]}" and
+                     body["family"] == family and body["key"] == key and len(body["members"]) == count)
+            for member in body["members"]:
+                crop = member[0]
+                if type(crop) is not int or crop not in live or crop in wanted:
+                    valid = False
+                wanted[crop] = number
+        except (OSError, ValueError, KeyError, IndexError, TypeError):
+            valid = False
+        if not valid:
+            sys.exit(f"invalid cluster list {path.name}; no crop updates prepared")
+    return wanted
+
+
+FILLS = {"family": families, "priority": priorities, "cluster": clusters}
 
 
 def statements(atlas, mirror):
@@ -95,7 +140,7 @@ def statements(atlas, mirror):
         wanted = values(atlas, mirror)
         current = dict(atlas.execute(f"SELECT id, {column} FROM crops WHERE {column} IS NOT NULL")) if column in have else {}
         live = {r[0] for r in atlas.execute("SELECT id FROM crops")} if wanted else set()
-        changed = {crop: value for crop, value in wanted.items() if crop in live and current.get(crop) != value}
+        changed = {crop: value for crop, value in wanted.items() if crop in live and current.get(crop, 1 if column == "priority" and column not in have else None) != value}
         changed.update({crop: None for crop in current if crop not in wanted})
         counts[column] = len(changed)
         for crop, value in changed.items():
@@ -129,37 +174,79 @@ def migrate(atlas):
         print(f"migration {name} applied", flush=True)
 
 
+def validate_plan(run):
+    """A saved plan must retain every original SQL part, byte for byte."""
+    try:
+        expected = json.loads((run / "manifest.json").read_text())
+        actual = {part.name: hashlib.sha256(part.read_bytes()).hexdigest() for part in run.glob("*.sql")}
+        if not expected or actual != expected:
+            raise ValueError("parts differ")
+    except (OSError, ValueError):
+        sys.exit(f"fill plan {run.name} is incomplete or changed; restore its original files")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--send", action="store_true", help="apply the column migrations and load the parts into glyph-atlas-v3")
     args = parser.parse_args()
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
-    mirror = sqlite3.connect(f"file:{OUT / 'mirror.sqlite'}?mode=ro", uri=True)
-    if mirror.execute("SELECT 1 FROM sqlite_master WHERE name='pending'").fetchone() and mirror.execute("SELECT 1 FROM pending").fetchone():
-        sys.exit("a publish is unfinished; finish it with publish.py first")
+    mirror = sqlite3.connect(OUT / "mirror.sqlite")
+    mirror.execute("CREATE TABLE IF NOT EXISTS pending(run TEXT PRIMARY KEY)")
+    mirror.commit()
+    pending = [r[0] for r in mirror.execute("SELECT run FROM pending")]
+    if any(not name.startswith("fill/") for name in pending):
+        sys.exit("a publish or crop facts load is unfinished; finish it first")
+    if len(pending) > 1:
+        sys.exit("multiple crop fills are pending; restore the original fill state")
     atlas = sqlite3.connect(OUT / "atlas.sqlite")
     if args.send:
         build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
-        migrate(atlas)
+    if pending and pending[0].startswith("fill/plan/"):
+        run = OUT / "fill-load" / pending[0].removeprefix("fill/plan/")
+        if not run.is_dir():
+            sys.exit("the pending fill plan is missing; restore its original directory")
+        if not args.send:
+            print(f"unfinished fill {run.name}; --send resumes its saved plan", flush=True)
+            return
+        validate_plan(run)
+        deliver(run, atlas)
+        mirror.execute("DELETE FROM pending WHERE run=?", (pending[0],))
+        mirror.commit()
+        print(f"finished {run.name}", flush=True)
+        return
+    source_run = pending[0].removeprefix("fill/source/") if pending else None
+    if source_run and atlas.execute("SELECT lists,loading FROM form_state WHERE id=0").fetchone() != (source_run, 1):
+        sys.exit("the deferred crop facts state no longer matches its handoff")
+    # Validate every source and list before any remote schema or row changes.
     groups, counts, crops, indexes = statements(atlas, mirror)
+    if args.send:
+        migrate(atlas)
     report = "".join(f"{column}: {n} crops change\n" for column, n in counts.items())
     report += f"crop rows written: {crops}\nindexes to build: {', '.join(re.match(r'CREATE INDEX (\w+)', s)[1] for s in indexes) or 'none'}\n"
     (OUT / "fill-report.txt").write_text(report)
     print(report, end="", flush=True)
+    if source_run:
+        groups.append([f"UPDATE form_state SET loading=0 WHERE id=0 AND lists={lit(source_run)};"])
     if not groups:
         print("every column is filled and every index built; nothing to send", flush=True)
         return
     digest = hashlib.sha256("\n".join(s for g in groups for s in g).encode()).hexdigest()[:12]
     run = OUT / "fill-load" / f"fill-{digest}"
-    n = built(run, "rows", groups)
+    n = built(run, "rows", groups, manifest=True)
+    validate_plan(run)
     print(f"{n if n is not None else 'existing'} parts -> {run}", flush=True)
     if not args.send:
         print("dry run: nothing sent", flush=True)
         return
+    mirror.execute("DELETE FROM pending WHERE run LIKE 'fill/%'")
+    mirror.execute("INSERT INTO pending VALUES(?)", ("fill/plan/" + run.name,))
+    mirror.commit()
     deliver(run, atlas)
+    mirror.execute("DELETE FROM pending WHERE run=?", ("fill/plan/" + run.name,))
+    mirror.commit()
     print("filled", flush=True)
 
 
