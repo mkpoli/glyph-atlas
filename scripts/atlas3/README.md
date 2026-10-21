@@ -294,21 +294,23 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    `accounts.py` stops it. It copies their CREATE statements (with their indexes) and their rows in
    primary-key ranges into `accounts.sqlite`, then compares the copy with the old database as `check`
    does; it only reads. `load` writes the tables with those exact statements, the rows (parents
-   first) and then the indexes as parts under `accounts-load/<copy>/`, named by the copy's checksums,
-   and replays them on an empty database to confirm they rebuild the copy. Only `--send` writes to D1:
-   each part is confirmed by its stamp in an `imports` table, and a database holding another copy's
-   rows or tables of its own is refused. If `--send` stops partway, run `load --send` again on the
-   same copy, without `pull --fresh`: it sends only the missing parts, and a copy differing in any
-   row would be refused by the half-loaded database. `check` compares the table set, the schema, row counts and a checksum
+   first) and then the indexes as parts under `accounts-load/<copy>-<base>/`, named by the copy's
+   checksums and the parts already loaded, and replays them on what is loaded to confirm they rebuild
+   the copy. Only `--send` writes to D1: each part is confirmed by its stamp in an `imports` table, and
+   a database holding a stamp no part sent from here wrote, or tables of its own, is refused. Every part sent is replayed on `accounts-loaded.sqlite`, and
+   a `load` after `pull --fresh` writes only the difference from it: an INSERT per new row, an UPDATE
+   per changed one and a DELETE per row gone, children first. If `--send` stops partway, run
+   `load --send` again: it sends only the missing parts. `check` compares the table set, the schema, row counts and a checksum
    of every row per table, first between the old database and `accounts.sqlite`, then between
    `accounts.sqlite` and `glyph-atlas-accounts`, and exits 1 on any difference. Run it before the
    site checks of step 9: their sign-ins and session
    renewals write to `glyph-atlas-accounts`, after which it no longer matches.
 
    `accounts.sqlite` and `accounts-load/` hold sessions and account tokens; the script creates them
-   readable by the owner only. Once `check` passes, delete both, in the Codespace too:
+   readable by the owner only, as is `accounts-loaded.sqlite`. Once the switch's last load and `check` pass,
+   delete all three, in the Codespace too:
 
-       rm -rf work/atlas-v3/accounts.sqlite* work/atlas-v3/accounts-load
+       rm -rf work/atlas-v3/accounts.sqlite* work/atlas-v3/accounts-loaded.sqlite work/atlas-v3/accounts-load
 
 9. **Check:** `check.py` must pass every check, and a set of site URLs must answer the same from a
    local Worker on each layout. The site checks that write (an existing session, renewal, logout, a

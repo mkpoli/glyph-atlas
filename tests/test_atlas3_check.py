@@ -362,11 +362,20 @@ def accounts_copy(root, sessions):
 
 
 def accounts_load(root, monkeypatch):
+    """accounts.py load --send into a local stand-in for glyph-atlas-accounts."""
     sys.modules.pop("accounts", None)
     accounts = importlib.import_module("accounts")
     monkeypatch.setattr(accounts, "COPY", root / "accounts.sqlite")
     monkeypatch.setattr(accounts, "LOADS", root / "accounts-load")
-    accounts.load(False)
+    monkeypatch.setattr(accounts, "LOADED", root / "accounts-loaded.sqlite")
+    target = sqlite3.connect(":memory:")
+
+    def send(_database, file, stamp, query):
+        target.executescript("BEGIN;\n" + file.read_text() + "COMMIT;\n")
+        return stamp in accounts.loaded(query)[0]
+
+    monkeypatch.setattr(accounts, "send", send)
+    accounts.load(True, accounts.local(target))
 
 
 def test_every_session_is_in_the_accounts_load(layout, monkeypatch):  # noqa: F811
@@ -378,9 +387,10 @@ def test_every_session_is_in_the_accounts_load(layout, monkeypatch):  # noqa: F8
     accounts_load(root, monkeypatch)
     assert check(monkeypatch) == 0
     assert "ok   the parts loaded into glyph-atlas-accounts rebuild accounts.sqlite, every session among them (2 sessions)" in report(root)
-    # A session the parts lack: drop it from the part that inserts it.
-    for part in (root / "accounts-load").glob("*/*.sql"):
-        part.write_text(part.read_text().replace("\nINSERT INTO \"session\"(\"id\",\"userId\") VALUES('s2','user-1');", ""))
+    # A session the loads lack.
+    loaded = sqlite3.connect(root / "accounts-loaded.sqlite")
+    loaded.execute("DELETE FROM \"session\" WHERE id = 's2'")
+    loaded.commit()
     assert check(monkeypatch) == 1
     assert "session: 2 rows here, 1 there" in report(root)
 
