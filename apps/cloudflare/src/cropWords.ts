@@ -49,34 +49,3 @@ export async function withWords<T extends Json>(env: Env, items: T[]): Promise<(
   const words = await wordsFor(env, items.map(item => item.id));
   return items.map(item => ({ ...item, word: words.get(item.id) ?? null }));
 }
-
-// At most this many words are offered.
-const CHOICES_MAX = 20;
-// Spellings find their words by the spelling index, readings by a range of the word key; a reading
-// typed beside the crop's characters narrows the words they spell to it.
-const SPELLED = 'id IN (SELECT word FROM word_spellings WHERE spelling IN (SELECT value FROM json_each(?)))';
-export const wordChoicesQuery = (by: 'spelling' | 'reading' | 'both') => `SELECT id,reading,class FROM words WHERE ${
-  by === 'reading' ? 'id>=? AND id<?' : by === 'both' ? SPELLED + ' AND id>=? AND id<?' : SPELLED} ORDER BY id LIMIT ${CHOICES_MAX}`;
-export const choiceSpellingsQuery = () => `SELECT DISTINCT word,spelling FROM word_spellings
-  WHERE word IN (SELECT value FROM json_each(?)) ORDER BY word,spelling`;
-
-// The key range of the word ids that begin with `prefix`.
-function range(prefix: string): [string, string] {
-  const points = [...prefix].map(c => c.codePointAt(0)!);
-  while (points.at(-1) === 0x10ffff) points.pop();
-  const next = points.pop()! + 1;
-  return [prefix, String.fromCodePoint(...points, next >= 0xd800 && next <= 0xdfff ? 0xe000 : next)];
-}
-
-/** Words spelled by the crop's characters first, followed by words whose reading begins with `q`. */
-export async function wordChoices(env: Env, q: string, chars: string[]) {
-  const wanted = JSON.stringify([...new Set(chars)].slice(0, 4));
-  const reading = q.trim().replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
-  const ids = reading ? range('ja/' + reading) : null;
-  const all = (sql: string, ...values: unknown[]) => env.DB.prepare(sql).bind(...values).all<Json>().then(r => r.results);
-  const spelled = chars.length ? await (ids ? all(wordChoicesQuery('both'), wanted, ...ids) : all(wordChoicesQuery('spelling'), wanted)) : [];
-  const read = ids && spelled.length < CHOICES_MAX ? await all(wordChoicesQuery('reading'), ...ids) : [];
-  const choices = [...new Map([...spelled, ...read].map(row => [row.id, row])).values()].slice(0, CHOICES_MAX);
-  const spellings = choices.length ? await all(choiceSpellingsQuery(), JSON.stringify(choices.map(row => row.id))) : [];
-  return choices.map(row => ({ ...row, spellings: spellings.filter(s => s.word === row.id).map(s => s.spelling) }));
-}

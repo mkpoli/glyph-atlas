@@ -9,8 +9,10 @@ import { heldObjects } from './atlas3Media';
 type Json = any;
 // [other, relation, source, detail, written, widens], from either end of the edge.
 export type VariantEdge = [string, string, string, string, number, number];
+// Cards by family head, then code point, as a summary shard holds them.
+export type Families = Record<string, Record<string, Json>>;
 export type CharacterObject = {
-  grapheme: number; data: Json; detail: Json; variants: VariantEdge[];
+  grapheme: number; data: Json; detail: Json; variants: VariantEdge[]; variant_families: Families;
   derived: [string, [string, string][][]][]; substitutions: [string, string, number, Json][];
   writes: [string, number][]; writers: [string, number][]; ids: Record<string, number>;
 };
@@ -19,8 +21,9 @@ export const LIST_PAGE = 500;
 const PREFIX = 'v3/reference/';
 export const SUMMARY_DIGITS = 3, IDS_DIGITS = 2;
 // Each kind of object has its own isolate copies, as many as a request of that kind reads: a character
-// page one card, a search list up to 48 families, a component search up to COMPONENT_PARTS lists.
-const readCard = heldObjects<Json>(32), readSummary = heldObjects<Json>(64), readIds = heldObjects<Json>(16),
+// page one card, a search one reading, the list a component search answers up to 48 families, and the
+// component search up to COMPONENT_PARTS lists.
+const readCard = heldObjects<Json>(32), readSummary = heldObjects<Json>(64), readIds = heldObjects<Json>(16), readReadings = heldObjects<Json>(16),
   readNames = heldObjects<Json>(1), readList = heldObjects<Json>(4), readComponentNames = heldObjects<Json>(1),
   readComponents = heldObjects<Json>(COMPONENT_PARTS);
 
@@ -34,6 +37,9 @@ export function characterObject(env: Env, codePoint: string, ctx?: ExecutionCont
   return readCard(env, `${PREFIX}char/${codePoint.split(' ').join('-')}.json.gz`, ctx);
 }
 
+// Every card of the families, by code point.
+export const familyCards = (families: Families) => new Map(Object.values(families).flatMap(cards => Object.entries(cards)));
+
 // The `data` of each card in the families of the given heads, by code point, and no other family's:
 // one read per shard.
 export async function familySummaries(env: Env, heads: string[], ctx?: ExecutionContext): Promise<Map<string, Json>> {
@@ -44,6 +50,12 @@ export async function familySummaries(env: Env, heads: string[], ctx?: Execution
     const shard = shards.get(keys[i]);
     return shard && Object.hasOwn(shard, head) ? Object.entries(shard[head] as Record<string, Json>) : [];
   }));
+}
+
+// A kana reading's kanji, most attested first, and the families of the first of them, or null.
+export async function readingKanji(env: Env, reading: string, ctx?: ExecutionContext): Promise<{ kanji: string[]; families: Families } | null> {
+  const shard = await readReadings(env, `${PREFIX}readings/${await referenceShard(reading, SUMMARY_DIGITS)}.json.gz`, ctx);
+  return shard && Object.hasOwn(shard, reading) ? shard[reading] : null;
 }
 
 // A character's ideographic descriptions and regional shapes, or null.
@@ -57,24 +69,51 @@ export async function characterStructure(env: Env, char: string, ctx?: Execution
 // the hex of the code point as [prefix, code points as steps, occurrences].
 type NameList = { names: [string, string, number][]; plain: [string, number[], number[]][] };
 const hex = (point: number) => point.toString(16).toUpperCase().padStart(4, '0');
+export type NameIndex = { occurrences: Map<string, number>; named: (term: string, limit: number) => string[] };
 
-// The cards whose code point or name holds the term, ignoring case ("4e00", "U+4E00", "hiragana"),
-// most frequent first, then by code point; at most `limit`, with how many there are.
-export async function nameMatches(env: Env, term: string, limit: number, ctx?: ExecutionContext) {
-  const list = await readNames(env, `${PREFIX}names.json.gz`, ctx) as NameList | null;
-  const wanted = term.trim().toUpperCase(), found: [string, number, number][] = [];
-  if (!list || !wanted) return { codes: [] as string[], total: 0 };
-  for (const [codePoint, name, occurrences] of list.names)
-    if (codePoint.includes(wanted) || name.toUpperCase().includes(wanted)) found.push([codePoint, occurrences, parseInt(codePoint.slice(2), 16)]);
-  for (const [prefix, steps, occurrences] of list.plain) {
+// Upper case for ASCII letters only, the case SQL LIKE ignores.
+const asciiUpper = (text: string) => text.replace(/[a-z]/g, c => c.toUpperCase());
+const byPoints = (a: number[], b: number[]) => {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return a.length - b.length;
+};
+// Each copy of the list the isolate holds is decoded once.
+const decodedNames = new WeakMap<NameList, NameIndex>();
+function decodeNames(list: NameList): NameIndex {
+  const occurrences = new Map<string, number>(), cards: [number[], string, string][] = [];
+  for (const [codePoint, name, n] of list.names) {
+    occurrences.set(codePoint, n);
+    cards.push([codePoint.split(' ').map(p => parseInt(p.slice(2), 16)), codePoint, asciiUpper(name)]);
+  }
+  for (const [prefix, steps, counts] of list.plain) {
     for (let k = 0, point = 0; k < steps.length; k++) {
       point = k ? point + steps[k] : steps[0];
       const code = hex(point);
-      if (`U+${code}`.includes(wanted) || (prefix + code).includes(wanted)) found.push([`U+${code}`, occurrences[k], point]);
+      occurrences.set(`U+${code}`, counts[k]);
+      cards.push([[point], `U+${code}`, asciiUpper(prefix) + code]);
     }
   }
-  found.sort((a, b) => b[1] - a[1] || a[2] - b[2] || (a[0] < b[0] ? -1 : 1));
-  return { codes: found.slice(0, limit).map(f => f[0]), total: found.length };
+  cards.sort((a, b) => byPoints(a[0], b[0]));
+  // The cards whose name holds the term, ignoring ASCII case as SQL LIKE does, in code point order.
+  const named = (term: string, limit: number) => {
+    const wanted = asciiUpper(term), found: string[] = [];
+    for (const [, codePoint, name] of cards) {
+      if (found.length >= limit) break;
+      if (name.includes(wanted)) found.push(codePoint);
+    }
+    return found;
+  };
+  return { occurrences, named };
+}
+
+// Every card by its code point(s) with how often the character occurs, and a search of the names in
+// code point order; null when the list is not in R2.
+export async function nameIndex(env: Env, ctx?: ExecutionContext): Promise<NameIndex | null> {
+  const list = await readNames(env, `${PREFIX}names.json.gz`, ctx) as NameList | null;
+  if (!list) return null;
+  let index = decodedNames.get(list);
+  if (!index) decodedNames.set(list, index = decodeNames(list));
+  return index;
 }
 
 // One page of a card list from `offset`: at most two objects for a page of up to LIST_PAGE.

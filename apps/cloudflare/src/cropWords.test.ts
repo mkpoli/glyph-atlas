@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { d1 } from './forms.test';
-import { cropWordsQuery, withWords, wordChoices, wordChoicesQuery, wordMethodsQuery, wordNamesQuery, choiceSpellingsQuery, wordsFor } from './cropWords';
+import { cropWordsQuery, withWords, wordMethodsQuery, wordNamesQuery, wordsFor } from './cropWords';
 
 const databases: Database[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); });
@@ -42,42 +42,16 @@ describe('a crop word in the old database', () => {
   });
 });
 
-describe('word choices', () => {
-  it('offers the crop spellings first, narrows them to a typed reading, folds katakana, and lists distinct spellings', async () => {
-    const { env, spelling } = setup();
-    spelling(W, '計'); spelling(W, '計', 'other'); spelling(W, '許'); spelling(OTHER, '而已');
-    expect(await wordChoices(env, '', ['計'])).toEqual([{ id: W, reading: 'ばかり', class: '副助詞', spellings: ['計', '許'] }]);
-    expect(await wordChoices(env, 'ノ', ['計'])).toEqual([{ id: OTHER, reading: 'のみ', class: '副助詞', spellings: ['而已'] }]);
-    expect((await wordChoices(env, 'バ', ['許', '許'])).map(r => r.id)).toEqual([W]);
-    expect(await wordChoices(env, '', [])).toEqual([]);
-    expect(await wordChoices(env, '%', [])).toEqual([]);
-    expect(await wordChoices(env, '\u{10ffff}', [])).toEqual([]);
-    expect(await wordChoices(env, '', ['a', 'b', 'c', 'd', '計'])).toEqual([]);
-  });
-
-  it('limits choices to twenty, keeping words spelled by the crop first', async () => {
-    const { db, env, spelling } = setup();
-    for (let i = 0; i < 25; i++) { db.query("INSERT INTO words VALUES(?,'ja',?,'名詞')").run('ja/あ' + i + '/名詞', 'あ' + i); spelling('ja/あ' + i + '/名詞', i % 2 ? '計' : '許') }
-    const found = await wordChoices(env, 'ア', ['計']);
-    expect(found).toHaveLength(20);
-    expect(found.slice(0, 12).every(r => r.spellings.includes('計'))).toBe(true);
-    // A crop spelling twenty words or more still finds the one a reading names.
-    expect((await wordChoices(env, 'あ24', ['計', '許'])).map(r => r.id)).toEqual(['ja/あ24/名詞']);
-  });
-
-  it('uses keys and the spelling index without scanning corpus or vocabulary tables', () => {
+describe('crop word reads', () => {
+  it('use keys without scanning corpus or vocabulary tables', () => {
     const { db } = setup();
     const plans = [
       [cropWordsQuery(), [JSON.stringify(['crop'])]], [wordNamesQuery(), [JSON.stringify([W])]],
-      [wordMethodsQuery(), [JSON.stringify(['assertion'])]], [wordChoicesQuery('spelling'), [JSON.stringify(['計'])]], [wordChoicesQuery('both'), [JSON.stringify(['計']), 'ja/ば', 'ja/ぱ']],
-      [wordChoicesQuery('reading'), ['ja/ば', 'ja/ぱ']], [choiceSpellingsQuery(), [JSON.stringify([W])]],
+      [wordMethodsQuery(), [JSON.stringify(['assertion'])]],
     ] as [string, string[]][];
     const details = plans.map(([sql, args]) => (db.query('EXPLAIN QUERY PLAN ' + sql).all(...args) as { detail: string }[]).map(r => r.detail));
     for (const plan of details) expect(plan.filter(d => /^SCAN (c|u|units|current_claims|words|word_spellings|assertions)\b/.test(d))).toEqual([]);
     expect(details[0].some(d => /SEARCH c USING PRIMARY KEY/.test(d))).toBe(true);
     expect(details[0].some(d => /SEARCH u USING INDEX/.test(d))).toBe(true);
-    expect(details[3].some(d => /SEARCH word_spellings USING COVERING INDEX word_spelling_spelling/.test(d))).toBe(true);
-    expect(details[4].some(d => /SEARCH word_spellings USING COVERING INDEX word_spelling_spelling/.test(d))).toBe(true);
-    expect(details[5]).toContain('SEARCH words USING PRIMARY KEY (id>? AND id<?)');
   });
 });
