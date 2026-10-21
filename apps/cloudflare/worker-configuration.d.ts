@@ -3,7 +3,6 @@
 // Runtime types generated with workerd@1.20260918.1 2026-09-22 nodejs_compat
 interface __BaseEnv_Env {
 	MEDIA: R2Bucket;
-	DB: D1Database;
 	ATLAS: D1Database;
 	ATLAS_RUNS: D1Database;
 	ACCOUNTS: D1Database;

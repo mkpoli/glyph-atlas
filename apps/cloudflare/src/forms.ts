@@ -20,13 +20,6 @@ const basis = (row: { glyph_set: number; form: string | null; issue?: string | n
 /** Whether a form is written as a well-formed ideographic description sequence. */
 export const isDescription = (value: string) => isSequence(value) && formProblem(value) === null;
 
-// A CODH record as published, shown with the form a person has since named for it.
-export async function withForm(env: Env, record: Json, tools: Pick<FormTools, 'codePoints'>): Promise<Json> {
-  const row = await env.DB.prepare(`SELECT ${FORM_COLUMNS} FROM form_units WHERE id=?`).bind(record.id).first<UnitForm>();
-  return formed(record, row, tools);
-}
-// The `form_units` columns `formed` reads, for a query that joins them to its own rows.
-export const FORM_COLUMNS = 'id,cluster,clustered,form,glyph_set,cluster_form,issue,issue_character,written_family';
 export type { UnitForm };
 export function formed(record: Json, row: UnitForm | null, tools: Pick<FormTools, 'codePoints'>): Json {
   if (row?.clustered === 0) {
