@@ -391,7 +391,8 @@ def publication(dry_run, read=None):
     for name in pool_sizes:
         upload([f for f in sampled if f.parent.name == name], f"{PUB_PREFIX}{pub}/gallery/{name}/")
     upload([f for f in sampled if f.name == "index.json.gz"], f"{PUB_PREFIX}{pub}/gallery/")
-    query("glyph-atlas-v3", "; ".join(site_row(k, v) for k, v in site.items()))
+    if site:
+        query("glyph-atlas-v3", "; ".join(site_row(k, v) for k, v in site.items()))
     # The pointer moves last, once everything it names is in place.
     upload([pointer], POINTER_PREFIX)
     last.write_text(json.dumps({"pub": pub, "digest": digest}) + "\n")
