@@ -191,7 +191,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    tombstone. `load_history.py` then applies `0003_history.sql` (which numbers the mark states `seen`
    and `hard`; the mirror takes the same numbers), `0008_representations.sql` (form anchors),
    `0009_undo.sql` (what an undo restores), and `0010_people.sql` (the labels each event showed and
-   named, the corpus rows and flags). It loads every translated row in stamped parts, sets
+   named, the corpus rows and flags), and `0013_forms.sql` (`form_bases`, the character before a
+   forms decision moved a glyph). It loads every translated row in stamped parts, sets
    each pending marked crop's state to its mark one revision on with an event, and writes
    `out/history-cuts.sqlite` for `publish.py` to give 496 crops their earlier cut, 36 the other encodings
    of their current cut (35 corpus glyphs whose source revision changed under the same box, one collected
@@ -417,7 +418,6 @@ answers:
   `rejections`), including `writes_word` claims;
 - reviews (`events`, `submissions`, `skips`, `seen`, `actors`), accounts (`user`, `session`,
   `account`, `account_profiles`, `passkey`, `verification`, `rateLimit`) and `favourites`;
-- `form_bases` (a corpus glyph's character and family before a form decision moved it);
 - `representations` (form anchors), which form claims write: they move with the forms;
 
 The Worker read path builds on the catalogue stamps of #763 (`catalogueStamps`, `catalogueKey`), so a

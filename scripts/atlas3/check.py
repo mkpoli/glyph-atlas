@@ -32,7 +32,7 @@ remote is read.
 History (decision record 0006), when `out/history.sqlite` exists (history.py):
 - Rows: every source row of every history table (actors, submissions, events, seen, skips,
   favourites, the claim ledger, the representations forms name, rejections, form decisions,
-  corpus_follow, written forms, suspects and shapes) is in it, every translated field equal to one derived again from the source copies (actor
+  corpus_follow, form_bases, written forms, suspects and shapes) is in it, every translated field equal to one derived again from the source copies (actor
   and submission keys, times in ms, crop through the mirror, cut from the live record's box and
   crop_versions), or left out for a reason history-report.txt lists exactly as often; and it holds no
   other rows. An actor with no source row has no user, via or time; actor_stats are recounted as the
@@ -1126,6 +1126,20 @@ def check_history(report, name, query=None):
             continue
         t.compare(f"followed {r['id']} ({cid})", {"crop": cid}, one("SELECT crop FROM corpus_follow WHERE crop=?", cid))
     t.done()
+
+    # A followed glyph's first character, as a grapheme id.
+    t = Table(report, history, "form_bases", listed)
+    for r in stream("form_bases", "id, character"):
+        cid = crop(r["id"])
+        if cid is None:
+            t.account("crop unknown")
+            continue
+        character = char_text(r["character"]) or None
+        found = atlas.execute("SELECT id FROM graphemes WHERE text=?", (character,)).fetchone() if character else None
+        want = {"char": found[0] if found else None}
+        t.compare(f"base of {r['id']} ({cid})", want, one("SELECT char FROM form_bases WHERE crop=?", cid))
+    t.done()
+
 
     # Corpus glyphs the old site held a row for, numbered in the order of those rows, with any flag an
     # admin set on one.

@@ -9,7 +9,7 @@ part is confirmed by its stamp in `imports` and replayed on the local copy.
 1. Each migration in MIGRATIONS (stamps `migration:<number>`), on D1 and the local copy, once;
    the mirror's `codes` take the two mark states 0003 numbers, so the publisher never numbers them
    differently. 0008 holds form anchors. 0009 gives events what an undo restores; 0010 the labels each showed and named, and
-   the corpus rows and flags.
+   the corpus rows and flags; 0013 keeps the character before a forms decision.
 2. The rows of every history table.
 3. Marks: a pending crop with a mark takes the mark as its state, one revision past its own, with an
    event at the round that marked it. A mark on a crop that is not pending is left out, as the old
@@ -38,13 +38,14 @@ SCHEMA = CF / "migrations-atlas"
 # Tables in the order their rows load: who and which request first, then what names them.
 TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats", "suspects", "shapes",
           "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "current_claims",
-          "ledger_submissions", "rejections", "representations", "forms", "form_decisions", "corpus_follow", "written_forms", "corpus_rows",
+          "ledger_submissions", "rejections", "representations", "forms", "form_decisions", "corpus_follow", "form_bases", "written_forms", "corpus_rows",
           "corpus_flags")
 # Each migration the translated rows need, in order, and a query that finds it in the local copy.
 MIGRATIONS = (("0003", "0003_history.sql", "SELECT 1 FROM sqlite_master WHERE name='actors'"),
               ("0008", "0008_representations.sql", "SELECT 1 FROM sqlite_master WHERE name='representations'"),
               ("0009", "0009_undo.sql", "SELECT 1 FROM pragma_table_info('events') WHERE name='reverses'"),
-              ("0010", "0010_people.sql", "SELECT 1 FROM sqlite_master WHERE name='corpus_rows'"))
+              ("0010", "0010_people.sql", "SELECT 1 FROM sqlite_master WHERE name='corpus_rows'"),
+              ("0013", "0013_forms.sql", "SELECT 1 FROM sqlite_master WHERE name='form_bases'"))
 GROUP = 500
 
 

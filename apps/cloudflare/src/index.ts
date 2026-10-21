@@ -5,7 +5,8 @@ import { body, canonical, compose, graphemeKey, graphemeText, integer, literal, 
 export { canonical, compose, literal, single } from './input';
 import { RECORD_MAX, readRecords, recordKey, type RecordPointer } from './records';
 export { recordRanges } from './records';
-import { formsRoute, withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
+import { withForm, formed, FORM_COLUMNS, type FormTools, type UnitForm } from './forms';
+import { formsRoute } from './routes/forms';
 import { similarCrops } from './similar';
 import { cropParam, movedPathResponse } from './atlas3Crops';
 import { drawingFile } from './drawings';
@@ -32,7 +33,6 @@ import { cropRoute } from './routes/crop';
 import { runsRoute } from './routes/runs';
 import { datingOf, documentOf } from './dating';
 import { cards, characterCard, characterPage, chronology, byCodePoint, citeCharacter, corpusOccurrences, decades, describedCard, jamoCard, occurrences, type CharacterTools } from './routes/character';
-export { leastTypicalQuery } from './forms';
 export { datingQuery, tallyDates } from './dating';
 import * as browse from './routes/browse';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
@@ -239,8 +239,7 @@ const OPEN = { 'access-control-allow-origin': '*' };
 const opened = (path: string) => path.startsWith('/atlas/documents/') || path.startsWith('/atlas/cite/');
 // A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
 const characterTools: CharacterTools = { literal, jamoSyllable };
-const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp,
-  family:async(env,char)=>(await known(env,char).catch(()=>null))?.data.grapheme?.code_point||cp(char)};
+const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp};
 // What the ledger's routes need of the rest of the Worker (`routes/claims.ts`).
 const claimTools: ClaimTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,canonical:value=>canonical(value),literal,integer};
 // Undo a submission as `actor`: each crop goes back to what it was before, unless a later review has

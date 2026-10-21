@@ -26,6 +26,7 @@ COLUMNS = {
     "forms": "id,anchor,created_by,created_at",
     "representations": "id,scheme,value,namespace,version",
     "corpus_follow": "id",
+    "form_bases": "id,character,family",
     "unit_suspects": "id,p,reads_as,label,box",
     "unit_shapes": "id,shape_order",
     "unit_marks": "id,mark",
@@ -281,6 +282,16 @@ def test_a_box_no_cut_has_on_a_crop_with_two_earlier_boxes_is_not_guessed(layout
     code, out = history(monkeypatch, root)
     assert code == 1
     assert out.execute("SELECT count(*) FROM seen").fetchone()[0] == 0
+
+
+def test_a_followed_glyphs_first_character_moves_as_a_grapheme(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    sources(root, form_bases=[("codh:g1", "か", "U+304B"), ("ex:gone", "あ", "U+3042")])
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    ka = atlas.execute("SELECT id FROM graphemes WHERE text='か'").fetchone()[0]
+    assert out.execute("SELECT crop, char FROM form_bases").fetchall() == [(ids(root)["codh:g1"], ka)]
 
 
 def test_an_event_keeps_its_recorded_issue_and_what_it_replaced(layout, monkeypatch):  # noqa: F811

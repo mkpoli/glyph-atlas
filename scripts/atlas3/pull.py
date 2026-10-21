@@ -62,6 +62,7 @@ TABLES = {
     "forms": ("id,anchor,created_by,created_at", ["id"], 8000),
     "representations": ("id,scheme,value,namespace,version", ["id"], 8000),
     "corpus_follow": ("id", ["id"], 8000),
+    "form_bases": ("id,character,family", ["id"], 8000),
     "aliases": ("query,code_point,rank", ["rowid"], 15000),
     # The model votes and the image they were read on, and each tile's paper colour and size, apart from
     # `units` so the crops' copy keeps its size; and the forms tool's clustering.

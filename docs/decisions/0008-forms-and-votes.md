@@ -53,8 +53,9 @@ filters on.
   refuses a decision whose list no `form_clusters` row holds, so none names a list already deleted.
 - `form_state` holds `lists`, the load in place (it keys cached forms answers), and `loading`, set
   while a load sends its rows; a trigger refuses decisions meanwhile.
-- The load recomputes each family's `count`, `assigned` and `rejected`. The Worker's recount after a
-  decision is not built yet.
+- The load recomputes each family's `count`, `assigned` and `rejected`. A decision recounts its
+  family's `assigned` and `rejected` in its own batch, from `form_clusters` and `form_glyphs`
+  (`apps/cloudflare/src/routes/forms.ts`).
 - The forms tool's form of a glyph is not a crop's written form, which is its `has_form` slot in
   `current_claims` (decision record 0005); a forms decision never writes it, and `crops.form` stays
   empty.
@@ -86,12 +87,19 @@ From the dry run on 20 October 2026 (110,292 collected crops' readings, the 5828
 2. The family view reading every cluster list: the family index object. Built.
 3. Member previews (`tone`, `image_size`): carried in the list and index entries. Built. A member's
    document comes from `crops.book`.
-4. Decisions copying the cluster's glyphs: `form_decisions.list`. Schema built; the Worker's decision
-   route is not ported.
+4. Decisions copying the cluster's glyphs: `form_decisions.list`. Built: a cluster decision names
+   its list and leaves `units` and `crops` empty; a glyph decision names its crops in `crops` and
+   their public ids in `units`.
 5. A corpus glyph's character following its decided form (`corpus_follow`, `form_bases`): the queue
    `corpus_follow` (decision record 0006) names the crops whose `crops.char` follows a decision, and a
-   `form_bases(crop, char)` table keeps the character before the first follow so a withdrawn form
-   restores it. Not built; it comes with the Worker's forms routes.
+   `form_bases(crop, char)` table (migration 0013) keeps the character before the first follow so a
+   withdrawn form restores it. Built in the Worker: a decision lists its unnamed corpus glyphs (kind 1,
+   revision 0), and each drain batch moves up to 500 of them in one transaction, with their counts
+   in `tally` in the current generation. The history load moves the old database's `form_bases`
+   rows (crop through the mirror, character as its grapheme). A publish never writes an unnamed
+   corpus glyph's new upstream character over a followed one: a glyph with a `form_bases` row keeps
+   its character and the new one becomes its base, which a withdrawn form restores; any other unnamed
+   glyph takes it. The answers a publication writes do not yet count followed characters.
 6. Republishing the clustering: `form_state` and the trigger are built. After the cutover the
    clustering load reads `work/forms/current` (`clusters.json`, `units.parquet`) in place of the old
    database's copies, and takes glyph-atlas-v3's own `form_decisions`, carrying each cluster decision

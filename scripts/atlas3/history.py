@@ -144,6 +144,7 @@ def create(db):
         m = re.match(r"CREATE (?:TABLE (\w+)|INDEX \w+ ON (\w+))", body)
         if m and (m[1] or m[2]) in ("events", "skips", "codes", "actor_stats"):
             db.execute(body)
+    db.executescript((SCHEMA / "0013_forms.sql").read_text())
     for migration in MIGRATIONS:
         db.executescript((SCHEMA / migration).read_text())
     for s in statements(SCHEMA / "0010_people.sql"):
@@ -320,7 +321,7 @@ def main():
         ("current_claims", "subject, predicate, scope, slot", None), ("ledger_submissions", "id", None),
         ("rejections", "submission", None), ("forms", "id", None), ("representations", "id", None),
         ("form_decisions", "seq", None),
-        ("corpus_follow", "id", None), ("written_forms", "id", None), ("unit_suspects", "id", None),
+        ("corpus_follow", "id", None), ("form_bases", "id", None), ("written_forms", "id", None), ("unit_suspects", "id", None),
         ("unit_shapes", "id", None), ("unit_marks", "id", None)]}
 
     # Actors: every actor text any table names, in key order.
@@ -685,6 +686,23 @@ def main():
         follow.append((crops.ids[r["id"]],))
     insert("corpus_follow", follow)
     report.tables["corpus_follow"]["out"] = len(follow)
+
+    # A corpus glyph's character before a forms decision first moved it: a glyph the mirror lacks has no
+    # crop to restore, and a character with no grapheme stops the load.
+    report.table("form_bases", len(src["form_bases"]))
+    bases = []
+    for r in src["form_bases"]:
+        if r["id"] not in crops.ids:
+            report.drop("form_bases", "crop unknown")
+            continue
+        character = char_text(r["character"]) or None
+        if character is not None and character not in graphemes:
+            report.stop("form_bases", "character has no grapheme", f"{r['id']}: {character!r}")
+            continue
+        bases.append((crops.ids[r["id"]], graphemes.get(character) if character else None))
+    insert("form_bases", bases)
+    report.tables["form_bases"]["out"] = len(bases)
+
 
     # Corpus glyphs the old site held a row for, in the order the rows were written: the first review,
     # round, claim or flag that named each. A flag an admin set keeps its finding.

@@ -286,6 +286,7 @@ class Mirror:
         if suspect is not None:
             row["flags"] = (row["flags"] & ~SUSPECT) | (SUSPECT if suspect else 0)
         changed = []
+        page_changed = False
         if old is None:
             self.emit("crops", CROP_COLS, tuple(row[c] for c in CROP_COLS), page=pid)
         else:
@@ -307,13 +308,42 @@ class Mirror:
                 self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in reviewed)} "
                                           f"WHERE id={cid} AND revision={old['revision']};")
                 self.guarded.append(cid)
+            if old["kind"] == 1 and given.get("kind") == 1 and not review_columns and "char" in given:
+                # A followed glyph retains its character; the incoming character becomes the base
+                # restored when its decision is withdrawn. Stage exactly what the remote guards allow,
+                # since the run projection below reads these local crops.
+                upstream = row["char"]
+                base = self.atlas.execute("SELECT char FROM form_bases WHERE crop=?", (cid,)).fetchone()
+                # The legacy drain retained bases after withdrawal. Once no decision is active, a
+                # publication supplies the new upstream character, so that old base can be released.
+                active = ("EXISTS(SELECT 1 FROM crops c LEFT JOIN form_glyphs g ON g.crop=c.id "
+                          "LEFT JOIN form_clusters k ON k.id=c.cluster WHERE c.id=? AND "
+                          "(g.crop IS NOT NULL OR k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue<>'mixed')))")
+                if base is not None and not self.atlas.execute(f"SELECT {active}", (cid,)).fetchone()[0]:
+                    self.page_sql[pid].append(f"DELETE FROM form_bases WHERE crop={cid} AND NOT {active.replace('?', str(cid))};")
+                    self.atlas.execute("DELETE FROM form_bases WHERE crop=?", (cid,))
+                    base = None
+                    page_changed = True
+                base_changed = base is not None and base[0] != upstream
+                crop_changed = base is None and old["revision"] == 0 and old["char"] != upstream
+                if base_changed or crop_changed:
+                    self.page_sql[pid].append(f"UPDATE form_bases SET char={lit(upstream)} WHERE crop={cid} AND char IS NOT {lit(upstream)};")
+                    self.atlas.execute("UPDATE form_bases SET char=? WHERE crop=?", (upstream, cid))
+                    self.page_sql[pid].append(f"UPDATE crops SET char={lit(upstream)} WHERE id={cid} AND revision=0 "
+                                              f"AND NOT EXISTS (SELECT 1 FROM form_bases WHERE crop={cid});")
+                    # Conditional row writes travel with the page even when only its base changed.
+                    page_changed = True
+                if crop_changed:
+                    changed.append("char")
+                else:
+                    row["char"] = old["char"]
             if "char" in changed:
                 self.relabelled.append(cid)
             if changed:
                 self.atlas.execute(f"UPDATE crops SET {','.join(f'{c}=?' for c in changed)} WHERE id=?",
                                    [row[c] for c in changed] + [cid])
         bundle = {k: v for k, v in bundle.items() if v is not None}
-        self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed))
+        self.touched_pages[pid][cid % PAGE] = (bundle, old is None or bool(changed) or page_changed)
 
     def unmark(self, cid):
         """A crop re-cut while marked seen or hard: rounds showed or skipped its old box, so at the new
