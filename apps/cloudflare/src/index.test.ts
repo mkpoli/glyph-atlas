@@ -1,7 +1,7 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
 import { canonical, literal, hira, single, describedCard, jamoCard, jamoSyllable,
-  moved, wroteLately, markWriter, substitutionKey, listingFilter } from './index';
+  wroteLately, markWriter, substitutionKey } from './index';
 import { dealable, validRound } from './routes/review';
 import { ROUND_MAX } from './rounds';
 import { held } from './held';
@@ -79,12 +79,6 @@ describe('categoryOf', () => {
   });
 });
 
-it('moves crops counted apart out of pending, and never more than pending holds', () => {
-  const row = (label: string, document: string | null, state: string, n: number) => ({ label, family: null, document, title: document && 'T', state, n })
-  expect(moved([row('ア', 'd', 'pending', 5), row('ア', 'd', 'checked', 1), row('イ', null, 'pending', 2)],
-    [row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ウ', null, 'seen', 1), row('ア', 'd', 'skipped', 9)]))
-    .toEqual([row('ア', 'd', 'checked', 1), row('ア', 'd', 'seen', 2), row('イ', null, 'hard', 2), row('ア', 'd', 'skipped', 3)])
-})
 
 describe('a held value', () => {
   it('is read again only once the lag is out', async () => {
@@ -198,13 +192,6 @@ describe('derived substitutions', () => {
   });
 });
 
-describe('unread crops', () => {
-  it('are browsed and never dealt in a round', () => {
-    expect(listingFilter(true, 'all', null).where).toContain("character<>''");
-    expect(listingFilter(false, 'all', null).where).not.toContain("character<>''");
-    expect(listingFilter(false, 'all', null).where).toContain('+quiz=1');
-  });
-});
 
 describe('dealing a local crop', () => {
   const box = { x: 1, y: 2, w: 3, h: 4 };

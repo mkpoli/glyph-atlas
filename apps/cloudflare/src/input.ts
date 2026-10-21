@@ -62,3 +62,9 @@ export function graphemeKey(value: string | null | undefined): string | null {
   if (!GRAPHEME_KEY.test(key) || key.split(' ').some(p => parseInt(p.slice(2), 16) > 0x10FFFF)) throw new Problem(422, 'Invalid grapheme.');
   return key;
 }
+
+export function integer(q: URLSearchParams, key: string, fallback: number, max = 1000000) {
+  const n = Number(q.get(key) ?? fallback);
+  if (!Number.isSafeInteger(n) || n < 0 || n > max) throw new Problem(422, `Invalid ${key}.`);
+  return n;
+}

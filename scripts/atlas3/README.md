@@ -101,14 +101,30 @@ One publish runs at a time. The first build's bundles went to R2 with
 
 ## Publication answers
 
-`answers.py` (dry run with `--dry-run`) publishes what the galleries count. It bumps `generation`
-in `glyph-atlas-v3` from G to G + 1, writes per-character counts from the local copy to
-`v3/pub/<pub>/counts/<char % 256>.json.gz` and the unread crops' counts per script to
-`v3/pub/<pub>/unread.json.gz`, then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A cell
-counts the crops of one kind, style, state, withheld flag, witness decade and visual group, in the
-codes of the `codes` table. It runs after a publish, under the same lock, and refuses while a publish
-is unfinished or while the database holds review events, which it cannot absorb yet. Each run costs
-one D1 row and 258 R2 objects.
+`answers.py` (dry run with `--dry-run`) publishes what the galleries, the browse page and the homepage
+count. It bumps `generation` in `glyph-atlas-v3` from G to G + 1, writes from the local copy, under
+`v3/pub/<pub>/`:
+
+- `counts/<char % 256>.json.gz`, per character, and `unread.json.gz`, the unread crops per script: one
+  cell per kind, style, state, withheld flag, witness decade and visual group, in the codes of the
+  `codes` table;
+- `facets.json.gz`: the collected crops per character, book, production, category, review priority,
+  state and withheld flag, with each character's text and grapheme key (the browse page's and the
+  rounds' counts);
+- `corpus.json.gz`: the corpus glyphs per character, production, state and withheld flag;
+- `books.json.gz`: each book's collected crops and corpus glyphs (the statistics of the dates);
+- `gallery/`: the homepage sample, the corpus glyphs below 1 in 64 of the shuffle range and every
+  glyph of Hangul, 구결 and Tangut, records copied in, in shards by shuffle;
+- the `site` values `collection` (the collection's status, as `publish_collection_status.py` also
+  writes between publications) and `corpus_index` (work/corpus-index/index.json).
+
+then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A sample glyph's record is read once from
+its pack through R2's S3 endpoint (the rclone remote's keys) and kept in `out/records.sqlite`; the
+reads come before the bump, so a failed read changes nothing. `publish.py` runs it under its lock
+after every publish that sent something, so the counts follow each publish. It refuses while a publish
+is unfinished or while the database holds review events of a generation above 0 (the history load's are
+absorbed), which it cannot absorb yet, and checks before the bump and again after it. On the local copy of 20 October a run costs one D1 row and 399 R2 objects, and
+the sample holds 24,868 glyphs and the Hangul pool 1,750.
 
 ## Image key map
 
@@ -191,7 +207,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    and loads only what differs from the local copy, in stamped parts. A book's title comes from its
    first page bundle, else from the source the first of that bundle's crops names, else from its
    corpus publication. The corpus glyphs per book and the homepage
-   sample are derived from the crops by `answers.py` (*not built*), so neither is copied. Keeping the
+   sample are derived from the crops by `answers.py`, so neither is copied. Keeping the
    facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
    ainu-records' character lists and the catalogue's site values still write the old database.
    The date claims on documents that are not books stay in `assertions` with the history (11,998 of

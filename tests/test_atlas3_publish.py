@@ -12,14 +12,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "atlas3
 PAGE = 1 << 24
 
 
-def unit(id, page, box, character="あ", state="pending", revision=0, quiz=1, document="book:a"):
+def unit(id, page, box, character="あ", state="pending", revision=0, quiz=1, document="book:a", priority=1):
     data = {"page_id": page, "box": box, "image": f"/atlas/media/{id.replace(':', '')}.webp", "label": character}
-    return (id, "local", character, None, "printed", "kana", state, revision, quiz, 1, document, "unassessed", None,
+    return (id, "local", character, None, "printed", "kana", state, revision, quiz, priority, 1, document, "unassessed", None,
             json.dumps(data))
 
 
-UNITS = ("id", "origin", "character", "visual_group", "production", "category", "state", "revision", "quiz", "shuffle",
-         "document", "style", "written_form", "data")
+UNITS = ("id", "origin", "character", "visual_group", "production", "category", "state", "revision", "quiz", "priority",
+         "shuffle", "document", "style", "written_form", "data")
 
 
 def write_source(root, name, cols, rows):
@@ -79,7 +79,7 @@ def layout(tmp_path, monkeypatch):
         unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
         unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", state="checked", revision=3),
         unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う"),
-        ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 2, 0, 1, "codh:b", "unassessed", None, "{}"),
+        ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 2, 0, 1, 1, "codh:b", "unassessed", None, "{}"),
     ])
     write_source(tmp_path, "corpus_units", ("id", "character", "family", "visual_group", "shuffle", "object", "offset",
                                             "size", "production", "named", "style", "document", "label"),
@@ -101,6 +101,9 @@ def layout(tmp_path, monkeypatch):
     monkeypatch.setattr(publish, "send", remote.send)
     monkeypatch.setattr(publish, "query", remote.query)
     monkeypatch.setattr(publish, "upload", remote.upload)
+    # A publish ends by publishing its answers; test_atlas3_answers.py runs them.
+    remote.answered = 0
+    monkeypatch.setattr(publish, "answer", lambda: setattr(remote, "answered", remote.answered + 1))
     return tmp_path, publish, remote
 
 
@@ -347,7 +350,7 @@ def test_a_corpus_overlay_sets_the_reviewed_style(layout, monkeypatch, tmp_path)
     db.execute("INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'corpus-0001.bin',0,100,'printed',0,'unassessed','codh:b',NULL)")
     db.execute(f"CREATE TABLE units({','.join(UNITS)})")
     db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})",
-               ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 5, 0, 1, "codh:b", "cursive", None, "{}"))
+               ("codh:g1", "corpus", "か", None, "printed", "kana", "checked", 5, 0, 1, 1, "codh:b", "cursive", None, "{}"))
     db.commit()
     run(publish, monkeypatch, path)
     styles = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, code FROM codes WHERE field='style'"))
@@ -660,6 +663,15 @@ def test_a_publish_needing_a_statement_over_d1s_limit_allocates_nothing(layout, 
     with pytest.raises(SystemExit, match="over D1's limit"):
         run(publish, monkeypatch, tmp_path / "c.sqlite")
     assert "ex:new" not in ids(root)
+
+
+def test_a_publish_that_sent_something_publishes_the_answers_after(layout, monkeypatch, tmp_path):
+    _root, publish, remote = layout
+    run(publish, monkeypatch, catalogue(tmp_path / "dry.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お")]), "--dry-run")
+    run(publish, monkeypatch, catalogue(tmp_path / "same.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ")]))
+    assert remote.answered == 0
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お")]))
+    assert remote.answered == 1
 
 
 def entry_of(root, cid):

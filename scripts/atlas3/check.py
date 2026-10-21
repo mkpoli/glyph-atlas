@@ -204,6 +204,15 @@ def check_crops(report, name):
         if g[:6] + g[7:] != w[:6] + w[7:]:
             diffs.append(f"{c[0]} ({cid}): live {w}, new layout {g}")
     report.check("every crop's row equals its live record", diffs)
+    if "priority" not in {c[1] for c in source("units").execute("PRAGMA table_info(units)")}:
+        report.skip("every collected crop has its live unit's review priority", "the units copy has no priority; pull.py --fresh units")
+    elif "priority" not in {c[1] for c in atlas.execute("PRAGMA table_info(crops)")}:
+        report.skip("every collected crop has its live unit's review priority", "the local copy lacks migration 0011; the next publish applies it")
+    else:
+        priority = dict(atlas.execute("SELECT id, priority FROM crops WHERE kind = 0"))
+        report.check("every collected crop has its live unit's review priority",
+                     (f"{t} ({id_of[t]}): live {p}, new layout {priority[id_of[t]]}" for t, p in latest(source("units"), "units", "id, priority")
+                      if t in id_of and id_of[t] in priority and priority[id_of[t]] != p))
 
     # Bundles.
     bundles = {}
