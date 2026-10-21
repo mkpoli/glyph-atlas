@@ -11,7 +11,9 @@ Every bulk write to D1 happens once and only where needed:
   and the copies. One UPDATE per crop whose values differ from the local copy sets every filled
   column at once, so a crop row is written once however many columns change.
 - Then each index of `migrations-atlas/indexes-cutover.sql` the local copy lacks, in the file's order,
-  is built once over the filled rows; no index is kept up row by row during the fill.
+  is built once over the filled rows; no index is kept up row by row during the fill. An index on a
+  table the local copy lacks yet (`book_dates`, which books.py creates after the fill) waits for the
+  next fill, which builds it alone.
 
 `family` (migration 0012): the family a crop is filed under, the grapheme of the family its record
 names (`units.family`, a reviewed corpus glyph's overlay before `corpus_units.family`), for every crop:
@@ -149,8 +151,11 @@ def statements(atlas, mirror):
             for crop, values in sorted(by_crop.items())]
     groups = [rows[i:i + GROUP] for i in range(0, len(rows), GROUP)]
     built_already = {r[0] for r in atlas.execute("SELECT name FROM sqlite_master WHERE type='index'")}
-    indexes = [s for s in index_statements() if re.match(r"CREATE INDEX (\w+)", s)[1] not in built_already]
-    return groups + [[s] for s in indexes], counts, len(by_crop), indexes
+    tables = {r[0] for r in atlas.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    missing = [s for s in index_statements() if re.match(r"CREATE INDEX (\w+)", s)[1] not in built_already]
+    indexes = [s for s in missing if re.match(r"CREATE INDEX \w+ ON (\w+)", s)[1] in tables]
+    waiting = [s for s in missing if s not in indexes]
+    return groups + [[s] for s in indexes], counts, len(by_crop), indexes, waiting
 
 
 def index_statements():
@@ -221,11 +226,15 @@ def main():
     if source_run and atlas.execute("SELECT lists,loading FROM form_state WHERE id=0").fetchone() != (source_run, 1):
         sys.exit("the deferred crop facts state no longer matches its handoff")
     # Validate every source and list before any remote schema or row changes.
-    groups, counts, crops, indexes = statements(atlas, mirror)
+    groups, counts, crops, indexes, waiting = statements(atlas, mirror)
     if args.send:
         migrate(atlas)
     report = "".join(f"{column}: {n} crops change\n" for column, n in counts.items())
     report += f"crop rows written: {crops}\nindexes to build: {', '.join(re.match(r'CREATE INDEX (\w+)', s)[1] for s in indexes) or 'none'}\n"
+    if waiting:
+        # An index on a table a later load creates (book_dates, books.py) is built by the next fill.
+        report += "indexes waiting for their table: " + ", ".join(
+            "{} on {}".format(*re.match(r"CREATE INDEX (\w+) ON (\w+)", s).groups()) for s in waiting) + "\n"
     (OUT / "fill-report.txt").write_text(report)
     print(report, end="", flush=True)
     if source_run:
