@@ -206,3 +206,25 @@ def test_saved_fill_checks_plan_integrity_and_database_ownership_before_resuming
         fill(publish, remote, monkeypatch, "--send")
     assert mirror.execute("SELECT run FROM pending").fetchone()[0] == marker
     assert remote.dbs["glyph-atlas-v3"].execute("SELECT loading FROM form_state").fetchone()[0] == 1
+
+
+def test_an_index_on_a_table_a_later_load_creates_waits_for_the_next_fill(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    unfilled(root, remote)
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    schema = local.execute("SELECT sql FROM sqlite_master WHERE name='book_dates'").fetchone()[0]
+    for db in (local, remote.dbs["glyph-atlas-v3"]):
+        db.execute("DROP TABLE book_dates")
+        db.commit()
+    fill(publish, remote, monkeypatch, "--send")
+    assert "indexes waiting for their table: book_date_axis on book_dates" in (root / "out" / "fill-report.txt").read_text()
+    assert set(CUTOVER) - {"book_date_axis"} <= {r[0] for r in local.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    # books.py creates the table; the next fill builds the index alone.
+    for db in (local, remote.dbs["glyph-atlas-v3"]):
+        db.execute(schema)
+        db.commit()
+    fill(publish, remote, monkeypatch, "--send")
+    report = (root / "out" / "fill-report.txt").read_text()
+    assert "crop rows written: 0\nindexes to build: book_date_axis\n" in report
+    for db in (local, remote.dbs["glyph-atlas-v3"]):
+        assert db.execute("SELECT 1 FROM sqlite_master WHERE name='book_date_axis'").fetchone()
