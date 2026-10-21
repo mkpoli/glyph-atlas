@@ -765,9 +765,10 @@ def check_written(report, query=None):
         if len(missing) != dropped[table]:
             problems += [f"{table} {k}: written on the old site, not in the new layout" for k in missing[:SHOWN]]
             problems.append(f"{table}: {len(missing)} rows missing, history-report.txt leaves out {dropped[table]}")
-        times = [ms(v) if in_ms else v for v in old.values() if v is not None]
+        # The newest time among the old rows the layout keeps.
+        times = [ms(v) if in_ms else v for k, v in old.items() if v is not None and k in new]
         newest_old, newest_new = max(times, default=None), max((v for v in new.values() if v is not None), default=None)
-        if newest_old != newest_new and not missing:
+        if newest_old != newest_new:
             problems.append(f"{table}: newest time {newest_old} on the old site, {newest_new} in the new layout")
         figures.append(f"{table}: {len(old)} old, {len(new)} new, {len(missing)} left out; newest {newest_old}")
     report.info("rows the old site wrote, and the new layout's", figures)
