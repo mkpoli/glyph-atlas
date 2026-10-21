@@ -12,8 +12,8 @@ read:
   else the one its corpus publication gave;
 - `book_dates`: both dating axes of each book, less the claim list and the export stamp (the claims
   stay in `assertions`);
-- `book_characters`: each occurrence by its integer crop id; a character whose unit the mirror lacks
-  stops the run. Whether the site shows it with its review state is derived when a route reads it
+- `book_characters`: each occurrence by its integer crop id; one whose unit the site never had (the
+  mirror lacks it) keeps its text id in `unit`, as the old site listed it. Whether the site shows it with its review state is derived when a route reads it
   (the query is in 0005), since every round changes it;
 - `site`: the publication's `collection`, `corpus_index`, `review_epoch`, `variant_sources` and
   `word_sources`.
@@ -48,7 +48,7 @@ from publish import applied, lit, query, send
 SITE_KEYS = ("collection", "corpus_index", "review_epoch", "variant_sources", "word_sources")
 DATE_COLS = ("book", "axis", "kind", "start", "end", "precision", "qualifier", "uncertain", "text", "label", "status",
              "calendar", "conversion", "source")
-CHARACTER_COLS = ("book", "ord", "crop", "data")
+CHARACTER_COLS = ("book", "ord", "crop", "unit", "data")
 # Each table books.py owns, with its key.
 TABLES = {"book_dates": (DATE_COLS, ("book", "axis")), "book_characters": (CHARACTER_COLS, ("book", "ord")),
           "site": (("key", "value"), ("key",))}
@@ -132,18 +132,16 @@ def translate(atlas, mirror):
 
     characters = source("document_characters").execute(
         "SELECT document, ord, unit, data FROM document_characters ORDER BY document, ord").fetchall()
-    rows, unknown = [], []
+    rows = []
     for document, ord_, unit, data in characters:
         if (b := book(document, "characters")) is None:
             continue
         crop = mirror.execute("SELECT id FROM ids WHERE text=?", (unit,)).fetchone()
         if crop is None:
-            unknown.append(unit)
-            continue
-        rows.append((b, ord_, crop[0], data))
-    if unknown:
-        sys.exit(f"{len(unknown)} characters name no crop of the mirror: {unknown[:5]}")
-    out.executemany("INSERT INTO book_characters VALUES(?,?,?,?)", rows)
+            # The old site listed it with its text id and no review state; so does the new one.
+            count("characters naming a unit the site never had, kept by their text id")
+        rows.append((b, ord_, crop[0] if crop else None, None if crop else unit, data))
+    out.executemany("INSERT INTO book_characters VALUES(?,?,?,?,?)", rows)
 
     meta = dict(source("metadata").execute("SELECT key, value FROM metadata"))
     out.executemany("INSERT INTO site VALUES(?,?)", [(k, meta[k]) for k in SITE_KEYS if k in meta])

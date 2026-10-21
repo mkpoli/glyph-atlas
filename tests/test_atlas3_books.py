@@ -223,8 +223,10 @@ def test_a_corpus_glyph_counts_as_shown_once_a_round_showed_it(layout, monkeypat
     assert "SCAN" not in plan, plan
 
 
-def test_characters_name_known_crops(layout, monkeypatch):  # noqa: F811
+def test_a_character_of_a_unit_the_site_never_had_keeps_its_text_id(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root, characters=[("book:a", 0, "ar:gone", json.dumps({"label": "い"}))])
-    with pytest.raises(SystemExit, match="1 characters name no crop of the mirror"):
-        books(remote, monkeypatch)
+    books(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    assert [tuple(r) for r in db.execute("SELECT ord, crop, unit FROM book_characters")] == [(0, None, "ar:gone")]
+    assert "characters naming a unit the site never had, kept by their text id" in (root / "out" / "books-report.txt").read_text()

@@ -434,13 +434,13 @@ async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
 // a flagged crop's issue is its last event's (`reading`, the name before the rename, as `character`).
 // One page costs a key range of `book_characters`, one `crops` row per occurrence and those probes.
 const CHARACTERS_PAGE = 1000;
-export const bookCharactersQuery = () => `SELECT c.ord,c.crop,c.data,g.text AS character,s.key AS state,k.revision-${MARKS('k')} AS revision,
+export const bookCharactersQuery = () => `SELECT c.ord,c.crop,c.unit,c.data,g.text AS character,s.key AS state,k.revision-${MARKS('k')} AS revision,
   CASE WHEN s.key='flagged' THEN ${ISSUE('c.crop')} END AS issue,
   (k.kind=0 OR (k.kind=1 AND (EXISTS (SELECT 1 FROM seen WHERE crop=c.crop) OR EXISTS (SELECT 1 FROM skips WHERE crop=c.crop)
     OR EXISTS (SELECT 1 FROM events WHERE crop=c.crop)))) AS shown
   FROM book_characters c LEFT JOIN crops k ON k.id=c.crop LEFT JOIN codes s ON s.field='state' AND s.code=k.state
   LEFT JOIN graphemes g ON g.id=k.char WHERE c.book=?1 AND c.ord>=?2 ORDER BY c.ord LIMIT ?3`;
-type CharacterRow = { ord: number; crop: number; data: string; character: string | null; state: string | null; revision: number | null;
+type CharacterRow = { ord: number; crop: number | null; unit: string | null; data: string; character: string | null; state: string | null; revision: number | null;
   issue: string | null; shown: number | null };
 // Other sites read this listing from the browser, so it is served to any origin, errors included. The
 // edge copy is keyed by the catalogue version, so any review makes a new key; browsers revalidate every
@@ -465,7 +465,8 @@ async function documentCharacters(env: Env, url: URL, document: string, ctx: Exe
   }
   if (!rows.length) throw new Problem(404, 'No characters are published for this document.');
   const characters = rows.map(r => {
-    const d = JSON.parse(r.data), unit = publicId(r.crop);
+    // An occurrence of a unit the site never had is named by its text id.
+    const d = JSON.parse(r.data), unit = r.crop === null ? r.unit : publicId(r.crop);
     if (!r.shown) return { ...d, unit, atlas: false };
     const label = r.character ?? d.label, state = shownState(r.state);
     // A label a reviewer changed or confirmed on the site is the review's, not its first source's.
