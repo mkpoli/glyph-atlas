@@ -170,6 +170,30 @@ def upload(files, prefix=BUNDLE_PREFIX):
     sys.exit(f"upload to {prefix} failed; rerun to finish")
 
 
+# Whether a form decision holds crop ?: its own glyph decision, or its cluster's form or issue. A corpus
+# glyph's base is kept only while one does; history.py and check.py leave out the bases it releases.
+ACTIVE_DECISION = ("EXISTS(SELECT 1 FROM crops c LEFT JOIN form_glyphs g ON g.crop=c.id "
+                   "LEFT JOIN form_clusters k ON k.id=c.cluster WHERE c.id=? AND "
+                   "(g.crop IS NOT NULL OR k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue<>'mixed')))")
+
+
+def releases_base(atlas, overlay):
+    """Whether a publish releases a corpus glyph's base: no form decision holds the glyph and no review
+    overlay (a `units` row of origin 'corpus', text ids in `overlay`) speaks for it. Before the crop facts
+    load has put the decisions in the local copy, every base is kept."""
+    tables = {r[0] for r in atlas.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if not {"form_glyphs", "form_clusters"} <= tables or \
+            "cluster" not in {r[1] for r in atlas.execute("PRAGMA table_info(crops)")}:
+        return lambda cid, text: False
+
+    def released(cid, text):
+        if text in overlay:
+            return False
+        row = atlas.execute("SELECT kind FROM crops WHERE id=?", (cid,)).fetchone()
+        return row is not None and row[0] == 1 and not atlas.execute(f"SELECT {ACTIVE_DECISION}", (cid,)).fetchone()[0]
+    return released
+
+
 class Mirror:
     def __init__(self):
         self.ids = sqlite3.connect(OUT / "mirror.sqlite")
@@ -317,9 +341,7 @@ class Mirror:
                 base = self.atlas.execute("SELECT char FROM form_bases WHERE crop=?", (cid,)).fetchone()
                 # The legacy drain retained bases after withdrawal. Once no decision is active, a
                 # publication supplies the new upstream character, so that old base can be released.
-                active = ("EXISTS(SELECT 1 FROM crops c LEFT JOIN form_glyphs g ON g.crop=c.id "
-                          "LEFT JOIN form_clusters k ON k.id=c.cluster WHERE c.id=? AND "
-                          "(g.crop IS NOT NULL OR k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue<>'mixed')))")
+                active = ACTIVE_DECISION
                 if base is not None and not self.atlas.execute(f"SELECT {active}", (cid,)).fetchone()[0]:
                     self.page_sql[pid].append(f"DELETE FROM form_bases WHERE crop={cid} AND NOT {active.replace('?', str(cid))};")
                     self.atlas.execute("DELETE FROM form_bases WHERE crop=?", (cid,))

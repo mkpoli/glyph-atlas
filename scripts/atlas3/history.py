@@ -46,6 +46,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from build import HERE, OUT, PAGE, ROOT, char_text
+from publish import releases_base
 
 SHOWN = 20
 SCHEMA = ROOT / "apps/cloudflare/migrations-atlas"
@@ -720,12 +721,17 @@ def main():
     report.tables["corpus_follow"]["out"] = len(follow)
 
     # A corpus glyph's character before a forms decision first moved it: a glyph the mirror lacks has no
-    # crop to restore, and a character with no grapheme stops the load.
+    # crop to restore, a base no decision holds is one a publish releases (the old site kept such bases
+    # after a decision was withdrawn), and a character with no grapheme stops the load.
     report.table("form_bases", len(src["form_bases"]))
+    released = releases_base(crops.atlas, {t for (t,) in source("units").execute("SELECT id FROM units WHERE origin='corpus'")})
     bases = []
     for r in src["form_bases"]:
         if r["id"] not in crops.ids:
             report.drop("form_bases", "crop unknown")
+            continue
+        if released(crops.ids[r["id"]], r["id"]):
+            report.drop("form_bases", "no form decision holds the glyph; a publish releases it")
             continue
         character = char_text(r["character"]) or None
         if character is not None and character not in graphemes:

@@ -401,3 +401,23 @@ def test_a_submissions_events_are_numbered_in_its_requests_order(layout, monkeyp
     code, out = history(monkeypatch, root)
     assert code == 0
     assert [c for (c,) in out.execute("SELECT crop FROM events ORDER BY id")] == [i["ex:b1"], i["ex:a2"], i["ex:a1"]]
+
+
+def test_a_base_no_form_decision_holds_is_left_out_as_a_publish_releases_it(layout, monkeypatch):  # noqa: F811
+    root, _publish, _remote = layout
+    sources(root, form_bases=[("codh:g1", "か", "U+304B")])
+    # No review overlay speaks for the glyph, and no decision holds it.
+    db = sqlite3.connect(root / "source-units.sqlite")
+    db.execute("DELETE FROM units WHERE origin='corpus'")
+    db.commit()
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    assert out.execute("SELECT count(*) FROM form_bases").fetchone() == (0,)
+    assert "dropped (1) no form decision holds the glyph; a publish releases it" in (root / "out" / "history-report.txt").read_text()
+    # A glyph decision of its own holds it.
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    atlas.execute("INSERT INTO form_glyphs(crop, family, decision) VALUES(?, 'U+304B', 'd1')", (ids(root)["codh:g1"],))
+    atlas.commit()
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    assert out.execute("SELECT count(*) FROM form_bases").fetchone() == (1,)

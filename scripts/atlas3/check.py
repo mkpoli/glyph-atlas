@@ -82,6 +82,7 @@ from datetime import datetime
 from build import HERE, OUT, PAGE, bundle_entry, char_text
 from history import CROP_PREDICATES
 from load_history import TABLES as LOADED
+from publish import releases_base
 from run_answers import FORMS_LISTED
 from run_answers import GRID as BOOK_GRID
 
@@ -1228,10 +1229,14 @@ def check_history(report, name, query=None):
 
     # A followed glyph's first character, as a grapheme id.
     t = Table(report, history, "form_bases", listed)
+    released = releases_base(atlas, {t_ for (t_,) in source("units").execute("SELECT id FROM units WHERE origin='corpus'")})
     for r in stream("form_bases", "id, character"):
         cid = crop(r["id"])
         if cid is None:
             t.account("crop unknown")
+            continue
+        if released(cid, r["id"]):
+            t.account("no form decision holds the glyph; a publish releases it")
             continue
         character = char_text(r["character"]) or None
         found = atlas.execute("SELECT id FROM graphemes WHERE text=?", (character,)).fetchone() if character else None
