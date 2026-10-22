@@ -320,14 +320,17 @@ def test_bulk_export_checks_unselected_pages(tmp_path, http_server):
 def test_full_import_retains_volumes_sharing_one_library_item(tmp_path, http_server):
     populate(http_server)
     put(http_server, 'texts', {'total': 2, 'texts': [{'id': 11}, {'id': 12}]})
-    put(http_server, 'texts/12', detail(text_id=12))
+    # As upstream's 道教源流: one title_han, the volume only in the romanised title.
+    put(http_server, 'texts/11', {**detail(), 'title': 'Đạo giáo nguyên lưu (quyển thượng)', 'title_han': '道教源流'})
+    put(http_server, 'texts/12', {**detail(text_id=12), 'title': 'Đạo giáo nguyên lưu (quyển hạ)', 'title_han': '道教源流'})
     for n in (1, 3):
         put(http_server, f'texts/12/pages/{n}', page(n, text_id=12))
     assert run(tmp_path, http_server, limit=0) == {'documents': 2, 'pages': 4, 'page_texts': 4}
     out = tmp_path / 'corpora/viet-dien'
     docs = tables.read(out / 'documents.parquet', Document)
     pages = tables.read(out / 'pages.parquet', Page)
-    assert {d.id for d in docs} == {'viet-dien:api:11', 'viet-dien:api:12'}
+    assert {d.id: d.title for d in docs} == {'viet-dien:api:11': '道教源流 · Đạo giáo nguyên lưu (quyển thượng)',
+                                             'viet-dien:api:12': '道教源流 · Đạo giáo nguyên lưu (quyển hạ)'}
     assert {d.source_refs['viet-dien'] for d in docs} == {'d8-example'}
     assert {p.meta['viewer_url'] for p in pages} == {
         f'{vd.BASE}/read/{i}/{n}' for i in (11, 12) for n in (1, 3)

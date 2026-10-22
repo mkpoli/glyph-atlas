@@ -127,7 +127,8 @@ def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision
             refs[name] = detail[field]
     document = Document(
         id=document_id,
-        title=detail.get("title_han") or detail["title"],
+        # Volumes can share title_han (道教源流 in three volumes); the romanised title names the volume.
+        title=" · ".join(dict.fromkeys(t for t in (detail.get("title_han"), detail.get("title")) if t)),
         source_refs=refs,
         text_rights=Rights(licence=Licence.RESTRICTED, attribution=ATTRIBUTION, evidence=TERMS),
         meta={"viet_dien": {**listing, **detail}, "revision": revision,

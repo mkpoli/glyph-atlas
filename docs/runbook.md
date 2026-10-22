@@ -95,7 +95,9 @@ text supports page-level matches. The API supplies no glyph rectangles. Page
 metadata retains the correction flag when supplied and a `/read/<id>/<page>`
 citation. Document identities use the API text id because separate volumes can
 share the same library `item_id` and page numbering. The library identifier is
-retained in source references, including when several volumes share it;
+retained in source references, including when several volumes share it.
+Volumes can also share the Hán title, so a document's title is `title_han · title`,
+both verbatim; the romanised title carries the volume (quyển thượng, hạ);
 processing status such as `complete` does not establish that OCR was corrected.
 The OCR and catalogue are offered for attributed research use and carry a
 `restricted` text licence, so the corpus stays off the site: the published corpus
