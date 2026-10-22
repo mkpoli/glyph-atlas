@@ -1,7 +1,7 @@
-// A crop's form and word panels on glyph-atlas-v3: its `has_form` and `writes_word` slots in the claim
+// A crop's form, word and grapheme panels on glyph-atlas-v3: its `has_form`, `writes_word` and `has_grapheme` slots in the claim
 // ledger that hold on the crop's effective cut, with the names of the forms and words they hold. A crop is
 // named by its integer id; a claim on an earlier cut is not live (decision record 0006).
-import { PREDICATES } from './ledger';
+import { keyText, PREDICATES } from './ledger';
 
 type Json = Record<string, any>;
 const spec = PREDICATES.writes_word;
@@ -70,6 +70,19 @@ export async function cropWords(env: Env, ids: number[]): Promise<Map<number, Js
       form: formOf(m.confidence, m.scheme) }));
     const held = new Set(backing(row).map(id => methods.get(id)));
     found.set(row.crop, { status: row.status, values, methods: spec.methods!.filter(method => held.has(method)), supporting: row.supporting, by: byOf(row) });
+  }
+  return found;
+}
+
+/** Each crop's grapheme (`has_grapheme`): the status of its slot, the graphemes it names (each standing
+ *  one while disputed) with who holds each, and who holds any. A crop with no live slot is absent. */
+export async function cropGraphemes(env: Env, ids: number[]): Promise<Map<number, Json>> {
+  const found = new Map<number, Json>();
+  for (const row of await slots(env, ids, 'has_grapheme')) {
+    const held = (row.claims as Json[]).filter(c => row.status === 'disputed' ? c.standing : c.members.some((m: Json) => row.supporting.includes(m.assertion)));
+    const keys = [...new Set(valuesOf(row).flatMap((m: Json) => m.object ? [m.object as string] : []))];
+    const holders = (key: string) => [...new Set(held.filter(c => c.members.some((m: Json) => m.object === key)).map(c => c.asserted_by))];
+    found.set(row.crop, { status: row.status, values: keys.map(key => ({ grapheme: key, char: keyText(key), by: holders(key) })), by: byOf(row) });
   }
   return found;
 }

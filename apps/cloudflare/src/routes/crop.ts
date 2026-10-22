@@ -10,7 +10,7 @@ import { Problem } from '../busy';
 import { bibtex, citedVersion, cropEntry, csl, FORMATS, hayagriva, type Day, type Format } from '../citation';
 import { axisOf } from '../dating';
 import { honkokuPage } from '../honkoku';
-import { cropForms, cropWords } from '../cropPanels';
+import { cropForms, cropGraphemes, cropWords } from '../cropPanels';
 import { MARKS, cropVersions, foundCrop, recordIssue, recordState, type FoundCrop } from '../cropRecords';
 
 type Json = Record<string, any>;
@@ -56,11 +56,15 @@ export async function bookDates(env: Env, document: string | null): Promise<Json
 // The book a record is dated by: a collected crop's book, a corpus glyph's source document.
 const documentFor = ({ row, record }: FoundCrop): string | null => row.kind === 1 ? record.source?.document_id ?? null : row.document;
 
-/** A crop's record for its inspector, with its form, word, book's dates and the claims they rest on. */
+// The statuses of a grapheme slot that file its crop, as the galleries read them (`FILES`, atlas3Gallery.ts).
+const FILING = new Set(['asserted', 'accepted', 'adjudicated']);
+/** A crop's record for its inspector, with its grapheme, form, word, book's dates and the claims they
+ *  rest on. A grapheme claim that holds names the grapheme the crop is filed under. */
 export async function inspected(env: Env, found: FoundCrop): Promise<Json> {
   const id = found.row.id, document = documentFor(found);
-  const [forms, words, dates] = await Promise.all([cropForms(env, [id]), cropWords(env, [id]), bookDates(env, document)]);
-  const record = { ...found.record, form: forms.get(id) ?? null, word: words.get(id) ?? null };
+  const [graphemes, forms, words, dates] = await Promise.all([cropGraphemes(env, [id]), cropForms(env, [id]), cropWords(env, [id]), bookDates(env, document)]);
+  const claim = graphemes.get(id) ?? null, filed = FILING.has(claim?.status) ? claim!.values[0]?.grapheme : null;
+  const record = { ...found.record, ...(filed ? { grapheme: filed } : {}), grapheme_claim: claim, form: forms.get(id) ?? null, word: words.get(id) ?? null };
   const honkoku = honkokuPage(record, document);
   return { ...record, ...(honkoku ? { honkoku_url: honkoku } : {}), ...dates };
 }

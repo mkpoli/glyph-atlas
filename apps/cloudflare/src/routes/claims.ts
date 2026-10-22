@@ -5,10 +5,11 @@ import { bundle, pageOf, publicId, slotOf as cropSlot } from '../atlas3';
 import { aliasCrop } from '../atlas3Aliases';
 import { StaleCrop, cropQueryParam, movedQueryResponse, staleResponse, writtenCropField } from '../atlas3Crops';
 import { formSlot } from '../cropForms';
+import { cropGraphemes } from '../cropPanels';
 import { formOf, slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
-import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, ledgerPage, type LedgerTools, type Member, ownedActors, planAction, planClaim,
-  PREDICATES, type Plan, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
+import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, GRAPHEME_KEY, headKeys, keyText, ledgerPage, type LedgerTools, type Member,
+  ownedActors, planAction, planClaim, PREDICATES, type Plan, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
 import { readRecords, recordKey } from '../records';
 import { anchoredForm, representationId, typed, type FormProblem } from '../representation';
 
@@ -104,7 +105,7 @@ const PROBLEMS: Record<FormProblem | 'private', string> = {
   private: 'A private-use character names nothing without the namespace of its mapping.',
 };
 // The reader's own latest live claim in a crop's single-valued slot: one range of `assertion_crop`.
-export const ownClaimQuery = (predicate: 'has_form' | 'writes_word', owned: string) => `SELECT a.id,a.object,a.method,a.confidence,a.confidence_scheme,
+export const ownClaimQuery = (predicate: 'has_form' | 'writes_word' | 'has_grapheme', owned: string) => `SELECT a.id,a.object,a.method,a.confidence,a.confidence_scheme,
   ${predicate === 'has_form' ? '(SELECT r.value FROM forms f JOIN representations r ON r.id=f.anchor WHERE f.id=a.object)' : 'NULL'} AS text
   FROM assertions a WHERE a.crop=? AND a.predicate='${predicate}' AND a.scope='' AND a.slot='' AND (a.asserted_by=? OR a.asserted_by IN ${owned})
   AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid DESC LIMIT 1`;
@@ -164,6 +165,40 @@ async function namingId(form: string) {
   return `cf:${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
+// A character with no family of its own names the head of the family it is filed under.
+export const graphemeHeadQuery = () => 'SELECT g.id,coalesce(g.head,g.id)=g.id AS head,h.text AS family FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head WHERE g.text=?';
+/** Set the reader's grapheme for one crop, named by its key (`U+5F8C`), or take back their own claim
+ *  with `grapheme: null`; answer with the crop's grapheme slot and the grapheme the save took back. */
+export async function setGrapheme(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
+  const ledger = ledgerTools(env, tools, ctx);
+  const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ crop: named, input });
+  const saved = await savedSubmission(env, key, signature, tools.fail);
+  if (saved) {
+    const { crop } = await withCrop(env, saved, ledger.alias);
+    if (crop == null) tools.fail(404, NOT_HERE);
+    return { id: publicId(crop), grapheme_claim: (await cropGraphemes(env, [crop])).get(crop) ?? null, replaced: saved.replaced ?? null };
+  }
+  let member: Member | null = null;
+  if (input.grapheme !== null) {
+    if (typeof input.grapheme !== 'string' || !GRAPHEME_KEY.test(input.grapheme)) tools.fail(422, 'Name a grapheme by its code points.');
+    if (!(await headKeys(env, [input.grapheme])).length) {
+      const row = await env.ATLAS.prepare(graphemeHeadQuery()).bind(keyText(input.grapheme)).first<{ family: string | null }>();
+      tools.fail(422, row ? `This character is filed under ${row.family}.` : 'No such character.');
+    }
+    member = { object: input.grapheme, value: null, confidence: null, confidence_scheme: null };
+    checkClaims('has_grapheme', [member], { [input.grapheme]: 'grapheme' }, tools.fail);
+  }
+  const crop = await ledger.crop(env, named);
+  const own = await env.ATLAS.prepare(ownClaimQuery('has_grapheme', ownedActors(actor))).bind(crop.id, actor).first<Own>();
+  if (!member && !own) tools.fail(409, 'You have no grapheme on this crop to clear.');
+  sameVersion(crop, input.crop_version, tools.fail);
+  const at = new Date().toISOString();
+  const plan = member ? await planClaim(env, { key, actor, crop, predicate: 'has_grapheme', scope: '', members: [member], at, method: 'crop-page' }, ledger)
+    : await planAction(env, { key, actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, ledger);
+  const result = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, cut: crop.cut, replaced: own?.object ?? null }, ledger);
+  return { id: publicId(crop.id), grapheme_claim: (await cropGraphemes(env, [crop.id])).get(crop.id) ?? null, replaced: result.replaced ?? null };
+}
+
 /** Set the reader's word for one crop (decision 0004), or retract their own latest claim with `word: null`. */
 export async function setWord(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
   const ledger = ledgerTools(env, tools, ctx), spec = PREDICATES.writes_word;
@@ -218,10 +253,10 @@ export async function bookDates(env: Env, book: number | null): Promise<Json> {
   return { dating, ...(dates.length ? { dates } : {}) };
 }
 
-/** A write to the ledger: a claim, an action on one, or a crop's form or word. `null` for another path. */
+/** A write to the ledger: a claim, an action on one, or a crop's form, word or grapheme. `null` for another path. */
 export async function claimWrite(env: Env, request: Request, path: string, me: { id: string; admin: boolean }, tools: ClaimTools,
   limit: () => Promise<void>, ctx?: ExecutionContext): Promise<Json | Response | null> {
-  const acted = path.match(/^\/atlas\/claims\/([^/]+)\/actions$/), picked = path.match(/^\/atlas\/characters\/([^/]+)\/(form|word)$/);
+  const acted = path.match(/^\/atlas\/claims\/([^/]+)\/actions$/), picked = path.match(/^\/atlas\/characters\/([^/]+)\/(form|word|grapheme)$/);
   if (path !== '/atlas/claims' && !acted && !picked) return null;
   // A claim, an action or a crop's form is a few small rows, and one address is held to a rate.
   await limit();
@@ -229,7 +264,8 @@ export async function claimWrite(env: Env, request: Request, path: string, me: {
   let target = '';
   try { target = decodeURIComponent((acted ?? picked)?.[1] ?? '') } catch { tools.fail(404, acted ? 'No such claim.' : NOT_HERE) }
   try {
-    if (picked) return picked[2] === 'word' ? await setWord(env, input, target, me.id, tools, ctx) : await setForm(env, input, target, me.id, tools, ctx);
+    if (picked) return picked[2] === 'word' ? await setWord(env, input, target, me.id, tools, ctx)
+      : picked[2] === 'grapheme' ? await setGrapheme(env, input, target, me.id, tools, ctx) : await setForm(env, input, target, me.id, tools, ctx);
     const ledger = ledgerTools(env, tools, ctx);
     return acted ? await actOnClaim(env, input, target, me.id, me.admin, ledger) : await writeClaim(env, input, me.id, ledger);
   } catch (error) {

@@ -9,7 +9,8 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
 import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
-  formOfCrop, ownClaimQuery, setForm, setWord, wordMethodsQuery, wordNamesQuery, wordOfCrop } from './claims';
+  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setGrapheme, setWord, wordMethodsQuery, wordNamesQuery, wordOfCrop } from './claims';
+import { familyClaims } from '../atlas3Gallery';
 
 // The Workers cache, as far as alias reads use it.
 const edge = new Map<string, Response>();
@@ -163,6 +164,58 @@ describe('the crop word picker', () => {
     expect((await wordOfCrop(env, local))?.values).toHaveLength(2);
     await save({ word: null }, 'alternatives');
     expect((await wordOfCrop(env, local))?.values).toEqual([]);
+  });
+});
+
+describe('the crop grapheme picker', () => {
+  const AFTER = 'U+5F8C', QUEEN = 'U+540E';
+  // 後 and 后 head families of their own; 从 is filed under 從.
+  function graphemes() {
+    const found = setup();
+    found.db.exec(`INSERT INTO graphemes(id,text,head) VALUES(1,'後',1),(2,'后',2),(3,'從',3),(4,'从',3);
+      UPDATE crops SET char=2 WHERE id=${found.local};`);
+    const pick = (grapheme: string | null, actor = 'reader', id: string = crypto.randomUUID()) =>
+      setGrapheme(found.env, { id, crop_version: found.version(found.local), grapheme }, publicId(found.local), actor, found.tools);
+    return { ...found, pick };
+  }
+
+  it('files the crop under the grapheme it is read as, and back under its character\'s once taken back', async () => {
+    const { env, local, pick } = graphemes(), id = crypto.randomUUID();
+    const saved = await pick(AFTER, 'reader', id);
+    expect(saved).toEqual({ id: publicId(local), grapheme_claim: { status: 'asserted', values: [{ grapheme: AFTER, char: '後', by: ['reader'] }], by: ['reader'] }, replaced: null });
+    expect(await pick(AFTER, 'reader', id)).toEqual(saved);
+    expect((await familyClaims(env, AFTER, [1])).here.map(r => r.id)).toEqual([local]);
+    expect((await familyClaims(env, QUEEN, [2])).away.map(r => r.id)).toEqual([local]);
+    expect(await pick(null)).toMatchObject({ grapheme_claim: null, replaced: AFTER });
+    expect(await familyClaims(env, QUEEN, [2])).toEqual({ away: [], here: [] });
+  });
+
+  it('files a disputed crop under its character\'s grapheme', async () => {
+    const { env, pick } = graphemes();
+    await pick(AFTER);
+    const disputed = await pick(QUEEN, 'other');
+    expect(disputed.grapheme_claim?.status).toBe('disputed');
+    expect(disputed.grapheme_claim?.values.map((v: { char: string }) => v.char).sort()).toEqual(['后', '後']);
+    expect(await familyClaims(env, QUEEN, [2])).toEqual({ away: [], here: [] });
+  });
+
+  it('names only a grapheme that heads its family, on the generic route too', async () => {
+    const { db, local, version, pick, post } = graphemes();
+    await expect(pick('U+4ECE')).rejects.toThrow('422 This character is filed under 從.');
+    await expect(pick('U+9999')).rejects.toThrow('422 No such character.');
+    await expect(pick('後')).rejects.toThrow('422 Name a grapheme by its code points.');
+    await expect(pick(null)).rejects.toThrow('409 You have no grapheme on this crop to clear.');
+    const claim = (object: string) => post('/atlas/claims', { id: crypto.randomUUID(), crop_version: version(local), subject: publicId(local),
+      predicate: 'has_grapheme', claims: [{ object }] }) as Promise<any>;
+    await expect(claim('U+4ECE')).rejects.toThrow('422 U+4ECE cannot be the object of has_grapheme.');
+    expect((await claim(AFTER)).current[0]).toMatchObject({ predicate: 'has_grapheme', status: 'asserted', object: AFTER });
+    expect(db.query(graphemeHeadQuery()).get('从')).toEqual({ id: 4, head: 0, family: '從' });
+  });
+
+  it('goes through the picker route', async () => {
+    const { local, version, post } = graphemes();
+    const answer = await post(`/atlas/characters/${publicId(local)}/grapheme`, { id: crypto.randomUUID(), crop_version: version(local), grapheme: AFTER }) as any;
+    expect(answer.grapheme_claim.values[0].grapheme).toBe(AFTER);
   });
 });
 
