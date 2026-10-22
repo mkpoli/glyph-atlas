@@ -28,7 +28,9 @@ answers and the figures (`out/runs-report.txt`) and sends nothing; the answers i
 the next `--send`.
 
 The publisher keeps all of this from then on (publish.py), and a review that changes a crop's written
-character writes its row.
+character writes its row. The publisher writes a row for every crop of its catalogue written apart from
+its head, in a run or not; a run here compares and sends only the rows of crops in a local run, so the
+two never undo each other.
 """
 
 from __future__ import annotations
@@ -175,7 +177,11 @@ def main():
         catch_up(runs)
     out, left = translate()
     want = dict(out.execute("SELECT crop, char FROM written"))
-    have = dict(runs.execute("SELECT crop, char FROM run_written")) if has(runs, "run_written") else {}
+    # Rows of crops in no local run are the publisher's (it writes one for every catalogue crop written
+    # apart from its head); only the runs' own crops are compared.
+    members = {r[0] for r in out.execute("SELECT crop FROM members")}
+    have = {c: v for c, v in runs.execute("SELECT crop, char FROM run_written") if c in members} \
+        if has(runs, "run_written") else {}
     statements = written_statements(want, have)
     changed = answers()
     objects = sum(len(paths) for paths in changed.values())
@@ -197,6 +203,10 @@ def main():
     print(f"{n if n is not None else 'existing'} parts -> {run}", flush=True)
     if not args.send:
         print("dry run: nothing sent", flush=True)
+        return
+    if not groups and not any(changed.values()) and has(runs, "imports") and \
+            runs.execute("SELECT 1 FROM imports WHERE stamp LIKE '%.answers'").fetchone():
+        print("the rows and answers are in place; nothing to send", flush=True)
         return
     if groups:
         deliver(run, runs)
