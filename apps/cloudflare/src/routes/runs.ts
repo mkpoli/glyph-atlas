@@ -16,6 +16,7 @@ import { honkokuPage } from '../honkoku';
 import { MARKS, WRITTEN, redrawLimits, writtenRecord } from '../cropRecords';
 import { integer, text } from '../input';
 import { readRecords, recordKey } from '../records';
+import { Timing } from '../timing';
 
 type Json = any;
 const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Response.json(value, {
@@ -207,20 +208,6 @@ export const bookFormsQuery = (size: number) => `SELECT text, count(*) AS n FROM
 /** How many rows of a trigram there are, counting no further than RUN_PROBE_MAX. */
 export function runProbeQuery(book: boolean) {
   return `SELECT count(*) AS n FROM (SELECT 1 FROM runs${book ? ' INDEXED BY run_book' : ''} WHERE ${book ? 'book=? AND ' : ''}size=3 AND graphemes=? LIMIT ${RUN_PROBE_MAX})`;
-}
-// How long each step of an answer took, as a `Server-Timing` header: a step's time runs from the previous
-// step's end (`step`), or from the start for steps that run side by side (`beside`). A Worker's clock moves
-// only across I/O, which is what the steps wait on.
-export class Timing {
-  private start = Date.now();
-  private last = this.start;
-  private steps: [string, number][] = [];
-  step(name: string) { const now = Date.now(); this.steps.push([name, now - this.last]); this.last = now; }
-  beside<T>(name: string, work: Promise<T>): Promise<T> {
-    const from = Date.now();
-    return work.finally(() => { this.steps.push([name, Date.now() - from]); });
-  }
-  header() { return [...this.steps, ['total', Date.now() - this.start] as [string, number]].map(([name, ms]) => `${name};dur=${ms}`).join(', '); }
 }
 
 // The books a page and its works name: key and title, one primary-key probe each.
