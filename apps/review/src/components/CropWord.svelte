@@ -8,6 +8,8 @@
   let editing = $state(false), query = $state(''), choices = $state([]), selected = $state(null)
   let method = $state(''), probable = $state(false), error = $state(''), pending = $state(false)
   const values = $derived(item.word?.values ?? [])
+  // A gallery's row has no word yet; the slot stands empty, in its place, until the crop's record names one.
+  const known = $derived(Object.hasOwn(item, 'word'))
   // Only a reader's own claim can be cleared; the others stand until their readers take them back.
   const own = $derived(Boolean(signedInUser()?.id && item.word?.by?.includes(signedInUser().id)))
 
@@ -50,8 +52,8 @@
       {/each}
       {#if item.word.methods?.[0]}<span>{t(`word.methods.${item.word.methods[0]}`)}</span>{/if}
       {#if item.word.status === 'disputed'}<span>{t('word.disputed')}</span>{/if}
-    {:else}<span>{t('word.none')}</span>{/if}
-    {#if !editing}<button type="button" disabled={disabled || pending} onclick={open}>{t('word.set')}</button>{/if}
+    {:else if known}<span>{t('word.none')}</span>{/if}
+    {#if !editing}<button type="button" disabled={disabled || pending || !known} onclick={open}>{t('word.set')}</button>{/if}
     {#if own}<button type="button" disabled={disabled || pending} onclick={() => save(true)}>{t('word.clear')}</button>{/if}
   </div>
   {#if editing}
