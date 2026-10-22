@@ -233,6 +233,32 @@ def test_the_review_migrations_reach_a_copy_that_took_an_earlier_one(layout, mon
         assert "evidence" in {r[1] for r in db.execute("PRAGMA table_info(submissions)")}
 
 
+def test_migrate_applies_the_review_migrations_alone_and_stamps_them(layout, monkeypatch):
+    root, publish, remote = layout
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executescript("DROP INDEX event_reviews; DROP TABLE review_revisions;")
+        db.commit()
+    pages = remote.query("glyph-atlas-v3", "SELECT id, rev FROM pages")
+    monkeypatch.setattr(sys, "argv", ["publish.py", "--migrate"])
+    publish.main()
+    assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM sqlite_master WHERE name IN ('review_revisions','event_reviews')") == [{"n": 2}]
+    assert remote.query("glyph-atlas-v3", "SELECT stamp FROM imports WHERE stamp LIKE 'migration:001_'") == [{"stamp": "migration:0016"}]
+    assert remote.query("glyph-atlas-v3", "SELECT id, rev FROM pages") == pages
+    # Run again, it finds both in place and sends nothing.
+    publish.main()
+    assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports WHERE stamp LIKE 'migration:001_'") == [{"n": 1}]
+
+
+def test_a_local_copy_without_the_review_history_is_refused(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    db = sqlite3.connect(root / "out" / "atlas.sqlite")
+    db.execute("DROP TABLE submissions")
+    db.commit()
+    with pytest.raises(SystemExit, match="run load_history.py first"):
+        run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10})]),
+            "--dry-run")
+
+
 def test_a_publish_keeps_the_crops_and_fields_it_does_not_carry_in_the_page_bundle(layout, monkeypatch, tmp_path):
     root, publish, _remote = layout
     run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お")]))

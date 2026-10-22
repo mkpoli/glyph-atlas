@@ -26,7 +26,7 @@ export function decodeCursor(value: string | null): { id: number } {
     const d = JSON.parse(atob(value));
     if (Array.isArray(d) && d.length === 1 && Number.isSafeInteger(d[0])) return { id: d[0] };
   } catch { /* refused below */ }
-  throw new Problem(422, 'Invalid cursor.');
+  throw new Problem(422, 'Invalid cursor. Restart the export from its first page.');
 }
 
 /** One page of the export. A missing or damaged object fails the whole page, so no partial page is read

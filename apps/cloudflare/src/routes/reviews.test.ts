@@ -106,6 +106,11 @@ describe('immutable review export', () => {
     expect([review.current, review.current_revision]).toEqual([true, 1]);
   });
 
+  it('asks for a restart when given a cursor of another form', async () => {
+    const { env } = setup();
+    await expect(reviewsPage(env, new URLSearchParams({ after: btoa(JSON.stringify([1, 2])) }))).rejects.toThrow('Restart the export');
+  });
+
   it('advances the cursor over a completely hidden legacy page', async () => {
     const { env, add, archive } = setup(), records: Record<string, any> = {};
     for (let id = 1; id <= PAGE + 1; id++) records[`legacy:old-${id}`] = { legacy_hidden: true, event: { id: `old-${id}` } };

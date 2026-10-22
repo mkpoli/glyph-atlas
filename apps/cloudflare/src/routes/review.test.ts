@@ -166,7 +166,7 @@ describe('captured review exports', () => {
     expect(review).toMatchObject({ expected_revision: 1, publication_snapshot: published });
   });
 
-  it('read each earlier evidence object once, and save when one cannot be read', async () => {
+  it('read each earlier evidence object once, and refuse a save to retry when one cannot be read', async () => {
     const { db, env, ids, objects } = setup();
     const crops = [ids[0], ids[2], ids[3]].map(id => local(id));
     expect((await send(env, '/atlas/rounds', { id: uuid(715), grapheme: 'U+306F',
@@ -179,8 +179,23 @@ describe('captured review exports', () => {
       crops: crops.map(c => ({ ...c, revision: 1 })) })).status).toBe(200);
     expect(db.query('SELECT count(*) AS n FROM events').get()).toEqual({ n: 6 });
     expect(reads.filter(key => key === evidence[0])).toHaveLength(1);
-    objects.set(evidence[0], gzipSync('{"version":1,"reviews":{}}'));
-    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(717), revision: 2, image_sha256: H, verdict: 'match' })).status).toBe(200);
+    const latest = `v3/review-evidence/${(db.query('SELECT evidence FROM submissions ORDER BY id DESC LIMIT 1').get() as any).evidence}.json.gz`;
+    const kept = objects.get(latest)!;
+    objects.set(latest, gzipSync('{"version":1,"reviews":{}}'));
+    const review = { id: uuid(717), revision: 2, image_sha256: H, verdict: 'match' };
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, review)).status).toBe(503);
+    objects.set(latest, kept);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, review)).status).toBe(200);
+  });
+
+  it('refuse to save a review of a crop the old site reviewed until its page is archived', async () => {
+    const { db, env, ids } = setup();
+    db.exec(`INSERT INTO submissions(id,key,actor,request,response,at) VALUES(90,'old',1,'{}','{}',1);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,legacy) VALUES(${ids[0]},1,0,0,1,90,1,0,'old-1');
+      UPDATE crops SET revision=1 WHERE id=${ids[0]}`);
+    const refused = await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(719), revision: 1, image_sha256: H, verdict: 'match' });
+    expect([refused.status, refused.body.detail]).toEqual([503, 'The reviews moved from the old site are not archived yet.']);
+    expect(db.query('SELECT count(*) AS n FROM submissions').get()).toEqual({ n: 1 });
   });
 
   it('leave out the page id of a crop that sits on its book rather than a page', async () => {

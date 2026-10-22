@@ -676,8 +676,10 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="write the parts and bundles, publish nothing")
     parser.add_argument("--replacements", action="store_true",
                         help="name the replacement of every retired crop from source-unit_redirects.sqlite")
+    parser.add_argument("--migrate", action="store_true",
+                        help="only apply migrations 0015 and 0016 where they are missing, on D1 and the local copy, stamped")
     args = parser.parse_args()
-    if args.catalogue is None and not args.replacements:
+    if args.catalogue is None and not args.replacements and not args.migrate:
         parser.error("a catalogue, --replacements, or both")
     catalogue, dry = args.catalogue, args.dry_run
     (OUT / "publish").mkdir(parents=True, exist_ok=True)
@@ -701,7 +703,17 @@ def main():
         sys.exit("the crop fill is unfinished; finish it with fill.py --send first")
     for (name,) in m.ids.execute("SELECT run FROM pending WHERE run LIKE ?", (FACTS_RUN + "%",)):
         sys.exit(f"the crop facts load {name.removeprefix(FACTS_RUN)} is unfinished; finish it with crop_facts.py --send first")
+    # Revisions are counted over the history's events (`reverses`, migration 0009) and saved beside its
+    # submissions; a local copy without the history cannot count them.
+    if (not m.atlas.execute("SELECT 1 FROM sqlite_master WHERE name='submissions'").fetchone()
+            or "reverses" not in {r[1] for r in m.atlas.execute("PRAGMA table_info(events)")}):
+        sys.exit("the local copy has no review history; run load_history.py first")
     migrate_reviews(m.atlas, dry)
+    if args.migrate:
+        if dry:
+            sys.exit("--migrate applies the migrations; it has no dry run")
+        print("review migrations in place on glyph-atlas-v3 and the local copy", flush=True)
+        return
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
