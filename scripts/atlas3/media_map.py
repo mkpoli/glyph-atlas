@@ -8,7 +8,8 @@ holds one shard per first three hex digits of the key, `v3/media/<prefix>.json.g
 member for a content type other than image/webp. A key's place never changes: a run merges the keys
 of a `media` table into the local copies under `out/media/` and uploads the shards that changed. The
 publisher does the same with a catalogue's `media` table, and takes the images of withdrawn crops
-out (`remove`).
+out (`remove`), both only once its run is recorded as pending, so a run that stops before then
+leaves the shards as they were.
 """
 
 from __future__ import annotations
@@ -40,14 +41,14 @@ def read_shard(prefix):
     return json.loads(gzip.decompress(path.read_bytes()))
 
 
-def merge(rows, save=True):
-    """Merge (key, object, offset, size, content_type) rows into the local shards and return the number
-    of new keys and of shards they fall in. A key already mapped elsewhere stops the run before any
-    shard is written: a key names one image."""
+def grow(rows):
+    """The local shards that (key, object, offset, size, content_type) rows add keys to, as merged, and
+    the rows whose keys are new. A key already mapped elsewhere stops the run before any shard is
+    written: a key names one image."""
     by_prefix = defaultdict(list)
     for row in rows:
-        by_prefix[row[0][:3]].append(row)
-    grown, new = {}, 0
+        by_prefix[row[0][:3]].append(tuple(row))
+    grown, fresh = {}, []
     for prefix, members in sorted(by_prefix.items()):
         shard = read_shard(prefix)
         objects = {name: i for i, name in enumerate(shard["objects"])}
@@ -61,14 +62,21 @@ def merge(rows, save=True):
             if old is None:
                 shard["keys"][key[3:]] = place
                 grew = True
-                new += 1
+                fresh.append((key, obj, offset, size, content_type))
             elif [shard["objects"][old[0]], *old[1:]] != [obj, offset, size, *place[3:]]:
                 sys.exit(f"image {key} is mapped to {shard['objects'][old[0]]} {old[1:]} and now to {obj} {offset} {size}; nothing written")
         if grew:
             grown[prefix] = shard
+    return grown, fresh
+
+
+def merge(rows, save=True):
+    """Merge (key, object, offset, size, content_type) rows into the local shards and return the number
+    of new keys and of shards they fall in."""
+    grown, fresh = grow(rows)
     if save and grown:
         write(grown)
-    return new, len(grown)
+    return len(fresh), len(grown)
 
 
 def write(shards):

@@ -22,8 +22,11 @@ images to the image key map (`media_map.py`).
   applied when its stamp is in that database's `imports`, and is then replayed on the local copy.
 - A publish stopped after allocating is finished by the next run before anything else.
 - A crop the catalogue carries with `origin='withdrawn'` (a document taken off the site,
-  `withdraw.py`) is retired, its bundle entry keeps only its id and cut, and the images its entry
-  named leave the image key map.
+  `withdraw.py`; such a catalogue holds nothing else) is first deleted in glyph-atlas-v3 under its
+  revision guard and read back. Only a crop D1 no longer holds is retired, its bundle entry keeping
+  only its id and cut, its images leaving the image key map unless another entry names them, and a
+  retired entry naming it as its replacement names the next live crop on its redirect chain. A crop
+  reviewed on the site since stays as it is, and the publish ends by listing it as refused.
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
   their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
@@ -471,7 +474,14 @@ def mark(run, line):
 def deliver(m, run):
     """Finish a publish whose ids are allocated. Every step can run again: bundles to R2, then each
     part to D1, then the same part to the local copy, in order; then the guarded rows are read back."""
-    # Image places first, so no crop is listed before its image can be served.
+    # Image places first, so no crop is listed before its image can be served. The local shards change
+    # only here, in a run recorded as pending, so a run that stopped before leaves none for the next.
+    if "media merged" not in journal(run):
+        if (run / "media.json").exists():
+            media_map.merge(json.loads((run / "media.json").read_text()))
+        if (run / "unmapped.json").exists():
+            media_map.remove(json.loads((run / "unmapped.json").read_text()))
+        mark(run, "media merged")
     media_map.send(upload)
     if "uploaded" not in journal(run):
         upload(sorted((run / "pages").iterdir()))
@@ -544,10 +554,53 @@ def deliver(m, run):
     mark(run, "done")
 
 
+def delete_withdrawn(m, run, crops, dry):
+    """Delete withdrawn crops, (id, catalogue revision) pairs, in glyph-atlas-v3 while their revision is
+    the catalogue's, and return the ids D1 still holds: those were reviewed since. Nothing local changes
+    here, so a publish that stops later and runs again deletes nothing more and finds the same ids. A
+    dry run sends nothing and returns none."""
+    if dry or not crops:
+        return []
+    stamp, path = f"{run.name}.withdraw", run / "withdraw.sql"
+    path.write_text("".join(f"DELETE FROM crops WHERE id={cid} AND revision={rev};\n" for cid, rev in crops)
+                    + f"INSERT INTO imports(stamp, at) VALUES({lit(stamp)}, unixepoch());\n")
+    if not send("glyph-atlas-v3", path, stamp):
+        sys.exit(f"{run.name}/{path.name} did not apply; nothing else was sent. Publish the withdrawal again")
+    kept, ids = [], [cid for cid, _ in crops]
+    for i in range(0, len(ids), 200):
+        kept += [r["id"] for r in query("glyph-atlas-v3", f"SELECT id FROM crops WHERE id IN ({','.join(map(str, ids[i:i + 200]))})")]
+    return kept
+
+
+def refuse_withdrawals(run):
+    """End the publish with the withdrawn crops D1 kept, if any."""
+    path = run / "refused-withdrawals.txt"
+    if path.exists():
+        refused = path.read_text().split()
+        sys.exit(f"{len(refused)} withdrawn crops were reviewed on the site since and stay live with their records and "
+                 f"images: {', '.join(refused[:10])} (all in {run.name}/refused-withdrawals.txt). Write the withdrawal "
+                 "again with withdraw.py to take them off at their new revision")
+
+
+def published_bundles(m, cached):
+    """Every page's published bundle as (page id, body), read one at a time unless already read."""
+    for pid, rev in m.atlas.execute("SELECT id, rev FROM pages WHERE rev > 0 ORDER BY id").fetchall():
+        if pid in cached:
+            yield pid, cached[pid]
+            continue
+        path = OUT / "pages" / f"{pid}-{rev}.json.gz"
+        if not path.exists():
+            sys.exit(f"page {pid} has revision {rev} but no bundle {path.name}; nothing published")
+        yield pid, json.loads(gzip.decompress(path.read_bytes()))
+
+
 def finish_unfinished(m):
     for (name,) in m.ids.execute("SELECT run FROM pending ORDER BY run").fetchall():
         print(f"finishing {name}", flush=True)
         deliver(m, OUT / "publish" / name)
+        if (OUT / "publish" / name / "refused-withdrawals.txt").exists():
+            print(f"WARNING: {name} left withdrawn crops live that were reviewed on the site since; "
+                  f"see {name}/refused-withdrawals.txt", file=sys.stderr, flush=True)
 
 
 def main():
@@ -599,11 +652,11 @@ def main():
         dated = {r["document"]: r["start"] for r in src.execute("SELECT document, start FROM document_dating WHERE axis='witness'")}
         years.update(dated)
         m.ids.executemany("INSERT OR REPLACE INTO book_years VALUES(?,?)", dated.items())
-    media = {}
+    media, fresh_media = {}, []
     if "media" in tables:
         media = {r["key"]: [r["object"], r["offset"], r["size"]] for r in src.execute("SELECT key, object, offset, size FROM media")}
-        if not dry:
-            media_map.merge(src.execute("SELECT key, object, offset, size, content_type FROM media"))
+        # Checked against the map now, merged into the local shards once the run is pending (`deliver`).
+        fresh_media = media_map.grow(src.execute("SELECT key, object, offset, size, content_type FROM media"))[1]
 
     def place(data, field):
         key = (data.get(field) or "").rsplit("/", 1)[-1].split(".")[0]
@@ -643,6 +696,10 @@ def main():
     units = list(src.execute(f"SELECT {columns} FROM units WHERE origin IN ('local', 'retired', 'withdrawn') ORDER BY id")) if "units" in tables else []
     overlay = {r["id"]: r for r in src.execute(f"SELECT {columns} FROM units WHERE origin='corpus'")} if "units" in tables else {}
     retiring = {r["id"] for r in units if r["origin"] in GONE}
+    withdrawing = [r for r in units if r["origin"] == "withdrawn"]
+    if withdrawing and (len(withdrawing) < len(units) or "corpus_units" in tables or args.replacements):
+        sys.exit("a withdrawal catalogue (withdraw.py) holds withdrawn units alone and is published without "
+                 "--replacements; nothing published")
     # A live crop with another box or image on its own page is re-cut: it keeps its id and its cut
     # moves on, so claims and reviews made on the old cut stay with it.
     recut = set()
@@ -662,7 +719,10 @@ def main():
         if cid is not None:
             published = entry(cid)
             current = m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
-            if r["origin"] in GONE:
+            if r["origin"] == "withdrawn":
+                # The read-back after the D1 deletion decides each withdrawn crop on its own.
+                pass
+            elif r["origin"] in GONE:
                 if current and r["revision"] < current["revision"]:
                     refused.append(f"{r['id']}: {r['origin']} at revision {r['revision']}, reviewed since (revision {current['revision']})")
             elif m.page_key(cid // PAGE) != page_key:
@@ -700,6 +760,31 @@ def main():
         report = OUT / "publish" / f"refused-{time.strftime('%Y%m%dT%H%M%S')}.txt"
         report.write_text("\n".join(refused) + "\n")
         sys.exit(f"{len(refused)} crops need the slot matcher or are newer on the site; nothing published. See {report}")
+
+    stamp = time.strftime("%Y%m%dT%H%M%S") + f".{time.time_ns() % 10**9:09d}-" + (
+        f"{catalogue.parent.name}-{catalogue.stem}" if catalogue else "replacements")
+    run = OUT / "publish" / stamp
+    (run / "pages").mkdir(parents=True)
+
+    # A withdrawal deletes its live crops in D1 first and goes on only with those D1 no longer holds: a
+    # crop reviewed on the site since keeps its row, its record and its images, and the publish ends
+    # by refusing it.
+    kept_live = set()
+    if withdrawing:
+        live_now = [(cid, r["revision"]) for r in withdrawing if (cid := m.known(r["id"])) is not None
+                    and m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone()]
+        # Every bundle is read below; a missing one stops the publish before D1 is touched.
+        for pid, rev in m.atlas.execute("SELECT id, rev FROM pages WHERE rev > 0").fetchall():
+            if not (OUT / "pages" / f"{pid}-{rev}.json.gz").exists():
+                sys.exit(f"page {pid} has revision {rev} but no bundle {pid}-{rev}.json.gz; nothing published")
+        if dry:
+            print(f"dry run: {len(live_now)} withdrawn crops would be deleted in D1 and read back before anything else is sent",
+                  flush=True)
+        kept_live = set(delete_withdrawn(m, run, live_now, dry))
+    withdraw_refused = sorted(r["id"] for r in withdrawing if m.known(r["id"]) in kept_live)
+    retiring -= set(withdraw_refused)
+    # The local copy takes D1's rows for them with the run's read-back (`deliver`).
+    m.guarded += sorted(kept_live)
 
     # A retired crop names the crop it was retired in favour of by integer id: the first text id on its
     # redirect chain that is a live crop after this publish, past retired crops and text ids with no crop.
@@ -750,10 +835,32 @@ def main():
             replacing[text] = found
             naming.append((cid, text))
 
-    stamp = time.strftime("%Y%m%dT%H%M%S") + f".{time.time_ns() % 10**9:09d}-" + (
-        f"{catalogue.parent.name}-{catalogue.stem}" if catalogue else "replacements")
-    run = OUT / "publish" / stamp
-    (run / "pages").mkdir(parents=True)
+    # What the withdrawn crops leave behind: a retired entry naming one as its replacement is named
+    # again from the redirects (or names none), and an image another entry also names stays mapped.
+    shared = set()
+    if withdrawing:
+        gone = {cid for r in withdrawing if r["id"] not in withdraw_refused and (cid := m.known(r["id"])) is not None}
+        leaving = set().union(*(image_keys(entry(cid)) for cid in gone)) if gone else set()
+        redirects = HERE / "source-unit_redirects.sqlite"
+        if redirects.exists():
+            replaced = dict(sqlite3.connect(f"file:{redirects}?mode=ro", uri=True).execute("SELECT id, target FROM unit_redirects"))
+        for pid, body in published_bundles(m, bundles):
+            for e in body["crops"]:
+                cid = pid * PAGE + e["slot"]
+                if cid in gone or e.get("withdrawn"):
+                    continue
+                shared |= image_keys(e) & leaving
+                if e.get("retired") and e.get("replaced_by") in gone:
+                    try:
+                        found = replacement(e["id"], replaced, live) if e["id"] in replaced else None
+                    except ValueError as loop:
+                        found = None
+                        unresolved.append(f"{e['id']}: its redirects loop ({loop})")
+                    replacing[e["id"]] = found
+                    naming.append((cid, e["id"]))
+        if shared:
+            print(f"{len(shared)} images of withdrawn crops are named by other crops too and stay mapped", flush=True)
+
     # When a re-cut's new cut is recorded (`cut_at`), as the old site timed its crop versions.
     cut_time = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -761,6 +868,8 @@ def main():
     for r in units:
         data = json.loads(r["data"])
         if r["origin"] == "withdrawn":
+            if r["id"] in withdraw_refused:
+                continue
             cid = m.known(r["id"])
             current = cid is not None and m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
             if current:
@@ -1028,7 +1137,7 @@ def main():
             new = {k: v for k, v in {**old, **new_entry, "slot": slot}.items() if v is not None} \
                 if new_entry.get("retired") and not new_entry.get("withdrawn") else {"slot": slot, **new_entry}
             if new_entry.get("withdrawn"):
-                unmapped |= image_keys(old)
+                unmapped |= image_keys(old) - shared
             for field in ("image", "context_image"):
                 if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
                     new[field + "_place"] = old[field + "_place"]
@@ -1072,6 +1181,8 @@ def main():
     if unmapped:
         (run / "unmapped.json").write_text(json.dumps(sorted(unmapped)))
         print(f"{len(unmapped)} images of withdrawn crops leave the image key map", flush=True)
+    if fresh_media:
+        (run / "media.json").write_text(json.dumps(fresh_media))
     if unresolved:
         (run / "unreplaced.txt").write_text("\n".join(unresolved) + "\n")
         print(f"{len(unresolved)} retired crops have no live crop on their redirect chain and name no replacement "
@@ -1087,12 +1198,14 @@ def main():
         mark(run, "dry run")
         print("dry run: nothing allocated, sent or changed")
         return
-    if unmapped:
-        # Sent before the bundles, with the image places (`deliver`).
-        media_map.remove(unmapped)
-    if not atlas_parts and not runs_parts and not voted and not pending():
+    if withdraw_refused:
+        (run / "refused-withdrawals.txt").write_text("\n".join(withdraw_refused) + "\n")
+    if not atlas_parts and not runs_parts and not voted and not withdraw_refused and not pending():
         m.ids.rollback()
         mark(run, "nothing to send")
+        # Nothing else is written, so the new image keys go into the local shards here.
+        if fresh_media:
+            media_map.merge(fresh_media)
         media_map.send(upload)
         print("nothing changed")
         return
@@ -1103,6 +1216,7 @@ def main():
     deliver(m, run)
     print(f"published {stamp}")
     answer()
+    refuse_withdrawals(run)
 
 
 def answer():

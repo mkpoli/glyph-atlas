@@ -60,9 +60,13 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   at a revision no older than the published one. The exporters drop withdrawn crops instead, so a
   withdrawal needs a catalogue that names it: `withdraw.py <file>` writes one for the documents of
   `data/vocab/withdrawn.yaml`, every crop on their pages with `origin='withdrawn'` at the local
-  copy's revision. A withdrawn crop is retired, its bundle entry keeps only its id and cut, and the
-  images its entry named (its earlier cuts' too) leave the image key map; its reviews and claims stay
-  with its number. A retired crop the new layout never had (the first
+  copy's revision. The publish deletes the live ones in D1 first, under their revision guard, and
+  reads them back; only a crop D1 no longer holds goes on. It is retired, its bundle entry keeps only
+  its id and cut, and the images its entry named (its earlier cuts' too) leave the image key map,
+  except those another entry names; its reviews and claims stay with its number. A retired entry
+  that named it as its replacement names the next live crop on its redirect chain. A crop reviewed
+  on the site since keeps its row, record and images, and the publish ends listing it
+  (`refused-withdrawals.txt`); a fresh `withdraw.py` catalogue takes it at its new revision. A retired crop the new layout never had (the first
   build left out the 56 live ones, each kept for its history) gets a number and a retired bundle
   entry with its record, so its reviews, claims and links resolve.
 - A retired crop's entry names its replacement in `replaced_by`, as an integer crop id: the first text
