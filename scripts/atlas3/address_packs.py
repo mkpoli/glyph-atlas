@@ -66,6 +66,8 @@ def address(catalogue: Path, *, dry_run=False) -> dict:
     finished = 0
     for original, obj in db.execute("SELECT original, object FROM addressed").fetchall() if known else []:
         source, target = root / original, root / obj
+        if not source.exists() and not target.exists():
+            sys.exit(f"the move of {original} to {obj} was recorded, and neither file is beside the catalogue")
         if source.exists() and not dry_run:
             if f"packs/{digest(source)}.bin" != obj:
                 sys.exit(f"{original} does not hold the bytes recorded for {obj}; refusing to move it")
@@ -124,7 +126,11 @@ def main():
     parser.add_argument("catalogue", type=Path)
     parser.add_argument("--dry-run", action="store_true", help="check the packs and count them, move nothing")
     args = parser.parse_args()
-    print(json.dumps(address(args.catalogue, dry_run=args.dry_run)))
+    counts = address(args.catalogue, dry_run=args.dry_run)
+    print(json.dumps(counts))
+    # A pack the rows name and the folder lacks cannot be uploaded: the run fails.
+    if counts["missing"]:
+        sys.exit(f"{counts['missing']} packs the catalogue names are not beside it")
 
 
 if __name__ == "__main__":
