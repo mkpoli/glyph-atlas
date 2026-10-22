@@ -418,7 +418,10 @@ def differences(db, query, names=None):
     out = [f"{t}: {'only in the copy' if t in ours_names else 'not in the copy'}"
            for t in sorted(set(ours_names) ^ set(names or ours_names))]
     ours = {(e["type"], e["name"]): e["sql"] for e in schema(local(db), ours_names)}
-    theirs = {(e["type"], e["name"]): e["sql"] for e in schema(query, ours_names)}
+    # An index or trigger only the other side has came from its own migrations (migrations-accounts adds
+    # `user_created`); the copy's own must all be there as the copy has them.
+    theirs = {(e["type"], e["name"]): e["sql"] for e in schema(query, ours_names)
+              if e["type"] == "table" or (e["type"], e["name"]) in ours}
     for k in sorted(ours.keys() | theirs.keys()):
         if ours.get(k) != theirs.get(k):
             out.append(f"{k[0]} {k[1]}: schema differs")

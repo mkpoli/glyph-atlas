@@ -173,6 +173,22 @@ def test_load_sends_once_and_check_passes(accounts, capsys):
     assert len(sent) == 3
 
 
+def test_check_accepts_the_indexes_the_accounts_migrations_add_and_misses_none_of_the_copys(accounts, capsys):
+    module, _old, target, _ = accounts
+    pull(module)
+    module.load(True, module.local(target))
+    target.execute((ROOT / "apps" / "cloudflare" / "migrations-accounts" / "0002_people.sql").read_text().splitlines()[1])
+    target.commit()
+    module.check()
+    assert "glyph-atlas-accounts matches" in capsys.readouterr().out
+    copied = target.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL AND name != 'user_created'").fetchone()[0]
+    target.execute(f'DROP INDEX "{copied}"')
+    target.commit()
+    with pytest.raises(SystemExit):
+        module.check()
+    assert f"glyph-atlas-accounts: index {copied}: schema differs" in capsys.readouterr().out
+
+
 def test_check_reports_a_changed_row(accounts, capsys):
     module, _old, target, _ = accounts
     pull(module)
