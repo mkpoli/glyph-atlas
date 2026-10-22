@@ -60,7 +60,8 @@ export type LedgerTools = {
   owned: (user: string) => string;
   // The crop an old text id names, through the alias map, or null.
   alias: (text: string) => Promise<number | null>;
-  // Files a crop's runs under the grapheme it is read as now, after a write moved its grapheme claim.
+  // Files a crop's runs under the grapheme it is read as now, after a write moved its grapheme claim;
+  // never throws, since the claim is saved by then.
   refile?: (crop: number) => Promise<void>;
 };
 export type Member = { object: string | null; value: unknown; confidence: number | null; confidence_scheme: string | null };

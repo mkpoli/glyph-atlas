@@ -62,7 +62,10 @@ async function namedCrop(env: Env, named: unknown, fail: ClaimTools['fail'], ctx
 
 const ledgerTools = (env: Env, tools: ClaimTools, ctx?: ExecutionContext): LedgerTools => ({ fail: tools.fail, text: tools.text, canonical: tools.canonical,
   owned: ownedActors, crop: (env, named) => namedCrop(env, named, tools.fail, ctx), alias: text => aliasCrop(env, text, ctx),
-  refile: crop => refileRuns(env, crop) });
+  // A claim is saved in glyph-atlas-v3 and its runs filed in glyph-atlas-v3-runs, which cannot share a
+  // transaction: a filing that fails is logged and the claim answers as saved, and the publisher files
+  // the crop's runs from the claims as they stand once it next publishes.
+  refile: crop => refileRuns(env, crop).catch(error => console.log(JSON.stringify({ event: 'refile_failed', crop, message: String(error) }))) });
 
 // A crop's slot that holds on its effective cut: one key of `current_claims` per crop, by `current_claim_crop`.
 export const cropSlotsQuery = (predicate: 'has_form' | 'writes_word') => `SELECT c.crop,c.status,c.object,c.value,c.members,c.claims,c.supporting

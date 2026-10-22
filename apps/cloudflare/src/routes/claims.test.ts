@@ -239,6 +239,14 @@ describe('the crop grapheme picker', () => {
     expect(held()).toEqual([[{ graphemes: '後后' }], [{ graphemes: '後后', n: 1 }], []]);
   });
 
+  it('answers a saved claim as saved when its runs cannot be filed', async () => {
+    const { env, local, pick } = graphemes();
+    (env as any).ATLAS_RUNS = { prepare: () => { throw new Error('D1_ERROR: runs unavailable') } };
+    const saved = await pick(AFTER);
+    expect(saved.grapheme_claim?.values.map((v: { grapheme: string }) => v.grapheme)).toEqual([AFTER]);
+    expect((await familyClaims(env, AFTER, [1])).here.map(r => r.id)).toEqual([local]);
+  });
+
   it('goes through the picker route', async () => {
     const { local, version, post } = graphemes();
     const answer = await post(`/atlas/characters/${publicId(local)}/grapheme`, { id: crypto.randomUUID(), crop_version: version(local), grapheme: AFTER }) as any;

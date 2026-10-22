@@ -396,7 +396,7 @@ describe('a grapheme claim files a crop’s runs', () => {
     expect(after.stats).toContainEqual({ size: 2, graphemes: 'んし', n: 3, down: 3 });
     expect(after.stats.some((r: Json) => r.graphemes === 'しんし')).toBe(false);
     expect(after.written).toContainEqual({ crop, char: 'し' });
-    expect(f.runsDb.query('SELECT first,size FROM run_moves ORDER BY first').all()).toEqual([{ first: f.at[1].id, size: 3 }, { first: f.at[2].id, size: 2 }]);
+    expect(f.runsDb.query('SELECT first,size,crop FROM run_moves ORDER BY first').all()).toEqual([{ first: f.at[1].id, size: 3, crop }, { first: f.at[2].id, size: 2, crop }]);
     // The run is found by the grapheme the claim reads, written as the crop is.
     const found = await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んん'))).json() as Json;
     expect(found.items.map((o: Json) => o.crops.map((c: Json) => c.label).join(''))).toEqual(['んし']);
@@ -421,6 +421,23 @@ describe('a grapheme claim files a crop’s runs', () => {
     const counted = f.runsDb.query('SELECT size,graphemes,count(*) AS n FROM runs GROUP BY size,graphemes').all();
     expect(f.runsDb.query('SELECT size,graphemes,n FROM run_stats ORDER BY size,graphemes').all())
       .toEqual([...counted].sort((a: Json, b: Json) => a.size - b.size || (a.graphemes < b.graphemes ? -1 : 1)));
+  });
+
+  it('keeps what a run holds for a crop no claim reads, whatever its character is now', async () => {
+    const f = fixture(), crop = f.at[3].id;
+    // The ん before the claimed し was relabelled し since the runs were published: its runs keep ん until the next publication.
+    f.atlas.exec(`UPDATE crops SET char=2 WHERE id=${f.at[2].id}`);
+    claim(f, crop);
+    await refileRuns(f.newEnv, crop);
+    expect(f.runsDb.query('SELECT graphemes FROM runs WHERE first=? AND size=2').all(f.at[2].id)).toEqual([{ graphemes: 'んん' }]);
+  });
+
+  it('counts a run once when two filings of one crop land together', async () => {
+    const f = fixture(), crop = f.at[3].id;
+    claim(f, crop);
+    await Promise.all([refileRuns(f.newEnv, crop), refileRuns(f.newEnv, crop)]);
+    const counted = f.runsDb.query('SELECT size,graphemes,count(*) AS n,count(*) AS down FROM runs GROUP BY size,graphemes ORDER BY size,graphemes').all();
+    expect(f.runsDb.query('SELECT size,graphemes,n,down FROM run_stats ORDER BY size,graphemes').all()).toEqual(counted);
   });
 
   it('reads its crops and their runs by their keys', () => {
