@@ -121,3 +121,25 @@ def test_a_read_that_runs_out_of_kernel_memory_is_tried_again(tmp_path, monkeypa
     monkeypatch.setattr(address_packs.time, "sleep", lambda s: None)
     assert address_packs.digest(path) == hashlib.sha256(b"abc").hexdigest()
     assert len(calls) == 3
+
+
+def test_a_recorded_move_whose_files_are_both_gone_stops_the_run(tmp_path, monkeypatch):
+    catalogue = export(tmp_path)
+    monkeypatch.setattr(Path, "rename", lambda self, target: (_ for _ in ()).throw(OSError("stopped")))
+    with pytest.raises(OSError):
+        address_packs.address(catalogue)
+    monkeypatch.undo()
+    (tmp_path / "pack-10001.bin").unlink()
+    with pytest.raises(SystemExit, match="neither file"):
+        address_packs.address(catalogue)
+
+
+def test_the_command_fails_while_a_named_pack_is_missing(tmp_path, monkeypatch):
+    catalogue = export(tmp_path)
+    address_packs.address(catalogue)
+    with sqlite3.connect(catalogue) as db:
+        (name,) = db.execute("SELECT DISTINCT object FROM media").fetchone()
+    (tmp_path / name).unlink()
+    monkeypatch.setattr(sys, "argv", ["address_packs.py", str(catalogue)])
+    with pytest.raises(SystemExit, match="not beside it"):
+        address_packs.main()
