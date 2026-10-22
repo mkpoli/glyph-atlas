@@ -8,7 +8,7 @@ import { formSlot } from '../cropForms';
 import { cropGraphemes } from '../cropPanels';
 import { formOf, slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
-import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, GRAPHEME_KEY, headKeys, keyText, ledgerPage, type LedgerTools, type Member,
+import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, graphemeKey, headKeys, keyText, ledgerPage, type LedgerTools, type Member,
   ownedActors, planAction, planClaim, PREDICATES, type Plan, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
 import { readRecords, recordKey } from '../records';
 import { anchoredForm, representationId, typed, type FormProblem } from '../representation';
@@ -180,7 +180,7 @@ export async function setGrapheme(env: Env, input: Json, named: string, actor: s
   }
   let member: Member | null = null;
   if (input.grapheme !== null) {
-    if (typeof input.grapheme !== 'string' || !GRAPHEME_KEY.test(input.grapheme)) tools.fail(422, 'Name a grapheme by its code points.');
+    if (!graphemeKey(input.grapheme)) tools.fail(422, 'Name a grapheme by its code points.');
     if (!(await headKeys(env, [input.grapheme])).length) {
       const row = await env.ATLAS.prepare(graphemeHeadQuery()).bind(keyText(input.grapheme)).first<{ family: string | null }>();
       tools.fail(422, row ? `This character is filed under ${row.family}.` : 'No such character.');
