@@ -45,7 +45,7 @@
         if (mine(head.code_point)) return
         key = head.code_point
       }
-      saved?.(await setGrapheme(item, key))
+      saved?.(await setGrapheme(item, key, offered.char === written ? offered.own?.code_point : null))
     } catch (e) { error = e.message }
     finally { pending = false; working?.(false) }
   }
@@ -61,7 +61,7 @@
     {#each chips as chip (chip.code_point)}
       <button type="button" class="grapheme-chip" class:current={chip.code_point === current} class:claimed={claimed(chip.code_point)}
         aria-pressed={chip.code_point === current} disabled={disabled || pending} title={chip.code_point} onclick={() => choose(chip)}>
-        <ScriptText text={chip.char} script="han" titled={false} />
+        <ScriptText text={chip.char} titled={false} />
       </button>
     {/each}
     {#if disputed}<span class="grapheme-note">{t('grapheme.disputed')}</span>{/if}
