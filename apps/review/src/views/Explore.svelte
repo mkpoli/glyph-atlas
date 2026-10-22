@@ -199,7 +199,8 @@
     }
     return { text: all > form ? t('tile.countWithin', { count: form, all }) : t('tile.count', { count: form }), lines, ranks }
   }
-  $effect(() => { if (!flagged) untrack(loadCorpusCounts) })
+  // Read once the first rows show: the database answers one read at a time, and the rows come first.
+  $effect(() => { if (!flagged && !loading) untrack(loadCorpusCounts) })
   // The hover panel's details, less what the caption under it shows whole. A line the caption also
   // gives comes as `{ cut, whole, short }`: the panel shows `whole` where the caption cuts its `cut`
   // part short or hides it (`markCut`), and `short`, what the line adds, where it shows it whole: the
@@ -485,9 +486,12 @@
       catalogueRequest = new AbortController()
       // The corpus half is requested alongside the crops, and deduplicated against them once both are in.
       const sampled = append ? null : requestSample()
-      // A further page continues from the cursor the last one handed back.
+      // A further page continues from the cursor the last one handed back. A view still without the
+      // counts by character and by work asks for its rows without them, and reads them once the rows show.
+      const light = !append && !flagged && !data?.categories?.length
       const result = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
-        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), cursor: append ? data?.next : null, seed, limit: 60 },
+        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), cursor: append ? data?.next : null, seed, limit: 60,
+        facets: light ? 'counts' : null },
         // The rows of a page the server rendered without them are its first screen.
         { signal: catalogueRequest.signal, priority: data ? 'low' : 'high' })
       if (closed || id !== requestId) return
@@ -497,6 +501,7 @@
       data = append && data ? { ...result, categories: data.categories, documents: data.documents } : result
       reach = append ? Math.min(reach, items.length) : 0
       items = append ? [...items, ...result.items] : result.items
+      if (light) readSummary()
       if (!append) await showSample(id, sampled, result.items)
     } catch (e) { if (!closed && id === requestId && e.name !== 'AbortError') error = e.message }
     finally { if (!closed && id === requestId) loading = false }
@@ -617,7 +622,8 @@
       if (scatteredFor === key) { scattered = slots.map(() => null); scatteredFor = null }
     }
   }
-  $effect(() => { const key = seed; if (bare && key !== scatteredFor) untrack(() => scatter(key)) })
+  // The runs are placed once the rows they stand among are in, so their reads wait behind the rows'.
+  $effect(() => { const key = seed; if (bare && !loading && key !== scatteredFor) untrack(() => scatter(key)) })
   // A character's runs show once they are here, and not at all when it has none among the counted
   // ones or they cannot be read: the strip is extra to the gallery, which loads below it meanwhile.
   let charRuns = $state(opened?.runs ? { char: opened.picked.char, items: opened.runs } : null), charRunsFor = untrack(() => charRuns?.char ?? '')
