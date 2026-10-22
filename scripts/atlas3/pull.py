@@ -177,8 +177,23 @@ def sql_str(s):
     return "'" + str(s).replace("'", "''") + "'"
 
 
+_PARSER = sqlite3.connect(":memory:")
+
+
+def real(v):
+    """A float literal SQLite reads back as `v`. D1 reads the shortest form exactly, but local SQLite reads
+    some one bit off (0.93256 and 0.93256000000000006 differ there), and a local copy that differs from D1
+    has every later diff resend the row. One of the two forms reads exactly for any value under 1e60."""
+    for text in (repr(v), format(v, ".17g")):
+        if _PARSER.execute(f"SELECT {text}").fetchone()[0] == v:
+            return text
+    return repr(v)
+
+
 def sql_lit(v):
-    return str(v) if isinstance(v, (int, float)) else sql_str(v)
+    if isinstance(v, float):
+        return real(v)
+    return str(v) if isinstance(v, int) else sql_str(v)
 
 
 if __name__ == "__main__":
