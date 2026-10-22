@@ -156,6 +156,16 @@ def create(db):
             db.execute(body)
 
 
+def upstream_characters(texts):
+    """Text id -> the character corpus_units gives each corpus glyph among `texts`."""
+    found, db = {}, source("corpus_units")
+    for i in range(0, len(texts), 500):
+        chunk = texts[i:i + 500]
+        found.update((t, char_text(c) or None) for t, c in db.execute(
+            f"SELECT id, character FROM corpus_units WHERE id IN ({','.join('?' * len(chunk))})", chunk))
+    return found
+
+
 def numbered(loaded, keys, last=None):
     """key -> integer id for `keys` in their order: a key an earlier load numbered keeps its id, and the
     rest take the next ids after the highest in use (`last`, else the highest loaded), so a translation of
@@ -722,9 +732,14 @@ def main():
 
     # A corpus glyph's character before a forms decision first moved it: a glyph the mirror lacks has no
     # crop to restore, a base no decision holds is one a publish releases (the old site kept such bases
-    # after a decision was withdrawn), and a character with no grapheme stops the load.
+    # after a decision was withdrawn), and a character with no grapheme stops the load. A glyph no review
+    # overlay speaks for has its upstream character as its base, as every publish writes it, so a withdrawn
+    # form restores the character its source now gives.
     report.table("form_bases", len(src["form_bases"]))
-    released = releases_base(crops.atlas, {t for (t,) in source("units").execute("SELECT id FROM units WHERE origin='corpus'")})
+    overlaid = {t for (t,) in source("units").execute("SELECT id FROM units WHERE origin='corpus'")}
+    released = releases_base(crops.atlas, overlaid)
+    upstream = upstream_characters([r["id"] for r in src["form_bases"] if r["id"] not in overlaid])
+    moved = 0
     bases = []
     for r in src["form_bases"]:
         if r["id"] not in crops.ids:
@@ -734,12 +749,16 @@ def main():
             report.drop("form_bases", "no form decision holds the glyph; a publish releases it")
             continue
         character = char_text(r["character"]) or None
+        # Until a publish has numbered an upstream character, the old base stands.
+        if upstream.get(r["id"]) in graphemes and upstream[r["id"]] != character:
+            character, moved = upstream[r["id"]], moved + 1
         if character is not None and character not in graphemes:
             report.stop("form_bases", "character has no grapheme", f"{r['id']}: {character!r}")
             continue
         bases.append((crops.ids[r["id"]], graphemes.get(character) if character else None))
     insert("form_bases", bases)
     report.tables["form_bases"]["out"] = len(bases)
+    report.note(f"form_bases: {moved} bases take their glyph's upstream character, which changed since the follow")
 
 
     # Corpus glyphs the old site held a row for, in the order the rows were written: the first review,

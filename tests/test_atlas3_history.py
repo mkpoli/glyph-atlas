@@ -432,3 +432,11 @@ def test_a_base_no_form_decision_holds_is_left_out_as_a_publish_releases_it(layo
     atlas.execute("UPDATE form_glyphs SET form='か'")
     atlas.commit()
     assert history(monkeypatch, root)[1].execute("SELECT count(*) FROM form_bases").fetchone() == (1,)
+    # With no review overlay, its base is the character its source now gives, as a publish writes it.
+    corpus = sqlite3.connect(root / "source-corpus_units.sqlite")
+    corpus.execute("UPDATE corpus_units SET character='あ' WHERE id='codh:g1'")
+    corpus.commit()
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    a = atlas.execute("SELECT id FROM graphemes WHERE text='あ'").fetchone()[0]
+    assert out.execute("SELECT char FROM form_bases").fetchall() == [(a,)]

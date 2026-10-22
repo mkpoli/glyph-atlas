@@ -1229,7 +1229,9 @@ def check_history(report, name, query=None):
 
     # A followed glyph's first character, as a grapheme id.
     t = Table(report, history, "form_bases", listed)
-    released = releases_base(atlas, {t_ for (t_,) in source("units").execute("SELECT id FROM units WHERE origin='corpus'")})
+    overlaid = {t_ for (t_,) in source("units").execute("SELECT id FROM units WHERE origin='corpus'")}
+    released = releases_base(atlas, overlaid)
+    upstream = dict(source("corpus_units").execute("SELECT id, character FROM corpus_units"))
     for r in stream("form_bases", "id, character"):
         cid = crop(r["id"])
         if cid is None:
@@ -1238,7 +1240,12 @@ def check_history(report, name, query=None):
         if released(cid, r["id"]):
             t.account("no form decision holds the glyph; a publish releases it")
             continue
+        # A glyph no review overlay speaks for has its upstream character as its base, once a publish has
+        # numbered it.
         character = char_text(r["character"]) or None
+        if r["id"] in upstream and r["id"] not in overlaid and (now := char_text(upstream[r["id"]]) or None) and \
+                atlas.execute("SELECT 1 FROM graphemes WHERE text=?", (now,)).fetchone():
+            character = now
         found = atlas.execute("SELECT id FROM graphemes WHERE text=?", (character,)).fetchone() if character else None
         want = {"char": found[0] if found else None}
         t.compare(f"base of {r['id']} ({cid})", want, one("SELECT char FROM form_bases WHERE crop=?", cid))
