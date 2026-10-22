@@ -4,7 +4,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from './forms.test';
 import { bundleKey, cropId, publicId } from './atlas3';
-import { SHARDS, characterCounts, currentPointer, cursorOf, filedCounts, galleryPage, rangeQuery, tallyQuery, type GalleryQuery } from './atlas3Gallery';
+import { SHARDS, characterCounts, currentPointer, cursorOf, familyClaims, filedCell, filedClaimsQuery, filedCounts, galleryPage, rangeQuery, tallyQuery,
+  type GalleryQuery } from './atlas3Gallery';
 
 const databases: Database[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); });
@@ -108,6 +109,44 @@ describe('new-layout character galleries', () => {
     expect(tally).toContain('USING PRIMARY KEY (gen=? AND char=?)');
     const filed = (db.query(`EXPLAIN QUERY PLAN ${tallyQuery('family')}`).all(3, '[9]') as { detail: string }[]).map(r => r.detail).join(' | ');
     expect(filed).toContain('USING PRIMARY KEY (gen=? AND char=? AND family=?)');
+    // A family that leaves out its crops filed elsewhere still reads its index alone.
+    const { sql, values } = rangeQuery({ kind: 0, segments: [], limit: 3 }, 'S', { by: 'char', key: 7, except: [cropId(1, 1)] }, after, 4)!;
+    expect((db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...values) as { detail: string }[]).map(r => r.detail).join(' | ')).toContain('COVERING INDEX crop_char');
+  });
+});
+
+describe('crops a grapheme claim files', () => {
+  // Slot 1 of 所 read as 後 (on its cut), slot 2 read as 後 on a cut since replaced, slot 4 read as 所.
+  function claimed() {
+    const found = setup(), { db, ids } = found;
+    db.exec(`INSERT INTO graphemes(id,text) VALUES(8,'後'); UPDATE crops SET cut=1 WHERE id=${ids[2]};`);
+    const claim = db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,value,members,supporting,claims,resolver,at)
+      VALUES(?,'has_grapheme','','',?,0,?,?,NULL,'[]','[]','[]','r','t')`);
+    claim.run('hk:1', ids[1], 'asserted', 'U+5F8C'); claim.run('hk:2', ids[2], 'accepted', 'U+5F8C'); claim.run('hk:4', ids[4], 'asserted', 'U+6240');
+    claim.run('hk:5', ids[5], 'disputed', 'U+5F8C');
+    return found;
+  }
+  const slotsOf = (ids: number[]) => ids.map(id => id % 2 ** 24);
+  it('leave the family of their character for the one their claim names, on the cut it holds on', async () => {
+    const { env, ids } = claimed();
+    const so = await familyClaims(env, 'U+6240', [7]), after = await familyClaims(env, 'U+5F8C', [8]);
+    expect(slotsOf(so.away.map(r => r.id))).toEqual([1]);
+    expect(so.here).toEqual([]);
+    expect(slotsOf(after.here.map(r => r.id))).toEqual([1]);
+    expect(filedCell(after.here[0], 1)).toEqual({ kind: 0, style: 0, state: 1, quiz: 1, decade: 1710, visual_group: null, n: 1 });
+    const family = (g: { except?: number[]; ids?: number[] }) => galleryPage(env, { kind: 0, limit: 20, withheld: true,
+      segments: [[{ by: 'char', key: 7, except: g.except }, ...(g.ids ? [{ by: 'claimed' as const, key: 8, ids: g.ids }] : [])]] });
+    expect(slotsOf((await family({ except: so.away.map(r => r.id) })).ids)).not.toContain(1);
+    expect(slotsOf((await galleryPage(env, { kind: 0, limit: 20, withheld: true, segments: [[{ by: 'claimed', key: 8, ids: after.here.map(r => r.id) }]] })).ids)).toEqual([1]);
+    // In year order too, a claimed crop takes its place among the family's own.
+    const dated = await galleryPage(env, { kind: 0, limit: 20, withheld: true, order: 'year', segments: [[{ by: 'char', key: 7, except: [ids[3]] }, { by: 'claimed', key: 8, ids: [ids[3]] }]] });
+    expect(slotsOf(dated.ids)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 9, 8]);
+  });
+  it('are read from the claims\' own index', () => {
+    const { db } = claimed();
+    const plan = (db.query(`EXPLAIN QUERY PLAN ${filedClaimsQuery()}`).all() as { detail: string }[]).map(r => r.detail).join(' | ');
+    expect(plan).toContain('current_claim_object');
+    expect(plan).toContain('INTEGER PRIMARY KEY');
   });
 });
 
