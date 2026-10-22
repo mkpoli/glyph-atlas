@@ -30,7 +30,9 @@
   import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, shuffleSeed, number, stored, remember } from '../lib/client.js'
-  import { correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
+  import { confirmationBatches, confirmationBody, confirmationOutcome, confirmationPlan, correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
+  import { arrowTarget, toggled, withRange } from '../lib/selection.js'
+  import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
   import { characterAddress, collectionAddress, corpusScope, expandFor, graphemeAddress, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
@@ -785,36 +787,86 @@
         reported_count: summary.reported_count, withheld_count: summary.withheld_count }
     } catch (e) { if (!closed) error = e.message }
   }
-  // Several tiles can be given one written character at once, as when the same misreading repeats.
-  // Ctrl/⌘-click or the corner box toggles a tile, Shift-click takes the range from the last one, X
-  // toggles the focused tile, and once anything is selected a mouse click toggles too; Enter still opens
-  // the inspector, so a keyboard reader can check a tile before marking it. Esc clears.
-  let selected = $state(new Set()), anchor = null, bulkTarget = $state(''), bulkBusy = $state(false), bulkError = $state('')
-  let bulkDone = $state(null)
-  const BATCH = 144
+  // A signed-in reviewer can select many tiles and confirm them all as they are labelled ("Looks right"),
+  // or give them all one written character, as when the same misreading repeats. Select mode is turned
+  // on by its button, by S, by a long press on a phone, or by Ctrl/⌘- or Shift-clicking a tile. In it a
+  // click, a tap or Space toggles a tile, Shift takes the range from the last one in display order, the
+  // arrow keys move between tiles, and Esc leaves the mode.
+  const reviewer = $derived(Boolean(session.state.user && !session.state.user.anonymous))
+  let selecting = $state(false), selected = $state(new Set()), anchor = null, bulkTarget = $state(''), bulkBusy = $state(false), bulkError = $state('')
+  // The last batch save, with its undo, and the crops it could not save, by reason.
+  let bulkDone = $state(null), bulkReport = $state([])
+  // Crops "Looks right" confirmed on this page: their tick says so, so they drop the empty select box until chosen again.
+  let confirmedHere = $state(new Set())
   /** A corpus glyph whose image this site may not show cannot be judged from the grid. */
   const selectable = item => item.origin !== 'corpus' || Boolean(item.proxyable && item.image)
+  function startSelecting() { selecting = true; bulkError = '' }
+  function stopSelecting() { selecting = false; clearSelection() }
+  /** Toggle the tile at `index`, or with `range` take every tile from the last one toggled to it. */
+  function choose(item, index, range = false) {
+    if (!selectable(item)) return
+    if (!selecting) startSelecting()
+    selected = range && anchor != null ? withRange(selected, tiles, anchor, index, selectable) : toggled(selected, item.id)
+    anchor = index; bulkError = ''
+  }
+  // A long press, or a key the selection handled, can be followed by a click the tile must not act on
+  // again: any click after a long press, a click with no pointer (`detail` 0) after a key.
+  let swallow = null
   function tileClick(event, item, index, open) {
-    const toggling = event.target.closest?.('.tile-select') || event.ctrlKey || event.metaKey || event.shiftKey || (selected.size && event.detail > 0)
+    const after = swallow
+    swallow = null
+    if (after && (after.press ? after.at == null || event.timeStamp - after.at < 800 : event.timeStamp - after.at < 800 && event.detail === 0)) { event.preventDefault(); return }
+    const toggling = reviewer && (selecting || event.target.closest?.('.tile-select') || event.ctrlKey || event.metaKey || event.shiftKey)
     if (!toggling || !selectable(item)) { open(); return }
     event.preventDefault()
-    const next = new Set(selected)
-    if (event.shiftKey && anchor != null) {
-      const [from, to] = anchor < index ? [anchor, index] : [index, anchor]
-      for (const tile of tiles.slice(from, to + 1)) if (selectable(tile)) next.add(tile.id)
-    } else if (next.has(item.id)) next.delete(item.id)
-    else next.add(item.id)
-    anchor = index; selected = next; bulkError = ''
+    choose(item, index, event.shiftKey)
   }
+  // A long press on a touch screen starts select mode with the tile pressed; moving the finger is a scroll.
+  let press = null
+  function pressStart(event, item, index) {
+    // A new gesture: a long press whose finger never lifted here holds no click back any more.
+    if (swallow?.press && swallow.at == null) swallow = null
+    if (event.pointerType !== 'touch' || !reviewer || !selectable(item)) return
+    clearTimeout(press?.timer)
+    press = { x: event.clientX, y: event.clientY, timer: setTimeout(() => {
+      // The click comes when the finger lifts, however long it is held: the lift starts the wait.
+      press = null; swallow = { at: null, press: true }
+      choose(item, index)
+      navigator.vibrate?.(10)
+    }, 450) }
+  }
+  function pressMove(event) { if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 10) pressEnd() }
+  function pressEnd() { clearTimeout(press?.timer); press = null }
+  function pressLift(event) { pressEnd(); if (swallow?.press && swallow.at == null) swallow.at = event.timeStamp }
+  const pressing = (item, index) => ({ onpointerdown: event => pressStart(event, item, index), onpointermove: pressMove, onpointerup: pressLift, onpointercancel: pressLift,
+    oncontextmenu: event => { if (swallow || press) event.preventDefault() } })
   function clearSelection() { selected = new Set(); anchor = null; bulkError = '' }
   function selectShown() { selected = new Set(tiles.filter(selectable).map(tile => tile.id)); bulkError = '' }
+  const tileId = tile => tile?.dataset.unit ?? tile?.dataset.corpus
+  /** Focus the tile at `index` of the tiles shown, scrolled into view. */
+  function focusTile(index) {
+    const id = tiles[index]?.id
+    const tile = id && [...grid.querySelectorAll('.glyph-tile')].find(node => tileId(node) === id)
+    tile?.focus(); tile?.scrollIntoView({ block: 'nearest' })
+  }
   function selectionKeys(event) {
-    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.target.closest?.('input, textarea, dialog')) return
-    if (event.key === 'Escape' && selected.size) { clearSelection(); return }
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || page.state.inspect || event.target.closest?.('input, textarea, select, dialog, [contenteditable]')) return
+    if ((event.key === 's' || event.key === 'S') && reviewer && !event.repeat) { event.preventDefault(); if (selecting) stopSelecting(); else startSelecting(); return }
+    if (!selecting) return
+    if (event.key === 'Escape') { event.preventDefault(); stopSelecting(); return }
     const tile = event.target.closest?.('.glyph-grid .glyph-tile')
-    if (!tile || (event.key !== 'x' && event.key !== 'X')) return
-    const index = tiles.findIndex(item => item.id === (tile.dataset.unit ?? tile.dataset.corpus))
-    if (index >= 0) { event.preventDefault(); tileClick({ ctrlKey: true, detail: 0, target: event.target, preventDefault() {} }, tiles[index], index, () => {}) }
+    const index = tile ? tiles.findIndex(item => item.id === tileId(tile)) : -1
+    if (event.key.startsWith('Arrow')) {
+      const nodes = [...grid.querySelectorAll('.glyph-tile')], byId = new Map(nodes.map(node => [tileId(node), node]))
+      // Without a tile in focus the first arrow goes to the first tile.
+      const to = index < 0 ? 0 : arrowTarget(tiles.map(item => byId.get(item.id)?.getBoundingClientRect() ?? { left: 0, top: 0, width: 0, height: 0 }), index, event.key)
+      if (to != null) { event.preventDefault(); focusTile(to) }
+      return
+    }
+    if (index >= 0 && (event.key === ' ' || event.key === 'Enter')) {
+      event.preventDefault(); swallow = { at: event.timeStamp, press: false }
+      choose(tiles[index], index, event.shiftKey)
+    }
   }
   const writtenAs = item => item.written_character || item.label
   /** A tile after a correction, or null when the correction takes it out of what this view shows. */
@@ -847,18 +899,18 @@
     // and one already written as the character is confirmed.
     const crops = chosen.filter(item => !(writtenAs(item) === target && item.state === 'checked'))
     let kept = chosen.length - crops.length
-    bulkBusy = true; bulkError = ''
+    bulkBusy = true; bulkError = ''; bulkReport = []
     const saved = [], before = {}, after = {}
     let refused = [], answered = [], waiting = []
     try {
-      ({ answered, kept: waiting } = await sendBatches(correctionBatches(target, crops, BATCH), ({ id, crops: part }) =>
+      ({ answered, kept: waiting } = await sendBatches(correctionBatches(target, crops, ROUND_MAX), ({ id, crops: part }) =>
         request('/atlas/corrections', { id, character: target,
           crops: part.map(item => ({ id: item.id, revision: item.revision,
             ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) })))
     } catch (e) {
       answered = e.answered ?? []; waiting = e.kept ?? []
       refused = (e.targets ?? []).map(target => target.id)
-      bulkError = refused.length ? t('bulk.refused', { count: refused.length }) : e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
+      bulkError = refused.length ? t('bulk.refused', { count: refused.length }) : failure(e)
     } finally {
       bulkBusy = false
     }
@@ -875,12 +927,62 @@
       .concat(chosen.filter(item => !crops.includes(item))).map(item => item.id).concat(refused))
     if (saved.length) {
       patch(after)
-      bulkDone = { batches: saved, count: Object.keys(after).length, char: target, before, kept }
+      bulkDone = { kind: 'correct', batches: saved, count: Object.keys(after).length, char: target, before, kept }
       runsChanged()
     }
     // What was saved, kept or refused leaves the selection; what a later batch never reached stays selected.
     selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
     if (refused.length) await refresh(refused)
+  }
+  /** What a batch save that stopped says: the site's own reasons for a rate limit or a crop that changed. */
+  const failure = e => e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
+  // "Looks right": every selected crop confirmed as the character it is labelled with, through the same
+  // correction batches (`lib/corrections.js`). The crops it could not confirm are reported by reason and
+  // read again, so their tiles show what they are now; what a stopped run never sent stays selected.
+  async function confirmSelected() {
+    if (bulkBusy || !selected.size) return
+    const chosen = display.filter(item => selected.has(item.id))
+    const plan = confirmationPlan(chosen)
+    bulkBusy = true; bulkError = ''; bulkReport = []
+    let answered = [], kept = []
+    try {
+      ({ answered, kept } = await sendBatches(confirmationBatches(plan.crops, ROUND_MAX), batch => request('/atlas/corrections', confirmationBody(batch))))
+    } catch (e) {
+      answered = e.answered ?? []; kept = e.kept ?? []
+      bulkError = failure(e)
+    } finally {
+      bulkBusy = false
+    }
+    if (kept.length && !bulkError) bulkError = t('client.pausedKept')
+    const outcome = confirmationOutcome(answered), before = {}, after = {}
+    for (const item of chosen) {
+      const saved = outcome.saved.get(item.id)
+      if (!saved) continue
+      before[item.id] = item
+      const next = { ...item, state: saved.state, revision: saved.revision }
+      after[item.id] = (flagged && !waiting(next.state)) || !fitsGallery(next) ? null : next
+    }
+    // Each reported crop keeps its label and origin, so it opens even when reading it again takes its tile away.
+    const tileOf = id => chosen.find(tile => tile.id === id)
+    // A crop with no character to show is named by its image, and by its id to a screen reader.
+    bulkReport = [...plan.report, ...outcome.report].map(entry => {
+      const tile = tileOf(entry.id), label = tile ? shownLabel(tile).trim() : '', named = Boolean(label) && !isUnassigned(tile)
+      const origin = tile?.origin === 'corpus' ? 'corpus' : 'collection', shown = named ? label : [label, entry.id].filter(Boolean).join(' ')
+      return { ...entry, label, named, origin, thumb: tile?.image && selectable(tile) ? tile : null,
+        name: origin === 'corpus' ? t('explore.tile.inspectCorpus', { label: shown }) : t('explore.tile.inspect', { label: shown }) }
+    })
+    if (outcome.saved.size) {
+      patch(after)
+      confirmedHere = new Set([...confirmedHere, ...outcome.saved.keys()])
+      bulkDone = { kind: 'confirm', batches: answered.map(({ item }) => item.id), count: outcome.saved.size, before }
+      runsChanged()
+    }
+    // What was sent, kept or reported leaves the selection.
+    const handled = new Set([...answered.map(({ item }) => item), ...kept].flatMap(batch => batch.crops).map(item => item.id)
+      .concat(plan.report.map(entry => entry.id)))
+    selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
+    const stale = outcome.report.filter(entry => entry.reason !== 'flagged').map(entry => entry.id)
+    if (stale.length) await refresh(stale)
   }
   async function undoBulk() {
     const done = bulkDone
@@ -888,7 +990,8 @@
     bulkBusy = true; bulkError = ''
     try {
       const { answered, kept: waiting } = await sendEach([...done.batches].reverse(), id => request(`/atlas/corrections/${id}/undo`, {}))
-      bulkDone = null
+      if (done.kind === 'confirm') confirmedHere = new Set([...confirmedHere].filter(id => !(id in done.before)))
+      bulkDone = null; bulkReport = []
       // Undos kept while writes are paused go once they resume; until then the site still shows those
       // batches' crops corrected, so the view is read again.
       if (waiting.length) bulkError = t('client.pausedKept')
@@ -901,6 +1004,12 @@
       runsChanged()
     } catch (e) { bulkError = e.message }
     finally { bulkBusy = false }
+  }
+  /** Open a crop the last batch save reported, stepping through the reported ones. */
+  function openReported(id) {
+    const queue = bulkReport.map(entry => display.find(tile => tile.id === entry.id) ?? { id: entry.id, origin: entry.origin })
+    const entry = bulkReport.find(reported => reported.id === id)
+    if (entry) inspect(id, null, queue, updateItem, entry.origin)
   }
   function select(value) { split = null; grapheme = value; load() }
   // A tile that counts corpus glyphs, which the collection's own listing leaves out, opens its
@@ -1009,7 +1118,7 @@
   </span>
 {/snippet}
 <!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
-{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if selectable(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}><span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span><span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{/if}{/snippet}
+{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{/if}{/snippet}
 <!-- The search term in its scripts' colours, and the code points `readable` adds to it. -->
 {#snippet term()}<ScriptText text={query} />{readable.slice(query.length)}{/snippet}
 
@@ -1046,6 +1155,7 @@
     <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else load() }} />
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
+    {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
     <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
       {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
     </div>
@@ -1088,13 +1198,14 @@
     <!-- The line the counts take once the rows are in, held so the collage does not move down then. -->
     <p class="find-count" aria-hidden="true">&#8203;</p>
   {/if}
-  <div class="glyph-grid collage" class:selecting={selected.size > 0} bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading && mounted}>
+  <div class="glyph-grid collage" class:selecting bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading && mounted}>
     {#if loading && !display.length}<noscript><p class="noscript-note">{t('explore.noscript')}</p></noscript><div class="collage-block" style={skeleton.block}>{#each skeleton.tiles as style}<div class="glyph-skeleton collage-cell" {style}></div>{/each}</div>
     {:else}{#each sections as section (section.key)}{#if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{/each}{/if}
   </div>
   {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: picked.char })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
-  {#if selected.size || bulkDone || bulkError}<BulkBar count={selected.size} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone}
-    onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onundo={undoBulk} ondismiss={() => { bulkDone = null; bulkError = '' }} />{/if}
+  {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
+    onconfirm={confirmSelected} onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onleave={stopSelecting} onundo={undoBulk} onopen={openReported}
+    ondismiss={() => { bulkDone = null; bulkError = ''; bulkReport = [] }} />{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && display.length}…{/if}</div>
   <div class="collection-bottom">{#if localName()}<span lang={locale()}>{localName()}</span>{:else}<span lang="en">GLYPH ATLAS</span>{/if}{#if data?.counts?.checked != null}<span>{t('explore.bottom.checked', { count: data.counts.checked })} <span class="separator">·</span> {t('explore.bottom.flagged', { count: data.counts.flagged })}</span>{/if}</div>
 </section>
@@ -1108,14 +1219,24 @@
   .browse-unit{display:flex;gap:2px;padding:8px 8px 6px}
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
-  /* The box that selects a tile shows on hover or focus, and on every tile once one is selected or on a touch screen.
-     A class on the gallery says one is selected: a `:has()` there restyled every tile each time tiles were added. */
-  .tile-select{position:absolute;top:8px;right:8px;z-index:4;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:1.5px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:600 12px/1 system-ui,sans-serif;opacity:0;transition:opacity .12s}
+  .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
+  .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
+  .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 10px/1 system-ui,sans-serif;color:transparent}
+  .select-toggle[aria-pressed="true"] .select-mark{color:inherit}
+  /* The box that selects a tile shows on hover or focus, and on every tile in select mode or on a touch screen.
+     A class on the gallery says the mode is on: a `:has()` there restyled every tile each time tiles were added. */
+  .tile-select{position:absolute;top:8px;right:8px;z-index:4;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid var(--muted);border-radius:6px;background:var(--surface);color:var(--on-color);font:700 13px/1 system-ui,sans-serif;opacity:0;transition:opacity .12s}
   :global(.glyph-tile):hover .tile-select,:global(.glyph-tile):focus-visible .tile-select,.selecting .tile-select{opacity:1}
   @media(hover:none){.tile-select{opacity:.85}}
   .decided-checked .tile-select,.decided-flagged .tile-select{right:36px}
-  :global(.glyph-tile.selected){outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-light)}
-  :global(.glyph-tile.selected) .tile-select{opacity:1;background:var(--accent-solid);border-color:var(--accent-solid)}
+  /* A selected tile is ringed and washed over its image, and its box is filled and ticked, so the state
+     does not rest on colour alone. The focus ring stays outside the tile, so a focused tile shows both. */
+  .selecting :global(.glyph-tile){-webkit-touch-callout:none;user-select:none}
+  :global(.glyph-tile.selected){background:var(--accent-light)}
+  :global(.glyph-tile.selected)::before{content:'';position:absolute;inset:0;z-index:4;pointer-events:none;border:3px solid var(--accent-solid);
+    box-shadow:inset 0 0 0 1px var(--surface);background:var(--accent-wash)}
+  :global(.glyph-tile.selected) .tile-select{opacity:1;z-index:5;background:var(--accent-solid);border-color:var(--accent-solid)}
+  .selecting :global(.glyph-tile:focus-visible){z-index:2}
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
   .tile-production{font-family:"GenZui Sans",system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* The copy's year, the tile's one date: in the footer's small type, its digits all one width. */
