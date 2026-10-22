@@ -89,9 +89,10 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   with the も family, and so is a crop whose character a review clears. On the 19 October copies this
   lists 6,252 `codh-omt` glyphs and 1,333 collected crops whose source named no family with their
   character's family, which the old galleries left out, and the 24 crops whose record named a family
-  other than their character's (21 汙, 2 匘, 1 撿) with their character's family. The ledger holds no
-  `has_grapheme` claim. `fill.py` fills the column once at the cutover; a publish refuses a local copy
-  without it.
+  other than their character's (21 汙, 2 匘, 1 撿) with their character's family. A crop that a
+  `has_grapheme` claim reads as another grapheme is listed with that grapheme's family instead, which
+  the Worker reads from the ledger; the publication leaves it alone. `fill.py` fills the column once at
+  the cutover; a publish refuses a local copy without it.
 - A known crop with another box or image on its own page is a re-cut: it keeps its id, its `cut`
   moves on by one, and its bundle entry takes the new record. Reviews and claims name the cut they
   were made on, so they stay with the old one. A re-cut crop that rounds had marked seen or hard is pending
