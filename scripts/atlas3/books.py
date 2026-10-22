@@ -1,22 +1,32 @@
-"""Move the book facts and site-wide values into glyph-atlas-v3 (`migrations-atlas/0005_books.sql`).
+"""Move the book facts, the date claims and the site-wide values into glyph-atlas-v3 (`migrations-atlas/0005_books.sql`).
 
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py          # translate and write the parts
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py --send   # and load them
 
-The copies `source-document_dating`, `source-corpus_documents`, `source-document_characters` and
-`source-metadata` (pull.py) are translated into `out/books.sqlite`, every book named by its integer id
-in the local copy and every published occurrence by its crop through `out/mirror.sqlite`, which is only
-read:
+The book facts input (`glyph_atlas.book_facts_input`: the dates export's claims and dating, and the
+characters another site lists per book) and the copies `source-corpus_documents` and `source-metadata`
+(pull.py) are translated into `out/books.sqlite`, every book named by its integer id in the local copy
+and every published occurrence by its crop through `out/mirror.sqlite`, which is only read:
 
 - `books.title`: the title on the book's first page bundle, else the source its first crop there names,
   else the one its corpus publication gave;
-- `book_dates`: both dating axes of each book, less the claim list and the export stamp (the claims
-  stay in `assertions`);
+- `book_dates`: both dating axes of each book, less the claim list. The input keeps the dating of
+  every document the export read, so a document that becomes a book later takes its dates on the
+  next run;
 - `book_characters`: each occurrence by its integer crop id; one whose unit the site never had (the
-  mirror lacks it) keeps its text id in `unit`, as the old site listed it. Whether the site shows it with its review state is derived when a route reads it
+  mirror lacks it) keeps its text id in `unit`, as the old site listed it. Only the books of documents
+  the input lists (`character_documents`) are replaced; the others keep the rows the site holds. Whether the site shows it with its review state is derived when a route reads it
   (the query is in 0005), since every round changes it;
 - `site`: the publication's `collection`, `corpus_index` and `review_epoch`; the citations
   `variant_sources` and `word_sources` are `reference.py`'s.
+
+The dates export's claims go to the ledger as the old export wrote them, against the ledger the
+local copy holds (the history, `load_history.py`): a claim that stands nowhere is asserted under its
+id, or as `<id>@<stamp>` when an earlier one was retracted, with its source as evidence; a date a
+source asserted and the export no longer states is retracted by that source at the stamp; and every
+slot that gains a claim or loses one is resolved again in glyph-atlas-v3, by the ledger's resolver
+(data/ledger.json) as the Worker runs it, from the rows D1 holds, so a verdict given on the site counts.
+A claim's stamp is the export's time.
 
 Facts about a document that is not a book of the new layout are left out with a count. Only what
 differs from the local copy is sent, in parts named by their content and confirmed by their stamps in
@@ -40,10 +50,15 @@ import hashlib
 import json
 import sqlite3
 import sys
+from collections import defaultdict
 
 from build import HERE, OUT
 from load_history import GROUP, SCHEMA, built, deliver, row_statements, stamped
 from publish import applied, lit, query, send
+
+from glyph_atlas import book_facts_input
+from glyph_atlas.dates import RESOLVER
+from glyph_atlas.review import ledger
 
 SITE_KEYS = ("collection", "corpus_index", "review_epoch")
 DATE_COLS = ("book", "axis", "kind", "start", "end", "precision", "qualifier", "uncertain", "text", "label", "status",
@@ -52,8 +67,12 @@ CHARACTER_COLS = ("book", "ord", "crop", "unit", "data")
 # Each table books.py writes, with its key and the rows of it books.py owns.
 TABLES = {"book_dates": (DATE_COLS, ("book", "axis"), ""), "book_characters": (CHARACTER_COLS, ("book", "ord"), ""),
           "site": (("key", "value"), ("key",), f" WHERE key IN ({','.join(repr(k) for k in SITE_KEYS)})")}
-SOURCES = {"document_dating": ("document", *DATE_COLS[1:]), "corpus_documents": ("document", "title"),
-           "document_characters": ("document", "ord", "unit", "data"), "metadata": ("key", "value")}
+SOURCES = {"corpus_documents": ("document", "title"), "metadata": ("key", "value")}
+# The ledger tables a dates export writes.
+LEDGER = ("assertions", "assertion_evidence", "assertion_actions")
+DATE = "substr(a.predicate, 1, 5) = 'date_'"
+METHOD = "atlas dates"
+INPUT = None
 
 
 def source(table):
@@ -65,6 +84,18 @@ def source(table):
     if lacking := [c for c in SOURCES[table] if c not in have]:
         sys.exit(f"{path.name} lacks {', '.join(lacking)}; pull.py --fresh {table} copies it again")
     return db
+
+
+def given(table):
+    """The book facts input, once a generator has written `table` into it."""
+    global INPUT
+    if INPUT is None:
+        INPUT = book_facts_input.reading()
+    if INPUT.execute("SELECT 1 FROM written WHERE name=?", (table,)).fetchone() is None:
+        sys.exit(f"no generator has written {table} into the book facts input; "
+                 + ("export_document_characters.py" if table == "document_characters" else "export_dates_cloudflare.py")
+                 + " writes it")
+    return INPUT
 
 
 def source_title(value):
@@ -125,12 +156,12 @@ def translate(atlas, mirror):
     out.executemany("INSERT INTO books VALUES(?,?,?)", [(b, t, o) for b, (o, t) in sorted(titles(atlas, corpus).items())])
 
     rows = []
-    for r in source("document_dating").execute(f"SELECT document,{','.join(DATE_COLS[1:])} FROM document_dating"):
+    for r in given("document_dating").execute(f"SELECT document,{','.join(DATE_COLS[1:])} FROM document_dating"):
         if (b := book(r[0], "dates")) is not None:
             rows.append((b, *r[1:6], r[6], int(bool(r[7])), *r[8:]))
     out.executemany(f"INSERT INTO book_dates VALUES({','.join('?' * len(DATE_COLS))})", rows)
 
-    characters = source("document_characters").execute(
+    characters = given("document_characters").execute(
         "SELECT document, ord, unit, data FROM document_characters ORDER BY document, ord").fetchall()
     rows = []
     for document, ord_, unit, data in characters:
@@ -142,6 +173,10 @@ def translate(atlas, mirror):
             count("characters naming a unit the site never had, kept by their text id")
         rows.append((b, ord_, crop[0] if crop else None, None if crop else unit, data))
     out.executemany("INSERT INTO book_characters VALUES(?,?,?,?,?)", rows)
+    listed = given("document_characters").execute(
+        "SELECT document FROM character_documents UNION SELECT document FROM document_characters")
+    out.execute("CREATE TABLE character_books(book INTEGER PRIMARY KEY)")
+    out.executemany("INSERT OR IGNORE INTO character_books VALUES(?)", [(books[d],) for (d,) in listed if d in books])
 
     meta = dict(source("metadata").execute("SELECT key, value FROM metadata"))
     out.executemany("INSERT INTO site VALUES(?,?)", [(k, meta[k]) for k in SITE_KEYS if k in meta])
@@ -178,10 +213,14 @@ def statements(books, atlas):
     wanted = dict(books.execute("SELECT id, title FROM books"))
     add("books", [[f"UPDATE books SET title = {lit(wanted.get(b))} WHERE id = {b};"]
                   for b in sorted(now) if now[b] != wanted.get(b)])
+    # A book whose document the input does not list keeps its characters: the input may hold only some.
+    listed = {r[0] for r in books.execute("SELECT book FROM character_books")}
     for table, (cols, key, owned) in TABLES.items():
         names = ",".join(f'"{c}"' for c in cols)
         k = [cols.index(c) for c in key]
         held = {tuple(r[i] for i in k): r for r in atlas.execute(f"SELECT {names} FROM {table}{owned}")} if has(atlas, table) else {}
+        if table == "book_characters":
+            held = {kk: r for kk, r in held.items() if r[0] in listed}
         new = {tuple(r[i] for i in k): r for r in books.execute(f"SELECT {names} FROM {table}")}
         rows = [[remove(table, cols, key, r)] for kk, r in sorted(held.items()) if kk not in new]
         removed = len(rows)
@@ -189,6 +228,124 @@ def statements(books, atlas):
         rows += [[remove(table, cols, key, r), *row_statements(table, list(cols), list(key), r)]
                  for kk, r in sorted(new.items()) if held.get(kk) != r]
         add(table, rows, removed, sum(kk not in held for kk, r in new.items()))
+    return groups, changes
+
+
+def ignored(table, row):
+    """A ledger row ({column: value}), which is never changed once written: a part sent again leaves it
+    as it is. A column it does not name takes its default."""
+    return f'INSERT OR IGNORE INTO "{table}"({",".join(row)}) VALUES({",".join(lit(v) for v in row.values())});'
+
+
+def base(identity):
+    """The claim an assertion states: its id, less the `@<stamp>` of a claim asserted again."""
+    return identity.split("@", 1)[0]
+
+
+# The ledger's resolver (data/ledger.json) as the Worker runs it on glyph-atlas-v3 (`apps/cloudflare/src/
+# ledger.ts`): crop evidence is live while it names its crop at the crop's effective cut, and a slot names
+# its crop and that cut. A date slot's subject is a book, so both are NULL there.
+def effective_cut(crop):
+    return (f"(SELECT c.cut+EXISTS(SELECT 1 FROM reviews rv WHERE rv.crop=c.id AND rv.x IS NOT NULL) "
+            f"FROM crops c WHERE c.id={crop})")
+
+
+# The columns the resolver selects, in its order.
+RESOLVED = "subject,predicate,scope,slot,status,object,value,members,supporting,claims,crop,cut,resolver,at"
+SLOT_CROP = ("(SELECT a.crop FROM assertions a WHERE a.subject=k.subject AND a.predicate=k.predicate AND a.scope=k.scope "
+             "AND a.slot=k.slot AND a.crop IS NOT NULL LIMIT 1)")
+CROP_PARTS = (("e.ref IS NOT (SELECT c.version FROM crop_now c WHERE c.unit=a.subject)",
+               f"(e.crop IS NOT a.crop OR e.cut IS NOT {effective_cut('a.crop')})"),
+              ("(SELECT c.version FROM crop_now c WHERE c.unit=k.subject) AS crop_version,",
+               f"{SLOT_CROP} AS crop, {effective_cut(SLOT_CROP)} AS cut,"))
+
+
+def v3_resolve():
+    body = ledger.RESOLVE_BODY
+    for old, new in CROP_PARTS:
+        if body.count(old) != 1:
+            sys.exit(f"data/ledger.json's resolver changed: {old}")
+        body = body.replace(old, new)
+    if "crop_now" in body:
+        sys.exit("data/ledger.json's resolver names crop_now where it is not replaced")
+    return body
+
+
+def resolve_statements(slots):
+    """The statements that resolve `slots` again in the database they run on, from its own rows: each
+    slot's `current_claims` row removed, then written where a claim of it is live (`resolveSlots`)."""
+    clear = ("DELETE FROM current_claims WHERE (subject,predicate,scope,slot) IN (SELECT json_extract(value,'$[0]'),"
+             "json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?1))")
+    write = f"INSERT INTO current_claims({RESOLVED}) WITH {v3_resolve()}"
+    out = []
+    for i in range(0, len(slots), ledger.KEYS_PER_STATEMENT):
+        bound = lit(ledger.canonical([list(k) for k in slots[i:i + ledger.KEYS_PER_STATEMENT]]))
+        out += [" ".join(line.strip() for line in sql.splitlines()).replace("?1", bound) + ";" for sql in (clear, write)]
+    return out
+
+
+def date_ledger(atlas):
+    """The ledger rows the dates export adds to the local copy's, and the resolution of each slot they
+    change, as groups of statements; also the rows each table gains or changes. None when the export
+    states no claims."""
+    claims = given("date_claims").execute(
+        f"SELECT {','.join(book_facts_input.CLAIM_COLUMNS)} FROM date_claims ORDER BY id").fetchall()
+    if not claims:
+        return None
+    stamp = given("date_claims").execute("SELECT at FROM written WHERE name='date_claims'").fetchone()[0]
+    if not has(atlas, "assertions"):
+        return "the local copy holds no ledger yet; load_history.py --send loads it"
+    held = {r[0]: r for r in atlas.execute(f"SELECT a.id, a.subject, a.predicate, a.scope, a.slot, a.asserted_by FROM assertions a WHERE {DATE}")}
+    retracted = {r[0] for r in atlas.execute(
+        f"SELECT x.assertion FROM assertion_actions x JOIN assertions a ON a.id = x.assertion WHERE x.action = 'retract' AND {DATE}")}
+    standing = defaultdict(list)
+    for identity in sorted(held):
+        if identity not in retracted:
+            standing[base(identity)].append(identity)
+    evidence = {(r[0], r[1], r[2]) for r in atlas.execute(
+        f"SELECT e.assertion, e.kind, e.ref FROM assertion_evidence e JOIN assertions a ON a.id = e.assertion WHERE {DATE}")}
+    new = {t: [] for t in LEDGER}
+    # Each changed slot's rows; evidence added to a claim that already stands changes no slot.
+    by_slot, loose = defaultdict(list), []
+    stated = set()
+    for identity, subject, predicate, value, tier, by, kind, ref, locator in claims:
+        stated.add(identity)
+        live = standing[identity]
+        if not live:
+            # A retraction is never undone: a claim that returns is asserted anew under the export's stamp.
+            fresh = f"{identity}@{stamp}" if identity in held else identity
+            # An id this stamp asserted and a later run retracted stays retracted.
+            live = [] if fresh in held else [fresh]
+            if live:
+                row = {"id": fresh, "subject": subject, "predicate": predicate, "scope": "", "slot": value,
+                       "value": value, "tier": tier, "asserted_by": by, "asserted_at": stamp, "method": METHOD,
+                       "run": RESOLVER}
+                new["assertions"].append(row)
+                by_slot[(subject, predicate, "", value)].append(("assertions", row))
+        for a in live:
+            if (a, kind, ref) not in evidence:
+                row = {"assertion": a, "kind": kind, "ref": ref, "locator": locator}
+                new["assertion_evidence"].append(row)
+                (by_slot[(subject, predicate, "", value)] if a not in held else loose).append(("assertion_evidence", row))
+    for identity, (_, subject, predicate, scope, slot, by) in sorted(held.items()):
+        if identity not in retracted and by.startswith("source:") and base(identity) not in stated:
+            row = {"id": f"dt-retract:{identity}:{stamp}", "assertion": identity, "action": "retract", "actor": by,
+                   "at": stamp, "reason": f"no source states it at export {stamp}"}
+            new["assertion_actions"].append(row)
+            by_slot[(subject, predicate, scope, slot)].append(("assertion_actions", row))
+    slots = sorted(by_slot)
+    groups = [[ignored(t, r) for t, r in loose[i:i + GROUP]] for i in range(0, len(loose), GROUP)]
+    # Each slot is resolved in D1 from the rows D1 holds, which may include verdicts the local copy
+    # lacks; the local copy replays the same statements over its own rows. A slot's rows and its
+    # resolution share a group, so no part lands its rows without resolving it.
+    order = {t: n for n, t in enumerate(LEDGER)}
+    for i in range(0, len(slots), ledger.KEYS_PER_STATEMENT):
+        chunk = slots[i:i + ledger.KEYS_PER_STATEMENT]
+        rows = sorted((r for k in chunk for r in by_slot[k]), key=lambda r: order[r[0]])
+        groups.append([ignored(t, r) for t, r in rows] + resolve_statements(chunk))
+    changes = {t: {"added": len(new[t]), "written": len(new[t])} for t in LEDGER}
+    # At most each slot's row removed and written again.
+    changes["current_claims"] = {"changed": len(slots), "written": 2 * len(slots)}
     return groups, changes
 
 
@@ -203,6 +360,10 @@ def figures(books, changes, left):
         got = changes.get(table, {})
         lines.append(f"{'books.title' if table == 'books' else table}\t{n}\t{b}\t"
                      + "\t".join(str(got.get(k, 0)) for k in kinds))
+    for table in (*LEDGER, "current_claims"):
+        if table in changes:
+            got = changes[table]
+            lines.append(f"{table} (date claims)\t\t\t" + "\t".join(str(got.get(k, 0)) for k in kinds))
     lines.append(f"rows written: {sum(c['written'] for c in changes.values())} (a removed row 1; a new row its INSERT "
                  "and the UPDATE per piece of a long value; a changed row its DELETE and those)")
     for reason, n in sorted(left.items()):
@@ -256,6 +417,14 @@ def main():
         catch_up(atlas)
     books, left = translate(atlas, mirror)
     groups, changes = statements(books, atlas)
+    claims = date_ledger(atlas)
+    if isinstance(claims, str):
+        if args.send:
+            sys.exit(f"the dates export states claims, but {claims}")
+        left[f"date claims of the export, left out: {claims}"] = 1
+    elif claims:
+        groups += claims[0]
+        changes.update(claims[1])
     report = figures(books, changes, left)
     (OUT / "books-report.txt").write_text(report)
     print(report, end="", flush=True)

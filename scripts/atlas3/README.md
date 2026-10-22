@@ -260,13 +260,24 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    first page bundle, else from the source the first of that bundle's crops names, else from its
    corpus publication. The corpus glyphs per book and the homepage
    sample are derived from the crops by `answers.py`, so neither is copied. Keeping the
-   facts current after the cutover is *not built*: the dates export, the corpus publication's titles,
-   ainu-records' character lists and the catalogue's site values still write the old database.
-   The date claims on documents that are not books stay in `assertions` with the history (11,998 of
-   the 14,095), and no `book_dates` row is made for them. When such a document gains crops after the
-   cutover, its dates come from running the resolver, `resolve` in `src/glyph_atlas/dates.py` (the one
-   `scripts/export_dates_cloudflare.py` runs), over its `date_*` assertions in `glyph-atlas-v3`; the
-   step that does so and writes `book_dates` is *not built*.
+   facts current after the cutover is the generators' work: they write the book facts input,
+   `book-facts-input.sqlite` in `ATLAS3_DIR` (`src/glyph_atlas/book_facts_input.py`), and `books.py`
+   reads it in place of copies:
+
+       .venv/bin/python scripts/export_dates_cloudflare.py work/dates
+       .venv/bin/python scripts/export_document_characters.py <dataset atlas ainu merge wrote>
+
+   The dates export holds its claims and every document's dating as `glyph_atlas.dates` resolved it,
+   books or not. `books.py` asserts the claims that stand nowhere in the ledger of the local copy
+   (loaded by `load_history.py`, which must come first), retracts the dates a source no longer states,
+   and resolves each slot it changes again in `glyph-atlas-v3` with the ledger's resolver as the Worker
+   runs it, so the verdicts readers gave on the site count. The date claims on documents that are not books stay in
+   `assertions` (11,998 of the 14,095 at the cutover), and their dating stays in the input, so a
+   document that gains crops later takes its `book_dates` on the next run. The characters export
+   replaces the documents it lists (all ainu-records covers, or those `--documents` names) and keeps
+   the rest; `books.py` replaces `book_characters` only for the books of documents the input lists,
+   so an input of some documents leaves the other books' characters as they are. The corpus publication's
+   titles and the catalogue's site values are still read from the copies.
    `runs.py` (a dry run without `--send`) adds how the runs are written
    (`migrations-atlas-runs/0002_forms.sql`, which `--send` applies to `glyph-atlas-v3-runs`):
    `run_written` holds each crop written apart from its grapheme family's head, with its character, so a

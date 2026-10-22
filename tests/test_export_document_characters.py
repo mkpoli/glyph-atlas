@@ -7,7 +7,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from glyph_atlas import refs, tables
+from glyph_atlas import book_facts_input, refs, tables
 from glyph_atlas.schema import Box, Line, ReviewState, Unit
 
 SCRIPT = Path(__file__).parent.parent / "scripts" / "export_document_characters.py"
@@ -57,12 +57,9 @@ def dataset(tmp_path: Path) -> Path:
 
 
 def rows(tmp_path: Path, **options) -> list[tuple[str, dict]]:
-    out = tmp_path / "out.sql"
+    out = tmp_path / "book-facts-input.sqlite"
     load().export(dataset(tmp_path), out, **options)
-    db = sqlite3.connect(":memory:")
-    db.execute("CREATE TABLE document_characters (document TEXT NOT NULL, ord INTEGER NOT NULL, unit TEXT NOT NULL, "
-               "data TEXT NOT NULL, PRIMARY KEY(document, ord)) WITHOUT ROWID")
-    db.executescript(out.read_text(encoding="utf-8"))
+    db = sqlite3.connect(out)
     return [(unit, json.loads(data)) for unit, data in
             db.execute("SELECT unit, data FROM document_characters WHERE document=? ORDER BY ord", (DOC,))]
 
@@ -85,10 +82,25 @@ def test_an_imported_occurrence_keeps_the_block_and_label_source_ainu_records_ga
 
 
 def test_only_the_documents_ainu_records_covers_are_replaced(tmp_path):
-    out = tmp_path / "out.sql"
+    out = tmp_path / "book-facts-input.sqlite"
+    with book_facts_input.writing(out) as db:
+        db.executemany("INSERT INTO document_characters VALUES(?,?,?,?)",
+                       [(DOC, 9, "gone", "{}"), ("hk:kept", 0, "hk:kept:0", "{}")])
     counts = load().export(dataset(tmp_path), out)
     assert counts == {DOC: 6}, "retired, flagged and withheld units, and documents ainu-records has no say on, stay out"
-    assert out.read_text(encoding="utf-8").startswith(f"DELETE FROM document_characters WHERE document IN ('{DOC}');")
+    db = sqlite3.connect(out)
+    assert db.execute("SELECT document, count(*) FROM document_characters GROUP BY 1 ORDER BY 1").fetchall() == [
+        (DOC, 6), ("hk:kept", 1)], "a document the dataset does not list keeps its rows"
+    assert db.execute("SELECT name FROM written").fetchall() == [("document_characters",)]
+    assert db.execute("SELECT document FROM character_documents").fetchall() == [(DOC,)]
+
+
+def test_the_documents_named_are_listed_one_without_characters_too(tmp_path):
+    out = tmp_path / "book-facts-input.sqlite"
+    counts = load().export(dataset(tmp_path), out, {DOC, "hk:none"})
+    assert counts == {DOC: 6}
+    db = sqlite3.connect(out)
+    assert db.execute("SELECT document FROM character_documents ORDER BY 1").fetchall() == [(DOC,), ("hk:none",)]
 
 
 def test_a_unit_a_person_corrected_in_the_review_store_is_listed(tmp_path):
@@ -103,6 +115,7 @@ def test_a_unit_a_person_corrected_in_the_review_store_is_listed(tmp_path):
                                                     height=100) for n in (0, 1)], Page)
     Store(directory).record_batch([ReviewRequest(target_id=rejected.id, field="text_source", new="ロ",
                                                  client_id="reviewer-1")])
-    out = tmp_path / "out.sql"
+    out = tmp_path / "book-facts-input.sqlite"
     load().export(directory, out)
-    assert rejected.id in out.read_text(encoding="utf-8"), "the aligner rejected it, and a person has since settled it"
+    assert sqlite3.connect(out).execute("SELECT 1 FROM document_characters WHERE unit=?", (rejected.id,)).fetchone(), \
+        "the aligner rejected it, and a person has since settled it"

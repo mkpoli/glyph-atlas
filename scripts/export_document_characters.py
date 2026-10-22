@@ -1,12 +1,13 @@
-"""Write D1 SQL that replaces `document_characters` for the documents ainu-records' character pages show.
+"""Write `document_characters` into the book facts input (`glyph_atlas.book_facts_input`) for the
+documents ainu-records' character pages show.
 
 The input is a dataset `atlas ainu merge` wrote. Every active unit with a box on those documents whose
 label the atlas stands behind is listed in source order: page, then the transcribed lines in order, then the OCR blocks, then position.
 A unit the atlas aligned is placed by its own line; one imported from ainu-records keeps the block and
 context its character page gave it. The label is the character the unit is, and `source` says where
 it came from. A unit withheld by the alignment repair, rejected by the aligner or flagged is left out
-until a review settles it. Run the output with `wrangler d1 execute glyph-atlas --remote --file <out>` after
-migration 0007 is applied; it replaces only the documents it lists.
+until a review settles it. The documents it lists are replaced in one transaction and the rest kept;
+`scripts/atlas3/books.py` loads them into `book_characters`, each unit by its integer crop id.
 """
 from __future__ import annotations
 
@@ -14,14 +15,13 @@ import argparse
 import json
 import re
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from glyph_atlas import tables
+from glyph_atlas import book_facts_input, tables
 from glyph_atlas.ainu_characters import DECIDED, META, read_log, trusted, written
 from glyph_atlas.schema import Line, ReviewState, Unit
-
-BATCH = 200
 
 
 def documents_of(units: list[Unit]) -> set[str]:
@@ -59,11 +59,7 @@ def order(data: dict[str, Any], unit_id: str) -> tuple:
     return data["page"], kind, number, block, data["position"] if data["position"] is not None else 1 << 30, unit_id
 
 
-def quoted(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
-def export(dataset: Path, out: Path, documents: set[str] | None = None) -> dict[str, int]:
+def export(dataset: Path, out: Path | None = None, documents: set[str] | None = None) -> dict[str, int]:
     # Units as the review store has them, so a correction a person made there counts as their decision.
     log = read_log(dataset)
     units = [u for u in log.units.values() if u.active and u.box and u.page_id]
@@ -75,25 +71,25 @@ def export(dataset: Path, out: Path, documents: set[str] | None = None) -> dict[
         if unit.document_id in rows and (trusted(unit) or decided):
             data = row(unit, lines)
             rows[unit.document_id].append((order(data, unit.id), unit.id, data))
-    statements = [f"DELETE FROM document_characters WHERE document IN ({','.join(map(quoted, rows))});"]
     counts: Counter = Counter()
     values = []
     for document, listed in rows.items():
         for ord_, (_, unit_id, data) in enumerate(sorted(listed, key=lambda r: r[0])):
-            values.append(f"({quoted(document)},{ord_},{quoted(unit_id)},"
-                          f"{quoted(json.dumps(data, ensure_ascii=False, separators=(',', ':')))})")
+            values.append((document, ord_, unit_id, json.dumps(data, ensure_ascii=False, separators=(",", ":"))))
             counts[document] += 1
-    for start in range(0, len(values), BATCH):
-        statements.append("INSERT INTO document_characters VALUES" + ",".join(values[start:start + BATCH]) + ";")
-    out.write_text("\n".join(statements) + "\n", encoding="utf-8")
+    with book_facts_input.writing(out) as db:
+        db.executemany("DELETE FROM document_characters WHERE document=?", [(d,) for d in rows])
+        db.executemany("INSERT OR IGNORE INTO character_documents VALUES(?)", [(d,) for d in rows])
+        db.executemany("INSERT INTO document_characters VALUES(?,?,?,?)", values)
+        book_facts_input.noted(db, "document_characters", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
     return dict(counts)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dataset", type=Path, help="dataset `atlas ainu merge` wrote")
-    parser.add_argument("out", type=Path)
+    parser.add_argument("--input", type=Path, help="the book facts input to write (default: book-facts-input.sqlite in ATLAS3_DIR)")
     parser.add_argument("--documents", help="comma-separated document ids instead of those ainu-records covers")
     args = parser.parse_args()
-    counts = export(args.dataset, args.out, set(args.documents.split(",")) if args.documents else None)
+    counts = export(args.dataset, args.input, set(args.documents.split(",")) if args.documents else None)
     print(json.dumps({"documents": counts, "rows": sum(counts.values())}, ensure_ascii=False))

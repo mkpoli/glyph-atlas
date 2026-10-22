@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 from test_atlas3_publish import ids, layout, write_source  # noqa: F401 -- `layout` is the fixture
 
+from glyph_atlas import book_facts_input
+
 SCHEMA = Path(__file__).resolve().parents[1] / "apps" / "cloudflare" / "migrations-atlas"
 DATING = ("document", "axis", "kind", "start", "end", "precision", "qualifier", "uncertain", "text", "label", "status",
           "calendar", "conversion", "source")
@@ -18,14 +20,26 @@ def dated(document, axis="witness", start=1700):
             json.dumps({"query": "https://ap.hutime.org/cal/"}), "source:test")
 
 
-def sources(root, dating=None, titles=None, characters=None, metadata=None):
-    for table in ("document_dating", "corpus_documents", "document_characters", "metadata"):
+def sources(root, dating=None, titles=None, characters=None, metadata=None, claims=(), stamp="2026-10-20T00:00:00Z",
+            listed=None):
+    """The input and copies; `listed` names the documents the characters export listed, by default
+    those it holds characters of."""
+    for table in ("corpus_documents", "metadata"):
         (root / f"source-{table}.sqlite").unlink(missing_ok=True)
-    write_source(root, "document_dating", DATING, dating if dating is not None else [dated("book:a"), dated("nowhere")])
+    (root / "book-facts-input.sqlite").unlink(missing_ok=True)
+    with book_facts_input.writing(root / "book-facts-input.sqlite") as db:
+        db.executemany(f"INSERT INTO document_dating({','.join(DATING)}, claims, resolver) "
+                       f"VALUES({','.join('?' * len(DATING))}, '[]', 'dates-2')",
+                       dating if dating is not None else [dated("book:a"), dated("nowhere")])
+        db.executemany("INSERT INTO document_characters VALUES(?,?,?,?)", characters if characters is not None else [
+            ("book:a", 0, "ex:a1", json.dumps({"label": "あ", "page": 1})),
+            ("codh:b", 0, "codh:g1", json.dumps({"label": "が", "page": 1}))])
+        db.executemany("INSERT INTO character_documents VALUES(?)", [(d,) for d in listed] if listed is not None else
+                       db.execute("SELECT DISTINCT document FROM document_characters").fetchall())
+        db.executemany("INSERT INTO date_claims VALUES(?,?,?,?,?,?,?,?,?)", claims)
+        for table in ("date_claims", "document_dating", "document_characters"):
+            book_facts_input.noted(db, table, stamp)
     write_source(root, "corpus_documents", ("document", "title"), titles if titles is not None else [("codh:b", "鼎左秘録")])
-    write_source(root, "document_characters", ("document", "ord", "unit", "data"), characters if characters is not None else [
-        ("book:a", 0, "ex:a1", json.dumps({"label": "あ", "page": 1})),
-        ("codh:b", 0, "codh:g1", json.dumps({"label": "が", "page": 1}))])
     write_source(root, "metadata", ("key", "value"), metadata if metadata is not None else [
         ("review_epoch", '"2026-10-01"'), ("collection", '{"books": 2}'), ("corpus_index", '{"glyphs": 1}'),
         ("variant_sources", "{}"), ("word_sources", "{}"), ("published_at", '"2026-10-19"')])
@@ -97,8 +111,9 @@ def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F
     root, _publish, remote = layout
     sources(root)
     books(remote, monkeypatch, "--send")
+    # codh:b is listed with no characters left.
     sources(root, dating=[dated("book:a", start=1701), dated("codh:b", "composed", 1600)], titles=[],
-            characters=[("book:a", 0, "ex:a1", json.dumps({"label": "あ", "page": 1}))])
+            characters=[("book:a", 0, "ex:a1", json.dumps({"label": "あ", "page": 1}))], listed=["book:a", "codh:b"])
     books(remote, monkeypatch, "--send")
     got = facts(remote.dbs["glyph-atlas-v3"])
     assert got["titles"]["codh:b"] is None
@@ -110,6 +125,22 @@ def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F
     assert "book_dates\t2\t203\t0\t1\t1\t3\n" in report
     assert "book_characters\t1\t40\t1\t0\t0\t1\n" in report
     assert "rows written: 5 " in report
+
+
+def test_an_input_of_some_documents_leaves_the_other_books_characters(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root)
+    books(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    before = facts(db)["characters"]
+    # A fresh input that export_document_characters.py --documents book:a wrote: book:a changes, codh:b is not listed.
+    sources(root, characters=[("book:a", 0, "ex:a2", json.dumps({"label": "い", "page": 1}))])
+    books(remote, monkeypatch, "--send")
+    book = dict(db.execute("SELECT key, id FROM books"))
+    assert sorted(facts(db)["characters"]) == sorted([(book["book:a"], 0, ids(root)["ex:a2"]),
+                                                      *(r for r in before if r[0] == book["codh:b"])])
+    assert "book_characters\t1\t40\t0\t0\t1\t2\n" in (root / "out" / "books-report.txt").read_text()
+    assert facts(sqlite3.connect(root / "out" / "atlas.sqlite")) == facts(db)
 
 
 def test_a_run_stopped_after_d1_applied_a_part_is_followed_on_rerun(layout, monkeypatch):  # noqa: F811
@@ -166,13 +197,97 @@ def test_a_database_without_migration_0005_gets_it_first(layout, monkeypatch):  
     assert facts(db)["dates"] == [("book:a", "witness", 1700, "gregorian")]
 
 
-def test_a_partial_dating_copy_is_refused(layout, monkeypatch):  # noqa: F811
+def test_a_table_no_generator_wrote_stops_the_run(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root)
-    (root / "source-document_dating.sqlite").unlink()
-    write_source(root, "document_dating", ("document", "axis", "kind", "start", "end", "precision", "label", "status"), [])
-    with pytest.raises(SystemExit, match="pull.py --fresh document_dating"):
+    db = sqlite3.connect(root / "book-facts-input.sqlite")
+    db.execute("DELETE FROM written WHERE name='document_characters'")
+    db.commit()
+    with pytest.raises(SystemExit, match="export_document_characters.py writes it"):
         books(remote, monkeypatch)
+
+
+def claim(identity, document="book:a", start=1700, by="kokusho"):
+    value = json.dumps({"of": "witness", "text": str(start), "start": start, "end": start}, separators=(",", ":"))
+    return (identity, document, "date_printed", value, "attested", f"source:{by}", "source", by, f"{by}#printed")
+
+
+def ledger(db):
+    db.row_factory = None
+    return {"assertions": db.execute("SELECT id, subject, slot, asserted_at, method, run FROM assertions ORDER BY id").fetchall(),
+            "evidence": db.execute("SELECT assertion, kind, ref, locator FROM assertion_evidence ORDER BY 1").fetchall(),
+            "actions": db.execute("SELECT id, assertion, action, actor, at FROM assertion_actions ORDER BY 1").fetchall(),
+            "current": db.execute("SELECT subject, status, json_extract(value, '$.start'), supporting, crop, cut FROM current_claims "
+                                  "ORDER BY 1").fetchall()}
+
+
+def test_date_claims_go_to_the_ledger_with_their_source_and_resolved_slots(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, claims=[claim("dt:1"), claim("dt:2", "nowhere", 1500)])
+    books(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    got = ledger(db)
+    stamp = "2026-10-20T00:00:00Z"
+    assert got["assertions"] == [("dt:1", "book:a", claim("dt:1")[3], stamp, "atlas dates", "dates-2"),
+                                 ("dt:2", "nowhere", claim("dt:2", "nowhere", 1500)[3], stamp, "atlas dates", "dates-2")]
+    assert got["evidence"] == [("dt:1", "source", "kokusho", "kokusho#printed"), ("dt:2", "source", "kokusho", "kokusho#printed")]
+    # A document that is no book keeps its claims and their resolution, for when it becomes one.
+    assert [(c[0], c[1], c[2], json.loads(c[3]), c[4], c[5]) for c in got["current"]] == [
+        ("book:a", "asserted", 1700, ["dt:1"], None, None), ("nowhere", "asserted", 1500, ["dt:2"], None, None)]
+    assert ledger(sqlite3.connect(root / "out" / "atlas.sqlite")) == got
+    stamps = db.execute("SELECT count(*) FROM imports").fetchone()[0]
+    books(remote, monkeypatch, "--send")
+    assert db.execute("SELECT count(*) FROM imports").fetchone()[0] == stamps, "a rerun finds nothing to send"
+
+
+def test_ledger_rows_name_their_columns_whatever_order_a_copy_holds_them_in(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executescript("DROP TABLE assertion_evidence; CREATE TABLE assertion_evidence(locator TEXT, cut INTEGER, crop INTEGER,"
+                         " ref TEXT NOT NULL, kind TEXT NOT NULL, assertion TEXT NOT NULL, PRIMARY KEY(assertion, kind, ref)) WITHOUT ROWID;")
+        db.commit()
+    sources(root, claims=[claim("dt:1")])
+    books(remote, monkeypatch, "--send")
+    got = ledger(remote.dbs["glyph-atlas-v3"])
+    assert got["evidence"] == [("dt:1", "source", "kokusho", "kokusho#printed")]
+    assert [(c[0], c[1], json.loads(c[3])) for c in got["current"]] == [("book:a", "asserted", ["dt:1"])]
+
+
+def test_a_date_no_source_states_is_retracted_and_a_claim_that_returns_is_asserted_anew(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, claims=[claim("dt:1"), claim("dt:2", start=1710, by="iiif-manifests")])
+    books(remote, monkeypatch, "--send")
+    sources(root, claims=[claim("dt:2", start=1710, by="iiif-manifests")], stamp="2026-10-21T00:00:00Z")
+    books(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    got = ledger(db)
+    assert got["actions"] == [("dt-retract:dt:1:2026-10-21T00:00:00Z", "dt:1", "retract", "source:kokusho",
+                               "2026-10-21T00:00:00Z")]
+    assert [(c[1], c[2], json.loads(c[3])) for c in got["current"]] == [("asserted", 1710, ["dt:2"])]
+    sources(root, claims=[claim("dt:1"), claim("dt:2", start=1710, by="iiif-manifests")], stamp="2026-10-22T00:00:00Z")
+    books(remote, monkeypatch, "--send")
+    got = ledger(db)
+    assert [a[0] for a in got["assertions"]] == ["dt:1", "dt:1@2026-10-22T00:00:00Z", "dt:2"]
+    assert ("dt:1@2026-10-22T00:00:00Z", "source", "kokusho", "kokusho#printed") in got["evidence"]
+    assert sorted(json.loads(c[3]) for c in got["current"]) == [["dt:1@2026-10-22T00:00:00Z"], ["dt:2"]]
+    assert ledger(sqlite3.connect(root / "out" / "atlas.sqlite")) == got
+
+
+def test_a_slot_is_resolved_from_the_verdicts_glyph_atlas_v3_holds(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, claims=[claim("dt:1")])
+    books(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    # Two readers reject dt:1 on the site; the Worker resolves the slot, the local copy never hears of it.
+    db.executemany("INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,NULL,'dt:1','reject',?,?,'')",
+                   [("cf:1", "user:a", "2026-10-20T01:00:00Z"), ("cf:2", "user:b", "2026-10-20T02:00:00Z")])
+    db.execute("UPDATE current_claims SET status='rejected', supporting='[]'")
+    db.commit()
+    # Another source states the same date: its slot is resolved again with the rejections counted.
+    sources(root, claims=[claim("dt:1"), claim("dt:3", by="iiif-manifests")], stamp="2026-10-21T00:00:00Z")
+    books(remote, monkeypatch, "--send")
+    current = ledger(db)["current"]
+    assert [(c[1], json.loads(c[3])) for c in current] == [("asserted", ["dt:3"])]
 
 
 def test_a_book_takes_the_title_of_its_first_page_before_its_corpus_title(layout, monkeypatch):  # noqa: F811
