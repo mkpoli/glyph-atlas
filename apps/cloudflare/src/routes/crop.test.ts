@@ -203,6 +203,17 @@ describe('a crop\'s record', () => {
     expect(await corpus.json()).toEqual(record);
   });
 
+  it('reads a corpus glyph outside the clustering under the cluster decision it carries from an earlier one', async () => {
+    const { db, get, ids } = setup();
+    db.exec(`UPDATE crops SET cluster=NULL WHERE id=${ids.glyph};
+      INSERT INTO form_glyphs(crop,family,cluster,form,issue,character,written_family,decision,carried)
+        VALUES(${ids.glyph},'U+7FC1',NULL,'𦐈',NULL,NULL,'U+7FC1','old','old')`);
+    const record = await (await get(`/atlas/characters/${publicId(ids.glyph)}`)).json() as any;
+    expect(record).toMatchObject({ form_decision: { form: '𦐈', basis: 'form_cluster' }, written_character: '𦐈', label: '𦐈',
+      identity_status: 'assigned', identity_basis: 'form_cluster', grapheme: 'U+7FC1' });
+    expect(record.form_cluster).toBeUndefined();
+  });
+
   it('redirects an old text id and a retired crop to the crop\'s public id, and answers 404 for a candidate or nothing', async () => {
     const { get, ids, text } = setup();
     const moved = await get(`/atlas/characters/${encodeURIComponent(text.a)}`);

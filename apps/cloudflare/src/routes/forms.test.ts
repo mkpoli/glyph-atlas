@@ -297,6 +297,42 @@ describe('the forms routes on glyph-atlas-v3', () => {
       '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1')).rejects.toThrow('409 The cluster has changed');
   });
 
+  it('carry a cluster decision of an earlier clustering until the glyph\'s cluster is decided', async () => {
+    const { fresh, get, decide } = both();
+    const carriedGlyphs = glyphs.slice(0, 5), own = (g: Glyph) => publicId(g.crop);
+    fresh.db.exec(`INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,crops,note)
+      VALUES('old','2026-01-01T00:00:00+00:00','u0','cluster','${FAMILY}','𛂙','U+306F/old','r0','[]','[]','')`);
+    for (const g of carriedGlyphs) fresh.db.prepare(`INSERT INTO form_glyphs(crop,family,cluster,form,issue,character,written_family,decision,carried)
+      VALUES(?,?,1,'𛂙',NULL,NULL,?,'old','old')`).run(g.crop, FAMILY, FAMILY);
+    fresh.db.prepare(recountQuery()).run(FAMILY);
+    const family = async () => (await get(`/atlas/forms/families/${encodeURIComponent(FAMILY)}`, 'order=shape')) as any;
+    const members = async () => new Map(((await get('/atlas/forms/clusters/U%2B306F/0', 'offset=0&limit=500')) as any).items
+      .map((m: any) => [m.id, [m.form, m.basis]]));
+    // The carried glyphs count as assigned, as their cluster's form, and are no exceptions.
+    expect((await family()).assigned).toBe(5);
+    expect((await family()).items[0]).toMatchObject({ assigned: 5, exceptions: 0, majority: '𛂙', majority_count: 5 });
+    expect((await members()).get(own(glyphs[0]))).toEqual(['𛂙', 'form_cluster']);
+    // A glyph decision overrides the carried one; following the cluster again restores it.
+    const decided = await decide({ kind: 'glyph', units: [glyphs[0].old], form: 'は' });
+    expect(decided.undo).toEqual([{ kind: 'inherit', units: [own(glyphs[0])] }]);
+    expect((await members()).get(own(glyphs[0]))).toEqual(['は', 'form_glyph']);
+    expect((await family()).items[0]).toMatchObject({ assigned: 5, exceptions: 1 });
+    await decide({ kind: 'inherit', units: [glyphs[0].old] });
+    expect((await members()).get(own(glyphs[0]))).toEqual(['𛂙', 'form_cluster']);
+    expect(fresh.db.query('SELECT decision,carried FROM form_glyphs WHERE crop=?').get(glyphs[0].crop)).toEqual({ decision: 'old', carried: 'old' });
+    // The cluster's own decision replaces the carried ones, also under a glyph's own decision.
+    await decide({ kind: 'glyph', units: [glyphs[1].old], form: 'は' });
+    await decide({ kind: 'cluster', cluster: 'U+306F/0', form: '𛂞' });
+    expect(fresh.db.query('SELECT crop,form,carried FROM form_glyphs').all()).toEqual([{ crop: glyphs[1].crop, form: 'は', carried: null }]);
+    expect((await members()).get(own(glyphs[0]))).toEqual(['𛂞', 'form_cluster']);
+    await decide({ kind: 'inherit', units: [glyphs[1].old] });
+    expect((await members()).get(own(glyphs[1]))).toEqual(['𛂞', 'form_cluster']);
+    expect((await family()).assigned).toBe(40);
+    // Every glyph a decision listed follows the form it ends with.
+    const char = (crop: number) => (fresh.db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(crop) as any).text;
+    expect([char(glyphs[0].crop), char(glyphs[1].crop)]).toEqual(['𛂞', '𛂞']);
+  });
+
   it('log each decision with the glyphs it names, a cluster decision with its list', async () => {
     const { fresh } = both();
     const send = (body: object) => formsRoute(fresh.env, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(body) }),

@@ -2,8 +2,9 @@
 // ATLAS (`form_families`, `form_clusters`, `form_glyphs`, `form_state`), each cluster's glyphs by rank in
 // a content-named R2 list `v3/forms/<list>.json.gz`, and each family's first and last glyphs per cluster
 // in its index object `v3/forms/families/<list>.json.gz`. A glyph's form is its `form_glyphs` row's, else
-// its cluster's. A decision writes its rows and the family's recount in one batch; the unnamed corpus
-// glyphs it covers move `crops.char` to their form shortly after (`followCorpus`).
+// its cluster's; the row is the glyph's own decision, or a cluster decision of an earlier clustering it
+// carries (`carried`). A decision writes its rows and the family's recount in one batch; the unnamed
+// corpus glyphs it covers move `crops.char` to their form shortly after (`followCorpus`).
 import { publicId } from '../atlas3';
 import { StaleCrop, staleResponse, writtenCropField } from '../atlas3Crops';
 import { axisOf } from '../dating';
@@ -18,8 +19,10 @@ type IndexEntry = [number, number, string | null, string | null, [number, number
 type FamilyIndex = { family: string; clusters: Record<string, { list: string; count: number; head: IndexEntry[]; tail: IndexEntry[] }> };
 type ClusterRow = { id: number; key: string; family: string; label: string; count: number; coherence: number; list: string;
   form: string | null; issue: string | null; character: string | null; written_family: string | null };
-// A glyph's own decision, from `form_glyphs`.
-type Own = { crop: number; cluster: number | null; form: string | null; issue: string | null; character: string | null };
+// A glyph's `form_glyphs` row: its own decision (`own` 1), or a carried cluster decision.
+type Own = { crop: number; cluster: number | null; own: number; form: string | null; issue: string | null; character: string | null };
+// Whether a `form_glyphs` row `g` is the glyph's own decision; 0 for no row.
+const OWN = (g: string) => `${g}.decision IS NOT ${g}.carried`;
 
 // The index object holds per cluster its first HEAD glyphs (the representatives) and its last ones.
 const HEAD = 12;
@@ -36,11 +39,11 @@ function count(q: URLSearchParams, key: string, fallback: number, max: number, t
 const image = (key: string | null) => key ? `/atlas/media/${key}.webp` : null;
 // A cluster's issue as its glyphs take it: 'mixed' gives them none.
 const glyphIssue = (c: Pick<ClusterRow, 'issue'>) => c.issue === 'mixed' ? null : c.issue;
-// What a glyph ends with: its own decision, else its cluster's.
-function settled(c: ClusterRow, own: Own | undefined) {
-  if (own) return { form: own.form, issue: own.issue, character: own.character, basis: 'form_glyph' as const };
-  const issue = glyphIssue(c);
-  return { form: c.form, issue, character: c.character, basis: c.form || issue ? 'form_cluster' as const : null };
+// What a glyph ends with: its `form_glyphs` row's, else its cluster's. A carried cluster decision is
+// the glyph's cluster form.
+function settled(c: ClusterRow, row: Own | undefined) {
+  const { form, issue, character } = row ?? { form: c.form, issue: glyphIssue(c), character: c.character };
+  return { form, issue, character, basis: row?.own ? 'form_glyph' as const : form || issue ? 'form_cluster' as const : null };
 }
 // What is painted in a member's place until it loads.
 const member = (crop: number, key: string | null, s: ReturnType<typeof settled>, tone: string | null, size: [number, number] | null) =>
@@ -80,9 +83,9 @@ async function codes(env: Env) {
 // The family's clusters in the order asked, along `form_cluster_shape` or `form_cluster_size`.
 export const familyClustersQuery = (order: 'shape' | 'size') =>
   `SELECT id,key,family,label,count,coherence,list,form,issue,character,written_family FROM form_clusters WHERE family=? ORDER BY ${order === 'size' ? 'size_position' : 'shape_position'}`;
-// The family's glyphs with their own decision: its clusters by `form_cluster_shape`, then each one's
-// rows by `form_glyph_cluster`.
-export const familyGlyphsQuery = () => `SELECT g.crop,g.cluster,g.form,g.issue,g.character FROM form_clusters c
+// The family's glyphs with their own or a carried decision: its clusters by `form_cluster_shape`, then
+// each one's rows by `form_glyph_cluster`.
+export const familyGlyphsQuery = () => `SELECT g.crop,g.cluster,${OWN('g')} AS own,g.form,g.issue,g.character FROM form_clusters c
   CROSS JOIN form_glyphs g ON g.cluster=c.id WHERE c.family=?`;
 
 // Description claims on the crop's effective cut, read from indexed description ranges.
@@ -111,7 +114,7 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
   const index = await object<FamilyIndex>(env, `v3/forms/families/${found!.list}.json.gz`) ?? tools.fail(503, 'The forms publication is incomplete.', { code: 'busy' });
   const own = new Map<number, Map<number, Own>>();
   for (const g of ownRows.results as Own[]) own.set(g.cluster!, (own.get(g.cluster!) ?? new Map()).set(g.crop, g));
-  // Each cluster's glyphs by form: those without their own decision take the cluster's.
+  // Each cluster's glyphs by form: those without a row take the cluster's.
   const tallies = new Map(clusters.map(c => {
     const mine = [...own.get(c.id)?.values() ?? []], rest = c.count - mine.length, forms = new Map<string, number>();
     if (c.form && rest > 0) forms.set(c.form, rest);
@@ -120,7 +123,7 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
     const rejected = (glyphIssue(c) ? rest : 0) + mine.filter(g => g.issue).length;
     // A tie goes to the lower form, as on the local review server.
     const [majority, majorityCount] = [...forms].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0] ?? [null, 0];
-    return [c.id, { own: mine.length, assigned, rejected, forms, majority, majorityCount, form: c.form ?? majority }];
+    return [c.id, { own: mine.filter(g => g.own).length, assigned, rejected, forms, majority, majorityCount, form: c.form ?? majority }];
   }));
   // The descriptions named by forms decisions or current crop claims, most used first: the palette
   // offers them after the encoded forms. How many of the family's glyphs each form names, most used first.
@@ -132,7 +135,7 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
   for (const row of claimRows.results as Json[]) if (isDescription(row.form))
     described.set(row.form, (described.get(row.form) ?? 0) + row.n);
   // A cluster's glyphs named otherwise, by form, twelve a form, most typical first; a cluster reported
-  // as a whole has none. Only a glyph with its own decision can differ, and its rank is in the list.
+  // as a whole has none. Only a glyph with a row can differ, and its rank is in the list.
   // Each cluster's twelve glyphs least like its centre, past the twelve most typical, leaving out
   // reported ones: from the index's last glyphs, or the list when too many of those are reported.
   const items = await Promise.all(clusters.map(async c => {
@@ -168,8 +171,8 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
 }
 
 export const clusterQuery = () => 'SELECT id,key,family,label,count,coherence,list,form,issue,character,written_family FROM form_clusters WHERE key=?';
-// A page of a cluster's glyphs: each one's own decision and book, by primary key.
-export const memberRowsQuery = () => `SELECT j.value AS crop,c.book,b.key AS document,g.crop IS NOT NULL AS own,g.form,g.issue,g.character
+// A page of a cluster's glyphs: each one's `form_glyphs` row and book, by primary key.
+export const memberRowsQuery = () => `SELECT j.value AS crop,c.book,b.key AS document,g.crop IS NOT NULL AS held,${OWN('g')} AS own,g.form,g.issue,g.character
   FROM json_each(?) j LEFT JOIN crops c ON c.id=j.value LEFT JOIN books b ON b.id=c.book LEFT JOIN form_glyphs g ON g.crop=j.value`;
 // The dates of the books those glyphs come from, by `book_dates`' key.
 export const memberDatesQuery = () => `SELECT b.key AS document,d.* FROM json_each(?) j JOIN books b ON b.id=j.value
@@ -192,13 +195,13 @@ async function members(env: Env, key: string, q: URLSearchParams, tools: FormToo
   return { id: cluster!.key, total: cluster!.count, offset, order, form: cluster!.form, issue: cluster!.issue,
     items: page.map(([crop, rank, similarity, tile, , tone, size]) => {
       const r = byCrop.get(crop), document = r?.document ?? null;
-      return { ...member(crop, tile, settled(cluster!, r?.own ? r as Own : undefined), tone, size), rank, similarity, document,
+      return { ...member(crop, tile, settled(cluster!, r?.held ? r as Own : undefined), tone, size), rank, similarity, document,
         dating: dating.get(document ?? '') ?? {} };
     }) };
 }
 
-// A cluster's glyphs with their own decision, along `form_glyph_cluster`.
-export const clusterGlyphsQuery = () => 'SELECT crop,cluster,form,issue,character FROM form_glyphs WHERE cluster=?';
+// A cluster's glyphs with their own or a carried decision, along `form_glyph_cluster`.
+export const clusterGlyphsQuery = () => `SELECT crop,cluster,${OWN('form_glyphs')} AS own,form,issue,character FROM form_glyphs WHERE cluster=?`;
 
 async function split(env: Env, key: string, q: URLSearchParams, tools: FormTools) {
   const k = count(q, 'k', 4, 8, tools), shown = count(q, 'shown', 60, 240, tools);
@@ -224,8 +227,8 @@ async function familyOf(env: Env, char: string, tools: FormTools) {
   return tools.codePoints(row?.text ?? char);
 }
 
-// The family's glyphs with a form and those reported, from its clusters and their glyphs' own
-// decisions, along `form_cluster_shape` and `form_glyph_cluster`.
+// The family's glyphs with a form and those reported, from its clusters and their glyphs' rows, along
+// `form_cluster_shape` and `form_glyph_cluster`.
 export const recountQuery = () => `UPDATE form_families SET
   assigned=(SELECT coalesce(sum(CASE WHEN c.form IS NOT NULL THEN c.count-(SELECT count(*) FROM form_glyphs g WHERE g.cluster=c.id) ELSE 0 END),0)
     +(SELECT count(*) FROM form_clusters c CROSS JOIN form_glyphs g ON g.cluster=c.id WHERE c.family=?1 AND g.form IS NOT NULL)
@@ -295,9 +298,12 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
   // are returned as the decision's undo.
   const before = kind === 'cluster'
     ? env.ATLAS.prepare('SELECT form,issue,character FROM form_clusters WHERE id=?').bind(cluster!.id)
-    : env.ATLAS.prepare('SELECT j.value AS crop,g.crop IS NOT NULL AS own,g.form,g.issue,g.character FROM json_each(?) j LEFT JOIN form_glyphs g ON g.crop=j.value ORDER BY j.value').bind(target);
+    : env.ATLAS.prepare(`SELECT j.value AS crop,${OWN('g')} AS own,g.form,g.issue,g.character FROM json_each(?) j LEFT JOIN form_glyphs g ON g.crop=j.value ORDER BY j.value`).bind(target);
   // A cluster decision names the list it was made on; a glyph decision its crops.
   const units = kind === 'cluster' ? '[]' : JSON.stringify(crops.map(publicId));
+  // A cluster decision replaces the decisions its glyphs carry from an earlier clustering, as the
+  // cluster form of those under their own decision too; following the cluster again restores a carried
+  // decision.
   const statements = [
     before,
     env.ATLAS.prepare(`INSERT INTO form_decisions(id,at,actor,kind,family,form,cluster,revision,units,crops,note,issue,character,written_family,list)
@@ -307,16 +313,23 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
             LEFT JOIN form_clusters k ON k.id=c.cluster WHERE k.family IS NOT ?5))),?9,?10,?11,?12,?13,?14,?15)`)
       .bind(id, at, actor, kind, family!, form, cluster?.key ?? null, allowed!.revision, units, kind === 'cluster' ? '[]' : target,
         note, issue, character, writtenFamily, cluster?.list ?? null, allowed!.lists),
-    kind === 'cluster'
-      ? env.ATLAS.prepare('UPDATE form_clusters SET form=?,issue=?,character=?,written_family=?,decision=? WHERE id=?')
-        .bind(form, issue, character, writtenFamily, id, cluster!.id)
-      : kind === 'glyph'
-        ? env.ATLAS.prepare(`INSERT INTO form_glyphs(crop,family,cluster,form,issue,character,written_family,decision)
-            SELECT c.id,?2,c.cluster,?3,?4,?5,?6,?7 FROM json_each(?1) j JOIN crops c ON c.id=j.value WHERE 1
-            ON CONFLICT(crop) DO UPDATE SET family=excluded.family,cluster=excluded.cluster,form=excluded.form,issue=excluded.issue,
-              character=excluded.character,written_family=excluded.written_family,decision=excluded.decision`)
-          .bind(target, family!, form, issue, character, writtenFamily, id)
-        : env.ATLAS.prepare('DELETE FROM form_glyphs WHERE crop IN (SELECT value FROM json_each(?))').bind(target),
+    ...kind === 'cluster' ? [
+      env.ATLAS.prepare('UPDATE form_clusters SET form=?,issue=?,character=?,written_family=?,decision=? WHERE id=?')
+        .bind(form, issue, character, writtenFamily, id, cluster!.id),
+      env.ATLAS.prepare('DELETE FROM form_glyphs WHERE cluster=? AND decision=carried').bind(cluster!.id),
+      env.ATLAS.prepare('UPDATE form_glyphs SET carried=NULL WHERE cluster=? AND carried IS NOT NULL').bind(cluster!.id),
+    ] : kind === 'glyph' ? [
+      env.ATLAS.prepare(`INSERT INTO form_glyphs(crop,family,cluster,form,issue,character,written_family,decision)
+          SELECT c.id,?2,c.cluster,?3,?4,?5,?6,?7 FROM json_each(?1) j JOIN crops c ON c.id=j.value WHERE 1
+          ON CONFLICT(crop) DO UPDATE SET family=excluded.family,cluster=excluded.cluster,form=excluded.form,issue=excluded.issue,
+            character=excluded.character,written_family=excluded.written_family,decision=excluded.decision`)
+        .bind(target, family!, form, issue, character, writtenFamily, id),
+    ] : [
+      env.ATLAS.prepare(`UPDATE form_glyphs SET (form,issue,character,written_family,decision)=(SELECT d.form,nullif(d.issue,'mixed'),
+          d.character,d.written_family,d.id FROM form_decisions d WHERE d.id=form_glyphs.carried)
+        WHERE crop IN (SELECT value FROM json_each(?)) AND carried IS NOT NULL`).bind(target),
+      env.ATLAS.prepare('DELETE FROM form_glyphs WHERE crop IN (SELECT value FROM json_each(?)) AND carried IS NULL').bind(target),
+    ],
     env.ATLAS.prepare(listFollowQuery()).bind(target),
     env.ATLAS.prepare(recountQuery()).bind(family!),
   ];
@@ -356,10 +369,11 @@ function restoreGlyphs(rows: Json[]) {
 export const FOLLOW_BATCH = 500;
 const following = `SELECT crop FROM corpus_follow WHERE (SELECT loading FROM form_state WHERE id=0)=0 ORDER BY crop LIMIT ${FOLLOW_BATCH}`;
 const movable = `FROM crops c WHERE c.id IN (${following}) AND c.kind=1 AND c.revision=0`;
-// What each listed unnamed glyph is written as: its own decision's character or form, else its
-// cluster's; `decided` is 0 when no decision names a form or report for it.
+// What each listed unnamed glyph is written as: its `form_glyphs` row's character or form, else its
+// cluster's; `decided` is 0 when no decision names a form or report for it and it has no own decision.
 const writtenAs = `SELECT c.id,CASE WHEN g.crop IS NOT NULL THEN coalesce(g.character,g.form) ELSE coalesce(k.character,k.form) END AS text,
-  (g.crop IS NOT NULL OR k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue<>'mixed')) AS decided
+  CASE WHEN g.crop IS NOT NULL THEN ${OWN('g')} OR g.form IS NOT NULL OR g.issue IS NOT NULL
+    ELSE k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue<>'mixed') END AS decided
   FROM crops c LEFT JOIN form_glyphs g ON g.crop=c.id LEFT JOIN form_clusters k ON k.id=c.cluster
   WHERE c.id IN (${following}) AND c.kind=1 AND c.revision=0`;
 const cell = 'c.kind,coalesce(c.char,-1),coalesce(c.family,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),c.state,c.quiz,coalesce((c.year-CASE WHEN c.year<0 THEN 9 ELSE 0 END)/10*10,-1)';

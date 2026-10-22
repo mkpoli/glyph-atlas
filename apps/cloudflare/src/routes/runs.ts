@@ -228,10 +228,10 @@ export const booksQuery = () => 'SELECT id,key,title FROM books WHERE id IN (SEL
 // Each page's revision, one primary-key probe each, so the bundles are read once for the records and
 // the places of the crops.
 export const pageRevsQuery = () => 'SELECT id,rev FROM pages WHERE id IN (SELECT value FROM json_each(?))';
-// A corpus glyph's forms tool decision: its own (`form_glyphs`) when it has one, else its cluster's
-// (`crops.cluster`); a cluster issue 'mixed' gives its glyphs no issue. One primary-key probe per glyph
-// and per cluster.
-export const corpusFormsQuery = () => `SELECT c.id,coalesce(g.cluster,c.cluster) IS NOT NULL AS clustered,g.crop IS NOT NULL AS glyph_set,coalesce(k.key,'') AS cluster,
+// A corpus glyph's forms tool decision: its `form_glyphs` row (its own, or a cluster decision of an earlier
+// clustering it carries) when it has one, else its cluster's (`crops.cluster`); a cluster issue 'mixed'
+// gives its glyphs no issue. One primary-key probe per glyph and per cluster.
+export const corpusFormsQuery = () => `SELECT c.id,coalesce(g.cluster,c.cluster) IS NOT NULL AS clustered,g.decision IS NOT g.carried AS glyph_set,coalesce(k.key,'') AS cluster,
   k.form AS cluster_form,iif(g.crop IS NULL,k.form,g.form) AS form,
   iif(g.crop IS NULL,iif(k.issue='mixed',NULL,k.issue),g.issue) AS issue,iif(g.crop IS NULL,k.character,g.character) AS issue_character,
   iif(g.crop IS NULL,k.written_family,g.written_family) AS written_family

@@ -19,10 +19,13 @@ mirror lacks, or a crop no longer live (retired), is dropped and counted.
   is uploaded; each family's first 12 and last 24 glyphs per cluster go to its index object
   `v3/forms/families/<code point>-<digest>.json.gz`. `form_families` and `form_clusters` take the
   copies' rows and the cluster decisions, each of which must be its cluster's latest in the loaded
-  `form_decisions`; `form_glyphs` takes the glyphs with their own decision, each of which must be the
-  glyph's latest glyph decision there; `crops.cluster` each live
-  crop's cluster, null outside the clustering. Counts are recomputed from the glyphs kept, and the form
-  each glyph ends with is checked against the copy's.
+  `form_decisions`; a cluster's character and written family are its decision's. `form_glyphs` takes
+  the glyphs with their own decision, each of which must be the glyph's latest glyph decision there,
+  and the glyphs whose cluster form is not their current cluster's: their latest cluster decision was
+  made on a cluster of an earlier clustering, which `carried` names and which must be the latest cluster
+  decision whose `crops` name the glyph. `crops.cluster` takes each live crop's cluster, null outside
+  the clustering. Counts are recomputed from the glyphs kept, and the form each glyph ends with is
+  checked against the copy's.
 - An object under `v3/forms/` that no row and no decision names is deleted by a load at least
   KEEP_UNNAMED seconds after a load first found it unnamed, from the manifest `v3/forms/manifest.json.gz`
   (local copy out/forms/manifest.json.gz).
@@ -75,7 +78,8 @@ TABLES = {
                        "revision", "list"), ("code_point",)),
     "form_clusters": (("id", "key", "family", "label", "count", "coherence", "shape_position", "size_position", "list",
                        "form", "issue", "character", "written_family", "decision"), ("id",)),
-    "form_glyphs": (("crop", "family", "cluster", "form", "issue", "character", "written_family", "decision"), ("crop",)),
+    "form_glyphs": (("crop", "family", "cluster", "form", "issue", "character", "written_family", "decision", "carried"),
+                    ("crop",)),
 }
 
 
@@ -95,20 +99,27 @@ def has(db, table):
     return db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone() is not None
 
 
+def carries(atlas):
+    """Whether the layout's `form_glyphs` has `carried` (migration 0014)."""
+    return "carried" in {r[1] for r in atlas.execute("PRAGMA table_info(form_glyphs)")}
+
+
 def migrate(atlas, build):
-    """Migration 0006 on D1 and the local copy, once, with the build id the Worker finds the vote
-    objects by; a layout built with it already has both."""
-    if has(atlas, "form_families"):
-        return
-    path = OUT / "crop-facts" / "0006.sql"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    sql = (SCHEMA / "0006_crop_facts.sql").read_text()
-    sql += f"\nINSERT OR IGNORE INTO codes(field, code, key) VALUES('build', 0, {lit(build)});\n"
-    path.write_text(stamped(sql, "migration:0006"))
-    if not applied("glyph-atlas-v3", "migration:0006") and not send("glyph-atlas-v3", path, "migration:0006"):
-        sys.exit("migration 0006 did not apply; rerun")
-    atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
-    print("migration 0006 applied", flush=True)
+    """Migrations 0006 and 0014 on D1 and the local copy, once each; 0006 with the build id the Worker
+    finds the vote objects by. A layout built with them already has them."""
+    for number, name, present, extra in (
+            ("0006", "0006_crop_facts.sql", lambda: has(atlas, "form_families"),
+             f"\nINSERT OR IGNORE INTO codes(field, code, key) VALUES('build', 0, {lit(build)});\n"),
+            ("0014", "0014_form_carried.sql", lambda: carries(atlas), "")):
+        if present():
+            continue
+        path = OUT / "crop-facts" / f"{number}.sql"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(stamped((SCHEMA / name).read_text() + extra, f"migration:{number}"))
+        if not applied("glyph-atlas-v3", f"migration:{number}") and not send("glyph-atlas-v3", path, f"migration:{number}"):
+            sys.exit(f"migration {number} did not apply; rerun")
+        atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+        print(f"migration {number} applied", flush=True)
 
 
 def numbered(mirror, field, key):
@@ -145,12 +156,21 @@ def latest_decisions(atlas):
                               "ORDER BY at, seq"))
 
 
-def latest_glyph_decisions(atlas):
-    """Each crop's latest glyph decision in the loaded form_decisions."""
+def latest_by_crop(atlas, kind):
+    """Each crop's latest decision of a kind ('glyph', or 'cluster' by the glyphs it listed) in the loaded
+    form_decisions."""
     if not has(atlas, "form_decisions"):
         return {}
-    return dict(atlas.execute("SELECT c.value, d.id FROM form_decisions d, json_each(d.crops) c WHERE d.kind='glyph' "
-                              "ORDER BY d.at, d.seq"))
+    return dict(atlas.execute("SELECT c.value, d.id FROM form_decisions d, json_each(d.crops) c WHERE d.kind=? "
+                              "ORDER BY d.at, d.seq", (kind,)))
+
+
+def stated(atlas):
+    """Each loaded decision's (form, issue, character, written family) as its glyphs take it."""
+    if not has(atlas, "form_decisions"):
+        return {}
+    return {r[0]: applies(None, r[1:]) for r in atlas.execute(
+        "SELECT id, form, issue, character, written_family FROM form_decisions")}
 
 
 class Facts:
@@ -250,9 +270,16 @@ class Facts:
         if stale:
             sys.exit(f"{len(stale)} clusters name a decision that is not their latest cluster decision in the loaded "
                      f"form_decisions; load the history from the same copy first: {stale[:5]}")
-        members, outside, settled, said = {}, [], {}, {}
-        undecided = Counter()
-        glyph_last, stale = latest_glyph_decisions(self.atlas), []
+        # What each cluster's glyphs take from it: its decision's form, issue, character and written family.
+        says = stated(self.atlas)
+        decided = {k: says[c["decision"]] if c["decision"] is not None else (None, None, None, None)
+                   for k, c in clusters.items()}
+        differ = sorted(k for k, c in clusters.items() if decided[k][:2] != applies(None, (c["form"], c["issue"], None, None))[:2])
+        if differ:
+            sys.exit(f"{len(differ)} clusters' form or issue is not their decision's; copy form_clusters again: {differ[:5]}")
+        members, outside, settled = {}, [], {}
+        undecided, carried = Counter(), Counter()
+        glyph_last, cluster_last, stale, unmarked = latest_by_crop(self.atlas, "glyph"), latest_by_crop(self.atlas, "cluster"), [], []
         for r in latest("form_units", "id"):
             report.tables["form_units"]["in"] += 1
             crop = self.ids.get(r["id"])
@@ -266,53 +293,67 @@ class Facts:
             if own is not None and glyph_last.get(crop) != r["glyph_decision"]:
                 stale.append(f"{r['id']}: {r['glyph_decision']} (latest {glyph_last.get(crop)})")
             settled[crop] = (r["form"], r["issue"], r["issue_character"], r["written_family"])
+            # The glyph's cluster form: its current cluster's, or one its latest cluster decision gave it on a
+            # cluster of an earlier clustering, which is carried.
+            layer = (r["cluster_form"], r["cluster_issue"], r["cluster_character"], r["cluster_family"])
+            mark = None
+            if layer != (decided[r["cluster"]] if r["clustered"] else (None, None, None, None)):
+                mark = cluster_last.get(crop)
+                if mark is None or says[mark] != layer:
+                    unmarked.append(f"{r['id']}: {layer} (latest cluster decision {mark})")
+                carried["clustered" if r["clustered"] else "outside"] += 1
+                carried["under their own decision"] += own is not None
+            row = None
+            if own is not None:
+                row = (*own, r["glyph_decision"], mark)
+            elif mark is not None:
+                row = (*layer, mark, mark)
             if r["clustered"]:
                 image = IMAGE.fullmatch(r["image"])[1] if r["image"] else None
-                members.setdefault(r["cluster"], []).append(
-                    (r["rank"], crop, r["similarity"], image, r["split"], own, r["glyph_decision"]))
-                said.setdefault(r["cluster"], Counter())[(r["cluster_character"], r["cluster_family"])] += 1
-            elif own is not None:
-                outside.append((crop, r["family"], None, *own, r["glyph_decision"]))
+                members.setdefault(r["cluster"], []).append((r["rank"], crop, r["similarity"], image, r["split"], row))
+            elif row is not None:
+                outside.append((crop, r["family"], None, *row))
             else:
-                # Outside the clustering with no decision of its own: nothing to keep.
+                # Outside the clustering with no decision: nothing to keep.
                 undecided["glyphs"] += 1
-                undecided["with a form"] += any(v is not None for v in settled[crop])
-                report.drop("form_units", "outside the clustering, no decision of its own")
+                report.drop("form_units", "outside the clustering, no decision")
 
         if stale:
             sys.exit(f"{len(stale)} glyphs name a decision that is not their latest glyph decision in the loaded "
                      f"form_decisions; load the history from the same copy first: {stale[:5]}")
-        disagree = sorted(k for k, c in said.items() if len(c) > 1)
-        report.note(f"form_clusters: {len(disagree)} clusters whose glyphs name differing cluster characters or families "
-                    "(the most common is kept)", disagree)
-        report.note(f"form_units: {undecided['glyphs']} glyphs outside the clustering with no decision of their own, "
-                    f"{undecided['with a form']} of them with a form from a former cluster, not kept")
+        if unmarked:
+            sys.exit(f"{len(unmarked)} glyphs have a cluster form that neither their cluster's decision nor their latest "
+                     f"cluster decision in the loaded form_decisions gives; load the history from the same copy first: "
+                     f"{unmarked[:5]}")
+        report.note(f"form_units: {undecided['glyphs']} glyphs outside the clustering with no decision, not kept")
+        report.note(f"form_glyphs: {carried['clustered']} clustered glyphs and {carried['outside']} outside the clustering "
+                    f"carry a cluster decision of an earlier clustering, {carried['under their own decision']} of them "
+                    "under their own decision")
         cluster_rows, lists, glyphs, wrong, counts = [], {}, [], [], Counter()
         for key in sorted(clusters):
             if key not in members:
                 report.drop("form_clusters", "no glyph left")
                 continue
-            c, ms = clusters[key], sorted(members[key])
+            c, ms = clusters[key], sorted(members[key], key=lambda m: m[:2])
             n = numbered(self.mirror, "form_cluster", key)
-            character, written = said[key].most_common(1)[0][0]
-            decided = (c["form"], c["issue"], character, written)
+            character, written = decided[key][2:]
             body = {"family": c["family"], "key": key,
                     "members": [[crop, rank, sim, image, split, *self.looks.get(crop, (None, None))]
-                                for rank, crop, sim, image, split, _own, _d in ms]}
+                                for rank, crop, sim, image, split, _row in ms]}
             data, digest = named(body)
             lists[n] = (f"{n}-{digest}", data, body["members"])
             cluster_rows.append((n, key, c["family"], c["label"], len(ms), c["coherence"], c["shape_position"],
-                                 c["size_position"], lists[n][0], *decided, c["decision"]))
-            for _rank, crop, _sim, _image, _split, own, decision in ms:
+                                 c["size_position"], lists[n][0], c["form"], c["issue"], character, written, c["decision"]))
+            for _rank, crop, _sim, _image, _split, row in ms:
                 self.cluster_of[crop] = n
-                got = applies(own, decided)
+                got = applies(row and row[:4], decided[key])
                 if got != settled[crop]:
                     wrong.append(crop)
                 counts[c["family"], "count"] += 1
                 counts[c["family"], "assigned"] += got[0] is not None
                 counts[c["family"], "rejected"] += got[1] is not None
-                if own is not None:
-                    glyphs.append((crop, c["family"], n, *own, decision))
+                if row is not None:
+                    glyphs.append((crop, c["family"], n, *row))
         report.note(f"form_units: {len(wrong)} glyphs whose form, issue, character or family differs from the copy's "
                     "when worked out from their own row and their cluster", wrong)
 
@@ -346,7 +387,7 @@ class Facts:
         report.tables["form_clusters"]["out"] = len(cluster_rows)
         report.tables["form_units"]["out"] = sum(len(ms) for _n, _d, ms in lists.values()) + len(outside)
         report.note(f"form_glyphs: {len(glyphs)} clustered glyphs and {len(outside)} outside the clustering with their "
-                    f"own decision; {len(lists)} cluster lists, {len(indexes)} family indexes")
+                    f"own or a carried decision; {len(lists)} cluster lists, {len(indexes)} family indexes")
         self.rows = {"form_families": family_rows, "form_clusters": cluster_rows, "form_glyphs": glyphs + outside}
         for name, data, _ms in lists.values():
             if not (OUT / "forms" / f"{name}.json.gz").exists():
@@ -363,7 +404,10 @@ class Facts:
                              for c, k in self.head], len(self.head))]
         for table, (cols, key) in TABLES.items():
             names = ",".join(cols)
-            held = {r[0]: r for r in self.atlas.execute(f"SELECT {names} FROM {table}")} if has(self.atlas, table) else {}
+            present = {r[1] for r in self.atlas.execute(f"PRAGMA table_info({table})")}
+            # A dry run before migration 0014 reads `carried` as empty.
+            read = ",".join(c if c in present else "NULL" for c in cols)
+            held = {r[0]: r for r in self.atlas.execute(f"SELECT {read} FROM {table}")} if present else {}
             new = {r[0]: tuple(r) for r in self.rows[table]}
             out = [f"DELETE FROM {table} WHERE {key[0]} = {lit(k)};" for k in sorted(held) if k not in new]
             out += [f"INSERT INTO {table}({names}) VALUES({','.join(map(lit, new[k]))}) ON CONFLICT({key[0]}) DO UPDATE SET "
