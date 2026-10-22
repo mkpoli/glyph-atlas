@@ -839,6 +839,8 @@
   "form.add": "Thêm dạng chữ",
   "grapheme.disputed": "còn tranh luận",
   "grapheme.find": "Tìm tự vị khác",
+  "grapheme.change": "Đổi tự vị",
+  "grapheme.readAs": "{char} được đọc là {grapheme}",
   "form.ids.compose": "Viết bằng IDS",
   "form.ids.label": "Dãy ghi chữ (IDS)",
   "form.ids.operators": "Ký hiệu ghép",

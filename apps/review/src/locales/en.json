@@ -883,6 +883,8 @@
   "form.add": "Add a form",
   "grapheme.disputed": "disputed",
   "grapheme.find": "Find another grapheme",
+  "grapheme.change": "Change grapheme",
+  "grapheme.readAs": "{char} read as {grapheme}",
   "form.ids.compose": "Write as an IDS",
   "form.ids.label": "Ideographic description sequence",
   "form.ids.operators": "Operators",

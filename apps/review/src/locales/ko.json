@@ -838,6 +838,8 @@
   "form.add": "자형 추가",
   "grapheme.disputed": "이견 있음",
   "grapheme.find": "다른 자소 찾기",
+  "grapheme.change": "자소 변경",
+  "grapheme.readAs": "{char}, {grapheme}(으)로 읽음",
   "form.ids.compose": "IDS로 쓰기",
   "form.ids.label": "한자 구성 기술(IDS)",
   "form.ids.operators": "구성 연산자",

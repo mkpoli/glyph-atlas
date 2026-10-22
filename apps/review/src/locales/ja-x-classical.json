@@ -847,6 +847,8 @@
   "form.add": "字形ヲ加フ",
   "grapheme.disputed": "異論アリ",
   "grapheme.find": "他ノ字種ヲ尋ヌ",
+  "grapheme.change": "字種ヲ改ム",
+  "grapheme.readAs": "{char}ヲ{grapheme}ト讀ム",
   "form.ids.compose": "IDSにて書く",
   "form.ids.label": "漢字構成記述（IDS）",
   "form.ids.operators": "構成符",

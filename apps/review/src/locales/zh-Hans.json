@@ -857,6 +857,8 @@
   "form.add": "添加字形",
   "grapheme.disputed": "有争议",
   "grapheme.find": "查找其他字种",
+  "grapheme.change": "更改字种",
+  "grapheme.readAs": "{char}读作{grapheme}",
   "form.ids.compose": "用IDS书写",
   "form.ids.label": "汉字构形描述序列（IDS）",
   "form.ids.operators": "结构符",

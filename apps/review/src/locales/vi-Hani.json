@@ -840,6 +840,8 @@
   "form.add": "添樣𡨸",
   "grapheme.disputed": "羣爭論",
   "grapheme.find": "尋字位恪",
+  "grapheme.change": "對字位",
+  "grapheme.readAs": "{char}特讀羅{grapheme}",
   "form.ids.compose": "曰憑IDS",
   "form.ids.label": "圮𥱬𡨸（IDS）",
   "form.ids.operators": "記號扱",

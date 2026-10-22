@@ -849,6 +849,8 @@
   "form.add": "增形",
   "grapheme.disputed": "有異議",
   "grapheme.find": "尋字種",
+  "grapheme.change": "易字種",
+  "grapheme.readAs": "{char}讀爲{grapheme}",
   "form.ids.compose": "以IDS書",
   "form.ids.label": "字構",
   "form.ids.operators": "構符",
