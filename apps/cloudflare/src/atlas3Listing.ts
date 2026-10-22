@@ -8,6 +8,7 @@ import { codeNames, cropItems, publicId, type Entry } from './atlas3';
 import { codePoints } from './atlas3Answers';
 import { axisOf } from './dating';
 import { formed, type UnitForm } from './forms';
+import type { Timing } from './timing';
 
 type Json = any;
 
@@ -57,18 +58,19 @@ const issueName = (name: string | undefined) => name === 'reading' ? 'character'
 
 /** The listing items of `ids`, in that order, with what reviews set since the cut (a redrawn box, a
  *  flagged crop's issue), their forms and dating. A crop `cropItems` leaves out is left out here. */
-export async function listingItems(env: Env, ids: number[], given?: Map<number, Entry>): Promise<Json[]> {
-  const items = await cropItems(env, ids, given);
+export async function listingItems(env: Env, ids: number[], given?: Map<number, Entry>, timing?: Timing): Promise<Json[]> {
+  const timed = <T>(name: string, work: Promise<T>) => timing ? timing.beside(name, work) : work;
+  const items = await timed('crops', cropItems(env, ids, given));
   if (!items.length) return items;
   const crops = new Map(ids.map(id => [publicId(id), id]));
   const listed = items.map(item => crops.get(item.id)!);
   const corpus = items.filter(item => item.origin === 'corpus').map(item => crops.get(item.id)!);
-  const [decided, claimed, dating, reviewed] = await Promise.all([
+  const [decided, claimed, dating, reviewed] = await timed('reviews', Promise.all([
     corpus.length ? env.ATLAS.prepare(corpusFormsQuery()).bind(JSON.stringify(corpus)).all<CorpusForm>().then(r => r.results) : [],
     cropForms(env, listed),
     datingOf(env, items.map(item => item.document)),
     env.ATLAS.prepare(reviewedQuery()).bind(JSON.stringify(listed)).all<Reviewed>(),
-  ]);
+  ]));
   const forms = new Map(decided.map(row => [row.id, unitForm(row)]));
   const claims = claimed;
   const since = new Map(reviewed.results.map(row => [row.crop, row]));

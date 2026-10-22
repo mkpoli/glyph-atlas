@@ -25,6 +25,7 @@ import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './ro
 import { MediaIncomplete, mediaResponse } from './atlas3Media';
 import { cropRoute } from './routes/crop';
 import { runsRoute } from './routes/runs';
+import { Timing } from './timing';
 import { cards, characterCard, characterPage, chronology, citeCharacter, corpusOccurrences, decades, occurrences, type CharacterTools } from './routes/character';
 import * as browse from './routes/browse';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
@@ -147,7 +148,8 @@ const routes = {
         throw new Problem(404,'Image not found.');
       }
       // A round leaves out what its reviewer skipped lately, so it reads who is asking.
-      if(path==='/atlas')return json(await browse.catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null));
+      if(path==='/atlas'){const timing=new Timing();const body=await browse.catalogue(env,ctx,url,q.get('purpose')==='review'?(await viewer(env,request))?.id??null:null,timing);
+        return json(body,200,{'server-timing':timing.header()})}
       if(path==='/api/ranking')return await ranking(env,url,ctx);
       if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null,{text,integer}));
       const run=await runsRoute(env,ctx,url);

@@ -4,7 +4,8 @@ import { bundle, bundleKey, cropId, publicId } from '../atlas3';
 import { charsQuery, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
 import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, cursorOf, cursorText, dateStats, flaggedQuery, gallery, page, type Stage,
-  graphemeQuery, health, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter } from './browse';
+  catalogue, graphemeQuery, health, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter } from './browse';
+import { Timing } from '../timing';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
 
 // The Workers cache, as far as these routes use it.
@@ -31,6 +32,17 @@ describe('site values', () => {
     // An isolate holds the answer for five seconds.
     expect((await health(env, now + 4000)).published_at).toBe(publishedAt(pub));
     expect(await health(env, now + 6000)).toEqual({ ok: true, published_at: null });
+  });
+});
+
+describe('the listing\'s timing', () => {
+  it('names each step a listing waits on', async () => {
+    const { env } = await setup();
+    const timing = new Timing();
+    await catalogue(env, ctx, new URL('https://glyphatlas.org/atlas?seed=5&limit=2'), null, timing);
+    const steps = timing.header().split(', ').map(step => step.split(';')[0]);
+    // Steps that run side by side end in either order.
+    expect(steps.sort()).toEqual(['counts', 'crops', 'facets', 'items', 'marks', 'page', 'reviews', 'stamps', 'total']);
   });
 });
 

@@ -13,6 +13,7 @@ import { categoryOf } from '../category';
 import { tallyDates } from '../dating';
 import { compose, graphemeKey, graphemeText, integer, literal, text } from '../input';
 import { ROUND_MAX } from '../rounds';
+import { Timing } from '../timing';
 
 type Json = any;
 
@@ -357,7 +358,7 @@ const empty = () => ({ total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, ha
 export const booksQuery = () => 'SELECT id,key,title FROM books WHERE id IN (SELECT value FROM json_each(?))';
 export const bookQuery = () => 'SELECT id FROM books WHERE key=?';
 
-export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: string | null): Promise<Json> {
+export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, reviewer: string | null, timing = new Timing()): Promise<Json> {
   const q = url.searchParams;
   const purpose = q.get('purpose') || 'browse', review = purpose === 'review';
   const production = q.get('production') || (review ? REVIEW_SCOPE : 'all');
@@ -380,11 +381,13 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const searched = q.get('q') ? literal(q.get('q')!) : null;
 
   const stamps = await catalogueStamps(env), version = catalogueKey(stamps);
+  timing.step('stamps');
   const [{ cells, chars }, held] = await Promise.all([collectedCounts(env, version), codeNames(env)]);
   const keys = await productionKeys(env, cells.map(c => c.production));
   // A publication may add a code the isolate does not hold yet: the table is read again, once.
   const names = cells.some(c => !held.has(`state:${c.state}`) || (c.category !== null && c.category !== -1 && !held.has(`category:${c.category}`)))
     ? await codeNames(env, true) : held;
+  timing.step('counts');
   const code = (field: string, key: string) => {
     for (const [k, v] of names) if (v === key && k.startsWith(field + ':')) return Number(k.slice(field.length + 1));
     return null;
@@ -421,6 +424,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const hit = facetsKey ? await caches.default.match(facetsKey) : undefined;
   const facets: { counts: Record<StateName, number>; categories: Category[]; documents: Book[] } = hit ? await hit.json()
     : await countFacets(env, { cells, chars, glyphs, own, counted, stateOf, review });
+  timing.step(hit ? 'facets-hit' : 'facets');
   if (facetsKey && !hit) ctx.waitUntil(caches.default.put(facetsKey, Response.json(facets, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
 
   // The listing.
@@ -470,8 +474,10 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     total = head.length + listedCount(filter) - left(0, filter) + (corpus ? glyphTotal - left(1, corpusFilter) : 0);
   }
   const dealt = wantsRows ? await page(env, stages, start(seed), cursor, limit, exclude) : { ids: [], next: null };
+  timing.step('page');
   const ids = dealt.ids;
-  let items = wantsRows ? await listed(env, ids, new Set(own.map(row => row.id))) : [];
+  let items = wantsRows ? await listed(env, ids, new Set(own.map(row => row.id)), timing) : [];
+  timing.step('items');
   // A corpus glyph whose image this site may not serve is not dealt; the cursor passes it all the same.
   items = items.filter(item => item.origin !== 'corpus' || item.proxyable);
   // How many withheld crops browsing left out, of a character, a book or a family where one is named;
@@ -545,9 +551,9 @@ async function countFacets(env: Env, { cells, chars, glyphs, own, counted, state
 
 // A page's items with each crop's suspect mark and shape order, and its state as the reviewer sees it:
 // a crop of their own recent skips is `skipped` for them.
-async function listed(env: Env, ids: number[], skipped: Set<number>): Promise<Json[]> {
+async function listed(env: Env, ids: number[], skipped: Set<number>, timing: Timing): Promise<Json[]> {
   if (!ids.length) return [];
-  const [items, marks] = await Promise.all([listingItems(env, ids), marksOf(env, ids)]);
+  const [items, marks] = await Promise.all([listingItems(env, ids, undefined, timing), timing.beside('marks', marksOf(env, ids))]);
   const crops = new Map(ids.map(id => [publicId(id), id]));
   return items.map(item => {
     const id = crops.get(item.id)!, mark = marks.get(id);
