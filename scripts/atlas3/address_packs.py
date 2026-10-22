@@ -17,11 +17,13 @@ uploads them, before `publish.py` names them in the image key map and the page b
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import re
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 ADDRESSED = re.compile(r"packs/[0-9a-f]{64}\.bin")
@@ -38,9 +40,18 @@ def crossing(db, table) -> list[str]:
     return sorted(found)
 
 
-def digest(path: Path) -> str:
-    with path.open("rb") as handle:
-        return hashlib.file_digest(handle, "sha256").hexdigest()
+def digest(path: Path, attempts=6) -> str:
+    """The pack's SHA-256. A read of /mnt (9P) fails with ENOMEM while the kernel lacks a free 64 KiB
+    block for the request; that passes, so the read is tried again."""
+    for attempt in range(attempts):
+        try:
+            with path.open("rb") as handle:
+                return hashlib.file_digest(handle, "sha256").hexdigest()
+        except OSError as error:
+            if error.errno != errno.ENOMEM or attempt == attempts - 1:
+                raise
+            time.sleep(2 ** attempt)
+    raise AssertionError("unreachable")
 
 
 def address(catalogue: Path, *, dry_run=False) -> dict:

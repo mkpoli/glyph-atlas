@@ -101,3 +101,23 @@ def test_packs_of_the_same_bytes_share_an_address(tmp_path):
     address_packs.address(catalogue)
     assert len({o for o, _, _ in rows(catalogue, "media")}) == 1
     assert address_packs.address(catalogue)["moved"] == 0
+
+
+def test_a_read_that_runs_out_of_kernel_memory_is_tried_again(tmp_path, monkeypatch):
+    import errno
+    import hashlib
+
+    path = tmp_path / "p.bin"
+    path.write_bytes(b"abc")
+    real, calls = hashlib.file_digest, []
+
+    def flaky(handle, name):
+        calls.append(1)
+        if len(calls) < 3:
+            raise OSError(errno.ENOMEM, "Cannot allocate memory")
+        return real(handle, name)
+
+    monkeypatch.setattr(address_packs.hashlib, "file_digest", flaky)
+    monkeypatch.setattr(address_packs.time, "sleep", lambda s: None)
+    assert address_packs.digest(path) == hashlib.sha256(b"abc").hexdigest()
+    assert len(calls) == 3
