@@ -164,7 +164,7 @@ export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParam
   const page = chosen.slice(0, limit);
   timing.step('shards');
   // A mark is the review queue's: a glyph a round showed or found hard is pending, as its record says.
-  const listed = await listingItems(env, page.map(e => e[0]), new Map<number, Entry>(page.map(([crop, , , record]) => [crop, record])), timing);
+  const listed = await listingItems(env, page.map(e => e[0]), { given: new Map<number, Entry>(page.map(([crop, , , record]) => [crop, record])), timing });
   const items = listed.filter(item => !group || categoryOf(String(item.label ?? '')) === group)
     .map(item => item.state === 'seen' || item.state === 'hard' ? { ...item, state: 'pending' } : item);
   timing.step('items');
@@ -580,7 +580,7 @@ async function countFacets(env: Env, { cells, chars, glyphs, own, counted, state
 // a crop of their own recent skips is `skipped` for them.
 async function listed(env: Env, ids: number[], skipped: Set<number>, timing: Timing): Promise<Json[]> {
   if (!ids.length) return [];
-  const [items, marks] = await Promise.all([listingItems(env, ids, undefined, timing), timing.beside('marks', marksOf(env, ids))]);
+  const [items, marks] = await Promise.all([listingItems(env, ids, { timing }), timing.beside('marks', marksOf(env, ids))]);
   const crops = new Map(ids.map(id => [publicId(id), id]));
   return items.map(item => {
     const id = crops.get(item.id)!, mark = marks.get(id);

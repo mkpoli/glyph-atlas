@@ -264,7 +264,7 @@ async function runCrops(env: Env, ids: number[]): Promise<Map<number, { item: Js
     if (record) given.set(id, { ...record, slot: entry.slot, id: entry.id, ...(entry.retired ? { retired: true } : {}) });
   }
   const listed = [...given.keys()];
-  const items = await cropItems(env, listed, given, rows.filter(row => given.has(row.id)));
+  const items = await cropItems(env, listed, { given, known: rows.filter(row => given.has(row.id)) });
   const forms = new Map(decided.map(row => [row.id, { ...row, id: publicId(row.id) } as UnitForm]));
   const crop = new Map(listed.map(id => [publicId(id), id]));
   const since = new Map(reviewed.map(row => [row.crop, row]));

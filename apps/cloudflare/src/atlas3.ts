@@ -104,7 +104,8 @@ const UNLISTED = ['text', 'line', 'context_image', 'context_box', 'crop_box', 'i
 // its record in place of `record_place` (the homepage sample), passes it in `given`, and that crop's
 // bundle is not read. One that read the crops' rows already (a run's page) passes them in `known`. With
 // `timing`, the rows, the bundles and the records are timed, and the bundles' sources noted.
-export async function cropItems(env: Env, ids: number[], given: Map<number, Entry> = new Map(), known?: CropRow[], timing?: Timing): Promise<Json[]> {
+export type CropReads = { given?: Map<number, Entry>; known?: CropRow[]; timing?: Timing };
+export async function cropItems(env: Env, ids: number[], { given = new Map(), known, timing }: CropReads = {}): Promise<Json[]> {
   if (!ids.length) return [];
   const timed = <T>(name: string, work: Promise<T>) => timing ? timing.beside(name, work) : work;
   const rows = known ?? (await timed('rows', env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>())).results;
