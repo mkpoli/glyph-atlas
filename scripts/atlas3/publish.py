@@ -1068,9 +1068,11 @@ def main():
                 rev, fresh = row["revision"], f"NOT EXISTS (SELECT 1 FROM corpus_rows WHERE crop={cid})"
                 mine = f"EXISTS (SELECT 1 FROM corpus_flags WHERE crop={cid} AND at={at})"
                 event = f"EXISTS (SELECT 1 FROM events WHERE crop={cid} AND submission={submission})"
-                tally = ("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) SELECT "
-                         f"{gen},{cell},{{n}} FROM crops c WHERE c.id={cid} AND c.revision={{rev}} AND {event} "
-                         "ON CONFLICT DO UPDATE SET n=n+excluded.n;")
+                # A function, so the catalogue's name in `event` never passes through str.format.
+                def tally(n, rev, cid=cid, event=event):
+                    return ("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) SELECT "
+                            f"{gen},{cell},{n} FROM crops c WHERE c.id={cid} AND c.revision={rev} AND {event} "
+                            "ON CONFLICT DO UPDATE SET n=n+excluded.n;")
                 # Each waits on the one before, so a glyph reviewed or named since keeps the site's rows.
                 group += [
                     (f"INSERT OR REPLACE INTO corpus_flags(crop,finding,realigned,transcribed,at) SELECT {cid},{lit(r['finding'])},"
@@ -1080,14 +1082,14 @@ def main():
                     ("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,issue,shown) "
                      f"SELECT c.id,c.revision+1,c.cut,{gen},{actor},{submission},{at},{kind[0]},c.char,{flagged},{issue[0]},c.char "
                      f"FROM crops c WHERE c.id={cid} AND c.revision={rev} AND {mine};"),
-                    tally.format(n=-1, rev=rev),
+                    tally(-1, rev),
                     ("INSERT INTO reviews(crop,gen,at,char,state,style,quiz,x,y,w,h,base_char,base_state,base_style,base_quiz) "
                      f"SELECT c.id,{gen},{at},c.char,{flagged},c.style,c.quiz,r.x,r.y,r.w,r.h,c.char,c.state,c.style,c.quiz "
                      f"FROM crops c LEFT JOIN reviews r ON r.crop=c.id WHERE c.id={cid} AND c.revision={rev} AND {event} "
                      "ON CONFLICT(crop) DO UPDATE SET gen=excluded.gen,at=excluded.at,char=excluded.char,state=excluded.state,"
                      "quiz=excluded.quiz,x=excluded.x,y=excluded.y,w=excluded.w,h=excluded.h;"),
                     f"UPDATE crops SET state={flagged},revision={rev + 1} WHERE id={cid} AND revision={rev} AND {event};",
-                    tally.format(n=1, rev=rev + 1)]
+                    tally(1, rev + 1)]
                 cells[cid] = [row["kind"], *(-1 if row[k] is None else row[k] for k in ("char", "family")), row["book"],
                               *(-1 if row[k] is None else row[k] for k in ("production", "style")), row["state"], row["quiz"],
                               -1 if row["year"] is None else row["year"] // 10 * 10]

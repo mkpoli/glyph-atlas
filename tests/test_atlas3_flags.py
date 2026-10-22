@@ -95,6 +95,13 @@ def test_a_flag_sends_a_corpus_glyph_to_the_flagged_view_once(glyphs, monkeypatc
     assert crops(remote)[g2]["revision"] == 1
 
 
+def test_a_catalogue_named_with_braces_flags_its_glyphs(glyphs, monkeypatch, tmp_path):
+    root, publish, remote = glyphs
+    run(publish, monkeypatch, write(tmp_path, monkeypatch, "f{n}{rev}", [glyph("codh:g2", "き")]))
+    flagged = remote.query("glyph-atlas-v3", "SELECT code FROM codes WHERE field='state' AND key='flagged'")[0]["code"]
+    assert crops(remote)[ids(root)["codh:g2"]]["state"] == flagged
+
+
 def test_a_glyph_whose_character_moved_is_left_as_it_is(glyphs, monkeypatch, tmp_path):
     root, publish, remote = glyphs
     run(publish, monkeypatch, write(tmp_path, monkeypatch, "f", [glyph("codh:g2", "け")]))
