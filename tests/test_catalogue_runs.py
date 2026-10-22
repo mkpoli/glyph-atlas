@@ -180,6 +180,20 @@ def test_an_export_keeps_a_written_character_over_the_label(labelled):
     assert db.execute("SELECT text FROM unit_ngrams WHERE size=2 ORDER BY first").fetchall() == [("ゑし",), ("し候",)]
 
 
+def test_an_export_reads_a_glyphs_review_overlay_over_its_published_row(tmp_path):
+    db = export_db()
+    held(db, [("K:0", "申"), ("K:1", "上"), ("K:2", None)], document="kept")
+    # K:0 reviewed to 中 in a cursive hand; K:2 reviewed with no character keeps its label.
+    db.executemany("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,"
+                   "data,snapshot,context,visual,style) VALUES(?,'corpus',?,'printed/woodblock','kanji','accepted',1,1,1,?,"
+                   "'{}','{}','{}','{}',?)", [("K:0", "中", 3, "cursive"), ("K:2", None, 9, "unassessed")])
+    units = [unit("kept", "K", 0, 0), unit("kept", "K", 1, 40),
+             unit("kept", "K", 2, 80).model_copy(update={"text_source": "候"})]
+    export.record_corpus_runs(db, corpus(tmp_path, units))
+    assert db.execute("SELECT first,size,text,hand_order,shuffle FROM unit_ngrams ORDER BY first,size").fetchall() == [
+        ("K:0", 2, "中上", 0, 3), ("K:0", 3, "中上候", 0, 3), ("K:1", 2, "上候", 1, 7)]
+
+
 def test_an_export_run_again_replaces_its_corpus_runs_and_leaves_the_others(tmp_path):
     db = export_db()
     held(db, [("K:0", "申"), ("K:1", "上"), ("K:2", "候")], document="kept")

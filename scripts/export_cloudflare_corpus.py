@@ -239,8 +239,10 @@ def record_corpus_runs(db, corpus) -> int:
 
     A glyph with no written character takes its label, which its runs read in place of one. A run is
     recorded only while all of its glyphs are in the export's `corpus_units`, so one with a glyph of a
-    withdrawn document or one the export left out is not; its text is its glyphs' characters as written
-    there and its document its first glyph's.
+    withdrawn document or one the export left out is not. A glyph with a review overlay (a `units` row
+    with `origin='corpus'`) reads its character, order and shuffle from it, as publish.py takes the
+    glyph's character from it; the label stands in only while neither holds a character. The run's
+    document is its first glyph's.
     """
     runs, on_lines, labels = corpus_runs(corpus)
     for start in range(0, len(on_lines), CHUNK):
@@ -251,7 +253,9 @@ def record_corpus_runs(db, corpus) -> int:
     glyphs = {}
     for start in range(0, len(members), CHUNK):
         glyphs.update((i, ngrams.Written(*rest)) for i, *rest in db.execute(
-            "SELECT id,coalesce(character,label),document,hand_order,shuffle FROM corpus_units WHERE id IN (SELECT value FROM json_each(?))",
+            "SELECT c.id,coalesce(iif(u.id IS NULL,c.character,u.character),c.label),c.document,"
+            "coalesce(u.hand_order,c.hand_order),coalesce(u.shuffle,c.shuffle) FROM corpus_units c"
+            " LEFT JOIN units u ON u.id=c.id AND u.origin='corpus' WHERE c.id IN (SELECT value FROM json_each(?))",
             (json.dumps(members[start:start + CHUNK]),)))
     return ngrams.record_runs(db, sorted(runs), glyphs)
 
