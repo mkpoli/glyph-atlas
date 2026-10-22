@@ -134,6 +134,26 @@ def test_a_malformed_shape_order_is_refused(layout, monkeypatch, tmp_path, order
         quiz(remote, monkeypatch, "--shapes", orders(tmp_path / "s.json", {"ex:a1": order}))
 
 
+def test_a_dry_run_after_a_stopped_run_counts_what_d1_holds_and_keeps_nothing(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, _publish, remote = layout
+    shapes = orders(tmp_path / "s.json", {"ex:a1": 1})
+
+    def stopped(database, file, stamp):
+        remote.send(database, file, stamp)
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        quiz(remote, monkeypatch, "--shapes", shapes, "--send", send=stopped)
+    local = root / "out" / "atlas.sqlite"
+    before = held(sqlite3.connect(local))
+    quiz(remote, monkeypatch, "--shapes", shapes)
+    # D1 holds the stopped run's part, so the same marks are nothing to send, and the local copy is as it was.
+    assert "shapes\t1\t0\t0\t0\t0\n" in (root / "out" / "quiz-marks-report.txt").read_text()
+    assert held(sqlite3.connect(local)) == before == {"suspects": [], "shapes": []}
+    quiz(remote, monkeypatch, "--shapes", shapes, "--send")
+    assert held(sqlite3.connect(local)) == held(remote.dbs["glyph-atlas-v3"])
+
+
 def test_a_history_load_after_quiz_marks_leaves_them(layout, monkeypatch, tmp_path):  # noqa: F811
     root, publish, remote = layout
     crop = ids(root)

@@ -15,9 +15,10 @@ Each table given is replaced whole; a table not given is left as it is. Every te
 out/mirror.sqlite, which is only read; a mark on a crop the mirror lacks is left out with a count.
 
 Only what differs from the local copy (out/atlas.sqlite) is sent, in parts named by their content and
-confirmed by their stamps in `imports`, then replayed on the local copy, as books.py sends them. `--send`
-first replays the parts of earlier runs whose stamps D1 holds and the local copy lacks. A dry run (the
-default) writes the parts and the figures to `out/quiz-marks-report.txt` and sends nothing.
+confirmed by their stamps in `imports`, then replayed on the local copy, as books.py sends them. Every
+run first replays the parts of earlier runs whose stamps D1 holds and the local copy lacks; a dry run (the
+default) keeps none of them, writes the parts and the figures to `out/quiz-marks-report.txt`, and sends
+nothing.
 """
 
 from __future__ import annotations
@@ -122,10 +123,12 @@ def figures(changes, left):
     return "\n".join(lines) + "\n"
 
 
-def catch_up(atlas):
+def catch_up(atlas, keep):
     """Replay on the local copy the parts of earlier runs that D1 holds and the local copy lacks, as a
-    run stopped between the two leaves them, so the difference is taken from what D1 holds."""
+    run stopped between the two leaves them, so the difference is taken from what D1 holds. Unless
+    `keep`, they stay in an open transaction the caller rolls back."""
     local = {r[0] for r in atlas.execute("SELECT stamp FROM imports WHERE stamp LIKE 'quiz-marks-%'")}
+    parts = []
     for r in query("glyph-atlas-v3", "SELECT stamp FROM imports WHERE stamp LIKE 'quiz-marks-%' ORDER BY at, stamp"):
         if r["stamp"] in local:
             continue
@@ -133,8 +136,15 @@ def catch_up(atlas):
         path = RUNS / run / f"{part}.sql"
         if not path.exists():
             sys.exit(f"glyph-atlas-v3 holds {r['stamp']}, whose part {path} is gone; the local copy cannot follow it")
+        parts.append((r["stamp"], path))
+    if not keep:
+        if parts:
+            atlas.executescript("SAVEPOINT catch_up;\n" + "".join(path.read_text() for _, path in parts))
+            print(f"dry run: {len(parts)} parts D1 holds and the local copy lacks, replayed for the figures only", flush=True)
+        return
+    for stamp, path in parts:
         atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
-        print(f"replayed {r['stamp']} from D1's imports", flush=True)
+        print(f"replayed {stamp} from D1's imports", flush=True)
 
 
 def main():
@@ -157,7 +167,7 @@ def main():
         build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
-        catch_up(atlas)
+    catch_up(atlas, keep=args.send)
     ids = dict(mirror.execute("SELECT text, id FROM ids"))
     left, wanted = {}, {}
     if args.suspects:
@@ -169,6 +179,7 @@ def main():
     (OUT / "quiz-marks-report.txt").write_text(report)
     print(report, end="", flush=True)
     if not groups:
+        atlas.rollback()
         print("the local copy already holds these marks; nothing to send", flush=True)
         return
     # The name covers the runs already applied as well as the statements, so the same difference taken
@@ -179,6 +190,7 @@ def main():
     n = built(run, "rows", groups)
     print(f"{n if n is not None else 'existing'} parts -> {run}", flush=True)
     if not args.send:
+        atlas.rollback()
         print("dry run: nothing sent", flush=True)
         return
     deliver(run, atlas)
