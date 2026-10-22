@@ -76,3 +76,28 @@ def test_a_pack_written_twice_stops_the_run(tmp_path):
         db.execute("INSERT INTO media VALUES('k3','pack-10001.bin',2,4,'image/webp')")
     with pytest.raises(SystemExit, match="two rows"):
         address_packs.address(catalogue)
+
+
+def test_a_pack_number_used_again_is_addressed_as_new(tmp_path):
+    catalogue = export(tmp_path)
+    address_packs.address(catalogue)
+    # The exporter numbers its next pack from the bottom again.
+    (tmp_path / "pack-10001.bin").write_bytes(b"cccc")
+    with sqlite3.connect(catalogue) as db:
+        db.execute("INSERT INTO media VALUES('k3','pack-10001.bin',0,4,'image/webp')")
+    assert address_packs.address(catalogue)["moved"] == 1
+    for name, offset, size in rows(catalogue, "media"):
+        assert (tmp_path / name).read_bytes()[offset:offset + size] in (b"aaaa", b"bbbb", b"cccc")
+    with sqlite3.connect(catalogue) as db:
+        (name,) = db.execute("SELECT object FROM media WHERE key='k3'").fetchone()
+    assert (tmp_path / name).read_bytes() == b"cccc"
+
+
+def test_packs_of_the_same_bytes_share_an_address(tmp_path):
+    catalogue = export(tmp_path)
+    (tmp_path / "pack-10002.bin").write_bytes(b"aaaabbbb")
+    with sqlite3.connect(catalogue) as db:
+        db.execute("INSERT INTO media VALUES('k3','pack-10002.bin',0,4,'image/webp')")
+    address_packs.address(catalogue)
+    assert len({o for o, _, _ in rows(catalogue, "media")}) == 1
+    assert address_packs.address(catalogue)["moved"] == 0

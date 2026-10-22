@@ -117,6 +117,7 @@ already holds for earlier publications. Before a catalogue's packs go up, `addre
 name to `packs/<SHA-256>.bin` beside it and points the rows there, in one transaction recorded in
 `addressed` before any file moves, so a stopped run finishes on the next. Then
 `rclone copy <export>/packs r2:glyph-atlas/packs --immutable` uploads them, and `publish.py` names them.
+An export resumed later reads its packs, so `packs/` stays beside it.
 
 One publish runs at a time. The first build's bundles went to R2 with
 `rclone copy out/pages r2:glyph-atlas/v3/pages --header-upload "Content-Type: application/json" --header-upload "Content-Encoding: gzip"`.

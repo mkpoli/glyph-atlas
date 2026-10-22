@@ -50,18 +50,25 @@ def address(catalogue: Path, *, dry_run=False) -> dict:
         db.execute("CREATE TABLE IF NOT EXISTS addressed(original TEXT PRIMARY KEY, object TEXT NOT NULL)")
     known = db.execute("SELECT 1 FROM sqlite_master WHERE name='addressed'").fetchone()
     tables = [t for t in TABLES if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (t,)).fetchone()]
-    # A move recorded but not made: the rows already name the new object.
+    # A move recorded but not made: the rows already name the new object. A recorded move is pending
+    # only until its file has moved, so a pack number the exporter hands out again is never taken for one.
     finished = 0
     for original, obj in db.execute("SELECT original, object FROM addressed").fetchall() if known else []:
         source, target = root / original, root / obj
         if source.exists() and not dry_run:
+            if f"packs/{digest(source)}.bin" != obj:
+                sys.exit(f"{original} does not hold the bytes recorded for {obj}; refusing to move it")
             target.parent.mkdir(exist_ok=True)
             if target.exists():
                 source.unlink()
             else:
                 source.rename(target)
             finished += 1
-    if bad := [o for t in tables for o in crossing(db, t)]:
+    if known and not dry_run:
+        with db:
+            db.execute("DELETE FROM addressed")
+    # Two packs of the same bytes share one address, so only numbered packs can hold another run's rows.
+    if bad := [o for t in tables for o in crossing(db, t) if not ADDRESSED.fullmatch(o)]:
         sys.exit(f"packs hold bytes of two rows under one name: {', '.join(bad[:10])}")
     extents: dict[str, int] = {}
     for table in tables:
@@ -89,6 +96,9 @@ def address(catalogue: Path, *, dry_run=False) -> dict:
         else:
             (root / obj).rename(target)
     moved = len(names)
+    if names:
+        with db:
+            db.execute("DELETE FROM addressed")
     named = {o for t in tables for o, in db.execute(f"SELECT DISTINCT object FROM {t}")}
     sizes = [(root / o).stat().st_size for o in named if (root / o).exists()]
     counts = {"moved": moved, "finished": finished, "to_move": len(pending) if dry_run else 0,
