@@ -81,6 +81,9 @@ Requests run sequentially at five-second intervals. For the 768 works and 98,027
 pages listed on 2026-10-20, bulk collection requires about 1,544 requests (at least
 2.2 hours, excluding transfer time and retries); per-page collection takes at
 least 137 hours. Cached responses resume interrupted collection without repeating requests.
+`--offline` reads only the cache and fails on the first response missing from it.
+A cached response that is not a JSON object or a `full.txt` export is deleted and
+the import stops, naming the file; the next online run fetches it again.
 Use a new `--cache` directory for a fresh upstream snapshot. Output tables replace
 the selected snapshot; use separate output directories for separate samples.
 `UPSTREAM.json` records response hashes and expected/imported page counts.

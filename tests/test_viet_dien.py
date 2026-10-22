@@ -372,3 +372,25 @@ def test_staging_stays_inside_a_root_whose_parent_is_another_filesystem(tmp_path
     assert vd.staging_dir(out) == out.parent
     monkeypatch.setattr(vd.os, 'stat', real)
 
+
+def test_offline_fails_on_a_cache_miss_without_a_request(tmp_path, http_server):
+    populate(http_server)
+    with pytest.raises(FileNotFoundError, match='not cached.*--offline'):
+        run(tmp_path, http_server, offline=True)
+    assert http_server.requests == []
+    run(tmp_path, http_server)
+    seen = len(http_server.requests)
+    assert run(tmp_path, http_server, offline=True) == {'documents': 1, 'pages': 2, 'page_texts': 2}
+    assert len(http_server.requests) == seen
+
+
+@pytest.mark.parametrize('body', [b'[1, 2]', b'{"total": ', b'\xff\xfe'])
+def test_a_cached_response_of_the_wrong_shape_is_named_and_removed(tmp_path, http_server, body):
+    populate(http_server)
+    run(tmp_path, http_server)
+    url = f'{http_server.base_url}/api/v1/texts/11'
+    cached = tmp_path / 'cache' / f'{vd.hashlib.sha256(url.encode()).hexdigest()}.json'
+    cached.write_bytes(body)
+    with pytest.raises(ValueError, match=cached.name):
+        run(tmp_path, http_server, offline=True)
+    assert not cached.exists()

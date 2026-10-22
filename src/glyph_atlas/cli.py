@@ -975,11 +975,13 @@ def import_viet_dien(
     bulk_text: Annotated[bool, typer.Option(help="use whole-book text exports; correction flags and scan URLs remain unknown")] = False,
     cache: Annotated[Path, typer.Option(help="API snapshot cache; use a new directory to refresh")] = Path("cache/viet-dien"),
     out: Annotated[Path, typer.Option(help="directory for this selection's tables")] = Path("work/viet-dien"),
+    offline: Annotated[bool, typer.Option(help="read only the cache; a response missing from it fails")] = False,
 ) -> None:
     """Import Việt Điển Hán-Nôm page text and scan links."""
     from .importers import viet_dien
 
-    counts = viet_dien.import_all(out, cache=cache, text_ids=text_id, limit=limit, page_limit=page_limit, bulk_text=bulk_text)
+    counts = viet_dien.import_all(out, cache=cache, text_ids=text_id, limit=limit, page_limit=page_limit,
+                                  bulk_text=bulk_text, offline=offline)
     for name, rows in counts.items():
         typer.echo(f"{name:<12} {rows:>10}")
     typer.echo(f"-> {out}")

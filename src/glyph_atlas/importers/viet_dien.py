@@ -34,27 +34,32 @@ REUSE = "The OCR text and the catalogue compilation are offered for research use
 class API:
     """A replayable API snapshot with the upstream's five-second crawl interval."""
 
-    def __init__(self, cache: Path, *, base: str = BASE, client: httpx.Client | None = None):
+    def __init__(self, cache: Path, *, base: str = BASE, client: httpx.Client | None = None, offline: bool = False):
         self.cache = Path(cache)
         self.base = base.rstrip("/")
         self.client = client
+        self.offline = offline
         self.responses: dict[str, str] = {}
 
     def get(self, path: str, **params: Any) -> tuple[dict, str]:
         body, digest = self.fetch(path, "json", **params)
-        payload = json.loads(body)
-        if not isinstance(payload, dict):
-            raise TypeError(f"{path}: expected a JSON object")
-        return payload, digest
+        return json.loads(body), digest
 
     def fetch(self, path: str, kind: str, **params: Any) -> tuple[bytes, str]:
+        """A cached response, fetched first unless offline. A response of the wrong shape is not kept."""
         url = f"{self.base}/api/v1/{path}"
         if params:
             url += "?" + urlencode(params)
         suffix = "json" if kind == "json" else "txt"
         target = self.cache / f"{hashlib.sha256(url.encode()).hexdigest()}.{suffix}"
+        if self.offline and not target.exists():
+            raise FileNotFoundError(f"{url} is not cached ({target}); run without --offline to fetch it")
         net.download(url, target, pause=5.0, expected=kind, client=self.client)
         body = target.read_bytes()
+        problem = _shape_problem(body, kind)
+        if problem:
+            target.unlink()
+            raise ValueError(f"{url}: {problem}; removed the cached response {target}")
         digest = hashlib.sha256(body).hexdigest()
         self.responses[url] = digest
         return body, digest
@@ -83,6 +88,21 @@ class API:
         if len(result) != total:
             raise ValueError("Việt Điển catalogue count differs from its advertised total")
         return result
+
+
+def _shape_problem(body: bytes, kind: str) -> str | None:
+    """Why a response is not a JSON object or a full.txt export, or None."""
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        return "not UTF-8"
+    if kind == "json":
+        try:
+            payload = json.loads(text)
+        except ValueError:
+            return "not JSON"
+        return None if isinstance(payload, dict) else "not a JSON object"
+    return None if re.search(r"^# Việt Điển text [1-9][0-9]* ", text, re.MULTILINE) else "not a full.txt export"
 
 
 def export_pages(body: bytes, detail: dict) -> list[dict]:
@@ -174,7 +194,7 @@ def staging_dir(out: Path) -> Path:
 def import_all(
     out: Path, *, cache: Path = Path("cache/viet-dien"), text_ids: list[int] | None = None,
     limit: int = 1, page_limit: int = 10, base: str = BASE, client: httpx.Client | None = None,
-    bulk_text: bool = False,
+    bulk_text: bool = False, offline: bool = False,
 ) -> dict[str, int]:
     """Write one selected snapshot; zero limits select all works/pages.
 
@@ -184,7 +204,7 @@ def import_all(
     """
     if limit < 0 or page_limit < 0 or any(type(i) is not int or i < 1 for i in (text_ids or [])):
         raise ValueError("limits must be nonnegative and text ids must be positive integers")
-    api = API(cache, base=base, client=client)
+    api = API(cache, base=base, client=client, offline=offline)
     if text_ids:
         catalogue = {row["id"]: row for row in api.texts(0)}
         missing = set(text_ids) - catalogue.keys()
