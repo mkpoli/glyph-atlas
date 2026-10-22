@@ -191,7 +191,7 @@ const routes = {
       if(path==='/layers/occurrences')return json(await occurrences(env,await characterCard(env,q.get('code_point')||'',characterTools,ctx),q));
       if(path==='/layers/candidates'){const found=await corpusOccurrences(env,await characterCard(env,q.get('code_point')||'',characterTools,ctx),q);
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
-      if(path==='/layers/gallery')return json(await browse.gallery(env,q));
+      if(path==='/layers/gallery'){const timing=new Timing();const body=await browse.gallery(env,ctx,q,timing);return json(body,200,{'server-timing':timing.header()})}
       if(path==='/layers/decades')return json(await decades(env,ctx,url,characterTools));
       if(path==='/layers/chronology')return json(await chronology(env,ctx,url,characterTools));
       if(path==='/layers/summary')return json(await browse.siteValue(env,'corpus_index'));
