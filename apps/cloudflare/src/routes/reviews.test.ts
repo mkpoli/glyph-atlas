@@ -95,6 +95,17 @@ describe('immutable review export', () => {
     expect(review).toMatchObject({ event: { id: 'v3:1', target_id: 'ex:a' }, unavailable: 'saved before review evidence was kept' });
   });
 
+  it('counts neither a mark nor a re-cut that cleared it, and neither supersedes a review', async () => {
+    const { add, crop, archive, env } = setup();
+    archive(1, { 'legacy:old-1': { event: { id: 'old-1' } } });
+    add(1, 16777217, 1, 'old-1');
+    add(2, 16777217, 2, null, 3);
+    add(3, 16777217, 3, null, 7);
+    crop(16777217, 3);
+    const [review] = (await reviewsPage(env, new URLSearchParams())).reviews;
+    expect([review.current, review.current_revision]).toEqual([true, 1]);
+  });
+
   it('advances the cursor over a completely hidden legacy page', async () => {
     const { env, add, archive } = setup(), records: Record<string, any> = {};
     for (let id = 1; id <= PAGE + 1; id++) records[`legacy:old-${id}`] = { legacy_hidden: true, event: { id: `old-${id}` } };

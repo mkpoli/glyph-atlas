@@ -145,3 +145,32 @@ def test_a_review_saved_here_continues_the_old_sites_reviews_not_yet_imported(st
     _, report = cloudflare_import.ingest_cloudflare(store, export, apply=True)
     assert report["counts"] == {"imported": 1}, report
     assert store.unit("u").unicode == "U+3092"
+
+
+def test_a_line_correction_that_relabels_and_redraws_a_crop_imports_both(store):  # noqa: F811
+    publication = baseline(store)
+    character = publication["character"]
+    box = {**character["box"], "w": character["box"]["w"] - 1}
+    answer = {"image_sha256": character["image_sha256"], "verdict": "wrong", "issue": "character", "character": "あ", "box": box}
+    source = capture(publication, "batch", records=[{"id": str(uuid4()), "before": character, "answer": answer}])
+    _, report = cloudflare_import.ingest_cloudflare(store, source, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    unit = store.unit("u")
+    assert (unit.unicode, unit.box.model_dump()) == ("U+3042", box)
+
+
+def test_a_batch_relabel_of_a_crop_reported_for_its_box_imports_as_disputed(store):  # noqa: F811
+    publication = baseline(store)
+    character = publication["character"]
+    reported = capture(publication, records=[{"id": str(uuid4()), "before": character,
+                                              "answer": {"image_sha256": character["image_sha256"], "verdict": "wrong", "issue": "crop"}}])
+    _, report = cloudflare_import.ingest_cloudflare(store, reported, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    before = {**character, "revision": store.revision("u")}
+    relabel = {"image_sha256": character["image_sha256"], "verdict": "wrong", "issue": "character", "character": "あ"}
+    source = capture({"character": before}, "batch", records=[{"id": str(uuid4()), "before": before, "answer": relabel, "kept": "crop"}],
+                     start=2)
+    assert source["reviews"][0]["event"]["new"] == "disputed"
+    _, report = cloudflare_import.ingest_cloudflare(store, source, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    assert (store.unit("u").unicode, store.unit("u").review) == ("U+3042", "disputed")

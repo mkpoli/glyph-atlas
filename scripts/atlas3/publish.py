@@ -156,24 +156,39 @@ def query(database, sql):
 # (routes/review.ts `LOGICAL`): from the revision the last publication that spoke for the crop gave it,
 # plus every event since but a mark; without one, its revision less every mark.
 MARKED = "({e}.kind IN (3,4) OR ({e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id={e}.reverses),3) IN (3,4)))"
+# Events the store never counts: marks, and a re-cut clearing a mark (RECUT_KIND, 7).
+UNCOUNTED = "(e.kind=7 OR " + MARKED.format(e="e") + ")"
 LOGICAL = ("coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at AND NOT "
-           + MARKED.format(e="e") + ") FROM review_revisions a WHERE a.crop=c.id),c.revision-(SELECT count(*) FROM events e "
-           "WHERE e.crop=c.id AND " + MARKED.format(e="e") + "))")
+           + UNCOUNTED + ") FROM review_revisions a WHERE a.crop=c.id),c.revision-(SELECT count(*) FROM events e "
+           "WHERE e.crop=c.id AND " + UNCOUNTED + "))")
 
 
-def migrate_review_revisions(atlas, dry):
-    """Migration 0015 on D1 and the local copy, once. It is applied to D1 before the Worker that reads it
-    deploys; the local copy takes it here. A dry run reads a copy without it as having no anchors."""
-    if atlas.execute("SELECT 1 FROM sqlite_master WHERE name='review_revisions'").fetchone() or dry:
+# The review migrations, each with a query that finds what it made. Each is applied where that is missing,
+# so a copy that took an earlier one (a mirror built after it, or one on another machine) is not touched again.
+REVIEW_MIGRATIONS = (
+    ("0015", "0015_review_evidence.sql", "SELECT 1 AS n FROM pragma_table_info('submissions') WHERE name='evidence'"),
+    ("0016", "0016_review_revisions.sql",
+     "SELECT 1 AS n FROM (SELECT count(*) AS k FROM sqlite_master WHERE name IN ('review_revisions','event_reviews')) WHERE k=2"),
+)
+
+
+def migrate_reviews(atlas, dry):
+    """Migrations 0015 and 0016 on D1 and on the local copy, where each lacks them. They reach D1 before
+    the Worker that reads them deploys; the local copy takes them here. A dry run changes neither."""
+    if dry:
         return
-    path = OUT / "publish" / "0015.sql"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text((CF / "migrations-atlas" / "0015_review_evidence.sql").read_text()
-                    + "\nINSERT INTO imports(stamp, at) VALUES('migration:0015', unixepoch());\n")
-    if not send("glyph-atlas-v3", path, "migration:0015"):
-        sys.exit("migration 0015 did not apply; rerun")
-    atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
-    print("migration 0015 applied", flush=True)
+    for number, name, made in REVIEW_MIGRATIONS:
+        path = OUT / "publish" / f"{number}.sql"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text((CF / "migrations-atlas" / name).read_text()
+                        + f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES('migration:{number}', unixepoch());\n")
+        if not query("glyph-atlas-v3", made):
+            send("glyph-atlas-v3", path, f"migration:{number}")
+            if not query("glyph-atlas-v3", made):
+                sys.exit(f"migration {number} did not apply; rerun")
+            print(f"migration {number} applied to glyph-atlas-v3", flush=True)
+        if not atlas.execute(made).fetchone():
+            atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
 
 
 def applied(database, stamp):
@@ -344,10 +359,11 @@ class Mirror:
         return cid
 
     def logical(self, cid):
-        """The crop's revision as the store counts it, in the local copy (`LOGICAL`)."""
+        """The crop's revision as the store counts it, in the local copy (`LOGICAL`); a dry run over a copy
+        without migration 0016 counts its revision less the events the store never counts."""
         if not self.atlas.execute("SELECT 1 FROM sqlite_master WHERE name='review_revisions'").fetchone():
             return self.atlas.execute("SELECT c.revision-(SELECT count(*) FROM events e WHERE e.crop=c.id AND "
-                                      + MARKED.format(e="e") + ") FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
+                                      + UNCOUNTED + ") FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
         return self.atlas.execute(f"SELECT {LOGICAL} FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
 
     def page_key(self, pid):
@@ -381,11 +397,11 @@ class Mirror:
             reviewed = [c for c in changed if c in REVIEW_OWNED]
             if own:
                 self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in own)} WHERE id={cid};")
+            # A change a reviewer can see moves the crop's revision on by one, so a view read before it is
+            # refused; otherwise the revision stays. It never goes back, since events name revisions.
+            row["revision"] = old["revision"] + (1 if reviewed else 0)
             if reviewed:
-                # A change a reviewer can see moves the crop's revision on by one, so a view read before
-                # it is refused; the revision never goes back, since events name revisions.
                 reviewed.append("revision")
-                row["revision"] = old["revision"] + 1
             if speaks and (reviewed or catalogue_revision != logical):
                 # The store's revision for the crop from here on, recorded first under the same guard, so
                 # both statements apply or neither does.
@@ -685,7 +701,7 @@ def main():
         sys.exit("the crop fill is unfinished; finish it with fill.py --send first")
     for (name,) in m.ids.execute("SELECT run FROM pending WHERE run LIKE ?", (FACTS_RUN + "%",)):
         sys.exit(f"the crop facts load {name.removeprefix(FACTS_RUN)} is unfinished; finish it with crop_facts.py --send first")
-    migrate_review_revisions(m.atlas, dry)
+    migrate_reviews(m.atlas, dry)
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():

@@ -1,17 +1,17 @@
 // The review export: every review, oldest first, as the offline importer reads it. A review saved on this
 // site returns the record its submission froze in R2 (`reviewCapture.ts`); one moved from the old site
 // returns the old export's record, archived by page. `current_revision` counts revisions as the old site
-// and the offline store do (`LOGICAL`); a review is current until a later event on its crop but a mark.
+// and the offline store do (`LOGICAL`); a review is current until a later event on its crop the store counts.
 import { bundle, pageOf, publicId, slotOf } from '../atlas3';
 import { Problem } from '../busy';
 import { readLegacyReviews, readReviewEvidence } from '../reviewEvidence';
-import { LOGICAL, MARKED } from './review';
+import { LOGICAL, UNCOUNTED } from './review';
 
 type Json = Record<string, any>;
 export const PAGE = 200;
 export const reviewsQuery = () => `SELECT e.id,e.legacy,e.crop,e.at,s.evidence,
   CASE WHEN c.id IS NULL THEN NULL ELSE ${LOGICAL('c')} END AS current_revision,
-  EXISTS(SELECT 1 FROM events n WHERE n.crop=e.crop AND n.revision>e.revision AND NOT ${MARKED('n')}) AS superseded
+  EXISTS(SELECT 1 FROM events n WHERE n.crop=e.crop AND n.revision>e.revision AND NOT ${UNCOUNTED('n')}) AS superseded
   FROM events e INDEXED BY event_reviews JOIN submissions s ON s.id=e.submission LEFT JOIN crops c ON c.id=e.crop
   WHERE e.kind IN (0,1,2) AND e.id>?1 ORDER BY e.id LIMIT ?2`;
 type Row = { id: number; legacy: string | null; crop: number; at: number; evidence: string | null;

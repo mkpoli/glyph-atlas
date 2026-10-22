@@ -160,7 +160,9 @@ def _step(record, before):
                 or not all(type(box[key]) is int for key in box) or box["x"] < 0 or box["y"] < 0
                 or box["w"] < 2 or box["h"] < 2):
             raise Rejected("redrawn box is malformed")
-        if verdict != "match" or issue not in (None, "character") or written:
+        # A redrawn box is the crop's fix: on its own, or, in a line correction, beside the character it names.
+        relabelled = verdict == "wrong" and issue == "character" and written
+        if not (verdict == "match" and issue in (None, "character") and not written) and not relabelled:
             raise Rejected("a redrawn box is saved as the crop's fix")
         after["box"] = {key: box[key] for key in ("x", "y", "w", "h")}
         recrop = evidence.get("recrop")
@@ -173,8 +175,9 @@ def _step(record, before):
         raise Rejected("saved effective state disagrees with the explicit correction")
     # A batch confirmation leaves a crop reported for its box, a blank or a merge reported (`kept_issue`).
     kept = evidence.get("kept_issue")
-    if kept is not None and (recorded_terms.issue(kept) not in ("merged", "crop", "blank", "other") or issue is not None):
-        raise Rejected("a kept issue stands beside no other")
+    # It stands beside a confirmation or a new character, which a batch names.
+    if kept is not None and (recorded_terms.issue(kept) not in ("merged", "crop", "blank", "other") or issue not in (None, "character")):
+        raise Rejected("a kept issue stands beside a confirmation or a new character")
     resolved = (verdict == "match" or bool(issue == "character" and written)) and kept is None
     if event.get("new") != ("reviewed" if resolved else "disputed"):
         raise Rejected("review certainty exceeds the saved decision")

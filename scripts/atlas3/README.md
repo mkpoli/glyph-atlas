@@ -140,10 +140,11 @@ record at the store's revision once a publication has spoken for the crop; befor
 publication record when the old site reviewed the crop, else the bundle record.
 
 Revisions there count as the old site and the offline store count them. A publication that speaks for a
-crop records the catalogue's revision in `review_revisions` (migration 0015), and moves the crop's own
-revision on by one when it changes what a reviewer sees; every event since but a mark adds one. A crop no
-publication has spoken for counts its revision less its marks. Migration 0015 is applied to glyph-atlas-v3
-before the Worker that reads it deploys; `publish.py` applies it to the local copy.
+crop records the catalogue's revision and the crop's own in `review_revisions` (migration 0016), and moves
+the crop's own revision on by one when it changes what a reviewer sees; every event since adds one, but a
+mark or a re-cut clearing a mark. A crop no publication has spoken for counts its revision less those.
+Migrations 0015 and 0016 are applied to glyph-atlas-v3 before the Worker that reads them deploys;
+`publish.py` applies each where what it makes is missing, on D1 and on the local copy.
 
 The reviews moved from the old site are served from `v3/review-legacy/<page>.json.gz`, as the old export
 gave them. `review_archive.py --snapshots FILE` builds those archives from the frozen copies of `events`

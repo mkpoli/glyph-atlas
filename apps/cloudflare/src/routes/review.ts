@@ -46,10 +46,12 @@ export const standing = (row: { revision: number; settled: number }, revision: u
 export const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id=${e}.reverses),3) IN (3,4)))`;
 /** A crop's revision as the old site and the offline store count it. A publication that speaks for the
  *  crop records the store's revision and the crop's revision then (`review_revisions`); every event since
- *  but a mark adds one. A crop no publication has spoken for since the cutover counts its revision less
- *  every mark. publish.py computes the same. */
+ *  but a mark or a publication's re-cut adds one. A crop no publication has spoken for since the cutover
+ *  counts its revision less those. publish.py computes the same. */
+// Events the store never counts: marks, and a publication clearing a mark from a re-cut crop (kind 7).
+export const UNCOUNTED = (e: string) => `(${e}.kind=7 OR ${MARKED(e)})`;
 export const LOGICAL = (c: string) => `coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at
-  AND NOT ${MARKED('e')}) FROM review_revisions a WHERE a.crop=${c}.id),${c}.revision-(SELECT count(*) FROM events e WHERE e.crop=${c}.id AND ${MARKED('e')}))`;
+  AND NOT ${UNCOUNTED('e')}) FROM review_revisions a WHERE a.crop=${c}.id),${c}.revision-(SELECT count(*) FROM events e WHERE e.crop=${c}.id AND ${UNCOUNTED('e')}))`;
 export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label,c.state,c.revision,c.cut,c.quiz,pg.rev,pg.key AS page_key,
   r.x,r.y,r.w,r.h,
   (SELECT coalesce(e.kept_issue,e.issue) FROM events e WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) AS issue,
