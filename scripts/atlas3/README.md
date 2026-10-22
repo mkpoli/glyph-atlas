@@ -177,7 +177,9 @@ the sample holds 24,868 glyphs and the Hangul pool 1,750.
 `media_map.py <media.sqlite>` (dry run with `--dry-run`) merges a `media` table into the image key
 map: `v3/media/<first three hex digits>.json.gz` in R2, each image key's pack, offset and size, with
 local copies under `out/media/`. A key mapped to another place stops the run before anything is
-written. Changed shards are listed in `out/media/unsent` until they are uploaded, so an interrupted
+written. So does a new key in a pack not named by its content (`pack_names.py`): the bucket's
+numbered packs belong to earlier publications. A publish also stops when a corpus glyph it has never published
+has its record in such a pack. Changed shards are listed in `out/media/unsent` until they are uploaded, so an interrupted
 run's shards go with the next. A publish whose catalogue has a `media` table adds its images the same
 way and uploads them before its bundles. The first map comes from the live `media` table:
 5,271,887 images in 4,096 shards, 354 MB.

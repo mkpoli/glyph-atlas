@@ -19,6 +19,9 @@ from test_atlas3_publish import (  # noqa: F401 -- the fixture
 
 from glyph_atlas import withdrawn
 
+# A pack named by its content (`pack_names`).
+PACK = f"packs/{'1' * 64}.bin"
+
 
 @pytest.fixture
 def withdraw(layout, monkeypatch):  # noqa: F811
@@ -51,8 +54,8 @@ def test_a_withdrawal_names_every_crop_on_the_documents_pages_at_its_revision(la
 
 def test_a_withdrawn_crop_leaves_the_site_with_its_record_runs_and_images(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
     root, publish, remote = layout
-    publish.media_map.merge([("exa1", "pack-1.bin", 0, 10, "image/webp"), ("exa2", "pack-1.bin", 10, 10, "image/webp"),
-                             ("keep", "pack-1.bin", 20, 10, "image/webp")])
+    publish.media_map.merge([("exa1", PACK, 0, 10, "image/webp"), ("exa2", PACK, 10, 10, "image/webp"),
+                             ("keep", PACK, 20, 10, "image/webp")])
     publish.media_map.send(remote.upload)
     run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "w.sqlite"))
     gone = {ids(root)[i] for i in ("ex:a1", "ex:a2", "ex:b1")}
@@ -60,7 +63,7 @@ def test_a_withdrawn_crop_leaves_the_site_with_its_record_runs_and_images(layout
     assert remote.query("glyph-atlas-v3-runs", "SELECT * FROM runs") == []
     assert entry_of(root, "ex:a2") == {"slot": 1, "id": "ex:a2", "retired": True, "withdrawn": True, "cut": 0}
     shard = json.loads(gzip.decompress((root / "out" / "media" / "exa.json.gz").read_bytes()))
-    assert shard["keys"] == {} and shard["objects"] == ["pack-1.bin"]
+    assert shard["keys"] == {} and shard["objects"] == [PACK]
     assert set(json.loads(gzip.decompress((root / "out" / "media" / "kee.json.gz").read_bytes()))["keys"]) == {"p"}
     assert remote.uploaded.count("exa.json.gz") == 2
     assert json.loads((max((root / "out" / "publish").glob("*-w")) / "unmapped.json").read_text()) == ["exa1", "exa2", "exb1"]
@@ -94,7 +97,7 @@ def test_a_crop_retired_before_its_document_was_withdrawn_gives_up_its_record(la
 
 def test_a_crop_reviewed_on_the_site_since_keeps_its_row_record_and_images(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
     root, publish, remote = layout
-    publish.media_map.merge([("exa1", "pack-1.bin", 0, 10, "image/webp"), ("exa2", "pack-1.bin", 10, 10, "image/webp")])
+    publish.media_map.merge([("exa1", PACK, 0, 10, "image/webp"), ("exa2", PACK, 10, 10, "image/webp")])
     publish.media_map.send(remote.upload)
     path = write(withdraw, monkeypatch, tmp_path / "w.sqlite")
     a2 = ids(root)["ex:a2"]
@@ -115,7 +118,7 @@ def test_a_crop_reviewed_on_the_site_since_keeps_its_row_record_and_images(layou
 
 def test_an_image_another_crop_names_stays_mapped(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
     root, publish, remote = layout
-    publish.media_map.merge([("exa1", "pack-1.bin", 0, 10, "image/webp"), ("exa2", "pack-1.bin", 10, 10, "image/webp")])
+    publish.media_map.merge([("exa1", PACK, 0, 10, "image/webp"), ("exa2", PACK, 10, 10, "image/webp")])
     publish.media_map.send(remote.upload)
     twin = list(unit("ex:z1", "hl:z1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ", document="book:z"))
     twin[UNITS.index("data")] = json.dumps({"page_id": "hl:z1", "box": {"x": 0, "y": 0, "w": 10, "h": 10},
@@ -150,7 +153,7 @@ def test_a_replacement_never_ends_at_a_withdrawn_crop(layout, withdraw, monkeypa
 
 def test_the_image_map_changes_only_in_a_run_that_is_pending(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
     root, publish, remote = layout
-    publish.media_map.merge([("exa1", "pack-1.bin", 0, 10, "image/webp")])
+    publish.media_map.merge([("exa1", PACK, 0, 10, "image/webp")])
     publish.media_map.send(remote.upload)
     path = write(withdraw, monkeypatch, tmp_path / "w.sqlite")
     run(publish, monkeypatch, path, "--dry-run")

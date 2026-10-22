@@ -12,6 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "atlas3
 PAGE = 1 << 24
 
 
+# Record packs named by their content (`pack_names`).
+PACK = {n: f"packs/{str(n) * 64}.bin" for n in (1, 2, 3)}
+
 def unit(id, page, box, character="あ", state="pending", revision=0, quiz=1, document="book:a", priority=1):
     data = {"page_id": page, "box": box, "image": f"/atlas/media/{id.replace(':', '')}.webp", "label": character}
     return (id, "local", character, None, None, "printed", "kana", state, revision, quiz, priority, 1, document, "unassessed", None,
@@ -83,7 +86,7 @@ def layout(tmp_path, monkeypatch):
     ])
     write_source(tmp_path, "corpus_units", ("id", "character", "family", "visual_group", "shuffle", "object", "offset",
                                             "size", "production", "named", "style", "document", "label"),
-                 [("codh:g1", "が", None, None, 7, "corpus-0001.bin", 0, 100, "printed", 0, "unassessed", "codh:b", None)])
+                 [("codh:g1", "が", None, None, 7, PACK[1], 0, 100, "printed", 0, "unassessed", "codh:b", None)])
     write_source(tmp_path, "media", ("key", "object", "offset", "size", "content_type"), [])
     write_source(tmp_path, "unit_ngrams", ("first", "size", "second", "third", "text", "document", "vertical", "hand_order",
                                            "shuffle", "graphemes"), [("ex:a1", 2, "ex:a2", None, "あい", "book:a", 1, 1, 0, "あい")])
@@ -271,13 +274,13 @@ def test_a_corpus_catalogue_keeps_the_review_of_a_corpus_glyph(layout, monkeypat
     path = tmp_path / "corpus.sqlite"
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
-    db.execute("INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'corpus-0002.bin',0,120,'printed',0,'unassessed','codh:b',NULL)")
+    db.execute(f"INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'{PACK[2]}',0,120,'printed',0,'unassessed','codh:b',NULL)")
     db.commit()
     run(publish, monkeypatch, path)
     after = crops(remote)[g1]
     assert (after["char"], after["state"], after["quiz"], after["revision"]) == (before["char"], before["state"], before["quiz"], 2)
     body = json.loads(gzip.decompress((root / "out" / "pages" / f"{g1 // PAGE}-2.json.gz").read_bytes()))
-    assert body["crops"][0]["record_place"] == ["corpus-0002.bin", 0, 120]
+    assert body["crops"][0]["record_place"] == [PACK[2], 0, 120]
 
 
 def test_a_retirement_older_than_a_review_is_refused(layout, monkeypatch, tmp_path):
@@ -359,7 +362,7 @@ def test_a_corpus_overlay_sets_the_reviewed_style(layout, monkeypatch, tmp_path)
     path = tmp_path / "corpus.sqlite"
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
-    db.execute("INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'corpus-0001.bin',0,100,'printed',0,'unassessed','codh:b',NULL)")
+    db.execute(f"INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'{PACK[1]}',0,100,'printed',0,'unassessed','codh:b',NULL)")
     db.execute(f"CREATE TABLE units({','.join(UNITS)})")
     db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})",
                ("codh:g1", "corpus", "か", None, None, "printed", "kana", "checked", 5, 0, 1, 1, "codh:b", "cursive", None, "{}"))
@@ -420,7 +423,7 @@ def test_a_new_corpus_glyph_stays_in_its_own_book(layout, monkeypatch, tmp_path)
     path = tmp_path / "corpus.sqlite"
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
-    db.execute("INSERT INTO corpus_units VALUES('codh:x1','き',NULL,NULL,7,'corpus-0003.bin',0,100,'printed',0,'unassessed','codh:b:x',NULL)")
+    db.execute(f"INSERT INTO corpus_units VALUES('codh:x1','き',NULL,NULL,7,'{PACK[3]}',0,100,'printed',0,'unassessed','codh:b:x',NULL)")
     db.commit()
     run(publish, monkeypatch, path)
     pages = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT id, key FROM pages"))
@@ -680,7 +683,7 @@ def test_a_publish_needing_a_statement_over_d1s_limit_allocates_nothing(layout, 
 def corpus_catalogue(path, rows):
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
-    db.executemany("INSERT INTO corpus_units VALUES(?,?,?,NULL,7,'corpus-0003.bin',0,100,'printed',0,'unassessed','codh:b',?)", rows)
+    db.executemany(f"INSERT INTO corpus_units VALUES(?,?,?,NULL,7,'{PACK[3]}',0,100,'printed',0,'unassessed','codh:b',?)", rows)
     db.commit()
     return path
 
@@ -769,7 +772,7 @@ def test_a_build_files_a_glyph_with_no_character_under_its_family(layout, monkey
     (tmp_path / "source-corpus_units.sqlite").unlink()
     write_source(tmp_path, "corpus_units", ("id", "character", "family", "visual_group", "shuffle", "object", "offset",
                                             "size", "production", "named", "style", "document", "label"),
-                 [("codh:m1", None, "U+3082", None, 7, "corpus-0001.bin", 0, 100, "printed", 0, "unassessed", "codh:b", "も")])
+                 [("codh:m1", None, "U+3082", None, 7, PACK[1], 0, 100, "printed", 0, "unassessed", "codh:b", "も")])
     sys.modules.pop("build", None)
     monkeypatch.setattr(sys, "argv", ["build.py", "--replace"])
     importlib.import_module("build").main()
@@ -839,7 +842,7 @@ def test_a_corpus_glyph_takes_its_review_overlays_category(layout, monkeypatch, 
     path = tmp_path / "corpus.sqlite"
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
-    db.execute("INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'corpus-0001.bin',0,100,'printed',0,'unassessed','codh:b',NULL)")
+    db.execute(f"INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'{PACK[1]}',0,100,'printed',0,'unassessed','codh:b',NULL)")
     db.execute(f"CREATE TABLE units({','.join(UNITS)})")
     db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})",
                ("codh:g1", "corpus", "か", None, None, "printed", "kanji", "checked", 2, 0, 1, 1, "codh:b", "unassessed", None, "{}"))
