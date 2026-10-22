@@ -240,6 +240,19 @@ def test_date_claims_go_to_the_ledger_with_their_source_and_resolved_slots(layou
     assert db.execute("SELECT count(*) FROM imports").fetchone()[0] == stamps, "a rerun finds nothing to send"
 
 
+def test_ledger_rows_name_their_columns_whatever_order_a_copy_holds_them_in(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executescript("DROP TABLE assertion_evidence; CREATE TABLE assertion_evidence(locator TEXT, cut INTEGER, crop INTEGER,"
+                         " ref TEXT NOT NULL, kind TEXT NOT NULL, assertion TEXT NOT NULL, PRIMARY KEY(assertion, kind, ref)) WITHOUT ROWID;")
+        db.commit()
+    sources(root, claims=[claim("dt:1")])
+    books(remote, monkeypatch, "--send")
+    got = ledger(remote.dbs["glyph-atlas-v3"])
+    assert got["evidence"] == [("dt:1", "source", "kokusho", "kokusho#printed")]
+    assert [(c[0], c[1], json.loads(c[3])) for c in got["current"]] == [("book:a", "asserted", ["dt:1"])]
+
+
 def test_a_date_no_source_states_is_retracted_and_a_claim_that_returns_is_asserted_anew(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root, claims=[claim("dt:1"), claim("dt:2", start=1710, by="iiif-manifests")])

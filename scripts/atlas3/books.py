@@ -231,9 +231,10 @@ def statements(books, atlas):
     return groups, changes
 
 
-def ignored(table, cols, r):
-    """A ledger row, which is never changed once written: a part sent again leaves it as it is."""
-    return f'INSERT OR IGNORE INTO "{table}"({",".join(cols)}) VALUES({",".join(lit(v) for v in r)});'
+def ignored(table, row):
+    """A ledger row ({column: value}), which is never changed once written: a part sent again leaves it
+    as it is. A column it does not name takes its default."""
+    return f'INSERT OR IGNORE INTO "{table}"({",".join(row)}) VALUES({",".join(lit(v) for v in row.values())});'
 
 
 def base(identity):
@@ -303,7 +304,6 @@ def date_ledger(atlas):
             standing[base(identity)].append(identity)
     evidence = {(r[0], r[1], r[2]) for r in atlas.execute(
         f"SELECT e.assertion, e.kind, e.ref FROM assertion_evidence e JOIN assertions a ON a.id = e.assertion WHERE {DATE}")}
-    v3 = {t: [r[1] for r in atlas.execute(f"PRAGMA table_info({t})")] for t in LEDGER}
     new = {t: [] for t in LEDGER}
     # Each changed slot's rows; evidence added to a claim that already stands changes no slot.
     by_slot, loose = defaultdict(list), []
@@ -317,23 +317,24 @@ def date_ledger(atlas):
             # An id this stamp asserted and a later run retracted stays retracted.
             live = [] if fresh in held else [fresh]
             if live:
-                row = (fresh, None, subject, None, None, predicate, "", value, None, value, None, tier,
-                       by, stamp, None, None, METHOD, RESOLVER, None)
+                row = {"id": fresh, "subject": subject, "predicate": predicate, "scope": "", "slot": value,
+                       "value": value, "tier": tier, "asserted_by": by, "asserted_at": stamp, "method": METHOD,
+                       "run": RESOLVER}
                 new["assertions"].append(row)
                 by_slot[(subject, predicate, "", value)].append(("assertions", row))
         for a in live:
             if (a, kind, ref) not in evidence:
-                row = (a, kind, ref, None, None, locator)
+                row = {"assertion": a, "kind": kind, "ref": ref, "locator": locator}
                 new["assertion_evidence"].append(row)
                 (by_slot[(subject, predicate, "", value)] if a not in held else loose).append(("assertion_evidence", row))
     for identity, (_, subject, predicate, scope, slot, by) in sorted(held.items()):
         if identity not in retracted and by.startswith("source:") and base(identity) not in stated:
-            row = (f"dt-retract:{identity}:{stamp}", None, identity, "retract", by, stamp,
-                   f"no source states it at export {stamp}")
+            row = {"id": f"dt-retract:{identity}:{stamp}", "assertion": identity, "action": "retract", "actor": by,
+                   "at": stamp, "reason": f"no source states it at export {stamp}"}
             new["assertion_actions"].append(row)
             by_slot[(subject, predicate, scope, slot)].append(("assertion_actions", row))
     slots = sorted(by_slot)
-    groups = [[ignored(t, v3[t], r) for t, r in loose[i:i + GROUP]] for i in range(0, len(loose), GROUP)]
+    groups = [[ignored(t, r) for t, r in loose[i:i + GROUP]] for i in range(0, len(loose), GROUP)]
     # Each slot is resolved in D1 from the rows D1 holds, which may include verdicts the local copy
     # lacks; the local copy replays the same statements over its own rows. A slot's rows and its
     # resolution share a group, so no part lands its rows without resolving it.
@@ -341,7 +342,7 @@ def date_ledger(atlas):
     for i in range(0, len(slots), ledger.KEYS_PER_STATEMENT):
         chunk = slots[i:i + ledger.KEYS_PER_STATEMENT]
         rows = sorted((r for k in chunk for r in by_slot[k]), key=lambda r: order[r[0]])
-        groups.append([ignored(t, v3[t], r) for t, r in rows] + resolve_statements(chunk))
+        groups.append([ignored(t, r) for t, r in rows] + resolve_statements(chunk))
     changes = {t: {"added": len(new[t]), "written": len(new[t])} for t in LEDGER}
     # At most each slot's row removed and written again.
     changes["current_claims"] = {"changed": len(slots), "written": 2 * len(slots)}
