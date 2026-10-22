@@ -194,6 +194,16 @@ def test_an_export_reads_a_glyphs_review_overlay_over_its_published_row(tmp_path
         ("K:0", 2, "中上", 0, 3), ("K:0", 3, "中上候", 0, 3), ("K:1", 2, "上候", 1, 7)]
 
 
+def test_a_resumed_export_drops_the_runs_of_a_document_withdrawn_since(tmp_path, monkeypatch):
+    db = export_db()
+    held(db, [("gone_1_1:0", "申"), ("gone_1_1:1", "上"), ("kept_1_1:0", "候"), ("kept_1_1:1", "也")])
+    db.execute("INSERT INTO unit_ngrams(first,size,second,text) VALUES"
+               "('gone_1_1:0',2,'gone_1_1:1','申上'),('kept_1_1:0',2,'kept_1_1:1','候也')")
+    monkeypatch.setattr(withdrawn, "documents", lambda: frozenset({"gone"}))
+    assert export.drop_withdrawn(db) == 2
+    assert db.execute("SELECT first FROM unit_ngrams").fetchall() == [("kept_1_1:0",)]
+
+
 def test_an_export_run_again_replaces_its_corpus_runs_and_leaves_the_others(tmp_path):
     db = export_db()
     held(db, [("K:0", "申"), ("K:1", "上"), ("K:2", "候")], document="kept")

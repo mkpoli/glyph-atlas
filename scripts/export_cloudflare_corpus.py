@@ -132,9 +132,14 @@ def drop_locally_published(db, ids) -> int:
 
 
 def drop_withdrawn(db) -> int:
-    """Remove from an export's `corpus_units` the glyphs of withdrawn documents an earlier run wrote."""
-    return sum(db.execute("DELETE FROM corpus_units WHERE id>=? AND id<?", withdrawn.corpus_range(doc)).rowcount
-               for doc in withdrawn.documents())
+    """Remove from an export's `corpus_units` the glyphs of withdrawn documents an earlier run wrote, and
+    from its `unit_ngrams` their runs. A run never crosses a line, so its first glyph names its document."""
+    dropped = 0
+    for doc in withdrawn.documents():
+        low, high = withdrawn.corpus_range(doc)
+        dropped += db.execute("DELETE FROM corpus_units WHERE id>=? AND id<?", (low, high)).rowcount
+        db.execute("DELETE FROM unit_ngrams WHERE first>=? AND first<?", (low, high))
+    return dropped
 
 
 def unit_corpora(names=None):
