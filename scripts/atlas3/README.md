@@ -111,6 +111,13 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   after allocating is finished by the next run before anything else.
 - A dry run writes the parts and bundles under `out/publish/<stamp>/` and publishes nothing.
 
+The exporters number their packs (`pack-10001.bin`, `corpus-0001.bin`), names the bucket's root
+already holds for earlier publications. Before a catalogue's packs go up, `address_packs.py
+<catalogue.sqlite>` (count only with `--dry-run`) moves each pack its `media` and `corpus_units` rows
+name to `packs/<SHA-256>.bin` beside it and points the rows there, in one transaction recorded in
+`addressed` before any file moves, so a stopped run finishes on the next. Then
+`rclone copy <export>/packs r2:glyph-atlas/packs --immutable` uploads them, and `publish.py` names them.
+
 One publish runs at a time. The first build's bundles went to R2 with
 `rclone copy out/pages r2:glyph-atlas/v3/pages --header-upload "Content-Type: application/json" --header-upload "Content-Encoding: gzip"`.
 
