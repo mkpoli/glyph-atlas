@@ -220,3 +220,18 @@ def test_a_publish_needs_the_written_crops_loaded(layout, monkeypatch, tmp_path)
     path = catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ")])
     with pytest.raises(SystemExit, match="runs.py --send"):
         run(publish, monkeypatch, path)
+
+
+def test_a_row_the_publisher_wrote_for_a_crop_in_no_run_stays(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    hentaigana(root)
+    runs(remote, monkeypatch, "--send")
+    # A crop in no run, written apart from its head: the publisher's row.
+    loose = max(r[0] for r in sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT id FROM crops")) + 1
+    for db in (remote.dbs["glyph-atlas-v3-runs"], sqlite3.connect(root / "out" / "atlas-runs.sqlite")):
+        db.execute("INSERT INTO run_written(crop, char) VALUES(?, '𛀆')", (loose,))
+        db.commit()
+    stamps = remote.dbs["glyph-atlas-v3-runs"].execute("SELECT count(*) FROM imports").fetchone()[0]
+    runs(remote, monkeypatch, "--send")
+    assert tuple(remote.dbs["glyph-atlas-v3-runs"].execute("SELECT char FROM run_written WHERE crop=?", (loose,)).fetchone()) == ("𛀆",)
+    assert remote.dbs["glyph-atlas-v3-runs"].execute("SELECT count(*) FROM imports").fetchone()[0] == stamps
