@@ -74,7 +74,8 @@ def test_the_search_names_come_from_their_own_copy_when_the_cards_file_lacks_the
 
 def test_a_family_that_grew_is_rewritten_and_a_sequence_the_input_lacks_is_added(module, monkeypatch, tmp_path):
     """Every card is in step with the table but ば's, whose family the cards hold as ば alone, and
-    𛂞 + U+3099 and one character of a family of its own have no card yet."""
+    𛂞 + U+3099 and one character of a family of its own have no card yet. Every held card has a name
+    but one, which an earlier run added."""
     path = tmp_path / "reference-input.sqlite"
     family = refs.graphemes()["U+3070"]
     lone = next(head for head, members in refs.graphemes().items() if members == [head] and " " not in head)
@@ -82,8 +83,11 @@ def test_a_family_that_grew_is_rewritten_and_a_sequence_the_input_lacks_is_added
             for p in members if head not in ("U+3070", lone)]
     held = [card("U+3070", "ば", "U+3070", ["U+3070"])] + [
         card(p, refs.to_char(p), "U+3070", family) for p in family if p not in ("U+3070", "U+1B09E U+3099")]
+    unnamed = kept[0][0]
+    names = [(r[1], r[0], 3) for r in held + kept if r[0] != unnamed]
     with reference_input.writing(path) as db:
         reference_input.replace(db, "characters", held + kept)
+        reference_input.replace(db, "aliases", names)
     got = run(module, monkeypatch, path)
     rows = {p: json.loads(d) for p, d in got.execute(
         f"SELECT code_point, data FROM characters WHERE code_point IN ({','.join('?' * len(family))})", family)}
@@ -91,10 +95,11 @@ def test_a_family_that_grew_is_rewritten_and_a_sequence_the_input_lacks_is_added
     assert all(rows[p]["grapheme"]["code_point"] == "U+3070" for p in family)
     assert all({m["code_point"] for m in rows[p]["grapheme"]["members"]} == set(family) for p in family)
     assert got.execute("SELECT character FROM characters WHERE code_point='U+1B09E U+3099'").fetchone() == ("\U0001B09E゙",)
-    # The new characters are found by their text and code points; the held cards gain no names.
+    # The new characters and the held card without a name are found by their text and code points; the
+    # named cards keep their names and ranks.
     assert sorted(got.execute("SELECT * FROM aliases")) == sorted([
-        ("\U0001B09E゙", "U+1B09E U+3099", 0), ("u+1b09e u+3099", "U+1B09E U+3099", 0),
-        (refs.to_char(lone), lone, 0), (lone.lower(), lone, 0)])
+        *names, ("\U0001B09E゙", "U+1B09E U+3099", 0), ("u+1b09e u+3099", "U+1B09E U+3099", 0),
+        (refs.to_char(lone), lone, 0), (lone.lower(), lone, 0), (kept[0][1], unnamed, 0), (unnamed.lower(), unnamed, 0)])
     assert got.execute("SELECT count(*) FROM characters").fetchone() == (len(kept) + len(family) + 1,)
     assert sorted(got.execute(f"SELECT * FROM characters WHERE code_point NOT IN ({','.join('?' * (len(family) + 1))})",
                               [*family, lone])) == sorted(kept), "the other cards stay as they were"

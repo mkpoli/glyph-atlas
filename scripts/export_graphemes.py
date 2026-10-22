@@ -13,8 +13,12 @@ whether the corpus needs the family scope and how many glyphs the family has (`c
 of the family (`detail.characters`), the widening a reader may choose (`detail.expansions`) and the
 visual analysis the family is keyed on. Everything else in the card is its own, so the counts stay
 the export's until the next full export. A character the input lacks - a sequence the table now keys,
-such as 𛂞 + U+3099 - is written whole, the way a full export writes it, with no crops counted, and
-gets the search names a full export gives it: its text and its lower-case code point.
+such as 𛂞 + U+3099 - is written whole, the way a full export writes it, with no crops counted.
+
+Every card without a search name, a new one or one an earlier run added, is given two: its text and
+its lower-case code point, each at rank 0. The other names a full export adds (readings, the kanji a
+kana is written from, cursive and ligature forms) wait for the next full export; a card that already
+has names keeps them and their ranks.
 
 The crops and corpus glyphs follow without a write of their own: `reference.py` gives every grapheme
 its card's family head (`graphemes.head`), which is where the new layout files a crop under its family.
@@ -164,10 +168,14 @@ def rewrite(db: sqlite3.Connection) -> dict[str, int]:
     db.executemany("INSERT OR REPLACE INTO characters(code_point, character, name, data, detail) VALUES(?,?,?,?,?)",
                    [(point, refs.to_char(point), refs.character(point).name or "", encoded(data), encoded(detail))
                     for point, (data, detail) in rows.items()])
-    # A new character is found by its text and its lower-case code point, as a full export names it.
+    # A card no name finds is found by its text and its lower-case code point.
+    # The aliases key leads with the name, so the named code points are read once rather than looked up.
+    named = {point for (point,) in db.execute("SELECT DISTINCT code_point FROM aliases")}
+    unnamed = [(point, character) for point, character in db.execute("SELECT code_point, character FROM characters")
+               if point not in named]
     before = db.total_changes
     db.executemany("INSERT OR IGNORE INTO aliases(query, code_point, rank) VALUES(?,?,0)",
-                   [(query, point) for point in created for query in (refs.to_char(point), point.lower())])
+                   [(query, point) for point, character in unnamed for query in (character, point.lower())])
     return {"changed": len(points), "created": len(created), "aliases": db.total_changes - before,
             "families": len({data["grapheme"]["code_point"] for data, _ in rows.values()})}
 
