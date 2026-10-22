@@ -108,6 +108,14 @@ def test_the_receipt_names_the_set_it_published_not_its_size():
     assert len(before) == len(after) and listing_digest(before) != listing_digest(after)
 
 
+def test_the_generation_a_publication_writes_back_does_not_change_the_receipt():
+    from glyph_atlas.corpus.collection import listing_digest
+
+    before = [{"entry_id": "one", "dataset": "books/one"}]
+    after = [{"entry_id": "one", "dataset": "books/one", "generation": 1792645218346186151}]
+    assert listing_digest(before) == listing_digest(after)
+
+
 def test_a_generation_written_before_a_field_was_added_is_published_with_its_default(tmp_path):
     import pyarrow.parquet as pq
 
