@@ -60,6 +60,8 @@ export type LedgerTools = {
   owned: (user: string) => string;
   // The crop an old text id names, through the alias map, or null.
   alias: (text: string) => Promise<number | null>;
+  // Files a crop's runs under the grapheme it is read as now, after a write moved its grapheme claim.
+  refile?: (crop: number) => Promise<void>;
 };
 export type Member = { object: string | null; value: unknown; confidence: number | null; confidence_scheme: string | null };
 
@@ -164,8 +166,8 @@ export function retractOwn(env: Env, own: { key: string; actor: string; subject:
 }
 
 type Slot = [string, string, string, string];
-/** Rows one write adds, and the slots they fall in, to be resolved in the same batch. */
-export type Plan = { statements: D1PreparedStatement[]; keys: Slot[] };
+/** Rows one write adds, the slots they fall in, to be resolved in the same batch, and the crops they are about. */
+export type Plan = { statements: D1PreparedStatement[]; keys: Slot[]; crops?: number[] };
 
 // The first claim on a corpus glyph records when the glyph was first written, as its first review
 // would (`corpus_rows`, the order the old `units` rows kept).
@@ -192,7 +194,7 @@ export async function planClaim(env: Env, claim: { key: string; actor: string; c
   });
   if (PREDICATES[predicate].cardinality === 'one') statements.push(retractOwn(env, { key, actor, subject, predicate, scope, at, by: ids[0], owned: tools.owned(actor) }));
   const keys = [...new Set(members.map(m => slotOf(predicate, m, tools.canonical)))].map((slot): Slot => [subject, predicate, scope, slot]);
-  return { statements, keys, assertions: ids };
+  return { statements, keys, crops: [crop.id], assertions: ids };
 }
 
 /** The rows of one action by `actor` on claim `target`: a retraction is the asserter's (under any id
@@ -217,7 +219,8 @@ export async function planAction(env: Env, act: { key: string; actor: string; ta
   const statements = open.map((one, i) => env.ATLAS.prepare('INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,?,?,?,?,?,?)')
     .bind(ids[i], key, one, action, actor, at, reason));
   const subject: Subject = found.crop != null ? { crop: found.crop } : { subject: found.subject };
-  return { statements, keys: [[found.subject, found.predicate, found.scope, found.slot]] as Slot[], actions: ids, subject };
+  return { statements, keys: [[found.subject, found.predicate, found.scope, found.slot]] as Slot[], crops: found.crop != null ? [found.crop as number] : [],
+    actions: ids, subject };
 }
 
 /** The response saved for submission `key`, or null; a reuse of its id with another request is refused. */
@@ -227,7 +230,8 @@ export async function savedSubmission(env: Env, key: string, signature: string, 
 
 /** Write a submission's rows, the resolution of their slots and the submission itself in one batch,
  *  and answer with the response saved, which names the claims the batch retracted (only the batch
- *  knows them). A batch that fails because the same submission landed meanwhile answers with that one. */
+ *  knows them). A batch that fails because the same submission landed meanwhile answers with that one.
+ *  A write that moves a crop's grapheme claim then files the crop's runs again (`refile`). */
 export async function commitPlan(env: Env, submission: { key: string; actor: string; signature: string; at: string },
   plan: Plan, response: Json, tools: LedgerTools): Promise<Json> {
   const statements = [...plan.statements, ...resolveSlots(env, [...new Map(plan.keys.map(k => [JSON.stringify(k), k])).values()]),
@@ -236,10 +240,16 @@ export async function commitPlan(env: Env, submission: { key: string; actor: str
       .bind(submission.key, submission.actor, submission.signature, JSON.stringify(response), submission.key, submission.at)];
   try { await env.ATLAS.batch(statements) } catch (error) {
     const again = await repeat(env, submission.key, submission.signature, tools.fail);
-    if (again) return again;
-    throw error;
+    if (!again) throw error;
+    await refiled(plan, tools);
+    return again;
   }
+  await refiled(plan, tools);
   return (await repeat(env, submission.key, submission.signature, tools.fail))!;
+}
+
+async function refiled(plan: Plan, tools: LedgerTools) {
+  if (tools.refile && plan.keys.some(key => key[1] === 'has_grapheme')) for (const crop of plan.crops ?? []) await tools.refile(crop);
 }
 
 // A grapheme is named by its code points (`U+5F8C`, at most four), as the site's character keys are.
@@ -282,7 +292,12 @@ export function sameVersion(crop: CropNow, seen: unknown, fail: LedgerTools['fai
 export async function writeClaim(env: Env, input: Json, actor: string, tools: LedgerTools) {
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical(input);
   const found = await repeat(env, key, signature, tools.fail);
-  if (found) { const previous = await withCrop(env, found, tools.alias); return { ...answered(previous), current: await currentOf(env, subjectOf(previous)) }; }
+  if (found) {
+    const previous = await withCrop(env, found, tools.alias);
+    // A submission sent again files its crop's runs again, in case the first send stopped before it did.
+    if (input.predicate === 'has_grapheme' && previous.crop != null) await tools.refile?.(previous.crop);
+    return { ...answered(previous), current: await currentOf(env, subjectOf(previous)) };
+  }
   const predicate = tools.text(input.predicate, 64, 'predicate', true)!;
   const spec = PREDICATES[predicate] ?? tools.fail(422, `Unknown predicate ${predicate}.`);
   const scope = tools.text(input.scope ?? '', 128, 'scope') ?? '';
@@ -313,7 +328,13 @@ export async function writeClaim(env: Env, input: Json, actor: string, tools: Le
 export async function actOnClaim(env: Env, input: Json, target: string, actor: string, admin: boolean, tools: LedgerTools) {
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ target, input });
   const found = await repeat(env, key, signature, tools.fail);
-  if (found) { const previous = await withCrop(env, found, tools.alias); return { ...answered(previous), current: await currentOf(env, subjectOf(previous)) }; }
+  if (found) {
+    const previous = await withCrop(env, found, tools.alias);
+    // An action sent again files its crop's runs again, in case the first send stopped before it did; a
+    // crop whose runs are filed as its claims read writes nothing.
+    if (previous.crop != null) await tools.refile?.(previous.crop);
+    return { ...answered(previous), current: await currentOf(env, subjectOf(previous)) };
+  }
   const at = new Date().toISOString();
   const plan = await planAction(env, { key, actor, target, action: tools.text(input.action, 16, 'action', true)!,
     reason: tools.text(input.reason ?? '', 500, 'reason') ?? '', admin, at }, tools);

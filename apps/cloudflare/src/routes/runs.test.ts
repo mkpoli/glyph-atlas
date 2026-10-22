@@ -8,7 +8,7 @@ import { listingItems } from '../atlas3Listing';
 import { d1 } from '../forms.test';
 import { redrawLimits } from '../cropRecords';
 import { bookCharactersQuery, bookFormsQuery, booksQuery, corpusFormsQuery, runCountQuery,
-  reviewedQuery, runGraphemesQuery, runHasQuery, runOccurrencesQuery, runProbeQuery, runRangeQuery, runWorksQuery, runsRoute, writtenStatement } from './runs';
+  reviewedQuery, cropRunsQuery, refileRuns, runGraphemesQuery, runHasQuery, runHeadsQuery, runOccurrencesQuery, runProbeQuery, runRangeQuery, runWorksQuery, runsRoute, writtenStatement } from './runs';
 
 type Json = any;
 const databases: Database[] = [];
@@ -371,5 +371,66 @@ describe('runs on the new layout', () => {
     for (const sql of [runOccurrencesQuery(2, 0, true, true), runCountQuery(2, 0, true), bookFormsQuery(2)])
       expect(plan(f.runsDb, sql, sql === bookFormsQuery(2) ? ['ん', 'し', 2, 'んし', 1] : [1, 2, 'んし', 0, ...(sql.includes('OFFSET') ? [48, 0] : [])]).join('; '))
         .toContain('run_book (size=? AND graphemes=? AND book=?)');
+  });
+});
+
+describe('a grapheme claim files a crop’s runs', () => {
+  // The し that ends ん𛁅んし read as ん: its pair んし and the trigram 𛁅んし (しんし) it ends.
+  const claim = (f: ReturnType<typeof fixture>, crop: number, status = 'asserted') => f.atlas.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,
+    members,supporting,claims,resolver,at) VALUES('ar:doc:1-l1-3','has_grapheme','','',?,0,?,'U+3093','[]','[]','[]','r','2026-10-23')`).run(crop, status);
+  const held = (f: ReturnType<typeof fixture>) => ({
+    runs: f.runsDb.query('SELECT size,graphemes,first FROM runs ORDER BY first,size').all(),
+    stats: f.runsDb.query('SELECT size,graphemes,n,down FROM run_stats ORDER BY size,graphemes').all(),
+    written: f.runsDb.query('SELECT crop,char FROM run_written ORDER BY crop').all(),
+  });
+
+  it('moves its runs and their counts, and back when the claim goes', async () => {
+    const f = fixture(), before = held(f), crop = f.at[3].id;
+    claim(f, crop);
+    await refileRuns(f.newEnv, crop);
+    const after = held(f);
+    expect(after.runs.filter((r: Json) => !before.runs.some((b: Json) => b.first === r.first && b.size === r.size && b.graphemes === r.graphemes)))
+      .toEqual([{ size: 3, graphemes: 'しんん', first: f.at[1].id }, { size: 2, graphemes: 'んん', first: f.at[2].id }]);
+    expect(after.runs.length).toBe(before.runs.length);
+    expect(after.stats).toContainEqual({ size: 2, graphemes: 'んん', n: 1, down: 1 });
+    expect(after.stats).toContainEqual({ size: 2, graphemes: 'んし', n: 3, down: 3 });
+    expect(after.stats.some((r: Json) => r.graphemes === 'しんし')).toBe(false);
+    expect(after.written).toContainEqual({ crop, char: 'し' });
+    expect(f.runsDb.query('SELECT first,size FROM run_moves ORDER BY first').all()).toEqual([{ first: f.at[1].id, size: 3 }, { first: f.at[2].id, size: 2 }]);
+    // The run is found by the grapheme the claim reads, written as the crop is.
+    const found = await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んん'))).json() as Json;
+    expect(found.items.map((o: Json) => o.crops.map((c: Json) => c.label).join(''))).toEqual(['んし']);
+    expect(found.hands.hand).toBe(1);
+    // Filing again writes nothing.
+    await refileRuns(f.newEnv, crop);
+    expect(held(f)).toEqual(after);
+    // A disputed claim no longer files the crop.
+    f.atlas.exec("UPDATE current_claims SET status='disputed'");
+    await refileRuns(f.newEnv, crop);
+    expect(held(f)).toEqual(before);
+  });
+
+  it('files a run once when two claims on its crops land together, and counts it once', async () => {
+    const f = fixture(), first = f.at[2].id, second = f.at[3].id;
+    // ん read as し and し read as ん, on the pair んし that ends the line.
+    for (const [crop, key] of [[first, 'U+3057'], [second, 'U+3093']] as const) f.atlas.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,
+      members,supporting,claims,resolver,at) VALUES(?,'has_grapheme','','',?,0,'asserted',?,'[]','[]','[]','r','2026-10-23')`).run(String(crop), crop, key);
+    await Promise.all([refileRuns(f.newEnv, first), refileRuns(f.newEnv, second)]);
+    const pair = f.runsDb.query('SELECT graphemes FROM runs WHERE first=? AND size=2').all(first);
+    expect(pair).toEqual([{ graphemes: 'しん' }]);
+    const counted = f.runsDb.query('SELECT size,graphemes,count(*) AS n FROM runs GROUP BY size,graphemes').all();
+    expect(f.runsDb.query('SELECT size,graphemes,n FROM run_stats ORDER BY size,graphemes').all())
+      .toEqual([...counted].sort((a: Json, b: Json) => a.size - b.size || (a.graphemes < b.graphemes ? -1 : 1)));
+  });
+
+  it('reads its crops and their runs by their keys', () => {
+    const f = fixture();
+    const plan = (db: Database, sql: string, values: unknown[]) => db.query('EXPLAIN QUERY PLAN ' + sql).all(...(values as any[])).map((r: Json) => r.detail as string);
+    const runs = plan(f.runsDb, cropRunsQuery(), [1]);
+    expect(runs.filter(d => /^SCAN /.test(d))).toEqual([]);
+    expect(runs.join('; ')).toMatch(/run_second \(second=\? AND size=\?\)/);
+    const head = plan(f.atlas, runHeadsQuery(), ['[1]']);
+    expect(head.filter(d => /^SCAN /.test(d) && !/^SCAN j /.test(d))).toEqual([]);
+    expect(head.join('; ')).toMatch(/current_claim_crop \(crop=\? AND predicate=\?\)/);
   });
 });
