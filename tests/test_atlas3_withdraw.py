@@ -5,7 +5,7 @@ import sqlite3
 import sys
 
 import pytest
-from test_atlas3_publish import PAGE, crops, ids, layout, run, unit  # noqa: F401 -- the fixture
+from test_atlas3_publish import PAGE, UNITS, crops, ids, layout, run, unit  # noqa: F401 -- the fixture
 
 from glyph_atlas import withdrawn
 
@@ -73,8 +73,8 @@ def test_a_crop_retired_before_its_document_was_withdrawn_gives_up_its_record(la
     root, publish, _remote = layout
     gone = unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う")
     db = sqlite3.connect(tmp_path / "retired.sqlite")
-    db.execute("CREATE TABLE units(id,origin,character,visual_group,production,category,state,revision,quiz,shuffle,document,style,written_form,data)")
-    db.execute("INSERT INTO units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (gone[0], "retired", *gone[2:]))
+    db.execute(f"CREATE TABLE units({','.join(UNITS)})")
+    db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})", (gone[0], "retired", *gone[2:]))
     db.commit()
     run(publish, monkeypatch, tmp_path / "retired.sqlite")
     assert entry_of(root, "ex:b1")["box"] == {"x": 0, "y": 0, "w": 10, "h": 10}
