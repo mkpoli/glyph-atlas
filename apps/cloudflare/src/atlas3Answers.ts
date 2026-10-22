@@ -5,6 +5,7 @@
 import { codeNames } from './atlas3';
 import { currentPointer } from './atlas3Gallery';
 import { categoryOf } from './category';
+import type { Timing } from './timing';
 
 type Json = any;
 
@@ -71,15 +72,20 @@ export function tallyDeltas(env: Env, pub: string, through: number, stamps: stri
 export type Facet = { char: number; book: number; production: number; category: number | null; priority: number | null;
   state: number; quiz: number; n: number };
 /** The collected crops by character, book, production, category, priority, state and withheld flag,
- *  with the characters they name, as they stand now. `stamps` is the catalogue key the deltas are held by. */
-export async function collectedCounts(env: Env, stamps: string): Promise<{ pub: string; cells: Facet[]; chars: Map<number, CharInfo> }> {
-  const { pub, through_gen } = await currentPointer(env);
-  const [body, deltas, names] = await Promise.all([answer(env, pub, 'facets.json.gz'), tallyDeltas(env, pub, through_gen, stamps), codeNames(env)]);
+ *  with the characters they name, as they stand now. `stamps` is the catalogue key the deltas are held by.
+ *  With `timing`, the pointer, the answer, the deltas, the codes and the characters are timed, and the
+ *  deltas and the characters the answer does not name are counted. */
+export async function collectedCounts(env: Env, stamps: string, timing?: Timing): Promise<{ pub: string; cells: Facet[]; chars: Map<number, CharInfo> }> {
+  const timed = <T>(name: string, work: Promise<T>) => timing ? timing.beside(name, work) : work;
+  const { pub, through_gen } = await timed('pointer', currentPointer(env));
+  const [body, deltas, names] = await Promise.all([timed('facets-answer', answer(env, pub, 'facets.json.gz')),
+    timed('deltas', tallyDeltas(env, pub, through_gen, stamps)), timed('codes', codeNames(env))]);
+  timing?.note('deltas-read', `rows ${deltas.length}`);
   const categories = new Map([...names].filter(([key]) => key.startsWith('category:')).map(([key, name]) => [name, Number(key.slice(9))]));
   const cells: Facet[] = (body.cells as number[][]).map(([char, book, production, category, priority, state, quiz, n]) =>
     ({ char, book, production, category, priority, state, quiz, n }));
   const collected = deltas.filter(d => d.kind === 0);
-  const chars = await charsOf(env, body.chars, [...cells.map(c => c.char), ...collected.map(d => d.char)]);
+  const chars = await timed('chars', charsOf(env, body.chars, [...cells.map(c => c.char), ...collected.map(d => d.char)]));
   for (const { kind: _, ...d } of collected) {
     const text = chars.get(d.char)?.text;
     cells.push({ ...d, category: text ? categories.get(categoryOf(text)) ?? null : null, priority: null });

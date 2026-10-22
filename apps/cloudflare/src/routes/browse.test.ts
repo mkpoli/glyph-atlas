@@ -42,7 +42,8 @@ describe('the listing\'s timing', () => {
     await catalogue(env, ctx, new URL('https://glyphatlas.org/atlas?seed=5&limit=2'), null, timing);
     const steps = timing.header().split(', ').map(step => step.split(';')[0]);
     // Steps that run side by side end in either order.
-    expect(steps.sort()).toEqual(['bundles', 'bundles-from', 'counts', 'crops', 'entries', 'facets', 'items', 'marks', 'page', 'records', 'reviews', 'rows', 'stamps', 'total']);
+    expect(steps.sort()).toEqual(['bundles', 'bundles-from', 'chars', 'codes', 'counts', 'crops', 'deltas', 'deltas-read', 'entries', 'facets', 'facets-answer', 'items', 'marks', 'page', 'pointer',
+      'productions', 'records', 'reviews', 'rows', 'stamps', 'total']);
     // A fresh isolate and edge read every bundle from R2.
     expect(timing.header()).toMatch(/bundles-from;desc="kept 0 held 0 edge 0 r2 \d+"/);
   });
