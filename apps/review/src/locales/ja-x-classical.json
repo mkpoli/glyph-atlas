@@ -151,6 +151,7 @@
   "explore.withheld.hide": "除外中ノ截片ヲ隱ス",
   "explore.withheld.about": "行ノ照合ニテ文字ヲ定メ得ザリシ截片。收メタルママ、示スヲ選ブマデ一覽ニ出サズ。",
   "explore.grid.collection": "文字集",
+  "explore.noscript": "截片ヲ見ルニハJavaScriptヲ有效ニセヨ",
   "explore.layout.label": "並ベ方",
   "explore.layout.collage": "散ラシ",
   "explore.layout.grid": "碁盤",

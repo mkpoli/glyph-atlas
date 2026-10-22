@@ -167,6 +167,7 @@
   "explore.withheld.hide": "Hide withheld crops",
   "explore.withheld.about": "Crops the line alignment could not place with confidence. They stay in the collection, out of browsing until shown.",
   "explore.grid.collection": "Character collection",
+  "explore.noscript": "Turn on JavaScript to see the crops.",
   "explore.layout.label": "Gallery layout",
   "explore.layout.collage": "Collage",
   "explore.layout.grid": "Grid",

@@ -153,6 +153,7 @@
   "explore.withheld.hide": "藏暫留之截",
   "explore.withheld.about": "行之校對未能定其字者，存而不列，待示乃見。",
   "explore.grid.collection": "字集",
+  "explore.noscript": "啓JavaScript以觀諸截",
   "explore.layout.label": "列法",
   "explore.layout.collage": "錯落",
   "explore.layout.grid": "方格",
