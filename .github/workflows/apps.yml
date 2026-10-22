@@ -23,6 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
       - run: bun install --frozen-lockfile
       - run: bun run check
       # `bun run test` runs each file in its own context: a file that mocks a module with
@@ -33,6 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
       # The site's server code imports the Worker's modules, which resolve their packages from there.
       - run: bun install --frozen-lockfile
         working-directory: apps/cloudflare
