@@ -329,3 +329,19 @@ def test_the_public_corpus_summary_leaves_out_restricted_corpora(tmp_path, layou
     assert (summary["documents"], summary["pages"], summary["characters"]) == (2, 10, 2)
     # Without a restricted corpus the summary is the index's own.
     assert module().public_corpus_index(index, restricted=set()) == json.loads(index.read_text())
+
+
+def test_an_index_without_page_counts_still_publishes_its_public_corpora(tmp_path, layout):  # noqa: F811
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    public = {"corpus": "codh-full", "rows": 9, "documents": 2, "distinct_chars": 40}
+    skipped = {"corpus": "eap140", "skipped": "no searchable text table (documents/pages only)"}
+    index = tmp_path / "index.json"
+    index.write_text(json.dumps({"documents": 5, "pages": 30, "characters": 3, "corpora": [
+        public, skipped, {"corpus": "viet-dien", "rows": 20, "documents": 3, "distinct_chars": 90}]}))
+    pq.write_table(pa.table({"corpora": ["codh-full,viet-dien", "viet-dien", "codh-full"]}), tmp_path / "chars.parquet")
+    summary = module().public_corpus_index(index)
+    assert summary["corpora"] == [public, skipped]
+    assert (summary["documents"], summary["characters"]) == (2, 2)
+    assert "pages" not in summary

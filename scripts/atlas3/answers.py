@@ -85,8 +85,10 @@ SHARDS = 256
 def public_corpus_index(path: Path, restricted: set[str] | None = None) -> dict:
     """The corpus index summary without the corpora whose source is restricted: those stay off the site.
 
-    Their documents and pages come off the totals, and the characters are counted again from the
-    index's `chars.parquet` over the corpora that remain.
+    Every other corpus is kept as the index wrote it. A dropped corpus's documents come off the total,
+    and the characters are counted again from the index's `chars.parquet` over the corpora that remain.
+    Its pages come off the total too; an index built before per-corpus page counts cannot say how many
+    those are, so its summary goes out without a page total until the index is rebuilt.
     """
     summary = json.loads(path.read_text())
     if restricted is None:
@@ -94,17 +96,21 @@ def public_corpus_index(path: Path, restricted: set[str] | None = None) -> dict:
     away = [c for c in summary.get("corpora", []) if c.get("corpus") in restricted]
     if not away:
         return summary
-    if any("pages" not in c for c in away if "skipped" not in c):
-        sys.exit(f"{path} predates per-corpus page counts; rebuild the corpus index before publishing")
     import pyarrow.parquet as pq
 
-    kept = [c for c in summary["corpora"] if c not in away]
+    kept = [c for c in summary["corpora"] if c.get("corpus") not in restricted]
     names = {c["corpus"] for c in kept}
     chars = pq.read_table(path.parent / "chars.parquet", columns=["corpora"]).column("corpora").to_pylist()
-    return {**summary, "corpora": kept,
-            "documents": summary["documents"] - sum(c.get("documents", 0) for c in away),
-            "pages": summary["pages"] - sum(c.get("pages", 0) for c in away),
-            "characters": sum(1 for row in chars if names & set((row or "").split(",")))}
+    public = {**summary, "corpora": kept,
+              "documents": summary["documents"] - sum(c.get("documents") or 0 for c in away),
+              "characters": sum(1 for row in chars if names & set((row or "").split(",")))}
+    if all("pages" in c for c in away if not c.get("skipped")):
+        public["pages"] = summary["pages"] - sum(c.get("pages") or 0 for c in away)
+    else:
+        del public["pages"]
+        print(f"{path} has no page count for {', '.join(c['corpus'] for c in away)}; the corpus summary goes out "
+              "without a page total until the index is rebuilt", flush=True)
+    return public
 PUB_PREFIX = "v3/pub/"
 POINTER_PREFIX = "v3/"
 CELL = ("kind", "style", "state", "quiz", "decade", "visual_group", "n")
