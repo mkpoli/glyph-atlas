@@ -758,6 +758,9 @@
   }
   async function updateItem(id, result) {
     if (result?.origin === 'corpus') {
+      // A grapheme claim moves the glyph between families, and their tiles count it there.
+      const before = [...(corpus ?? []), ...(sample ?? [])].find(row => row.id === id)
+      if (before && corpusCountsAsked && claimedGrapheme(before) !== claimedGrapheme({ ...before, ...result })) { corpusCountsAsked = false; loadCorpusCounts() }
       const replace = row => {
         if (row.id !== id) return [row]
         const updated = { ...row, ...result }
