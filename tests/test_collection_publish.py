@@ -60,6 +60,26 @@ def test_a_killed_publication_leaves_no_generation_behind(tmp_path):
     assert kept == {first.name, (collection / "current").resolve().name}
 
 
+def test_an_unreadable_current_keeps_every_generation(tmp_path, capsys):
+    from glyph_atlas.corpus.collection import _sweep_unfinished
+
+    collection = tmp_path / "honkoku-collection"
+    generations = collection / "generations"
+    for name in ("100", "200", "300"):
+        (generations / name).mkdir(parents=True)
+    current = collection / "current"
+    current.symlink_to("generations/250", target_is_directory=True)
+    _sweep_unfinished(collection)
+    assert sorted(p.name for p in generations.iterdir()) == ["100", "200", "300"]
+    assert "dangling" in capsys.readouterr().err
+    current.unlink()
+    (collection / "elsewhere").mkdir()
+    current.symlink_to("elsewhere", target_is_directory=True)
+    _sweep_unfinished(collection)
+    assert sorted(p.name for p in generations.iterdir()) == ["100", "200", "300"]
+    assert "not a generation" in capsys.readouterr().err
+
+
 def test_live_index_sees_new_generation(tmp_path):
     from glyph_atlas.corpus.index import CorpusIndex, build_chars
     dataset(tmp_path / "honkoku-data", "one", "ア")

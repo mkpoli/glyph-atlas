@@ -5,6 +5,7 @@ import fcntl
 import json
 import os
 import shutil
+import sys
 import tempfile
 import time
 from contextlib import contextmanager
@@ -183,7 +184,16 @@ def _sweep_unfinished(collection: Path) -> None:
     if not generations.is_dir():
         return
     current = collection / "current"
-    live = int(current.resolve().name) if current.exists() else None
+    if current.is_symlink() or current.exists():
+        # Without a readable live generation nothing can be told apart from it; keep every copy.
+        name = current.resolve().name
+        if not current.exists() or not name.isdigit():
+            reason = "dangling" if not current.exists() else f"names {name!r}, not a generation"
+            print(f"unfinished generations kept: {collection.name}/current is {reason}", file=sys.stderr)
+            return
+        live = int(name)
+    else:
+        live = None
     for path in generations.iterdir():
         if path.name.isdigit() and (live is None or int(path.name) > live):
             shutil.rmtree(path)
