@@ -1,3 +1,4 @@
+import gc
 import gzip
 import importlib
 import json
@@ -176,3 +177,26 @@ def test_a_withdrawal_catalogue_holds_withdrawals_alone(layout, withdraw, monkey
     db.commit()
     with pytest.raises(SystemExit, match="withdrawn units alone"):
         run(publish, monkeypatch, path)
+
+
+def test_a_withdrawal_stopped_after_the_deletion_finishes_when_run_again(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    path = write(withdraw, monkeypatch, tmp_path / "w.sqlite")
+    a1, a2 = ids(root)["ex:a1"], ids(root)["ex:a2"]
+    remote.dbs["glyph-atlas-v3"].execute("UPDATE crops SET revision=4 WHERE id=?", (a2,)).connection.commit()
+    write_parts = publish.write_parts
+
+    def stop(*_args):
+        sys.exit("stopped")
+    monkeypatch.setattr(publish, "write_parts", stop)
+    with pytest.raises(SystemExit, match="stopped") as stopped:
+        run(publish, monkeypatch, path)
+    # The stopped process's connections go with it.
+    del stopped
+    gc.collect()
+    assert a1 not in crops(remote) and "withdrawn" not in entry_of(root, "ex:a1")
+    monkeypatch.setattr(publish, "write_parts", write_parts)
+    with pytest.raises(SystemExit, match="1 withdrawn crops were reviewed on the site since.*ex:a2"):
+        run(publish, monkeypatch, path)
+    assert entry_of(root, "ex:a1")["withdrawn"] is True and "withdrawn" not in entry_of(root, "ex:a2")
+    assert sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT revision FROM crops WHERE id=?", (a2,)).fetchone() == (4,)

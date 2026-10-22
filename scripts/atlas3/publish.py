@@ -555,10 +555,10 @@ def deliver(m, run):
 
 
 def delete_withdrawn(m, run, crops, dry):
-    """Delete withdrawn crops, (id, revision) pairs, in glyph-atlas-v3 while their revision is the local
-    copy's, and read back which rows D1 still holds: those were reviewed on the site meanwhile. Their
-    rows replace the local copy's and their ids are returned. A dry run sends nothing and returns none;
-    run again, the deletion finds nothing more to delete and the same rows kept."""
+    """Delete withdrawn crops, (id, catalogue revision) pairs, in glyph-atlas-v3 while their revision is
+    the catalogue's, and return the ids D1 still holds: those were reviewed since. Nothing local changes
+    here, so a publish that stops later and runs again deletes nothing more and finds the same ids. A
+    dry run sends nothing and returns none."""
     if dry or not crops:
         return []
     stamp, path = f"{run.name}.withdraw", run / "withdraw.sql"
@@ -568,18 +568,15 @@ def delete_withdrawn(m, run, crops, dry):
         sys.exit(f"{run.name}/{path.name} did not apply; nothing else was sent. Publish the withdrawal again")
     kept, ids = [], [cid for cid, _ in crops]
     for i in range(0, len(ids), 200):
-        for r in query("glyph-atlas-v3", f"SELECT * FROM crops WHERE id IN ({','.join(map(str, ids[i:i + 200]))})"):
-            kept.append(r["id"])
-            m.atlas.execute(f"INSERT OR REPLACE INTO crops({','.join(CROP_COLS)}) VALUES({','.join('?' * len(CROP_COLS))})",
-                            [r[c] for c in CROP_COLS])
-    m.atlas.commit()
+        kept += [r["id"] for r in query("glyph-atlas-v3", f"SELECT id FROM crops WHERE id IN ({','.join(map(str, ids[i:i + 200]))})")]
     return kept
 
 
-def refuse_withdrawals(run, refused):
+def refuse_withdrawals(run):
     """End the publish with the withdrawn crops D1 kept, if any."""
-    if refused:
-        (run / "refused-withdrawals.txt").write_text("\n".join(refused) + "\n")
+    path = run / "refused-withdrawals.txt"
+    if path.exists():
+        refused = path.read_text().split()
         sys.exit(f"{len(refused)} withdrawn crops were reviewed on the site since and stay live with their records and "
                  f"images: {', '.join(refused[:10])} (all in {run.name}/refused-withdrawals.txt). Write the withdrawal "
                  "again with withdraw.py to take them off at their new revision")
@@ -601,6 +598,9 @@ def finish_unfinished(m):
     for (name,) in m.ids.execute("SELECT run FROM pending ORDER BY run").fetchall():
         print(f"finishing {name}", flush=True)
         deliver(m, OUT / "publish" / name)
+        if (OUT / "publish" / name / "refused-withdrawals.txt").exists():
+            print(f"WARNING: {name} left withdrawn crops live that were reviewed on the site since; "
+                  f"see {name}/refused-withdrawals.txt", file=sys.stderr, flush=True)
 
 
 def main():
@@ -719,7 +719,10 @@ def main():
         if cid is not None:
             published = entry(cid)
             current = m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
-            if r["origin"] in GONE:
+            if r["origin"] == "withdrawn":
+                # The read-back after the D1 deletion decides each withdrawn crop on its own.
+                pass
+            elif r["origin"] in GONE:
                 if current and r["revision"] < current["revision"]:
                     refused.append(f"{r['id']}: {r['origin']} at revision {r['revision']}, reviewed since (revision {current['revision']})")
             elif m.page_key(cid // PAGE) != page_key:
@@ -768,14 +771,20 @@ def main():
     # by refusing it.
     kept_live = set()
     if withdrawing:
-        live_now = [(cid, row["revision"]) for r in withdrawing if (cid := m.known(r["id"])) is not None
-                    and (row := m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone())]
+        live_now = [(cid, r["revision"]) for r in withdrawing if (cid := m.known(r["id"])) is not None
+                    and m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone()]
+        # Every bundle is read below; a missing one stops the publish before D1 is touched.
+        for pid, rev in m.atlas.execute("SELECT id, rev FROM pages WHERE rev > 0").fetchall():
+            if not (OUT / "pages" / f"{pid}-{rev}.json.gz").exists():
+                sys.exit(f"page {pid} has revision {rev} but no bundle {pid}-{rev}.json.gz; nothing published")
         if dry:
             print(f"dry run: {len(live_now)} withdrawn crops would be deleted in D1 and read back before anything else is sent",
                   flush=True)
         kept_live = set(delete_withdrawn(m, run, live_now, dry))
     withdraw_refused = sorted(r["id"] for r in withdrawing if m.known(r["id"]) in kept_live)
     retiring -= set(withdraw_refused)
+    # The local copy takes D1's rows for them with the run's read-back (`deliver`).
+    m.guarded += sorted(kept_live)
 
     # A retired crop names the crop it was retired in favour of by integer id: the first text id on its
     # redirect chain that is a live crop after this publish, past retired crops and text ids with no crop.
@@ -1189,12 +1198,16 @@ def main():
         mark(run, "dry run")
         print("dry run: nothing allocated, sent or changed")
         return
-    if not atlas_parts and not runs_parts and not voted and not fresh_media and not pending():
+    if withdraw_refused:
+        (run / "refused-withdrawals.txt").write_text("\n".join(withdraw_refused) + "\n")
+    if not atlas_parts and not runs_parts and not voted and not withdraw_refused and not pending():
         m.ids.rollback()
         mark(run, "nothing to send")
+        # Nothing else is written, so the new image keys go into the local shards here.
+        if fresh_media:
+            media_map.merge(fresh_media)
         media_map.send(upload)
         print("nothing changed")
-        refuse_withdrawals(run, withdraw_refused)
         return
     # The allocation and the record that this publish is pending are one transaction.
     m.ids.execute("INSERT INTO pending VALUES(?)", (run.name,))
@@ -1203,7 +1216,7 @@ def main():
     deliver(m, run)
     print(f"published {stamp}")
     answer()
-    refuse_withdrawals(run, withdraw_refused)
+    refuse_withdrawals(run)
 
 
 def answer():
