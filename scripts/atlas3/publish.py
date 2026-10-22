@@ -539,10 +539,10 @@ def deliver(m, run):
                             if cid not in refused:
                                 refused.append(cid)
                             old = sent["cells"][str(cid)]
-                            for state, step in ((old[5], 1), (sent["state"], -1)):
-                                m.atlas.execute("INSERT INTO tally(gen,kind,char,book,production,style,state,quiz,n) "
-                                                "SELECT gen,?,?,?,?,?,?,?,? FROM generation WHERE id=0 ON CONFLICT DO UPDATE SET n=n+excluded.n",
-                                                [*old[:5], state, old[6], step])
+                            for state, step in ((old[6], 1), (sent["state"], -1)):
+                                m.atlas.execute("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) "
+                                                "SELECT gen,?,?,?,?,?,?,?,?,?,? FROM generation WHERE id=0 ON CONFLICT DO UPDATE SET n=n+excluded.n",
+                                                [*old[:6], state, *old[7:9], step])
             m.atlas.commit()
             (run / "refused-by-d1.json").write_text(json.dumps(refused))
             if refused:
@@ -1051,7 +1051,9 @@ def main():
                 listed.append((cid, row, r))
         gen = "(SELECT gen FROM generation WHERE id=0)"
         actor = f"(SELECT id FROM actors WHERE key={lit(PUBLISHER)})"
-        cell = "c.kind,coalesce(c.char,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),c.state,c.quiz"
+        # The tally's cell as the Worker keys it (`applyStatements` in routes/review.ts).
+        cell = ("c.kind,coalesce(c.char,-1),coalesce(c.family,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),"
+                "c.state,c.quiz,coalesce((c.year-CASE WHEN c.year<0 THEN 9 ELSE 0 END)/10*10,-1)")
         for start in range(0, len(listed), FLAG_MAX):
             chunk = listed[start:start + FLAG_MAX]
             key = f"{PUBLISHER}:{stamp}:{start // FLAG_MAX}"
@@ -1066,7 +1068,7 @@ def main():
                 rev, fresh = row["revision"], f"NOT EXISTS (SELECT 1 FROM corpus_rows WHERE crop={cid})"
                 mine = f"EXISTS (SELECT 1 FROM corpus_flags WHERE crop={cid} AND at={at})"
                 event = f"EXISTS (SELECT 1 FROM events WHERE crop={cid} AND submission={submission})"
-                tally = ("INSERT INTO tally(gen,kind,char,book,production,style,state,quiz,n) SELECT "
+                tally = ("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) SELECT "
                          f"{gen},{cell},{{n}} FROM crops c WHERE c.id={cid} AND c.revision={{rev}} AND {event} "
                          "ON CONFLICT DO UPDATE SET n=n+excluded.n;")
                 # Each waits on the one before, so a glyph reviewed or named since keeps the site's rows.
@@ -1086,9 +1088,9 @@ def main():
                      "quiz=excluded.quiz,x=excluded.x,y=excluded.y,w=excluded.w,h=excluded.h;"),
                     f"UPDATE crops SET state={flagged},revision={rev + 1} WHERE id={cid} AND revision={rev} AND {event};",
                     tally.format(n=1, rev=rev + 1)]
-                cells[cid] = [row["kind"], -1 if row["char"] is None else row["char"], row["book"],
-                              -1 if row["production"] is None else row["production"], -1 if row["style"] is None else row["style"],
-                              row["state"], row["quiz"]]
+                cells[cid] = [row["kind"], *(-1 if row[k] is None else row[k] for k in ("char", "family")), row["book"],
+                              *(-1 if row[k] is None else row[k] for k in ("production", "style")), row["state"], row["quiz"],
+                              -1 if row["year"] is None else row["year"] // 10 * 10]
                 m.atlas.execute("UPDATE crops SET state=?, revision=? WHERE id=?", (flagged, rev + 1, cid))
                 m.guarded.append(cid)
                 n += 1
