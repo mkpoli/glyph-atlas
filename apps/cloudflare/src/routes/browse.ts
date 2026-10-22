@@ -5,7 +5,7 @@
 // listings deal crops in shuffle order from the indexes of migration 0011.
 import { codeNames, cropOf, publicId, type Entry } from '../atlas3';
 import { bookCounts, codePoints, collectedCounts, corpusCounts, galleryIndex, galleryShard, productionKeys, type SampleEntry } from '../atlas3Answers';
-import { currentPointer } from '../atlas3Gallery';
+import { currentPointer, filedClaims } from '../atlas3Gallery';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
 import { catalogueKey, catalogueStamps, publicationKey, type CatalogueStamps } from '../atlas3Stamps';
 import { Problem } from '../busy';
@@ -107,22 +107,35 @@ export async function dateStats(env: Env, ctx: ExecutionContext, url: URL): Prom
 
 // Corpus glyphs by character in the material asked for, with the grapheme each is filed under: what
 // the grapheme browser counts beside the collection's own crops, so a character the site holds only as
-// corpus glyphs (債) is listed too. The answer changes only with a publication, and the edge keeps one
-// copy per publication, book-facts or forms load and material.
+// corpus glyphs (債) is listed too. A glyph a grapheme claim reads as another grapheme counts under that
+// grapheme's family, as the family's gallery lists it (`filedClaims`). A claim holds on its crop's
+// effective cut, which a redrawn box moves, so the edge keeps one copy per publication and catalogue
+// stamps (reviews and ledger writes among them) and material.
 export async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
   const production = url.searchParams.get('production') || 'all';
   if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
   const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]);
-  const key = new Request(`${url.origin}/atlas/corpus/characters?production=${encodeURIComponent(production)}&v=${encodeURIComponent(`${pub}:${publicationKey(stamps)}`)}`);
+  const key = new Request(`${url.origin}/atlas/corpus/characters?production=${encodeURIComponent(production)}&v=${
+    encodeURIComponent(`${pub}:${catalogueKey(stamps)}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return cached.json();
-  const { cells, chars } = await corpusCounts(env, null);
-  const keys = await productionKeys(env, cells.map(c => c.production));
-  const totals = new Map<number, number>();
-  for (const c of cells) if (inScope(production, keys.get(c.production) ?? 'unknown')) totals.set(c.char, (totals.get(c.char) ?? 0) + c.n);
-  // [label, grapheme, glyphs], one per character that has any.
-  const items = [...totals].filter(([char, n]) => n > 0 && chars.has(char)).map(([char, n]): [string, string, number] => [chars.get(char)!.text, chars.get(char)!.grapheme, n])
-    .sort((a, b) => byCodePoint(a[0], b[0]));
+  const [{ cells, chars }, claims] = await Promise.all([corpusCounts(env, null), filedClaims(env)]);
+  const keys = await productionKeys(env, [...cells.map(c => c.production), ...claims.map(r => r.production ?? -1)]);
+  const scoped = (id: number | null) => inScope(production, keys.get(id ?? -1) ?? 'unknown');
+  // [label, grapheme, glyphs], one per character and the grapheme its glyphs are filed under.
+  const totals = new Map<string, [string, string, number]>();
+  const add = (text: string, grapheme: string, n: number) => {
+    const at = `${text} ${grapheme}`, found = totals.get(at);
+    if (found) found[2] += n; else totals.set(at, [text, grapheme, n]);
+  };
+  for (const c of cells) if (scoped(c.production) && chars.has(c.char)) add(chars.get(c.char)!.text, chars.get(c.char)!.grapheme, c.n);
+  for (const r of claims) {
+    const info = r.kind === 1 && r.char !== null ? chars.get(r.char) : undefined;
+    if (!info || info.grapheme === r.head || !scoped(r.production) || !(totals.get(`${info.text} ${info.grapheme}`)?.[2])) continue;
+    add(info.text, info.grapheme, -1);
+    add(info.text, r.head, 1);
+  }
+  const items = [...totals.values()].filter(([, , n]) => n > 0).sort((a, b) => byCodePoint(a[0], b[0]) || byCodePoint(a[1], b[1]));
   const body = { items };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
   return body;
@@ -366,10 +379,12 @@ export async function othersSkips(env: Env, reviewer: string | null, version: st
 export const REVIEWED_IN_INSPECTOR = `EXISTS(SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission AND s.undone=0
   WHERE e.crop=c.id AND e.kind IN (0,1,2) AND json_extract(s.request,'$.target') IS NOT NULL)`;
 // The Flagged view: every collected crop flagged or hard to read, from `crop_flagged`, which holds only them.
-export function flaggedQuery(f: Filter): { sql: string; values: (number | string)[] } {
+// With `ids`, only those crops, each by its key: the crops a grapheme claim files under a family.
+export function flaggedQuery(f: Filter, ids?: number[]): { sql: string; values: (number | string)[] } {
   const rest = conditions(f, {}, name => `c.${name}`);
+  const from = ids ? 'json_each(?) j CROSS JOIN crops c ON c.id=j.value' : 'crops c INDEXED BY crop_flagged';
   return { sql: `SELECT c.id,c.shuffle,c.char,c.book,c.production,c.category,c.state,c.quiz,${REVIEWED_IN_INSPECTOR} AS reported
-    FROM crops c INDEXED BY crop_flagged WHERE c.kind=0 AND c.state IN (2,4)${rest.sql}`, values: rest.values };
+    FROM ${from} WHERE c.kind=0 AND c.state IN (2,4)${rest.sql}`, values: [...(ids ? [JSON.stringify(ids)] : []), ...rest.values] };
 }
 // The order the Flagged view shows its few crops in, from the seed: a hash of the shuffle, then id.
 const seeded = (shuffle: number, seed: number) => Number((BigInt(shuffle) * BigInt(seed + 1)) % 2147483647n);
@@ -434,14 +449,28 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   // The characters a listing names: a round's grapheme members, a browse page's family (every character
   // filed under the grapheme), a character, a search. A name the site holds no crop of names none.
   const byText = new Map([...chars].map(([id, info]) => [info.text, id]));
-  let named: Set<number> | null = null;
+  let named: Set<number> | null = null, written: Set<number> | null = null;
   const narrow = (ids: Iterable<number>) => { const next = new Set(ids); named = named === null ? next : new Set([...named].filter(id => next.has(id))); };
   if (members) narrow(members.ids);
-  if (grapheme && !scoped) narrow([...chars].filter(([, info]) => info.grapheme === grapheme).map(([id]) => id));
+  const family = grapheme && !scoped ? new Set([...chars].filter(([, info]) => info.grapheme === grapheme).map(([id]) => id)) : null;
+  if (family) narrow(family);
   for (const value of [character, searched]) if (value) {
     const id = byText.get(value) ?? (await env.ATLAS.prepare(graphemeQuery()).bind(value).first<{ id: number }>())?.id;
-    narrow(id === undefined ? [] : [id]);
+    const ids = id === undefined ? [] : [id];
+    narrow(ids);
+    written = written === null ? new Set(ids) : new Set(ids.filter(i => written!.has(i)));
   }
+  // The crops grapheme claims file, read once a request (`countFacets` reads them too).
+  let filing: ReturnType<typeof filedClaims> | null = null;
+  const claimsRead = () => filing ??= filedClaims(env);
+  // Browsing a family, a crop a grapheme claim files under it is listed with it, and a crop of its
+  // characters a claim files under another family is not, as the family's gallery lists them; a
+  // character or a search narrows those as it narrows the rest. A crop with no character is counted
+  // under none, and is listed by none.
+  const claims = family ? await claimsRead() : [];
+  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && family!.has(r.char) && r.head !== grapheme).map(r => r.id));
+  const here = claims.filter(r => r.kind === 0 && r.head === grapheme && r.char !== null && !family!.has(r.char) && (written === null || written.has(r.char))
+    && r.state !== null && r.quiz !== null).map(r => ({ ...r, char: r.char!, state: r.state!, quiz: r.quiz! }));
   // -2 matches nothing: a book, script or state the site does not know.
   const book = documentKey ? (await env.ATLAS.prepare(bookQuery()).bind(documentKey).first<{ id: number }>())?.id ?? -2 : null;
   const category = groupParam ? code('category', groupParam) ?? -2 : null;
@@ -458,7 +487,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     withheld ? 'show' : 'hide'}&v=${encodeURIComponent(version)}`);
   const hit = facetsKey ? await caches.default.match(facetsKey) : undefined;
   const facets: { counts: Record<StateName, number>; categories: Category[]; documents: Book[] } = hit ? await hit.json()
-    : await countFacets(env, { cells, chars, glyphs, own, counted, stateOf, review });
+    : await countFacets(env, { cells, chars, glyphs, own, counted, stateOf, review, claims: review ? [] : await claimsRead() });
   timing.step(hit ? 'facets-hit' : 'facets');
   if (facetsKey && !hit) ctx.waitUntil(caches.default.put(facetsKey, Response.json(facets, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
 
@@ -473,8 +502,10 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   if (flaggedView) {
     // `attention` is every crop waiting for a person, flagged or hard to read; `flagged` the flagged ones.
     // The Flagged view hides crops already looked at in the inspector on `reported=hide`, and counts them.
-    const { sql, values } = flaggedQuery(filter);
-    const rows = (await env.ATLAS.prepare(sql).bind(...values).all<Row & { id: number; shuffle: number; reported: number }>()).results;
+    const flaggedRows = async (f: Filter, ids?: number[]) => { const { sql, values } = flaggedQuery(f, ids);
+      return (await env.ATLAS.prepare(sql).bind(...values).all<Row & { id: number; shuffle: number; reported: number }>()).results; };
+    const waiting = here.filter(r => r.state === 2 || r.state === 4).map(r => r.id);
+    const rows = [...(await flaggedRows(filter)).filter(row => !away.has(row.id)), ...(waiting.length ? await flaggedRows({ ...filter, chars: null }, waiting) : [])];
     reportedCount = rows.filter(row => row.reported).length;
     const shown = q.get('reported') === 'hide' ? rows.filter(row => !row.reported) : rows;
     // A crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
@@ -498,15 +529,22 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
       .filter(row => !exclude.has(row.id) && (row.kind === 0 ? matches(filter, row) : corpus && matches(corpusFilter, row)))
       .sort((a, b) => (a.shuffle - start(seed) + SHUFFLE_RANGE) % SHUFFLE_RANGE - (b.shuffle - start(seed) + SHUFFLE_RANGE) % SHUFFLE_RANGE || a.id - b.id) : [];
     for (const row of head) exclude.add(row.id);
+    const claimed = here.filter(row => !exclude.has(row.id) && matches({ ...filter, chars: null }, row))
+      .sort((a, b) => (a.shuffle - start(seed) + SHUFFLE_RANGE) % SHUFFLE_RANGE - (b.shuffle - start(seed) + SHUFFLE_RANGE) % SHUFFLE_RANGE || a.id - b.id);
+    const left = claims.filter(row => away.has(row.id) && row.state !== null && row.quiz !== null
+      && matches(filter, { ...row, state: row.state, quiz: row.quiz })).length;
+    for (const id of [...away, ...claimed.map(row => row.id)]) exclude.add(id);
     const tiered = review && seed % 5 !== 0;
     stages = [{ ids: head.map(row => row.id) },
       ...(tiered ? priorities.map(p => ({ list: ranges(filter, 0, categoryCodes, [p], true) }))
         : [{ list: ranges(filter, 0, categoryCodes, priorities) }]),
-      ...(corpus ? [{ list: ranges(corpusFilter, 1, categoryCodes, priorities) }] : [])];
-    const left = (kind: number, f: Filter) => own.filter(row => row.kind === kind && matches(f, row)).length + head.filter(row => row.kind === kind).length;
+      ...(corpus ? [{ list: ranges(corpusFilter, 1, categoryCodes, priorities) }] : []),
+      // Last, so a claim saved between two pages leaves every earlier stage where its cursor names it.
+      ...(claimed.length ? [{ ids: claimed.map(row => row.id) }] : [])];
+    const skippedOrHead = (kind: number, f: Filter) => own.filter(row => row.kind === kind && matches(f, row)).length + head.filter(row => row.kind === kind).length;
     let glyphTotal = 0;
     if (corpus) for (const c of glyphs!.cells) if (matches(corpusFilter, { ...c, book: -1, category: null })) glyphTotal += c.n;
-    total = head.length + listedCount(filter) - left(0, filter) + (corpus ? glyphTotal - left(1, corpusFilter) : 0);
+    total = head.length + claimed.length + listedCount(filter) - left - skippedOrHead(0, filter) + (corpus ? glyphTotal - skippedOrHead(1, corpusFilter) : 0);
   }
   const dealt = wantsRows ? await page(env, stages, start(seed), cursor, limit, exclude) : { ids: [], next: null };
   timing.step('page');
@@ -536,21 +574,25 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
 
 // Counts by character and state, and for browsing by book as well, with each book's key and title. A
 // reviewer's own recent skips move from `pending` to `skipped`; a round adds each character's corpus
-// glyphs nothing has decided, as pending, under the grapheme its family files it under.
-async function countFacets(env: Env, { cells, chars, glyphs, own, counted, stateOf, review }: {
+// glyphs nothing has decided, as pending, under the grapheme its family files it under. Browsing, a
+// crop a grapheme claim reads as another grapheme counts with its character under that grapheme's
+// family, as the family's gallery lists it (`filedClaims`); a round deals by character, and counts so.
+async function countFacets(env: Env, { cells, chars, glyphs, own, counted, stateOf, review, claims }: {
   cells: Awaited<ReturnType<typeof collectedCounts>>['cells']; chars: Awaited<ReturnType<typeof collectedCounts>>['chars'];
   glyphs: Awaited<ReturnType<typeof corpusCounts>> | null; own: (Row & { id: number; kind: number })[]; counted: Filter;
-  stateOf: Map<number, StateName>; review: boolean }) {
+  stateOf: Map<number, StateName>; review: boolean; claims: Awaited<ReturnType<typeof filedClaims>> }) {
   const counts = Object.fromEntries(STATE_NAMES.map(s => [s, 0])) as Record<StateName, number>;
   const categories = new Map<string, Category>(), documents = new Map<number, Book>();
   const info = (char: number) => chars.get(char) ?? glyphs?.chars.get(char) ?? null;
+  // A character's counts under each grapheme its crops are filed under.
+  const count = (text: string, grapheme: string, state: StateName, n: number) => {
+    const at = `${text} ${grapheme}`, entry = categories.get(at) ?? { label: text, grapheme, ...empty() };
+    entry.total += n; entry[state] += n; categories.set(at, entry);
+  };
   const add = (char: number, state: StateName, n: number, book: number | null) => {
     counts[state] += n;
     const found = char === -1 ? null : info(char);
-    if (found) {
-      const entry = categories.get(found.text) ?? { label: found.text, grapheme: found.grapheme, ...empty() };
-      entry.total += n; entry[state] += n; categories.set(found.text, entry);
-    }
+    if (found) count(found.text, found.grapheme, state, n);
     if (book === null) return;
     const entry = documents.get(book) ?? { id: '', title: null, ...empty() };
     entry.total += n; entry[state] += n; documents.set(book, entry);
@@ -584,6 +626,15 @@ async function countFacets(env: Env, { cells, chars, glyphs, own, counted, state
       if (moved) add(char, 'skipped', moved, null);
     }
   }
+  for (const r of claims) {
+    const found = r.kind === 0 && r.char !== null ? chars.get(r.char) : undefined, state = stateOf.get(r.state ?? -1) ?? 'pending';
+    if (!found || found.grapheme === r.head || r.state === null || r.quiz === null) continue;
+    if (!matches(counted, { char: r.char, book: r.book, production: r.production, category: null, state: r.state, quiz: r.quiz })) continue;
+    if (!((categories.get(`${found.text} ${found.grapheme}`)?.[state] ?? 0) > 0)) continue;
+    count(found.text, found.grapheme, state, -1);
+    count(found.text, r.head, state, 1);
+  }
+  for (const [at, entry] of categories) if (entry.total <= 0) categories.delete(at);
   if (documents.size) for (const row of (await env.ATLAS.prepare(booksQuery()).bind(JSON.stringify([...documents.keys()]))
     .all<{ id: number; key: string; title: string | null }>()).results) Object.assign(documents.get(row.id)!, { id: row.key, title: row.title });
   return { counts,

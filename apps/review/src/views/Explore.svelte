@@ -143,11 +143,12 @@
   // service has none) or a failed read leaves the tiles counting crops for the rest of the visit.
   // The frequent graphemes above the collection need them too, and offer to read them again after a failure.
   let corpusCounts = $state(null), corpusCountsAsked = false, corpusCountsFailed = $state(false)
-  async function loadCorpusCounts() {
+  async function loadCorpusCounts(fresh = false) {
     if (flagged || corpusCountsAsked) return
     corpusCountsAsked = true; corpusCountsFailed = false
     try {
-      const found = await request('/atlas/corpus/characters')
+      // Read again after a claim, past the copy the browser keeps for a few minutes.
+      const found = await request('/atlas/corpus/characters', undefined, fresh ? { cache: 'no-store' } : {})
       if (closed) return
       corpusCounts = found.items
       // Under a script group, an empty listing waits for these counts to tell whether the corpus holds its grapheme.
@@ -164,11 +165,15 @@
   const tileCounts = $derived.by(() => {
     if (!wholeCategories.length || (!corpusCounts && !corpusCountsFailed)) return null
     const forms = new Map(), groups = new Map(), keys = new Map()
-    // A form one source files under another grapheme than the other (扵 under 於, or under its own)
-    // counts among the forms of each.
-    const shapes = new Map()
+    // A form one source files under another grapheme than the other (扵 under 於, or under its own), or
+    // some of whose glyphs a claim reads as another grapheme, counts among the forms of each, and keys
+    // the grapheme most of its glyphs are filed under, the collection's and the corpus's together.
+    const shapes = new Map(), under = new Map()
     const add = (label, key, n) => {
-      forms.set(label, (forms.get(label) ?? 0) + n); groups.set(key, (groups.get(key) ?? 0) + n); keys.set(label, key)
+      forms.set(label, (forms.get(label) ?? 0) + n); groups.set(key, (groups.get(key) ?? 0) + n)
+      const sums = under.get(label) ?? new Map()
+      sums.set(key, (sums.get(key) ?? 0) + n); under.set(label, sums)
+      if (!keys.has(label) || sums.get(key) > sums.get(keys.get(label))) keys.set(label, key)
       if (!shapes.has(key)) shapes.set(key, new Set())
       shapes.get(key).add(label)
     }
@@ -756,6 +761,9 @@
   }
   async function updateItem(id, result) {
     if (result?.origin === 'corpus') {
+      // A grapheme claim moves the glyph between families, and their tiles count it there.
+      const before = [...(corpus ?? []), ...(sample ?? [])].find(row => row.id === id)
+      if (before && corpusCountsAsked && claimedGrapheme(before) !== claimedGrapheme({ ...before, ...result })) { corpusCountsAsked = false; loadCorpusCounts(true) }
       const replace = row => {
         if (row.id !== id) return [row]
         const updated = { ...row, ...result }
@@ -1065,7 +1073,7 @@
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
   {/if}
-  {#if bare}{#if runKind === 'grapheme'}<RunStrip runs={frequentGraphemes} heading={t('explore.runs.heading')} failed={corpusCountsFailed ? t('explore.graphemes.failed') : ''} onretry={() => { corpusCountsAsked = false; loadCorpusCounts() }}
+  {#if bare}{#if runKind === 'grapheme'}<RunStrip runs={frequentGraphemes} heading={t('explore.runs.heading')} failed={corpusCountsFailed ? t('explore.graphemes.failed') : ''} onretry={() => { corpusCountsAsked = false; loadCorpusCounts(true) }}
       address={group => graphemeAddress(group.key, group.text)} tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />
     {:else}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
       tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}{/if}
