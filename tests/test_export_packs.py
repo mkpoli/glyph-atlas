@@ -52,3 +52,33 @@ def test_a_crop_tone_is_read_from_its_pack_and_cut_again_once_the_pack_is_gone(t
     (tmp_path / packs.name).unlink()
     assert module.image_tone(packs, media, "/atlas/media/crop.webp")["tone"] == "#d2bea0"
     assert media.cut == ["crop"]
+
+
+def test_an_image_that_fails_to_copy_leaves_no_row_and_no_bytes(tmp_path, monkeypatch):
+    import pytest
+
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    module = importlib.import_module("export_cloudflare")
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE media (key TEXT PRIMARY KEY, object TEXT, offset INTEGER, size INTEGER, content_type TEXT)")
+    packs = module.Packs(tmp_path, db)
+    (tmp_path / "a.webp").write_bytes(b"first")
+    (tmp_path / "b.webp").write_bytes(b"broken")
+    (tmp_path / "c.webp").write_bytes(b"third")
+    packs.add("a", tmp_path / "a.webp")
+    real = module.shutil.copyfileobj
+
+    def fail(source, target, length):
+        target.write(b"bro")
+        raise OSError(12, "Cannot allocate memory")
+
+    monkeypatch.setattr(module.shutil, "copyfileobj", fail)
+    with pytest.raises(OSError):
+        packs.add("b", tmp_path / "b.webp")
+    monkeypatch.setattr(module.shutil, "copyfileobj", real)
+    packs.add("c", tmp_path / "c.webp")
+    packs.add("b", tmp_path / "b.webp")
+    packs.close()
+    pack = (tmp_path / packs.name).read_bytes()
+    rows = {k: (o, s) for k, o, s in db.execute("SELECT key, offset, size FROM media")}
+    assert {k: pack[o:o + s] for k, (o, s) in rows.items()} == {"a": b"first", "c": b"third", "b": b"broken"}

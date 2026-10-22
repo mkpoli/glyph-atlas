@@ -62,18 +62,25 @@ class Packs:
     def add(self, key, path, content_type="image/webp"):
         if key in self.seen:
             return
-        self.seen.add(key)
         if self.file is None or self.file.tell() >= 32 * 1024**2:
             if self.file:
                 self.file.close()
             self.index += 1
             self.name = f"pack-{self.index:04}.bin"
             self.file = (self.output / self.name).open("wb")
-        size = path.stat().st_size
+        # The row goes in only once the bytes are in the pack. A copy that fails partway is cut off the
+        # pack, so the next image starts where this one did and no row points at bytes it lacks.
+        offset = self.file.tell()
+        try:
+            with path.open("rb") as source:
+                shutil.copyfileobj(source, self.file, 1024 * 1024)
+        except BaseException:
+            self.file.seek(offset)
+            self.file.truncate()
+            raise
         self.db.execute("INSERT INTO media VALUES(?,?,?,?,?)",
-                        (key, self.name, self.file.tell(), size, content_type))
-        with path.open("rb") as source:
-            shutil.copyfileobj(source, self.file, 1024 * 1024)
+                        (key, self.name, offset, self.file.tell() - offset, content_type))
+        self.seen.add(key)
 
     def read(self, key):
         """The bytes of a packed image, or None when its pack is no longer in the export."""
