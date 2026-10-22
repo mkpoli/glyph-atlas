@@ -816,7 +816,9 @@ def main():
                      "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
                      "style": m.code("style", (o["style"] if o else None) or r["style"] or "unassessed"),
                      "state": m.code("state", o["state"] if o else "pending"), "quiz": o["quiz"] if o else 1,
-                     "year": years.get(r["document"], KEEP), "revision": o["revision"] if o else 0, "shuffle": shuffle(cid)}
+                     "year": years.get(r["document"], KEEP), "revision": o["revision"] if o else 0, "shuffle": shuffle(cid),
+                     # A corpus glyph's script category is its review overlay's, as the old site listed it.
+                     "category": m.code("category", o["category"]) if o else None}
             m.crop(given, {"id": r["id"], "label": r["label"], "record_place": [r["object"], r["offset"], r["size"]]},
                    o["revision"] if o else 0, o is not None)
             n += 1

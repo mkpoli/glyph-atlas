@@ -225,11 +225,11 @@ def check_crops(report, name):
             continue
         book = c[5] or c[0].split("|")[0].split(":")[0]
         w = want((o[2] if o else None) or c[1], o[3] if o else "pending", (o[4] if o else None) or c[3], o[5] if o else 1,
-                 c[2], None, c[4], o[9] if o else 0, 1) + (book, years.get(c[5]), 0,
+                 c[2], o[7] if o else None, c[4], o[9] if o else 0, 1) + (book, years.get(c[5]), 0,
                                                           filed((o[2] if o else None) or c[1], o[12] if o else c[10]))
         w, g = marked(cid, w), got(cid)
-        # A corpus glyph has no category of its own.
-        if g[:6] + g[7:] != w[:6] + w[7:]:
+        # A corpus glyph's category is its review overlay's.
+        if g != w:
             diffs.append(f"{c[0]} ({cid}): live {w}, new layout {g}")
     report.check("every crop's row equals its live record", diffs)
     if "priority" not in {c[1] for c in source("units").execute("PRAGMA table_info(units)")}:
