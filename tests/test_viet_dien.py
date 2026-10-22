@@ -62,15 +62,15 @@ def test_import_replay_and_search(tmp_path, http_server):
     doc, = tables.read(out / "documents.parquet", Document)
     pages = tables.read(out / "pages.parquet", Page)
     texts = tables.read(out / "page_texts.parquet", PageText)
-    assert doc.id == "viet-dien:d8-example"
-    assert doc.source_refs["viewer"] == f"{vd.BASE}/t/d8-example"
+    assert doc.id == "viet-dien:api:11"
+    assert doc.source_refs["viewer"] == f"{vd.BASE}/read/11/1"
     assert doc.meta["viet_dien"]["year"] == 1937
     assert doc.origin == "unknown" and doc.production == "unknown" and not doc.dating
     assert doc.image_rights is None
     assert doc.text_rights.licence == Licence.RESTRICTED
     assert [p.seq for p in pages] == [0, 2]
     assert [p.meta["corrected"] for p in pages] == [False, True]
-    assert pages[1].meta["viewer_url"] == f"{vd.BASE}/t/d8-example/3"
+    assert pages[1].meta["viewer_url"] == f"{vd.BASE}/read/11/3"
     assert pages[0].image == page(1)["image_url"]
     assert all(t.text_raw == "國𠊛\n 音\n" for t in texts)
     assert len(texts[0].revision) == 64
@@ -94,7 +94,7 @@ def test_import_replay_and_search(tmp_path, http_server):
     hits = idx.occurrences("國")
     assert len(hits) == 2
     assert {h.source.source_refs["viewer"] for h in hits} == {
-        f"{vd.BASE}/t/d8-example/1", f"{vd.BASE}/t/d8-example/3",
+        f"{vd.BASE}/read/11/1", f"{vd.BASE}/read/11/3",
     }
     assert {h.meta["page_meta"]["corrected"] for h in hits} == {False, True}
     api = CorpusAPI(out.parent, index_dir)
@@ -157,11 +157,14 @@ def test_bad_page_leaves_existing_output(tmp_path, http_server, change):
     assert (out / "documents.parquet").read_bytes() == b"previous snapshot"
 
 
-def test_stable_identity_ignores_database_id():
+def test_volumes_sharing_a_library_item_keep_distinct_identities():
     old = vd.records(detail(), {}, [(page(1), "hash")], "revision")
     new = vd.records(detail(text_id=999), {}, [(page(1, text_id=999), "hash")], "revision")
-    assert old[0].id == new[0].id
-    assert old[1][0].id == new[1][0].id
+    assert old[0].id != new[0].id
+    assert old[0].source_refs["viet-dien"] == new[0].source_refs["viet-dien"]
+    assert old[0].source_refs["viewer"] != new[0].source_refs["viewer"]
+    assert old[1][0].id != new[1][0].id
+    assert old[1][0].meta["viewer_url"] != new[1][0].meta["viewer_url"]
 
 
 def test_cli_validation_and_help():
@@ -277,7 +280,7 @@ def test_bulk_export_preserves_text_and_unknown_metadata(tmp_path, http_server):
     texts = tables.read(out / 'page_texts.parquet', PageText)
     assert [t.text_raw for t in texts] == ['國𠊛\n 音\n', '']
     assert all(p.image == '' and p.meta['corrected'] is None and p.meta['text_status'] == 'unknown' for p in pages)
-    assert [p.meta['viewer_url'] for p in pages] == [f'{vd.BASE}/t/d8-example/{n}' for n in (1, 3)]
+    assert [p.meta['viewer_url'] for p in pages] == [f'{vd.BASE}/read/11/{n}' for n in (1, 3)]
     assert all(p.meta['text_transport'] == 'full.txt' for p in pages)
     assert http_server.requests[-1] == 'GET /api/v1/texts/11/full.txt'
     assert len(http_server.requests) == 3
@@ -312,3 +315,21 @@ def test_bulk_export_checks_unselected_pages(tmp_path, http_server):
     with pytest.raises(ValueError, match='markers'):
         run(tmp_path, http_server, bulk_text=True, page_limit=1)
     assert not (tmp_path / 'corpora/viet-dien/documents.parquet').exists()
+
+
+def test_full_import_retains_volumes_sharing_one_library_item(tmp_path, http_server):
+    populate(http_server)
+    put(http_server, 'texts', {'total': 2, 'texts': [{'id': 11}, {'id': 12}]})
+    put(http_server, 'texts/12', detail(text_id=12))
+    for n in (1, 3):
+        put(http_server, f'texts/12/pages/{n}', page(n, text_id=12))
+    assert run(tmp_path, http_server, limit=0) == {'documents': 2, 'pages': 4, 'page_texts': 4}
+    out = tmp_path / 'corpora/viet-dien'
+    docs = tables.read(out / 'documents.parquet', Document)
+    pages = tables.read(out / 'pages.parquet', Page)
+    assert {d.id for d in docs} == {'viet-dien:api:11', 'viet-dien:api:12'}
+    assert {d.source_refs['viet-dien'] for d in docs} == {'d8-example'}
+    assert {p.meta['viewer_url'] for p in pages} == {
+        f'{vd.BASE}/read/{i}/{n}' for i in (11, 12) for n in (1, 3)
+    }
+    assert len({p.transcription['entry'] for p in pages}) == 2

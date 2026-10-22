@@ -16,7 +16,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode, urljoin
+from urllib.parse import urlencode, urljoin
 
 import httpx
 
@@ -114,13 +114,13 @@ def export_pages(body: bytes, detail: dict) -> list[dict]:
 def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision: str, *, bulk_text: bool = False):
     """Convert a work without inferring dates, origin, geometry or scan permissions."""
     item = detail.get("item_id")
-    key = quote(item, safe="") if isinstance(item, str) and item.strip() else None
-    identity = key if key else f"api:{detail['id']}"
-    document_id = f"{SOURCE}:{identity}"
-    citation = f"{BASE}/t/{key}" if key else f"{BASE}/read/{detail['id']}"
-    viewer = citation if key else urljoin(BASE + "/", detail.get("viewer_url") or f"{citation}/{min(detail['page_numbers'], default=1)}")
+    # Several volumes can share one holding-library item_id and page numbering.
+    # Only the upstream text id identifies a particular volume and its viewer.
+    document_id = f"{SOURCE}:api:{detail['id']}"
+    citation = f"{BASE}/read/{detail['id']}"
+    viewer = f"{citation}/{min(detail['page_numbers'], default=1)}"
     refs = {"viet-dien-api-id": str(detail["id"]), "viewer": viewer}
-    if key:
+    if isinstance(item, str) and item.strip():
         refs[SOURCE] = item
     for field, name in (("source_url", "source"), ("manifest_url", "iiif-manifest")):
         if detail.get(field):
@@ -132,7 +132,7 @@ def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision
         text_rights=Rights(licence=Licence.RESTRICTED, attribution=ATTRIBUTION, evidence=TERMS),
         meta={"viet_dien": {**listing, **detail}, "revision": revision,
               "text_reuse_terms": REUSE, "image_reuse_terms": "Follow the holding library's terms.",
-              "title_romanized": detail["title"], "identity_basis": "item_id" if key else "api_id"},
+              "title_romanized": detail["title"], "identity_basis": "api_id"},
     )
     page_records, texts = [], []
     for row, digest in pages:
@@ -145,7 +145,7 @@ def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision
         page_records.append(Page(
             id=page_id, document_id=document_id, seq=number - 1,
             image=urljoin(BASE + "/", row["image_url"]) if row.get("image_url") else "", width=0, height=0,
-            transcription={"source": SOURCE, "entry": item if key else str(detail["id"]), "revision": digest},
+            transcription={"source": SOURCE, "entry": str(detail["id"]), "revision": digest},
             meta={"viewer_url": f"{citation}/{number}", "upstream_viewer_url": row.get("viewer_url"),
                   "source_url": row.get("source_url"), "page_number": number,
                   "corrected": None if bulk_text else row["corrected"],
@@ -204,7 +204,7 @@ def import_all(
         pages.extend(work_pages)
         texts.extend(work_texts)
     if len({d.id for d in documents}) != len(documents):
-        raise ValueError("Việt Điển texts share a stable item_id")
+        raise ValueError("Việt Điển texts share an API identity")
     command = "atlas import viet-dien"
     if text_ids:
         command += "".join(f" --text-id {i}" for i in dict.fromkeys(text_ids))

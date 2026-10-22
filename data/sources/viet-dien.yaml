@@ -14,7 +14,7 @@ counts:
 access:
   api: https://viet-dien.com/api/v1
   schema: https://viet-dien.com/api/openapi.json
-  citation: https://viet-dien.com/t/{item_id}/{page}
+  citation: https://viet-dien.com/read/{text_id}/{page}
   crawl_delay_seconds: 5
   requests_per_minute: 60
   requests_per_hour: 1000
@@ -28,4 +28,5 @@ notes:
   - Scan rights follow the holding libraries; no image licence is inferred from API access.
   - Catalogue dates and language are retained verbatim; neither establishes exemplar origin or production.
   - The API's processing status is separate from the page's correction status.
-  - Local uploads without item_id use API row identities and /read viewer URLs. Relative image URLs resolve against viet-dien.com.
+  - Documents and /read citations use API text identities. Several volumes can share one library item_id; that identifier remains in source references.
+  - Relative image URLs resolve against viet-dien.com.

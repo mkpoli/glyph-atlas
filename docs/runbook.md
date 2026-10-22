@@ -92,9 +92,10 @@ Build a fresh corpus index after collection, including its per-character occurre
 files, so matches include the imported text and page citations. The corpus index
 discovers `viet-dien` beneath its configured corpus root. Imported
 text supports page-level matches. The API supplies no glyph rectangles. Page
-metadata retains the correction flag when supplied and a stable `/t/<item_id>/<page>` citation
-where a library identifier exists. Local uploads retain their `/read/<id>/<page>`
-viewer URL and an identity based on the API row number;
+metadata retains the correction flag when supplied and a `/read/<id>/<page>`
+citation. Document identities use the API text id because separate volumes can
+share the same library `item_id` and page numbering. The library identifier is
+retained in source references, including when several volumes share it;
 processing status such as `complete` does not establish that OCR was corrected.
 The OCR and catalogue are offered for attributed research use and carry a
 `restricted` text licence. Scan permissions remain unstated until checked against
