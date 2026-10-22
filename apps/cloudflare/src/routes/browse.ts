@@ -7,7 +7,7 @@ import { codeNames, cropOf, publicId, type Entry } from '../atlas3';
 import { bookCounts, codePoints, collectedCounts, corpusCounts, galleryIndex, galleryShard, productionKeys, type SampleEntry } from '../atlas3Answers';
 import { currentPointer } from '../atlas3Gallery';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
-import { catalogueKey, catalogueStamps, publicationKey } from '../atlas3Stamps';
+import { catalogueKey, catalogueStamps, publicationKey, type CatalogueStamps } from '../atlas3Stamps';
 import { Problem } from '../busy';
 import { categoryOf } from '../category';
 import { tallyDates } from '../dating';
@@ -141,14 +141,14 @@ export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParam
   const group = q.get('group') && q.get('group') !== 'all' ? q.get('group')! : null;
   if (group && !GALLERY_GROUPS.includes(group)) throw new Problem(400, 'Invalid group.');
   const limit = integer(q, 'limit', 24, 96), seed = integer(q, 'seed', 0, 2147483647);
-  // A sample is the same for anyone who asks with the same group, size and seed while the catalogue
-  // stands, so the edge keeps it, as it keeps a browse listing. The key names the publication too: a
-  // publication moves the catalogue key before its answers are up, and the sample is dealt from them.
+  // A sample is the same for anyone who asks with the same group, size and seed in the same minute of a
+  // publication (`keptFor`), so the edge keeps it, as it keeps a browse listing.
   const [stamps, { pub }] = await Promise.all([catalogueStamps(env), currentPointer(env)]);
-  const keptKey = new Request(`https://glyphatlas.org/layers/gallery/kept?${new URLSearchParams({ group: group ?? '', limit: String(limit), seed: String(seed),
-    pub, v: catalogueKey(stamps) })}`);
+  const span = keptFor(env, stamps, pub);
+  const keptKey = span === null ? null : new Request(`https://glyphatlas.org/layers/gallery/kept?${new URLSearchParams({ group: group ?? '', limit: String(limit),
+    seed: String(seed), v: span })}`);
   timing.step('stamps');
-  const kept = await caches.default.match(keptKey);
+  const kept = keptKey ? await caches.default.match(keptKey) : undefined;
   if (kept) { timing.step('sample-hit'); return await kept.json(); }
   const name = group && WHOLE_GROUPS.includes(group) ? group : 'sample', pool = (await galleryIndex(env, pub))[name];
   const start = seed % pool.range, first = Math.floor(start * pool.shards / pool.range);
@@ -170,7 +170,7 @@ export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParam
   timing.step('items');
   const body = { status: 'ok', available: items.length, items };
   // A sample short of a glyph it chose (a crop gone since the publication) is answered but not kept.
-  if (listed.length === page.length) ctx.waitUntil(caches.default.put(keptKey, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  if (keptKey && listed.length === page.length) ctx.waitUntil(caches.default.put(keptKey, Response.json(body, { headers: { 'cache-control': `public, max-age=${KEPT_SECONDS}` } })));
   return body;
 }
 
@@ -186,6 +186,16 @@ const start = (seed: number) => seed % SHUFFLE_RANGE;
 // Browse counts every collected crop by character, book and state, and every visitor gets the same
 // answer: the edge keeps one copy per catalogue version.
 const FACETS_TTL = 3600;
+// What a kept listing or sample stands for: a minute of a publication. The catalogue key moves with every
+// review and quiz mark, too often for answers kept under it to be met again, so another visitor sees a
+// review once the minute ends, as an isolate's lag already lets them. The key names the publication's
+// pointer as well as its stamps: a publication moves its stamps before its answers are up. A writer,
+// whose requests come with the lag at 0, reads afresh and keeps nothing.
+const KEPT_SECONDS = 60;
+export function keptFor(env: Env, stamps: CatalogueStamps | null, pub: string, now = Date.now()): string | null {
+  if (!(Number(env.CATALOGUE_LAG) > 0)) return null;
+  return `${pub}:${publicationKey(stamps)}:${Math.floor(now / (KEPT_SECONDS * 1000))}`;
+}
 const STATE_NAMES = ['pending', 'seen', 'flagged', 'checked', 'hard', 'skipped'] as const;
 type StateName = typeof STATE_NAMES[number];
 
@@ -395,14 +405,13 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
 
   const stamps = await catalogueStamps(env), version = catalogueKey(stamps);
   timing.step('stamps');
-  // A browse listing is the same for anyone who asks with the same filters, seed and cursor while the
-  // catalogue stands, so the edge keeps it: the shuffles a page deals are few (`shuffleSeed`), and a
-  // listing read again skips its crops' bundles and records. A round is its reviewer's, and the Flagged
-  // and skipped views follow each review as it is saved, so those are not kept.
-  // The key names the publication as well: its counts come from the publication's answers, which go up
-  // after the catalogue key has moved.
-  const listingKey = review || flaggedView || stateParam === 'skipped' ? null : new Request(`${url.origin}/atlas/listing?${new URLSearchParams([...q].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))}&pub=${
-    encodeURIComponent((await currentPointer(env)).pub)}&v=${encodeURIComponent(version)}`);
+  // A browse listing is the same for anyone who asks with the same filters, seed and cursor in the same
+  // minute of a publication (`keptFor`), so the edge keeps it: the shuffles a page deals are few
+  // (`shuffleSeed`), and a listing read again skips its crops' bundles and records. A round is its
+  // reviewer's, and the Flagged and skipped views follow each review as it is saved, so those are not kept.
+  const span = review || flaggedView || stateParam === 'skipped' ? null : keptFor(env, stamps, (await currentPointer(env)).pub);
+  const listingKey = span === null ? null : new Request(`${url.origin}/atlas/listing?${new URLSearchParams([...q].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))}&v=${
+    encodeURIComponent(span)}`);
   const kept = listingKey ? await caches.default.match(listingKey) : undefined;
   if (kept) { timing.step('listing-hit'); return await kept.json(); }
   const [{ cells, chars }, held] = await Promise.all([collectedCounts(env, version), codeNames(env)]);
@@ -515,7 +524,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     counts: facets.counts, purpose, production, review_limit: ROUND_MAX, review_epoch: await siteValue(env, 'review_epoch') || 0,
     query: q.get('q'), ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members: members!.texts } } : {}),
     categories: facets.categories, documents: facets.documents, reported_count: reportedCount, withheld_count: withheldCount, items };
-  if (listingKey && whole) ctx.waitUntil(caches.default.put(listingKey, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  if (listingKey && whole) ctx.waitUntil(caches.default.put(listingKey, Response.json(body, { headers: { 'cache-control': `public, max-age=${KEPT_SECONDS}` } })));
   return body;
 }
 

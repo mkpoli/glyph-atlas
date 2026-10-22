@@ -4,7 +4,7 @@ import { bundle, bundleKey, cropId, publicId } from '../atlas3';
 import { charsQuery, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
 import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, cursorOf, cursorText, dateStats, flaggedQuery, gallery, page, type Stage,
-  catalogue, graphemeQuery, health, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter } from './browse';
+  catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter } from './browse';
 import { Timing } from '../timing';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
 
@@ -49,10 +49,12 @@ describe('the listing\'s timing', () => {
 });
 
 describe('a kept listing', () => {
-  it('answers a browse listing asked for again from the edge, and a round afresh', async () => {
-    const { env } = await setup();
-    const steps = async (path: string) => {
-      const timing = new Timing(), body = await catalogue(env, ctx, new URL(`https://glyphatlas.org${path}`), null, timing);
+  it('answers a browse listing asked for again from the edge, and a round and a writer afresh', async () => {
+    const { env: writer } = await setup();
+    // A visitor's isolate lags the catalogue; a writer's requests come with the lag at 0.
+    const env = { ...writer, CATALOGUE_LAG: '60' } as Env;
+    const steps = async (path: string, as = env) => {
+      const timing = new Timing(), body = await catalogue(as, ctx, new URL(`https://glyphatlas.org${path}`), null, timing);
       return { body, steps: timing.header().split(', ').map(step => step.split(';')[0]) };
     };
     const first = await steps('/atlas?seed=5&limit=2'), again = await steps('/atlas?limit=2&seed=5');
@@ -63,6 +65,18 @@ describe('a kept listing', () => {
     // The Flagged view, asked for twice, is read twice.
     await steps('/atlas?seed=5&limit=2&state=flagged');
     expect((await steps('/atlas?seed=5&limit=2&state=flagged')).steps).not.toContain('listing-hit');
+    expect((await steps('/atlas?seed=5&limit=2', writer)).steps).not.toContain('listing-hit');
+  });
+  it('keeps answers for a minute of a publication, whatever is reviewed in it', () => {
+    const env = { CATALOGUE_LAG: '60' } as unknown as Env, minute = 60_000;
+    const stamps = { gen: 3, import: 7, event: 10, submission: 4, undone: 0, ledger: null, decision: null };
+    const at = (now: number, s = stamps, pub = 'p1') => keptFor(env, s, pub, now);
+    expect(at(5 * minute + 1)).toBe(at(6 * minute - 1));
+    expect(at(5 * minute + 1, { ...stamps, event: 11 })).toBe(at(5 * minute + 1));
+    expect(at(6 * minute)).not.toBe(at(6 * minute - 1));
+    expect(at(5 * minute, { ...stamps, gen: 4 })).not.toBe(at(5 * minute));
+    expect(at(5 * minute, stamps, 'p2')).not.toBe(at(5 * minute));
+    expect(keptFor({ CATALOGUE_LAG: '0' } as unknown as Env, stamps, 'p1')).toBeNull();
   });
 });
 
@@ -125,7 +139,8 @@ describe('the homepage gallery', () => {
     expect((await gallery(env, ctx, new URLSearchParams({ seed: String(entries[7][1] as number), limit: '1' }))).items[0].state).toBe('pending');
   });
   it('answer a sample asked for again from the edge', async () => {
-    const { env, objects, c, records, pub } = await setup();
+    const { env: writer, objects, c, records, pub } = await setup();
+    const env = { ...writer, CATALOGUE_LAG: '60' } as Env;
     const entries = sampled(objects, c, records, pub);
     const ask = async () => {
       const timing = new Timing(), body = await gallery(env, ctx, new URLSearchParams({ seed: String(entries[6][1] as number), limit: '5' }), timing);
