@@ -40,8 +40,8 @@
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
-  // address, the collection's rows, the corpus sample and the progress line; without rows the view loads
-  // them itself, with the same filters.
+  // address, the progress line and, for a search, a grapheme or a work, the collection's rows; without
+  // rows the view loads them and the corpus sample itself, with the same seed and filters.
   // `gallery` is a character's page instead (`lib/gallery.js`).
   // `addressed` is the collection and character pages, whose address this view keeps; the Flagged view
   // and the collection behind a crop's dialog leave theirs alone.
@@ -121,8 +121,9 @@
   }
   // The unfiltered homepage, or one narrowed to a script group, shows the collection's own rows and then
   // a bounded corpus sample of the same group. The
-  // sample is normalised by the same adapter and deduplicated against what is already on the page.
-  let sample = $state(first ? sampleRows(first.sample, first.result.items) : []), sampleFault = $state(first?.sample ? (first.sample.status === 'ok' ? null : first.sample.status) : null)
+  // sample is normalised by the same adapter and deduplicated against what is already on the page. The
+  // view reads it with the rows, once it shows.
+  let sample = $state([]), sampleFault = $state(null)
   let collection = $state(asked?.collection ?? null)
   async function readCollection() {
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
@@ -487,7 +488,8 @@
       // A further page continues from the cursor the last one handed back.
       const result = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), cursor: append ? data?.next : null, seed, limit: 60 },
-        { signal: catalogueRequest.signal, priority: 'low' })
+        // The rows of a page the server rendered without them are its first screen.
+        { signal: catalogueRequest.signal, priority: data ? 'low' : 'high' })
       if (closed || id !== requestId) return
       if (!append && (openEmptyGrapheme(result) || openSplit(result))) return
       // A further page keeps the counts by character and work it came with: they answer the same filters,

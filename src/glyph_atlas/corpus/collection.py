@@ -106,10 +106,14 @@ def archive_statistics(root: Path) -> dict:
 
 
 def listing_digest(records: list[dict]) -> str:
-    """What a collection's committed listing holds, so a changed set is published even at the same size."""
+    """What a collection's committed listing holds, so a changed set is published even at the same size.
+
+    A row's `generation` names the publication that holds the book. The publisher writes it, so it is
+    left out: counting it would make every publication change the listing and start the next one."""
     import hashlib
 
-    return hashlib.sha256(json.dumps(records, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    held = [{k: v for k, v in row.items() if k != "generation"} for row in records]
+    return hashlib.sha256(json.dumps(held, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 @contextmanager
