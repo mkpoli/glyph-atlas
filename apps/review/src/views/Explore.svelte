@@ -1082,7 +1082,7 @@
 </section>
 
 <style>
-  .noscript-note{grid-column:1/-1;margin:0 0 12px;color:var(--muted);font-size:14px}
+  .noscript-note{margin:0 0 12px;color:var(--muted);font-size:14px}
   .split-term{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:4px 0 10px;font-size:13px;color:var(--muted)}
   .split-tabs{display:flex;gap:2px;border-bottom:1px solid var(--line)}
   .split-tabs button{border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;padding:4px 14px 6px;font-size:22px;line-height:1.2;color:var(--muted)}
