@@ -239,7 +239,8 @@ def main():
                 quiz = o["quiz"] if o else 1
                 char = grapheme((o["character"] if o else None) or r["character"])
                 row = (char, None, None,
-                       code("visual_group", r["visual_group"]), production(r["production"]), None,
+                       code("visual_group", r["visual_group"]), production(r["production"]),
+                       code("category", o["category"]) if o else None,
                        code("style", r["style"]), state, quiz, years.get(r["document"]), 0,
                        o["revision"] if o else 0, 0, 1, grapheme(o["family"] if o else r["family"]))
                 add(r["id"], pg, 1, row, {"label": r["label"], "record_place": [r["object"], r["offset"], r["size"]]})

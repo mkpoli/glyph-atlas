@@ -828,3 +828,22 @@ def test_a_cut_keeps_when_it_was_recorded_and_hands_it_to_its_earlier_cut_on_a_r
     e = entry_of(root, a2)
     assert [(c["cut"], c.get("at")) for c in e["cuts"]] == [(0, "2026-10-03T00:00:00.000Z")]
     assert e["cut_at"] > "2026-10-03" and e["cut_at"].endswith("Z")
+
+
+def test_a_corpus_glyph_takes_its_review_overlays_category(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    g1 = ids(root)["codh:g1"]
+    kana = remote.dbs["glyph-atlas-v3"].execute("SELECT code FROM codes WHERE field='category' AND key='kana'").fetchone()[0]
+    # The build files it under its overlay's category; a publish keeps it there.
+    assert crops(remote)[g1]["category"] == kana
+    path = tmp_path / "corpus.sqlite"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.execute("INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'corpus-0001.bin',0,100,'printed',0,'unassessed','codh:b',NULL)")
+    db.execute(f"CREATE TABLE units({','.join(UNITS)})")
+    db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})",
+               ("codh:g1", "corpus", "か", None, None, "printed", "kanji", "checked", 2, 0, 1, 1, "codh:b", "unassessed", None, "{}"))
+    db.commit()
+    run(publish, monkeypatch, path)
+    kanji = remote.dbs["glyph-atlas-v3"].execute("SELECT code FROM codes WHERE field='category' AND key='kanji'").fetchone()[0]
+    assert crops(remote)[g1]["category"] == kanji
