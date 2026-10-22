@@ -95,15 +95,18 @@ let undoEventId = null
 
 console.log('\nthe page server')
 
-await step('GET / renders the collection on the server', async () => {
+await step('GET / renders the collection without waiting for its shuffle, and a work with its crops', async () => {
   const response = await fetch(`${service.base}/`)
   const text = await response.text()
   assert(response.status === 200, `status ${response.status}`)
   assert(response.headers.get('content-type')?.includes('text/html'), `content-type ${response.headers.get('content-type')}`)
   assert(/<html lang="[^"]+"/.test(text), 'the page names no language')
-  const tiles = (text.match(/class="glyph-tile/g) ?? []).length
-  assert(tiles > 0, 'the server rendered no crops')
-  return `${tiles} crops in the first response`
+  // The unnarrowed page holds placeholders, and the view deals its rows once it shows.
+  assert(/class="glyph-skeleton/.test(text), 'the page holds no placeholders for its rows')
+  const narrowed = await (await fetch(`${service.base}/en?work=${encodeURIComponent(fixture.documents[0])}`)).text()
+  const tiles = (narrowed.match(/class="glyph-tile/g) ?? []).length
+  assert(tiles > 0, 'the server rendered no crops of a work')
+  return `${tiles} crops of ${fixture.documents[0]} in the first response`
 })
 
 
