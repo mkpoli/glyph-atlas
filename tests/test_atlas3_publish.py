@@ -847,3 +847,15 @@ def test_a_corpus_glyph_takes_its_review_overlays_category(layout, monkeypatch, 
     run(publish, monkeypatch, path)
     kanji = remote.dbs["glyph-atlas-v3"].execute("SELECT code FROM codes WHERE field='category' AND key='kanji'").fetchone()[0]
     assert crops(remote)[g1]["category"] == kanji
+
+
+def test_a_float_literal_reads_back_as_the_same_double(layout):
+    _, publish, _ = layout
+    pull = importlib.import_module("pull")
+    db = sqlite3.connect(":memory:")
+    # SQLite 3.45 reads the shortest form of the first three one bit off; D1 reads them exactly.
+    rounded = [round(i / 99991, 5) for i in range(99991)]
+    for v in (0.93256, 0.87006, 0.96381, 0.1, 1e-30, 123456.789, *rounded):
+        assert db.execute(f"SELECT {publish.lit(v)}").fetchone()[0] == v
+        assert db.execute(f"SELECT {pull.sql_lit(v)}").fetchone()[0] == v
+    assert publish.lit(3) == "3" and pull.sql_lit(3) == "3"

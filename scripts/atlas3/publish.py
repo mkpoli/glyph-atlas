@@ -51,6 +51,7 @@ from pathlib import Path
 import media_map
 import votes
 from build import CORPUS_PAGE, PAGE, WRITTEN, bundle_entry, char_text, horizontal, replacement, shuffle
+from pull import real
 from run_answers import PREFIX as ANSWER_PREFIX
 from run_answers import RUN_TEXT, Answers, pending, uploaded
 
@@ -101,8 +102,10 @@ def lit(v):
         return "NULL"
     if isinstance(v, bool):
         return str(int(v))
-    if isinstance(v, (int, float)):
+    if isinstance(v, int):
         return str(v)
+    if isinstance(v, float):
+        return real(v)
     return "'" + str(v).replace("'", "''") + "'"
 
 
