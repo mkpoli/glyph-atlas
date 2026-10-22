@@ -539,6 +539,8 @@ def build_chars(
             reports.append({"corpus": corpus.name, "skipped": corpus.problem})
             continue
         docs = corpus_sources.documents_of(corpus)
+        # Page keys carry the corpus name, so the keys this corpus adds are its own pages.
+        pages_before = len(page_ids)
         seen_rows = 0
         seen_chars = 0
         for table, column, row in corpus_sources.iter_text_rows(
@@ -596,7 +598,8 @@ def build_chars(
             if progress and seen_rows % 200000 == 0:
                 progress(f"{corpus.name}: {seen_rows} rows")
         reports.append(
-            {"corpus": corpus.name, "rows": seen_rows, "documents": len(docs), "distinct_chars": seen_chars}
+            {"corpus": corpus.name, "rows": seen_rows, "documents": len(docs),
+             "pages": len(page_ids) - pages_before, "distinct_chars": seen_chars}
         )
 
     # The authoritative unit count: renderable rows only, keyed by the *written*
@@ -786,7 +789,7 @@ class _MetaCache:
                 "source_refs",
                 "style",
             ],
-            "pages": ["id", "document_id", "seq", "canvas", "image", "width", "height", "transcription", "style"],
+            "pages": ["id", "document_id", "seq", "canvas", "image", "width", "height", "transcription", "style", "meta"],
         }[name]
         columns = [c for c in wanted if c in dataset.schema.names]
         return dataset, columns
@@ -887,6 +890,10 @@ def _rows_for(corpus, table, column, row, text, char, context) -> Iterator[Occur
     doc = context.document(doc_id)
     page = context.page(str(page_id) if page_id else None)
     meta = _json(row.get("meta"))
+    page_meta = _json(page.get("meta"))
+    source_refs = dict(_json(doc.get("source_refs")))
+    if page_meta.get("viewer_url"):
+        source_refs["viewer"] = page_meta["viewer_url"]
     line_id = row.get("id") if table == "lines" else None
 
     rects: list[Rect] = []
@@ -918,7 +925,7 @@ def _rows_for(corpus, table, column, row, text, char, context) -> Iterator[Occur
         text_register=_enum(doc.get("text_register")),
         dating=doc.get("dating") or [],
         revision=_revision(page, doc),
-        source_refs=doc.get("source_refs") or {},
+        source_refs=source_refs,
         image=page.get("image"),
         canvas=page.get("canvas"),
         iiif_region_url=iiif_region_url,
@@ -951,6 +958,7 @@ def _rows_for(corpus, table, column, row, text, char, context) -> Iterator[Occur
             meta={
                 "table": table,
                 "column": column,
+                "page_meta": {k: page_meta[k] for k in ("viewer_url", "corrected", "text_status") if k in page_meta},
                 "edit_distance": meta.get("edit_distance"),
                 "det_score": meta.get("det_score"),
                 "line_meta": {
@@ -1111,6 +1119,7 @@ OCC_SCHEMA_COLUMNS = (
     "text_register",
     "dating",
     "revision",
+    "source_refs",
     "image",
     "canvas",
     "image_rights",
@@ -1171,6 +1180,7 @@ def _occurrence_row(o: Occurrence) -> dict[str, Any]:
         "text_register": o.source.text_register,
         "dating": json.dumps(o.source.dating, ensure_ascii=False),
         "revision": o.source.revision,
+        "source_refs": json.dumps(o.source.source_refs, ensure_ascii=False),
         "image": o.source.image,
         "canvas": o.source.canvas,
         "image_rights": json.dumps(o.source.image_rights, ensure_ascii=False, default=str),
@@ -1282,6 +1292,7 @@ def _iter_occurrences(path: Path, batch_size: int = 4096) -> Iterator[list[Occur
                         text_register=row["text_register"],
                         dating=_json(row.get("dating")),
                         revision=row["revision"],
+                        source_refs=_json(row.get("source_refs")),
                         image=row["image"],
                         canvas=row["canvas"],
                         iiif_region_url=row["iiif_region_url"],

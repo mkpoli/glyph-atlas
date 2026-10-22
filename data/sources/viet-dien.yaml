@@ -1,0 +1,41 @@
+id: viet-dien
+name: Việt Điển
+publisher: Albert Errickson
+kind: transcription-corpus
+url: https://viet-dien.com
+licence: restricted
+licence_evidence: https://viet-dien.com/data
+attribution: Việt Điển, Albert Errickson; source collections from Digitizing Vietnam and holding libraries
+reuse_terms: The OCR text and the catalogue compilation are offered for research use with attribution.
+counts:
+  texts: 768
+  pages: 98027
+  checked: 2026-10-20
+access:
+  api: https://viet-dien.com/api/v1
+  schema: https://viet-dien.com/api/openapi.json
+  citation: https://viet-dien.com/read/{text_id}/{page}
+  citation_basis: >-
+    https://viet-dien.com/data recommends https://viet-dien.com/t/<item_key>/<page>, but
+    /t/dao-giao-nguyen-luu/1 answered 404 on 2026-10-22, and the API's own viewer_url is /read/<id>/<page>.
+    /read/<id> also names one volume where several share an item_id.
+  crawl_delay_seconds: 5
+  crawl_delay_evidence: https://viet-dien.com/robots.txt (Crawl-delay 5, checked 2026-10-22)
+  requests_per_minute: 60
+  requests_per_hour: 1000
+  rate_limit_evidence: https://viet-dien.com/ai ("rate limited to 60/minute and 1000/hour per client", checked 2026-10-22)
+  robots: >-
+    robots.txt allows /api/ and disallows /data/ for all agents. The importer requests /api/v1 only;
+    /data is read by hand as the reuse terms.
+format:
+  tables: [documents, pages, page_texts]
+  geometry: none
+  snapshot: UPSTREAM.json records SHA-256 fingerprints of cached API responses.
+notes:
+  - Most page text is uncorrected OCR. The API supplies a corrected flag for each page.
+  - Whole-book full.txt exports omit correction flags and scan URLs; bulk imports retain these as unknown.
+  - Scan rights follow the holding libraries; no image licence is inferred from API access.
+  - Catalogue dates and language are retained verbatim; neither establishes exemplar origin or production.
+  - The API's processing status is separate from the page's correction status.
+  - Documents and /read citations use API text identities. Several volumes can share one library item_id; that identifier remains in source references.
+  - Relative image URLs resolve against viet-dien.com.

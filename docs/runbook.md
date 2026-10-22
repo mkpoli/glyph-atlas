@@ -52,6 +52,64 @@ for d in codh-full honkoku-lines kokatsuji ndl-minhon hilab honkoku-data honkoku
 done
 ```
 
+`atlas import viet-dien` imports Hán-Nôm page text and scan links from
+[Việt Điển](https://viet-dien.com/ai). The default selects ten pages of one work.
+A complete ten-page work can be collected with:
+
+```sh
+atlas import viet-dien --text-id 856 --page-limit 0 --out work/viet-dien
+atlas tables validate work/viet-dien
+```
+
+Repeat `--text-id` to select several works. Explicit selection reads the catalogue
+to retain the same metadata as a catalogue import. Without explicit ids, `--limit 0`
+selects the whole catalogue; `--page-limit 0` selects every page of each work.
+For the whole corpus, use the whole-book text exports:
+
+```sh
+atlas import viet-dien --bulk-text --limit 0 --page-limit 0 --out work/viet-dien
+```
+
+The bulk path validates every export's identity and page markers against the
+detail response, including empty pages. It preserves text whitespace and records
+the export hash on each page. Exports omit scan URLs and correction flags:
+those pages have no scan URL, `corrected: null`, and `text_status: unknown`.
+Original page citations and holding-library manifest links remain available.
+Use the per-page mode when scan URLs and correction evidence are needed.
+
+Requests run sequentially at five-second intervals. For the 768 works and 98,027
+pages listed on 2026-10-20, bulk collection requires about 1,544 requests (at least
+2.2 hours, excluding transfer time and retries); per-page collection takes at
+least 137 hours. Cached responses resume interrupted collection without repeating requests.
+`--offline` reads only the cache and fails on the first response missing from it.
+A cached response that is not a JSON object or a `full.txt` export is deleted and
+the import stops, naming the file; the next online run fetches it again.
+Use a new `--cache` directory for a fresh upstream snapshot. Output tables replace
+the selected snapshot; use separate output directories for separate samples.
+`UPSTREAM.json` records response hashes, expected/imported page counts and the
+first and last day the responses were cached. Tables are staged and validated
+beside the corpus root, in the directory above it, before replacing the output
+directory. If the process is killed during the replacement, the previous snapshot
+remains there in `.<output>-<temporary-id>-previous` for recovery. Corpus
+discovery skips dot-folders, so a staging folder never counts as a corpus.
+
+Build a fresh corpus index after collection, including its per-character occurrence
+files, so matches include the imported text and page citations. The corpus index
+discovers `viet-dien` beneath its configured corpus root. Imported
+text supports page-level matches. The API supplies no glyph rectangles. Page
+metadata retains the correction flag when supplied and a `/read/<id>/<page>`
+citation. Document identities use the API text id because separate volumes can
+share the same library `item_id` and page numbering. The library identifier is
+retained in source references, including when several volumes share it.
+Volumes can also share the Hán title, so a document's title is `title_han · title`,
+both verbatim; the romanised title carries the volume (quyển thượng, hạ);
+processing status such as `complete` does not establish that OCR was corrected.
+The OCR and catalogue are offered for attributed research use and carry a
+`restricted` text licence, so the corpus stays off the site: the published corpus
+summary leaves out every corpus whose source is `restricted`. Scan permissions
+remain unstated until checked against the holding library. API access supplies no
+reuse licence for the images.
+
 `atlas import hilab --download` extracts the 325,261 crops instead of only listing them; it is needed
 before a release can materialise HI Lab crops.
 
