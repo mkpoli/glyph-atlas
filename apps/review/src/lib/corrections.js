@@ -1,3 +1,5 @@
+import { isUnassigned } from './identity.js'
+
 // A batch correction marks many crops as one character, a request per batch, and is undone batch by
 // batch. Both are a run of saves made one after another.
 
@@ -21,6 +23,78 @@ export function correctionBatches(character, crops, size) {
     batches.push({ id: submissions.get(key), key, crops: part })
   }
   return batches
+}
+
+// "Looks right" confirms each selected crop as the character it is labelled with. It goes as a line
+// correction, which names a character for each crop: the site saves the crops that still stand and
+// names the rest (`skipped`, with a reason; `unchanged` for one a person already checked), so a crop
+// that changed since it was shown is reported and never overwritten.
+
+const single = text => [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(text)].length === 1
+/** The one written character a tile is labelled with, or null when it has none to confirm. A corpus
+ *  glyph is judged by its source's written character, a collection crop by its written form or label. */
+export function confirmedCharacter(item) {
+  if (isUnassigned(item)) return null
+  const written = item.origin === 'corpus' ? item.written_character : item.written_character || item.label
+  return typeof written === 'string' && written.trim() && single(written.trim()) ? written.trim() : null
+}
+
+/**
+ * What "Looks right" does with the tiles `items`: the crops to send, and the rest as `{ id, reason }`:
+ * `checked` (a person already confirmed it), `unlabelled` (no single character to confirm) or
+ * `unavailable` (a corpus glyph whose image this site may not show).
+ */
+export function confirmationPlan(items) {
+  const crops = [], report = []
+  for (const item of items) {
+    if (item.origin === 'corpus' && !(item.proxyable && item.image)) report.push({ id: item.id, reason: 'unavailable' })
+    else if (!confirmedCharacter(item)) report.push({ id: item.id, reason: 'unlabelled' })
+    else if (item.state === 'checked') report.push({ id: item.id, reason: 'checked' })
+    else crops.push(item)
+  }
+  return { crops, report }
+}
+
+/** `crops` cut into confirmation batches of `size`, with submission ids as `correctionBatches` gives them. */
+export const confirmationBatches = (crops, size) => correctionBatches('\u0001confirm', crops, size)
+
+/** The correction a confirmation batch sends: each crop at its revision and pixels, as its own character. */
+export function confirmationBody(batch) {
+  return { id: batch.id, line: true, crops: batch.crops.map(item => ({ id: item.id, revision: item.revision, character: confirmedCharacter(item),
+    ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) }
+}
+
+/**
+ * The answers to confirmation batches (`answered` from `sendEach`) by crop: `saved` maps each confirmed
+ * crop's id to `{ revision, state }`; `report` names every other crop the batches carried, as
+ * `{ id, reason }`: `checked` for one already confirmed, the site's reason (`changed`, `missing`,
+ * `unavailable`, `checked`) for one it skipped, and `flagged` for a crop confirmed but still reported
+ * for another issue (its box, say). A crop the site named nowhere is reported `changed`, never dropped.
+ */
+export function confirmationOutcome(answered) {
+  const saved = new Map(), report = []
+  for (const { item: batch, result } of answered) {
+    // The site names unchanged and skipped crops by the id they were sent with, and answers the crops it
+    // saved in the order they were sent, by their public id, which an old id is not.
+    const results = [...(result?.results ?? [])]
+    const unchanged = new Set(result?.unchanged ?? [])
+    const skipped = new Map((result?.skipped ?? []).map(s => [s.id, s.reason]))
+    for (const crop of batch.crops) {
+      if (unchanged.has(crop.id)) { report.push({ id: crop.id, reason: 'checked' }); continue }
+      if (skipped.has(crop.id)) { report.push({ id: crop.id, reason: skipped.get(crop.id) }); continue }
+      const done = results.shift()
+      if (!done) { report.push({ id: crop.id, reason: 'changed' }); continue }
+      saved.set(crop.id, { revision: done.revision, state: done.state })
+      if (done.state !== 'checked') report.push({ id: crop.id, reason: 'flagged' })
+    }
+  }
+  return { saved, report }
+}
+
+/** A report's crops gathered by reason, in `REASONS` order: `[[reason, ids], …]`. */
+export const REASONS = ['changed', 'checked', 'flagged', 'missing', 'unavailable', 'unlabelled']
+export function reportByReason(report) {
+  return REASONS.map(reason => [reason, report.filter(entry => entry.reason === reason).map(entry => entry.id)]).filter(([, ids]) => ids.length)
 }
 
 const forget = batch => { if (submissions.get(batch.key) === batch.id) submissions.delete(batch.key) }
