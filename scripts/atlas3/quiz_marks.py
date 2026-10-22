@@ -58,7 +58,8 @@ def suspects(files):
             if not isinstance(label, str) or not label:
                 sys.exit(f"{path}: {identity}: a suspect names the label it was judged under")
             if box is not None and not (isinstance(box, dict) and sorted(box) == ["h", "w", "x", "y"]
-                                        and all(isinstance(v, (int, float)) for v in box.values())):
+                                        and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                                                and math.isfinite(v) for v in box.values())):
                 sys.exit(f"{path}: {identity}: box must be x, y, w and h, or null")
             marks[identity] = (p, reads, label, None if box is None else json.dumps(box, sort_keys=True))
         scored |= set(document.get("scored_ids") or document["suspects"])
@@ -170,7 +171,10 @@ def main():
     if not groups:
         print("the local copy already holds these marks; nothing to send", flush=True)
         return
-    digest = hashlib.sha256("\n".join(s for g in groups for s in g).encode()).hexdigest()[:12]
+    # The name covers the runs already applied as well as the statements, so the same difference taken
+    # again after other runs moved the tables gets a new run; an interrupted run keeps its name.
+    history = sorted(r[0] for r in atlas.execute("SELECT stamp FROM imports WHERE stamp LIKE 'quiz-marks-%'"))
+    digest = hashlib.sha256("\n".join([*history, "", *(s for g in groups for s in g)]).encode()).hexdigest()[:12]
     run = RUNS / f"quiz-marks-{digest}"
     n = built(run, "rows", groups)
     print(f"{n if n is not None else 'existing'} parts -> {run}", flush=True)

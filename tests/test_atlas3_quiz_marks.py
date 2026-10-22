@@ -98,11 +98,27 @@ def test_a_run_stopped_after_d1_applied_a_part_is_followed_on_rerun(layout, monk
     assert held(sqlite3.connect(root / "out" / "atlas.sqlite")) == held(remote.dbs["glyph-atlas-v3"])
 
 
+def test_a_difference_taken_again_after_a_revert_is_sent(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, _publish, remote = layout
+    crop = ids(root)
+    x = orders(tmp_path / "x.json", {"ex:a1": 1})
+    y = orders(tmp_path / "y.json", {})
+    quiz(remote, monkeypatch, "--shapes", y, "--send")
+    quiz(remote, monkeypatch, "--shapes", x, "--send")
+    quiz(remote, monkeypatch, "--shapes", y, "--send")
+    quiz(remote, monkeypatch, "--shapes", x, "--send")
+    assert held(remote.dbs["glyph-atlas-v3"])["shapes"] == [(crop["ex:a1"], 1)]
+    assert held(sqlite3.connect(root / "out" / "atlas.sqlite")) == held(remote.dbs["glyph-atlas-v3"])
+
+
 @pytest.mark.parametrize("mark", [{"p": "0.1", "reads_as": None, "label": "a", "box": None},
                                   {"p": 2, "reads_as": None, "label": "a", "box": None},
                                   {"p": 0.1, "reads_as": 3, "label": "a", "box": None},
                                   {"p": 0.1, "reads_as": None, "box": None},
-                                  {"p": 0.1, "reads_as": None, "label": "a", "box": {"x": 1}}])
+                                  {"p": 0.1, "reads_as": None, "label": "a", "box": {"x": 1}},
+                                  {"p": 0.1, "reads_as": None, "label": "a", "box": {**BOX, "x": True}},
+                                  {"p": 0.1, "reads_as": None, "label": "a", "box": {**BOX, "w": float("nan")}},
+                                  {"p": 0.1, "reads_as": None, "label": "a", "box": {**BOX, "h": float("inf")}}])
 def test_a_malformed_mark_is_refused(layout, monkeypatch, tmp_path, mark):  # noqa: F811
     _root, _publish, remote = layout
     with pytest.raises(SystemExit, match="ex:a1"):
