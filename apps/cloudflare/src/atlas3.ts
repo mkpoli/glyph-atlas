@@ -39,6 +39,12 @@ export function cropOf(text: string): number | null {
 export type Entry = Json & { slot: number; id: string };
 export type Bundle = { key: string; book: number; rev: number; page: Json | null; bySlot: Map<number, Entry> };
 export const bundleKey = (page: number, rev: number) => `v3/pages/${page}-${rev}.json.gz`;
+/** Whether this isolate holds a page's bundle at a revision. */
+export const holdsBundle = (page: number, rev: number) => held.has(bundleKey(page, rev));
+// A crop's bundle entry by itself, at the edge under a URL no route answers. An entry never changes under
+// its page's revision, so a listing that meets a crop again, whatever has been reviewed since, reads
+// its entry instead of the page's whole bundle, which can hold hundreds of crops.
+const entryEdge = (page: number, rev: number, slot: number) => new Request(`https://glyphatlas.org/_entries/${page}-${rev}/${slot}`);
 const BUNDLES_HELD = 64, BUNDLE_EDGE_SECONDS = 86400;
 const held = new Map<string, Promise<Bundle | null>>();
 /** Where the bundles a call read came from: the isolate, the edge, or R2. */
@@ -103,18 +109,31 @@ const UNLISTED = ['text', 'line', 'context_image', 'context_box', 'crop_box', 'i
 // error fails the call, as `readRecords` explains. A caller that holds a crop's entry already, with
 // its record in place of `record_place` (the homepage sample), passes it in `given`, and that crop's
 // bundle is not read. One that read the crops' rows already (a run's page) passes them in `known`. With
-// `timing`, the rows, the bundles and the records are timed, and the bundles' sources noted.
-export type CropReads = { given?: Map<number, Entry>; known?: CropRow[]; timing?: Timing };
-export async function cropItems(env: Env, ids: number[], { given = new Map(), known, timing }: CropReads = {}): Promise<Json[]> {
+// `timing`, the rows, the entries, the bundles and the records are timed, and the bundles' sources noted.
+// A crop's entry is read from the edge (`entryEdge`) unless the isolate holds its page's bundle; with
+// `ctx`, each entry read from a bundle is kept there.
+export type CropReads = { given?: Map<number, Entry>; known?: CropRow[]; timing?: Timing; ctx?: ExecutionContext };
+export async function cropItems(env: Env, ids: number[], { given = new Map(), known, timing, ctx }: CropReads = {}): Promise<Json[]> {
   if (!ids.length) return [];
   const timed = <T>(name: string, work: Promise<T>) => timing ? timing.beside(name, work) : work;
   const rows = known ?? (await timed('rows', env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>())).results;
   const byId = new Map(rows.map(row => [row.id, row]));
-  const pages = new Map(rows.filter(row => !given.has(row.id)).map(row => [pageOf(row.id), row.rev]));
+  const unread = rows.filter(row => !given.has(row.id));
+  const asked = unread.filter(row => !holdsBundle(pageOf(row.id), row.rev));
+  const kept = new Map(await timed('entries', Promise.all(asked.map(async row =>
+    [row.id, await caches.default.match(entryEdge(pageOf(row.id), row.rev, slotOf(row.id))).then(hit => hit ? hit.json() as Promise<Entry> : null)] as const))));
+  const pages = new Map(unread.filter(row => !kept.get(row.id)).map(row => [pageOf(row.id), row.rev]));
   const sources: BundleSources = { held: 0, edge: 0, r2: 0 };
   const bundles = new Map(await timed('bundles', Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev, sources)] as const))));
-  timing?.note('bundles-from', `held ${sources.held} edge ${sources.edge} r2 ${sources.r2}`);
-  const entries = new Map(ids.map(id => [id, !byId.has(id) ? undefined : given.get(id) ?? bundles.get(pageOf(id))?.bySlot.get(slotOf(id))]));
+  timing?.note('bundles-from', `kept ${[...kept.values()].filter(Boolean).length} held ${sources.held} edge ${sources.edge} r2 ${sources.r2}`);
+  const fromBundle = (row: CropRow) => bundles.get(pageOf(row.id))?.bySlot.get(slotOf(row.id));
+  if (ctx) for (const row of asked) {
+    const entry = kept.get(row.id) ? undefined : fromBundle(row);
+    if (entry) ctx.waitUntil(caches.default.put(entryEdge(pageOf(row.id), row.rev, slotOf(row.id)),
+      Response.json(entry, { headers: { 'cache-control': `public, max-age=${BUNDLE_EDGE_SECONDS}, immutable` } })).catch(() => {}));
+  }
+  const entries = new Map(ids.map(id => { const row = byId.get(id);
+    return [id, !row ? undefined : given.get(id) ?? kept.get(id) ?? fromBundle(row)] as const; }));
   const pointer = (entry: Entry) => ({ object: entry.record_place[0], offset: entry.record_place[1], size: entry.record_place[2] });
   const wanted = [...entries.values()].filter(entry => entry?.record_place).map(entry => pointer(entry!));
   const records = await timed('records', readRecords(env, wanted));

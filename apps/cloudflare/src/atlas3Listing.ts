@@ -60,7 +60,7 @@ const issueName = (name: string | undefined) => name === 'reading' ? 'character'
 export async function listingItems(env: Env, ids: number[], reads: CropReads = {}): Promise<Json[]> {
   const { timing } = reads;
   const timed = <T>(name: string, work: Promise<T>) => timing ? timing.beside(name, work) : work;
-  const items = await timed('crops', cropItems(env, ids, { given: reads.given, timing }));
+  const items = await timed('crops', cropItems(env, ids, { given: reads.given, timing, ctx: reads.ctx }));
   if (!items.length) return items;
   const crops = new Map(ids.map(id => [publicId(id), id]));
   const listed = items.map(item => crops.get(item.id)!);
