@@ -23,9 +23,9 @@ The dates export's claims go to the ledger as the old export wrote them, against
 local copy holds (the history, `load_history.py`): a claim that stands nowhere is asserted under its
 id, or as `<id>@<stamp>` when an earlier one was retracted, with its source as evidence; a date a
 source asserted and the export no longer states is retracted by that source at the stamp; and every
-slot the export names or retracts in is resolved again with the ledger's resolver
-(`glyph_atlas.review.ledger`, data/ledger.json) on a scratch copy of its claims, its
-`current_claims` row written where it differs. A claim's stamp is the export's time.
+slot that gains a claim or loses one is resolved again in glyph-atlas-v3, by the ledger's resolver
+(data/ledger.json) as the Worker runs it, from the rows D1 holds, so a verdict given on the site counts.
+A claim's stamp is the export's time.
 
 Facts about a document that is not a book of the new layout are left out with a count. Only what
 differs from the local copy is sent, in parts named by their content and confirmed by their stamps in
@@ -67,10 +67,8 @@ CHARACTER_COLS = ("book", "ord", "crop", "unit", "data")
 TABLES = {"book_dates": (DATE_COLS, ("book", "axis"), ""), "book_characters": (CHARACTER_COLS, ("book", "ord"), ""),
           "site": (("key", "value"), ("key",), f" WHERE key IN ({','.join(repr(k) for k in SITE_KEYS)})")}
 SOURCES = {"corpus_documents": ("document", "title"), "metadata": ("key", "value")}
-# The ledger tables a dates export writes, and the columns of current_claims.
+# The ledger tables a dates export writes.
 LEDGER = ("assertions", "assertion_evidence", "assertion_actions")
-CURRENT_COLS = ("subject", "predicate", "scope", "slot", "crop", "cut", "status", "object", "value", "members", "supporting",
-                "claims", "resolver", "at")
 DATE = "substr(a.predicate, 1, 5) = 'date_'"
 METHOD = "atlas dates"
 INPUT = None
@@ -234,10 +232,52 @@ def base(identity):
     return identity.split("@", 1)[0]
 
 
+# The ledger's resolver (data/ledger.json) as the Worker runs it on glyph-atlas-v3 (`apps/cloudflare/src/
+# ledger.ts`): crop evidence is live while it names its crop at the crop's effective cut, and a slot names
+# its crop and that cut. A date slot's subject is a book, so both are NULL there.
+def effective_cut(crop):
+    return (f"(SELECT c.cut+EXISTS(SELECT 1 FROM reviews rv WHERE rv.crop=c.id AND rv.x IS NOT NULL) "
+            f"FROM crops c WHERE c.id={crop})")
+
+
+# The columns the resolver selects, in its order.
+RESOLVED = "subject,predicate,scope,slot,status,object,value,members,supporting,claims,crop,cut,resolver,at"
+SLOT_CROP = ("(SELECT a.crop FROM assertions a WHERE a.subject=k.subject AND a.predicate=k.predicate AND a.scope=k.scope "
+             "AND a.slot=k.slot AND a.crop IS NOT NULL LIMIT 1)")
+CROP_PARTS = (("e.ref IS NOT (SELECT c.version FROM crop_now c WHERE c.unit=a.subject)",
+               f"(e.crop IS NOT a.crop OR e.cut IS NOT {effective_cut('a.crop')})"),
+              ("(SELECT c.version FROM crop_now c WHERE c.unit=k.subject) AS crop_version,",
+               f"{SLOT_CROP} AS crop, {effective_cut(SLOT_CROP)} AS cut,"))
+
+
+def v3_resolve():
+    body = ledger.RESOLVE_BODY
+    for old, new in CROP_PARTS:
+        if body.count(old) != 1:
+            sys.exit(f"data/ledger.json's resolver changed: {old}")
+        body = body.replace(old, new)
+    if "crop_now" in body:
+        sys.exit("data/ledger.json's resolver names crop_now where it is not replaced")
+    return body
+
+
+def resolve_statements(slots):
+    """The statements that resolve `slots` again in the database they run on, from its own rows: each
+    slot's `current_claims` row removed, then written where a claim of it is live (`resolveSlots`)."""
+    clear = ("DELETE FROM current_claims WHERE (subject,predicate,scope,slot) IN (SELECT json_extract(value,'$[0]'),"
+             "json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?1))")
+    write = f"INSERT INTO current_claims({RESOLVED}) WITH {v3_resolve()}"
+    out = []
+    for i in range(0, len(slots), ledger.KEYS_PER_STATEMENT):
+        bound = lit(ledger.canonical([list(k) for k in slots[i:i + ledger.KEYS_PER_STATEMENT]]))
+        out += [" ".join(line.strip() for line in sql.splitlines()).replace("?1", bound) + ";" for sql in (clear, write)]
+    return out
+
+
 def date_ledger(atlas):
-    """The ledger rows the dates export adds to the local copy's, and the current_claims rows of the
-    slots it names or retracts in, as groups of statements; also the rows each table gains or changes.
-    None when the export states no claims."""
+    """The ledger rows the dates export adds to the local copy's, and the resolution of each slot they
+    change, as groups of statements; also the rows each table gains or changes. None when the export
+    states no claims."""
     claims = given("date_claims").execute(
         f"SELECT {','.join(book_facts_input.CLAIM_COLUMNS)} FROM date_claims ORDER BY id").fetchall()
     if not claims:
@@ -254,8 +294,10 @@ def date_ledger(atlas):
             standing[base(identity)].append(identity)
     evidence = {(r[0], r[1], r[2]) for r in atlas.execute(
         f"SELECT e.assertion, e.kind, e.ref FROM assertion_evidence e JOIN assertions a ON a.id = e.assertion WHERE {DATE}")}
+    v3 = {t: [r[1] for r in atlas.execute(f"PRAGMA table_info({t})")] for t in LEDGER}
     new = {t: [] for t in LEDGER}
-    slots = []
+    # Each changed slot's rows; evidence added to a claim that already stands changes no slot.
+    by_slot, loose = defaultdict(list), []
     stated = set()
     for identity, subject, predicate, value, tier, by, kind, ref, locator in claims:
         stated.add(identity)
@@ -266,51 +308,34 @@ def date_ledger(atlas):
             # An id this stamp asserted and a later run retracted stays retracted.
             live = [] if fresh in held else [fresh]
             if live:
-                new["assertions"].append((fresh, None, subject, None, None, predicate, "", value, None, value, None, tier,
-                                          by, stamp, None, None, METHOD, RESOLVER, None))
+                row = (fresh, None, subject, None, None, predicate, "", value, None, value, None, tier,
+                       by, stamp, None, None, METHOD, RESOLVER, None)
+                new["assertions"].append(row)
+                by_slot[(subject, predicate, "", value)].append(("assertions", row))
         for a in live:
             if (a, kind, ref) not in evidence:
-                new["assertion_evidence"].append((a, kind, ref, None, None, locator))
-        slots.append((subject, predicate, "", value))
+                row = (a, kind, ref, None, None, locator)
+                new["assertion_evidence"].append(row)
+                (by_slot[(subject, predicate, "", value)] if a not in held else loose).append(("assertion_evidence", row))
     for identity, (_, subject, predicate, scope, slot, by) in sorted(held.items()):
         if identity not in retracted and by.startswith("source:") and base(identity) not in stated:
-            new["assertion_actions"].append((f"dt-retract:{identity}:{stamp}", None, identity, "retract", by, stamp,
-                                             f"no source states it at export {stamp}"))
-            slots.append((subject, predicate, scope, slot))
-    slots = sorted(set(slots))
-
-    # The slots resolved again on a scratch copy of the ledger's date claims, with the rows above.
-    scratch = sqlite3.connect(":memory:")
-    ledger.schema(scratch)
-    cols = {t: [r[1] for r in scratch.execute(f"PRAGMA table_info({t})")] for t in (*LEDGER, "assertion_premises")}
-    v3 = {t: [r[1] for r in atlas.execute(f"PRAGMA table_info({t})")] for t in (*LEDGER, "assertion_premises")}
-    joins = {"assertions": "a.id", "assertion_evidence": "x.assertion", "assertion_actions": "x.assertion",
-             "assertion_premises": "x.assertion"}
-    for t in (*LEDGER, "assertion_premises"):
-        common = [c for c in cols[t] if c in v3[t]]
-        alias = "a" if t == "assertions" else "x"
-        source = f"{t} a" if t == "assertions" else f"{t} x JOIN assertions a ON a.id = {joins[t]}"
-        rows = atlas.execute(f"SELECT {','.join(f'{alias}.{c}' for c in common)} FROM {source} WHERE {DATE}")
-        scratch.executemany(f"INSERT INTO {t}({','.join(common)}) VALUES({','.join('?' * len(common))})", rows)
-        scratch.executemany(f"INSERT INTO {t}({','.join(common)}) VALUES({','.join('?' * len(common))})",
-                            [tuple(r[v3[t].index(c)] for c in common) for r in new.get(t, [])])
-    ledger.resolve(scratch, slots, lambda subject: None)
-    pick = ",".join("NULL" if c in ("crop", "cut") else c for c in CURRENT_COLS)
-    names = ",".join(CURRENT_COLS)
-    current = []
-    for slot in slots:
-        want = scratch.execute(f"SELECT {pick} FROM current_claims WHERE subject=? AND predicate=? AND scope=? AND slot=?", slot).fetchone()
-        have = atlas.execute(f"SELECT {names} FROM current_claims WHERE subject=? AND predicate=? AND scope=? AND slot=?", slot).fetchone()
-        if want == have:
-            continue
-        rows = [remove("current_claims", CURRENT_COLS, CURRENT_COLS[:4], have)] if have else []
-        if want:
-            rows += row_statements("current_claims", list(CURRENT_COLS), list(CURRENT_COLS[:4]), want)
-        current.append(rows)
-    groups = [[ignored(t, v3[t], r) for r in new[t][i:i + GROUP]] for t in LEDGER for i in range(0, len(new[t]), GROUP)]
-    groups += [[s for r in current[i:i + GROUP] for s in r] for i in range(0, len(current), GROUP)]
+            row = (f"dt-retract:{identity}:{stamp}", None, identity, "retract", by, stamp,
+                   f"no source states it at export {stamp}")
+            new["assertion_actions"].append(row)
+            by_slot[(subject, predicate, scope, slot)].append(("assertion_actions", row))
+    slots = sorted(by_slot)
+    groups = [[ignored(t, v3[t], r) for t, r in loose[i:i + GROUP]] for i in range(0, len(loose), GROUP)]
+    # Each slot is resolved in D1 from the rows D1 holds, which may include verdicts the local copy
+    # lacks; the local copy replays the same statements over its own rows. A slot's rows and its
+    # resolution share a group, so no part lands its rows without resolving it.
+    order = {t: n for n, t in enumerate(LEDGER)}
+    for i in range(0, len(slots), ledger.KEYS_PER_STATEMENT):
+        chunk = slots[i:i + ledger.KEYS_PER_STATEMENT]
+        rows = sorted((r for k in chunk for r in by_slot[k]), key=lambda r: order[r[0]])
+        groups.append([ignored(t, v3[t], r) for t, r in rows] + resolve_statements(chunk))
     changes = {t: {"added": len(new[t]), "written": len(new[t])} for t in LEDGER}
-    changes["current_claims"] = {"changed": len(current), "written": sum(len(r) for r in current)}
+    # At most each slot's row removed and written again.
+    changes["current_claims"] = {"changed": len(slots), "written": 2 * len(slots)}
     return groups, changes
 
 

@@ -255,8 +255,8 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    The dates export holds its claims and every document's dating as `glyph_atlas.dates` resolved it,
    books or not. `books.py` asserts the claims that stand nowhere in the ledger of the local copy
    (loaded by `load_history.py`, which must come first), retracts the dates a source no longer states,
-   resolves their slots again on a scratch copy with the ledger's resolver, and writes the
-   `current_claims` rows that differ. The date claims on documents that are not books stay in
+   and resolves each slot it changes again in `glyph-atlas-v3` with the ledger's resolver as the Worker
+   runs it, so the verdicts readers gave on the site count. The date claims on documents that are not books stay in
    `assertions` (11,998 of the 14,095 at the cutover), and their dating stays in the input, so a
    document that gains crops later takes its `book_dates` on the next run. The corpus publication's
    titles and the catalogue's site values are still read from the copies.

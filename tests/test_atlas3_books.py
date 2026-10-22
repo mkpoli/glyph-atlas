@@ -238,6 +238,23 @@ def test_a_date_no_source_states_is_retracted_and_a_claim_that_returns_is_assert
     assert ledger(sqlite3.connect(root / "out" / "atlas.sqlite")) == got
 
 
+def test_a_slot_is_resolved_from_the_verdicts_glyph_atlas_v3_holds(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, claims=[claim("dt:1")])
+    books(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    # Two readers reject dt:1 on the site; the Worker resolves the slot, the local copy never hears of it.
+    db.executemany("INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,NULL,'dt:1','reject',?,?,'')",
+                   [("cf:1", "user:a", "2026-10-20T01:00:00Z"), ("cf:2", "user:b", "2026-10-20T02:00:00Z")])
+    db.execute("UPDATE current_claims SET status='rejected', supporting='[]'")
+    db.commit()
+    # Another source states the same date: its slot is resolved again with the rejections counted.
+    sources(root, claims=[claim("dt:1"), claim("dt:3", by="iiif-manifests")], stamp="2026-10-21T00:00:00Z")
+    books(remote, monkeypatch, "--send")
+    current = ledger(db)["current"]
+    assert [(c[1], json.loads(c[3])) for c in current] == [("asserted", ["dt:3"])]
+
+
 def test_a_book_takes_the_title_of_its_first_page_before_its_corpus_title(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
