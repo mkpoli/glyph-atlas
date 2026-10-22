@@ -235,3 +235,35 @@ def test_a_row_the_publisher_wrote_for_a_crop_in_no_run_stays(layout, monkeypatc
     runs(remote, monkeypatch, "--send")
     assert tuple(remote.dbs["glyph-atlas-v3-runs"].execute("SELECT char FROM run_written WHERE crop=?", (loose,)).fetchone()) == ("𛀆",)
     assert remote.dbs["glyph-atlas-v3-runs"].execute("SELECT count(*) FROM imports").fetchone()[0] == stamps
+
+
+def test_the_migrations_apply_alone_once_each_with_their_stamps(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    db, local = remote.dbs["glyph-atlas-v3-runs"], sqlite3.connect(root / "out" / "atlas-runs.sqlite")
+    for copy in (db, local):
+        copy.executescript("DROP TABLE run_moves;")
+        copy.commit()
+    runs(remote, monkeypatch, "--migrate")
+    for copy in (db, sqlite3.connect(root / "out" / "atlas-runs.sqlite")):
+        assert copy.execute("SELECT 1 FROM sqlite_master WHERE name='run_moves'").fetchone()
+    assert db.execute("SELECT count(*) FROM imports WHERE stamp='migration:0003'").fetchone() == (1,)
+    assert db.execute("SELECT count(*) FROM imports WHERE stamp='migration:0002'").fetchone() == (0,)
+    before = db.execute("SELECT count(*) FROM imports").fetchone()
+    runs(remote, monkeypatch, "--migrate")
+    assert db.execute("SELECT count(*) FROM imports").fetchone() == before
+
+
+def test_the_row_the_worker_wrote_for_a_claimed_crop_stays(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    a2 = ids(root)["ex:a2"]
+    atlas = remote.dbs["glyph-atlas-v3"]
+    atlas.execute("INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) "
+                  "VALUES('ex:a2','has_grapheme','','',?,0,'asserted','U+3046','[]','[]','[]','r','2026-10-23')", (a2,))
+    atlas.commit()
+    before_0002(root, remote)
+    runs(remote, monkeypatch, "--migrate")
+    for copy in (remote.dbs["glyph-atlas-v3-runs"], sqlite3.connect(root / "out" / "atlas-runs.sqlite")):
+        copy.execute("INSERT INTO run_written VALUES(?, 'い')", (a2,))
+        copy.commit()
+    runs(remote, monkeypatch, "--send")
+    assert written(remote.dbs["glyph-atlas-v3-runs"]) == [(a2, "い")]

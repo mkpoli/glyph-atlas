@@ -102,13 +102,19 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   the page: a catalogue run written across it stops the publish, since the layout has no column for its
   direction yet. A run with a crop a `has_grapheme` claim reads as another grapheme is filed under
   that grapheme's head, as the Worker files it when the claim is made; a crop the publish cuts again
-  leaves its claims on the old cut. Before it compares the runs, the publish takes the runs the Worker
-  moved (`run_moves`) and their crops' `run_written` rows from D1 into its own runs part, deletes a run
-  by its first crop and size, and counts every key a claimed or moved run leaves or reaches again from
-  its rows, so the two never undo each other or count a run twice. The publish keeps `run_written` for the
+  leaves its claims on the old cut. The local copy first takes from D1, and keeps, the runs the Worker
+  moved (`run_moves`), their counts and their crops' `run_written` rows; nothing of them is sent back.
+  A run of a claimed or moved crop is taken out and put in under whatever key it holds when the part
+  lands, its count with it. Once the runs have landed, the publish files every run of a claimed or
+  moved crop again from the claims as they then stand (`reconcile`): a claim disputed meanwhile, a
+  claim a redrawn box or a new cut stopped, and a filing the Worker could not finish are put right, and
+  `run_moves` keeps only crops a claim still reads. Every move is guarded as the Worker's is, so
+  neither undoes nor counts twice what the other did. The publish keeps `run_written` for the
   catalogue's crops and, once the runs have landed, writes again the R2 answers of the books and forms
   shards it and the moves changed and Explore's grids (`run_answers.py`), uploading those whose bytes
-  R2 lacks. It refuses a local copy without `run_written` (`runs.py`).
+  R2 lacks. It refuses a local copy without `run_written` (`runs.py`). `runs.py --migrate` applies the runs
+  migrations D1 and the local copy lack, each stamped `migration:<number>`, and nothing else; migration
+  0003 (`run_moves`, an empty table) goes before the Worker that writes it.
 - A crop joins the family gallery of its character's family (`graphemes.head`). Every crop also keeps
   the family its source names (`crops.family`, migration 0012), and a crop with no character is listed
   with that family: a corpus glyph transcribed も, which may be も or one of its hentaigana, is listed

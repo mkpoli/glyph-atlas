@@ -260,42 +260,129 @@ def refolded(graphemes, members, heads):
 RUN_COLS = (*RUN_KEY, "second", "third", "book")
 
 
-def recount(size, graphemes):
-    """A key's count from its rows, right in whichever database runs it whatever moved its rows."""
-    count = (f"INSERT INTO run_stats(size,graphemes,n,down) SELECT {size},{lit(graphemes)},count(*),count(*) FROM runs "
-             f"WHERE size={size} AND graphemes={lit(graphemes)} ON CONFLICT(size,graphemes) DO UPDATE SET n=excluded.n,down=excluded.down;")
-    return [count, f"DELETE FROM run_stats WHERE size={size} AND graphemes={lit(graphemes)} AND n=0;"]
+def counted_in(size, graphemes):
+    """A run more under a key, counted only if the statement before changed a row."""
+    return (f"INSERT INTO run_stats(size,graphemes,n,down) SELECT {size},{lit(graphemes)},1,1 WHERE changes()=1 "
+            "ON CONFLICT(size,graphemes) DO UPDATE SET n=n+1,down=down+1;")
 
 
-def take_moves(runs, scope):
-    """The statements that bring into the local copy the runs a grapheme claim moved in D1 since
-    (`run_moves`), as D1 holds them, with how their crops are written; and the keys they leave and
-    reach, to be counted again. They apply to the local copy at once, for this publish to compare
-    against, and go in its runs part, so the local copy keeps them once D1 has taken the part. The
-    books and shards of a moved run are written again. Reads one row a move, and the crops of a move the
-    local copy lacks."""
-    moves = {(r["first"], r["size"]) for r in query(RUNS_DATABASE, "SELECT first, size FROM run_moves")}
-    firsts, statements, keys = sorted({first for first, _ in moves}), [], set()
+def move_sql(run, graphemes):
+    """The statements that move one run to another key with its counts, as the Worker moves it
+    (`runMoveStatements`): only from the key it was read under, each count following only a move that
+    happened, so a move made by another write first is neither undone nor counted twice."""
+    size, old = run["size"], run["graphemes"]
+    where = " AND ".join(f"{c}={lit(run[c])}" for c in RUN_KEY)
+    return [f"UPDATE OR IGNORE runs SET graphemes={lit(graphemes)} WHERE {where};", counted_in(size, graphemes),
+            f"UPDATE run_stats SET n=n-1,down=down-1 WHERE size={size} AND graphemes={lit(old)} AND changes()=1;",
+            f"DELETE FROM run_stats WHERE size={size} AND graphemes={lit(old)} AND n<=0;"]
+
+
+def removal_sql(first, size, graphemes):
+    """A run of a claimed crop taken out under whatever key it holds when the part lands, its count
+    with it: a claim may have filed it under another key since it was read."""
+    return [f"UPDATE run_stats SET n=n-1,down=down-1 WHERE (size,graphemes) IN (SELECT size,graphemes FROM runs WHERE first={first} AND size={size});",
+            f"DELETE FROM runs WHERE first={first} AND size={size};",
+            f"DELETE FROM run_stats WHERE size={size} AND graphemes={lit(graphemes)} AND n<=0;"]
+
+
+def addition_sql(key, value):
+    """A run of a claimed crop put in, counted only if it went in."""
+    return [insert("runs", RUN_COLS, (*key, *value)).replace("INSERT INTO", "INSERT OR IGNORE INTO", 1), counted_in(key[0], key[1])]
+
+
+ANSWERS_OWED = "CREATE TABLE IF NOT EXISTS answers_owed(kind TEXT, a INTEGER, b INTEGER, PRIMARY KEY(kind, a, b)) WITHOUT ROWID"
+
+
+def snapshot(runs, keys):
+    """Take into the local copy, and nowhere else, D1's rows of the runs `keys` names ((first, size)),
+    the counts of every key they or the local copy file them under, and how their crops are written:
+    D1 holds what the Worker filed, and the local copy follows it. The books and shards of a run that
+    differed owe their answers again (`answers_owed`), which the next publish that sends writes."""
+    runs.execute(ANSWERS_OWED)
+    firsts = sorted({first for first, _ in keys})
     for i in range(0, len(firsts), 200):
         marks = ",".join(map(str, firsts[i:i + 200]))
-        live = [r for r in query(RUNS_DATABASE, f"SELECT * FROM runs WHERE first IN ({marks})") if (r["first"], r["size"]) in moves]
-        held = [dict(r) for r in runs.execute(f"SELECT * FROM runs WHERE first IN ({marks})") if (r["first"], r["size"]) in moves]
+        live = [r for r in query(RUNS_DATABASE, f"SELECT * FROM runs WHERE first IN ({marks})") if (r["first"], r["size"]) in keys]
+        held = [dict(r) for r in runs.execute(f"SELECT * FROM runs WHERE first IN ({marks})") if (r["first"], r["size"]) in keys]
         if {tuple(r[c] for c in RUN_COLS) for r in live} == {tuple(r[c] for c in RUN_COLS) for r in held}:
             continue
+        counted = sorted({(r["size"], r["graphemes"]) for r in live + held})
         crops = sorted({r[c] for r in live + held for c in ("first", "second", "third") if r[c] is not None})
+        stats = query(RUNS_DATABASE, "SELECT * FROM run_stats WHERE " + " OR ".join(f"(size={n} AND graphemes={lit(g)})" for n, g in counted))
         written = query(RUNS_DATABASE, f"SELECT crop, char FROM run_written WHERE crop IN ({','.join(map(str, crops))})")
-        statements += [f"DELETE FROM runs WHERE first={r['first']} AND size={r['size']};" for r in held]
-        statements += [insert("runs", RUN_COLS, [r[c] for c in RUN_COLS]) for r in live]
-        statements += [f"DELETE FROM run_written WHERE crop={c};" for c in crops]
-        statements += [insert("run_written", ("crop", "char"), (r["crop"], r["char"])) for r in written]
-        for r in live + held:
-            keys.add((r["size"], r["graphemes"]))
-            if r["graphemes"]:
-                scope["books"].add(r["book"])
-                scope["shards"].add((r["size"], ord(r["graphemes"][0])))
-    for statement in statements:
-        runs.execute(statement)
-    return statements, keys
+        runs.executemany("DELETE FROM runs WHERE first=? AND size=?", [(r["first"], r["size"]) for r in held])
+        runs.executemany(f"INSERT INTO runs({','.join(RUN_COLS)}) VALUES({','.join('?' * len(RUN_COLS))})", [[r[c] for c in RUN_COLS] for r in live])
+        runs.executemany("DELETE FROM run_stats WHERE size=? AND graphemes=?", counted)
+        runs.executemany("INSERT INTO run_stats(size,graphemes,n,down) VALUES(?,?,?,?)", [(r["size"], r["graphemes"], r["n"], r["down"]) for r in stats])
+        runs.executemany("DELETE FROM run_written WHERE crop=?", [(c,) for c in crops])
+        runs.executemany("INSERT INTO run_written(crop,char) VALUES(?,?)", [(r["crop"], r["char"]) for r in written])
+        owed = {("book", r["book"], 0) for r in live + held if r["graphemes"]}
+        owed |= {("shard", r["size"], ord(r["graphemes"][0])) for r in live + held if r["graphemes"]}
+        runs.executemany("INSERT OR IGNORE INTO answers_owed VALUES(?,?,?)", sorted(owed))
+    runs.commit()
+
+
+def take_moves(runs):
+    """The local copy takes D1's rows of the runs a grapheme claim moved (`run_moves`) before the publish
+    compares against it (`snapshot`); the crops whose claims moved them."""
+    moves = query(RUNS_DATABASE, "SELECT first, size, crop FROM run_moves")
+    snapshot(runs, {(r["first"], r["size"]) for r in moves})
+    return {r["crop"] for r in moves}
+
+
+# The runs of crops, read from D1 a batch at a time: those they start, the pairs they end, and the
+# trigrams they are second or third in, found by the pairs before them (`cropRunsQuery`).
+CROP_RUNS = """SELECT r.* FROM runs r WHERE r.first IN ({ids})
+  UNION SELECT r.* FROM runs r WHERE r.second IN ({ids}) AND r.size = 2
+  UNION SELECT t.* FROM runs p CROSS JOIN runs t ON t.first = p.first WHERE p.second IN ({ids}) AND p.size = 2 AND +t.size = 3
+  UNION SELECT t.* FROM runs p CROSS JOIN runs q ON q.second = p.first AND q.size = 2 CROSS JOIN runs t ON t.first = q.first
+    WHERE p.second IN ({ids}) AND p.size = 2 AND +t.size = 3"""
+# The head each crop's own family names, and the character it is written with.
+CROP_HEADS = """SELECT k.id, g.text AS char, coalesce(h.text, g.text, f.text) AS head FROM crops k LEFT JOIN graphemes g ON g.id = k.char
+  LEFT JOIN graphemes h ON h.id = g.head LEFT JOIN graphemes f ON f.id = k.family WHERE k.id IN ({ids})"""
+
+
+def reconcile(m, run):
+    """File again, once the publish's runs have landed, every run of a crop a grapheme claim reads or
+    moved, from the claims as they stand now: a claimed crop to the head its claim reads, a moved crop
+    no claim reads any longer back to its own family's head, every other crop as its run holds it. A
+    claim that began or stopped holding without a write that filed its runs (a box redrawn, a crop cut
+    again) and a filing the Worker could not finish are put right here. The moves are guarded as the
+    Worker's are, `run_moves` keeps only crops a claim still reads, and the local copy takes D1's rows
+    after (`snapshot`). Returns how many runs moved."""
+    heads = claimed_heads(m.atlas, set())
+    logged = {r["crop"] for r in query(RUNS_DATABASE, "SELECT DISTINCT crop FROM run_moves")}
+    crops = sorted(set(heads) | logged)
+    statements, read, own = [], set(), {}
+    for i in range(0, len(crops), 100):
+        ids = ",".join(map(str, crops[i:i + 100]))
+        own.update({r["id"]: r for r in query("glyph-atlas-v3", CROP_HEADS.format(ids=ids))})
+        for r in query(RUNS_DATABASE, CROP_RUNS.format(ids=ids)):
+            if (r["first"], r["size"]) in read:
+                continue
+            read.add((r["first"], r["size"]))
+            members = [r["first"], r["second"], r["third"]][:r["size"]]
+            parts = graphemes_of(r["graphemes"] or "")
+            if len(parts) != len(members):
+                continue
+            fold = {c: heads[c] if c in heads else own[c]["head"] for c in members if c in heads or (c in logged and own.get(c, {}).get("head"))}
+            graphemes = "".join(fold.get(c, part) for c, part in zip(members, parts, strict=True))
+            if graphemes != r["graphemes"]:
+                statements += move_sql(r, graphemes)
+    for c in crops:
+        char, head = own.get(c, {}).get("char"), heads.get(c, own.get(c, {}).get("head"))
+        if char is not None and head is not None:
+            statements.append(insert("run_written", ("crop", "char"), (c, char)).replace("INSERT INTO", "INSERT OR REPLACE INTO", 1)
+                              if char != head else f"DELETE FROM run_written WHERE crop={c};")
+    gone = sorted(logged - set(heads))
+    statements += [f"DELETE FROM run_moves WHERE crop IN ({','.join(map(str, gone[i:i + 500]))});" for i in range(0, len(gone), 500)]
+    if statements:
+        path, stamp = run / "reconcile.sql", f"{run.name}.reconcile"
+        path.write_text("\n".join(statements) + f"\nINSERT INTO imports(stamp, at) VALUES({lit(stamp)}, unixepoch());\n")
+        if not send(RUNS_DATABASE, path, stamp):
+            sys.exit(f"{path.name} did not apply; rerun to finish {run.name}")
+    snapshot(m.runs, read)
+    return sum(s.startswith("UPDATE OR IGNORE runs") for s in statements)
 
 
 def applied(database, stamp):
@@ -736,11 +823,25 @@ def deliver(m, run):
             if refused:
                 print(f"{len(refused)} changes kept D1's newer review instead (ids in {run.name}/refused-by-d1.json)", flush=True)
             mark(run, "read back")
+    # The runs of claimed and moved crops, filed from the claims as they stand once the publish's runs
+    # have landed, whatever was claimed, disputed or redrawn while it was under way.
+    if "reconciled" not in journal(run):
+        if m.runs.execute("SELECT 1 FROM sqlite_master WHERE name='run_written'").fetchone():
+            moved = reconcile(m, run)
+            if moved:
+                print(f"{moved} runs filed again from the grapheme claims", flush=True)
+        mark(run, "reconciled")
     # The runs' answers, once both databases hold what they count: the books and shards the publish
-    # changed, and Explore's grids, written again from the local copies; those whose bytes R2 lacks go up.
+    # changed or owed since (`answers_owed`), and Explore's grids, written again from the local copies;
+    # those whose bytes R2 lacks go up.
     if "run answers" not in journal(run):
-        if (run / "run-answers.json").exists() and m.runs.execute("SELECT 1 FROM sqlite_master WHERE name='run_written'").fetchone():
-            touched = json.loads((run / "run-answers.json").read_text())
+        m.runs.execute(ANSWERS_OWED)
+        owed = m.runs.execute("SELECT kind, a, b FROM answers_owed").fetchall()
+        if ((run / "run-answers.json").exists() or owed) and m.runs.execute("SELECT 1 FROM sqlite_master WHERE name='run_written'").fetchone():
+            touched = json.loads((run / "run-answers.json").read_text()) if (run / "run-answers.json").exists() \
+                else {"books": [], "shards": [], "texts": []}
+            touched["books"] = sorted(set(touched["books"]) | {a for kind, a, _ in owed if kind == "book"})
+            touched["shards"] = sorted({tuple(k) for k in touched["shards"]} | {(a, b) for kind, a, b in owed if kind == "shard"})
             # The runs' texts, which the local copy alone holds, then the answers they count.
             m.runs.execute(RUN_TEXT)
             m.runs.executemany("DELETE FROM run_text WHERE first=? AND size=?", [t[:2] for t in touched["texts"] if t[2] is None])
@@ -755,6 +856,8 @@ def deliver(m, run):
         for folder, paths in sorted(pending().items()):
             upload(paths, ANSWER_PREFIX + (folder + "/" if folder else ""))
             uploaded(paths)
+        m.runs.executemany("DELETE FROM answers_owed WHERE kind=? AND a=? AND b=?", owed)
+        m.runs.commit()
         mark(run, "run answers")
     # The vote objects go once D1 holds the model codes they name; out/votes/ takes each as it goes up.
     voted = sorted((run / "votes").glob("*.json.gz")) if (run / "votes").exists() else []
@@ -1350,14 +1453,15 @@ def main():
 
     # Runs: those starting at this catalogue's crops follow it; those touching a retired crop go. A run
     # with a crop a grapheme claim reads as another grapheme is filed under it, as the Worker files it
-    # when the claim is made, and the runs the Worker moved are taken from D1 first. A key such a run
-    # leaves or reaches is counted again from its rows at the end, so a claim saved while this publish
-    # is under way cannot leave its count off.
-    runs_note, scope, texts, heads, recounted = "", {"books": set(), "shards": set()}, {}, {}, set()
+    # when the claim is made. The local copy first takes D1's rows of the runs the Worker moved. A run of
+    # a claimed or moved crop is taken out and put in whatever key a claim files it under by the time
+    # the part lands, and `reconcile` files it from the claims as they then stand.
+    runs_note, scope, texts, heads, claimed = "", {"books": set(), "shards": set()}, {}, {}, set()
+    recut_ids = {m.known(t) for t in recut}
     if crop_ids or retired:
-        moved, recounted = take_moves(m.runs, scope)
-        m.runs_sql += moved
-        heads = claimed_heads(m.atlas, {m.known(t) for t in recut})
+        claimed = take_moves(m.runs)
+        heads = claimed_heads(m.atlas, recut_ids)
+        claimed |= set(heads)
     if (crop_ids and "unit_ngrams" in tables) or retired:
         want, missing = {}, 0
         if "unit_ngrams" in tables:
@@ -1406,19 +1510,20 @@ def main():
         for key, value in have.items():
             if key not in want:
                 texts.setdefault((key[4], key[0]), None)
-                # By its first crop and size, which name one run, whatever key a claim filed it under since.
-                m.runs_sql.append(f"DELETE FROM runs WHERE first={key[4]} AND size={key[0]};")
-                delta[key[:2]] -= 1
+                if claimed & {key[4], *value[:2]}:
+                    m.runs_sql += removal_sql(key[4], key[0], key[1])
+                else:
+                    m.runs_sql.append("DELETE FROM runs WHERE " + " AND ".join(f"{c}={lit(v)}" for c, v in zip(RUN_KEY, key)) + ";")
+                    delta[key[:2]] -= 1
                 touch(key, value)
         for key, value in want.items():
             old = have.get(key)
             if old is None:
-                if heads.keys() & {key[4], *value[:2]}:
-                    # A run of a claimed crop, which the Worker may file again before this part lands.
-                    m.runs_sql.append(f"DELETE FROM runs WHERE first={key[4]} AND size={key[0]};")
-                    recounted |= {key[:2], *(k[:2] for k in have if k[4] == key[4] and k[0] == key[0])}
-                m.runs_sql.append(insert("runs", (*RUN_KEY, "second", "third", "book"), (*key, *value)))
-                delta[key[:2]] += 1
+                if claimed & {key[4], *value[:2]}:
+                    m.runs_sql += removal_sql(key[4], key[0], key[1]) + addition_sql(key, value)
+                else:
+                    m.runs_sql.append(insert("runs", (*RUN_KEY, "second", "third", "book"), (*key, *value)))
+                    delta[key[:2]] += 1
             elif old != value:
                 # The same run with other crops or another book: only what changed is written.
                 changed = ", ".join(f"{c}={lit(v)}" for c, v, w in zip(("second", "third", "book"), value, old) if v != w)
@@ -1439,7 +1544,6 @@ def main():
                 m.runs_sql.append(f"INSERT INTO run_stats(size,graphemes,n,down) VALUES({size},{lit(graphemes)},{dn},{dn}) "
                                   "ON CONFLICT(size,graphemes) DO UPDATE SET n=n+excluded.n, down=down+excluded.down;")
                 m.runs_sql.append(f"DELETE FROM run_stats WHERE size={size} AND graphemes={lit(graphemes)} AND n<=0;")
-    m.runs_sql += [statement for size, graphemes in sorted(recounted) for statement in recount(size, graphemes)]
     if m.runs_sql:
         runs_note = f", {len(m.runs_sql)} run statements"
     # How this catalogue's crops are written: a crop written apart from its family head has its row in
@@ -1575,7 +1679,9 @@ def main():
         return
     if withdraw_refused:
         (run / "refused-withdrawals.txt").write_text("\n".join(withdraw_refused) + "\n")
-    if not atlas_parts and not runs_parts and not voted and not withdraw_refused and not pending():
+    m.runs.execute(ANSWERS_OWED)
+    owed = m.runs.execute("SELECT 1 FROM answers_owed LIMIT 1").fetchone()
+    if not atlas_parts and not runs_parts and not voted and not withdraw_refused and not pending() and not owed:
         m.ids.rollback()
         mark(run, "nothing to send")
         # Nothing else is written, so the new image keys go into the local shards here.

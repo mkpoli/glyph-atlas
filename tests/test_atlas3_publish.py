@@ -971,7 +971,7 @@ def test_a_run_with_a_claimed_crop_is_published_under_the_grapheme_the_claim_rea
                   "VALUES('ex:a2','has_grapheme','','',?,0,'asserted','U+3046','[]','[]','[]','r','2026-10-23')", (a2,))
     atlas.commit()
     runs.executescript(f"""UPDATE runs SET graphemes='あう' WHERE first={a1} AND size=2; DELETE FROM run_stats WHERE graphemes='あい';
-      INSERT INTO run_stats VALUES(2,'あう',1,1); INSERT INTO run_written VALUES({a2},'い'); INSERT INTO run_moves VALUES({a1},2);""")
+      INSERT INTO run_stats VALUES(2,'あう',1,1); INSERT INTO run_written VALUES({a2},'い'); INSERT INTO run_moves VALUES({a1},2,{a2});""")
     units = [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
              unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", state="checked", revision=3)]
     run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", units, [("ex:a1", 2, "ex:a2", None, "あい", "book:a", 1, 1, 0, "あい")]))
@@ -1004,7 +1004,7 @@ def claim_and_move(remote, a1, a2):
                   "VALUES('ex:a2','has_grapheme','','',?,0,'asserted','U+3046','[]','[]','[]','r','2026-10-23')", (a2,))
     atlas.commit()
     runs.executescript(f"""UPDATE runs SET graphemes='あう' WHERE first={a1} AND size=2; DELETE FROM run_stats WHERE graphemes='あい';
-      INSERT INTO run_stats VALUES(2,'あう',1,1); INSERT INTO run_written VALUES({a2},'い'); INSERT INTO run_moves VALUES({a1},2);""")
+      INSERT INTO run_stats VALUES(2,'あう',1,1); INSERT INTO run_written VALUES({a2},'い'); INSERT INTO run_moves VALUES({a1},2,{a2});""")
 
 
 def claimed_catalogue(tmp_path):
@@ -1017,15 +1017,55 @@ def held_runs(db):
     return (db.execute("SELECT graphemes FROM runs").fetchall(), db.execute("SELECT graphemes, n FROM run_stats").fetchall())
 
 
-def test_a_dry_run_leaves_the_runs_a_claim_moved_for_the_publish_that_follows(layout, monkeypatch, tmp_path):
+def test_a_dry_run_takes_the_runs_a_claim_moved_and_owes_their_answers_to_the_next_publish(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     claim_and_move(remote, *(ids(root)[t] for t in ("ex:a1", "ex:a2")))
     path = claimed_catalogue(tmp_path)
     run(publish, monkeypatch, path, "--dry-run")
     local = sqlite3.connect(root / "out" / "atlas-runs.sqlite")
-    assert held_runs(local) == ([("あい",)], [("あい", 1)])
+    assert held_runs(local) == ([("あう",)], [("あう", 1)])
+    assert local.execute("SELECT kind FROM answers_owed ORDER BY kind").fetchall() == [("book",), ("shard",)]
     run(publish, monkeypatch, path)
-    assert held_runs(sqlite3.connect(root / "out" / "atlas-runs.sqlite")) == ([("あう",)], [("あう", 1)])
+    local = sqlite3.connect(root / "out" / "atlas-runs.sqlite")
+    assert held_runs(local) == ([("あう",)], [("あう", 1)])
+    assert local.execute("SELECT count(*) FROM answers_owed").fetchone() == (0,)
+
+
+def test_a_claim_disputed_while_a_publish_is_under_way_is_not_undone_by_it(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, a2 = (ids(root)[t] for t in ("ex:a1", "ex:a2"))
+    claim_and_move(remote, a1, a2)
+    deliver = publish.deliver
+
+    def disputed_meanwhile(m, run_dir):
+        # Between planning and landing, another reader disputes the claim and the Worker files the run back.
+        remote.dbs["glyph-atlas-v3"].execute("UPDATE current_claims SET status='disputed'")
+        remote.dbs["glyph-atlas-v3"].commit()
+        remote.dbs["glyph-atlas-v3-runs"].executescript(f"""UPDATE runs SET graphemes='あい' WHERE first={a1} AND size=2;
+          DELETE FROM run_stats WHERE graphemes='あう'; INSERT INTO run_stats VALUES(2,'あい',1,1); DELETE FROM run_written WHERE crop={a2};""")
+        return deliver(m, run_dir)
+    monkeypatch.setattr(publish, "deliver", disputed_meanwhile)
+    units = [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
+             unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", state="checked", revision=3),
+             unit("ex:a4", "hl:p1", {"x": 0, "y": 60, "w": 10, "h": 10}, "お")]
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", units, [("ex:a1", 2, "ex:a2", None, "あい", "book:a", 1, 1, 0, "あい")]))
+    runs = remote.dbs["glyph-atlas-v3-runs"]
+    assert held_runs(runs) == ([("あい",)], [("あい", 1)])
+    assert runs.execute("SELECT count(*) FROM run_moves").fetchone() == (0,)
+    assert held_runs(sqlite3.connect(root / "out" / "atlas-runs.sqlite")) == ([("あい",)], [("あい", 1)])
+
+
+def test_a_claim_a_redrawn_box_stops_is_filed_back_by_the_next_publish(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, a2 = (ids(root)[t] for t in ("ex:a1", "ex:a2"))
+    claim_and_move(remote, a1, a2)
+    # The crop is cut again on the site; its claim was made on the old cut and no longer holds.
+    remote.dbs["glyph-atlas-v3"].execute("UPDATE crops SET cut=1 WHERE id=?", (a2,))
+    remote.dbs["glyph-atlas-v3"].commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:b2", "hl:p2", {"x": 0, "y": 40, "w": 10, "h": 10}, "え")]))
+    runs = remote.dbs["glyph-atlas-v3-runs"]
+    assert held_runs(runs) == ([("あい",)], [("あい", 1)])
+    assert runs.execute("SELECT count(*) FROM run_moves").fetchone() == (0,)
 
 
 def test_a_claim_saved_while_a_publish_reads_the_claims_is_published_once(layout, monkeypatch, tmp_path):
@@ -1033,8 +1073,12 @@ def test_a_claim_saved_while_a_publish_reads_the_claims_is_published_once(layout
     a1, a2 = (ids(root)[t] for t in ("ex:a1", "ex:a2"))
     read = publish.claimed_heads
 
+    saved = []
+
     def saved_meanwhile(atlas, recut):
-        claim_and_move(remote, a1, a2)
+        if not saved:
+            claim_and_move(remote, a1, a2)
+            saved.append(True)
         return read(atlas, recut)
     monkeypatch.setattr(publish, "claimed_heads", saved_meanwhile)
     run(publish, monkeypatch, claimed_catalogue(tmp_path))

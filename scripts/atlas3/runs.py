@@ -43,7 +43,7 @@ import sys
 
 from build import HERE, OUT
 from load_history import GROUP, built, stamped
-from publish import CF, applied, lit, query, send, upload
+from publish import CF, applied, claimed_heads, lit, query, send, upload
 from run_answers import ANSWERS, PREFIX, RUN_TEXT, Answers, pending, uploaded
 
 DATABASE = "glyph-atlas-v3-runs"
@@ -63,17 +63,24 @@ def written_statements(want, have):
     return out
 
 
+# The migrations after the first build, each by the table it adds: a layout built with one already has it.
+MIGRATIONS = {"0002": "run_written", "0003": "run_moves"}
+
+
 def migrate(runs):
-    """Migration 0002 on D1 and the local copy, once; a layout built with it already has its table."""
-    if has(runs, "run_written"):
-        return
-    path = OUT / "runs-load" / "0002.sql"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(stamped((SCHEMA / "0002_forms.sql").read_text(), "migration:0002"))
-    if not applied(DATABASE, "migration:0002") and not send(DATABASE, path, "migration:0002"):
-        sys.exit("migration 0002 did not apply; rerun")
-    runs.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
-    print("migration 0002 applied", flush=True)
+    """Each migration in MIGRATIONS on D1 and the local copy, once, in order, each stamped
+    `migration:<number>` in D1's `imports`, so a rerun sends none twice."""
+    for number, table in MIGRATIONS.items():
+        if has(runs, table):
+            continue
+        stamp = f"migration:{number}"
+        path = OUT / "runs-load" / f"{number}.sql"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(stamped(next(SCHEMA.glob(f"{number}_*.sql")).read_text(), stamp))
+        if not applied(DATABASE, stamp) and not send(DATABASE, path, stamp):
+            sys.exit(f"migration {number} did not apply; rerun")
+        runs.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+        print(f"migration {number} applied", flush=True)
 
 
 def catch_up(runs):
@@ -157,13 +164,20 @@ def answers():
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--send", action="store_true", help=f"load the rows into {DATABASE} and the answers into R2")
+    parser.add_argument("--migrate", action="store_true", help=f"apply the migrations {DATABASE} lacks, and nothing else")
     args = parser.parse_args()
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
     mirror = sqlite3.connect(f"file:{OUT / 'mirror.sqlite'}?mode=ro", uri=True)
     if has(mirror, "pending") and mirror.execute("SELECT 1 FROM pending").fetchone():
         sys.exit("a publish is unfinished; finish it with publish.py first")
-    # A dry run only reads the local copies.
+    if args.migrate:
+        runs = sqlite3.connect(OUT / "atlas-runs.sqlite")
+        runs.execute("CREATE TABLE IF NOT EXISTS imports(stamp TEXT PRIMARY KEY, at INTEGER NOT NULL)")
+        runs.commit()
+        migrate(runs)
+        return
+    # A dry run only reads the local copies, and the grapheme claims from glyph-atlas-v3.
     mode = "" if args.send else "?mode=ro"
     runs = sqlite3.connect(f"file:{OUT / 'atlas-runs.sqlite'}{mode}", uri=True)
     atlas = sqlite3.connect(f"file:{OUT / 'atlas.sqlite'}{mode}", uri=True)
@@ -179,7 +193,11 @@ def main():
     want = dict(out.execute("SELECT crop, char FROM written"))
     # Rows of crops in no local run are the publisher's (it writes one for every catalogue crop written
     # apart from its head); only the runs' own crops are compared.
-    members = {r[0] for r in out.execute("SELECT crop FROM members")}
+    # A crop a grapheme claim reads has its row from the Worker, which names its character apart from
+    # the head its claim reads (`refileRuns`); the publisher keeps it after.
+    claimed = set(claimed_heads(atlas, set()))
+    members = {r[0] for r in out.execute("SELECT crop FROM members")} - claimed
+    want = {c: v for c, v in want.items() if c not in claimed}
     have = {c: v for c, v in runs.execute("SELECT crop, char FROM run_written") if c in members} \
         if has(runs, "run_written") else {}
     statements = written_statements(want, have)
