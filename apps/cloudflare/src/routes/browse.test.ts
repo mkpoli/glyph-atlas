@@ -1,5 +1,5 @@
 import { cropSlotsQuery } from '../cropPanels';
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:test';
 import { bundle, bundleKey, cropId, publicId } from '../atlas3';
 import { charsQuery, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
@@ -17,7 +17,7 @@ beforeEach(() => {
     put: async (request: Request, response: Response) => { edge.set(request.url, response.clone()); },
   } };
 });
-afterEach(() => { for (const db of databases.splice(0)) db.close(); });
+afterEach(() => { setSystemTime(); for (const db of databases.splice(0)) db.close(); });
 
 describe('site values', () => {
   it('answer the publication time, the collection status and the corpus summary', async () => {
@@ -50,6 +50,8 @@ describe('the listing\'s timing', () => {
 
 describe('a kept listing', () => {
   it('answers a browse listing asked for again from the edge, and a round and a writer afresh', async () => {
+    // Within one minute, so the kept answers stand throughout.
+    setSystemTime(new Date('2026-10-22T12:00:20Z'));
     const { env: writer } = await setup();
     // A visitor's isolate lags the catalogue; a writer's requests come with the lag at 0.
     const env = { ...writer, CATALOGUE_LAG: '60' } as Env;
@@ -139,6 +141,8 @@ describe('the homepage gallery', () => {
     expect((await gallery(env, ctx, new URLSearchParams({ seed: String(entries[7][1] as number), limit: '1' }))).items[0].state).toBe('pending');
   });
   it('answer a sample asked for again from the edge', async () => {
+    // Within one minute, so the kept answers stand throughout.
+    setSystemTime(new Date('2026-10-22T12:00:20Z'));
     const { env: writer, objects, c, records, pub } = await setup();
     const env = { ...writer, CATALOGUE_LAG: '60' } as Env;
     const entries = sampled(objects, c, records, pub);
