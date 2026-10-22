@@ -179,15 +179,12 @@ describe('a character page', () => {
     expect(body.variants.sources).toEqual({ 'derived-ids': 'derived-ids', src1: 'Source One', src2: 'src2', src3: 'src3' });
     expect(body.words.items[0].spellings.map((s: any) => [s.spelling, s.current])).toEqual([['時', true], ['刻', false]]);
     expect(body.words.sources).toEqual({ dict: 'A dictionary' });
-    // Four crops shown, one withheld.
-    expect(body.occurrences).toEqual({ total: 4, exact: 4, exact_total: 4, filtered: 4 });
-    expect(ids(body.samples)).toEqual([crop(PAGE_A, 0), crop(PAGE_A, 1), crop(PAGE_B, 0), crop(PAGE_B, 1)]);
   });
 
   it('answers 404 for a character no card has, and a card for a description sequence', async () => {
     expect((await get('/layers/characters/U+9F98')).status).toBe(404);
     const { status, body } = await get('/layers/characters/' + encodeURIComponent('⿰日寺'));
-    expect([status, body.char, body.samples]).toEqual([200, '⿰日寺', []]);
+    expect([status, body.char]).toEqual([200, '⿰日寺']);
   });
 });
 

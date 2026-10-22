@@ -633,14 +633,13 @@ export async function cards(env: Env, list: 'graphemes' | 'ligatures', q: URLSea
   return { items, total: items.length };
 }
 
-/** The character page (`/layers/characters/:cp`): the card's detail, its 異体字 and words, and the first
- *  page of its gallery with its counts. */
+/** The character page (`/layers/characters/:cp`): the card's detail, its 異体字 and words. Its crops
+ *  are `/layers/occurrences`, which pages them. */
 export async function characterPage(env: Env, ctx: ExecutionContext, url: URL, value: string, tools: CharacterTools) {
   const card = await characterCard(env, value, tools, ctx), { detail } = card;
-  const found = await occurrences(env, card, url.searchParams);
   const version = await catalogueVersion(env);
   const [variants, words] = await Promise.all([variantsOf(env, ctx, url.origin, card, version), wordsOf(env, ctx, url.origin, detail.char, version)]);
-  return { ...detail, variants, words, query: detail.code_point, samples: found.items, occurrences: { ...found.counts, filtered: found.total } };
+  return { ...detail, variants, words, query: detail.code_point };
 }
 
 const CITABLE_CHARACTER = /^U\+[0-9A-Fa-f]{4,6}(-U\+[0-9A-Fa-f]{4,6})*$/;
