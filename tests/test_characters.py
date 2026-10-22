@@ -448,6 +448,10 @@ def write_release(directory: Path) -> Path:
         archive.writestr("Unihan_IRGSources.txt", "# Unihan_IRGSources.txt\nU+5CF6\tkIRG_JSource\tJ0-4567\n"
                          "U+5D8B\tkIRG_JSource\tJ0-5068\nU+5B50\tkIRG_JSource\tJ0-3B52\n")
         archive.writestr("Unihan_OtherMappings.txt", "# Unihan_OtherMappings.txt\nU+5CF6\tkJoyoKanji\t2010\n")
+        # Unicode 18.0's rows: each of the three ideographs is a character of its own.
+        archive.writestr("Unihan_Readings.txt", "# Unihan_Readings.txt\nU+5B50\tkDefinition\toffspring, child; "
+                         "fruit, seed of; first earthly branch\nU+5CF6\tkDefinition\tisland\n"
+                         "U+5D8B\tkDefinition\tisland\n")
     return directory
 
 
