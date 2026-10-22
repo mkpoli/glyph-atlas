@@ -526,7 +526,10 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const body = { total, next: dealt.next, has_more: dealt.next !== null, available: Object.values(facets.counts).reduce((a, b) => a + b, 0),
     counts: facets.counts, purpose, production, review_limit: ROUND_MAX, review_epoch: await siteValue(env, 'review_epoch') || 0,
     query: q.get('q'), ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members: members!.texts } } : {}),
-    categories: facets.categories, documents: facets.documents, reported_count: reportedCount, withheld_count: withheldCount, items };
+    // `facets=counts` leaves out the counts by character and by work, a few hundred kilobytes a page that
+    // shows its rows first and reads them after (`limit=0`) does not wait for.
+    ...(q.get('facets') === 'counts' ? { categories: [], documents: [] } : { categories: facets.categories, documents: facets.documents }),
+    reported_count: reportedCount, withheld_count: withheldCount, items };
   if (listingKey && whole) ctx.waitUntil(caches.default.put(listingKey, Response.json(body, { headers: { 'cache-control': `public, max-age=${KEPT_SECONDS}` } })));
   return body;
 }
