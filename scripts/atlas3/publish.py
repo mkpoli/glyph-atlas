@@ -21,6 +21,9 @@ images to the image key map (`media_map.py`).
   crops and its revision go together), then the runs to glyph-atlas-v3-runs. Each part counts as
   applied when its stamp is in that database's `imports`, and is then replayed on the local copy.
 - A publish stopped after allocating is finished by the next run before anything else.
+- A crop the catalogue carries with `origin='withdrawn'` (a document taken off the site,
+  `withdraw.py`) is retired, its bundle entry keeps only its id and cut, and the images its entry
+  named leave the image key map.
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
   their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
@@ -95,6 +98,15 @@ STATEMENT_BYTES = 90_000
 KEEP = object()
 # A crop facts load (crop_facts.py) names its run in `pending` with this prefix.
 FACTS_RUN = "crop-facts/"
+# A withdrawn crop's bundle entry: retired, with no record.
+WITHDRAWN = {"withdrawn": True}
+GONE = ("retired", "withdrawn")
+
+
+def image_keys(entry):
+    """The image keys a bundle entry names, its earlier cuts' among them."""
+    return {key for e in (entry, *entry.get("cuts", ())) for field in ("image", "context_image")
+            if (key := (e.get(field) or "").rsplit("/", 1)[-1].removesuffix(".webp"))}
 
 
 def lit(v):
@@ -406,7 +418,7 @@ class Mirror:
             slots[slot] = new
         self.voted.add(cid // PAGE)
 
-    def retire(self, cid, text_id, mirror_revision):
+    def retire(self, cid, text_id, mirror_revision, withdrawn=False):
         pid = cid // PAGE
         # The entry keeps the crop's cut, so a crop put back continues from it.
         cut = self.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()["cut"]
@@ -415,7 +427,7 @@ class Mirror:
             self.voted.add(pid)
         self.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
         self.guarded.append(cid)
-        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut}, True)
+        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut, **(WITHDRAWN if withdrawn else {})}, True)
 
 
 def fits(groups):
@@ -628,9 +640,9 @@ def main():
     with_votes = {"visual", "context"} <= unit_columns
     if with_votes:
         columns += ", visual, context"
-    units = list(src.execute(f"SELECT {columns} FROM units WHERE origin IN ('local', 'retired') ORDER BY id")) if "units" in tables else []
+    units = list(src.execute(f"SELECT {columns} FROM units WHERE origin IN ('local', 'retired', 'withdrawn') ORDER BY id")) if "units" in tables else []
     overlay = {r["id"]: r for r in src.execute(f"SELECT {columns} FROM units WHERE origin='corpus'")} if "units" in tables else {}
-    retiring = {r["id"] for r in units if r["origin"] == "retired"}
+    retiring = {r["id"] for r in units if r["origin"] in GONE}
     # A live crop with another box or image on its own page is re-cut: it keeps its id and its cut
     # moves on, so claims and reviews made on the old cut stay with it.
     recut = set()
@@ -650,9 +662,9 @@ def main():
         if cid is not None:
             published = entry(cid)
             current = m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
-            if r["origin"] == "retired":
+            if r["origin"] in GONE:
                 if current and r["revision"] < current["revision"]:
-                    refused.append(f"{r['id']}: retired at revision {r['revision']}, reviewed since (revision {current['revision']})")
+                    refused.append(f"{r['id']}: {r['origin']} at revision {r['revision']}, reviewed since (revision {current['revision']})")
             elif m.page_key(cid // PAGE) != page_key:
                 refused.append(f"{r['id']}: page {m.page_key(cid // PAGE)} -> {page_key}")
             elif r["id"] in recut and data.get("box") and not data.get("box_pending"):
@@ -664,7 +676,7 @@ def main():
                         refused.append(f"{r['id']}: re-cut box overlaps published crop {e['id']} (IoU {iou(data['box'], e['box']):.2f})")
                         break
             continue
-        if r["origin"] == "retired":
+        if r["origin"] in GONE:
             continue
         pid_row = m.ids.execute("SELECT id FROM pages WHERE key=?", (page_key,)).fetchone()
         if pid_row and data.get("box"):
@@ -724,7 +736,8 @@ def main():
         catalogued = {r["id"] for r in units}
         for text in sorted(replaced.keys() - catalogued):
             cid = m.known(text)
-            if cid is None or m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone() or not entry(cid).get("retired"):
+            if cid is None or m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone() or not entry(cid).get("retired") \
+                    or entry(cid).get("withdrawn") or text in retiring:
                 continue
             try:
                 found = replacement(text, replaced, live)
@@ -747,6 +760,19 @@ def main():
     n, crop_ids, retired = 0, {}, set()
     for r in units:
         data = json.loads(r["data"])
+        if r["origin"] == "withdrawn":
+            cid = m.known(r["id"])
+            current = cid is not None and m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
+            if current:
+                m.retire(cid, r["id"], current["revision"], withdrawn=True)
+                retired.add(cid)
+                n += 1
+            elif cid is not None and entry(cid) and not entry(cid).get("withdrawn"):
+                # Retired before: its entry gives up its record too.
+                m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": r["id"], "retired": True, "cut": entry(cid).get("cut", 0),
+                                                             **WITHDRAWN}, True)
+                n += 1
+            continue
         if r["origin"] == "retired":
             cid = m.known(r["id"])
             current = cid is not None and m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
@@ -988,7 +1014,7 @@ def main():
         row = m.ids.execute("SELECT id FROM pages WHERE key=?", (key,)).fetchone()
         if row and bundle_of(row[0]).get("page") != page_facts:
             m.touched_pages.setdefault(row[0], {})
-    files = []
+    files, unmapped = [], set()
     for pid, entries in m.touched_pages.items():
         p = m.atlas.execute("SELECT * FROM pages WHERE id=?", (pid,)).fetchone()
         previous = bundle_of(pid)
@@ -1000,7 +1026,9 @@ def main():
             # retired crop keeps its record; an image keeps its pack place when the catalogue could
             # not look it up.
             new = {k: v for k, v in {**old, **new_entry, "slot": slot}.items() if v is not None} \
-                if new_entry.get("retired") else {"slot": slot, **new_entry}
+                if new_entry.get("retired") and not new_entry.get("withdrawn") else {"slot": slot, **new_entry}
+            if new_entry.get("withdrawn"):
+                unmapped |= image_keys(old)
             for field in ("image", "context_image"):
                 if field + "_place" not in new and field + "_place" in old and new.get(field) == old.get(field):
                     new[field + "_place"] = old[field + "_place"]
@@ -1041,6 +1069,9 @@ def main():
                                               if (OUT / "votes" / f"{pid}.json.gz").exists() else None)]
     print(f"{n} crops read, {statements} statements in {atlas_parts} parts{runs_note} in {runs_parts} parts, "
           f"{len(files)} pages, {len(voted)} vote objects -> {run}", flush=True)
+    if unmapped:
+        (run / "unmapped.json").write_text(json.dumps(sorted(unmapped)))
+        print(f"{len(unmapped)} images of withdrawn crops leave the image key map", flush=True)
     if unresolved:
         (run / "unreplaced.txt").write_text("\n".join(unresolved) + "\n")
         print(f"{len(unresolved)} retired crops have no live crop on their redirect chain and name no replacement "
@@ -1056,6 +1087,9 @@ def main():
         mark(run, "dry run")
         print("dry run: nothing allocated, sent or changed")
         return
+    if unmapped:
+        # Sent before the bundles, with the image places (`deliver`).
+        media_map.remove(unmapped)
     if not atlas_parts and not runs_parts and not voted and not pending():
         m.ids.rollback()
         mark(run, "nothing to send")

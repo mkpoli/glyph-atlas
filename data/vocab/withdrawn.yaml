@@ -1,6 +1,6 @@
 # Documents withdrawn from the atlas. Extraction skips their pages, every export and publication
-# leaves their crops out, and `scripts/withdraw_documents.py` writes the SQL that removes what the
-# site already holds. Their tables, transcriptions and production metadata stay in the local datasets.
+# leaves their crops out, and `scripts/atlas3/withdraw.py` writes the catalogue whose publish takes
+# what the site already holds off it. Their tables, transcriptions and production metadata stay in the local datasets.
 version: 1
 withdrawals:
   - decided: 2026-10-02

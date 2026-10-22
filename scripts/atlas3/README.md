@@ -58,7 +58,11 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   (`units` rows with `origin='corpus'`), which a plain corpus export does not have.
 - A crop leaves the galleries and runs only when the catalogue carries it with `origin='retired'`,
   at a revision no older than the published one. The exporters drop withdrawn crops instead, so a
-  withdrawal needs a catalogue that names it. A retired crop the new layout never had (the first
+  withdrawal needs a catalogue that names it: `withdraw.py <file>` writes one for the documents of
+  `data/vocab/withdrawn.yaml`, every crop on their pages with `origin='withdrawn'` at the local
+  copy's revision. A withdrawn crop is retired, its bundle entry keeps only its id and cut, and the
+  images its entry named (its earlier cuts' too) leave the image key map; its reviews and claims stay
+  with its number. A retired crop the new layout never had (the first
   build left out the 56 live ones, each kept for its history) gets a number and a retired bundle
   entry with its record, so its reviews, claims and links resolve.
 - A retired crop's entry names its replacement in `replaced_by`, as an integer crop id: the first text
