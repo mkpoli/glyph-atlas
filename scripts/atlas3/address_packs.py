@@ -26,6 +26,8 @@ import sys
 import time
 from pathlib import Path
 
+from glyph_atlas import export_lock
+
 ADDRESSED = re.compile(r"packs/[0-9a-f]{64}\.bin")
 TABLES = ("media", "corpus_units")
 
@@ -56,6 +58,7 @@ def digest(path: Path, attempts=6) -> str:
 
 def address(catalogue: Path, *, dry_run=False) -> dict:
     root = catalogue.parent
+    lock = export_lock.hold(root)  # noqa: F841 -- no exporter writes while the packs move
     db = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True) if dry_run else sqlite3.connect(catalogue)
     if not dry_run:
         db.execute("CREATE TABLE IF NOT EXISTS addressed(original TEXT PRIMARY KEY, object TEXT NOT NULL)")

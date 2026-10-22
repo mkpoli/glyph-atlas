@@ -12,7 +12,7 @@ import pyarrow.dataset as ds
 from cloudflare_schema import CORPUS_REFRESH, schema
 from export_cloudflare import Packs, encoded
 
-from glyph_atlas import box_relabel, style, tone, withdrawn
+from glyph_atlas import box_relabel, export_lock, style, tone, withdrawn
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.corpus.details import DetailResolver, _iiif_region, _viewport
@@ -218,6 +218,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
     """
     found = unit_corpora(corpora)
     output.mkdir(parents=True, exist_ok=resume)
+    lock = export_lock.hold(output)  # noqa: F841 -- held while the export writes
     db = sqlite3.connect(output / "corpus.sqlite")
     schema(db)
     media = MediaCache(corpus_root=Path("work"))

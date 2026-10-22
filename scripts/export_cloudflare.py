@@ -21,7 +21,7 @@ import export_character_variants
 from cloudflare_schema import schema
 from PIL import Image
 
-from glyph_atlas import ainu_geometry, images, ngrams, refs, style, tone, withdrawn
+from glyph_atlas import ainu_geometry, export_lock, images, ngrams, refs, style, tone, withdrawn
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.review import atlas, characters, collection, corpus_source, ledger
 from glyph_atlas.review.context_suggestions import context_guesses
@@ -240,6 +240,7 @@ def freeze(dataset: Path, frozen: Path) -> None:
 
 def export(dataset: Path, output: Path, *, resume=False):
     output.mkdir(parents=True, exist_ok=resume)
+    lock = export_lock.hold(output)  # noqa: F841 -- held while the export writes
     frozen = output / "source"
     fresh = not frozen.exists()
     frozen.mkdir(exist_ok=resume)
