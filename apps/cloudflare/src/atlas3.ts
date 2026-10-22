@@ -1,4 +1,5 @@
 import { readRecords, recordKey } from './records';
+import type { Timing } from './timing';
 
 // Reads of the new storage layout (docs/decisions/0005-storage-rebuild.md): the crop index in the D1
 // database bound as ATLAS, and page bundles in R2 under `v3/pages/`.
@@ -40,12 +41,15 @@ export type Bundle = { key: string; book: number; rev: number; page: Json | null
 export const bundleKey = (page: number, rev: number) => `v3/pages/${page}-${rev}.json.gz`;
 const BUNDLES_HELD = 64, BUNDLE_EDGE_SECONDS = 86400;
 const held = new Map<string, Promise<Bundle | null>>();
-export function bundle(env: Env, page: number, rev: number): Promise<Bundle | null> {
+/** Where the bundles a call read came from: the isolate, the edge, or R2. */
+export type BundleSources = { held: number; edge: number; r2: number };
+export function bundle(env: Env, page: number, rev: number, sources?: BundleSources): Promise<Bundle | null> {
   const key = bundleKey(page, rev), hit = held.get(key);
-  if (hit) { held.delete(key); held.set(key, hit); return hit; }
+  if (hit) { held.delete(key); held.set(key, hit); if (sources) sources.held++; return hit; }
   const read = (async () => {
     const edge = new Request(`https://glyphatlas.org/_bundles/${key}`);
     let bytes = await caches.default.match(edge).then(hit => hit?.arrayBuffer() ?? null);
+    if (sources) sources[bytes ? 'edge' : 'r2']++;
     if (!bytes) {
       const object = await env.MEDIA.get(key);
       if (!object) return null;
@@ -98,16 +102,21 @@ const UNLISTED = ['text', 'line', 'context_image', 'context_box', 'crop_box', 'i
 // is a corpus glyph whose record (at `record_place` in a pack) is missing or does not parse. A storage
 // error fails the call, as `readRecords` explains. A caller that holds a crop's entry already, with
 // its record in place of `record_place` (the homepage sample), passes it in `given`, and that crop's
-// bundle is not read. One that read the crops' rows already (a run's page) passes them in `known`.
-export async function cropItems(env: Env, ids: number[], given: Map<number, Entry> = new Map(), known?: CropRow[]): Promise<Json[]> {
+// bundle is not read. One that read the crops' rows already (a run's page) passes them in `known`. With
+// `timing`, the rows, the bundles and the records are timed, and the bundles' sources noted.
+export async function cropItems(env: Env, ids: number[], given: Map<number, Entry> = new Map(), known?: CropRow[], timing?: Timing): Promise<Json[]> {
   if (!ids.length) return [];
-  const rows = known ?? (await env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>()).results;
+  const timed = <T>(name: string, work: Promise<T>) => timing ? timing.beside(name, work) : work;
+  const rows = known ?? (await timed('rows', env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>())).results;
   const byId = new Map(rows.map(row => [row.id, row]));
   const pages = new Map(rows.filter(row => !given.has(row.id)).map(row => [pageOf(row.id), row.rev]));
-  const bundles = new Map(await Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev)] as const)));
+  const sources: BundleSources = { held: 0, edge: 0, r2: 0 };
+  const bundles = new Map(await timed('bundles', Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev, sources)] as const))));
+  timing?.note('bundles-from', `held ${sources.held} edge ${sources.edge} r2 ${sources.r2}`);
   const entries = new Map(ids.map(id => [id, !byId.has(id) ? undefined : given.get(id) ?? bundles.get(pageOf(id))?.bySlot.get(slotOf(id))]));
   const pointer = (entry: Entry) => ({ object: entry.record_place[0], offset: entry.record_place[1], size: entry.record_place[2] });
-  const records = await readRecords(env, [...entries.values()].filter(entry => entry?.record_place).map(entry => pointer(entry!)));
+  const wanted = [...entries.values()].filter(entry => entry?.record_place).map(entry => pointer(entry!));
+  const records = await timed('records', readRecords(env, wanted));
   const keys = rows.flatMap(row => [`state:${row.state}`, `style:${row.style}`, `category:${row.category}`]).filter(key => !key.endsWith(':null'));
   let names = await codeNames(env);
   if (keys.some(key => !names.has(key))) names = await codeNames(env, true);
