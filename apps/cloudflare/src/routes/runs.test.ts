@@ -7,7 +7,7 @@ import { currentPointer } from '../atlas3Gallery';
 import { listingItems } from '../atlas3Listing';
 import { d1 } from '../forms.test';
 import { redrawLimits } from '../cropRecords';
-import { bookCharactersQuery, bookFormsQuery, booksQuery, corpusFormsQuery, pageRevsQuery, runCountQuery,
+import { bookCharactersQuery, bookFormsQuery, booksQuery, corpusFormsQuery, runCountQuery,
   reviewedQuery, runGraphemesQuery, runHasQuery, runOccurrencesQuery, runProbeQuery, runRangeQuery, runWorksQuery, runsRoute, writtenStatement } from './runs';
 
 type Json = any;
@@ -348,7 +348,7 @@ describe('runs on the new layout', () => {
       [f.runsDb, runRangeQuery(), [3, 'んし', 'んし\u{10FFFF}', '']], [f.runsDb, runHasQuery(), [2, 'んし']],
       [f.runsDb, bookFormsQuery(2), ['ん', 'し', 2, 'んし', 1]], [f.runsDb, bookFormsQuery(3), ['ん', 'し', 'ん', 3, 'んしん', 1]],
       [f.runsDb, runProbeQuery(false), ['んしん']], [f.runsDb, runProbeQuery(true), [1, 'んしん']],
-      [f.atlas, runGraphemesQuery(), ['["ん"]']], [f.atlas, booksQuery(), ['[1]']], [f.atlas, pageRevsQuery(), ['[1]']],
+      [f.atlas, runGraphemesQuery(), ['["ん"]']], [f.atlas, booksQuery(), ['[1]']],
       [f.atlas, corpusFormsQuery(), ['[1]']], [f.atlas, bookCharactersQuery(), [1, 0, 1000]], [f.atlas, reviewedQuery(), ['[1]']],
     ];
     for (const size of [2, 3, 5]) for (let anchor = 0; anchor + Math.min(size, 3) <= size; anchor++) for (const book of [false, true]) {

@@ -6,7 +6,7 @@
 // (scripts/atlas3/run_answers.py); their crops, books and dates are in glyph-atlas-v3 (ATLAS) and the page
 // bundles. A book is named by its key at the URL boundary and by its integer id in both databases. Which
 // runs a crop is in moves at a publication; how its crops are written follows reviews (`run_written`).
-import { bundle, cropItems, pageOf, publicId, slotOf, type Entry } from '../atlas3';
+import { bundle, cropItems, cropRowsQuery, pageOf, publicId, slotOf, type CropRow, type Entry } from '../atlas3';
 import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
 import { currentPointer } from '../atlas3Gallery';
 import { Problem } from '../busy';
@@ -227,7 +227,6 @@ export class Timing {
 export const booksQuery = () => 'SELECT id,key,title FROM books WHERE id IN (SELECT value FROM json_each(?))';
 // Each page's revision, one primary-key probe each, so the bundles are read once for the records and
 // the places of the crops.
-export const pageRevsQuery = () => 'SELECT id,rev FROM pages WHERE id IN (SELECT value FROM json_each(?))';
 // A corpus glyph's forms tool decision: its `form_glyphs` row (its own, or a cluster decision of an earlier
 // clustering it carries) when it has one, else its cluster's (`crops.cluster`); a cluster issue 'mixed'
 // gives its glyphs no issue. One primary-key probe per glyph and per cluster.
@@ -258,9 +257,14 @@ type Reviewed = { crop: number; marks: number; issue: string | null; x: number |
 async function runCrops(env: Env, ids: number[]): Promise<Map<number, { item: Json; whole: Json }>> {
   const found = new Map<number, { item: Json; whole: Json }>();
   if (!ids.length) return found;
-  const pages = [...new Set(ids.map(pageOf))];
-  const revs = (await env.ATLAS.prepare(pageRevsQuery()).bind(JSON.stringify(pages)).all<{ id: number; rev: number }>()).results;
-  const bundles = new Map(await Promise.all(revs.map(async ({ id, rev }) => [id, await bundle(env, id, rev)] as const)));
+  // The crops' rows, forms and reviews are read by id at once; the rows name the bundles to read.
+  const bound = JSON.stringify(ids);
+  const [rows, decided, reviewed] = await Promise.all([
+    env.ATLAS.prepare(cropRowsQuery()).bind(bound).all<CropRow>().then(r => r.results),
+    env.ATLAS.prepare(corpusFormsQuery()).bind(bound).all<Omit<UnitForm, 'id'> & { id: number }>().then(r => r.results),
+    env.ATLAS.prepare(reviewedQuery()).bind(bound).all<Reviewed>().then(r => r.results)]);
+  const pages = new Map(rows.map(row => [pageOf(row.id), row.rev]));
+  const bundles = new Map(await Promise.all([...pages].map(async ([id, rev]) => [id, await bundle(env, id, rev)] as const)));
   const entries = new Map(ids.flatMap(id => {
     const entry = bundles.get(pageOf(id))?.bySlot.get(slotOf(id));
     return entry ? [[id, entry] as const] : [];
@@ -275,13 +279,10 @@ async function runCrops(env: Env, ids: number[]): Promise<Map<number, { item: Js
     if (record) given.set(id, { ...record, slot: entry.slot, id: entry.id, ...(entry.retired ? { retired: true } : {}) });
   }
   const listed = [...given.keys()];
-  const [items, decided] = await Promise.all([cropItems(env, listed, given),
-    env.ATLAS.prepare(corpusFormsQuery()).bind(JSON.stringify(listed)).all<Omit<UnitForm, 'id'> & { id: number }>()]);
-  const forms = new Map(decided.results.map(row => [row.id, { ...row, id: publicId(row.id) } as UnitForm]));
+  const items = await cropItems(env, listed, given, rows.filter(row => given.has(row.id)));
+  const forms = new Map(decided.map(row => [row.id, { ...row, id: publicId(row.id) } as UnitForm]));
   const crop = new Map(listed.map(id => [publicId(id), id]));
-  const reviewed = items.map(item => crop.get(item.id)!);
-  const since = new Map(reviewed.length ? (await env.ATLAS.prepare(reviewedQuery()).bind(JSON.stringify(reviewed))
-    .all<Reviewed>()).results.map(row => [row.crop, row]) : []);
+  const since = new Map(reviewed.map(row => [row.crop, row]));
   for (const item of items) {
     const id = crop.get(item.id)!, whole = given.get(id)!, review = since.get(id);
     let shown = item.origin === 'corpus' ? formed(item, forms.get(id) ?? null, { codePoints }) : item;

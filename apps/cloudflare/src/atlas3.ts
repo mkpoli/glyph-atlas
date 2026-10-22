@@ -98,10 +98,10 @@ const UNLISTED = ['text', 'line', 'context_image', 'context_box', 'crop_box', 'i
 // is a corpus glyph whose record (at `record_place` in a pack) is missing or does not parse. A storage
 // error fails the call, as `readRecords` explains. A caller that holds a crop's entry already, with
 // its record in place of `record_place` (the homepage sample), passes it in `given`, and that crop's
-// bundle is not read.
-export async function cropItems(env: Env, ids: number[], given: Map<number, Entry> = new Map()): Promise<Json[]> {
+// bundle is not read. One that read the crops' rows already (a run's page) passes them in `known`.
+export async function cropItems(env: Env, ids: number[], given: Map<number, Entry> = new Map(), known?: CropRow[]): Promise<Json[]> {
   if (!ids.length) return [];
-  const rows = (await env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>()).results;
+  const rows = known ?? (await env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>()).results;
   const byId = new Map(rows.map(row => [row.id, row]));
   const pages = new Map(rows.filter(row => !given.has(row.id)).map(row => [pageOf(row.id), row.rev]));
   const bundles = new Map(await Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev)] as const)));
