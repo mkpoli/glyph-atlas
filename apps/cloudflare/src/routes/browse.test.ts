@@ -108,7 +108,7 @@ describe('the homepage gallery', () => {
   it('deal from the seed’s point, wrapping round, with each glyph’s row and dating', async () => {
     const { env, db, objects, c, records, pub } = await setup();
     const entries = sampled(objects, c, records, pub);
-    const page = await gallery(env, new URLSearchParams({ seed: String(entries[6][1] as number), limit: '5' }));
+    const page = await gallery(env, ctx, new URLSearchParams({ seed: String(entries[6][1] as number), limit: '5' }));
     expect(page.items.map((i: any) => i.source_id)).toEqual(['codh:6', 'codh:7', 'codh:8', 'codh:9', 'codh:0']);
     expect(page.available).toBe(5);
     const first = page.items[0];
@@ -120,17 +120,29 @@ describe('the homepage gallery', () => {
     expect(page.items[3].label).toBe('');
     // A glyph a round showed is pending, as its record says.
     db.exec(`UPDATE crops SET state=3 WHERE id=${cropId(c, 7)}`);
-    expect((await gallery(env, new URLSearchParams({ seed: String(entries[7][1] as number), limit: '1' }))).items[0].state).toBe('pending');
+    expect((await gallery(env, ctx, new URLSearchParams({ seed: String(entries[7][1] as number), limit: '1' }))).items[0].state).toBe('pending');
+  });
+  it('answer a sample asked for again from the edge', async () => {
+    const { env, objects, c, records, pub } = await setup();
+    const entries = sampled(objects, c, records, pub);
+    const ask = async () => {
+      const timing = new Timing(), body = await gallery(env, ctx, new URLSearchParams({ seed: String(entries[6][1] as number), limit: '5' }), timing);
+      return { body, steps: timing.header().split(', ').map(step => step.split(';')[0]) };
+    };
+    const first = await ask(), again = await ask();
+    expect(first.steps).not.toContain('sample-hit');
+    expect(again.steps).toEqual(['stamps', 'sample-hit', 'total']);
+    expect(again.body).toEqual(first.body);
   });
   it('deal a script group from its own glyphs, and leave out one a review moved to another script', async () => {
     const { env, db, objects, c, records, pub } = await setup();
     sampled(objects, c, records, pub);
-    expect((await gallery(env, new URLSearchParams({ group: 'hangul' }))).items.map((i: any) => i.source_id)).toEqual(['codh:7']);
-    expect((await gallery(env, new URLSearchParams({ group: 'gugyeol' }))).items).toEqual([]);
-    expect((await gallery(env, new URLSearchParams({ group: 'kanji', limit: '3' }))).items.map((i: any) => i.source_id)).toEqual(['codh:8']);
+    expect((await gallery(env, ctx, new URLSearchParams({ group: 'hangul' }))).items.map((i: any) => i.source_id)).toEqual(['codh:7']);
+    expect((await gallery(env, ctx, new URLSearchParams({ group: 'gugyeol' }))).items).toEqual([]);
+    expect((await gallery(env, ctx, new URLSearchParams({ group: 'kanji', limit: '3' }))).items.map((i: any) => i.source_id)).toEqual(['codh:8']);
     db.exec(`UPDATE crops SET char=1 WHERE id=${cropId(c, 8)}`);
-    expect((await gallery(env, new URLSearchParams({ group: 'kanji' }))).items).toEqual([]);
-    await expect(gallery(env, new URLSearchParams({ group: 'latin' }))).rejects.toThrow('Invalid group.');
+    expect((await gallery(env, ctx, new URLSearchParams({ group: 'kanji' }))).items).toEqual([]);
+    await expect(gallery(env, ctx, new URLSearchParams({ group: 'latin' }))).rejects.toThrow('Invalid group.');
   });
 });
 

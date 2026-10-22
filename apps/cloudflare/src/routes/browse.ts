@@ -137,10 +137,18 @@ export async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL
 // shuffle range. A glyph a review has relabelled shows its row's values, and leaves a group it no
 // longer belongs to.
 const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol', 'tangut'];
-export async function gallery(env: Env, q: URLSearchParams): Promise<Json> {
+export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParams, timing = new Timing()): Promise<Json> {
   const group = q.get('group') && q.get('group') !== 'all' ? q.get('group')! : null;
   if (group && !GALLERY_GROUPS.includes(group)) throw new Problem(400, 'Invalid group.');
   const limit = integer(q, 'limit', 24, 96), seed = integer(q, 'seed', 0, 2147483647);
+  // A sample is the same for anyone who asks with the same group, size and seed while the catalogue
+  // stands, so the edge keeps it, as it keeps a browse listing.
+  const version = catalogueKey(await catalogueStamps(env));
+  const keptKey = new Request(`https://glyphatlas.org/layers/gallery/kept?${new URLSearchParams({ group: group ?? '', limit: String(limit), seed: String(seed),
+    v: version })}`);
+  timing.step('stamps');
+  const kept = await caches.default.match(keptKey);
+  if (kept) { timing.step('sample-hit'); return await kept.json(); }
   const { pub } = await currentPointer(env);
   const name = group && WHOLE_GROUPS.includes(group) ? group : 'sample', pool = (await galleryIndex(env, pub))[name];
   const start = seed % pool.range, first = Math.floor(start * pool.shards / pool.range);
@@ -154,11 +162,16 @@ export async function gallery(env: Env, q: URLSearchParams): Promise<Json> {
     for (const entry of entries) if (wanted(entry) && (i === 0 ? entry[1] >= start : i < pool.shards || entry[1] < start)) chosen.push(entry);
   }
   const page = chosen.slice(0, limit);
+  timing.step('shards');
   // A mark is the review queue's: a glyph a round showed or found hard is pending, as its record says.
-  const items = (await listingItems(env, page.map(e => e[0]), new Map<number, Entry>(page.map(([crop, , , record]) => [crop, record]))))
-    .filter(item => !group || categoryOf(String(item.label ?? '')) === group)
+  const listed = await listingItems(env, page.map(e => e[0]), new Map<number, Entry>(page.map(([crop, , , record]) => [crop, record])), timing);
+  const items = listed.filter(item => !group || categoryOf(String(item.label ?? '')) === group)
     .map(item => item.state === 'seen' || item.state === 'hard' ? { ...item, state: 'pending' } : item);
-  return { status: 'ok', available: items.length, items };
+  timing.step('items');
+  const body = { status: 'ok', available: items.length, items };
+  // A sample short of a glyph it chose (a crop gone since the publication) is answered but not kept.
+  if (listed.length === page.length) ctx.waitUntil(caches.default.put(keptKey, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return body;
 }
 
 // ---- The catalogue.
