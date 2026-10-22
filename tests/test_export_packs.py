@@ -82,3 +82,38 @@ def test_an_image_that_fails_to_copy_leaves_no_row_and_no_bytes(tmp_path, monkey
     pack = (tmp_path / packs.name).read_bytes()
     rows = {k: (o, s) for k, o, s in db.execute("SELECT key, offset, size FROM media")}
     assert {k: pack[o:o + s] for k, (o, s) in rows.items()} == {"a": b"first", "c": b"third", "b": b"broken"}
+
+
+def test_rows_past_a_packs_end_are_dropped_and_packed_again(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    module = importlib.import_module("export_cloudflare")
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE media (key TEXT PRIMARY KEY, object TEXT, offset INTEGER, size INTEGER, content_type TEXT)")
+    # A run killed after committing b's row and before its bytes reached pack-0002; pack-0001 was
+    # published and deleted.
+    (tmp_path / "pack-0002.bin").write_bytes(b"aaaa")
+    db.executemany("INSERT INTO media VALUES(?,?,?,?,'image/webp')",
+                   [("old", "pack-0001.bin", 0, 9), ("a", "pack-0002.bin", 0, 4), ("b", "pack-0002.bin", 4, 4)])
+    db.commit()
+    packs = module.Packs(tmp_path, db)
+    assert {k for k, in db.execute("SELECT key FROM media")} == {"old", "a"}
+    (tmp_path / "b.webp").write_bytes(b"bbbb")
+    packs.add("b", tmp_path / "b.webp")
+    packs.close()
+    obj, offset, size = db.execute("SELECT object, offset, size FROM media WHERE key='b'").fetchone()
+    assert obj == "pack-0003.bin" and (tmp_path / obj).read_bytes()[offset:offset + size] == b"bbbb"
+
+
+def test_sync_puts_the_open_packs_bytes_on_disk_before_a_commit(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    module = importlib.import_module("export_cloudflare")
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE media (key TEXT PRIMARY KEY, object TEXT, offset INTEGER, size INTEGER, content_type TEXT)")
+    packs = module.Packs(tmp_path, db)
+    (tmp_path / "a.webp").write_bytes(b"aaaa")
+    packs.add("a", tmp_path / "a.webp")
+    synced = []
+    monkeypatch.setattr(module.os, "fsync", lambda fd: synced.append(fd))
+    packs.sync()
+    assert synced == [packs.file.fileno()]
+    assert (tmp_path / packs.name).read_bytes() == b"aaaa"
