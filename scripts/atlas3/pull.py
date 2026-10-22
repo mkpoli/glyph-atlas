@@ -24,7 +24,7 @@ db = None
 
 # copy: (columns, key columns, chunk[, live table when the copy has another name])
 TABLES = {
-    "units": ("id,origin,character,family,visual_group,production,category,state,revision,quiz,shuffle,document,style,written_form,data", ["rowid"], 1500),
+    "units": ("id,origin,character,family,visual_group,production,category,state,revision,quiz,priority,shuffle,document,style,written_form,data", ["rowid"], 1500),
     "corpus_units": ("id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label", ["rowid"], 8000),
     "media": ("key,object,offset,size,content_type", ["rowid"], 15000),
     "unit_ngrams": ("first,size,second,third,text,document,vertical,hand_order,shuffle,graphemes", ["first", "size"], 8000),
@@ -60,7 +60,9 @@ TABLES = {
     "unit_suspects": ("id,p,reads_as,label,box", ["id"], 8000),
     "unit_shapes": ("id,shape_order", ["id"], 8000),
     "forms": ("id,anchor,created_by,created_at", ["id"], 8000),
+    "representations": ("id,scheme,value,namespace,version", ["id"], 8000),
     "corpus_follow": ("id", ["id"], 8000),
+    "form_bases": ("id,character,family", ["id"], 8000),
     "aliases": ("query,code_point,rank", ["rowid"], 15000),
     # The model votes and the image they were read on, and each tile's paper colour and size, apart from
     # `units` so the crops' copy keeps its size; and the forms tool's clustering.

@@ -263,3 +263,38 @@ test('a kept round stays kept while its account is signed out, and reads as refu
   expect(keptState(key)).toBe('refused')
   stop()
 })
+
+test('a save kept while paused that the site later answers 409 reload is gone: refused, shown, never sent again, and its crops dealt again', async () => {
+  me = { id: 'u1', anonymous: false }
+  answer = () => Response.json({ ok: true })
+  await new Promise(resolve => realTimeout(resolve, 10))
+  await drain()
+  answer = paused
+  const key = keyOf('/atlas/rounds', { id: 'round-gone' })
+  const saving = await request('/atlas/rounds', { id: 'round-gone', grapheme: 'U+304F', seen: [{ id: 'gone-crop' }], skipped: [] }).catch(e => e)
+  expect(saving.kept).toBe(true)
+  expect(keptState(key)).toBe('kept')
+  expect(await keptCrops()).toContain('gone-crop')
+  // Writes resume after a site update that no longer knows the crop the save names.
+  await new Promise(resolve => realTimeout(resolve, 10))
+  answer = () => Response.json({ detail: 'Reload the page.', code: 'reload' }, { status: 409 })
+  sent.length = 0
+  await drain()
+  expect(sent).toEqual(['round-gone'])
+  expect(keptState(key)).toBe('refused')
+  expect(outbox.pending).toBe(0)
+  expect(outbox.refused.find(r => r.key === key)).toMatchObject({ gone: true })
+  expect(outbox.keys).toContain(key)
+  // A gone save decides no crop, whether or not the page knows yet who reads.
+  expect(await keptCrops()).not.toContain('gone-crop')
+  known = false
+  expect(await keptCrops()).not.toContain('gone-crop')
+  known = true
+  // A later pass does not send it again; Discard drops it from the device, and it still reads as refused.
+  await drain()
+  expect(sent).toEqual(['round-gone'])
+  await dismiss(key)
+  expect(outbox.keys).not.toContain(key)
+  expect(keptState(key)).toBe('refused')
+  expect(outbox.refused.some(r => r.key === key)).toBe(false)
+})

@@ -8,6 +8,7 @@ const edge = new Map<string, Response>();
 (globalThis as any).caches = { default: {
   match: async (request: Request) => edge.get(request.url)?.clone(),
   put: async (request: Request, response: Response) => { edge.set(request.url, response.clone()); },
+  delete: async (request: Request) => edge.delete(request.url),
 } };
 beforeEach(() => edge.clear());
 
@@ -20,14 +21,15 @@ function setup() {
     const name = `v3/aliases/${createHash('sha256').update(text).digest('hex').slice(0, 3)}.json.gz`;
     shards.set(name, { ...shards.get(name), [text]: id });
   }
-  const objects = new Map([...shards].map(([name, shard]) => [name, gzipSync(JSON.stringify(shard))]));
+  const objects = new Map<string, Uint8Array>([...shards].map(([name, shard]) => [name, gzipSync(JSON.stringify(shard))]));
   const reads: string[] = [];
   const MEDIA = { get: async (name: string) => {
     reads.push(name);
     const bytes = objects.get(name);
+    // A copy of exactly these bytes: a Buffer's `.buffer` can be its whole shared pool.
     return bytes ? { arrayBuffer: async () => new Uint8Array(bytes).buffer } : null;
   } };
-  return { env: { MEDIA } as unknown as Env, ids, reads };
+  return { env: { MEDIA } as unknown as Env, ids, reads, objects, shards };
 }
 
 describe('old crop URLs', () => {
@@ -55,5 +57,16 @@ describe('old crop URLs', () => {
     edge.clear();
     await aliasCrop(env, text, undefined, Date.now() + 301_000);
     expect(reads.filter(r => r === name)).toHaveLength(2);
+  });
+
+  it('find a text id added to its shard after the shard was read', async () => {
+    const { env, ids, objects, shards } = setup();
+    const text = Object.keys(ids)[0], name = await aliasShardKey(text), now = Date.now();
+    // A text id in the same shard as `text`.
+    let later = '';
+    for (let i = 0; !later; i++) if (await aliasShardKey(`hk:later:${i}`) === name) later = `hk:later:${i}`;
+    expect(await aliasCrop(env, later, undefined, now)).toBeNull();
+    objects.set(name, gzipSync(JSON.stringify({ ...shards.get(name), [later]: 42 })));
+    expect(await aliasCrop(env, later, undefined, now + 31_000)).toBe(42);
   });
 });

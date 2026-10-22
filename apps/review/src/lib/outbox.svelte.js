@@ -4,8 +4,10 @@
 // result and so records it once; an undo is named by its path, and a repeat of one changes nothing.
 // While the site pauses writes, which can last hours, nobody waits on a kept save: each caller is told
 // at once that it is kept (an error with `kept: true`), and it is sent once writes resume.
-// `DatabaseStatus` shows what is waiting.
-import { backoff, isBusy, isPaused, retryAfter } from './busy.svelte.js'
+// A save refused as naming a crop by an old id the site no longer holds (409 `reload`) can never be
+// taken: it stays on the device marked `gone`, is never sent again, and is shown with what it named
+// until the reader discards it. `DatabaseStatus` shows what is waiting.
+import { backoff, isBusy, isPaused, isReload, retryAfter } from './busy.svelte.js'
 
 // `pending` counts this reader's kept saves; `keys` names every save kept on this device, whoever made
 // it; `lost` names every kept save the site refused, in this tab or another, which stays named after
@@ -13,7 +15,9 @@ import { backoff, isBusy, isPaused, retryAfter } from './busy.svelte.js'
 export const outbox = $state({ pending: 0, refused: [], paused: false, keys: [], lost: [] })
 
 // The browser stores saves in IndexedDB; a save IndexedDB would not take goes to localStorage, and
-// failing both, to this page's memory. All three are read together.
+// failing both, to this page's memory. All three are read together. A write leaves one copy: one
+// IndexedDB takes clears the fallback copy, and one it refuses deletes the IndexedDB copy where it
+// can. Where both remain, the fallback copy is the later one.
 const DATABASE = 'atlas-outbox', STORE = 'saves', FALLBACK = 'atlas.outbox'
 let opened = null
 function database() {
@@ -29,7 +33,7 @@ function database() {
 const LOST = 'atlas.outbox.lost', LOST_KEPT = 256
 const storedLost = () => { try { const keys = JSON.parse(localStorage.getItem(LOST)); return Array.isArray(keys) ? keys : [] } catch { return [] } }
 function refuse(key) {
-  outbox.lost.push(key)
+  if (!outbox.lost.includes(key)) outbox.lost.push(key)
   try { localStorage.setItem(LOST, JSON.stringify([...new Set([...storedLost(), key])].slice(-LOST_KEPT))) } catch { /* This tab still knows. */ }
 }
 const memory = new Map()
@@ -49,44 +53,74 @@ function transaction(mode, use) {
 }
 async function entries() {
   const found = await transaction('readonly', store => store.getAll())
+  // A fallback copy replaces the IndexedDB copy of the same save.
   const all = new Map([...(Array.isArray(found) ? found : []), ...fallback.all()].map(entry => [entry.key, entry]))
   return [...all.values()].sort((a, b) => a.seq - b.seq)
 }
 async function put(entry) {
-  if (!(await transaction('readwrite', store => store.put(entry)))) fallback.write([...fallback.all().filter(e => e.key !== entry.key), entry])
+  if (await transaction('readwrite', store => store.put(entry))) return dropFallback(entry.key)
+  fallback.write([...fallback.all().filter(e => e.key !== entry.key), entry])
+  await transaction('readwrite', store => store.delete(entry.key))
 }
-async function remove(key) {
-  await transaction('readwrite', store => store.delete(key))
+function dropFallback(key) {
   const rest = fallback.all()
   if (rest.some(e => e.key === key)) fallback.write(rest.filter(e => e.key !== key))
 }
+/** The kept save under `key` as stored now, or null. */
+async function stored(key) {
+  const later = fallback.all().find(e => e.key === key)
+  if (later) return later
+  const found = await transaction('readonly', store => store.get(key))
+  return found && typeof found === 'object' ? found : null
+}
+async function remove(key) {
+  await transaction('readwrite', store => store.delete(key))
+  dropFallback(key)
+}
+// Saves the reader discarded on this page: never sent, even by a pass that read them before.
+const discarded = new Set()
+// A save that may still be sent: neither gone nor discarded.
+const live = entry => !entry.gone && !discarded.has(entry.key)
 // The saves this reader can send now. One made by an account that is not signed in waits for it, and
-// is not counted meanwhile.
-const mine = async () => (await entries()).filter(entry => sender?.mine(entry) !== false)
-// What the corner counts, what is stored, and what another tab saw refused.
-const count = async () => {
+// is not counted meanwhile. A gone save is shown, not counted.
+const sendable = entry => live(entry) && sender?.mine(entry) !== false
+// What the corner counts and shows, what is stored, and what another tab saw refused.
+async function count() {
   const all = await entries()
-  outbox.pending = all.filter(entry => sender?.mine(entry) !== false).length
+  outbox.pending = all.filter(sendable).length
   outbox.keys = all.map(entry => entry.key)
   const lost = storedLost().filter(key => !outbox.lost.includes(key))
   if (lost.length) outbox.lost.push(...lost)
+  for (const entry of all) if (entry.gone && !discarded.has(entry.key) && !outbox.refused.some(r => r.key === entry.key))
+    outbox.refused.push({ key: entry.key, gone: true, what: described(entry) })
+}
+// What a gone save was: the character, form or word it gave, and the crop ids it named.
+function described({ path, body }) {
+  const said = [body?.character, body?.form, body?.word, body?.grapheme].find(value => typeof value === 'string' && value)
+  const segment = /^\/(?:atlas\/characters|layers\/units)\/([^/]+)/.exec(path)?.[1]
+  let crops = Array.isArray(body?.crops) ? body.crops.map(crop => crop?.id).filter(id => typeof id === 'string') : []
+  if (typeof body?.identity === 'string') crops = [body.identity]
+  if (segment) { try { crops = [decodeURIComponent(segment)] } catch { crops = [segment] } }
+  const named = crops.slice(0, 3).join(', ') + (crops.length > 3 ? ', …' : '')
+  return [said, named].filter(Boolean).join(' · ')
 }
 
 /**
  * Where a kept save stands, by its key: `kept` while it is stored (also while it waits for an account
- * that is not signed in), `refused` once the site refused it, else `sent`.
+ * that is not signed in), `refused` once the site refused it or found it gone, else `sent`.
  */
 export const keptState = key => outbox.lost.includes(key) ? 'refused' : outbox.keys.includes(key) ? 'kept' : 'sent'
 
 /**
  * The crops this reader's kept saves decide, by id: the crops of a kept round (flagged, seen or skipped)
  * and of a kept correction. They still read as pending until the saves are sent, so a round dealt
- * meanwhile leaves them out. A save whose undo is kept too decides nothing, and one another account
- * made leaves its crops to this reader. Until the page knows who reads, every kept save's crops are
- * left out.
+ * meanwhile leaves them out. A save whose undo is kept too decides nothing, a gone save decides
+ * nothing, and one another account made leaves its crops to this reader. Until the page knows who
+ * reads, every kept save's crops are left out.
  */
 export async function keptCrops() {
-  const kept = sender && !sender.known() ? await entries() : await mine()
+  const unknown = sender && !sender.known()
+  const kept = (await entries()).filter(entry => unknown ? live(entry) : sendable(entry))
   const undone = new Set(kept.map(entry => /\/([^/]+)\/undo$/.exec(entry.path)?.[1]).filter(Boolean))
   const crops = new Set()
   for (const { body } of kept) {
@@ -98,7 +132,7 @@ export async function keptCrops() {
 }
 
 /** Whether any save is kept, in this tab or another: a new save then joins the end of the line. */
-export const anyKept = async () => outbox.pending > 0 || (await mine()).length > 0
+export const anyKept = async () => outbox.pending > 0 || (await entries()).some(sendable)
 
 // `send(entry)` makes one save and answers `{ response, value }`, or `{ wait: true, retryAfter, paused }`
 // when it cannot be sent yet (`retryAfter` in seconds, 0 for no particular wait), or `{ skip: true }`
@@ -179,6 +213,16 @@ function settleWaiters(key, use) {
   for (const waiter of list) use(waiter)
   return list.length > 0
 }
+// The answer the site gives a save naming a crop it no longer holds.
+const GONE = { response: new Response(null, { status: 409 }), value: { code: 'reload' } }
+/** Refuse a gone save to the view waiting on it and drop it, or keep it as gone for the corner. */
+async function refuseGone(entry, answer) {
+  let error
+  try { sender.settle(answer) } catch (refusal) { error = refusal }
+  refuse(entry.key)
+  if (settleWaiters(entry.key, waiter => waiter.reject(error)) || discarded.has(entry.key)) await remove(entry.key)
+  else await put({ ...entry, gone: true })
+}
 async function run() {
   if (!sender) return
   // One tab sends at a time, so two tabs do not send the same save together.
@@ -190,6 +234,12 @@ async function run() {
     const keys = new Set(kept.map(entry => entry.key))
     for (const [key, [{ entry }]] of waiting) if (!keys.has(key)) kept.unshift(entry)
     for (const entry of kept) {
+      // The reader may have discarded it, or another tab sent it or found it gone, since it was read.
+      if (discarded.has(entry.key)) continue
+      const now = await stored(entry.key)
+      // One another tab found gone, which a view here waits on, is refused to that view.
+      if (now?.gone && waiting.has(entry.key)) { await refuseGone(entry, GONE); continue }
+      if (now ? now.gone : !waiting.has(entry.key)) continue
       let answer
       try { answer = await sender.send(entry) } catch (error) {
         if (offline(error)) { again(); return }
@@ -211,6 +261,9 @@ async function run() {
       outbox.paused = false
       failures = 0
       failed.delete(entry.key)
+      // A save naming a crop the site no longer holds goes to the view that made it, which shows the
+      // refusal; one from an earlier page stays kept as gone, for the reader to see and discard.
+      if (isReload(answer.response, answer.value)) { await refuseGone(entry, answer); continue }
       await remove(entry.key)
       let value
       try { value = sender.settle(answer) } catch (error) {
@@ -246,4 +299,12 @@ export function resume() {
   }
 }
 
-export const dismiss = key => { outbox.refused = outbox.refused.filter(r => r.key !== key) }
+/** Close a refusal in the corner; a gone save it names is discarded from the device. */
+export async function dismiss(key) {
+  const gone = outbox.refused.some(r => r.key === key && r.gone)
+  outbox.refused = outbox.refused.filter(r => r.key !== key)
+  if (!gone) return
+  discarded.add(key)
+  await remove(key)
+  await count()
+}

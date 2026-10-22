@@ -106,7 +106,9 @@ CREATE TABLE names(text TEXT, code_point INTEGER, rank INTEGER, PRIMARY KEY(text
   partial-index condition (`kind < 2`) literally, or SQLite scans the table.
 - **Families.** A grapheme family has no column. Its gallery reads one bounded range per member
   character and merges them in the Worker, so regrouping characters rewrites no crop. Family
-  galleries are about 1% of gallery reads.
+  galleries are about 1% of gallery reads. Every crop keeps the family its source names
+  (`crops.family`, migration 0012); a crop with no character is listed with that family, and a family's
+  gallery reads its members' crops with no character as one more range each.
 - **The review queue** reads `crop_pending` for one production and `crop_backlog`, in shuffle order
   with the production as a filter and named by `INDEXED BY`, for the whole backlog or a large
   subtree.
@@ -154,9 +156,11 @@ CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTE
     `ON CONFLICT DO UPDATE SET n = n + excluded.n`;
   - bump `actor_stats`.
 
-  The batch also clears flags whose premise it changed: a new label or box clears `suspect` and
-  `irregular`. A redrawn box is fetched once from the page's IIIF image service and stored in R2
-  under `overrides/<id>-<revision>.jpg`, which galleries show until the next publication cuts it.
+  The batch leaves `flags` as they are: a suspect mark holds while the crop keeps the label and box the
+  classifier was shown, which a reader judges against `suspects` and the crop's label and redrawn box,
+  so an undo that puts them back brings the mark back too. A redrawn box is fetched once from the
+  page's IIIF image service and stored in R2 under `overrides/<id>-<revision>.jpg`, which galleries
+  show until the next publication cuts it.
 - **Absorbing a publication.** The publication bumps `generation` from G to G + 1 in one statement,
   then reads every event with `gen ≤ G`. Batches run in order on the primary, so no review writes
   generation G after the bump. The publication builds its answers and bundles from those events,
@@ -170,8 +174,9 @@ CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTE
   D1 table can be rebuilt from R2 and the publisher's data.
 - **Kept, with integer ids:** the claim ledger (`assertions` with two indexes, `assertion_*`,
   `current_claims` with `cut`), forms tool decisions, submissions, accounts and favourites. A crop's
-  current form is written into `crops.form` by the claim that sets it. Each publication archives the
-  ledger to R2 as well.
+  current form is its `has_form` slot in `current_claims`, which listings and the inspector read;
+  `crops.form` stays empty, since a form id is text and no query filters on it, and dropping the
+  column would rewrite every `crops` row. Each publication archives the ledger to R2 as well.
 - **Read replication.** A reviewer's reads after a save go through the D1 Sessions API with the
   save's bookmark and bypass the edge cache; only anonymous reads are edge-cached.
 
@@ -192,8 +197,14 @@ CREATE TABLE run_stats(size INTEGER, graphemes TEXT, n INTEGER, down INTEGER,
 CREATE INDEX run_rank ON run_stats(size, n);
 ```
 
-- A run's line text and direction come from its page bundle. Hands, works, written forms and
-  related runs are R2 answers per run, and book-scope counts are in each book's R2 answer.
+- A run's written form is its crops' characters: `run_written` (crop, character) names each crop
+  written apart from its grapheme family's head, and a crop without a row is written as its head. A
+  review that changes a crop's written character writes its row, so forms follow reviews, while which
+  runs a crop is in, by graphemes, moves at the next publication. Every run is written down the page; a
+  column for the direction comes with the first run that is not. Hands, works and related runs are
+  read from the runs and `run_stats`. Explore's grids with the forms each run gathers, each book's
+  grid and every run's forms (sharded by length and first code point) are R2 answers under
+  `v3/runs/`, which the publisher writes again where its runs changed.
 - **Runs of four to eight** anchor on their rarest three-crop run by `run_stats.n`, then extend pair
   by pair in both directions through `run_first` and `run_second`, joining on crop ids. Their
   counts are capped, as today.

@@ -32,7 +32,7 @@ const uploadedKey = (image: string | null, user: string) => {
 /** Set the reader's picture from `source`, the uploaded bytes coming in `request` for `upload`. */
 export async function setAvatar(env: Env, me: Viewer, source: string, request: Request): Promise<Answer> {
   if (me.anonymous) return { status: 403, body: { detail: 'Sign in to an account to choose a picture.' } };
-  const row = await env.DB.prepare('SELECT email,image FROM "user" WHERE id=?').bind(me.id).first<{ email: string; image: string | null }>();
+  const row = await env.ACCOUNTS.prepare('SELECT email,image FROM "user" WHERE id=?').bind(me.id).first<{ email: string; image: string | null }>();
   if (!row) return { status: 404, body: { detail: 'No such user.' } };
   let image: string | null;
   if (source === 'initial') image = null;
@@ -40,11 +40,11 @@ export async function setAvatar(env: Env, me: Viewer, source: string, request: R
     image = await gravatar(row.email);
     if (!image) return { status: 404, body: { detail: 'Gravatar has no picture for this address.' } };
   } else if (source === 'github') {
-    const account = await env.DB.prepare("SELECT accountId FROM account WHERE userId=? AND providerId='github'").bind(me.id).first<{ accountId: string }>();
+    const account = await env.ACCOUNTS.prepare("SELECT accountId FROM account WHERE userId=? AND providerId='github'").bind(me.id).first<{ accountId: string }>();
     if (!account) return { status: 404, body: { detail: 'No GitHub account is connected.' } };
     image = `https://avatars.githubusercontent.com/u/${encodeURIComponent(account.accountId)}?v=4`;
   } else if (PICTURED.has(source)) {
-    const profile = await env.DB.prepare('SELECT p.image FROM account a JOIN account_profiles p ON p.account=a.id WHERE a.userId=? AND a.providerId=?')
+    const profile = await env.ACCOUNTS.prepare('SELECT p.image FROM account a JOIN account_profiles p ON p.account=a.id WHERE a.userId=? AND a.providerId=?')
       .bind(me.id, source).first<{ image: string | null }>();
     if (!profile?.image?.startsWith('https://')) return { status: 404, body: { detail: 'That account has no picture.' } };
     image = profile.image;
@@ -57,7 +57,7 @@ export async function setAvatar(env: Env, me: Viewer, source: string, request: R
     await env.MEDIA.put(`avatars/${me.id}/${name}.webp`, bytes, { httpMetadata: { contentType: 'image/webp', cacheControl: 'public, max-age=31536000, immutable' } });
     image = `/api/avatars/${me.id}/${name}.webp`;
   } else return { status: 422, body: { detail: 'Unknown picture source.' } };
-  await env.DB.prepare('UPDATE "user" SET image=?,updatedAt=? WHERE id=?').bind(image, new Date().toISOString(), me.id).run();
+  await env.ACCOUNTS.prepare('UPDATE "user" SET image=?,updatedAt=? WHERE id=?').bind(image, new Date().toISOString(), me.id).run();
   // An upload the reader has moved on from is removed.
   const old = uploadedKey(row.image, me.id);
   if (old && old !== uploadedKey(image, me.id)) await env.MEDIA.delete(old);

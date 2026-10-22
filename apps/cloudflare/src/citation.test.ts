@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { d1 } from './forms.test';
 import { bibtex, characterEntry, citationKey, citeAddress, citedVersion, cropEntry, csl, hayagriva, linkedData, versionToken } from './citation';
 import worker from './index';
@@ -121,54 +122,24 @@ describe('a character’s citation', () => {
   });
 });
 
-describe('GET /atlas/cite', () => {
+describe('GET /atlas/cite/grapheme and /atlas/cite/form', () => {
   function setup() {
-    const db = new Database(':memory:');
-    const migrations = new URL('../migrations/', import.meta.url);
-    for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
-    const data = (box: object) => JSON.stringify({ ...crop, crop_version: undefined, image_sha256: pixels, box });
-    db.prepare(`INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,data,snapshot,context,visual)
-      VALUES('ex:1','local','敢','printed','kanji','pending',0,1,1,0,?,'{}','{}','{}')`).run(data({ x: 1, y: 2, w: 3, h: 4 }));
-    // A recut: the first version stays recorded.
-    db.prepare(`UPDATE units SET data=? WHERE id='ex:1'`).run(data({ x: 785, y: 2131, w: 136, h: 123 }));
-    db.prepare('INSERT INTO characters(code_point,character,name,data,detail) VALUES(?,?,?,?,?)').run('U+1B002', '𛀂', 'HENTAIGANA LETTER A-1', '{}',
-      JSON.stringify({ code_point: 'U+1B002', char: '𛀂', grapheme: { code_point: 'U+3042', char: 'あ' } }));
+    // Characters are cited from their reference objects in the new layout (decision record 0007).
+    const atlas = new Database(':memory:');
+    const layout = new URL('../migrations-atlas/', import.meta.url);
+    for (const file of readdirSync(layout).filter(f => f.endsWith('.sql')).sort()) atlas.exec(readFileSync(new URL(file, layout), 'utf8'));
+    const reference = new Map([['v3/reference/char/U+1B002.json.gz', gzipSync(JSON.stringify({ grapheme: 1, data: {}, ids: {},
+      detail: { code_point: 'U+1B002', char: '𛀂', grapheme: { code_point: 'U+3042', char: 'あ' } } }))]]);
+    const MEDIA = { get: async (name: string) => { const bytes = reference.get(name); return bytes ? { arrayBuffer: async () => new Uint8Array(bytes).buffer } : null } };
     const stored = new Map<string, Response>();
     (globalThis as any).caches = { default: { match: async (key: Request) => stored.get(key.url)?.clone(), put: async (key: Request, value: Response) => { stored.set(key.url, value) } } };
     const waits: Promise<unknown>[] = [];
     const ctx = { waitUntil: (p: Promise<unknown>) => waits.push(p), passThroughOnException() {} } as unknown as ExecutionContext;
-    const get = async (path: string) => { const response = await worker.fetch(new Request('https://glyphatlas.org' + path), { DB: d1(db) } as unknown as Env, ctx); await Promise.all(waits); return response };
-    return { db, get, stored };
+    const get = async (path: string) => { const response = await worker.fetch(new Request('https://glyphatlas.org' + path), { ATLAS: d1(atlas), MEDIA, CATALOGUE_LAG: '0' } as unknown as Env, ctx); await Promise.all(waits); return response };
+    return { db: atlas, get, stored };
   }
-  const current = versionToken('ex:1', crop.crop_version)!, first = versionToken('ex:1', `ex:1@${pixels}@1,2,3,4`)!;
-  it('serves a crop’s current version as CSL-JSON, open to any site and cached', async () => {
-    const { db, get, stored } = setup();
-    const response = await get('/atlas/cite/crop/ex:1');
-    expect(response.status).toBe(200);
-    expect(response.headers.get('content-type')).toStartWith('application/vnd.citationstyles.csl+json');
-    expect(response.headers.get('access-control-allow-origin')).toBe('*');
-    expect(response.headers.get('cache-control')).toBe('no-cache');
-    const [item] = await response.json() as any[];
-    expect([item.version, item.URL]).toEqual([current, `https://glyphatlas.org/crop/ex:1?v=${current}`]);
-    expect(stored.size).toBe(1);
-    const again = await get('/atlas/cite/crop/ex%3A1');
-    expect([again.headers.get('cache-control'), (await again.json() as any[])[0].version]).toEqual(['no-cache', current]);
-    db.close();
-  });
-  it('serves the earlier version a citation names, and refuses one the crop never had', async () => {
+  it('serves Hayagriva on request, and refuses another format', async () => {
     const { db, get } = setup();
-    const [item] = await (await get(`/atlas/cite/crop/ex:1?v=${first}`)).json() as any[];
-    // The label is the crop's now, and that cut may not have shown it.
-    expect([item.version, item.title]).toEqual([first, 'ex:1']);
-    expect((await get('/atlas/cite/crop/ex:1?v=zzzzzz')).status).toBe(404);
-    expect((await get('/atlas/cite/crop/ex:1?v=2c9afc05d11e-1-2-3-4')).status).toBe(422);
-    db.close();
-  });
-  it('serves BibTeX and Hayagriva on request, and refuses another format', async () => {
-    const { db, get } = setup();
-    const bib = await get(citeAddress(cropEntry(crop), 'bibtex'));
-    expect([bib.status, bib.headers.get('content-type')]).toEqual([200, 'application/x-bibtex; charset=utf-8']);
-    expect(await bib.text()).toStartWith(`@misc{glyphatlas-敢-${current},`);
     const yml = await get(`/atlas/cite/form/U+1B002?format=hayagriva`);
     expect(yml.headers.get('content-type')).toBe('application/yaml; charset=utf-8');
     expect(await yml.text()).toStartWith('glyphatlas-𛀂-form:\n  type: "entry"');

@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "glyph-atlas",
-  "main": "../review/.svelte-kit/cloudflare/_worker.js",
+  "main": "src/entry.js",
   "account_id": "5e6d5236e83c2395b253db1ec8e28a3e",
   "compatibility_date": "2026-09-22",
   "compatibility_flags": ["nodejs_compat"],
@@ -14,11 +14,14 @@
     "binding": "ASSETS"
   },
   "observability": {"enabled": true, "head_sampling_rate": 0.1},
-  // ATLAS and ATLAS_RUNS are the new storage layout (docs/decisions/0005-storage-rebuild.md), filled by
-  // scripts/atlas3; the site reads DB until the cutover.
-  "d1_databases": [{"binding": "DB", "database_name": "glyph-atlas", "database_id": "556cb20f-db02-4f2a-8044-f7fd86776db6", "migrations_dir": "migrations"},
-                   {"binding": "ATLAS", "database_name": "glyph-atlas-v3", "database_id": "0b475d45-dfe4-49a6-8c44-996289e82995", "migrations_dir": "migrations-atlas"},
-                   {"binding": "ATLAS_RUNS", "database_name": "glyph-atlas-v3-runs", "database_id": "61a9e757-1343-4e4e-801b-f9c23f66b531", "migrations_dir": "migrations-atlas-runs"}],
+  // ATLAS and ATLAS_RUNS are the storage layout (docs/decisions/0005-storage-rebuild.md), filled by scripts/atlas3.
+  "d1_databases": [{"binding": "ATLAS", "database_name": "glyph-atlas-v3", "database_id": "0b475d45-dfe4-49a6-8c44-996289e82995", "migrations_dir": "migrations-atlas"},
+                   {"binding": "ATLAS_RUNS", "database_name": "glyph-atlas-v3-runs", "database_id": "61a9e757-1343-4e4e-801b-f9c23f66b531", "migrations_dir": "migrations-atlas-runs"},
+                   // ACCOUNTS holds the users, sessions and sign-in accounts: the cutover copies the auth tables
+                   // into it with scripts/atlas3/accounts.py, then applies migrations-accounts.
+                   {"binding": "ACCOUNTS", "database_name": "glyph-atlas-accounts", "database_id": "d2f3d824-cb72-4db9-9d83-fe16ebe5b141", "migrations_dir": "migrations-accounts"}],
+  // Every hour the Worker finishes account deletions that stopped between the two databases (`src/entry.js`).
+  "triggers": {"crons": ["17 * * * *"]},
   "r2_buckets": [{"binding": "MEDIA", "bucket_name": "glyph-atlas"}],
   // Sign-in codes are sent from MAIL_FROM, on a domain onboarded to Email Sending.
   "send_email": [{"name": "EMAIL"}],

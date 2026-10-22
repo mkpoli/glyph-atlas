@@ -21,12 +21,16 @@ const ctx = { waitUntil() {}, passThroughOnException() {} } as unknown as Execut
 let setups = 0;
 function setup() {
   const ORIGIN = `https://freeze${++setups}.glyphatlas.org`;
-  const db = new Database(':memory:');
-  const migrations = new URL('../migrations/', import.meta.url);
-  for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
-  db.exec(`INSERT INTO metadata(key,value) VALUES('published_at','"2026-10-01"')`);
+  const migrated = (dir: string) => {
+    const db = new Database(':memory:');
+    const migrations = new URL(`../${dir}/`, import.meta.url);
+    for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
+    return db;
+  };
+  const db = migrated('migrations-accounts'), atlas = migrated('migrations-atlas');
+  atlas.exec(`INSERT INTO site(key,value) VALUES('collection','"2026-10-01"')`);
   const statements: string[] = [];
-  const env = (paused?: string) => ({ DB: d1(db, statements), BETTER_AUTH_SECRET: 'freeze-test-secret-freeze-test-secret-01', MAIL_FROM: 'sign-in@example.org',
+  const env = (paused?: string) => ({ ACCOUNTS: d1(db, statements), ATLAS: d1(atlas, statements), BETTER_AUTH_SECRET: 'freeze-test-secret-freeze-test-secret-01', MAIL_FROM: 'sign-in@example.org',
     CATALOGUE_LAG: '60', ...(paused === undefined ? {} : { WRITES_PAUSED: paused }) }) as unknown as Env;
   const jar = new Map<string, string>();
   const send = async (paused: string | undefined, path: string, method = 'GET', body?: unknown, origin: string | null = ORIGIN) => {
@@ -53,9 +57,9 @@ describe('the write freeze', () => {
   });
   it('lets a read through', async () => {
     const { send } = setup();
-    const response = await send('1', '/health');
+    const response = await send('1', '/atlas/collection/status');
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, published_at: '2026-10-01' });
+    expect(await response.json()).toBe('2026-10-01');
   });
   it('lets a write through when unset or not "1"', async () => {
     for (const paused of [undefined, '0', '']) {

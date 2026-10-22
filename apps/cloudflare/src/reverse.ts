@@ -12,7 +12,7 @@
 //   filled and published before a deploy binds it.
 // The page offers the model for download and asks for its files here; nothing is fetched until the
 // reader chooses to.
-import { resolveNeighbours, type ItemsFor } from './similar';
+import { resolveNeighbours, type Items } from './similar';
 
 type Json = Record<string, any>;
 export type IndexPointer = { index: string; encoder: string; revision: string; crops: number; dimensions: number };
@@ -163,14 +163,14 @@ export function decodeCandidates(value: unknown): string[][] {
  * like it. A request from a model other than the one the index was built with is refused with the
  * version to update to.
  */
-export async function query(env: Env, input: Json, itemsFor: ItemsFor): Promise<Json> {
+export async function query(env: Env, input: Json, items: Items, ctx?: ExecutionContext): Promise<Json> {
   const { model, index } = await current(env);
   if (!index || !env.SIMILAR_INDEX) throw new QueryError(503, 'Image search is not available yet.');
   if (input.encoder !== index.encoder)
     throw new QueryError(409, 'This model is out of date.', { error: 'model', version: model?.encoder === index.encoder ? model.version : null });
   const vector = decodeVector(input.vector, index.dimensions);
   const candidates = decodeCandidates(input.candidates);
-  // Ids and scores only: the crops' records come from D1, which has their current labels.
+  // Text ids and scores only: the crops' records come from ATLAS, which has their current labels.
   const search = (topK: number, filter?: VectorizeVectorMetadataFilter) =>
     env.SIMILAR_INDEX.query(vector, { topK, returnMetadata: 'none', returnValues: false, ...(filter ? { filter } : {}) })
       .then(found => found.matches.map(m => [m.id, Math.round(m.score * 1000) / 1000] as [string, number]));
@@ -188,9 +188,9 @@ export async function query(env: Env, input: Json, itemsFor: ItemsFor): Promise<
   const known = new Map<string, Json | null>();
   return {
     revision: index.revision,
-    similar: await resolveNeighbours(env, similar, SIMILAR_LIMIT, itemsFor, known),
+    similar: await resolveNeighbours(env, similar, SIMILAR_LIMIT, items, known, undefined, ctx),
     candidates: await Promise.all(perCandidate.map(async (list, n) => ({
       characters: candidates[n],
-      crops: await resolveNeighbours(env, list, CANDIDATE_LIMIT, itemsFor, known, item => candidates[n].includes(item.label)) }))),
+      crops: await resolveNeighbours(env, list, CANDIDATE_LIMIT, items, known, item => candidates[n].includes(item.label), ctx) }))),
   };
 }

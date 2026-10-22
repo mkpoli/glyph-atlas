@@ -9,11 +9,15 @@ pull   finds the authentication tables in the old database's sqlite_master: `use
        history. A table that is neither, nor named in LEFT, stops it. It creates them (tables, indexes,
        triggers) in `accounts.sqlite`, copies their rows in primary-key ranges, then compares the copy
        with the old database as `check` does. It only reads.
-load   writes the schema, the rows (parents before the rows that reference them) and then the indexes
-       as SQL parts under `accounts-load/<copy>/`, named by the copy's checksums, and replays them on an
-       empty database to confirm they rebuild the copy exactly. With --send each part goes to
-       glyph-atlas-accounts and is confirmed by its stamp in `imports`; a rerun sends only what is
-       missing, and a database holding another copy's rows or any table of its own is refused.
+load   writes, as SQL parts under `accounts-load/<copy>-<base>/`, what turns the loaded copy
+       (`accounts-loaded.sqlite`, every part sent so far replayed) into this copy: on the first load the
+       schema, the rows (parents before the rows that reference them) and then the indexes; after it the
+       difference, an INSERT per new row, an UPDATE per changed row and a DELETE per row gone (children
+       first), so a fresh copy sends only what changed and nothing already loaded. It replays the parts on
+       the loaded copy to confirm they rebuild this copy exactly. With --send each part goes to
+       glyph-atlas-accounts, is confirmed by its stamp in `imports` and replayed on the loaded copy; a
+       rerun sends only what is missing, and a database holding a stamp the loaded copy does not know, or
+       tables no load wrote, is refused.
 check  compares the table set, the schema, the row count and a checksum of every row of each table of
        `accounts.sqlite` with the old database, then with glyph-atlas-accounts, and exits 1 on any
        difference. It only reads.
@@ -39,6 +43,8 @@ ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(os.environ.get("ATLAS3_DIR", ROOT / "work/atlas-v3"))
 COPY = HERE / "accounts.sqlite"
 LOADS = HERE / "accounts-load"
+# Every part sent to glyph-atlas-accounts, replayed: what the database holds, for the next difference.
+LOADED = HERE / "accounts-loaded.sqlite"
 OLD = "glyph-atlas"
 DATABASE = "glyph-atlas-accounts"
 # The authentication tables no foreign key ties to `user`; the rest are found through their keys.
@@ -50,7 +56,7 @@ JOB = "the lock or progress of a job that runs on the old database"
 LEFT = {
     **dict.fromkeys(("character_derived", "character_variants", "component_variants", "document_characters",
                      "grapheme_writers", "han_component_names", "han_components", "han_ids", "word_spellings",
-                     "words", "form_bases", "form_clusters", "form_families", "form_units"), EXPORTED),
+                     "words", "form_clusters", "form_families", "form_units"), EXPORTED),
     **dict.fromkeys(("unit_counts", "unit_count_keys", "ngram_counts", "ngram_forms", "corpus_characters",
                      "corpus_gallery"), DERIVED),
     **dict.fromkeys(("form_loading", "corpus_follow_drain", "graphemes_backfill", "hand_order_backfill",
@@ -221,35 +227,108 @@ def copy_name(db):
     return "accounts-" + digest.hexdigest()[:12]
 
 
-def parts(db):
-    """The copy's parts: imports and the tables, the rows, then the indexes and triggers."""
-    orphans = db.execute("PRAGMA foreign_key_check").fetchall()
-    if orphans:
-        sys.exit(f"{len(orphans)} rows name a missing parent, e.g. {orphans[:5]}; D1 would refuse them")
-    run = LOADS / copy_name(db)
-    if run.exists():
-        return run
-    entries = schema(local(db), tables(db))
-    tmp = LOADS / ".building" / run.name
-    shutil.rmtree(tmp, ignore_errors=True)
-    for d in (LOADS, tmp.parent, tmp):
-        d.mkdir(mode=0o700, exist_ok=True)
-        d.chmod(0o700)
-    write_parts(tmp, "1-schema", [[IMPORTS] + [e["sql"] + ";" for e in entries if e["type"] == "table"]])
-    groups = []
-    for table in ordered(db):
-        cols, key = columns(db, table), keys(db, table)
-        batch = []
-        for r in db.execute(f"SELECT {','.join(q(c) for c in cols)} FROM {q(table)} ORDER BY "
-                            f"{','.join(q(k) if k != 'rowid' else k for k in key)}"):
-            batch += row_statements(table, cols, key, r)
+def private(path):
+    """An SQLite file readable by the owner only: sessions and account tokens."""
+    if not path.exists():
+        os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+    return sqlite3.connect(path)
+
+
+def stamps_of(db):
+    return {r[0] for r in db.execute("SELECT stamp FROM imports")} if "imports" in stored(local(db)) else set()
+
+
+def run_name(db, base):
+    """The run that turns `base` (the loaded copy) into `db`: named by both, so a run built against an
+    older loaded copy is never sent over a newer one."""
+    digest = hashlib.sha256("\n".join(sorted(stamps_of(base))).encode()).hexdigest()[:12]
+    return f"{copy_name(db)}-{digest}"
+
+
+def key_of(db, table):
+    """The columns that name a row: the primary key, or every column of a table without one."""
+    key = keys(db, table)
+    return columns(db, table) if key == ["rowid"] else key
+
+
+def where(key, values):
+    return " AND ".join(f"{q(k)} IS {lit(v)}" for k, v in zip(key, values))
+
+
+def difference(db, base):
+    """Groups of statements that turn `base`'s rows into `db`'s, and the new, changed and gone rows per
+    table. Rows gone are deleted children first; new and changed rows follow parents first. A changed row
+    is updated in place, so no delete cascades to the rows that reference it."""
+    gone, groups, counts = [], [], {}
+    order = ordered(db)
+    for table in order:
+        cols, key = columns(db, table), key_of(db, table)
+        at = [cols.index(k) for k in key]
+        select = f"SELECT {','.join(q(c) for c in cols)} FROM {q(table)}"
+        old = {tuple(r[i] for i in at): r for r in base.execute(select)}
+        n, batch = {"new": 0, "changed": 0, "gone": 0}, []
+        for r in db.execute(select + f" ORDER BY {','.join(q(k) for k in key)}"):
+            k = tuple(r[i] for i in at)
+            was = old.pop(k, None)
+            if was == r:
+                continue
+            if was is None:
+                n["new"] += 1
+                batch += row_statements(table, cols, key, r)
+            else:
+                n["changed"] += 1
+                sets = ",".join(f"{q(c)} = {lit(v)}" for c, v in zip(cols, r) if c not in key)
+                statement = f"UPDATE {q(table)} SET {sets} WHERE {where(key, k)};"
+                if len(statement.encode()) > publish.STATEMENT_BYTES:
+                    sys.exit(f"a changed row of {table} needs a statement over {publish.STATEMENT_BYTES} bytes")
+                batch.append(statement)
             if len(batch) >= GROUP:
                 groups.append(batch)
                 batch = []
         if batch:
             groups.append(batch)
+        n["gone"] = len(old)
+        gone.append([f"DELETE FROM {q(table)} WHERE {where(key, k)};" for k in old])
+        counts[table] = n
+    deletes = [g for table in reversed(gone) for g in (table[i:i + GROUP] for i in range(0, len(table), GROUP))]
+    return deletes + groups, counts
+
+
+def parts(db, base):
+    """The parts that turn the loaded copy `base` into the copy: on the first load the imports table and
+    the tables, the rows, then the indexes and triggers; after it the difference of the rows."""
+    orphans = db.execute("PRAGMA foreign_key_check").fetchall()
+    if orphans:
+        sys.exit(f"{len(orphans)} rows name a missing parent, e.g. {orphans[:5]}; D1 would refuse them")
+    run = LOADS / run_name(db, base)
+    if run.exists():
+        return run
+    entries = schema(local(db), tables(db))
+    first = not stamps_of(base)
+    if not first:
+        here = {(e["type"], e["name"]): e["sql"] for e in entries}
+        there = {(e["type"], e["name"]): e["sql"] for e in schema(local(base), tables(db))}
+        if here != there:
+            sys.exit("the auth tables' schema changed since the first load; a schema change is applied by hand")
+    tmp = LOADS / ".building" / run.name
+    shutil.rmtree(tmp, ignore_errors=True)
+    for d in (LOADS, tmp.parent, tmp):
+        d.mkdir(mode=0o700, exist_ok=True)
+        d.chmod(0o700)
+    if first:
+        write_parts(tmp, "1-schema", [[IMPORTS] + [e["sql"] + ";" for e in entries if e["type"] == "table"]])
+        empty = sqlite3.connect(":memory:")
+        for e in entries:
+            if e["type"] == "table":
+                empty.execute(e["sql"])
+        groups, counts = difference(db, empty)
+    else:
+        groups, counts = difference(db, base)
     write_parts(tmp, "2-rows", groups)
-    write_parts(tmp, "3-indexes", [[e["sql"] + ";" for e in entries if e["type"] != "table"]])
+    if first:
+        write_parts(tmp, "3-indexes", [[e["sql"] + ";" for e in entries if e["type"] != "table"]])
+    (tmp / "figures.txt").write_text("".join(f"{t}: {c['new']} new, {c['changed']} changed, {c['gone']} gone\n"
+                                             for t, c in counts.items()))
     tmp.rename(run)
     return run
 
@@ -259,12 +338,17 @@ def stamp(run, part):
     return f"{run.name}.{label}.{k}"
 
 
-def replay(run, db):
-    """Apply the parts to an empty database as D1 would, foreign keys on, and compare it with the copy."""
+def apply(target, part):
+    target.executescript("BEGIN;\n" + part.read_text() + "COMMIT;\n")
+
+
+def replay(run, db, base):
+    """Apply the parts to a copy of the loaded copy as D1 would, foreign keys on, and compare it with the copy."""
     target = sqlite3.connect(":memory:")
+    base.backup(target)
     target.execute("PRAGMA foreign_keys = ON")
     for part in sorted(run.glob("*.sql")):
-        target.executescript("BEGIN;\n" + part.read_text() + "COMMIT;\n")
+        apply(target, part)
     if differences(db, local(target))[0]:
         sys.exit(f"the parts in {run} do not rebuild the copy")
 
@@ -287,34 +371,43 @@ def send(database, file, stamp_, query):
     return stamp_ in loaded(query)[0]
 
 
-def deliver(run, query):
+def deliver(run, query, base):
+    """Each part to the database, then to the loaded copy, in order. A part the database holds and the
+    loaded copy lacks (a run stopped between the two) is only replayed."""
     stamps, tables = loaded(query)
-    others = sorted(s for s in stamps if not s.startswith(run.name + "."))
-    if others:
-        sys.exit(f"{DATABASE} holds rows of another copy ({others[0]}); delete and create the database "
-                 "again to load this one")
     if tables and not stamps:
         sys.exit(f"{DATABASE} holds tables no copy loaded ({', '.join(tables)}); it must be empty")
+    ours = {stamp(run, part) for part in run.glob("*.sql")}
+    unknown = sorted(stamps - stamps_of(base) - ours)
+    if unknown:
+        sys.exit(f"{DATABASE} holds {unknown[0]}, which {LOADED.name} lacks; it no longer describes the database")
+    lost = sorted(stamps_of(base) - stamps)
+    if lost:
+        sys.exit(f"{LOADED.name} holds {lost[0]}, which {DATABASE} lacks; it no longer describes the database")
     sent = 0
     for part in sorted(run.glob("*.sql")):
-        if stamp(run, part) in stamps:
+        if stamp(run, part) in stamps_of(base):
             continue
-        if not send(DATABASE, part, stamp(run, part), query):
-            sys.exit(f"{part.name} did not apply; rerun to finish")
-        sent += 1
-        print(f"{part.name} applied", flush=True)
-    print(f"{run.name}: {sent} parts sent, {len(list(run.glob('*.sql'))) - sent} already there", flush=True)
+        if stamp(run, part) not in stamps:
+            if not send(DATABASE, part, stamp(run, part), query):
+                sys.exit(f"{part.name} did not apply; rerun to finish")
+            sent += 1
+            print(f"{part.name} applied", flush=True)
+        apply(base, part)
+    print(f"{run.name}: {sent} parts sent, {len(ours) - sent} already there", flush=True)
 
 
 def load(do_send, query=None):
     db = sqlite3.connect(f"file:{COPY}?mode=ro", uri=True)
-    run = parts(db)
-    replay(run, db)
-    print(f"{len(list(run.glob('*.sql')))} parts -> {run}; they rebuild the copy", flush=True)
+    base = private(LOADED)
+    run = parts(db, base)
+    replay(run, db, base)
+    print((run / "figures.txt").read_text(), end="", flush=True)
+    print(f"{len(list(run.glob('*.sql')))} parts -> {run}; they turn {LOADED.name} into the copy", flush=True)
     if not do_send:
         print("dry run: nothing sent; --send loads them", flush=True)
         return
-    deliver(run, query or remote(DATABASE))
+    deliver(run, query or remote(DATABASE), base)
 
 
 def differences(db, query, names=None):

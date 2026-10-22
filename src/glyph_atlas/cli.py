@@ -1599,17 +1599,19 @@ def similar_index(
 def similar_neighbours(
     out: Annotated[Path, typer.Option(help="directory holding the revisions and `current`")] = Path("work/similar"),
     k: Annotated[int, typer.Option(help="neighbours kept per crop, in each list")] = 20,
+    mirror: Annotated[Path, typer.Option(help="v3 migration mirror mapping source ids to public crops")] = Path("work/atlas-v3/out/mirror.sqlite"),
 ) -> None:
     """Write each crop's nearest crops, and its nearest filed under another character, as shards."""
     from .similar import neighbours
 
-    typer.echo(json.dumps(neighbours((out / "current").resolve(), k=k)))
+    typer.echo(json.dumps(neighbours((out / "current").resolve(), k=k, mirror=mirror)))
 
 
 @similar_app.command("vectorize")
 def similar_vectorize(
     out: Annotated[Path, typer.Option(help="directory holding the revisions and `current`")] = Path("work/similar"),
     state: Annotated[Path | None, typer.Option(help="what the Vectorize index holds; default work/similar/vectorize/<index>/state.parquet")] = None,
+    mirror: Annotated[Path, typer.Option(help="v3 migration mirror mapping source ids to public crops")] = Path("work/atlas-v3/out/mirror.sqlite"),
     plan: Annotated[Path, typer.Option(help="directory the upsert files and the plan are written to")] = Path("work/similar/vectorize/plan"),
 ) -> None:
     """Write the Vectorize upserts and deletions that bring the image-search index to `current`."""
@@ -1619,7 +1621,7 @@ def similar_vectorize(
     if state is None:
         encoder = json.loads((directory / "manifest.json").read_text())["encoder"]
         state = out / "vectorize" / vectorize_index_name(encoder) / "state.parquet"
-    typer.echo(json.dumps(vectorize_plan(directory, state, plan)))
+    typer.echo(json.dumps(vectorize_plan(directory, state, plan, mirror=mirror)))
 
 
 @forms_app.command("audit")

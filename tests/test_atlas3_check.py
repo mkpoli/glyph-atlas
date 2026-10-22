@@ -37,6 +37,7 @@ def test_a_fresh_build_passes_every_check(layout, monkeypatch):  # noqa: F811
 @pytest.mark.parametrize("change", ["UPDATE crops SET state = 1 WHERE kind = 0 AND state = 0",
                                     "UPDATE crops SET year = 1999 WHERE kind = 0",
                                     "UPDATE crops SET flags = 1 WHERE kind = 0",
+                                    "UPDATE crops SET priority = 0 WHERE kind = 0",
                                     "DELETE FROM crops WHERE kind = 1"])
 def test_a_crop_that_differs_from_its_live_record_fails(layout, monkeypatch, change):  # noqa: F811
     root, _publish, _remote = layout
@@ -100,8 +101,13 @@ def translated(root, monkeypatch, sources, history, **extra):
             assertion_premises=[("cf:a", "cf:b", "premise")],
             rejections=[("r-b:s2", "user-1", "wrong book", "2026-10-01T00:00:05Z")],
             corpus_follow=[("codh:g1",)],
+            form_bases=[("codh:g1", "か", "U+304B")],
             unit_suspects=[("ex:a1", 0.9, "い", "あ", "0,0,10,10"), ("ex:gone", 0.8, "う", "え", None)],
-            unit_shapes=[("ex:a2", 3), ("ex:gone", 4)])
+            unit_shapes=[("ex:a2", 3), ("ex:gone", 4)],
+            forms=[("fm:1", "rp:1", "u1", "2026-10-01T00:00:00Z")],
+            representations=[("rp:1", "unicode", "あ", None, None)],
+            ledger_submissions=[("u1:a", "u1", "{}", json.dumps({"submission": "u1:a", "subject": "ex:a1", "replaced": None}),
+                                 "2026-10-01T00:00:00Z")])
     sources(root, **{**tables, **extra})
     code, _out = history(monkeypatch, root)
     assert code == 0
@@ -134,9 +140,11 @@ def test_a_correct_history_translation_passes(layout, monkeypatch):  # noqa: F81
     ("UPDATE events SET actor = 3 - actor WHERE id = 1", "every events row is translated"),
     ("UPDATE submissions SET actor = 3 - actor WHERE id = 1", "every submissions row is translated"),
     ("UPDATE assertion_premises SET role = 'other'", "every assertion_premises row is translated"),
+    ("UPDATE ledger_submissions SET response = json_remove(response, '$.crop')", "every ledger_submissions row is translated"),
     ("DELETE FROM rejections", "every rejections row is translated"),
     ("UPDATE rejections SET at = at + 1", "every rejections row is translated"),
     ("DELETE FROM corpus_follow", "every corpus_follow row is translated"),
+    ("UPDATE form_bases SET char = NULL", "every form_bases row is translated"),
     ("UPDATE suspects SET p = 0.1", "every unit_suspects row is translated into suspects"),
     ("DELETE FROM shapes", "every unit_shapes row is translated into shapes"),
     ("UPDATE actors SET via = 'account' WHERE user IS NULL", "every actors row is translated"),
@@ -321,7 +329,17 @@ def test_every_cut_minus_one_a_row_cites_is_in_its_bundle_with_its_earlier_box(l
     publish.main()
     assert check(monkeypatch) == 0
     assert "ok   every crop cited at cut -1 has that cut in its bundle with its earlier box (1 crops)" in report(root)
+    assert "ok   every crop's cut_at and other encodings equal crop_versions' record of its current version" in report(root)
     path = bundle_of(root, ids(root)["ex:a1"])
+    body = json.loads(gzip.decompress(path.read_bytes()))
+    kept = path.read_bytes()
+    for e in body["crops"]:
+        if e["id"] == "ex:a1":
+            e["cut_at"] = "2026-10-04T00:00:00Z"
+    path.write_bytes(gzip.compress(json.dumps(body).encode()))
+    assert check(monkeypatch) == 1
+    assert "ex:a1" in report(root) and "'cut_at': '2026-10-04T00:00:00Z'" in report(root)
+    path.write_bytes(kept)
     body = json.loads(gzip.decompress(path.read_bytes()))
     for e in body["crops"]:
         for c in e.get("cuts", []):
@@ -344,11 +362,20 @@ def accounts_copy(root, sessions):
 
 
 def accounts_load(root, monkeypatch):
+    """accounts.py load --send into a local stand-in for glyph-atlas-accounts."""
     sys.modules.pop("accounts", None)
     accounts = importlib.import_module("accounts")
     monkeypatch.setattr(accounts, "COPY", root / "accounts.sqlite")
     monkeypatch.setattr(accounts, "LOADS", root / "accounts-load")
-    accounts.load(False)
+    monkeypatch.setattr(accounts, "LOADED", root / "accounts-loaded.sqlite")
+    target = sqlite3.connect(":memory:")
+
+    def send(_database, file, stamp, query):
+        target.executescript("BEGIN;\n" + file.read_text() + "COMMIT;\n")
+        return stamp in accounts.loaded(query)[0]
+
+    monkeypatch.setattr(accounts, "send", send)
+    accounts.load(True, accounts.local(target))
 
 
 def test_every_session_is_in_the_accounts_load(layout, monkeypatch):  # noqa: F811
@@ -360,9 +387,10 @@ def test_every_session_is_in_the_accounts_load(layout, monkeypatch):  # noqa: F8
     accounts_load(root, monkeypatch)
     assert check(monkeypatch) == 0
     assert "ok   the parts loaded into glyph-atlas-accounts rebuild accounts.sqlite, every session among them (2 sessions)" in report(root)
-    # A session the parts lack: drop it from the part that inserts it.
-    for part in (root / "accounts-load").glob("*/*.sql"):
-        part.write_text(part.read_text().replace("\nINSERT INTO \"session\"(\"id\",\"userId\") VALUES('s2','user-1');", ""))
+    # A session the loads lack.
+    loaded = sqlite3.connect(root / "accounts-loaded.sqlite")
+    loaded.execute("DELETE FROM \"session\" WHERE id = 's2'")
+    loaded.commit()
     assert check(monkeypatch) == 1
     assert "session: 2 rows here, 1 there" in report(root)
 
@@ -423,7 +451,7 @@ def test_the_loaded_copy_equals_the_translation_row_for_row(layout, monkeypatch,
     ("UPDATE events SET at = at + 1 WHERE id > 2", "at 1790812802000 expected, 1790812802001 set"),
     ("UPDATE events SET cut = -1 WHERE id > 2", "cut 0 expected, -1 set"),
     ("INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind, state) VALUES(1, 99, 0, 0, 1, 1, 0, 3, 3)",
-     "past the translation's events and sets no live mark"),
+     "an event no source event names that sets no live mark"),
 ])
 def test_a_mark_event_names_the_latest_round_that_showed_the_crop(layout, monkeypatch, change, line):  # noqa: F811
     root, publish, remote = layout
@@ -528,6 +556,21 @@ def test_a_mark_event_is_no_review_in_actor_stats(layout, monkeypatch):  # noqa:
     assert check(monkeypatch) == 0
 
 
+@pytest.mark.parametrize(("change", "line"), [
+    ("DELETE FROM representations", "every representations row is translated"),
+    ("UPDATE representations SET value = 'い'", "every representations row is translated"),
+    ("UPDATE forms SET anchor = 'rp:none'", "every form's anchor names a representation"),
+])
+def test_a_representation_must_move_as_it_is_and_name_every_anchor(layout, monkeypatch, change, line):  # noqa: F811
+    root, _publish, _remote = layout
+    translated(root, monkeypatch, sources, history)
+    db = sqlite3.connect(root / "out" / "history.sqlite")
+    # Representations are never changed in the site's database; here a wrong translation is staged.
+    db.executescript(f"DROP TRIGGER representation_kept; DROP TRIGGER representation_kept_delete; {change};")
+    assert check(monkeypatch) == 1
+    assert f"FAIL (1) {line}" in report(root)
+
+
 def test_a_null_key_in_the_local_copy_is_reported_not_raised(layout, monkeypatch):  # noqa: F811
     root, publish, remote = layout
     translated(root, monkeypatch, sources, history)
@@ -552,3 +595,18 @@ def test_a_tombstones_current_box_is_its_retired_bundle_entrys(layout, monkeypat
     assert cuts.current("ex:a1") == (0, 0, 10, 10)
     assert cuts.current("ex:nothing") is None
     assert cuts.cut("ex:gone", {"x": 1, "y": 2, "w": 3, "h": 4}) == 0
+
+
+def test_every_row_the_old_site_wrote_is_in_the_new_layout(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    translated(root, monkeypatch, sources, history, favourites=[("user-1", "ex:a1", "2026-10-01T00:00:03Z")])
+    assert check(monkeypatch) == 0
+    assert "skip every row the old site wrote is in the new layout" in report(root)
+    load(publish, remote, monkeypatch)
+    assert check(monkeypatch) == 0
+    assert "ok   every row the old site wrote to a history table is in the new layout, by id or legacy id" in report(root)
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    local.execute("DELETE FROM favourites")
+    local.commit()
+    assert check(monkeypatch) == 1
+    assert "favourites: 1 rows missing, history-report.txt leaves out 0" in report(root)

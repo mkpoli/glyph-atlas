@@ -37,7 +37,7 @@ missing=$(find "$staging" -name '*.json.gz' -printf '%f\n' | grep -cvxFf "$uploa
 [ "$missing" -eq 0 ] || { echo "$missing shards did not upload; rerun to send them" >&2; exit 1; }
 sent=$(sort -u "$uploaded" | wc -l)
 [ "$sent" -eq "$expected" ] || { echo "$sent shards in R2, the manifest counts $expected; not switching" >&2; exit 1; }
-jq -n --arg revision "$revision" --argjson digits "$digits" '{revision: $revision, shard_digits: $digits}' > "$staging/current.json"
+jq -n --arg revision "$revision" --argjson digits "$digits" --slurpfile manifest "$manifest" '{revision: $revision, shard_digits: $digits, id_format: $manifest[0].id_format}' > "$staging/current.json"
 bunx wrangler r2 object put glyph-atlas/similar/current.json --file "$staging/current.json" \
   --content-type application/json --remote >/dev/null
 echo "published similar/$revision ($total shards)"

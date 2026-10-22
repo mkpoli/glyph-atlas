@@ -2,6 +2,7 @@ import { getContext, setContext } from 'svelte'
 import { pushState, replaceState } from '$app/navigation'
 import { page } from '$app/state'
 import { localize } from './i18n.svelte.js'
+import { showing } from './inspectQueue.js'
 
 const KEY = Symbol('inspector')
 
@@ -36,7 +37,7 @@ export function createInspector() {
     /** The crop on show, as `{ id, origin }`, or null. */
     get shown() { return page.state.inspect ?? null },
     get queue() { return current() ? state.queue : [] },
-    get index() { return current() ? state.queue.findIndex(item => item.id === page.state.inspect?.id) : -1 },
+    get index() { return current() ? state.queue.findIndex(item => showing(item, page.state.inspect)) : -1 },
     get onVerdict() { return current() ? state.onVerdict : null },
     get update() { return current() ? updateItem : null },
     inspect(id, decision = null, collection = [], update = null, origin = 'collection') {
@@ -58,10 +59,12 @@ export function createInspector() {
       closing = true
       history.back()
     },
-    /** The crop on show was replaced by another; the entry names the one on screen. */
-    replaced(id) {
-      if (page.state.inspect) replaceState(cropAddress(id, page.state.inspect.origin), { ...page.state, inspect: { ...page.state.inspect, id } })
-      else replaceState(cropAddress(id), page.state)
+    /** The crop on show opened as another id (an old one, or a retired crop's replacement); the entry names
+     *  the one on screen, `source` its source id, and keeps the id the list asked for. */
+    replaced(id, source = null, origin = 'collection') {
+      const inspect = page.state.inspect
+      if (inspect) replaceState(cropAddress(id, inspect.origin), { ...page.state, inspect: { ...inspect, id, was: inspect.was ?? inspect.id, source } })
+      else replaceState(cropAddress(id, origin), page.state)
     },
     /** A new page has nothing of the last one's to step through. */
     forget() { Object.assign(state, { onVerdict: null, queue: [], key: state.key + 1 }); updateItem = null; lastFocus = null },

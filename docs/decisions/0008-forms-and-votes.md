@@ -42,21 +42,29 @@ filters on.
   number, null outside the clustering. It maps a crop to its cluster for a record's form, for checking
   a glyph decision against the clustering, and for joining claims to a family.
 - A cluster decision is one row: `form`, `issue`, `character`, `written_family` and `decision` on
-  `form_clusters`. Every glyph without its own decision takes it; `mixed` gives them no issue. The
+  `form_clusters`. Every glyph without a `form_glyphs` row takes it; `mixed` gives them no issue. The
   load stops when a cluster's decision is not its latest in the loaded `form_decisions`.
-- `form_glyphs` holds only glyphs with their own glyph decision; a glyph's form is its `form_glyphs`
-  row's, else its cluster's. A glyph outside the clustering with no decision of its own has no row.
-  The load stops when a glyph's decision is not its latest glyph decision in the loaded
-  `form_decisions`.
+- A glyph's form is its `form_glyphs` row's, else its cluster's. A row is the glyph's own glyph
+  decision, or a cluster decision of an earlier clustering that the glyph carries: its latest cluster
+  decision was made on a cluster it is no longer in, and its current cluster has not been decided
+  since. `carried` (migration 0014) names that decision; a row whose `decision` is not `carried` is the
+  glyph's own. A carried decision counts and shows as the glyph's cluster form. Its current cluster's
+  next decision replaces it, also under the glyph's own decision; following the cluster again after a
+  glyph decision restores it. A glyph outside the clustering keeps a row only for one of these.
+- The load stops when a glyph's decision is not its latest glyph decision in the loaded
+  `form_decisions`, or when a glyph's cluster form in the copy is neither its cluster's decision's nor
+  that of its latest cluster decision there, read from the `crops` each decision listed.
 - A decision names the list it was made on (`form_decisions.list`, whose name starts with the
   cluster's number) in place of copying the cluster's glyphs into `units` and `crops`. A trigger
   refuses a decision whose list no `form_clusters` row holds, so none names a list already deleted.
 - `form_state` holds `lists`, the load in place (it keys cached forms answers), and `loading`, set
   while a load sends its rows; a trigger refuses decisions meanwhile.
-- The load recomputes each family's `count`, `assigned` and `rejected`. The Worker's recount after a
-  decision is not built yet.
-- The forms tool's form of a glyph is not `crops.form`. `crops.form` is a crop's written form, set by
-  the claim that names it (decision record 0005); a forms decision never writes it.
+- The load recomputes each family's `count`, `assigned` and `rejected`. A decision recounts its
+  family's `assigned` and `rejected` in its own batch, from `form_clusters` and `form_glyphs`
+  (`apps/cloudflare/src/routes/forms.ts`).
+- The forms tool's form of a glyph is not a crop's written form, which is its `has_form` slot in
+  `current_claims` (decision record 0005); a forms decision never writes it, and `crops.form` stays
+  empty.
 
 ## List retention
 
@@ -78,6 +86,9 @@ From the dry run on 20 October 2026 (110,292 collected crops' readings, the 5828
   which no index covers) and about 70,000 for the families and clusters with their indexes. A later
   load writes only what changed. The first load waits for the owner's approval.
 - D1 stored: 3.4 MB for the forms tables with their indexes, and 2.7 MB more in `crops`.
+- Carried cluster decisions, from the copy of 22 October 2026: 326,110 `form_glyphs` rows (323,312
+  clustered glyphs and 2,798 outside the clustering, from 252 decisions), about 41 MB with their index,
+  written once by the load that adds `carried`.
 
 ## Gaps against today's forms tool, and their designs
 
@@ -85,14 +96,25 @@ From the dry run on 20 October 2026 (110,292 collected crops' readings, the 5828
 2. The family view reading every cluster list: the family index object. Built.
 3. Member previews (`tone`, `image_size`): carried in the list and index entries. Built. A member's
    document comes from `crops.book`.
-4. Decisions copying the cluster's glyphs: `form_decisions.list`. Schema built; the Worker's decision
-   route is not ported.
+4. Decisions copying the cluster's glyphs: `form_decisions.list`. Built: a cluster decision names
+   its list and leaves `units` and `crops` empty; a glyph decision names its crops in `crops` and
+   their public ids in `units`.
 5. A corpus glyph's character following its decided form (`corpus_follow`, `form_bases`): the queue
    `corpus_follow` (decision record 0006) names the crops whose `crops.char` follows a decision, and a
-   `form_bases(crop, char)` table keeps the character before the first follow so a withdrawn form
-   restores it. Not built; it comes with the Worker's forms routes.
-6. Republishing the clustering: `form_state` and the trigger are built. After the cutover the
-   clustering load reads `work/forms/current` (`clusters.json`, `units.parquet`) in place of the old
-   database's copies, and takes glyph-atlas-v3's own `form_decisions`, carrying each cluster decision
-   by cluster key onto the cluster of the new clustering with that key and each glyph decision by crop.
-   `export_forms_cloudflare.py`, which writes the old database, is then removed. Not built; next.
+   `form_bases(crop, char)` table (migration 0013) keeps the character before the first follow so a
+   withdrawn form restores it. Built in the Worker: a decision lists its unnamed corpus glyphs (kind 1,
+   revision 0), and each drain batch moves up to 500 of them in one transaction, with their counts
+   in `tally` in the current generation. The history load moves the old database's `form_bases`
+   rows (crop through the mirror, character as its grapheme). A publish never writes an unnamed
+   corpus glyph's new upstream character over a followed one: a glyph with a `form_bases` row keeps
+   its character and the new one becomes its base, which a withdrawn form restores; any other unnamed
+   glyph takes it. The answers a publication writes do not yet count followed characters.
+6. Republishing the clustering: `form_state` and the trigger are built, and so is carrying a cluster
+   decision across a re-clustering (`form_glyphs.carried`): the cutover load carries every glyph's
+   cluster form from an earlier clustering's decision as the old database held it. After the cutover
+   the clustering load reads `work/forms/current` (`clusters.json`, `units.parquet`) in place of the
+   old database's copies, and takes glyph-atlas-v3's own `form_decisions`, carrying each cluster
+   decision by cluster key onto the cluster of the new clustering with that key, each glyph decision by
+   crop, and each glyph's latest cluster decision onto the glyph when its new cluster has no later one.
+   `export_forms_cloudflare.py`, which writes the old database, is then removed. That load is not
+   built; next.

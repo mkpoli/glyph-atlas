@@ -4,16 +4,22 @@
 
 Decision record 0006. Every step writes SQL parts under `out/history-load/<name>/`, named by the
 content of `out/history.sqlite`, so a rerun on the same translation skips what D1 already holds; each
-part is confirmed by its stamp in `imports` and replayed on the local copy.
+part is confirmed by its stamp in `imports` and replayed on the local copy. The rows sent are the
+difference between the translation and the local copy: a translation of a later copy (history.py keeps
+the ids an earlier load gave) sends its new rows, its changed rows (a DELETE and the INSERT) and the
+DELETE of rows the source no longer has, and nothing already loaded. Mark events are the load's own
+(no `legacy`) and stay out of the difference.
 
-1. Migration 0003 (stamp `migration:0003`), on D1 and the local copy; the mirror's `codes` take the
-   two mark states the migration numbers, so the publisher never numbers them differently.
-2. The rows of every history table.
+1. Each migration in MIGRATIONS (stamps `migration:<number>`), on D1 and the local copy, once;
+   the mirror's `codes` take the two mark states 0003 numbers, so the publisher never numbers them
+   differently. 0008 holds form anchors. 0009 gives events what an undo restores; 0010 the labels each showed and named, and
+   the corpus rows and flags; 0013 keeps the character before a forms decision.
+2. The rows of every history table that differ from the local copy.
 3. Marks: a pending crop with a mark takes the mark as its state, one revision past its own, with an
    event at the round that marked it. A mark on a crop that is not pending is left out, as the old
-   site showed it only on pending crops.
-4. Earlier cuts: `out/history-cuts.sqlite`, a catalogue of the crops with an earlier box, their
-   records naming their cuts, for `publish.py`.
+   site showed it only on pending crops; a crop already in its mark's state was set by an earlier load.
+4. Cuts: `out/history-cuts.sqlite`, a catalogue for `publish.py`: the records of the crops with an earlier
+   box, naming their cuts, and `cut_facts`, when each crop's current cut was recorded and its other encodings.
 
 Run `answers.py` afterwards: marks change the counts by state.
 """
@@ -36,7 +42,14 @@ SCHEMA = CF / "migrations-atlas"
 # Tables in the order their rows load: who and which request first, then what names them.
 TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats", "suspects", "shapes",
           "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "current_claims",
-          "ledger_submissions", "rejections", "forms", "form_decisions", "corpus_follow", "written_forms")
+          "ledger_submissions", "rejections", "representations", "forms", "form_decisions", "corpus_follow", "form_bases", "written_forms", "corpus_rows",
+          "corpus_flags")
+# Each migration the translated rows need, in order, and a query that finds it in the local copy.
+MIGRATIONS = (("0003", "0003_history.sql", "SELECT 1 FROM sqlite_master WHERE name='actors'"),
+              ("0008", "0008_representations.sql", "SELECT 1 FROM sqlite_master WHERE name='representations'"),
+              ("0009", "0009_undo.sql", "SELECT 1 FROM pragma_table_info('events') WHERE name='reverses'"),
+              ("0010", "0010_people.sql", "SELECT 1 FROM sqlite_master WHERE name='corpus_rows'"),
+              ("0013", "0013_forms.sql", "SELECT 1 FROM sqlite_master WHERE name='form_bases'"))
 GROUP = 500
 
 
@@ -62,7 +75,7 @@ def stamped(sql, stamp):
 
 
 def migrate(history, atlas, mirror, dry):
-    """Migration 0003 on D1 and the local copy, once; a layout built with it already has its tables."""
+    """Each migration in MIGRATIONS on D1 and the local copy, once; a layout built with one already has it."""
     # The mirror numbers new codes after the highest it holds; the two mark states must be the
     # migration's numbers before anything else claims them.
     taken = dict(mirror.execute("SELECT key, code FROM codes WHERE field='state'"))
@@ -70,20 +83,22 @@ def migrate(history, atlas, mirror, dry):
         if taken.get(key, code) != code or (key not in taken and code in taken.values()):
             sys.exit(f"the mirror numbers states {taken}; migration 0003 numbers {key} {code}")
     if dry:
-        print("dry run: migration 0003 and the mirror's mark states not written", flush=True)
+        print("dry run: the migrations and the mirror's mark states not written", flush=True)
         return
     mirror.executemany("INSERT OR IGNORE INTO codes(field, key, code) VALUES(?, ?, ?)",
                        history.execute("SELECT field, key, code FROM codes WHERE field='state'").fetchall())
     mirror.commit()
-    if atlas.execute("SELECT 1 FROM sqlite_master WHERE name='actors'").fetchone():
-        return
-    path = OUT / "history-load" / "0003.sql"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(stamped((SCHEMA / "0003_history.sql").read_text(), "migration:0003"))
-    if not applied("glyph-atlas-v3", "migration:0003") and not send("glyph-atlas-v3", path, "migration:0003"):
-        sys.exit("migration 0003 did not apply; rerun")
-    atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
-    print("migration 0003 applied", flush=True)
+    for number, file, present in MIGRATIONS:
+        if atlas.execute(present).fetchone():
+            continue
+        stamp = f"migration:{number}"
+        path = OUT / "history-load" / f"{number}.sql"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(stamped((SCHEMA / file).read_text(), stamp))
+        if not applied("glyph-atlas-v3", stamp) and not send("glyph-atlas-v3", path, stamp):
+            sys.exit(f"migration {number} did not apply; rerun")
+        atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+        print(f"migration {number} applied", flush=True)
 
 
 # D1 refuses a statement over 100 KB. A row past STATEMENT_BYTES goes in with its long text columns
@@ -108,25 +123,48 @@ def row_statements(table, cols, keys, r):
     return statements
 
 
-def rows(history):
-    """INSERT statements for every history row, in groups; a row's statements stay in one group."""
-    groups = []
+def changes(history, atlas):
+    """Statements in groups that turn the local copy's history rows into the translation's, and the count
+    of new, changed and gone rows per table; a row's statements stay in one group. Rows gone are deleted
+    first, last table first, so a new row never meets a gone one on a unique column. Events the load
+    wrote for marks (no `legacy`) are left out of the comparison."""
+    groups, gone, counts = [], [], {}
     for table in TABLES:
         info = list(history.execute(f'PRAGMA table_info("{table}")'))
         cols = [r[1] for r in info]
-        keys = [r[1] for r in sorted(info, key=lambda r: r[5]) if r[5]]
+        keys = [r[1] for r in sorted(info, key=lambda r: r[5]) if r[5]] or cols
+        at = [cols.index(k) for k in keys]
         names = ",".join(f'"{c}"' for c in cols)
-        batch = []
+        where = " WHERE legacy IS NOT NULL" if table == "events" else ""
+        try:
+            old = {tuple(r[i] for i in at): r for r in atlas.execute(f'SELECT {names} FROM "{table}"{where}')}
+        except sqlite3.OperationalError:
+            old = {}  # a dry run before the migrations: the table is not there yet
+
+        def remove(key, table=table, keys=keys):
+            return f'DELETE FROM "{table}" WHERE {" AND ".join(f"\"{k}\" IS {lit(v)}" for k, v in zip(keys, key))};'
+
+        n, batch = {"new": 0, "changed": 0, "gone": 0}, []
         for r in history.execute(f'SELECT {names} FROM "{table}" ORDER BY rowid' if table not in
-                                 ("seen", "skips", "favourites", "assertion_evidence", "assertion_premises", "current_claims")
+                                 ("seen", "skips", "favourites", "assertion_evidence", "assertion_premises", "current_claims",
+                                  "representations", "corpus_flags")
                                  else f'SELECT {names} FROM "{table}"'):
-            batch += row_statements(table, cols, keys, r)
+            key = tuple(r[i] for i in at)
+            was = old.pop(key, None)
+            if was == r:
+                continue
+            n["changed" if was is not None else "new"] += 1
+            batch += ([remove(key)] if was is not None else []) + row_statements(table, cols, keys, r)
             if len(batch) >= GROUP:
                 groups.append(batch)
                 batch = []
         if batch:
             groups.append(batch)
-    return groups
+        n["gone"] = len(old)
+        gone.append([remove(key) for key in old])
+        counts[table] = n
+    deletes = [g for table in reversed(gone) for g in (table[i:i + GROUP] for i in range(0, len(table), GROUP))]
+    return deletes + groups, counts
 
 
 def marks(history, atlas):
@@ -139,6 +177,8 @@ def marks(history, atlas):
     statements, left = [], 0
     for m in json.loads((OUT / "history-marks.json").read_text()):
         crop = atlas.execute("SELECT state, revision, cut FROM crops WHERE id=?", (m["crop"],)).fetchone()
+        if crop is not None and crop[0] == states[m["state"]]:
+            continue  # set by an earlier load
         if crop is None or crop[0] != pending:
             left += 1
             continue
@@ -156,7 +196,9 @@ def marks(history, atlas):
 
 
 def cuts_catalogue():
-    """The crops with an earlier box, as a catalogue whose records name their cuts."""
+    """The cuts history-cuts.json names, as a catalogue for publish.py: a `units` record naming its earlier
+    cuts for each collected crop with one, and `cut_facts`, when each crop's current cut was recorded and
+    the other encodings of it, for every crop the old site recorded versions of."""
     cuts = json.loads((OUT / "history-cuts.json").read_text())
     shards = {}
 
@@ -175,14 +217,19 @@ def cuts_catalogue():
     units = source("units")
     cols = [r[1] for r in units.execute("PRAGMA table_info(units)") if r[1] != "_rowid"]
     out.execute(f"CREATE TABLE units({','.join(cols)})")
+    out.execute("CREATE TABLE cut_facts(id TEXT PRIMARY KEY, cut_at TEXT, encodings TEXT NOT NULL)")
+    out.executemany("INSERT INTO cut_facts VALUES(?,?,?)",
+                    [(text, v.get("cut_at"), json.dumps(v["encodings"], ensure_ascii=False)) for text, v in sorted(cuts.items())])
+    earlier = {text: v["cuts"] for text, v in cuts.items() if v["cuts"]}
     missing = []
-    for text, versions in cuts.items():
+    for text, versions in earlier.items():
         r = units.execute("SELECT * FROM units WHERE id=? ORDER BY _rowid DESC LIMIT 1", (text,)).fetchone()
         if r is None:
             missing.append(text)
             continue
         data = json.loads(r["data"])
         data["cuts"] = [{"cut": v["cut"], "box": v["box"], "image_sha256": v["pixels"], "image": v["image"],
+                         **({"at": v["at"]} if v.get("at") else {}),
                          **({"image_place": place(v["image"])} if v.get("image") and place(v["image"]) else {})}
                         for v in versions]
         out.execute(f"INSERT INTO units VALUES({','.join('?' * len(cols))})",
@@ -190,10 +237,11 @@ def cuts_catalogue():
     out.commit()
     if missing:
         sys.exit(f"{len(missing)} crops with an earlier box have no live record: {missing[:5]}")
-    print(f"{len(cuts)} crops with an earlier box -> {path}; publish it with publish.py", flush=True)
+    print(f"{len(earlier)} crops with an earlier box, {len(cuts)} with recorded versions -> {path}; "
+          "publish it with publish.py", flush=True)
 
 
-def built(final, label, groups, extra=None):
+def built(final, label, groups, extra=None, *, manifest=False):
     """Write a run's parts under a temporary name and rename the folder once complete, so a folder
     that exists holds every part; stamps name the final folder. None when it was already built."""
     if final.exists():
@@ -210,6 +258,9 @@ def built(final, label, groups, extra=None):
             (tmp / file).write_bytes(content)
         else:
             (tmp / file).write_text(content)
+    if manifest:
+        hashes = {part.name: hashlib.sha256(part.read_bytes()).hexdigest() for part in sorted(tmp.glob("*.sql"))}
+        (tmp / "manifest.json").write_text(json.dumps(hashes, sort_keys=True))
     tmp.rename(final)
     return n
 
@@ -217,7 +268,6 @@ def built(final, label, groups, extra=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="write the parts and the catalogue, send nothing")
-    parser.add_argument("--replace", action="store_true", help="clear the rows of another, partly loaded translation first")
     args = parser.parse_args()
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
@@ -230,20 +280,20 @@ def main():
     migrate(history, atlas, mirror, args.dry_run)
     name = "history-" + hashlib.sha256((OUT / "history.sqlite").read_bytes()).hexdigest()[:12]
     run = OUT / "history-load" / name
-    # A load of another translation, started and not this one, would collide on ids.
-    others = [r[0] for r in atlas.execute("SELECT stamp FROM imports WHERE stamp LIKE 'history-%' AND stamp NOT LIKE ?",
-                                          (f"{name}%",))]
-    if others and not args.replace:
-        sys.exit(f"another translation is partly loaded ({others[0]}); --replace clears its rows first")
-    if others and not args.dry_run:
-        if any(".marks-" in o for o in others):
-            sys.exit("another translation's marks are set; its crops' states must be put back by hand first")
-        clear = run.parent / f"{name}-clear"
-        built(clear, "clear", [[f'DELETE FROM "{t}";' for t in reversed(TABLES)]])
-        deliver(clear, atlas)
-    n = built(run, "rows", rows(history) if not run.exists() else [])
-    if n is not None:
-        print(f"{n} parts of history rows -> {run}", flush=True)
+    # The ids history.py kept and gave are those of the loads it saw; another load since would clash.
+    base = {r[0] for r in history.execute("SELECT stamp FROM base")}
+    since = {r[0] for r in atlas.execute("SELECT stamp FROM imports WHERE stamp LIKE 'history-%'")
+             if not r[0].startswith((f"{name}.", f"{name}-marks."))}
+    if since != base:
+        sys.exit(f"the local copy holds history loads the translation did not see ({sorted(since ^ base)[:3]}); "
+                 "run history.py again")
+    if not run.exists():
+        groups, counts = changes(history, atlas)
+        figures = "".join(f"{t}: {c['new']} new, {c['changed']} changed, {c['gone']} gone\n" for t, c in counts.items())
+        built(run, "rows", groups, {"figures.txt": figures})
+        print(f"{figures}{len(groups)} groups of statements -> {run}", flush=True)
+    else:
+        print(f"{run} was built before:\n{(run / 'figures.txt').read_text()}", end="", flush=True)
     if args.dry_run:
         cuts_catalogue()
         print("dry run: nothing sent", flush=True)

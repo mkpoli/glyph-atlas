@@ -30,8 +30,9 @@ export function layoutBuild(env: Env, now = Date.now()): Promise<string> {
 
 // The crop's readings when they were made on its cut `cut` (its `crops.cut`), else null.
 export async function cropVotes(env: Env, id: number, cut: number, ctx?: ExecutionContext, now = Date.now()): Promise<StoredVotes | null> {
-  const page = await votesObject(env, votesKey(await layoutBuild(env, now), pageOf(id)), ctx, now), slot = String(slotOf(id));
-  const found = page && Object.hasOwn(page, slot) ? page[slot] : null;
+  const slot = String(slotOf(id));
+  const found = await votesObject(env, votesKey(await layoutBuild(env, now), pageOf(id)),
+    page => Object.hasOwn(page, slot) ? page[slot] : undefined, ctx, now);
   return found && found.cut === cut ? found : null;
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { described, retried, transient } from './busy';
+import { Problem, StorageUnavailable, described, retried, transient } from './busy';
 import worker from './index';
 
 describe('a busy database is told apart from a broken request', () => {
@@ -66,28 +66,38 @@ describe('the Worker answers a busy database with 503 and a retry time', () => {
   const database = (error: Error, failures = Infinity) => {
     let calls = 0;
     const statement = { bind: () => statement, first: async () => { if (calls++ < failures) throw error; return { value: '"2026-10-01"' } } };
-    return { env: { DB: { prepare: () => statement } } as unknown as Env, calls: () => calls };
+    return { env: { ATLAS: { prepare: () => statement } } as unknown as Env, calls: () => calls };
   };
   const overloaded = new Error('D1_ERROR: D1 DB is overloaded. Requests queued for too long.');
   it('a read that finds the database back answers as usual', async () => {
     const { env, calls } = database(overloaded, 2);
-    const response = await worker.fetch(new Request('https://glyphatlas.org/health'), env, ctx);
+    const response = await worker.fetch(new Request('https://glyphatlas.org/atlas/collection/status'), env, ctx);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, published_at: '2026-10-01' });
+    expect(await response.json()).toBe('2026-10-01');
     expect(calls()).toBe(3);
   });
   it('a read that keeps finding it busy is answered busy', async () => {
     const { env } = database(overloaded);
-    const response = await worker.fetch(new Request('https://glyphatlas.org/health'), env, ctx);
+    const response = await worker.fetch(new Request('https://glyphatlas.org/atlas/collection/status'), env, ctx);
     expect(response.status).toBe(503);
     expect(response.headers.get('retry-after')).toBe('5');
     expect(await response.json()).toEqual({ detail: 'The database is updating. Try again in a moment.', code: 'busy' });
   });
   it('another failure is a 500 that names nothing internal', async () => {
     const { env, calls } = database(new Error('D1_ERROR: no such column: secret: SQLITE_ERROR'));
-    const response = await worker.fetch(new Request('https://glyphatlas.org/health'), env, ctx);
+    const response = await worker.fetch(new Request('https://glyphatlas.org/atlas/collection/status'), env, ctx);
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ detail: 'The request could not be completed.', code: 'failed' });
     expect(calls()).toBe(1);
+  });
+});
+
+describe('storage that fails is a busy answer wherever it is thrown', () => {
+  it('is a Problem: 503 busy, with what failed kept for the log', () => {
+    const cause = new Error('R2 is unavailable');
+    const error = new StorageUnavailable('v3/aliases/abc.json.gz could not be read', { cause });
+    expect(error).toBeInstanceOf(Problem);
+    expect(error).toMatchObject({ status: 503, extra: { code: 'busy' }, where: 'v3/aliases/abc.json.gz could not be read', cause });
+    expect(error.message).not.toContain('v3/');
   });
 });

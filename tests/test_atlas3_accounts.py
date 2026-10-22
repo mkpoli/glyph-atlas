@@ -185,14 +185,42 @@ def test_check_reports_a_changed_row(accounts, capsys):
     assert "glyph-atlas-accounts: session: 1 rows here, 1 there" in capsys.readouterr().out
 
 
-def test_load_refuses_a_target_holding_another_copy(accounts):
+def test_a_fresh_copy_sends_only_the_difference(accounts, capsys):
     module, old, target, sent = accounts
     pull(module)
     module.load(True, module.local(target))
-    old.execute("INSERT INTO verification VALUES('v1', 'a@example.org', '123456', '2026-01-01', '2026-01-01', '2026-01-01')")
+    assert len(sent) == 3
+    old.executescript("""
+        INSERT INTO verification VALUES('v1', 'a@example.org', '123456', '2026-01-01', '2026-01-01', '2026-01-01');
+        UPDATE user SET name = 'Ó Briain' WHERE id = 'u1';
+        DELETE FROM rateLimit WHERE id = 'r1';
+    """)
     old.commit()
     pull(module, fresh=True)
-    with pytest.raises(SystemExit, match="another copy"):
+    capsys.readouterr()
+    module.load(True, module.local(target))
+    out = capsys.readouterr().out
+    # One part of rows: the new verification, the changed user and the rate limit gone; no schema again.
+    assert len(sent) == 4 and ".2-rows." in sent[-1]
+    assert "verification: 1 new, 0 changed, 0 gone" in out and "user: 0 new, 1 changed, 0 gone" in out
+    assert "rateLimit: 0 new, 0 changed, 1 gone" in out and "session: 0 new, 0 changed, 0 gone" in out
+    # An update in place keeps the rows that reference the user.
+    assert target.execute("SELECT count(*) FROM session WHERE userId = 'u1'").fetchone() == (1,)
+    module.check()
+    assert "glyph-atlas-accounts matches" in capsys.readouterr().out
+    # Nothing changed since: nothing is sent.
+    module.load(True, module.local(target))
+    assert len(sent) == 4
+
+
+def test_load_refuses_a_target_holding_a_stamp_it_did_not_send(accounts):
+    module, _old, target, sent = accounts
+    pull(module)
+    module.load(True, module.local(target))
+    target.execute("INSERT INTO imports VALUES('accounts-elsewhere.2-rows.0000', 0)")
+    target.commit()
+    (module.LOADED).unlink()
+    with pytest.raises(SystemExit, match="lacks"):
         module.load(True, module.local(target))
     assert len(sent) == 3
 

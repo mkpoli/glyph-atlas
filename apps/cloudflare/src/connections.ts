@@ -64,30 +64,30 @@ async function read(row: AccountRow): Promise<Profile | null> {
 }
 
 async function save(env: Env, row: AccountRow, profile: Profile) {
-  await env.DB.prepare(`INSERT INTO account_profiles(account,provider,handle,name,email,image,at) VALUES(?,?,?,?,?,?,?)
+  await env.ACCOUNTS.prepare(`INSERT INTO account_profiles(account,provider,handle,name,email,image,at) VALUES(?,?,?,?,?,?,?)
     ON CONFLICT(account) DO UPDATE SET handle=excluded.handle,name=excluded.name,email=excluded.email,image=excluded.image,at=excluded.at`)
     .bind(row.id, row.providerId, profile.handle, profile.name, profile.email, profile.image, new Date().toISOString()).run();
 }
 
 /** Read and keep the profile of the account row `id`, right after it was connected or signed in with. */
 export async function recordProfile(env: Env, id: string) {
-  const row = await env.DB.prepare('SELECT id,providerId,accountId,accessToken,idToken,createdAt FROM account WHERE id=?').bind(id).first<AccountRow>();
+  const row = await env.ACCOUNTS.prepare('SELECT id,providerId,accountId,accessToken,idToken,createdAt FROM account WHERE id=?').bind(id).first<AccountRow>();
   if (!row || row.providerId === 'credential') return;
   const profile = await read(row);
   if (!profile) return;
-  const user = await env.DB.prepare('SELECT u.id,u.image FROM "user" u JOIN account a ON a.userId=u.id WHERE a.id=?').bind(id).first<{ id: string; image: string | null }>();
-  const before = await env.DB.prepare('SELECT image FROM account_profiles WHERE account=?').bind(id).first<{ image: string | null }>();
+  const user = await env.ACCOUNTS.prepare('SELECT u.id,u.image FROM "user" u JOIN account a ON a.userId=u.id WHERE a.id=?').bind(id).first<{ id: string; image: string | null }>();
+  const before = await env.ACCOUNTS.prepare('SELECT image FROM account_profiles WHERE account=?').bind(id).first<{ image: string | null }>();
   await save(env, row, profile);
   // A user showing this account's picture, at any size, shows it as the site keeps it, and keeps showing
   // it after they change it there. The picture a new user signs up with is this account's.
   const shown = picture(user?.image ?? null);
   if (user?.image && profile.image && user.image !== profile.image && (shown === profile.image || shown === before?.image))
-    await env.DB.prepare('UPDATE "user" SET image=? WHERE id=? AND image=?').bind(profile.image, user.id, user.image).run();
+    await env.ACCOUNTS.prepare('UPDATE "user" SET image=? WHERE id=? AND image=?').bind(profile.image, user.id, user.image).run();
 }
 
 /** A user's connected accounts, each with who it is at its provider and when it was connected. */
 export async function connections(env: Env, user: string) {
-  const rows = (await env.DB.prepare(`SELECT a.id,a.providerId,a.accountId,a.accessToken,a.idToken,a.createdAt,p.handle,p.name,p.email,p.image
+  const rows = (await env.ACCOUNTS.prepare(`SELECT a.id,a.providerId,a.accountId,a.accessToken,a.idToken,a.createdAt,p.handle,p.name,p.email,p.image
     FROM account a LEFT JOIN account_profiles p ON p.account=a.id WHERE a.userId=? AND a.providerId!='credential' ORDER BY a.createdAt`).bind(user).all<AccountRow & Profile & { at?: string }>()).results;
   const out = [];
   for (const row of rows) {

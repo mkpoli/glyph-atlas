@@ -9,8 +9,9 @@ one that ends at a text id the mirror lacks is counted as gone and left out. Sha
 `v3/aliases/<first three hex digits of the text id's SHA-256>.json.gz` holds `{text id: crop id}`.
 The set is closed at the cutover: crops published later are linked by their integer id.
 
-Without `--send` the run only counts. With it, the shards are written under `out/aliases/` and
-uploaded.
+Without `--send` the run only counts. With it, each shard whose bytes changed is written under
+`out/aliases/` and listed in `out/aliases/unsent` until it is uploaded, so a run after a publish
+uploads only the shards its new crops changed, and a run with nothing new uploads none.
 """
 
 from __future__ import annotations
@@ -94,17 +95,25 @@ def encode(shard):
 
 
 def write(shards):
-    """Write every shard whole under out/aliases/, each through a `.part` file, and return their paths."""
+    """Write each shard whose bytes differ from its copy under out/aliases/, through a `.part` file, after
+    listing it in out/aliases/unsent; return the paths of every shard listed there."""
     folder = OUT / "aliases"
     folder.mkdir(parents=True, exist_ok=True)
-    paths = []
+    unsent = folder / "unsent"
+    listed = set(unsent.read_text().split()) if unsent.exists() else set()
     for name, shard in sorted(shards.items()):
         path = folder / f"{name}.json.gz"
+        data = encode(shard)
+        if path.exists() and path.read_bytes() == data:
+            continue
+        if path.name not in listed:
+            listed.add(path.name)
+            with unsent.open("a") as f:
+                f.write(path.name + "\n")
         part = path.with_suffix(".part")
-        part.write_bytes(encode(shard))
+        part.write_bytes(data)
         os.replace(part, path)
-        paths.append(path)
-    return paths
+    return [folder / name for name in sorted(listed)]
 
 
 def main():
@@ -128,8 +137,10 @@ def main():
         return
     from publish import upload
 
-    upload(write(shards), PREFIX)
-    print(f"{len(shards)} shards uploaded to {PREFIX}", flush=True)
+    paths = write(shards)
+    upload(paths, PREFIX)
+    (OUT / "aliases" / "unsent").unlink(missing_ok=True)
+    print(f"{len(paths)} of {len(shards)} shards uploaded to {PREFIX}", flush=True)
 
 
 if __name__ == "__main__":

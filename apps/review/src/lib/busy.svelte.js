@@ -10,6 +10,10 @@ export const isBusy = (response, value) => response.status === 503 && value?.cod
 /** Whether an answer is the site refusing writes for a while (`WRITES_PAUSED`); reads still work. */
 export const isPaused = (response, value) => response.status === 503 && value?.error === 'paused'
 
+/** Whether an answer is a save from a page opened before a site update, naming a crop the site no
+ *  longer knows by that name (409 `reload`). */
+export const isReload = (response, value) => response.status === 409 && value?.code === 'reload'
+
 /**
  * `fetch`, with a refused write's message in the reader's language, for clients that show `message`.
  * The refusal also carries `code: 'paused'` and the `Retry-After` as `retry_after`, since such a
