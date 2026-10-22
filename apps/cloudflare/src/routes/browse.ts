@@ -142,14 +142,14 @@ export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParam
   if (group && !GALLERY_GROUPS.includes(group)) throw new Problem(400, 'Invalid group.');
   const limit = integer(q, 'limit', 24, 96), seed = integer(q, 'seed', 0, 2147483647);
   // A sample is the same for anyone who asks with the same group, size and seed while the catalogue
-  // stands, so the edge keeps it, as it keeps a browse listing.
-  const version = catalogueKey(await catalogueStamps(env));
+  // stands, so the edge keeps it, as it keeps a browse listing. The key names the publication too: a
+  // publication moves the catalogue key before its answers are up, and the sample is dealt from them.
+  const [stamps, { pub }] = await Promise.all([catalogueStamps(env), currentPointer(env)]);
   const keptKey = new Request(`https://glyphatlas.org/layers/gallery/kept?${new URLSearchParams({ group: group ?? '', limit: String(limit), seed: String(seed),
-    v: version })}`);
+    pub, v: catalogueKey(stamps) })}`);
   timing.step('stamps');
   const kept = await caches.default.match(keptKey);
   if (kept) { timing.step('sample-hit'); return await kept.json(); }
-  const { pub } = await currentPointer(env);
   const name = group && WHOLE_GROUPS.includes(group) ? group : 'sample', pool = (await galleryIndex(env, pub))[name];
   const start = seed % pool.range, first = Math.floor(start * pool.shards / pool.range);
   const wanted = (entry: SampleEntry) => name !== 'sample' || !group || entry[2] === group;
