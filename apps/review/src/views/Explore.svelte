@@ -927,7 +927,7 @@
     query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false
     openGrapheme(key)
   }
-  function shuffle() { seed = shuffleSeed(); load() }
+  function shuffle() { let next; do next = shuffleSeed(); while (next === seed); seed = next; load() }
   /**
    * Back or Forward to an address this view rewrote loads the page as it was first loaded, while the
    * address bar keeps what the view had moved on to. The view follows the address bar.
