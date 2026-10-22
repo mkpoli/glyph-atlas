@@ -612,14 +612,20 @@ def test_a_redrawn_box_cut_again_is_published_past_the_site_and_the_next_review_
     assert (unit.unicode, unit.box.model_dump()) == ("U+3092", box) and store.revision("u") > revision
 
 
-def test_a_new_publication_the_store_did_not_ask_for_is_refused(store):
+def test_a_new_publication_record_starts_a_lineage_only_where_the_store_stands(store):
     first, _ = remote(baseline(store), character="ナ")
     bridge.ingest_cloudflare(store, payload(first), apply=True)
-    # Published again at the store's revision, with no recut behind it.
-    second, _ = remote(baseline(store), character="を")
+    # Another record of the crop as the store holds it now (the page bundle's): the next review imports.
+    second, _ = remote({"character": {**baseline(store)["character"], "label": "ナ", "tone": "#ab9d7c"}}, character="を")
     _, report = bridge.ingest_cloudflare(store, payload(second), apply=True)
-    assert report["items"][0]["reason"] == "publication changed after the last import"
-    assert store.unit("u").unicode == "U+30CA"
+    assert report["counts"] == {"imported": 1}, report
+    assert store.unit("u").unicode == "U+3092"
+    # A record at a revision the store has moved past is refused.
+    stale = {"character": {**baseline(store)["character"], "label": "を", "revision": store.revision("u") - 1, "tone": "#000000"}}
+    third, _ = remote(stale, character="ナ")
+    _, report = bridge.ingest_cloudflare(store, payload(third), apply=True)
+    assert report["items"][0]["reason"] == "local revision differs from the published baseline"
+    assert store.unit("u").unicode == "U+3092"
 
 
 def test_a_review_on_the_old_cut_after_a_redrawn_box_still_imports(store):

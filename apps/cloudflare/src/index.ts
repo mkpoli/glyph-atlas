@@ -15,6 +15,7 @@ import { ranking } from './routes/ranking';
 import { connections } from './connections';
 import { flagCorpus, flaggedCorpus, reject, reviewerActors, reviewers, submissions } from './routes/admin';
 import { history } from './routes/history';
+import { reviewsPage } from './routes/reviews';
 import { listingItems } from './atlas3Listing';
 import { StaleCrop, staleResponse } from './atlas3Crops';
 import { Problem, READ_BUDGET, RETRY_AFTER, StorageUnavailable, described, retried, transient } from './busy';
@@ -161,8 +162,8 @@ const routes = {
       if(path==='/atlas/dates/stats')return json(await browse.dateStats(env,ctx,url));
       const read=await claimRead(env,url,claimTools,ctx);
       if(read)return read instanceof Response?read:json(read);
-      // The review export is rebuilt on glyph-atlas-v3 in the next release.
-      if(path==='/atlas/reviews'||path==='/atlas/reviews.json')throw new Problem(503,'The review export moves with the next release.');
+      if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviewsPage(env,q),200,
+        path.endsWith('.json')?{'content-disposition':'attachment; filename="atlas-character-reviews.json"'}:{});
       const cited=path.match(/^\/atlas\/cite\/([^/]+)\/([^/]+)$/);
       if(cited&&(cited[1]==='grapheme'||cited[1]==='form'))return await citeCharacter(env,ctx,url,cited[1],cited[2],characterTools,OPEN);
       if(path==='/atlas/similar/model')return json(await modelInfo(env));

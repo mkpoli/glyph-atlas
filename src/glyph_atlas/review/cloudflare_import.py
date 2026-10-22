@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 from copy import deepcopy
 
 from .. import evidence, recorded_terms, refs
-from ..evidence import crop_version, record_version
+from ..evidence import crop_version
 from ..schema import Review
 from ..unit_scope import character_count
 from .atlas import identity_text, script_of_identity, single_character
@@ -16,7 +16,9 @@ from .characters import _source_digest, written_identity
 from .receipts import fingerprint
 from .store import RECUT, _change, _review, advanced
 
-REMOTE_ID = re.compile(r"cf:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", re.IGNORECASE)
+#: A hosted review's id: the old journal's `cf:<uuid>`, which a review moved to the new storage layout
+#: keeps, or `v3:<number>` for one saved since.
+REMOTE_ID = re.compile(r"(?:cf:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|v3:[0-9]+)$", re.IGNORECASE)
 #: A site user's id, which the Worker records as the actor of every write since accounts.
 ACCOUNT_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.IGNORECASE)
 POLICY = "cloudflare-import-v1"
@@ -199,7 +201,7 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
     output, groups, report = [], defaultdict(list), []
     for record in payload.get("reviews", []):
         event = record.get("event", {})
-        if record.get("origin", "local") != "local" or not str(event.get("id", "")).startswith("cf:"):
+        if record.get("origin", "local") != "local" or not str(event.get("id", "")).startswith(("cf:", "v3:")):
             output.append(record)
         else:
             groups[event.get("target_id")].append(record)
@@ -247,14 +249,11 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                         raise Rejected("local occurrence is absent or retired")
                     previous = conn.execute("SELECT * FROM cloudflare_imports WHERE target_id=? ORDER BY local_revision DESC LIMIT 1",
                                             (target,)).fetchone()
-                    # A crop published again since the last import starts its lineage anew from that
-                    # publication, when it is the cut the store's last recut asked for (and was made from this
-                    # store at the revision it names, checked below as for a first publication).
-                    if previous and previous["publication"] != publication_key:
-                        asked = conn.execute("SELECT new FROM events WHERE target_id=? AND field=? ORDER BY seq DESC LIMIT 1",
-                                             (target, RECUT)).fetchone()
-                        if not asked or json.loads(asked["new"]).get("crop_version") != record_version(publication["character"]):
-                            raise Rejected("publication changed after the last import")
+                    # A crop under another publication record since the last import starts its lineage anew
+                    # from that record, checked below as a first publication: the store must stand at its
+                    # revision and show its pixels, box and label. That holds for a recut the store asked for,
+                    # and for the page bundle record glyph-atlas-v3 serves as the baseline of a crop whose
+                    # earlier reviews were imported from the old site's export.
                     if previous and previous["publication"] == publication_key:
                         before = json.loads(previous["remote_state"])
                         if not conn.execute("SELECT 1 FROM events WHERE id=?", (previous["remote_id"],)).fetchone():
@@ -357,6 +356,13 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
 _CLAIM_COLUMNS = ("subject", "predicate", "scope", "slot", "object", "value", "alternative_set", "tier", "asserted_by",
                   "asserted_at", "confidence", "confidence_scheme", "method", "run", "legacy")
 _ACTION_COLUMNS = ("assertion", "action", "actor", "at", "reason")
+
+
+def merge_review_pages(pages: list[dict]) -> dict:
+    """The pages of `/atlas/reviews`, read one after another (each `next` as the following `after`), as one export."""
+    first = pages[0] if pages else {}
+    return {"version": first.get("version", 1), "kind": first.get("kind", "atlas-character-reviews"),
+            "reviews": [row for page in pages for row in page.get("reviews", [])], "publication": first.get("publication")}
 
 
 def merge_ledger_pages(pages: list[dict]) -> dict:

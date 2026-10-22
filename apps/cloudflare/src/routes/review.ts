@@ -3,6 +3,7 @@
 // in `ATLAS`: its submission, an event per crop it changes, the crops' rows, their counts in `tally`,
 // the `reviews` overlay, seen marks and skips, and the reviewer's totals.
 import { Problem } from '../busy';
+import { captureReviews, priorBaselines, type ReviewedInput } from '../reviewCapture';
 import { bundle, cropItems, pageOf, publicId, slotOf } from '../atlas3';
 import { STALE_CODE, StaleCrop, cropParam, writtenCropField } from '../atlas3Crops';
 import { categoryOf } from '../category';
@@ -33,27 +34,30 @@ const markable = (code: number) => code === STATE.pending || code === STATE.seen
 // glyph's record from its pack) under the row's label, state and revision; the issue of its last event
 // while it is flagged; the character a standing review named; the box a review redrew.
 export type Current = { id: number; kind: number; char: number | null; label: string; state: number; revision: number; cut: number;
-  quiz: number; data: Json; cutBox: Json | null; settled: number };
+  quiz: number; data: Json; cutBox: Json | null; settled: number; logicalRevision: number;
+  sourceId: string; pageRevision: number; record: Json };
 // Whether a client that read the crop at `revision` saw it as it stands: at its revision now, or at one
 // before marks only, which the old site's revision never counted (`settled`).
 export const standing = (row: { revision: number; settled: number }, revision: unknown) =>
   Number.isSafeInteger(revision) && (revision as number) >= row.settled && (revision as number) <= row.revision;
 // An event that only moved a mark: a round's seen or hard, or an undo of a round that took one away.
-// The old site kept marks beside the crop and never moved its revision for them.
-const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id=${e}.reverses),3) IN (3,4)))`;
-export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label,c.state,c.revision,c.cut,c.quiz,pg.rev,
+// The old site kept marks beside the crop and never moved its revision for them, so a crop's revision as
+// the old site and the offline store count it is its revision less its marks (`logicalRevision`).
+export const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id=${e}.reverses),3) IN (3,4)))`;
+export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label,c.state,c.revision,c.cut,c.quiz,pg.rev,pg.key AS page_key,
   r.x,r.y,r.w,r.h,
   (SELECT coalesce(e.kept_issue,e.issue) FROM events e WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) AS issue,
   (SELECT n.text FROM events e JOIN graphemes n ON n.id=e.named WHERE e.crop=c.id AND e.named IS NOT NULL
     AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id) ORDER BY e.revision DESC LIMIT 1) AS named,
   (SELECT max(e.revision) FROM events e WHERE e.crop=c.id AND NOT ${MARKED('e')}) AS reviewed,
   (SELECT count(*) FROM events e WHERE e.crop=c.id AND ${MARKED('e')} AND e.revision>coalesce((SELECT max(f.revision) FROM events f
-    WHERE f.crop=c.id AND NOT ${MARKED('f')}),-1)) AS marks
+    WHERE f.crop=c.id AND NOT ${MARKED('f')}),-1)) AS marks,
+  (SELECT count(*) FROM events e WHERE e.crop=c.id AND ${MARKED('e')}) AS marked
   FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN pages pg ON pg.id=c.id>>24
   LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN reviews r ON r.crop=c.id`;
 type CropRow = { id: number; kind: number; char: number | null; label: string | null; state: number; revision: number; cut: number; quiz: number;
   rev: number; x: number | null; y: number | null; w: number | null; h: number | null; issue: number | null; named: string | null;
-  reviewed: number | null; marks: number };
+  reviewed: number | null; marks: number; marked: number; page_key: string };
 
 // Why a crop a write names is not there: a retired crop names the crop that replaced it.
 async function missing(env: Env, id: number): Promise<Problem> {
@@ -79,7 +83,7 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
     const { slot: _slot, record_place: _place, ...stored } = record;
     const label = row.label ?? '';
     const box = row.x == null ? null : { x: row.x, y: row.y, w: row.w, h: row.h };
-    const data: Json = { ...stored, id: publicId(row.id), label, state: stateName(row.state), revision: row.revision,
+    const data: Json = { ...stored, id: publicId(row.id), page_id: row.page_key, label, state: stateName(row.state), revision: row.revision,
       issue: row.state === STATE.flagged ? issueName(row.issue) : null,
       written_character: row.named ?? stored.written_character ?? null,
       ...(row.named ? { identity_status: 'assigned', identity_basis: 'human_review' } : {}),
@@ -87,7 +91,8 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
     // Marks since the last review that follow on from it, one revision each, leave the crop as a client saw it then.
     const settled = row.marks && (row.reviewed ?? row.revision - row.marks) + row.marks === row.revision ? row.revision - row.marks : row.revision;
     found.set(row.id, { id: row.id, kind: row.kind, char: row.char, label, state: row.state, revision: row.revision, cut: row.cut, quiz: row.quiz, data,
-      cutBox: stored.box ?? null, settled });
+      cutBox: stored.box ?? null, settled, logicalRevision: row.revision - row.marked, sourceId: entry!.id,
+      pageRevision: row.rev, record: stored });
   }
   const gone = ids.filter(id => !found.has(id)), told = new Set(explained);
   const answers = await Promise.all(gone.map(id => told.has(id) ? missing(env, id) : new Problem(404, 'This character is not in the published collection.')));
@@ -275,7 +280,7 @@ type Box = { x: number; y: number; w: number; h: number };
  *  undefined (`box` null clears the redrawn box); `quiz` null keeps it. */
 export type CropChange = { crop: number; expected: number; cut: number; kind: number; label: string | null; state: number; mark?: boolean;
   issue: number | null; kept_issue?: number | null; text?: string | null; note?: string | null; named?: string | null; shown?: number | null; quiz?: number | null;
-  category?: string; box?: Box | null; reverses?: number | null };
+  category?: string; box?: Box | null; reverses?: number | null; pageRevision?: number };
 
 // The events of a list of changes, each guarded by the revision and cut its writer read.
 function eventStatements(env: Env, actor: number, key: string, at: number, changes: CropChange[]): D1PreparedStatement[] {
@@ -290,7 +295,8 @@ function eventStatements(env: Env, actor: number, key: string, at: number, chang
     ...categories.map(category => env.ATLAS.prepare(`INSERT OR IGNORE INTO codes(field,code,key) SELECT 'category',coalesce(max(code),0)+1,?
       FROM codes WHERE field='category'`).bind(category)),
     env.ATLAS.prepare(`INSERT INTO events(${EVENT_COLUMNS})
-      SELECT c.id,(SELECT x.revision+1 FROM crops x WHERE x.id=c.id AND x.revision=${v('expected')} AND x.cut=${v('cut')}),c.cut,${GEN},?,${SUBMISSION},?,${v('kind')},
+      SELECT c.id,(SELECT x.revision+1 FROM crops x WHERE x.id=c.id AND x.revision=${v('expected')} AND x.cut=${v('cut')}
+        AND (${v('pageRevision')} IS NULL OR (SELECT rev FROM pages WHERE id=c.id>>24)=${v('pageRevision')})),c.cut,${GEN},?,${SUBMISSION},?,${v('kind')},
       (SELECT id FROM graphemes WHERE text=${v('label')}),CASE WHEN ${v('mark')}=1 AND ${v('state')} IN (0,3,4) THEN ${MARK('c')} ELSE ${v('state')} END,
       ${v('quiz')},${v('x')},${v('y')},${v('w')},${v('h')},${v('note')},${v('issue')},${v('kept_issue')},${v('text')},
       CASE WHEN ${v('shown_set')}=1 THEN ${v('shown')} ELSE c.char END,(SELECT id FROM graphemes WHERE text=${v('named')}),${v('reverses')},${WAS}
@@ -369,10 +375,12 @@ const conflict = (error: unknown) => /NOT NULL constraint failed: events\.revisi
 // Whether every crop the changes name moved since it was read only by marks, one revision each, at
 // the cut it was read at: the old site never counted marks, so the write is made again on a fresh read.
 export const marksOnlyQuery = () => `SELECT count(*) AS n FROM json_each(?) j JOIN crops c ON c.id=j.value->>'crop'
-  WHERE c.cut<>j.value->>'cut' OR c.revision<>j.value->>'expected'+(SELECT count(*) FROM events e WHERE e.crop=c.id AND e.revision>j.value->>'expected')
+  WHERE (j.value->>'pageRevision' IS NOT NULL AND (SELECT rev FROM pages WHERE id=c.id>>24) IS NOT j.value->>'pageRevision')
+  OR c.cut<>j.value->>'cut' OR c.revision<>j.value->>'expected'+(SELECT count(*) FROM events e WHERE e.crop=c.id AND e.revision>j.value->>'expected')
   OR EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.revision>j.value->>'expected' AND NOT ${MARKED('e')})`;
 async function marksOnly(env: Env, changes: CropChange[]): Promise<boolean> {
-  const list = JSON.stringify(changes.map(c => ({ crop: c.crop, expected: c.expected, cut: c.cut })));
+  const list = JSON.stringify(changes.map(c => ({ crop: c.crop, expected: c.expected, cut: c.cut,
+    pageRevision: c.pageRevision })));
   return (await env.ATLAS.prepare(marksOnlyQuery()).bind(list).first<{ n: number }>())?.n === 0;
 }
 
@@ -438,7 +446,7 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     answers.splice(0, answers.length, ...judged.chosen);
   }
   const at = Date.now();
-  const changes: CropChange[] = [], results: Json[] = [];
+  const changes: CropChange[] = [], results: Json[] = [], captured: ReviewedInput[] = [];
   const first: number[] = [];
   for (const answer of answers) {
     const found = rows.get(answer.id)!;
@@ -452,11 +460,13 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     // A batch names the character only: a crop reported for its box, a blank or a merge stays reported.
     const kept = batch && current.state === 'flagged' && current.issue && current.issue !== 'character' ? current.issue : null;
     const resolved = !kept && (answer.verdict === 'match' || Boolean(answer.issue === 'character' && written));
-    changes.push({ crop: row.id, expected: row.revision, cut: row.cut, kind: KIND[answer.verdict as 'match'], label: written ?? (row.char === null ? null : row.label),
+    changes.push({ crop: row.id, expected: row.revision, cut: row.cut, 
+      ...(row.kind === 0 ? { pageRevision: row.pageRevision } : {}), kind: KIND[answer.verdict as 'match'], label: written ?? (row.char === null ? null : row.label),
       state: resolved ? STATE.checked : STATE.flagged, issue: issueCode(answer.issue ?? null), ...(kept ? { kept_issue: issueCode(kept) } : {}), text: answer.correction || null, note: answer.note || null,
       named: written, ...(written ? { category: categoryOf(written) } : {}), ...(answer.box ? { box: answer.box } : {}) });
     results.push({ target_id: publicId(row.id), revision: row.revision + 1, state: resolved ? 'checked' : 'flagged' });
     first.push(row.id);
+    captured.push({ row, change: changes[changes.length - 1], answer });
   }
   // A crop that left the queue, changed its pixels or moved to another character since the round
   // was dealt was not seen as it stands, so it is skipped rather than failing the round.
@@ -482,8 +492,10 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   }));
   const shownRows = observations(shown), passedRows = observations(passed);
   const observed = `c.id=j.value->>'crop' AND c.cut=j.value->>'cut' AND c.char IS j.value->>'char' AND c.quiz=1 AND c.kind<2`;
+  const priors = await priorBaselines(env, captured.filter(c => c.row.kind === 0).map(c => c.row.id));
+  const evidence = await captureReviews(env, captured, sent, mode, user, at, priors);
   const actor = await actorFor(env, user);
-  const statements = [env.ATLAS.prepare('INSERT INTO submissions(key,actor,request,response,at) VALUES (?,?,?,?,?)').bind(key, actor, signature, JSON.stringify(result), at),
+  const statements = [env.ATLAS.prepare('INSERT INTO submissions(key,actor,request,response,at,evidence) VALUES (?,?,?,?,?,?)').bind(key, actor, signature, JSON.stringify(result), at, evidence),
     ...eventStatements(env, actor, key, at, changes)];
   if (shown.length) statements.push(env.ATLAS.prepare(`INSERT INTO seen(submission,crop,cut,at)
     SELECT ${SUBMISSION},c.id,c.cut,? FROM json_each(?) j JOIN crops c ON ${observed}`).bind(key, at, shownRows));
