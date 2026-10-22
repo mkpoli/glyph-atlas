@@ -15,15 +15,26 @@ export const codePoints = (value: string) => [...value].map(c => 'U+' + c.codePo
 // Answers are immutable under their publication, so an isolate keeps the last few it read: the counts
 // (a few hundred kilobytes each) apart from the sample's shards, so a run of homepage visits never
 // pushes the counts out.
-const COUNTS_HELD = 8, SHARDS_HELD = 48;
+const COUNTS_HELD = 8, SHARDS_HELD = 48, ANSWER_EDGE_SECONDS = 86400;
 const counts = new Map<string, Promise<Json>>(), shards = new Map<string, Promise<Json>>();
 export function answer(env: Env, pub: string, name: string, answers = counts, kept = COUNTS_HELD): Promise<Json> {
   const key = `v3/pub/${pub}/${name}`, hit = answers.get(key);
   if (hit) { answers.delete(key); answers.set(key, hit); return hit; }
-  const read = env.MEDIA.get(key).then(async object => {
-    if (!object) throw new Error(`${key} is missing`);
-    return await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json();
-  });
+  // A publication's answers never change once the pointer names it (answers.py moves the pointer last),
+  // so the edge keeps each one it served for a day, as it keeps page bundles: an isolate new to a
+  // publication reads it from R2 once per location.
+  const read = (async () => {
+    const edge = new Request(`https://glyphatlas.org/_answers/${key}`);
+    let bytes = await caches.default.match(edge).then(hit => hit?.arrayBuffer() ?? null);
+    if (!bytes) {
+      const object = await env.MEDIA.get(key);
+      if (!object) throw new Error(`${key} is missing`);
+      bytes = await new Response(object.body).arrayBuffer();
+      await caches.default.put(edge, new Response(bytes, { headers: { 'cache-control': `public, max-age=${ANSWER_EDGE_SECONDS}, immutable` } }))
+        .catch(() => {});
+    }
+    return await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json();
+  })();
   read.catch(() => { if (answers.get(key) === read) answers.delete(key); });
   answers.set(key, read);
   while (answers.size > kept) answers.delete(answers.keys().next().value!);
