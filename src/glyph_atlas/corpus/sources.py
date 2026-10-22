@@ -230,6 +230,9 @@ def discover(root: str | Path = DEFAULT_ROOT) -> list[Corpus]:
     if not base.is_dir():
         return found
     for child in sorted(p for p in base.iterdir() if p.is_dir()):
+        # A dot-folder is an importer's staging or swap folder, never a corpus.
+        if child.name.startswith("."):
+            continue
         if child.name in DERIVED_CORPORA or _declares_itself_derived(child):
             continue
         directory = child

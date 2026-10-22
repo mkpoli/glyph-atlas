@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -157,6 +158,19 @@ def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision
     return document, page_records, texts
 
 
+def staging_dir(out: Path) -> Path:
+    """Where a snapshot is staged: beside the corpus root, so a killed run leaves no second corpus in it.
+
+    The staged folder is renamed into place, so it stays inside the root when the root's parent is
+    on another filesystem; corpus discovery skips its dot-folder name there.
+    """
+    root = out.resolve().parent
+    above = root.parent
+    if above != root and os.access(above, os.W_OK) and os.stat(above).st_dev == os.stat(root).st_dev:
+        return above
+    return root
+
+
 def import_all(
     out: Path, *, cache: Path = Path("cache/viet-dien"), text_ids: list[int] | None = None,
     limit: int = 1, page_limit: int = 10, base: str = BASE, client: httpx.Client | None = None,
@@ -218,7 +232,7 @@ def import_all(
                 "text_transport": "full.txt" if bulk_text else "page-api"}
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    with tables.locked(out), tempfile.TemporaryDirectory(prefix=f".{out.name}-", dir=out.parent) as scratch:
+    with tables.locked(out), tempfile.TemporaryDirectory(prefix=f".{out.name}-", dir=staging_dir(out)) as scratch:
         stage = Path(scratch)
         # An importer must not replace a derived corpus or another source's documents.
         if out.is_symlink():

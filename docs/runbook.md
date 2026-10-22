@@ -84,9 +84,10 @@ least 137 hours. Cached responses resume interrupted collection without repeatin
 Use a new `--cache` directory for a fresh upstream snapshot. Output tables replace
 the selected snapshot; use separate output directories for separate samples.
 `UPSTREAM.json` records response hashes and expected/imported page counts.
-Tables are staged and validated before replacing the output directory. If the
-process is killed during the directory replacement, the previous snapshot remains
-in a sibling `.<output>-<temporary-id>-previous` directory for recovery.
+Tables are staged and validated beside the corpus root, in the directory above
+it, before replacing the output directory. If the process is killed during the replacement, the previous snapshot
+remains there in `.<output>-<temporary-id>-previous` for recovery. Corpus
+discovery skips dot-folders, so a staging folder never counts as a corpus.
 
 Build a fresh corpus index after collection, including its per-character occurrence
 files, so matches include the imported text and page citations. The corpus index

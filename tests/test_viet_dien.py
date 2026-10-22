@@ -336,3 +336,39 @@ def test_full_import_retains_volumes_sharing_one_library_item(tmp_path, http_ser
         f'{vd.BASE}/read/{i}/{n}' for i in (11, 12) for n in (1, 3)
     }
     assert len({p.transcription['entry'] for p in pages}) == 2
+
+
+def test_a_killed_swap_leaves_no_second_corpus_under_the_root(tmp_path, http_server, monkeypatch):
+    populate(http_server)
+    run(tmp_path, http_server)
+
+    def killed(path, *a, **kw):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(vd.shutil, 'rmtree', killed)
+    with pytest.raises(KeyboardInterrupt):
+        run(tmp_path, http_server)
+    root = tmp_path / 'corpora'
+    assert [p.name for p in root.iterdir() if p.is_dir()] == ['viet-dien']
+    assert list(tmp_path.glob('.viet-dien-*-previous'))
+    # A staging folder left inside a root by an older run is not a corpus either.
+    (root / '.viet-dien-old').mkdir()
+    for f in (root / 'viet-dien').iterdir():
+        (root / '.viet-dien-old' / f.name).write_bytes(f.read_bytes())
+    assert [c.name for c in discover(root)] == ['viet-dien']
+    index_dir = tmp_path / 'index'
+    build_chars(root, index_dir)
+    idx = CorpusIndex(index_dir, root)
+    idx.build_occurrences('國')
+    assert len(idx.occurrences('國')) == 2
+
+
+def test_staging_stays_inside_a_root_whose_parent_is_another_filesystem(tmp_path, monkeypatch):
+    out = tmp_path / 'corpora/viet-dien'
+    out.parent.mkdir()
+    assert vd.staging_dir(out) == tmp_path
+    real = vd.os.stat
+    monkeypatch.setattr(vd.os, 'stat', lambda p, *a, **k: type('S', (), {'st_dev': hash(str(p))})())
+    assert vd.staging_dir(out) == out.parent
+    monkeypatch.setattr(vd.os, 'stat', real)
+
