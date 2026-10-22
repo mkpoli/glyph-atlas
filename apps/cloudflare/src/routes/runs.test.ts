@@ -236,11 +236,11 @@ describe('runs on the new layout', () => {
     f.atlas.exec(`INSERT INTO seen(submission,crop,cut,at) VALUES(1,${glyph},0,0)`);
     expect(await shown()).toMatchObject({ atlas: true, label: 'ん', state: 'pending', revision: 0, issue: null, source: 'transcription' });
     // A round's mark moves the revision; the listing shows the revision before it.
-    f.atlas.exec(`INSERT INTO codes VALUES('state',3,'seen'); UPDATE crops SET state=3,revision=1 WHERE id=${glyph};
+    f.atlas.exec(`UPDATE crops SET state=3,revision=1 WHERE id=${glyph};
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(${glyph},1,0,0,1,1,0,3)`);
     expect(await shown()).toMatchObject({ state: 'pending', revision: 0 });
     // A review that flags it as another character.
-    f.atlas.exec(`INSERT INTO codes VALUES('issue',6,'reading'); UPDATE crops SET state=2,revision=2,char=2 WHERE id=${glyph};
+    f.atlas.exec(`UPDATE crops SET state=2,revision=2,char=2 WHERE id=${glyph};
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,issue) VALUES(${glyph},2,0,0,1,2,0,1,6)`);
     expect(await shown()).toMatchObject({ state: 'flagged', revision: 2, issue: 'character', label: 'し', source: 'review' });
   });
@@ -248,8 +248,7 @@ describe('runs on the new layout', () => {
   it('show a marked crop pending at its revision before the marks, and a flagged one with its issue', async () => {
     const f = fixture();
     const [marked, flagged] = [f.at[2].id, f.at[3].id];
-    f.atlas.exec(`INSERT INTO codes VALUES('state',3,'seen'),('issue',6,'reading');
-      UPDATE crops SET state=3,revision=1 WHERE id=${marked}; UPDATE crops SET state=2,revision=1 WHERE id=${flagged};
+    f.atlas.exec(`UPDATE crops SET state=3,revision=1 WHERE id=${marked}; UPDATE crops SET state=2,revision=1 WHERE id=${flagged};
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(${marked},1,0,0,1,1,0,3);
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,issue) VALUES(${flagged},1,0,0,1,1,0,1,6);`);
     const body = await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んし') + '&document=' + encodeURIComponent('hk:83b29132c6d01a596a847de5ba3b0b0d'))).json();
@@ -260,10 +259,9 @@ describe('runs on the new layout', () => {
 
   it('keep a flagged crop’s issue after a later event preserves it', async () => {
     const f = fixture(), crop = f.at[0].id;
-    f.atlas.exec(`INSERT INTO codes VALUES('issue',6,'reading'),('issue',7,'other');
-      UPDATE crops SET state=2,revision=2 WHERE id=${crop};
+    f.atlas.exec(`UPDATE crops SET state=2,revision=2 WHERE id=${crop};
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,issue,kept_issue)
-        VALUES(${crop},1,0,0,1,1,0,1,6,NULL),(${crop},2,0,0,1,2,0,2,7,6)`);
+        VALUES(${crop},1,0,0,1,1,0,1,6,NULL),(${crop},2,0,0,1,2,0,2,4,6)`);
     const body = await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んし'))).json();
     expect(body.items.flatMap((item: Json) => item.crops).find((item: Json) => item.id === publicId(crop)))
       .toMatchObject({ state: 'flagged', revision: 2, issue: 'character' });
@@ -329,8 +327,7 @@ describe('runs on the new layout', () => {
 
   it('counts only trailing marks for each book character', () => {
     const f = fixture();
-    f.atlas.exec(`INSERT INTO codes VALUES('state',3,'seen'),('state',4,'hard');
-      INSERT INTO book_characters(book,ord,crop,data) VALUES(1,2,${f.at[2].id},'{}'),(1,3,${f.at[3].id},'{}');
+    f.atlas.exec(`INSERT INTO book_characters(book,ord,crop,data) VALUES(1,2,${f.at[2].id},'{}'),(1,3,${f.at[3].id},'{}');
       UPDATE crops SET state=3,revision=2 WHERE id=${f.at[0].id}; UPDATE crops SET state=2,revision=2 WHERE id=${f.at[1].id};
       UPDATE crops SET state=4,revision=1 WHERE id=${f.at[2].id};
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(${f.at[0].id},1,0,0,1,1,0,1),(${f.at[0].id},2,0,0,1,2,0,3),
