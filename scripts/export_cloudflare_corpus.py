@@ -46,6 +46,9 @@ class Published:
     def __init__(self, keys):
         self.keys = keys
 
+    def sync(self):
+        pass
+
     def add(self, key, path):
         if key not in self.keys:
             raise ValueError(f"display crop {key} was never published")
@@ -355,8 +358,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                 counts[corpus.name] += 1
             if record_file:
                 record_file.flush()
-            if packs.file:
-                packs.file.flush()
+            packs.sync()
             db.commit()
             (output / "progress.json").write_text(encoded(dict(counts)))
         print(encoded({"corpus": corpus.name, "counts": dict(counts)}), flush=True)

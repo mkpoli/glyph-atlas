@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -57,6 +58,13 @@ class Packs:
         # the rows still pointing into it.
         names = {p.name for p in output.glob("pack-*.bin")} | {o for o, in db.execute("SELECT DISTINCT object FROM media")}
         self.index = max([int(m[1]) for n in names if (m := re.fullmatch(r"pack-(\d+)\.bin", n))], default=0)
+        # A run killed after committing rows whose bytes never reached the pack leaves them past its end;
+        # they go, so their images are packed again. A pack gone from disk was published and deleted, and
+        # its rows stay.
+        for name, in db.execute("SELECT DISTINCT object FROM media").fetchall():
+            if (output / name).exists():
+                db.execute("DELETE FROM media WHERE object=? AND offset+size>?", (name, (output / name).stat().st_size))
+        db.commit()
         self.seen = {r[0] for r in db.execute("SELECT key FROM media")}
 
     def add(self, key, path, content_type="image/webp"):
@@ -95,8 +103,15 @@ class Packs:
             data = handle.read(row[2])
         return data if len(data) == row[2] else None
 
+    def sync(self):
+        """Put the open pack's bytes on disk. Call it before committing rows that point into the pack."""
+        if self.file and not self.file.closed:
+            self.file.flush()
+            os.fsync(self.file.fileno())
+
     def close(self):
         if self.file:
+            self.sync()
             self.file.close()
 
 
@@ -326,8 +341,10 @@ def export(dataset: Path, output: Path, *, resume=False):
                 encoded(detail), encoded(snapshot), encoded(context), encoded(visual), doc.id,
                 style.style_of(unit, page, doc)))
             if i % 500 == 0:
+                packs.sync()
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
+        packs.sync()
         page_rows(db, [i for i, in db.execute("SELECT id FROM units WHERE origin='local'")], units, pages, documents)
         # The claims made here, and those an action here names, go to the site's ledger, but none about a
         # crop of a withdrawn document; the site resolves their slots once they are there (`seal_cloudflare`).
