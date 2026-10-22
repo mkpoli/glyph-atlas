@@ -298,6 +298,9 @@ describe('runs on the new layout', () => {
     f.atlas.exec(`UPDATE crops SET char=1,state=0,revision=2 WHERE id=${crop};
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,reverses) VALUES(${crop},2,0,0,1,2,1,5,1)`);
     for (const item of await shown()) expect(item).toMatchObject({ label: 'ん', identity_basis: 'form_glyph' });
+    // The same form carried from a cluster decision of an earlier clustering is the glyph's cluster form.
+    f.atlas.exec(`UPDATE form_glyphs SET carried='old' WHERE crop=${crop}`);
+    for (const item of await shown()) expect(item).toMatchObject({ label: 'ん', identity_basis: 'form_cluster' });
   });
 
   it('does not add review revisions when a round mark is undone', async () => {

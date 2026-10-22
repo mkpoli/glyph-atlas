@@ -11,24 +11,24 @@ import { formed, type UnitForm } from './forms';
 
 type Json = any;
 
-// A corpus glyph's forms-tool decision: its own glyph decision (`form_glyphs`) when it has one, else its
-// cluster's (`crops.cluster`); a cluster issue 'mixed' gives its glyphs no issue. One primary-key read
-// per glyph and per cluster.
-export const corpusFormsQuery = () => `SELECT c.id,c.cluster IS NOT NULL AS clustered,g.crop IS NOT NULL AS glyph_set,k.key AS cluster,
+// A corpus glyph's forms-tool decision: its `form_glyphs` row (its own glyph decision, or a cluster
+// decision of an earlier clustering it carries) when it has one, else its cluster's (`crops.cluster`); a
+// cluster issue 'mixed' gives its glyphs no issue. One primary-key read per glyph and per cluster.
+export const corpusFormsQuery = () => `SELECT c.id,c.cluster IS NOT NULL AS clustered,g.crop IS NOT NULL AS held,g.decision IS NOT g.carried AS glyph_set,k.key AS cluster,
   k.form AS cluster_form,g.form AS glyph_form,g.issue AS glyph_issue,g.character AS glyph_character,g.written_family AS glyph_family,
   k.issue AS cluster_issue,k.character AS cluster_character,k.written_family AS cluster_family
   FROM json_each(?) j JOIN crops c ON c.id=j.value LEFT JOIN form_glyphs g ON g.crop=c.id
   LEFT JOIN form_clusters k ON k.id=coalesce(c.cluster,g.cluster) WHERE c.cluster IS NOT NULL OR g.crop IS NOT NULL`;
-type CorpusForm = { id: number; clustered: number; glyph_set: number; cluster: string | null; cluster_form: string | null;
+type CorpusForm = { id: number; clustered: number; held: number; glyph_set: number; cluster: string | null; cluster_form: string | null;
   glyph_form: string | null; glyph_issue: string | null; glyph_character: string | null; glyph_family: string | null;
   cluster_issue: string | null; cluster_character: string | null; cluster_family: string | null };
 const unitForm = (row: CorpusForm): UnitForm => {
-  const own = Boolean(row.glyph_set);
+  const held = Boolean(row.held);
   return { id: publicId(row.id), cluster: row.cluster ?? '', clustered: row.clustered, glyph_set: row.glyph_set,
-    cluster_form: row.cluster_form, form: own ? row.glyph_form : row.cluster_form,
-    issue: own ? row.glyph_issue : row.cluster_issue === 'mixed' ? null : row.cluster_issue,
-    issue_character: own ? row.glyph_character : row.cluster_character,
-    written_family: own ? row.glyph_family : row.cluster_family };
+    cluster_form: row.cluster_form, form: held ? row.glyph_form : row.cluster_form,
+    issue: held ? row.glyph_issue : row.cluster_issue === 'mixed' ? null : row.cluster_issue,
+    issue_character: held ? row.glyph_character : row.cluster_character,
+    written_family: held ? row.glyph_family : row.cluster_family };
 };
 
 // Each book's dating on both axes, by book key: one unique-key and one primary-key probe per book.

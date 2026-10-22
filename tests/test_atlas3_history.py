@@ -416,8 +416,19 @@ def test_a_base_no_form_decision_holds_is_left_out_as_a_publish_releases_it(layo
     assert "dropped (1) no form decision holds the glyph; a publish releases it" in (root / "out" / "history-report.txt").read_text()
     # A glyph decision of its own holds it.
     atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    atlas.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) "
+                  "VALUES(1, 'd1', '2025-01-01', 'a', 'glyph', 'U+304B', 'r1', '[]', '[]', '')")
     atlas.execute("INSERT INTO form_glyphs(crop, family, decision) VALUES(?, 'U+304B', 'd1')", (ids(root)["codh:g1"],))
     atlas.commit()
     code, out = history(monkeypatch, root)
     assert code == 0
     assert out.execute("SELECT count(*) FROM form_bases").fetchone() == (1,)
+    # A cluster decision of an earlier clustering the glyph carries holds it while it names a form.
+    atlas.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) "
+                  "VALUES(2, 'd0', '2025-01-02', 'a', 'cluster', 'U+304B', 'r0', '[]', '[]', '')")
+    atlas.execute("UPDATE form_glyphs SET decision='d0', carried='d0'")
+    atlas.commit()
+    assert history(monkeypatch, root)[1].execute("SELECT count(*) FROM form_bases").fetchone() == (0,)
+    atlas.execute("UPDATE form_glyphs SET form='か'")
+    atlas.commit()
+    assert history(monkeypatch, root)[1].execute("SELECT count(*) FROM form_bases").fetchone() == (1,)
