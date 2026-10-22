@@ -5,6 +5,7 @@ import fcntl
 import json
 import os
 import shutil
+import sys
 import tempfile
 import time
 from contextlib import contextmanager
@@ -176,6 +177,28 @@ def _merge_table(base: Path, additions: list[Path], target: Path, name: str, ids
     return count
 
 
+def _sweep_unfinished(collection: Path) -> None:
+    """Remove the generations a killed publication left behind. A failure cleans up after itself, but a
+    publication stopped by the OOM killer does not, and each one leaves a full copy of the tables."""
+    generations = collection / "generations"
+    if not generations.is_dir():
+        return
+    current = collection / "current"
+    if current.is_symlink() or current.exists():
+        # Without a readable live generation nothing can be told apart from it; keep every copy.
+        name = current.resolve().name
+        if not current.exists() or not name.isdigit():
+            reason = "dangling" if not current.exists() else f"names {name!r}, not a generation"
+            print(f"unfinished generations kept: {collection.name}/current is {reason}", file=sys.stderr)
+            return
+        live = int(name)
+    else:
+        live = None
+    for path in generations.iterdir():
+        if path.name.isdigit() and (live is None or int(path.name) > live):
+            shutil.rmtree(path)
+
+
 def publish(root: Path, *, source: str = "honkoku", rebuild_index: bool = True,
             min_free_bytes: int = 5 * 1024**3) -> dict:
     if source not in {"honkoku", "wikisource"}:
@@ -188,6 +211,7 @@ def publish(root: Path, *, source: str = "honkoku", rebuild_index: bool = True,
     # The index is rebuilt from every source, so two sources publishing at once would each install an
     # index built before the other's tables; one publication holds the index from snapshot to install.
     with publication_lock(collection), publication_lock(index_dir):
+        _sweep_unfinished(collection)
         if shutil.disk_usage(collection).free < min_free_bytes:
             raise RuntimeError("Collection publication paused: less than 5 GiB free")
         listing = json.loads((collection / "index.json").read_text())

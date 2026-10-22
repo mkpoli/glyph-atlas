@@ -43,6 +43,43 @@ def test_failed_generation_does_not_replace_current(tmp_path):
     assert (book.parent.parent / "current").resolve() == current
 
 
+def test_a_killed_publication_leaves_no_generation_behind(tmp_path):
+    book = tmp_path / "honkoku-collection/books/one"
+    dataset(book, "one", "NEW")
+    collection = book.parent.parent
+    (collection / "index.json").write_text(json.dumps({"books": [{"entry_id": "one", "dataset": "books/one"}]}))
+    publish(tmp_path, rebuild_index=False, min_free_bytes=0)
+    first = (collection / "current").resolve()
+    killed = collection / "generations" / str(int(first.name) + 1)
+    killed.mkdir()
+    (killed / "documents.parquet").write_bytes(b"partial")
+    publish(tmp_path, rebuild_index=False, min_free_bytes=0)
+    assert not killed.exists()
+    # The new generation and the one before it, for readers still using its paths.
+    kept = {p.name for p in (collection / "generations").iterdir()}
+    assert kept == {first.name, (collection / "current").resolve().name}
+
+
+def test_an_unreadable_current_keeps_every_generation(tmp_path, capsys):
+    from glyph_atlas.corpus.collection import _sweep_unfinished
+
+    collection = tmp_path / "honkoku-collection"
+    generations = collection / "generations"
+    for name in ("100", "200", "300"):
+        (generations / name).mkdir(parents=True)
+    current = collection / "current"
+    current.symlink_to("generations/250", target_is_directory=True)
+    _sweep_unfinished(collection)
+    assert sorted(p.name for p in generations.iterdir()) == ["100", "200", "300"]
+    assert "dangling" in capsys.readouterr().err
+    current.unlink()
+    (collection / "elsewhere").mkdir()
+    current.symlink_to("elsewhere", target_is_directory=True)
+    _sweep_unfinished(collection)
+    assert sorted(p.name for p in generations.iterdir()) == ["100", "200", "300"]
+    assert "not a generation" in capsys.readouterr().err
+
+
 def test_live_index_sees_new_generation(tmp_path):
     from glyph_atlas.corpus.index import CorpusIndex, build_chars
     dataset(tmp_path / "honkoku-data", "one", "ア")
