@@ -88,3 +88,14 @@ export function scriptParts(text, stated = '') {
   const parts = segments(text)
   return parts.map(part => ({ text: part, ...scriptInfo(part, parts.length === 1 ? stated : '') }))
 }
+
+// The statuses of a grapheme slot that file its crop, as the site's galleries read them.
+const FILING = new Set(['asserted', 'accepted', 'adjudicated'])
+/** The grapheme a claim files the crop under (`U+5F8C`), or null while none holds. */
+export const claimedGrapheme = item => FILING.has(item?.grapheme_claim?.status) ? item.grapheme_claim.values[0]?.grapheme ?? null : null
+/** `crop` with its grapheme slot `claim`, filed under the grapheme the claim holds, or `own`, its
+ *  character's, once none does. */
+export function withGraphemeClaim(crop, claim, own = null) {
+  const saved = { ...crop, grapheme_claim: claim }
+  return { ...saved, grapheme: claimedGrapheme(saved) ?? own ?? crop.grapheme }
+}

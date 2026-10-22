@@ -1,5 +1,6 @@
 import { request } from './client.js'
 import { character as readCard } from './layers.js'
+import { withGraphemeClaim } from './identity.js'
 
 const pointOf = char => [...char].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 const headOf = card => card?.grapheme ? { char: card.grapheme.char, code_point: card.grapheme.code_point } : null
@@ -28,8 +29,9 @@ export async function graphemeOf(item) {
 
 // A lost answer keeps its submission id; an answered save of the same value is a new claim.
 const submissions = new Map()
-/** Read `crop` as `grapheme` (a key, `U+5F8C`), or with null take back the reader's own choice. */
-export async function setGrapheme(crop, grapheme) {
+/** Read `crop` as `grapheme` (a key, `U+5F8C`), or with null take back the reader's own choice. The crop
+ *  answered is filed under the grapheme claimed, or `own`, its character's, once none holds. */
+export async function setGrapheme(crop, grapheme, own = null) {
   const key = JSON.stringify([crop.id, crop.crop_version, grapheme])
   if (!submissions.has(key)) submissions.set(key, crypto.randomUUID())
   let result
@@ -38,5 +40,5 @@ export async function setGrapheme(crop, grapheme) {
       { id: submissions.get(key), crop_version: crop.crop_version, grapheme })
   } catch (error) { if (error.status) submissions.delete(key); throw error }
   submissions.delete(key)
-  return { ...crop, grapheme_claim: result.grapheme_claim }
+  return withGraphemeClaim(crop, result.grapheme_claim, own)
 }
