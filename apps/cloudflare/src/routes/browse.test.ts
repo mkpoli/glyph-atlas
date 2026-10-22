@@ -181,6 +181,9 @@ describe('the browse page', () => {
     expect(body.documents.map((d: any) => [d.id, d.title, d.total, d.pending])).toEqual([['hk:a', 'Book A', 10, 6], ['hk:b', 'Book B', 5, 4]]);
     expect(body.withheld_count).toBe(3);
     expect(body.review_epoch).toBe(3);
+    // Asked for its rows alone, a page keeps the counts by state and leaves out those by character and work.
+    const light = await get(env, '/atlas?seed=5&limit=2&facets=counts');
+    expect([light.counts, light.categories, light.documents, light.items.length]).toEqual([body.counts, [], [], 2]);
     const shown = await get(env, '/atlas?limit=0&withheld=show');
     expect(shown.documents.map((d: any) => d.total)).toEqual([12, 6]);
     expect(shown.withheld_count).toBeNull();
