@@ -5,13 +5,14 @@
   import CharacterSearch from './CharacterSearch.svelte'
   import ContributionTerms from './ContributionTerms.svelte'
   import ScriptText from './ScriptText.svelte'
+  import Glyph from './Glyph.svelte'
   import { reportByReason } from '../lib/corrections.js'
   import { t } from '../lib/i18n.svelte.js'
   let { selecting = false, count = 0, target = $bindable(''), busy = false, error = '', done = null, report = [],
     onconfirm, onapply, onselectall, onclear, onleave, onundo, onopen, ondismiss } = $props()
   let query = $state('')
   const groups = $derived(reportByReason(report))
-  const labels = $derived(new Map(report.map(entry => [entry.id, entry.label])))
+  const entries = $derived(new Map(report.map(entry => [entry.id, entry])))
 </script>
 
 <div class="bulk-bar" role="region" aria-label={t('bulk.label')}>
@@ -44,7 +45,7 @@
       <ul class="bulk-report" aria-label={t('bulk.report.label')}>
         {#each groups as [reason, ids] (reason)}
           <li><span class="bulk-reason">{t(`bulk.report.${reason}`, { count: ids.length })}</span>
-            {#each ids as id (id)}<button class="report-crop" title={id} onclick={() => onopen(id)}><ScriptText text={labels.get(id)} titled={false} /></button>{/each}</li>
+            {#each ids as id (id)}{@const entry = entries.get(id)}<button class="report-crop" title={id} aria-label={entry.name} onclick={() => onopen(id)}>{#if entry.thumb}<Glyph item={entry.thumb} alt="" class="glyph-image report-thumb" />{/if}{#if entry.named}<ScriptText text={entry.label} titled={false} />{:else}<span class="report-id">{entry.label || id}</span>{/if}</button>{/each}</li>
         {/each}
       </ul>
     {/if}
@@ -71,7 +72,9 @@
   .bulk-report{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:9.5em;overflow:auto}
   .bulk-report li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
   .bulk-reason{color:var(--muted);margin-right:4px}
-  .report-crop{min-width:32px;padding:3px 7px;font-size:16px;line-height:1.2;border-radius:5px}
+  .report-crop{display:inline-flex;align-items:center;gap:6px;min-width:32px;min-height:34px;padding:3px 7px;font-size:16px;line-height:1.2;border-radius:5px}
+  .report-crop :global(.report-thumb){display:block;width:26px;height:26px}
+  .report-id{font-size:11px;color:var(--muted);max-width:14ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .bulk-error{margin:0;color:var(--wrong)}
   .bulk-hint{color:var(--muted);font-size:11px}
   @media(max-width:700px){.bulk-bar{bottom:max(8px,calc(env(safe-area-inset-bottom) + 4px));padding-top:10px;padding-bottom:10px}
