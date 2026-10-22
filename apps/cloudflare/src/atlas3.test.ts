@@ -112,6 +112,32 @@ describe('new-layout listing items', () => {
     expect((await cropItems(env, [a]))[0].state).toBe('hard');
   });
 
+  it('keep each entry read from a bundle at the edge, and read a kept entry instead of its bundle', async () => {
+    const before = (globalThis as any).caches, edge = new Map<string, Response>();
+    (globalThis as any).caches = { default: {
+      match: async (request: Request) => edge.get(request.url)?.clone(),
+      put: async (request: Request, response: Response) => { edge.set(request.url, response.clone()); },
+    } };
+    try {
+      const { db, env, reads, page, a, b } = setup();
+      const waited: Promise<unknown>[] = [];
+      const ctx = { waitUntil: (work: Promise<unknown>) => { waited.push(work); } } as unknown as ExecutionContext;
+      await cropItems(env, [a], { ctx });
+      await Promise.all(waited);
+      expect([...edge.keys()].filter(url => url.includes('/_entries/'))).toEqual([`https://glyphatlas.org/_entries/${page}-3/0`]);
+      expect(reads.filter(key => key === bundleKey(page, 3))).toHaveLength(1);
+      // A page this isolate does not hold: its crop's kept entry stands in for the bundle.
+      const other = cropId(page + 100000, 0);
+      db.exec(`INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${page + 100000},'hk:book:9',1,1,1);
+        INSERT INTO crops(id,kind,book,char,production,category,style,state,quiz,year,shuffle,cut,revision,flags)
+        SELECT ${other},kind,book,char,production,category,style,state,quiz,year,shuffle,cut,revision,flags FROM crops WHERE id=${b}`);
+      edge.set(`https://glyphatlas.org/_entries/${page + 100000}-1/0`, Response.json({ slot: 0, id: 'hk:kept', image: '/atlas/media/kept.webp' }));
+      const [item] = await cropItems(env, [other]);
+      expect(item).toMatchObject({ source_id: 'hk:kept', image: '/atlas/media/kept.webp' });
+      expect(reads.filter(key => key === bundleKey(page + 100000, 1))).toHaveLength(0);
+    } finally { (globalThis as any).caches = before; }
+  });
+
   it('read each bundle once per isolate', async () => {
     const { env, reads, page, a, b } = setup();
     await cropItems(env, [a, b]);

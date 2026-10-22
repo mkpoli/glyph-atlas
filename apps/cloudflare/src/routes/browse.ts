@@ -164,7 +164,7 @@ export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParam
   const page = chosen.slice(0, limit);
   timing.step('shards');
   // A mark is the review queue's: a glyph a round showed or found hard is pending, as its record says.
-  const listed = await listingItems(env, page.map(e => e[0]), new Map<number, Entry>(page.map(([crop, , , record]) => [crop, record])), timing);
+  const listed = await listingItems(env, page.map(e => e[0]), { given: new Map<number, Entry>(page.map(([crop, , , record]) => [crop, record])), timing });
   const items = listed.filter(item => !group || categoryOf(String(item.label ?? '')) === group)
     .map(item => item.state === 'seen' || item.state === 'hard' ? { ...item, state: 'pending' } : item);
   timing.step('items');
@@ -499,7 +499,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const dealt = wantsRows ? await page(env, stages, start(seed), cursor, limit, exclude) : { ids: [], next: null };
   timing.step('page');
   const ids = dealt.ids;
-  let items = wantsRows ? await listed(env, ids, new Set(own.map(row => row.id)), timing) : [];
+  let items = wantsRows ? await listed(env, ctx, ids, new Set(own.map(row => row.id)), timing) : [];
   // A page that came back short of a crop it dealt (a bundle not yet stored) is answered but not kept.
   const whole = items.length === ids.length;
   timing.step('items');
@@ -578,9 +578,9 @@ async function countFacets(env: Env, { cells, chars, glyphs, own, counted, state
 
 // A page's items with each crop's suspect mark and shape order, and its state as the reviewer sees it:
 // a crop of their own recent skips is `skipped` for them.
-async function listed(env: Env, ids: number[], skipped: Set<number>, timing: Timing): Promise<Json[]> {
+async function listed(env: Env, ctx: ExecutionContext, ids: number[], skipped: Set<number>, timing: Timing): Promise<Json[]> {
   if (!ids.length) return [];
-  const [items, marks] = await Promise.all([listingItems(env, ids, undefined, timing), timing.beside('marks', marksOf(env, ids))]);
+  const [items, marks] = await Promise.all([listingItems(env, ids, { timing, ctx }), timing.beside('marks', marksOf(env, ids))]);
   const crops = new Map(ids.map(id => [publicId(id), id]));
   return items.map(item => {
     const id = crops.get(item.id)!, mark = marks.get(id);

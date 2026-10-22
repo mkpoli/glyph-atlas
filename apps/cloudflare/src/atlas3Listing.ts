@@ -4,11 +4,10 @@ import { cropForms } from './cropPanels';
 // (`cropItems`), with what the site has said of it since. A corpus glyph shows the form the forms tool
 // decided for it or its cluster, every crop the form a person named for its cut (`has_form`), and every
 // crop its book's dating.
-import { codeNames, cropItems, publicId, type Entry } from './atlas3';
+import { codeNames, cropItems, publicId, type CropReads } from './atlas3';
 import { codePoints } from './atlas3Answers';
 import { axisOf } from './dating';
 import { formed, type UnitForm } from './forms';
-import type { Timing } from './timing';
 
 type Json = any;
 
@@ -58,9 +57,10 @@ const issueName = (name: string | undefined) => name === 'reading' ? 'character'
 
 /** The listing items of `ids`, in that order, with what reviews set since the cut (a redrawn box, a
  *  flagged crop's issue), their forms and dating. A crop `cropItems` leaves out is left out here. */
-export async function listingItems(env: Env, ids: number[], given?: Map<number, Entry>, timing?: Timing): Promise<Json[]> {
+export async function listingItems(env: Env, ids: number[], reads: CropReads = {}): Promise<Json[]> {
+  const { timing } = reads;
   const timed = <T>(name: string, work: Promise<T>) => timing ? timing.beside(name, work) : work;
-  const items = await timed('crops', cropItems(env, ids, given, undefined, timing));
+  const items = await timed('crops', cropItems(env, ids, { given: reads.given, timing, ctx: reads.ctx }));
   if (!items.length) return items;
   const crops = new Map(ids.map(id => [publicId(id), id]));
   const listed = items.map(item => crops.get(item.id)!);
