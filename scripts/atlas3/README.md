@@ -80,11 +80,14 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   each named corpus glyph to the Flagged view with the rows the Worker's admin flag writes: its
   finding in `corpus_flags`, its first `corpus_rows` row, and an event of kind `flag` with the
   wrong-character issue one revision on, under a submission of the actor `publish` keyed
-  `publish:<run>:<n>` (96 glyphs each), which moves the crop to `flagged`, its review overlay and its
-  `tally` cells. A collected crop, a glyph with a `corpus_rows` row (anything was written about it),
-  one whose character is not the finding's or one withheld from the quiz is left out; in D1 each flag
-  waits on the crop's revision and on no `corpus_rows` row, and the local copy takes D1's rows back
-  (a refused flag's tally cells move back). The run's `flags.json` lists what became of each id.
+  `publish:<run>:<n>` (one finding and at most 96 glyphs each, the finding in its request as the
+  Worker reads it), which moves the crop to `flagged`, its review overlay and its `tally` cells. Each
+  glyph is judged on D1's row, since the site moves a corpus glyph's character by itself: a collected
+  crop, a glyph with a `corpus_rows` row (anything was written about it), one whose character is not
+  the finding's or one withheld from the quiz is left out. In D1 each flag waits on the crop's
+  revision, character, kind and quiz and on no `corpus_rows` row, and the local copy takes D1's rows
+  back, its tally following what D1 did. The run's `flags.json` lists what became of each id, a
+  glyph D1 refused under `refused`.
 - A catalogue whose `units` carry `visual` and `context`, as `export_cloudflare.py` writes them, sets
   each published crop's model votes for its cut in its page's object
   `v3/votes/<build>/<page>.json.gz` (`votes.py`), and a reading that is not ready removes them. Only
