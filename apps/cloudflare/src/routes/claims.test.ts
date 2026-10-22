@@ -205,11 +205,13 @@ describe('the crop grapheme picker', () => {
     await expect(pick('U+9999')).rejects.toThrow('422 No such character.');
     await expect(pick('後')).rejects.toThrow('422 Name a grapheme by its code points.');
     await expect(pick('U+005F8C')).rejects.toThrow('422 Name a grapheme by its code points.');
+    for (const key of ['U+110000', 'U+D800', 'U+FFFFFF']) await expect(pick(key)).rejects.toThrow('422 Name a grapheme by its code points.');
     await expect(pick(null)).rejects.toThrow('409 You have no grapheme on this crop to clear.');
     const claim = (object: string) => post('/atlas/claims', { id: crypto.randomUUID(), crop_version: version(local), subject: publicId(local),
       predicate: 'has_grapheme', claims: [{ object }] }) as Promise<any>;
     await expect(claim('U+4ECE')).rejects.toThrow('422 U+4ECE cannot be the object of has_grapheme.');
     await expect(claim('U+005F8C')).rejects.toThrow('422 U+005F8C cannot be the object of has_grapheme.');
+    await expect(claim('U+110000')).rejects.toThrow('422 U+110000 cannot be the object of has_grapheme.');
     expect((await claim(AFTER)).current[0]).toMatchObject({ predicate: 'has_grapheme', status: 'asserted', object: AFTER });
     expect(db.query(graphemeHeadQuery()).get('从')).toEqual({ id: 4, head: 0, family: '從' });
   });

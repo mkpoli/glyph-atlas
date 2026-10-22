@@ -245,9 +245,12 @@ export async function commitPlan(env: Env, submission: { key: string; actor: str
 // A grapheme is named by its code points (`U+5F8C`, at most four), as the site's character keys are.
 export const GRAPHEME_KEY = /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6}){0,3}$/;
 export const keyText = (key: string) => key.split(' ').map(point => String.fromCodePoint(parseInt(point.slice(2), 16))).join('');
+// A Unicode scalar value: within the code space, and no surrogate.
+const scalar = (point: string) => { const n = parseInt(point.slice(2), 16); return n <= 0x10FFFF && (n < 0xD800 || n > 0xDFFF) };
 const keyOf = (text: string) => [...text].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 /** Whether `key` names a grapheme as the site writes its keys: `U+5F8C`, never `U+005F8C`. */
-export const graphemeKey = (key: unknown): key is string => typeof key === 'string' && GRAPHEME_KEY.test(key) && keyOf(keyText(key)) === key;
+export const graphemeKey = (key: unknown): key is string => typeof key === 'string' && GRAPHEME_KEY.test(key) && key.split(' ').every(scalar)
+  && keyOf(keyText(key)) === key;
 export const headsQuery = () => 'SELECT text FROM graphemes WHERE text IN (SELECT value FROM json_each(?)) AND coalesce(head,id)=id';
 /** The keys among `named` of graphemes that head their family: a `has_grapheme` claim names one. */
 export async function headKeys(env: Env, named: string[]): Promise<string[]> {
