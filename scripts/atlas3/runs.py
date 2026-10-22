@@ -204,6 +204,10 @@ def main():
     if not args.send:
         print("dry run: nothing sent", flush=True)
         return
+    if not groups and not any(changed.values()) and has(runs, "imports") and \
+            runs.execute("SELECT 1 FROM imports WHERE stamp LIKE '%.answers'").fetchone():
+        print("the rows and answers are in place; nothing to send", flush=True)
+        return
     if groups:
         deliver(run, runs)
     # The texts the answers count, in the local copy alone.
