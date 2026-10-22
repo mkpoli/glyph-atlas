@@ -121,8 +121,9 @@
   }
   // The unfiltered homepage, or one narrowed to a script group, shows the collection's own rows and then
   // a bounded corpus sample of the same group. The
-  // sample is normalised by the same adapter and deduplicated against what is already on the page.
-  let sample = $state(first ? sampleRows(first.sample, first.result.items) : []), sampleFault = $state(first?.sample ? (first.sample.status === 'ok' ? null : first.sample.status) : null)
+  // sample is normalised by the same adapter and deduplicated against what is already on the page. The
+  // view reads it with the rows, once it shows.
+  let sample = $state([]), sampleFault = $state(null)
   let collection = $state(asked?.collection ?? null)
   async function readCollection() {
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
