@@ -846,6 +846,8 @@
   "quiz.keyboardHint.issues": "W M B X誤 · S置 · ←→截",
   "suggestions.pick.next": "次字…",
   "form.add": "增形",
+  "grapheme.disputed": "有異議",
+  "grapheme.find": "尋字種",
   "form.ids.compose": "以IDS書",
   "form.ids.label": "字構",
   "form.ids.operators": "構符",

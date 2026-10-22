@@ -854,6 +854,8 @@
   "quiz.keyboardHint.issues": "W M B X問題類型 · S略過 · ←→切換裁切",
   "suggestions.pick.next": "下一個字…",
   "form.add": "新增字形",
+  "grapheme.disputed": "有爭議",
+  "grapheme.find": "查找其他字種",
   "form.ids.compose": "以IDS書寫",
   "form.ids.label": "漢字構形描述序列（IDS）",
   "form.ids.operators": "結構符",

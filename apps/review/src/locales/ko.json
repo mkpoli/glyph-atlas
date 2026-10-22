@@ -835,6 +835,8 @@
   "quiz.keyboardHint.issues": "W M B X 문제 · S 건너뛰기 · ←→ 크롭",
   "suggestions.pick.next": "다음 글자…",
   "form.add": "자형 추가",
+  "grapheme.disputed": "이견 있음",
+  "grapheme.find": "다른 자소 찾기",
   "form.ids.compose": "IDS로 쓰기",
   "form.ids.label": "한자 구성 기술(IDS)",
   "form.ids.operators": "구성 연산자",

@@ -854,6 +854,8 @@
   "quiz.keyboardHint.issues": "W M B X选择问题 · S跳过 · ←→切换裁切",
   "suggestions.pick.next": "下一个字…",
   "form.add": "添加字形",
+  "grapheme.disputed": "有争议",
+  "grapheme.find": "查找其他字种",
   "form.ids.compose": "用IDS书写",
   "form.ids.label": "汉字构形描述序列（IDS）",
   "form.ids.operators": "结构符",

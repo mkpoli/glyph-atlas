@@ -11,8 +11,8 @@
   import { listForms, formOf } from '../lib/cropForms.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
-  // its own form would mark nothing.
-  let { crop, chosen = null, onchoose, disabled = false, others = false } = $props()
+  // its own form would mark nothing. `labelled` names the bar 字体, under the crop's 字種.
+  let { crop, chosen = null, onchoose, disabled = false, others = false, labelled = false } = $props()
   let offered = $state({ char: null, members: [], variants: [], derived: [] }), added = $state([])
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   let composing = $state(false)
@@ -74,6 +74,7 @@
 
 <div class="crop-form" bind:this={root}>
   <div class="form-row copyable">
+    {#if labelled}<span class="form-label">{t('chips.forms')}</span>{/if}
     <FormChips forms={bar} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose}>
       {#if !others}<CopyValue value={chosen ?? current} />{/if}
     </FormChips>
@@ -107,6 +108,7 @@
 <style>
   .crop-form{display:flex;flex-direction:column;gap:10px;margin:0 0 16px}
   .form-row{display:flex;gap:6px;align-items:flex-start}
+  .form-label{min-width:3em;font-size:12px;color:var(--muted);line-height:39px}
   .form-row :global(.copy-value){align-self:center}
   .crop-form :global(.form-chips){flex:1 1 0}
   .form-add{flex:none;min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
