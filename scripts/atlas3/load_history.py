@@ -14,7 +14,8 @@ DELETE of rows the source no longer has, and nothing already loaded. Mark events
    the mirror's `codes` take the two mark states 0003 numbers, so the publisher never numbers them
    differently. 0008 holds form anchors. 0009 gives events what an undo restores; 0010 the labels each showed and named, and
    the corpus rows and flags; 0013 keeps the character before a forms decision.
-2. The rows of every history table that differ from the local copy.
+2. The rows of every history table that differ from the local copy. Suspects and shapes are left out:
+   quiz_marks.py writes them, and a rerun here would restore the cutover's marks over its own.
 3. Marks: a pending crop with a mark takes the mark as its state, one revision past its own, with an
    event at the round that marked it. A mark on a crop that is not pending is left out, as the old
    site showed it only on pending crops; a crop already in its mark's state was set by an earlier load.
@@ -39,8 +40,9 @@ from build import HERE, OUT
 from publish import CF, STATEMENT_BYTES, applied, lit, send, write_parts
 
 SCHEMA = CF / "migrations-atlas"
-# Tables in the order their rows load: who and which request first, then what names them.
-TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats", "suspects", "shapes",
+# Tables in the order their rows load: who and which request first, then what names them. The
+# translation's `suspects` and `shapes` are not among them: quiz_marks.py owns those tables.
+TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats",
           "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "current_claims",
           "ledger_submissions", "rejections", "representations", "forms", "form_decisions", "corpus_follow", "form_bases", "written_forms", "corpus_rows",
           "corpus_flags")

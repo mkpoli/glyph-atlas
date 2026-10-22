@@ -4,6 +4,8 @@ import sqlite3
 import sys
 
 import pytest
+from test_atlas3_history import COLUMNS, history, sources
+from test_atlas3_load import load
 from test_atlas3_publish import ids, layout  # noqa: F401 -- `layout` is the fixture
 
 BOX = {"x": 1, "y": 2, "w": 3, "h": 4}
@@ -130,3 +132,45 @@ def test_a_malformed_shape_order_is_refused(layout, monkeypatch, tmp_path, order
     _root, _publish, remote = layout
     with pytest.raises(SystemExit, match="non-negative integer"):
         quiz(remote, monkeypatch, "--shapes", orders(tmp_path / "s.json", {"ex:a1": order}))
+
+
+def test_a_dry_run_after_a_stopped_run_counts_what_d1_holds_and_keeps_nothing(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, _publish, remote = layout
+    shapes = orders(tmp_path / "s.json", {"ex:a1": 1})
+
+    def stopped(database, file, stamp):
+        remote.send(database, file, stamp)
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        quiz(remote, monkeypatch, "--shapes", shapes, "--send", send=stopped)
+    local = root / "out" / "atlas.sqlite"
+    before = held(sqlite3.connect(local))
+    quiz(remote, monkeypatch, "--shapes", shapes)
+    # D1 holds the stopped run's part, so the same marks are nothing to send, and the local copy is as it was.
+    assert "shapes\t1\t0\t0\t0\t0\n" in (root / "out" / "quiz-marks-report.txt").read_text()
+    assert held(sqlite3.connect(local)) == before == {"suspects": [], "shapes": []}
+    quiz(remote, monkeypatch, "--shapes", shapes, "--send")
+    assert held(sqlite3.connect(local)) == held(remote.dbs["glyph-atlas-v3"])
+
+
+def test_a_history_load_after_quiz_marks_leaves_them(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    crop = ids(root)
+    cutover = {"unit_suspects": [("ex:a1", 0.9, "い", "あ", None)], "unit_shapes": [("ex:a1", 7)]}
+    sources(root, **cutover)
+    assert history(monkeypatch, root)[0] == 0
+    load(publish, remote, monkeypatch)
+    quiz(remote, monkeypatch, "--suspects", marks(tmp_path / "m.json", {"ex:b1": {"p": 0.2, "reads_as": None, "label": "う", "box": None}}),
+         "--shapes", orders(tmp_path / "s.json", {"ex:b1": 0}), "--send")
+    after = held(remote.dbs["glyph-atlas-v3"])
+    # The history load of a later copy neither deletes the quiz's marks nor puts the cutover's back.
+    for table in COLUMNS:
+        (root / f"source-{table}.sqlite").unlink()
+    sources(root, **cutover, favourites=[("user-1", "ex:a1", "2026-10-01T00:00:03Z")])
+    assert history(monkeypatch, root)[0] == 0
+    load(publish, remote, monkeypatch)
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT count(*) FROM favourites").fetchone() == (1,)
+    assert held(remote.dbs["glyph-atlas-v3"]) == after == {"suspects": [(crop["ex:b1"], 0.2, None, "う", None)],
+                                                          "shapes": [(crop["ex:b1"], 0)]}
+    assert held(sqlite3.connect(root / "out" / "atlas.sqlite")) == after
