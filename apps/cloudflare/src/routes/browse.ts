@@ -399,8 +399,10 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   // catalogue stands, so the edge keeps it: the shuffles a page deals are few (`shuffleSeed`), and a
   // listing read again skips its crops' bundles and records. A round is its reviewer's, and the Flagged
   // and skipped views follow each review as it is saved, so those are not kept.
-  const listingKey = review || flaggedView || stateParam === 'skipped' ? null : new Request(`${url.origin}/atlas/listing?${new URLSearchParams([...q].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))}&v=${
-    encodeURIComponent(version)}`);
+  // The key names the publication as well: its counts come from the publication's answers, which go up
+  // after the catalogue key has moved.
+  const listingKey = review || flaggedView || stateParam === 'skipped' ? null : new Request(`${url.origin}/atlas/listing?${new URLSearchParams([...q].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))}&pub=${
+    encodeURIComponent((await currentPointer(env)).pub)}&v=${encodeURIComponent(version)}`);
   const kept = listingKey ? await caches.default.match(listingKey) : undefined;
   if (kept) { timing.step('listing-hit'); return await kept.json(); }
   const [{ cells, chars }, held] = await Promise.all([collectedCounts(env, version), codeNames(env)]);
