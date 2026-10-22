@@ -13,7 +13,8 @@ whether the corpus needs the family scope and how many glyphs the family has (`c
 of the family (`detail.characters`), the widening a reader may choose (`detail.expansions`) and the
 visual analysis the family is keyed on. Everything else in the card is its own, so the counts stay
 the export's until the next full export. A character the input lacks - a sequence the table now keys,
-such as 𛂞 + U+3099 - is written whole, the way a full export writes it, with no crops counted.
+such as 𛂞 + U+3099 - is written whole, the way a full export writes it, with no crops counted, and
+gets the search names a full export gives it: its text and its lower-case code point.
 
 The crops and corpus glyphs follow without a write of their own: `reference.py` gives every grapheme
 its card's family head (`graphemes.head`), which is where the new layout files a crop under its family.
@@ -163,7 +164,11 @@ def rewrite(db: sqlite3.Connection) -> dict[str, int]:
     db.executemany("INSERT OR REPLACE INTO characters(code_point, character, name, data, detail) VALUES(?,?,?,?,?)",
                    [(point, refs.to_char(point), refs.character(point).name or "", encoded(data), encoded(detail))
                     for point, (data, detail) in rows.items()])
-    return {"changed": len(points), "created": len(created),
+    # A new character is found by its text and its lower-case code point, as a full export names it.
+    before = db.total_changes
+    db.executemany("INSERT OR IGNORE INTO aliases(query, code_point, rank) VALUES(?,?,0)",
+                   [(query, point) for point in created for query in (refs.to_char(point), point.lower())])
+    return {"changed": len(points), "created": len(created), "aliases": db.total_changes - before,
             "families": len({data["grapheme"]["code_point"] for data, _ in rows.values()})}
 
 
