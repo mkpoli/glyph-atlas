@@ -10,6 +10,7 @@ import { Problem } from '../busy';
 import { body, canonical, literal, text } from '../input';
 import { setForm, type ClaimTools } from './claims';
 import { STALE_CODE } from '../atlas3Crops';
+import { reviewsPage } from './reviews';
 import { cropChanges, reviewCrops, reviewCropsQuery, reviewRoute, revert, roundMembersQuery, type Submission } from './review';
 
 const H = 'a'.repeat(64), G = 'b'.repeat(64);
@@ -69,14 +70,14 @@ function setup() {
       crops: [...[0, 1, 2, 3, 4, 5].map(local), ...[6, 7, 8].map((slot, i) => ({ slot, id: `hng:${page}:${slot}`, record_place: places[i] })),
         { slot: 9, id: `hk:${page}:9`, retired: true, replaced_by: ids[0] }] }))],
     ['packs/p.bin', new TextEncoder().encode(records.join(''))]]);
-  const MEDIA = { get: async (name: string, options?: { range?: { offset: number; length: number } }) => {
+  const MEDIA = { put: async (key: string, value: ArrayBuffer) => { objects.set(key, new Uint8Array(value)); }, get: async (name: string, options?: { range?: { offset: number; length: number } }) => {
     const bytes = objects.get(name);
     if (!bytes) return null;
     const part = options?.range ? bytes.subarray(options.range.offset, options.range.offset + options.range.length) : bytes;
     return { body: new Response(part).body!, arrayBuffer: async () => new Uint8Array(part).buffer };
   } };
   const env = { ATLAS: planned(db), MEDIA, CORRECTIONS: { limit: async () => ({ success: true }) } } as unknown as Env;
-  return { db, env, ids, page };
+  return { db, env, ids, page, objects };
 }
 const ORIGIN = 'https://glyphatlas.org';
 async function send(env: Env, path: string, body: unknown, user = 'u1') {
@@ -106,6 +107,91 @@ describe('review count dimensions', () => {
       { char: 1, family: 1, decade: -20, n: -1 }, { char: 4, family: 1, decade: -20, n: 1 }]);
     expect((await send(env, `/atlas/rounds/${uuid(501)}/undo`, {})).status).toBe(200);
     expect(db.query('SELECT sum(abs(n)) AS n FROM tally').get()).toEqual({ n: 0 });
+  });
+});
+
+describe('captured review exports', () => {
+  it('freeze the crop as reviewed and as published in its page bundle, unchanged by later revisions', async () => {
+    const { db, env, ids, page } = setup();
+    const request = { id: uuid(710), revision: 0, image_sha256: H, verdict: 'wrong', issue: 'character', character: 'あ' };
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, request)).status).toBe(200);
+    const before = (await reviewsPage(env, new URLSearchParams())).reviews[0];
+    expect(before).toMatchObject({ event: { id: expect.stringMatching(/^v3:\d+$/), target_id: `hk:${page}:0` }, expected_revision: 0, current_revision: 1,
+      reviewed: { character: { id: `hk:${page}:0`, revision: 0, page_id: `hk:book:${page}` } } });
+    const { slot: _slot, ...published } = { slot: 0, id: `hk:${page}:0`, label: '', image_sha256: H, image: '/atlas/media/0.webp',
+      box: { x: 0, y: 0, w: 10, h: 10 }, context: true, context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 0, y: 0, w: 10, h: 10 },
+      source_scale: [1, 1] };
+    expect(before.publication_snapshot).toEqual({ character: { ...published, page_id: `hk:book:${page}`, revision: 0 } });
+    expect(JSON.parse(before.event.evidence).request.revision).toBe(0);
+    expect(JSON.parse((db.query('SELECT request FROM submissions').get() as any).request).input).toEqual(request);
+    // A later page revision and later physical revisions leave the record as it was saved.
+    db.prepare('UPDATE pages SET rev=2 WHERE id=?').run(page);
+    db.prepare('UPDATE crops SET revision=10 WHERE id=?').run(ids[0]);
+    const { current_revision: _a, ...kept } = before;
+    const { current_revision: _b, ...after } = (await reviewsPage(env, new URLSearchParams())).reviews[0];
+    expect(after).toEqual(kept);
+  });
+
+  it('commits no review when storing its evidence fails', async () => {
+    const { db, env, ids } = setup();
+    env.MEDIA = { ...env.MEDIA, put: async () => { throw new Error('evidence write failed'); } } as unknown as R2Bucket;
+    await expect(send(env, `/atlas/characters/${publicId(ids[0])}`, {
+      id: uuid(711), revision: 0, image_sha256: H, verdict: 'match',
+    })).rejects.toThrow('evidence write failed');
+    expect(db.query('SELECT * FROM submissions').all()).toEqual([]);
+    expect(db.query('SELECT * FROM events').all()).toEqual([]);
+  });
+
+  it('keeps one committed evidence reference when the same request races itself', async () => {
+    const { db, env, ids } = setup();
+    const request = { id: uuid(712), revision: 0, image_sha256: H, verdict: 'match' };
+    const [a, b] = await Promise.all([send(env, `/atlas/characters/${publicId(ids[0])}`, request), send(env, `/atlas/characters/${publicId(ids[0])}`, request)]);
+    expect(a).toEqual(b);
+    expect(a.status).toBe(200);
+    expect(db.query('SELECT count(*) AS n FROM submissions').get()).toEqual({ n: 1 });
+    expect(db.query('SELECT count(*) AS n FROM events').get()).toEqual({ n: 1 });
+    expect((await reviewsPage(env, new URLSearchParams())).reviews).toHaveLength(1);
+  });
+
+  it('lists a review saved before evidence was kept without a record', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(713), revision: 0, image_sha256: H, verdict: 'match' })).status).toBe(200);
+    db.exec('UPDATE submissions SET evidence=NULL');
+    const [review] = (await reviewsPage(env, new URLSearchParams())).reviews;
+    expect(review).toMatchObject({ evidence: null, crop: publicId(ids[0]), current: true, current_revision: 1 });
+    expect(review.publication_snapshot).toBeUndefined();
+  });
+});
+
+describe('revisions as the offline store counts them', () => {
+  it('leave out marks, and a chain of reviews under one published record shares its baseline', async () => {
+    const { env, ids } = setup();
+    expect((await send(env, '/atlas/rounds', { id: uuid(700), grapheme: 'U+306F', seen: [local(ids[0])] })).status).toBe(200);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
+      id: uuid(701), revision: 1, image_sha256: H, verdict: 'wrong', issue: 'character', character: 'あ',
+    })).status).toBe(200);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
+      id: uuid(702), revision: 2, image_sha256: H, verdict: 'match',
+    })).status).toBe(200);
+    const [first, second] = (await reviewsPage(env, new URLSearchParams())).reviews;
+    expect([first.expected_revision, second.expected_revision]).toEqual([0, 1]);
+    expect(first.reviewed.character.revision).toBe(0);
+    expect(second.publication_snapshot).toEqual(first.publication_snapshot);
+    expect(first.publication_snapshot.character.revision).toBe(0);
+    expect([first.current, second.current, second.current_revision]).toEqual([false, true, 2]);
+  });
+
+  it('refuses a review when its page is published again between reading the crop and committing', async () => {
+    const { db, env, ids, page } = setup(), atlas = env.ATLAS;
+    env.ATLAS = { ...atlas, batch: async (statements: D1PreparedStatement[]) => {
+      db.prepare('UPDATE pages SET rev=rev+1 WHERE id=?').run(page);
+      return atlas.batch(statements);
+    } } as D1Database;
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
+      id: uuid(703), revision: 0, image_sha256: H, verdict: 'match',
+    })).status).toBe(409);
+    expect(db.query('SELECT * FROM submissions').all()).toEqual([]);
+    expect(db.query('SELECT * FROM events').all()).toEqual([]);
   });
 });
 

@@ -114,6 +114,21 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
 One publish runs at a time. The first build's bundles went to R2 with
 `rclone copy out/pages r2:glyph-atlas/v3/pages --header-upload "Content-Type: application/json" --header-upload "Content-Encoding: gzip"`.
 
+## Review exports
+
+`/atlas/reviews.json` lists every review, oldest first, 200 a page; `scripts/fetch_reviews.py` collects
+the pages into one file for the offline import. A review saved on the site freezes its record in R2
+before its submission commits (`v3/review-evidence/<sha256>.json.gz`, named in `submissions.evidence`,
+migration 0015): what the reviewer saw, and the crop's record in the page bundle it was read from as its
+publication baseline. Every review under one bundle record keeps the baseline of the first. Revisions
+there are counted as the old site and the offline store count them: a crop's revision less its marks.
+
+The reviews moved from the old site are served from `v3/review-legacy/<page>.json.gz`, as the old export
+gave them. `review_archive.py --snapshots FILE` builds those archives from the frozen copies of `events`
+and `units` and the old site's publication record (`units.snapshot`) of each collected or retired crop
+they name, which the copies lack; `--send` uploads them. It writes nothing to D1. Until they are
+uploaded the export stops at the first moved review.
+
 ## Publication answers
 
 `answers.py` (dry run with `--dry-run`) publishes what the galleries, the browse page and the homepage
