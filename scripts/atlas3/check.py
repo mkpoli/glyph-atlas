@@ -1243,9 +1243,10 @@ def check_history(report, name, query=None):
         # A glyph no review overlay speaks for has its upstream character as its base, once a publish has
         # numbered it.
         character = char_text(r["character"]) or None
-        if r["id"] in upstream and r["id"] not in overlaid and (now := char_text(upstream[r["id"]]) or None) and \
-                atlas.execute("SELECT 1 FROM graphemes WHERE text=?", (now,)).fetchone():
-            character = now
+        if r["id"] in upstream and r["id"] not in overlaid:
+            now = char_text(upstream[r["id"]]) or None
+            if now is None or atlas.execute("SELECT 1 FROM graphemes WHERE text=?", (now,)).fetchone():
+                character = now
         found = atlas.execute("SELECT id FROM graphemes WHERE text=?", (character,)).fetchone() if character else None
         want = {"char": found[0] if found else None}
         t.compare(f"base of {r['id']} ({cid})", want, one("SELECT char FROM form_bases WHERE crop=?", cid))
