@@ -251,6 +251,16 @@ const keyOf = (text: string) => [...text].map(c => 'U+' + c.codePointAt(0)!.toSt
 /** Whether `key` names a grapheme as the site writes its keys: `U+5F8C`, never `U+005F8C`. */
 export const graphemeKey = (key: unknown): key is string => typeof key === 'string' && GRAPHEME_KEY.test(key) && key.split(' ').every(scalar)
   && keyOf(keyText(key)) === key;
+/** The key of the grapheme that heads the family each of `keys` is filed under now; a key the table
+ *  does not hold heads itself. */
+export const keyHeadsQuery = () => `SELECT g.text,coalesce(h.text,g.text) AS head FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head
+  WHERE g.text IN (SELECT value FROM json_each(?))`;
+export async function keyHeads(env: Env, keys: string[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(keys.filter(graphemeKey))];
+  const rows = wanted.length ? (await env.ATLAS.prepare(keyHeadsQuery()).bind(JSON.stringify(wanted.map(keyText))).all<{ text: string; head: string }>()).results : [];
+  const heads = new Map(rows.map(r => [keyOf(r.text), keyOf(r.head)]));
+  return new Map(keys.map(key => [key, heads.get(key) ?? key]));
+}
 export const headsQuery = () => 'SELECT text FROM graphemes WHERE text IN (SELECT value FROM json_each(?)) AND coalesce(head,id)=id';
 /** The keys among `named` of graphemes that head their family: a `has_grapheme` claim names one. */
 export async function headKeys(env: Env, named: string[]): Promise<string[]> {

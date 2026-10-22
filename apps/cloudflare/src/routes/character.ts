@@ -304,6 +304,12 @@ const NONE: Gallery = { sources: [], chars: [], filed: [], away: [], here: [] };
 // crops, less the crops a grapheme claim files under another family and with those it files under this
 // one; or the character and its variants, one after another in code point order. `filedOnly` keeps
 // only the crops with no character.
+// A request reads its family's claims once, however many of its galleries ask.
+const familyClaimsRead = new WeakMap<Card, ReturnType<typeof familyClaims>>();
+function claimsOf(env: Env, card: Card, members: number[]) {
+  if (!familyClaimsRead.has(card)) familyClaimsRead.set(card, familyClaims(env, cp(card.data.grapheme?.char ?? card.data.char), members));
+  return familyClaimsRead.get(card)!;
+}
 async function galleryOf(env: Env, card: Card, scope: Scope, filedOnly = false): Promise<Gallery> {
   if (scope === 'variants') {
     if (filedOnly) return NONE;
@@ -313,7 +319,7 @@ async function galleryOf(env: Env, card: Card, scope: Scope, filedOnly = false):
   if (scope === 'grapheme') {
     const { head, members } = await familyOf(env, card), chars = filedOnly ? [] : members;
     if (head === null) return NONE;
-    const claims = await familyClaims(env, cp(card.data.grapheme?.char ?? card.data.char), members);
+    const claims = await claimsOf(env, card, members);
     const here = claims.here.filter(r => !filedOnly || r.char === null), except = claims.away.map(r => r.id);
     const sources: Source[] = [...chars.map(key => ({ by: 'char' as const, key, except })), ...members.map(key => ({ by: 'family' as const, key, except })),
       ...(here.length ? [{ by: 'claimed' as const, key: head, ids: here.map(r => r.id) }] : [])];

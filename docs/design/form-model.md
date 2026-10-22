@@ -77,9 +77,10 @@ A crop's `has_grapheme` claim names the grapheme it is read as, by the key of th
 heads it (`U+5F8C`). Without one, a crop is filed under its character's grapheme. A form that writes
 several graphemes (后 for 後 and 后) and a scribe's slip (one character written for another) are read
 as the grapheme the reviewer names. While an asserted, accepted or adjudicated claim holds on the
-crop's published cut, a family gallery and its counts leave the crop out of its character's family
-and list it under the claimed one (`familyClaims`, `atlas3Gallery.ts`); the character's own gallery
-keeps it. A disputed or rejected slot names none, and a crop cut again waits for a claim on its new cut.
+crop's cut as its inspector reads it, a family gallery and its counts leave the crop out of its
+character's family and list it under the family the claimed grapheme is filed under now
+(`familyClaims`, `atlas3Gallery.ts`); the character's own gallery keeps it. A disputed or rejected
+slot names none, and a crop cut again waits for a claim on its new cut.
 
 A crop's `writes_word` claim names the word it writes at its place in the text (decision 0004), or a
 gloss where no word row fits yet. Its `method` is the strongest evidence for the sense: the source's

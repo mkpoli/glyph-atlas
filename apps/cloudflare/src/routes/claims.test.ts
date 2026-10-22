@@ -216,6 +216,15 @@ describe('the crop grapheme picker', () => {
     expect(db.query(graphemeHeadQuery()).get('从')).toEqual({ id: 4, head: 0, family: '從' });
   });
 
+  it('files the crop under the family its grapheme is filed under after a publication moves it', async () => {
+    const { db, env, local, pick } = graphemes();
+    await pick(AFTER);
+    // 後 joins 從's family: the crop read as 後 is listed with 從, and still not with 后.
+    db.exec('UPDATE graphemes SET head=3 WHERE id=1');
+    expect((await familyClaims(env, 'U+5F9E', [3, 4, 1])).here.map(r => r.id)).toEqual([local]);
+    expect((await familyClaims(env, QUEEN, [2])).away.map(r => r.id)).toEqual([local]);
+  });
+
   it('goes through the picker route', async () => {
     const { local, version, post } = graphemes();
     const answer = await post(`/atlas/characters/${publicId(local)}/grapheme`, { id: crypto.randomUUID(), crop_version: version(local), grapheme: AFTER }) as any;

@@ -1,6 +1,7 @@
 // Character galleries on the new storage layout: counts from the publication's answers plus the
 // reviews since, and pages of crops read from index ranges in the order they show.
 import { cropOf, publicId } from './atlas3';
+import { keyHeads } from './ledger';
 
 type Json = any;
 
@@ -90,32 +91,40 @@ export const groupOf = (style: number | null): StyleGroup => style === null || s
 // Where a gallery's crops are read: the crops of a character (`crop_char` and its kin), the crops with
 // no character filed under a family (`crop_family` and its kin), or the crops a grapheme claim files
 // under a family from outside it, by id. A family's char and family sources leave out (`except`) the
-// crops a claim files under another grapheme.
+// crops a claim files under another grapheme. The ids are bound as one JSON list.
 export type Source = { by: 'char' | 'family'; key: number; except?: number[] } | { by: 'claimed'; key: number; ids: number[] };
 /** A source's conditions in `kind` and their values. A char or family source's are its index's. */
-export function sourceWhere(source: Source, kind: 0 | 1): { where: string[]; values: number[] } {
-  if (source.by === 'claimed') return { where: [`id IN (${source.ids.join(',')})`, `kind=${kind}`], values: [] };
+export function sourceWhere(source: Source, kind: 0 | 1): { where: string[]; values: (number | string)[] } {
+  if (source.by === 'claimed') return { where: ['id IN (SELECT value FROM json_each(?))', `kind=${kind}`], values: [JSON.stringify(source.ids)] };
   const where = source.by === 'char' ? ['char=?', `kind=${kind}`] : ['family=?', `kind=${kind}`, 'family IS NOT NULL', 'char IS NULL'];
-  if (source.except?.length) where.push(`id NOT IN (${source.except.join(',')})`);
-  return { where, values: [source.key] };
+  const values: (number | string)[] = [source.key];
+  if (source.except?.length) { where.push('id NOT IN (SELECT value FROM json_each(?))'); values.push(JSON.stringify(source.except)); }
+  return { where, values };
 }
 
 // The statuses of a grapheme slot that file its crop.
 export const FILING = ['asserted', 'accepted', 'adjudicated'];
-// The crops a grapheme claim files, on the cut each is published at, with what their counts are kept by:
-// one range of `current_claim_object` (every crop read as some grapheme) and each crop by its key.
+// At most this many claimed crops are read for a gallery; past it the claims beyond are not applied,
+// and the claims want a column of their own on `crops`.
+export const FILED_MAX = 2000;
+// The crops a grapheme claim files, on each crop's effective cut (the next one while a redrawn box waits
+// in `reviews`, as the inspector reads the slot), with what their counts are kept by: one range of
+// `current_claim_object` (every crop read as some grapheme) and each crop and review by its key.
 export const filedClaimsQuery = () => `SELECT k.id,c.object AS grapheme,k.char,k.family,k.kind,k.style,k.state,k.quiz,k.visual_group,
   coalesce((k.year-CASE WHEN k.year<0 THEN 9 ELSE 0 END)/10*10,-1) AS decade
-  FROM current_claims c CROSS JOIN crops k ON k.id=c.crop AND k.cut=c.cut
-  WHERE c.predicate='has_grapheme' AND c.object IS NOT NULL AND c.scope='' AND c.slot='' AND c.status IN (${FILING.map(s => `'${s}'`).join(',')})`;
+  FROM current_claims c CROSS JOIN crops k ON k.id=c.crop LEFT JOIN reviews r ON r.crop=k.id
+  WHERE c.predicate='has_grapheme' AND c.object IS NOT NULL AND c.scope='' AND c.slot='' AND c.status IN (${FILING.map(s => `'${s}'`).join(',')})
+    AND c.cut=k.cut+(r.x IS NOT NULL) LIMIT ${FILED_MAX}`;
 export type Filed = { id: number; grapheme: string; char: number | null; family: number | null; kind: number; style: number | null;
   state: number | null; quiz: number | null; visual_group: number | null; decade: number };
 /** For a family headed by `grapheme` (its key) with these members: the crops of its members a claim
- *  files elsewhere (`away`), and the crops from outside it a claim files here (`here`). */
+ *  files elsewhere (`away`), and the crops from outside it a claim files here (`here`). A claim files
+ *  its crop under the family its grapheme heads now, or is filed under since a publication moved it. */
 export async function familyClaims(env: Env, grapheme: string, members: number[]): Promise<{ away: Filed[]; here: Filed[] }> {
   const rows = (await env.ATLAS.prepare(filedClaimsQuery()).all<Filed>()).results, own = new Set(members);
+  const heads = await keyHeads(env, rows.map(r => r.grapheme)), filed = (r: Filed) => heads.get(r.grapheme) === grapheme;
   const inFamily = (r: Filed) => r.char !== null ? own.has(r.char) : r.family !== null && own.has(r.family);
-  return { away: rows.filter(r => r.grapheme !== grapheme && inFamily(r)), here: rows.filter(r => r.grapheme === grapheme && !inFamily(r)) };
+  return { away: rows.filter(r => !filed(r) && inFamily(r)), here: rows.filter(r => filed(r) && !inFamily(r)) };
 }
 /** A filed crop's count cell, `sign` 1 where a claim adds it and -1 where it takes it away. */
 export const filedCell = (r: Filed, sign: number): Cell => ({ kind: r.kind, style: r.style, state: r.state, quiz: r.quiz,
