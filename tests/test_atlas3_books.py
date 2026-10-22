@@ -20,7 +20,10 @@ def dated(document, axis="witness", start=1700):
             json.dumps({"query": "https://ap.hutime.org/cal/"}), "source:test")
 
 
-def sources(root, dating=None, titles=None, characters=None, metadata=None, claims=(), stamp="2026-10-20T00:00:00Z"):
+def sources(root, dating=None, titles=None, characters=None, metadata=None, claims=(), stamp="2026-10-20T00:00:00Z",
+            listed=None):
+    """The input and copies; `listed` names the documents the characters export listed, by default
+    those it holds characters of."""
     for table in ("corpus_documents", "metadata"):
         (root / f"source-{table}.sqlite").unlink(missing_ok=True)
     (root / "book-facts-input.sqlite").unlink(missing_ok=True)
@@ -31,6 +34,8 @@ def sources(root, dating=None, titles=None, characters=None, metadata=None, clai
         db.executemany("INSERT INTO document_characters VALUES(?,?,?,?)", characters if characters is not None else [
             ("book:a", 0, "ex:a1", json.dumps({"label": "あ", "page": 1})),
             ("codh:b", 0, "codh:g1", json.dumps({"label": "が", "page": 1}))])
+        db.executemany("INSERT INTO character_documents VALUES(?)", [(d,) for d in listed] if listed is not None else
+                       db.execute("SELECT DISTINCT document FROM document_characters").fetchall())
         db.executemany("INSERT INTO date_claims VALUES(?,?,?,?,?,?,?,?,?)", claims)
         for table in ("date_claims", "document_dating", "document_characters"):
             book_facts_input.noted(db, table, stamp)
@@ -106,8 +111,9 @@ def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F
     root, _publish, remote = layout
     sources(root)
     books(remote, monkeypatch, "--send")
+    # codh:b is listed with no characters left.
     sources(root, dating=[dated("book:a", start=1701), dated("codh:b", "composed", 1600)], titles=[],
-            characters=[("book:a", 0, "ex:a1", json.dumps({"label": "あ", "page": 1}))])
+            characters=[("book:a", 0, "ex:a1", json.dumps({"label": "あ", "page": 1}))], listed=["book:a", "codh:b"])
     books(remote, monkeypatch, "--send")
     got = facts(remote.dbs["glyph-atlas-v3"])
     assert got["titles"]["codh:b"] is None
@@ -119,6 +125,22 @@ def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F
     assert "book_dates\t2\t203\t0\t1\t1\t3\n" in report
     assert "book_characters\t1\t40\t1\t0\t0\t1\n" in report
     assert "rows written: 5 " in report
+
+
+def test_an_input_of_some_documents_leaves_the_other_books_characters(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root)
+    books(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    before = facts(db)["characters"]
+    # A fresh input that export_document_characters.py --documents book:a wrote: book:a changes, codh:b is not listed.
+    sources(root, characters=[("book:a", 0, "ex:a2", json.dumps({"label": "い", "page": 1}))])
+    books(remote, monkeypatch, "--send")
+    book = dict(db.execute("SELECT key, id FROM books"))
+    assert sorted(facts(db)["characters"]) == sorted([(book["book:a"], 0, ids(root)["ex:a2"]),
+                                                      *(r for r in before if r[0] == book["codh:b"])])
+    assert "book_characters\t1\t40\t0\t0\t1\t2\n" in (root / "out" / "books-report.txt").read_text()
+    assert facts(sqlite3.connect(root / "out" / "atlas.sqlite")) == facts(db)
 
 
 def test_a_run_stopped_after_d1_applied_a_part_is_followed_on_rerun(layout, monkeypatch):  # noqa: F811

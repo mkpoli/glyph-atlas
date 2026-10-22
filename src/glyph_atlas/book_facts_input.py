@@ -8,7 +8,8 @@ generators and read by the load:
   dating on both axes as `glyph_atlas.dates` resolved it from the claims, for every document the
   export read, a book of the new layout or not;
 - `document_characters`: `export_document_characters.py`, from a dataset `atlas ainu merge` wrote,
-  the documents it covers replaced and the rest kept.
+  the documents it covers replaced and the rest kept; `character_documents` names every document it
+  has listed, one that came out with no characters too.
 
 A generator writes in one transaction and notes in `written` when, so a table no generator has
 written yet is told from one written empty. The dates export's time is its stamp, which names the
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS document_dating(document TEXT NOT NULL, axis TEXT NOT
   source TEXT NOT NULL, resolver TEXT NOT NULL, PRIMARY KEY(document, axis)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS document_characters(document TEXT NOT NULL, ord INTEGER NOT NULL, unit TEXT NOT NULL,
   data TEXT NOT NULL, PRIMARY KEY(document, ord)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS character_documents(document TEXT PRIMARY KEY) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS written(name TEXT PRIMARY KEY, at TEXT NOT NULL) WITHOUT ROWID;
 """
 

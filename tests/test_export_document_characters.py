@@ -92,6 +92,15 @@ def test_only_the_documents_ainu_records_covers_are_replaced(tmp_path):
     assert db.execute("SELECT document, count(*) FROM document_characters GROUP BY 1 ORDER BY 1").fetchall() == [
         (DOC, 6), ("hk:kept", 1)], "a document the dataset does not list keeps its rows"
     assert db.execute("SELECT name FROM written").fetchall() == [("document_characters",)]
+    assert db.execute("SELECT document FROM character_documents").fetchall() == [(DOC,)]
+
+
+def test_the_documents_named_are_listed_one_without_characters_too(tmp_path):
+    out = tmp_path / "book-facts-input.sqlite"
+    counts = load().export(dataset(tmp_path), out, {DOC, "hk:none"})
+    assert counts == {DOC: 6}
+    db = sqlite3.connect(out)
+    assert db.execute("SELECT document FROM character_documents ORDER BY 1").fetchall() == [(DOC,), ("hk:none",)]
 
 
 def test_a_unit_a_person_corrected_in_the_review_store_is_listed(tmp_path):

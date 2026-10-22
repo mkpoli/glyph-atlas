@@ -79,6 +79,7 @@ def export(dataset: Path, out: Path | None = None, documents: set[str] | None = 
             counts[document] += 1
     with book_facts_input.writing(out) as db:
         db.executemany("DELETE FROM document_characters WHERE document=?", [(d,) for d in rows])
+        db.executemany("INSERT OR IGNORE INTO character_documents VALUES(?)", [(d,) for d in rows])
         db.executemany("INSERT INTO document_characters VALUES(?,?,?,?)", values)
         book_facts_input.noted(db, "document_characters", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
     return dict(counts)

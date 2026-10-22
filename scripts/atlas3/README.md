@@ -258,7 +258,10 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    and resolves each slot it changes again in `glyph-atlas-v3` with the ledger's resolver as the Worker
    runs it, so the verdicts readers gave on the site count. The date claims on documents that are not books stay in
    `assertions` (11,998 of the 14,095 at the cutover), and their dating stays in the input, so a
-   document that gains crops later takes its `book_dates` on the next run. The corpus publication's
+   document that gains crops later takes its `book_dates` on the next run. The characters export
+   replaces the documents it lists (all ainu-records covers, or those `--documents` names) and keeps
+   the rest; `books.py` replaces `book_characters` only for the books of documents the input lists,
+   so an input of some documents leaves the other books' characters as they are. The corpus publication's
    titles and the catalogue's site values are still read from the copies.
    `runs.py` (a dry run without `--send`) adds how the runs are written
    (`migrations-atlas-runs/0002_forms.sql`, which `--send` applies to `glyph-atlas-v3-runs`):

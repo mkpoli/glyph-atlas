@@ -14,7 +14,8 @@ and every published occurrence by its crop through `out/mirror.sqlite`, which is
   every document the export read, so a document that becomes a book later takes its dates on the
   next run;
 - `book_characters`: each occurrence by its integer crop id; one whose unit the site never had (the
-  mirror lacks it) keeps its text id in `unit`, as the old site listed it. Whether the site shows it with its review state is derived when a route reads it
+  mirror lacks it) keeps its text id in `unit`, as the old site listed it. Only the books of documents
+  the input lists (`character_documents`) are replaced; the others keep the rows the site holds. Whether the site shows it with its review state is derived when a route reads it
   (the query is in 0005), since every round changes it;
 - `site`: the publication's `collection`, `corpus_index` and `review_epoch`; the citations
   `variant_sources` and `word_sources` are `reference.py`'s.
@@ -172,6 +173,10 @@ def translate(atlas, mirror):
             count("characters naming a unit the site never had, kept by their text id")
         rows.append((b, ord_, crop[0] if crop else None, None if crop else unit, data))
     out.executemany("INSERT INTO book_characters VALUES(?,?,?,?,?)", rows)
+    listed = given("document_characters").execute(
+        "SELECT document FROM character_documents UNION SELECT document FROM document_characters")
+    out.execute("CREATE TABLE character_books(book INTEGER PRIMARY KEY)")
+    out.executemany("INSERT OR IGNORE INTO character_books VALUES(?)", [(books[d],) for (d,) in listed if d in books])
 
     meta = dict(source("metadata").execute("SELECT key, value FROM metadata"))
     out.executemany("INSERT INTO site VALUES(?,?)", [(k, meta[k]) for k in SITE_KEYS if k in meta])
@@ -208,10 +213,14 @@ def statements(books, atlas):
     wanted = dict(books.execute("SELECT id, title FROM books"))
     add("books", [[f"UPDATE books SET title = {lit(wanted.get(b))} WHERE id = {b};"]
                   for b in sorted(now) if now[b] != wanted.get(b)])
+    # A book whose document the input does not list keeps its characters: the input may hold only some.
+    listed = {r[0] for r in books.execute("SELECT book FROM character_books")}
     for table, (cols, key, owned) in TABLES.items():
         names = ",".join(f'"{c}"' for c in cols)
         k = [cols.index(c) for c in key]
         held = {tuple(r[i] for i in k): r for r in atlas.execute(f"SELECT {names} FROM {table}{owned}")} if has(atlas, table) else {}
+        if table == "book_characters":
+            held = {kk: r for kk, r in held.items() if r[0] in listed}
         new = {tuple(r[i] for i in k): r for r in books.execute(f"SELECT {names} FROM {table}")}
         rows = [[remove(table, cols, key, r)] for kk, r in sorted(held.items()) if kk not in new]
         removed = len(rows)
