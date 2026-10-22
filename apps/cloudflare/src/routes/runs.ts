@@ -225,8 +225,6 @@ export class Timing {
 
 // The books a page and its works name: key and title, one primary-key probe each.
 export const booksQuery = () => 'SELECT id,key,title FROM books WHERE id IN (SELECT value FROM json_each(?))';
-// Each page's revision, one primary-key probe each, so the bundles are read once for the records and
-// the places of the crops.
 // A corpus glyph's forms tool decision: its `form_glyphs` row (its own, or a cluster decision of an earlier
 // clustering it carries) when it has one, else its cluster's (`crops.cluster`); a cluster issue 'mixed'
 // gives its glyphs no issue. One primary-key probe per glyph and per cluster.
