@@ -6,8 +6,8 @@
 // family its source names (`crops.family`, migration 0012), which every crop keeps. A family's gallery reads one range
 // per member character and one per member's filed crops, merged in the order they show.
 import { cropOf, publicId } from '../atlas3';
-import { STYLE_GROUPS, STYLE_NAMES, characterCounts, composedBooks, cursorOf, filedCounts, galleryPage, groupOf, phasesOf, rangeCountQuery,
-  type Cell, type GalleryQuery, type Phase, type Source, type StyleGroup } from '../atlas3Gallery';
+import { STYLE_GROUPS, STYLE_NAMES, characterCounts, composedBooks, cursorOf, familyClaims, filedCell, filedCounts, galleryPage, groupOf, phasesOf,
+  rangeCountQuery, sourceWhere, type Cell, type Filed, type GalleryQuery, type Phase, type Source, type StyleGroup } from '../atlas3Gallery';
 import { listingItems } from '../atlas3Listing';
 import { cardList, characterObject, type CharacterObject } from '../atlas3Reference';
 import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
@@ -298,27 +298,40 @@ async function paged<T>(read: () => Promise<T>): Promise<T> {
 }
 
 type Scope = 'character' | 'grapheme' | 'variants';
-type Gallery = { sources: Source[][]; chars: number[]; filed: number[] };
+type Gallery = { sources: Source[][]; chars: number[]; filed: number[]; away: Filed[]; here: Filed[] };
+const NONE: Gallery = { sources: [], chars: [], filed: [], away: [], here: [] };
 // Where a gallery's crops are: the character's range; a family's member ranges and its members' filed
-// crops; or the character and its variants, one after another in code point order. `filedOnly` keeps
+// crops, less the crops a grapheme claim files under another family and with those it files under this
+// one; or the character and its variants, one after another in code point order. `filedOnly` keeps
 // only the crops with no character.
+// A request reads its family's claims once, however many of its galleries ask.
+const familyClaimsRead = new WeakMap<Card, ReturnType<typeof familyClaims>>();
+function claimsOf(env: Env, card: Card, members: number[]) {
+  if (!familyClaimsRead.has(card)) familyClaimsRead.set(card, familyClaims(env, cp(card.data.grapheme?.char ?? card.data.char), members));
+  return familyClaimsRead.get(card)!;
+}
 async function galleryOf(env: Env, card: Card, scope: Scope, filedOnly = false): Promise<Gallery> {
   if (scope === 'variants') {
-    if (filedOnly) return { sources: [], chars: [], filed: [] };
+    if (filedOnly) return NONE;
     const chars = writtenVariants(card.object, card.data.char).sort(byCodePoint).flatMap(c => { const id = gid(card, c); return id === null ? [] : [id] });
-    return { sources: chars.map(key => [{ by: 'char', key }]), chars, filed: [] };
+    return { ...NONE, sources: chars.map(key => [{ by: 'char', key }]), chars };
   }
   if (scope === 'grapheme') {
-    const { members } = await familyOf(env, card), chars = filedOnly ? [] : members;
-    const sources: Source[] = [...chars.map(key => ({ by: 'char' as const, key })), ...members.map(key => ({ by: 'family' as const, key }))];
-    return { sources: sources.length ? [sources] : [], chars, filed: members };
+    const { head, members } = await familyOf(env, card), chars = filedOnly ? [] : members;
+    if (head === null) return NONE;
+    const claims = await claimsOf(env, card, members);
+    const here = claims.here.filter(r => !filedOnly || r.char === null), except = claims.away.map(r => r.id);
+    const sources: Source[] = [...chars.map(key => ({ by: 'char' as const, key, except })), ...members.map(key => ({ by: 'family' as const, key, except })),
+      ...(here.length ? [{ by: 'claimed' as const, key: head, ids: here.map(r => r.id) }] : [])];
+    return { sources: sources.length ? [sources] : [], chars, filed: members, away: claims.away.filter(r => !filedOnly || r.char === null), here };
   }
   const own = gid(card, card.data.char);
-  return own === null || filedOnly ? { sources: [], chars: [], filed: [] } : { sources: [[{ by: 'char', key: own }]], chars: [own], filed: [] };
+  return own === null || filedOnly ? NONE : { ...NONE, sources: [[{ by: 'char', key: own }]], chars: [own] };
 }
 async function cellsOf(env: Env, g: Gallery, kind: 0 | 1): Promise<Cell[]> {
   const [chars, filed] = await Promise.all([characterCounts(env, g.chars), g.filed.length ? filedCounts(env, g.filed) : new Map<number, Cell[]>()]);
-  return [...[...chars.values()].flat(), ...[...filed.values()].flat()].filter(cell => cell.kind === kind);
+  return [...[...chars.values()].flat(), ...[...filed.values()].flat(), ...g.away.map(r => filedCell(r, -1)), ...g.here.map(r => filedCell(r, 1))]
+    .filter(cell => cell.kind === kind);
 }
 /** Counts by style group of the crops a dated gallery lists, the withheld among them when it shows
  *  them: from the cells where they can answer (no year range, or the crops of no year on the witness
@@ -381,9 +394,9 @@ type VisualRow = { id: number; char: number | null; family: number | null; style
 // with the counts by style group of those it lists.
 async function visualPage(env: Env, g: Gallery, q: GalleryQuery, code: number) {
   const rows = (await env.ATLAS.prepare(visualQuery()).bind(code).all<VisualRow>()).results;
-  const chars = new Set(g.chars), filed = new Set(g.filed), phases = phasesOf(q);
+  const chars = new Set(g.chars), filed = new Set(g.filed), away = new Set(g.away.map(r => r.id)), here = new Set(g.here.map(r => r.id)), phases = phasesOf(q);
   const years = q.years && q.years !== 'undated' ? q.years : null, books = new Map(composedBooks(q));
-  const placed = rows.filter(r => r.char !== null ? chars.has(r.char) : r.family !== null && filed.has(r.family)).flatMap(r => {
+  const placed = rows.filter(r => here.has(r.id) || !away.has(r.id) && (r.char !== null ? chars.has(r.char) : r.family !== null && filed.has(r.family))).flatMap(r => {
     const y = q.axis === 'composed' ? (q.composed?.get(r.book) ?? null) : r.year;
     const inRange = q.axis === 'composed' ? books.has(r.book) : y !== null && (!years || (y >= years.from && y <= years.to));
     const phase = phases.find(p => p === 'S' || (p === 'U' || p === 'N' ? y === null : inRange));
@@ -425,11 +438,14 @@ export async function corpusOccurrences(env: Env, card: Card, q: URLSearchParams
     styles = dated ? await datedCounts(env, g, query, cells) : (c => plus(c.styles, c.withheld))(counted(cells, () => true));
   }
   const [items, members, filed] = await Promise.all([listingItems(env, page.ids), characterCounts(env, family.chars), filedCounts(env, family.filed)]);
-  const glyphs = (cells: Map<number, Cell[]>) => [...cells.values()].flat().filter(c => c.kind === 1).reduce((n, c) => n + c.n, 0);
-  const n = total(styles, group), unassigned = glyphs(filed);
+  const glyphs = (cells: Cell[]) => cells.filter(c => c.kind === 1).reduce((n, c) => n + c.n, 0);
+  // The family's glyphs with no character, and with them those a grapheme claim files in or out.
+  const claimed = (char: boolean) => [...family.away.filter(r => (r.char !== null) === char).map(r => filedCell(r, -1)),
+    ...family.here.filter(r => (r.char !== null) === char).map(r => filedCell(r, 1))];
+  const n = total(styles, group), unassigned = glyphs([...[...filed.values()].flat(), ...claimed(false)]);
   return { ...data.candidates, code_point: data.code_point, total: widened ? Math.min(n, WIDENED_CAP) : n, capped: widened && n > WIDENED_CAP,
     available: items.length, items, ...(widened ? {} : { styles }), scope, status: 'ok', visual_analysis: detail.visual_analysis,
-    family_total: glyphs(members) + unassigned, unassigned_count: unassigned, ...datedFields(dated), next: page.next };
+    family_total: glyphs([...[...members.values()].flat(), ...claimed(true)]) + unassigned, unassigned_count: unassigned, ...datedFields(dated), next: page.next };
 }
 
 // Decades and the time axis.
@@ -443,9 +459,12 @@ const decadeOf = (year: number) => year - (((year % 10) + 10) % 10);
 const byDecade = (a: number | null, b: number | null) => a === b ? 0 : a === null ? -1 : b === null ? 1 : a - b;
 // One source's crops in the dated books of the composed axis, counted per book along `crop_char_book`
 // or `crop_family_book`.
-export const composedCountQuery = (source: Source, kind: 0 | 1, books: number[], withheld: boolean) =>
-  `SELECT book,count(*) AS n FROM crops INDEXED BY ${source.by === 'char' ? 'crop_char_book' : 'crop_family_book'} WHERE ${source.by === 'char'
-    ? 'char=? AND kind<2' : 'family=? AND family IS NOT NULL AND char IS NULL'} AND kind=${kind} AND book IN (${books.join(',')})${withheld ? '' : ' AND quiz=1'} GROUP BY book`;
+export function composedCountQuery(source: Source, kind: 0 | 1, books: number[], withheld: boolean) {
+  const { where, values } = sourceWhere(source, kind);
+  const index = source.by === 'claimed' ? '' : ` INDEXED BY ${source.by === 'char' ? 'crop_char_book' : 'crop_family_book'}`;
+  return { sql: `SELECT book,count(*) AS n FROM crops${index} WHERE ${[...where, ...(source.by === 'char' ? ['kind<2'] : [])].join(' AND ')}`
+    + ` AND book IN (${books.join(',')})${withheld ? '' : ' AND quiz=1'} GROUP BY book`, values };
+}
 /** A character's crops (or its family's) counted per decade of its book's date, the collection's and the
  *  corpus's apart, with the undated as decade null, sorted as SQLite sorts them (null first). Withheld
  *  crops are left out unless `withheld` asks for them, as in the gallery the decades sit beside. On the
@@ -464,7 +483,10 @@ export async function decades(env: Env, ctx: ExecutionContext, url: URL, tools: 
       const by = new Map<number | null, number>(), add = (decade: number | null, n: number) => { if (n) by.set(decade, (by.get(decade) ?? 0) + n) };
       if (axis === 'witness') { for (const cell of cells) if (shown(cell)) add(cell.decade, cell.n) }
       else {
-        const statements = books.length ? g.sources.flat().map(source => env.ATLAS.prepare(composedCountQuery(source, kind, books, kind === 1 || withheld)).bind(source.key)) : [];
+        const statements = books.length ? g.sources.flat().map(source => {
+          const { sql, values } = composedCountQuery(source, kind, books, kind === 1 || withheld);
+          return env.ATLAS.prepare(sql).bind(...values);
+        }) : [];
         let dated = 0;
         for (const result of statements.length ? await env.ATLAS.batch(statements) as D1Result<{ book: number; n: number }>[] : [])
           for (const row of result.results) { add(decadeOf(years.get(row.book)!), row.n); dated += row.n }
@@ -505,8 +527,8 @@ const DECADE = (year: string) => `CASE WHEN ${year} IS NULL THEN NULL ELSE (${ye
  *  decade holds. Each ranks the source's crops it reads along its index, so the database sorts them. */
 export function chronologyQueries(source: Source, kind: 0 | 1, axis: 'witness' | 'composed',
   filter: { style: StyleGroup | null; productions: number[] | null; withheld: boolean }, composed: [number, number][], per: number) {
-  const char = source.by === 'char', by = `${char ? 'char=? AND kind<2' : 'family=? AND family IS NOT NULL AND char IS NULL'} AND kind=${kind}`;
-  const extra: string[] = [], values: number[] = [source.key];
+  const char = source.by === 'char', claimed = source.by === 'claimed', found = sourceWhere(source, kind);
+  const by = [...found.where, ...(char ? ['kind<2'] : [])].join(' AND '), extra: string[] = [], values = [...found.values];
   if (filter.style) {
     const [low, high] = STYLE_GROUPS[filter.style];
     extra.push('style>=?'); values.push(low);
@@ -519,13 +541,13 @@ export function chronologyQueries(source: Source, kind: 0 | 1, axis: 'witness' |
     row_number() OVER (PARTITION BY ${decade} ORDER BY shuffle,id) AS r,count(*) OVER (PARTITION BY ${decade}) AS bucket FROM crops ${from}${tail}) WHERE r<=?`,
     values: [...values, per] });
   if (axis === 'witness') return [
-    read(`INDEXED BY ${char ? 'crop_year' : 'crop_family_year'} WHERE ${by} AND year IS NOT NULL`, DECADE('year')),
+    read(`${claimed ? '' : `INDEXED BY ${char ? 'crop_year' : 'crop_family_year'} `}WHERE ${by} AND year IS NOT NULL`, DECADE('year')),
     read(char ? `INDEXED BY ${kind === 0 ? 'crop_undated' : 'crop_undated_corpus'} WHERE ${by} AND kind=${kind} AND year IS NULL` : `WHERE ${by} AND year IS NULL`, 'NULL'),
   ];
   const books = composed.map(([b]) => b).join(',');
   if (!composed.length) return [read(`WHERE ${by}`, 'NULL')];
   return [
-    read(`INDEXED BY ${char ? 'crop_char_book' : 'crop_family_book'} WHERE ${by} AND book IN (${books})`,
+    read(`${claimed ? '' : `INDEXED BY ${char ? 'crop_char_book' : 'crop_family_book'} `}WHERE ${by} AND book IN (${books})`,
       `CASE book ${composed.map(([b, y]) => `WHEN ${b} THEN ${decadeOf(y)}`).join(' ')} END`),
     read(`WHERE ${by} AND +book NOT IN (${books})`, 'NULL'),
   ];

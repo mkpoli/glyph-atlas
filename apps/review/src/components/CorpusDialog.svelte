@@ -5,6 +5,7 @@
   import ProductionBadge, { productionLabel } from './ProductionBadge.svelte'
   import SourceCredit from './SourceCredit.svelte'
   import CropForm from './CropForm.svelte'
+  import CropGrapheme from './CropGrapheme.svelte'
   import CropWord from './CropWord.svelte'
   import CropTitle from './CropTitle.svelte'
   import ReviewState from './ReviewState.svelte'
@@ -147,7 +148,7 @@
           <div class="assignment-options"><FormChips forms={data.family_members ?? []} chosen={issue === 'character' ? correction : null} disabled={busy || !fresh} label={t('corpus.assign.label')}
             onchoose={char => { chooseIssue('character'); choose(char) }} /></div>
         {/if}
-        {#snippet formBar()}{#if data.identity_status !== 'unassigned' && !data.needs_segmentation}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
+        {#snippet formBar()}{#if data.identity_status !== 'unassigned' && !data.needs_segmentation}{#if Object.hasOwn(data, 'grapheme_claim')}{#key data.id + ':' + data.crop_version}<CropGrapheme item={data} disabled={busy || !fresh} working={value => busy = value} saved={record => { changed?.(record.id, record); if (!closed && record.id === data?.id) data = record }} />{/key}{/if}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} labelled={Object.hasOwn(data, 'grapheme_claim')} />{/if}{/snippet}
         <CropReview forms={formBar} {issue} onissue={chooseIssue} disabled={busy || !fresh} suggested={data.state === 'flagged' ? data.issue : null} onskip={skip}
           targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} label={data.label} value={correction} onchoose={choose} />
         <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />

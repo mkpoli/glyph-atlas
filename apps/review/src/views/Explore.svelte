@@ -9,7 +9,7 @@
   import StyleFilter from '../components/StyleFilter.svelte'
   import PeriodFilter from '../components/PeriodFilter.svelte'
   import { STYLE_GROUPS, styleRank } from '../lib/style.js'
-  import { isUnassigned, writtenLabel, visualGroup, matchesVisualGroup, graphemeChar } from '../lib/identity.js'
+  import { isUnassigned, writtenLabel, visualGroup, matchesVisualGroup, graphemeChar, claimedGrapheme } from '../lib/identity.js'
   import { categoryOf } from '../../../cloudflare/src/category.ts'
   import Glyph from '../components/Glyph.svelte'
   import ScriptText from '../components/ScriptText.svelte'
@@ -726,6 +726,9 @@
     if (expand === 'variants') return !isUnassigned(row)
       && [picked.char, ...(picked.variants?.items ?? []).map(v => v.char)].includes(writtenLabel(row))
     if (expand !== 'grapheme') return !isUnassigned(row) && writtenLabel(row) === picked.char
+    // A grapheme claim files a crop under the family it names, whatever its character.
+    const claimed = claimedGrapheme(row)
+    if (claimed) return claimed === picked.grapheme?.code_point
     if (isUnassigned(row)) return (row.grapheme?.code_point ?? row.grapheme) === picked.grapheme?.code_point
     return (picked.grapheme?.members ?? [picked]).some(member => member.char === writtenLabel(row))
   }

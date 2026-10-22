@@ -828,6 +828,8 @@
   "quiz.keyboardHint.issues": "W M B X 問題 · S 건너뛰기 · ←→ 크롭",
   "suggestions.pick.next": "다음 文字…",
   "form.add": "字形 追加",
+  "grapheme.disputed": "異見 있음",
+  "grapheme.find": "다른 字素 찾기",
   "form.ids.compose": "IDS로 쓰기",
   "form.ids.label": "漢字 構成 記述(IDS)",
   "form.ids.operators": "構成 演算子",

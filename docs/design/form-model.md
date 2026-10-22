@@ -73,6 +73,15 @@ its hash. `assertion_premises` names the assertions a derivation rests on. Rows 
 claim about a crop is deleted only once the crop has left the site, as a withdrawn document's crops
 do, and its evidence, premises and actions with it.
 
+A crop's `has_grapheme` claim names the grapheme it is read as, by the key of the character that
+heads it (`U+5F8C`). Without one, a crop is filed under its character's grapheme. A form that writes
+several graphemes (后 for 後 and 后) and a scribe's slip (one character written for another) are read
+as the grapheme the reviewer names. While an asserted, accepted or adjudicated claim holds on the
+crop's cut as its inspector reads it, a family gallery and its counts leave the crop out of its
+character's family and list it under the family the claimed grapheme is filed under now
+(`familyClaims`, `atlas3Gallery.ts`); the character's own gallery keeps it. A disputed or rejected
+slot names none, and a crop cut again waits for a claim on its new cut.
+
 A crop's `writes_word` claim names the word it writes at its place in the text (decision 0004), or a
 gloss where no word row fits yet. Its `method` is the strongest evidence for the sense: the source's
 own gloss of a headword, a 振り仮名 over the character or its word (`rubies`), a note such as a 割書,
@@ -157,8 +166,8 @@ Each step is one pull request with a usable result of its own.
 2. The assertion ledger, the predicate catalogue, review actions and the materialised views.
 3. Forms and representations, and the move of written forms into them.
 4. The 字形 picker and Quick Review's form bar write form assertions under the identity-and-form rule.
-5. Forms decisions write assertions, identity becomes its own assertion, and the live-log replay is
-   the acceptance test.
+5. Forms decisions write assertions, identity becomes its own assertion (`has_grapheme`, set on the
+   crop page), and the live-log replay is the acceptance test.
 6. Clustering runs as proposals; adopt, split, merge and re-parent in the API and the interface.
 7. Grapheme grouping as a scoped, versioned policy that reproduces the current families; derivation
    premises in the ledger.

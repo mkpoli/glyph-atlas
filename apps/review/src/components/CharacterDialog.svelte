@@ -5,6 +5,7 @@
   import StyleField from './StyleField.svelte'
   import CropWord from './CropWord.svelte'
   import CropForm from './CropForm.svelte'
+  import CropGrapheme from './CropGrapheme.svelte'
   import CropTitle from './CropTitle.svelte'
   import ReviewState from './ReviewState.svelte'
   import { setForm } from '../lib/cropForms.js'
@@ -281,7 +282,7 @@
   // marked as changed either way, and the record on screen is replaced only when it is that crop.
   function fieldSaved(result) {
     changed?.(result.id, result)
-    // Style and word claims leave the decision as it was.
+    // Style, word and grapheme claims leave the decision as it was.
     const decided = inspector.decided(result.id)
     if (decided?.revision != null && decided.revision === data?.revision && result.id === data.id) inspector.remember(result.id, { ...decided, revision: result.revision })
     if (!closed && result.id === data?.id) data = result
@@ -340,7 +341,7 @@
         <div class="inspector-title"><CropTitle char={data.label} script={data.script} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<ReviewState tone="waiting" text={t('character.crop.pending')} />{:else if data.state === 'checked' || repairOf(data)?.kind === 'verified'}<ReviewState tone="checked" text={t('state.checked')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'hard'}<ReviewState tone="waiting" text={t('state.hard')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
         {#if !onVerdict && Object.hasOwn(data, 'word')}{#key data.id + ':' + data.crop_version}<CropWord item={data} disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} />{/key}{/if}
         {#if !onVerdict && (issue === 'character' || issue === 'crop')}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
-        {#snippet formBar()}{#if !onVerdict}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
+        {#snippet formBar()}{#if !onVerdict}{#if Object.hasOwn(data, 'grapheme_claim')}{#key data.id + ':' + data.crop_version}<CropGrapheme item={data} disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} />{/key}{/if}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} labelled={Object.hasOwn(data, 'grapheme_claim')} />{/if}{/snippet}
         <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}
           targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
         {#if issue === 'crop' && !onVerdict && data.context && data.crop_editable !== false && (box || !editingBox)}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}

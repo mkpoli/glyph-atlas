@@ -242,6 +242,34 @@ export async function commitPlan(env: Env, submission: { key: string; actor: str
   return (await repeat(env, submission.key, submission.signature, tools.fail))!;
 }
 
+// A grapheme is named by its code points (`U+5F8C`, at most four), as the site's character keys are.
+export const GRAPHEME_KEY = /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6}){0,3}$/;
+export const keyText = (key: string) => key.split(' ').map(point => String.fromCodePoint(parseInt(point.slice(2), 16))).join('');
+// A Unicode scalar value: within the code space, and no surrogate.
+const scalar = (point: string) => { const n = parseInt(point.slice(2), 16); return n <= 0x10FFFF && (n < 0xD800 || n > 0xDFFF) };
+const keyOf = (text: string) => [...text].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
+/** Whether `key` names a grapheme as the site writes its keys: `U+5F8C`, never `U+005F8C`. */
+export const graphemeKey = (key: unknown): key is string => typeof key === 'string' && GRAPHEME_KEY.test(key) && key.split(' ').every(scalar)
+  && keyOf(keyText(key)) === key;
+/** The key of the grapheme that heads the family each of `keys` is filed under now; a key the table
+ *  does not hold heads itself. */
+export const keyHeadsQuery = () => `SELECT g.text,coalesce(h.text,g.text) AS head FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head
+  WHERE g.text IN (SELECT value FROM json_each(?))`;
+export async function keyHeads(env: Env, keys: string[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(keys.filter(graphemeKey))];
+  const rows = wanted.length ? (await env.ATLAS.prepare(keyHeadsQuery()).bind(JSON.stringify(wanted.map(keyText))).all<{ text: string; head: string }>()).results : [];
+  const heads = new Map(rows.map(r => [keyOf(r.text), keyOf(r.head)]));
+  return new Map(keys.map(key => [key, heads.get(key) ?? key]));
+}
+export const headsQuery = () => 'SELECT text FROM graphemes WHERE text IN (SELECT value FROM json_each(?)) AND coalesce(head,id)=id';
+/** The keys among `named` of graphemes that head their family: a `has_grapheme` claim names one. */
+export async function headKeys(env: Env, named: string[]): Promise<string[]> {
+  const keys = named.filter(graphemeKey);
+  if (!keys.length) return [];
+  const heads = new Set((await env.ATLAS.prepare(headsQuery()).bind(JSON.stringify(keys.map(keyText))).all<{ text: string }>()).results.map(r => r.text));
+  return keys.filter(key => heads.has(keyText(key)));
+}
+
 /** Refuse a write on a crop its reviewer saw at another version: it was cut again, or its box redrawn. */
 export function sameVersion(crop: CropNow, seen: unknown, fail: LedgerTools['fail']) {
   if (!crop.version) fail(409, 'This crop has no image to make a claim about.');
@@ -262,10 +290,11 @@ export async function writeClaim(env: Env, input: Json, actor: string, tools: Le
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > MEMBERS_MAX) tools.fail(422, `A claim names 1–${MEMBERS_MAX} values.`);
   const members: Member[] = raw.map((m: Json) => ({ object: m?.object == null ? null : tools.text(m.object, 128, 'object', true),
     value: m?.value ?? null, confidence: m?.confidence ?? null, confidence_scheme: m?.confidence_scheme == null ? null : tools.text(m.confidence_scheme, 64, 'confidence scheme', true) }));
-  // An object this route can name is a form or a word the site holds.
+  // An object this route can name is a form or a word the site holds, or a grapheme that heads its family.
   const named = members.flatMap(m => m.object === null ? [] : [m.object]);
   const kinds: Record<string, string> = named.length ? Object.fromEntries((await env.ATLAS.prepare(`SELECT id,'form' AS kind FROM forms WHERE id IN (SELECT value FROM json_each(?1))
     UNION ALL SELECT id,'word' FROM words WHERE id IN (SELECT value FROM json_each(?1))`).bind(JSON.stringify(named)).all<{ id: string; kind: string }>()).results.map(r => [r.id, r.kind])) : {};
+  for (const key of await headKeys(env, named)) kinds[key] = 'grapheme';
   const method = tools.text(input.method ?? null, 64, 'method');
   if (input.evidence != null && !Array.isArray(input.evidence)) tools.fail(422, 'Evidence is a list.');
   const evidence: Evidence[] = (input.evidence ?? []).map((e: Json) => ({ kind: tools.text(e?.kind, 16, 'evidence kind', true)!,

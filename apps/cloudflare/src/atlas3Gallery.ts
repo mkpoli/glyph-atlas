@@ -1,6 +1,7 @@
 // Character galleries on the new storage layout: counts from the publication's answers plus the
 // reviews since, and pages of crops read from index ranges in the order they show.
 import { cropOf, publicId } from './atlas3';
+import { keyHeads } from './ledger';
 
 type Json = any;
 
@@ -87,9 +88,47 @@ export type StyleGroup = keyof typeof STYLE_GROUPS;
 export const STYLE_NAMES = Object.keys(STYLE_GROUPS) as StyleGroup[];
 export const groupOf = (style: number | null): StyleGroup => style === null || style >= 4 ? 'formal' : style >= 2 ? 'unassessed' : 'cursive';
 
-// Where a gallery's crops are read: the crops of a character (`crop_char` and its kin), or the crops
-// with no character filed under a family (`crop_family` and its kin).
-export type Source = { by: 'char' | 'family'; key: number };
+// Where a gallery's crops are read: the crops of a character (`crop_char` and its kin), the crops with
+// no character filed under a family (`crop_family` and its kin), or the crops a grapheme claim files
+// under a family from outside it, by id. A family's char and family sources leave out (`except`) the
+// crops a claim files under another grapheme. The ids are bound as one JSON list.
+export type Source = { by: 'char' | 'family'; key: number; except?: number[] } | { by: 'claimed'; key: number; ids: number[] };
+/** A source's conditions in `kind` and their values. A char or family source's are its index's. */
+export function sourceWhere(source: Source, kind: 0 | 1): { where: string[]; values: (number | string)[] } {
+  if (source.by === 'claimed') return { where: ['id IN (SELECT value FROM json_each(?))', `kind=${kind}`], values: [JSON.stringify(source.ids)] };
+  const where = source.by === 'char' ? ['char=?', `kind=${kind}`] : ['family=?', `kind=${kind}`, 'family IS NOT NULL', 'char IS NULL'];
+  const values: (number | string)[] = [source.key];
+  if (source.except?.length) { where.push('id NOT IN (SELECT value FROM json_each(?))'); values.push(JSON.stringify(source.except)); }
+  return { where, values };
+}
+
+// The statuses of a grapheme slot that file its crop.
+export const FILING = ['asserted', 'accepted', 'adjudicated'];
+// At most this many claimed crops are read for a gallery; past it the claims beyond are not applied,
+// and the claims want a column of their own on `crops`.
+export const FILED_MAX = 2000;
+// The crops a grapheme claim files, on each crop's effective cut (the next one while a redrawn box waits
+// in `reviews`, as the inspector reads the slot), with what their counts are kept by: one range of
+// `current_claim_object` (every crop read as some grapheme) and each crop and review by its key.
+export const filedClaimsQuery = () => `SELECT k.id,c.object AS grapheme,k.char,k.family,k.kind,k.style,k.state,k.quiz,k.visual_group,
+  coalesce((k.year-CASE WHEN k.year<0 THEN 9 ELSE 0 END)/10*10,-1) AS decade
+  FROM current_claims c CROSS JOIN crops k ON k.id=c.crop LEFT JOIN reviews r ON r.crop=k.id
+  WHERE c.predicate='has_grapheme' AND c.object IS NOT NULL AND c.scope='' AND c.slot='' AND c.status IN (${FILING.map(s => `'${s}'`).join(',')})
+    AND c.cut=k.cut+(r.x IS NOT NULL) LIMIT ${FILED_MAX}`;
+export type Filed = { id: number; grapheme: string; char: number | null; family: number | null; kind: number; style: number | null;
+  state: number | null; quiz: number | null; visual_group: number | null; decade: number };
+/** For a family headed by `grapheme` (its key) with these members: the crops of its members a claim
+ *  files elsewhere (`away`), and the crops from outside it a claim files here (`here`). A claim files
+ *  its crop under the family its grapheme heads now, or is filed under since a publication moved it. */
+export async function familyClaims(env: Env, grapheme: string, members: number[]): Promise<{ away: Filed[]; here: Filed[] }> {
+  const rows = (await env.ATLAS.prepare(filedClaimsQuery()).all<Filed>()).results, own = new Set(members);
+  const heads = await keyHeads(env, rows.map(r => r.grapheme)), filed = (r: Filed) => heads.get(r.grapheme) === grapheme;
+  const inFamily = (r: Filed) => r.char !== null ? own.has(r.char) : r.family !== null && own.has(r.family);
+  return { away: rows.filter(r => !filed(r) && inFamily(r)), here: rows.filter(r => filed(r) && !inFamily(r)) };
+}
+/** A filed crop's count cell, `sign` 1 where a claim adds it and -1 where it takes it away. */
+export const filedCell = (r: Filed, sign: number): Cell => ({ kind: r.kind, style: r.style, state: r.state, quiz: r.quiz,
+  decade: r.decade === -1 ? null : r.decade, visual_group: r.visual_group, n: sign });
 export type Years = { from: number; to: number } | 'undated' | null;
 export type GalleryQuery = {
   kind: 0 | 1;
@@ -131,9 +170,7 @@ export function rangeQuery(q: GalleryQuery, phase: Phase, source: Source, after:
   const books = composedBooks(q), list = books.map(([b]) => b).join(',');
   // A composed range with no book in it holds nothing.
   if ((phase === 'C' || phase === 'K') && !books.length) return null;
-  const kind = q.kind === 1 ? 1 : 0, char = source.by === 'char';
-  const where = [char ? 'char=?' : 'family=?', `kind=${kind}`], values: number[] = [source.key];
-  if (!char) where.push('family IS NOT NULL', 'char IS NULL');
+  const kind = q.kind === 1 ? 1 : 0, char = source.by === 'char', { where, values } = sourceWhere(source, kind);
   const years = q.years && q.years !== 'undated' ? q.years : null;
   let lead = 'style', index = char ? 'crop_char' : 'crop_family';
   if (phase === 'S') { if (char) where.push('kind<2'); }
@@ -161,7 +198,7 @@ export function rangeQuery(q: GalleryQuery, phase: Phase, source: Source, after:
   if (q.state != null) { where.push('state=?'); values.push(q.state); }
   if (!q.withheld) where.push('quiz=1');
   if (after) { where.push(`(${lead},shuffle,id)>(?,?,?)`); values.push(...after); }
-  return { sql: `SELECT id,${lead} AS lead,shuffle FROM crops INDEXED BY ${index} WHERE ${where.join(' AND ')}`
+  return { sql: `SELECT id,${lead} AS lead,shuffle FROM crops${source.by === 'claimed' ? '' : ` INDEXED BY ${index}`} WHERE ${where.join(' AND ')}`
     + ` ORDER BY ${lead},shuffle,id LIMIT ?`, values: [...values, limit] };
 }
 

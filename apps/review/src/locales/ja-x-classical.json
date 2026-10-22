@@ -844,6 +844,8 @@
   "quiz.keyboardHint.issues": "W M B X：誤 · S：保留 · ←→：截片",
   "suggestions.pick.next": "次ノ字…",
   "form.add": "字形ヲ加フ",
+  "grapheme.disputed": "異論アリ",
+  "grapheme.find": "他ノ字種ヲ尋ヌ",
   "form.ids.compose": "IDSにて書く",
   "form.ids.label": "漢字構成記述（IDS）",
   "form.ids.operators": "構成符",

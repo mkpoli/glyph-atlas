@@ -141,6 +141,8 @@ beforeAll(() => {
   objects.set('v3/reference/char/U+1B092.json.gz', json({ grapheme: G['𛂒'], data: card('𛂒', { grapheme: { code_point: 'U+306D', char: 'ね' } }),
     detail: card('𛂒', { grapheme: { code_point: 'U+306D', char: 'ね' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [],
     ids: { ね: G.ね, '𛂒': G['𛂒'] } }));
+  objects.set('v3/reference/char/U+5CD5.json.gz', json({ grapheme: G.峕, data: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }),
+    detail: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 峕: G.峕 } }));
   objects.set('v3/reference/list/ligatures/0.json.gz', json({ total: 2, offset: 0, items: [{ char: 'ね' }, { char: '時' }] }));
   env = { ATLAS: d1(db), MEDIA: bucket(), CATALOGUE_LAG: '0' } as unknown as Env;
 });
@@ -252,6 +254,25 @@ describe('character gallery metadata', () => {
   });
 });
 
+describe('a crop a grapheme claim files', () => {
+  it('leaves its character\'s family for the one the claim names, in the gallery and its counts', async () => {
+    // 时 (slot 2 of page B, in 時's family) read as 峕.
+    const claim = (status: string) => db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,value,members,supporting,claims,resolver,at)
+      VALUES('x','has_grapheme','','',?,0,?,'U+5CD5',NULL,'[]','[]','[]','r','t')`).run(cropId(PAGE_B, 2), status);
+    const time = '/layers/occurrences?code_point=U%2B6642&expand=grapheme', other = '/layers/occurrences?code_point=U%2B5CD5&expand=grapheme';
+    claim('asserted');
+    try {
+      expect(await every(time + '&limit=2')).toEqual([crop(PAGE_A, 0), crop(PAGE_A, 1), crop(PAGE_B, 0), crop(PAGE_B, 1), crop(PAGE_B, 3)]);
+      expect((await get(time)).body.total).toBe(5);
+      const filed = await get(other);
+      expect([ids(filed.body.items), filed.body.total, filed.body.styles]).toEqual([[crop(PAGE_B, 2), crop(PAGE_B, 4)], 2, { cursive: 1, unassessed: 1, formal: 0 }]);
+      db.exec(`UPDATE current_claims SET status='disputed' WHERE predicate='has_grapheme'`);
+      expect((await get(time)).body.total).toBe(6);
+      expect(ids((await get(other)).body.items)).toEqual([crop(PAGE_B, 4)]);
+    } finally { db.exec(`DELETE FROM current_claims WHERE predicate='has_grapheme'`) }
+  });
+});
+
 describe('a gallery of the corpus', () => {
   it('lists a family’s glyphs with those filed under it with no character, and counts the family', async () => {
     const own = await get('/layers/candidates?code_point=U%2B306D');
@@ -342,7 +363,8 @@ describe('every query of the character routes', () => {
 
   it('reads the decades, the time axis and the rest by key or index', () => {
     for (const source of sources) for (const kind of [0, 1] as const) {
-      expect(plan(composedCountQuery(source, kind, [1, 2], false), [source.key])).toContain(source.by === 'char' ? 'crop_char_book' : 'crop_family_book');
+      const composed = composedCountQuery(source, kind, [1, 2], false);
+      expect(plan(composed.sql, composed.values)).toContain(source.by === 'char' ? 'crop_char_book' : 'crop_family_book');
       // The time axis ranks the crops it counts, so it sorts them; it reads them along an index.
       for (const axis of ['witness', 'composed'] as const) for (const statement of chronologyQueries(source, kind, axis, { style: 'cursive', productions: [1, 2], withheld: false }, [[1, 1653]], 6)) {
         const found = plan(statement.sql, statement.values);

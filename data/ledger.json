@@ -35,6 +35,16 @@
    "cardinality": "one",
    "alternatives": true
   },
+  "has_grapheme": {
+   "label": "the grapheme a crop is read as, named by its key (U+5F8C); a form that writes several (后 for 後 and 后) is read as one of them",
+   "subject": "crop",
+   "objects": [
+    "grapheme"
+   ],
+   "values": [],
+   "cardinality": "one",
+   "alternatives": false
+  },
   "represented_by": {
    "label": "a representation that names the form",
    "subject": "form",
