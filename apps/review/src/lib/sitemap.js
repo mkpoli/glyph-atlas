@@ -40,6 +40,6 @@ export async function pagePaths(fetch) {
 /** A page for every single character the collection holds crops of. */
 export async function characterPaths(fetch) {
   const { categories } = await catalogue({ limit: 1 }, { fetch })
-  return categories.filter(category => category.total > 0 && hasCharacterPage(category.label))
-    .map(category => '/character/' + pointOf(category.label).split(' ').join('-'))
+  return [...new Set(categories.filter(category => category.total > 0 && hasCharacterPage(category.label))
+    .map(category => '/character/' + pointOf(category.label).split(' ').join('-')))]
 }

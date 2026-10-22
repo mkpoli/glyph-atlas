@@ -164,11 +164,13 @@
   const tileCounts = $derived.by(() => {
     if (!wholeCategories.length || (!corpusCounts && !corpusCountsFailed)) return null
     const forms = new Map(), groups = new Map(), keys = new Map()
-    // A form one source files under another grapheme than the other (扵 under 於, or under its own)
-    // counts among the forms of each.
-    const shapes = new Map()
+    // A form one source files under another grapheme than the other (扵 under 於, or under its own), or
+    // some of whose glyphs a claim reads as another grapheme, counts among the forms of each, and keys
+    // the grapheme most of its glyphs are filed under.
+    const shapes = new Map(), keyed = new Map()
     const add = (label, key, n) => {
-      forms.set(label, (forms.get(label) ?? 0) + n); groups.set(key, (groups.get(key) ?? 0) + n); keys.set(label, key)
+      forms.set(label, (forms.get(label) ?? 0) + n); groups.set(key, (groups.get(key) ?? 0) + n)
+      if (!keys.has(label) || n > keyed.get(label)) { keys.set(label, key); keyed.set(label, n) }
       if (!shapes.has(key)) shapes.set(key, new Set())
       shapes.get(key).add(label)
     }
