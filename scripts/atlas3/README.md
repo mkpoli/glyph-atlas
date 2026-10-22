@@ -233,7 +233,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    with family and priority. Review the combined dry-run figures before sending the fill.
 6. **Move the book facts:** `books.py` translates each book's dating (both axes), the titles, the
    characters another site lists per book and the site-wide values (`collection`, `corpus_index`,
-   `review_epoch`, `variant_sources`, `word_sources`) from the copies into `out/books.sqlite`
+   `review_epoch`; the citations are `reference.py`'s) from the copies into `out/books.sqlite`
    (`migrations-atlas/0005_books.sql`), books and occurrences by integer id through
    `out/mirror.sqlite`, and writes the parts and their figures to `out/books-report.txt`; facts about
    a document that is not a book are left out with a count. Whether the site shows an occurrence with
@@ -264,23 +264,35 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    written form and every answer with the live runs. **The first `--send` writes 297,905 rows of
    `glyph-atlas-v3-runs` and 1 of `glyph-atlas-v3`, and uploads 12,153 objects (6.3 MB) on the copies of 19 October 2026; it needs the owner's
    approval with the dry run's figures.**
-7. **Move the reference data:** `pull.py --fresh` copies the character cards, the 異体字 graph and its
-   derived tier, the writers, words and spellings and the component index. `reference.py` (dry run
-   by default) writes the cards with their edges, derived forms and writers as one R2 object per
-   character under `v3/reference/`, beside sharded card summaries, the IDS, the name list, the card
-   lists, one list per component and the kana readings of `data/vocab/kanji-readings.json` with
-   their kanji's families (run it again after `scripts/build_kanji_readings.py`); the rows a query
-   filters, joins or sorts on go to the tables of `migrations-atlas/0004_reference.sql` and to
-   `names`, the cards' search aliases. A card's
-   character or family head the layout lacks gets the next grapheme id, and every grapheme takes its
-   card's family head. A visual group's samples are crop ids found in the mirror and in `crops`.
+7. **Move the reference data:** the generators write the reference input,
+   `reference-input.sqlite` in `ATLAS3_DIR` (`src/glyph_atlas/reference_input.py`):
+
+       .venv/bin/python scripts/export_graphemes.py --catalogue work/atlas-v3/source-characters.sqlite \
+           --aliases work/atlas-v3/source-aliases.sqlite
+       .venv/bin/python scripts/export_character_variants.py     # about half an hour on every processor
+       .venv/bin/python scripts/export_components_cloudflare.py
+
+   At the cutover the cards and their search aliases came from the copies of the live ones (`pull.py
+   characters aliases`), so the site keeps the counts it shows; after it, from each full export's
+   catalogue (`--catalogue` alone, which holds both), and `export_graphemes.py` without it rewrites the
+   cards whose family the character table changed. The graph, its derived tier, the writers, words and
+   spellings, their citations, the IDS and the component index are generated from the repository's
+   data each time. `reference.py` (dry run by default) writes the cards with their edges, derived forms
+   and writers as one R2 object per character under `v3/reference/`, beside sharded card summaries, the
+   IDS, the name list, the card lists, one list per component and the kana readings of
+   `data/vocab/kanji-readings.json` with their kanji's families (run it again after
+   `scripts/build_kanji_readings.py`); the rows a query filters, joins or sorts on go to the tables of
+   `migrations-atlas/0004_reference.sql` and to `names`, the cards' search aliases, and the citations
+   to `site` (`variant_sources`, `word_sources`; `books.py --send` makes the table, migration 0005). A
+   card's character or family head the layout lacks gets the next grapheme id, and every grapheme takes
+   its card's family head. A visual group's samples are crop ids found in the mirror and in `crops`.
    `--send` applies 0004 once, loads only the rows that differ from the local copy in stamped parts,
    then uploads the objects whose hash differs from `v3/reference/manifest.json.gz` and deletes the
    paths that manifest lists and the translation lacks; figures go to `out/reference-report.txt`. A
    load that stopped partway is finished on the next run, also one whose part D1 applied and the
    local copy missed: the run checks D1 for the stamps of every load the local copy has not finished.
 
-   The run reads about 1 GB of copies and writes as much again to scratch files and the stage
+   The run reads about 1 GB of input and writes as much again to scratch files and the stage
    folder; it holds one object at a time (190 MB resident at most on the copies of 19–20 October
    2026). Run it in the batch slice:
 

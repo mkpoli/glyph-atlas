@@ -71,7 +71,7 @@ def test_book_facts_load_once_by_book_and_crop(layout, monkeypatch):  # noqa: F8
     assert "1 dates of documents that are not books, left out" in report
     # New rows write once each: the DELETE ahead of an INSERT finds nothing.
     assert "book_characters\t2\t80\t0\t2\t0\t2\n" in report
-    assert "rows written: 9 " in report
+    assert "rows written: 7 " in report
 
     books(remote, monkeypatch, "--send")
     book = dict(db.execute("SELECT key, id FROM books"))
@@ -79,13 +79,18 @@ def test_book_facts_load_once_by_book_and_crop(layout, monkeypatch):  # noqa: F8
     assert got["titles"] == {"book:a": None, "codh:b": "鼎左秘録"}
     assert got["dates"] == [("book:a", "witness", 1700, "gregorian")]
     assert sorted(got["characters"]) == sorted([(book["book:a"], 0, ids(root)["ex:a1"]), (book["codh:b"], 0, ids(root)["codh:g1"])])
-    assert set(got["site"]) == {"review_epoch", "collection", "corpus_index", "variant_sources", "word_sources"}
+    assert set(got["site"]) == {"review_epoch", "collection", "corpus_index"}
     # The local copy replays the same parts.
-    assert facts(sqlite3.connect(root / "out" / "atlas.sqlite")) == got
-    # A second run finds nothing to send.
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert facts(local) == got
+    # A second run finds nothing to send, and leaves the site values reference.py writes alone.
+    for target in (db, local):
+        target.execute("""INSERT INTO site VALUES('variant_sources', '{"cjkvi-variants": "x"}')""")
+        target.commit()
     stamps = db.execute("SELECT count(*) FROM imports").fetchone()[0]
     books(remote, monkeypatch, "--send")
     assert db.execute("SELECT count(*) FROM imports").fetchone()[0] == stamps
+    assert "variant_sources" in facts(db)["site"]
 
 
 def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F811
