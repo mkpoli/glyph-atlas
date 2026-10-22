@@ -235,9 +235,11 @@ A document listed in `data/vocab/withdrawn.yaml` keeps its records but gives no 
 withdraws its queued pages, and the Cloudflare exports, `prepare_publication.py` and `atlas export`
 leave its crops out. What the site already holds goes with a withdrawal publish:
 `scripts/atlas3/withdraw.py <file>` writes a catalogue naming every crop on the document's pages,
-and `scripts/atlas3/publish.py <file>` retires them, keeps only each crop's id and cut in its page
-bundle and takes their images out of the image key map. Their reviews and claims stay with the
-crops' numbers.
+and `scripts/atlas3/publish.py <file>` deletes them in glyph-atlas-v3 and reads the deletion back.
+Each crop D1 no longer holds is retired, keeps only its id and cut in its page bundle, and its images
+leave the image key map unless another crop names them. Their reviews and claims stay with the
+crops' numbers. A crop reviewed on the site since stays live, and the publish stops listing it; write
+the catalogue again to take it at its new revision.
 
 ## 8. Audit
 

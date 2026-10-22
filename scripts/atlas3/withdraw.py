@@ -6,10 +6,11 @@
 
 A document's crops are every crop numbered on its book's pages in out/mirror.sqlite: its collected
 crops and its corpus glyphs, live or retired. Each is written as a `units` row with
-`origin='withdrawn'` at the revision the local copy (out/atlas.sqlite) holds, so a crop reviewed
-since is refused by the publish and a fresh catalogue is written. The publish retires the live ones,
-leaves each entry its id and cut alone, and takes the images the entries named out of the image key
-map. Reviews and claims stay with the crop's number. Both files are only read here; a document the
+`origin='withdrawn'` at the revision the local copy (out/atlas.sqlite) holds. The publish deletes
+the live ones in D1 under that revision and reads the deletion back: a crop reviewed on the site
+since stays, is listed as refused, and needs a fresh catalogue. For each crop D1 no longer holds it
+leaves the entry its id and cut alone and takes the images only that entry named out of the image
+key map. Reviews and claims stay with the crop's number. Both files are only read here; a document the
 layout never had gives no row.
 """
 import argparse

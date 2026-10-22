@@ -5,7 +5,16 @@ import sqlite3
 import sys
 
 import pytest
-from test_atlas3_publish import PAGE, UNITS, crops, ids, layout, run, unit  # noqa: F401 -- the fixture
+from test_atlas3_publish import (  # noqa: F401 -- the fixture
+    PAGE,
+    UNITS,
+    catalogue,
+    crops,
+    ids,
+    layout,
+    run,
+    unit,
+)
 
 from glyph_atlas import withdrawn
 
@@ -80,3 +89,90 @@ def test_a_crop_retired_before_its_document_was_withdrawn_gives_up_its_record(la
     assert entry_of(root, "ex:b1")["box"] == {"x": 0, "y": 0, "w": 10, "h": 10}
     run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "w.sqlite"))
     assert entry_of(root, "ex:b1") == {"slot": 0, "id": "ex:b1", "retired": True, "withdrawn": True, "cut": 0}
+
+
+def test_a_crop_reviewed_on_the_site_since_keeps_its_row_record_and_images(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    publish.media_map.merge([("exa1", "pack-1.bin", 0, 10, "image/webp"), ("exa2", "pack-1.bin", 10, 10, "image/webp")])
+    publish.media_map.send(remote.upload)
+    path = write(withdraw, monkeypatch, tmp_path / "w.sqlite")
+    a2 = ids(root)["ex:a2"]
+    # Reviewed on the site after the withdrawal was written: D1's revision moves past the local copy's.
+    remote.dbs["glyph-atlas-v3"].execute("UPDATE crops SET revision=4 WHERE id=?", (a2,)).connection.commit()
+    with pytest.raises(SystemExit, match="1 withdrawn crops were reviewed on the site since.*ex:a2"):
+        run(publish, monkeypatch, path)
+    assert a2 in crops(remote) and crops(remote)[a2]["revision"] == 4
+    assert sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT revision FROM crops WHERE id=?", (a2,)).fetchone() == (4,)
+    kept = entry_of(root, "ex:a2")
+    assert not kept.get("retired") and "withdrawn" not in kept and kept["image"].endswith("exa2.webp")
+    shard = json.loads(gzip.decompress((root / "out" / "media" / "exa.json.gz").read_bytes()))
+    assert set(shard["keys"]) == {"2"}
+    assert entry_of(root, "ex:a1")["withdrawn"] is True and ids(root)["ex:a1"] not in crops(remote)
+    refused = max((root / "out" / "publish").glob("*-w")) / "refused-withdrawals.txt"
+    assert refused.read_text() == "ex:a2\n"
+
+
+def test_an_image_another_crop_names_stays_mapped(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    publish.media_map.merge([("exa1", "pack-1.bin", 0, 10, "image/webp"), ("exa2", "pack-1.bin", 10, 10, "image/webp")])
+    publish.media_map.send(remote.upload)
+    twin = list(unit("ex:z1", "hl:z1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ", document="book:z"))
+    twin[UNITS.index("data")] = json.dumps({"page_id": "hl:z1", "box": {"x": 0, "y": 0, "w": 10, "h": 10},
+                                            "image": "/atlas/media/exa1.webp", "label": "あ"})
+    run(publish, monkeypatch, catalogue(tmp_path / "z.sqlite", [tuple(twin)]))
+    run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "w.sqlite"))
+    shard = json.loads(gzip.decompress((root / "out" / "media" / "exa.json.gz").read_bytes()))
+    assert set(shard["keys"]) == {"1"}
+    assert json.loads((max((root / "out" / "publish").glob("*-w")) / "unmapped.json").read_text()) == ["exa2", "exb1"]
+
+
+def test_a_replacement_never_ends_at_a_withdrawn_crop(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, _remote = layout
+    z = [unit(f"ex:z{k}", "hl:z1", {"x": 0, "y": 20 * k, "w": 10, "h": 10}, "あ", document="book:z") for k in (1, 2)]
+    run(publish, monkeypatch, catalogue(tmp_path / "z.sqlite", z))
+    gone = list(z[0])
+    gone[UNITS.index("origin")] = "retired"
+    path = catalogue(tmp_path / "gone.sqlite", [tuple(gone)])
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE unit_redirects(id, target)")
+    db.execute("INSERT INTO unit_redirects VALUES('ex:z1', 'ex:a1')")
+    db.commit()
+    run(publish, monkeypatch, path)
+    assert entry_of(root, "ex:z1")["replaced_by"] == ids(root)["ex:a1"]
+    redirects = sqlite3.connect(root / "source-unit_redirects.sqlite")
+    redirects.execute("CREATE TABLE IF NOT EXISTS unit_redirects(id, target)")
+    redirects.executemany("INSERT INTO unit_redirects VALUES(?, ?)", [("ex:z1", "ex:a1"), ("ex:a1", "ex:z2")])
+    redirects.commit()
+    run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "w.sqlite"))
+    assert entry_of(root, "ex:z1")["replaced_by"] == ids(root)["ex:z2"]
+
+
+def test_the_image_map_changes_only_in_a_run_that_is_pending(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    publish.media_map.merge([("exa1", "pack-1.bin", 0, 10, "image/webp")])
+    publish.media_map.send(remote.upload)
+    path = write(withdraw, monkeypatch, tmp_path / "w.sqlite")
+    run(publish, monkeypatch, path, "--dry-run")
+    deliver = publish.deliver
+
+    def stop(*_args):
+        sys.exit("stopped")
+    monkeypatch.setattr(publish, "deliver", stop)
+    with pytest.raises(SystemExit, match="stopped"):
+        run(publish, monkeypatch, path)
+    assert not (root / "out" / "media" / "unsent").exists()
+    assert set(json.loads(gzip.decompress((root / "out" / "media" / "exa.json.gz").read_bytes()))["keys"]) == {"1"}
+    # The next publish finishes the pending run, and the keys go then.
+    monkeypatch.setattr(publish, "deliver", deliver)
+    run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "again.sqlite"))
+    assert json.loads(gzip.decompress((root / "out" / "media" / "exa.json.gz").read_bytes()))["keys"] == {}
+
+
+def test_a_withdrawal_catalogue_holds_withdrawals_alone(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
+    _root, publish, _remote = layout
+    path = write(withdraw, monkeypatch, tmp_path / "w.sqlite")
+    db = sqlite3.connect(path)
+    db.execute("INSERT INTO units(id, origin, revision, document, data) VALUES('ex:z9', 'local', 0, 'book:z', '{}')")
+    db.commit()
+    with pytest.raises(SystemExit, match="withdrawn units alone"):
+        run(publish, monkeypatch, path)
