@@ -620,7 +620,8 @@ def normalize_export(payload: Any, *, active_only: bool = False) -> list[Feedbac
     if not isinstance(reviews, Sequence) or isinstance(reviews, (str, bytes)):
         raise TypeError("an export's `reviews` must be a list")
 
-    parsed = [_one(record) for record in reviews if isinstance(record, Mapping)]
+    # A review the site lists without its record (`unavailable` names why) holds no decision to read.
+    parsed = [_one(record) for record in reviews if isinstance(record, Mapping) and not record.get("unavailable")]
     # A record with no event id identifies nothing and cannot be traced back, so it is
     # dropped rather than carried as an anonymous row.
     records = _supersede([record for record in parsed if record.event_id])

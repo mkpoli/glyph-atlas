@@ -160,7 +160,25 @@ def test_a_newer_review_in_the_catalogue_is_applied_with_its_revision(layout, mo
     a1 = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["ex:a1"]
     run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ",
                                                                      state="checked", revision=4)]))
-    assert crops(remote)[a1]["state"] == 1 and crops(remote)[a1]["revision"] == 4
+    # The crop's revision moves on by one; the store's revision is recorded beside it.
+    assert crops(remote)[a1]["state"] == 1 and crops(remote)[a1]["revision"] == 1
+    assert remote.query("glyph-atlas-v3", "SELECT revision, at FROM review_revisions WHERE crop=" + str(a1)) == [{"revision": 4, "at": 1}]
+
+
+def test_a_publication_speaks_against_the_revision_the_store_counts_not_the_marks(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1 = ids(root)["ex:a1"]
+    # On the site: a seen mark (revision 1), then a review (revision 2). The store imported the review at 2.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executemany("INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind) VALUES(?, ?, 0, 0, 1, 1, 1, ?)",
+                       [(a1, 1, 3), (a1, 2, 1)])
+        db.execute("UPDATE crops SET revision=2 WHERE id=?", (a1,))
+        db.commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ",
+                                                                     revision=2)]))
+    logical = f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a1}"
+    assert remote.query("glyph-atlas-v3", logical) == [{"n": 2}]
+    assert sqlite3.connect(root / "out" / "atlas.sqlite").execute(logical).fetchone() == (2,)
 
 
 def test_a_publish_keeps_the_crops_and_fields_it_does_not_carry_in_the_page_bundle(layout, monkeypatch, tmp_path):
@@ -367,7 +385,7 @@ def test_a_corpus_overlay_sets_the_reviewed_style(layout, monkeypatch, tmp_path)
     run(publish, monkeypatch, path)
     styles = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, code FROM codes WHERE field='style'"))
     assert crops(remote)[g1]["style"] == styles["cursive"]
-    assert crops(remote)[g1]["revision"] == 5
+    assert remote.query("glyph-atlas-v3", f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={g1}") == [{"n": 5}]
 
 
 def test_a_change_of_page_facts_alone_moves_the_page_revision(layout, monkeypatch, tmp_path):

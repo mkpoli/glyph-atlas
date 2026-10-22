@@ -153,6 +153,45 @@ describe('captured review exports', () => {
     expect((await reviewsPage(env, new URLSearchParams())).reviews).toHaveLength(1);
   });
 
+  it('take the old site\'s publication record as the baseline of a crop the old site reviewed', async () => {
+    const { db, env, ids, page, objects } = setup();
+    const published = { character: { id: `hk:${page}:0`, label: 'は', revision: 0, box: { x: 0, y: 0, w: 10, h: 10 } } };
+    db.exec(`INSERT INTO submissions(id,key,actor,request,response,at) VALUES(90,'old',1,'{}','{}',1);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,legacy) VALUES(${ids[0]},1,0,0,1,90,1,0,'old-1');
+      UPDATE crops SET revision=1 WHERE id=${ids[0]}`);
+    objects.set(`v3/review-legacy/${page}.json.gz`, gzipSync(JSON.stringify({ version: 1, reviews: {
+      'legacy:old-1': { event: { id: 'old-1' }, expected_revision: 0, publication_snapshot: published } } })));
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(714), revision: 1, image_sha256: H, verdict: 'match' })).status).toBe(200);
+    const review = (await reviewsPage(env, new URLSearchParams())).reviews.find(r => r.event.id !== 'old-1');
+    expect(review).toMatchObject({ expected_revision: 1, publication_snapshot: published });
+  });
+
+  it('read each earlier evidence object once, and save when one cannot be read', async () => {
+    const { db, env, ids, objects } = setup();
+    const crops = [ids[0], ids[2], ids[3]].map(id => local(id));
+    expect((await send(env, '/atlas/rounds', { id: uuid(715), grapheme: 'U+306F',
+      answers: crops.map(c => ({ ...c, verdict: 'unsure' })) })).status).toBe(200);
+    const evidence = [...objects.keys()].filter(key => key.startsWith('v3/review-evidence/'));
+    expect(evidence).toHaveLength(1);
+    const reads: string[] = [], get = env.MEDIA.get.bind(env.MEDIA);
+    (env as any).MEDIA = { ...env.MEDIA, get: async (key: string, options?: any) => { reads.push(key); return get(key, options); } };
+    expect((await send(env, '/atlas/characters/@batch', { id: uuid(716), character: 'は',
+      crops: crops.map(c => ({ ...c, revision: 1 })) })).status).toBe(200);
+    expect(db.query('SELECT count(*) AS n FROM events').get()).toEqual({ n: 6 });
+    expect(reads.filter(key => key === evidence[0])).toHaveLength(1);
+    objects.set(evidence[0], gzipSync('{"version":1,"reviews":{}}'));
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(717), revision: 2, image_sha256: H, verdict: 'match' })).status).toBe(200);
+  });
+
+  it('leave out the page id of a crop that sits on its book rather than a page', async () => {
+    const { db, env, ids, page } = setup();
+    db.prepare("UPDATE pages SET key='book:hk' WHERE id=?").run(page);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(718), revision: 0, image_sha256: H, verdict: 'match' })).status).toBe(200);
+    const [review] = (await reviewsPage(env, new URLSearchParams())).reviews;
+    expect('page_id' in review.reviewed.character).toBe(false);
+    expect('page_id' in review.publication_snapshot.character).toBe(false);
+  });
+
   it('lists a review saved before evidence was kept without a record', async () => {
     const { db, env, ids } = setup();
     expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(713), revision: 0, image_sha256: H, verdict: 'match' })).status).toBe(200);
@@ -181,15 +220,32 @@ describe('revisions as the offline store counts them', () => {
     expect([first.current, second.current, second.current_revision]).toEqual([false, true, 2]);
   });
 
+  it('take the revision a publication gave the crop, counting reviews since but not marks', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, '/atlas/rounds', { id: uuid(704), grapheme: 'U+306F', seen: [local(ids[0])] })).status).toBe(200);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
+      id: uuid(705), revision: 1, image_sha256: H, verdict: 'wrong', issue: 'character', character: 'あ',
+    })).status).toBe(200);
+    // The store imported the relabel at its revision 2, and a publication spoke for the crop at that revision.
+    db.prepare('INSERT INTO review_revisions(crop,revision,at) VALUES(?,2,2)').run(ids[0]);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
+      id: uuid(706), revision: 2, image_sha256: H, verdict: 'match',
+    })).status).toBe(200);
+    expect((await send(env, '/atlas/rounds', { id: uuid(707), grapheme: 'U+306F', seen: [local(ids[0], { revision: 3 })] })).status).toBe(200);
+    const reviews = (await reviewsPage(env, new URLSearchParams())).reviews;
+    expect(reviews.map(r => r.expected_revision)).toEqual([0, 2]);
+    expect(reviews[1].publication_snapshot.character.revision).toBe(2);
+    expect(reviews[1].current_revision).toBe(3);
+  });
+
   it('refuses a review when its page is published again between reading the crop and committing', async () => {
     const { db, env, ids, page } = setup(), atlas = env.ATLAS;
     env.ATLAS = { ...atlas, batch: async (statements: D1PreparedStatement[]) => {
       db.prepare('UPDATE pages SET rev=rev+1 WHERE id=?').run(page);
       return atlas.batch(statements);
     } } as D1Database;
-    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
-      id: uuid(703), revision: 0, image_sha256: H, verdict: 'match',
-    })).status).toBe(409);
+    const refused = await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(703), revision: 0, image_sha256: H, verdict: 'match' });
+    expect([refused.status, refused.body.detail]).toEqual([409, "This crop's page was published again. Reload it."]);
     expect(db.query('SELECT * FROM submissions').all()).toEqual([]);
     expect(db.query('SELECT * FROM events').all()).toEqual([]);
   });

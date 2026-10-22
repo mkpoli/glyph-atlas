@@ -34,7 +34,7 @@ const markable = (code: number) => code === STATE.pending || code === STATE.seen
 // glyph's record from its pack) under the row's label, state and revision; the issue of its last event
 // while it is flagged; the character a standing review named; the box a review redrew.
 export type Current = { id: number; kind: number; char: number | null; label: string; state: number; revision: number; cut: number;
-  quiz: number; data: Json; cutBox: Json | null; settled: number; logicalRevision: number;
+  quiz: number; data: Json; cutBox: Json | null; settled: number; logicalRevision: number; anchored: number | null;
   sourceId: string; pageRevision: number; record: Json };
 // Whether a client that read the crop at `revision` saw it as it stands: at its revision now, or at one
 // before marks only, which the old site's revision never counted (`settled`).
@@ -42,8 +42,14 @@ export const standing = (row: { revision: number; settled: number }, revision: u
   Number.isSafeInteger(revision) && (revision as number) >= row.settled && (revision as number) <= row.revision;
 // An event that only moved a mark: a round's seen or hard, or an undo of a round that took one away.
 // The old site kept marks beside the crop and never moved its revision for them, so a crop's revision as
-// the old site and the offline store count it is its revision less its marks (`logicalRevision`).
+// the old site and the offline store count it leaves its marks out (`logicalRevision`).
 export const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id=${e}.reverses),3) IN (3,4)))`;
+/** A crop's revision as the old site and the offline store count it. A publication that speaks for the
+ *  crop records the store's revision and the crop's revision then (`review_revisions`); every event since
+ *  but a mark adds one. A crop no publication has spoken for since the cutover counts its revision less
+ *  every mark. publish.py computes the same. */
+export const LOGICAL = (c: string) => `coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at
+  AND NOT ${MARKED('e')}) FROM review_revisions a WHERE a.crop=${c}.id),${c}.revision-(SELECT count(*) FROM events e WHERE e.crop=${c}.id AND ${MARKED('e')}))`;
 export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label,c.state,c.revision,c.cut,c.quiz,pg.rev,pg.key AS page_key,
   r.x,r.y,r.w,r.h,
   (SELECT coalesce(e.kept_issue,e.issue) FROM events e WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) AS issue,
@@ -52,13 +58,15 @@ export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label
   (SELECT max(e.revision) FROM events e WHERE e.crop=c.id AND NOT ${MARKED('e')}) AS reviewed,
   (SELECT count(*) FROM events e WHERE e.crop=c.id AND ${MARKED('e')} AND e.revision>coalesce((SELECT max(f.revision) FROM events f
     WHERE f.crop=c.id AND NOT ${MARKED('f')}),-1)) AS marks,
-  (SELECT count(*) FROM events e WHERE e.crop=c.id AND ${MARKED('e')}) AS marked
+  ${LOGICAL('c')} AS logical,(SELECT revision FROM review_revisions WHERE crop=c.id) AS anchored
   FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN pages pg ON pg.id=c.id>>24
   LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN reviews r ON r.crop=c.id`;
 type CropRow = { id: number; kind: number; char: number | null; label: string | null; state: number; revision: number; cut: number; quiz: number;
   rev: number; x: number | null; y: number | null; w: number | null; h: number | null; issue: number | null; named: string | null;
-  reviewed: number | null; marks: number; marked: number; page_key: string };
+  reviewed: number | null; marks: number; logical: number; anchored: number | null; page_key: string };
 
+// A crop's page id as its record names it; a crop with none sits on its book's page (`book:<document>`).
+export const pageId = (key: string): { page_id?: string } => key.startsWith('book:') ? {} : { page_id: key };
 // Why a crop a write names is not there: a retired crop names the crop that replaced it.
 async function missing(env: Env, id: number): Promise<Problem> {
   const named = await cropParam(env, publicId(id));
@@ -83,7 +91,7 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
     const { slot: _slot, record_place: _place, ...stored } = record;
     const label = row.label ?? '';
     const box = row.x == null ? null : { x: row.x, y: row.y, w: row.w, h: row.h };
-    const data: Json = { ...stored, id: publicId(row.id), page_id: row.page_key, label, state: stateName(row.state), revision: row.revision,
+    const data: Json = { ...stored, id: publicId(row.id), ...pageId(row.page_key), label, state: stateName(row.state), revision: row.revision,
       issue: row.state === STATE.flagged ? issueName(row.issue) : null,
       written_character: row.named ?? stored.written_character ?? null,
       ...(row.named ? { identity_status: 'assigned', identity_basis: 'human_review' } : {}),
@@ -91,7 +99,7 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
     // Marks since the last review that follow on from it, one revision each, leave the crop as a client saw it then.
     const settled = row.marks && (row.reviewed ?? row.revision - row.marks) + row.marks === row.revision ? row.revision - row.marks : row.revision;
     found.set(row.id, { id: row.id, kind: row.kind, char: row.char, label, state: row.state, revision: row.revision, cut: row.cut, quiz: row.quiz, data,
-      cutBox: stored.box ?? null, settled, logicalRevision: row.revision - row.marked, sourceId: entry!.id,
+      cutBox: stored.box ?? null, settled, logicalRevision: row.logical, anchored: row.anchored, sourceId: entry!.id,
       pageRevision: row.rev, record: stored });
   }
   const gone = ids.filter(id => !found.has(id)), told = new Set(explained);
@@ -378,6 +386,15 @@ export const marksOnlyQuery = () => `SELECT count(*) AS n FROM json_each(?) j JO
   WHERE (j.value->>'pageRevision' IS NOT NULL AND (SELECT rev FROM pages WHERE id=c.id>>24) IS NOT j.value->>'pageRevision')
   OR c.cut<>j.value->>'cut' OR c.revision<>j.value->>'expected'+(SELECT count(*) FROM events e WHERE e.crop=c.id AND e.revision>j.value->>'expected')
   OR EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.revision>j.value->>'expected' AND NOT ${MARKED('e')})`;
+// The 409 of a save that lost its guard: its page was published again, or another write changed the crop.
+async function conflictProblem(env: Env, changes: CropChange[]): Promise<Problem> {
+  const paged = changes.filter(c => c.pageRevision !== undefined);
+  const republished = paged.length ? (await env.ATLAS.prepare(`SELECT count(*) AS n FROM json_each(?) j
+    JOIN pages p ON p.id=(j.value->>'crop')>>24 WHERE p.rev<>j.value->>'pageRevision'`)
+    .bind(JSON.stringify(paged.map(c => ({ crop: c.crop, pageRevision: c.pageRevision })))).first<{ n: number }>())?.n : 0;
+  return republished ? new Problem(409, "This crop's page was published again. Reload it.")
+    : new Problem(409, 'Another review changed this crop. Reload it.');
+}
 async function marksOnly(env: Env, changes: CropChange[]): Promise<boolean> {
   const list = JSON.stringify(changes.map(c => ({ crop: c.crop, expected: c.expected, cut: c.cut,
     pageRevision: c.pageRevision })));
@@ -466,7 +483,7 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
       named: written, ...(written ? { category: categoryOf(written) } : {}), ...(answer.box ? { box: answer.box } : {}) });
     results.push({ target_id: publicId(row.id), revision: row.revision + 1, state: resolved ? 'checked' : 'flagged' });
     first.push(row.id);
-    captured.push({ row, change: changes[changes.length - 1], answer });
+    captured.push({ row, change: changes[changes.length - 1], answer, kept });
   }
   // A crop that left the queue, changed its pixels or moved to another character since the round
   // was dealt was not seen as it stands, so it is skipped rather than failing the round.
@@ -527,7 +544,7 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     const repeat = await previous();
     if (repeat?.request === signature) return answered(JSON.parse(repeat.response));
     if (conflict(error) && again && await marksOnly(env, changes)) return await save(env, sent, address, user, mode, false);
-    if (conflict(error)) throw new Problem(409, 'Another review changed this crop. Reload it.');
+    if (conflict(error)) throw await conflictProblem(env, changes);
     throw error;
   }
   return answered(saved);

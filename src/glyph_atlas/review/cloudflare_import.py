@@ -80,6 +80,11 @@ def _answer(evidence, identity, snapshot=None):
     if "batch" in evidence and "request" not in evidence:
         if evidence.get("kind") != "character-review":
             raise Rejected("a batch correction is recorded as an inspector review")
+        # Since glyph-atlas-v3 a batch correction keeps each crop's own answer, with a line's redrawn box.
+        if "answer" in evidence:
+            if evidence["answer"].get("id") != identity:
+                raise Rejected("batch answer names another occurrence")
+            return evidence["answer"]
         shown = (snapshot or {}).get("character", {})
         answer = {"id": identity, "revision": shown.get("revision"), "image_sha256": shown.get("image_sha256"),
                   "verdict": evidence.get("verdict"), "issue": evidence.get("issue")}
@@ -166,7 +171,11 @@ def _step(record, before):
     if (correction.get("unicode") != " ".join(refs.to_code_points(after["label"]))
             or correction.get("box") != after["box"]):
         raise Rejected("saved effective state disagrees with the explicit correction")
-    resolved = verdict == "match" or bool(issue == "character" and written)
+    # A batch confirmation leaves a crop reported for its box, a blank or a merge reported (`kept_issue`).
+    kept = evidence.get("kept_issue")
+    if kept is not None and (recorded_terms.issue(kept) not in ("merged", "crop", "blank", "other") or issue is not None):
+        raise Rejected("a kept issue stands beside no other")
+    resolved = (verdict == "match" or bool(issue == "character" and written)) and kept is None
     if event.get("new") != ("reviewed" if resolved else "disputed"):
         raise Rejected("review certainty exceeds the saved decision")
     return after
