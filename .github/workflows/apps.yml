@@ -1,0 +1,46 @@
+name: apps
+# The Worker and the review site are what glyphatlas.org runs. A pull request's run already tests its
+# merge into main, so main itself is checked only on demand.
+on:
+  pull_request:
+    paths:
+      - 'apps/cloudflare/**'
+      - 'apps/review/**'
+      - 'data/ledger.json'
+      - 'data/vocab/kanji-readings.json'
+      - '.github/workflows/apps.yml'
+  workflow_dispatch:
+# A newer push to the same pull request makes the older run moot.
+concurrency:
+  group: apps-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/cloudflare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      # `bun run test` runs each file in its own context: a file that mocks a module with
+      # `mock.module` would otherwise hand its stand-ins to every later file that imports it.
+      - run: bun run test
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      # The site's server code imports the Worker's modules, which resolve their packages from there.
+      - run: bun install --frozen-lockfile
+        working-directory: apps/cloudflare
+      - run: bun install --frozen-lockfile
+        working-directory: apps/review
+      - run: bun run build
+        working-directory: apps/review
