@@ -167,6 +167,7 @@
   "explore.withheld.hide": "保留된 크롭 숨기기",
   "explore.withheld.about": "줄 對照로 文字를 確定하지 못한 크롭입니다. 收錄은 그대로 두고, 보기를 고를 때까지 目錄에서 뺍니다.",
   "explore.grid.collection": "文字 蒐集",
+  "explore.noscript": "크롭을 보려면 JavaScript를 켜 주세요.",
   "explore.layout.label": "配列 方式",
   "explore.layout.collage": "콜라주",
   "explore.layout.grid": "格子",

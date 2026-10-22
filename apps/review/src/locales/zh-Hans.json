@@ -162,6 +162,7 @@
   "explore.withheld.hide": "隐藏已搁置的裁切",
   "explore.withheld.about": "逐行对齐未能确定文字的裁切。仍收录在内，选择显示前不在列表中出现。",
   "explore.grid.collection": "图谱中的字",
+  "explore.noscript": "请启用JavaScript以查看裁切。",
   "explore.layout.label": "排列方式",
   "explore.layout.collage": "拼贴",
   "explore.layout.grid": "网格",

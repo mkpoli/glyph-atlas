@@ -158,6 +158,7 @@
   "explore.withheld.hide": "保留中の切り出しを隠す",
   "explore.withheld.about": "行の照合で文字を確定できなかった切り出しです。収録はそのままで、表示を選ぶまで一覧に出しません。",
   "explore.grid.collection": "文字コレクション",
+  "explore.noscript": "切り出しを表示するにはJavaScriptを有効にしてください。",
   "explore.layout.label": "並べ方",
   "explore.layout.collage": "コラージュ",
   "explore.layout.grid": "グリッド",
