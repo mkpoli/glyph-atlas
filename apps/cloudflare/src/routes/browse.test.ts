@@ -210,6 +210,13 @@ describe('the browse page', () => {
     expect(ids(so)).not.toContain(publicId(crop(a, 5)));
     const flagged = await get(env, '/atlas?grapheme=U%2B6240&state=attention&limit=60');
     expect(flagged.items.map((item: any) => item.id)).toEqual([publicId(crop(a, 6))]);
+    // A crop with no character is counted under no character, and listed under no family.
+    claim.run('hk:a8', crop(a, 8));
+    const unnamed = await get(env, '/atlas?grapheme=U%2B51E6&limit=60&v=2');
+    expect(ids(unnamed)).not.toContain(publicId(crop(a, 8)));
+    // A character narrows the claimed crops as it narrows the rest.
+    const narrowed = await get(env, '/atlas?grapheme=U%2B51E6&character=%E6%89%80&limit=60');
+    expect([narrowed.total, narrowed.items.map((item: any) => item.id)]).toEqual([1, [publicId(crop(a, 5))]]);
     // A round deals by character, and counts so.
     const round = await get(env, '/atlas?purpose=review&limit=0', 'me');
     expect(round.categories.filter((x: any) => x.label === '所').map((x: any) => x.grapheme)).toEqual(['U+6240']);

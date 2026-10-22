@@ -109,12 +109,13 @@ export const FILING = ['asserted', 'accepted', 'adjudicated'];
 export const FILED_MAX = 2000;
 // The crops a grapheme claim files, on each crop's effective cut (the next one while a redrawn box waits
 // in `reviews`, as the inspector reads the slot), with what their counts are kept by: one range of
-// `current_claim_object` (every crop read as some grapheme) and each crop and review by its key.
+// `current_claim_object` (every crop read as some grapheme), in its order, so the cap keeps the same
+// claims for every reader, and each crop and review by its key.
 export const filedClaimsQuery = () => `SELECT k.id,c.object AS grapheme,k.char,k.family,k.kind,k.book,k.production,k.category,k.shuffle,k.style,k.state,k.quiz,k.visual_group,
   coalesce((k.year-CASE WHEN k.year<0 THEN 9 ELSE 0 END)/10*10,-1) AS decade
   FROM current_claims c CROSS JOIN crops k ON k.id=c.crop LEFT JOIN reviews r ON r.crop=k.id
   WHERE c.predicate='has_grapheme' AND c.object IS NOT NULL AND c.scope='' AND c.slot='' AND c.status IN (${FILING.map(s => `'${s}'`).join(',')})
-    AND c.cut=k.cut+(r.x IS NOT NULL) LIMIT ${FILED_MAX}`;
+    AND c.cut=k.cut+(r.x IS NOT NULL) ORDER BY c.object,c.subject LIMIT ${FILED_MAX}`;
 export type Filed = { id: number; grapheme: string; char: number | null; family: number | null; kind: number; book: number; production: number | null; category: number | null; shuffle: number; style: number | null;
   state: number | null; quiz: number | null; visual_group: number | null; decade: number };
 /** For a family headed by `grapheme` (its key) with these members: the crops of its members a claim

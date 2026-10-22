@@ -379,10 +379,12 @@ export async function othersSkips(env: Env, reviewer: string | null, version: st
 export const REVIEWED_IN_INSPECTOR = `EXISTS(SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission AND s.undone=0
   WHERE e.crop=c.id AND e.kind IN (0,1,2) AND json_extract(s.request,'$.target') IS NOT NULL)`;
 // The Flagged view: every collected crop flagged or hard to read, from `crop_flagged`, which holds only them.
-export function flaggedQuery(f: Filter): { sql: string; values: (number | string)[] } {
+// With `ids`, only those crops, each by its key: the crops a grapheme claim files under a family.
+export function flaggedQuery(f: Filter, ids?: number[]): { sql: string; values: (number | string)[] } {
   const rest = conditions(f, {}, name => `c.${name}`);
+  const from = ids ? 'json_each(?) j CROSS JOIN crops c ON c.id=j.value' : 'crops c INDEXED BY crop_flagged';
   return { sql: `SELECT c.id,c.shuffle,c.char,c.book,c.production,c.category,c.state,c.quiz,${REVIEWED_IN_INSPECTOR} AS reported
-    FROM crops c INDEXED BY crop_flagged WHERE c.kind=0 AND c.state IN (2,4)${rest.sql}`, values: rest.values };
+    FROM ${from} WHERE c.kind=0 AND c.state IN (2,4)${rest.sql}`, values: [...(ids ? [JSON.stringify(ids)] : []), ...rest.values] };
 }
 // The order the Flagged view shows its few crops in, from the seed: a hash of the shuffle, then id.
 const seeded = (shuffle: number, seed: number) => Number((BigInt(shuffle) * BigInt(seed + 1)) % 2147483647n);
@@ -447,20 +449,28 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   // The characters a listing names: a round's grapheme members, a browse page's family (every character
   // filed under the grapheme), a character, a search. A name the site holds no crop of names none.
   const byText = new Map([...chars].map(([id, info]) => [info.text, id]));
-  let named: Set<number> | null = null;
+  let named: Set<number> | null = null, written: Set<number> | null = null;
   const narrow = (ids: Iterable<number>) => { const next = new Set(ids); named = named === null ? next : new Set([...named].filter(id => next.has(id))); };
   if (members) narrow(members.ids);
-  if (grapheme && !scoped) narrow([...chars].filter(([, info]) => info.grapheme === grapheme).map(([id]) => id));
+  const family = grapheme && !scoped ? new Set([...chars].filter(([, info]) => info.grapheme === grapheme).map(([id]) => id)) : null;
+  if (family) narrow(family);
   for (const value of [character, searched]) if (value) {
     const id = byText.get(value) ?? (await env.ATLAS.prepare(graphemeQuery()).bind(value).first<{ id: number }>())?.id;
-    narrow(id === undefined ? [] : [id]);
+    const ids = id === undefined ? [] : [id];
+    narrow(ids);
+    written = written === null ? new Set(ids) : new Set(ids.filter(i => written!.has(i)));
   }
+  // The crops grapheme claims file, read once a request (`countFacets` reads them too).
+  let filing: ReturnType<typeof filedClaims> | null = null;
+  const claimsRead = () => filing ??= filedClaims(env);
   // Browsing a family, a crop a grapheme claim files under it is listed with it, and a crop of its
-  // characters a claim files under another family is not, as the family's gallery lists them.
-  const claims = grapheme && !scoped && !character && !searched ? await filedClaims(env) : [];
-  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && named!.has(r.char) && r.head !== grapheme).map(r => r.id));
-  const here = claims.filter(r => r.kind === 0 && r.head === grapheme && (r.char === null || !named!.has(r.char)) && r.state !== null && r.quiz !== null)
-    .map(r => ({ ...r, state: r.state!, quiz: r.quiz! }));
+  // characters a claim files under another family is not, as the family's gallery lists them; a
+  // character or a search narrows those as it narrows the rest. A crop with no character is counted
+  // under none, and is listed by none.
+  const claims = family ? await claimsRead() : [];
+  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && family!.has(r.char) && r.head !== grapheme).map(r => r.id));
+  const here = claims.filter(r => r.kind === 0 && r.head === grapheme && r.char !== null && !family!.has(r.char) && (written === null || written.has(r.char))
+    && r.state !== null && r.quiz !== null).map(r => ({ ...r, char: r.char!, state: r.state!, quiz: r.quiz! }));
   // -2 matches nothing: a book, script or state the site does not know.
   const book = documentKey ? (await env.ATLAS.prepare(bookQuery()).bind(documentKey).first<{ id: number }>())?.id ?? -2 : null;
   const category = groupParam ? code('category', groupParam) ?? -2 : null;
@@ -477,7 +487,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     withheld ? 'show' : 'hide'}&v=${encodeURIComponent(version)}`);
   const hit = facetsKey ? await caches.default.match(facetsKey) : undefined;
   const facets: { counts: Record<StateName, number>; categories: Category[]; documents: Book[] } = hit ? await hit.json()
-    : await countFacets(env, { cells, chars, glyphs, own, counted, stateOf, review });
+    : await countFacets(env, { cells, chars, glyphs, own, counted, stateOf, review, claims: review ? [] : await claimsRead() });
   timing.step(hit ? 'facets-hit' : 'facets');
   if (facetsKey && !hit) ctx.waitUntil(caches.default.put(facetsKey, Response.json(facets, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
 
@@ -492,11 +502,10 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   if (flaggedView) {
     // `attention` is every crop waiting for a person, flagged or hard to read; `flagged` the flagged ones.
     // The Flagged view hides crops already looked at in the inspector on `reported=hide`, and counts them.
-    const flaggedRows = async (f: Filter) => { const { sql, values } = flaggedQuery(f);
+    const flaggedRows = async (f: Filter, ids?: number[]) => { const { sql, values } = flaggedQuery(f, ids);
       return (await env.ATLAS.prepare(sql).bind(...values).all<Row & { id: number; shuffle: number; reported: number }>()).results; };
-    const hereIds = new Set(here.map(r => r.id));
-    const rows = [...(await flaggedRows(filter)).filter(row => !away.has(row.id)),
-      ...(hereIds.size ? (await flaggedRows({ ...filter, chars: null })).filter(row => hereIds.has(row.id)) : [])];
+    const waiting = here.filter(r => r.state === 2 || r.state === 4).map(r => r.id);
+    const rows = [...(await flaggedRows(filter)).filter(row => !away.has(row.id)), ...(waiting.length ? await flaggedRows({ ...filter, chars: null }, waiting) : [])];
     reportedCount = rows.filter(row => row.reported).length;
     const shown = q.get('reported') === 'hide' ? rows.filter(row => !row.reported) : rows;
     // A crop already looked at in the inspector queues behind the ones nobody has reviewed yet.
@@ -568,10 +577,10 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
 // glyphs nothing has decided, as pending, under the grapheme its family files it under. Browsing, a
 // crop a grapheme claim reads as another grapheme counts with its character under that grapheme's
 // family, as the family's gallery lists it (`filedClaims`); a round deals by character, and counts so.
-async function countFacets(env: Env, { cells, chars, glyphs, own, counted, stateOf, review }: {
+async function countFacets(env: Env, { cells, chars, glyphs, own, counted, stateOf, review, claims }: {
   cells: Awaited<ReturnType<typeof collectedCounts>>['cells']; chars: Awaited<ReturnType<typeof collectedCounts>>['chars'];
   glyphs: Awaited<ReturnType<typeof corpusCounts>> | null; own: (Row & { id: number; kind: number })[]; counted: Filter;
-  stateOf: Map<number, StateName>; review: boolean }) {
+  stateOf: Map<number, StateName>; review: boolean; claims: Awaited<ReturnType<typeof filedClaims>> }) {
   const counts = Object.fromEntries(STATE_NAMES.map(s => [s, 0])) as Record<StateName, number>;
   const categories = new Map<string, Category>(), documents = new Map<number, Book>();
   const info = (char: number) => chars.get(char) ?? glyphs?.chars.get(char) ?? null;
@@ -617,7 +626,7 @@ async function countFacets(env: Env, { cells, chars, glyphs, own, counted, state
       if (moved) add(char, 'skipped', moved, null);
     }
   }
-  if (!review) for (const r of await filedClaims(env)) {
+  for (const r of claims) {
     const found = r.kind === 0 && r.char !== null ? chars.get(r.char) : undefined, state = stateOf.get(r.state ?? -1) ?? 'pending';
     if (!found || found.grapheme === r.head || r.state === null || r.quiz === null) continue;
     if (!matches(counted, { char: r.char, book: r.book, production: r.production, category: null, state: r.state, quiz: r.quiz })) continue;
