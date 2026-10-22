@@ -414,11 +414,11 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     encodeURIComponent(span)}`);
   const kept = listingKey ? await caches.default.match(listingKey) : undefined;
   if (kept) { timing.step('listing-hit'); return await kept.json(); }
-  const [{ cells, chars }, held] = await Promise.all([collectedCounts(env, version), codeNames(env)]);
-  const keys = await productionKeys(env, cells.map(c => c.production));
+  const [{ cells, chars }, held] = await Promise.all([collectedCounts(env, version, timing), codeNames(env)]);
+  const keys = await timing.beside('productions', productionKeys(env, cells.map(c => c.production)));
   // A publication may add a code the isolate does not hold yet: the table is read again, once.
   const names = cells.some(c => !held.has(`state:${c.state}`) || (c.category !== null && c.category !== -1 && !held.has(`category:${c.category}`)))
-    ? await codeNames(env, true) : held;
+    ? await timing.beside('codes-again', codeNames(env, true)) : held;
   timing.step('counts');
   const code = (field: string, key: string) => {
     for (const [k, v] of names) if (v === key && k.startsWith(field + ':')) return Number(k.slice(field.length + 1));
