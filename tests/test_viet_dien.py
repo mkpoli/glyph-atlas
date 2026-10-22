@@ -394,3 +394,11 @@ def test_a_cached_response_of_the_wrong_shape_is_named_and_removed(tmp_path, htt
     with pytest.raises(ValueError, match=cached.name):
         run(tmp_path, http_server, offline=True)
     assert not cached.exists()
+
+
+def test_upstream_records_the_retrieval_dates(tmp_path, http_server):
+    populate(http_server)
+    run(tmp_path, http_server)
+    upstream = json.loads((tmp_path / 'corpora/viet-dien/UPSTREAM.json').read_text())
+    assert set(upstream['retrieved']) == {'first', 'last'}
+    assert upstream['retrieved']['first'] <= upstream['retrieved']['last']

@@ -86,9 +86,10 @@ A cached response that is not a JSON object or a `full.txt` export is deleted an
 the import stops, naming the file; the next online run fetches it again.
 Use a new `--cache` directory for a fresh upstream snapshot. Output tables replace
 the selected snapshot; use separate output directories for separate samples.
-`UPSTREAM.json` records response hashes and expected/imported page counts.
-Tables are staged and validated beside the corpus root, in the directory above
-it, before replacing the output directory. If the process is killed during the replacement, the previous snapshot
+`UPSTREAM.json` records response hashes, expected/imported page counts and the
+first and last day the responses were cached. Tables are staged and validated
+beside the corpus root, in the directory above it, before replacing the output
+directory. If the process is killed during the replacement, the previous snapshot
 remains there in `.<output>-<temporary-id>-previous` for recovery. Corpus
 discovery skips dot-folders, so a staging folder never counts as a corpus.
 

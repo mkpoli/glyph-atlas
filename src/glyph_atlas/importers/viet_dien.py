@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urljoin
@@ -40,6 +41,7 @@ class API:
         self.client = client
         self.offline = offline
         self.responses: dict[str, str] = {}
+        self.files: dict[str, Path] = {}
 
     def get(self, path: str, **params: Any) -> tuple[dict, str]:
         body, digest = self.fetch(path, "json", **params)
@@ -62,6 +64,7 @@ class API:
             raise ValueError(f"{url}: {problem}; removed the cached response {target}")
         digest = hashlib.sha256(body).hexdigest()
         self.responses[url] = digest
+        self.files[url] = target
         return body, digest
 
     def texts(self, limit: int) -> list[dict]:
@@ -178,6 +181,12 @@ def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision
     return document, page_records, texts
 
 
+def retrieval_dates(files: dict[str, Path]) -> dict[str, str]:
+    """The first and last day (UTC) the snapshot's responses were cached, from their file times."""
+    days = sorted(datetime.fromtimestamp(path.stat().st_mtime, UTC).date().isoformat() for path in files.values())
+    return {"first": days[0], "last": days[-1]} if days else {}
+
+
 def staging_dir(out: Path) -> Path:
     """Where a snapshot is staged: beside the corpus root, so a killed run leaves no second corpus in it.
 
@@ -249,7 +258,8 @@ def import_all(
     snapshot = {"source": SOURCE, "terms_url": TERMS, "text_reuse_terms": REUSE,
                 "responses": api.responses, "expected_pages": expected_pages,
                 "imported_pages": len(pages), "page_limited": len(pages) < expected_pages,
-                "text_transport": "full.txt" if bulk_text else "page-api"}
+                "text_transport": "full.txt" if bulk_text else "page-api",
+                "retrieved": retrieval_dates(api.files)}
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with tables.locked(out), tempfile.TemporaryDirectory(prefix=f".{out.name}-", dir=staging_dir(out)) as scratch:
