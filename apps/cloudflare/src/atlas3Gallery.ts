@@ -110,21 +110,25 @@ export const FILED_MAX = 2000;
 // The crops a grapheme claim files, on each crop's effective cut (the next one while a redrawn box waits
 // in `reviews`, as the inspector reads the slot), with what their counts are kept by: one range of
 // `current_claim_object` (every crop read as some grapheme) and each crop and review by its key.
-export const filedClaimsQuery = () => `SELECT k.id,c.object AS grapheme,k.char,k.family,k.kind,k.style,k.state,k.quiz,k.visual_group,
+export const filedClaimsQuery = () => `SELECT k.id,c.object AS grapheme,k.char,k.family,k.kind,k.book,k.production,k.category,k.shuffle,k.style,k.state,k.quiz,k.visual_group,
   coalesce((k.year-CASE WHEN k.year<0 THEN 9 ELSE 0 END)/10*10,-1) AS decade
   FROM current_claims c CROSS JOIN crops k ON k.id=c.crop LEFT JOIN reviews r ON r.crop=k.id
   WHERE c.predicate='has_grapheme' AND c.object IS NOT NULL AND c.scope='' AND c.slot='' AND c.status IN (${FILING.map(s => `'${s}'`).join(',')})
     AND c.cut=k.cut+(r.x IS NOT NULL) LIMIT ${FILED_MAX}`;
-export type Filed = { id: number; grapheme: string; char: number | null; family: number | null; kind: number; style: number | null;
+export type Filed = { id: number; grapheme: string; char: number | null; family: number | null; kind: number; book: number; production: number | null; category: number | null; shuffle: number; style: number | null;
   state: number | null; quiz: number | null; visual_group: number | null; decade: number };
 /** For a family headed by `grapheme` (its key) with these members: the crops of its members a claim
  *  files elsewhere (`away`), and the crops from outside it a claim files here (`here`). A claim files
  *  its crop under the family its grapheme heads now, or is filed under since a publication moved it. */
 export async function familyClaims(env: Env, grapheme: string, members: number[]): Promise<{ away: Filed[]; here: Filed[] }> {
-  const rows = (await env.ATLAS.prepare(filedClaimsQuery()).all<Filed>()).results, own = new Set(members);
-  const heads = await keyHeads(env, rows.map(r => r.grapheme)), filed = (r: Filed) => heads.get(r.grapheme) === grapheme;
+  const rows = await filedClaims(env), own = new Set(members);
   const inFamily = (r: Filed) => r.char !== null ? own.has(r.char) : r.family !== null && own.has(r.family);
-  return { away: rows.filter(r => !filed(r) && inFamily(r)), here: rows.filter(r => filed(r) && !inFamily(r)) };
+  return { away: rows.filter(r => r.head !== grapheme && inFamily(r)), here: rows.filter(r => r.head === grapheme && !inFamily(r)) };
+}
+/** Every crop a grapheme claim files, with the key of the head of the family it files it under now. */
+export async function filedClaims(env: Env): Promise<(Filed & { head: string })[]> {
+  const rows = (await env.ATLAS.prepare(filedClaimsQuery()).all<Filed>()).results, heads = await keyHeads(env, rows.map(r => r.grapheme));
+  return rows.map(r => ({ ...r, head: heads.get(r.grapheme)! }));
 }
 /** A filed crop's count cell, `sign` 1 where a claim adds it and -1 where it takes it away. */
 export const filedCell = (r: Filed, sign: number): Cell => ({ kind: r.kind, style: r.style, state: r.state, quiz: r.quiz,

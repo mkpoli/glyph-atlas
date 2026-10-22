@@ -189,6 +189,32 @@ describe('the browse page', () => {
     expect(shown.withheld_count).toBeNull();
   });
 
+  it('count a crop a grapheme claim reads as another grapheme under that grapheme, as its gallery lists it', async () => {
+    const { db, env, a, c, crop } = await setup();
+    // A pending 所 of book A and the corpus glyph 所 of movable type, each read as 処.
+    const claim = db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+      VALUES(?,'has_grapheme','','',?,0,'asserted','U+51E6','[]','[]','[]','r','2026-10-23')`);
+    claim.run('hk:a5', crop(a, 5)); claim.run('codh:8', crop(c, 8));
+    const body = await get(env, '/atlas?limit=0');
+    const of = (label: string) => body.categories.filter((x: any) => x.label === label).map((x: any) => [x.grapheme, x.total, x.pending]).sort();
+    expect(of('所')).toEqual([['U+51E6', 1, 1], ['U+6240', 4, 2]]);
+    expect(body.counts).toEqual({ pending: 10, seen: 1, flagged: 1, checked: 2, hard: 1, skipped: 0 });
+    const corpus = await corpusCharacters(env, ctx, new URL('https://glyphatlas.org/atlas/corpus/characters'));
+    expect(corpus.items).toEqual([['は', 'U+306F', 4], ['所', 'U+51E6', 1], ['한', 'U+D55C', 1], ['𛂞', 'U+306F', 3]]);
+    // Each family's listing agrees with its count: 処 lists the claimed 所, and 所 leaves it out.
+    const ids = (body: any) => body.items.map((item: any) => item.id).sort();
+    const sho = await get(env, '/atlas?grapheme=U%2B51E6&limit=60'), so = await get(env, '/atlas?grapheme=U%2B6240&limit=60');
+    expect([sho.total, sho.items.length]).toEqual([2, 2]);
+    expect(ids(sho)).toContain(publicId(crop(a, 5)));
+    expect([so.total, so.items.length]).toEqual([4, 4]);
+    expect(ids(so)).not.toContain(publicId(crop(a, 5)));
+    const flagged = await get(env, '/atlas?grapheme=U%2B6240&state=attention&limit=60');
+    expect(flagged.items.map((item: any) => item.id)).toEqual([publicId(crop(a, 6))]);
+    // A round deals by character, and counts so.
+    const round = await get(env, '/atlas?purpose=review&limit=0', 'me');
+    expect(round.categories.filter((x: any) => x.label === '所').map((x: any) => x.grapheme)).toEqual(['U+6240']);
+  });
+
   it('page through every crop once from the seed’s point, the cursor ending where the index does', async () => {
     const { env } = await setup();
     for (const seed of [0, 1234567, 2147483647]) {
