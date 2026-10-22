@@ -60,7 +60,7 @@ const issueName = (name: string | undefined) => name === 'reading' ? 'character'
  *  flagged crop's issue), their forms and dating. A crop `cropItems` leaves out is left out here. */
 export async function listingItems(env: Env, ids: number[], given?: Map<number, Entry>, timing?: Timing): Promise<Json[]> {
   const timed = <T>(name: string, work: Promise<T>) => timing ? timing.beside(name, work) : work;
-  const items = await timed('crops', cropItems(env, ids, given));
+  const items = await timed('crops', cropItems(env, ids, given, undefined, timing));
   if (!items.length) return items;
   const crops = new Map(ids.map(id => [publicId(id), id]));
   const listed = items.map(item => crops.get(item.id)!);
