@@ -313,3 +313,19 @@ def test_crops_with_no_character_are_counted_under_the_family_they_are_filed_und
     body = shard_of(root, family)
     assert [cell[0] for cell in body["families"][str(family)]] == [1] and body["families"][str(family)][0][-1] == 1
     assert str(family) not in body["chars"]
+
+
+def test_the_public_corpus_summary_leaves_out_restricted_corpora(tmp_path, layout):  # noqa: F811
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    index = tmp_path / "index.json"
+    index.write_text(json.dumps({"documents": 5, "pages": 30, "characters": 3, "corpora": [
+        {"corpus": "codh-full", "rows": 9, "documents": 2, "pages": 10},
+        {"corpus": "viet-dien", "rows": 20, "documents": 3, "pages": 20}]}))
+    pq.write_table(pa.table({"corpora": ["codh-full,viet-dien", "viet-dien", "codh-full"]}), tmp_path / "chars.parquet")
+    summary = module().public_corpus_index(index)
+    assert [c["corpus"] for c in summary["corpora"]] == ["codh-full"]
+    assert (summary["documents"], summary["pages"], summary["characters"]) == (2, 10, 2)
+    # Without a restricted corpus the summary is the index's own.
+    assert module().public_corpus_index(index, restricted=set()) == json.loads(index.read_text())

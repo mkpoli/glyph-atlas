@@ -98,8 +98,10 @@ share the same library `item_id` and page numbering. The library identifier is
 retained in source references, including when several volumes share it;
 processing status such as `complete` does not establish that OCR was corrected.
 The OCR and catalogue are offered for attributed research use and carry a
-`restricted` text licence. Scan permissions remain unstated until checked against
-the holding library. API access supplies no reuse licence for the images.
+`restricted` text licence, so the corpus stays off the site: the published corpus
+summary leaves out every corpus whose source is `restricted`. Scan permissions
+remain unstated until checked against the holding library. API access supplies no
+reuse licence for the images.
 
 `atlas import hilab --download` extracts the 325,261 crops instead of only listing them; it is needed
 before a release can materialise HI Lab crops.

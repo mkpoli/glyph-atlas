@@ -539,6 +539,8 @@ def build_chars(
             reports.append({"corpus": corpus.name, "skipped": corpus.problem})
             continue
         docs = corpus_sources.documents_of(corpus)
+        # Page keys carry the corpus name, so the keys this corpus adds are its own pages.
+        pages_before = len(page_ids)
         seen_rows = 0
         seen_chars = 0
         for table, column, row in corpus_sources.iter_text_rows(
@@ -596,7 +598,8 @@ def build_chars(
             if progress and seen_rows % 200000 == 0:
                 progress(f"{corpus.name}: {seen_rows} rows")
         reports.append(
-            {"corpus": corpus.name, "rows": seen_rows, "documents": len(docs), "distinct_chars": seen_chars}
+            {"corpus": corpus.name, "rows": seen_rows, "documents": len(docs),
+             "pages": len(page_ids) - pages_before, "distinct_chars": seen_chars}
         )
 
     # The authoritative unit count: renderable rows only, keyed by the *written*
