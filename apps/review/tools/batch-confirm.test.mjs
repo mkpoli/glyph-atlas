@@ -63,6 +63,7 @@ describe('what "Looks right" confirms', () => {
     expect(confirmedCharacter(tile('a', { label: '\u3099' }))).toBeNull()
     expect(confirmedCharacter(tile('a', { label: '\u200b' }))).toBeNull()
     expect(confirmedCharacter(tile('a', { label: '\u3000' }))).toBeNull()
+    expect(confirmedCharacter(tile('a', { label: '\u304b' + '\u3099'.repeat(32) }))).toBeNull()
   })
   it('sends the crops left to confirm and reports the rest by reason', () => {
     const plan = confirmationPlan([tile('a'), tile('b', { state: 'checked' }), tile('c', { label: 'あい' }), glyph('d', { proxyable: false }), glyph('e'), tile('f', { state: 'flagged' })])

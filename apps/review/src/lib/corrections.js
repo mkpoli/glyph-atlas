@@ -33,13 +33,13 @@ export function correctionBatches(character, crops, size) {
 const single = text => [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(text)].length === 1
 /** The one written character a tile is labelled with, or null when it has none to confirm. A corpus
  *  glyph is judged by its source's written character, a collection crop by its written form or label.
- *  The site takes one character as the Worker's `writtenCharacter` does: no control, format, surrogate
+ *  The site takes one character as the Worker's `writtenCharacter` does, in at most 32 code units: no control, format, surrogate
  *  or separator code point, and no combining mark without a base, which would refuse the whole batch. */
 export function confirmedCharacter(item) {
   if (isUnassigned(item)) return null
   const raw = item.origin === 'corpus' ? item.written_character : item.written_character || item.label
   const written = typeof raw === 'string' ? raw.trim() : ''
-  if (!written || /[\p{Cc}\p{Cf}\p{Cs}\p{Z}]/u.test(written) || /^\p{M}/u.test(written) || !single(written)) return null
+  if (!written || written.length > 32 || /[\p{Cc}\p{Cf}\p{Cs}\p{Z}]/u.test(written) || /^\p{M}/u.test(written) || !single(written)) return null
   return written
 }
 
