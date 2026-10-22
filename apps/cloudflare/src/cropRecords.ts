@@ -39,7 +39,7 @@ export const recordState = (state: string | null) => state === null || MARK_STAT
 export type RecordRow = { id: number; kind: number; book: number; state: string | null; revision: number; cut: number;
   category: string | null; char: string | null; head: string | null; production: string | null; rev: number; page_key: string;
   document: string; x: number | null; y: number | null; w: number | null; h: number | null; issue: string | null;
-  reviewed: number; written: number; settled: number; redrawn_at: number | null; cluster_key: string | null; glyph_set: number; form: string | null; form_issue: string | null;
+  reviewed: number; written: number; settled: number; redrawn_at: number | null; cluster_key: string | null; form_row: number; glyph_set: number; form: string | null; form_issue: string | null;
   form_character: string | null; written_family: string | null };
 // An event that only moved a mark: a round's seen or hard (kinds 3 and 4), or an undo (kind 5) of a round
 // that took one away. The old site kept marks beside the crop and never moved its revision for them.
@@ -71,7 +71,7 @@ export const recordQuery = () => `SELECT c.id,c.kind,c.book,s.key AS state,c.rev
   EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.kind<3 AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id)) AS reviewed,
   ${WRITTEN('c.id')} AS written,
   c.revision-${MARKS('c')} AS settled,
-  fc.key AS cluster_key,fg.crop IS NOT NULL AS glyph_set,iif(fg.crop IS NULL,fc.form,fg.form) AS form,
+  fc.key AS cluster_key,fg.crop IS NOT NULL AS form_row,fg.decision IS NOT fg.carried AS glyph_set,iif(fg.crop IS NULL,fc.form,fg.form) AS form,
   iif(fg.crop IS NULL,nullif(fc.issue,'mixed'),fg.issue) AS form_issue,iif(fg.crop IS NULL,fc.character,fg.character) AS form_character,
   iif(fg.crop IS NULL,fc.written_family,fg.written_family) AS written_family
   FROM crops c JOIN pages pg ON pg.id=c.id>>24 JOIN books b ON b.id=c.book
@@ -80,9 +80,10 @@ export const recordQuery = () => `SELECT c.id,c.kind,c.book,s.key AS state,c.rev
   LEFT JOIN reviews r ON r.crop=c.id LEFT JOIN form_glyphs fg ON fg.crop=c.id LEFT JOIN form_clusters fc ON fc.id=coalesce(fg.cluster,c.cluster)
   WHERE c.id=?1 AND c.kind<2`;
 
-// A corpus glyph's forms tool row, in the shape `formed` reads: its own glyph decision, else its cluster's.
+// A corpus glyph's forms tool row, in the shape `formed` reads: its `form_glyphs` row (its own glyph
+// decision, or a cluster decision of an earlier clustering it carries), else its cluster's.
 function formRow(row: RecordRow): UnitForm | null {
-  if (row.cluster_key === null && !row.glyph_set) return null;
+  if (row.cluster_key === null && !row.form_row) return null;
   return { id: publicId(row.id), cluster: row.cluster_key ?? '', clustered: row.cluster_key === null ? 0 : 1, form: row.form,
     glyph_set: row.glyph_set ? 1 : 0, cluster_form: null, issue: row.form_issue, issue_character: row.form_character,
     written_family: row.written_family };

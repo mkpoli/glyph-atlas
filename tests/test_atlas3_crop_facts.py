@@ -109,6 +109,8 @@ def unit_facts(root, rows):
 
 
 def sources(root, decided="か", units=None, decision="d1"):
+    """The copies; a cluster without a decision has no form."""
+    decided = decided if decision is not None else None
     for name in ("form_families", "form_clusters", "form_units"):
         (root / f"source-{name}.sqlite").unlink(missing_ok=True)
     unit_facts(root, [
@@ -128,10 +130,14 @@ def sources(root, decided="か", units=None, decision="d1"):
 
 
 def decisions(root, remote, *rows):
-    """Cluster decisions in the loaded history, on D1 and the local copy: (seq, id, at, cluster)."""
+    """Cluster decisions in the loaded history, on D1 and the local copy: (seq, id, at, cluster[, form[, glyphs]]),
+    form か and no glyphs listed unless given."""
+    known = ids(root)
+    rows = [(*r[:4], r[4] if len(r) > 4 else "か", json.dumps(r[5] if len(r) > 5 else []),
+             json.dumps([known[g] for g in (r[5] if len(r) > 5 else [])])) for r in rows]
     for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
-        db.executemany("INSERT INTO form_decisions(seq, id, at, actor, kind, family, cluster, revision, units, crops, note) "
-                       "VALUES(?, ?, ?, 'a', 'cluster', 'U+304B', ?, 'r1', '[]', '[]', '')", rows)
+        db.executemany("INSERT INTO form_decisions(seq, id, at, actor, kind, family, cluster, form, revision, units, crops, note) "
+                       "VALUES(?, ?, ?, 'a', 'cluster', 'U+304B', ?, ?, 'r1', ?, ?, '')", rows)
         db.commit()
 
 
@@ -186,7 +192,7 @@ def test_crop_facts_load_votes_to_r2_and_the_forms_by_integer_crop_id(layout, mo
     assert not mirror.execute("SELECT 1 FROM codes WHERE field IN ('models', 'form_cluster')").fetchone()
 
     facts(root, remote, monkeypatch, "--send")
-    assert db.execute("SELECT 1 FROM imports WHERE stamp='migration:0006'").fetchone()
+    assert db.execute("SELECT count(*) FROM imports WHERE stamp IN ('migration:0006', 'migration:0014')").fetchone() == (2,)
     assert db.execute("SELECT key FROM codes WHERE field='build'").fetchone() == (build_of(root),)
     code = mirror.execute("SELECT code FROM codes WHERE field='models'").fetchone()[0]
     assert json.loads(db.execute("SELECT key FROM codes WHERE field='models' AND code=?", (code,)).fetchone()[0]) == ENGINES
@@ -208,8 +214,8 @@ def test_crop_facts_load_votes_to_r2_and_the_forms_by_integer_crop_id(layout, mo
     assert name.startswith(f"{c1}-")
     count, clusters, assigned, index = db.execute("SELECT count, cluster_count, assigned, list FROM form_families").fetchone()
     assert (count, clusters, assigned) == (2, 1, 2) and index.startswith("U+304B-")
-    assert sorted(db.execute("SELECT crop, cluster, form, decision FROM form_glyphs").fetchall()) == sorted([
-        (a1, c1, "𛀙", "g1"), (known["ex:a2"], None, "か", "g1")])
+    assert sorted(db.execute("SELECT crop, cluster, form, decision, carried FROM form_glyphs").fetchall()) == sorted([
+        (a1, c1, "𛀙", "g1", None), (known["ex:a2"], None, "か", "g1", None)])
     members = [[known["codh:g1"], 0, 0.9, "ab" * 32, "0101010", None, None], [a1, 1, 0.9, "ab" * 32, "0101010", "#cbc0b0", [83, 133]]]
     assert body(root / "out" / "forms" / f"{name}.json.gz") == {"family": "U+304B", "key": "U+304B:c1", "members": members}
     assert body(root / "out" / "forms" / "families" / f"{index}.json.gz") == {"family": "U+304B", "clusters": {str(c1): {
@@ -235,7 +241,7 @@ def test_a_rerun_after_a_fresh_copy_sends_the_difference(layout, monkeypatch):  
     glyph_decided(root, remote)
     known = ids(root)
     sources(root)
-    decisions(root, remote, (1, "d1", "2026-01-01", "U+304B:c1"), (2, "d2", "2026-01-02", "U+304B:c1"))
+    decisions(root, remote, (1, "d1", "2026-01-01", "U+304B:c1"), (2, "d2", "2026-01-02", "U+304B:c1", "か", ["ex:a2"]))
     sources(root, decision="d2")
     facts(root, remote, monkeypatch, "--send")
     db = remote.dbs["glyph-atlas-v3"]
@@ -243,13 +249,15 @@ def test_a_rerun_after_a_fresh_copy_sends_the_difference(layout, monkeypatch):  
     family = db.execute("SELECT list FROM form_families").fetchone()[0]
     uploads = len(remote.uploaded)
     # The fresh copy has another cluster decision, a1 follows its cluster again, codh:g1 has left, and a2,
-    # outside the clustering, no longer has a decision of its own: it keeps no row.
-    sources(root, decided="𛀙", decision="d2", units=[form_unit("ex:a1", "U+304B:c1", 1, cluster_form="𛀙"),
+    # outside the clustering, no longer has a decision of its own: it keeps the form d2 listed it with.
+    decisions(root, remote, (3, "d3", "2026-01-03", "U+304B:c1", "𛀙", ["ex:a1"]))
+    sources(root, decided="𛀙", decision="d3", units=[form_unit("ex:a1", "U+304B:c1", 1, cluster_form="𛀙"),
                                                       form_unit("ex:a2", "U+304B:old", 0, clustered=0, cluster_form="か", image=None)])
     facts(root, remote, monkeypatch, "--send")
     assert db.execute("SELECT id, form FROM form_clusters").fetchall() == [(c1, "𛀙")]
-    assert db.execute("SELECT count(*) FROM form_glyphs").fetchone() == (0,)
-    assert "1 glyphs outside the clustering with no decision of their own, 1 of them with a form" in (
+    assert db.execute("SELECT crop, cluster, form, decision, carried FROM form_glyphs").fetchall() == [
+        (known["ex:a2"], None, "か", "d2", "d2")]
+    assert "0 clustered glyphs and 1 outside the clustering carry a cluster decision" in (
         root / "out" / "crop-facts-report.txt").read_text()
     assert db.execute("SELECT count, assigned, list <> ? FROM form_families", (family,)).fetchone() == (1, 1, 1)
     assert dict(db.execute("SELECT id, cluster FROM crops WHERE cluster IS NOT NULL")) == {known["ex:a1"]: c1}
@@ -259,6 +267,46 @@ def test_a_rerun_after_a_fresh_copy_sends_the_difference(layout, monkeypatch):  
         [f"{after}.json.gz", f"{db.execute('SELECT list FROM form_families').fetchone()[0]}.json.gz", "manifest.json.gz"])
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
     assert local.execute("SELECT id, form FROM form_clusters").fetchall() == [(c1, "𛀙")]
+
+
+def test_a_glyph_keeps_the_cluster_form_a_decision_of_an_earlier_clustering_gave_it(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    known = ids(root)
+    db, local = remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")
+    # A layout loaded before migration 0014.
+    for d in (db, local):
+        d.execute("ALTER TABLE form_glyphs DROP COLUMN carried")
+        d.commit()
+    glyph_decided(root, remote, crops=("ex:a1",))
+    # d0 named a1, b1 and a2 𛀙 on a cluster of an earlier clustering; d1 decided c1 since, listing g1.
+    decisions(root, remote, (1, "d0", "2026-01-01", "U+304B:old", "𛀙", ["ex:a1", "ex:b1", "ex:a2"]),
+              (2, "d1", "2026-01-02", "U+304B:c1", "か", ["codh:g1"]))
+    units = [form_unit("codh:g1", "U+304B:c1", 0, cluster_form="か"), form_unit("ex:a1", "U+304B:c2", 0, cluster_form="𛀙", own="か"),
+             form_unit("ex:b1", "U+304B:c2", 1, cluster_form="𛀙"),
+             form_unit("ex:a2", "U+304B:old", 0, clustered=0, cluster_form="𛀙", image=None)]
+    sources(root, units=units)
+    facts(root, remote, monkeypatch)
+    report = (root / "out" / "crop-facts-report.txt").read_text()
+    assert "2 clustered glyphs and 1 outside the clustering carry a cluster decision of an earlier clustering, 1 of them" in report
+    facts(root, remote, monkeypatch, "--send")
+    assert db.execute("SELECT 1 FROM imports WHERE stamp='migration:0014'").fetchone()
+    c2 = sqlite3.connect(root / "out" / "mirror.sqlite").execute(
+        "SELECT code FROM codes WHERE field='form_cluster' AND key='U+304B:c2'").fetchone()[0]
+    # Each row is what the glyph ends with; `carried` names the earlier decision, which a1's own decision overrides.
+    assert sorted(db.execute("SELECT crop, cluster, form, decision, carried FROM form_glyphs").fetchall()) == sorted([
+        (known["ex:a1"], c2, "か", "g1", "d0"), (known["ex:b1"], c2, "𛀙", "d0", "d0"), (known["ex:a2"], None, "𛀙", "d0", "d0")])
+    # Every clustered glyph has a form, as the copy counts them.
+    assert db.execute("SELECT count, assigned FROM form_families").fetchone() == (3, 3)
+    assert "0 glyphs whose form, issue, character or family differs" in (root / "out" / "crop-facts-report.txt").read_text()
+    # A rerun sends nothing.
+    stamps, uploads = db.execute("SELECT count(*) FROM imports").fetchone(), len(remote.uploaded)
+    facts(root, remote, monkeypatch, "--send")
+    assert db.execute("SELECT count(*) FROM imports").fetchone() == stamps and len(remote.uploaded) == uploads
+    # A cluster form no loaded decision gives stops the load.
+    units[2] = form_unit("ex:b1", "U+304B:c2", 1, cluster_form="𛀁")
+    sources(root, units=units)
+    with pytest.raises(SystemExit, match=r"1 glyphs have a cluster form .*ex:b1"):
+        facts(root, remote, monkeypatch)
 
 
 def test_a_list_no_row_or_decision_names_is_deleted_after_the_cache_time(layout, monkeypatch):  # noqa: F811

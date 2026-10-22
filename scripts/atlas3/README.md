@@ -214,10 +214,10 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    crop's current cut. Each forms cluster becomes an R2 list named by its content,
    `v3/forms/<n>-<digest>.json.gz` (glyphs by rank with tile, tone and size), each family an index
    object under `v3/forms/families/`, clusters numbered by the mirror's `codes`; D1 takes the tables of
-   migration 0006, which it applies: families, clusters with their decisions (each must be its
-   cluster's latest in the loaded `form_decisions`), the glyphs with their own decision (each its
-   latest glyph decision there), and
-   `crops.cluster`. Text ids resolve through the mirror and never through a redirect; rows naming a
+   migrations 0006 and 0014, which it applies: families, clusters with their decisions (each must be
+   its cluster's latest in the loaded `form_decisions`), the glyphs with their own decision (each its
+   latest glyph decision there) or with a cluster form from a decision of an earlier clustering (each
+   the latest cluster decision that listed the glyph, named in `carried`), and `crops.cluster`. Text ids resolve through the mirror and never through a redirect; rows naming a
    crop the mirror lacks or a retired crop, and readings of another image, are dropped and counted in
    `out/crop-facts-report.txt`, and the counts are worked out again from what is kept. D1 takes the
    difference from the local copy, so a rerun after a fresh copy sends only what changed, and readings
