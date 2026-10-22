@@ -485,6 +485,8 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   timing.step('page');
   const ids = dealt.ids;
   let items = wantsRows ? await listed(env, ids, new Set(own.map(row => row.id)), timing) : [];
+  // A page that came back short of a crop it dealt (a bundle not yet stored) is answered but not kept.
+  const whole = items.length === ids.length;
   timing.step('items');
   // A corpus glyph whose image this site may not serve is not dealt; the cursor passes it all the same.
   items = items.filter(item => item.origin !== 'corpus' || item.proxyable);
@@ -498,7 +500,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     counts: facets.counts, purpose, production, review_limit: ROUND_MAX, review_epoch: await siteValue(env, 'review_epoch') || 0,
     query: q.get('q'), ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members: members!.texts } } : {}),
     categories: facets.categories, documents: facets.documents, reported_count: reportedCount, withheld_count: withheldCount, items };
-  if (listingKey) ctx.waitUntil(caches.default.put(listingKey, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  if (listingKey && whole) ctx.waitUntil(caches.default.put(listingKey, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
 
