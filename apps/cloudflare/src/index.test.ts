@@ -118,6 +118,8 @@ describe('a writer reads the catalogue as it stands', () => {
     expect(markWriter(Response.json({}), 60).headers.get('set-cookie')).toBe('atlas-wrote=1; Max-Age=60; Path=/; HttpOnly; Secure; SameSite=Lax')
     expect(markWriter(Response.json({}, { status: 409 }), 60).headers.get('set-cookie')).toBe(null)
     expect(markWriter(Response.json({}), 0).headers.get('set-cookie')).toBe(null)
+    // A kept listing may stand a minute behind the stamps an isolate holds, so the mark lasts both.
+    expect(markWriter(Response.json({}), 60, 60).headers.get('set-cookie')).toBe('atlas-wrote=1; Max-Age=120; Path=/; HttpOnly; Secure; SameSite=Lax')
   })
   it('keeps the cookies a response already sets', () => {
     const response = new Response('{}', { headers: [['set-cookie', 'session=a; Path=/']] })

@@ -191,7 +191,7 @@ const FACETS_TTL = 3600;
 // review once the minute ends, as an isolate's lag already lets them. The key names the publication's
 // pointer as well as its stamps: a publication moves its stamps before its answers are up. A writer,
 // whose requests come with the lag at 0, reads afresh and keeps nothing.
-const KEPT_SECONDS = 60;
+export const KEPT_SECONDS = 60;
 export function keptFor(env: Env, stamps: CatalogueStamps | null, pub: string, now = Date.now()): string | null {
   if (!(Number(env.CATALOGUE_LAG) > 0)) return null;
   return `${pub}:${publicationKey(stamps)}:${Math.floor(now / (KEPT_SECONDS * 1000))}`;

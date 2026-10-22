@@ -210,14 +210,16 @@ const routes = {
   },
 };
 
-// A writer reads the catalogue as it now stands: a write that succeeds marks the browser for
-// `CATALOGUE_LAG` seconds, and a marked request reads the stamps afresh, which the isolate then keeps.
+// A writer reads the catalogue as it now stands: a write that succeeds marks the browser for as long as
+// another visitor's answers may stand behind it, `CATALOGUE_LAG` seconds of stamps an isolate holds and
+// the minute a kept listing stands for (`browse.KEPT_SECONDS`), and a marked request reads the stamps
+// afresh, which the isolate then keeps.
 const WROTE = 'atlas-wrote';
 export const wroteLately = (cookie: string | null) => (cookie ?? '').split(';').some(part => part.trim() === `${WROTE}=1`);
-export function markWriter(response: Response, lag: number): Response {
+export function markWriter(response: Response, lag: number, kept = 0): Response {
   if (!(lag > 0) || !response.ok) return response;
   const marked = new Response(response.body, response);
-  marked.headers.append('set-cookie', `${WROTE}=1; Max-Age=${lag}; Path=/; HttpOnly; Secure; SameSite=Lax`);
+  marked.headers.append('set-cookie', `${WROTE}=1; Max-Age=${lag + kept}; Path=/; HttpOnly; Secure; SameSite=Lax`);
   return marked;
 }
 export default {
@@ -227,7 +229,7 @@ export default {
     const read=request.method==='GET'||request.method==='HEAD';
     const scoped=wroteLately(request.headers.get('cookie'))?{...env,CATALOGUE_LAG:'0' as string} as Env:env;
     const outcome=await retried(()=>routes.fetch(request,scoped,ctx),read?READ_BUDGET:0);
-    if('value' in outcome)return read?outcome.value:markWriter(outcome.value,Number(env.CATALOGUE_LAG));
+    if('value' in outcome)return read?outcome.value:markWriter(outcome.value,Number(env.CATALOGUE_LAG),browse.KEPT_SECONDS);
     const path=new URL(request.url).pathname,open=opened(path)?OPEN:{};
     const busy=transient(outcome.error);
     console.error(JSON.stringify({event:'request_failed',path,method:request.method,busy,attempts:outcome.attempts,...described(outcome.error)}));
