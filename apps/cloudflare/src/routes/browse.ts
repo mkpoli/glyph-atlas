@@ -382,6 +382,14 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
 
   const stamps = await catalogueStamps(env), version = catalogueKey(stamps);
   timing.step('stamps');
+  // A browse listing is the same for anyone who asks with the same filters, seed and cursor while the
+  // catalogue stands, so the edge keeps it: the shuffles a page deals are few (`shuffleSeed`), and a
+  // listing read again skips its crops' bundles and records. A round is its reviewer's, and the Flagged
+  // and skipped views follow each review as it is saved, so those are not kept.
+  const listingKey = review || flaggedView || stateParam === 'skipped' ? null : new Request(`${url.origin}/atlas/listing?${new URLSearchParams([...q].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))}&v=${
+    encodeURIComponent(version)}`);
+  const kept = listingKey ? await caches.default.match(listingKey) : undefined;
+  if (kept) { timing.step('listing-hit'); return await kept.json(); }
   const [{ cells, chars }, held] = await Promise.all([collectedCounts(env, version), codeNames(env)]);
   const keys = await productionKeys(env, cells.map(c => c.production));
   // A publication may add a code the isolate does not hold yet: the table is read again, once.
@@ -477,6 +485,8 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   timing.step('page');
   const ids = dealt.ids;
   let items = wantsRows ? await listed(env, ids, new Set(own.map(row => row.id)), timing) : [];
+  // A page that came back short of a crop it dealt (a bundle not yet stored) is answered but not kept.
+  const whole = items.length === ids.length;
   timing.step('items');
   // A corpus glyph whose image this site may not serve is not dealt; the cursor passes it all the same.
   items = items.filter(item => item.origin !== 'corpus' || item.proxyable);
@@ -486,10 +496,12 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     ? listedCount({ chars: named, book, category: null, state: null, withheld: true, productions, named: false })
       - listedCount({ chars: named, book, category: null, state: null, withheld: false, productions, named: false })
     : null;
-  return { total, next: dealt.next, has_more: dealt.next !== null, available: Object.values(facets.counts).reduce((a, b) => a + b, 0),
+  const body = { total, next: dealt.next, has_more: dealt.next !== null, available: Object.values(facets.counts).reduce((a, b) => a + b, 0),
     counts: facets.counts, purpose, production, review_limit: ROUND_MAX, review_epoch: await siteValue(env, 'review_epoch') || 0,
     query: q.get('q'), ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members: members!.texts } } : {}),
     categories: facets.categories, documents: facets.documents, reported_count: reportedCount, withheld_count: withheldCount, items };
+  if (listingKey && whole) ctx.waitUntil(caches.default.put(listingKey, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
+  return body;
 }
 
 // Counts by character and state, and for browsing by book as well, with each book's key and title. A

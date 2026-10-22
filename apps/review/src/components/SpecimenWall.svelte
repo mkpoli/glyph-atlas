@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { catalogue, randomSeed } from '../lib/client.js'
+  import { catalogue, shuffleSeed } from '../lib/client.js'
   import Glyph from './Glyph.svelte'
   // Crops from the collection, a few at a time swapping for others, as a wall behind the sign-in form.
   let { count = 24, columns = 6 } = $props()
@@ -8,7 +8,7 @@
   const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches
   onMount(() => {
     let timer, closed = false
-    catalogue({ limit: count * 2, seed: randomSeed() }).then(result => {
+    catalogue({ limit: count * 2, seed: shuffleSeed() }).then(result => {
       if (closed) return
       const shown = result.items.filter(item => item.image && (item.origin !== 'corpus' || item.proxyable))
       tiles = shown.slice(0, count).map((item, slot) => ({ slot, item, turn: 0 }))

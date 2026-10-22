@@ -46,6 +46,24 @@ describe('the listing\'s timing', () => {
   });
 });
 
+describe('a kept listing', () => {
+  it('answers a browse listing asked for again from the edge, and a round afresh', async () => {
+    const { env } = await setup();
+    const steps = async (path: string) => {
+      const timing = new Timing(), body = await catalogue(env, ctx, new URL(`https://glyphatlas.org${path}`), null, timing);
+      return { body, steps: timing.header().split(', ').map(step => step.split(';')[0]) };
+    };
+    const first = await steps('/atlas?seed=5&limit=2'), again = await steps('/atlas?limit=2&seed=5');
+    expect(first.steps).not.toContain('listing-hit');
+    expect(again.steps).toEqual(['stamps', 'listing-hit', 'total']);
+    expect(again.body).toEqual(first.body);
+    expect((await steps('/atlas?seed=6&limit=2')).steps).not.toContain('listing-hit');
+    // The Flagged view, asked for twice, is read twice.
+    await steps('/atlas?seed=5&limit=2&state=flagged');
+    expect((await steps('/atlas?seed=5&limit=2&state=flagged')).steps).not.toContain('listing-hit');
+  });
+});
+
 describe('the statistics of the dates', () => {
   it('count each book once per list, by its witness year and its composed date', async () => {
     const { env } = await setup();
