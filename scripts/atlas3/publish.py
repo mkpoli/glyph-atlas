@@ -60,6 +60,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import unicodedata
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -202,6 +203,99 @@ def migrate_reviews(atlas, dry):
             print(f"migration {number} applied to glyph-atlas-v3", flush=True)
         if not atlas.execute(made).fetchone():
             atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+
+
+RUNS_DATABASE = "glyph-atlas-v3-runs"
+# The grapheme claims that read a crop as a grapheme, as the Worker files them (`filedClaimsQuery`): on
+# the crop's effective cut, by one range of `current_claim_object`. The publisher reads every one.
+FILING = ("asserted", "accepted", "adjudicated")
+CLAIMED = ("SELECT c.crop, c.object FROM current_claims c CROSS JOIN crops k ON k.id = c.crop LEFT JOIN reviews r ON r.crop = k.id "
+           "WHERE c.predicate = 'has_grapheme' AND c.object IS NOT NULL AND c.scope = '' AND c.slot = '' "
+           f"AND c.status IN ({','.join(map(repr, FILING))}) AND c.cut = k.cut + (r.x IS NOT NULL)")
+
+
+def claimed_heads(atlas, recut):
+    """{crop: head} of the crops a grapheme claim reads as a grapheme: the head of the family that
+    grapheme is filed under in the local copy, else the grapheme itself. A crop this publish cuts again
+    leaves its claims on the old cut, as the Worker reads them once the new cut lands."""
+    heads = {}
+    for r in query("glyph-atlas-v3", CLAIMED):
+        if r["crop"] in recut:
+            continue
+        text = char_text(r["object"])
+        row = atlas.execute("SELECT coalesce(h.text, g.text) FROM graphemes g LEFT JOIN graphemes h ON h.id = g.head WHERE g.text = ?",
+                            (text,)).fetchone()
+        heads[r["crop"]] = row[0] if row else text
+    return heads
+
+
+def joins(ch):
+    """Whether a code point belongs to the grapheme before it: a mark, a variation selector, a joiner,
+    or a conjoining vowel or final consonant jamo."""
+    point = ord(ch)
+    return (unicodedata.category(ch).startswith("M") or 0xFE00 <= point <= 0xFE0F or 0xE0100 <= point <= 0xE01EF or ch == "\u200d"
+            or 0x1160 <= point <= 0x11FF or 0xD7B0 <= point <= 0xD7FB)
+
+
+def graphemes_of(text):
+    """A run's graphemes, one crop each, as the Worker segments them for the scripts the site holds."""
+    out = []
+    for ch in text:
+        if out and (joins(ch) or out[-1].endswith("\u200d")):
+            out[-1] += ch
+        else:
+            out.append(ch)
+    return out
+
+
+def refolded(graphemes, members, heads):
+    """A run's graphemes with each claimed crop folded to the head its claim reads, as the Worker
+    files it (`refileRuns`); unchanged where no crop of it is claimed."""
+    parts = graphemes_of(graphemes)
+    if not any(c in heads for c in members) or len(parts) != len(members):
+        return graphemes
+    return "".join(heads.get(c, part) for c, part in zip(members, parts, strict=True))
+
+
+RUN_COLS = (*RUN_KEY, "second", "third", "book")
+
+
+def recount(size, graphemes):
+    """A key's count from its rows, right in whichever database runs it whatever moved its rows."""
+    count = (f"INSERT INTO run_stats(size,graphemes,n,down) SELECT {size},{lit(graphemes)},count(*),count(*) FROM runs "
+             f"WHERE size={size} AND graphemes={lit(graphemes)} ON CONFLICT(size,graphemes) DO UPDATE SET n=excluded.n,down=excluded.down;")
+    return [count, f"DELETE FROM run_stats WHERE size={size} AND graphemes={lit(graphemes)} AND n=0;"]
+
+
+def take_moves(runs, scope):
+    """The statements that bring into the local copy the runs a grapheme claim moved in D1 since
+    (`run_moves`), as D1 holds them, with how their crops are written; and the keys they leave and
+    reach, to be counted again. They apply to the local copy at once, for this publish to compare
+    against, and go in its runs part, so the local copy keeps them once D1 has taken the part. The
+    books and shards of a moved run are written again. Reads one row a move, and the crops of a move the
+    local copy lacks."""
+    moves = {(r["first"], r["size"]) for r in query(RUNS_DATABASE, "SELECT first, size FROM run_moves")}
+    firsts, statements, keys = sorted({first for first, _ in moves}), [], set()
+    for i in range(0, len(firsts), 200):
+        marks = ",".join(map(str, firsts[i:i + 200]))
+        live = [r for r in query(RUNS_DATABASE, f"SELECT * FROM runs WHERE first IN ({marks})") if (r["first"], r["size"]) in moves]
+        held = [dict(r) for r in runs.execute(f"SELECT * FROM runs WHERE first IN ({marks})") if (r["first"], r["size"]) in moves]
+        if {tuple(r[c] for c in RUN_COLS) for r in live} == {tuple(r[c] for c in RUN_COLS) for r in held}:
+            continue
+        crops = sorted({r[c] for r in live + held for c in ("first", "second", "third") if r[c] is not None})
+        written = query(RUNS_DATABASE, f"SELECT crop, char FROM run_written WHERE crop IN ({','.join(map(str, crops))})")
+        statements += [f"DELETE FROM runs WHERE first={r['first']} AND size={r['size']};" for r in held]
+        statements += [insert("runs", RUN_COLS, [r[c] for c in RUN_COLS]) for r in live]
+        statements += [f"DELETE FROM run_written WHERE crop={c};" for c in crops]
+        statements += [insert("run_written", ("crop", "char"), (r["crop"], r["char"])) for r in written]
+        for r in live + held:
+            keys.add((r["size"], r["graphemes"]))
+            if r["graphemes"]:
+                scope["books"].add(r["book"])
+                scope["shards"].add((r["size"], ord(r["graphemes"][0])))
+    for statement in statements:
+        runs.execute(statement)
+    return statements, keys
 
 
 def applied(database, stamp):
@@ -1254,8 +1348,16 @@ def main():
             # Already retired: a replacement named since, or one the entry holds as a text id, is set.
             m.touched_pages[cid // PAGE][cid % PAGE] = ({"id": text_id, "retired": True, "replaced_by": target}, True)
 
-    # Runs: those starting at this catalogue's crops follow it; those touching a retired crop go.
-    runs_note, scope, texts = "", {"books": set(), "shards": set()}, {}
+    # Runs: those starting at this catalogue's crops follow it; those touching a retired crop go. A run
+    # with a crop a grapheme claim reads as another grapheme is filed under it, as the Worker files it
+    # when the claim is made, and the runs the Worker moved are taken from D1 first. A key such a run
+    # leaves or reaches is counted again from its rows at the end, so a claim saved while this publish
+    # is under way cannot leave its count off.
+    runs_note, scope, texts, heads, recounted = "", {"books": set(), "shards": set()}, {}, {}, set()
+    if crop_ids or retired:
+        moved, recounted = take_moves(m.runs, scope)
+        m.runs_sql += moved
+        heads = claimed_heads(m.atlas, {m.known(t) for t in recut})
     if (crop_ids and "unit_ngrams" in tables) or retired:
         want, missing = {}, 0
         if "unit_ngrams" in tables:
@@ -1272,7 +1374,7 @@ def main():
                     continue
                 if retired & set(members):
                     continue
-                key = (r["size"], r["graphemes"] or "", r["hand_order"], shuffle(first), first)
+                key = (r["size"], refolded(r["graphemes"] or "", members, heads), r["hand_order"], shuffle(first), first)
                 want[key] = (members[1], members[2] if len(members) > 2 else None, m.book(r["document"]))
                 if r["text"] is not None:
                     texts[(first, r["size"])] = r["text"]
@@ -1304,12 +1406,17 @@ def main():
         for key, value in have.items():
             if key not in want:
                 texts.setdefault((key[4], key[0]), None)
-                m.runs_sql.append("DELETE FROM runs WHERE " + " AND ".join(f"{c}={lit(v)}" for c, v in zip(RUN_KEY, key)) + ";")
+                # By its first crop and size, which name one run, whatever key a claim filed it under since.
+                m.runs_sql.append(f"DELETE FROM runs WHERE first={key[4]} AND size={key[0]};")
                 delta[key[:2]] -= 1
                 touch(key, value)
         for key, value in want.items():
             old = have.get(key)
             if old is None:
+                if heads.keys() & {key[4], *value[:2]}:
+                    # A run of a claimed crop, which the Worker may file again before this part lands.
+                    m.runs_sql.append(f"DELETE FROM runs WHERE first={key[4]} AND size={key[0]};")
+                    recounted |= {key[:2], *(k[:2] for k in have if k[4] == key[4] and k[0] == key[0])}
                 m.runs_sql.append(insert("runs", (*RUN_KEY, "second", "third", "book"), (*key, *value)))
                 delta[key[:2]] += 1
             elif old != value:
@@ -1332,6 +1439,8 @@ def main():
                 m.runs_sql.append(f"INSERT INTO run_stats(size,graphemes,n,down) VALUES({size},{lit(graphemes)},{dn},{dn}) "
                                   "ON CONFLICT(size,graphemes) DO UPDATE SET n=n+excluded.n, down=down+excluded.down;")
                 m.runs_sql.append(f"DELETE FROM run_stats WHERE size={size} AND graphemes={lit(graphemes)} AND n<=0;")
+    m.runs_sql += [statement for size, graphemes in sorted(recounted) for statement in recount(size, graphemes)]
+    if m.runs_sql:
         runs_note = f", {len(m.runs_sql)} run statements"
     # How this catalogue's crops are written: a crop written apart from its family head has its row in
     # run_written, and the runs it is in are counted again in the answers. A crop with no character (a
@@ -1345,6 +1454,13 @@ def main():
             chunk = published[i:i + 500]
             marks = ",".join("?" * len(chunk))
             written.update(m.atlas.execute(f"{WRITTEN} AND c.id IN ({marks})", chunk).fetchall())
+            # A claimed crop is written apart from the head its claim reads, whatever its own family.
+            for c, char in m.atlas.execute(f"SELECT c.id, g.text FROM crops c JOIN graphemes g ON g.id = c.char WHERE c.id IN ({marks})", chunk):
+                if c in heads:
+                    if char != heads[c]:
+                        written[c] = char
+                    else:
+                        written.pop(c, None)
             named = {r[0] for r in m.atlas.execute(f"SELECT id FROM crops WHERE char IS NOT NULL AND id IN ({marks})", chunk)}
             held.update((c, w) for c, w in m.runs.execute(f"SELECT crop, char FROM run_written WHERE crop IN ({marks})", chunk)
                         if c in named or c in retired)

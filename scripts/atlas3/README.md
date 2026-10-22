@@ -100,10 +100,15 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
 - A crop's runs are replaced when the catalogue lists runs for it; one with no rows in `unit_ngrams`
   keeps its runs; a run whose crops change in place is updated, not replaced. Every run is written down
   the page: a catalogue run written across it stops the publish, since the layout has no column for its
-  direction yet. The publish keeps `run_written` for the catalogue's crops and, once the runs have
-  landed, writes again the R2 answers of the books and forms shards it changed and Explore's grids
-  (`run_answers.py`), uploading those whose bytes R2 lacks. It refuses a local copy without
-  `run_written` (`runs.py`).
+  direction yet. A run with a crop a `has_grapheme` claim reads as another grapheme is filed under
+  that grapheme's head, as the Worker files it when the claim is made; a crop the publish cuts again
+  leaves its claims on the old cut. Before it compares the runs, the publish takes the runs the Worker
+  moved (`run_moves`) and their crops' `run_written` rows from D1 into its own runs part, deletes a run
+  by its first crop and size, and counts every key a claimed or moved run leaves or reaches again from
+  its rows, so the two never undo each other or count a run twice. The publish keeps `run_written` for the
+  catalogue's crops and, once the runs have landed, writes again the R2 answers of the books and forms
+  shards it and the moves changed and Explore's grids (`run_answers.py`), uploading those whose bytes
+  R2 lacks. It refuses a local copy without `run_written` (`runs.py`).
 - A crop joins the family gallery of its character's family (`graphemes.head`). Every crop also keeps
   the family its source names (`crops.family`, migration 0012), and a crop with no character is listed
   with that family: a corpus glyph transcribed も, which may be も or one of its hentaigana, is listed

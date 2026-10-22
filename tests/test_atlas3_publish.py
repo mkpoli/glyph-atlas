@@ -63,12 +63,14 @@ class FakeD1:
 
     def query(self, database, sql):
         db = self.dbs[database]
-        db.row_factory = sqlite3.Row
         if ";" in sql.strip().rstrip(";"):
             # D1 runs a command of several statements in one transaction and answers with the last.
             db.executescript(f"BEGIN; {sql}; COMMIT;")
             return []
-        return [dict(r) for r in db.execute(sql)]
+        # Rows as dicts for this read alone, so a test reading the database itself gets tuples.
+        cursor = db.cursor()
+        cursor.row_factory = sqlite3.Row
+        return [dict(r) for r in cursor.execute(sql)]
 
     def upload(self, files, prefix="v3/pages/"):
         self.uploaded += [f.name for f in files]
@@ -958,3 +960,100 @@ def test_a_float_literal_reads_back_as_the_same_double(layout):
         assert db.execute(f"SELECT {publish.lit(v)}").fetchone()[0] == v
         assert db.execute(f"SELECT {pull.sql_lit(v)}").fetchone()[0] == v
     assert publish.lit(3) == "3" and pull.sql_lit(3) == "3"
+
+
+def test_a_run_with_a_claimed_crop_is_published_under_the_grapheme_the_claim_reads(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, a2 = (ids(root)[t] for t in ("ex:a1", "ex:a2"))
+    # い read as う; the Worker filed the run あい as あう when the claim was made.
+    atlas, runs = remote.dbs["glyph-atlas-v3"], remote.dbs["glyph-atlas-v3-runs"]
+    atlas.execute("INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) "
+                  "VALUES('ex:a2','has_grapheme','','',?,0,'asserted','U+3046','[]','[]','[]','r','2026-10-23')", (a2,))
+    atlas.commit()
+    runs.executescript(f"""UPDATE runs SET graphemes='あう' WHERE first={a1} AND size=2; DELETE FROM run_stats WHERE graphemes='あい';
+      INSERT INTO run_stats VALUES(2,'あう',1,1); INSERT INTO run_written VALUES({a2},'い'); INSERT INTO run_moves VALUES({a1},2);""")
+    units = [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
+             unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", state="checked", revision=3)]
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", units, [("ex:a1", 2, "ex:a2", None, "あい", "book:a", 1, 1, 0, "あい")]))
+    local = sqlite3.connect(root / "out" / "atlas-runs.sqlite")
+    for db in (runs, local):
+        assert db.execute("SELECT graphemes FROM runs").fetchall() == [("あう",)]
+        assert db.execute("SELECT graphemes, n FROM run_stats").fetchall() == [("あう", 1)]
+        assert db.execute("SELECT crop, char FROM run_written").fetchall() == [(a2, "い")]
+
+
+def test_a_claim_made_before_a_publish_files_its_runs_there(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a2 = ids(root)["ex:a2"]
+    atlas = remote.dbs["glyph-atlas-v3"]
+    atlas.execute("INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) "
+                  "VALUES('ex:a2','has_grapheme','','',?,0,'asserted','U+3046','[]','[]','[]','r','2026-10-23')", (a2,))
+    atlas.commit()
+    units = [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
+             unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", state="checked", revision=3)]
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", units, [("ex:a1", 2, "ex:a2", None, "あい", "book:a", 1, 1, 0, "あい")]))
+    assert [r["graphemes"] for r in remote.query("glyph-atlas-v3-runs", "SELECT graphemes FROM runs")] == ["あう"]
+    assert remote.query("glyph-atlas-v3-runs", "SELECT graphemes, n FROM run_stats") == [{"graphemes": "あう", "n": 1}]
+    assert remote.query("glyph-atlas-v3-runs", "SELECT crop, char FROM run_written") == [{"crop": a2, "char": "い"}]
+
+
+def claim_and_move(remote, a1, a2):
+    """い read as う, and the run あい filed as あう, as the Worker does when the claim is saved."""
+    atlas, runs = remote.dbs["glyph-atlas-v3"], remote.dbs["glyph-atlas-v3-runs"]
+    atlas.execute("INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) "
+                  "VALUES('ex:a2','has_grapheme','','',?,0,'asserted','U+3046','[]','[]','[]','r','2026-10-23')", (a2,))
+    atlas.commit()
+    runs.executescript(f"""UPDATE runs SET graphemes='あう' WHERE first={a1} AND size=2; DELETE FROM run_stats WHERE graphemes='あい';
+      INSERT INTO run_stats VALUES(2,'あう',1,1); INSERT INTO run_written VALUES({a2},'い'); INSERT INTO run_moves VALUES({a1},2);""")
+
+
+def claimed_catalogue(tmp_path):
+    units = [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
+             unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", state="checked", revision=3)]
+    return catalogue(tmp_path / "c.sqlite", units, [("ex:a1", 2, "ex:a2", None, "あい", "book:a", 1, 1, 0, "あい")])
+
+
+def held_runs(db):
+    return (db.execute("SELECT graphemes FROM runs").fetchall(), db.execute("SELECT graphemes, n FROM run_stats").fetchall())
+
+
+def test_a_dry_run_leaves_the_runs_a_claim_moved_for_the_publish_that_follows(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    claim_and_move(remote, *(ids(root)[t] for t in ("ex:a1", "ex:a2")))
+    path = claimed_catalogue(tmp_path)
+    run(publish, monkeypatch, path, "--dry-run")
+    local = sqlite3.connect(root / "out" / "atlas-runs.sqlite")
+    assert held_runs(local) == ([("あい",)], [("あい", 1)])
+    run(publish, monkeypatch, path)
+    assert held_runs(sqlite3.connect(root / "out" / "atlas-runs.sqlite")) == ([("あう",)], [("あう", 1)])
+
+
+def test_a_claim_saved_while_a_publish_reads_the_claims_is_published_once(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, a2 = (ids(root)[t] for t in ("ex:a1", "ex:a2"))
+    read = publish.claimed_heads
+
+    def saved_meanwhile(atlas, recut):
+        claim_and_move(remote, a1, a2)
+        return read(atlas, recut)
+    monkeypatch.setattr(publish, "claimed_heads", saved_meanwhile)
+    run(publish, monkeypatch, claimed_catalogue(tmp_path))
+    for db in (remote.dbs["glyph-atlas-v3-runs"], sqlite3.connect(root / "out" / "atlas-runs.sqlite")):
+        assert held_runs(db) == ([("あう",)], [("あう", 1)])
+
+
+def test_a_crop_cut_again_leaves_its_claims_on_the_old_cut(layout):
+    root, publish, remote = layout
+    a1, a2 = (ids(root)[t] for t in ("ex:a1", "ex:a2"))
+    claim_and_move(remote, a1, a2)
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert publish.claimed_heads(atlas, set()) == {a2: "う"}
+    assert publish.claimed_heads(atlas, {a2}) == {}
+
+
+def test_a_run_is_split_into_graphemes_as_the_worker_splits_it(layout):
+    _root, publish, _remote = layout
+    assert publish.graphemes_of("가나") == ["가", "나"]
+    assert publish.graphemes_of("가나") == ["가", "나"]
+    assert publish.graphemes_of("葛\U000E0100城") == ["葛\U000E0100", "城"]
+    assert publish.graphemes_of("がな") == ["が", "な"]
