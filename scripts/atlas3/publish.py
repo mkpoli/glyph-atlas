@@ -34,8 +34,9 @@ images to the image key map (`media_map.py`).
   its review overlay and tally. Each glyph is judged on D1's row: one anything was written about
   already (a `corpus_rows` row), a collected crop, one whose character is no longer the one the
   finding was made against, or one this site may not show is left as it is. In D1 each flag waits on
-  the crop's revision, character, kind and quiz and on no `corpus_rows` row; the outcome is read back
-  and reported, a glyph D1 refused counted as refused, not flagged.
+  the crop's revision, character, kind and quiz and on no `corpus_rows` row, and a submission keeps
+  only the glyphs D1 flagged under it; the outcome is read back into the local copy and
+  `flags-outcome.json`, a glyph D1 refused counted as refused, not flagged.
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
   their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
@@ -482,6 +483,13 @@ def mark(run, line):
         f.write(line + "\n")
 
 
+def tally_cell(row):
+    """A crop row's tally cell as the Worker keys it (`applyStatements` in routes/review.ts), year as decade."""
+    return [row["kind"], *(-1 if row[k] is None else row[k] for k in ("char", "family")), row["book"],
+            *(-1 if row[k] is None else row[k] for k in ("production", "style")), row["state"], row["quiz"],
+            -1 if row["year"] is None else row["year"] // 10 * 10]
+
+
 def deliver(m, run):
     """Finish a publish whose ids are allocated. Every step can run again: bundles to R2, then each
     part to D1, then the same part to the local copy, in order; then the guarded rows are read back."""
@@ -506,6 +514,12 @@ def deliver(m, run):
                 sys.exit(f"{part.name} did not apply; rerun to finish {run.name}")
             local.executescript("BEGIN;\n" + part.read_text() + "COMMIT;\n")
         if name == "atlas" and "read back" not in journal(run):
+            sent = json.loads((run / "flags.json").read_text()) if (run / "flags.json").exists() else {}
+            texts = {m.known(i): i for i in sent.get("flagged", [])}
+            flagged, kept = sorted(texts), []
+            # Each flagged glyph's tally cell as the local copy counts it now, before D1's rows replace its own.
+            counted = {cid: tally_cell(row) for cid in flagged
+                       if (row := m.atlas.execute("SELECT * FROM crops WHERE id=?", (cid,)).fetchone())}
             # A guarded change D1 refused (the crop was reviewed meanwhile) leaves D1's row; take it.
             guarded, refused = json.loads((run / "guarded.json").read_text()), []
             for i in range(0, len(guarded), 200):
@@ -522,22 +536,9 @@ def deliver(m, run):
                     else:
                         m.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
             # A flagged glyph's corpus row, finding, overlay and events as D1 holds them: a flag D1 refused
-            # (a round or a review wrote about the glyph first) leaves D1's rows, and its tally cells move back.
-            sent = json.loads((run / "flags.json").read_text()) if (run / "flags.json").exists() else {}
-            texts = {m.known(i): i for i in sent.get("flagged", [])}
-            flagged, kept = sorted(texts), []
-
-            def move(cid, step, sent=sent):
-                """The glyph's tally cells as the flag moves them, `step` 1 forward and -1 back."""
-                old = sent["cells"][str(cid)]
-                for state, n in ((old[6], -step), (sent["state"], step)):
-                    m.atlas.execute("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) "
-                                    "SELECT gen,?,?,?,?,?,?,?,?,?,? FROM generation WHERE id=0 ON CONFLICT DO UPDATE SET n=n+excluded.n",
-                                    [*old[:6], state, *old[7:9], n])
+            # (a round or a review wrote about the glyph first) leaves D1's rows.
             for i in range(0, len(flagged), 200):
                 ids, chunk = flagged[i:i + 200], ",".join(map(str, flagged[i:i + 200]))
-                # Whether the local copy took each flag when it replayed the part, and whether D1 did.
-                local_mine = {c for (c,) in m.atlas.execute(f"SELECT crop FROM corpus_flags WHERE crop IN ({chunk}) AND at=?", (sent["at"],))}
                 for table in ("corpus_rows", "corpus_flags", "reviews", "events"):
                     found = query(database, f"SELECT * FROM {table} WHERE crop IN ({chunk})")
                     m.atlas.execute(f"DELETE FROM {table} WHERE crop IN ({chunk})")
@@ -546,24 +547,29 @@ def deliver(m, run):
                                         [[r.get(c) for c in cols] for r in found])
                     if table == "corpus_flags":
                         d1_mine = {r["crop"] for r in found if r["at"] == sent["at"]}
-                # The local tally follows what D1 did.
                 for cid in ids:
-                    if cid in d1_mine and cid not in local_mine:
-                        move(cid, 1)
-                    elif cid not in d1_mine:
+                    if cid in d1_mine:
+                        # Flagged: its revision moved on in D1 by the flag, which is no newer review.
+                        refused = [c for c in refused if c != cid]
+                    else:
                         kept.append(texts[cid])
-                        if cid in local_mine:
-                            move(cid, -1)
                         if cid not in refused:
                             refused.append(cid)
-            if sent:
-                # What the publish flagged, after D1 has answered: a chunk D1 refused flagged nothing.
-                sent["refused"] = kept
-                sent["flagged"] = [t for t in sent["flagged"] if t not in set(kept)]
-                (run / "flags.json").write_text(json.dumps(sent))
-                print(f"corpus flags: {len(sent['flagged'])} flagged, {len(kept)} refused by D1 (a round or review came first)",
-                      flush=True)
+                    # The local tally follows the crop's row: out of the cell it counted, into its row's now.
+                    row = m.atlas.execute("SELECT * FROM crops WHERE id=?", (cid,)).fetchone()
+                    before, now = counted.get(cid), tally_cell(row) if row else None
+                    for cell, step in ((before, -1), (now, 1)):
+                        if cell is not None and before != now:
+                            m.atlas.execute("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) "
+                                            "SELECT gen,?,?,?,?,?,?,?,?,?,? FROM generation WHERE id=0 "
+                                            "ON CONFLICT DO UPDATE SET n=n+excluded.n", [*cell, step])
             m.atlas.commit()
+            if sent:
+                # What the publish flagged once D1 has answered: a glyph D1 refused is not flagged.
+                outcome = {"flagged": [t for t in sent["flagged"] if t not in set(kept)], "refused": kept}
+                (run / "flags-outcome.json").write_text(json.dumps(outcome))
+                print(f"corpus flags: {len(outcome['flagged'])} flagged, {len(kept)} refused by D1 (a round or review came "
+                      f"first; ids in {run.name}/flags-outcome.json)", flush=True)
             (run / "refused-by-d1.json").write_text(json.dumps(refused))
             if refused:
                 print(f"{len(refused)} changes kept D1's newer review instead (ids in {run.name}/refused-by-d1.json)", flush=True)
@@ -1046,7 +1052,7 @@ def main():
     # Each is the Worker's admin flag (`flagCorpus`): its finding, its first corpus row and an event of
     # kind `flag` with the wrong-character issue under a submission of the publisher, which moves the
     # crop, its review overlay and its tally cells as `cropChanges` does.
-    flag_sql, flags, cells = [], defaultdict(list), {}
+    flag_sql, flags = [], defaultdict(list)
     if "corpus_flags" in tables:
         at, flagged = int(time.time() * 1000), m.code("state", "flagged")
         kind, issue = (m.atlas.execute("SELECT code FROM codes WHERE field=? AND key=?", key).fetchone() for key in
@@ -1054,6 +1060,13 @@ def main():
         if kind is None or issue is None:
             sys.exit("the local copy has no code for the flag event; apply migration 0010 to it first")
         entries = list(src.execute("SELECT id, character, finding, realigned, transcribed FROM corpus_flags ORDER BY rowid"))
+        # The Worker's limits on a flag request; one value past them would stop the whole D1 part.
+        if long := [r["id"] for r in entries if not r["finding"] or len(r["finding"]) > 64 or not r["character"]
+                    or any(len(r[k] or "") > 16 for k in ("character", "realigned", "transcribed"))]:
+            sys.exit(f"{len(long)} corpus_flags rows have no finding or character, or one past the Worker's limits "
+                     f"(finding 64, characters 16), e.g. {long[0]}; nothing published")
+        if dry and not applied("glyph-atlas-v3", f"build:{m.build}"):
+            sys.exit(f"glyph-atlas-v3 was not loaded from build {m.build}; the flags cannot be judged on it")
         # Each glyph is judged on D1's row, as the Worker judges it: the site moves a corpus glyph's
         # character by itself (a form decision's follow), which the local copy learns only later.
         named, d1 = sorted({cid for r in entries if (cid := m.known(r["id"])) is not None}), {}
@@ -1128,12 +1141,18 @@ def main():
                      "quiz=excluded.quiz,x=excluded.x,y=excluded.y,w=excluded.w,h=excluded.h;"),
                     f"UPDATE crops SET state={flagged},revision={rev + 1} WHERE id={cid} AND revision={rev} AND {event};",
                     tally(1, rev + 1)]
-                cells[cid] = [row["kind"], *(-1 if row[k] is None else row[k] for k in ("char", "family")), row["book"],
-                              *(-1 if row[k] is None else row[k] for k in ("production", "style")), row["state"], row["quiz"],
-                              -1 if row["year"] is None else row["year"] // 10 * 10]
                 m.atlas.execute("UPDATE crops SET state=?, revision=? WHERE id=?", (flagged, rev + 1, cid))
                 m.guarded.append(cid)
                 n += 1
+            # The submission names only the glyphs D1 flagged under it, and goes when it flagged none.
+            values = ",".join(f"({cid},{lit(g['id'])},{lit(json.dumps(g, ensure_ascii=False))})"
+                              for (cid, _, _), g in zip(chunk, glyphs, strict=True))
+            took = "EXISTS (SELECT 1 FROM events e WHERE e.crop=t.crop AND e.submission=submissions.id)"
+            group += [
+                (f"WITH t(crop, id, g) AS (VALUES {values}) UPDATE submissions SET "
+                 f"request=json_set(request,'$.input.glyphs',(SELECT json_group_array(json(g)) FROM t WHERE {took})),"
+                 f"response=json_object('flagged',(SELECT json_group_array(id) FROM t WHERE {took})) WHERE key={lit(key)};"),
+                f"DELETE FROM submissions WHERE key={lit(key)} AND NOT EXISTS (SELECT 1 FROM events e WHERE e.submission=submissions.id);"]
             flag_sql.append(group)
 
     # Replacements are numbered once every crop of the catalogue has its id. None removes the field.
@@ -1331,7 +1350,7 @@ def main():
     if fresh_media:
         (run / "media.json").write_text(json.dumps(fresh_media))
     if flags:
-        (run / "flags.json").write_text(json.dumps({**flags, "at": at, "state": flagged, "cells": cells}))
+        (run / "flags.json").write_text(json.dumps({**flags, "at": at}))
         print("corpus flags to send: " + ", ".join(f"{len(v)} {k}" for k, v in sorted(flags.items())) + f" (ids in {run.name}/flags.json)",
               flush=True)
     if unresolved:

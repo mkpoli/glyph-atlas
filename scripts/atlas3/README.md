@@ -86,8 +86,9 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   crop, a glyph with a `corpus_rows` row (anything was written about it), one whose character is not
   the finding's or one withheld from the quiz is left out. In D1 each flag waits on the crop's
   revision, character, kind and quiz and on no `corpus_rows` row, and the local copy takes D1's rows
-  back, its tally following what D1 did. The run's `flags.json` lists what became of each id, a
-  glyph D1 refused under `refused`.
+  back, its tally moved from the cell it counted each glyph in to the cell of D1's row. A submission
+  ends naming only the glyphs D1 flagged under it, and goes when it flagged none. The run's
+  `flags.json` lists each id by how it was judged, `flags-outcome.json` what D1 flagged and refused.
 - A catalogue whose `units` carry `visual` and `context`, as `export_cloudflare.py` writes them, sets
   each published crop's model votes for its cut in its page's object
   `v3/votes/<build>/<page>.json.gz` (`votes.py`), and a reading that is not ready removes them. Only

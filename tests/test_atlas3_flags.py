@@ -84,11 +84,12 @@ def test_a_flag_sends_a_corpus_glyph_to_the_flagged_view_once(glyphs, monkeypatc
     tally = {r["state"]: r["n"] for r in remote.query("glyph-atlas-v3", "SELECT state, sum(n) AS n FROM tally WHERE kind=1 GROUP BY state")}
     assert tally[flagged] == 2 and sum(tally.values()) == 0
     report = json.loads((max((root / "out" / "publish").glob("*-f")) / "flags.json").read_text())
-    for key in ("at", "state", "cells"):
-        del report[key]
+    del report["at"]
     # codh:g1 is withheld from the quiz by its review overlay; ex:a1 is a collected crop.
-    assert report == {"flagged": ["codh:g3", "codh:g2"], "unshowable": ["codh:g1"], "held": ["ex:a1"], "missing": ["codh:g9", "codh:gx"],
-                      "refused": []}
+    assert report == {"flagged": ["codh:g3", "codh:g2"], "unshowable": ["codh:g1"], "held": ["ex:a1"], "missing": ["codh:g9", "codh:gx"]}
+    outcome = json.loads((max((root / "out" / "publish").glob("*-f")) / "flags-outcome.json").read_text())
+    assert outcome == {"flagged": ["codh:g3", "codh:g2"], "refused": []}
+    assert json.loads(remote.query("glyph-atlas-v3", "SELECT response FROM submissions")[0]["response"]) == {"flagged": ["codh:g3", "codh:g2"]}
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
     assert local.execute("SELECT crop, seq FROM corpus_rows ORDER BY seq").fetchall() == [(g3, 1), (g2, 2)]
     sent = remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports")[0]["n"]
@@ -113,6 +114,7 @@ def test_a_glyph_whose_character_moved_is_left_as_it_is(glyphs, monkeypatch, tmp
 
 def test_a_glyph_a_round_named_since_keeps_the_sites_rows(glyphs, monkeypatch, tmp_path, capsys):
     root, publish, remote = glyphs
+    before = recount(sqlite3.connect(root / "out" / "atlas.sqlite"))
     g2 = ids(root)["codh:g2"]
     # A round showed it on the site after the publish read D1 and before its part landed: its row and a
     # mark one revision on.
@@ -130,15 +132,17 @@ def test_a_glyph_a_round_named_since_keeps_the_sites_rows(glyphs, monkeypatch, t
     assert remote.query("glyph-atlas-v3", "SELECT * FROM corpus_flags") == []
     out = capsys.readouterr().out
     assert "1 changes kept D1's newer review" in out and "corpus flags: 0 flagged, 1 refused by D1" in out
-    report = json.loads((max((root / "out" / "publish").glob("*-f")) / "flags.json").read_text())
-    assert report["flagged"] == [] and report["refused"] == ["codh:g2"]
+    outcome = json.loads((max((root / "out" / "publish").glob("*-f")) / "flags-outcome.json").read_text())
+    assert outcome == {"flagged": [], "refused": ["codh:g2"]}
+    # A submission that flagged nothing is not kept.
+    assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM submissions")[0]["n"] == 0
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
     assert local.execute("SELECT state, revision FROM crops WHERE id=?", (g2,)).fetchone() == (3, 1)
     assert local.execute("SELECT crop, seq FROM corpus_rows").fetchall() == [(g2, 1)]
     assert local.execute("SELECT count(*) FROM corpus_flags").fetchone() == (0,)
     assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM events")[0]["n"] == 0
     assert local.execute("SELECT count(*) FROM events").fetchone() == (0,)
-    assert local.execute("SELECT count(*) FROM tally WHERE n<>0").fetchone() == (0,)
+    assert follows(before, recount(local))
 
 
 def test_a_glyph_the_site_moved_to_another_character_is_judged_on_d1(glyphs, monkeypatch, tmp_path):
@@ -156,6 +160,7 @@ def test_a_glyph_the_site_moved_to_another_character_is_judged_on_d1(glyphs, mon
 
 def test_a_character_moved_after_the_glyph_was_read_stops_its_flag_in_d1(glyphs, monkeypatch, tmp_path, capsys):
     root, publish, remote = glyphs
+    before = recount(sqlite3.connect(root / "out" / "atlas.sqlite"))
     g2 = ids(root)["codh:g2"]
     site, send = remote.dbs["glyph-atlas-v3"], publish.send
 
@@ -171,7 +176,7 @@ def test_a_character_moved_after_the_glyph_was_read_stops_its_flag_in_d1(glyphs,
     assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM events")[0]["n"] == 0
     assert "corpus flags: 0 flagged, 1 refused by D1" in capsys.readouterr().out
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
-    assert local.execute("SELECT count(*) FROM tally WHERE n<>0").fetchone() == (0,)
+    assert follows(before, recount(local))
 
 
 def test_each_finding_has_its_own_submission(glyphs, monkeypatch, tmp_path):
@@ -181,3 +186,41 @@ def test_each_finding_has_its_own_submission(glyphs, monkeypatch, tmp_path):
     run(publish, monkeypatch, path)
     requests = [json.loads(r["request"])["input"] for r in remote.query("glyph-atlas-v3", "SELECT request FROM submissions ORDER BY id")]
     assert [(r["finding"], [g["id"] for g in r["glyphs"]]) for r in requests] == [("box-relabel", ["codh:g2"]), ("other", ["codh:g3"])]
+
+
+def recount(local):
+    """The local tally's corpus cells beside a count of the local crops, each as {cell: n}."""
+    tally = {tuple(r[:-1]): r[-1] for r in local.execute(
+        "SELECT kind,char,family,book,production,style,state,quiz,decade,sum(n) FROM tally WHERE kind=1 GROUP BY 1,2,3,4,5,6,7,8,9")
+        if r[-1]}
+    crops = {tuple(r[:-1]): r[-1] for r in local.execute(
+        "SELECT kind,coalesce(char,-1),coalesce(family,-1),book,coalesce(production,-1),coalesce(style,-1),state,quiz,"
+        "coalesce((year-CASE WHEN year<0 THEN 9 ELSE 0 END)/10*10,-1),count(*) FROM crops WHERE kind=1 GROUP BY 1,2,3,4,5,6,7,8,9")}
+    return tally, crops
+
+
+def follows(before, after):
+    """Whether the local tally moved exactly as the local crops' cells did."""
+    def delta(a, b):
+        return {k: b.get(k, 0) - a.get(k, 0) for k in a.keys() | b.keys() if b.get(k, 0) != a.get(k, 0)}
+    return delta(before[0], after[0]) == delta(before[1], after[1])
+
+
+def test_a_glyph_d1_flagged_that_the_local_copy_saw_under_another_character(glyphs, monkeypatch, tmp_path, capsys):
+    root, publish, remote = glyphs
+    g2, g3 = ids(root)["codh:g2"], ids(root)["codh:g3"]
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    before = recount(local)
+    # The site's follow moved the glyph to く (g3's character) without a revision; the local copy still has き.
+    site = remote.dbs["glyph-atlas-v3"]
+    site.execute("UPDATE crops SET char=(SELECT char FROM crops WHERE id=?) WHERE id=?", (g3, g2))
+    site.commit()
+    run(publish, monkeypatch, write(tmp_path, monkeypatch, "f", [glyph("codh:g2", "く")]))
+    flagged = remote.query("glyph-atlas-v3", "SELECT code FROM codes WHERE field='state' AND key='flagged'")[0]["code"]
+    assert (crops(remote)[g2]["state"], crops(remote)[g2]["revision"]) == (flagged, 1)
+    out = capsys.readouterr().out
+    assert "corpus flags: 1 flagged, 0 refused by D1" in out and "kept D1's newer review" not in out
+    assert local.execute("SELECT char, state FROM crops WHERE id=?", (g2,)).fetchone() == \
+        tuple(site.execute("SELECT char, state FROM crops WHERE id=?", (g2,)).fetchone())
+    # The local tally moved as the local crops did, the glyph's old cell under き included.
+    assert follows(before, recount(local))
