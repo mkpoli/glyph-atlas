@@ -961,14 +961,18 @@
   // A character's page, and the collection's when no search or filter narrows it, come without the
   // collection's counts by character and by work, which run to hundreds of kilobytes: they are read
   // once the page shows, for the work menu, the grapheme list and the tiles' ranks, and a failed read
-  // leaves those empty. Counts a save or a listing brought in the meantime are newer, and stay.
-  async function readSummary(signal) {
+  // leaves those empty. Counts a save or a listing brought in the meantime are newer, and stay. A
+  // summary asked for again (the withheld crops shown or hidden meanwhile) replaces the one on its way.
+  let summaryRequest = null
+  async function readSummary() {
+    summaryRequest?.abort()
+    const reading = summaryRequest = new AbortController()
     try {
-      const summary = await catalogue({ group: filter, withheld: withheldParam(), limit: 1 }, { priority: 'low', signal })
-      if (!closed && !data?.categories?.length) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents }
+      const summary = await catalogue({ group: filter, withheld: withheldParam(), limit: 1 }, { priority: 'low', signal: reading.signal })
+      if (!closed && summaryRequest === reading && !data?.categories?.length) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents }
     } catch { /* the next save reads them again */ }
   }
-  onMount(() => { if (!opened && !(first && !first.result.categories?.length)) return; const reading = new AbortController(); readSummary(reading.signal); return () => reading.abort() })
+  onMount(() => { if (!opened && !(first && !first.result.categories?.length)) return; readSummary(); return () => summaryRequest?.abort() })
   // The crop count is read again every half minute while the tab is in view; a hidden tab waits.
   onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) || openSplit(first.result) : false; if (!collection) readCollection(); if (!first && !opened || showWithheld && !flagged) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(() => document.hidden || readCollection(), 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
