@@ -57,13 +57,13 @@
   const choose = chip => save(mine(chip.code_point) ? null : chip.code_point)
   function pick(result) { query = ''; save(null, result) }
   // Escape shuts the picker, from its search too, before it can close the inspector; so does a press
-  // outside it.
+  // outside it. A save in flight keeps it open, so its error has somewhere to show.
   function keydown(event) {
     if (event.key !== 'Escape' || event.defaultPrevented) return
-    event.preventDefault(); close()
+    event.preventDefault(); if (!pending) close()
   }
   function pointerdown(event) {
-    if (root && !root.contains(event.target) && !event.target.closest?.('.glyph-button')) close(false)
+    if (!pending && root && !root.contains(event.target) && !event.target.closest?.('.glyph-button')) close(false)
   }
   // The picker takes the focus as it opens; Tab then reaches its graphemes and its search.
   $effect(() => { root?.focus({ preventScroll: true }) })

@@ -33,7 +33,7 @@
     const value = filed ? claim.values.find(v => v.grapheme === filed) : null
     return value && value.char !== char ? value : null
   })
-  const label = $derived([other ? t('grapheme.readAs', { char, grapheme: other.char }) : null, disputed ? t('grapheme.disputed') : null,
+  const label = $derived([other ? t('grapheme.readAs', { char, grapheme: other.char }) : char, disputed ? t('grapheme.disputed') : null,
     t('grapheme.change')].filter(Boolean).join('\n'))
   let open = $state(false), button = $state(null)
   // Another crop starts with the picker shut.
