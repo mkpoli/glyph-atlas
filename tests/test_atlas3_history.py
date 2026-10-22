@@ -440,3 +440,9 @@ def test_a_base_no_form_decision_holds_is_left_out_as_a_publish_releases_it(layo
     assert code == 0
     a = atlas.execute("SELECT id FROM graphemes WHERE text='あ'").fetchone()[0]
     assert out.execute("SELECT char FROM form_bases").fetchall() == [(a,)]
+    # A source that names no character leaves the base none.
+    corpus.execute("UPDATE corpus_units SET character=NULL WHERE id='codh:g1'")
+    corpus.commit()
+    code, out = history(monkeypatch, root)
+    assert code == 0
+    assert out.execute("SELECT char FROM form_bases").fetchall() == [(None,)]

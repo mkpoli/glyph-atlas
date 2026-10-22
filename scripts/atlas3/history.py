@@ -749,8 +749,10 @@ def main():
             report.drop("form_bases", "no form decision holds the glyph; a publish releases it")
             continue
         character = char_text(r["character"]) or None
-        # Until a publish has numbered an upstream character, the old base stands.
-        if upstream.get(r["id"]) in graphemes and upstream[r["id"]] != character:
+        # Until a publish has numbered an upstream character, the old base stands; a source that names no
+        # character leaves none, as a publish writes it.
+        if r["id"] in upstream and (upstream[r["id"]] is None or upstream[r["id"]] in graphemes) \
+                and upstream[r["id"]] != character:
             character, moved = upstream[r["id"]], moved + 1
         if character is not None and character not in graphemes:
             report.stop("form_bases", "character has no grapheme", f"{r['id']}: {character!r}")
