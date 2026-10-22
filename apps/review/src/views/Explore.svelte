@@ -805,7 +805,7 @@
   function tileClick(event, item, index, open) {
     const after = swallow
     swallow = null
-    if (after && event.timeStamp - after.at < 800 && (after.press || event.detail === 0)) { event.preventDefault(); return }
+    if (after && (after.press ? after.at == null || event.timeStamp - after.at < 800 : event.timeStamp - after.at < 800 && event.detail === 0)) { event.preventDefault(); return }
     const toggling = reviewer && (selecting || event.target.closest?.('.tile-select') || event.ctrlKey || event.metaKey || event.shiftKey)
     if (!toggling || !selectable(item)) { open(); return }
     event.preventDefault()
@@ -814,17 +814,21 @@
   // A long press on a touch screen starts select mode with the tile pressed; moving the finger is a scroll.
   let press = null
   function pressStart(event, item, index) {
+    // A new gesture: a long press whose finger never lifted here holds no click back any more.
+    if (swallow?.press && swallow.at == null) swallow = null
     if (event.pointerType !== 'touch' || !reviewer || !selectable(item)) return
     clearTimeout(press?.timer)
     press = { x: event.clientX, y: event.clientY, timer: setTimeout(() => {
-      press = null; swallow = { at: performance.now(), press: true }
+      // The click comes when the finger lifts, however long it is held: the lift starts the wait.
+      press = null; swallow = { at: null, press: true }
       choose(item, index)
       navigator.vibrate?.(10)
     }, 450) }
   }
   function pressMove(event) { if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 10) pressEnd() }
   function pressEnd() { clearTimeout(press?.timer); press = null }
-  const pressing = (item, index) => ({ onpointerdown: event => pressStart(event, item, index), onpointermove: pressMove, onpointerup: pressEnd, onpointercancel: pressEnd,
+  function pressLift(event) { pressEnd(); if (swallow?.press && swallow.at == null) swallow.at = event.timeStamp }
+  const pressing = (item, index) => ({ onpointerdown: event => pressStart(event, item, index), onpointermove: pressMove, onpointerup: pressLift, onpointercancel: pressLift,
     oncontextmenu: event => { if (swallow || press) event.preventDefault() } })
   function clearSelection() { selected = new Set(); anchor = null; bulkError = '' }
   function selectShown() { selected = new Set(tiles.filter(selectable).map(tile => tile.id)); bulkError = '' }
@@ -948,8 +952,10 @@
       const next = { ...item, state: saved.state, revision: saved.revision }
       after[item.id] = (flagged && !waiting(next.state)) || !fitsGallery(next) ? null : next
     }
-    const label = id => { const item = chosen.find(tile => tile.id === id); return item ? shownLabel(item) : id }
-    bulkReport = [...plan.report, ...outcome.report].map(entry => ({ ...entry, label: label(entry.id) }))
+    // Each reported crop keeps its label and origin, so it opens even when reading it again takes its tile away.
+    const tileOf = id => chosen.find(tile => tile.id === id)
+    bulkReport = [...plan.report, ...outcome.report].map(entry => ({ ...entry, label: tileOf(entry.id) ? shownLabel(tileOf(entry.id)) : entry.id,
+      origin: tileOf(entry.id)?.origin === 'corpus' ? 'corpus' : 'collection' }))
     if (outcome.saved.size) {
       patch(after)
       bulkDone = { kind: 'confirm', batches: answered.map(({ item }) => item.id), count: outcome.saved.size, before }
@@ -982,10 +988,11 @@
     } catch (e) { bulkError = e.message }
     finally { bulkBusy = false }
   }
-  /** Open a crop the last batch save reported. */
+  /** Open a crop the last batch save reported, stepping through the reported ones. */
   function openReported(id) {
-    const item = display.find(tile => tile.id === id)
-    if (item) inspect(item.id, null, display, updateItem, item.origin === 'corpus' ? 'corpus' : undefined)
+    const queue = bulkReport.map(entry => display.find(tile => tile.id === entry.id) ?? { id: entry.id, origin: entry.origin })
+    const entry = bulkReport.find(reported => reported.id === id)
+    if (entry) inspect(id, null, queue, updateItem, entry.origin)
   }
   function select(value) { split = null; grapheme = value; load() }
   // A tile that counts corpus glyphs, which the collection's own listing leaves out, opens its

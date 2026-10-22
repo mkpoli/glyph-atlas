@@ -58,7 +58,11 @@ describe('what "Looks right" confirms', () => {
     expect(confirmedCharacter(tile('a', { identity_status: 'unassigned' }))).toBeNull()
     expect(confirmedCharacter(tile('a', { label: 'あい' }))).toBeNull()
     // A base with its combining mark is one character.
-    expect(confirmedCharacter(tile('a', { label: 'が' }))).toBe('が')
+    expect(confirmedCharacter(tile('a', { label: '\u304b\u3099' }))).toBe('\u304b\u3099')
+    // What the Worker refuses as a written character would refuse the whole batch, so it is not sent.
+    expect(confirmedCharacter(tile('a', { label: '\u3099' }))).toBeNull()
+    expect(confirmedCharacter(tile('a', { label: '\u200b' }))).toBeNull()
+    expect(confirmedCharacter(tile('a', { label: '\u3000' }))).toBeNull()
   })
   it('sends the crops left to confirm and reports the rest by reason', () => {
     const plan = confirmationPlan([tile('a'), tile('b', { state: 'checked' }), tile('c', { label: 'あい' }), glyph('d', { proxyable: false }), glyph('e'), tile('f', { state: 'flagged' })])
