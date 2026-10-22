@@ -1063,6 +1063,9 @@
     <p class="find-count" role="status">{@render withheldToggle(false)}</p>
   {:else if query && settled}
     <p class="find-count" role="status">{around('explore.occurrencesOf', 'character', { count: settled.total })[0]}<b>{@render term()}</b>{around('explore.occurrencesOf', 'character', { count: settled.total })[1]}{#if loading}<span class="find-pending"> …</span>{/if}</p>
+  {:else if !query && loading}
+    <!-- The line the counts take once the rows are in, held so the collage does not move down then. -->
+    <p class="find-count" aria-hidden="true">&#8203;</p>
   {/if}
   <div class="glyph-grid collage" class:selecting={selected.size > 0} bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading}>
     {#if loading && !display.length}<div class="collage-block" style={skeleton.block}>{#each skeleton.tiles as style}<div class="glyph-skeleton collage-cell" {style}></div>{/each}</div>
