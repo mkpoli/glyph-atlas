@@ -25,6 +25,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from build import OUT
+from pack_names import addressed
 
 PREFIX = "v3/media/"
 WEBP = "image/webp"
@@ -43,8 +44,8 @@ def read_shard(prefix):
 
 def grow(rows):
     """The local shards that (key, object, offset, size, content_type) rows add keys to, as merged, and
-    the rows whose keys are new. A key already mapped elsewhere stops the run before any shard is
-    written: a key names one image."""
+    the rows whose keys are new. A key already mapped elsewhere, or a new key in a pack not named by its
+    content, stops the run before any shard is written: a key names one image."""
     by_prefix = defaultdict(list)
     for row in rows:
         by_prefix[row[0][:3]].append(tuple(row))
@@ -54,6 +55,9 @@ def grow(rows):
         objects = {name: i for i, name in enumerate(shard["objects"])}
         grew = False
         for key, obj, offset, size, content_type in members:
+            if key[3:] not in shard["keys"] and not addressed(obj):
+                sys.exit(f"image {key} is new and sits in {obj}, a numbered pack the bucket may hold with other bytes; "
+                         "name the catalogue's packs by their content first (address_packs.py); nothing written")
             if obj not in objects:
                 objects[obj] = len(shard["objects"])
                 shard["objects"].append(obj)

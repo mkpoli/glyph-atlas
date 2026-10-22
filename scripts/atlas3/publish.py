@@ -57,6 +57,7 @@ from pathlib import Path
 import media_map
 import votes
 from build import CORPUS_PAGE, PAGE, WRITTEN, bundle_entry, char_text, horizontal, replacement, shuffle
+from pack_names import addressed
 from pull import real
 from run_answers import PREFIX as ANSWER_PREFIX
 from run_answers import RUN_TEXT, Answers, pending, uploaded
@@ -652,6 +653,14 @@ def main():
         dated = {r["document"]: r["start"] for r in src.execute("SELECT document, start FROM document_dating WHERE axis='witness'")}
         years.update(dated)
         m.ids.executemany("INSERT OR REPLACE INTO book_years VALUES(?,?)", dated.items())
+    # A corpus glyph published for the first time has its record in a pack named by its content; a numbered
+    # pack may already be in the bucket with other bytes. Glyphs published before keep their places.
+    if "corpus_units" in tables:
+        unaddressed = [(i, o) for i, o in src.execute("SELECT id, object FROM corpus_units WHERE object NOT GLOB 'packs/*.bin' "
+                                                      "OR length(object) <> 73") if not addressed(o) and m.known(i) is None]
+        if unaddressed:
+            sys.exit(f"{len(unaddressed)} new corpus glyphs have their records in numbered packs, for example "
+                     f"{unaddressed[0][0]} in {unaddressed[0][1]}; name the packs by their content first (address_packs.py)")
     media, fresh_media = {}, []
     if "media" in tables:
         media = {r["key"]: [r["object"], r["offset"], r["size"]] for r in src.execute("SELECT key, object, offset, size FROM media")}

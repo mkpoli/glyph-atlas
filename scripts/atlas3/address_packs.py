@@ -20,15 +20,15 @@ import argparse
 import errno
 import hashlib
 import json
-import re
 import sqlite3
 import sys
 import time
 from pathlib import Path
 
+from pack_names import ADDRESSED
+
 from glyph_atlas import export_lock
 
-ADDRESSED = re.compile(r"packs/[0-9a-f]{64}\.bin")
 TABLES = ("media", "corpus_units")
 
 
