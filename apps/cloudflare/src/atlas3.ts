@@ -44,6 +44,7 @@ export const holdsBundle = (page: number, rev: number) => held.has(bundleKey(pag
 // A crop's bundle entry by itself, at the edge under a URL no route answers. An entry never changes under
 // its page's revision, so a listing that meets a crop again, whatever has been reviewed since, reads
 // its entry instead of the page's whole bundle, which can hold hundreds of crops.
+const ENTRIES_PER_PAGE = 2;
 const entryEdge = (page: number, rev: number, slot: number) => new Request(`https://glyphatlas.org/_entries/${page}-${rev}/${slot}`);
 const BUNDLES_HELD = 64, BUNDLE_EDGE_SECONDS = 86400;
 const held = new Map<string, Promise<Bundle | null>>();
@@ -119,9 +120,15 @@ export async function cropItems(env: Env, ids: number[], { given = new Map(), kn
   const rows = known ?? (await timed('rows', env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>())).results;
   const byId = new Map(rows.map(row => [row.id, row]));
   const unread = rows.filter(row => !given.has(row.id));
-  const asked = unread.filter(row => !holdsBundle(pageOf(row.id), row.rev));
+  // A page that holds several of the crops asked for is read whole: one bundle read costs less than
+  // asking the edge for each of its entries, as a Worker waits on six reads at a time.
+  const onPage = new Map<number, number>();
+  for (const row of unread) onPage.set(pageOf(row.id), (onPage.get(pageOf(row.id)) ?? 0) + 1);
+  const asked = unread.filter(row => !holdsBundle(pageOf(row.id), row.rev) && onPage.get(pageOf(row.id))! <= ENTRIES_PER_PAGE);
+  // An entry the edge holds but that does not parse is read from its bundle instead.
   const kept = new Map(await timed('entries', Promise.all(asked.map(async row =>
-    [row.id, await caches.default.match(entryEdge(pageOf(row.id), row.rev, slotOf(row.id))).then(hit => hit ? hit.json() as Promise<Entry> : null)] as const))));
+    [row.id, await caches.default.match(entryEdge(pageOf(row.id), row.rev, slotOf(row.id)))
+      .then(hit => hit ? hit.json() as Promise<Entry> : null).catch(() => null)] as const))));
   const pages = new Map(unread.filter(row => !kept.get(row.id)).map(row => [pageOf(row.id), row.rev]));
   const sources: BundleSources = { held: 0, edge: 0, r2: 0 };
   const bundles = new Map(await timed('bundles', Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev, sources)] as const))));
