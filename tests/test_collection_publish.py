@@ -43,6 +43,23 @@ def test_failed_generation_does_not_replace_current(tmp_path):
     assert (book.parent.parent / "current").resolve() == current
 
 
+def test_a_killed_publication_leaves_no_generation_behind(tmp_path):
+    book = tmp_path / "honkoku-collection/books/one"
+    dataset(book, "one", "NEW")
+    collection = book.parent.parent
+    (collection / "index.json").write_text(json.dumps({"books": [{"entry_id": "one", "dataset": "books/one"}]}))
+    publish(tmp_path, rebuild_index=False, min_free_bytes=0)
+    first = (collection / "current").resolve()
+    killed = collection / "generations" / str(int(first.name) + 1)
+    killed.mkdir()
+    (killed / "documents.parquet").write_bytes(b"partial")
+    publish(tmp_path, rebuild_index=False, min_free_bytes=0)
+    assert not killed.exists()
+    # The new generation and the one before it, for readers still using its paths.
+    kept = {p.name for p in (collection / "generations").iterdir()}
+    assert kept == {first.name, (collection / "current").resolve().name}
+
+
 def test_live_index_sees_new_generation(tmp_path):
     from glyph_atlas.corpus.index import CorpusIndex, build_chars
     dataset(tmp_path / "honkoku-data", "one", "ア")
