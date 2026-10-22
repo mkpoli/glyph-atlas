@@ -29,7 +29,7 @@
   import RunTile from '../components/RunTile.svelte'
   import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
-  import { catalogue, character, request, randomSeed, number, stored, remember } from '../lib/client.js'
+  import { catalogue, character, request, shuffleSeed, number, stored, remember } from '../lib/client.js'
   import { correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
@@ -52,7 +52,7 @@
   let data = $state(first?.result ?? (opened ? { query: opened.picked.char, total: opened.total, available: opened.available,
     categories: [], documents: [], counts: {} } : null))
   let items = $state(first?.result.items ?? []), error = $state(''), loading = $state(!first && !opened)
-  let grapheme = $state(asked?.grapheme ?? ''), work = $state(asked?.work ?? ''), seed = $state(asked?.seed ?? randomSeed())
+  let grapheme = $state(asked?.grapheme ?? ''), work = $state(asked?.work ?? ''), seed = $state(asked?.seed ?? shuffleSeed())
   let query = $state(asked?.q ?? opened?.picked.char ?? '')
   let choosing = $state(false), catalogueRequest = null
   // Search by image: open with the image the box was given, or none yet.
@@ -927,7 +927,7 @@
     query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false
     openGrapheme(key)
   }
-  function shuffle() { seed = randomSeed(); load() }
+  function shuffle() { seed = shuffleSeed(); load() }
   /**
    * Back or Forward to an address this view rewrote loads the page as it was first loaded, while the
    * address bar keeps what the view had moved on to. The view follows the address bar.

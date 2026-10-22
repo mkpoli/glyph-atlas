@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit'
-import { catalogue, randomSeed, request } from '$lib/client.js'
+import { catalogue, request, shuffleSeed } from '$lib/client.js'
 import { characterAddress } from '$lib/gallery.js'
 import { keyText } from '$lib/codePoints.js'
 import { localize } from '$lib/i18n.svelte.js'
@@ -23,7 +23,7 @@ export async function load({ fetch, params, url }) {
   const written = keyText(q) ?? q
   const point = hasCharacterPage(written) ? pointOf(written) : null
   if (point) redirect(307, localize(characterAddress(point), params.lang))
-  const seed = randomSeed()
+  const seed = shuffleSeed()
   const sampled = !q && !grapheme && !work, bare = sampled && group === 'all'
   const [result, sample, collection, runs] = await Promise.all([
     // The rows are on the path to the first byte, so a collection that stalls must not hold the page

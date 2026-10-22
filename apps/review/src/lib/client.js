@@ -151,6 +151,11 @@ export const history = (params = {}, options = {}) =>
   request('/atlas/history?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)), undefined, options)
 export const corpusCharacter = (id, options) => request('/atlas/corpus/character?' + new URLSearchParams({ id }), undefined, options)
 export const randomSeed = () => Math.floor(Math.random() * 2147483647)
+/** How many shuffles the collection is dealt in. A listing someone was dealt before is kept at the edge
+ *  and answered without reading its crops again, so the seeds are few, spread over the whole range by a
+ *  multiplier, as the shuffle starts where the seed falls in it. */
+const SHUFFLES = 256
+export const shuffleSeed = () => Math.floor(Math.random() * SHUFFLES) * 2654435761 % 2147483647
 export { formatNumber as number } from './i18n.svelte.js'
 export function stored(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
