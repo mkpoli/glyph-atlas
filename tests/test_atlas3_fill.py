@@ -63,10 +63,11 @@ def test_the_fill_writes_each_crop_once_then_builds_the_indexes_and_a_rerun_send
 
 
 def deferred(root, remote, monkeypatch):
-    from test_atlas3_crop_facts import decisions, facts, glyph_decided, sources
+    from test_atlas3_crop_facts import cluster_decided, clustering, facts, glyph_decided, mapped_tile
     glyph_decided(root, remote)
-    decisions(root, remote, (1, "d1", "2025-01-02", "U+304B:c1"))
-    sources(root)
+    cluster_decided(root, remote, 1, "d1", "2025-01-02")
+    clustering(root, monkeypatch)
+    mapped_tile(root)
     unfilled(root, remote)
     units = sqlite3.connect(root / "source-units.sqlite")
     units.execute("UPDATE units SET family='U+304B',priority=0 WHERE id='ex:a1'")

@@ -40,10 +40,10 @@ class MediaCache:
             self.roots["corpus"] = Path(corpus_root).resolve()
         self._known = set()
 
-    def _register(self, spec):
+    def _register(self, spec, write=True):
         raw = json.dumps({"version": VERSION, **spec}, sort_keys=True, separators=(",", ":"))
         key = hashlib.sha256(raw.encode()).hexdigest()
-        if key not in self._known:
+        if write and key not in self._known:
             descriptor = self.directory / key[:2] / f"{key}.json"
             if not descriptor.exists():
                 descriptor.parent.mkdir(parents=True, exist_ok=True)
@@ -62,7 +62,9 @@ class MediaCache:
         finally:
             temp.unlink(missing_ok=True)
 
-    def local(self, path, box=None, *, context=False, edge=None, exact=False):
+    def local(self, path, box=None, *, context=False, edge=None, exact=False, write=True):
+        """The display crop's URL, its key naming the source file, its stamp and the box; with `write`
+        false its descriptor is not written, so the key can be counted without rendering."""
         path = Path(path)
         stat = path.stat()
         path = _resolved(str(path), stat.st_dev, stat.st_ino)
@@ -78,7 +80,7 @@ class MediaCache:
                 if exact:
                     # A requested region is cut as given, without the display margin.
                     spec["exact"] = True
-                return self._register(spec)
+                return self._register(spec, write)
         raise ValueError("display crop outside registered image roots")
 
     def region(self, url):
