@@ -34,7 +34,7 @@ const markable = (code: number) => code === STATE.pending || code === STATE.seen
 // glyph's record from its pack) under the row's label, state and revision; the issue of its last event
 // while it is flagged; the character a standing review named; the box a review redrew.
 export type Current = { id: number; kind: number; char: number | null; label: string; state: number; revision: number; cut: number;
-  quiz: number; data: Json; cutBox: Json | null; settled: number; logicalRevision: number; anchored: number | null; anchoredAt: number | null;
+  quiz: number; data: Json; cutBox: Json | null; settled: number; logicalRevision: number; anchored: number | null; boundary: number | null;
   sourceId: string; pageRevision: number; record: Json };
 // Whether a client that read the crop at `revision` saw it as it stands: at its revision now, or at one
 // before marks only, which the old site's revision never counted (`settled`).
@@ -52,21 +52,24 @@ export const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND co
 export const UNCOUNTED = (e: string) => `(${e}.kind=7 OR ${MARKED(e)})`;
 export const LOGICAL = (c: string) => `coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at
   AND NOT ${UNCOUNTED('e')}) FROM review_revisions a WHERE a.crop=${c}.id),${c}.revision-(SELECT count(*) FROM events e WHERE e.crop=${c}.id AND ${UNCOUNTED('e')}))`;
+// The crop's revision at the last publication that changed what a reviewer sees, or put it back: no view
+// or review from before it stands, and nothing before it counts toward a view's standing.
+const BOUNDARY = (c: string) => `(SELECT boundary FROM review_revisions WHERE crop=${c}.id)`;
 export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label,c.state,c.revision,c.cut,c.quiz,pg.rev,pg.key AS page_key,
   r.x,r.y,r.w,r.h,
   (SELECT coalesce(e.kept_issue,e.issue) FROM events e WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) AS issue,
   (SELECT n.text FROM events e JOIN graphemes n ON n.id=e.named WHERE e.crop=c.id AND e.named IS NOT NULL
     AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id) ORDER BY e.revision DESC LIMIT 1) AS named,
-  (SELECT max(e.revision) FROM events e WHERE e.crop=c.id AND NOT ${MARKED('e')}) AS reviewed,
+  (SELECT max(e.revision) FROM events e WHERE e.crop=c.id AND NOT ${MARKED('e')} AND e.revision>coalesce(${BOUNDARY('c')},-1)) AS reviewed,
   (SELECT count(*) FROM events e WHERE e.crop=c.id AND ${MARKED('e')} AND e.revision>coalesce((SELECT max(f.revision) FROM events f
-    WHERE f.crop=c.id AND NOT ${MARKED('f')}),-1)) AS marks,
-  ${LOGICAL('c')} AS logical,(SELECT revision FROM review_revisions WHERE crop=c.id) AS anchored,
-  (SELECT at FROM review_revisions WHERE crop=c.id) AS anchored_at
+    WHERE f.crop=c.id AND NOT ${MARKED('f')} AND f.revision>coalesce(${BOUNDARY('c')},-1)),${BOUNDARY('c')},-1)) AS marks,
+  ${BOUNDARY('c')} AS boundary,
+  ${LOGICAL('c')} AS logical,(SELECT revision FROM review_revisions WHERE crop=c.id) AS anchored
   FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN pages pg ON pg.id=c.id>>24
   LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN reviews r ON r.crop=c.id`;
 type CropRow = { id: number; kind: number; char: number | null; label: string | null; state: number; revision: number; cut: number; quiz: number;
   rev: number; x: number | null; y: number | null; w: number | null; h: number | null; issue: number | null; named: string | null;
-  reviewed: number | null; marks: number; logical: number; anchored: number | null; anchored_at: number | null; page_key: string };
+  reviewed: number | null; marks: number; logical: number; anchored: number | null; boundary: number | null; page_key: string };
 
 // A crop's page id as its record names it; a crop with none sits on its book's page (`book:<document>`).
 export const pageId = (key: string): { page_id?: string } => key.startsWith('book:') ? {} : { page_id: key };
@@ -100,11 +103,12 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
       ...(row.named ? { identity_status: 'assigned', identity_basis: 'human_review' } : {}),
       category: categoryOf(label), ...(box ? { box, box_pending: true } : {}) };
     // Marks since the last review that follow on from it, one revision each, leave the crop as a client saw it then.
-    // A publication that spoke for the crop, or put it back, is a boundary: no view from before it stands.
-    const settled = Math.max(row.marks && (row.reviewed ?? row.revision - row.marks) + row.marks === row.revision ? row.revision - row.marks : row.revision,
-      row.anchored_at ?? -Infinity);
+    // From the last review after the crop's boundary (else the boundary), marks one revision each leave the
+    // crop as a client saw it then; marks and events before the boundary never count.
+    const base = row.reviewed ?? row.boundary ?? row.revision - row.marks;
+    const settled = base + row.marks === row.revision ? base : row.revision;
     found.set(row.id, { id: row.id, kind: row.kind, char: row.char, label, state: row.state, revision: row.revision, cut: row.cut, quiz: row.quiz, data,
-      cutBox: stored.box ?? null, settled, logicalRevision: row.logical, anchored: row.anchored, anchoredAt: row.anchored_at, sourceId: entry!.id,
+      cutBox: stored.box ?? null, settled, logicalRevision: row.logical, anchored: row.anchored, boundary: row.boundary, sourceId: entry!.id,
       pageRevision: row.rev, record: stored });
   }
   const gone = ids.filter(id => !found.has(id)), told = new Set(explained);
@@ -500,6 +504,8 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     // the crop's own image is what the reader saw. A client that does not send it is held to the rest.
     // A corpus glyph's source revision covers its box and image reference.
     const same = row.kind === 1 ? data.source_revision === crop.source_revision : data.image_sha256 === crop.image_sha256;
+    // A view from before the crop's last boundary, or since moved past by a review, is refused as any save is.
+    if (crop.revision !== undefined && !standing(row, crop.revision)) throw new Problem(409, 'This character changed. Reload it.');
     return same && members!.includes(data.label) && (crop.image === undefined || crop.image === data.image) ? row.id : null;
   };
   const shown = seen.map(stands).filter((n): n is number => n !== null);
@@ -604,7 +610,7 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     // Rejecting all of one reviewer's work also passes over their own later changes to the crop that
     // are already undone, and the undos themselves; anyone else's later change, or one of theirs that
     // still stands, stops it. Marks never do.
-    if (current.anchoredAt !== null && r.revision <= current.anchoredAt)
+    if (current.boundary !== null && r.revision <= current.boundary)
       throw new Problem(409, 'This crop was published again since this review. It cannot be undone.');
     const later = current.revision !== r.revision && (!rejection?.reviewer || await env.ATLAS.prepare(`SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission
       WHERE e.crop=? AND e.revision>? AND e.kind NOT IN (3,4) AND (s.actor NOT IN (SELECT value FROM json_each(?)) OR (s.undone=0 AND e.kind IN (0,1,2))) LIMIT 1`)

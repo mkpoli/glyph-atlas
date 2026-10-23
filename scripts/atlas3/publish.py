@@ -221,6 +221,17 @@ def migrate_reviews(atlas, dry):
             print(f"migration {number} applied to glyph-atlas-v3", flush=True)
         if not atlas.execute(made).fetchone():
             atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+    # A copy that took 0016 before it gained `boundary` takes the column alone.
+    lacks = "SELECT 1 AS n FROM sqlite_master WHERE name='review_revisions' AND sql NOT LIKE '%boundary%'"
+    column = "ALTER TABLE review_revisions ADD COLUMN boundary INTEGER;"
+    if query("glyph-atlas-v3", lacks):
+        path = OUT / "publish" / "0016-boundary.sql"
+        path.write_text(column + "\n")
+        wrangler("d1", "execute", "glyph-atlas-v3", "--remote", "--yes", "--file", str(path))
+        if query("glyph-atlas-v3", lacks):
+            sys.exit("review_revisions.boundary did not apply; rerun")
+    if atlas.execute(lacks).fetchone():
+        atlas.executescript("BEGIN;\n" + column + "\nCOMMIT;\n")
 
 
 RUNS_DATABASE = "glyph-atlas-v3-runs"
@@ -625,8 +636,8 @@ class Mirror:
                 self.page_sql[pid] += [
                     (f"UPDATE crops SET revision=max({catalogue_revision},{int(retired_at)},"
                      f"(SELECT coalesce(max(revision),0) FROM events WHERE crop={cid}))+1 WHERE id={cid};"),
-                    (f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},revision FROM crops WHERE id={cid} "
-                     "ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")]
+                    (f"INSERT INTO review_revisions(crop,revision,at,boundary) SELECT id,{catalogue_revision},revision,revision FROM crops "
+                     f"WHERE id={cid} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at,boundary=excluded.boundary;")]
                 for statement in self.page_sql[pid][-2:]:
                     self.atlas.execute(statement)
                 self.guarded.append(cid)
@@ -646,13 +657,18 @@ class Mirror:
             row["revision"] = old["revision"] + (1 if reviewed else 0)
             if reviewed:
                 reviewed.append("revision")
-            if speaks and (reviewed or catalogue_revision != logical):
+            # What a reviewer sees changed: a review-owned column, or the cut. Only then is the anchor a
+            # boundary that no earlier view or undo crosses; a revision-only publication keeps the last one.
+            visible = bool(reviewed) or "cut" in changed
+            if speaks and (visible or catalogue_revision != logical):
                 # The store's revision for the crop from here on, recorded first under the same guard, so
                 # both statements apply or neither does.
                 changed.append("revision")
+                boundary = row["revision"] if visible else "NULL"
                 self.page_sql[pid].append(
-                    f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},{row['revision']} FROM crops "
-                    f"WHERE id={cid} AND revision={old['revision']} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")
+                    f"INSERT INTO review_revisions(crop,revision,at,boundary) SELECT id,{catalogue_revision},{row['revision']},{boundary} "
+                    f"FROM crops WHERE id={cid} AND revision={old['revision']} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,"
+                    "at=excluded.at,boundary=coalesce(excluded.boundary,review_revisions.boundary);")
                 self.guarded.append(cid)
             if reviewed:
                 # Only while nobody has reviewed the crop since the revision the mirror holds.
@@ -846,12 +862,15 @@ def deliver(m, run):
                 chunk = guarded[i:i + 1000]
                 found = {r["id"]: r for r in query(database, f"SELECT * FROM crops WHERE id IN ({','.join(map(str, chunk))})")}
                 # The revision D1 counts for each crop as the store does, which the next publication speaks against.
-                logical = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision FROM crops c "
+                logical = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision,"
+                                                              "(SELECT boundary FROM review_revisions WHERE crop=c.id) AS boundary FROM crops c "
                                                               f"WHERE c.id IN ({','.join(map(str, chunk))})")}
                 for cid in chunk:
                     if cid in logical:
-                        m.atlas.execute("INSERT INTO review_revisions(crop,revision,at) VALUES(?,?,?) ON CONFLICT(crop) DO UPDATE "
-                                        "SET revision=excluded.revision,at=excluded.at", (cid, logical[cid]["revision"], logical[cid]["at"]))
+                        r = logical[cid]
+                        m.atlas.execute("INSERT INTO review_revisions(crop,revision,at,boundary) VALUES(?,?,?,?) ON CONFLICT(crop) DO UPDATE "
+                                        "SET revision=excluded.revision,at=excluded.at,boundary=excluded.boundary",
+                                        (cid, r["revision"], r["at"], r["boundary"]))
                     local = m.atlas.execute("SELECT * FROM crops WHERE id=?", (cid,)).fetchone()
                     if (cid in found) != (local is not None) or (local and found[cid]["revision"] != local["revision"]):
                         refused.append(cid)

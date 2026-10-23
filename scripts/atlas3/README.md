@@ -180,6 +180,9 @@ Revisions there count as the old site and the offline store count them. A public
 crop records the catalogue's revision and the crop's own in `review_revisions` (migration 0016), and moves
 the crop's own revision on by one when it changes what a reviewer sees; every event since adds one, but a
 mark or a re-cut clearing a mark. A crop no publication has spoken for counts its revision less those.
+When the publication changed what a reviewer sees (a review-owned column or the cut), or put the crop back,
+the row is also a `boundary`: no view or review from before it stands, and an undo of one is refused; a
+publication that changes only the revision keeps the last boundary and leaves open views alone.
 Migrations 0015 and 0016 are applied to glyph-atlas-v3 before the Worker that reads them deploys;
 `publish.py` applies each where what it makes is missing, on D1 and on the local copy.
 
