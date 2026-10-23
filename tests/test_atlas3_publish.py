@@ -1189,3 +1189,43 @@ def test_a_publish_after_the_claims_are_filed_reconciles_nothing(layout, monkeyp
     monkeypatch.setattr(publish, "send", lambda database, file, stamp: (sent.append(stamp), send(database, file, stamp))[1])
     run(publish, monkeypatch, catalogue(tmp_path / "c2.sqlite", [unit("ex:b2", "hl:p2", {"x": 0, "y": 40, "w": 10, "h": 10}, "え")]))
     assert sent and not [s for s in sent if ".reconcile" in s]
+
+
+def test_a_claim_committed_after_a_newer_one_was_read_is_still_reconciled(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a2 = ids(root)["ex:a2"]
+    run(publish, monkeypatch, claimed_catalogue(tmp_path))
+    atlas = remote.dbs["glyph-atlas-v3"]
+    atlas.execute("INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) "
+                  "VALUES('ex:zz','has_grapheme','','',999,0,'asserted','U+3042','[]','[]','[]','r','2026-10-23T00:00:00.200Z')")
+    atlas.commit()
+    query = publish.query
+
+    def late_commit(database, sql):
+        out = query(database, sql)
+        if "max(at)" in sql:
+            # A claim timed before the one just read commits after the read, and its filing failed.
+            atlas.execute("INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) "
+                          "VALUES('ex:a2','has_grapheme','','',?,0,'asserted','U+3046','[]','[]','[]','r','2026-10-23T00:00:00.100Z')", (a2,))
+            atlas.commit()
+        return out
+    monkeypatch.setattr(publish, "query", late_commit)
+    run(publish, monkeypatch, catalogue(tmp_path / "c2.sqlite", [unit("ex:b2", "hl:p2", {"x": 0, "y": 40, "w": 10, "h": 10}, "え")]))
+    monkeypatch.setattr(publish, "query", query)
+    run(publish, monkeypatch, catalogue(tmp_path / "c3.sqlite", [unit("ex:b2", "hl:p2", {"x": 0, "y": 40, "w": 12, "h": 10}, "え")]))
+    assert held_runs(remote.dbs["glyph-atlas-v3-runs"]) == ([("あう",)], [("あう", 1)])
+
+
+def test_a_part_boundary_never_falls_inside_a_guarded_run_change(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    claim_and_move(remote, *(ids(root)[t] for t in ("ex:a1", "ex:a2")))
+    monkeypatch.setattr(publish, "PART_BYTES", 300)
+    units = [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
+             unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", state="checked", revision=3),
+             unit("ex:a3", "hl:p1", {"x": 0, "y": 40, "w": 10, "h": 10}, "え")]
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", units, [("ex:a1", 2, "ex:a2", None, "あい", "book:a", 1, 1, 0, "あい"),
+                                                                       ("ex:a2", 2, "ex:a3", None, "いえ", "book:a", 1, 1, 0, "いえ")]))
+    rows, stats = counts_match(remote.dbs["glyph-atlas-v3-runs"])
+    assert rows == stats == [(2, "あう", 1), (2, "うえ", 1)]
+    for part in (root / "out" / "publish").rglob("runs-*.sql"):
+        assert not part.read_text().splitlines()[0].startswith("INSERT INTO run_stats(size,graphemes,n,down) SELECT")

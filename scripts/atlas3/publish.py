@@ -63,7 +63,7 @@ import sys
 import time
 import unicodedata
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import media_map
@@ -347,6 +347,7 @@ CROP_HEADS = """SELECT k.id, g.text AS char, coalesce(h.text, g.text, f.text) AS
 
 # The newest claim resolution a reconcile has filed (`current_claims.at`), kept with the local copy.
 RECONCILED = "CREATE TABLE IF NOT EXISTS reconciled(id INTEGER PRIMARY KEY CHECK(id = 0), at TEXT NOT NULL)"
+RECONCILE_OVERLAP = timedelta(minutes=10)
 
 
 def reconcile(m, run):
@@ -362,8 +363,11 @@ def reconcile(m, run):
     m.runs.execute(RECONCILED)
     since = (m.runs.execute("SELECT at FROM reconciled").fetchone() or ("",))[0]
     logged = query(RUNS_DATABASE, "SELECT first, size, crop FROM run_moves")
+    # A claim's time is taken before its write commits, so one can land after a newer one was read:
+    # the claims of the last RECONCILE_OVERLAP before the watermark are read again, at the cost of reads.
+    after = "" if not since else (datetime.fromisoformat(since) - RECONCILE_OVERLAP).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     changed = query("glyph-atlas-v3", "SELECT crop, max(at) AS at FROM current_claims WHERE predicate = 'has_grapheme' "
-                                      f"AND crop IS NOT NULL AND at > {lit(since)} GROUP BY crop")
+                                      f"AND crop IS NOT NULL AND at > {lit(after)} GROUP BY crop")
     newest = max([since, *(r["at"] for r in changed)])
     crops = sorted({r["crop"] for r in logged} | {r["crop"] for r in changed})
     read, moved = set(), 0
@@ -1537,13 +1541,14 @@ def main():
             if key not in want:
                 texts.setdefault((key[4], key[0]), None)
                 # Whatever key a claim filed it under since it was read.
-                m.runs_sql += removal_sql(key[4], key[0])
+                # One element, so a part boundary cannot fall between a statement and the count it guards.
+                m.runs_sql.append("\n".join(removal_sql(key[4], key[0])))
                 touch(key, value)
         for key, value in want.items():
             old = have.get(key)
             if old is None:
                 if claimed & {key[4], *value[:2]}:
-                    m.runs_sql += removal_sql(key[4], key[0]) + addition_sql(key, value)
+                    m.runs_sql.append("\n".join(removal_sql(key[4], key[0]) + addition_sql(key, value)))
                 else:
                     m.runs_sql.append(insert("runs", (*RUN_KEY, "second", "third", "book"), (*key, *value)))
                     delta[key[:2]] += 1
