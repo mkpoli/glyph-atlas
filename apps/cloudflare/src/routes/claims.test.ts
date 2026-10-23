@@ -24,8 +24,8 @@ afterEach(() => { for (const db of databases.splice(0)) db.close(); });
 
 const W = 'ja/ばかり/副助詞', OTHER = 'ja/のみ/副助詞';
 const BOX = { x: 0, y: 0, w: 10, h: 10 };
-const atlasSchema = (db: Database) => {
-  const folder = new URL('../../migrations-atlas/', import.meta.url);
+const atlasSchema = (db: Database, name = 'migrations-atlas') => {
+  const folder = new URL(`../../${name}/`, import.meta.url);
   for (const file of readdirSync(folder).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, folder), 'utf8'));
 };
 
@@ -59,7 +59,9 @@ function setup() {
     const bytes = objects.get(name);
     return bytes ? { body: new Response(bytes).body!, arrayBuffer: async () => new Uint8Array(bytes).buffer } : null;
   } };
-  const env = { ATLAS: d1(db), MEDIA } as unknown as Env;
+  const runs = new Database(':memory:'); databases.push(runs);
+  atlasSchema(runs, 'migrations-atlas-runs');
+  const env = { ATLAS: d1(db), ATLAS_RUNS: d1(runs), MEDIA } as unknown as Env;
   const tools: ClaimTools = {
     fail: (status, message, extra): never => { throw Object.assign(new Error(`${status} ${message}`), { extra }); },
     body: async request => await request.json(), canonical: JSON.stringify, literal: value => value,
@@ -79,7 +81,7 @@ function setup() {
     { id: crypto.randomUUID(), crop_version: version(crop, crop === corpus ? 'rev1' : 'px'), subject: publicId(crop), predicate: 'writes_word', method, claims: members },
     { id: actor, admin: false }) as Promise<any>;
   const read = (path: string) => claimRead(env, new URL('https://x' + path), tools);
-  return { db, env, tools, text, local, corpus, retired, gone, version, input, save, post, claim, read, reads, page };
+  return { db, runs, env, tools, text, local, corpus, retired, gone, version, input, save, post, claim, read, reads, page };
 }
 
 describe('the crop word picker', () => {
@@ -223,6 +225,26 @@ describe('the crop grapheme picker', () => {
     db.exec('UPDATE graphemes SET head=3 WHERE id=1');
     expect((await familyClaims(env, 'U+5F9E', [3, 4, 1])).here.map(r => r.id)).toEqual([local]);
     expect((await familyClaims(env, QUEEN, [2])).away.map(r => r.id)).toEqual([local]);
+  });
+
+  it('files the crop\'s runs under the grapheme it is read as, and back once taken back', async () => {
+    const { db, runs, local, corpus, pick } = graphemes();
+    // A run 後后 whose 后 is the crop.
+    db.exec(`UPDATE crops SET char=1 WHERE id=${corpus}`);
+    runs.exec(`INSERT INTO runs VALUES(2,'後后',0,1,${corpus},${local},NULL,1); INSERT INTO run_stats VALUES(2,'後后',1,1)`);
+    const held = () => [runs.query('SELECT graphemes FROM runs').all(), runs.query('SELECT graphemes,n FROM run_stats').all(), runs.query('SELECT crop,char FROM run_written').all()];
+    await pick(AFTER);
+    expect(held()).toEqual([[{ graphemes: '後後' }], [{ graphemes: '後後', n: 1 }], [{ crop: local, char: '后' }]]);
+    await pick(null);
+    expect(held()).toEqual([[{ graphemes: '後后' }], [{ graphemes: '後后', n: 1 }], []]);
+  });
+
+  it('answers a saved claim as saved when its runs cannot be filed', async () => {
+    const { env, local, pick } = graphemes();
+    (env as any).ATLAS_RUNS = { prepare: () => { throw new Error('D1_ERROR: runs unavailable') } };
+    const saved = await pick(AFTER);
+    expect(saved.grapheme_claim?.values.map((v: { grapheme: string }) => v.grapheme)).toEqual([AFTER]);
+    expect((await familyClaims(env, AFTER, [1])).here.map(r => r.id)).toEqual([local]);
   });
 
   it('goes through the picker route', async () => {

@@ -79,8 +79,10 @@ several graphemes (后 for 後 and 后) and a scribe's slip (one character writt
 as the grapheme the reviewer names. While an asserted, accepted or adjudicated claim holds on the
 crop's cut as its inspector reads it, a family gallery and its counts leave the crop out of its
 character's family and list it under the family the claimed grapheme is filed under now
-(`familyClaims`, `atlas3Gallery.ts`); the character's own gallery keeps it. A disputed or rejected
-slot names none, and a crop cut again waits for a claim on its new cut.
+(`familyClaims`, `atlas3Gallery.ts`); the character's own gallery keeps it. Its runs are filed under
+that grapheme as the claim is saved or taken back (`refileRuns`, `routes/runs.ts`), so a run search
+finds 后日 written for 後日 under 後日. A disputed or rejected slot names none, and a crop cut again
+waits for a claim on its new cut.
 
 A crop's `writes_word` claim names the word it writes at its place in the text (decision 0004), or a
 gloss where no word row fits yet. Its `method` is the strongest evidence for the sense: the source's

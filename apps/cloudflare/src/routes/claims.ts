@@ -11,6 +11,7 @@ import { axisOf } from '../dating';
 import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, graphemeKey, headKeys, keyText, ledgerPage, type LedgerTools, type Member,
   ownedActors, planAction, planClaim, PREDICATES, type Plan, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
 import { readRecords, recordKey } from '../records';
+import { refileRuns } from './runs';
 import { anchoredForm, representationId, typed, type FormProblem } from '../representation';
 
 type Json = Record<string, any>;
@@ -60,7 +61,11 @@ async function namedCrop(env: Env, named: unknown, fail: ClaimTools['fail'], ctx
 }
 
 const ledgerTools = (env: Env, tools: ClaimTools, ctx?: ExecutionContext): LedgerTools => ({ fail: tools.fail, text: tools.text, canonical: tools.canonical,
-  owned: ownedActors, crop: (env, named) => namedCrop(env, named, tools.fail, ctx), alias: text => aliasCrop(env, text, ctx) });
+  owned: ownedActors, crop: (env, named) => namedCrop(env, named, tools.fail, ctx), alias: text => aliasCrop(env, text, ctx),
+  // A claim is saved in glyph-atlas-v3 and its runs filed in glyph-atlas-v3-runs, which cannot share a
+  // transaction: a filing that fails is logged and the claim answers as saved, and the publisher files
+  // the crop's runs from the claims as they stand once it next publishes.
+  refile: crop => refileRuns(env, crop).catch(error => console.log(JSON.stringify({ event: 'refile_failed', crop, message: String(error) }))) });
 
 // A crop's slot that holds on its effective cut: one key of `current_claims` per crop, by `current_claim_crop`.
 export const cropSlotsQuery = (predicate: 'has_form' | 'writes_word') => `SELECT c.crop,c.status,c.object,c.value,c.members,c.claims,c.supporting
@@ -176,6 +181,8 @@ export async function setGrapheme(env: Env, input: Json, named: string, actor: s
   if (saved) {
     const { crop } = await withCrop(env, saved, ledger.alias);
     if (crop == null) tools.fail(404, NOT_HERE);
+    // A pick sent again files the crop's runs again, in case the first send stopped before it did.
+    await ledger.refile?.(crop);
     return { id: publicId(crop), grapheme_claim: (await cropGraphemes(env, [crop])).get(crop) ?? null, replaced: saved.replaced ?? null };
   }
   let member: Member | null = null;

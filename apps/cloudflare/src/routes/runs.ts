@@ -8,13 +8,14 @@
 // runs a crop is in moves at a publication; how its crops are written follows reviews (`run_written`).
 import { bundle, cropItems, cropRowsQuery, pageOf, publicId, slotOf, type CropRow, type Entry } from '../atlas3';
 import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
-import { currentPointer } from '../atlas3Gallery';
+import { currentPointer, FILING } from '../atlas3Gallery';
 import { Problem } from '../busy';
 import { bookDating } from '../dating';
 import { formed, type UnitForm } from '../forms';
 import { honkokuPage } from '../honkoku';
 import { MARKS, WRITTEN, redrawLimits, writtenRecord } from '../cropRecords';
 import { integer, text } from '../input';
+import { keyHeads, keyText } from '../ledger';
 import { readRecords, recordKey } from '../records';
 import { Timing } from '../timing';
 
@@ -473,6 +474,75 @@ async function documentCharacters(env: Env, url: URL, document: string, ctx: Exe
  *  is not written. */
 export const writtenStatement = (env: Env, crop: number, char: string) => env.ATLAS_RUNS.prepare(
   'INSERT INTO run_written(crop,char) VALUES(?,?) ON CONFLICT(crop) DO UPDATE SET char=excluded.char WHERE char<>excluded.char').bind(crop, char);
+
+// ---- A grapheme claim's write.
+
+// Crops as their runs fold them: the head of the family of the grapheme a holding claim reads one as,
+// on its effective cut (`filedClaimsQuery`), else of its character's family, else its own family; and
+// the character it is written with. One primary-key read and one `current_claim_crop` probe a crop.
+export const runHeadsQuery = () => `SELECT k.id,g.text AS char,coalesce(h.text,g.text,f.text) AS head,
+  (SELECT c.object FROM current_claims c INDEXED BY current_claim_crop LEFT JOIN reviews r ON r.crop=k.id WHERE c.crop=k.id AND c.predicate='has_grapheme'
+    AND c.scope='' AND c.slot='' AND c.object IS NOT NULL AND c.status IN (${FILING.map(s => `'${s}'`).join(',')})
+    AND c.cut=k.cut+(r.x IS NOT NULL)) AS claimed
+  FROM json_each(?) j JOIN crops k ON k.id=j.value LEFT JOIN graphemes g ON g.id=k.char LEFT JOIN graphemes h ON h.id=g.head
+  LEFT JOIN graphemes f ON f.id=k.family`;
+// Every run a crop is in: those it starts (`run_first`), the pairs it ends (`run_second`), and the
+// trigrams it is second or third in, which start where a pair ending at it, or the pair before that
+// one, starts. A trigram's crops are each a pair, as publication writes them.
+export const cropRunsQuery = () => `SELECT r.* FROM runs r WHERE r.first=?1
+  UNION ALL SELECT r.* FROM runs r WHERE r.second=?1 AND r.size=2
+  UNION ALL SELECT t.* FROM runs p CROSS JOIN runs t ON t.first=p.first WHERE p.second=?1 AND p.size=2 AND +t.size=3 AND +t.second=?1
+  UNION ALL SELECT t.* FROM runs p CROSS JOIN runs q ON q.second=p.first AND q.size=2 CROSS JOIN runs t ON t.first=q.first
+    WHERE p.second=?1 AND p.size=2 AND +t.size=3 AND +t.third=?1`;
+/** The statements that move one run to another key and its counts with it: the run moves only from
+ *  the key it was read under, and each count follows only a move that happened (`changes()` names the
+ *  rows the statement before changed), so a move another write made first is neither undone nor
+ *  counted twice. The first statement's change count tells whether this one moved the run. */
+export const runMoveStatements = (db: D1Database, run: { size: number; graphemes: string; hand: number; shuffle: number; first: number }, graphemes: string) => [
+  db.prepare('UPDATE OR IGNORE runs SET graphemes=? WHERE size=? AND graphemes=? AND hand=? AND shuffle=? AND first=?')
+    .bind(graphemes, run.size, run.graphemes, run.hand, run.shuffle, run.first),
+  db.prepare(`INSERT INTO run_stats(size,graphemes,n,down) SELECT ?,?,1,1 WHERE changes()=1
+    ON CONFLICT(size,graphemes) DO UPDATE SET n=n+1,down=down+1`).bind(run.size, graphemes),
+  db.prepare('UPDATE run_stats SET n=n-1,down=down-1 WHERE size=? AND graphemes=? AND changes()=1').bind(run.size, run.graphemes),
+  db.prepare('DELETE FROM run_stats WHERE size=? AND graphemes=? AND n<=0').bind(run.size, run.graphemes)];
+type RunRow = { size: number; graphemes: string; hand: number; shuffle: number; first: number; second: number; third: number | null; book: number };
+type RunHead = { id: number; char: string | null; head: string | null; claimed: string | null };
+/** File a crop's runs under the grapheme it is read as now, after a write moved its grapheme claim:
+ *  the crop folds to the head of the grapheme a holding claim reads it as, else of its own family, and
+ *  each other crop of a run that a claim reads keeps that claim's; the rest keep what their runs hold.
+ *  Each run whose graphemes change moves to its new key with its counts, and is named with the crop in
+ *  `run_moves`, from which the publisher takes it and files it again from the claims as they then
+ *  stand. The crop's `run_written` row names its character while that is not the head its runs fold
+ *  it to. A run moved by another write meanwhile is read and filed again. The site's and books' grids
+ *  and forms are the publication's answers, and count the move from the next one. */
+export async function refileRuns(env: Env, crop: number): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const rows = (await env.ATLAS_RUNS.prepare(cropRunsQuery()).bind(crop).all<RunRow>()).results;
+    if (!rows.length) return;
+    const members = (run: RunRow) => [run.first, run.second, run.third].slice(0, run.size) as number[];
+    const found = (await env.ATLAS.prepare(runHeadsQuery()).bind(JSON.stringify([...new Set(rows.flatMap(members))])).all<RunHead>()).results;
+    const claimed = await keyHeads(env, found.flatMap(r => r.claimed ? [r.claimed] : []));
+    const heads = new Map(found.flatMap(r => r.claimed ? [[r.id, keyText(claimed.get(r.claimed)!)] as const] : r.id === crop && r.head !== null ? [[r.id, r.head] as const] : []));
+    const own = found.find(r => r.id === crop);
+    if (!own) return;
+    const moved = rows.flatMap(run => {
+      const parts = runCharacters(run.graphemes);
+      if (parts.length !== run.size) return [];
+      const graphemes = members(run).map((id, i) => heads.get(id) ?? parts[i]).join('');
+      return graphemes === run.graphemes ? [] : [{ run, graphemes }];
+    });
+    if (!moved.length) return;
+    const db = env.ATLAS_RUNS;
+    const statements = moved.flatMap(({ run, graphemes }) => runMoveStatements(db, run, graphemes));
+    statements.push(...moved.map(({ run }) => db.prepare('INSERT OR IGNORE INTO run_moves(first,size,crop) VALUES(?,?,?)').bind(run.first, run.size, crop)));
+    const head = heads.get(crop);
+    if (own.char !== null && head !== undefined && own.char !== head) statements.push(writtenStatement(env, crop, own.char));
+    else if (own.char !== null) statements.push(db.prepare('DELETE FROM run_written WHERE crop=?').bind(crop));
+    const results = await db.batch(statements);
+    // A run another write moved between the read and the batch is left as that write left it: read again.
+    if (moved.every((_, i) => results[i * 4].meta.changes === 1)) return;
+  }
+}
 
 /** The routes of this module, or null for a path it does not serve. */
 export async function runsRoute(env: Env, ctx: ExecutionContext, url: URL): Promise<Response | null> {
