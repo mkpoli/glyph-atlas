@@ -349,19 +349,55 @@ describe('revisions as the offline store counts them', () => {
     expect(db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(ids[0])).toEqual({ text: 'い' });
   });
 
-  it('let an admin reject a review a publication has since changed the crop over', async () => {
+  it('let an admin reject a review a publication has since changed the crop over, leaving what the publication set', async () => {
     const { db, env, ids } = setup();
     expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
       id: uuid(737), revision: 0, image_sha256: H, verdict: 'wrong', issue: 'character', character: 'あ',
     })).status).toBe(200);
     db.exec(`UPDATE crops SET revision=2, char=5 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},1,2);
-      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label) VALUES(${ids[0]},2,0,0,0,0,1,8,5)`);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,published) VALUES(${ids[0]},2,0,0,0,0,1,8,5,1)`);
     const actor = (key: string) => (db.query('SELECT id FROM actors WHERE key=?').get(key) as any).id;
     const own = db.query('SELECT id,key,actor,at,undone FROM submissions WHERE key=?').get(`u1:${uuid(737)}`) as Submission;
     const rejected = await revert(env, own, actor('u1'), { by: 'admin', reason: 'vandalism' });
     expect(rejected.results).toHaveLength(1);
     expect(rejected.results[0].refused).toBeUndefined();
-    expect(db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(ids[0])).toEqual({ text: 'は' });
+    // The review's state goes; the character the publication set stays.
+    expect(db.query('SELECT g.text,c.state FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(ids[0])).toEqual({ text: 'い', state: 0 });
+    expect(db.query('SELECT undone FROM submissions WHERE key=?').get(`u1:${uuid(737)}`)).toEqual({ undone: 1 });
+  });
+
+  it('keep a submission a reviewer could undo only in part open for an admin, counting only what was undone', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, '/atlas/rounds', { id: uuid(739), grapheme: 'U+306F', answers: [
+      local(ids[0], { verdict: 'wrong', issue: 'character', character: 'あ' }), local(ids[2], { verdict: 'wrong', issue: 'character', character: 'あ' })] })).status).toBe(200);
+    // A publication since set the state of one crop.
+    db.exec(`UPDATE crops SET revision=2, state=1 WHERE id=${ids[0]};
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,state,published) VALUES(${ids[0]},2,0,0,0,0,1,8,1,2)`);
+    const undo = await send(env, `/atlas/rounds/${uuid(739)}/undo`, {});
+    expect(undo.body.results.map((r: any) => Boolean(r.refused))).toEqual([true, false]);
+    expect(db.query('SELECT undone FROM submissions WHERE key=?').get(`u1:${uuid(739)}`)).toEqual({ undone: 0 });
+    expect(db.query('SELECT reviews,rounds FROM actor_stats').get()).toEqual({ reviews: 1, rounds: 1 });
+    // Asked again, the reviewer gets the same refusal, and nothing is undone twice.
+    const again = await send(env, `/atlas/rounds/${uuid(739)}/undo`, {});
+    expect(again.body.results).toEqual([{ id: null, target_id: publicId(ids[0]), refused: 'This crop was published again since this review.' }]);
+    // An admin undoes the rest, and the submission is undone.
+    const actor = (key: string) => (db.query('SELECT id FROM actors WHERE key=?').get(key) as any).id;
+    const own = db.query('SELECT id,key,actor,at,undone FROM submissions WHERE key=?').get(`u1:${uuid(739)}`) as Submission;
+    const rejected = await revert(env, own, actor('u1'), { by: 'admin', reason: 'vandalism' });
+    expect(rejected.results.map(r => r.target_id)).toEqual([publicId(ids[0])]);
+    expect(db.query('SELECT undone FROM submissions WHERE key=?').get(`u1:${uuid(739)}`)).toEqual({ undone: 1 });
+    expect(db.query('SELECT reviews,rounds FROM actor_stats').get()).toEqual({ reviews: 0, rounds: 0 });
+  });
+
+  it('refuse a reviewer\'s undo where the crop moved on with no event since', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
+      id: uuid(749), revision: 0, image_sha256: H, verdict: 'wrong', issue: 'character', character: 'あ',
+    })).status).toBe(200);
+    // An older publication moved it on without an event.
+    db.exec(`UPDATE crops SET revision=2 WHERE id=${ids[0]}`);
+    const undo = await send(env, `/atlas/rounds/${uuid(749)}/undo`, {});
+    expect(undo.body.results[0].refused).toBeDefined();
   });
 
   it('let a reviewer undo a review across a publication that changed nothing it set', async () => {
@@ -371,11 +407,12 @@ describe('revisions as the offline store counts them', () => {
     })).status).toBe(200);
     // A publication that changed only whether the crop is dealt.
     db.exec(`UPDATE crops SET revision=2, quiz=0 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},1,2);
-      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,quiz) VALUES(${ids[0]},2,0,0,0,0,1,8,0)`);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,quiz,published) VALUES(${ids[0]},2,0,0,0,0,1,8,0,4)`);
     const undo = await send(env, `/atlas/rounds/${uuid(738)}/undo`, {});
     expect(undo.status).toBe(200);
     expect(undo.body.results[0].refused).toBeUndefined();
-    expect(db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(ids[0])).toEqual({ text: 'は' });
+    // The review's character goes; the quiz the publication set stays.
+    expect(db.query('SELECT g.text,c.quiz FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(ids[0])).toEqual({ text: 'は', quiz: 0 });
   });
 
   it('refuses a review when its page is published again between reading the crop and committing', async () => {

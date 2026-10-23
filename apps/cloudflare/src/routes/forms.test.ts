@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { d1 } from '../forms.test';
 import { cropId, publicId } from '../atlas3';
+import { LOGICAL } from './review';
 import { FOLLOW_BATCH, describedClaimsQuery, clusterGlyphsQuery, clusterQuery, familyClustersQuery, familyGlyphsQuery, followCorpus, followStatements,
   formsRoute, glyphFamiliesQuery, listFollowQuery, memberDatesQuery, memberRowsQuery, recountQuery, stateQuery } from './forms';
 
@@ -170,9 +171,10 @@ describe('the forms routes on glyph-atlas-v3', () => {
     await followCorpus(env);
     expect(db.query('SELECT char,family,decade,n FROM tally ORDER BY char').all())
       .toEqual([{ char: -1, family: 1, decade: -20, n: -1 }, { char: 2, family: 1, decade: -20, n: 1 }]);
-    // The new character moves the glyph on a revision with a publication event; the store still counts none.
-    expect(db.query('SELECT revision FROM crops WHERE id=?').get(crop)).toEqual({ revision: 1 });
-    expect(db.query('SELECT revision,kind FROM events WHERE crop=?').all(crop)).toEqual([{ revision: 1, kind: 8 }]);
+    // The new character moves the glyph on a revision with no event; the store still counts none.
+    expect(db.query('SELECT revision,bumps FROM crops WHERE id=?').get(crop)).toEqual({ revision: 1, bumps: 1 });
+    expect(db.query('SELECT count(*) AS n FROM events WHERE crop=?').get(crop)).toEqual({ n: 0 });
+    expect(db.query(`SELECT ${LOGICAL('c')} AS n FROM crops c WHERE c.id=?`).get(crop)).toEqual({ n: 0 });
     db.exec(`UPDATE form_clusters SET form=NULL WHERE id=1; INSERT INTO corpus_follow VALUES(${crop});`);
     await followCorpus(env);
     expect(db.query('SELECT * FROM tally').all()).toEqual([]);

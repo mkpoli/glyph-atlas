@@ -172,7 +172,9 @@ def test_a_newer_review_in_the_catalogue_is_applied_with_its_revision(layout, mo
     # A change a reviewer sees: a publication event, the boundary, at the crop's new revision, with the
     # store's revision recorded there.
     assert remote.query("glyph-atlas-v3", "SELECT revision, at FROM review_revisions WHERE crop=" + str(a1)) == [{"revision": 4, "at": 1}]
-    assert remote.query("glyph-atlas-v3", f"SELECT revision, kind FROM events WHERE crop={a1}") == [{"revision": 1, "kind": 8}]
+    # It names what it set (publish.SET_BITS): the state, as a character it set to none would be named too.
+    assert remote.query("glyph-atlas-v3", f"SELECT revision, kind, published FROM events WHERE crop={a1}") == [
+        {"revision": 1, "kind": 8, "published": publish.SET_BITS["state"]}]
 
 
 def test_a_publication_speaks_against_the_revision_the_store_counts_not_the_marks(layout, monkeypatch, tmp_path):
@@ -406,7 +408,8 @@ def test_a_crop_put_back_takes_a_revision_no_view_from_before_holds(layout, monk
     # A new revision, above every event and the one it was retired at; the store's 2 is recorded there.
     assert crops(remote)[a2]["revision"] == 4
     assert remote.query("glyph-atlas-v3", f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a2}") == [{"n": 2}]
-    assert remote.query("glyph-atlas-v3", f"SELECT revision, kind FROM events WHERE crop={a2} AND kind=8") == [{"revision": 4, "kind": 8}]
+    assert remote.query("glyph-atlas-v3", f"SELECT revision, kind, published FROM events WHERE crop={a2} AND kind=8") == [
+        {"revision": 4, "kind": 8, "published": publish.EVERYTHING}]
 
 
 def test_a_crop_retired_without_its_revision_is_not_put_back(layout, monkeypatch, tmp_path):
@@ -511,8 +514,8 @@ def test_a_known_crop_with_another_box_is_re_cut_under_its_own_id(layout, monkey
     # A new cut is a change a reviewer sees: one revision on, with a publication event holding the new cut;
     # the store's count and its anchor are untouched, as the publication did not speak for the crop.
     assert after["revision"] == before["revision"] + 1
-    assert remote.query("glyph-atlas-v3", f"SELECT revision, cut, kind FROM events WHERE crop={a2}") == [
-        {"revision": after["revision"], "cut": after["cut"], "kind": 8}]
+    assert remote.query("glyph-atlas-v3", f"SELECT revision, cut, kind, published FROM events WHERE crop={a2}") == [
+        {"revision": after["revision"], "cut": after["cut"], "kind": 8, "published": publish.SET_BITS["cut"]}]
     assert remote.query("glyph-atlas-v3", f"SELECT count(*) AS n FROM review_revisions WHERE crop={a2}") == [{"n": 0}]
     assert remote.query("glyph-atlas-v3", f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a2}") == [{"n": before["revision"]}]
     entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{a2 // PAGE}-2.json.gz").read_bytes()))["crops"]

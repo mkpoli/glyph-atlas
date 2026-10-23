@@ -6,7 +6,7 @@
 // carries (`carried`). A decision writes its rows and the family's recount in one batch; the unnamed
 // corpus glyphs it covers move `crops.char` to their form shortly after (`followCorpus`).
 import { publicId } from '../atlas3';
-import { LOGICAL, PUBLISHED } from './review';
+import { LOGICAL } from './review';
 import { StaleCrop, staleResponse, writtenCropField } from '../atlas3Crops';
 import { axisOf } from '../dating';
 import { type FormTools, GLYPHS_PER_DECISION, isDescription } from '../forms';
@@ -389,11 +389,9 @@ export const followStatements = () => [
   `INSERT OR IGNORE INTO graphemes(text) SELECT DISTINCT text FROM (${writtenAs}) WHERE decided AND text IS NOT NULL`,
   `INSERT OR IGNORE INTO form_bases(crop,char) SELECT c.id,c.char ${movable}`,
   tallied('-'),
-  // A new character is a change a reviewer sees: the glyph moves on a revision with a publication event,
-  // so no view from before it stands (review.ts PUBLISHED).
-  `INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label) SELECT c.id,c.revision+1,c.cut,${GEN},0,0,
-    CAST(strftime('%s','now') AS INTEGER)*1000,${PUBLISHED},t.char FROM crops c JOIN (${moved}) t ON t.id=c.id WHERE c.char IS NOT t.char`,
-  `UPDATE crops SET char=t.char,revision=revision+1 FROM (${moved}) AS t WHERE crops.id=t.id AND crops.char IS NOT t.char`,
+  // A new character moves the glyph on a revision, so no view from before it stands; it has no review to
+  // protect, so no event records it, and `bumps` keeps the store's count where it was.
+  `UPDATE crops SET char=t.char,revision=revision+1,bumps=bumps+1 FROM (${moved}) AS t WHERE crops.id=t.id AND crops.char IS NOT t.char`,
   tallied(''),
   `DELETE FROM tally WHERE gen=${GEN} AND n=0`,
   `DELETE FROM form_bases WHERE crop IN (SELECT id FROM (${writtenAs}) WHERE NOT decided)`,

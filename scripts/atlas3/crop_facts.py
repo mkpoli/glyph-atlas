@@ -76,7 +76,19 @@ import votes
 from build import HERE, OUT, PAGE, ROOT
 from history import Report
 from load_history import GROUP, SCHEMA, built, stamped
-from publish import BUCKET, FACTS_RUN, LOGICAL, R2_REMOTE, applied, fits, lit, query, send, upload
+from publish import (
+    BUCKET,
+    FACTS_RUN,
+    LOGICAL,
+    R2_REMOTE,
+    applied,
+    fits,
+    lit,
+    logical_sql,
+    query,
+    send,
+    upload,
+)
 
 FORMS_PREFIX = "v3/forms/"
 MANIFEST = "manifest.json.gz"
@@ -586,7 +598,7 @@ class Facts:
             f"CASE WHEN g.crop IS NOT NULL THEN g.decision IS NOT {carried} OR g.form IS NOT NULL OR g.issue IS NOT NULL "
             "ELSE k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue <> 'mixed') END "
             "FROM crops c LEFT JOIN form_glyphs g ON g.crop = c.id LEFT JOIN form_clusters k ON k.id = c.cluster "
-            f"WHERE c.kind = 1 AND {LOGICAL} = 0")}
+            f"WHERE c.kind = 1 AND {logical_sql(self.atlas)} = 0")}
         glyph_cols, cluster_cols = TABLES["form_glyphs"][0], TABLES["form_clusters"][0]
         glyphs = {r[0]: dict(zip(glyph_cols, r, strict=True)) for r in self.rows["form_glyphs"]}
         clusters = {r[0]: dict(zip(cluster_cols, r, strict=True)) for r in self.rows["form_clusters"]}
@@ -635,7 +647,8 @@ class Facts:
         # An unnamed corpus glyph whose decided form this load changes is listed for the site's follow
         # (`followCorpus`), which moves its character once `loading` is cleared.
         follow = self.follows()
-        # Unreviewed: the store counts none of its revisions, a publication's changes being no review.
+        # Unreviewed: the store counts none of its revisions, a publication's changes being no review. D1 has
+        # migration 0016 before this load runs (the release applies it first).
         out = [f"INSERT OR IGNORE INTO corpus_follow(crop) SELECT c.id FROM crops c WHERE c.id IN "
                f"({','.join(map(str, follow[i:i + CLUSTER_IDS]))}) AND c.kind = 1 AND {LOGICAL} = 0;"
                for i in range(0, len(follow), CLUSTER_IDS)]

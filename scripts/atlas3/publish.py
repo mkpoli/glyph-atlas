@@ -61,6 +61,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -100,11 +101,12 @@ R2_REMOTE = os.environ.get("ATLAS3_R2_REMOTE", "r2")
 BUCKET = "glyph-atlas"
 BUNDLE_PREFIX = "v3/pages/"
 CROP_COLS = ("id", "kind", "book", "char", "form", "cluster", "visual_group", "production", "category", "style",
-             "state", "quiz", "year", "cut", "revision", "flags", "priority", "family", "shuffle")
+             "state", "quiz", "year", "cut", "revision", "flags", "priority", "family", "shuffle", "bumps")
 # Columns a review owns.
 REVIEW_OWNED = ("char", "state", "style", "quiz", "kind", "flags")
 # What a crop takes when it is new and the catalogue does not say.
-DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0, "priority": 1, "family": None}
+DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0, "priority": 1, "family": None,
+            "bumps": 0}
 SUSPECT = 1
 # The mark states, the pending state and the event kind of a re-cut that clears a mark, as migrations
 # 0003 and 0009 and the first build number them. The publication's own events name actor and
@@ -196,7 +198,18 @@ PUBLISHED = 8
 UNCOUNTED = f"(e.kind IN (7,{PUBLISHED}) OR " + MARKED.format(e="e") + ")"
 LOGICAL = ("coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at "
            "AND e.revision<=c.revision AND NOT " + UNCOUNTED + ") FROM review_revisions a WHERE a.crop=c.id),"
-           "c.revision-(SELECT count(*) FROM events e WHERE e.crop=c.id AND e.revision<=c.revision AND " + UNCOUNTED + "))")
+           "c.revision-c.bumps-(SELECT count(*) FROM events e WHERE e.crop=c.id AND e.revision<=c.revision AND " + UNCOUNTED + "))")
+# The same for a copy without migration 0016, which has no anchors and no bumps.
+LOGICAL_BEFORE_0016 = "(c.revision-(SELECT count(*) FROM events e WHERE e.crop=c.id AND " + MARKED.format(e="e") + "))"
+
+
+def logical_sql(db):
+    """`LOGICAL` for a database, or its form before migration 0016 when the database lacks it."""
+    return LOGICAL if "bumps" in {r[1] for r in db.execute("PRAGMA table_info(crops)")} else LOGICAL_BEFORE_0016
+
+
+SET_BITS = {"char": 1, "state": 2, "quiz": 4, "cut": 8, "kind": 16, "flags": 32}
+EVERYTHING = sum(SET_BITS.values())
 
 
 def visible_change(sets, source, store=None):
@@ -208,11 +221,13 @@ def visible_change(sets, source, store=None):
     catalogue's revision) is the store's revision recorded there. Every writer of a field a review decides
     (char, state, kind, quiz, flags) or of the cut goes through here; one that records its own event need not."""
     held = {c: sets.get(c, "NULL") for c in ("char", "state", "quiz")}
+    # Which columns it set, so a cleared character is told from one left alone (routes/review.ts SET_BITS).
+    mask = sum(bit for column, bit in SET_BITS.items() if column in sets)
     # D1 holds no event past a crop's revision; a local copy that took D1's row back over an event of its own
     # may, and keeps that one.
-    statements = [(f"INSERT OR IGNORE INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,quiz) SELECT c.id,c.revision+1,"
-                   f"{sets.get('cut', 'c.cut')},(SELECT gen FROM generation WHERE id=0),0,0,{round(time.time() * 1000)},{PUBLISHED},"
-                   f"{held['char']},{held['state']},{held['quiz']} {source};"),
+    statements = [(f"INSERT OR IGNORE INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,quiz,published) SELECT c.id,"
+                   f"c.revision+1,{sets.get('cut', 'c.cut')},(SELECT gen FROM generation WHERE id=0),0,0,{round(time.time() * 1000)},{PUBLISHED},"
+                   f"{held['char']},{held['state']},{held['quiz']},{mask} {source};"),
                   f"UPDATE crops SET {','.join(f'{c}={v}' for c, v in sets.items())},revision=revision+1 WHERE id IN (SELECT c.id {source});"]
     if store is not None:
         statements.insert(1, f"INSERT INTO review_revisions(crop,revision,at) SELECT c.id,{store},c.revision+1 {source} "
@@ -225,28 +240,44 @@ def visible_change(sets, source, store=None):
 REVIEW_MIGRATIONS = (
     ("0015", "0015_review_evidence.sql", "SELECT 1 AS n FROM pragma_table_info('submissions') WHERE name='evidence'"),
     ("0016", "0016_review_revisions.sql",
-     "SELECT 1 AS n FROM (SELECT count(*) AS k FROM sqlite_master WHERE name IN ('review_revisions','event_reviews')) WHERE k=2"),
+     ("SELECT 1 AS n FROM (SELECT (SELECT count(*) FROM sqlite_master WHERE name IN ('review_revisions','event_reviews'))"
+      "+(SELECT count(*) FROM pragma_table_info('crops') WHERE name='bumps')"
+      "+(SELECT count(*) FROM pragma_table_info('events') WHERE name='published') AS k) WHERE k=4")),
 )
 
 
+def missing_only(sql, columns):
+    """A migration's statements less each `ALTER TABLE t ADD COLUMN c` whose column a database has
+    (`columns(table)`), so a copy that took part of it takes the rest."""
+    kept, code = [], re.sub(r"--[^\n]*", "", sql)
+    for statement in (part.strip() for part in code.split(";")):
+        added = re.match(r"ALTER TABLE (\w+) ADD COLUMN (\w+)", statement)
+        if statement and not (added and added[2] in columns(added[1])):
+            kept.append(statement + ";")
+    return "\n".join(kept) + "\n"
+
+
 def migrate_reviews(atlas, dry):
-    """Migrations 0015 and 0016 on D1 and on the local copy, where each lacks them. They reach D1 before
-    the Worker that reads them deploys; the local copy takes them here. A dry run changes neither."""
+    """Migrations 0015 and 0016 on D1 and on the local copy, where each lacks what it makes: a copy that
+    took part of one takes the rest. They reach D1 before the Worker that reads them deploys; the local copy
+    takes them here. A dry run changes neither."""
     if dry:
         return
     for number, name, made in REVIEW_MIGRATIONS:
+        sql = (CF / "migrations-atlas" / name).read_text()
+        stamp = f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES('migration:{number}', unixepoch());\n"
         path = OUT / "publish" / f"{number}.sql"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text((CF / "migrations-atlas" / name).read_text()
-                        + f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES('migration:{number}', unixepoch());\n")
         if not query("glyph-atlas-v3", made):
+            path.write_text(missing_only(sql, lambda t: {r["name"] for r in query("glyph-atlas-v3", f"SELECT name FROM pragma_table_info('{t}')")})
+                            + stamp)
             send("glyph-atlas-v3", path, f"migration:{number}")
             if not query("glyph-atlas-v3", made):
                 sys.exit(f"migration {number} did not apply; rerun")
             print(f"migration {number} applied to glyph-atlas-v3", flush=True)
         if not atlas.execute(made).fetchone():
-            atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
-
+            local = missing_only(sql, lambda t: {r[1] for r in atlas.execute(f"PRAGMA table_info({t})")})
+            atlas.executescript("BEGIN;\n" + local + stamp + "COMMIT;\n")
 
 
 RUNS_DATABASE = "glyph-atlas-v3-runs"
@@ -618,10 +649,7 @@ class Mirror:
     def logical(self, cid):
         """The crop's revision as the store counts it, in the local copy (`LOGICAL`); a dry run over a copy
         without migration 0016 counts its revision less the events the store never counts."""
-        if not self.atlas.execute("SELECT 1 FROM sqlite_master WHERE name='review_revisions'").fetchone():
-            return self.atlas.execute("SELECT c.revision-(SELECT count(*) FROM events e WHERE e.crop=c.id AND "
-                                      + UNCOUNTED + ") FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
-        return self.atlas.execute(f"SELECT {LOGICAL} FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
+        return self.atlas.execute(f"SELECT {logical_sql(self.atlas)} FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
 
     def page_key(self, pid):
         return self.ids.execute("SELECT key FROM pages WHERE id=?", (pid,)).fetchone()[0]
@@ -651,8 +679,9 @@ class Mirror:
                 self.page_sql[pid] += [
                     (f"UPDATE crops SET revision=max({catalogue_revision},{int(retired_at)},"
                      f"(SELECT coalesce(max(revision),0) FROM events WHERE crop={cid}))+1 WHERE id={cid};"),
-                    (f"INSERT OR IGNORE INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,quiz) SELECT id,revision,cut,"
-                     f"(SELECT gen FROM generation WHERE id=0),0,0,{round(time.time() * 1000)},{PUBLISHED},char,state,quiz FROM crops WHERE id={cid};"),
+                    (f"INSERT OR IGNORE INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,quiz,published) SELECT id,revision,"
+                     f"cut,(SELECT gen FROM generation WHERE id=0),0,0,{round(time.time() * 1000)},{PUBLISHED},char,state,quiz,{EVERYTHING} "
+                     f"FROM crops WHERE id={cid};"),
                     (f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},revision FROM crops "
                      f"WHERE id={cid} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")]
                 for statement in self.page_sql[pid][-3:]:
@@ -663,7 +692,7 @@ class Mirror:
             speaks = review_columns and catalogue_revision >= logical
             if review_columns and not speaks:
                 self.stale.append(cid)
-            changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle") and old[c] != row[c]
+            changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle", "bumps") and old[c] != row[c]
                        and (c not in REVIEW_OWNED or speaks)]
             own = [c for c in changed if c not in REVIEW_OWNED and c != "cut"]
             reviewed = [c for c in changed if c in REVIEW_OWNED]
