@@ -21,7 +21,8 @@ export type ReviewedInput = { row: Current; change: CropChange; answer: Json; ke
 export function baseline(row: Current, found: Baselines): Json {
   const character = { ...Object.fromEntries(Object.entries(row.record).filter(([key]) => !INTERNAL.has(key))),
     id: row.sourceId, ...(row.data.page_id ? { page_id: row.data.page_id } : {}) };
-  if (row.anchored !== null) return { character: { ...character, revision: row.anchored } };
+  // The boundary tells this publication from an earlier one of the same record, a crop put back among them.
+  if (row.anchored !== null) return { character: { ...character, revision: row.anchored }, ...(row.boundary !== null ? { boundary: row.boundary } : {}) };
   const legacy = found.legacy.get(row.id);
   if (legacy) return legacy;
   const prior = found.prior.get(row.id);

@@ -1,6 +1,8 @@
+import gc
 import gzip
 import importlib
 import json
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -443,6 +445,28 @@ def test_a_crop_retired_without_its_revision_is_not_put_back(layout, monkeypatch
     assert a2 not in crops(remote)
 
 
+def test_a_book_style_moves_each_crop_on_with_a_boundary(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1 = ids(root)["ex:a1"]
+    before = crops(remote)[a1]
+    path = tmp_path / "styles.sqlite"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE book_styles(document, style)")
+    db.execute("INSERT INTO book_styles VALUES('book:a', 'cursive')")
+    db.commit()
+    with pytest.raises(SystemExit, match=r"--approve-styles (\d+)") as refused:
+        run(publish, monkeypatch, path)
+    approved = re.search(r"--approve-styles (\d+)", str(refused.value)).group(1)
+    # The refused run's frames hold its lock on out/mirror.lock until they are released.
+    del refused
+    gc.collect()
+    run(publish, monkeypatch, path, "--approve-styles", approved)
+    after = crops(remote)[a1]
+    assert after["style"] != before["style"] and after["revision"] == before["revision"] + 1
+    assert remote.query("glyph-atlas-v3", f"SELECT boundary FROM review_revisions WHERE crop={a1}") == [{"boundary": after["revision"]}]
+    assert remote.query("glyph-atlas-v3", f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a1}") == [{"n": before["revision"]}]
+
+
 def test_a_corpus_catalogue_keeps_the_review_of_a_corpus_glyph(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     g1 = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["codh:g1"]
@@ -494,7 +518,11 @@ def test_a_known_crop_with_another_box_is_re_cut_under_its_own_id(layout, monkey
                                                                      state="checked", revision=3)]))
     after = crops(remote)[a2]
     assert ids(root)["ex:a2"] == a2 and after["cut"] == before["cut"] + 1
-    assert {k: after[k] for k in ("char", "state", "revision")} == {k: before[k] for k in ("char", "state", "revision")}
+    assert {k: after[k] for k in ("char", "state")} == {k: before[k] for k in ("char", "state")}
+    # A new cut is a change a reviewer sees: one revision on, a boundary there, the store's count kept.
+    assert after["revision"] == before["revision"] + 1
+    assert remote.query("glyph-atlas-v3", f"SELECT revision, at, boundary FROM review_revisions WHERE crop={a2}") == [
+        {"revision": before["revision"], "at": after["revision"], "boundary": after["revision"]}]
     entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{a2 // PAGE}-2.json.gz").read_bytes()))["crops"]
                  if e["id"] == "ex:a2")
     assert entry["box"] == {"x": 2, "y": 22, "w": 12, "h": 9}
@@ -510,12 +538,13 @@ def test_a_re_cut_takes_a_marked_crop_back_to_pending_with_its_event(layout, mon
         db.commit()
     run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 1, "y": 1, "w": 9, "h": 9})]))
     after = crops(remote)[a1]
-    assert (after["cut"], after["state"], after["revision"]) == (1, 0, 2)
+    # The new cut moves it on to 2 with a boundary; clearing the mark is event 3.
+    assert (after["cut"], after["state"], after["revision"]) == (1, 0, 3)
     db = remote.dbs["glyph-atlas-v3"]
-    assert [tuple(r) for r in db.execute("SELECT crop, revision, cut, actor, submission, kind, state FROM events")] == [(a1, 2, 1, 0, 0, 7, 0)]
+    assert [tuple(r) for r in db.execute("SELECT crop, revision, cut, actor, submission, kind, state FROM events")] == [(a1, 3, 1, 0, 0, 7, 0)]
     assert [tuple(r) for r in db.execute("SELECT state FROM reviews")] == [(0,)]
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
-    assert local.execute("SELECT state, revision FROM crops WHERE id=?", (a1,)).fetchone() == (0, 2)
+    assert local.execute("SELECT state, revision FROM crops WHERE id=?", (a1,)).fetchone() == (0, 3)
     # A crop that is not marked keeps its state through a re-cut.
     run(publish, monkeypatch, catalogue(tmp_path / "d.sqlite", [unit("ex:a1", "hl:p1", {"x": 2, "y": 2, "w": 8, "h": 8})]))
     assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 1

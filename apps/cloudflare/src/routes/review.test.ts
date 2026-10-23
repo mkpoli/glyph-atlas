@@ -313,6 +313,24 @@ describe('revisions as the offline store counts them', () => {
     expect(db.query('SELECT revision FROM crops WHERE id=?').get(ids[0])).toEqual({ revision: 2 });
   });
 
+  it('record nothing for a seen crop with a boundary that names no revision, as an older client sends it', async () => {
+    const { db, env, ids } = setup();
+    db.exec(`UPDATE crops SET revision=2 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at,boundary) VALUES(${ids[0]},0,2,2)`);
+    const { revision: _revision, ...bare } = local(ids[0], { revision: 2 });
+    expect((await send(env, '/atlas/rounds', { id: uuid(747), grapheme: 'U+306F', seen: [bare, local(ids[2])] })).status).toBe(200);
+    expect(db.query('SELECT crop FROM seen').all()).toEqual([{ crop: ids[2] }]);
+  });
+
+  it('record nothing for a seen crop put back between the round\'s read and its commit', async () => {
+    const { db, env, ids } = setup(), atlas = env.ATLAS;
+    env.ATLAS = { ...atlas, batch: async (statements: D1PreparedStatement[]) => {
+      db.exec(`UPDATE crops SET revision=1 WHERE id=${ids[0]}; INSERT OR REPLACE INTO review_revisions(crop,revision,at,boundary) VALUES(${ids[0]},0,1,1)`);
+      return atlas.batch(statements);
+    } } as D1Database;
+    expect((await send(env, '/atlas/rounds', { id: uuid(748), grapheme: 'U+306F', seen: [local(ids[0]), local(ids[2])] })).status).toBe(200);
+    expect(db.query('SELECT crop FROM seen').all()).toEqual([{ crop: ids[2] }]);
+  });
+
   it('refuse a view or an undo from before a crop was retired and put back', async () => {
     const { db, env, ids } = setup();
     expect((await send(env, '/atlas/rounds', { id: uuid(730), grapheme: 'U+306F', seen: [local(ids[0])] })).status).toBe(200);

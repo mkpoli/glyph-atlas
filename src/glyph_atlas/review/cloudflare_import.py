@@ -292,13 +292,14 @@ def ingest_cloudflare(store, payload: dict, *, apply=False) -> tuple[dict, dict]
                               "image_sha256": _source_digest(store, unit)}
                     if not actual["image_sha256"] or not _same_view(actual, before):
                         raise Rejected("local pixels, geometry, or identity changed")
+                    # The chain is the reviews under the current one's publication: a crop put back, or published
+                    # again, starts another, whose revisions may repeat the earlier one's.
                     chain = sorted((r for r in records if type(r.get("expected_revision")) is int
-                                    and r["expected_revision"] >= before["revision"]), key=lambda r: r["expected_revision"])
+                                    and r["expected_revision"] >= before["revision"]
+                                    and _json(r.get("publication_snapshot")) == publication_key), key=lambda r: r["expected_revision"])
                     if not chain or chain[-1]["event"]["id"] != remote["id"]:
                         raise Rejected("current review has no complete remote lineage")
                     for link in chain:
-                        if _json(link.get("publication_snapshot")) != publication_key:
-                            raise Rejected("remote history mixes publication baselines")
                         before = _step(link, before)
                     if record.get("current_revision") != before["revision"]:
                         raise Rejected("the exported current revision is not the reviewed revision")

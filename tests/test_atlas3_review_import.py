@@ -190,3 +190,18 @@ def test_a_line_correction_naming_another_issue_of_a_crop_reported_for_its_box_i
     _, report = cloudflare_import.ingest_cloudflare(store, source, apply=True)
     assert report["counts"] == {"imported": 1}, report
     assert store.unit("u").review == "disputed"
+
+
+def test_a_review_after_a_crop_is_put_back_starts_its_own_chain(store):  # noqa: F811
+    publication = baseline(store)
+    character = publication["character"]
+    answer = {"image_sha256": character["image_sha256"], "verdict": "wrong", "issue": "crop"}
+    before = capture(publication, records=[{"id": str(uuid4()), "before": character, "answer": answer}])
+    earlier = {**before["reviews"][0], "current": False}
+    # Put back at the store's revision 0 with a boundary at the crop's new revision 4: the next review's
+    # expected revision repeats the earlier one's.
+    after = capture(publication, records=[{"id": str(uuid4()), "before": character, "answer": answer, "anchored": 0, "boundary": 4}],
+                    start=2)
+    assert after["reviews"][0]["expected_revision"] == earlier["expected_revision"] == 0
+    _, report = cloudflare_import.ingest_cloudflare(store, {**after, "reviews": [earlier, *after["reviews"]]}, apply=True)
+    assert report["counts"] == {"imported": 1}, report

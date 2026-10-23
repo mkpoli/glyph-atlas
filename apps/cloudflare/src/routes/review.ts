@@ -504,8 +504,9 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     // the crop's own image is what the reader saw. A client that does not send it is held to the rest.
     // A corpus glyph's source revision covers its box and image reference.
     const same = row.kind === 1 ? data.source_revision === crop.source_revision : data.image_sha256 === crop.image_sha256;
-    // A view from before the crop's last boundary, or since moved past by a review, records nothing for it.
-    if (crop.revision !== undefined && !standing(row, crop.revision)) return null;
+    // A view from before the crop's last boundary, or since moved past by a review, records nothing for it;
+    // so does one that names no revision of a crop with a boundary, which an older client sends.
+    if (crop.revision === undefined ? row.boundary !== null : !standing(row, crop.revision)) return null;
     return same && members!.includes(data.label) && (crop.image === undefined || crop.image === data.image) ? row.id : null;
   };
   const shown = seen.map(stands).filter((n): n is number => n !== null);
@@ -516,10 +517,11 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   // Observations must still name the cut and character seen during validation when the batch commits.
   const observations = (ids: number[]) => JSON.stringify(ids.map(id => {
     const row = read.get(id) as Current;
-    return { crop: id, cut: row.cut, char: row.char, target_id: publicId(id) };
+    return { crop: id, cut: row.cut, char: row.char, revision: row.revision, target_id: publicId(id) };
   }));
   const shownRows = observations(shown), passedRows = observations(passed);
-  const observed = `c.id=j.value->>'crop' AND c.cut=j.value->>'cut' AND c.char IS j.value->>'char' AND c.quiz=1 AND c.kind<2`;
+  // At the revision validation read: a publication or a write in between leaves the crop unrecorded.
+  const observed = `c.id=j.value->>'crop' AND c.cut=j.value->>'cut' AND c.char IS j.value->>'char' AND c.revision=j.value->>'revision' AND c.quiz=1 AND c.kind<2`;
   // A crop a publication anchored takes its baseline from its bundle record alone; only the others read history.
   const priors = await priorBaselines(env, captured.filter(c => c.row.kind === 0 && c.row.anchored === null).map(c => c.row.id));
   const evidence = await captureReviews(env, captured, sent, mode, user, at, priors);

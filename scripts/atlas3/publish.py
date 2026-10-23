@@ -195,6 +195,17 @@ LOGICAL = ("coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.c
            "WHERE e.crop=c.id AND " + UNCOUNTED + "))")
 
 
+def visible_change(sets, source, store=LOGICAL):
+    """The statements of a change to what a reviewer sees of crops (`sets`, for the crops `source` selects as
+    `FROM crops c WHERE ...`): each crop's revision moves on by one, and its `review_revisions` row records a
+    boundary there, with the store's revision (`store`: the catalogue's, else the revision D1 counts now, so
+    the change itself is not counted). No view or undo from before it stands. Every writer of a column a
+    reviewer sees (REVIEW_OWNED, or the cut) goes through here, except the ones that record an event."""
+    return [(f"INSERT INTO review_revisions(crop,revision,at,boundary) SELECT c.id,{store},c.revision+1,c.revision+1 {source} "
+             "ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at,boundary=excluded.boundary;"),
+            f"UPDATE crops SET {sets},revision=revision+1 WHERE id IN (SELECT c.id {source});"]
+
+
 # The review migrations, each with a query that finds what it made. Each is applied where that is missing,
 # so a copy that took an earlier one (a mirror built after it, or one on another machine) is not touched again.
 REVIEW_MIGRATIONS = (
@@ -648,32 +659,33 @@ class Mirror:
                 self.stale.append(cid)
             changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle") and old[c] != row[c]
                        and (c not in REVIEW_OWNED or speaks)]
-            own = [c for c in changed if c not in REVIEW_OWNED]
+            own = [c for c in changed if c not in REVIEW_OWNED and c != "cut"]
             reviewed = [c for c in changed if c in REVIEW_OWNED]
             if own:
                 self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in own)} WHERE id={cid};")
-            # A change a reviewer can see moves the crop's revision on by one, so a view read before it is
-            # refused; otherwise the revision stays. It never goes back, since events name revisions.
-            row["revision"] = old["revision"] + (1 if reviewed else 0)
-            if reviewed:
-                reviewed.append("revision")
-            # What a reviewer sees changed: a review-owned column, or the cut. Only then is the anchor a
-            # boundary that no earlier view or undo crosses; a revision-only publication keeps the last one.
-            visible = bool(reviewed) or "cut" in changed
-            if speaks and (visible or catalogue_revision != logical):
-                # The store's revision for the crop from here on, recorded first under the same guard, so
-                # both statements apply or neither does.
-                changed.append("revision")
-                boundary = row["revision"] if visible else "NULL"
-                self.page_sql[pid].append(
-                    f"INSERT INTO review_revisions(crop,revision,at,boundary) SELECT id,{catalogue_revision},{row['revision']},{boundary} "
-                    f"FROM crops WHERE id={cid} AND revision={old['revision']} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,"
-                    "at=excluded.at,boundary=coalesce(excluded.boundary,review_revisions.boundary);")
+            # What a reviewer sees changes with a review-owned column or the cut: each moves the crop's
+            # revision on by one and sets a boundary (visible_change). A new cut always applies, as the
+            # bundle carries it; a review-owned change only while nobody has reviewed the crop since the
+            # revision the mirror holds. A revision-only publication keeps the revision and the boundary.
+            base = old["revision"]
+            if "cut" in changed:
+                self.page_sql[pid] += visible_change(f"cut={row['cut']}", f"FROM crops c WHERE c.id={cid}")
+                base += 1
                 self.guarded.append(cid)
-            if reviewed:
-                # Only while nobody has reviewed the crop since the revision the mirror holds.
-                self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in reviewed)} "
-                                          f"WHERE id={cid} AND revision={old['revision']};")
+            row["revision"] = base + (1 if reviewed else 0)
+            if row["revision"] != old["revision"]:
+                changed.append("revision")
+            if speaks and reviewed:
+                self.page_sql[pid] += visible_change(",".join(f"{c}={lit(row[c])}" for c in reviewed),
+                                                     f"FROM crops c WHERE c.id={cid} AND c.revision={base}", catalogue_revision)
+                self.guarded.append(cid)
+            elif speaks and catalogue_revision != logical:
+                # The store's revision for the crop from here on, at the crop's own revision.
+                page_changed = True
+                self.page_sql[pid].append(
+                    f"INSERT INTO review_revisions(crop,revision,at,boundary) SELECT id,{catalogue_revision},{base},NULL "
+                    f"FROM crops WHERE id={cid} AND revision={base} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,"
+                    "at=excluded.at,boundary=coalesce(excluded.boundary,review_revisions.boundary);")
                 self.guarded.append(cid)
             if old["kind"] == 1 and given.get("kind") == 1 and not review_columns and "char" in given:
                 # A followed glyph retains its character; the incoming character becomes the base
@@ -690,16 +702,20 @@ class Mirror:
                     base = None
                     page_changed = True
                 base_changed = base is not None and base[0] != upstream
-                crop_changed = base is None and old["revision"] == 0 and old["char"] != upstream
+                crop_changed = base is None and self.logical(cid) == 0 and old["char"] != upstream
                 if base_changed or crop_changed:
                     self.page_sql[pid].append(f"UPDATE form_bases SET char={lit(upstream)} WHERE crop={cid} AND char IS NOT {lit(upstream)};")
                     self.atlas.execute("UPDATE form_bases SET char=? WHERE crop=?", (upstream, cid))
-                    self.page_sql[pid].append(f"UPDATE crops SET char={lit(upstream)} WHERE id={cid} AND revision=0 "
-                                              f"AND NOT EXISTS (SELECT 1 FROM form_bases WHERE crop={cid});")
+                    # An unreviewed glyph takes the new character as a change a reviewer sees.
+                    self.page_sql[pid] += visible_change(f"char={lit(upstream)}", f"FROM crops c WHERE c.id={cid} AND {LOGICAL}=0 "
+                                                         f"AND NOT EXISTS (SELECT 1 FROM form_bases WHERE crop={cid})")
+                    self.guarded.append(cid)
                     # Conditional row writes travel with the page even when only its base changed.
                     page_changed = True
                 if crop_changed:
                     changed.append("char")
+                    row["revision"] = old["revision"] + 1
+                    changed.append("revision")
                 else:
                     row["char"] = old["char"]
             if "char" in changed:
@@ -1568,7 +1584,7 @@ def main():
                                     "ORDER BY c.kind, c.char, c.family, c.production, c.style, c.state, c.quiz, c.year, c.id",
                                     (book[0], code)).fetchall()
             restyled[code] += [(c["id"], c["revision"], tuple(tally_cell(c))) for c in found]
-            m.atlas.executemany("UPDATE crops SET style=? WHERE id=?", [(code, c["id"]) for c in found])
+            m.atlas.executemany("UPDATE crops SET style=?, revision=revision+1 WHERE id=?", [(code, c["id"]) for c in found])
             m.guarded += [c["id"] for c in found]
             n += len(found)
     style_sql, gen, tally_rows = [], "(SELECT gen FROM generation WHERE id=0)", 0
@@ -1585,7 +1601,7 @@ def main():
             style_sql.append([
                 f"{tally} {gen},{TALLY_CELL},-count(*) {changing} GROUP BY {TALLY_CELL} ON CONFLICT DO UPDATE SET n=n+excluded.n;",
                 f"{tally} {gen},{restyle_cell},count(*) {changing} GROUP BY {TALLY_CELL} ON CONFLICT DO UPDATE SET n=n+excluded.n;",
-                f"UPDATE crops SET style={code} WHERE id IN (SELECT c.id {changing});"])
+                *visible_change(f"style={code}", changing)])
 
     # Replacements are numbered once every crop of the catalogue has its id. None removes the field.
     for cid, text_id in naming:
