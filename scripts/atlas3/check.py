@@ -79,12 +79,15 @@ import time
 from collections import Counter, defaultdict
 from datetime import datetime
 
+import styles
 from build import HERE, OUT, PAGE, bundle_entry, char_text
 from history import CROP_PREDICATES
 from load_history import TABLES as LOADED
 from publish import releases_base
 from run_answers import FORMS_LISTED
 from run_answers import GRID as BOOK_GRID
+
+from glyph_atlas import style
 
 SHOWN = 20
 # How many `replaced_by` steps the site follows from a retired crop.
@@ -212,12 +215,19 @@ def check_crops(report, name):
     def marked(cid, w):
         return w[:2] + (marks[cid],) + w[3:8] + (w[8] + 1,) + w[9:] if w[2] == "pending" and cid in marks else w
 
+    # A confirmed document's style (`styles.py`, sent as a `book_styles` catalogue) stands for the
+    # unassessed style its crops' sources still name, once it has reached them.
+    confirmed = dict(styles.book_styles(style.confirmed()))
+
+    def styled(w, g, document):
+        return w[:3] + (g[3],) + w[4:] if w[3] == "unassessed" and g[3] == confirmed.get(document) else w
+
     diffs = []
     for u in local:
         cid = id_of.get(u[0])
         w = marked(cid, want(*u[2:10], 0) + (u[11] or "unknown", years.get(u[11]), int(bool(json.loads(u[10]).get("suspect"))),
                                               filed(u[2], u[12])))
-        if cid in rows and got(cid) != w:
+        if cid in rows and got(cid) != styled(w, got(cid), u[11]):
             diffs.append(f"{u[0]} ({cid}): live {w}, new layout {got(cid)}")
     for c in corpus:
         cid, o = id_of.get(c[0]), overlay.get(c[0])
@@ -228,6 +238,7 @@ def check_crops(report, name):
                  c[2], o[7] if o else None, c[4], o[9] if o else 0, 1) + (book, years.get(c[5]), 0,
                                                           filed((o[2] if o else None) or c[1], o[12] if o else c[10]))
         w, g = marked(cid, w), got(cid)
+        w = styled(w, g, c[5])
         # A corpus glyph's category is its review overlay's.
         if g != w:
             diffs.append(f"{c[0]} ({cid}): live {w}, new layout {g}")

@@ -89,6 +89,17 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   back, its tally moved from the cell it counted each glyph in to the cell of D1's row. A submission
   ends naming only the glyphs D1 flagged under it, and goes when it flagged none. The run's
   `flags.json` lists each id by how it was judged, `flags-outcome.json` what D1 flagged and refused.
+- A catalogue's `book_styles` (document, style), which `styles.py` writes from
+  `data/vocab/document-styles.yaml`, gives every collected crop and corpus glyph of each book that
+  style, guarded and read back like the other review-owned columns, and moves each changed crop's
+  `tally` cell in the same statements; the style is no bundle field, so no page moves. `styles.py`
+  refuses while a glyph or page of a confirmed document, a review event in the layout's local copy
+  (`events.style`, or a review whose style is not the one it was shown with), or a review store named
+  with `--review` gives a crop a style of its own, and in D1 a crop with such an event is passed
+  over. The first styles go the same way: the dry run writes the counts to the run's `styles.json`
+  (crop rows, index entries holding `style` per index, tally cells),
+  and the send runs only with `--approve-styles N` naming that crop count, after the owner has
+  approved the figures.
 - A catalogue whose `units` carry `visual` and `context`, as `export_cloudflare.py` writes them, sets
   each published crop's model votes for its cut in its page's object
   `v3/votes/<build>/<page>.json.gz` (`votes.py`), and a reading that is not ready removes them. Only
