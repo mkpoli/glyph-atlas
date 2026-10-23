@@ -1,7 +1,7 @@
 """Write the catalogue that gives the crops the site holds their document's confirmed style
 (`data/vocab/document-styles.yaml`).
 
-    python3 scripts/atlas3/styles.py <styles.sqlite> [--review work/DATASET ...]
+    python3 scripts/atlas3/styles.py <styles.sqlite> [--review work/DATASET ...]  (default: every work/*/review.sqlite)
     python3 scripts/atlas3/publish.py <styles.sqlite> --dry-run
     python3 scripts/atlas3/publish.py <styles.sqlite> --approve-styles N
 
@@ -115,13 +115,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("output", type=Path, help="the catalogue to write")
     parser.add_argument("--review", type=Path, action="append", default=[],
-                        help="a dataset directory whose review.sqlite may hold styles given to single crops")
+                        help="a dataset directory whose review.sqlite may hold styles given to single crops; "
+                             "by default every work/*/review.sqlite")
     args = parser.parse_args()
     if args.output.exists():
         sys.exit(f"{args.output} exists; the styles are written into a new file")
     confirmed = style.confirmed()
     documents = set(confirmed)
-    if crops := unit_styles(args.review):
+    reviews = args.review or sorted(path.parent for path in Path("work").glob("*/review.sqlite"))
+    if crops := unit_styles(reviews):
         raise Refused(f"{len(crops)} crops have a style of their own, e.g. {crops[0]}; publish them instead")
     if pages := page_styles(documents):
         raise Refused(f"{len(pages)} pages state a style of their own, e.g. {min(pages)}")

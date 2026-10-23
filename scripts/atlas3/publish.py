@@ -825,8 +825,9 @@ def deliver(m, run):
             # Restyled crops moved their local tally cells as the local copy's rows stood; one whose row
             # D1 holds otherwise moves on to the cell of D1's row.
             restyled = set(json.loads((run / "restyled.json").read_text())) if (run / "restyled.json").exists() else set()
-            for i in range(0, len(guarded), 200):
-                chunk = guarded[i:i + 200]
+            # 1,000 ids a query (about 8 KB of SQL), so a publish of many crops reads back in few queries.
+            for i in range(0, len(guarded), 1000):
+                chunk = guarded[i:i + 1000]
                 found = {r["id"]: r for r in query(database, f"SELECT * FROM crops WHERE id IN ({','.join(map(str, chunk))})")}
                 # The revision D1 counts for each crop as the store does, which the next publication speaks against.
                 logical = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision FROM crops c "
@@ -1051,6 +1052,10 @@ def main():
     src = sqlite3.connect(f"file:{catalogue}?mode=ro", uri=True) if catalogue else sqlite3.connect(":memory:")
     src.row_factory = sqlite3.Row
     tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    # A styles catalogue (styles.py) changes up to every crop of a book on an approved count; it carries
+    # nothing else, so nothing reaches D1 before its count is checked.
+    if "book_styles" in tables and tables - {"book_styles"}:
+        sys.exit(f"a book_styles catalogue holds book_styles alone, not {sorted(tables - {'book_styles'})}; nothing published")
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
     # D1 apart from catalogues). A book with neither keeps its crops' years.
     years = dict(m.ids.execute("SELECT key, year FROM book_years"))
@@ -1509,7 +1514,7 @@ def main():
     # A book's confirmed style, on each of its crops whose style differs and that no review gave a style
     # of its own, after the crops above. Each chunk moves the tally cells of the crops it changes, then
     # changes them, all under the same guard, so a crop reviewed since keeps its row and its count.
-    restyled, unbooked, style_cells = defaultdict(list), [], set()
+    restyled, unbooked = defaultdict(list), []
     own = "NOT EXISTS (SELECT 1 FROM events e WHERE e.crop=c.id AND e.style IS NOT NULL)"
     if "book_styles" in tables:
         for r in src.execute("SELECT document, style FROM book_styles ORDER BY document"):
@@ -1518,19 +1523,21 @@ def main():
                 unbooked.append(r["document"])
                 continue
             code = m.code("style", r["style"])
-            found = m.atlas.execute(f"SELECT c.* FROM crops c WHERE c.book=? AND c.kind<2 AND c.style IS NOT ? AND {own}",
+            # In tally order, so a chunk's crops share few cells and its tally statements write few rows.
+            found = m.atlas.execute(f"SELECT c.* FROM crops c WHERE c.book=? AND c.kind<2 AND c.style IS NOT ? AND {own} "
+                                    "ORDER BY c.kind, c.char, c.family, c.production, c.style, c.state, c.quiz, c.year, c.id",
                                     (book[0], code)).fetchall()
-            restyled[code] += [(c["id"], c["revision"]) for c in found]
-            for c in found:
-                cell = tally_cell(c)
-                style_cells.update({tuple(cell), (*cell[:5], code, *cell[6:])})
+            restyled[code] += [(c["id"], c["revision"], tuple(tally_cell(c))) for c in found]
             m.atlas.executemany("UPDATE crops SET style=? WHERE id=?", [(code, c["id"]) for c in found])
             m.guarded += [c["id"] for c in found]
             n += len(found)
-    style_sql, gen = [], "(SELECT gen FROM generation WHERE id=0)"
+    style_sql, gen, tally_rows = [], "(SELECT gen FROM generation WHERE id=0)", 0
     for code, crops in sorted(restyled.items()):
         for i in range(0, len(crops), RESTYLE):
-            values = ",".join(f"({cid},{rev})" for cid, rev in crops[i:i + RESTYLE])
+            chunk = crops[i:i + RESTYLE]
+            # The rows its two tally statements write: one per old cell and one per new cell.
+            tally_rows += len({cell for _, _, cell in chunk}) + len({(*cell[:5], code, *cell[6:]) for _, _, cell in chunk})
+            values = ",".join(f"({cid},{rev})" for cid, rev, _ in chunk)
             changing = (f"FROM crops c JOIN (VALUES {values}) AS v ON c.id=v.column1 AND c.revision=v.column2 "
                         f"WHERE c.style IS NOT {code} AND {own}")
             restyle_cell = TALLY_CELL.replace("coalesce(c.style,-1)", str(code))
@@ -1761,13 +1768,13 @@ def main():
               flush=True)
     styled_crops = sum(map(len, restyled.values()))
     if styled_crops:
-        (run / "restyled.json").write_text(json.dumps(sorted(cid for crops in restyled.values() for cid, _ in crops)))
-        moved = style_index_entries(m.atlas, [cid for crops in restyled.values() for cid, _ in crops])
-        (run / "styles.json").write_text(json.dumps({"crops": styled_crops, "index_entries": moved, "tally_cells": len(style_cells)}))
+        (run / "restyled.json").write_text(json.dumps(sorted(cid for crops in restyled.values() for cid, _, _ in crops)))
+        moved = style_index_entries(m.atlas, [cid for crops in restyled.values() for cid, _, _ in crops])
+        (run / "styles.json").write_text(json.dumps({"crops": styled_crops, "index_entries": moved, "tally_rows": tally_rows}))
         print(f"styles: {styled_crops} crop rows change style; index entries holding style that move: "
               + ", ".join(f"{k} {v}" for k, v in sorted(moved.items())) + f" ({sum(moved.values())} in all); "
-              f"{len(style_cells)} tally cells. D1 writes about {styled_crops + sum(moved.values()) + len(style_cells)} rows "
-              f"(up to {styled_crops + 2 * sum(moved.values()) + len(style_cells)} if it counts an index entry's move as two)", flush=True)
+              f"{tally_rows} tally row writes. D1 writes about {styled_crops + sum(moved.values()) + tally_rows} rows "
+              f"(up to {styled_crops + 2 * sum(moved.values()) + tally_rows} if it counts an index entry's move as two)", flush=True)
     if unbooked:
         print(f"{len(unbooked)} styled documents are no book of the layout, e.g. {unbooked[0]}", flush=True)
     if unresolved:

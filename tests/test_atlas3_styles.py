@@ -142,3 +142,22 @@ def test_a_layout_crop_with_a_style_of_its_own_stops_the_catalogue(layout, tmp_p
     atlas.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,9,0,0,0,0,0,0,1)", (a2,))
     assert styles.layout_styles({"book:a", "hl:never"}, mirror, atlas) == [a2]
     assert styles.layout_styles({"codh:b"}, mirror, atlas) == []
+
+
+def test_a_styles_catalogue_carries_nothing_else(layout, monkeypatch, tmp_path):  # noqa: F811
+    _root, publish, remote = layout
+    path = styled(tmp_path / "s.sqlite", [("book:a", "cursive")])
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE units(id)")
+    db.commit()
+    with pytest.raises(SystemExit, match="holds book_styles alone"):
+        run(publish, monkeypatch, path, "--approve-styles", "3")
+    assert remote.uploaded == []
+
+
+def test_the_dry_run_counts_each_chunks_tally_rows(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, _remote = layout
+    run(publish, monkeypatch, styled(tmp_path / "s.sqlite", [("book:a", "cursive")]), "--dry-run")
+    figures = json.loads((max((root / "out" / "publish").glob("*-s")) / "styles.json").read_text())
+    # Three crops of book:a: あ pending, い checked, う pending, each its own cell, each moved to cursive.
+    assert figures["crops"] == 3 and figures["tally_rows"] == 6
