@@ -50,7 +50,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from catalogue import schema
+from catalogue_schema import schema
 from seal_cloudflare import MEDIA_URL, crossing_packs, seal
 
 from glyph_atlas import withdrawn

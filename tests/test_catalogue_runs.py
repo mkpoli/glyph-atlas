@@ -12,7 +12,7 @@ from glyph_atlas.schema import Box, Line, Unit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import catalogue
+import catalogue_schema
 import export_cloudflare_corpus as export
 
 
@@ -61,7 +61,7 @@ def test_a_line_written_across_is_read_left_to_right():
 
 def export_db():
     db = sqlite3.connect(":memory:")
-    catalogue.schema(db)
+    catalogue_schema.schema(db)
     return db
 
 
@@ -254,10 +254,10 @@ def test_a_catalogue_holds_no_trigger_but_the_ledgers_and_refuses_one_made_with_
     db = export_db()
     assert {r[0] for r in db.execute("SELECT DISTINCT tbl_name FROM sqlite_master WHERE type='trigger'")} == {
         "assertions", "assertion_evidence", "assertion_premises", "assertion_actions", "forms", "representations"}
-    catalogue.schema(db)
+    catalogue_schema.schema(db)
     db.execute("CREATE TRIGGER t AFTER INSERT ON units BEGIN SELECT 1; END")
     with pytest.raises(ValueError, match="export it again"):
-        catalogue.schema(db)
+        catalogue_schema.schema(db)
 
 
 def test_a_base_no_decision_holds_any_more_gives_the_export_its_character(tmp_path):

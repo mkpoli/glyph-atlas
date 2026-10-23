@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 import httpx
-from catalogue import schema
+from catalogue_schema import schema
 from export_cloudflare import encoded
 from export_cloudflare_corpus import FrozenResolver
 from PIL import Image

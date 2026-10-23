@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 import pyarrow.dataset as ds
-from catalogue import schema
+from catalogue_schema import schema
 from export_cloudflare import Packs, encoded
 
 from glyph_atlas import box_relabel, export_lock, ngrams, style, tone, withdrawn

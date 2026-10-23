@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import export_character_variants
-from catalogue import schema
+from catalogue_schema import schema
 from PIL import Image
 
 from glyph_atlas import ainu_geometry, export_lock, images, ngrams, refs, style, tone, withdrawn
