@@ -104,12 +104,14 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   that grapheme's head, as the Worker files it when the claim is made; a crop the publish cuts again
   leaves its claims on the old cut. The local copy first takes from D1, and keeps, the runs the Worker
   moved (`run_moves`), their counts and their crops' `run_written` rows; nothing of them is sent back.
-  A run of a claimed or moved crop is taken out and put in under whatever key it holds when the part
-  lands, its count with it. Once the runs have landed, the publish files every run of a claimed or
-  moved crop again from the claims as they then stand (`reconcile`): a claim disputed meanwhile, a
-  claim a redrawn box or a new cut stopped, and a filing the Worker could not finish are put right, and
-  `run_moves` keeps only crops a claim still reads. Every move is guarded as the Worker's is, so
-  neither undoes nor counts twice what the other did. The publish keeps `run_written` for the
+  A run is taken out under whatever key it holds when the part lands, its count with it, and a run of
+  a claimed or moved crop is put in counted only if it went in. Once the runs have landed, the publish
+  files again the runs of every crop whose claim changed since the last reconcile and of every crop in
+  `run_moves`, from the claims as they then stand (`reconcile`): a claim disputed meanwhile, a claim a
+  redrawn box or a new cut stopped, and a filing the Worker could not finish are put right. Each batch's
+  runs are read before its claims and sent at once, `run_written` is written where it differs, and
+  `run_moves` keeps the runs a claim still reads. Every move is guarded as the Worker's is, so neither
+  undoes nor counts twice what the other did. The publish keeps `run_written` for the
   catalogue's crops and, once the runs have landed, writes again the R2 answers of the books and forms
   shards it and the moves changed and Explore's grids (`run_answers.py`), uploading those whose bytes
   R2 lacks. It refuses a local copy without `run_written` (`runs.py`). `runs.py --migrate` applies the runs
