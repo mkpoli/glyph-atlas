@@ -634,6 +634,7 @@
   "quiz.unavailableCount": "{count}件 利用 不可",
   "quiz.undecided": "未決 {count}件",
   "quiz.undoLastRound": "↶ 直前 回次 되돌리기",
+  "review.undoRefused.other": "{count}個의 크롭은 그 뒤 다시 公開되어 되돌릴 수 없습니다. 公開된 狀態로 維持됩니다.",
   "repair.checked": "確認됨",
   "repair.machine": "機械",
   "repair.reason.corpusUnconfirmed": "말뭉치에서 아직 確認되지 않은 候補",

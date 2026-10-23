@@ -620,6 +620,7 @@
   "quiz.unavailableCount": "{count}个不可用",
   "quiz.undecided": "待决定{count}个",
   "quiz.undoLastRound": "↶ 撤销上一轮",
+  "review.undoRefused.other": "{count}个裁切在此后重新发布，无法撤销，将保持已发布状态。",
   "repair.checked": "已核对",
   "repair.machine": "机器",
   "repair.reason.corpusUnconfirmed": "语料库尚未确认此线索",

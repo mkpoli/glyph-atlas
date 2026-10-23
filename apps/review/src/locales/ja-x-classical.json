@@ -615,6 +615,7 @@
   "quiz.unavailableCount": "{count}ハ得ラレズ",
   "quiz.undecided": "未決{count}",
   "quiz.undoLastRound": "↶ 前一巡ヲ取リ消ス",
+  "review.undoRefused.other": "{count}件ハ其ノ後再ビ公開セラレタレバ、元ニ戻スヲ得ズ。公開セル狀態ノママ殘ル。",
   "repair.checked": "確認濟",
   "repair.machine": "機械",
   "repair.reason.corpusUnconfirmed": "集成ハ未ダ此手掛ヲ確メズ",
