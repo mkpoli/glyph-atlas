@@ -239,15 +239,39 @@ def corpus_runs(corpus) -> tuple[list[ngrams.Run], list[str], dict[str, str]]:
 CHUNK = 5000
 
 
-def record_corpus_runs(db, corpus) -> int:
-    """Replace the runs of a corpus's glyphs in an export's `unit_ngrams`; return how many were written.
+def layout_characters(out: Path, ids, skipped=frozenset()) -> dict[str, str | None]:
+    """The character the published layout (`out`: the atlas-v3 copies `mirror.sqlite` and `atlas.sqlite`)
+    holds for each of `ids` it speaks for, by text id: a glyph a review has changed (revision above 0)
+    or a form decision moved (`form_bases`), as publish.py keeps them over the upstream character, and
+    every glyph in `skipped`, which this export does not write again."""
+    mirror = sqlite3.connect(f"file:{out / 'mirror.sqlite'}?mode=ro", uri=True)
+    atlas = sqlite3.connect(f"file:{out / 'atlas.sqlite'}?mode=ro", uri=True)
+    followed = "EXISTS(SELECT 1 FROM form_bases b WHERE b.crop=c.id)" if atlas.execute(
+        "SELECT 1 FROM sqlite_master WHERE name='form_bases'").fetchone() else "0"
+    ids, found = sorted(ids), {}
+    for start in range(0, len(ids), CHUNK):
+        number = dict(mirror.execute("SELECT text, id FROM ids WHERE text IN (SELECT value FROM json_each(?))",
+                                     (json.dumps(ids[start:start + CHUNK]),)))
+        rows = atlas.execute(f"SELECT c.id, g.text, c.revision > 0 OR {followed} FROM crops c LEFT JOIN graphemes g ON g.id=c.char "
+                             "WHERE c.id IN (SELECT value FROM json_each(?))", (json.dumps(list(number.values())),))
+        by_number = {cid: (text, speaks) for cid, text, speaks in rows}
+        for text_id, cid in number.items():
+            if cid in by_number and (by_number[cid][1] or text_id in skipped):
+                found[text_id] = by_number[cid][0]
+    return found
 
-    A glyph with no written character takes its label, which its runs read in place of one. A run is
-    recorded only while all of its glyphs are in the export's `corpus_units`, so one with a glyph of a
-    withdrawn document or one the export left out is not. A glyph with a review overlay (a `units` row
-    with `origin='corpus'`) reads its character, order and shuffle from it, as publish.py takes the
-    glyph's character from it; the label stands in only while neither holds a character. The run's
-    document is its first glyph's.
+
+def record_corpus_runs(db, corpus, layout: Path | None = None, skipped=frozenset()) -> tuple[int, int]:
+    """Replace the runs of a corpus's glyphs in an export's `unit_ngrams`; return how many were written
+    and how many of those the published layout's characters key otherwise than this export's.
+
+    A glyph with no written character takes its label, which its runs read in place of one. A glyph the
+    layout (`layout_characters`) speaks for reads its character from it, as publish.py keeps it: a review
+    or a form decision on the site outranks the corpus. A glyph in `skipped` is no row of this export but
+    is published; its runs read its character from the layout, so a publish does not take them for gone.
+    A run is recorded only while each of its glyphs has a row here or, past its first, is a skipped glyph
+    the layout holds; one with a glyph of a withdrawn document or one the export left out is not. The
+    run's document, order and shuffle are its first glyph's.
     """
     runs, on_lines, labels = corpus_runs(corpus)
     for start in range(0, len(on_lines), CHUNK):
@@ -258,11 +282,22 @@ def record_corpus_runs(db, corpus) -> int:
     glyphs = {}
     for start in range(0, len(members), CHUNK):
         glyphs.update((i, ngrams.Written(*rest)) for i, *rest in db.execute(
-            "SELECT c.id,coalesce(iif(u.id IS NULL,c.character,u.character),c.label),c.document,"
-            "coalesce(u.hand_order,c.hand_order),coalesce(u.shuffle,c.shuffle) FROM corpus_units c"
-            " LEFT JOIN units u ON u.id=c.id AND u.origin='corpus' WHERE c.id IN (SELECT value FROM json_each(?))",
+            "SELECT id,coalesce(character,label),document,hand_order,shuffle FROM corpus_units WHERE id IN (SELECT value FROM json_each(?))",
             (json.dumps(members[start:start + CHUNK]),)))
-    return ngrams.record_runs(db, sorted(runs), glyphs)
+    held = layout_characters(layout, members, skipped) if layout else {}
+    own = dict(glyphs)
+    for i, character in held.items():
+        if i in glyphs:
+            glyphs[i] = glyphs[i]._replace(character=character or glyphs[i].character)
+        elif i in skipped:
+            glyphs[i] = ngrams.Written(character, None, 0, 0)
+    # A skipped glyph stands in a run only after its first, which this export writes.
+    runs = [run for run in runs if run.units[0] in own]
+
+    def key(table, run):
+        return tuple(ngrams.fold(table[i].character) if table[i].character else None for i in run.units)
+    rekeyed = sum(1 for run in runs if all(i in own for i in run.units) and key(own, run) != key(glyphs, run))
+    return ngrams.record_runs(db, sorted(runs), glyphs), rekeyed
 
 
 def stale_units(dataset, vertical=None) -> set[str]:
@@ -301,8 +336,9 @@ def drop_stale(db, ids) -> int:
     return db.execute("DELETE FROM corpus_units WHERE id IN (SELECT id FROM stale_units)").rowcount
 
 
-def export(output, *, resume=False, published=None, corpora=None, skip=frozenset(), holder_images=False):
-    """Export every unit corpus, or only those named in `corpora`, leaving out the ids in `skip`.
+def export(output, *, resume=False, published=None, corpora=None, skip=frozenset(), holder_images=False, layout=None):
+    """Export every unit corpus, or only those named in `corpora`, leaving out the ids in `skip`. Runs
+    read the characters the published layout in `layout` holds (`record_corpus_runs`).
 
     With `holder_images`, a unit on a page the holder serves through IIIF points at the holder's
     region of its box, so no crop is packed for it; a pre-cut crop is packed as before.
@@ -458,7 +494,9 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
         record_file.close()
     packs.close()
     for corpus in found:
-        counts["runs"] += record_corpus_runs(db, corpus)
+        written, rekeyed = record_corpus_runs(db, corpus, layout, skip)
+        counts["runs"] += written
+        counts["runs-keyed-by-the-layout"] += rekeyed
         db.commit()
     db.close()
     print(encoded({"complete": True, "counts": dict(counts)}), flush=True)
@@ -478,7 +516,12 @@ if __name__ == "__main__":
                              "the site already holds, so a publication adds units without replacing them")
     parser.add_argument("--holder-images", action="store_true",
                         help="point units on IIIF pages at the holder's region instead of packing a crop")
+    parser.add_argument("--layout", type=Path, default=Path("work/atlas-v3/out"),
+                        help="the published layout's local copies (mirror.sqlite, atlas.sqlite), whose reviewed "
+                             "and form-decided characters the runs read (default: work/atlas-v3/out)")
     args = parser.parse_args()
-    export(args.output, resume=args.resume, corpora=args.corpora,
+    if not ((args.layout / "mirror.sqlite").exists() and (args.layout / "atlas.sqlite").exists()):
+        parser.error(f"{args.layout} holds no mirror.sqlite and atlas.sqlite; the runs need the published layout's characters")
+    export(args.output, resume=args.resume, corpora=args.corpora, layout=args.layout,
            published=published_keys(args.records_only) if args.records_only else None,
            skip=unit_ids(args.skip) if args.skip else frozenset(), holder_images=args.holder_images)

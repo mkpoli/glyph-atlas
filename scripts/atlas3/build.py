@@ -105,10 +105,12 @@ WRITTEN = """SELECT c.id, g.text FROM crops c JOIN graphemes g ON g.id = c.char
 
 
 def horizontal(rows):
-    """Stop on a run written across the page: the layout records no direction, since every run so far
-    is written down it (`run_stats.down` counts them); a column for it comes with the first one."""
+    """Count the runs written across the page, which the layout leaves out: it records no direction,
+    since every run it holds is written down the page (`run_stats.down` counts them); a column for it
+    comes when such runs are wanted. A horizontal line leaves out its own runs and stops nothing else."""
     if n := sum(1 for r in rows if not r["vertical"]):
-        sys.exit(f"{n} runs are written across the page; the layout has no column for their direction yet")
+        print(f"{n} runs are written across the page and left out; the layout has no column for their direction", flush=True)
+    return n
 
 
 STATE = {"pending": 0, "checked": 1, "flagged": 2}
@@ -286,7 +288,7 @@ def main():
     ngrams = src("unit_ngrams")
     horizontal(ngrams.execute("SELECT vertical FROM unit_ngrams"))
     out, stats, missing = [], defaultdict(lambda: [0, 0]), 0
-    for r in ngrams.execute("SELECT * FROM unit_ngrams"):
+    for r in ngrams.execute("SELECT * FROM unit_ngrams WHERE vertical"):
         a, b = ids.get(r["first"]), ids.get(r["second"])
         c = ids.get(r["third"]) if r["third"] else None
         if a is None or b is None or (r["third"] and c is None):

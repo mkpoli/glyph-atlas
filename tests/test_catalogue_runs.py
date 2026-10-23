@@ -180,18 +180,50 @@ def test_an_export_keeps_a_written_character_over_the_label(labelled):
     assert db.execute("SELECT text FROM unit_ngrams WHERE size=2 ORDER BY first").fetchall() == [("ゑし",), ("し候",)]
 
 
-def test_an_export_reads_a_glyphs_review_overlay_over_its_published_row(tmp_path):
+def published_layout(path, crops, followed=()):
+    """A published layout's copies: (text id, crop number, character, revision) rows, and the crops a
+    form decision moved."""
+    path.mkdir()
+    mirror = sqlite3.connect(path / "mirror.sqlite")
+    mirror.execute("CREATE TABLE ids(text TEXT PRIMARY KEY, id INTEGER NOT NULL UNIQUE) WITHOUT ROWID")
+    mirror.executemany("INSERT INTO ids VALUES(?,?)", [(t, cid) for t, cid, _, _ in crops])
+    mirror.commit()
+    atlas = sqlite3.connect(path / "atlas.sqlite")
+    atlas.executescript("CREATE TABLE graphemes(id INTEGER PRIMARY KEY, text TEXT NOT NULL UNIQUE, head INTEGER);"
+                        "CREATE TABLE crops(id INTEGER PRIMARY KEY, char INTEGER, revision INTEGER NOT NULL);"
+                        "CREATE TABLE form_bases(crop INTEGER PRIMARY KEY, char INTEGER)")
+    texts = sorted({c for _, _, c, _ in crops if c})
+    atlas.executemany("INSERT INTO graphemes(id,text) VALUES(?,?)", list(enumerate(texts, 1)))
+    atlas.executemany("INSERT INTO crops VALUES(?,?,?)", [(cid, texts.index(c) + 1 if c else None, rev) for _, cid, c, rev in crops])
+    atlas.executemany("INSERT INTO form_bases(crop) VALUES(?)", [(cid,) for cid in followed])
+    atlas.commit()
+    return path
+
+
+def test_an_export_reads_the_characters_the_published_layout_keeps(tmp_path):
     db = export_db()
-    held(db, [("K:0", "申"), ("K:1", "上"), ("K:2", None)], document="kept")
-    # K:0 reviewed to 中 in a cursive hand; K:2 reviewed with no character keeps its label.
-    db.executemany("INSERT INTO units(id,origin,character,production,category,state,revision,quiz,priority,shuffle,"
-                   "data,snapshot,context,visual,style) VALUES(?,'corpus',?,'printed/woodblock','kanji','accepted',1,1,1,?,"
-                   "'{}','{}','{}','{}',?)", [("K:0", "中", 3, "cursive"), ("K:2", None, 9, "unassessed")])
-    units = [unit("kept", "K", 0, 0), unit("kept", "K", 1, 40),
-             unit("kept", "K", 2, 80).model_copy(update={"text_source": "候"})]
-    export.record_corpus_runs(db, corpus(tmp_path, units))
-    assert db.execute("SELECT first,size,text,hand_order,shuffle FROM unit_ngrams ORDER BY first,size").fetchall() == [
-        ("K:0", 2, "中上", 0, 3), ("K:0", 3, "中上候", 0, 3), ("K:1", 2, "上候", 1, 7)]
+    held(db, [("K:0", "申"), ("K:1", "上"), ("K:2", "候"), ("K:3", "也")], document="kept")
+    # K:0 reviewed to 中; K:1 unreviewed, its old upstream 土 giving way to the export's 上; K:2 moved to 侯
+    # by a form decision; K:3 has never been published.
+    layout = published_layout(tmp_path / "layout", [("K:0", 1, "中", 2), ("K:1", 2, "土", 0), ("K:2", 3, "侯", 0)], followed=[3])
+    units = [unit("kept", "K", n, 40 * n) for n in range(4)]
+    written, rekeyed = export.record_corpus_runs(db, corpus(tmp_path, units), layout)
+    assert db.execute("SELECT first,size,text FROM unit_ngrams ORDER BY first,size").fetchall() == [
+        ("K:0", 2, "中上"), ("K:0", 3, "中上侯"), ("K:1", 2, "上侯"), ("K:1", 3, "上侯也"), ("K:2", 2, "侯也")]
+    # Every run through K:0 or K:2 is keyed by the layout's character, not the export's.
+    assert (written, rekeyed) == (5, 5)
+
+
+def test_a_run_through_a_skipped_glyph_reads_it_from_the_layout(tmp_path):
+    db = export_db()
+    # K:1 is held by the site and skipped by this export; K:0 and K:2 are written again.
+    held(db, [("K:0", "申"), ("K:2", "候")], document="kept")
+    layout = published_layout(tmp_path / "layout", [("K:0", 1, "申", 0), ("K:1", 2, "上", 0), ("K:2", 3, "候", 0)])
+    units = [unit("kept", "K", n, 40 * n) for n in range(3)]
+    export.record_corpus_runs(db, corpus(tmp_path, units), layout, skipped=frozenset({"K:1"}))
+    # The runs starting at K:0 keep K:1; K:1's own runs are no row of this export.
+    assert db.execute("SELECT first,size,second,text FROM unit_ngrams ORDER BY first,size").fetchall() == [
+        ("K:0", 2, "K:1", "申上"), ("K:0", 3, "K:1", "申上候")]
 
 
 def test_a_resumed_export_drops_the_runs_of_a_document_withdrawn_since(tmp_path, monkeypatch):

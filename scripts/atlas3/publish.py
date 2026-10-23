@@ -1496,7 +1496,7 @@ def main():
         want, missing = {}, 0
         if "unit_ngrams" in tables:
             horizontal(src.execute("SELECT vertical FROM unit_ngrams"))
-            for r in src.execute("SELECT * FROM unit_ngrams"):
+            for r in src.execute("SELECT * FROM unit_ngrams WHERE vertical"):
                 first = crop_ids.get(r["first"])
                 if first is None:
                     continue

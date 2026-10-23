@@ -206,12 +206,17 @@ def test_a_run_with_other_crops_is_updated_in_place(layout, monkeypatch, tmp_pat
     assert remote.dbs["glyph-atlas-v3-runs"].execute("SELECT second FROM runs").fetchall() == [(ids(root)["ex:b1"],)]
 
 
-def test_a_run_across_the_page_is_refused(layout, monkeypatch, tmp_path):  # noqa: F811
-    _root, publish, _remote = layout
-    path = catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ")],
-                     [("ex:a1", 2, "ex:a2", None, "あい", "book:a", 0, 1, 0, "あい")])
-    with pytest.raises(SystemExit, match="across the page"):
-        run(publish, monkeypatch, path)
+def test_a_run_across_the_page_is_left_out_and_the_rest_published(layout, monkeypatch, tmp_path, capsys):  # noqa: F811
+    root, publish, remote = layout
+    before = remote.dbs["glyph-atlas-v3-runs"].execute("SELECT * FROM runs ORDER BY first").fetchall()
+    path = catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "え")],
+                     [("ex:a1", 2, "ex:a2", None, "えい", "book:a", 0, 1, 0, "えい")])
+    run(publish, monkeypatch, path)
+    assert "1 runs are written across the page and left out" in capsys.readouterr().out
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?",
+                                                (ids(root)["ex:a1"],)).fetchone() == ("え",)
+    # The crop's runs down the page stay as they were.
+    assert remote.dbs["glyph-atlas-v3-runs"].execute("SELECT * FROM runs ORDER BY first").fetchall() == before
 
 
 def test_a_publish_needs_the_written_crops_loaded(layout, monkeypatch, tmp_path):  # noqa: F811
