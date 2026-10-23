@@ -888,7 +888,9 @@ def deliver(m, run):
                                         "SET revision=excluded.revision,at=excluded.at,boundary=excluded.boundary",
                                         (cid, r["revision"], r["at"], r["boundary"]))
                     local = m.atlas.execute("SELECT * FROM crops WHERE id=?", (cid,)).fetchone()
-                    if (cid in found) != (local is not None) or (local and found[cid]["revision"] != local["revision"]):
+                    # The local copy holds what the publication meant D1 to have; any column D1 holds otherwise was
+                    # kept by a write since (a revision alone can coincide with one).
+                    if (cid in found) != (local is not None) or (local and any(found[cid][c] != local[c] for c in CROP_COLS)):
                         refused.append(cid)
                     if cid in restyled:
                         before, now = local and tally_cell(local), cid in found and tally_cell(found[cid])
