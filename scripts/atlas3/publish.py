@@ -600,7 +600,7 @@ class Mirror:
     def page_key(self, pid):
         return self.ids.execute("SELECT key FROM pages WHERE id=?", (pid,)).fetchone()[0]
 
-    def crop(self, given, bundle, catalogue_revision, review_columns, suspect=None, restored=False):
+    def crop(self, given, bundle, catalogue_revision, review_columns, suspect=None, restored=False, retired_at=None):
         """`given` holds the columns the catalogue carries; the rest keep their value (or DEFAULTS when
         new). review_columns: whether the catalogue speaks for the review-owned columns."""
         cid, pid = given["id"], given["id"] // PAGE
@@ -618,14 +618,16 @@ class Mirror:
         if old is None:
             self.emit("crops", CROP_COLS, tuple(row[c] for c in CROP_COLS), page=pid)
             if restored:
-                # A crop put back keeps the events of its earlier life: its revision goes past every one,
-                # since events name revisions, and the store's revision is recorded at it, so those events
-                # are not counted again.
+                # A crop put back keeps the events of its earlier life. Its revision is a new one, above every
+                # event's and above the one it was retired at (its retired entry's), so no view or undo from
+                # before answers; the store's revision is recorded there, so those events are not counted again.
+                floor = -1 if retired_at is None else int(retired_at)
                 self.page_sql[pid] += [
-                    f"UPDATE crops SET revision=max(revision,(SELECT coalesce(max(revision),0) FROM events WHERE crop={cid})) WHERE id={cid};",
+                    (f"UPDATE crops SET revision=max(revision,(SELECT coalesce(max(revision),-1)+1 FROM events WHERE crop={cid}),{floor + 1}) "
+                     f"WHERE id={cid};"),
                     f"DELETE FROM review_revisions WHERE crop={cid};",
                     (f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},revision FROM crops WHERE id={cid} "
-                     f"AND EXISTS(SELECT 1 FROM events WHERE crop={cid});")]
+                     f"AND (revision<>{catalogue_revision} OR EXISTS(SELECT 1 FROM events WHERE crop={cid}));")]
                 for statement in self.page_sql[pid][-3:]:
                     self.atlas.execute(statement)
                 self.guarded.append(cid)
@@ -734,7 +736,10 @@ class Mirror:
             self.voted.add(pid)
         self.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
         self.guarded.append(cid)
-        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut, **(WITHDRAWN if withdrawn else {})}, True)
+        # A retired entry also keeps the revision it was retired at, which a crop put back goes past; a
+        # withdrawn one keeps its id and cut alone.
+        kept = WITHDRAWN if withdrawn else {"revision": mirror_revision}
+        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut, **kept}, True)
 
 
 def fits(groups):
@@ -1357,7 +1362,7 @@ def main():
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
         m.crop(given, bundle, r["revision"], True, suspect=bool(data.get("suspect")),
-               restored=row is None and bool(previous.get("retired")))
+               restored=row is None and bool(previous.get("retired")), retired_at=previous.get("revision"))
         if r["id"] in recut and row is not None and row["state"] in MARK_STATES:
             m.unmark(cid)
         if with_votes:

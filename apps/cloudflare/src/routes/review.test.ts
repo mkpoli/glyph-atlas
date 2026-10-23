@@ -266,6 +266,21 @@ describe('revisions as the offline store counts them', () => {
     expect(reviews[1].current_revision).toBe(3);
   });
 
+  it('refuse a view or an undo from before a crop was retired and put back', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, '/atlas/rounds', { id: uuid(730), grapheme: 'U+306F', seen: [local(ids[0])] })).status).toBe(200);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
+      id: uuid(732), revision: 1, image_sha256: H, verdict: 'wrong', issue: 'character', character: 'あ',
+    })).status).toBe(200);
+    // Retired at 2, then put back by a publication as い at the store's revision 1: a new revision, 3, records it.
+    db.exec(`UPDATE crops SET revision=3, char=5, state=0 WHERE id=${ids[0]};
+      INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},1,3)`);
+    const stale = await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(733), revision: 2, image_sha256: H, verdict: 'match' });
+    expect(stale.status).toBe(409);
+    expect((await send(env, `/atlas/rounds/${uuid(732)}/undo`, {})).status).toBe(409);
+    expect(db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(ids[0])).toEqual({ text: 'い' });
+  });
+
   it('refuses a review when its page is published again between reading the crop and committing', async () => {
     const { db, env, ids, page } = setup(), atlas = env.ATLAS;
     env.ATLAS = { ...atlas, batch: async (statements: D1PreparedStatement[]) => {
