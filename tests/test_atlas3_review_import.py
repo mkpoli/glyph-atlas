@@ -174,3 +174,19 @@ def test_a_batch_relabel_of_a_crop_reported_for_its_box_imports_as_disputed(stor
     _, report = cloudflare_import.ingest_cloudflare(store, source, apply=True)
     assert report["counts"] == {"imported": 1}, report
     assert (store.unit("u").unicode, store.unit("u").review) == ("U+3042", "disputed")
+
+
+def test_a_line_correction_naming_another_issue_of_a_crop_reported_for_its_box_imports_as_disputed(store):  # noqa: F811
+    publication = baseline(store)
+    character = publication["character"]
+    reported = capture(publication, records=[{"id": str(uuid4()), "before": character,
+                                              "answer": {"image_sha256": character["image_sha256"], "verdict": "wrong", "issue": "crop"}}])
+    _, report = cloudflare_import.ingest_cloudflare(store, reported, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    before = {**character, "revision": store.revision("u")}
+    blank = {"image_sha256": character["image_sha256"], "verdict": "wrong", "issue": "blank"}
+    source = capture({"character": before}, "batch", records=[{"id": str(uuid4()), "before": before, "answer": blank, "kept": "crop"}],
+                     start=2)
+    _, report = cloudflare_import.ingest_cloudflare(store, source, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    assert store.unit("u").review == "disputed"

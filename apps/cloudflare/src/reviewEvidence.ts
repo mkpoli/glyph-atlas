@@ -14,17 +14,27 @@ export async function storeReviewEvidence(env: Env, reviews: Record<string, Json
   return hash;
 }
 
+/** The reviews a stored object holds: gzipped JSON `{version: 1, reviews: {...}}`. Anything else, bytes
+ *  that do not unzip or parse included, is a 503 naming the object, so a caller retries or stops. */
+async function stored(object: { body: ReadableStream }, what: string, hash?: string): Promise<Record<string, Json>> {
+  let bytes: ArrayBuffer, saved: unknown;
+  try { bytes = await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() }
+  catch { throw new Problem(503, `The ${what} could not be read.`) }
+  if (hash !== undefined && await digest(bytes) !== hash) throw new Problem(503, 'Review evidence failed its integrity check.');
+  try { saved = JSON.parse(new TextDecoder().decode(bytes)) }
+  catch { throw new Problem(503, `The ${what} could not be read.`) }
+  const reviews = saved && typeof saved === 'object' && !Array.isArray(saved) ? (saved as Json).reviews : undefined;
+  if ((saved as Json | null)?.version !== 1 || !reviews || typeof reviews !== 'object' || Array.isArray(reviews))
+    throw new Problem(503, `Invalid ${what}.`);
+  return reviews;
+}
+
 /** Missing or damaged evidence must fail the export, so a partial page cannot be acknowledged. */
 export async function readReviewEvidence(env: Env, hash: string): Promise<Record<string, Json>> {
   if (!/^[0-9a-f]{64}$/.test(hash)) throw new Problem(503, 'Invalid review evidence reference.');
   const object = await env.MEDIA.get(evidenceKey(hash));
   if (!object) throw new Problem(503, 'Review evidence is unavailable.');
-  const bytes = await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-  if (await digest(bytes) !== hash) throw new Problem(503, 'Review evidence failed its integrity check.');
-  const saved = JSON.parse(new TextDecoder().decode(bytes));
-  if (saved.version !== 1 || !saved.reviews || typeof saved.reviews !== 'object' || Array.isArray(saved.reviews))
-    throw new Problem(503, 'Invalid review evidence object.');
-  return saved.reviews;
+  return stored(object, 'review evidence object', hash);
 }
 
 export const legacyKey = (page: number) => `v3/review-legacy/${page}.json.gz`;
@@ -32,11 +42,5 @@ export const legacyKey = (page: number) => `v3/review-legacy/${page}.json.gz`;
  *  has none archived. */
 export async function readLegacyReviews(env: Env, page: number): Promise<Record<string, Json> | null> {
   const object = await env.MEDIA.get(legacyKey(page));
-  if (!object) return null;
-  let saved: Json;
-  try { saved = JSON.parse(new TextDecoder().decode(await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer())) }
-  catch { throw new Problem(503, 'The legacy review archive could not be read.') }
-  if (saved.version !== 1 || !saved.reviews || typeof saved.reviews !== 'object' || Array.isArray(saved.reviews))
-    throw new Problem(503, 'Invalid legacy review archive.');
-  return saved.reviews;
+  return object ? stored(object, 'legacy review archive') : null;
 }

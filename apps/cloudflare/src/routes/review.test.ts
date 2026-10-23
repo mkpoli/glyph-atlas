@@ -11,6 +11,7 @@ import { body, canonical, literal, text } from '../input';
 import { setForm, type ClaimTools } from './claims';
 import { STALE_CODE } from '../atlas3Crops';
 import { reviewsPage } from './reviews';
+import { readReviewEvidence } from '../reviewEvidence';
 import { cropChanges, reviewCrops, reviewCropsQuery, reviewRoute, revert, roundMembersQuery, type Submission } from './review';
 
 const H = 'a'.repeat(64), G = 'b'.repeat(64);
@@ -186,6 +187,18 @@ describe('captured review exports', () => {
     expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, review)).status).toBe(503);
     objects.set(latest, kept);
     expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, review)).status).toBe(200);
+  });
+
+  it('build an anchored crop\'s baseline without reading its history', async () => {
+    const { db, env, ids } = setup();
+    // The old site reviewed it, its page has no archive, and a publication has since spoken for it.
+    db.exec(`INSERT INTO submissions(id,key,actor,request,response,at) VALUES(90,'old',1,'{}','{}',1);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,legacy) VALUES(${ids[0]},1,0,0,1,90,1,0,'old-1');
+      UPDATE crops SET revision=1 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},4,1)`);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(720), revision: 1, image_sha256: H, verdict: 'match' })).status).toBe(200);
+    const hash = (db.query('SELECT evidence FROM submissions ORDER BY id DESC LIMIT 1').get() as any).evidence;
+    expect((await readReviewEvidence(env, hash))[`crop:${ids[0]}`]).toMatchObject({ expected_revision: 4,
+      publication_snapshot: { character: { revision: 4 } } });
   });
 
   it('refuse to save a review of a crop the old site reviewed until its page is archived', async () => {

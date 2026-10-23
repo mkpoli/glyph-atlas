@@ -511,7 +511,8 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   }));
   const shownRows = observations(shown), passedRows = observations(passed);
   const observed = `c.id=j.value->>'crop' AND c.cut=j.value->>'cut' AND c.char IS j.value->>'char' AND c.quiz=1 AND c.kind<2`;
-  const priors = await priorBaselines(env, captured.filter(c => c.row.kind === 0).map(c => c.row.id));
+  // A crop a publication anchored takes its baseline from its bundle record alone; only the others read history.
+  const priors = await priorBaselines(env, captured.filter(c => c.row.kind === 0 && c.row.anchored === null).map(c => c.row.id));
   const evidence = await captureReviews(env, captured, sent, mode, user, at, priors);
   const actor = await actorFor(env, user);
   const statements = [env.ATLAS.prepare('INSERT INTO submissions(key,actor,request,response,at,evidence) VALUES (?,?,?,?,?,?)').bind(key, actor, signature, JSON.stringify(result), at, evidence),

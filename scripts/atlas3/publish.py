@@ -600,7 +600,7 @@ class Mirror:
     def page_key(self, pid):
         return self.ids.execute("SELECT key FROM pages WHERE id=?", (pid,)).fetchone()[0]
 
-    def crop(self, given, bundle, catalogue_revision, review_columns, suspect=None):
+    def crop(self, given, bundle, catalogue_revision, review_columns, suspect=None, restored=False):
         """`given` holds the columns the catalogue carries; the rest keep their value (or DEFAULTS when
         new). review_columns: whether the catalogue speaks for the review-owned columns."""
         cid, pid = given["id"], given["id"] // PAGE
@@ -617,6 +617,18 @@ class Mirror:
         page_changed = False
         if old is None:
             self.emit("crops", CROP_COLS, tuple(row[c] for c in CROP_COLS), page=pid)
+            if restored:
+                # A crop put back keeps the events of its earlier life: its revision goes past every one,
+                # since events name revisions, and the store's revision is recorded at it, so those events
+                # are not counted again.
+                self.page_sql[pid] += [
+                    f"UPDATE crops SET revision=max(revision,(SELECT coalesce(max(revision),0) FROM events WHERE crop={cid})) WHERE id={cid};",
+                    f"DELETE FROM review_revisions WHERE crop={cid};",
+                    (f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},revision FROM crops WHERE id={cid} "
+                     f"AND EXISTS(SELECT 1 FROM events WHERE crop={cid});")]
+                for statement in self.page_sql[pid][-3:]:
+                    self.atlas.execute(statement)
+                self.guarded.append(cid)
         else:
             logical = self.logical(cid)
             speaks = review_columns and catalogue_revision >= logical
@@ -1344,7 +1356,8 @@ def main():
         for field in ("image", "context_image"):
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
-        m.crop(given, bundle, r["revision"], True, suspect=bool(data.get("suspect")))
+        m.crop(given, bundle, r["revision"], True, suspect=bool(data.get("suspect")),
+               restored=row is None and bool(previous.get("retired")))
         if r["id"] in recut and row is not None and row["state"] in MARK_STATES:
             m.unmark(cid)
         if with_votes:

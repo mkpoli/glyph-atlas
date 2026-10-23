@@ -365,6 +365,24 @@ def test_a_retired_crop_leaves_the_galleries_and_its_runs_but_keeps_its_id(layou
     assert {"id": "ex:a2", "retired": True}.items() <= next(c for c in body["crops"] if c["id"] == "ex:a2").items()
 
 
+def test_a_crop_put_back_goes_past_the_events_of_its_earlier_life(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a2 = ids(root)["ex:a2"]
+    # Marked once (revision 1, 0 as the store counts it), retired at 0, then put back at 0.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind) VALUES(?, 1, 0, 0, 1, 1, 1, 3)", (a2,))
+        db.execute("UPDATE crops SET revision=1 WHERE id=?", (a2,))
+        db.commit()
+    gone = unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", revision=0)
+    run(publish, monkeypatch, catalogue(tmp_path / "gone.sqlite", [(gone[0], "retired", *gone[2:])]))
+    assert a2 not in crops(remote)
+    run(publish, monkeypatch, catalogue(tmp_path / "back.sqlite", [gone]))
+    assert crops(remote)[a2]["revision"] == 1
+    count = f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a2}"
+    assert remote.query("glyph-atlas-v3", count) == [{"n": 0}]
+    assert sqlite3.connect(root / "out" / "atlas.sqlite").execute(count).fetchone() == (0,)
+
+
 def test_a_corpus_catalogue_keeps_the_review_of_a_corpus_glyph(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     g1 = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["codh:g1"]

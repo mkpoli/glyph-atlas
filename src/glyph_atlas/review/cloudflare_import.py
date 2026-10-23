@@ -175,9 +175,9 @@ def _step(record, before):
         raise Rejected("saved effective state disagrees with the explicit correction")
     # A batch confirmation leaves a crop reported for its box, a blank or a merge reported (`kept_issue`).
     kept = evidence.get("kept_issue")
-    # It stands beside a confirmation or a new character, which a batch names.
-    if kept is not None and (recorded_terms.issue(kept) not in ("merged", "crop", "blank", "other") or issue not in (None, "character")):
-        raise Rejected("a kept issue stands beside a confirmation or a new character")
+    # It stands beside whatever the batch saved for the crop, which leaves it disputed.
+    if kept is not None and recorded_terms.issue(kept) not in ("merged", "crop", "blank", "other"):
+        raise Rejected("unsupported kept issue")
     resolved = (verdict == "match" or bool(issue == "character" and written)) and kept is None
     if event.get("new") != ("reviewed" if resolved else "disputed"):
         raise Rejected("review certainty exceeds the saved decision")
