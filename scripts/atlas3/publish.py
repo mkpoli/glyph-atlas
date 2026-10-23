@@ -37,6 +37,11 @@ images to the image key map (`media_map.py`).
   the crop's revision, character, kind and quiz and on no `corpus_rows` row, and a submission keeps
   only the glyphs D1 flagged under it; the outcome is read back into the local copy and
   `flags-outcome.json`, a glyph D1 refused counted as refused, not flagged.
+- A catalogue's `book_styles` (document, style), as `styles.py` writes it, gives every collected crop
+  and corpus glyph of each book that style, except one a review event gave a style of its own, and
+  moves their tally cells; in D1 only while the crop's revision is unchanged. No bundle changes. The
+  dry run counts the crop rows, index entries and tally cells it writes (`styles.json`), and the send
+  needs `--approve-styles` naming that count of crops.
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
   their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
@@ -111,6 +116,8 @@ RUN_KEY = ("size", "graphemes", "hand", "shuffle", "first")
 PART_BYTES = 40 * 1024 ** 2
 # D1 refuses a statement over 100 KB.
 STATEMENT_BYTES = 90_000
+# Crops one style statement names.
+RESTYLE = 400
 KEEP = object()
 # The actor a publish writes its flags under, and the glyphs one submission names (FLAG_MAX in the Worker).
 PUBLISHER, FLAG_MAX = "publish", 96
@@ -756,11 +763,31 @@ def mark(run, line):
         f.write(line + "\n")
 
 
+# A crop's tally cell as the Worker keys it (`applyStatements` in routes/review.ts).
+TALLY_CELL = ("c.kind,coalesce(c.char,-1),coalesce(c.family,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),"
+              "c.state,c.quiz,coalesce((c.year-CASE WHEN c.year<0 THEN 9 ELSE 0 END)/10*10,-1)")
+
+
 def tally_cell(row):
-    """A crop row's tally cell as the Worker keys it (`applyStatements` in routes/review.ts), year as decade."""
+    """A crop row's tally cell, as TALLY_CELL reads it."""
     return [row["kind"], *(-1 if row[k] is None else row[k] for k in ("char", "family")), row["book"],
             *(-1 if row[k] is None else row[k] for k in ("production", "style")), row["state"], row["quiz"],
             -1 if row["year"] is None else row["year"] // 10 * 10]
+
+
+def style_index_entries(atlas, crops):
+    """For each index of `crops` that holds `style`, how many of these crops it lists."""
+    atlas.execute("CREATE TEMP TABLE IF NOT EXISTS restyle(id INTEGER PRIMARY KEY)")
+    atlas.execute("DELETE FROM restyle")
+    atlas.executemany("INSERT INTO restyle VALUES(?)", [(c,) for c in crops])
+    out = {}
+    for name, sql in atlas.execute("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='crops' AND sql IS NOT NULL"):
+        head, _, where = sql.partition(" WHERE ")
+        if "style" not in head.split("(", 1)[1]:
+            continue
+        out[name] = atlas.execute("SELECT count(*) FROM crops WHERE id IN (SELECT id FROM restyle)"
+                                  + (f" AND ({where})" if where else "")).fetchone()[0]
+    return out
 
 
 def deliver(m, run):
@@ -795,6 +822,9 @@ def deliver(m, run):
                        if (row := m.atlas.execute("SELECT * FROM crops WHERE id=?", (cid,)).fetchone())}
             # A guarded change D1 refused (the crop was reviewed meanwhile) leaves D1's row; take it.
             guarded, refused = json.loads((run / "guarded.json").read_text()), []
+            # Restyled crops moved their local tally cells as the local copy's rows stood; one whose row
+            # D1 holds otherwise moves on to the cell of D1's row.
+            restyled = set(json.loads((run / "restyled.json").read_text())) if (run / "restyled.json").exists() else set()
             for i in range(0, len(guarded), 200):
                 chunk = guarded[i:i + 200]
                 found = {r["id"]: r for r in query(database, f"SELECT * FROM crops WHERE id IN ({','.join(map(str, chunk))})")}
@@ -805,9 +835,16 @@ def deliver(m, run):
                     if cid in logical:
                         m.atlas.execute("INSERT INTO review_revisions(crop,revision,at) VALUES(?,?,?) ON CONFLICT(crop) DO UPDATE "
                                         "SET revision=excluded.revision,at=excluded.at", (cid, logical[cid]["revision"], logical[cid]["at"]))
-                    local = m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
+                    local = m.atlas.execute("SELECT * FROM crops WHERE id=?", (cid,)).fetchone()
                     if (cid in found) != (local is not None) or (local and found[cid]["revision"] != local["revision"]):
                         refused.append(cid)
+                    if cid in restyled:
+                        before, now = local and tally_cell(local), cid in found and tally_cell(found[cid])
+                        for cell, step in ((before, -1), (now, 1)):
+                            if cell and before != now:
+                                m.atlas.execute("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) "
+                                                "SELECT gen,?,?,?,?,?,?,?,?,?,? FROM generation WHERE id=0 "
+                                                "ON CONFLICT DO UPDATE SET n=n+excluded.n", [*cell, step])
                     if cid in found:
                         r = found[cid]
                         m.atlas.execute(f"INSERT OR REPLACE INTO crops({','.join(CROP_COLS)}) VALUES({','.join('?' * len(CROP_COLS))})",
@@ -961,6 +998,8 @@ def main():
     parser = argparse.ArgumentParser(description="Publish a catalogue into the new layout.")
     parser.add_argument("catalogue", type=Path, nargs="?")
     parser.add_argument("--dry-run", action="store_true", help="write the parts and bundles, publish nothing")
+    parser.add_argument("--approve-styles", type=int, metavar="N",
+                        help="send a book_styles catalogue that changes exactly N crops, the figure its dry run reported")
     parser.add_argument("--replacements", action="store_true",
                         help="name the replacement of every retired crop from source-unit_redirects.sqlite")
     parser.add_argument("--migrate", action="store_true",
@@ -1413,9 +1452,6 @@ def main():
                 listed.append((cid, row, r))
         gen = "(SELECT gen FROM generation WHERE id=0)"
         actor = f"(SELECT id FROM actors WHERE key={lit(PUBLISHER)})"
-        # The tally's cell as the Worker keys it (`applyStatements` in routes/review.ts).
-        cell = ("c.kind,coalesce(c.char,-1),coalesce(c.family,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),"
-                "c.state,c.quiz,coalesce((c.year-CASE WHEN c.year<0 THEN 9 ELSE 0 END)/10*10,-1)")
         # One submission names one finding and at most FLAG_MAX glyphs, as the Worker's request does.
         by_finding = defaultdict(list)
         for item in listed:
@@ -1437,7 +1473,7 @@ def main():
                 # A function, so the catalogue's name in `event` never passes through str.format.
                 def tally(n, rev, cid=cid, event=event):
                     return ("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) SELECT "
-                            f"{gen},{cell},{n} FROM crops c WHERE c.id={cid} AND c.revision={rev} AND {event} "
+                            f"{gen},{TALLY_CELL},{n} FROM crops c WHERE c.id={cid} AND c.revision={rev} AND {event} "
                             "ON CONFLICT DO UPDATE SET n=n+excluded.n;")
                 # Each waits on the one before, so a glyph reviewed or named since keeps the site's rows.
                 group += [
@@ -1470,6 +1506,39 @@ def main():
                  f"response=json_object('flagged',(SELECT json_group_array(id) FROM t WHERE {took})) WHERE key={lit(key)};"),
                 f"DELETE FROM submissions WHERE key={lit(key)} AND NOT EXISTS (SELECT 1 FROM events e WHERE e.submission=submissions.id);"]
             flag_sql.append(group)
+    # A book's confirmed style, on each of its crops whose style differs and that no review gave a style
+    # of its own, after the crops above. Each chunk moves the tally cells of the crops it changes, then
+    # changes them, all under the same guard, so a crop reviewed since keeps its row and its count.
+    restyled, unbooked, style_cells = defaultdict(list), [], set()
+    own = "NOT EXISTS (SELECT 1 FROM events e WHERE e.crop=c.id AND e.style IS NOT NULL)"
+    if "book_styles" in tables:
+        for r in src.execute("SELECT document, style FROM book_styles ORDER BY document"):
+            book = m.ids.execute("SELECT id FROM books WHERE key=?", (r["document"],)).fetchone()
+            if book is None:
+                unbooked.append(r["document"])
+                continue
+            code = m.code("style", r["style"])
+            found = m.atlas.execute(f"SELECT c.* FROM crops c WHERE c.book=? AND c.kind<2 AND c.style IS NOT ? AND {own}",
+                                    (book[0], code)).fetchall()
+            restyled[code] += [(c["id"], c["revision"]) for c in found]
+            for c in found:
+                cell = tally_cell(c)
+                style_cells.update({tuple(cell), (*cell[:5], code, *cell[6:])})
+            m.atlas.executemany("UPDATE crops SET style=? WHERE id=?", [(code, c["id"]) for c in found])
+            m.guarded += [c["id"] for c in found]
+            n += len(found)
+    style_sql, gen = [], "(SELECT gen FROM generation WHERE id=0)"
+    for code, crops in sorted(restyled.items()):
+        for i in range(0, len(crops), RESTYLE):
+            values = ",".join(f"({cid},{rev})" for cid, rev in crops[i:i + RESTYLE])
+            changing = (f"FROM crops c JOIN (VALUES {values}) AS v ON c.id=v.column1 AND c.revision=v.column2 "
+                        f"WHERE c.style IS NOT {code} AND {own}")
+            restyle_cell = TALLY_CELL.replace("coalesce(c.style,-1)", str(code))
+            tally = "INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) SELECT"
+            style_sql.append([
+                f"{tally} {gen},{TALLY_CELL},-count(*) {changing} GROUP BY {TALLY_CELL} ON CONFLICT DO UPDATE SET n=n+excluded.n;",
+                f"{tally} {gen},{restyle_cell},count(*) {changing} GROUP BY {TALLY_CELL} ON CONFLICT DO UPDATE SET n=n+excluded.n;",
+                f"UPDATE crops SET style={code} WHERE id IN (SELECT c.id {changing});"])
 
     # Replacements are numbered once every crop of the catalogue has its id. None removes the field.
     for cid, text_id in naming:
@@ -1668,7 +1737,7 @@ def main():
     if stray:
         sys.exit(f"pages {stray[:5]} have row changes but no new bundle; nothing published")
 
-    groups = [m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)] + flag_sql
+    groups = [m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)] + flag_sql + style_sql
     atlas_parts = write_parts(run, "atlas", [g for g in groups if g])
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))
@@ -1690,6 +1759,17 @@ def main():
         (run / "flags.json").write_text(json.dumps({**flags, "at": at}))
         print("corpus flags to send: " + ", ".join(f"{len(v)} {k}" for k, v in sorted(flags.items())) + f" (ids in {run.name}/flags.json)",
               flush=True)
+    styled_crops = sum(map(len, restyled.values()))
+    if styled_crops:
+        (run / "restyled.json").write_text(json.dumps(sorted(cid for crops in restyled.values() for cid, _ in crops)))
+        moved = style_index_entries(m.atlas, [cid for crops in restyled.values() for cid, _ in crops])
+        (run / "styles.json").write_text(json.dumps({"crops": styled_crops, "index_entries": moved, "tally_cells": len(style_cells)}))
+        print(f"styles: {styled_crops} crop rows change style; index entries holding style that move: "
+              + ", ".join(f"{k} {v}" for k, v in sorted(moved.items())) + f" ({sum(moved.values())} in all); "
+              f"{len(style_cells)} tally cells. D1 writes about {styled_crops + sum(moved.values()) + len(style_cells)} rows "
+              f"(up to {styled_crops + 2 * sum(moved.values()) + len(style_cells)} if it counts an index entry's move as two)", flush=True)
+    if unbooked:
+        print(f"{len(unbooked)} styled documents are no book of the layout, e.g. {unbooked[0]}", flush=True)
     if unresolved:
         (run / "unreplaced.txt").write_text("\n".join(unresolved) + "\n")
         print(f"{len(unresolved)} retired crops have no live crop on their redirect chain and name no replacement "
@@ -1707,6 +1787,11 @@ def main():
         return
     if withdraw_refused:
         (run / "refused-withdrawals.txt").write_text("\n".join(withdraw_refused) + "\n")
+    if styled_crops and args.approve_styles != styled_crops:
+        m.ids.rollback()
+        mark(run, "styles not approved")
+        sys.exit(f"{styled_crops} crops would change style; nothing sent. Send with --approve-styles {styled_crops} once the "
+                 "owner has approved the dry run's figures")
     m.runs.execute(ANSWERS_OWED)
     owed = m.runs.execute("SELECT 1 FROM answers_owed LIMIT 1").fetchone()
     if not atlas_parts and not runs_parts and not voted and not withdraw_refused and not pending() and not owed:
