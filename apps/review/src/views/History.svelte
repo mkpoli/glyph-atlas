@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import { undoOutcome } from '../lib/undoOutcome.js'
   import { tileDate } from '../lib/dating.js'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
@@ -90,7 +91,11 @@
   let undoing = $state('')
   async function undoBatch(batch) {
     undoing = batch; error = ''
-    try { await request(`/atlas/corrections/${batch}/undo`, {}); await load() }
+    try {
+      const { refused } = undoOutcome(await request(`/atlas/corrections/${batch}/undo`, {}))
+      await load()
+      if (refused) error = t('review.undoRefused', { count: refused })
+    }
     catch (e) { error = e.message }
     finally { undoing = '' }
   }

@@ -263,6 +263,25 @@ def test_migrate_applies_the_review_migrations_alone_and_stamps_them(layout, mon
     assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports WHERE stamp LIKE 'migration:001_'") == [{"n": 1}]
 
 
+def test_a_database_that_took_an_earlier_0016_gains_its_new_columns_under_a_stamp_of_their_own(layout, monkeypatch):
+    root, publish, remote = layout
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executescript("ALTER TABLE crops DROP COLUMN bumps; ALTER TABLE events DROP COLUMN published;")
+        db.commit()
+    # As publish.py stamps the whole migration when it applies one.
+    remote.dbs["glyph-atlas-v3"].execute("INSERT INTO imports(stamp, at) VALUES('migration:0016', 0)")
+    remote.dbs["glyph-atlas-v3"].commit()
+    # Before them, the count reads the anchors and leaves re-cut events out.
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert "review_revisions" in publish.logical_sql(local) and "kind IN (7," in publish.logical_sql(local)
+    monkeypatch.setattr(sys, "argv", ["publish.py", "--migrate"])
+    publish.main()
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        assert "bumps" in {r[1] for r in db.execute("PRAGMA table_info(crops)")}
+        assert "published" in {r[1] for r in db.execute("PRAGMA table_info(events)")}
+    assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports WHERE stamp LIKE 'migration:0016+%'") == [{"n": 1}]
+
+
 def test_a_local_copy_without_the_review_history_is_refused(layout, monkeypatch, tmp_path):
     root, publish, _remote = layout
     db = sqlite3.connect(root / "out" / "atlas.sqlite")

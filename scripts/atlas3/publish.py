@@ -196,16 +196,22 @@ PUBLISHED = 8
 # and its changes, PUBLISHED). Only events up to the crop's revision count, so a statement that writes an
 # event before moving the crop on reads the same count on either side of it.
 UNCOUNTED = f"(e.kind IN (7,{PUBLISHED}) OR " + MARKED.format(e="e") + ")"
-LOGICAL = ("coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at "
-           "AND e.revision<=c.revision AND NOT " + UNCOUNTED + ") FROM review_revisions a WHERE a.crop=c.id),"
-           "c.revision-c.bumps-(SELECT count(*) FROM events e WHERE e.crop=c.id AND e.revision<=c.revision AND " + UNCOUNTED + "))")
-# The same for a copy without migration 0016, which has no anchors and no bumps.
-LOGICAL_BEFORE_0016 = "(c.revision-(SELECT count(*) FROM events e WHERE e.crop=c.id AND " + MARKED.format(e="e") + "))"
+def _logical(anchors=True, bumps=True):
+    """`LOGICAL`, for a database with or without the anchors (`review_revisions`) and the `bumps` column."""
+    anchored = ("(SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at "
+                "AND e.revision<=c.revision AND NOT " + UNCOUNTED + ") FROM review_revisions a WHERE a.crop=c.id)") if anchors else "NULL"
+    return (f"coalesce({anchored},c.revision{'-c.bumps' if bumps else ''}-(SELECT count(*) FROM events e WHERE e.crop=c.id "
+            "AND e.revision<=c.revision AND " + UNCOUNTED + "))")
+
+
+LOGICAL = _logical()
 
 
 def logical_sql(db):
-    """`LOGICAL` for a database, or its form before migration 0016 when the database lacks it."""
-    return LOGICAL if "bumps" in {r[1] for r in db.execute("PRAGMA table_info(crops)")} else LOGICAL_BEFORE_0016
+    """`LOGICAL` for a database, with each part only where the database has what it reads: a copy that took
+    an earlier migration 0016 may have the anchors and not `bumps`."""
+    anchors = db.execute("SELECT 1 FROM sqlite_master WHERE name='review_revisions'").fetchone() is not None
+    return _logical(anchors, "bumps" in {r[1] for r in db.execute("PRAGMA table_info(crops)")})
 
 
 SET_BITS = {"char": 1, "state": 2, "quiz": 4, "cut": 8, "kind": 16, "flags": 32}
@@ -265,18 +271,23 @@ def migrate_reviews(atlas, dry):
         return
     for number, name, made in REVIEW_MIGRATIONS:
         sql = (CF / "migrations-atlas" / name).read_text()
-        stamp = f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES('migration:{number}', unixepoch());\n"
         path = OUT / "publish" / f"{number}.sql"
         path.parent.mkdir(parents=True, exist_ok=True)
         if not query("glyph-atlas-v3", made):
-            path.write_text(missing_only(sql, lambda t: {r["name"] for r in query("glyph-atlas-v3", f"SELECT name FROM pragma_table_info('{t}')")})
-                            + stamp)
-            send("glyph-atlas-v3", path, f"migration:{number}")
+            part = missing_only(sql, lambda t: {r["name"] for r in query("glyph-atlas-v3", f"SELECT name FROM pragma_table_info('{t}')")})
+            # A database that took an earlier form of it holds its stamp already, and send() takes a present
+            # stamp as applied: what it lacks then goes under a stamp of its own.
+            stamp = f"migration:{number}"
+            if applied("glyph-atlas-v3", stamp):
+                stamp += f"+{hashlib.sha256(part.encode()).hexdigest()[:8]}"
+            path.write_text(part + f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES({lit(stamp)}, unixepoch());\n")
+            send("glyph-atlas-v3", path, stamp)
             if not query("glyph-atlas-v3", made):
                 sys.exit(f"migration {number} did not apply; rerun")
             print(f"migration {number} applied to glyph-atlas-v3", flush=True)
         if not atlas.execute(made).fetchone():
             local = missing_only(sql, lambda t: {r[1] for r in atlas.execute(f"PRAGMA table_info({t})")})
+            stamp = f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES('migration:{number}', unixepoch());\n"
             atlas.executescript("BEGIN;\n" + local + stamp + "COMMIT;\n")
 
 

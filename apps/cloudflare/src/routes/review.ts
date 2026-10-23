@@ -627,12 +627,17 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     FROM events e LEFT JOIN graphemes g ON g.id=e.shown WHERE e.submission=? AND e.kind IN (0,1,2) ORDER BY e.id`).bind(submission.id).all<Reviewed>()).results;
   const open = reviewed.filter(r => !r.reversed);
   const read = await reviewCrops(env, open.map(r => r.crop));
+  // Every event since each review, in one read.
+  const after = new Map<number, { kind: number; published: number | null }[]>();
+  if (open.length) for (const e of (await env.ATLAS.prepare(`SELECT j.value->>'id' AS review,e.kind,e.published FROM json_each(?) j
+    JOIN crops c ON c.id=j.value->>'crop' JOIN events e ON e.crop=c.id AND e.revision>j.value->>'revision' AND e.revision<=c.revision`)
+    .bind(JSON.stringify(open.map(r => ({ id: r.id, crop: r.crop, revision: r.revision })))).all<{ review: number; kind: number; published: number | null }>()).results)
+    after.set(e.review, [...after.get(e.review) ?? [], e]);
   const at = Date.now(), changes: CropChange[] = [], results: Json[] = [];
   for (const r of open) {
     const current = read.get(r.crop)!;
     if (current instanceof Problem) throw current;
-    const since = (await env.ATLAS.prepare(`SELECT kind,published FROM events WHERE crop=? AND revision>? AND revision<=?`)
-      .bind(r.crop, r.revision, current.revision).all<{ kind: number; published: number | null }>()).results;
+    const since = after.get(r.id) ?? [];
     const set = since.filter(e => e.kind === PUBLISHED).reduce((bits, e) => bits | (e.published ?? SET.all), 0);
     // What the review set: its state always, its character when it named another, its box when drawn.
     const wrote = SET.state | (r.label !== r.shown ? SET.char : 0) | (r.x !== null ? SET.cut : 0);

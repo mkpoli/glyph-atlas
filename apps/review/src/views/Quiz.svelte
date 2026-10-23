@@ -5,6 +5,7 @@
   // Only explicitly marked problems are saved as reviews. An unmarked crop that was on screen is
   // recorded as seen, which keeps it out of later rounds without confirming it.
   import { onMount, tick, untrack } from 'svelte'
+  import { undoOutcome } from '../lib/undoOutcome.js'
   import { pushState, replaceState } from '$app/navigation'
   import { page, updated } from '$app/state'
   import Glyph from '../components/Glyph.svelte'
@@ -732,11 +733,15 @@
     if (!last || saving) return
     saving = true; error = ''; errorStatus = 0
     try {
-      await keptWhilePaused(request(`/atlas/rounds/${last.id}/undo`, {}))
+      const sent = request(`/atlas/rounds/${last.id}/undo`, {})
+      const kept = await keptWhilePaused(sent)
+      // Crops a publication changed since stay as published; the round keeps its count for them.
+      const { refused } = kept ? { refused: 0 } : undoOutcome(await sent)
       // A round stored by an older version may name a scope the menu no longer offers.
       const target = last.grapheme, scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
-      completed = Math.max(0, completed - last.count); last = null
+      completed = Math.max(0, completed - Math.max(0, last.count - refused)); last = null
       remember('atlas.last-round', null); await load({ target, scope })
+      if (refused) error = t('review.undoRefused', { count: refused })
     } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
     finally { saving = false }
   }
