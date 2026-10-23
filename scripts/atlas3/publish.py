@@ -746,16 +746,18 @@ class Mirror:
                 if base_changed or crop_changed:
                     self.page_sql[pid].append(f"UPDATE form_bases SET char={lit(upstream)} WHERE crop={cid} AND char IS NOT {lit(upstream)};")
                     self.atlas.execute("UPDATE form_bases SET char=? WHERE crop=?", (upstream, cid))
-                    # An unreviewed glyph takes the new character as a change a reviewer sees.
-                    self.page_sql[pid] += visible_change({"char": lit(upstream)}, f"FROM crops c WHERE c.id={cid} AND {LOGICAL}=0 "
-                                                         f"AND NOT EXISTS (SELECT 1 FROM form_bases WHERE crop={cid})")
+                    # An unreviewed glyph takes the new character a revision on, so no view from before stands. It
+                    # has no review to protect, so no event records it, and `bumps` keeps the store's count.
+                    self.page_sql[pid].append(f"UPDATE crops SET char={lit(upstream)},revision=revision+1,bumps=bumps+1 WHERE id IN "
+                                              f"(SELECT c.id FROM crops c WHERE c.id={cid} AND {LOGICAL}=0 "
+                                              f"AND NOT EXISTS (SELECT 1 FROM form_bases WHERE crop={cid}));")
                     self.guarded.append(cid)
                     # Conditional row writes travel with the page even when only its base changed.
                     page_changed = True
                 if crop_changed:
                     changed.append("char")
-                    row["revision"] = old["revision"] + 1
-                    changed.append("revision")
+                    row["revision"], row["bumps"] = old["revision"] + 1, old["bumps"] + 1
+                    changed += ["revision", "bumps"]
                 else:
                     row["char"] = old["char"]
             if "char" in changed:
