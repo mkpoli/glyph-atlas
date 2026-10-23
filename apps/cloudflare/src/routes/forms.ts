@@ -6,6 +6,7 @@
 // carries (`carried`). A decision writes its rows and the family's recount in one batch; the unnamed
 // corpus glyphs it covers move `crops.char` to their form shortly after (`followCorpus`).
 import { publicId } from '../atlas3';
+import { LOGICAL } from './review';
 import { StaleCrop, staleResponse, writtenCropField } from '../atlas3Crops';
 import { axisOf } from '../dating';
 import { type FormTools, GLYPHS_PER_DECISION, isDescription } from '../forms';
@@ -243,7 +244,7 @@ export const glyphFamiliesQuery = () => `SELECT count(*) AS n,count(DISTINCT k.f
   FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN form_clusters k ON k.id=c.cluster LEFT JOIN form_families f ON f.code_point=k.family`;
 // The unnamed corpus glyphs among a decision's crops, listed for `followCorpus`.
 export const listFollowQuery = () => `INSERT OR IGNORE INTO corpus_follow(crop) SELECT c.id FROM json_each(?) j
-  JOIN crops c ON c.id=j.value WHERE c.kind=1 AND c.revision=0`;
+  JOIN crops c ON c.id=j.value WHERE c.kind=1 AND ${UNREVIEWED}`;
 
 async function decide(env: Env, request: Request, tools: FormTools, actor: string, ctx: ExecutionContext): Promise<Json | Response> {
   const input = await tools.body(request);
@@ -368,14 +369,19 @@ function restoreGlyphs(rows: Json[]) {
 // second on D1.
 export const FOLLOW_BATCH = 500;
 const following = `SELECT crop FROM corpus_follow WHERE (SELECT loading FROM form_state WHERE id=0)=0 ORDER BY crop LIMIT ${FOLLOW_BATCH}`;
-const movable = `FROM crops c WHERE c.id IN (${following}) AND c.kind=1 AND c.revision=0`;
+// A glyph no one has reviewed: the store counts none of its revisions (a publication's changes are not
+// reviews).
+const UNREVIEWED = `${LOGICAL('c')}=0`;
+const movable = `FROM crops c WHERE c.id IN (${following}) AND c.kind=1 AND ${UNREVIEWED}`;
 // What each listed unnamed glyph is written as: its `form_glyphs` row's character or form, else its
 // cluster's; `decided` is 0 when no decision names a form or report for it and it has no own decision.
 const writtenAs = `SELECT c.id,CASE WHEN g.crop IS NOT NULL THEN coalesce(g.character,g.form) ELSE coalesce(k.character,k.form) END AS text,
   CASE WHEN g.crop IS NOT NULL THEN ${OWN('g')} OR g.form IS NOT NULL OR g.issue IS NOT NULL
     ELSE k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue<>'mixed') END AS decided
   FROM crops c LEFT JOIN form_glyphs g ON g.crop=c.id LEFT JOIN form_clusters k ON k.id=c.cluster
-  WHERE c.id IN (${following}) AND c.kind=1 AND c.revision=0`;
+  WHERE c.id IN (${following}) AND c.kind=1 AND ${UNREVIEWED}`;
+const moved = `SELECT w.id,CASE WHEN w.decided THEN (SELECT id FROM graphemes WHERE text=w.text) ELSE b.char END AS char
+  FROM (${writtenAs}) w JOIN form_bases b ON b.crop=w.id`;
 const cell = 'c.kind,coalesce(c.char,-1),coalesce(c.family,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),c.state,c.quiz,coalesce((c.year-CASE WHEN c.year<0 THEN 9 ELSE 0 END)/10*10,-1)';
 const tallied = (sign: string) => `INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n)
   SELECT ${GEN},${cell},${sign}count(*) ${movable} GROUP BY ${cell} ON CONFLICT DO UPDATE SET n=n+excluded.n`;
@@ -383,8 +389,9 @@ export const followStatements = () => [
   `INSERT OR IGNORE INTO graphemes(text) SELECT DISTINCT text FROM (${writtenAs}) WHERE decided AND text IS NOT NULL`,
   `INSERT OR IGNORE INTO form_bases(crop,char) SELECT c.id,c.char ${movable}`,
   tallied('-'),
-  `UPDATE crops SET char=t.char FROM (SELECT w.id,CASE WHEN w.decided THEN (SELECT id FROM graphemes WHERE text=w.text) ELSE b.char END AS char
-    FROM (${writtenAs}) w JOIN form_bases b ON b.crop=w.id) AS t WHERE crops.id=t.id AND crops.char IS NOT t.char`,
+  // A new character moves the glyph on a revision, so no view from before it stands; it has no review to
+  // protect, so no event records it, and `bumps` keeps the store's count where it was.
+  `UPDATE crops SET char=t.char,revision=revision+1,bumps=bumps+1 FROM (${moved}) AS t WHERE crops.id=t.id AND crops.char IS NOT t.char`,
   tallied(''),
   `DELETE FROM tally WHERE gen=${GEN} AND n=0`,
   `DELETE FROM form_bases WHERE crop IN (SELECT id FROM (${writtenAs}) WHERE NOT decided)`,

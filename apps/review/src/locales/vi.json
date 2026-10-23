@@ -611,6 +611,7 @@
   "quiz.unavailableCount": "{count} không có sẵn",
   "quiz.undecided": "{count} chưa quyết định",
   "quiz.undoLastRound": "↶ Hoàn tác vòng trước",
+  "review.undoRefused.other": "{count} vùng cắt đã được công bố lại sau đó nên không thể hoàn tác và vẫn giữ trạng thái đã công bố.",
   "repair.checked": "đã kiểm tra",
   "repair.machine": "máy",
   "repair.reason.corpusUnconfirmed": "kho ngữ liệu chưa xác nhận kết quả khớp này",

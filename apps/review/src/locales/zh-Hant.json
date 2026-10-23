@@ -620,6 +620,7 @@
   "quiz.unavailableCount": "{count}項無法使用",
   "quiz.undecided": "待決定{count}個",
   "quiz.undoLastRound": "↶ 復原上一輪",
+  "review.undoRefused.other": "{count}個裁切範圍在此後重新發布，無法復原，將維持已發布狀態。",
   "repair.checked": "已覈對",
   "repair.machine": "機器",
   "repair.reason.corpusUnconfirmed": "語料庫尚未確認此線索",

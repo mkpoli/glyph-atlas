@@ -613,6 +613,7 @@
   "quiz.unavailableCount": "{count}件利用不可",
   "quiz.undecided": "未決定{count}件",
   "quiz.undoLastRound": "↶前のラウンドを元に戻す",
+  "review.undoRefused.other": "{count}件はその後再び公開されたため、元に戻せません。公開された状態のまま残ります。",
   "repair.checked": "確認済み",
   "repair.machine": "機械",
   "repair.reason.corpusUnconfirmed": "コーパスがこの候補を確認していません",

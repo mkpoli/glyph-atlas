@@ -621,6 +621,7 @@
   "quiz.unavailableCount": "{count}不可得",
   "quiz.undecided": "待定{count}",
   "quiz.undoLastRound": "↶ 撤前一過",
+  "review.undoRefused.other": "{count}截其後再布，不可復，仍存已布之狀。",
   "repair.checked": "已校",
   "repair.machine": "機",
   "repair.reason.corpusUnconfirmed": "群籍未證此緒",

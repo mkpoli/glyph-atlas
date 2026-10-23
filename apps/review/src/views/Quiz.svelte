@@ -5,6 +5,7 @@
   // Only explicitly marked problems are saved as reviews. An unmarked crop that was on screen is
   // recorded as seen, which keeps it out of later rounds without confirming it.
   import { onMount, tick, untrack } from 'svelte'
+  import { undoOutcome } from '../lib/undoOutcome.js'
   import { pushState, replaceState } from '$app/navigation'
   import { page, updated } from '$app/state'
   import Glyph from '../components/Glyph.svelte'
@@ -623,10 +624,12 @@
     if (!answered) { jump(selectedItems.findIndex(i => !choices[i.id] && !skipped[i.id])); return }
     submit()
   }
+  // A crop recorded as seen or skipped, as it was shown: the site records nothing for one that changed since.
+  const observation = i => ({ id: i.id, revision: i.revision, ...pixels(i), image: i.image })
   /** The crops this round skipped. A skip is recorded against the reviewer, not as a decision: other
    * reviewers are dealt the crop first, and it comes back to this one only after a rest. */
   function skippedCrops() {
-    return items.filter(i => skipped[i.id] && !failed[i.id] && viewed[i.id] && !recorded[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
+    return items.filter(i => skipped[i.id] && !failed[i.id] && viewed[i.id] && !recorded[i.id]).map(observation)
   }
   // A round the site refused is reported in the reader's language; the service's messages are English.
   const roundError = e => e.status === 409 ? t('quiz.roundChanged') : e.code === 'paused' ? t('client.paused') : t('quiz.roundNotSaved')
@@ -684,7 +687,7 @@
     // Every other crop the round showed was seen and left unflagged. That is not a confirmation,
     // but it is recorded, so the crop is not dealt again.
     const flagged = new Set(answers.map(answer => answer.id))
-    const seen = remaining.filter(i => !flagged.has(i.id) && viewed[i.id] && !recorded[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
+    const seen = remaining.filter(i => !flagged.has(i.id) && viewed[i.id] && !recorded[i.id]).map(observation)
     const passed = skippedCrops()
     if (!answers.length && !seen.length && !passed.length) { await load(); return }
     saving = true; error = ''; errorStatus = 0
@@ -706,7 +709,7 @@
   /** Record what a round with nothing selected showed: the crops seen, and the crops skipped. Every
    * way out of such a round goes through here, so none of them drops the round's record. */
   async function record() {
-    const seen = remaining.filter(i => viewed[i.id] && !recorded[i.id]).map(i => ({ id: i.id, ...pixels(i), image: i.image }))
+    const seen = remaining.filter(i => viewed[i.id] && !recorded[i.id]).map(observation)
     const passed = skippedCrops()
     if ((!seen.length && !passed.length) || openSelection.length) return true
     saving = true; error = ''; errorStatus = 0
@@ -730,11 +733,15 @@
     if (!last || saving) return
     saving = true; error = ''; errorStatus = 0
     try {
-      await keptWhilePaused(request(`/atlas/rounds/${last.id}/undo`, {}))
+      const sent = request(`/atlas/rounds/${last.id}/undo`, {})
+      const kept = await keptWhilePaused(sent)
+      // Crops a publication changed since stay as published; the round keeps its count for them.
+      const { refused } = kept ? { refused: 0 } : undoOutcome(await sent)
       // A round stored by an older version may name a scope the menu no longer offers.
       const target = last.grapheme, scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
-      completed = Math.max(0, completed - last.count); last = null
+      completed = Math.max(0, completed - Math.max(0, last.count - refused)); last = null
       remember('atlas.last-round', null); await load({ target, scope })
+      if (refused) error = t('review.undoRefused', { count: refused })
     } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
     finally { saving = false }
   }

@@ -650,6 +650,8 @@
   "quiz.unavailableCount": "{count} unavailable",
   "quiz.undecided": "{count} to decide",
   "quiz.undoLastRound": "↶ Undo last round",
+  "review.undoRefused.one": "{count} crop was published again since; it can't be undone, and stays as published.",
+  "review.undoRefused.other": "{count} crops were published again since; they can't be undone, and stay as published.",
   "repair.checked": "checked",
   "repair.machine": "machine",
   "repair.reason.corpusUnconfirmed": "the corpus has not confirmed this match",

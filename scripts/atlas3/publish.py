@@ -61,6 +61,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -100,11 +101,12 @@ R2_REMOTE = os.environ.get("ATLAS3_R2_REMOTE", "r2")
 BUCKET = "glyph-atlas"
 BUNDLE_PREFIX = "v3/pages/"
 CROP_COLS = ("id", "kind", "book", "char", "form", "cluster", "visual_group", "production", "category", "style",
-             "state", "quiz", "year", "cut", "revision", "flags", "priority", "family", "shuffle")
+             "state", "quiz", "year", "cut", "revision", "flags", "priority", "family", "shuffle", "bumps")
 # Columns a review owns.
 REVIEW_OWNED = ("char", "state", "style", "quiz", "kind", "flags")
 # What a crop takes when it is new and the catalogue does not say.
-DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0, "priority": 1, "family": None}
+DEFAULTS = {"form": None, "cluster": None, "category": None, "year": None, "cut": 0, "flags": 0, "priority": 1, "family": None,
+            "bumps": 0}
 SUSPECT = 1
 # The mark states, the pending state and the event kind of a re-cut that clears a mark, as migrations
 # 0003 and 0009 and the first build number them. The publication's own events name actor and
@@ -188,11 +190,55 @@ def query(database, sql):
 # (routes/review.ts `LOGICAL`): from the revision the last publication that spoke for the crop gave it,
 # plus every event since but a mark; without one, its revision less every mark.
 MARKED = "({e}.kind IN (3,4) OR ({e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id={e}.reverses),3) IN (3,4)))"
-# Events the store never counts: marks, and a re-cut clearing a mark (RECUT_KIND, 7).
-UNCOUNTED = "(e.kind=7 OR " + MARKED.format(e="e") + ")"
-LOGICAL = ("coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at AND NOT "
-           + UNCOUNTED + ") FROM review_revisions a WHERE a.crop=c.id),c.revision-(SELECT count(*) FROM events e "
-           "WHERE e.crop=c.id AND " + UNCOUNTED + "))")
+# A publication's change to what a reviewer sees, as an event (visible_change; routes/review.ts PUBLISHED).
+PUBLISHED = 8
+# Events the store never counts: marks, and the publication's own (a re-cut clearing a mark, RECUT_KIND 7,
+# and its changes, PUBLISHED). Only events up to the crop's revision count, so a statement that writes an
+# event before moving the crop on reads the same count on either side of it.
+UNCOUNTED = f"(e.kind IN (7,{PUBLISHED}) OR " + MARKED.format(e="e") + ")"
+def _logical(anchors=True, bumps=True):
+    """`LOGICAL`, for a database with or without the anchors (`review_revisions`) and the `bumps` column."""
+    anchored = ("(SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at "
+                "AND e.revision<=c.revision AND NOT " + UNCOUNTED + ") FROM review_revisions a WHERE a.crop=c.id)") if anchors else "NULL"
+    return (f"coalesce({anchored},c.revision{'-c.bumps' if bumps else ''}-(SELECT count(*) FROM events e WHERE e.crop=c.id "
+            "AND e.revision<=c.revision AND " + UNCOUNTED + "))")
+
+
+LOGICAL = _logical()
+
+
+def logical_sql(db):
+    """`LOGICAL` for a database, with each part only where the database has what it reads: a copy that took
+    an earlier migration 0016 may have the anchors and not `bumps`."""
+    anchors = db.execute("SELECT 1 FROM sqlite_master WHERE name='review_revisions'").fetchone() is not None
+    return _logical(anchors, "bumps" in {r[1] for r in db.execute("PRAGMA table_info(crops)")})
+
+
+SET_BITS = {"char": 1, "state": 2, "quiz": 4, "cut": 8, "kind": 16, "flags": 32}
+EVERYTHING = sum(SET_BITS.values())
+
+
+def visible_change(sets, source, store=None):
+    """The statements of a change to what a reviewer sees of crops (`sets`, column to SQL value, for the
+    crops `source` selects as `FROM crops c WHERE ...`): a publication event (PUBLISHED) one revision on,
+    holding the character, state, quiz and cut it set (null for one it left), then the crop moved on to it.
+    The event is the boundary no earlier view crosses, nor an undo of a review whose character, state or cut
+    it changed; the store does not count it. Only when the publication speaks for the crop (`store`, the
+    catalogue's revision) is the store's revision recorded there. Every writer of a field a review decides
+    (char, state, kind, quiz, flags) or of the cut goes through here; one that records its own event need not."""
+    held = {c: sets.get(c, "NULL") for c in ("char", "state", "quiz")}
+    # Which columns it set, so a cleared character is told from one left alone (routes/review.ts SET_BITS).
+    mask = sum(bit for column, bit in SET_BITS.items() if column in sets)
+    # D1 holds no event past a crop's revision; a local copy that took D1's row back over an event of its own
+    # may, and keeps that one.
+    statements = [(f"INSERT OR IGNORE INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,quiz,published) SELECT c.id,"
+                   f"c.revision+1,{sets.get('cut', 'c.cut')},(SELECT gen FROM generation WHERE id=0),0,0,{round(time.time() * 1000)},{PUBLISHED},"
+                   f"{held['char']},{held['state']},{held['quiz']},{mask} {source};"),
+                  f"UPDATE crops SET {','.join(f'{c}={v}' for c, v in sets.items())},revision=revision+1 WHERE id IN (SELECT c.id {source});"]
+    if store is not None:
+        statements.insert(1, f"INSERT INTO review_revisions(crop,revision,at) SELECT c.id,{store},c.revision+1 {source} "
+                             "ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")
+    return statements
 
 
 # The review migrations, each with a query that finds what it made. Each is applied where that is missing,
@@ -200,27 +246,49 @@ LOGICAL = ("coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.c
 REVIEW_MIGRATIONS = (
     ("0015", "0015_review_evidence.sql", "SELECT 1 AS n FROM pragma_table_info('submissions') WHERE name='evidence'"),
     ("0016", "0016_review_revisions.sql",
-     "SELECT 1 AS n FROM (SELECT count(*) AS k FROM sqlite_master WHERE name IN ('review_revisions','event_reviews')) WHERE k=2"),
+     ("SELECT 1 AS n FROM (SELECT (SELECT count(*) FROM sqlite_master WHERE name IN ('review_revisions','event_reviews'))"
+      "+(SELECT count(*) FROM pragma_table_info('crops') WHERE name='bumps')"
+      "+(SELECT count(*) FROM pragma_table_info('events') WHERE name='published') AS k) WHERE k=4")),
 )
 
 
+def missing_only(sql, columns):
+    """A migration's statements less each `ALTER TABLE t ADD COLUMN c` whose column a database has
+    (`columns(table)`), so a copy that took part of it takes the rest."""
+    kept, code = [], re.sub(r"--[^\n]*", "", sql)
+    for statement in (part.strip() for part in code.split(";")):
+        added = re.match(r"ALTER TABLE (\w+) ADD COLUMN (\w+)", statement)
+        if statement and not (added and added[2] in columns(added[1])):
+            kept.append(statement + ";")
+    return "\n".join(kept) + "\n"
+
+
 def migrate_reviews(atlas, dry):
-    """Migrations 0015 and 0016 on D1 and on the local copy, where each lacks them. They reach D1 before
-    the Worker that reads them deploys; the local copy takes them here. A dry run changes neither."""
+    """Migrations 0015 and 0016 on D1 and on the local copy, where each lacks what it makes: a copy that
+    took part of one takes the rest. They reach D1 before the Worker that reads them deploys; the local copy
+    takes them here. A dry run changes neither."""
     if dry:
         return
     for number, name, made in REVIEW_MIGRATIONS:
+        sql = (CF / "migrations-atlas" / name).read_text()
         path = OUT / "publish" / f"{number}.sql"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text((CF / "migrations-atlas" / name).read_text()
-                        + f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES('migration:{number}', unixepoch());\n")
         if not query("glyph-atlas-v3", made):
-            send("glyph-atlas-v3", path, f"migration:{number}")
+            part = missing_only(sql, lambda t: {r["name"] for r in query("glyph-atlas-v3", f"SELECT name FROM pragma_table_info('{t}')")})
+            # A database that took an earlier form of it holds its stamp already, and send() takes a present
+            # stamp as applied: what it lacks then goes under a stamp of its own.
+            stamp = f"migration:{number}"
+            if applied("glyph-atlas-v3", stamp):
+                stamp += f"+{hashlib.sha256(part.encode()).hexdigest()[:8]}"
+            path.write_text(part + f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES({lit(stamp)}, unixepoch());\n")
+            send("glyph-atlas-v3", path, stamp)
             if not query("glyph-atlas-v3", made):
                 sys.exit(f"migration {number} did not apply; rerun")
             print(f"migration {number} applied to glyph-atlas-v3", flush=True)
         if not atlas.execute(made).fetchone():
-            atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+            local = missing_only(sql, lambda t: {r[1] for r in atlas.execute(f"PRAGMA table_info({t})")})
+            stamp = f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES('migration:{number}', unixepoch());\n"
+            atlas.executescript("BEGIN;\n" + local + stamp + "COMMIT;\n")
 
 
 RUNS_DATABASE = "glyph-atlas-v3-runs"
@@ -592,15 +660,12 @@ class Mirror:
     def logical(self, cid):
         """The crop's revision as the store counts it, in the local copy (`LOGICAL`); a dry run over a copy
         without migration 0016 counts its revision less the events the store never counts."""
-        if not self.atlas.execute("SELECT 1 FROM sqlite_master WHERE name='review_revisions'").fetchone():
-            return self.atlas.execute("SELECT c.revision-(SELECT count(*) FROM events e WHERE e.crop=c.id AND "
-                                      + UNCOUNTED + ") FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
-        return self.atlas.execute(f"SELECT {LOGICAL} FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
+        return self.atlas.execute(f"SELECT {logical_sql(self.atlas)} FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
 
     def page_key(self, pid):
         return self.ids.execute("SELECT key FROM pages WHERE id=?", (pid,)).fetchone()[0]
 
-    def crop(self, given, bundle, catalogue_revision, review_columns, suspect=None):
+    def crop(self, given, bundle, catalogue_revision, review_columns, suspect=None, restored=False, retired_at=None):
         """`given` holds the columns the catalogue carries; the rest keep their value (or DEFAULTS when
         new). review_columns: whether the catalogue speaks for the review-owned columns."""
         cid, pid = given["id"], given["id"] // PAGE
@@ -617,34 +682,61 @@ class Mirror:
         page_changed = False
         if old is None:
             self.emit("crops", CROP_COLS, tuple(row[c] for c in CROP_COLS), page=pid)
+            if restored:
+                # A crop put back keeps the events of its earlier life. Its revision is a new one, above every
+                # revision it had: the catalogue's, every event's and the one it was retired at (its retired
+                # entry's; main() refuses a restore without it). A publication event there, holding all it
+                # set, is the boundary no view or undo from before crosses; the store's revision is recorded at it.
+                self.page_sql[pid] += [
+                    (f"UPDATE crops SET revision=max({catalogue_revision},{int(retired_at)},"
+                     f"(SELECT coalesce(max(revision),0) FROM events WHERE crop={cid}))+1 WHERE id={cid};"),
+                    (f"INSERT OR IGNORE INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,quiz,published) SELECT id,revision,"
+                     f"cut,(SELECT gen FROM generation WHERE id=0),0,0,{round(time.time() * 1000)},{PUBLISHED},char,state,quiz,{EVERYTHING} "
+                     f"FROM crops WHERE id={cid};"),
+                    (f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},revision FROM crops "
+                     f"WHERE id={cid} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")]
+                for statement in self.page_sql[pid][-3:]:
+                    self.atlas.execute(statement)
+                self.guarded.append(cid)
         else:
             logical = self.logical(cid)
             speaks = review_columns and catalogue_revision >= logical
             if review_columns and not speaks:
                 self.stale.append(cid)
-            changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle") and old[c] != row[c]
+            changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle", "bumps") and old[c] != row[c]
                        and (c not in REVIEW_OWNED or speaks)]
-            own = [c for c in changed if c not in REVIEW_OWNED]
+            own = [c for c in changed if c not in REVIEW_OWNED and c != "cut"]
             reviewed = [c for c in changed if c in REVIEW_OWNED]
             if own:
                 self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in own)} WHERE id={cid};")
-            # A change a reviewer can see moves the crop's revision on by one, so a view read before it is
-            # refused; otherwise the revision stays. It never goes back, since events name revisions.
-            row["revision"] = old["revision"] + (1 if reviewed else 0)
-            if reviewed:
-                reviewed.append("revision")
-            if speaks and (reviewed or catalogue_revision != logical):
-                # The store's revision for the crop from here on, recorded first under the same guard, so
-                # both statements apply or neither does.
-                changed.append("revision")
-                self.page_sql[pid].append(
-                    f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},{row['revision']} FROM crops "
-                    f"WHERE id={cid} AND revision={old['revision']} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")
+            # A change to a field a review decides (char, state, kind, quiz, flags) or to the cut moves the
+            # crop's revision on with a boundary (visible_change); a style, a document's fact, does not. A new
+            # cut always applies, as the bundle carries it, and leaves the store's revision as it is; a
+            # review-owned change applies only while nobody has reviewed the crop since the revision the
+            # mirror holds, and records the catalogue's revision.
+            base = old["revision"]
+            if "cut" in changed:
+                self.page_sql[pid] += visible_change({"cut": str(row["cut"])}, f"FROM crops c WHERE c.id={cid}")
+                base += 1
                 self.guarded.append(cid)
-            if reviewed:
-                # Only while nobody has reviewed the crop since the revision the mirror holds.
-                self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in reviewed)} "
-                                          f"WHERE id={cid} AND revision={old['revision']};")
+            decided = [c for c in reviewed if c != "style"]
+            row["revision"] = base + (1 if decided else 0)
+            if row["revision"] != old["revision"]:
+                changed.append("revision")
+            if speaks and decided:
+                self.page_sql[pid] += visible_change({c: lit(row[c]) for c in reviewed},
+                                                     f"FROM crops c WHERE c.id={cid} AND c.revision={base}", catalogue_revision)
+                self.guarded.append(cid)
+            elif speaks and (reviewed or catalogue_revision != logical):
+                page_changed = True
+                if catalogue_revision != logical:
+                    # The store's revision for the crop from here on, at the crop's own revision.
+                    self.page_sql[pid].append(
+                        f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},{base} FROM crops "
+                        f"WHERE id={cid} AND revision={base} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")
+                if reviewed:
+                    self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in reviewed)} "
+                                              f"WHERE id={cid} AND revision={base};")
                 self.guarded.append(cid)
             if old["kind"] == 1 and given.get("kind") == 1 and not review_columns and "char" in given:
                 # A followed glyph retains its character; the incoming character becomes the base
@@ -661,16 +753,22 @@ class Mirror:
                     base = None
                     page_changed = True
                 base_changed = base is not None and base[0] != upstream
-                crop_changed = base is None and old["revision"] == 0 and old["char"] != upstream
+                crop_changed = base is None and self.logical(cid) == 0 and old["char"] != upstream
                 if base_changed or crop_changed:
                     self.page_sql[pid].append(f"UPDATE form_bases SET char={lit(upstream)} WHERE crop={cid} AND char IS NOT {lit(upstream)};")
                     self.atlas.execute("UPDATE form_bases SET char=? WHERE crop=?", (upstream, cid))
-                    self.page_sql[pid].append(f"UPDATE crops SET char={lit(upstream)} WHERE id={cid} AND revision=0 "
-                                              f"AND NOT EXISTS (SELECT 1 FROM form_bases WHERE crop={cid});")
+                    # An unreviewed glyph takes the new character a revision on, so no view from before stands. It
+                    # has no review to protect, so no event records it, and `bumps` keeps the store's count.
+                    self.page_sql[pid].append(f"UPDATE crops SET char={lit(upstream)},revision=revision+1,bumps=bumps+1 WHERE id IN "
+                                              f"(SELECT c.id FROM crops c WHERE c.id={cid} AND {LOGICAL}=0 "
+                                              f"AND NOT EXISTS (SELECT 1 FROM form_bases WHERE crop={cid}));")
+                    self.guarded.append(cid)
                     # Conditional row writes travel with the page even when only its base changed.
                     page_changed = True
                 if crop_changed:
                     changed.append("char")
+                    row["revision"], row["bumps"] = old["revision"] + 1, old["bumps"] + 1
+                    changed += ["revision", "bumps"]
                 else:
                     row["char"] = old["char"]
             if "char" in changed:
@@ -722,7 +820,10 @@ class Mirror:
             self.voted.add(pid)
         self.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
         self.guarded.append(cid)
-        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut, **(WITHDRAWN if withdrawn else {})}, True)
+        # A retired entry also keeps the revision it was retired at, which a crop put back goes past; a
+        # withdrawn one keeps its id and cut alone.
+        kept = WITHDRAWN if withdrawn else {"revision": mirror_revision}
+        self.touched_pages[pid][cid % PAGE] = ({"id": text_id, "retired": True, "cut": cut, **kept}, True)
 
 
 def fits(groups):
@@ -834,10 +935,13 @@ def deliver(m, run):
                                                               f"WHERE c.id IN ({','.join(map(str, chunk))})")}
                 for cid in chunk:
                     if cid in logical:
+                        r = logical[cid]
                         m.atlas.execute("INSERT INTO review_revisions(crop,revision,at) VALUES(?,?,?) ON CONFLICT(crop) DO UPDATE "
-                                        "SET revision=excluded.revision,at=excluded.at", (cid, logical[cid]["revision"], logical[cid]["at"]))
+                                        "SET revision=excluded.revision,at=excluded.at", (cid, r["revision"], r["at"]))
                     local = m.atlas.execute("SELECT * FROM crops WHERE id=?", (cid,)).fetchone()
-                    if (cid in found) != (local is not None) or (local and found[cid]["revision"] != local["revision"]):
+                    # The local copy holds what the publication meant D1 to have; any column D1 holds otherwise was
+                    # kept by a write since (a revision alone can coincide with one).
+                    if (cid in found) != (local is not None) or (local and any(found[cid][c] != local[c] for c in CROP_COLS)):
                         refused.append(cid)
                     if cid in restyled:
                         before, now = local and tally_cell(local), cid in found and tally_cell(found[cid])
@@ -1144,6 +1248,10 @@ def main():
             elif r["origin"] in GONE:
                 if current is not None and r["revision"] < current:
                     refused.append(f"{r['id']}: {r['origin']} at revision {r['revision']}, reviewed since (revision {current})")
+            elif current is None and published.get("retired") and "revision" not in published:
+                # A crop put back takes a revision above every one it had; without the one it was retired at,
+                # a revision a publication gave it then without an event could be reused.
+                refused.append(f"{r['id']}: retired without its revision recorded, so it cannot be put back safely")
             elif m.page_key(cid // PAGE) != page_key:
                 refused.append(f"{r['id']}: page {m.page_key(cid // PAGE)} -> {page_key}")
             elif r["id"] in recut and data.get("box") and not data.get("box_pending"):
@@ -1344,7 +1452,8 @@ def main():
         for field in ("image", "context_image"):
             if place(data, field):
                 bundle[field + "_place"] = place(data, field)
-        m.crop(given, bundle, r["revision"], True, suspect=bool(data.get("suspect")))
+        m.crop(given, bundle, r["revision"], True, suspect=bool(data.get("suspect")),
+               restored=row is None and bool(previous.get("retired")), retired_at=previous.get("revision"))
         if r["id"] in recut and row is not None and row["state"] in MARK_STATES:
             m.unmark(cid)
         if with_votes:
@@ -1545,6 +1654,7 @@ def main():
             style_sql.append([
                 f"{tally} {gen},{TALLY_CELL},-count(*) {changing} GROUP BY {TALLY_CELL} ON CONFLICT DO UPDATE SET n=n+excluded.n;",
                 f"{tally} {gen},{restyle_cell},count(*) {changing} GROUP BY {TALLY_CELL} ON CONFLICT DO UPDATE SET n=n+excluded.n;",
+                # A book's style is a fact about the document, not a review's: no revision moves.
                 f"UPDATE crops SET style={code} WHERE id IN (SELECT c.id {changing});"])
 
     # Replacements are numbered once every crop of the catalogue has its id. None removes the field.

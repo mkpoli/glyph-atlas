@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { gzipSync } from 'node:zlib';
-import { evidenceKey, readReviewEvidence, storeReviewEvidence } from './reviewEvidence';
+import { evidenceKey, legacyKey, readLegacyReviews, readReviewEvidence, storeReviewEvidence } from './reviewEvidence';
 
 function bucket() {
   const objects = new Map<string, ArrayBuffer>();
@@ -29,6 +29,18 @@ describe('immutable review evidence', () => {
     const corrupt = gzipSync('{"version":1,"reviews":{"lost":{}}}');
     objects.set(evidenceKey(hash), corrupt.buffer.slice(corrupt.byteOffset, corrupt.byteOffset + corrupt.byteLength));
     await expect(readReviewEvidence(env, hash)).rejects.toThrow('integrity');
+  });
+
+  it('answers 503 for bytes that do not unzip, and for an archive that holds no object', async () => {
+    const { env, objects } = bucket();
+    const hash = await storeReviewEvidence(env, {});
+    objects.set(evidenceKey(hash), new TextEncoder().encode('not gzip').buffer as ArrayBuffer);
+    await expect(readReviewEvidence(env, hash)).rejects.toMatchObject({ status: 503 });
+    const empty = gzipSync('null');
+    objects.set(legacyKey(3), empty.buffer.slice(empty.byteOffset, empty.byteOffset + empty.byteLength));
+    await expect(readLegacyReviews(env, 3)).rejects.toMatchObject({ status: 503 });
+    objects.set(legacyKey(4), new TextEncoder().encode('not gzip').buffer as ArrayBuffer);
+    await expect(readLegacyReviews(env, 4)).rejects.toMatchObject({ status: 503 });
   });
 
   it('does not return a reference when R2 refuses the write', async () => {

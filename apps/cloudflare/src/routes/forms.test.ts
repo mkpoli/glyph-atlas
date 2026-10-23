@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { d1 } from '../forms.test';
 import { cropId, publicId } from '../atlas3';
+import { LOGICAL } from './review';
 import { FOLLOW_BATCH, describedClaimsQuery, clusterGlyphsQuery, clusterQuery, familyClustersQuery, familyGlyphsQuery, followCorpus, followStatements,
   formsRoute, glyphFamiliesQuery, listFollowQuery, memberDatesQuery, memberRowsQuery, recountQuery, stateQuery } from './forms';
 
@@ -154,6 +155,15 @@ describe('the forms routes on glyph-atlas-v3', () => {
     
   });
 
+  it('follow a glyph a publication moved on but no one reviewed, and not one a review reached', async () => {
+    const { db, env } = newDatabase(), [moved, reviewed] = [glyphs[0].crop, glyphs[1].crop];
+    // One moved on by a publication event alone, one by a review.
+    db.exec(`UPDATE crops SET revision=1 WHERE id IN (${moved},${reviewed});
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(${moved},1,0,0,0,0,1,8),(${reviewed},1,0,0,1,1,1,0)`);
+    await env.ATLAS.prepare(listFollowQuery()).bind(JSON.stringify([moved, reviewed])).run();
+    expect(db.query('SELECT crop FROM corpus_follow').all()).toEqual([{ crop: moved }]);
+  });
+
   it('keeps the source family and negative decade in form-follow tallies', async () => {
     const { db, env } = newDatabase(), crop = glyphs[0].crop;
     db.exec(`UPDATE crops SET char=NULL,family=1,year=-11 WHERE id=${crop};
@@ -161,7 +171,10 @@ describe('the forms routes on glyph-atlas-v3', () => {
     await followCorpus(env);
     expect(db.query('SELECT char,family,decade,n FROM tally ORDER BY char').all())
       .toEqual([{ char: -1, family: 1, decade: -20, n: -1 }, { char: 2, family: 1, decade: -20, n: 1 }]);
-    expect(db.query('SELECT revision FROM crops WHERE id=?').get(crop)).toEqual({ revision: 0 });
+    // The new character moves the glyph on a revision with no event; the store still counts none.
+    expect(db.query('SELECT revision,bumps FROM crops WHERE id=?').get(crop)).toEqual({ revision: 1, bumps: 1 });
+    expect(db.query('SELECT count(*) AS n FROM events WHERE crop=?').get(crop)).toEqual({ n: 0 });
+    expect(db.query(`SELECT ${LOGICAL('c')} AS n FROM crops c WHERE c.id=?`).get(crop)).toEqual({ n: 0 });
     db.exec(`UPDATE form_clusters SET form=NULL WHERE id=1; INSERT INTO corpus_follow VALUES(${crop});`);
     await followCorpus(env);
     expect(db.query('SELECT * FROM tally').all()).toEqual([]);
