@@ -714,3 +714,25 @@ def test_a_load_that_changes_an_unnamed_glyphs_decided_form_lists_it_for_the_fol
     # Loaded again unchanged, nothing is listed.
     facts(root, remote, monkeypatch)
     assert "corpus_follow: 0 statements" in (root / "out" / "crop-facts-report.txt").read_text()
+
+
+def test_a_load_stopped_before_its_rows_is_refused_when_the_site_decided_since(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    clustering(root, monkeypatch)
+    mapped_tile(root)
+    sent = remote.upload
+
+    def down(files, prefix=None):
+        sys.exit("upload failed")
+    remote.upload = down
+    with pytest.raises(SystemExit, match="upload failed"):
+        facts(root, remote, monkeypatch, "--send")
+    remote.upload = sent
+    # The site decides while the load waits; its rows were built without that decision.
+    db = remote.dbs["glyph-atlas-v3"]
+    db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) "
+               "VALUES(1, 'd9', '2026-10-21', 'a', 'cluster', 'U+304B', 'r1', '[]', '[]', '')")
+    db.commit()
+    with pytest.raises(SystemExit, match="form decisions"):
+        facts(root, remote, monkeypatch, "--send")
+    assert db.execute("SELECT count(*) FROM form_clusters").fetchone() == (0,)

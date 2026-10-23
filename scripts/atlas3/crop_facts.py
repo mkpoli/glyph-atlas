@@ -18,9 +18,12 @@ mirror lacks, or a crop no longer live (retired), is dropped and counted.
   the site's media; a key the image map (`out/media/`) lacks is rendered, packed into `packs/<sha>.bin`
   and uploaded, then merged into the map (media_map.py), before any list names it. A dry run counts them
   and writes no tile descriptor. A send stops before rendering when more glyphs than `--missing-tiles`
-  (default 0) have no pixels on disk or fail to render: their lists would go up without tiles.
-- Decisions come from glyph-atlas-v3's own `form_decisions`: every run first copies the decisions the
-  site recorded since into the local copy (by `seq`), then reads them there: each cluster's latest
+  (default 0) have no pixels on disk, and before uploading when renders fail past it: their lists would
+  go up without tiles. A dry run cannot count render failures.
+- Decisions come from glyph-atlas-v3's own `form_decisions`: every run, once any pending load is
+  finished, copies the decisions the site recorded since into the local copy (by `seq`; the counts must
+  then agree), then reads them there. Only the decisions are copied: a `form_glyphs` row the site wrote
+  for a crop retired since stays in D1. Each cluster's latest
   cluster decision by its key, whichever clustering it was made on, and each crop's latest glyph or
   inherit decision; an inherit decision leaves the glyph to its cluster. A glyph carries its latest
   cluster decision (read from the glyphs the decision listed, or the list a site decision names) when
@@ -238,7 +241,11 @@ def tile_keys(corpus_root, wanted):
     # File by file, so each scan is stat'ed and decoded once. Only the key is worked out here: a tile's
     # descriptor is written when it is rendered (`register`), not for every glyph a dry run counts.
     for identity, (path, box) in sorted(found.items(), key=lambda item: str(item[1][0])):
-        keys[identity] = media.local(path, list(box) if box else None, edge=TILE_EDGE, write=False).rsplit("/", 1)[-1].removesuffix(".webp")
+        try:
+            keys[identity] = media.local(path, list(box) if box else None, edge=TILE_EDGE, write=False).rsplit("/", 1)[-1].removesuffix(".webp")
+        except (OSError, ValueError):
+            # A scan gone or outside the image roots counts as a glyph without pixels.
+            continue
     return keys, media, found
 
 
@@ -656,6 +663,12 @@ def pull_decisions(atlas):
                           [[r[c] for c in cols] for r in rows])
         atlas.commit()
         last, n = rows[-1]["seq"], n + len(rows)
+    # A row changed or removed at a `seq` already copied would go unseen; the totals must agree.
+    local = tuple(atlas.execute("SELECT count(*), max(seq) FROM form_decisions").fetchone())
+    remote = query("glyph-atlas-v3", "SELECT count(*) AS n, max(seq) AS seq FROM form_decisions")[0]
+    if local != (remote["n"], remote["seq"]):
+        sys.exit(f"the local copy holds {local[0]} form decisions up to seq {local[1]}, glyph-atlas-v3 {remote['n']} up to "
+                 f"{remote['seq']}: a decision changed after it was copied; copy the table again")
     return n
 
 
@@ -814,9 +827,6 @@ def main():
         sys.exit("a publish is unfinished; finish it with publish.py first")
     if pending and dry:
         sys.exit(f"the load {pending[0].removeprefix(FACTS_RUN)} is unfinished; finish it with --send first")
-    # The site's decisions since the local copy was made, which the load keeps and the guard compares.
-    if pulled := pull_decisions(atlas):
-        print(f"form_decisions: {pulled} decisions the site recorded since copied into the local copy", flush=True)
     if not dry:
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
@@ -832,6 +842,12 @@ def main():
         if mirror.execute("SELECT 1 FROM pending WHERE run LIKE 'fill/%'").fetchone():
             print("crop facts loaded; finish the deferred crop fill with fill.py --send", flush=True)
             return
+    # The site's decisions since the local copy was made, which this load keeps and the guard compares.
+    # Only now: a pending run built its rows from the decisions it saw, so it is finished, or refused by the
+    # guard, before any later decision reaches the local copy.
+    if pulled := pull_decisions(atlas):
+        print(f"form_decisions: {pulled} decisions the site recorded since copied into the local copy", flush=True)
+    if not dry:
         if problem := guard(atlas):
             sys.exit(problem)
         migrate(atlas, build)
