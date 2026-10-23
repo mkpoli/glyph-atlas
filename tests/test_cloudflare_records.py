@@ -151,15 +151,13 @@ def test_a_file_built_with_an_earlier_draft_of_0006_is_refused(scripts, tmp_path
             cloudflare_schema.schema(db)
 
 
-def test_resuming_an_export_whose_corpus_rows_predate_their_material_is_refused(scripts, tmp_path):
+def test_resuming_an_export_made_with_the_site_databases_migrations_is_refused(scripts, tmp_path):
     export = importlib.import_module("export_cloudflare_corpus")
     with sqlite3.connect(tmp_path / "corpus.sqlite") as db:
-        db.executescript(Path("apps/cloudflare/migrations/0001_catalogue.sql").read_text())
-        db.execute("INSERT INTO corpus_units VALUES('codh-omt:1','と','U+3068',NULL,1,'corpus-0001.bin',0,1)")
-    with pytest.raises(ValueError, match="predate their material"):
+        for migration in sorted(Path("apps/cloudflare/migrations").glob("*.sql")):
+            db.executescript(migration.read_text())
+    with pytest.raises(ValueError, match="export it again"):
         export.export(tmp_path, resume=True, published=set())
-    with sqlite3.connect(tmp_path / "corpus.sqlite") as db:
-        assert "production" not in {r[1] for r in db.execute("PRAGMA table_info(corpus_units)")}
 
 
 def test_an_export_reads_only_the_corpora_it_names(scripts, tmp_path, monkeypatch):

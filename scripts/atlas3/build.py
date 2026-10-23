@@ -97,6 +97,16 @@ def replacement(text_id, redirects, live):
         at = redirects[at]
 
 
+# Whether a form decision holds crop ?: its own glyph decision, else the form or issue of the cluster
+# decision it carries from an earlier clustering or of its cluster. A corpus glyph's base is kept only
+# while one does; history.py and check.py leave out the bases it releases.
+ACTIVE_DECISION = ("EXISTS(SELECT 1 FROM crops c LEFT JOIN form_glyphs g ON g.crop=c.id "
+                   "LEFT JOIN form_clusters k ON k.id=c.cluster WHERE c.id=? AND CASE WHEN g.crop IS NOT NULL "
+                   "THEN g.form IS NOT NULL OR g.issue IS NOT NULL "
+                   "OR EXISTS(SELECT 1 FROM form_decisions d WHERE d.id=g.decision AND d.kind='glyph') "
+                   "ELSE k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue<>'mixed') END)")
+
+
 # A crop whose character is written apart from its grapheme family's head (𛁅 for し), as the publisher
 # keeps `run_written` for a catalogue's crops: the head stands for the crop in its runs' graphemes, the
 # row for how it is written. A new layout's rows and texts come from runs.py, after the build.
@@ -105,10 +115,13 @@ WRITTEN = """SELECT c.id, g.text FROM crops c JOIN graphemes g ON g.id = c.char
 
 
 def horizontal(rows):
-    """Stop on a run written across the page: the layout records no direction, since every run so far
-    is written down it (`run_stats.down` counts them); a column for it comes with the first one."""
+    """Count the runs written across the page, which the layout leaves out: it records no direction,
+    since every run it holds is written down the page (`run_stats.down` counts them); a column for it
+    comes when such runs are wanted. A horizontal line leaves out its own runs and stops nothing else; a
+    line published down the page and read across it later keeps its published runs until its crops go."""
     if n := sum(1 for r in rows if not r["vertical"]):
-        sys.exit(f"{n} runs are written across the page; the layout has no column for their direction yet")
+        print(f"{n} runs are written across the page and left out; the layout has no column for their direction", flush=True)
+    return n
 
 
 STATE = {"pending": 0, "checked": 1, "flagged": 2}
@@ -286,7 +299,7 @@ def main():
     ngrams = src("unit_ngrams")
     horizontal(ngrams.execute("SELECT vertical FROM unit_ngrams"))
     out, stats, missing = [], defaultdict(lambda: [0, 0]), 0
-    for r in ngrams.execute("SELECT * FROM unit_ngrams"):
+    for r in ngrams.execute("SELECT * FROM unit_ngrams WHERE vertical"):
         a, b = ids.get(r["first"]), ids.get(r["second"])
         c = ids.get(r["third"]) if r["third"] else None
         if a is None or b is None or (r["third"] and c is None):

@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 import httpx
-from cloudflare_schema import CORPUS_REFRESH, schema
+from catalogue_schema import schema
 from export_cloudflare import encoded
 from export_cloudflare_corpus import FrozenResolver
 from PIL import Image
@@ -57,5 +57,4 @@ with (args.output / "anchors-images.bin").open("wb") as media, (args.output / "a
             int(hashlib.sha256(detail["id"].encode()).hexdigest()[:7], 16), "anchors-records.bin", offset, len(raw),
             detail.get("production") or "unknown", style.resolve_values(None, None, document, None)[0], document))
 db.commit()
-db.executescript(CORPUS_REFRESH)
 print(encoded({"anchors": len(details), "hosted_images": len(images)}))

@@ -68,7 +68,17 @@ from pathlib import Path
 
 import media_map
 import votes
-from build import CORPUS_PAGE, PAGE, WRITTEN, bundle_entry, char_text, horizontal, replacement, shuffle
+from build import (
+    ACTIVE_DECISION,
+    CORPUS_PAGE,
+    PAGE,
+    WRITTEN,
+    bundle_entry,
+    char_text,
+    horizontal,
+    replacement,
+    shuffle,
+)
 from pack_names import addressed
 from pull import real
 from run_answers import PREFIX as ANSWER_PREFIX
@@ -449,16 +459,6 @@ def upload(files, prefix=BUNDLE_PREFIX):
             return
         time.sleep(10 * (attempt + 1))
     sys.exit(f"upload to {prefix} failed; rerun to finish")
-
-
-# Whether a form decision holds crop ?: its own glyph decision, else the form or issue of the cluster
-# decision it carries from an earlier clustering or of its cluster. A corpus glyph's base is kept only
-# while one does; history.py and check.py leave out the bases it releases.
-ACTIVE_DECISION = ("EXISTS(SELECT 1 FROM crops c LEFT JOIN form_glyphs g ON g.crop=c.id "
-                   "LEFT JOIN form_clusters k ON k.id=c.cluster WHERE c.id=? AND CASE WHEN g.crop IS NOT NULL "
-                   "THEN g.form IS NOT NULL OR g.issue IS NOT NULL "
-                   "OR EXISTS(SELECT 1 FROM form_decisions d WHERE d.id=g.decision AND d.kind='glyph') "
-                   "ELSE k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue<>'mixed') END)")
 
 
 def releases_base(atlas, overlay):
@@ -1496,7 +1496,7 @@ def main():
         want, missing = {}, 0
         if "unit_ngrams" in tables:
             horizontal(src.execute("SELECT vertical FROM unit_ngrams"))
-            for r in src.execute("SELECT * FROM unit_ngrams"):
+            for r in src.execute("SELECT * FROM unit_ngrams WHERE vertical"):
                 first = crop_ids.get(r["first"])
                 if first is None:
                     continue
