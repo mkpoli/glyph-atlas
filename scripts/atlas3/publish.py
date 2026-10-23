@@ -799,12 +799,12 @@ def deliver(m, run):
                 chunk = guarded[i:i + 200]
                 found = {r["id"]: r for r in query(database, f"SELECT * FROM crops WHERE id IN ({','.join(map(str, chunk))})")}
                 # The revision D1 counts for each crop as the store does, which the next publication speaks against.
-                counted = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision FROM crops c "
+                logical = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision FROM crops c "
                                                               f"WHERE c.id IN ({','.join(map(str, chunk))})")}
                 for cid in chunk:
-                    if cid in counted:
+                    if cid in logical:
                         m.atlas.execute("INSERT INTO review_revisions(crop,revision,at) VALUES(?,?,?) ON CONFLICT(crop) DO UPDATE "
-                                        "SET revision=excluded.revision,at=excluded.at", (cid, counted[cid]["revision"], counted[cid]["at"]))
+                                        "SET revision=excluded.revision,at=excluded.at", (cid, logical[cid]["revision"], logical[cid]["at"]))
                     local = m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
                     if (cid in found) != (local is not None) or (local and found[cid]["revision"] != local["revision"]):
                         refused.append(cid)
