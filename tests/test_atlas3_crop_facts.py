@@ -73,11 +73,12 @@ def facts(root, remote, monkeypatch, *flags):
     monkeypatch.setattr(module, "remove", lambda names, prefix: remote.removed.extend(prefix + n for n in names))
     # Tiles: every glyph but those of `remote.unheld` has pixels on disk, all with one tile.
     monkeypatch.setattr(module, "tile_keys", lambda corpus_root, wanted: (
-        {i: getattr(remote, "tile", TILE) for i in wanted if i not in getattr(remote, "unheld", ())}, None))
+        {i: getattr(remote, "tile", TILE) for i in wanted if i not in getattr(remote, "unheld", ())}, None, {}))
+    monkeypatch.setattr(module, "register", lambda media, found, keys, wanted: None)
     remote.packed = getattr(remote, "packed", [])
     monkeypatch.setattr(module, "pack", lambda media, keys, folder, workers: (
-        folder.mkdir(parents=True, exist_ok=True), (folder / "p.bin").write_bytes(b"RIFF"),
-        remote.packed.append(sorted(keys)), ([(k, "packs/p.bin", 0, 4, None) for k in keys], set()))[-1])
+        folder.mkdir(parents=True, exist_ok=True), (folder / f"{PACK}.bin").write_bytes(b"RIFF"),
+        remote.packed.append(sorted(keys)), ([(k, f"packs/{PACK}.bin", 0, 4, None) for k in keys], set()))[-1])
     monkeypatch.setattr(module, "put_packs", lambda files: remote.uploaded.extend(f"packs/{f.name}" for f in files))
     monkeypatch.setattr(sys, "argv", ["crop_facts.py", "--clusters", str(root / "forms"), *flags])
     try:
@@ -88,6 +89,8 @@ def facts(root, remote, monkeypatch, *flags):
 
 
 TILE = "ab" * 32
+# The content-named pack the stub renders into (address_packs.py).
+PACK = "c" * 64
 SHA = "cd" * 32
 # The clustering of か: c1 with three glyphs (one the mirror lacks), c2 with a glyph the mirror lacks.
 CLUSTERS = {"U+304B:c1": [("codh:g1", 0.9), ("ex:a1", 0.9), ("ex:b1", 0.9), ("codh:gone", 0.8)],
@@ -137,7 +140,7 @@ def unit_facts(root, rows):
 
 def mapped_tile(root, key=TILE):
     """A tile the image map already places."""
-    importlib.import_module("media_map").merge([(key, "packs/held.bin", 0, 10, None)])
+    importlib.import_module("media_map").merge([(key, f"packs/{'d' * 64}.bin", 0, 10, None)])
     (root / "out" / "media" / "unsent").unlink()
 
 
@@ -255,11 +258,15 @@ def test_a_tile_the_image_map_lacks_is_packed_and_mapped_before_a_list_names_it(
     assert not remote.packed and not remote.uploaded
     assert "2 glyphs with pixels on disk, 1 without (no tile); 0 tiles the image map holds, 1 to render" in (
         root / "out" / "crop-facts-report.txt").read_text()
-    facts(root, remote, monkeypatch, "--send")
+    # A glyph without pixels stops a send before anything renders, unless the floor allows it.
+    with pytest.raises(SystemExit, match="1 of 3 clustered glyphs have no pixels"):
+        facts(root, remote, monkeypatch, "--send")
+    assert not remote.packed and not remote.uploaded
+    facts(root, remote, monkeypatch, "--send", "--missing-tiles", "1")
     assert remote.packed == [[TILE]]
     # The pack, then the map's shard, then the lists.
     order = remote.uploaded
-    assert order.index("packs/p.bin") < order.index(f"{TILE[:3]}.json.gz") < min(
+    assert order.index(f"packs/{PACK}.bin") < order.index(f"{TILE[:3]}.json.gz") < min(
         i for i, n in enumerate(order) if n.startswith(("1-", "U+304B-")))
     assert importlib.import_module("media_map").read_shard(TILE[:3])["keys"][TILE[3:]] == [0, 0, 4]
     name = remote.dbs["glyph-atlas-v3"].execute("SELECT list FROM form_clusters").fetchone()[0]
@@ -267,7 +274,7 @@ def test_a_tile_the_image_map_lacks_is_packed_and_mapped_before_a_list_names_it(
     assert [m[3] for m in members] == [None, TILE, TILE]
     # Mapped now, the tile is not rendered again.
     remote.packed.clear()
-    facts(root, remote, monkeypatch, "--send")
+    facts(root, remote, monkeypatch, "--send", "--missing-tiles", "1")
     assert not remote.packed
 
 
@@ -276,8 +283,12 @@ def test_tiles_are_keyed_as_the_sites_media_and_packed_from_their_pixels(tmp_pat
     sys.modules.pop("crop_facts", None)
     module = importlib.import_module("crop_facts")
     wanted = {*glyph["held"], glyph["unheld"], glyph["crop"]}
-    keys, media = module.tile_keys(root, wanted)
+    keys, media, found = module.tile_keys(root, wanted)
     assert set(keys) == {*glyph["held"], glyph["crop"]}
+    # Counting the tiles writes no descriptor; only those about to render get one.
+    assert not list(media.directory.rglob("*.json"))
+    module.register(media, found, keys, set(keys.values()))
+    assert len(list(media.directory.rglob("*.json"))) == len(set(keys.values()))
     rows, failed = module.pack(media, set(keys.values()), tmp_path / "packs", 2)
     assert not failed and {r[0] for r in rows} == set(keys.values())
     for key, obj, offset, size, content_type in rows:
@@ -440,15 +451,19 @@ def test_a_list_whose_delete_failed_goes_up_again_when_a_load_names_it(layout, m
     assert f"v3/forms/{first}.json.gz" not in remote.removed
 
 
-def test_a_load_over_decisions_the_site_made_is_refused(layout, monkeypatch):  # noqa: F811
+def test_a_decision_the_site_made_since_the_copy_is_copied_and_kept(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     clustering(root, monkeypatch)
+    mapped_tile(root)
     db = remote.dbs["glyph-atlas-v3"]
     db.execute("INSERT INTO form_decisions(seq, id, at, actor, kind, family, revision, units, crops, note) "
                "VALUES(1, 'd9', '2026-10-21', 'a', 'cluster', 'U+304B', 'r1', '[]', '[]', '')")
     db.commit()
-    with pytest.raises(SystemExit, match="form decisions"):
-        facts(root, remote, monkeypatch, "--send")
+    facts(root, remote, monkeypatch)
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert local.execute("SELECT seq, id FROM form_decisions").fetchall() == [(1, "d9")]
+    facts(root, remote, monkeypatch, "--send")
+    assert db.execute("SELECT loading FROM form_state").fetchone() == (0,)
 
 
 def test_a_decision_made_while_the_rows_are_sent_stops_the_load_and_opens_decisions_again(layout, monkeypatch):  # noqa: F811
@@ -681,3 +696,21 @@ def test_a_publish_sends_votes_after_its_model_codes_and_keeps_them_by_build(lay
     assert sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT key FROM codes WHERE field='build'").fetchone() == (
         "29991231T000000",)
     assert votes.prefix(build_of(root)) == "v3/votes/29991231T000000/"
+
+
+def test_a_load_that_changes_an_unnamed_glyphs_decided_form_lists_it_for_the_follow(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    g1 = ids(root)["codh:g1"]
+    for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
+        db.execute("UPDATE crops SET revision=0 WHERE id=?", (g1,))
+        db.commit()
+    clustering(root, monkeypatch)
+    mapped_tile(root)
+    cluster_decided(root, remote)
+    facts(root, remote, monkeypatch, "--send")
+    # Its cluster's decision now names か for it; the site's follow moves its character once loading ends.
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT crop FROM corpus_follow").fetchall() == [(g1,)]
+    assert "corpus_follow: 1 statements" in (root / "out" / "crop-facts-report.txt").read_text()
+    # Loaded again unchanged, nothing is listed.
+    facts(root, remote, monkeypatch)
+    assert "corpus_follow: 0 statements" in (root / "out" / "crop-facts-report.txt").read_text()

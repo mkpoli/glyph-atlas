@@ -1,4 +1,5 @@
-"""Copy the published tables out of the live D1 into source.sqlite, a bounded keyset read at a time.
+"""Copy the published tables out of the old D1 (`glyph-atlas`) into source.sqlite, a bounded keyset read
+at a time. That database was deleted after the cutover, so `query` now refuses; the copies are final.
 
 Each read is a primary-key range of at most CHUNK rows, so no read scans and the site keeps answering.
 A table of long text (SIZED) is read by bytes instead: a probe reads the keys and byte sizes of the
@@ -9,17 +10,13 @@ A rerun continues from the last key copied.
 """
 import json
 import os
-import shutil
 import sqlite3
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 # Copies of the live tables and the build output live outside the repository.
 HERE = Path(os.environ.get("ATLAS3_DIR", ROOT / "work/atlas-v3"))
-CF = ROOT / "apps/cloudflare"
 db = None
 
 # copy: (columns, key columns, chunk[, live table when the copy has another name])
@@ -87,20 +84,10 @@ READ_BYTES = 4 * 1024 ** 2
 
 
 def query(sql):
-    # This copies out of the live database; it never writes there.
-    assert sql.lstrip().upper().startswith("SELECT"), sql
-    for attempt in range(6):
-        out = subprocess.run([shutil.which("bunx") or "bunx", "wrangler", "d1", "execute", "glyph-atlas", "--remote", "--json", "--command", sql],
-                             cwd=CF, capture_output=True, text=True, check=False)
-        try:
-            body = json.loads(out.stdout)
-            if isinstance(body, list):
-                return body[0]["results"]
-            print("error", json.dumps(body)[:300], flush=True)
-        except json.JSONDecodeError:
-            print("bad output", out.stdout[:200], out.stderr[-300:], flush=True)
-        time.sleep(10 * (attempt + 1))
-    sys.exit(f"gave up on: {sql[:200]}")
+    """The old database these copies came from (`glyph-atlas`) was deleted on 2026-10-22, after the
+    cutover; its copies under `source-*.sqlite` are final. The new layout's own tables are read from
+    glyph-atlas-v3 by the scripts that load them (crop_facts.py copies the form decisions)."""
+    sys.exit("glyph-atlas, the database pull.py copied from, no longer exists; the source-*.sqlite copies are final")
 
 
 def pull(table, fresh):

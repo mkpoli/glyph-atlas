@@ -16,15 +16,20 @@ mirror lacks, or a crop no longer live (retired), is dropped and counted.
   per cluster go to its index object `v3/forms/families/<code point>-<digest>.json.gz`.
 - Tiles: each clustered glyph whose pixels are on disk (`--corpus-root`) has a 240-pixel tile, keyed as
   the site's media; a key the image map (`out/media/`) lacks is rendered, packed into `packs/<sha>.bin`
-  and uploaded, then merged into the map (media_map.py), before any list names it. A dry run counts them.
-- Decisions come from glyph-atlas-v3's own `form_decisions` (the local copy): each cluster's latest
+  and uploaded, then merged into the map (media_map.py), before any list names it. A dry run counts them
+  and writes no tile descriptor. A send stops before rendering when more glyphs than `--missing-tiles`
+  (default 0) have no pixels on disk or fail to render: their lists would go up without tiles.
+- Decisions come from glyph-atlas-v3's own `form_decisions`: every run first copies the decisions the
+  site recorded since into the local copy (by `seq`), then reads them there: each cluster's latest
   cluster decision by its key, whichever clustering it was made on, and each crop's latest glyph or
   inherit decision; an inherit decision leaves the glyph to its cluster. A glyph carries its latest
   cluster decision (read from the glyphs the decision listed, or the list a site decision names) when
   that is not its cluster's and its cluster has not been decided since; `carried` (migration 0014)
   names it. `form_families` and `form_clusters` take the clustering's rows with the cluster decisions,
   `form_glyphs` the glyphs with their own or a carried decision, and `crops.cluster` each live crop's
-  cluster, null outside the clustering. Counts are recomputed from the glyphs kept.
+  cluster, null outside the clustering. Counts are recomputed from the glyphs kept. An unnamed corpus
+  glyph (kind 1, revision 0) whose written form as the site's follow reads it changes is listed in
+  `corpus_follow`, so the follow moves its character once `loading` is cleared.
 - An object under `v3/forms/` that no row and no decision names is deleted by a load at least
   KEEP_UNNAMED seconds after a load first found it unnamed, from the manifest `v3/forms/manifest.json.gz`
   (local copy out/forms/manifest.json.gz).
@@ -230,10 +235,19 @@ def tile_keys(corpus_root, wanted):
     pixels = form_clusters.Pixels(corpus_root)
     found = {g["id"]: at for g in form_clusters.glyphs(corpus_root, wanted) if (at := pixels(g)) is not None}
     keys = {}
-    # File by file, so each scan is stat'ed and decoded once.
+    # File by file, so each scan is stat'ed and decoded once. Only the key is worked out here: a tile's
+    # descriptor is written when it is rendered (`register`), not for every glyph a dry run counts.
     for identity, (path, box) in sorted(found.items(), key=lambda item: str(item[1][0])):
-        keys[identity] = media.local(path, list(box) if box else None, edge=TILE_EDGE).rsplit("/", 1)[-1].removesuffix(".webp")
-    return keys, media
+        keys[identity] = media.local(path, list(box) if box else None, edge=TILE_EDGE, write=False).rsplit("/", 1)[-1].removesuffix(".webp")
+    return keys, media, found
+
+
+def register(media, found, keys, wanted):
+    """Write the descriptors of the tiles about to be rendered, so `materialize` can cut them."""
+    for identity, key in keys.items():
+        if key in wanted:
+            path, box = found[identity]
+            media.local(path, list(box) if box else None, edge=TILE_EDGE)
 
 
 def mapped(keys):
@@ -405,17 +419,27 @@ class Facts:
                 kept[identity] = crop
         return kept
 
-    def tiles(self, kept, corpus_root, send, workers):
+    def tiles(self, kept, corpus_root, send, workers, missing_tiles=0):
         """Each kept glyph's tile key, with the tiles the image map lacks rendered, uploaded and mapped
-        first when sending; a dry run counts them."""
-        keys, media = tile_keys(corpus_root, set(kept))
+        first when sending; a dry run counts them. A send stops before rendering anything when more than
+        `missing_tiles` glyphs have no pixels on disk: their lists would go up without tiles."""
+        keys, media, found = tile_keys(corpus_root, set(kept))
         held = mapped(set(keys.values()))
         wanted = set(keys.values()) - held
         failed = set()
+        self.missing_tiles = len(kept) - len(keys)
+        if send and self.missing_tiles > missing_tiles:
+            sys.exit(f"{self.missing_tiles} of {len(kept)} clustered glyphs have no pixels under {corpus_root} (at most "
+                     f"{missing_tiles} allowed with --missing-tiles); their lists would go up without tiles. Nothing sent")
         if send and wanted:
             folder = OUT / "crop-facts" / "tiles"
             shutil.rmtree(folder, ignore_errors=True)
+            register(media, found, keys, wanted)
             rows, failed = pack(media, wanted, folder, workers)
+            lost = sum(1 for key in keys.values() if key in failed)
+            if self.missing_tiles + lost > missing_tiles:
+                sys.exit(f"{lost} tiles did not render and {self.missing_tiles} glyphs have no pixels (at most {missing_tiles} "
+                         "allowed with --missing-tiles); nothing uploaded or sent")
             # The packs first, so no key the map gains names a pack R2 lacks.
             put_packs(sorted(folder.glob("*.bin")))
             media_map.merge(rows)
@@ -427,7 +451,7 @@ class Facts:
                          f"{f', {len(failed)} of them failed (no tile)' if failed else ''}")
         return {identity: key for identity, key in keys.items() if key not in failed}
 
-    def forms(self, directory, corpus_root, send, workers):
+    def forms(self, directory, corpus_root, send, workers, missing_tiles=0):
         report = self.report
         if not has(self.atlas, "form_decisions"):
             sys.exit("the local copy has no form_decisions; load the history (load_history.py) first")
@@ -435,7 +459,7 @@ class Facts:
         from glyph_atlas.review.forms import _form_entry, shape_runs
 
         kept = self.glyphs(data)
-        tiles = self.tiles(kept, corpus_root, send, workers)
+        tiles = self.tiles(kept, corpus_root, send, workers, missing_tiles)
         decided_last, glyph_last = cluster_decisions(self.atlas), glyph_decisions(self.atlas)
         by_crop, order, says = cluster_decisions_by_crop(self.atlas)
 
@@ -543,6 +567,34 @@ class Facts:
             if not (OUT / "forms" / "families" / f"{name}.json.gz").exists():
                 self.objects[f"forms/families/{name}.json.gz"] = blob
 
+    def follows(self):
+        """The unnamed corpus glyphs (kind 1, revision 0) whose written form, as the Worker's follow reads
+        it (`writtenAs` in routes/forms.ts: their own glyph row's character or form, else their cluster's,
+        and whether a decision names it), differs between the local copy and this load."""
+        if not has(self.atlas, "form_glyphs"):
+            return []
+        carried = "g.carried" if carries(self.atlas) else "NULL"
+        before = {r[0]: (r[1], bool(r[2])) for r in self.atlas.execute(
+            "SELECT c.id, CASE WHEN g.crop IS NOT NULL THEN coalesce(g.character, g.form) ELSE coalesce(k.character, k.form) END, "
+            f"CASE WHEN g.crop IS NOT NULL THEN g.decision IS NOT {carried} OR g.form IS NOT NULL OR g.issue IS NOT NULL "
+            "ELSE k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue <> 'mixed') END "
+            "FROM crops c LEFT JOIN form_glyphs g ON g.crop = c.id LEFT JOIN form_clusters k ON k.id = c.cluster "
+            "WHERE c.kind = 1 AND c.revision = 0")}
+        glyph_cols, cluster_cols = TABLES["form_glyphs"][0], TABLES["form_clusters"][0]
+        glyphs = {r[0]: dict(zip(glyph_cols, r, strict=True)) for r in self.rows["form_glyphs"]}
+        clusters = {r[0]: dict(zip(cluster_cols, r, strict=True)) for r in self.rows["form_clusters"]}
+
+        def after(crop):
+            if (g := glyphs.get(crop)) is not None:
+                text = g["character"] if g["character"] is not None else g["form"]
+                return text, g["decision"] != g["carried"] or g["form"] is not None or g["issue"] is not None
+            k = clusters.get(self.cluster_of.get(crop))
+            if k is None:
+                return None, False
+            return (k["character"] if k["character"] is not None else k["form"],
+                    k["form"] is not None or (k["issue"] is not None and k["issue"] != "mixed"))
+        return sorted(crop for crop, was in before.items() if after(crop) != was)
+
     def groups(self, defer_crops=False):
         """The statements that turn the local copy's tables into these, in groups; per table the statements,
         their bytes and the rows they change."""
@@ -560,22 +612,51 @@ class Facts:
             out += [f"INSERT INTO {table}({names}) VALUES({','.join(map(lit, new[k]))}) ON CONFLICT({key[0]}) DO UPDATE SET "
                     + ",".join(f"{c}=excluded.{c}" for c in cols[1:]) + ";" for k in sorted(new) if held.get(k) != new[k]]
             tables.append((table, out, len(out)))
-        # Each live crop's cluster, null outside the clustering.
+        # Each live crop's cluster, null outside the clustering; counted even when fill.py sends them.
         moves = {}
-        for crop, n in ([] if defer_crops else self.cluster_of.items()):
+        for crop, n in self.cluster_of.items():
             if self.clustered.get(crop) != n:
                 moves.setdefault(n, []).append(crop)
-        cleared = [] if defer_crops else sorted(crop for crop in self.clustered if crop not in self.cluster_of)
+        cleared = sorted(crop for crop in self.clustered if crop not in self.cluster_of)
+        self.cluster_updates = len(cleared) + sum(map(len, moves.values()))
         out = []
-        for n, crops in [(None, cleared)] + sorted(moves.items()):
+        for n, crops in ([] if defer_crops else [(None, cleared)] + sorted(moves.items())):
             crops = sorted(crops)
             out += [f"UPDATE crops SET cluster = {lit(n)} WHERE id IN ({','.join(map(str, crops[i:i + CLUSTER_IDS]))});"
                     for i in range(0, len(crops), CLUSTER_IDS)]
-        tables.append(("crops.cluster", out, len(cleared) + sum(map(len, moves.values()))))
+        tables.append(("crops.cluster", out, 0 if defer_crops else self.cluster_updates))
+        # An unnamed corpus glyph whose decided form this load changes is listed for the site's follow
+        # (`followCorpus`), which moves its character once `loading` is cleared.
+        follow = self.follows()
+        out = [f"INSERT OR IGNORE INTO corpus_follow(crop) SELECT id FROM crops WHERE id IN "
+               f"({','.join(map(str, follow[i:i + CLUSTER_IDS]))}) AND kind = 1 AND revision = 0;"
+               for i in range(0, len(follow), CLUSTER_IDS)]
+        tables.append(("corpus_follow", out, len(follow)))
         for table, out, rows in tables:
             groups += [out[i:i + GROUP] for i in range(0, len(out), GROUP)]
             written[table] = (len(out), sum(len(s.encode()) + 1 for s in out), rows)
         return groups, written
+
+
+# Decisions a read copies from glyph-atlas-v3, about 1 MB of JSON.
+DECISION_ROWS = 1000
+
+
+def pull_decisions(atlas):
+    """Copy into the local copy the form decisions the site has recorded since it was made, by `seq`, a
+    bounded keyset read at a time; return how many. Decisions are only ever added, so the rows past the
+    local copy's last `seq` are all that changed."""
+    if not has(atlas, "form_decisions"):
+        return 0
+    cols = [r[1] for r in atlas.execute("PRAGMA table_info(form_decisions)")]
+    last, n = atlas.execute("SELECT coalesce(max(seq), 0) FROM form_decisions").fetchone()[0], 0
+    while rows := query("glyph-atlas-v3", f"SELECT {','.join(cols)} FROM form_decisions WHERE seq > {last} "
+                                          f"ORDER BY seq LIMIT {DECISION_ROWS}"):
+        atlas.executemany(f"INSERT INTO form_decisions({','.join(cols)}) VALUES({','.join('?' * len(cols))})",
+                          [[r[c] for c in cols] for r in rows])
+        atlas.commit()
+        last, n = rows[-1]["seq"], n + len(rows)
+    return n
 
 
 def guard(atlas):
@@ -715,6 +796,8 @@ def main():
                         "(the cutover load)")
     parser.add_argument("--send", action="store_true", help="apply migrations 0006 and 0014, upload the objects and send the rows")
     parser.add_argument("--defer-crops", action="store_true", help="leave cluster updates to fill.py with family and priority")
+    parser.add_argument("--missing-tiles", type=int, default=0, metavar="N",
+                        help="send even when up to N clustered glyphs have no pixels on disk (default 0)")
     args = parser.parse_args()
     dry = not args.send
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
@@ -731,6 +814,9 @@ def main():
         sys.exit("a publish is unfinished; finish it with publish.py first")
     if pending and dry:
         sys.exit(f"the load {pending[0].removeprefix(FACTS_RUN)} is unfinished; finish it with --send first")
+    # The site's decisions since the local copy was made, which the load keeps and the guard compares.
+    if pulled := pull_decisions(atlas):
+        print(f"form_decisions: {pulled} decisions the site recorded since copied into the local copy", flush=True)
     if not dry:
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
@@ -753,7 +839,7 @@ def main():
     facts = Facts(mirror, atlas, build)
     if args.votes:
         facts.votes()
-    facts.forms(args.clusters, args.corpus_root, not dry, args.workers)
+    facts.forms(args.clusters, args.corpus_root, not dry, args.workers, args.missing_tiles)
     groups, written = facts.groups(args.defer_crops)
     digest = hashlib.sha256(b"defer-crops" if args.defer_crops else b"")
     for g in groups:
@@ -784,6 +870,9 @@ def main():
     n = built(run, "rows", groups, extra)
     lines = facts.report.lines()[:-2]
     lines += [f"{table}: {k} statements, {b} bytes, {rows} rows changed" for table, (k, b, rows) in written.items()]
+    lines.append(f"crops.cluster UPDATEs: {facts.cluster_updates} crops change cluster"
+                 + (", left to fill.py --send (--defer-crops)" if args.defer_crops else ""))
+    lines.append(f"tiles: {facts.missing_tiles} clustered glyphs without pixels on disk (a send allows {args.missing_tiles})")
     for kind in ("votes/", "forms/families/", "forms/"):
         objects = [v for k, v in facts.objects.items() if k.startswith(kind) and (kind != "forms/" or k.count("/") == 1)]
         lines.append(f"{kind} objects to upload: {len(objects)}, {sum(map(len, objects))} bytes")
