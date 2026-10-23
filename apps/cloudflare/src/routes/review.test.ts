@@ -270,7 +270,7 @@ describe('revisions as the offline store counts them', () => {
     const { db, env, ids } = setup();
     expect((await send(env, '/atlas/rounds', { id: uuid(734), grapheme: 'U+306F', seen: [local(ids[0])] })).status).toBe(200);
     // Retired at 1, put back at 2 with the store's revision 0 recorded there.
-    db.exec(`UPDATE crops SET revision=2, state=0 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at,boundary) VALUES(${ids[0]},0,2,2)`);
+    db.exec(`UPDATE crops SET revision=2, state=0 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},0,2); INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state) SELECT id,2,cut,0,0,0,1,8,char,state FROM crops WHERE id=${ids[0]}`);
     const stale = await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(735), revision: 1, image_sha256: H, verdict: 'match' });
     expect(stale.status).toBe(409);
     expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(736), revision: 2, image_sha256: H, verdict: 'match' })).status).toBe(200);
@@ -281,7 +281,7 @@ describe('revisions as the offline store counts them', () => {
     // Reviewed at 1 in its earlier life, put back at 2.
     db.exec(`INSERT INTO submissions(id,key,actor,request,response,at) VALUES(91,'early',1,'{}','{}',1);
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(${ids[0]},1,0,0,1,91,1,0);
-      UPDATE crops SET revision=2 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at,boundary) VALUES(${ids[0]},0,2,2)`);
+      UPDATE crops SET revision=2 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},0,2); INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state) SELECT id,2,cut,0,0,0,1,8,char,state FROM crops WHERE id=${ids[0]}`);
     expect((await send(env, '/atlas/rounds', { id: uuid(740), grapheme: 'U+306F', seen: [local(ids[0], { revision: 2 })] }, 'u2')).status).toBe(200);
     expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(741), revision: 2, image_sha256: H, verdict: 'match' })).status).toBe(200);
   });
@@ -296,7 +296,7 @@ describe('revisions as the offline store counts them', () => {
       id: uuid(746), revision: 0, image_sha256: H, verdict: 'wrong', issue: 'character', character: 'あ',
     })).status).toBe(200);
     // The store's revision recorded at each crop's own, with nothing a reviewer sees changed.
-    db.exec(`INSERT INTO review_revisions(crop,revision,at,boundary) VALUES(${ids[0]},2,2,NULL),(${ids[2]},2,1,NULL)`);
+    db.exec(`INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},2,2),(${ids[2]},2,1)`);
     // A view read after the review, before the mark, still stands; so does an undo of a review from before.
     expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(744), revision: 1, image_sha256: H, verdict: 'match' })).status).toBe(200);
     expect((await send(env, `/atlas/rounds/${uuid(746)}/undo`, {})).status).toBe(200);
@@ -304,7 +304,7 @@ describe('revisions as the offline store counts them', () => {
 
   it('record nothing for a seen mark from before a crop was put back, and save the rest of the round', async () => {
     const { db, env, ids } = setup();
-    db.exec(`UPDATE crops SET revision=2 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at,boundary) VALUES(${ids[0]},0,2,2)`);
+    db.exec(`UPDATE crops SET revision=2 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},0,2); INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state) SELECT id,2,cut,0,0,0,1,8,char,state FROM crops WHERE id=${ids[0]}`);
     const round = await send(env, '/atlas/rounds', { id: uuid(745), grapheme: 'U+306F',
       seen: [local(ids[0], { revision: 1 }), local(ids[2])], skipped: [local(ids[3])] });
     expect(round.status).toBe(200);
@@ -315,7 +315,7 @@ describe('revisions as the offline store counts them', () => {
 
   it('record nothing for a seen crop with a boundary that names no revision, as an older client sends it', async () => {
     const { db, env, ids } = setup();
-    db.exec(`UPDATE crops SET revision=2 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at,boundary) VALUES(${ids[0]},0,2,2)`);
+    db.exec(`UPDATE crops SET revision=2 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},0,2); INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state) SELECT id,2,cut,0,0,0,1,8,char,state FROM crops WHERE id=${ids[0]}`);
     const { revision: _revision, ...bare } = local(ids[0], { revision: 2 });
     expect((await send(env, '/atlas/rounds', { id: uuid(747), grapheme: 'U+306F', seen: [bare, local(ids[2])] })).status).toBe(200);
     expect(db.query('SELECT crop FROM seen').all()).toEqual([{ crop: ids[2] }]);
@@ -324,7 +324,7 @@ describe('revisions as the offline store counts them', () => {
   it('record nothing for a seen crop put back between the round\'s read and its commit', async () => {
     const { db, env, ids } = setup(), atlas = env.ATLAS;
     env.ATLAS = { ...atlas, batch: async (statements: D1PreparedStatement[]) => {
-      db.exec(`UPDATE crops SET revision=1 WHERE id=${ids[0]}; INSERT OR REPLACE INTO review_revisions(crop,revision,at,boundary) VALUES(${ids[0]},0,1,1)`);
+      db.exec(`UPDATE crops SET revision=1 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},0,1); INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state) SELECT id,1,cut,0,0,0,1,8,char,state FROM crops WHERE id=${ids[0]}`);
       return atlas.batch(statements);
     } } as D1Database;
     expect((await send(env, '/atlas/rounds', { id: uuid(748), grapheme: 'U+306F', seen: [local(ids[0]), local(ids[2])] })).status).toBe(200);
@@ -339,11 +339,43 @@ describe('revisions as the offline store counts them', () => {
     })).status).toBe(200);
     // Retired at 2, then put back by a publication as い at the store's revision 1: a new revision, 3, records it.
     db.exec(`UPDATE crops SET revision=3, char=5, state=0 WHERE id=${ids[0]};
-      INSERT INTO review_revisions(crop,revision,at,boundary) VALUES(${ids[0]},1,3,3)`);
+      INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},1,3); INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state) SELECT id,3,cut,0,0,0,1,8,char,state FROM crops WHERE id=${ids[0]}`);
     const stale = await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(733), revision: 2, image_sha256: H, verdict: 'match' });
     expect(stale.status).toBe(409);
-    expect((await send(env, `/atlas/rounds/${uuid(732)}/undo`, {})).status).toBe(409);
+    // The reviewer's own undo leaves the crop as the publication put it, and says so for that crop.
+    const undo = await send(env, `/atlas/rounds/${uuid(732)}/undo`, {});
+    expect(undo.status).toBe(200);
+    expect(undo.body.results).toEqual([{ id: null, target_id: publicId(ids[0]), refused: 'This crop was published again since this review.' }]);
     expect(db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(ids[0])).toEqual({ text: 'い' });
+  });
+
+  it('let an admin reject a review a publication has since changed the crop over', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
+      id: uuid(737), revision: 0, image_sha256: H, verdict: 'wrong', issue: 'character', character: 'あ',
+    })).status).toBe(200);
+    db.exec(`UPDATE crops SET revision=2, char=5 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},1,2);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label) VALUES(${ids[0]},2,0,0,0,0,1,8,5)`);
+    const actor = (key: string) => (db.query('SELECT id FROM actors WHERE key=?').get(key) as any).id;
+    const own = db.query('SELECT id,key,actor,at,undone FROM submissions WHERE key=?').get(`u1:${uuid(737)}`) as Submission;
+    const rejected = await revert(env, own, actor('u1'), { by: 'admin', reason: 'vandalism' });
+    expect(rejected.results).toHaveLength(1);
+    expect(rejected.results[0].refused).toBeUndefined();
+    expect(db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(ids[0])).toEqual({ text: 'は' });
+  });
+
+  it('let a reviewer undo a review across a publication that changed nothing it set', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, {
+      id: uuid(738), revision: 0, image_sha256: H, verdict: 'wrong', issue: 'character', character: 'あ',
+    })).status).toBe(200);
+    // A publication that changed only whether the crop is dealt.
+    db.exec(`UPDATE crops SET revision=2, quiz=0 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},1,2);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,quiz) VALUES(${ids[0]},2,0,0,0,0,1,8,0)`);
+    const undo = await send(env, `/atlas/rounds/${uuid(738)}/undo`, {});
+    expect(undo.status).toBe(200);
+    expect(undo.body.results[0].refused).toBeUndefined();
+    expect(db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(ids[0])).toEqual({ text: 'は' });
   });
 
   it('refuses a review when its page is published again between reading the crop and committing', async () => {

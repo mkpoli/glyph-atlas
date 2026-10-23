@@ -169,9 +169,10 @@ def test_a_newer_review_in_the_catalogue_is_applied_with_its_revision(layout, mo
                                                                      state="checked", revision=4)]))
     # The crop's revision moves on by one; the store's revision is recorded beside it.
     assert crops(remote)[a1]["state"] == 1 and crops(remote)[a1]["revision"] == 1
-    # A change a reviewer sees: the anchor is a boundary at the crop's new revision.
-    assert remote.query("glyph-atlas-v3", "SELECT revision, at, boundary FROM review_revisions WHERE crop=" + str(a1)) == [
-        {"revision": 4, "at": 1, "boundary": 1}]
+    # A change a reviewer sees: a publication event, the boundary, at the crop's new revision, with the
+    # store's revision recorded there.
+    assert remote.query("glyph-atlas-v3", "SELECT revision, at FROM review_revisions WHERE crop=" + str(a1)) == [{"revision": 4, "at": 1}]
+    assert remote.query("glyph-atlas-v3", f"SELECT revision, kind FROM events WHERE crop={a1}") == [{"revision": 1, "kind": 8}]
 
 
 def test_a_publication_speaks_against_the_revision_the_store_counts_not_the_marks(layout, monkeypatch, tmp_path):
@@ -215,8 +216,8 @@ def test_a_publication_that_changes_nothing_a_reviewer_sees_anchors_at_the_crops
                                                                      state=state[0]["key"], revision=2)]))
     assert crops(remote)[a1]["revision"] == 3
     assert logical(publish, lambda q: remote.query("glyph-atlas-v3", q), a1) == [{"n": 2}]
-    # Nothing a reviewer sees changed, so the anchor is no boundary: open views and undos stand.
-    assert remote.query("glyph-atlas-v3", f"SELECT boundary FROM review_revisions WHERE crop={a1}") == [{"boundary": None}]
+    # Nothing a reviewer sees changed, so there is no boundary: open views and undos stand.
+    assert remote.query("glyph-atlas-v3", f"SELECT count(*) AS n FROM events WHERE crop={a1} AND kind=8") == [{"n": 0}]
     events(root, remote, a1, (4, 1))
     assert logical(publish, lambda q: remote.query("glyph-atlas-v3", q), a1) == [{"n": 3}]
 
@@ -258,19 +259,6 @@ def test_migrate_applies_the_review_migrations_alone_and_stamps_them(layout, mon
     # Run again, it finds both in place and sends nothing.
     publish.main()
     assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports WHERE stamp LIKE 'migration:001_'") == [{"n": 1}]
-
-
-def test_a_copy_that_took_0016_before_its_boundary_column_gains_it(layout, monkeypatch):
-    root, publish, remote = layout
-    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
-        db.execute("ALTER TABLE review_revisions DROP COLUMN boundary")
-        db.commit()
-    monkeypatch.setattr(publish, "wrangler", lambda *args, capture=False: remote.dbs["glyph-atlas-v3"].executescript(
-        Path(args[-1]).read_text()))
-    monkeypatch.setattr(sys, "argv", ["publish.py", "--migrate"])
-    publish.main()
-    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
-        assert "boundary" in {r[1] for r in db.execute("PRAGMA table_info(review_revisions)")}
 
 
 def test_a_local_copy_without_the_review_history_is_refused(layout, monkeypatch, tmp_path):
@@ -418,7 +406,7 @@ def test_a_crop_put_back_takes_a_revision_no_view_from_before_holds(layout, monk
     # A new revision, above every event and the one it was retired at; the store's 2 is recorded there.
     assert crops(remote)[a2]["revision"] == 4
     assert remote.query("glyph-atlas-v3", f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a2}") == [{"n": 2}]
-    assert remote.query("glyph-atlas-v3", f"SELECT boundary FROM review_revisions WHERE crop={a2}") == [{"boundary": 4}]
+    assert remote.query("glyph-atlas-v3", f"SELECT revision, kind FROM events WHERE crop={a2} AND kind=8") == [{"revision": 4, "kind": 8}]
 
 
 def test_a_crop_retired_without_its_revision_is_not_put_back(layout, monkeypatch, tmp_path):
@@ -445,7 +433,7 @@ def test_a_crop_retired_without_its_revision_is_not_put_back(layout, monkeypatch
     assert a2 not in crops(remote)
 
 
-def test_a_book_style_moves_each_crop_on_with_a_boundary(layout, monkeypatch, tmp_path):
+def test_a_book_style_moves_no_revision_and_sets_no_boundary(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     a1 = ids(root)["ex:a1"]
     before = crops(remote)[a1]
@@ -462,9 +450,10 @@ def test_a_book_style_moves_each_crop_on_with_a_boundary(layout, monkeypatch, tm
     gc.collect()
     run(publish, monkeypatch, path, "--approve-styles", approved)
     after = crops(remote)[a1]
-    assert after["style"] != before["style"] and after["revision"] == before["revision"] + 1
-    assert remote.query("glyph-atlas-v3", f"SELECT boundary FROM review_revisions WHERE crop={a1}") == [{"boundary": after["revision"]}]
-    assert remote.query("glyph-atlas-v3", f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a1}") == [{"n": before["revision"]}]
+    # A book's style is a fact about the document: open views and undos stand, and the store's count is untouched.
+    assert after["style"] != before["style"] and after["revision"] == before["revision"]
+    assert remote.query("glyph-atlas-v3", f"SELECT count(*) AS n FROM review_revisions WHERE crop={a1}") == [{"n": 0}]
+    assert remote.query("glyph-atlas-v3", f"SELECT count(*) AS n FROM events WHERE crop={a1}") == [{"n": 0}]
 
 
 def test_a_corpus_catalogue_keeps_the_review_of_a_corpus_glyph(layout, monkeypatch, tmp_path):
@@ -519,13 +508,32 @@ def test_a_known_crop_with_another_box_is_re_cut_under_its_own_id(layout, monkey
     after = crops(remote)[a2]
     assert ids(root)["ex:a2"] == a2 and after["cut"] == before["cut"] + 1
     assert {k: after[k] for k in ("char", "state")} == {k: before[k] for k in ("char", "state")}
-    # A new cut is a change a reviewer sees: one revision on, a boundary there, the store's count kept.
+    # A new cut is a change a reviewer sees: one revision on, with a publication event holding the new cut;
+    # the store's count and its anchor are untouched, as the publication did not speak for the crop.
     assert after["revision"] == before["revision"] + 1
-    assert remote.query("glyph-atlas-v3", f"SELECT revision, at, boundary FROM review_revisions WHERE crop={a2}") == [
-        {"revision": before["revision"], "at": after["revision"], "boundary": after["revision"]}]
+    assert remote.query("glyph-atlas-v3", f"SELECT revision, cut, kind FROM events WHERE crop={a2}") == [
+        {"revision": after["revision"], "cut": after["cut"], "kind": 8}]
+    assert remote.query("glyph-atlas-v3", f"SELECT count(*) AS n FROM review_revisions WHERE crop={a2}") == [{"n": 0}]
+    assert remote.query("glyph-atlas-v3", f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a2}") == [{"n": before["revision"]}]
     entry = next(e for e in json.loads(gzip.decompress((root / "out" / "pages" / f"{a2 // PAGE}-2.json.gz").read_bytes()))["crops"]
                  if e["id"] == "ex:a2")
     assert entry["box"] == {"x": 2, "y": 22, "w": 12, "h": 9}
+
+
+def test_a_publication_that_does_not_speak_for_a_crop_leaves_the_stores_revision_alone(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a2 = ids(root)["ex:a2"]
+    # The store last spoke for the crop at its revision 2, the crop's 3; a review since is not yet imported.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind) VALUES(?, 4, 0, 0, 1, 1, 1, 1)", (a2,))
+        db.execute("UPDATE crops SET revision=4 WHERE id=?", (a2,))
+        db.execute("INSERT INTO review_revisions(crop, revision, at) VALUES(?, 2, 3)", (a2,))
+        db.commit()
+    # A catalogue behind the site: its revision speaks for nothing, but its new cut applies.
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a2", "hl:p1", {"x": 2, "y": 22, "w": 12, "h": 9}, "い", revision=2)]))
+    assert crops(remote)[a2]["revision"] == 5
+    assert remote.query("glyph-atlas-v3", f"SELECT revision, at FROM review_revisions WHERE crop={a2}") == [{"revision": 2, "at": 3}]
+    assert remote.query("glyph-atlas-v3", f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a2}") == [{"n": 3}]
 
 
 def test_a_re_cut_takes_a_marked_crop_back_to_pending_with_its_event(layout, monkeypatch, tmp_path):
@@ -541,13 +549,14 @@ def test_a_re_cut_takes_a_marked_crop_back_to_pending_with_its_event(layout, mon
     # The new cut moves it on to 2 with a boundary; clearing the mark is event 3.
     assert (after["cut"], after["state"], after["revision"]) == (1, 0, 3)
     db = remote.dbs["glyph-atlas-v3"]
-    assert [tuple(r) for r in db.execute("SELECT crop, revision, cut, actor, submission, kind, state FROM events")] == [(a1, 3, 1, 0, 0, 7, 0)]
+    assert [tuple(r) for r in db.execute("SELECT crop, revision, cut, actor, submission, kind, state FROM events ORDER BY revision")] == [
+        (a1, 2, 1, 0, 0, 8, None), (a1, 3, 1, 0, 0, 7, 0)]
     assert [tuple(r) for r in db.execute("SELECT state FROM reviews")] == [(0,)]
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
     assert local.execute("SELECT state, revision FROM crops WHERE id=?", (a1,)).fetchone() == (0, 3)
-    # A crop that is not marked keeps its state through a re-cut.
+    # A crop that is not marked keeps its state through a re-cut: only the new cut's publication event.
     run(publish, monkeypatch, catalogue(tmp_path / "d.sqlite", [unit("ex:a1", "hl:p1", {"x": 2, "y": 2, "w": 8, "h": 8})]))
-    assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
+    assert [tuple(r) for r in db.execute("SELECT kind, count(*) FROM events GROUP BY kind ORDER BY kind")] == [(7, 1), (8, 2)]
 
 
 def test_fields_a_catalogue_does_not_carry_keep_their_values(layout, monkeypatch, tmp_path):

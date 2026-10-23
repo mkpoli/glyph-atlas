@@ -48,13 +48,21 @@ export const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND co
  *  crop records the store's revision and the crop's revision then (`review_revisions`); every event since
  *  but a mark or a publication's re-cut adds one. A crop no publication has spoken for since the cutover
  *  counts its revision less those. publish.py computes the same. */
-// Events the store never counts: marks, and a publication clearing a mark from a re-cut crop (kind 7).
-export const UNCOUNTED = (e: string) => `(${e}.kind=7 OR ${MARKED(e)})`;
+// A publication's change to what a reviewer sees, as an event (publish.py `visible_change`): a new cut,
+// character, state, kind, quiz or flags, or a crop put back. `label`, `state` and `cut` hold what it set
+// (null where it left one), so an undo can tell whether it touched what a review set.
+export const PUBLISHED = 8;
+// Events the store never counts: marks, and the publication's own (a re-cut clearing a mark, kind 7, and
+// its changes, kind 8).
+export const UNCOUNTED = (e: string) => `(${e}.kind IN (7,${PUBLISHED}) OR ${MARKED(e)})`;
+// Only events up to the crop's revision count, so a statement that writes an event before moving the crop
+// on (followCorpus) reads the same count on either side of it.
 export const LOGICAL = (c: string) => `coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at
-  AND NOT ${UNCOUNTED('e')}) FROM review_revisions a WHERE a.crop=${c}.id),${c}.revision-(SELECT count(*) FROM events e WHERE e.crop=${c}.id AND ${UNCOUNTED('e')}))`;
+  AND e.revision<=${c}.revision AND NOT ${UNCOUNTED('e')}) FROM review_revisions a WHERE a.crop=${c}.id),
+  ${c}.revision-(SELECT count(*) FROM events e WHERE e.crop=${c}.id AND e.revision<=${c}.revision AND ${UNCOUNTED('e')}))`;
 // The crop's revision at the last publication that changed what a reviewer sees, or put it back: no view
 // or review from before it stands, and nothing before it counts toward a view's standing.
-const BOUNDARY = (c: string) => `(SELECT boundary FROM review_revisions WHERE crop=${c}.id)`;
+const BOUNDARY = (c: string) => `(SELECT max(b.revision) FROM events b WHERE b.crop=${c}.id AND b.kind=${PUBLISHED})`;
 export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label,c.state,c.revision,c.cut,c.quiz,pg.rev,pg.key AS page_key,
   r.x,r.y,r.w,r.h,
   (SELECT coalesce(e.kept_issue,e.issue) FROM events e WHERE e.crop=c.id ORDER BY e.revision DESC LIMIT 1) AS issue,
@@ -609,14 +617,21 @@ export async function revert(env: Env, submission: Submission, actor: number, re
   for (const r of reviewed) {
     const current = read.get(r.crop)!;
     if (current instanceof Problem) throw current;
+    // A reviewer's own undo passes over a publication since only when it changed none of what the review
+    // set (the character, the state, the cut its box was drawn on); the crop is then left as it is and
+    // reported. An admin's rejection always goes through, so vandalism can be cleaned up.
+    if (!rejection && await env.ATLAS.prepare(`SELECT 1 FROM events WHERE crop=? AND revision>? AND kind=${PUBLISHED}
+      AND (label IS NOT NULL OR state IS NOT NULL OR cut<>?) LIMIT 1`).bind(r.crop, r.revision, r.cut).first()) {
+      results.push({ crop: r.crop, refused: 'This crop was published again since this review.' });
+      continue;
+    }
     // Rejecting all of one reviewer's work also passes over their own later changes to the crop that
     // are already undone, and the undos themselves; anyone else's later change, or one of theirs that
-    // still stands, stops it. Marks never do.
-    if (current.boundary !== null && r.revision <= current.boundary)
-      throw new Problem(409, 'This crop was published again since this review. It cannot be undone.');
-    const later = current.revision !== r.revision && (!rejection?.reviewer || await env.ATLAS.prepare(`SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission
-      WHERE e.crop=? AND e.revision>? AND e.kind NOT IN (3,4) AND (s.actor NOT IN (SELECT value FROM json_each(?)) OR (s.undone=0 AND e.kind IN (0,1,2))) LIMIT 1`)
-      .bind(r.crop, r.revision, JSON.stringify(rejection.reviewer)).first());
+    // still stands, stops it. Marks never do; nor does a publication, which is no one's review.
+    const later = current.revision !== r.revision && (rejection?.reviewer ? await env.ATLAS.prepare(`SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission
+      WHERE e.crop=? AND e.revision>? AND e.kind NOT IN (3,4,${PUBLISHED}) AND (s.actor NOT IN (SELECT value FROM json_each(?)) OR (s.undone=0 AND e.kind IN (0,1,2))) LIMIT 1`)
+      .bind(r.crop, r.revision, JSON.stringify(rejection.reviewer)).first()
+      : await env.ATLAS.prepare(`SELECT 1 FROM events WHERE crop=? AND revision>? AND kind<>${PUBLISHED} LIMIT 1`).bind(r.crop, r.revision).first());
     if (later) {
       if (await env.ATLAS.prepare('SELECT 1 FROM submissions WHERE id=? AND undone=1').bind(submission.id).first())
         return { results: [], duplicate: true };
@@ -654,8 +669,9 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     if (conflict(error)) throw new Problem(409, 'A later review changed this crop.');
     throw error;
   }
-  return { results: results.map(r => ({ id: ids.get(r.crop) ?? null, target_id: publicId(r.crop), revision: r.revision,
-    review: { id: ids.get(r.crop) ?? null, kind: 'undo', reverses: r.reverses, at: new Date(at).toISOString() } })) };
+  return { results: results.map(r => r.refused ? { id: null, target_id: publicId(r.crop), refused: r.refused }
+    : { id: ids.get(r.crop) ?? null, target_id: publicId(r.crop), revision: r.revision,
+      review: { id: ids.get(r.crop) ?? null, kind: 'undo', reverses: r.reverses, at: new Date(at).toISOString() } }) };
 }
 
 // --- Routes ---
