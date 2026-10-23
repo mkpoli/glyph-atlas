@@ -165,6 +165,45 @@ def query(database, sql):
     sys.exit(f"could not read {database}; rerun to finish")
 
 
+# A crop's revision as the old site and the offline store count it, as the Worker computes it
+# (routes/review.ts `LOGICAL`): from the revision the last publication that spoke for the crop gave it,
+# plus every event since but a mark; without one, its revision less every mark.
+MARKED = "({e}.kind IN (3,4) OR ({e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id={e}.reverses),3) IN (3,4)))"
+# Events the store never counts: marks, and a re-cut clearing a mark (RECUT_KIND, 7).
+UNCOUNTED = "(e.kind=7 OR " + MARKED.format(e="e") + ")"
+LOGICAL = ("coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at AND NOT "
+           + UNCOUNTED + ") FROM review_revisions a WHERE a.crop=c.id),c.revision-(SELECT count(*) FROM events e "
+           "WHERE e.crop=c.id AND " + UNCOUNTED + "))")
+
+
+# The review migrations, each with a query that finds what it made. Each is applied where that is missing,
+# so a copy that took an earlier one (a mirror built after it, or one on another machine) is not touched again.
+REVIEW_MIGRATIONS = (
+    ("0015", "0015_review_evidence.sql", "SELECT 1 AS n FROM pragma_table_info('submissions') WHERE name='evidence'"),
+    ("0016", "0016_review_revisions.sql",
+     "SELECT 1 AS n FROM (SELECT count(*) AS k FROM sqlite_master WHERE name IN ('review_revisions','event_reviews')) WHERE k=2"),
+)
+
+
+def migrate_reviews(atlas, dry):
+    """Migrations 0015 and 0016 on D1 and on the local copy, where each lacks them. They reach D1 before
+    the Worker that reads them deploys; the local copy takes them here. A dry run changes neither."""
+    if dry:
+        return
+    for number, name, made in REVIEW_MIGRATIONS:
+        path = OUT / "publish" / f"{number}.sql"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text((CF / "migrations-atlas" / name).read_text()
+                        + f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES('migration:{number}', unixepoch());\n")
+        if not query("glyph-atlas-v3", made):
+            send("glyph-atlas-v3", path, f"migration:{number}")
+            if not query("glyph-atlas-v3", made):
+                sys.exit(f"migration {number} did not apply; rerun")
+            print(f"migration {number} applied to glyph-atlas-v3", flush=True)
+        if not atlas.execute(made).fetchone():
+            atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+
+
 def applied(database, stamp):
     return query(database, f"SELECT count(*) AS n FROM imports WHERE stamp={lit(stamp)}")[0]["n"] == 1
 
@@ -332,6 +371,14 @@ class Mirror:
         self.ids.execute("INSERT INTO ids VALUES(?,?)", (text_id, cid))
         return cid
 
+    def logical(self, cid):
+        """The crop's revision as the store counts it, in the local copy (`LOGICAL`); a dry run over a copy
+        without migration 0016 counts its revision less the events the store never counts."""
+        if not self.atlas.execute("SELECT 1 FROM sqlite_master WHERE name='review_revisions'").fetchone():
+            return self.atlas.execute("SELECT c.revision-(SELECT count(*) FROM events e WHERE e.crop=c.id AND "
+                                      + UNCOUNTED + ") FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
+        return self.atlas.execute(f"SELECT {LOGICAL} FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
+
     def page_key(self, pid):
         return self.ids.execute("SELECT key FROM pages WHERE id=?", (pid,)).fetchone()[0]
 
@@ -342,6 +389,10 @@ class Mirror:
         old = self.atlas.execute("SELECT * FROM crops WHERE id=?", (cid,)).fetchone()
         row = {c: (old[c] if old else DEFAULTS.get(c)) for c in CROP_COLS}
         row.update({c: v for c, v in given.items() if v is not KEEP})
+        # A catalogue knows no marks: a crop it holds pending keeps the seen or hard mark it has on the site,
+        # now that a publication speaks against the revision less its marks.
+        if old and old["state"] in MARK_STATES and row["state"] == PENDING:
+            row["state"] = old["state"]
         if suspect is not None:
             row["flags"] = (row["flags"] & ~SUSPECT) | (SUSPECT if suspect else 0)
         changed = []
@@ -349,7 +400,8 @@ class Mirror:
         if old is None:
             self.emit("crops", CROP_COLS, tuple(row[c] for c in CROP_COLS), page=pid)
         else:
-            speaks = review_columns and catalogue_revision >= old["revision"]
+            logical = self.logical(cid)
+            speaks = review_columns and catalogue_revision >= logical
             if review_columns and not speaks:
                 self.stale.append(cid)
             changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle") and old[c] != row[c]
@@ -358,10 +410,19 @@ class Mirror:
             reviewed = [c for c in changed if c in REVIEW_OWNED]
             if own:
                 self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in own)} WHERE id={cid};")
-            if speaks and catalogue_revision != old["revision"]:
+            # A change a reviewer can see moves the crop's revision on by one, so a view read before it is
+            # refused; otherwise the revision stays. It never goes back, since events name revisions.
+            row["revision"] = old["revision"] + (1 if reviewed else 0)
+            if reviewed:
                 reviewed.append("revision")
+            if speaks and (reviewed or catalogue_revision != logical):
+                # The store's revision for the crop from here on, recorded first under the same guard, so
+                # both statements apply or neither does.
                 changed.append("revision")
-                row["revision"] = catalogue_revision
+                self.page_sql[pid].append(
+                    f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},{row['revision']} FROM crops "
+                    f"WHERE id={cid} AND revision={old['revision']} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")
+                self.guarded.append(cid)
             if reviewed:
                 # Only while nobody has reviewed the crop since the revision the mirror holds.
                 self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in reviewed)} "
@@ -526,7 +587,13 @@ def deliver(m, run):
             for i in range(0, len(guarded), 200):
                 chunk = guarded[i:i + 200]
                 found = {r["id"]: r for r in query(database, f"SELECT * FROM crops WHERE id IN ({','.join(map(str, chunk))})")}
+                # The revision D1 counts for each crop as the store does, which the next publication speaks against.
+                counted = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision FROM crops c "
+                                                              f"WHERE c.id IN ({','.join(map(str, chunk))})")}
                 for cid in chunk:
+                    if cid in counted:
+                        m.atlas.execute("INSERT INTO review_revisions(crop,revision,at) VALUES(?,?,?) ON CONFLICT(crop) DO UPDATE "
+                                        "SET revision=excluded.revision,at=excluded.at", (cid, counted[cid]["revision"], counted[cid]["at"]))
                     local = m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
                     if (cid in found) != (local is not None) or (local and found[cid]["revision"] != local["revision"]):
                         refused.append(cid)
@@ -669,8 +736,10 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="write the parts and bundles, publish nothing")
     parser.add_argument("--replacements", action="store_true",
                         help="name the replacement of every retired crop from source-unit_redirects.sqlite")
+    parser.add_argument("--migrate", action="store_true",
+                        help="only apply migrations 0015 and 0016 where they are missing, on D1 and the local copy, stamped")
     args = parser.parse_args()
-    if args.catalogue is None and not args.replacements:
+    if args.catalogue is None and not args.replacements and not args.migrate:
         parser.error("a catalogue, --replacements, or both")
     catalogue, dry = args.catalogue, args.dry_run
     (OUT / "publish").mkdir(parents=True, exist_ok=True)
@@ -694,6 +763,17 @@ def main():
         sys.exit("the crop fill is unfinished; finish it with fill.py --send first")
     for (name,) in m.ids.execute("SELECT run FROM pending WHERE run LIKE ?", (FACTS_RUN + "%",)):
         sys.exit(f"the crop facts load {name.removeprefix(FACTS_RUN)} is unfinished; finish it with crop_facts.py --send first")
+    # Revisions are counted over the history's events (`reverses`, migration 0009) and saved beside its
+    # submissions; a local copy without the history cannot count them.
+    if (not m.atlas.execute("SELECT 1 FROM sqlite_master WHERE name='submissions'").fetchone()
+            or "reverses" not in {r[1] for r in m.atlas.execute("PRAGMA table_info(events)")}):
+        sys.exit("the local copy has no review history; run load_history.py first")
+    migrate_reviews(m.atlas, dry)
+    if args.migrate:
+        if dry:
+            sys.exit("--migrate applies the migrations; it has no dry run")
+        print("review migrations in place on glyph-atlas-v3 and the local copy", flush=True)
+        return
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
@@ -786,13 +866,13 @@ def main():
         cid = m.known(r["id"])
         if cid is not None:
             published = entry(cid)
-            current = m.atlas.execute("SELECT revision FROM crops WHERE id=?", (cid,)).fetchone()
+            current = m.logical(cid) if m.atlas.execute("SELECT 1 FROM crops WHERE id=?", (cid,)).fetchone() else None
             if r["origin"] == "withdrawn":
                 # The read-back after the D1 deletion decides each withdrawn crop on its own.
                 pass
             elif r["origin"] in GONE:
-                if current and r["revision"] < current["revision"]:
-                    refused.append(f"{r['id']}: {r['origin']} at revision {r['revision']}, reviewed since (revision {current['revision']})")
+                if current is not None and r["revision"] < current:
+                    refused.append(f"{r['id']}: {r['origin']} at revision {r['revision']}, reviewed since (revision {current})")
             elif m.page_key(cid // PAGE) != page_key:
                 refused.append(f"{r['id']}: page {m.page_key(cid // PAGE)} -> {page_key}")
             elif r["id"] in recut and data.get("box") and not data.get("box_pending"):

@@ -163,7 +163,103 @@ def test_a_newer_review_in_the_catalogue_is_applied_with_its_revision(layout, mo
     a1 = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["ex:a1"]
     run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ",
                                                                      state="checked", revision=4)]))
-    assert crops(remote)[a1]["state"] == 1 and crops(remote)[a1]["revision"] == 4
+    # The crop's revision moves on by one; the store's revision is recorded beside it.
+    assert crops(remote)[a1]["state"] == 1 and crops(remote)[a1]["revision"] == 1
+    assert remote.query("glyph-atlas-v3", "SELECT revision, at FROM review_revisions WHERE crop=" + str(a1)) == [{"revision": 4, "at": 1}]
+
+
+def test_a_publication_speaks_against_the_revision_the_store_counts_not_the_marks(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1 = ids(root)["ex:a1"]
+    # On the site: a seen mark (revision 1), then a review (revision 2). The store imported the review at 2.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executemany("INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind) VALUES(?, ?, 0, 0, 1, 1, 1, ?)",
+                       [(a1, 1, 3), (a1, 2, 1)])
+        db.execute("UPDATE crops SET revision=2 WHERE id=?", (a1,))
+        db.commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ",
+                                                                     revision=2)]))
+    logical = f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a1}"
+    assert remote.query("glyph-atlas-v3", logical) == [{"n": 2}]
+    assert sqlite3.connect(root / "out" / "atlas.sqlite").execute(logical).fetchone() == (2,)
+
+
+def events(root, remote, crop, *rows, state=None):
+    """Events on the site and in the local copy, (revision, kind), the crop at the last revision."""
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executemany("INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind) VALUES(?, ?, 0, 0, 1, 1, 1, ?)",
+                       [(crop, revision, kind) for revision, kind in rows])
+        db.execute("UPDATE crops SET revision=?, state=coalesce(?, state) WHERE id=?", (rows[-1][0], state, crop))
+        db.commit()
+
+
+def logical(publish, db_query, crop):
+    return db_query(f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={crop}")
+
+
+def test_a_publication_that_changes_nothing_a_reviewer_sees_anchors_at_the_crops_own_revision(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1 = ids(root)["ex:a1"]
+    # Two marks, then a review: revision 3 on the site, 1 as the store counts it.
+    events(root, remote, a1, (1, 3), (2, 3), (3, 1))
+    state = remote.query("glyph-atlas-v3", f"SELECT k.key FROM crops c JOIN codes k ON k.field='state' AND k.code=c.state WHERE c.id={a1}")
+    char = remote.query("glyph-atlas-v3", f"SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id={a1}")[0]["text"]
+    # The store, which imported the review as two of its own, publishes the crop unchanged at its revision 2.
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, char,
+                                                                     state=state[0]["key"], revision=2)]))
+    assert crops(remote)[a1]["revision"] == 3
+    assert logical(publish, lambda q: remote.query("glyph-atlas-v3", q), a1) == [{"n": 2}]
+    events(root, remote, a1, (4, 1))
+    assert logical(publish, lambda q: remote.query("glyph-atlas-v3", q), a1) == [{"n": 3}]
+
+
+def test_a_re_cut_that_clears_a_mark_leaves_the_revision_the_store_counts(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1 = ids(root)["ex:a1"]
+    seen = remote.dbs["glyph-atlas-v3"].execute("SELECT code FROM codes WHERE field='state' AND key='seen'").fetchone()[0]
+    events(root, remote, a1, (1, 3), state=seen)
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 1, "y": 1, "w": 10, "h": 10}, revision=1)]))
+    assert remote.query("glyph-atlas-v3", f"SELECT kind FROM events WHERE crop={a1} ORDER BY revision DESC LIMIT 1") == [{"kind": 7}]
+    assert logical(publish, lambda q: remote.query("glyph-atlas-v3", q), a1) == [{"n": 1}]
+
+
+def test_the_review_migrations_reach_a_copy_that_took_an_earlier_one(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    # Both copies took migration 0015 as it first stood, with no table for the store's revisions.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executescript("DROP INDEX event_reviews; DROP TABLE review_revisions;")
+        db.commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "お")]))
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        assert {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE name IN ('review_revisions','event_reviews')")} == {
+            "review_revisions", "event_reviews"}
+        assert "evidence" in {r[1] for r in db.execute("PRAGMA table_info(submissions)")}
+
+
+def test_migrate_applies_the_review_migrations_alone_and_stamps_them(layout, monkeypatch):
+    root, publish, remote = layout
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executescript("DROP INDEX event_reviews; DROP TABLE review_revisions;")
+        db.commit()
+    pages = remote.query("glyph-atlas-v3", "SELECT id, rev FROM pages")
+    monkeypatch.setattr(sys, "argv", ["publish.py", "--migrate"])
+    publish.main()
+    assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM sqlite_master WHERE name IN ('review_revisions','event_reviews')") == [{"n": 2}]
+    assert remote.query("glyph-atlas-v3", "SELECT stamp FROM imports WHERE stamp LIKE 'migration:001_'") == [{"stamp": "migration:0016"}]
+    assert remote.query("glyph-atlas-v3", "SELECT id, rev FROM pages") == pages
+    # Run again, it finds both in place and sends nothing.
+    publish.main()
+    assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports WHERE stamp LIKE 'migration:001_'") == [{"n": 1}]
+
+
+def test_a_local_copy_without_the_review_history_is_refused(layout, monkeypatch, tmp_path):
+    root, publish, _remote = layout
+    db = sqlite3.connect(root / "out" / "atlas.sqlite")
+    db.execute("DROP TABLE submissions")
+    db.commit()
+    with pytest.raises(SystemExit, match="run load_history.py first"):
+        run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10})]),
+            "--dry-run")
 
 
 def test_a_publish_keeps_the_crops_and_fields_it_does_not_carry_in_the_page_bundle(layout, monkeypatch, tmp_path):
@@ -370,7 +466,7 @@ def test_a_corpus_overlay_sets_the_reviewed_style(layout, monkeypatch, tmp_path)
     run(publish, monkeypatch, path)
     styles = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, code FROM codes WHERE field='style'"))
     assert crops(remote)[g1]["style"] == styles["cursive"]
-    assert crops(remote)[g1]["revision"] == 5
+    assert remote.query("glyph-atlas-v3", f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={g1}") == [{"n": 5}]
 
 
 def test_a_change_of_page_facts_alone_moves_the_page_revision(layout, monkeypatch, tmp_path):

@@ -33,7 +33,9 @@ export const legacyKey = (page: number) => `v3/review-legacy/${page}.json.gz`;
 export async function readLegacyReviews(env: Env, page: number): Promise<Record<string, Json> | null> {
   const object = await env.MEDIA.get(legacyKey(page));
   if (!object) return null;
-  const saved = JSON.parse(new TextDecoder().decode(await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()));
+  let saved: Json;
+  try { saved = JSON.parse(new TextDecoder().decode(await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer())) }
+  catch { throw new Problem(503, 'The legacy review archive could not be read.') }
   if (saved.version !== 1 || !saved.reviews || typeof saved.reviews !== 'object' || Array.isArray(saved.reviews))
     throw new Problem(503, 'Invalid legacy review archive.');
   return saved.reviews;

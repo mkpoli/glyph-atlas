@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from test_cloudflare_import import baseline, store  # noqa: F401 -- fixture
+from test_cloudflare_import import baseline, remote, store  # noqa: F401 -- fixture
 
 from glyph_atlas.feedback import normalize_export
 from glyph_atlas.review import cloudflare_import
@@ -17,10 +17,10 @@ pytestmark = pytest.mark.skipif(not shutil.which("bun"), reason="Worker evidence
 SCRIPT = Path(__file__).parents[1] / "apps/cloudflare/src/routes/fixtures/captureReviewExport.ts"
 
 
-def capture(publication, mode="single", records=None, origin="local", start=1):
+def capture(publication, mode="single", records=None, origin="local", start=1, legacy=None):
     answer = {"image_sha256": publication["character"]["image_sha256"], "verdict": "wrong", "issue": "character", "character": "ナ"}
     records = records or [{"id": str(uuid4()), "before": publication["character"], "answer": answer}]
-    result = subprocess.run(["bun", str(SCRIPT)], input=json.dumps({"publication": publication, "mode": mode, "records": records, "origin": origin, "start": start}),
+    result = subprocess.run(["bun", str(SCRIPT)], input=json.dumps({"publication": publication, "mode": mode, "records": records, "origin": origin, "start": start, "legacy": legacy}),
                             capture_output=True, text=True, check=True)
     return json.loads(result.stdout)
 
@@ -95,3 +95,82 @@ def test_a_review_under_the_page_bundle_record_follows_one_imported_from_the_old
     _, report = cloudflare_import.ingest_cloudflare(store, new, apply=True)
     assert report["counts"] == {"imported": 1}, report
     assert store.unit("u").unicode == "U+3092"
+
+
+def test_a_batch_line_redraw_imports_with_its_box(store):  # noqa: F811
+    publication = baseline(store)
+    character = publication["character"]
+    box = {**character["box"], "w": character["box"]["w"] - 1}
+    answer = {"image_sha256": character["image_sha256"], "verdict": "match", "box": box}
+    source = capture(publication, "batch", records=[{"id": str(uuid4()), "before": character, "answer": answer}])
+    _, report = cloudflare_import.ingest_cloudflare(store, source, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    assert store.unit("u").box.model_dump() == box
+
+
+def test_a_batch_confirmation_that_keeps_a_box_report_imports_as_disputed(store):  # noqa: F811
+    publication = baseline(store)
+    character = publication["character"]
+    report_answer = {"image_sha256": character["image_sha256"], "verdict": "wrong", "issue": "crop"}
+    reported = capture(publication, records=[{"id": str(uuid4()), "before": character, "answer": report_answer}])
+    _, report = cloudflare_import.ingest_cloudflare(store, reported, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    before = {**character, "revision": store.revision("u")}
+    confirm = {"image_sha256": character["image_sha256"], "verdict": "match"}
+    source = capture({"character": before}, "batch", records=[{"id": str(uuid4()), "before": before, "answer": confirm, "kept": "crop"}],
+                     start=2)
+    assert source["reviews"][0]["event"]["new"] == "disputed"
+    _, report = cloudflare_import.ingest_cloudflare(store, source, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    assert store.unit("u").review == "disputed"
+
+
+def test_a_review_listed_without_its_record_is_no_feedback():
+    export = {"version": 1, "kind": "atlas-character-reviews", "reviews": [
+        {"event": {"id": "v3:9", "target_type": "unit", "target_id": "u", "field": "review", "at": "2026-10-22T00:00:00Z"},
+         "evidence": None, "unavailable": "saved before review evidence was kept", "crop": "1", "current": True, "current_revision": 1}]}
+    assert normalize_export(export) == []
+
+
+def test_a_review_saved_here_continues_the_old_sites_reviews_not_yet_imported(store):  # noqa: F811
+    publication = baseline(store)
+    old, after = remote(publication, character="ナ", current=False)
+    # The bundle record already shows the old review's label; the baseline is the old site's record.
+    record = {**after, "tone": "#ab9d7c"}
+    answer = {"image_sha256": record["image_sha256"], "verdict": "wrong", "issue": "character", "character": "を"}
+    new = capture({"character": record}, records=[{"id": str(uuid4()), "before": after, "answer": answer}], start=2,
+                  legacy=publication)
+    assert new["reviews"][0]["publication_snapshot"] == publication
+    export = {**new, "reviews": [old, *new["reviews"]]}
+    _, report = cloudflare_import.ingest_cloudflare(store, export, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    assert store.unit("u").unicode == "U+3092"
+
+
+def test_a_line_correction_that_relabels_and_redraws_a_crop_imports_both(store):  # noqa: F811
+    publication = baseline(store)
+    character = publication["character"]
+    box = {**character["box"], "w": character["box"]["w"] - 1}
+    answer = {"image_sha256": character["image_sha256"], "verdict": "wrong", "issue": "character", "character": "あ", "box": box}
+    source = capture(publication, "batch", records=[{"id": str(uuid4()), "before": character, "answer": answer}])
+    _, report = cloudflare_import.ingest_cloudflare(store, source, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    unit = store.unit("u")
+    assert (unit.unicode, unit.box.model_dump()) == ("U+3042", box)
+
+
+def test_a_batch_relabel_of_a_crop_reported_for_its_box_imports_as_disputed(store):  # noqa: F811
+    publication = baseline(store)
+    character = publication["character"]
+    reported = capture(publication, records=[{"id": str(uuid4()), "before": character,
+                                              "answer": {"image_sha256": character["image_sha256"], "verdict": "wrong", "issue": "crop"}}])
+    _, report = cloudflare_import.ingest_cloudflare(store, reported, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    before = {**character, "revision": store.revision("u")}
+    relabel = {"image_sha256": character["image_sha256"], "verdict": "wrong", "issue": "character", "character": "あ"}
+    source = capture({"character": before}, "batch", records=[{"id": str(uuid4()), "before": before, "answer": relabel, "kept": "crop"}],
+                     start=2)
+    assert source["reviews"][0]["event"]["new"] == "disputed"
+    _, report = cloudflare_import.ingest_cloudflare(store, source, apply=True)
+    assert report["counts"] == {"imported": 1}, report
+    assert (store.unit("u").unicode, store.unit("u").review) == ("U+3042", "disputed")

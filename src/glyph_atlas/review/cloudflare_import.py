@@ -80,6 +80,11 @@ def _answer(evidence, identity, snapshot=None):
     if "batch" in evidence and "request" not in evidence:
         if evidence.get("kind") != "character-review":
             raise Rejected("a batch correction is recorded as an inspector review")
+        # Since glyph-atlas-v3 a batch correction keeps each crop's own answer, with a line's redrawn box.
+        if "answer" in evidence:
+            if evidence["answer"].get("id") != identity:
+                raise Rejected("batch answer names another occurrence")
+            return evidence["answer"]
         shown = (snapshot or {}).get("character", {})
         answer = {"id": identity, "revision": shown.get("revision"), "image_sha256": shown.get("image_sha256"),
                   "verdict": evidence.get("verdict"), "issue": evidence.get("issue")}
@@ -155,7 +160,9 @@ def _step(record, before):
                 or not all(type(box[key]) is int for key in box) or box["x"] < 0 or box["y"] < 0
                 or box["w"] < 2 or box["h"] < 2):
             raise Rejected("redrawn box is malformed")
-        if verdict != "match" or issue not in (None, "character") or written:
+        # A redrawn box is the crop's fix: on its own, or, in a line correction, beside the character it names.
+        relabelled = verdict == "wrong" and issue == "character" and written
+        if not (verdict == "match" and issue in (None, "character") and not written) and not relabelled:
             raise Rejected("a redrawn box is saved as the crop's fix")
         after["box"] = {key: box[key] for key in ("x", "y", "w", "h")}
         recrop = evidence.get("recrop")
@@ -166,7 +173,12 @@ def _step(record, before):
     if (correction.get("unicode") != " ".join(refs.to_code_points(after["label"]))
             or correction.get("box") != after["box"]):
         raise Rejected("saved effective state disagrees with the explicit correction")
-    resolved = verdict == "match" or bool(issue == "character" and written)
+    # A batch confirmation leaves a crop reported for its box, a blank or a merge reported (`kept_issue`).
+    kept = evidence.get("kept_issue")
+    # It stands beside a confirmation or a new character, which a batch names.
+    if kept is not None and (recorded_terms.issue(kept) not in ("merged", "crop", "blank", "other") or issue not in (None, "character")):
+        raise Rejected("a kept issue stands beside a confirmation or a new character")
+    resolved = (verdict == "match" or bool(issue == "character" and written)) and kept is None
     if event.get("new") != ("reviewed" if resolved else "disputed"):
         raise Rejected("review certainty exceeds the saved decision")
     return after

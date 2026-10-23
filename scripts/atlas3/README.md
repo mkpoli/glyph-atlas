@@ -145,18 +145,26 @@ One publish runs at a time. The first build's bundles went to R2 with
 
 ## Review exports
 
-`/atlas/reviews.json` lists every review, oldest first, 200 a page; `scripts/fetch_reviews.py` collects
-the pages into one file for the offline import. A review saved on the site freezes its record in R2
-before its submission commits (`v3/review-evidence/<sha256>.json.gz`, named in `submissions.evidence`,
-migration 0015): what the reviewer saw, and the crop's record in the page bundle it was read from as its
-publication baseline. Every review under one bundle record keeps the baseline of the first. Revisions
-there are counted as the old site and the offline store count them: a crop's revision less its marks.
+`/atlas/reviews.json` lists every review in the order it committed, 200 a page; `scripts/fetch_reviews.py`
+collects the pages into one file for the offline import. A review saved on the site freezes its record in
+R2 before its submission commits (`v3/review-evidence/<sha256>.json.gz`, named in `submissions.evidence`):
+what the reviewer saw, and the record its crop is imported from. That baseline is the crop's page bundle
+record at the store's revision once a publication has spoken for the crop; before that, the old site's
+publication record when the old site reviewed the crop, else the bundle record.
+
+Revisions there count as the old site and the offline store count them. A publication that speaks for a
+crop records the catalogue's revision and the crop's own in `review_revisions` (migration 0016), and moves
+the crop's own revision on by one when it changes what a reviewer sees; every event since adds one, but a
+mark or a re-cut clearing a mark. A crop no publication has spoken for counts its revision less those.
+Migrations 0015 and 0016 are applied to glyph-atlas-v3 before the Worker that reads them deploys;
+`publish.py` applies each where what it makes is missing, on D1 and on the local copy.
 
 The reviews moved from the old site are served from `v3/review-legacy/<page>.json.gz`, as the old export
 gave them. `review_archive.py --snapshots FILE` builds those archives from the frozen copies of `events`
 and `units` and the old site's publication record (`units.snapshot`) of each collected or retired crop
-they name, which the copies lack; `--send` uploads them. It writes nothing to D1. Until they are
-uploaded the export stops at the first moved review.
+they name, which the copies lack; `--send` uploads them. It writes nothing to D1. They are uploaded before
+the Worker deploys: until then the export stops at the first moved review, and a review of a crop the old
+site reviewed takes the bundle record as its baseline.
 
 ## Publication answers
 
