@@ -180,9 +180,9 @@ def test_an_export_keeps_a_written_character_over_the_label(labelled):
     assert db.execute("SELECT text FROM unit_ngrams WHERE size=2 ORDER BY first").fetchall() == [("ゑし",), ("し候",)]
 
 
-def published_layout(path, crops, followed=()):
-    """A published layout's copies: (text id, crop number, character, revision) rows, and the crops a
-    form decision moved."""
+def published_layout(path, crops, followed=(), released=()):
+    """A published layout's copies: (text id, crop number, character, revision) rows, the crops a glyph
+    decision holds over their base, and those whose base no decision holds any more."""
     path.mkdir()
     mirror = sqlite3.connect(path / "mirror.sqlite")
     mirror.execute("CREATE TABLE ids(text TEXT PRIMARY KEY, id INTEGER NOT NULL UNIQUE) WITHOUT ROWID")
@@ -190,12 +190,17 @@ def published_layout(path, crops, followed=()):
     mirror.commit()
     atlas = sqlite3.connect(path / "atlas.sqlite")
     atlas.executescript("CREATE TABLE graphemes(id INTEGER PRIMARY KEY, text TEXT NOT NULL UNIQUE, head INTEGER);"
-                        "CREATE TABLE crops(id INTEGER PRIMARY KEY, char INTEGER, revision INTEGER NOT NULL);"
-                        "CREATE TABLE form_bases(crop INTEGER PRIMARY KEY, char INTEGER)")
+                        "CREATE TABLE crops(id INTEGER PRIMARY KEY, char INTEGER, revision INTEGER NOT NULL, cluster INTEGER);"
+                        "CREATE TABLE form_bases(crop INTEGER PRIMARY KEY, char INTEGER);"
+                        "CREATE TABLE form_glyphs(crop INTEGER PRIMARY KEY, form INTEGER, issue TEXT, decision INTEGER);"
+                        "CREATE TABLE form_clusters(id INTEGER PRIMARY KEY, form INTEGER, issue TEXT);"
+                        "CREATE TABLE form_decisions(id INTEGER PRIMARY KEY, kind TEXT)")
     texts = sorted({c for _, _, c, _ in crops if c})
     atlas.executemany("INSERT INTO graphemes(id,text) VALUES(?,?)", list(enumerate(texts, 1)))
-    atlas.executemany("INSERT INTO crops VALUES(?,?,?)", [(cid, texts.index(c) + 1 if c else None, rev) for _, cid, c, rev in crops])
-    atlas.executemany("INSERT INTO form_bases(crop) VALUES(?)", [(cid,) for cid in followed])
+    atlas.executemany("INSERT INTO crops(id,char,revision) VALUES(?,?,?)",
+                      [(cid, texts.index(c) + 1 if c else None, rev) for _, cid, c, rev in crops])
+    atlas.executemany("INSERT INTO form_bases(crop) VALUES(?)", [(cid,) for cid in (*followed, *released)])
+    atlas.executemany("INSERT INTO form_glyphs(crop,form) VALUES(?,1)", [(cid,) for cid in followed])
     atlas.commit()
     return path
 
@@ -253,3 +258,28 @@ def test_a_catalogue_holds_no_trigger_but_the_ledgers_and_refuses_one_made_with_
     db.execute("CREATE TRIGGER t AFTER INSERT ON units BEGIN SELECT 1; END")
     with pytest.raises(ValueError, match="export it again"):
         catalogue.schema(db)
+
+
+def test_a_base_no_decision_holds_any_more_gives_the_export_its_character(tmp_path):
+    db = export_db()
+    held(db, [("K:0", "申"), ("K:1", "上")], document="kept")
+    # K:0 kept 中 while a decision held it; the decision is withdrawn, so publish.py writes the upstream 申.
+    layout = published_layout(tmp_path / "layout", [("K:0", 1, "中", 0), ("K:1", 2, "上", 0)], released=[1])
+    _written, rekeyed = export.record_corpus_runs(db, corpus(tmp_path, [unit("kept", "K", 0, 0), unit("kept", "K", 1, 40)]), layout)
+    assert db.execute("SELECT text FROM unit_ngrams").fetchall() == [("申上",)] and rekeyed == 0
+
+
+def test_a_glyph_the_layout_holds_with_no_character_reads_its_label(tmp_path):
+    db = export_db()
+    held(db, [("K:0", "申"), ("K:1", "上")], document="kept")
+    layout = published_layout(tmp_path / "layout", [("K:0", 1, None, 3), ("K:1", 2, "上", 0)])
+    units = [unit("kept", "K", 0, 0).model_copy(update={"text_source": "中"}), unit("kept", "K", 1, 40)]
+    export.record_corpus_runs(db, corpus(tmp_path, units), layout)
+    assert db.execute("SELECT text FROM unit_ngrams").fetchall() == [("中上",)]
+
+
+def test_a_layout_without_its_form_decisions_is_refused(tmp_path):
+    layout = published_layout(tmp_path / "layout", [("K:0", 1, "中", 1)])
+    sqlite3.connect(layout / "atlas.sqlite").execute("DROP TABLE form_bases").connection.commit()
+    with pytest.raises(SystemExit, match="form_bases"):
+        export.layout_characters(layout, ["K:0"])

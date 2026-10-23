@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import sqlite3
+import sys
 import unicodedata
 from collections import Counter
 from pathlib import Path
@@ -242,18 +243,24 @@ CHUNK = 5000
 def layout_characters(out: Path, ids, skipped=frozenset()) -> dict[str, str | None]:
     """The character the published layout (`out`: the atlas-v3 copies `mirror.sqlite` and `atlas.sqlite`)
     holds for each of `ids` it speaks for, by text id: a glyph a review has changed (revision above 0)
-    or a form decision moved (`form_bases`), as publish.py keeps them over the upstream character, and
-    every glyph in `skipped`, which this export does not write again."""
+    or one whose form decision still holds it over its base (`form_bases` and `ACTIVE_DECISION`), as
+    publish.py keeps them over the upstream character, and every glyph in `skipped`, which this export
+    does not write again. A glyph the layout holds with no character is given as None."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "atlas3"))
+    from build import ACTIVE_DECISION
+
     mirror = sqlite3.connect(f"file:{out / 'mirror.sqlite'}?mode=ro", uri=True)
     atlas = sqlite3.connect(f"file:{out / 'atlas.sqlite'}?mode=ro", uri=True)
-    followed = "EXISTS(SELECT 1 FROM form_bases b WHERE b.crop=c.id)" if atlas.execute(
-        "SELECT 1 FROM sqlite_master WHERE name='form_bases'").fetchone() else "0"
+    have = {r[0] for r in atlas.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if missing := {"form_bases", "form_glyphs", "form_clusters", "form_decisions"} - have:
+        sys.exit(f"{out / 'atlas.sqlite'} lacks {sorted(missing)}; the runs need a layout copy with its form decisions loaded")
+    followed = f"EXISTS(SELECT 1 FROM form_bases b WHERE b.crop=x.id) AND {ACTIVE_DECISION.replace('?', 'x.id')}"
     ids, found = sorted(ids), {}
     for start in range(0, len(ids), CHUNK):
         number = dict(mirror.execute("SELECT text, id FROM ids WHERE text IN (SELECT value FROM json_each(?))",
                                      (json.dumps(ids[start:start + CHUNK]),)))
-        rows = atlas.execute(f"SELECT c.id, g.text, c.revision > 0 OR {followed} FROM crops c LEFT JOIN graphemes g ON g.id=c.char "
-                             "WHERE c.id IN (SELECT value FROM json_each(?))", (json.dumps(list(number.values())),))
+        rows = atlas.execute(f"SELECT x.id, g.text, x.revision > 0 OR {followed} FROM crops x LEFT JOIN graphemes g ON g.id=x.char "
+                             "WHERE x.id IN (SELECT value FROM json_each(?))", (json.dumps(list(number.values())),))
         by_number = {cid: (text, speaks) for cid, text, speaks in rows}
         for text_id, cid in number.items():
             if cid in by_number and (by_number[cid][1] or text_id in skipped):
@@ -286,11 +293,12 @@ def record_corpus_runs(db, corpus, layout: Path | None = None, skipped=frozenset
             (json.dumps(members[start:start + CHUNK]),)))
     held = layout_characters(layout, members, skipped) if layout else {}
     own = dict(glyphs)
+    # A glyph the layout holds with no character reads its label, as one with no written character does.
     for i, character in held.items():
         if i in glyphs:
-            glyphs[i] = glyphs[i]._replace(character=character or glyphs[i].character)
+            glyphs[i] = glyphs[i]._replace(character=character or labels.get(i))
         elif i in skipped:
-            glyphs[i] = ngrams.Written(character, None, 0, 0)
+            glyphs[i] = ngrams.Written(character or labels.get(i), None, 0, 0)
     # A skipped glyph stands in a run only after its first, which this export writes.
     runs = [run for run in runs if run.units[0] in own]
 

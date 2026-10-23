@@ -97,6 +97,16 @@ def replacement(text_id, redirects, live):
         at = redirects[at]
 
 
+# Whether a form decision holds crop ?: its own glyph decision, else the form or issue of the cluster
+# decision it carries from an earlier clustering or of its cluster. A corpus glyph's base is kept only
+# while one does; history.py and check.py leave out the bases it releases.
+ACTIVE_DECISION = ("EXISTS(SELECT 1 FROM crops c LEFT JOIN form_glyphs g ON g.crop=c.id "
+                   "LEFT JOIN form_clusters k ON k.id=c.cluster WHERE c.id=? AND CASE WHEN g.crop IS NOT NULL "
+                   "THEN g.form IS NOT NULL OR g.issue IS NOT NULL "
+                   "OR EXISTS(SELECT 1 FROM form_decisions d WHERE d.id=g.decision AND d.kind='glyph') "
+                   "ELSE k.form IS NOT NULL OR (k.issue IS NOT NULL AND k.issue<>'mixed') END)")
+
+
 # A crop whose character is written apart from its grapheme family's head (𛁅 for し), as the publisher
 # keeps `run_written` for a catalogue's crops: the head stands for the crop in its runs' graphemes, the
 # row for how it is written. A new layout's rows and texts come from runs.py, after the build.
@@ -107,7 +117,8 @@ WRITTEN = """SELECT c.id, g.text FROM crops c JOIN graphemes g ON g.id = c.char
 def horizontal(rows):
     """Count the runs written across the page, which the layout leaves out: it records no direction,
     since every run it holds is written down the page (`run_stats.down` counts them); a column for it
-    comes when such runs are wanted. A horizontal line leaves out its own runs and stops nothing else."""
+    comes when such runs are wanted. A horizontal line leaves out its own runs and stops nothing else; a
+    line published down the page and read across it later keeps its published runs until its crops go."""
     if n := sum(1 for r in rows if not r["vertical"]):
         print(f"{n} runs are written across the page and left out; the layout has no column for their direction", flush=True)
     return n
