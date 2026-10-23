@@ -76,6 +76,19 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   them in `unreplaced.txt` in its run. An entry that holds its replacement as a text id is rewritten
   by the next publish whose catalogue carries the crop as retired, or by `publish.py --replacements`,
   which checks every retired entry against `source-unit_redirects.sqlite`.
+- A catalogue's `corpus_flags`, which `flags.py` writes from a relabel's `review-ids.json`, sends
+  each named corpus glyph to the Flagged view with the rows the Worker's admin flag writes: its
+  finding in `corpus_flags`, its first `corpus_rows` row, and an event of kind `flag` with the
+  wrong-character issue one revision on, under a submission of the actor `publish` keyed
+  `publish:<run>:<n>` (one finding and at most 96 glyphs each, the finding in its request as the
+  Worker reads it), which moves the crop to `flagged`, its review overlay and its `tally` cells. Each
+  glyph is judged on D1's row, since the site moves a corpus glyph's character by itself: a collected
+  crop, a glyph with a `corpus_rows` row (anything was written about it), one whose character is not
+  the finding's or one withheld from the quiz is left out. In D1 each flag waits on the crop's
+  revision, character, kind and quiz and on no `corpus_rows` row, and the local copy takes D1's rows
+  back, its tally moved from the cell it counted each glyph in to the cell of D1's row. A submission
+  ends naming only the glyphs D1 flagged under it, and goes when it flagged none. The run's
+  `flags.json` lists each id by how it was judged, `flags-outcome.json` what D1 flagged and refused.
 - A catalogue whose `units` carry `visual` and `context`, as `export_cloudflare.py` writes them, sets
   each published crop's model votes for its cut in its page's object
   `v3/votes/<build>/<page>.json.gz` (`votes.py`), and a reading that is not ready removes them. Only
