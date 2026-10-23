@@ -504,8 +504,8 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     // the crop's own image is what the reader saw. A client that does not send it is held to the rest.
     // A corpus glyph's source revision covers its box and image reference.
     const same = row.kind === 1 ? data.source_revision === crop.source_revision : data.image_sha256 === crop.image_sha256;
-    // A view from before the crop's last boundary, or since moved past by a review, is refused as any save is.
-    if (crop.revision !== undefined && !standing(row, crop.revision)) throw new Problem(409, 'This character changed. Reload it.');
+    // A view from before the crop's last boundary, or since moved past by a review, records nothing for it.
+    if (crop.revision !== undefined && !standing(row, crop.revision)) return null;
     return same && members!.includes(data.label) && (crop.image === undefined || crop.image === data.image) ? row.id : null;
   };
   const shown = seen.map(stands).filter((n): n is number => n !== null);

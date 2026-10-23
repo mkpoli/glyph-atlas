@@ -302,11 +302,15 @@ describe('revisions as the offline store counts them', () => {
     expect((await send(env, `/atlas/rounds/${uuid(746)}/undo`, {})).status).toBe(200);
   });
 
-  it('refuse a seen mark from before a crop was put back', async () => {
+  it('record nothing for a seen mark from before a crop was put back, and save the rest of the round', async () => {
     const { db, env, ids } = setup();
     db.exec(`UPDATE crops SET revision=2 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at,boundary) VALUES(${ids[0]},0,2,2)`);
-    expect((await send(env, '/atlas/rounds', { id: uuid(745), grapheme: 'U+306F', seen: [local(ids[0], { revision: 1 })] })).status).toBe(409);
-    expect(db.query('SELECT count(*) AS n FROM seen').get()).toEqual({ n: 0 });
+    const round = await send(env, '/atlas/rounds', { id: uuid(745), grapheme: 'U+306F',
+      seen: [local(ids[0], { revision: 1 }), local(ids[2])], skipped: [local(ids[3])] });
+    expect(round.status).toBe(200);
+    expect(db.query('SELECT crop FROM seen').all()).toEqual([{ crop: ids[2] }]);
+    expect(db.query('SELECT crop FROM skips').all()).toEqual([{ crop: ids[3] }]);
+    expect(db.query('SELECT revision FROM crops WHERE id=?').get(ids[0])).toEqual({ revision: 2 });
   });
 
   it('refuse a view or an undo from before a crop was retired and put back', async () => {
