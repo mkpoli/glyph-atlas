@@ -619,16 +619,15 @@ class Mirror:
             self.emit("crops", CROP_COLS, tuple(row[c] for c in CROP_COLS), page=pid)
             if restored:
                 # A crop put back keeps the events of its earlier life. Its revision is a new one, above every
-                # event's and above the one it was retired at (its retired entry's), so no view or undo from
-                # before answers; the store's revision is recorded there, so those events are not counted again.
-                floor = -1 if retired_at is None else int(retired_at)
+                # revision it had: the catalogue's, every event's and the one it was retired at (its retired
+                # entry's; main() refuses a restore without it). The store's revision is recorded there: the
+                # Worker counts from it and refuses any view or undo from before it.
                 self.page_sql[pid] += [
-                    (f"UPDATE crops SET revision=max(revision,(SELECT coalesce(max(revision),-1)+1 FROM events WHERE crop={cid}),{floor + 1}) "
-                     f"WHERE id={cid};"),
-                    f"DELETE FROM review_revisions WHERE crop={cid};",
+                    (f"UPDATE crops SET revision=max({catalogue_revision},{int(retired_at)},"
+                     f"(SELECT coalesce(max(revision),0) FROM events WHERE crop={cid}))+1 WHERE id={cid};"),
                     (f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},revision FROM crops WHERE id={cid} "
-                     f"AND (revision<>{catalogue_revision} OR EXISTS(SELECT 1 FROM events WHERE crop={cid}));")]
-                for statement in self.page_sql[pid][-3:]:
+                     "ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")]
+                for statement in self.page_sql[pid][-2:]:
                     self.atlas.execute(statement)
                 self.guarded.append(cid)
         else:
@@ -1161,6 +1160,10 @@ def main():
             elif r["origin"] in GONE:
                 if current is not None and r["revision"] < current:
                     refused.append(f"{r['id']}: {r['origin']} at revision {r['revision']}, reviewed since (revision {current})")
+            elif current is None and published.get("retired") and "revision" not in published:
+                # A crop put back takes a revision above every one it had; without the one it was retired at,
+                # a revision a publication gave it then without an event could be reused.
+                refused.append(f"{r['id']}: retired without its revision recorded, so it cannot be put back safely")
             elif m.page_key(cid // PAGE) != page_key:
                 refused.append(f"{r['id']}: page {m.page_key(cid // PAGE)} -> {page_key}")
             elif r["id"] in recut and data.get("box") and not data.get("box_pending"):

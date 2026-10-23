@@ -34,7 +34,7 @@ const markable = (code: number) => code === STATE.pending || code === STATE.seen
 // glyph's record from its pack) under the row's label, state and revision; the issue of its last event
 // while it is flagged; the character a standing review named; the box a review redrew.
 export type Current = { id: number; kind: number; char: number | null; label: string; state: number; revision: number; cut: number;
-  quiz: number; data: Json; cutBox: Json | null; settled: number; logicalRevision: number; anchored: number | null;
+  quiz: number; data: Json; cutBox: Json | null; settled: number; logicalRevision: number; anchored: number | null; anchoredAt: number | null;
   sourceId: string; pageRevision: number; record: Json };
 // Whether a client that read the crop at `revision` saw it as it stands: at its revision now, or at one
 // before marks only, which the old site's revision never counted (`settled`).
@@ -60,12 +60,13 @@ export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label
   (SELECT max(e.revision) FROM events e WHERE e.crop=c.id AND NOT ${MARKED('e')}) AS reviewed,
   (SELECT count(*) FROM events e WHERE e.crop=c.id AND ${MARKED('e')} AND e.revision>coalesce((SELECT max(f.revision) FROM events f
     WHERE f.crop=c.id AND NOT ${MARKED('f')}),-1)) AS marks,
-  ${LOGICAL('c')} AS logical,(SELECT revision FROM review_revisions WHERE crop=c.id) AS anchored
+  ${LOGICAL('c')} AS logical,(SELECT revision FROM review_revisions WHERE crop=c.id) AS anchored,
+  (SELECT at FROM review_revisions WHERE crop=c.id) AS anchored_at
   FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN pages pg ON pg.id=c.id>>24
   LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN reviews r ON r.crop=c.id`;
 type CropRow = { id: number; kind: number; char: number | null; label: string | null; state: number; revision: number; cut: number; quiz: number;
   rev: number; x: number | null; y: number | null; w: number | null; h: number | null; issue: number | null; named: string | null;
-  reviewed: number | null; marks: number; logical: number; anchored: number | null; page_key: string };
+  reviewed: number | null; marks: number; logical: number; anchored: number | null; anchored_at: number | null; page_key: string };
 
 // A crop's page id as its record names it; a crop with none sits on its book's page (`book:<document>`).
 export const pageId = (key: string): { page_id?: string } => key.startsWith('book:') ? {} : { page_id: key };
@@ -99,9 +100,11 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
       ...(row.named ? { identity_status: 'assigned', identity_basis: 'human_review' } : {}),
       category: categoryOf(label), ...(box ? { box, box_pending: true } : {}) };
     // Marks since the last review that follow on from it, one revision each, leave the crop as a client saw it then.
-    const settled = row.marks && (row.reviewed ?? row.revision - row.marks) + row.marks === row.revision ? row.revision - row.marks : row.revision;
+    // A publication that spoke for the crop, or put it back, is a boundary: no view from before it stands.
+    const settled = Math.max(row.marks && (row.reviewed ?? row.revision - row.marks) + row.marks === row.revision ? row.revision - row.marks : row.revision,
+      row.anchored_at ?? -Infinity);
     found.set(row.id, { id: row.id, kind: row.kind, char: row.char, label, state: row.state, revision: row.revision, cut: row.cut, quiz: row.quiz, data,
-      cutBox: stored.box ?? null, settled, logicalRevision: row.logical, anchored: row.anchored, sourceId: entry!.id,
+      cutBox: stored.box ?? null, settled, logicalRevision: row.logical, anchored: row.anchored, anchoredAt: row.anchored_at, sourceId: entry!.id,
       pageRevision: row.rev, record: stored });
   }
   const gone = ids.filter(id => !found.has(id)), told = new Set(explained);
@@ -601,6 +604,8 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     // Rejecting all of one reviewer's work also passes over their own later changes to the crop that
     // are already undone, and the undos themselves; anyone else's later change, or one of theirs that
     // still stands, stops it. Marks never do.
+    if (current.anchoredAt !== null && r.revision <= current.anchoredAt)
+      throw new Problem(409, 'This crop was published again since this review. It cannot be undone.');
     const later = current.revision !== r.revision && (!rejection?.reviewer || await env.ATLAS.prepare(`SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission
       WHERE e.crop=? AND e.revision>? AND e.kind NOT IN (3,4) AND (s.actor NOT IN (SELECT value FROM json_each(?)) OR (s.undone=0 AND e.kind IN (0,1,2))) LIMIT 1`)
       .bind(r.crop, r.revision, JSON.stringify(rejection.reviewer)).first());

@@ -266,6 +266,16 @@ describe('revisions as the offline store counts them', () => {
     expect(reviews[1].current_revision).toBe(3);
   });
 
+  it('refuse a view from before a crop was put back, though only marks came before', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, '/atlas/rounds', { id: uuid(734), grapheme: 'U+306F', seen: [local(ids[0])] })).status).toBe(200);
+    // Retired at 1, put back at 2 with the store's revision 0 recorded there.
+    db.exec(`UPDATE crops SET revision=2, state=0 WHERE id=${ids[0]}; INSERT INTO review_revisions(crop,revision,at) VALUES(${ids[0]},0,2)`);
+    const stale = await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(735), revision: 1, image_sha256: H, verdict: 'match' });
+    expect(stale.status).toBe(409);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { id: uuid(736), revision: 2, image_sha256: H, verdict: 'match' })).status).toBe(200);
+  });
+
   it('refuse a view or an undo from before a crop was retired and put back', async () => {
     const { db, env, ids } = setup();
     expect((await send(env, '/atlas/rounds', { id: uuid(730), grapheme: 'U+306F', seen: [local(ids[0])] })).status).toBe(200);

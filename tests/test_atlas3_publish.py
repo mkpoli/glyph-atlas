@@ -401,6 +401,30 @@ def test_a_crop_put_back_takes_a_revision_no_view_from_before_holds(layout, monk
     assert remote.query("glyph-atlas-v3", f"SELECT {publish.LOGICAL} AS n FROM crops c WHERE c.id={a2}") == [{"n": 2}]
 
 
+def test_a_crop_retired_without_its_revision_is_not_put_back(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a2 = ids(root)["ex:a2"]
+    # Seen, undone, seen (1–3), a review (4), then a publication moved it to 5 with no event.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executemany("INSERT INTO events(crop, revision, cut, gen, actor, submission, at, kind) VALUES(?, ?, 0, 0, 1, 1, 1, ?)",
+                       [(a2, 1, 3), (a2, 2, 5), (a2, 3, 3), (a2, 4, 1)])
+        db.execute("UPDATE crops SET revision=5 WHERE id=?", (a2,))
+        db.commit()
+    gone = unit("ex:a2", "hl:p1", {"x": 0, "y": 20, "w": 10, "h": 10}, "い", revision=4)
+    run(publish, monkeypatch, catalogue(tmp_path / "gone.sqlite", [(gone[0], "retired", *gone[2:])]))
+    # A bundle written before retired entries kept their revision.
+    rev = sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT rev FROM pages WHERE id=?", (a2 // PAGE,)).fetchone()[0]
+    path = root / "out" / "pages" / f"{a2 // PAGE}-{rev}.json.gz"
+    body = json.loads(gzip.decompress(path.read_bytes()))
+    for e in body["crops"]:
+        if e["id"] == "ex:a2":
+            del e["revision"]
+    path.write_bytes(gzip.compress(json.dumps(body).encode()))
+    with pytest.raises(SystemExit):
+        run(publish, monkeypatch, catalogue(tmp_path / "back.sqlite", [gone]))
+    assert a2 not in crops(remote)
+
+
 def test_a_corpus_catalogue_keeps_the_review_of_a_corpus_glyph(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     g1 = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["codh:g1"]

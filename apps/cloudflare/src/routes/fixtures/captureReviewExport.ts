@@ -17,7 +17,7 @@ for (const [index, source] of input.records.entries()) {
   const old = source.before, answer = { ...source.answer, id: publicId(crop), revision: 20 + old.revision };
   // The crop's record in its page bundle is the publication the offline store made.
   const { revision: _revision, page_id: _page, ...record } = input.publication.character;
-  const row: Current = { id: crop, sourceId: old.id, pageRevision: 1, record: { slot: 1, ...record }, anchored: source.anchored ?? null,
+  const row: Current = { id: crop, sourceId: old.id, pageRevision: 1, record: { slot: 1, ...record }, anchored: source.anchored ?? null, anchoredAt: null,
     kind: input.origin === 'corpus' ? 1 : 0, char: 1, label: old.label, state: index ? 1 : 0, revision: 20 + old.revision, logicalRevision: old.revision,
     cut: 0, quiz: 1, cutBox: old.box, settled: 20 + old.revision, data: { ...old, id: publicId(crop), page_id: input.publication.character.page_id, revision: 20 + old.revision } };
   const change: CropChange = { crop, expected: row.revision, cut: 0, kind: 1,
