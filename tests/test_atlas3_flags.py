@@ -7,6 +7,9 @@ from pathlib import Path
 import pytest
 from test_atlas3_publish import crops, ids, layout, run  # noqa: F401 -- the fixture
 
+# New corpus records sit in a pack named by its content (address_packs.py).
+PACK = f"packs/{'1' * 64}.bin"
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "atlas3"))
 flags = importlib.import_module("flags")
 
@@ -32,8 +35,8 @@ def test_a_family_code_point_names_no_shown_character_and_a_glyph_is_listed_once
 def corpus_catalogue(path, glyphs):
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
-    db.executemany("INSERT INTO corpus_units VALUES(?,?,NULL,NULL,7,'corpus-0001.bin',?,10,'printed',0,'unassessed','codh:b',NULL)",
-                   [(g, c, i * 10) for i, (g, c) in enumerate(glyphs)])
+    db.executemany("INSERT INTO corpus_units VALUES(?,?,NULL,NULL,7,?,?,10,'printed',0,'unassessed','codh:b',NULL)",
+                   [(g, c, PACK, i * 10) for i, (g, c) in enumerate(glyphs)])
     db.commit()
     return path
 
