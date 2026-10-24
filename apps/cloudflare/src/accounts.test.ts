@@ -63,35 +63,49 @@ describe('names for rows written in ATLAS', () => {
 });
 
 describe('claims on reviewer ids from before accounts', () => {
+  const anon = { id: 'u2', name: 'anon-000002', image: null, anonymous: true, admin: false };
+  // Ids that wrote before accounts: an actor row with neither user nor `via`.
+  const wrote = (atlas: any, ...ids: string[]) => { for (const id of ids) atlas.prepare(`INSERT INTO actors(key,user,via,at) VALUES(?,NULL,NULL,NULL)`).run(id) };
+  const limited = (env: Env, allowed = () => true) => ({ ...env, OLD_IDS: { limit: async () => ({ success: allowed() }) } }) as unknown as Env;
   it('hold at once for the first account, and stop at an id another account holds', async () => {
-    const { env, atlas } = setup();
-    atlas.exec(`INSERT INTO actors(key,user,via,at) VALUES('reviewer-0000000a','u1','legacy',1),('reviewer-0000000d',NULL,NULL,NULL)`);
-    const anon = { id: 'u2', name: 'anon-000002', image: null, anonymous: true, admin: false };
-    expect((await claim(env, anon, 'someone')).status).toBe(422);
-    expect((await claim(env, anon, 'reviewer-0000000b')).status).toBe(200);
-    expect((await claim(env, anon, 'reviewer-0000000b')).status).toBe(200);
+    const { env: base, atlas } = setup(), env = limited(base);
+    atlas.exec(`INSERT INTO actors(key,user,via,at) VALUES('reviewer-0000000a','u1','legacy',1)`);
+    wrote(atlas, 'reviewer-0000000b', 'reviewer-0000000d');
+    expect((await claim(env, anon, 'someone', null)).status).toBe(422);
+    expect((await claim(env, anon, 'reviewer-0000000b', null)).status).toBe(200);
+    expect((await claim(env, anon, 'reviewer-0000000b', null)).status).toBe(200);
     expect(atlas.query("SELECT user,via,typeof(at) AS at FROM actors WHERE key='reviewer-0000000b'").get()).toEqual({ user: 'u2', via: 'legacy', at: 'integer' });
-    expect((await claim(env, anon, 'reviewer-0000000a')).status).toBe(409);
-    // An id that wrote before any account took it has an actor row with no user.
-    expect((await claim(env, anon, 'reviewer-0000000d')).status).toBe(200);
-    expect(atlas.query("SELECT user FROM actors WHERE key='reviewer-0000000d'").get()).toEqual({ user: 'u2' });
+    expect((await claim(env, anon, 'reviewer-0000000a', null)).status).toBe(409);
+    expect((await claim(env, anon, 'reviewer-0000000d', null)).status).toBe(200);
     // An id an account held keeps no user once that account is deleted, and nobody else takes it.
     atlas.exec(`INSERT INTO actors(key,user,via,at) VALUES('reviewer-0000000f',NULL,'legacy',1)`);
-    expect((await claim(env, anon, 'reviewer-0000000f')).status).toBe(409);
+    expect((await claim(env, anon, 'reviewer-0000000f', null)).status).toBe(409);
     expect(atlas.query("SELECT user,via FROM actors WHERE key='reviewer-0000000f'").get()).toEqual({ user: null, via: 'legacy' });
-    for (const id of ['c', 'e', '9']) expect((await claim(env, anon, `reviewer-0000000${id}`)).status).toBe(200);
-    expect((await claim(env, anon, 'reviewer-00000010')).status).toBe(429);
-    expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user='u2' AND via='legacy'").get()).toEqual({ n: 5 });
   });
-  it('stop at five when two are sent at once', async () => {
-    const { env, atlas } = setup();
+  it('take no id that never wrote, and write no row for it', async () => {
+    const { env: base, atlas } = setup(), env = limited(base);
+    expect((await claim(env, anon, 'reviewer-00000077', null)).status).toBe(422);
+    expect(atlas.query("SELECT count(*) AS n FROM actors WHERE key='reviewer-00000077'").get()).toEqual({ n: 0 });
+  });
+  it('stop an address that sends too many ids, before reading any', async () => {
+    const { env: base, atlas, bound } = setup();
+    const keys: string[] = [];
+    const env = { ...base, OLD_IDS: { limit: async ({ key }: { key: string }) => { keys.push(key); return { success: false } } } } as unknown as Env;
+    wrote(atlas, 'reviewer-0000000b');
+    bound.length = 0;
+    expect((await claim(env, anon, 'reviewer-0000000b', '203.0.113.9')).status).toBe(429);
+    expect(keys).toEqual(['203.0.113.9']);
+    expect(atlas.query("SELECT user FROM actors WHERE key='reviewer-0000000b'").get()).toEqual({ user: null });
+  });
+  it('stop at five, also when two are sent at once', async () => {
+    const { env: base, atlas } = setup(), env = limited(base);
     atlas.exec(`INSERT INTO actors(key,user,via,at) VALUES('reviewer-00000001','u2','legacy',1),('reviewer-00000002','u2','legacy',1),
       ('reviewer-00000003','u2','legacy',1),('reviewer-00000004','u2','legacy',1)`);
-    const anon = { id: 'u2', name: 'anon-000002', image: null, anonymous: true, admin: false };
-    const statuses = (await Promise.all(['a', 'b'].map(id => claim(env, anon, `reviewer-0000000${id}`)))).map(r => r.status);
-    expect(statuses.sort()).toEqual([200, 429]);
+    wrote(atlas, 'reviewer-0000000a', 'reviewer-0000000b');
+    const statuses = (await Promise.all(['a', 'b'].map(id => claim(env, anon, `reviewer-0000000${id}`, null)))).map(r => r.status);
+    expect(statuses.sort()).toEqual([200, 409]);
     expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user='u2' AND via='legacy'").get()).toEqual({ n: 5 });
     // A claim of an id the account already holds still answers that it holds it.
-    expect((await claim(env, anon, 'reviewer-00000001')).status).toBe(200);
+    expect((await claim(env, anon, 'reviewer-00000001', null)).status).toBe(200);
   });
 });
