@@ -27,6 +27,7 @@ import { MediaIncomplete, mediaResponse } from './atlas3Media';
 import { cropRoute } from './routes/crop';
 import { runsRoute } from './routes/runs';
 import { Timing } from './timing';
+import { sendContact } from './contact';
 import { cards, characterCard, characterPage, chronology, citeCharacter, corpusOccurrences, decades, occurrences, type CharacterTools } from './routes/character';
 import * as browse from './routes/browse';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
@@ -95,6 +96,8 @@ const routes = {
         try{return json(await imageQuery(env,input,listingItems,ctx))}
         catch(error){if(error instanceof QueryError)throw new Problem(error.status,error.message,error.extra);throw error}
       }
+      // A contact-form message needs no session and writes nothing here (`contact.ts`).
+      if(request.method==='POST'&&path==='/api/contact')return await sendContact(env,request);
       if(request.method==='POST'){
         // Every write is made by the user the request is signed in as; a browser starts an anonymous
         // session before its first one.
