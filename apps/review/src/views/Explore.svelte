@@ -1229,6 +1229,8 @@
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
   .zoom-control{display:flex;align-items:center;gap:6px;color:var(--muted)}
+  /* The server cannot know the reader's size, so the slider waits for the page to wake rather than show the wrong one. */
+  :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
   .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
   .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
