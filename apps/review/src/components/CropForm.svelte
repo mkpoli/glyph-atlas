@@ -2,8 +2,8 @@
   // The crop's form: the forms of its grapheme as chips, its members and then its variants, chosen with
   // a click or a number key, and a picker that adds another form to them: a form past the bar, a related
   // or derived character, a character found by search, or a shape written as an ideographic description
-  // sequence. A choice is held until the dialog saves; choosing the form the crop already has drops it
-  // again.
+  // sequence. A choice is held until the dialog saves. Every chip toggles: a click chooses it, the crop's
+  // own form too, which confirms that form, and a click on the chosen chip drops the choice.
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
   import CopyValue from './CopyValue.svelte'
@@ -48,11 +48,13 @@
     ['related', t('chips.related'), listed.related],
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
-  function choose(char) { onchoose(char === current ? null : char) }
+  function choose(char) { onchoose(char === chosen ? null : char) }
   function add(item) {
+    // Where choosing marks at once, the crop's own form, found by search, would mark nothing.
+    if (others && item.char === current) { picking = false; query = ''; composing = false; return }
     if (!bar.some(chip => chip.char === item.char)) added = [...added, { char: item.char, code_point: item.code_point, script: item.script ?? '', lang: item.lang ?? '' }]
     picking = false; query = ''; composing = false
-    onchoose(item.char === current ? null : item.char)
+    onchoose(item.char)
   }
   // A derived option names how it was made: each substitution of its first route, as made; a
   // registered figure names its sequence and its MJ figure; a regional shape names its regions.

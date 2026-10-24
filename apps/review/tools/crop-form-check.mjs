@@ -3,7 +3,7 @@
  * The inspector's form bar, in a real browser, against a disposable dataset.
  *
  * The bar offers the crop's grapheme's forms with number keys. Choosing one changes the save to
- * "Save", choosing the crop's own form again changes it back, and the save marks the crop: a member of
+ * "Save", choosing it again drops it, and the save marks the crop: a member of
  * its grapheme becomes its character, and a form picked from the add-form picker is claimed as its
  * form in the ledger while the crop keeps its character. Each marking is the reader's form claim.
  * Nothing typed is saved as it stands.
@@ -65,9 +65,9 @@ try {
   await browser.waitFor(`${chips}[1].getAttribute('aria-pressed') === 'true'`)
   assert((await label()).startsWith('Save'), `choosing a form does not turn the button into Save: ${await label()}`)
   await browser.screenshot(join(screenshots, 'form-bar-chosen-light.png'))
-  await browser.key('1')
+  await browser.key('2')
   await browser.waitFor(`${chips}[1].getAttribute('aria-pressed') !== 'true'`)
-  assert((await label()).includes('Looks right'), 'choosing the crop\'s own form again does not undo the change')
+  assert((await label()).includes('Looks right'), 'choosing the chosen form again does not undo the change')
   await browser.key('2')
   const mark = events(config.directory).length
   await browser.evaluate('document.querySelector(".save-character").click()')
@@ -207,6 +207,33 @@ try {
   assert(JSON.stringify(claimed(third)) === JSON.stringify(['所\u{E0102}']) && units(config.directory)[third].unicode === 'U+6240',
     `a variant from the bar was not claimed alone: ${claimed(third)} ${units(config.directory)[third].unicode}`)
   console.log('PASS a variant chosen from the bar is claimed as the crop\'s form, the character kept')
+
+  // The crop's own form is a choice like any other: chosen, it is claimed with the review that confirms
+  // the crop; chosen again, it is dropped.
+  const confirmed = await browser.evaluate(`(async () => {
+    for (const id of ${JSON.stringify(others.filter(id => id !== third))}) {
+      if ((await (await fetch('/atlas/characters/' + encodeURIComponent(id))).json()).image_sha256) return id
+    }
+    return null
+  })()`)
+  assert(confirmed, 'no other crop written as あ has an image')
+  await open(confirmed)
+  await browser.key('1')
+  await browser.waitFor(`${chips}[0].classList.contains('chosen') && ${chips}[0].getAttribute('aria-pressed') === 'true'`)
+  assert((await label()).startsWith('Save'), `choosing the crop's own form does not turn the button into Save: ${await label()}`)
+  await browser.key('1')
+  await browser.waitFor(`!${chips}[0].classList.contains('chosen')`)
+  assert((await label()).includes('Looks right'), 'choosing the crop\'s own form again does not drop it')
+  await browser.evaluate(`${chips}[0].click()`)
+  await browser.waitFor(`${chips}[0].classList.contains('chosen')`)
+  const confirming = events(config.directory).length
+  await browser.evaluate('document.querySelector(".save-character").click()')
+  await browser.waitFor('document.querySelector("dialog[open]") === null', 30000)
+  assert(units(config.directory)[confirmed].unicode === 'U+3042', 'confirming the crop\'s own form changed its character')
+  assert(JSON.stringify(claimed(confirmed)) === JSON.stringify(['あ']), `the crop's own form was not claimed: ${claimed(confirmed)}`)
+  const confirmations = events(config.directory).slice(confirming).filter(e => e.target_id === confirmed && e.field === 'review')
+  assert(confirmations.length === 1, `confirming the crop's own form wrote ${confirmations.length} reviews`)
+  console.log('PASS the crop\'s own form is chosen, dropped, and claimed with its review')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop form')

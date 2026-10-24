@@ -147,6 +147,7 @@
   "crop.tools.label": "이미지 操作",
   "crop.transcription": "轉寫",
   "crop.viewer.label": "文脈 속의 文字. 끌거나 方向키로 移動하고, Home으로 크롭에 돌아갑니다.",
+  "crop.wholePage": "페이지 全體 열기",
   "crop.zoomIn": "擴大",
   "crop.zoomOut": "縮小",
   "explore.bottom.checked": "{count}件 確認",

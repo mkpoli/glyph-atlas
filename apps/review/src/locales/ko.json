@@ -154,6 +154,7 @@
   "crop.tools.label": "이미지 조정",
   "crop.transcription": "전사",
   "crop.viewer.label": "맥락 속 글자입니다. 드래그하거나 방향키로 이동하세요. Home 키를 누르면 크롭으로 돌아갑니다.",
+  "crop.wholePage": "페이지 전체 열기",
   "crop.zoomIn": "확대",
   "crop.zoomOut": "축소",
   "explore.bottom.checked": "{count}개 확인됨",

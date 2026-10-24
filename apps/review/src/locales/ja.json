@@ -138,6 +138,7 @@
   "crop.tools.label": "画像操作",
   "crop.transcription": "翻刻",
   "crop.viewer.label": "文字の周辺画像。ドラッグまたは矢印キーで移動、Homeで切り出しに戻ります。",
+  "crop.wholePage": "ページ全体を開く",
   "crop.zoomIn": "拡大",
   "crop.zoomOut": "縮小",
   "explore.bottom.checked": "{count}件確認済み",

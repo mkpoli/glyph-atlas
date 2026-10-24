@@ -142,6 +142,7 @@
   "crop.tools.label": "影像控制",
   "crop.transcription": "釋文",
   "crop.viewer.label": "字所在原文脈絡。拖曳或使用方向鍵移動；按Home返回裁切範圍。",
+  "crop.wholePage": "開啟整頁",
   "crop.zoomIn": "放大",
   "crop.zoomOut": "縮小",
   "explore.bottom.checked": "已覈對{count}個",
