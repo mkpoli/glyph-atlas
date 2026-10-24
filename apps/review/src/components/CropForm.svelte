@@ -1,9 +1,9 @@
 <script>
-  // The crop's form: the forms of its grapheme as chips, chosen with a click or a number key, and a
-  // picker that adds another form to them: a character found by search, a listed variant or derived
-  // form, or a shape written as an ideographic description sequence. A choice is held until the dialog
-  // saves. Every chip toggles: a click chooses it, the crop's own form too, which confirms that form, and
-  // a click on the chosen chip drops the choice.
+  // The crop's form: the forms of its grapheme as chips, its members and then its variants, chosen with
+  // a click or a number key, and a picker that adds another form to them: a form past the bar, a related
+  // or derived character, a character found by search, or a shape written as an ideographic description
+  // sequence. A choice is held until the dialog saves. Every chip toggles: a click chooses it, the crop's
+  // own form too, which confirms that form, and a click on the chosen chip drops the choice.
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
   import CopyValue from './CopyValue.svelte'
@@ -14,7 +14,7 @@
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
   // its own form would mark nothing.
   let { crop, chosen = null, onchoose, disabled = false, others = false } = $props()
-  let offered = $state({ char: null, members: [], variants: [], derived: [] }), added = $state([])
+  let offered = $state({ char: null, members: [], variants: [], related: [], derived: [] }), added = $state([])
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   let composing = $state(false)
   const written = $derived(crop?.written_character ?? crop?.label ?? '')
@@ -25,26 +25,27 @@
     const char = written
     added = []; picking = false; query = ''; failed = false; composing = false
     listForms(char).then(found => { if (char === written) offered = { char, ...found } })
-      .catch(() => { if (char === written) { offered = { char, members: [{ char }], variants: [], derived: [] }; failed = true } })
+      .catch(() => { if (char === written) { offered = { char, members: [{ char }], variants: [], related: [], derived: [] }; failed = true } })
   })
-  const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], derived: [] })
+  const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], related: [], derived: [] })
+  // The grapheme's forms: its members, then its variants.
+  const forms = $derived([...listed.members, ...listed.variants].filter(form => !others || form.char !== current))
   // The bar: the grapheme's first forms, the crop's own form when it is none of them, and what the
   // picker added.
-  const members = $derived(listed.members.filter(member => !others || member.char !== current))
   const bar = $derived.by(() => {
-    const chips = members.slice(0, BAR)
+    const chips = forms.slice(0, BAR)
     const has = char => chips.some(chip => chip.char === char)
-    if (current && !others && !has(current)) chips.push({ char: current, script: '', lang: listed.variants.find(v => v.char === current)?.lang ?? '' })
+    if (current && !others && !has(current)) chips.push(forms.find(form => form.char === current) ?? { char: current, script: '', lang: '' })
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
-  // The bar wraps onto further rows; only a grapheme's forms past the first ten wait in the picker.
-  const rest = $derived(members.slice(BAR))
+  // The bar wraps onto further rows; only the forms past the first ten, and not on it, wait in the picker.
+  const rest = $derived(forms.slice(BAR).filter(form => !bar.some(chip => chip.char === form.char)))
   const q = $derived(query.trim().toUpperCase())
   const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
   const sections = $derived([
-    ['grapheme', t('chips.grapheme'), rest],
-    ['variants', t('chips.variants'), listed.variants],
+    ['forms', t('chips.forms'), rest],
+    ['related', t('chips.related'), listed.related],
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   function choose(char) { onchoose(char === chosen ? null : char) }
@@ -61,6 +62,9 @@
     ? `${item.char}\n` + item.routes[0].map(sub => `${sub.was} → ${sub.became}`).join('\n')
     : item.mj ? `${item.code_point}\n${item.mj}`
     : item.regions ? `${item.char}\n${item.regions}` : item.code_point ?? item.char
+  // A registered figure on the bar names its MJ figure, and a regional shape its regions, since either
+  // can look like the character itself.
+  const chipTitle = char => { const form = bar.find(chip => chip.char === char); return form?.mj ? `${char} ${form.mj}` : form?.regions ? `${char} ${form.regions}` : char }
   // 1–0 choose the bar's forms, as Quick Review's form bar does; a key typed into a field is the field's.
   function keydown(event) {
     if (disabled || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
@@ -78,7 +82,7 @@
 
 <div class="crop-form" bind:this={root}>
   <div class="form-row copyable">
-    <FormChips forms={bar} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} onchoose={choose}>
+    <FormChips forms={bar} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
       {#if !others}<CopyValue value={chosen ?? current} />{/if}
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+⌕'}</button>
