@@ -101,7 +101,7 @@ def main():
     target = HERE / "catalogue.sqlite"
     building = target.with_name(target.name + ".building")
     building.unlink(missing_ok=True)
-    db = sqlite3.connect(building)
+    db = sqlite3.connect(f"file:{building}", uri=True)
     for table, key in TABLES.items():
         path = HERE / f"source-{table}.sqlite"
         if not path.exists():
