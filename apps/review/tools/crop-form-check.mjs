@@ -210,7 +210,8 @@ try {
   await browser.waitFor('document.querySelector("dialog[open]") === null', 30000)
   assert(units(config.directory)[confirmed].unicode === 'U+3042', 'confirming the crop\'s own form changed its character')
   assert(JSON.stringify(claimed(confirmed)) === JSON.stringify(['あ']), `the crop's own form was not claimed: ${claimed(confirmed)}`)
-  assert(events(config.directory).slice(confirming).some(e => e.target_id === confirmed && e.field === 'review'), 'confirming the crop\'s own form recorded no review')
+  const confirmations = events(config.directory).slice(confirming).filter(e => e.target_id === confirmed && e.field === 'review')
+  assert(confirmations.length === 1, `confirming the crop's own form wrote ${confirmations.length} reviews`)
   console.log('PASS the crop\'s own form is chosen, dropped, and claimed with its review')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
