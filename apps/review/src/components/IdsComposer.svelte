@@ -209,11 +209,14 @@
   // the page's own shortcuts (a crop's review letters, the forms page's undo) leave it alone.
   function keydown(event) {
     if (event.isComposing || event.key === 'Process' || disabled) return
-    // Keys a picker handles, or pressed inside one (its tabs, its grid, its tree), are the picker's own.
-    if (event.defaultPrevented || event.target.closest?.('input, textarea, select, [contenteditable="true"], .ids-pick-tabs, .ids-pick-panel')) return
-    const command = event.ctrlKey || event.metaKey
-    if (command && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); focusChosen(); return }
-    if (command && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); focusChosen(); return }
+    if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
+    // Undo and redo work from anywhere in the editor; the focus stays in a picker that has it.
+    const command = event.ctrlKey || event.metaKey, inPicker = Boolean(event.target.closest?.('.ids-pick-tabs, .ids-pick-panel'))
+    const after = () => { if (!inPicker) focusChosen() }
+    if (command && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); after(); return }
+    if (command && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); after(); return }
+    // Any other key a picker handles, or pressed inside one (its tabs, its grid, its tree), is the picker's own.
+    if (event.defaultPrevented || inPicker) return
     if (command || event.altKey) return
     const op = event.shiftKey ? null : CODES[event.code] ?? KEYS[event.key]
     if (op) { event.preventDefault(); operator(op); focusChosen(); return }
@@ -336,7 +339,7 @@
     <span class="ids-title">{chosen && picked !== null ? t('form.ids.replace', { part: write(picked) }) : t('form.ids.insert')}</span>
     <div class="ids-pick-tabs" role="tablist" aria-label={t('form.ids.pick.label')}>
       {#each PICKERS as tab, index (tab)}
-        <button type="button" role="tab" id={`${uid}-pick-${tab}`} aria-controls={`${uid}-pick-${tab}-panel`} bind:this={pickButtons[index]}
+        <button type="button" role="tab" id={`${uid}-pick-${tab}`} aria-controls={opened.has(tab) ? `${uid}-pick-${tab}-panel` : undefined} bind:this={pickButtons[index]}
           class:active={picker === tab} aria-selected={picker === tab} tabindex={picker === tab ? 0 : -1}
           onclick={() => open(tab)} onkeydown={event => pickKey(event, index)}>{t(`form.ids.pick.${tab}`)}</button>
       {/each}
