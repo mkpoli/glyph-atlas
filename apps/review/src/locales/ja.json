@@ -1114,7 +1114,7 @@
   "contact.email.title": "メール",
   "contact.email.body": "その他のお問い合わせは{email}までご連絡ください。",
   "contact.others.title": "その他のグループ",
-  "contact.others.body": "これらのグループはGlyph Atlasとは独立して、メンバー自身によって運営されています。",
+  "contact.others.body": "それぞれ中心となる話題は異なりますが、これらのグループでも、同じ関心を持つ人たちと出会い、Glyph Atlasについて語り合えます。",
   "contact.form.title": "メッセージの送信",
   "contact.form.body": "このフォームはメールを経由せず、コミュニティのMatrixサーバー上にある管理者専用の受信箱へ直接届きます。返信をご希望の場合は連絡先をご記入ください。匿名で送信する場合は空欄のままで構いません。",
   "contact.form.message": "メッセージ",

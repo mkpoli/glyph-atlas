@@ -1092,7 +1092,7 @@
   "contact.email.title": "이메일",
   "contact.email.body": "그 밖의 問議는 {email}로 보내 주세요.",
   "contact.others.title": "다른 모임",
-  "contact.others.body": "각 모임은 Glyph Atlas와 別個로 構成員들이 直接 運營합니다.",
+  "contact.others.body": "각 모임마다 主로 다루는 主題는 다르지만, 이 모임들에서도 關心事가 같은 사람들을 만나 Glyph Atlas에 關해 이야기를 나눌 수 있습니다.",
   "contact.form.title": "메시지 보내기",
   "contact.form.body": "이 樣式으로 보낸 메시지는 이메일을 거치지 않고 커뮤니티 Matrix 서버에 있는 運營陣의 非公開 受信函으로 바로 傳達됩니다. 答狀을 원하시면 連絡處를 남겨 주세요. 連絡處를 비워 두면 匿名으로 보낼 수 있습니다.",
   "contact.form.message": "메시지",

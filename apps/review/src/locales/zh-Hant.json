@@ -1117,7 +1117,7 @@
   "contact.email.title": "電子郵件",
   "contact.email.body": "其他事宜，請來信{email}。",
   "contact.others.title": "其他群組",
-  "contact.others.body": "這些群組由各自的成員自行管理，獨立於Glyph Atlas運作。",
+  "contact.others.body": "這些群組各有側重，你也可以在其中結識志趣相投的人，一起交流有關Glyph Atlas的話題。",
   "contact.form.title": "傳送留言",
   "contact.form.body": "透過此表單傳送的留言會直接送達社群Matrix伺服器上維護者的私人收件匣，不經電子郵件。如果希望收到回覆，請留下聯絡方式；也可以留空，匿名留言。",
   "contact.form.message": "留言",

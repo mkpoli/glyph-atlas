@@ -1156,7 +1156,7 @@
   "contact.email.title": "Email",
   "contact.email.body": "For anything else, write to {email}.",
   "contact.others.title": "Other groups",
-  "contact.others.body": "These groups are run by their own members, independently of Glyph Atlas.",
+  "contact.others.body": "You can also meet people with the same interests in these groups and talk about Glyph Atlas there, though each has its own focus.",
   "contact.form.title": "Send a message",
   "contact.form.body": "This form goes straight to the maintainers’ private inbox on the community’s Matrix server, with no email involved. Add a way to reach you if you would like a reply, or leave it empty to write anonymously.",
   "contact.form.message": "Message",
