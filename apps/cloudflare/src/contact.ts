@@ -1,14 +1,32 @@
-// Messages from the contact form. Nothing is stored here: each one is posted to the maintainers' inbox room
-// on the community's Matrix server, as the inbox account whose token is MATRIX_INBOX_TOKEN. The sender's
-// network address only keys the rate limit.
+// Messages from the contact form and mail to the contact address. Nothing is stored here: each one is posted
+// to the maintainers' inbox room on the community's Matrix server, as the inbox account whose token is
+// MATRIX_INBOX_TOKEN. A form sender's network address only keys the rate limit; a mail is also forwarded
+// whole to the address in the secret CONTACT_FORWARD_TO. No message text is ever logged.
+import PostalMime from 'postal-mime';
 import { Problem } from './busy';
 import { body, text } from './input';
 import { addressKey } from './reverse';
 
 export const MAX_MESSAGE = 4000;
 export const MAX_REPLY = 200;
+/** A mail larger than this is posted by its sender and subject alone; the forwarded copy keeps all of it. */
+export const MAX_PARSED_MAIL = 2 * 1024 * 1024;
 
-type ContactEnv = Pick<Env, 'CONTACT' | 'MATRIX_HOMESERVER' | 'MATRIX_INBOX_ROOM'> & { MATRIX_INBOX_TOKEN?: string };
+type InboxEnv = Pick<Env, 'MATRIX_HOMESERVER' | 'MATRIX_INBOX_ROOM'> & { MATRIX_INBOX_TOKEN?: string };
+type ContactEnv = InboxEnv & Pick<Env, 'CONTACT'>;
+type MailEnv = InboxEnv & { CONTACT_FORWARD_TO?: string };
+
+/** Post one message to the inbox room; false when it could not be delivered. */
+export async function postToInbox(env: InboxEnv, post: string): Promise<boolean> {
+  if (!env.MATRIX_INBOX_TOKEN) { console.error(JSON.stringify({ event: 'inbox_unset' })); return false }
+  const room = encodeURIComponent(env.MATRIX_INBOX_ROOM);
+  const sent = await fetch(`${env.MATRIX_HOMESERVER}/_matrix/client/v3/rooms/${room}/send/m.room.message/${crypto.randomUUID()}`, {
+    method: 'PUT', headers: { authorization: `Bearer ${env.MATRIX_INBOX_TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ msgtype: 'm.text', body: post }),
+  }).catch(() => null);
+  if (!sent?.ok) console.error(JSON.stringify({ event: 'inbox_failed', status: sent?.status ?? null }));
+  return !!sent?.ok;
+}
 
 /** The inbox post: who to answer, if anyone, then the message as written. */
 export function inboxText(message: string, reply: string | null, locale: string | null): string {
@@ -25,18 +43,52 @@ export async function sendContact(env: ContactEnv, request: Request): Promise<Re
   const message = text(input.message, MAX_MESSAGE, 'message', true)!;
   const reply = text(input.reply, MAX_REPLY, 'reply');
   const locale = typeof input.locale === 'string' && /^[A-Za-z0-9-]{1,32}$/.test(input.locale) ? input.locale : null;
-  const post = inboxText(message, reply, locale);
-  // A Worker without the token (a local one, or a deploy missing the secret) cannot deliver, and says so;
-  // the message is not logged, since logs are not the inbox.
+  // A Worker without the token (a local one, or a deploy missing the secret) cannot deliver, and says so.
   if (!env.MATRIX_INBOX_TOKEN) throw new Problem(503, 'The message form is not set up yet. Write to contact@glyphatlas.org.');
-  const room = encodeURIComponent(env.MATRIX_INBOX_ROOM);
-  const sent = await fetch(`${env.MATRIX_HOMESERVER}/_matrix/client/v3/rooms/${room}/send/m.room.message/${crypto.randomUUID()}`, {
-    method: 'PUT', headers: { authorization: `Bearer ${env.MATRIX_INBOX_TOKEN}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ msgtype: 'm.text', body: post }),
-  }).catch(() => null);
-  if (!sent?.ok) {
-    console.error(JSON.stringify({ event: 'contact_failed', status: sent?.status ?? null }));
-    throw new Problem(502, 'The message could not be delivered. Try again later.');
-  }
+  if (!await postToInbox(env, inboxText(message, reply, locale))) throw new Problem(502, 'The message could not be delivered. Try again later.');
   return Response.json({ sent: true });
+}
+
+/** At most `limit` characters of a text, read no further than that. */
+function head(value: string, limit: number): { text: string; cut: boolean } {
+  let out = '', count = 0;
+  for (const char of value) { if (count === limit) return { text: out, cut: true }; out += char; count++ }
+  return { text: out, cut: false };
+}
+
+/** The readable text of an HTML part, for a mail that has no plain one. */
+export function htmlText(html: string): string {
+  return html.slice(0, MAX_MESSAGE * 20)
+    .replace(/<(style|script|head)\b[\s\S]*?<\/\1>/gi, '')
+    .replace(/<br\s*\/?>|<\/(p|div|li|tr|h[1-6])>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+}
+
+/** The inbox post for a mail: who sent it, its subject and its text, cut at MAX_MESSAGE, with what it
+ * carried beside the text. The forwarded copy keeps the whole mail. */
+export function mailText(from: string, subject: string, text: string, attachments: number): string {
+  const { text: kept, cut } = head(text.trim(), MAX_MESSAGE);
+  const lines = ['Mail to contact@glyphatlas.org', `From: ${from}`, `Subject: ${subject || '(none)'}`];
+  if (attachments) lines.push(`Attachments: ${attachments}`);
+  return `${lines.join('\n')}\n\n${kept ? kept + (cut ? '\n[…]' : '') : '(no text)'}`;
+}
+
+/** A mail to the contact address: forwarded first, so it arrives even if the inbox post fails, then posted.
+ * A large mail is not parsed: its post names the sender and subject from the headers and points to the
+ * forwarded copy. */
+export async function receiveMail(message: ForwardableEmailMessage, env: MailEnv): Promise<void> {
+  if (env.CONTACT_FORWARD_TO) await message.forward(env.CONTACT_FORWARD_TO);
+  else console.error(JSON.stringify({ event: 'mail_forward_unset' }));
+  if (message.rawSize > MAX_PARSED_MAIL) {
+    const from = message.headers.get('from') ?? message.from;
+    const megabytes = (message.rawSize / 1024 / 1024).toFixed(1);
+    await postToInbox(env, mailText(from, message.headers.get('subject') ?? '', `(${megabytes} MB; read it in the forwarded copy)`, 0));
+    return;
+  }
+  const mail = await PostalMime.parse(message.raw);
+  const from = mail.from ? [mail.from.name, mail.from.address && `<${mail.from.address}>`].filter(Boolean).join(' ') : message.from;
+  const text = mail.text?.trim() ? mail.text : mail.html ? htmlText(mail.html) : '';
+  await postToInbox(env, mailText(from, mail.subject ?? '', text, mail.attachments.length));
 }
