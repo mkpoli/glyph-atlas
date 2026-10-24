@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { Problem } from './busy';
-import { MAX_MESSAGE, inboxText, mailText, receiveMail, sendContact } from './contact';
+import { MAX_MESSAGE, MAX_PARSED_MAIL, htmlText, inboxText, mailText, receiveMail, sendContact } from './contact';
 
 const sent: { url: string; init: RequestInit }[] = [];
 const realFetch = globalThis.fetch;
@@ -58,10 +58,14 @@ describe('a contact-form message', () => {
     expect((await refused(sendContact(env(), form({ message: 'hi' })))).status).toBe(502);
   });
 
-  it('is only logged by a Worker with no inbox token', async () => {
+  it('is refused, and not logged, by a Worker with no inbox token', async () => {
     answering(200);
-    expect(await (await sendContact(env(true, ''), form({ message: 'hi' }))).json()).toEqual({ sent: true });
+    const logged: unknown[] = [], log = console.log;
+    console.log = (...args: unknown[]) => { logged.push(args) };
+    try { expect((await refused(sendContact(env(true, ''), form({ message: 'secret words' })))).status).toBe(503) }
+    finally { console.log = log }
     expect(sent).toHaveLength(0);
+    expect(JSON.stringify(logged)).not.toContain('secret words');
   });
 });
 
@@ -69,9 +73,9 @@ const raw = [
   'From: =?UTF-8?B?5bGx55Sw?= <yamada@example.jp>', 'To: contact@glyphatlas.org', 'Subject: =?UTF-8?B?6Kqk6K2Y44Gu5aCx5ZGK?=',
   'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: 8bit', '', '「字」が「宇」になっています。', '',
 ].join('\r\n');
-const mail = (forwarded: string[]) => ({
-  from: 'bounce@example.jp', to: 'contact@glyphatlas.org', raw: new Response(raw).body!, rawSize: raw.length,
-  headers: new Headers(), forward: async (to: string) => { forwarded.push(to) }, setReject: () => {}, reply: async () => {},
+const mail = (forwarded: string[], source = raw, size = source.length) => ({
+  from: 'bounce@example.jp', to: 'contact@glyphatlas.org', raw: new Response(source).body!, rawSize: size,
+  headers: new Headers({ from: 'Big Sender <big@example.org>', subject: 'Scans' }), forward: async (to: string) => { forwarded.push(to) }, setReject: () => {}, reply: async () => {},
 }) as unknown as ForwardableEmailMessage;
 
 describe('a mail to the contact address', () => {
@@ -95,5 +99,26 @@ describe('a mail to the contact address', () => {
     const post = mailText('a@b', '', 'x'.repeat(MAX_MESSAGE + 5), 2);
     expect(post).toStartWith('Mail to contact@glyphatlas.org\nFrom: a@b\nSubject: (none)\nAttachments: 2\n\n');
     expect(post).toEndWith('x\n[…]');
+  });
+
+  it('that is HTML only is posted as its text', async () => {
+    answering(200);
+    const html = ['From: a@example.org', 'Subject: hi', 'MIME-Version: 1.0', 'Content-Type: text/html; charset=UTF-8', '',
+      '<html><head><style>p{}</style></head><body><p>First &amp; second</p><p>Line<br>break</p></body></html>', ''].join('\r\n');
+    await receiveMail(mail([], html), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org' });
+    expect(JSON.parse(sent[0].init.body as string).body).toEndWith('\n\nFirst & second\nLine\nbreak');
+  });
+
+  it('that is large is forwarded and posted by its headers alone, unparsed', async () => {
+    answering(200);
+    const forwarded: string[] = [];
+    await receiveMail(mail(forwarded, 'not a mail', MAX_PARSED_MAIL + 1), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org' });
+    expect(forwarded).toHaveLength(1);
+    expect(JSON.parse(sent[0].init.body as string).body).toBe(
+      'Mail to contact@glyphatlas.org\nFrom: Big Sender <big@example.org>\nSubject: Scans\n\n(2.0 MB; read it in the forwarded copy)');
+  });
+
+  it('strips markup from an HTML part', () => {
+    expect(htmlText('<script>x()</script><b>bold</b>&lt;tag&gt;')).toBe('bold<tag>');
   });
 });
