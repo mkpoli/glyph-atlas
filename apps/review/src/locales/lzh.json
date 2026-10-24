@@ -906,6 +906,7 @@
   "form.ids.from.searchFailed": "尋不得。",
   "form.ids.from.noneContaining": "圖中無兼含者。",
   "form.ids.from.swapsHint": "右鍵及代者",
+  "form.ids.from.partsLoaded.other": "{char}：{count}件",
   "form.ids.from.more": "猶有…",
   "form.ids.from.containingNamed": "{parts}亦合名或讀，故所尋者彼也。",
   "form.ids.tag": "IDS",

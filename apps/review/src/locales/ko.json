@@ -895,6 +895,7 @@
   "form.ids.from.searchFailed": "검색하지 못했습니다.",
   "form.ids.from.noneContaining": "아틀라스에는 이 구성 요소를 모두 포함하는 글자가 없습니다.",
   "form.ids.from.swapsHint": "오른쪽 화살표 키로 대신 쓸 후보로",
+  "form.ids.from.partsLoaded.other": "{char}: 구성 요소 {count}개",
   "form.ids.from.more": "더 있음…",
   "form.ids.from.containingNamed": "{parts}은(는) 이름이나 읽기에도 맞아서, 검색이 그쪽을 보여 줍니다.",
   "form.ids.tag": "IDS",

@@ -10,12 +10,12 @@
   // still reaches the box would show as text, not taken, its encoded parts still open.
   //
   // The tree's rows are its only controls: the toggle and the swaps beside a part are drawn inside
-  // its row and reached by the row's keys, and what changes is said once, in one live region.
+  // its row and reached by the row's keys; failures and loaded parts are said in one live region.
   //
   // `known` holds what the structure route answered for each character, `swaps` the substitutes of
   // each component; `lookup(char)` asks for one; `ontake(text)` takes a part or a node, as written.
   import { untrack } from 'svelte'
-  import { isNode, write } from '../lib/ids.js'
+  import { isNode, leaves, write } from '../lib/ids.js'
   import { DEPTH, ROOTS, decomposable, lookupChar, namedParts, roots, searchParts, tokens, treeKey, unencoded, variants } from '../lib/decompose.js'
   import { suggest } from '../lib/layers.js'
   import { base, t } from '../lib/i18n.svelte.js'
@@ -92,32 +92,53 @@
   $effect(() => {
     for (const row of rows) if (row.kind === 'char' && row.open && !known[lookupChar(row.part)]) untrack(() => lookup(lookupChar(row.part)))
   })
-  // A row that had the focus and is gone (a loading row once its answer came) hands it on: to the
-  // first row that took its place, else to the row above it.
-  $effect(() => {
-    const key = focusKey
-    if (!key || rows.some(row => row.key === key)) return
+  // A loading or failed row that has the focus when its answer comes hands the focus on: to the first
+  // row that took its place, else to its character's row. Whether it had the focus is read before the
+  // rows are redrawn; focus anywhere else is left where it is.
+  let handOn = null
+  $effect.pre(() => {
+    rows
     untrack(() => {
-      if (document.activeElement && document.activeElement !== document.body && !tree?.contains(document.activeElement)) return
-      const base = key.replace(/\/(loading|failed)$/, '')
-      const next = rows.find(row => row.key.startsWith(`${base}/`)) ?? rows.find(row => row.key === base)
-      if (next) focusRow(next.key)
+      const key = document.activeElement?.dataset?.key
+      handOn = key && tree?.contains(document.activeElement) && /\/(loading|failed)$/.test(key) ? key : null
     })
   })
-  // The live region says what a character's descriptions came to, once.
-  const said = new Set()
+  $effect(() => {
+    const key = handOn
+    if (!key || rows.some(row => row.key === key)) return
+    handOn = null
+    const base = key.replace(/\/(loading|failed)$/, '')
+    const next = rows.find(row => row.key.startsWith(`${base}/`)) ?? rows.find(row => row.key === base)
+    if (next) focusRow(next.key)
+  })
+  // The live region says when a character's descriptions fail, each time, and how many parts a row
+  // the reader opened came to once they load. Loading itself is not said.
+  const seen = new Map()
+  function announce(message) {
+    if (live !== message) { live = message; return }
+    live = ''
+    queueMicrotask(() => { live = message })
+  }
   $effect(() => {
     for (const row of rows) {
-      if (row.kind !== 'status' || said.has(row.key)) continue
-      said.add(row.key)
-      live = statusText(row)
+      if (row.kind !== 'char' || !(row.open || row.note === 'atomic')) continue
+      const c = lookupChar(row.part), status = known[c]?.status, was = seen.get(row.key)
+      if (status === was) continue
+      seen.set(row.key, status)
+      untrack(() => {
+        if (status === 'failed') announce(statusText({ status, part: c }))
+        else if (status === 'ready' && was === 'loading' && (toggled.has(row.key) || row.key.startsWith('x'))) {
+          const first = variants(known[c]).find(found => found.tree)?.tree
+          announce(row.note === 'atomic' || !first ? `${c}: ${t('form.ids.from.atomic')}` : t('form.ids.from.partsLoaded', { char: c, count: leaves(first).length }))
+        }
+      })
     }
   })
 
   function typing(event) {
     if (event?.isComposing) return
     text = input.value
-    extra = []; toggled = new Set(); focusKey = null; swapAt = null; said.clear()
+    extra = []; toggled = new Set(); focusKey = null; swapAt = null; seen.clear()
   }
 
   function toggle(row) {
@@ -172,7 +193,7 @@
     row.regions ? regionsTitle(row.regions) : null,
     row.note ? t(`form.ids.from.${row.note}`) : null,
     row.status === 'failed' ? t('form.ids.from.retry') : null,
-    row.swaps?.length ? t('form.ids.from.swapsHint', { count: row.swaps.length }) : null,
+    row.swaps?.length ? t('form.ids.from.swapsHint') : null,
   ].filter(Boolean).join('. ')
   const label = row => row.kind === 'char' ? row.part : row.text
   function statusText(row) {

@@ -177,7 +177,7 @@
   // A part or a node taken from the parts palette or the "Take parts from" tree, as written.
   function take(written) { const found = parse(written, { open: true }); if (!disabled && !found.problem && found.tree !== null) place(found.tree) }
   // The descriptions a component can be split into, those the editor can read.
-  const splits = $derived(typeof picked === 'string' ? sequencesOf(picked).filter(sequence => !parse(sequence, { open: true }).problem) : [])
+  const splits = $derived(typeof picked === 'string' ? sequencesOf(lookupChar(picked)).filter(sequence => !parse(sequence, { open: true }).problem) : [])
   function choose(path) {
     chosen = samePath(chosen, path) ? null : path
     note = ''
@@ -322,11 +322,11 @@
   </div>
   {#if problem}<p class="ids-problem" role="status">{problem}</p>
   {:else if pending}<p class="ids-pending" role="status">{pending}</p>{/if}
-  {#if typeof picked === 'string' && ((swaps[picked] ?? []).length || splits.length)}
+  {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length)}
     <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: picked })}>
       <span class="ids-title">{t('form.ids.swaps', { part: picked })}</span>
       <div class="ids-options">
-        {#each swaps[picked] ?? [] as item (item.char)}
+        {#each swaps[lookupChar(picked)] ?? [] as item (item.char)}
           <button type="button" class="ids-swap" {disabled} title={`${picked} → ${item.char} · ${item.count}`} onclick={() => swap(item)}>{item.char}</button>
         {/each}
         {#each splits as sequence (sequence)}

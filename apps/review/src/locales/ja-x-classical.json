@@ -904,6 +904,7 @@
   "form.ids.from.searchFailed": "探り得ず。",
   "form.ids.from.noneContaining": "此れら悉く含む字、アトラスに無シ。",
   "form.ids.from.swapsHint": "右矢印鍵にて代はりの候補へ",
+  "form.ids.from.partsLoaded.other": "{char}：部品{count}",
   "form.ids.from.more": "猶ほ有り…",
   "form.ids.from.containingNamed": "{parts}は名或いは讀みにも當たる故、探りは其を返す。",
   "form.ids.tag": "IDS",

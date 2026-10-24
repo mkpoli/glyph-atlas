@@ -896,6 +896,7 @@
   "form.ids.from.searchFailed": "Tìm không được.",
   "form.ids.from.noneContaining": "Atlas không có chữ nào chứa tất cả các phần chữ này.",
   "form.ids.from.swapsHint": "Phím mũi tên phải đến các phần thay thế",
+  "form.ids.from.partsLoaded.other": "{char}: {count} phần chữ",
   "form.ids.from.more": "còn nữa…",
   "form.ids.from.containingNamed": "{parts} cũng khớp với một tên hay cách đọc, nên kết quả tìm là những chữ đó.",
   "form.ids.tag": "IDS",

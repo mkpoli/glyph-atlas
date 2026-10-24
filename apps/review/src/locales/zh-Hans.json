@@ -914,6 +914,7 @@
   "form.ids.from.searchFailed": "搜索失败。",
   "form.ids.from.noneContaining": "图谱中没有同时含有这些部件的字。",
   "form.ids.from.swapsHint": "按右方向键可移到替换候选",
+  "form.ids.from.partsLoaded.other": "{char}：{count}个部件",
   "form.ids.from.more": "还有更多…",
   "form.ids.from.containingNamed": "{parts}也对应名称或读音，因此搜索返回的是那些结果。",
   "form.ids.tag": "IDS",

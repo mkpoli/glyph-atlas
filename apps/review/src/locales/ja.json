@@ -911,6 +911,7 @@
   "form.ids.from.searchFailed": "検索できませんでした。",
   "form.ids.from.noneContaining": "これらの部品をすべて含む字はアトラスにありません。",
   "form.ids.from.swapsHint": "右矢印キーで代わりの候補へ",
+  "form.ids.from.partsLoaded.other": "{char}：部品{count}個",
   "form.ids.from.more": "ほかにもあり…",
   "form.ids.from.containingNamed": "{parts}は名前や読みにも当たるため、検索はそちらを返します。",
   "form.ids.tag": "IDS",

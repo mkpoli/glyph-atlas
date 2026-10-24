@@ -888,6 +888,7 @@
   "form.ids.from.searchFailed": "檢索하지 못했습니다.",
   "form.ids.from.noneContaining": "아틀라스에는 이 構成 要素를 모두 包含하는 글자가 없습니다.",
   "form.ids.from.swapsHint": "오른쪽 화살표 키로 代身 쓸 候補로",
+  "form.ids.from.partsLoaded.other": "{char}: 構成 要素 {count}個",
   "form.ids.from.more": "더 있음…",
   "form.ids.from.containingNamed": "{parts}은(는) 이름이나 읽기에도 맞아서, 檢索이 그쪽을 보여 줍니다.",
   "form.ids.tag": "IDS",
