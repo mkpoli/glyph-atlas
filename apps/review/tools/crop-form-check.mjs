@@ -185,8 +185,8 @@ try {
   const onBar = await browser.evaluate(`[...${chips}].map(c => c.querySelector('.script-text').textContent)`)
   const past = await browser.evaluate(`[...${section('Forms')}].map(o => o.title)`)
   const related = await browser.evaluate(`[...(${section('Related')} ?? [])].map(o => o.title)`)
-  assert(onBar.length === 10 && members.length === 9 && members.every((member, i) => onBar[i] === member), `the bar does not lead with the grapheme's members: ${JSON.stringify(onBar)}`)
-  assert(onBar[9] === '所\u{E0102}' && past[0] === 'U+6240 U+E0103\nMJ012119', `the registered figures do not follow the members: ${JSON.stringify({ onBar, past })}`)
+  assert(onBar.length === 10 && members.length < 10 && members.every((member, i) => onBar[i] === member), `the bar does not lead with the grapheme's members: ${JSON.stringify(onBar)}`)
+  assert(onBar[members.length] === '所\u{E0102}' && past[0] === 'U+6240 U+E0103\nMJ012119', `the registered figures do not follow the members: ${JSON.stringify({ onBar, past })}`)
   assert(past[1] === '⿰戶斤\nGHTKPV' && past[2] === '⿰戸斤\nJ', `the regional shapes do not follow the figures: ${JSON.stringify(past)}`)
   assert(!onBar.includes('数') && related.includes('U+6570'), `数 is not offered as related: ${JSON.stringify({ onBar, related })}`)
   assert(!await browser.evaluate(`(${section('Variants')})?.length > 0`), 'the picker still has a Variants section')
@@ -196,6 +196,17 @@ try {
   await browser.screenshot(join(screenshots, 'form-picker-variants-dark.png'))
   await browser.setColorScheme('light')
   console.log('PASS a character\'s variants follow its members on the bar, figures first, then its regional shapes')
+
+  // A variant chosen from the bar is claimed alone: the crop keeps its character.
+  await browser.key('Escape')
+  await browser.waitFor('!document.querySelector("dialog[open] .form-picker")')
+  await browser.evaluate(`[...${chips}].find(c => c.querySelector('.script-text').textContent === '所\u{E0102}').click()`)
+  await browser.waitFor(`[...${chips}].some(c => c.classList.contains('chosen') && c.querySelector('.script-text').textContent === '所\u{E0102}')`)
+  await browser.evaluate('document.querySelector(".save-character").click()')
+  await browser.waitFor('document.querySelector("dialog[open]") === null', 30000)
+  assert(JSON.stringify(claimed(third)) === JSON.stringify(['所\u{E0102}']) && units(config.directory)[third].unicode === 'U+6240',
+    `a variant from the bar was not claimed alone: ${claimed(third)} ${units(config.directory)[third].unicode}`)
+  console.log('PASS a variant chosen from the bar is claimed as the crop\'s form, the character kept')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop form')

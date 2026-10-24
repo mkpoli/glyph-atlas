@@ -48,7 +48,9 @@ export function listForms(char) {
       const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) }))
       const found = card?.variants ?? {}
       const writers = new Set((found.writers ?? []).map(v => v.char)), writes = new Set((found.writes ?? []).map(v => v.char))
+      // The card's order: a form that writes this grapheme first (後: 后), then the others.
       const forms = [...found.items ?? [], ...(found.related ?? []).filter(v => v.written || writers.has(v.char))].filter(v => !writes.has(v.char))
+        .sort((a, b) => writers.has(b.char) - writers.has(a.char))
       const variants = [...figures.map(figure => ({ ...entry(figure), mj: figure.mj })), ...shapes, ...forms.map(entry)]
       const related = [...found.items ?? [], ...found.related ?? []].filter(v => !forms.includes(v)).map(entry)
       const derived = (found.derived ?? []).map(derivedEntry)

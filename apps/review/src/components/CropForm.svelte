@@ -35,12 +35,12 @@
   const bar = $derived.by(() => {
     const chips = forms.slice(0, BAR)
     const has = char => chips.some(chip => chip.char === char)
-    if (current && !others && !has(current)) chips.push({ char: current, script: '', lang: forms.find(form => form.char === current)?.lang ?? '' })
+    if (current && !others && !has(current)) chips.push(forms.find(form => form.char === current) ?? { char: current, script: '', lang: '' })
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
-  // The bar wraps onto further rows; only the forms past the first ten wait in the picker.
-  const rest = $derived(forms.slice(BAR))
+  // The bar wraps onto further rows; only the forms past the first ten, and not on it, wait in the picker.
+  const rest = $derived(forms.slice(BAR).filter(form => !bar.some(chip => chip.char === form.char)))
   const q = $derived(query.trim().toUpperCase())
   const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
   const sections = $derived([
