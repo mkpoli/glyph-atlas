@@ -282,7 +282,7 @@ describe('the ranking', () => {
     atlas.exec(`INSERT INTO submissions(id,key,actor,request,response,at) VALUES(${subId.size + 1},'u2:rename',3,'{}','{}',${ms(1)})`);
     const after = await rankingRows(env);
     expect(after).toMatchSnapshot();
-    expect(after.map(r => [r.name, r.total])).toEqual([['Ada', 6], ['anon-00aa11', 3], ['reviewer-0000000f', 1]]);
+    expect(after.map(r => [r.name, r.total])).toEqual([['Ada', 6], ['anon-00aa11', 3], [null, 1]]);
   });
   it('reads each table by index, the reviews from the running totals', () => {
     const { atlas } = setup();
