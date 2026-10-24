@@ -20,12 +20,12 @@
   {:else if !items.length}<div class="empty"><span class="empty-mark">∅</span><h2>{t('ranking.empty')}</h2></div>
   {:else}
     <ol class="ranking-list">
-      {#each items as row (row.user ?? row.name)}
+      {#each items as row (row.user ?? row.place)}
         <li class:mine={row.user && row.user === session.state.user?.id} class:podium={row.place <= 3}>
           <span class="ranking-place">{number(row.place)}</span>
           <span class="avatar ranking-avatar" class:unnamed={row.anonymous} aria-hidden="true">{#if row.image}<img src={row.image} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}{row.anonymous ? '?' : initial(row.name)}{/if}</span>
           <span class="ranking-who">
-            {#if row.anonymous}<span>{t('ranking.anonymous')}</span><small>{row.name}</small>{:else}<span>{row.name}</span>{/if}
+            {#if row.anonymous}<span>{t('ranking.anonymous')}</span>{#if row.name}<small>{row.name}</small>{/if}{:else}<span>{row.name}</span>{/if}
           </span>
           {#if row.user}<a class="quiet-link ranking-history" href={localize('/history') + '?user=' + encodeURIComponent(row.user)}>{t('nav.history')} ↗</a>{/if}
           <span class="ranking-total">{t('ranking.total', { count: row.total })}</span>

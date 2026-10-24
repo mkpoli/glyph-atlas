@@ -34,11 +34,12 @@ export const rankingQuery = () => `WITH work(actor,n) AS (
   who(key,user,actor,n) AS (SELECT coalesce(a.user,'actor:'||w.actor),a.user,w.actor,w.n FROM work w LEFT JOIN actors a ON a.key=w.actor)
   SELECT key,user,min(actor) AS actor,sum(n) AS total FROM who GROUP BY key ORDER BY total DESC,key LIMIT ${LIMIT}`;
 
-/** A ranked row as the page shows it: a signed-in user by name, anyone else as anonymous with their id. */
+/** A ranked row as the page shows it: a signed-in user by name, an anonymous user by its generated name,
+ *  and an id nobody holds by nothing, since an old reviewer id is all it takes to claim one. */
 export function rankingRow(row: Json, place: number): Json {
   const named = Boolean(row.user) && !row.anonymous;
   return { place, total: row.total, user: row.user ?? null, anonymous: !named,
-    name: named ? row.name : row.user ? row.name : row.actor, image: named ? row.image : null };
+    name: row.user ? row.name : null, image: named ? row.image : null };
 }
 
 /** The ranked rows with each user's name, picture and whether it is anonymous; a user ACCOUNTS no longer

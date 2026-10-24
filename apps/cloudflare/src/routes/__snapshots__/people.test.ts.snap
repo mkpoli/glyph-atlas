@@ -1863,7 +1863,7 @@ exports[`the ranking ranks as before, names from ACCOUNTS 1`] = `
   {
     "anonymous": true,
     "image": null,
-    "name": "reviewer-0000000f",
+    "name": null,
     "place": 3,
     "total": 1,
     "user": null,
