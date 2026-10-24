@@ -3,13 +3,14 @@
   import Forms from '$views/Forms.svelte'
   import { t } from '$lib/i18n.svelte.js'
   let { data } = $props()
-  // The family on show, once it is read; until then the address's character names the page.
+  // The family on show, once it is read; until then the address's character names the page. The bare
+  // address becomes the first family's, so only that one is indexed.
   let family = $state(null)
-  const char = $derived(family?.char ?? (/^U\+[0-9A-F]{4,6}$/.test(data.family) ? String.fromCodePoint(parseInt(data.family.slice(2), 16)) : ''))
+  const char = $derived(family?.char ?? (data.family ? String.fromCodePoint(parseInt(data.family.slice(2), 16)) : ''))
 </script>
 
 {#if family}<Seo title={`${family.char} · ${t('nav.forms')}`} description={t('meta.forms.description', { character: family.char, codePoint: family.code_point, count: family.count, clusters: family.clusters })} />
 {:else if char}<Seo title={`${char} · ${t('nav.forms')}`} description={t('meta.formsIndex.description')} />
-{:else}<Seo title={t('nav.forms')} description={t('meta.formsIndex.description')} />{/if}
+{:else}<Seo title={t('nav.forms')} description={t('meta.formsIndex.description')} index={false} />{/if}
 
 <Forms initialFamily={data.family} onshow={shown => family = shown} />

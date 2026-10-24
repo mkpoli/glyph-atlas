@@ -67,7 +67,12 @@
     : pickedClusters.length === 1 ? t('forms.target.clusterGlyphs', { label: pickedClusters[0].label, count: pickedClusters[0].count })
     : cluster ? t('forms.target.clusterGlyphs', { label: cluster.label, count: cluster.count }) : '')
 
-  async function refreshList(options) { list = (await loadFamilies(options)).items }
+  // Only the latest list asked for is shown: one read after a decision replaces an older one on its way.
+  let listRequest = 0
+  async function refreshList(options) {
+    const request = ++listRequest, items = (await loadFamilies(options)).items
+    if (request === listRequest) list = items
+  }
   // A finished cluster is shown with the others of its form, or of its report. One whose glyphs were
   // named one by one goes with the form most of them have.
   const groupOf = c => c.form ?? c.issue ?? c.majority ?? 'reported'
@@ -344,7 +349,9 @@
     // address names none.
     try {
       if (!initialFamily) await refreshList()
-      await pick(initialFamily || list[0]?.code_point).finally(() => initialFamily && refreshList({ priority: 'low' }))
+      // A list that fails says so unless the family failed too.
+      await pick(initialFamily || list[0]?.code_point)
+        .finally(() => initialFamily && refreshList({ priority: 'low' }).catch(e => { error ||= e.message }))
     } catch (e) { error = e.message }
   })
 </script>
