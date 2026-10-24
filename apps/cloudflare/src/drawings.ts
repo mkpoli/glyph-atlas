@@ -1,5 +1,5 @@
 // Drawings of forms named by an ideographic description sequence, made by the composer when the site
-// is built and stored in R2 as `ids/<sha256 of the sequence's NFC form>.svg` (`drawingKey` in the
+// is built and stored in R2 as `ids/<sha256 of the sequence's NFC form>.svg` (`loadDrawing` in the
 // review app). A sequence keeps its key when the composer redraws it, so a drawing is cached for a day
 // rather than for good, and a sequence not drawn yet is answered as missing for five minutes.
 const FILE = /^[0-9a-f]{64}\.svg$/;
