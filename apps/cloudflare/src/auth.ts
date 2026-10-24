@@ -12,6 +12,7 @@ import { MAIL, signInMail } from './mail';
 import { recordProfile } from './connections';
 import { finishForgetting, startForgetting } from './accounts';
 import { writesPaused } from './freeze';
+import { addressKey } from './reverse';
 
 export type Viewer = { id: string; name: string; image: string | null; anonymous: boolean; admin: boolean };
 type Auth = ReturnType<typeof build>;
@@ -259,17 +260,21 @@ export const ownedActors = (user: string) => `(SELECT id FROM actors WHERE user=
  * Take over a reviewer id a browser made up before accounts. The browser that holds the id sends it,
  * and the first account to send an id holds it from then on, past that account's deletion.
  */
-export async function claim(env: Env, user: Viewer, reviewer: string) {
+export async function claim(env: Env, user: Viewer, reviewer: string, address: string | null) {
   if (!LEGACY_REVIEWER.test(reviewer)) return { status: 422, body: { detail: 'Not a reviewer id from before accounts.' } };
-  // An actor row with neither user nor `via` is an id that wrote before any account took it, and the
-  // first account to send it takes it. One with `via` set was held by an account since deleted, and
-  // stays with nobody. The cap is checked in the same statement, so that claims sent at once stop at it.
-  await env.ATLAS.prepare(`INSERT INTO actors(key,user,via,at) SELECT ?1,?2,'legacy',?3
-    WHERE (SELECT count(*) FROM actors WHERE user=?2 AND via='legacy') < ?4
-    ON CONFLICT(key) DO UPDATE SET user=excluded.user,via=excluded.via,at=excluded.at WHERE actors.user IS NULL AND actors.via IS NULL`)
+  // A browser sends its one id once; an address sending many is trying ids it read somewhere.
+  if (!(await env.OLD_IDS.limit({ key: addressKey(address) })).success)
+    return { status: 429, body: { detail: 'Too many reviewer ids from this address. Wait a minute and try again.' } };
+  // Only an id that wrote before accounts has an actor row with neither user nor `via`, and the first
+  // account to send it takes it; an id that never wrote has nothing to bring and gets no row. One with
+  // `via` set was held by an account since deleted, and stays with nobody. The cap is checked in the
+  // same statement, so that claims sent at once stop at it.
+  await env.ATLAS.prepare(`UPDATE actors SET user=?2,via='legacy',at=?3 WHERE key=?1 AND user IS NULL AND via IS NULL
+    AND (SELECT count(*) FROM actors WHERE user=?2 AND via='legacy') < ?4`)
     .bind(reviewer, user.id, Date.now(), CLAIMS).run();
   const found = await env.ATLAS.prepare('SELECT user,via FROM actors WHERE key=?').bind(reviewer).first<{ user: string | null; via: string | null }>();
-  if (found?.user === user.id) return { status: 200, body: { reviewer, status: 'held' } };
-  if (found?.user || found?.via) return { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
-  return { status: 429, body: { detail: 'This account already holds as many old reviewer ids as one may.' } };
+  if (!found) return { status: 422, body: { detail: 'No reviewer id like this wrote before accounts.' } };
+  if (found.user === user.id) return { status: 200, body: { reviewer, status: 'held' } };
+  if (found.user || found.via) return { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
+  return { status: 409, body: { detail: 'This account already holds as many old reviewer ids as one may.' } };
 }
