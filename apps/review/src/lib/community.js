@@ -1,11 +1,13 @@
-// The community's chat: one Matrix space, bridged to a Discord server and a Telegram group, so a message
-// sent on any of them appears on all three. The Matrix door opens the space in Element on the web, where
-// someone new can sign up. Each `mark` names a `LinkMark`.
+// The community's chat: one Matrix space, bridged to a Discord server, a Telegram group and an IRC channel
+// on Libera.Chat, so a message sent in one place appears in all. The Matrix door opens the space in the
+// community's Element at chat.glyphatlas.org, where a Glyph Atlas account signs in. Each `mark` names a
+// `LinkMark`.
 export const SPACE = '#glyphatlas:glyphatlas.org'
 export const CHATS = [
-  { name: 'Matrix', mark: 'matrix', href: 'https://app.element.io/#/room/#glyphatlas:glyphatlas.org' },
+  { name: 'Matrix', mark: 'matrix', href: 'https://chat.glyphatlas.org/#/room/#glyphatlas:glyphatlas.org' },
   { name: 'Discord', mark: 'discord', href: 'https://discord.gg/DR25YeAYSg' },
   { name: 'Telegram', mark: 'telegram', href: 'https://t.me/+Q4wiIzMijRwzOWE1' },
+  { name: 'IRC', mark: 'irc', href: 'https://web.libera.chat/#glyphatlas' },
 ]
 
 // Other groups where people with the same interests gather, each with its own focus. Each is named as
