@@ -11,10 +11,11 @@
   let root = $state(null)
 
   // A letter chooses a card, S skips and N says none of the suggestions fits. Keys typed into a field
-  // are the field's, and a review under an open dialog leaves them to the dialog.
+  // are the field's, and so are keys typed in the IDS editor; a review under an open dialog leaves them
+  // to the dialog.
   function keydown(event) {
     if (disabled || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
-    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search')) return
+    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search, .ids-composer')) return
     // Only the topmost dialog's panel answers, or the page's when no dialog is open.
     const dialog = [...document.querySelectorAll('dialog[open]')].at(-1)
     if (dialog ? !dialog.contains(root) : root.closest('dialog')) return

@@ -751,8 +751,8 @@
     // control has focus — choosing a crop or a suggestion must never post the round.
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); primary(); return }
     if (e.metaKey || e.ctrlKey || e.altKey) return
-    // The character search's list is its own: its arrows and letters never reach the round.
-    if (e.target.closest?.('.character-search')) return
+    // The character search's list and the IDS editor are their own: their keys never reach the round.
+    if (e.target.closest?.('.character-search, .ids-composer')) return
     const control = e.target.closest('button, a, input, textarea, select, summary, [contenteditable="true"]')
     if (step === 'select') {
       const index = keys.indexOf(e.key.toLowerCase())

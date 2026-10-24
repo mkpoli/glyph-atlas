@@ -295,8 +295,9 @@
       else if (at >= 0) { active = at; if (reviewing) reviewRound++; else scrollActive() }
     } catch (e) { error = e.message } finally { busy = false }
   }
+  // Ctrl+Z and Ctrl+Y take back the page's own changes; a key a field or the IDS editor took is theirs.
   function historyKeys(event) {
-    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.target.closest?.('input, textarea')) return false
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.defaultPrevented || event.target.closest?.('input, textarea, .ids-composer')) return false
     const key = event.key.toLowerCase()
     if (key === 'z' || key === 'y') { event.preventDefault(); takeBack(key === 'y' || event.shiftKey); return true }
     return false
