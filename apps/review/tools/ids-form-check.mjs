@@ -7,7 +7,11 @@
  * own verbs are tried on a sequence typed with ASCII operator names: a character typed on a slot goes
  * to the part field and Enter puts it there, operator keys split a slot and swap an operator (and
  * refuse a swap that would drop a filled part), Tab and Shift+Tab step through the parts, Backspace
- * empties one, Ctrl+Z and Ctrl+Shift+Z undo and redo, and × takes a level away. Then 𠤕 is split
+ * empties one, Ctrl+Z and Ctrl+Shift+Z undo and redo, and × takes a level away. Keys the editor
+ * takes are marked taken, so the page's own shortcuts leave them alone; operator keys go by where
+ * the key sits, an IME's composition waits until it ends, a unary operator on an empty slot chooses
+ * the slot inside it, and a sequence with an empty slot or unreadable text cannot be used until it
+ * is whole, with ？ typed for a part no character names. Then 𠤕 is split
  * into ⿱匕矢, 矢 is swapped for 失 and 龴 for コ from the components the variant table offers, and the
  * result, ⿰⿱匕失⿱コ疋, is saved as the crop's form claim; the crop keeps its character.
  *
@@ -107,7 +111,7 @@ try {
 
   // Typed with ASCII names, the missing part is an empty slot, written ？ once the field is left.
   await typeSequence('LR木UD口')
-  await becomes('⿰木⿱口？')
+  await becomes('⿰木⿱口＋')
   assert(await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-part.empty').length`) === 1, 'the missing part is not an empty slot')
   // A character typed on the empty slot goes to the part field; Enter puts it in the slot.
   await focusPath('1.1')
@@ -121,7 +125,7 @@ try {
   // to two parts the empty one goes; a swap that would drop a filled part is refused.
   await focusPath('1')
   await browser.key('3')
-  await becomes('⿰木⿲口日？')
+  await becomes('⿰木⿲口日＋')
   await browser.key('1')
   await becomes('⿰木⿰口日')
   await browser.key('e')
@@ -130,7 +134,7 @@ try {
   // An operator key on a component splits it, the component first and the new slot chosen.
   await focusPath('0')
   await browser.key('2')
-  await becomes('⿰⿱木？⿰口日')
+  await becomes('⿰⿱木＋⿰口日')
   assert(await chosenPath() === '0.1', `the new slot is not chosen: ${await chosenPath()}`)
   assert(!await browser.evaluate(`!!document.querySelector('dialog[open] .ids-problem')`), 'the refusal stayed after a change')
   console.log('PASS operator keys split a slot and swap an operator, and refuse to drop a filled part')
@@ -147,19 +151,85 @@ try {
   // Backspace empties a part; Ctrl+Z and Ctrl+Shift+Z undo and redo it.
   await focusPath('1.0')
   await browser.key('Backspace')
-  await becomes('⿰⿱木？⿰？日')
+  await becomes('⿰⿱木＋⿰＋日')
   await browser.key('z', { ctrl: true })
-  await becomes('⿰⿱木？⿰口日')
+  await becomes('⿰⿱木＋⿰口日')
   await browser.key('z', { ctrl: true, shift: true })
-  await becomes('⿰⿱木？⿰？日')
+  await becomes('⿰⿱木＋⿰＋日')
   await browser.key('z', { ctrl: true })
-  await becomes('⿰⿱木？⿰口日')
+  await becomes('⿰⿱木＋⿰口日')
   await shoot('ids-editor-keys')
   // × takes one level away, keeping its first filled part.
   await browser.evaluate(`document.querySelector('dialog[open] .ids-op[data-path="0"]').closest('.ids-node').querySelector('.ids-unwrap').click()`)
   await becomes('⿰木⿰口日')
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS Tab steps through the parts, Backspace empties one, undo and redo, and × takes a level away')
+
+  // Keys the editor takes are marked taken, so the page's own shortcuts (a crop's review letters,
+  // the forms page's undo) leave them alone.
+  await browser.evaluate(`window.idsKeys = []; window.addEventListener('keydown', e => idsKeys.push([e.key, e.defaultPrevented]))`)
+  await focusPath('1.0')
+  await browser.key('z', { ctrl: true })
+  await browser.key('s')
+  const seen = await browser.evaluate('idsKeys')
+  assert(seen.length === 2 && seen.every(([, taken]) => taken), `keys reached the page untaken: ${JSON.stringify(seen)}`)
+  assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-slot input').value`) === 's', 'a letter did not go to the part field')
+  console.log('PASS keys the editor takes are not the page\'s')
+
+  // Unreadable text and empty slots keep the sequence from being used; the empty slot is named, and
+  // ？ typed into it is the part no character names.
+  const usable = () => browser.evaluate(`!document.querySelector('dialog[open] .ids-use').disabled`)
+  const fieldText = text => browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-field input'); i.focus(); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await typeSequence('⿰木口')
+  await becomes('⿰木口')
+  assert(await usable(), 'a whole sequence cannot be used')
+  await fieldText('⿰木口a')
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-problem')`)
+  assert(!await usable(), 'unreadable text can be used, saving the tree before it')
+  await fieldText('⿰木L')
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-problem')?.textContent.includes('ASCII')`)
+  await fieldText('lr木')
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-field input').blur()`)
+  await becomes('⿰木＋')
+  assert(!await usable(), 'a sequence with an empty slot can be used')
+  assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-pending')?.textContent.includes('Part 2 of')`), 'the empty slot is not named')
+  await focusPath('1')
+  await browser.key('？')
+  await browser.key('Enter')
+  await becomes('⿰木？')
+  assert(await usable(), '？ typed for an unnamed part cannot be used')
+  console.log('PASS unreadable text and empty slots cannot be used; ？ can')
+
+  // A unary operator on an empty slot chooses the slot inside it, so ⿾⿰… is typed by keys alone.
+  await typeSequence('⿰木＋')
+  await focusPath('1')
+  await browser.key('e')
+  await becomes('⿰木⿾＋')
+  assert(await chosenPath() === '1.0', `the slot inside the unary operator is not chosen: ${await chosenPath()}`)
+  await browser.key('1')
+  await becomes('⿰木⿾⿰＋＋')
+  // Operator keys go by where the key sits: the key 2 of an AZERTY keyboard types é. A key an IME
+  // is composing with does nothing.
+  await focusPath('1.0.0')
+  const press = (key, code) => browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: key === 'Process' ? 229 : 50 })
+    .then(() => browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code }))
+  await press('é', 'Digit2')
+  await becomes('⿰木⿾⿰⿱＋＋＋')
+  await press('Process', 'Digit3')
+  await Bun.sleep(150)
+  assert(await value() === '⿰木⿾⿰⿱＋＋＋', `a composing key put an operator: ${await value()}`)
+  // Tab steps from the part that has the focus, chosen or not.
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-tree [data-path="0"]').focus()`)
+  await browser.key('Tab')
+  assert(await focusedPath() === '1', `Tab did not step from the focused part: ${await focusedPath()}`)
+  // Text an IME is still composing waits for the composition to end.
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-field input'); i.focus(); i.value = '⿱日月'; i.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true })) })()`)
+  await Bun.sleep(150)
+  assert(await browser.evaluate(`!document.querySelector('dialog[open] .ids-tree > [data-op="⿱"]')`), 'the tree followed text still being composed')
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-field input').dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '月' }))`)
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-tree > [data-op="⿱"]')`)
+  assert(!errors.length, 'page errors: ' + errors.join('; '))
+  console.log('PASS operator keys by position, IME composition, a unary operator on an empty slot, Tab from the focus')
 
   await typeSequence('⿰𠤕⿱龴疋')
   await becomes('⿰𠤕⿱龴疋')
