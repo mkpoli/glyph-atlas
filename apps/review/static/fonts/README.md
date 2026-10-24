@@ -86,6 +86,24 @@ rebuilt whenever `vi-Hani.json` gains one.
 - Licence: SIL Open Font License 1.1, copied in `OFL-Plangothic.txt`. The font declares no Reserved
   Font Name.
 
+## Parts of the IDS editor
+
+`Plangothic-ids-parts.woff2` and `NotoSansCJKjp-ids-strokes.woff2` draw the parts of the IDS parts
+palette (`src/components/IdsParts.svelte`) that few installed fonts cover: the CJK strokes, CJK
+Radicals Supplement, and the parts beyond the Basic Multilingual Plane (CJK Extensions B–J).
+`scripts/build_ids_parts.py --font` subsets them from `static/palette/ids-parts.json`, so the files
+are rebuilt with the palette. The page names them as `IDS Strokes` (U+31C0–U+31E3) and `IDS Parts`
+(U+2E80–U+2EFF, U+31E4–U+31EF, U+20000–U+3FFFF), with ranges that do not overlap.
+
+- `IDS Strokes`: Noto Sans CJK JP 2.004 (<https://github.com/notofonts/noto-cjk>, tag `Sans2.004`,
+  the variable font instanced at weight 400), © 2014-2021 Adobe, under the SIL Open Font License 1.1
+  with the notice in `OFL.txt`. Plangothic lacks these strokes. The Reserved Font Name is `Source`,
+  which the family name does not use.
+- `IDS Parts`: Plangothic P1 and P2 V2.9.5795, merged as for the vi-Hani font above, under the SIL
+  Open Font License 1.1 as `OFL-Plangothic.txt`.
+- Not covered: the rest of the Basic Multilingual Plane, Extension A included, comes from the
+  reader's own CJK font, as for the vi-Hani font.
+
 ## Registered figures
 
 `mj/` draws the ideographic variation sequences of the Moji_Joho collection that the form picker
