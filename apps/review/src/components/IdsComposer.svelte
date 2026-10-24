@@ -209,7 +209,8 @@
   // the page's own shortcuts (a crop's review letters, the forms page's undo) leave it alone.
   function keydown(event) {
     if (event.isComposing || event.key === 'Process' || disabled) return
-    if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
+    // Keys a picker handles, or pressed inside one (its tabs, its grid, its tree), are the picker's own.
+    if (event.defaultPrevented || event.target.closest?.('input, textarea, select, [contenteditable="true"], .ids-pick-tabs, .ids-pick-panel')) return
     const command = event.ctrlKey || event.metaKey
     if (command && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); focusChosen(); return }
     if (command && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); focusChosen(); return }
@@ -345,7 +346,7 @@
       {#if opened.has(tab)}
         <div class="ids-pick-panel" role="tabpanel" id={`${uid}-pick-${tab}-panel`} aria-labelledby={`${uid}-pick-${tab}`} hidden={picker !== tab}>
           {#if tab === 'find'}<CharacterSearch compact codePoints bind:value={query} label={t('form.ids.search')} placeholder={t('search.placeholder')} onselect={component} />
-          {:else if tab === 'parts'}<IdsParts {disabled} onpick={part => take(part)} />
+          {:else if tab === 'parts'}<IdsParts {disabled} onpick={take} />
           {:else}<IdsFrom {known} {swaps} lookup={read} {disabled} ontake={take} />{/if}
         </div>
       {/if}

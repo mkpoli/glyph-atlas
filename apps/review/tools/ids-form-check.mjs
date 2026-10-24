@@ -235,6 +235,25 @@ try {
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS operator keys by position, IME composition, a unary operator on an empty slot, Tab from the focus')
 
+  // The parts palette, a tab of the part picker: a part picked fills the chosen slot, and an
+  // operator key pressed on the palette is the palette's, so the sequence keeps its operator.
+  await typeSequence('⿰＋木')
+  await becomes('⿰＋木')
+  await focusPath('0')
+  await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][1].click()`)
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-pick-panel:not([hidden]) .part')`, 20000)
+  const palettePart = await browser.evaluate(`document.querySelector('dialog[open] .ids-pick-panel:not([hidden]) .part').textContent`)
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-pick-panel:not([hidden]) .part').focus()`)
+  await browser.key('2')
+  await Bun.sleep(150)
+  assert(await value() === '⿰＋木', `an operator key on the palette changed the sequence: ${await value()}`)
+  await browser.key('Enter')
+  await becomes(`⿰${palettePart}木`)
+  await shoot('ids-parts-tab', '.ids-search')
+  assert(!errors.length, 'page errors: ' + errors.join('; '))
+  console.log(`PASS ${palettePart} picked from the parts palette tab, and its keys are its own`)
+  await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][0].click()`)
+
   // Take parts from: 疑 typed into the box opens into its description, 𠤕 opened by the arrow key
   // shows ⿱匕矢, and Enter on 匕 puts it in the chosen slot; a node is taken whole by a click. Parts
   // typed there list the characters built from them, and one opened from that list gives its parts.
