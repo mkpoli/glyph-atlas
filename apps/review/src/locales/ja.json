@@ -911,6 +911,8 @@
   "privacy.browsing.measure": "本サイトをホストするCloudflareは、Cloudflare Web Analyticsによってページの読み込み速度を計測しています。これにはCookieは使用されず、プロファイルの作成も行われません。また、Cloudflareは障害調査のためにリクエストログのサンプルを短期間保持します。",
   "privacy.saving.title": "レビューの保存",
   "privacy.saving.body": "初めてレビューを保存する際、本サイトはお使いのブラウザ用にanon-1a2b3cのような名前の匿名アカウントを作成し、Cookieによりサインイン状態を維持します。保存された各判断は、そのアカウント、対象の切り出し、および日時に紐付けて記録されます。",
+  "privacy.messages.title": "メッセージ",
+  "privacy.messages.body": "お問い合わせフォームから送信されたメッセージ、およびそこに添えられた連絡先は、コミュニティのMatrixサーバー（matrix.glyphatlas.org、日本のVultrで運用）にある管理者用非公開ルームに投稿され、保管されます。本サイトにはそのコピーは保持されません。お使いのネットワークアドレスは、一度に送信できるメッセージ数を制限する目的でのみ使用されます。",
   "privacy.account.title": "サインイン",
   "privacy.account.body": "アカウントには、メールアドレス、表示名、および設定した場合はプロフィール画像が保存されます。GitHub、Google、Discord、LINE、Kakaoでサインインすると、本サイトには氏名、ユーザー名、メールアドレス、プロフィール画像、各サービスのアカウント識別番号が提供されます。これらは接続ごとに保存され、どのアカウントを接続したか確かめられるよう、ご自身のアカウントページにだけ表示されます。それ以外の情報が要求されることはありません。",
   "privacy.account.methods": "サインイン用のコードはCloudflare Email Serviceを通じて送信され、ハッシュ化されて10分間保持されます。パスキーを使用した場合、本サイトには公開鍵のみが保存されます。サインイン中の端末ごとに、IPアドレスとブラウザ名を含むセッションが維持され、アカウントページに一覧表示されます。セッションはサインアウト時、または90日後に終了します。",
@@ -1112,5 +1114,15 @@
   "contact.email.title": "メール",
   "contact.email.body": "その他のお問い合わせは{email}までご連絡ください。",
   "contact.others.title": "その他のグループ",
-  "contact.others.body": "これらのグループはGlyph Atlasとは独立して、メンバー自身によって運営されています。"
+  "contact.others.body": "これらのグループはGlyph Atlasとは独立して、メンバー自身によって運営されています。",
+  "contact.form.title": "メッセージの送信",
+  "contact.form.body": "このフォームはメールを経由せず、コミュニティのMatrixサーバー上にある管理者専用の受信箱へ直接届きます。返信をご希望の場合は連絡先をご記入ください。匿名で送信する場合は空欄のままで構いません。",
+  "contact.form.message": "メッセージ",
+  "contact.form.reply": "連絡先（任意）",
+  "contact.form.replyHint": "メールアドレス、MatrixまたはDiscordのユーザー名など…",
+  "contact.form.send": "送信",
+  "contact.form.sending": "送信中…",
+  "contact.form.sent": "送信されました。ありがとうございます。",
+  "contact.form.busy": "一度に送信されたメッセージが多すぎます。1分ほど待ってから再度お試しください。",
+  "contact.form.failed": "メッセージを送信できませんでした。時間をおいて再度お試しいただくか、{email}までご連絡ください。"
 }
