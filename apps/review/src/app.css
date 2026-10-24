@@ -206,7 +206,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 @media(min-width:1000px){.character-dialog .inspector-savebar{align-items:stretch}.character-dialog .inspector-savebar .looks-right{align-self:center}}
 .tile-id{margin-top:3px;font-family:ui-monospace,SFMono-Regular,Consolas,"GenZui Sans",monospace;font-size:9px;color:light-dark(#8a8a93, #9d9da6);white-space:normal!important;word-break:break-all;overflow:visible!important}.record-id{display:flex;align-items:center;gap:10px;margin:6px 0 0;font-size:11px;color:var(--muted)}.record-id code{font-family:ui-monospace,SFMono-Regular,Consolas,"GenZui Sans",monospace;font-size:10px;word-break:break-all}.copy-id{border:0;background:transparent;padding:2px 4px;font-size:11px;color:var(--muted);text-decoration:underline;flex-shrink:0}.copy-id:hover{color:var(--ink)}
 .site-footer{max-width:1920px;margin:8px auto 0;padding:0 4.4vw 28px;font-size:11px;line-height:1.7;color:var(--muted)}.site-footer p{margin:0;padding-top:16px;border-top:1px solid var(--line)}.site-footer a{color:inherit;text-decoration:underline;text-underline-offset:2px}
-.chat{white-space:nowrap}.link-mark{display:inline-block;width:1.1em;height:1.1em;margin-right:.3em;vertical-align:-.2em;fill:currentColor}
+.chat{white-space:nowrap}.link-mark{display:inline-block;width:1.1em;height:1.1em;margin-right:.3em;vertical-align:-.2em;fill:currentColor}.link-mark.outline{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .page-status{display:flex;align-items:center;flex-wrap:wrap;gap:8px 24px;padding:4px 0 14px}.page-status .collection-meta{margin-left:auto;padding:0}
 .site-links{margin:0;font-size:12px;color:var(--muted)}.site-links a{color:inherit;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
 /* The header menu: settings, account and tools. Below the width the full header needs in its longest
@@ -256,19 +256,15 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 /* The collage (`lib/collage.js`): tiles in columns of one width, each as tall as its crop, at the place
    worked out for the number of columns the gallery's width takes. A tile's place is its column (`--cell-c`),
    the height of the crops above it as a share of their width (`--cell-y`) and how many tiles stand above it
-   (`--cell-n`); a block is as tall as its tallest column (`--collage-h`). The grid of squares (`data-gallery="grid"`)
-   lays the same tiles out as before. */
+   (`--cell-n`); a block is as tall as its tallest column (`--collage-h`). The reader's tile size (`data-zoom`) sets the
+   narrowest a column may be, and so how many columns there are; `collageStyle` writes those rules. The
+   grid of squares (`data-gallery="grid"`) lays the same tiles out in rows. */
 .glyph-grid.collage{container-type:inline-size}
 /* A tile's place is its own: the numbers are not passed down to what it holds. */
-@property --cell-a{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c2{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y2{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n2{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c3{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y3{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n3{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c4{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y4{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n4{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c5{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y5{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n5{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c6{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y6{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n6{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c7{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y7{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n7{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c8{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y8{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n8{syntax:"<number>";inherits:false;initial-value:0}@property --collage-h2{syntax:"*";inherits:false}@property --collage-h3{syntax:"*";inherits:false}@property --collage-h4{syntax:"*";inherits:false}@property --collage-h5{syntax:"*";inherits:false}@property --collage-h6{syntax:"*";inherits:false}@property --collage-h7{syntax:"*";inherits:false}@property --collage-h8{syntax:"*";inherits:false}@property --collage-h{syntax:"*";inherits:false}
+@property --cell-a{syntax:"<number>";inherits:false;initial-value:0}@property --cell-c{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n{syntax:"<number>";inherits:false;initial-value:0}@property --collage-h{syntax:"*";inherits:false}
 .collage-block{--collage-cols:2;--collage-gap:8px;--collage-caption:40px;--collage-h:var(--collage-h2);--collage-colw:calc((100cqw - (var(--collage-cols) - 1) * var(--collage-gap)) / var(--collage-cols));--collage-iw:var(--collage-colw);--collage-step:calc(var(--collage-caption) + var(--collage-gap))}
 .collage-cell{--cell-c:var(--cell-c2);--cell-y:var(--cell-y2);--cell-n:var(--cell-n2)}
-@container (min-width:480px){.collage-block{--collage-cols:3;--collage-gap:12px;--collage-caption:44px;--collage-h:var(--collage-h3)}.collage-cell{--cell-c:var(--cell-c3);--cell-y:var(--cell-y3);--cell-n:var(--cell-n3)}}
-@container (min-width:680px){.collage-block{--collage-cols:4;--collage-h:var(--collage-h4)}.collage-cell{--cell-c:var(--cell-c4);--cell-y:var(--cell-y4);--cell-n:var(--cell-n4)}}
-@container (min-width:880px){.collage-block{--collage-cols:5;--collage-h:var(--collage-h5)}.collage-cell{--cell-c:var(--cell-c5);--cell-y:var(--cell-y5);--cell-n:var(--cell-n5)}}
-@container (min-width:1080px){.collage-block{--collage-cols:6;--collage-h:var(--collage-h6)}.collage-cell{--cell-c:var(--cell-c6);--cell-y:var(--cell-y6);--cell-n:var(--cell-n6)}}
-@container (min-width:1280px){.collage-block{--collage-cols:7;--collage-h:var(--collage-h7)}.collage-cell{--cell-c:var(--cell-c7);--cell-y:var(--cell-y7);--cell-n:var(--cell-n7)}}
-@container (min-width:1500px){.collage-block{--collage-cols:8;--collage-h:var(--collage-h8)}.collage-cell{--cell-c:var(--cell-c8);--cell-y:var(--cell-y8);--cell-n:var(--cell-n8)}}
+@container (min-width:480px){.collage-block{--collage-gap:12px;--collage-caption:44px}}
 :root:not([data-gallery="grid"]) .glyph-grid.collage{display:block;background:none;border:0}
 :root:not([data-gallery="grid"]) .collage-block{position:relative;height:var(--collage-h)}
 :root:not([data-gallery="grid"]) .collage-cell{position:absolute;left:calc(var(--cell-c) * (var(--collage-colw) + var(--collage-gap)));top:calc(var(--cell-y) * var(--collage-iw) + var(--cell-n) * var(--collage-step));width:var(--collage-colw);height:calc(var(--cell-a) * var(--collage-iw) + var(--collage-caption));min-height:0;padding:0 0 var(--collage-caption);border-radius:0}
@@ -295,5 +291,9 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 :root:not([data-gallery="grid"]) .collage-cell:focus-visible{z-index:1;outline-offset:-3px}
 :root:not([data-gallery="grid"]) .glyph-grid.collage .visual-grid-heading{background:none}
 :root[data-gallery="grid"] .collage-block{display:contents}
+/* The grid of squares takes as many columns as fit at the reader's tile size (`--tile-w`). */
+:root[data-gallery="grid"] .glyph-grid.collage{grid-template-columns:repeat(auto-fill,minmax(var(--tile-w,130px),1fr))}
+:root[data-gallery="grid"] .glyph-grid.collage .collage-cell{height:calc(var(--tile-w,130px) * 1.15);min-height:0}
+:root[data-gallery="grid"] .glyph-grid.collage .glyph-tile{padding:calc(var(--tile-w,130px) * .15) calc(var(--tile-w,130px) * .12) calc(var(--tile-w,130px) * .18)}
 /* A tile out of view is not laid out or painted until it nears the viewport; its box is set either way. */
 .collage-cell{content-visibility:auto;contain-intrinsic-size:auto 160px}
