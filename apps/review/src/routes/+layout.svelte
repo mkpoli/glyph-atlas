@@ -6,6 +6,7 @@
   import '../tangut-font.css'
   import '../script-colors.css'
   import ChatLinks from '../components/ChatLinks.svelte'
+  import LinkMark from '../components/LinkMark.svelte'
   import { onMount, untrack } from 'svelte'
   import { afterNavigate, goto, pushState } from '$app/navigation'
   import { page } from '$app/state'
@@ -117,11 +118,11 @@
 <!-- The dataset's own licence covers the records and annotations made here; images and texts keep the
      terms of their sources, which each crop's "Source & rights" link shows. -->
 <footer class="site-footer">
-  <p>{around('footer.data', 'license')[0]}<a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="license noopener" target="_blank">CC BY-SA 4.0</a>{around('footer.data', 'license')[1]}
+  <p>{around('footer.data', 'license')[0]}<a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="license noopener" target="_blank"><LinkMark name="cc" />CC BY-SA 4.0</a>{around('footer.data', 'license')[1]}
     · {t('footer.images')}
-    · {around('footer.code', 'license')[0]}<a href="https://github.com/mkpoli/glyph-atlas/blob/main/LICENSE" rel="noopener" target="_blank">MIT</a>{around('footer.code', 'license')[1]}
-    · <a href="https://github.com/mkpoli/glyph-atlas" rel="noopener" target="_blank">GitHub ↗</a>
-    · <a href={localize('/privacy')}>{t('footer.privacy')}</a>
+    · {around('footer.code', 'license')[0]}<a href="https://github.com/mkpoli/glyph-atlas/blob/main/LICENSE" rel="noopener" target="_blank"><LinkMark name="code" />MIT</a>{around('footer.code', 'license')[1]}
+    · <a href="https://github.com/mkpoli/glyph-atlas" rel="noopener" target="_blank"><LinkMark name="github" />GitHub</a>
+    · <a href={localize('/privacy')}><LinkMark name="privacy" />{t('footer.privacy')}</a>
     · <ChatLinks /></p>
 </footer>
 {#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {close} {saved} {previous} {next} {position} {initial} {cited} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {close} onVerdict={inspector.onVerdict} {saved} {previous} {next} {position} {initial} {cited} />{/if}{/if}
