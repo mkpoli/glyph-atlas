@@ -10,8 +10,14 @@
 // gallery leave every tile before them where it was.
 import { cropShape } from './cropPaint.js'
 
-/** The column counts the stylesheet chooses between by the gallery's width. */
-export const COLUMNS = [2, 3, 4, 5, 6, 7, 8]
+/** The column counts the stylesheet chooses between by the gallery's width and the tile size. */
+export const COLUMNS = Array.from({ length: 14 }, (_, i) => i + 2)
+/** The tile sizes the reader chooses between, smallest first: the narrowest a column may be, in CSS pixels. */
+export const ZOOMS = [100, 130, 160, 200, 250]
+/** The tile size a reader who has not chosen one sees. */
+export const ZOOM = 1
+/** The gap between columns once the gallery is wide enough for three. */
+const GAP = 12
 /** How far a crop's height may run from its width: a very flat or very tall crop is shown in a tile at this limit. */
 const FLATTEST = 0.55, TALLEST = 1.9
 /** The caption and gap as a share of a typical column's width, for choosing the shortest column. */
@@ -46,6 +52,30 @@ export function collage(aspects) {
     heights.push(`--collage-h${count}:${used.length ? `max(${used.map(column => `calc(${round(column.y)} * var(--collage-iw) + ${column.n} * var(--collage-step))`).join(',')})` : '0px'}`)
   }
   return { tiles: places.map(place => place.join(';')), block: heights.join(';') }
+}
+
+/**
+ * The stylesheet that picks the column count: for each tile size, as many columns as fit at that
+ * width or wider (`--tile-w`, which the grid of squares uses too). The size is the document's
+ * `data-zoom`; a document without one, or with one out of range, takes `ZOOM`.
+ */
+export function collageStyle() {
+  const rules = COLUMNS.flatMap(n => [
+    `@property --cell-c${n}{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y${n}{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n${n}{syntax:"<number>";inherits:false;initial-value:0}@property --collage-h${n}{syntax:"*";inherits:false}`])
+  const others = z => ZOOMS.map((_, i) => i).filter(i => i !== z).map(i => `[data-zoom="${i}"]`).join(',')
+  ZOOMS.forEach((width, z) => {
+    const root = z === ZOOM ? `:root:not(${others(z)})` : `:root[data-zoom="${z}"]`
+    rules.push(`${root}{--tile-w:${width}px}`)
+    for (const n of COLUMNS.slice(1)) rules.push(`@container (min-width:${n * width + (n - 1) * GAP}px){${root} .collage-block{--collage-cols:${n};--collage-h:var(--collage-h${n})}${root} .collage-cell{--cell-c:var(--cell-c${n});--cell-y:var(--cell-y${n});--cell-n:var(--cell-n${n})}}`)
+  })
+  return rules.join('\n')
+}
+
+/** Where the reader's choice of tile size is remembered; `app.html` reads it before the first paint. */
+export const ZOOM_KEY = 'atlas.galleryZoom'
+/** The tile size the reader chose last, as an index of `ZOOMS`. */
+export function storedZoom() {
+  try { const z = JSON.parse(localStorage.getItem(ZOOM_KEY)); return Number.isInteger(z) && z >= 0 && z < ZOOMS.length ? z : ZOOM } catch { return ZOOM }
 }
 
 /** Where the reader's choice of layout is remembered; `app.html` reads it before the first paint. */
