@@ -90,7 +90,6 @@ import sys
 import urllib.parse
 import urllib.request
 from collections import defaultdict
-from pathlib import Path
 
 from build import OUT, ROOT, char_text
 from load_history import built, deliver, row_statements, stamped
@@ -763,9 +762,11 @@ def send_lock_path():
     """work/atlas-v3/out/reference.lock in the main checkout (the one git keeps its common directory in)."""
     if SEND_LOCK is not None:
         return SEND_LOCK
-    common = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                            capture_output=True, text=True, check=False)
-    root = Path(common.stdout.strip()).parent if common.returncode == 0 and common.stdout.strip() else ROOT
+    root, dot_git = ROOT, ROOT / ".git"
+    if dot_git.is_file():  # a worktree: `gitdir: <main>/.git/worktrees/<name>`, whose commondir names <main>/.git
+        gitdir = (ROOT / dot_git.read_text().split("gitdir:", 1)[1].strip()).resolve()
+        if (gitdir / "commondir").is_file():
+            root = (gitdir / (gitdir / "commondir").read_text().strip()).resolve().parent
     return root / "work" / "atlas-v3" / "out" / "reference.lock"
 
 
