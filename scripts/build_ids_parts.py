@@ -1,28 +1,35 @@
 """Build `apps/review/static/palette/ids-parts.json`, the parts palette of the IDS editor (難輸入部件).
 
 A part is a component that the sequences of `data/vocab/han-ids.tsv` (BabelStone IDS) use and that
-does not decompose further: hfhchan/ids leaves it undecomposed (its entry has no description operator
-and names the character itself, or a variant that is atomic in turn), or BabelStone gives it no
-sequence with an operator whose components are all known (⿻？乚 leaves 也 a part). Each part counts
-the ideographs whose sequences use it, leaving out the sequences of ideographs that are parts by
-hfhchan/ids. Every character of the CJK Strokes block is a part, used or not; CJK Radicals
-Supplement characters are parts when used. Operators, ？ and BabelStone's unencoded components {n}
-are not parts.
+a writer picks whole. That is one of:
+- a component hfhchan/ids leaves undecomposed (its entry has no description operator and names the
+  character itself, or a variant that is atomic in turn);
+- one BabelStone gives no sequence with an operator whose components are all known (⿻？乚 leaves 也
+  a part);
+- one whose every such sequence is strokes only, or strokes and one other component, a stroke being a
+  CJK stroke or a one-stroke ideograph (𠂉 ⿰㇒一, 𠂇 ⿻一丿, 䒑 ⿱丷一);
+- one at least `USE_THRESHOLD` (50) ideographs use, whatever its sequence (殳 門 髟 齒 䖵).
+Each part counts the ideographs whose sequences use it, leaving out the sequences of ideographs that
+hfhchan/ids keeps whole. Every character of the CJK Strokes block (U+31C0–U+31E5) is a part, used or
+not; CJK Radicals Supplement characters are parts when used. Operators, ？ and BabelStone's unencoded
+components {n} are not parts.
 
 Each part carries:
-- `strokes`: Unihan's kTotalStrokes (its first value). A part Unihan lacks gets the sum over the
-  leaves of its own first compound sequence, marked derived, when every leaf has a count; a CJK stroke
-  counts 1 and is marked derived; anything else stays null.
+- `strokes`: Unihan's kTotalStrokes (its first value, which Unihan gives for the zh-Hans form where
+  the forms differ). A part Unihan lacks gets the sum over the leaves of its first compound sequence
+  whose leaves all have counts, marked derived; a CJK stroke counts 1 and is marked derived; anything
+  else stays null.
 - `first`: the class of its first stroke, 横 豎 撇 點 or 折, where KanjiVG records it: the first stroke of
   the character's own KanjiVG entry, or else of every KanjiVG group drawing the character as a whole
-  component (`kvg:element`, no `kvg:part`), when they agree. A CJK stroke is classed as itself. The
-  stroke types map to the five classes by the table `CLASS` (an editorial table, after the five
+  component (`kvg:element`, no `kvg:part`), when they agree. A CJK stroke is classed as itself. A bare
+  stroke type maps to the five classes by the table `CLASS` (an editorial table, after the five
   classes Chinese dictionaries order strokes by: 提 counts as 横, 豎鉤 as 豎, 捺 and 提捺 as 點, every
-  turning stroke as 折, and ㇣ as none); an alternative type (㇔/㇑) whose sides disagree, or a type
-  outside the table, gives null.
-- `kind`: s for a CJK stroke; c (common) for a part that is a 常用漢字 (Unihan kJoyoKanji) or in the
-  first level of the 通用规范汉字表 (Unihan kTGH, positions 1–3500); d (difficult) for the rest. The
-  palette's Common, Difficult and Strokes tabs list them.
+  turning stroke as 折, and ㇣ as none). A suffixed type (㇑a, which KanjiVG gives to the dot of 亠 and
+  the vertical of 山 alike), an alternative whose sides disagree (㇔/㇑), or a type outside the table
+  gives null. KanjiVG follows Japanese stroke order.
+- `kind`: s for a CJK stroke; c (common) for a part that is a 常用漢字 (Unihan kJoyoKanji, with the
+  form a U+XXXX value points to) or in the first level of the 通用规范汉字表 (Unihan kTGH, positions
+  1–3500); d (difficult) for the rest. The palette's Common, Difficult and Strokes tabs list them.
 
     uv run python scripts/build_ids_parts.py          # write ids-parts.json
     uv run python scripts/build_ids_parts.py --font   # and the webfont subset
@@ -44,7 +51,6 @@ import gzip
 import hashlib
 import json
 import re
-import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import Counter, defaultdict
@@ -98,7 +104,50 @@ REGIONS = re.compile(r"\([^)]*\)$")
 KVG = "{http://kanjivg.tagaini.net}"
 TGH_FIRST_LEVEL = 3500
 
-# CJK stroke → class, by the stroke's Unicode name (CJK STROKE <letters>); every other stroke is 折.
+# The CJK Strokes block, U+31C0–U+31E5, by the abbreviations of its Unicode 18.0 names (CJK STROKE
+# <letters>), written out so the output does not depend on the Unicode version Python carries.
+STROKE_NAMES = [
+    "T",
+    "WG",
+    "XG",
+    "BXG",
+    "SW",
+    "HZZ",
+    "HZG",
+    "HP",
+    "HZWG",
+    "SZWG",
+    "HZT",
+    "HZZP",
+    "HPWG",
+    "HZW",
+    "HZZZ",
+    "N",
+    "H",
+    "S",
+    "P",
+    "SP",
+    "D",
+    "HZ",
+    "HG",
+    "SZ",
+    "SWZ",
+    "ST",
+    "SG",
+    "PD",
+    "PZ",
+    "TN",
+    "SZZ",
+    "SWG",
+    "HXWG",
+    "HZZZG",
+    "PG",
+    "Q",
+    "HXG",
+    "SZP",
+]
+STROKES = [chr(0x31C0 + offset) for offset in range(len(STROKE_NAMES))]
+# Stroke → class: the strokes named here are 横, 豎, 撇 or 點 (㇣ Q is none); every other stroke is 折.
 _NAMED = {
     "H": "横",
     "T": "横",
@@ -111,31 +160,30 @@ _NAMED = {
     "TN": "點",
     "Q": None,
 }
-
-
-def stroke_class(stroke: str) -> str | None:
-    """The class of one CJK stroke character, or None for a character that is not one (or ㇣)."""
-    name = unicodedata.name(stroke, "")
-    if not name.startswith("CJK STROKE "):
-        return None
-    return _NAMED.get(name.removeprefix("CJK STROKE "), "折")
-
-
-CLASS = {chr(point): stroke_class(chr(point)) for point in range(0x31C0, 0x31EF) if stroke_class(chr(point))}
+CLASS = {
+    stroke: _NAMED.get(name, "折")
+    for stroke, name in zip(STROKES, STROKE_NAMES, strict=True)
+    if _NAMED.get(name, "折")
+}
+# Parts that BabelStone splits into strokes still count as parts when each of their sequences is
+# strokes only, or strokes and one other component; every component this many ideographs use counts
+# as a part as well.
+USE_THRESHOLD = 50
 
 
 def type_class(kind: str) -> str | None:
-    """The class of a KanjiVG `kvg:type` (㇐a, ㇔/㇏ …): its strokes' class when all sides agree."""
-    found = {CLASS.get(side[:1]) for side in kind.split("/")}
+    """The class of a KanjiVG `kvg:type`, when every side of it is a bare stroke of one class.
+
+    A type with a letter suffix (㇑a, ㇐b, ㇕c) names a variant shape, and KanjiVG gives the same
+    suffixed type to strokes of different classes: ㇑a is the top dot of 亠 宀 广 as well as the
+    verticals of 山 止 出. Such a type, an alternative whose sides disagree (㇔/㇑), or a type outside
+    the table gives None.
+    """
+    sides = kind.split("/")
+    if any(len(side) != 1 for side in sides):
+        return None
+    found = {CLASS.get(side) for side in sides}
     return found.pop() if len(found) == 1 else None
-
-
-def strokes_block() -> list[str]:
-    return [
-        chr(point)
-        for point in range(0x31C0, 0x31EF)
-        if unicodedata.name(chr(point), "").startswith("CJK STROKE ")
-    ]
 
 
 def components(ids: str) -> list[str]:
@@ -178,8 +226,12 @@ def compound(sequence: str) -> bool:
     return any(char in OPERATORS for char in sequence)
 
 
-def parts(ids: dict[str, list[str]], atomic: set[str]) -> Counter:
-    """Each part → how many ideographs' sequences use it (once per ideograph)."""
+def parts(ids: dict[str, list[str]], atomic: set[str], single: set[str]) -> Counter:
+    """Each part → how many ideographs' sequences use it (once per ideograph).
+
+    `single` holds the one-stroke ideographs (一 丨 丿 丶 乙 亅 …), which count as strokes when a
+    sequence is read for whether it is made of strokes.
+    """
     uses: Counter = Counter()
     for char, sequences in ids.items():
         if char in atomic:
@@ -187,13 +239,27 @@ def parts(ids: dict[str, list[str]], atomic: set[str]) -> Counter:
         named = {part for sequence in sequences if compound(sequence) for part in components(sequence)}
         named.discard(char)
         uses.update(named)
+    stroke = set(STROKES) | single
 
-    def undecomposed(part: str) -> bool:
-        return part in atomic or not any(
-            compound(sequence) and not UNKNOWN.search(sequence) for sequence in ids.get(part, [])
+    def known(part: str) -> list[str]:
+        return [
+            sequence for sequence in ids.get(part, []) if compound(sequence) and not UNKNOWN.search(sequence)
+        ]
+
+    def of_strokes(sequence: str) -> bool:
+        leaves = components(sequence)
+        return sum(leaf not in stroke for leaf in leaves) <= 1 and any(leaf in stroke for leaf in leaves)
+
+    def kept(part: str) -> bool:
+        sequences = known(part)
+        return (
+            part in atomic
+            or not sequences
+            or all(of_strokes(sequence) for sequence in sequences)
+            or uses[part] >= USE_THRESHOLD
         )
 
-    return Counter({part: count for part, count in uses.items() if undecomposed(part)})
+    return Counter({part: count for part, count in uses.items() if kept(part)})
 
 
 def unihan_fields(path: Path) -> dict[str, dict[str, str]]:
@@ -215,7 +281,14 @@ def common_set(unihan: dict[str, dict[str, str]]) -> set[str]:
         for char, value in unihan["kTGH"].items()
         if any(int(entry.split(":")[1]) <= TGH_FIRST_LEVEL for entry in value.split())
     }
-    return set(unihan["kJoyoKanji"]) | first_level
+    # A kJoyoKanji value of U+XXXX names the code point of the form the 常用漢字表 prints (剥 → 剝);
+    # both are counted as common.
+    joyo = set(unihan["kJoyoKanji"]) | {
+        chr(int(value.removeprefix("U+"), 16))
+        for value in unihan["kJoyoKanji"].values()
+        if value.startswith("U+")
+    }
+    return joyo | first_level
 
 
 def stroke_counts(
@@ -227,14 +300,16 @@ def stroke_counts(
     def count(char: str, seen: frozenset = frozenset()) -> tuple[int | None, bool]:
         if char in unihan:
             return unihan[char], False
-        if char in CLASS or unicodedata.name(char, "").startswith("CJK STROKE "):
+        if char in STROKES:
             return 1, True
+        if char in seen:
+            return None, False
+        # The first sequence whose leaves all have counts; a later one is tried when an earlier fails.
         for sequence in ids.get(char, []):
-            if compound(sequence) and not UNKNOWN.search(sequence) and char not in seen:
+            if compound(sequence) and not UNKNOWN.search(sequence):
                 leaves = [count(leaf, seen | {char})[0] for leaf in components(sequence)]
                 if leaves and all(value is not None for value in leaves):
                     return sum(leaves), True
-                return None, False
         return None, False
 
     return {name: count(name) for name in names}
@@ -276,8 +351,9 @@ def palette(
 ) -> list[list]:
     """Rows `[part, uses, strokes, derived, first, kind]`, most used first; kind is c(ommon),
     d(ifficult) or s(troke)."""
-    uses = parts(ids, atomic)
-    strokes = strokes_block()
+    single = {char for char, value in unihan["kTotalStrokes"].items() if value.split()[0] == "1"}
+    uses = parts(ids, atomic, single)
+    strokes = STROKES
     names = sorted(set(uses) | set(strokes), key=lambda char: (-uses.get(char, 0), ord(char)))
     counts = stroke_counts(names, ids, unihan["kTotalStrokes"])
     common = common_set(unihan)
