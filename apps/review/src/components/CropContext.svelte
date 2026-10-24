@@ -7,8 +7,9 @@
   import { toSource } from '../lib/cropBox.js'
   // `cropBox` is a box drawn over the crop (a redraw), in source pixels; the view stays framed on the
   // crop as it was cut. `editing` turns the box into one the reader moves and resizes here, and
-  // `onedit` hears each new box, in source pixels, `onexit` an Escape.
-  let { item, detail = null, corpus = false, cropBox = null, disabled = false, editing = false,
+  // `onedit` hears each new box, in source pixels, `onexit` an Escape. `page` is the link to the whole
+  // page the crop was cut from (`pageLink`), offered in the view's corner.
+  let { item, detail = null, corpus = false, cropBox = null, disabled = false, editing = false, page = null,
     onedit = null, onexit = null, describedby = undefined, onload = () => {}, onerror = () => {} } = $props()
   // A supplied record names the crop shown: the same crop, revision and image (or corpus source).
   const matches = (supplied, shown, fromCorpus) => supplied.id === shown.id && supplied.revision === shown.revision
@@ -130,7 +131,7 @@
     pan = limitPan({ x: pan.x * zoom / previous, y: pan.y * zoom / previous })
   }
   function down(event) {
-    if (!ready || disabled || event.button !== 0 || event.target.closest('button')) return
+    if (!ready || disabled || event.button !== 0 || event.target.closest('button, a')) return
     if (pointer) return
     expandPage = true
     event.preventDefault()
@@ -208,7 +209,8 @@
         {:else}<span class="crop-mask" style={mask} aria-hidden="true"></span>{/if}
       {/if}
     {/if}
-    {#if !loading && !ready && (detailFailed || !contextual || (contextFailed && (!fullPage || fullFailed)))}<span class="crop-only">{t('crop.only')}</span>{/if}
+    {#if !loading && !ready && (detailFailed || !contextual || (contextFailed && (!fullPage || fullFailed)))}<span class="crop-only" class:beside-page={page}>{t('crop.only')}</span>{/if}
+    {#if page}<div class="crop-tools crop-page"><a href={page.href} aria-label={t('crop.wholePage')} title={t('crop.wholePage')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z M14 3v4h4"/><rect x="9" y="11" width="4" height="4"/></svg></a></div>{/if}
     <div class="crop-tools" aria-label={t('crop.tools.label')}>
       <button type="button" class="zoom-out" aria-label={t('crop.zoomOut')} title={t('crop.zoomOut')} disabled={disabled || !ready || zoom <= .6} onclick={() => magnify(1 / 1.25)}>−</button>
       <button type="button" class="reset-crop" aria-label={t('crop.returnToCrop')} title={t('crop.returnToCrop.title')} disabled={disabled || !ready} onclick={reset}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4M9 9h6v6H9z"/></svg></button>
@@ -236,11 +238,13 @@
   .crop-viewport :global(.crop-early.placed){-webkit-mask:none;mask:none}
   .crop-viewport :global(.crop-early.placed img){object-fit:fill}
   .crop-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:2px;background:light-dark(rgb(255 255 255 / 94%), rgb(27 27 31 / 94%));padding:3px;border-radius:8px;box-shadow:0 2px 12px light-dark(rgb(0 0 0 / 12%), rgb(0 0 0 / 40%));cursor:default}
-  .crop-tools button{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:5px;background:transparent;font-size:22px;color:var(--ink);cursor:pointer}
-  .crop-tools button:hover:enabled{background:var(--accent-light)}
+  .crop-page{right:auto;left:12px}
+  .crop-tools :is(button,a){display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:5px;background:transparent;font-size:22px;color:var(--ink);cursor:pointer}
+  .crop-tools :is(button:enabled,a):hover{background:var(--accent-light)}
   .crop-tools button:disabled{opacity:.35;cursor:default}
   .crop-tools svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5}
   .crop-only{position:absolute;left:12px;bottom:18px;font-size:11px;color:var(--muted);background:light-dark(rgb(255 255 255 / 90%), rgb(27 27 31 / 90%));padding:4px 7px;border-radius:4px}
+  .crop-only.beside-page{left:62px}
   .context-text{margin-top:10px;text-align:left;font-size:11px;color:var(--muted)}
   .context-text p{font-size:15px;line-height:1.8;max-height:7em;overflow:auto;overflow-wrap:anywhere;margin:4px 0 0;color:var(--ink)}
   @media(max-width:760px){.crop-viewport{height:300px}}
