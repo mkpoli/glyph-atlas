@@ -8,6 +8,9 @@ Copyright 2023 The Noto Project Authors (https://github.com/notofonts/hentaigana
 © 2017-2024 Adobe (http://www.adobe.com/).
 Copyright (c) 2020, Fredrick R. Brennan (<copypaste@kittens.ph>)
 
+NotoSansCJKjp-ids-strokes.woff2 (Noto Sans CJK JP 2.004, https://github.com/notofonts/noto-cjk):
+© 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
+
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
 https://scripts.sil.org/OFL

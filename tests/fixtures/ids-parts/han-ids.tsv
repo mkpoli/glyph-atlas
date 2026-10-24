@@ -1,0 +1,16 @@
+# A few rows in the shape of han-ids.tsv, for tests/test_ids_parts.py.
+code_point	char	sequences
+U+4E00	一	一(GHTJKPV)
+U+738B	王	⿱一土(GHTJKPV)
+U+571F	土	⿱十一(GHTJKPV)
+U+5341	十	⿻一丨(GHTJKPV)
+U+4E28	丨	丨(GHTJKPV)
+U+6C5F	江	⿰氵工(GHTJKPV)
+U+6C60	池	⿰氵也(GHTJKPV)
+U+5DE5	工	⿱一⿱丨一(GHTJKPV)
+U+4E5F	也	⿻？乚(G) {12}(J)
+U+73A9	玩	⿰王元(GHTJKPV) ⿰𤣩元(X)
+U+5143	元	⿱二儿(GHTJKPV)
+U+80A1	股	⿰⺼殳(G)
+U+20089	𠂉	⿰㇒一(GJV)
+U+2D928	𭤨	⿰方𠂉(S)
