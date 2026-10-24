@@ -24,6 +24,7 @@
   "bulk.character.label": "Character to give the selection",
   "bulk.character.placeholder": "Written as…",
   "bulk.apply": "Mark as {char}",
+  "bulk.apply.runs": "Pairs and trigrams can only be confirmed: each holds several characters",
   "bulk.chooseFirst": "Choose a character",
   "bulk.selectAll": "Select all shown",
   "bulk.clear": "Clear",
