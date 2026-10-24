@@ -1,5 +1,6 @@
 <script>
   import Seo from '$components/Seo.svelte'
+  import LinkMark from '$components/LinkMark.svelte'
   import { t, around } from '$lib/i18n.svelte.js'
   import { CHATS, OTHER_GROUPS, SPACE } from '$lib/community.js'
   const EMAIL = 'contact@glyphatlas.org'
@@ -23,7 +24,7 @@
     <p>{t('contact.chat.body')}</p>
     <ul class="doors">
       {#each CHATS as chat (chat.name)}
-        <li><a href={chat.href} rel="noopener" target="_blank"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={chat.mark}/></svg>{chat.name}</a></li>
+        <li><a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}</a></li>
       {/each}
     </ul>
     <p>{t('contact.chat.rooms')}</p>
@@ -47,7 +48,7 @@
     <p>{t('contact.others.body')}</p>
     <ul class="doors">
       {#each OTHER_GROUPS as group (group.href)}
-        <li><a href={group.href} rel="noopener" target="_blank"><svg viewBox="0 0 24 24" role="img" aria-label={group.network}><path d={group.mark}/></svg><span lang={group.lang}>{group.name}</span><small lang={group.lang}>{group.language}</small></a></li>
+        <li><a href={group.href} rel="noopener" target="_blank"><LinkMark name={group.mark} /><span class="visually-hidden">{group.network}: </span><span lang={group.lang}>{group.name}</span><small lang={group.lang}>{group.language}</small></a></li>
       {/each}
     </ul>
   </section>
@@ -79,7 +80,7 @@
   .doors { list-style: none; padding: 0; margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px; }
   .doors a { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; font-weight: 500; }
   .doors a:hover { border-color: var(--line-hover); }
-  .doors svg { width: 18px; height: 18px; fill: currentColor; }
+  .doors :global(.link-mark) { width: 18px; height: 18px; margin: 0; vertical-align: 0; }
   .doors small { color: var(--muted); font-weight: 400; }
   .apps { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
 </style>

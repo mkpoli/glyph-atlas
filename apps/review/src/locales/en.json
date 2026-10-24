@@ -185,6 +185,7 @@
   "explore.layout.label": "Gallery layout",
   "explore.layout.collage": "Collage",
   "explore.layout.grid": "Grid",
+  "explore.zoom.label": "Tile size",
   "explore.heading.atlas": "Character atlas",
   "explore.heading.flagged": "Characters that need fixing",
   "explore.meta.characters.one": "{count} character",

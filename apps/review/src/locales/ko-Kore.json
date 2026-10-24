@@ -184,6 +184,7 @@
   "explore.layout.label": "配列 方式",
   "explore.layout.collage": "콜라주",
   "explore.layout.grid": "格子",
+  "explore.zoom.label": "크기",
   "explore.heading.atlas": "文字 圖譜",
   "explore.heading.flagged": "修正이 必要한 文字",
   "explore.meta.characters.one": "{count}字",
