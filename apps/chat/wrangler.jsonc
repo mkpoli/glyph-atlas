@@ -1,0 +1,8 @@
+// chat.glyphatlas.org: Element Web for the community's Matrix space, served as static files. `build.sh`
+// fills dist/ with a pinned Element release and this folder's config; deploy with `bunx wrangler deploy`.
+{
+  "name": "glyph-atlas-chat",
+  "compatibility_date": "2026-09-22",
+  "assets": {"directory": "./dist", "not_found_handling": "single-page-application"},
+  "routes": [{"pattern": "chat.glyphatlas.org", "custom_domain": true}]
+}

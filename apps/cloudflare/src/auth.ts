@@ -5,7 +5,8 @@
 // `actors` and `favourites` are in `ATLAS` with what was written.
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
-import { admin, anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins';
+import { admin, anonymous, emailOTP, jwt, lastLoginMethod } from 'better-auth/plugins';
+import { oauthProvider } from '@better-auth/oauth-provider';
 import { passkey } from '@better-auth/passkey';
 import { MAIL, signInMail } from './mail';
 import { recordProfile } from './connections';
@@ -118,6 +119,14 @@ function build(env: Env, origin: string, paused: boolean) {
             const held = id && await env.ATLAS.prepare('SELECT 1 FROM actors WHERE key=? AND user=?').bind(user.name, id).first();
             if (!held) throw new APIError('BAD_REQUEST', { message: 'This name is an old reviewer id another reviewer may hold.' });
           },
+          // A ban also ends the user's Matrix sign-in: its OAuth tokens are revoked with its sessions.
+          after: async user => {
+            if (!user?.banned) return;
+            await env.ACCOUNTS.batch([
+              env.ACCOUNTS.prepare('DELETE FROM "oauthAccessToken" WHERE "userId"=?').bind(user.id),
+              env.ACCOUNTS.prepare('DELETE FROM "oauthRefreshToken" WHERE "userId"=?').bind(user.id),
+            ]);
+          },
         },
         // Better Auth deletes the user's sessions and sign-in accounts, runs `before`, which marks the user
         // and deletes the anonymous users joined to it, then deletes the user. `after` removes their
@@ -131,8 +140,9 @@ function build(env: Env, origin: string, paused: boolean) {
     },
     // A code by mail signs in and does nothing else: no passwords to reset, and an address is changed
     // by connecting another account, so every other route that mails a code is off.
+    // The JWT plugin's own `/token` is off: tokens are issued only through the OAuth routes below.
     disabledPaths: ['/email-otp/request-password-reset', '/forget-password/email-otp', '/email-otp/reset-password',
-      '/email-otp/request-email-change', '/email-otp/change-email'],
+      '/email-otp/request-email-change', '/email-otp/change-email', '/token'],
     hooks: {
       // The address a sign-in code goes to is held to SIGN_IN_MAIL before a code is made: a refused
       // request leaves the code already sent in place. The address is lower-cased as the plugin does,
@@ -187,8 +197,34 @@ function build(env: Env, origin: string, paused: boolean) {
             await env.ACCOUNTS.prepare('UPDATE "user" SET name=? WHERE id=?').bind(generatedName(), anonymousUser.user.id).run();
         },
       }),
+      // The site signs people in to the community's Matrix homeserver as an OpenID Connect provider
+      // (issuer `{origin}/api/auth`). The homeserver is its one client, registered by hand in
+      // `oauthClient` with consent skipped; no client can register itself. ID tokens are RS256, which
+      // every OpenID Connect library reads.
+      // A session read gets no JWT header: only the sign-in for Matrix signs tokens.
+      jwt({ jwks: { keyPairConfig: { alg: 'RS256', modulusLength: 2048 } }, disableSettingJwtHeader: true }),
+      oauthProvider({
+        loginPage: '/sign-in', consentPage: '/sign-in',
+        scopes: ['openid', 'profile', 'email', 'offline_access'],
+        // Clients are only ever added by hand: none registers itself, and no session may create one.
+        allowDynamicClientRegistration: false,
+        clientPrivileges: () => false,
+        // An anonymous session is no account to sign in with: it is sent to sign in first.
+        selectAccount: { shouldRedirect: ({ user }) => Boolean(user.isAnonymous) },
+        // Every token is checked against the user as stored now, a refresh included: an anonymous user
+        // gets none whatever route it took, and neither does a banned one.
+        customIdTokenClaims: ({ user }) => { refuseTokens(user); return {} },
+        customAccessTokenClaims: ({ user }) => { if (user) refuseTokens(user); return {} },
+      }),
     ],
   });
+}
+
+/** Refuse a Matrix sign-in token to an anonymous user, or to one whose ban stands. */
+export function refuseTokens(user: Record<string, unknown>) {
+  if (user.isAnonymous) throw new APIError('FORBIDDEN', { message: 'Sign in with an account first.' });
+  const until = user.banExpires ? new Date(user.banExpires as string | Date).getTime() : Infinity;
+  if (user.banned && until > Date.now()) throw new APIError('FORBIDDEN', { message: 'This account is banned.' });
 }
 
 // One instance per origin, freeze state and isolate: the options are the same for every request.

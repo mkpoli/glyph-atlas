@@ -3,11 +3,14 @@ import { pausedFetch } from './busy.svelte.js'
 // The accounts client, loaded once the page runs in a browser; no page needs it to draw.
 let loaded
 export function authClient() {
-  loaded ??= Promise.all([import('better-auth/client'), import('better-auth/client/plugins'), import('@better-auth/passkey/client')])
-    .then(([{ createAuthClient }, { adminClient, anonymousClient, emailOTPClient, lastLoginMethodClient }, { passkeyClient }]) => createAuthClient({
+  loaded ??= Promise.all([import('better-auth/client'), import('better-auth/client/plugins'), import('@better-auth/passkey/client'),
+    import('@better-auth/oauth-provider/client')])
+    .then(([{ createAuthClient }, { adminClient, anonymousClient, emailOTPClient, lastLoginMethodClient }, { passkeyClient }, { oauthProviderClient }]) => createAuthClient({
       basePath: '/api/auth',
       fetchOptions: { customFetchImpl: pausedFetch },
-      plugins: [anonymousClient(), emailOTPClient(), passkeyClient(), lastLoginMethodClient(), adminClient()],
+      // A sign-in reached from the Matrix homeserver's login carries its signed request on to the
+      // provider, which then sends the browser back to the homeserver (`auth.ts`).
+      plugins: [anonymousClient(), emailOTPClient(), passkeyClient(), lastLoginMethodClient(), adminClient(), oauthProviderClient()],
     }))
   return loaded
 }

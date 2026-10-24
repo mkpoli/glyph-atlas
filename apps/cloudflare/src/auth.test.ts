@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { auth, claim, viewer } from './auth';
+import { auth, claim, refuseTokens, viewer } from './auth';
 import { hourly as run } from './accounts';
 
 // The auth library reads through D1's whole statement API, `raw` and `run`'s row id included.
@@ -294,5 +294,37 @@ describe('deleting a user', () => {
     expect(accounts.query('SELECT count(*) AS n FROM forgotten').get()).toEqual({ n: 0 });
     expect(atlas.query('SELECT count(*) AS n FROM favourites').get()).toEqual({ n: 0 });
     expect(atlas.query('SELECT count(*) AS n FROM actors WHERE user IN (?,?)').get(gone, stays)).toEqual({ n: 0 });
+  });
+});
+
+describe('the Matrix sign-in provider', () => {
+  it('lets no session create an OAuth client', async () => {
+    const { call, signIn, accounts } = setup('https://clients.glyphatlas.org');
+    await signIn('maker@example.org');
+    expect(await call('/oauth2/create-client', { redirect_uris: ['https://evil.example/cb'] })).toBeGreaterThanOrEqual(400);
+    expect(await call('/sign-in/anonymous', {})).toBe(200);
+    expect(await call('/oauth2/create-client', { redirect_uris: ['https://evil.example/cb'] })).toBeGreaterThanOrEqual(400);
+    expect(accounts.query('SELECT count(*) AS n FROM "oauthClient"').get()).toEqual({ n: 0 });
+  });
+
+  it('refuses tokens to an anonymous user and to a standing ban, not to an expired one', () => {
+    expect(() => refuseTokens({ isAnonymous: true })).toThrow('Sign in with an account first.');
+    expect(() => refuseTokens({ banned: true })).toThrow('This account is banned.');
+    expect(() => refuseTokens({ banned: true, banExpires: new Date(Date.now() + 60e3) })).toThrow('This account is banned.');
+    expect(() => refuseTokens({ banned: true, banExpires: new Date(Date.now() - 60e3) })).not.toThrow();
+    expect(() => refuseTokens({ isAnonymous: false, banned: false })).not.toThrow();
+  });
+
+  it('revokes a user\'s Matrix tokens when an admin bans them', async () => {
+    const { call, signIn, accounts } = setup('https://bans.glyphatlas.org');
+    const banned = await signIn('member@example.org');
+    const now = new Date().toISOString();
+    accounts.query(`INSERT INTO "oauthClient"("id","clientId","redirectUris") VALUES('c','c','["https://matrix.example/cb"]')`).run();
+    accounts.query(`INSERT INTO "oauthRefreshToken"("id","token","clientId","userId","scopes","createdAt") VALUES('r','rt','c',?,'["openid"]',?)`).run(banned, now);
+    accounts.query(`INSERT INTO "oauthAccessToken"("id","token","clientId","userId","refreshId","scopes","createdAt") VALUES('a','at','c',?,'r','["openid"]',?)`).run(banned, now);
+    const admin = await signIn('admin@example.org');
+    accounts.query(`UPDATE "user" SET role='admin' WHERE id=?`).run(admin);
+    expect(await call('/admin/ban-user', { userId: banned })).toBe(200);
+    expect(accounts.query('SELECT (SELECT count(*) FROM "oauthAccessToken") + (SELECT count(*) FROM "oauthRefreshToken") AS n').get()).toEqual({ n: 0 });
   });
 });

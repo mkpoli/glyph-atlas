@@ -1,0 +1,16 @@
+{
+  "default_server_config": {
+    "m.homeserver": {"base_url": "https://matrix.glyphatlas.org", "server_name": "glyphatlas.org"}
+  },
+  "brand": "字形大圖譜 Glyph Atlas",
+  "room_directory": {"servers": ["glyphatlas.org", "matrix.org"]},
+  "disable_guests": true,
+  "disable_3pid_login": true,
+  "show_labs_settings": false,
+  "permalink_prefix": "https://matrix.to",
+  "branding": {
+    "auth_header_logo_url": "glyph-atlas.svg",
+    "welcome_background_url": "background.svg",
+    "auth_footer_links": [{"text": "glyphatlas.org", "url": "https://glyphatlas.org"}]
+  }
+}

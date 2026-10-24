@@ -293,7 +293,7 @@
   <label class="ids-field">
     <span class="ids-title">{t('form.ids.label')}</span>
     <input bind:this={field} value={draft} {disabled} lang="ja" spellcheck="false" autocomplete="off"
-      placeholder="⿰⿱匕失⿱コ疋" aria-invalid={Boolean(problem)} oninput={edit} oncompositionend={() => edit()} onblur={() => { run = false; if (!typed.problem) draft = write(tree) }}
+      placeholder="⿰⿱匕失⿱コ疋" aria-invalid={Boolean(problem)} oninput={edit} oncompositionend={() => edit()} onblur={() => { run = false; if (!typed.problem && tree !== null) draft = write(tree) }}
       onkeydown={event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); use() } }} />
   </label>
   <div class="ids-operators" role="group" aria-label={t('form.ids.operators')}>
