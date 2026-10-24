@@ -2,7 +2,7 @@
 // the record places it in the manifest: the CODH IIIF Curation Viewer by the canvas id, the Universal
 // Viewer by the canvas's 0-based position.
 const CURATION = 'https://codh.rois.ac.jp/software/iiif-curation-viewer/demo/'
-const UNIVERSAL = 'https://universalviewer.dev/uv.html'
+const UNIVERSAL = 'https://www.universalviewer.dev/uv.html'
 
 const web = url => typeof url === 'string' && /^https?:\/\//i.test(url)
 

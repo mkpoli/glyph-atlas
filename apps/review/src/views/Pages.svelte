@@ -173,7 +173,7 @@
   const proposedCount = $derived(data ? data.units.filter(unit => unit.proposed).length : 0)
   // The page's source under its title: holder, licence, dates and records, then the viewers its manifest opens in.
   const credit = $derived(data ? { holder: data.holder, attribution: data.attribution, licence: data.licence, rights_url: data.rights_url,
-    catalogue_url: data.catalogue_url, honkoku_url: data.honkoku_url, dating: data.dating } : null)
+    catalogue_url: data.catalogue_url, honkoku_url: data.honkoku_url, dating: data.dating, dates: data.dates } : null)
   const viewers = $derived(viewerLinks(data))
 </script>
 
@@ -204,8 +204,8 @@
     {#if data && !index}
       <div class="page-sources">
         <SourceCredit item={credit} />
-        {#if viewers}<p class="page-viewers copyable">{t('pages.source.openIn')}
-          <a href={viewers.curation} target="_blank" rel="noreferrer">{t('pages.source.curationViewer')}</a>{'\u00a0· '}<a href={viewers.universal} target="_blank" rel="noreferrer">{t('pages.source.universalViewer')}</a>{'\u00a0· '}<a href={viewers.manifest} target="_blank" rel="noreferrer">{t('pages.source.manifest')}</a><CopyValue value={viewers.manifest} /></p>{/if}
+        <!-- The manifest with its copy button, then the viewers that open it at this page. -->
+        {#if viewers}<p class="page-viewers"><span class="copyable"><a href={viewers.manifest} target="_blank" rel="noreferrer">{t('pages.source.manifest')}</a><CopyValue value={viewers.manifest} /></span>{'\u00a0· '}{t('pages.source.openIn')}<a href={viewers.curation} target="_blank" rel="noreferrer">{t('pages.source.curationViewer')}</a>{'\u00a0· '}<a href={viewers.universal} target="_blank" rel="noreferrer">{t('pages.source.universalViewer')}</a></p>{/if}
       </div>
     {/if}
     {#if error}<div class="error-message" role="alert">{error}<button onclick={() => loadPage(pageId)}>{t('common.retry')}</button></div>{/if}
@@ -280,7 +280,7 @@
   .page-viewers{margin:0;font-size:11px;line-height:1.5;color:var(--faint)}
   .page-viewers a{color:inherit;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
   .page-viewers a:hover{color:var(--muted)}
-  .page-viewers :global(.copy-value){width:20px;height:20px;vertical-align:middle}
+  .page-viewers :global(.copy-value){width:18px;height:18px;margin-left:2px;vertical-align:-4px;opacity:.75}
   .page-viewers :global(.copy-value svg){width:12px;height:12px}
   .toolbar-space{flex:1}
   .quiet-link.disabled{opacity:.4;pointer-events:none}

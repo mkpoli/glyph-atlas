@@ -488,7 +488,7 @@
   "pages.heading": "페이지",
   "pages.loading": "불러오는 중…",
   "pages.next": "다음 페이지 →",
-  "pages.source.openIn": "뷰어로 열기:",
+  "pages.source.openIn": "뷰어로 열기: ",
   "pages.source.curationViewer": "IIIF Curation Viewer ↗",
   "pages.source.universalViewer": "Universal Viewer ↗",
   "pages.source.manifest": "IIIF 매니페스트 ↗",
