@@ -212,8 +212,9 @@ count. It bumps `generation` in `glyph-atlas-v3` from G to G + 1, writes from th
   rounds' counts);
 - `corpus.json.gz`: the corpus glyphs per character, production, state and withheld flag;
 - `books.json.gz`: each book's collected crops and corpus glyphs (the statistics of the dates);
-- `gallery/`: the homepage sample, the corpus glyphs below 1 in 64 of the shuffle range and every
-  glyph of Hangul, 구결 and Tangut, records copied in, in shards by shuffle;
+- `gallery/`: the homepage sample, the corpus glyphs below 1 in 64 of the shuffle range and, for
+  Hangul, 구결 and Tangut, 32 glyphs of each character spread over the shuffle range, records copied
+  in, in shards by shuffle;
 - the `site` values `collection` (the collection's status, as `publish_collection_status.py` also
   writes between publications) and `corpus_index` (work/corpus-index/index.json).
 

@@ -146,9 +146,9 @@ export async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL
 // The homepage gallery is dealt from the publication's sample (`gallery/` in answers.py): the corpus
 // glyphs whose shuffle falls below one sixty-fourth of its range, records copied in, so a page reads one
 // or two objects. A script group deals the sample's glyphs of its category; the scripts the corpus
-// holds few glyphs of are copied whole (WHOLE_GROUPS), so their seed's point falls anywhere in the
-// shuffle range. A glyph a review has relabelled shows its row's values, and leaves a group it no
-// longer belongs to.
+// holds few glyphs of have pools of their own (WHOLE_GROUPS), up to 32 glyphs of each character, so
+// their seed's point falls anywhere in the shuffle range. A glyph a review has relabelled shows its
+// row's values, and leaves a group it no longer belongs to.
 const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol', 'tangut'];
 export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParams, timing = new Timing()): Promise<Json> {
   const group = q.get('group') && q.get('group') !== 'all' ? q.get('group')! : null;

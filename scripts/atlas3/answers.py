@@ -31,11 +31,12 @@ refused.
   folders where they are) and the corpus summary (`corpus_index`, from work/corpus-index/index.json),
   which the status pages serve; a value whose source is not here stays as published.
 - `gallery/`: the homepage sample. `sample/<k>.json.gz` holds the corpus glyphs whose shuffle falls
-  below SAMPLE_RANGE (1 in 64) and `<group>/<k>.json.gz` every glyph of a script the corpus holds few
-  of (WHOLE), each glyph with its record copied out of its pack, so a page of the gallery is one or
-  two objects where reading the records took a request each. Shard k of a pool holds the shuffles
-  from k * range // shards up, by shuffle and id; `index.json.gz` names each pool's range, shards and
-  glyphs by category.
+  below SAMPLE_RANGE (1 in 64) and `<group>/<k>.json.gz` the glyphs of a script the corpus holds few
+  of (WHOLE), at most PER_CHARACTER of each character, spread evenly over its shuffles, so one
+  common syllable cannot fill a group's page. Each glyph has its record copied out of its pack, so a
+  page of the gallery is one or two objects where reading the records took a request each. Shard k of a pool
+  holds the shuffles from k * range // shards up, by shuffle and id; `index.json.gz` names each pool's
+  range, shards and glyphs by category.
 
 A glyph's record is read once from its pack in R2 (an S3 ranged GET with the keys of the rclone
 remote) and kept in out/records.sqlite under its place, which names it for good: packs are written
@@ -123,6 +124,10 @@ SHUFFLE_RANGE = 2**31
 SAMPLE_RANGE = SHUFFLE_RANGE // 64
 SAMPLE_SHARDS = 128
 WHOLE = ("hangul", "gugyeol", "tangut")
+# A WHOLE group's pool keeps this many glyphs of each character. With the ko.wikisource scans a
+# Hangul pool of every glyph would hold 467,627, 23,815 of them 이; at 32 it holds 32,810, about the
+# size of the 1-in-64 sample, and still holds each of its 2,247 characters.
+PER_CHARACTER = 32
 # A whole group's shard holds about this many glyphs.
 WHOLE_SHARD = 256
 # Record fields no listing shows: the inspector's and the image route's (`UNLISTED` in atlas3.ts).
@@ -176,17 +181,27 @@ def books(atlas):
 
 
 def pools(atlas):
-    """The homepage sample's glyphs, (id, shuffle, category), by pool: `sample` and each WHOLE group."""
-    out = defaultdict(list)
-    for crop, shuffle, text in atlas.execute(
-            "SELECT c.id, c.shuffle, g.text FROM crops c LEFT JOIN graphemes g ON g.id = c.char WHERE c.kind = 1"):
+    """The homepage sample's glyphs, (id, shuffle, category), by pool: `sample` and each WHOLE group,
+    which keeps PER_CHARACTER glyphs of each character spread evenly over its shuffles, so a seed
+    anywhere in the range meets common characters as well as rare ones."""
+    out, grouped = defaultdict(list), defaultdict(list)
+    for crop, shuffle, char, text in atlas.execute(
+            "SELECT c.id, c.shuffle, c.char, g.text FROM crops c LEFT JOIN graphemes g ON g.id = c.char WHERE c.kind = 1 "
+            "ORDER BY c.shuffle, c.id"):
         category = category_of(text)
         if shuffle < SAMPLE_RANGE:
             out["sample"].append((crop, shuffle, category))
         if category in WHOLE:
-            out[category].append((crop, shuffle, category))
-    for glyphs in out.values():
-        glyphs.sort(key=lambda g: (g[1], g[0]))
+            grouped[char].append((crop, shuffle, category))
+    # A long run keeps the middle glyph of each of PER_CHARACTER equal stretches of its shuffle order; the
+    # first of each would pile every common character's lowest glyph into shard 0.
+    for glyphs in grouped.values():
+        n = len(glyphs)
+        out[glyphs[0][2]] += glyphs if n <= PER_CHARACTER else [
+            glyphs[(2 * i + 1) * n // (2 * PER_CHARACTER)] for i in range(PER_CHARACTER)]
+    for name in WHOLE:
+        if name in out:
+            out[name].sort(key=lambda g: (g[1], g[0]))
     return out
 
 
