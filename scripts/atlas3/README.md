@@ -410,6 +410,15 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
        .venv/bin/python scripts/export_components_cloudflare.py --input <dir>/reference-input.sqlite
        ATLAS3_DIR=<dir> .venv/bin/python scripts/atlas3/reference.py --only components [--send]
        .venv/bin/python scripts/atlas3/reference.py --check https://glyphatlas.org
+
+   The Python probe is looser than the Worker's search (it has no COMPONENT_SCAN cap), so `--check`
+   on the live site is the authority. Every `--send`, full or `--only components`, holds
+   `work/atlas-v3/out/reference.lock` in the main checkout from reading the R2 manifest to writing it
+   back, whatever `ATLAS3_DIR` names; a second sender stops at once with the lock's path.
+
+   The first full load after 2026-10-25 needs `.venv/bin/python scripts/export_components_cloudflare.py`
+   rerun into `work/atlas-v3/reference-input.sqlite` beside the other generators: the 10-22 load read
+   the component index empty, and an input without it, or with it empty, now stops the load.
 8. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
    session changes still frozen. It is created once, before the window:
    `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:

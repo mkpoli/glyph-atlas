@@ -43,7 +43,10 @@ The component objects must answer each of PROBES (日月 finds 明) before anyth
 `han_components` or `han_component_names` stops the load. `--only components` makes and sends those
 objects alone: it reads neither D1 nor the local copies, keeps every other path of the manifest as R2
 gives it, and reports to `out/reference-components-report.txt`. `--check URL` asks the site's
-`/layers/suggest` for each probe after a load.
+`/layers/suggest` for each probe after a load. The probe here is looser than the Worker's search,
+which scans at most COMPONENT_SCAN characters of the rarest component, so `--check` is the authority.
+Every `--send` takes `work/atlas-v3/out/reference.lock` in the main checkout (SEND_LOCK) from reading
+the manifest to writing it back, and stops at once while another sender holds it.
 
 A shard is the first hex digits of the SHA-256 of its key as UTF-8 text: the head's code point(s)
 (`U+3042`) for a summary, the character itself (`好`) for the IDS.
@@ -87,6 +90,7 @@ import sys
 import urllib.parse
 import urllib.request
 from collections import defaultdict
+from pathlib import Path
 
 from build import OUT, ROOT, char_text
 from load_history import built, deliver, row_statements, stamped
@@ -126,6 +130,10 @@ PLAIN_NAME = re.compile(r"^(.*IDEOGRAPH-)([0-9A-F]{4,6})$")
 # Component searches the index must answer: the typed components, and one character they find.
 PROBES = {"日月": "明", "匕矢": "彘"}
 COMPONENTS = "components/"
+# The lock every --send takes, full or --only components, from reading R2's manifest to writing it back:
+# two senders would each drop the other's paths. It lies in the main checkout's work/atlas-v3/out
+# whatever ATLAS3_DIR names, the worktree's checkout included; None finds it there.
+SEND_LOCK = None
 
 
 INPUT = None
@@ -751,11 +759,34 @@ def migrate(atlas):
     print("migration 0004 applied", flush=True)
 
 
+def send_lock_path():
+    """work/atlas-v3/out/reference.lock in the main checkout (the one git keeps its common directory in)."""
+    if SEND_LOCK is not None:
+        return SEND_LOCK
+    common = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                            capture_output=True, text=True, check=False)
+    root = Path(common.stdout.strip()).parent if common.returncode == 0 and common.stdout.strip() else ROOT
+    return root / "work" / "atlas-v3" / "out" / "reference.lock"
+
+
+def take_send_lock():
+    """The send lock, held until the process exits; another sender holding it stops this one."""
+    path = send_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    held = open(path, "w")  # noqa: SIM115 -- held until the process exits
+    try:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        sys.exit(f"another reference.py --send holds {path}; rerun once it has finished")
+    return held
+
+
 def components_only(send):
     """Make the component objects and, with `send`, upload the changed ones; no D1 read or write."""
     OUT.mkdir(parents=True, exist_ok=True)
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
+    sending = take_send_lock() if send else None  # noqa: F841 -- held until the process exits
     held = fetch_manifest()
     if send and not held:
         sys.exit(f"R2 has no {PREFIX}{MANIFEST}; load the whole reference first")
@@ -797,6 +828,7 @@ def main():
     atlas = sqlite3.connect(OUT / "atlas.sqlite") if args.send else \
         sqlite3.connect(f"file:{OUT / 'atlas.sqlite'}?mode=ro", uri=True)
     if args.send:
+        sending = take_send_lock()  # noqa: F841 -- held until the process exits
         build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")

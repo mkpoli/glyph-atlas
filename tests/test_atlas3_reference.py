@@ -1,3 +1,4 @@
+import fcntl
 import gzip
 import hashlib
 import importlib
@@ -89,6 +90,7 @@ def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES):
     monkeypatch.setattr(module, "fetch_manifest", bucket.manifest)
     monkeypatch.setattr(module, "READINGS", READINGS["path"])
     monkeypatch.setattr(module, "PROBES", probes)
+    monkeypatch.setattr(module, "SEND_LOCK", READINGS["path"].parent / "lock" / "reference.lock")
     monkeypatch.setattr(sys, "argv", ["reference.py", *flags])
     module.main()
     remote.dbs["glyph-atlas-v3"].row_factory = None
@@ -468,3 +470,29 @@ def test_the_site_check_fails_a_probe_the_search_does_not_answer(monkeypatch):
 
     monkeypatch.setattr(module.urllib.request, "urlopen", urlopen)
     assert module.check_site("https://example.test/") == ["匕矢: 彘 not among no items"]
+
+
+@pytest.mark.parametrize("flags", [("--send",), ("--only", "components", "--send")])
+def test_a_second_sender_stops_while_another_holds_the_send_lock(layout, monkeypatch, flags):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")])
+    bucket = load(remote, monkeypatch, "--send")
+    puts = bucket.puts
+    lock = root / "lock" / "reference.lock"
+    with open(lock, "w") as other:
+        fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(SystemExit, match="another reference.py --send holds"):
+            load(remote, monkeypatch, *flags, bucket=bucket)
+    assert bucket.puts == puts
+    # A dry run takes no send lock.
+    with open(lock, "w") as other:
+        fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        load(remote, monkeypatch, "--only", "components", bucket=bucket)
+
+
+def test_the_send_lock_lies_in_the_main_checkout(monkeypatch):
+    sys.modules.pop("reference", None)
+    module = importlib.import_module("reference")
+    path = module.send_lock_path()
+    assert path.parts[-4:] == ("work", "atlas-v3", "out", "reference.lock")
+    assert (path.parents[3] / ".git").is_dir()
