@@ -147,7 +147,7 @@ describe('users and what they wrote, in two databases', () => {
     expect(atlas.query('SELECT user,crop,at FROM favourites ORDER BY crop').all()).toEqual([
       { user: kept, crop: 7, at: 1 }, { user: kept, crop: 8, at: 1 }, { user: kept, crop: 9, at: 2 }]);
   });
-  it('bring an anonymous user\'s old reviewer ids only up to the account\'s five, the earliest first', async () => {
+  it('bring all of an anonymous user\'s old reviewer ids', async () => {
     const { atlas, accounts, call, jar, code, signIn } = setup('https://cap.glyphatlas.org');
     const kept = await signIn('kept@example.org');
     atlas.exec(`INSERT INTO actors(key,user,via,at) VALUES('reviewer-00000001','${kept}','legacy',1),('reviewer-00000002','${kept}','legacy',1),('reviewer-00000003','${kept}','legacy',1)`);
@@ -158,8 +158,8 @@ describe('users and what they wrote, in two databases', () => {
     expect(await call('/email-otp/send-verification-otp', { email: 'kept@example.org', type: 'sign-in' }, '192.0.2.11')).toBe(200);
     expect(await call('/sign-in/email-otp', { email: 'kept@example.org', otp: code() }, '192.0.2.11')).toBe(200);
     expect(atlas.query("SELECT key,user FROM actors WHERE key LIKE 'reviewer-0000000_' AND key>'reviewer-00000009' ORDER BY key").all()).toEqual([
-      { key: 'reviewer-0000000a', user: kept }, { key: 'reviewer-0000000b', user: kept }, { key: 'reviewer-0000000c', user: anon }]);
-    expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user=? AND via='legacy'").get(kept)).toEqual({ n: 5 });
+      { key: 'reviewer-0000000a', user: kept }, { key: 'reviewer-0000000b', user: kept }, { key: 'reviewer-0000000c', user: kept }]);
+    expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user=? AND via='legacy'").get(kept)).toEqual({ n: 6 });
     expect(atlas.query('SELECT user FROM actors WHERE key=?').get(anon)).toEqual({ user: kept });
   });
   it('keep the stars of a sign-in that lands on the anonymous user itself, and record no link', async () => {
