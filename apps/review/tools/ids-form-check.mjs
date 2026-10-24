@@ -278,14 +278,32 @@ try {
   await shoot('ids-from-tree', '.ids-search')
   await browser.evaluate(`${fromRow('⿱龴疋', 'node')}.querySelector('.from-take').click()`)
   await becomes('⿰⿱龴疋木')
+  // ArrowRight opens a closed part, then reaches the swaps beside it; Enter takes the swap. An
+  // operator key pressed on a row is the tree's, so the sequence keeps its operator.
+  await browser.evaluate(`${fromRow('矢', 'char')}.focus()`)
+  await browser.key('1')
+  await Bun.sleep(150)
+  assert(await value() === '⿰⿱龴疋木', `an operator key on the tree changed the sequence: ${await value()}`)
+  await browser.key('ArrowRight')
+  await browser.waitFor(`${fromRow('矢', 'char')}.getAttribute('aria-expanded') === 'true'`)
+  await browser.key('ArrowRight')
+  await browser.waitFor(`!!${fromRow('矢', 'char')}.querySelector('.from-swap.active')`)
+  const swapped = await browser.evaluate(`${fromRow('矢', 'char')}.querySelector('.from-swap.active').textContent`)
+  await browser.key('Enter')
+  await becomes(`⿰${swapped}木`)
   assert(!errors.length, 'page errors: ' + errors.join('; '))
-  console.log('PASS 匕 taken from 疑\'s tree by the keyboard, and ⿱龴疋 taken whole')
+  console.log('PASS 匕 taken from 疑\'s tree by the keyboard, ⿱龴疋 taken whole, a swap reached by ArrowRight')
 
   await fromType('匕矢')
   await browser.waitFor(`!!document.querySelector('dialog[open] .ids-from .from-hit') || !!document.querySelector('dialog[open] .ids-from .from-containing [role="status"]:not(:empty)') && !document.querySelector('dialog[open] .ids-from .from-containing')?.textContent.includes('…')`, 30000)
   const hit = await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-hit')?.textContent ?? null`)
   assert(hit, 'no character was found containing 匕 and 矢: ' + await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-containing')?.textContent`))
+  // A typed character closed by the reader stays closed when a found one is opened above it.
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-row[data-key="t0"] .from-toggle').click()`)
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-from .from-row[data-key="t0"]').getAttribute('aria-expanded') === 'false'`)
   await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-hit').click()`)
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-from .from-row[data-key="x${hit}"]')`)
+  assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-row[data-key="t0"]').getAttribute('aria-expanded')`) === 'false', 'opening a found character reopened a typed one')
   // The first part in the opened character's own tree, the rows before the next character typed.
   const leaf = `(() => { const rows = [...document.querySelectorAll('dialog[open] .ids-from .from-row')], at = rows.findIndex(r => r.dataset.key === 'x${hit}')
     const end = rows.findIndex((r, k) => k > at && r.getAttribute('aria-level') === '1')
