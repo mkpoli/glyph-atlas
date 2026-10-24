@@ -279,16 +279,30 @@ def test_the_homepage_sample_copies_each_record_once_and_shards_it_by_shuffle(co
     assert reads == []
 
 
-def test_a_group_pool_keeps_the_glyphs_of_lowest_shuffle_of_each_character(corpus_layout, monkeypatch):
+def test_a_group_pool_keeps_a_few_glyphs_of_each_character_and_the_sample_all(corpus_layout, monkeypatch):
     root, publish, packs = corpus_layout
-    # Kana stands in for a group copied by character: か has two glyphs, the unread one none.
-    answers(publish, monkeypatch, packs=packs, sample=0, WHOLE=("hangul", "kana"), PER_CHARACTER=1)
+    # Kana stands in for a group copied by character: か has two glyphs, 한 one.
+    answers(publish, monkeypatch, packs=packs, sample=2**31, WHOLE=("hangul", "kana"), PER_CHARACTER=1)
     index = answer(root, "gallery/index.json.gz")["pools"]
     assert index["kana"]["glyphs"] == 1 and index["hangul"]["glyphs"] == 1
-    glyph, atlas = ids(root), sqlite3.connect(root / "out" / "atlas.sqlite")
-    shuffles = dict(atlas.execute("SELECT id, shuffle FROM crops WHERE kind = 1"))
-    lowest = min((glyph["codh:k1"], glyph["codh:k2"]), key=lambda c: (shuffles[c], c))
-    assert [e[0] for e in answer(root, "gallery/kana/0.json.gz")["entries"]] == [lowest]
+    assert index["sample"]["glyphs"] == 4
+    glyph = ids(root)
+    assert [e[0] for e in answer(root, "gallery/kana/0.json.gz")["entries"]] in ([glyph["codh:k1"]], [glyph["codh:k2"]])
+    time.sleep(1.1)  # a publication is named by its second
+    answers(publish, monkeypatch, packs=packs, sample=2**31, WHOLE=("hangul", "kana"), PER_CHARACTER=2)
+    assert answer(root, "gallery/index.json.gz")["pools"]["kana"]["glyphs"] == 2
+
+
+def test_a_character_s_kept_glyphs_spread_over_its_shuffles():
+    rows = [(i, i * 1000, 7, "한") for i in range(100)]
+
+    class Atlas:
+        def execute(self, sql):
+            return iter(rows)
+    pools_module = module()
+    pools_module.PER_CHARACTER = 4
+    kept = [g[1] for g in pools_module.pools(Atlas())["hangul"]]
+    assert kept == [12000, 37000, 62000, 87000]
 
 
 def test_a_record_read_from_another_place_stops_the_publication_before_the_bump(corpus_layout, monkeypatch):

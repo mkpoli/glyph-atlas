@@ -32,9 +32,9 @@ refused.
   which the status pages serve; a value whose source is not here stays as published.
 - `gallery/`: the homepage sample. `sample/<k>.json.gz` holds the corpus glyphs whose shuffle falls
   below SAMPLE_RANGE (1 in 64) and `<group>/<k>.json.gz` the glyphs of a script the corpus holds few
-  of (WHOLE), at most PER_CHARACTER of each character, those of lowest shuffle, so one common
-  syllable cannot fill a group's page. Each glyph has its record copied out of its pack, so a page of
-  the gallery is one or two objects where reading the records took a request each. Shard k of a pool
+  of (WHOLE), at most PER_CHARACTER of each character, spread evenly over its shuffles, so one
+  common syllable cannot fill a group's page. Each glyph has its record copied out of its pack, so a
+  page of the gallery is one or two objects where reading the records took a request each. Shard k of a pool
   holds the shuffles from k * range // shards up, by shuffle and id; `index.json.gz` names each pool's
   range, shards and glyphs by category.
 
@@ -182,17 +182,25 @@ def books(atlas):
 
 def pools(atlas):
     """The homepage sample's glyphs, (id, shuffle, category), by pool: `sample` and each WHOLE group,
-    which keeps the PER_CHARACTER glyphs of lowest shuffle of each character."""
-    out, kept = defaultdict(list), Counter()
+    which keeps PER_CHARACTER glyphs of each character spread evenly over its shuffles, so a seed
+    anywhere in the range meets common characters as well as rare ones."""
+    out, grouped = defaultdict(list), defaultdict(list)
     for crop, shuffle, char, text in atlas.execute(
             "SELECT c.id, c.shuffle, c.char, g.text FROM crops c LEFT JOIN graphemes g ON g.id = c.char WHERE c.kind = 1 "
             "ORDER BY c.shuffle, c.id"):
         category = category_of(text)
         if shuffle < SAMPLE_RANGE:
             out["sample"].append((crop, shuffle, category))
-        if category in WHOLE and kept[char] < PER_CHARACTER:
-            kept[char] += 1
-            out[category].append((crop, shuffle, category))
+        if category in WHOLE:
+            grouped[char].append((crop, shuffle, category))
+    # A long run keeps the middle glyph of each of PER_CHARACTER equal stretches of its shuffle order; the
+    # first of each would pile every common character's lowest glyph into shard 0.
+    for glyphs in grouped.values():
+        n = len(glyphs)
+        out[glyphs[0][2]] += glyphs if n <= PER_CHARACTER else [
+            glyphs[(2 * i + 1) * n // (2 * PER_CHARACTER)] for i in range(PER_CHARACTER)]
+    for name in WHOLE:
+        out[name].sort(key=lambda g: (g[1], g[0]))
     return out
 
 
