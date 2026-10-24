@@ -158,5 +158,8 @@ describe('immutable review export', () => {
     add(1, 16777217, 1, 'old-1');
     (env as any).MEDIA.get = async () => { throw new Error('R2 unavailable'); };
     await expect(reviewsPage(env, new URLSearchParams())).rejects.toThrow('R2 unavailable');
+    // A body R2 breaks off mid-read is the same failure, never a damaged object.
+    (env as any).MEDIA.get = async () => ({ body: new ReadableStream({ pull(c) { c.error(new Error('R2 stream reset')); } }) });
+    await expect(reviewsPage(env, new URLSearchParams())).rejects.toThrow('R2 stream reset');
   });
 });

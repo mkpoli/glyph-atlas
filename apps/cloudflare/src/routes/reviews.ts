@@ -72,7 +72,10 @@ export async function reviewsPage(env: Env, q: URLSearchParams) {
   const bare = page.filter(row => unavailable.has(row.id));
   const revs = bare.length ? (await env.ATLAS.prepare('SELECT p.id,p.rev FROM json_each(?) j JOIN pages p ON p.id=j.value')
     .bind(JSON.stringify([...new Set(bare.map(row => pageOf(row.crop)))])).all<{ id: number; rev: number }>()).results : [];
-  const bundles = new Map(await Promise.all(revs.map(async p => [p.id, await bundle(env, p.id, p.rev)] as const)));
+  const bundles = new Map<number, Awaited<ReturnType<typeof bundle>>>();
+  for (let offset = 0; offset < revs.length; offset += 8)
+    for (const [id, read] of await Promise.all(revs.slice(offset, offset + 8).map(async p => [p.id, await bundle(env, p.id, p.rev)] as const)))
+      bundles.set(id, read);
   const reviews: Json[] = [];
   for (const row of page) {
     const state = { crop: publicId(row.crop), current: !row.superseded, current_revision: row.current_revision };

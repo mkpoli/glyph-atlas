@@ -18,7 +18,9 @@ export async function storeReviewEvidence(env: Env, reviews: Record<string, Json
  *  that do not unzip or parse included, is a 503 naming the object, so a caller retries or stops. */
 async function stored(object: { body: ReadableStream }, what: string, hash?: string): Promise<Record<string, Json>> {
   let bytes: ArrayBuffer, saved: unknown;
-  try { bytes = await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() }
+  // Read first: a stream R2 breaks off is R2 failing to answer, never a damaged object.
+  const zipped = await new Response(object.body).arrayBuffer();
+  try { bytes = await new Response(new Response(zipped).body!.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() }
   catch { throw new Problem(503, `The ${what} could not be read.`) }
   if (hash !== undefined && await digest(bytes) !== hash) throw new Problem(503, 'Review evidence failed its integrity check.');
   try { saved = JSON.parse(new TextDecoder().decode(bytes)) }
