@@ -72,7 +72,7 @@
     if (dialog ? !dialog.contains(root) : root.closest('dialog')) return
     // Escape closes the picker, from its search too, before it can close the dialog.
     if (event.key === 'Escape' && picking) { event.preventDefault(); picking = false; query = ''; composing = false; addButton?.focus(); return }
-    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search')) return
+    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search, .ids-composer')) return
     const index = '1234567890'.indexOf(event.key)
     if (index >= 0 && bar[index]) { event.preventDefault(); choose(bar[index].char) }
   }

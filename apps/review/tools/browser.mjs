@@ -16,6 +16,9 @@ import { chromePath } from './harness.mjs'
 const KEY_CODES = {
   Enter: { code: 'Enter', keyCode: 13, text: '\r' },
   Escape: { code: 'Escape', keyCode: 27, text: '' },
+  Tab: { code: 'Tab', keyCode: 9, text: '' },
+  Backspace: { code: 'Backspace', keyCode: 8, text: '' },
+  Delete: { code: 'Delete', keyCode: 46, text: '' },
   ' ': { code: 'Space', keyCode: 32, text: ' ' },
   ArrowUp: { code: 'ArrowUp', keyCode: 38, text: '' },
   ArrowDown: { code: 'ArrowDown', keyCode: 40, text: '' },

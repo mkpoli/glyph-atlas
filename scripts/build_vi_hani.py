@@ -44,7 +44,7 @@ EXPAND = (("tr. {page}", "trang {page}"), ("{seconds}s ", "{seconds} giây "))
 SOURCES = {"wiktionary", "unihan", "joined", "reviewer"}
 # Latin words that are names, keys, file formats, licence codes or loanwords written in Latin letters
 # (email, PIN, the address you@example.org), and stay in Latin letters.
-KEEP = {"CODH", "U", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "IDS", "Ctrl", "Esc", "Home", "Enter", "Shift",
+KEEP = {"CODH", "U", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "IDS", "Ctrl", "Esc", "Home", "Enter", "Shift", "Tab", "Backspace", "ASCII", "LR", "UD", "ud",
         "click", "qwerty", "zi", "tools", "Wikipedia", "Hentaigana", "roneo", "scan", "Gothic", "B", "C", "J", "K", "M", "S", "V", "W", "X", "Z", "n", "s",
         "CC", "BY", "SA", "email", "PIN", "you", "example", "org", "Gravatar",
         "Cloudflare", "Web", "Analytics", "Email", "Service", "GitHub", "Google", "Discord", "LINE", "Kakao", "IP", "cookie",
@@ -60,6 +60,8 @@ FONTS = {
 }
 
 HAN = r"㐀-䶿一-鿿豈-﫿\U00020000-\U0003ffff"
+# What joins Han text the way a Han character does: the description operators, ？ and full-width marks.
+HANLIKE = HAN + "⿰-⿿㇯〾？，。：；、"
 VIETNAMESE = "A-Za-zÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõùúýĂăĐđĨĩŨũƠơƯưẠ-ỹ"
 WORD = re.compile(rf"\{{\w+\}}|[{VIETNAMESE}]+")
 
@@ -131,13 +133,15 @@ def spell(text: str, table: dict[str, str], missing: set[str], used: set[str] | 
         result = result.replace(" & ", " 吧 ")
         result = re.sub(r" ?\((.*?)\)", r"（\1）", result)
         for ascii_mark, wide in ((",", "，"), ("?", "？"), (":", "："), (";", "；"), (".", "。")):
-            result = re.sub(rf"(?<=[{HAN}）\w}}]) ?{re.escape(ascii_mark)}( |$)", wide, result)
+            result = re.sub(rf"(?<=[{HANLIKE}）\w}}]) ?{re.escape(ascii_mark)}( |$)", wide, result)
         # No space where Han characters meet each other, Latin letters, digits or placeholders.
-        result = re.sub(rf"(?<=[{HAN}]) (?=[{HAN}{{A-Za-z0-9])|(?<=[{HAN}}}A-Za-z0-9%）]) (?=[{HAN}])", "", result)
+        result = re.sub(rf"(?<=[{HANLIKE}]) (?=[{HANLIKE}{{A-Za-z0-9])|(?<=[{HANLIKE}}}A-Za-z0-9%）]) (?=[{HANLIKE}])", "", result)
         # A quotation joins the Han text around it the same way: 塳割“敢”.
         result = re.sub(rf"(?<=[{HAN}]) (?=“)|(?<=”) (?=[{HAN}])", "", result)
         # Key names written as symbols join the same way: ⌫挅, 或⌘/Ctrl, ←→塳割, qwerty…底.
         result = re.sub(rf"(?<=[{HAN}]) (?=[⌫⌘])|(?<=[⌫…]) (?=[{HAN}])|(?<=←→) (?=[{HAN}])", "", result)
+        # So do the - and = keys: 0，-吧=撻.
+        result = re.sub(rf"(?<=[{HANLIKE}]) (?=[-=] )|(?<=[ {HANLIKE}][-=]) (?=[{HANLIKE}])", "", result)
     return result.strip()
 
 
