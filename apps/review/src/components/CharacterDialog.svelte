@@ -2,6 +2,7 @@
   import ContributionTerms from './ContributionTerms.svelte'
   import ProductionBadge, { productionLabel } from './ProductionBadge.svelte'
   import SourceCredit from './SourceCredit.svelte'
+  import { pageLink } from '../lib/licence.js'
   import StyleField from './StyleField.svelte'
   import CropWord from './CropWord.svelte'
   import CropForm from './CropForm.svelte'
@@ -329,7 +330,7 @@
       <!-- The crop alone, in a box of one size for every crop, then the page around it further down. -->
       <div class="inspector-page">
         <div class="inspector-figure" bind:this={figure}>
-          {#key data.image}<CropContext item={data} detail={data} cropBox={drawn ? toSource(drawn) : null} disabled={busy} editing={editingBox} onedit={edited} onexit={endCrop} describedby="crop-keys"
+          {#key data.image}<CropContext item={data} detail={data} page={pageLink(data, false)} cropBox={drawn ? toSource(drawn) : null} disabled={busy} editing={editingBox} onedit={edited} onexit={endCrop} describedby="crop-keys"
             onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}
           {#if editingBox}<p class="crop-keys" id="crop-keys">{t('character.crop.keys')}<button type="button" disabled={busy} onclick={endCrop}>{t('character.crop.doneAdjusting')}</button></p>{/if}
         </div>

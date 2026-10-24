@@ -2,8 +2,8 @@
   // Where a crop's image comes from and on what terms, in one quiet line: the work, its holder and
   // licence, when its copy was made, who gave the label, the page it was cut from, and the record that
   // states the rights.
-  import { t, localize } from '../lib/i18n.svelte.js'
-  import { licenceName, holderName, sourceLinks } from '../lib/licence.js'
+  import { t } from '../lib/i18n.svelte.js'
+  import { licenceName, holderName, sourceLinks, pageLink } from '../lib/licence.js'
   import DateMark from './DateMark.svelte'
   // `omit` is a link the view offers on its own, which the line then leaves out.
   let { item, corpus = false, omit = null } = $props()
@@ -14,9 +14,7 @@
     : [item.source, holderName(item.attribution || item.holder), licenceName(item.licence)]).filter(Boolean))
   const credit = $derived(corpus && item.text_attribution ? t('corpus.labelCredit', { credit: item.text_attribution }) : null)
   const linked = $derived(sourceLinks(item, corpus))
-  // The page view of the page a local crop was cut from, with the crop marked on it.
-  const page = $derived(!corpus && item.page_id && item.id ? { href: localize('/pages/' + encodeURIComponent(item.page_id) + '?crop=' + encodeURIComponent(item.id)),
-    label: item.page_number ? t('tile.page', { page: item.page_number }) : t('nav.pages'), internal: true } : null)
+  const page = $derived(pageLink(item, corpus))
   const links = $derived([page, linked.record, linked.honkoku].filter(link => link && link.href !== omit))
 </script>
 
