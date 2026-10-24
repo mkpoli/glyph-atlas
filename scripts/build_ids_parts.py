@@ -19,9 +19,10 @@ Each part carries:
   the forms differ). A part Unihan lacks gets the sum over the leaves of its first compound sequence
   whose leaves all have counts, marked derived; a CJK stroke counts 1 and is marked derived; anything
   else stays null.
-- `first`: the class of its first stroke, 横 豎 撇 點 or 折, where KanjiVG records it: the first stroke of
-  the character's own KanjiVG entry, or else of every KanjiVG group drawing the character as a whole
-  component (`kvg:element`, no `kvg:part`), when they agree. A CJK stroke is classed as itself. A bare
+- `first`: the class of its first stroke, 横 豎 撇 點 or 折, where every KanjiVG witness agrees: the
+  character's own entry, every group drawing it whole (`kvg:element`, not marked part, partial or
+  variant), and every character whose sequence starts with it under ⿰ ⿱ ⿸ (𠂇 starts with 一 in 左
+  and with 丿 in 右, so it has none). A CJK stroke is classed as itself. A bare
   stroke type maps to the five classes by the table `CLASS` (an editorial table, after the five
   classes Chinese dictionaries order strokes by: 提 counts as 横, 豎鉤 as 豎, 捺 and 提捺 as 點, every
   turning stroke as 折, and ㇣ as none). A suffixed type (㇑a, which KanjiVG gives to the dot of 亠 and
@@ -315,34 +316,65 @@ def stroke_counts(
     return {name: count(name) for name in names}
 
 
-def kanjivg_first(path: Path) -> dict[str, str]:
-    """char → class of its first stroke, from its own entry, else from groups that agree."""
+# Operators whose first operand is written first in the characters they describe (⿺ is not: 辶
+# comes last), so a character spelled ⿸𠂇X starts as its 𠂇 does.
+LEADING = set("⿰⿱⿸")
+
+
+def kanjivg_first(path: Path, ids: dict[str, list[str]]) -> dict[str, str]:
+    """char → class of its first stroke, where every KanjiVG witness of it agrees.
+
+    A component's first stroke can depend on the character it stands in: 𠂇 writes 一 first in 左 and
+    友 but 丿 first in 右 有 布. The witnesses are the character's own entry, every group drawing it
+    whole, and every character with an entry whose sequence starts with it (⿰ ⿱ ⿸ and the component
+    as the first operand), whose own first stroke is then the component's. KanjiVG names no 𠂇 group
+    in 右, so only these characters show that 𠂇 starts two ways. Any disagreement gives no class. A
+    witness whose first stroke has no class (a suffixed type such as ㇑a) is left out, and so is a
+    group KanjiVG marks as drawing part of the component or a variant shape of it.
+    """
     own: dict[str, str | None] = {}
-    grouped: dict[str, set[str | None]] = defaultdict(set)
+    witnesses: dict[str, list[str | None]] = defaultdict(list)
 
     def first_type(node) -> str | None:
         for path_node in node.iter("path"):
             return path_node.get(f"{KVG}type")
         return None
 
+    def cls(node) -> str | None:
+        kind = first_type(node)
+        return type_class(kind) if kind else None
+
     root = ET.fromstring(gzip.decompress(path.read_bytes()))
     for kanji in root.iter("kanji"):
-        ident = kanji.get("id", "")
-        hexcode = ident.removeprefix("kvg:kanji_")
+        hexcode = kanji.get("id", "").removeprefix("kvg:kanji_")
         if not re.fullmatch(r"[0-9a-f]{5}", hexcode):
             continue
         char = chr(int(hexcode, 16))
-        kind = first_type(kanji)
-        own[char] = type_class(kind) if kind else None
+        own[char] = cls(kanji)
+        witnesses[char].append(own[char])
         for group in kanji.iter("g"):
             element = group.get(f"{KVG}element")
-            if element and len(element) == 1 and group.get(f"{KVG}part") is None and group is not kanji:
-                kind = first_type(group)
-                grouped[element].add(type_class(kind) if kind else None)
-    out = {char: value for char, value in own.items() if value}
-    for char, found in grouped.items():
-        if char not in own and len(found) == 1 and (value := next(iter(found))):
-            out[char] = value
+            # A group that draws only some of the component (kvg:part, kvg:partial) or a variant shape
+            # of it (kvg:variant) says nothing of how the component itself starts.
+            whole = all(group.get(f"{KVG}{name}") is None for name in ("part", "partial", "variant"))
+            if element and len(element) == 1 and whole and group is not kanji:
+                witnesses[element].append(cls(group))
+    for char, sequences in ids.items():
+        if char not in own:
+            continue
+        for sequence in sequences:
+            if (
+                len(sequence) > 1
+                and sequence[0] in LEADING
+                and sequence[1] not in OPERATORS
+                and sequence[1] != char
+            ):
+                witnesses[sequence[1]].append(own[char])
+    out = {}
+    for char, found in witnesses.items():
+        classes = {value for value in found if value}
+        if len(classes) == 1:
+            out[char] = classes.pop()
     return out
 
 
@@ -461,7 +493,7 @@ def main(argv: list[str] | None = None) -> int:
         ids,
         hfhchan_atomic(hfhchan_path.read_text(encoding="utf-8")),
         unihan_fields(unihan_path),
-        kanjivg_first(kanjivg_path),
+        kanjivg_first(kanjivg_path, ids),
     )
     document = {
         "columns": ["part", "uses", "strokes", "derived", "first", "kind"],

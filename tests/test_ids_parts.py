@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import importlib.util
 import sys
 from pathlib import Path
@@ -101,3 +102,41 @@ def test_kanjivg_types_map_to_five_classes():
     # A suffixed type names strokes of more than one class (㇑a is the dot of 亠 and the vertical of 山).
     assert build.type_class("㇑a") is None and build.type_class("㇐b/㇔") is None
     assert build.type_class("６") is None
+
+
+def _kanjivg(tmp_path, entries: dict[str, str]) -> Path:
+    """A KanjiVG release file of `entries`: char → the inner XML of its <kanji> element."""
+    ns = 'xmlns:kvg="http://kanjivg.tagaini.net"'
+    body = "".join(
+        f'<kanji id="kvg:kanji_{ord(char):05x}">{inner}</kanji>' for char, inner in entries.items()
+    )
+    path = tmp_path / "kanjivg.xml.gz"
+    path.write_bytes(gzip.compress(f"<kanjivg {ns}>{body}</kanjivg>".encode()))
+    return path
+
+
+def _path(kind: str) -> str:
+    return f'<path kvg:type="{kind}" d="M0,0"/>'
+
+
+def test_a_part_that_starts_two_ways_has_no_first_stroke(tmp_path):
+    # 𠂇's own entry starts with 一, as 左 does; 右 is spelled ⿸𠂇口 and starts with 丿.
+    path = _kanjivg(
+        tmp_path,
+        {
+            "𠂇": _path("㇐") + _path("㇒"),
+            "左": _path("㇐") + _path("㇒") + _path("㇐"),
+            "右": _path("㇒") + _path("㇐") + _path("㇑"),
+            "口": _path("㇑") + _path("㇕") + _path("㇐"),
+            # A variant drawing of 口 starting with a dot is no witness against 口's vertical.
+            "品": f'<g kvg:element="口" kvg:variant="true">{_path("㇔")}</g>',
+            # 亠's own first stroke is a suffixed type; 交, spelled ⿱亠父, starts with a dot.
+            "亠": _path("㇑a") + _path("㇐"),
+            "交": _path("㇔") + _path("㇐"),
+        },
+    )
+    ids = {"左": ["⿸𠂇工"], "右": ["⿸𠂇口"], "交": ["⿱亠父"]}
+    first = build.kanjivg_first(path, ids)
+    assert "𠂇" not in first
+    assert first["左"] == "横" and first["右"] == "撇"
+    assert first["口"] == "豎" and first["亠"] == "點"
