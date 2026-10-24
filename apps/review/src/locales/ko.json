@@ -191,6 +191,7 @@
   "explore.layout.label": "배열 방식",
   "explore.layout.collage": "콜라주",
   "explore.layout.grid": "격자",
+  "explore.zoom.label": "크기",
   "explore.heading.atlas": "글자 아틀라스",
   "explore.heading.flagged": "수정이 필요한 글자",
   "explore.meta.characters.one": "글자 {count}개",
