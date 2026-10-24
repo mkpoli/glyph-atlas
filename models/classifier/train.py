@@ -289,8 +289,11 @@ def ranked(logits: np.ndarray, *, k: int = 1, temperature: float = 1.0) -> tuple
     for start in range(0, rows, CHUNK):
         piece = values[start : start + CHUNK].astype(np.float64) / temperature
         top = np.argpartition(-piece, k - 1, axis=-1)[:, :k] if k < piece.shape[-1] else np.argsort(-piece, axis=-1)
+        # tied scores keep the lowest class first, as argmax does; bf16 logits tie often enough to matter
+        top = np.sort(top, axis=-1)
         scores = np.take_along_axis(piece, top, axis=-1)
         top = np.take_along_axis(top, np.argsort(-scores, axis=-1, kind="stable"), axis=-1)
+        top[:, 0] = piece.argmax(axis=-1)
         best = np.take_along_axis(piece, top[:, :1], axis=-1)
         order[start : start + CHUNK] = top
         confidence[start : start + CHUNK] = 1.0 / np.exp(piece - best).sum(axis=-1)

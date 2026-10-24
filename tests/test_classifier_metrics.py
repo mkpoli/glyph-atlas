@@ -58,3 +58,14 @@ def test_temperature_fitted_in_pieces_matches_a_whole_fit(monkeypatch):
     monkeypatch.setattr(train, "CHUNK", 700)
     fitted, _ = train.fit_temperature(logits, labels)
     assert fitted == pytest.approx(float(torch.exp(temperature)), rel=1e-6)
+
+
+def test_tied_scores_predict_the_lowest_class_as_argmax_does():
+    rng = np.random.default_rng(2)
+    logits = rng.integers(0, 4, size=(2000, 50)).astype(np.float32)
+    labels = rng.integers(0, 50, 2000)
+    order, _ = train.ranked(logits, k=5)
+    assert (order[:, 0] == logits.argmax(axis=-1)).all()
+    assert all(len(set(row)) == 5 for row in order)
+    report = train.metrics_for(logits, labels, classes=50)
+    assert report["accuracy_all"] == pytest.approx(np.mean(logits.argmax(axis=-1) == labels))
