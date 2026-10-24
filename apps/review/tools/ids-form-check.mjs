@@ -249,9 +249,15 @@ try {
   assert(await value() === '⿰＋木', `an operator key on the palette changed the sequence: ${await value()}`)
   await browser.key('Enter')
   await becomes(`⿰${palettePart}木`)
+  // Ctrl+Z on the palette undoes the pick, and the focus stays on the palette.
+  await browser.key('z', { ctrl: true })
+  await becomes('⿰＋木')
+  assert(await browser.evaluate(`!!document.activeElement?.closest('.ids-pick-panel')`), 'undo moved the focus out of the palette')
+  await browser.key('z', { ctrl: true, shift: true })
+  await becomes(`⿰${palettePart}木`)
   await shoot('ids-parts-tab', '.ids-search')
   assert(!errors.length, 'page errors: ' + errors.join('; '))
-  console.log(`PASS ${palettePart} picked from the parts palette tab, and its keys are its own`)
+  console.log(`PASS ${palettePart} picked from the parts palette tab, its keys its own, undo and redo from it`)
   await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][0].click()`)
 
   await typeSequence('⿰𠤕⿱龴疋')
