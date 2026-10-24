@@ -11,9 +11,12 @@
   // that operator's place and keeps its parts. × takes one level away, keeping its first filled part.
   // A component found, typed into the part field or offered by the variant table replaces the chosen
   // part, and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
+  // The part picker under the tree has two tabs: a component found by name or reading, and the
+  // parts palette (IdsParts).
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
   import CharacterSearch from './CharacterSearch.svelte'
+  import IdsParts from './IdsParts.svelte'
   import { CODES, KEYS, OPERATORS, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator } from '../lib/ids.js'
   import { structure } from '../lib/layers.js'
@@ -159,6 +162,8 @@
   function component(item) { query = ''; if (!disabled) place(item.char) }
   function swap(item) { place(parse(item.char).tree ?? item.char) }
   function split(sequence) { const found = parse(sequence, { open: true }); if (!found.problem) place(found.tree) }
+  // A part taken from a picker, as written.
+  function take(written) { const found = parse(written, { open: true }); if (!disabled && !found.problem && found.tree !== null) place(found.tree) }
   // The descriptions a component can be split into, those the editor can read.
   const splits = $derived(typeof picked === 'string' ? (own[picked] ?? []).filter(sequence => !parse(sequence, { open: true }).problem) : [])
   function choose(path) {
@@ -192,7 +197,8 @@
   // the page's own shortcuts (a crop's review letters, the forms page's undo) leave it alone.
   function keydown(event) {
     if (event.isComposing || event.key === 'Process' || disabled) return
-    if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
+    // Keys a picker handles, or pressed inside one (its tabs, its grid), are the picker's own.
+    if (event.defaultPrevented || event.target.closest?.('input, textarea, select, [contenteditable="true"], .ids-pick-tabs, .ids-pick-panel')) return
     const command = event.ctrlKey || event.metaKey
     if (command && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); focusChosen(); return }
     if (command && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); focusChosen(); return }
@@ -215,6 +221,21 @@
     if (event.key.length === 1 && event.key !== ' ') { event.preventDefault(); slot?.focus(); piece = event.key; tick().then(() => slot?.setSelectionRange(piece.length, piece.length)) }
   }
   function use() { if (usable && !disabled) onuse(whole) }
+
+  // The part picker's tabs: a component found by name or reading, and the parts palette. Arrow keys,
+  // Home and End move between them.
+  const uid = $props.id()
+  const PICKERS = ['find', 'parts']
+  let picker = $state('find'), opened = $state(new Set(['find'])), pickButtons = $state([])
+  function open(tab) { picker = tab; if (!opened.has(tab)) opened = new Set([...opened, tab]) }
+  function pickKey(event, index) {
+    const last = PICKERS.length - 1
+    const to = { ArrowRight: index === last ? 0 : index + 1, ArrowLeft: index === 0 ? last : index - 1, Home: 0, End: last }[event.key]
+    if (to === undefined) return
+    event.preventDefault()
+    open(PICKERS[to])
+    pickButtons[to]?.focus()
+  }
 </script>
 
 {#snippet icon(op, size)}
@@ -301,7 +322,22 @@
   {/if}
   <div class="ids-search">
     <span class="ids-title">{chosen && picked !== null ? t('form.ids.replace', { part: write(picked) }) : t('form.ids.insert')}</span>
-    <CharacterSearch compact codePoints bind:value={query} label={t('form.ids.search')} placeholder={t('search.placeholder')} onselect={component} />
+    <div class="ids-pick-tabs" role="tablist" aria-label={t('form.ids.pick.label')}>
+      {#each PICKERS as tab, index (tab)}
+        <button type="button" role="tab" id={`${uid}-pick-${tab}`} aria-controls={`${uid}-pick-${tab}-panel`} bind:this={pickButtons[index]}
+          class:active={picker === tab} aria-selected={picker === tab} tabindex={picker === tab ? 0 : -1}
+          onclick={() => open(tab)} onkeydown={event => pickKey(event, index)}>{t(`form.ids.pick.${tab}`)}</button>
+      {/each}
+    </div>
+    <!-- A picker once opened stays, hidden while another is shown, so what was typed in it is kept. -->
+    {#each PICKERS as tab (tab)}
+      {#if opened.has(tab)}
+        <div class="ids-pick-panel" role="tabpanel" id={`${uid}-pick-${tab}-panel`} aria-labelledby={`${uid}-pick-${tab}`} hidden={picker !== tab}>
+          {#if tab === 'find'}<CharacterSearch compact codePoints bind:value={query} label={t('form.ids.search')} placeholder={t('search.placeholder')} onselect={component} />
+          {:else}<IdsParts {disabled} onpick={take} />{/if}
+        </div>
+      {/if}
+    {/each}
   </div>
   <div class="ids-actions">
     <p class="ids-keys">{t('form.ids.keys')}</p>
@@ -385,6 +421,11 @@
   .ids-pending{margin:0;font-size:12px;color:var(--muted)}
   .ids-search{display:flex;flex-direction:column;gap:4px}
   .ids-search :global(.character-search){width:100%;min-width:0}
+  .ids-pick-tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--line);padding-bottom:4px}
+  .ids-pick-tabs button{border:0;background:transparent;font-size:12px;padding:6px 10px;border-radius:5px;color:var(--muted)}
+  .ids-pick-tabs button.active{background:var(--surface-selected);color:var(--ink)}
+  .ids-pick-panel{min-width:0}
+  .ids-pick-panel[hidden]{display:none}
   .ids-actions{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
   .ids-keys{margin:0;font-size:11px;line-height:1.5;color:var(--muted)}
   .ids-use{flex:none;padding:5px 14px}
