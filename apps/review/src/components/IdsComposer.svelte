@@ -14,6 +14,7 @@
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
   import CharacterSearch from './CharacterSearch.svelte'
+  import IdsPreview from './IdsPreview.svelte'
   import { CODES, KEYS, OPERATORS, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator } from '../lib/ids.js'
   import { structure } from '../lib/layers.js'
@@ -270,8 +271,11 @@
         title={t('form.ids.operatorTitle', { op, name: name(op), key: KEY[op] })} onclick={() => operator(op)}>{@render icon(op, 22)}</button>
     {/each}
   </div>
-  <div class="ids-tree" role="group" aria-label={t('form.ids.structure')}>
-    {@render box(tree, [], null)}
+  <div class="ids-view">
+    <div class="ids-tree" role="group" aria-label={t('form.ids.structure')}>
+      {@render box(tree, [], null)}
+    </div>
+    <IdsPreview {tree} sequence={whole} whole={usable} />
   </div>
   <div class="ids-tools">
     <label class="ids-slot">
@@ -323,6 +327,9 @@
   .ids-icon :is(rect,line,path){fill:none;stroke:var(--accent);stroke-width:1.6}
   .ids-icon .inner{stroke:var(--ink-soft);stroke-dasharray:2 1.5}
 
+  .ids-view{display:flex;align-items:flex-start;gap:12px}
+  .ids-view > .ids-tree{flex:1;min-width:0}
+  @media (max-width:520px){.ids-view{flex-direction:column-reverse;align-items:center}.ids-view > .ids-tree{align-self:stretch}}
   .ids-tree{display:grid;justify-items:center;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-subtle);min-height:72px}
   .ids-node{position:relative;display:flex;flex-direction:column;min-width:0;padding:22px 6px 6px;
     border:1.5px dashed var(--line-strong);border-radius:8px}
