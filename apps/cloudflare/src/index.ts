@@ -7,6 +7,7 @@ import { formsRoute } from './routes/forms';
 import { similarCrops } from './similar';
 import { cropParam, movedPathResponse } from './atlas3Crops';
 import { drawingFile } from './drawings';
+import { composerFile } from './composer';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { structureOf, suggest, wordChoices } from './routes/search';
 import { auth, claim, providers, viewer } from './auth';
@@ -174,6 +175,11 @@ const routes = {
         const drawing=await drawingFile(env,path.slice('/atlas/ids/'.length),request,ctx);
         if(!drawing)throw new Problem(404,'No drawing of this sequence.');
         return drawing;
+      }
+      if(path.startsWith('/atlas/composer/')){
+        const file=await composerFile(env,path.slice('/atlas/composer/'.length),request,ctx);
+        if(!file)throw new Problem(404,'No such composer file.');
+        return file;
       }
       if(path.startsWith('/atlas/similar/files/')){
         const file=await modelFile(env,path.slice('/atlas/similar/files/'.length),request,ctx);
