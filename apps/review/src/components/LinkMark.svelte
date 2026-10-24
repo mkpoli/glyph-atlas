@@ -1,6 +1,6 @@
 <script>
   // The small marks before the site's outward links. Brand and licence marks: Simple Icons 16.32.0
-  // (CC0); `code` and `privacy` follow Lucide's code and shield icons, drawn as outlines: ISC licence,
+  // (CC0); `code`, `privacy` and `irc` follow Lucide's code, shield and hash icons, drawn as outlines: ISC licence,
   // copyright Lucide Contributors 2022, portions Cole Bemis 2013–2022 (Feather, MIT), https://lucide.dev/license.
   let { name } = $props()
   const FILLED = {
@@ -13,5 +13,6 @@
 </script>
 
 {#if name === 'code'}<svg class="link-mark outline" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
+{:else if name === 'irc'}<svg class="link-mark outline" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>
 {:else if name === 'privacy'}<svg class="link-mark outline" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
 {:else}<svg class="link-mark" viewBox="0 0 24 24" aria-hidden="true"><path d={FILLED[name]}/></svg>{/if}
