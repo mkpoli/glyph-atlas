@@ -1,0 +1,47 @@
+id: ids-parts
+name: IDS parts palette (難輸入部件), built for the atlas's IDS editor
+publisher: Glyph Atlas, from the upstreams below
+kind: reference-table
+url: https://www.babelstone.co.uk/CJK/IDS.TXT
+version: "built by scripts/build_ids_parts.py from the upstream versions below"
+licence: CC-BY-SA-3.0
+licence_evidence: https://github.com/KanjiVG/kanjivg/blob/r20260714/COPYING
+attribution: "Andrew West (魏安), BabelStone IDS.TXT; hfhchan/ids, Copyright (c) 2021 Henry Chan (MIT); Unicode Han Database, Copyright Unicode, Inc. (Unicode License v3); KanjiVG, Copyright (C) 2009-2013 Ulrich Apel, CC BY-SA 3.0, https://kanjivg.tagaini.net/"
+access:
+  file: apps/review/static/palette/ids-parts.json
+format:
+  file: "JSON: columns [part, uses, strokes, derived, first, kind] and one row per part, most used first; kind is c (common), d (difficult) or s (CJK stroke)"
+upstreams:
+  - id: babelstone-ids
+    what: which components the sequences use, and how many ideographs use each (data/vocab/han-ids.tsv)
+    file: https://www.babelstone.co.uk/CJK/IDS.TXT
+    version: File Date 2025-06-27, as data/sources/babelstone-ids.yaml records
+    licence: PD
+  - id: hfhchan-ids
+    what: which components are left undecomposed (王 is not ⿱一土), read the way han-compose's han-atomic table reads it
+    file: https://github.com/hfhchan/ids/releases/download/v1.0.2/ids-20240112.txt
+    version: v1.0.2, ids-20240112.txt, sha256:7466c8bd9151f1db5ef247fcbf84d7de4b36a6ec741e793c54972aa3dcbc0af4
+    licence: MIT
+    licence_evidence: https://github.com/hfhchan/ids/blob/0a25893fe8ddc56beae72eeebd988a2f20aaf7e0/LICENSE
+    attribution: Copyright (c) 2021 Henry Chan, hfhchan/ids
+  - id: unihan
+    what: stroke counts (kTotalStrokes, Unihan_IRGSources.txt) and the common set (kJoyoKanji; kTGH positions 1–3500, Unihan_OtherMappings.txt)
+    file: https://www.unicode.org/Public/18.0.0/ucd/Unihan.zip
+    version: 18.0.0, sha256:4c93ea9c1f636451729a840978f1667a53886af37ba854fdcce109721c63d43e
+    licence: Unicode-3.0
+    licence_evidence: https://www.unicode.org/license.txt
+    attribution: Copyright Unicode, Inc.; Unicode License v3
+  - id: kanjivg
+    what: the type of each character's first stroke (kvg:type), mapped to 横 豎 撇 點 折
+    file: https://github.com/KanjiVG/kanjivg/releases/download/r20260714/kanjivg-20260714.xml.gz
+    version: release r20260714, sha256:d4a8e5e11533fe6a5d81a158b2c153964322641d2982c90a919461f3c06dca6b
+    licence: CC-BY-SA-3.0
+    licence_evidence: https://github.com/KanjiVG/kanjivg/blob/r20260714/COPYING
+    attribution: "KanjiVG, Copyright (C) 2009-2013 Ulrich Apel, CC BY-SA 3.0, https://kanjivg.tagaini.net/"
+notes:
+  - "The `first` column adapts KanjiVG's stroke data and is shared alike under CC BY-SA 3.0, with the 3.0 notice kept; the record takes that licence for the file as a whole. The other columns come from public-domain sequences, MIT-licensed decomposition choices and Unicode data, whose licences ask only for the notices above."
+  - "The mapping of KanjiVG's stroke types to the five classes is an editorial table of the build script (提 as 横, 豎鉤 as 豎, 捺 and 提捺 as 點, every turning stroke as 折). A type whose alternatives disagree (㇔/㇑) gives no class. KanjiVG describes Japanese school kanji and their Japanese stroke order, so most rare parts have no class (439 of the 649 difficult parts and 72 of the 467 common ones in the build of 2026-10-25)."
+  - "A part's stroke count is Unihan's first kTotalStrokes value. A CJK stroke counts 1 and is marked derived; a part Unihan lacks takes the sum over its own sequence's leaves, marked derived, or stays null. CJK Radicals Supplement characters have no Unihan row and no sequence, so their counts are null."
+  - "The common set is 常用漢字 (kJoyoKanji) together with the first level of the 通用规范汉字表 (kTGH positions 1–3500). Every other part that is not a CJK stroke is listed as difficult."
+  - "The webfont subsets beside the palette (apps/review/static/fonts/Plangothic-ids-parts.woff2, NotoSansCJKjp-ids-strokes.woff2) are Plangothic V2.9.5795 and Noto Sans CJK JP 2.004 under the SIL Open Font License 1.1; apps/review/static/fonts/README.md records them."
+checked: 2026-10-25
