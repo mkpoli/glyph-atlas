@@ -342,6 +342,7 @@
   "history.noMore": "Không còn chỉnh sửa nào nữa",
   "history.onlyMine": "Chỉ của tôi",
   "history.onlyMine.aria": "Chỉ hiện chỉnh sửa của tôi",
+  "history.reviewer.anonymous": "Ẩn danh",
   "history.reviewer.you": "bạn",
   "history.row.inspect": "Mở {label}",
   "copyId.copy": "Sao chép ID",

@@ -410,8 +410,9 @@ export async function followCorpus(env: Env) {
 }
 
 async function decisionLog(env: Env) {
-  const rows = await env.ATLAS.prepare('SELECT * FROM form_decisions ORDER BY at,seq').all<Json>();
-  const lines = rows.results.map(r => JSON.stringify({ id: r.id, at: r.at, actor: r.actor, kind: r.kind, family: r.family,
+  // A decision names the user who holds its actor, or nobody: an old reviewer id is all it takes to claim one.
+  const rows = await env.ATLAS.prepare('SELECT f.*,a.user AS holder FROM form_decisions f LEFT JOIN actors a ON a.key=f.actor ORDER BY f.at,f.seq').all<Json>();
+  const lines = rows.results.map(r => JSON.stringify({ id: r.id, at: r.at, actor: r.holder ?? null, kind: r.kind, family: r.family,
     form: r.form, cluster: r.cluster, revision: r.revision, units: JSON.parse(r.units), note: r.note,
     ...(r.issue ? { issue: r.issue } : {}), ...(r.character ? { character: r.character } : {}), ...(r.list ? { list: r.list } : {}) }));
   return new Response(lines.join('\n') + (lines.length ? '\n' : ''), { headers: {

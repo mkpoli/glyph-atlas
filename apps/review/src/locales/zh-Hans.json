@@ -353,6 +353,7 @@
   "history.noMore": "没有更多编辑了",
   "history.onlyMine": "只看我的",
   "history.onlyMine.aria": "只显示我的编辑",
+  "history.reviewer.anonymous": "匿名",
   "history.reviewer.you": "你",
   "history.row.inspect": "打开{label}",
   "copyId.copy": "复制ID",
