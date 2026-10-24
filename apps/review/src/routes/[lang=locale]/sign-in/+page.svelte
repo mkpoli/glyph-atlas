@@ -16,8 +16,12 @@
     // The address checked is the one followed; `/..//host` resolves to a path that starts `//`.
     return url.origin === origin && !url.pathname.startsWith('//') ? url.href : null
   }
+  // A sign-in the Matrix homeserver asked for carries the provider's signed request (`sig`). Signing in
+  // then sends the browser back to the homeserver, and a reader already signed in is here because the
+  // homeserver asked them to sign in again, so the page stays.
+  const forMatrix = $derived(page.url.searchParams.has('sig'))
   // A reader who is already signed in has nothing to do here.
-  $effect(() => { if (session.state.user && !session.state.user.anonymous) goto(next, { replaceState: true }) })
+  $effect(() => { if (!forMatrix && session.state.user && !session.state.user.anonymous) goto(next, { replaceState: true }) })
 </script>
 
 <Seo title={t('signIn.title')} index={false} />
@@ -25,7 +29,7 @@
 <section class="sign-in-page">
   <figure class="sign-in-wall"><SpecimenWall count={36} columns={6} /><figcaption class="overline">{t('signIn.wall')}</figcaption></figure>
   <div class="sign-in-card">
-    <SignIn done={() => goto(next)} />
+    <SignIn done={() => { if (!forMatrix) goto(next) }} />
   </div>
 </section>
 
