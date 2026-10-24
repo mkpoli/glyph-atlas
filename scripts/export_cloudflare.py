@@ -217,7 +217,7 @@ def page_rows(db, published, units, pages, documents):
     for page_id in held:
         books[pages[page_id].document_id].append(pages[page_id])
     db.execute("DELETE FROM pages")
-    catalogue = page_sources.catalogue_urls((d, doc.source_refs, doc.meta) for d in books if (doc := documents.get(d)))
+    catalogue = page_sources.catalogue_urls((d, doc.source_refs, doc.meta) for d, doc in documents.items())
     for document_id, own in books.items():
         own.sort(key=lambda page: (page.seq, page.id))
         for i, page in enumerate(own):

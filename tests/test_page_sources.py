@@ -56,3 +56,21 @@ def test_a_link_two_books_manifests_share_is_the_site_and_no_record(tmp_path):
                  ("e", {}, {"kokusho": {"record_url": "https://kokusho.nijl.ac.jp/biblio/1"}})]
     assert catalogue_urls(documents, tmp_path) == {"c": "https://x.org/item/c", "d": "https://x.org/catalogue/d",
                                                     "e": "https://kokusho.nijl.ac.jp/biblio/1"}
+
+
+def test_one_service_under_another_host_name_or_encoding_is_the_same_page(tmp_path):
+    url = "https://x.org/b/manifest"
+    cache_manifest(tmp_path, url, {"@id": url, "sequences": [{"canvases": [
+        {"@id": f"https://x.org/b/canvas/{n}", "@type": "sc:Canvas", "images": [{"resource": {"@type": "dctypes:Image", "service": {"@id": s}}}]}
+        for n, s in enumerate(["https://kokusho.nijl.ac.jp/api/iiif/1/a.tif", "https://dl.ndl.go.jp/api/iiif/2/R0000039",
+                               "https://khirin-a.rekihaku.ac.jp/iiif/2/ext/goto/11-070-002.tif"])]}]})
+    refs = {"iiif-manifest": url}
+    for service, index in [("https://kotenseki.nijl.ac.jp/api/iiif/1/a.tif", 0), ("https://www.dl.ndl.go.jp/api/iiif/2/R0000039", 1),
+                           ("https://khirin-a.rekihaku.ac.jp/iiif/2/ext%2Fgoto%2F11-070-002.tif", 2)]:
+        assert page_sources(refs, None, service, cache=tmp_path)["canvas_index"] == index
+
+
+def test_a_presentation_3_homepage_and_an_escaped_link_name_the_record():
+    assert manifest_record({"homepage": [{"id": "https://x.org/item/3", "type": "Text", "format": "text/html"}]}) == "https://x.org/item/3"
+    assert manifest_record({"metadata": [{"label": "URL", "value": '<a href="https://x.org/r?a=1&amp;b=2">https://x.org/r?a=1&b=2</a>'}]}) \
+        == "https://x.org/r?a=1&b=2"

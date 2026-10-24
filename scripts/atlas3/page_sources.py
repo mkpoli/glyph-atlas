@@ -4,7 +4,7 @@
 
 Each page's published record is read from the local copy (out/atlas.sqlite and its bundles in
 out/pages), its book from the `documents.parquet` of the datasets named, and its book's manifest from
-the manifest cache (`glyph_atlas.page_sources`). A page whose record gains or changes `manifest`,
+the manifest cache (`glyph_atlas.page_sources`). A page whose record gains or changes a non-null `manifest`,
 `canvas`, `canvas_index` or `catalogue_url` is written to the catalogue's `pages` table as the
 exporter writes it, which `publish.py` then publishes as a new revision of the page; the rest of the
 record stays as published. A page whose book no dataset holds is left out and counted.
@@ -52,8 +52,7 @@ def main() -> None:
         page = json.loads(gzip.decompress((OUT / "pages" / f"{pid}-{rev}.json.gz").read_bytes())).get("page")
         if page:
             records[page["id"]] = page
-    held = {page["document"] for page in records.values()} & books.keys()
-    catalogue = catalogue_urls((d, *books[d]) for d in held)
+    catalogue = catalogue_urls((d, *refs) for d, refs in books.items())
     counts, rows = Counter(), []
     for key, page in records.items():
         if page["document"] not in books:
@@ -63,7 +62,8 @@ def main() -> None:
         record = {**page, **found}
         for field in FIELDS:
             counts[f"{field} given"] += record[field] is not None
-        if record == page:
+        # A field the record lacks reads as null, so a page that gains nothing gets no new revision.
+        if all(page.get(field) == record[field] for field in FIELDS):
             counts["unchanged"] += 1
             continue
         rows.append((key, page["document"], json.dumps(record, ensure_ascii=False, separators=(",", ":"))))

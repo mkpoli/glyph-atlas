@@ -3,25 +3,29 @@ page is in that manifest, and the holder's own catalogue record of the book.
 
 The manifest is the one the document's importer recorded (`source_refs["iiif-manifest"]`), read from
 the manifest cache (`cache/manifests/<sha256 of url>.json`) without fetching anything; a manifest the
-cache does not hold was never read and is not offered. The page is
-placed in it by the canvas its importer recorded or, failing that, by the canvas whose image service
-is the page's own; a page found in neither way keeps the manifest and has no canvas, since a page
+cache does not hold was never read and is not offered. The page is placed in it by the canvas its
+importer recorded or, failing that, by the one canvas whose image service is the page's own
+(`same_service`); a page found in neither way keeps the manifest and has no canvas, since a page
 number is no proof of a canvas position.
 
 The catalogue record comes, in this order, from the record the importer read (`source_refs
-["catalogue"]`, `meta.kokusho.record_url`), the manifest's `related` page, or a manifest metadata
-entry labelled URL or Source that holds one link. A link the manifests of two different books both
-give is a page of the holder's site and no record of either book, so `catalogue_urls` drops it.
+["catalogue"]`, `meta.kokusho.record_url`), the manifest's `related` or `homepage` web page, or a
+manifest metadata entry labelled URL or Source that holds one link. A link the manifests of two
+different books both give is a page of the holder's site and no record of either book, so
+`catalogue_urls` drops it, judging that over every document it is given, published or not.
 """
 
 from __future__ import annotations
 
+import html
 import json
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 from .importers.honkoku_data import canvas_page, canvases, identifier, manifest_path
 
@@ -29,6 +33,9 @@ MANIFEST_REF = "iiif-manifest"
 #: Labels of manifest metadata entries whose single link is the item's record.
 RECORD_LABELS = frozenset({"url", "source", "ソース"})
 LINK = re.compile(r"https?://[^\s\"'<>]+")
+#: Hosts that serve the same images under another name: NIJL's manifests name `kokusho` for the
+#: services Honkoku-Lines records under `kotenseki`.
+ALIASES = {"kotenseki.nijl.ac.jp": "kokusho.nijl.ac.jp"}
 
 
 def manifest_url(source_refs: Mapping[str, Any] | None) -> str | None:
@@ -48,19 +55,35 @@ def read_manifest(url: str | None, cache: Path | None = None) -> dict | None:
     return found if isinstance(found, dict) else None
 
 
-def locate(manifest: dict | None, canvas: str | None, service: str | None) -> tuple[int, str] | None:
-    """The 0-based position and id of the page's canvas in `manifest`: the canvas its importer
-    recorded, else the one whose image service is the page's."""
-    if not manifest:
+def same_service(url: str | None) -> str:
+    """An image service URL as two names of one service compare equal: the host in lower case
+    without `www.` and through `ALIASES`, the path decoded, no trailing slash."""
+    if not url:
+        return ""
+    parts = urlsplit(url.strip())
+    host = parts.netloc.lower().removeprefix("www.")
+    return f"{ALIASES.get(host, host)}{unquote(parts.path).rstrip('/')}{'?' + unquote(parts.query) if parts.query else ''}"
+
+
+@lru_cache(maxsize=64)
+def _canvases(url: str, cache: Path | None) -> tuple[tuple[str | None, str], ...] | None:
+    """The canvas ids and image services of the cached manifest of `url`, in order."""
+    manifest = read_manifest(url, cache)
+    return None if manifest is None else tuple((found, same_service(image)) for found, image, *_ in map(canvas_page, canvases(manifest)))
+
+
+def locate(pages: tuple[tuple[str | None, str], ...] | None, canvas: str | None, service: str | None) -> tuple[int, str] | None:
+    """The 0-based position and id of the page's canvas among a manifest's `pages`: the canvas its
+    importer recorded, else the one canvas whose image service is the page's."""
+    if not pages:
         return None
-    pages = [canvas_page(node)[:2] for node in canvases(manifest)]
     if canvas:
         for index, (found, _) in enumerate(pages):
             if found == canvas:
                 return index, found
-    wanted = (service or "").rstrip("/")
+    wanted = same_service(service)
     if wanted:
-        matches = [(index, found) for index, (found, image) in enumerate(pages) if found and image.rstrip("/") == wanted]
+        matches = [(index, found) for index, (found, image) in enumerate(pages) if found and image == wanted]
         if len(matches) == 1:
             return matches[0]
     return None
@@ -91,15 +114,15 @@ def manifest_record(manifest: dict | None) -> str | None:
     metadata entry labelled URL or Source."""
     if not manifest:
         return None
-    related = manifest.get("related")
-    for node in related if isinstance(related, list) else [related]:
+    linked = [manifest.get("related"), manifest.get("homepage")]
+    for node in [n for value in linked for n in (value if isinstance(value, list) else [value])]:
         url = identifier(node) if _html(node) else None
         if url and url.startswith(("https://", "http://")):
             return url
     for entry in manifest.get("metadata") or []:
         if not isinstance(entry, dict) or not {label.strip().casefold() for label in _text(entry.get("label"))} & RECORD_LABELS:
             continue
-        links = {link.rstrip(".,)") for text in _text(entry.get("value")) for link in LINK.findall(text)}
+        links = {link.rstrip(".,)") for text in _text(entry.get("value")) for link in LINK.findall(html.unescape(text))}
         if len(links) == 1:
             return links.pop()
     return None
@@ -133,7 +156,7 @@ def page_sources(source_refs: Mapping[str, Any] | None, canvas: str | None, serv
     """What a page record says of where the page can be opened: `manifest`, `canvas` and its 0-based
     `canvas_index` in the manifest, and the book's `catalogue_url`."""
     manifest = manifest_url(source_refs)
-    read = read_manifest(manifest, cache)
-    placed = locate(read, canvas, service)
-    return {"manifest": manifest if read else None, "canvas": placed[1] if placed else canvas,
+    pages = _canvases(manifest, cache) if manifest else None
+    placed = locate(pages, canvas, service)
+    return {"manifest": manifest if pages is not None else None, "canvas": placed[1] if placed else canvas,
             "canvas_index": placed[0] if placed else None, "catalogue_url": catalogue}
