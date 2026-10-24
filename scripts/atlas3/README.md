@@ -400,6 +400,16 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
        systemd-run --user --unit atlas3-reference --slice=batch.slice -p MemorySwapMax=0 --same-dir \
          --setenv=ATLAS3_DIR=$PWD/work/atlas-v3 -- .venv/bin/python scripts/atlas3/reference.py --send
        journalctl --user -u atlas3-reference -f
+
+   The component objects must find 明 for 日月 and 彘 for 匕矢 (`PROBES`) before anything is sent,
+   and an empty `han_components` or `han_component_names` stops the run. To rebuild the component
+   index alone, write it into an input of its own and send just those objects; this reads and writes
+   no D1, keeps the other paths of the R2 manifest, and reports to `out/reference-components-report.txt`
+   under that `ATLAS3_DIR`:
+
+       .venv/bin/python scripts/export_components_cloudflare.py --input <dir>/reference-input.sqlite
+       ATLAS3_DIR=<dir> .venv/bin/python scripts/atlas3/reference.py --only components [--send]
+       .venv/bin/python scripts/atlas3/reference.py --check https://glyphatlas.org
 8. **Copy the accounts** into their own database, `glyph-atlas-accounts`, last, with sign-in and
    session changes still frozen. It is created once, before the window:
    `bunx wrangler d1 create glyph-atlas-accounts` (from `apps/cloudflare`). Then:
