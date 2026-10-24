@@ -15,7 +15,7 @@
   const credit = $derived(corpus && item.text_attribution ? t('corpus.labelCredit', { credit: item.text_attribution }) : null)
   const linked = $derived(sourceLinks(item, corpus))
   const page = $derived(pageLink(item, corpus))
-  const links = $derived([page, linked.record, linked.honkoku].filter(link => link && link.href !== omit))
+  const links = $derived([page, linked.record, linked.catalogue, linked.honkoku].filter(link => link && link.href !== omit))
 </script>
 
 {#if shown.length || item.dating || credit || links.length}

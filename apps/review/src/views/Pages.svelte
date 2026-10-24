@@ -3,6 +3,8 @@
   import DrawnBoxDialog from '../components/DrawnBoxDialog.svelte'
   import ReferenceGlyph from '../components/ReferenceGlyph.svelte'
   import SourceCredit from '../components/SourceCredit.svelte'
+  import CopyValue from '../components/CopyValue.svelte'
+  import { viewerLinks } from '../lib/iiifViewers.js'
   import { number } from '../lib/client.js'
   import { pageList, pageRecord, drawBox } from '../lib/pages.js'
   import { t, localize } from '../lib/i18n.svelte.js'
@@ -169,6 +171,10 @@
   const origin = unit => unit.proposed ? t('pages.box.proposed') : unit.detected ? t('pages.box.confirmed')
     : unit.manual ? t('pages.box.drawn') : t('pages.box.imported')
   const proposedCount = $derived(data ? data.units.filter(unit => unit.proposed).length : 0)
+  // The page's source under its title: holder, licence, dates and records, then the viewers its manifest opens in.
+  const credit = $derived(data ? { holder: data.holder, attribution: data.attribution, licence: data.licence, rights_url: data.rights_url,
+    catalogue_url: data.catalogue_url, honkoku_url: data.honkoku_url, dating: data.dating, dates: data.dates } : null)
+  const viewers = $derived(viewerLinks(data))
 </script>
 
 <svelte:window onkeydown={keys} />
@@ -195,6 +201,13 @@
         <a class="quiet-link" class:disabled={!data.next} aria-disabled={!data.next} href={data.next ? localize('/pages/' + encodeURIComponent(data.next)) : undefined}>{t('pages.next')}</a>
       {/if}
     </div>
+    {#if data && !index}
+      <div class="page-sources">
+        <SourceCredit item={credit} />
+        <!-- The manifest with its copy button, then the viewers that open it at this page. -->
+        {#if viewers}<p class="page-viewers"><span class="copyable"><a href={viewers.manifest} target="_blank" rel="noreferrer">{t('pages.source.manifest')}</a><CopyValue value={viewers.manifest} /></span>{'\u00a0· '}{t('pages.source.openIn')}<a href={viewers.curation} target="_blank" rel="noreferrer">{t('pages.source.curationViewer')}</a>{'\u00a0· '}<a href={viewers.universal} target="_blank" rel="noreferrer">{t('pages.source.universalViewer')}</a></p>{/if}
+      </div>
+    {/if}
     {#if error}<div class="error-message" role="alert">{error}<button onclick={() => loadPage(pageId)}>{t('common.retry')}</button></div>{/if}
     {#if data}
       <div class="page-workspace">
@@ -231,7 +244,6 @@
               {/each}
             </ul>
           {/if}
-          {#if !index}<div class="page-credit"><SourceCredit item={{ source: data.document_title, holder: data.holder, attribution: data.attribution, licence: data.licence, rights_url: data.rights_url }} /></div>{/if}
         </aside>
       </div>
     {:else if !error}<p class="find-count" role="status">{t('pages.loading')}</p>{/if}
@@ -264,6 +276,12 @@
   .page-view{display:flex;flex-direction:column;height:calc(100dvh - 89px);padding:0 4.4vw 16px}
   .page-toolbar{display:flex;align-items:center;gap:18px;padding:12px 0;flex-wrap:wrap;font-size:13px}
   .page-title{font-weight:500}
+  .page-sources{display:grid;gap:2px;margin:-4px 0 10px}
+  .page-viewers{margin:0;font-size:11px;line-height:1.5;color:var(--faint)}
+  .page-viewers a{color:inherit;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
+  .page-viewers a:hover{color:var(--muted)}
+  .page-viewers :global(.copy-value){width:18px;height:18px;margin-left:2px;vertical-align:-4px;opacity:.75}
+  .page-viewers :global(.copy-value svg){width:12px;height:12px}
   .toolbar-space{flex:1}
   .quiet-link.disabled{opacity:.4;pointer-events:none}
   .draw-toggle{display:flex;align-items:center;gap:10px;font-size:12px;padding:8px 14px}
@@ -301,7 +319,6 @@
   .box-glyph{width:30px;height:30px;flex:none;display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--surface-tile);border-radius:5px;overflow:hidden}
   .box-glyph img{width:100%;height:100%;object-fit:contain}
   .page-boxes li button.focused{border-color:var(--accent-solid);background:var(--accent-light)}
-  .page-credit{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
   .box-none{color:var(--muted)}
   .box-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .page-boxes small{color:var(--muted);font-size:10px}
