@@ -9,7 +9,7 @@
   import LinkMark from '../components/LinkMark.svelte'
   import { onMount, untrack } from 'svelte'
   import { afterNavigate, beforeNavigate, goto, pushState } from '$app/navigation'
-  import { noteNavigation } from '$lib/keptViews.js'
+  import { noteArrival, noteNavigation } from '$lib/keptViews.js'
   import { page } from '$app/state'
   import CharacterDialog from '$components/CharacterDialog.svelte'
   import CorpusDialog from '$components/CorpusDialog.svelte'
@@ -95,7 +95,7 @@
   function showProgress() { menu = false; session.showProgress() }
   // A new page closes whatever the last one left open.
   beforeNavigate(navigation => noteNavigation(navigation.type))
-  afterNavigate(() => { menu = false; inspector.forget() })
+  afterNavigate(navigation => { menu = false; inspector.forget(); noteArrival(navigation.type) })
   // Once the dialog has gone, by its close button or by Back, the focus returns to what opened it.
   let wasShown = false
   $effect(() => { const now = Boolean(shown); void page.state.inspect; inspector.settle(); if (wasShown && !now) inspector.restoreFocus(); wasShown = now })

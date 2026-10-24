@@ -14,15 +14,23 @@ export const entry = () => typeof history === 'undefined' ? null : history.state
 /** Called before every navigation, with SvelteKit's navigation type. */
 export function noteNavigation(type) { returning = type === 'popstate' }
 
+/** Called after every navigation that is not Back or Forward: the entries past the one it reached were
+ *  left behind, and their numbers are given again. */
+export function noteArrival(type) {
+  if (type === 'popstate' || type === 'enter') return
+  const at = entry()
+  if (at != null) for (const key of [...views.keys()]) if (key >= at) views.delete(key)
+}
+
 /** Called on every write to the site. */
 export function noteWrite() { views.clear() }
 
-/** Keeps what the gallery shows under each of `entries`. */
+/** Keeps what the gallery shows under each of `entries`; `null` keeps nothing there, dropping what was. */
 export function keepView(entries, state) {
   for (const key of new Set(entries)) {
     if (key == null) continue
     views.delete(key)
-    views.set(key, state)
+    if (state) views.set(key, state)
   }
   // A visit holds a handful of galleries; the oldest go first.
   while (views.size > 8) views.delete(views.keys().next().value)
