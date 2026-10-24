@@ -272,22 +272,41 @@ def balanced_sampler(data: Data, *, seed: int, rendered_share: float | None = No
 # --- metrics ---------------------------------------------------------------------------------
 
 
-def softmax(logits: np.ndarray) -> np.ndarray:
-    values = np.asarray(logits, dtype=np.float64)
-    values = values - values.max(axis=-1, keepdims=True)
-    exponent = np.exp(values)
-    return exponent / exponent.sum(axis=-1, keepdims=True)
+CHUNK = 2048
 
 
-def top_k_accuracy(logits: np.ndarray, labels: np.ndarray, k: int) -> float:
+def ranked(logits: np.ndarray, *, k: int = 1, temperature: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+    """The `k` likeliest classes of every crop, best first, and the probability of the first.
+
+    Worked over `CHUNK` rows at a time: a split of 50,000 crops over 2,000 classes holds 400 MB of
+    logits, and a float64 softmax or sort of the whole split would take several times that.
+    """
+    values = np.asarray(logits)
+    rows = len(values)
+    k = max(1, min(k, values.shape[-1] if values.ndim == 2 else 1))
+    order = np.zeros((rows, k), dtype=np.int64)
+    confidence = np.zeros(rows, dtype=np.float64)
+    for start in range(0, rows, CHUNK):
+        piece = values[start : start + CHUNK].astype(np.float64) / temperature
+        top = np.argpartition(-piece, k - 1, axis=-1)[:, :k] if k < piece.shape[-1] else np.argsort(-piece, axis=-1)
+        # tied scores keep the lowest class first, as argmax does; bf16 logits tie often enough to matter
+        top = np.sort(top, axis=-1)
+        scores = np.take_along_axis(piece, top, axis=-1)
+        top = np.take_along_axis(top, np.argsort(-scores, axis=-1, kind="stable"), axis=-1)
+        top[:, 0] = piece.argmax(axis=-1)
+        best = np.take_along_axis(piece, top[:, :1], axis=-1)
+        order[start : start + CHUNK] = top
+        confidence[start : start + CHUNK] = 1.0 / np.exp(piece - best).sum(axis=-1)
+    return order, confidence
+
+
+def top_k_accuracy(order: np.ndarray, labels: np.ndarray, k: int) -> float:
     if len(labels) == 0:
         return 0.0
-    order = np.argsort(-np.asarray(logits, dtype=np.float64), axis=-1)[:, :k]
-    return float(np.mean((order == labels[:, None]).any(axis=1)))
+    return float(np.mean((order[:, :k] == labels[:, None]).any(axis=1)))
 
 
-def confusion(logits: np.ndarray, labels: np.ndarray, n_classes: int) -> np.ndarray:
-    predicted = np.argmax(np.asarray(logits, dtype=np.float64), axis=-1) if len(labels) else np.zeros(0, dtype=int)
+def confusion(predicted: np.ndarray, labels: np.ndarray, n_classes: int) -> np.ndarray:
     matrix = np.zeros((n_classes, n_classes), dtype=np.int64)
     np.add.at(matrix, (labels, predicted), 1)
     return matrix
@@ -305,13 +324,11 @@ def macro_f1(matrix: np.ndarray) -> float:
 
 
 def expected_calibration_error(
-    probabilities: np.ndarray, labels: np.ndarray, *, bins: int = 15
+    confidence: np.ndarray, predicted: np.ndarray, labels: np.ndarray, *, bins: int = 15
 ) -> float:
     """Top-1 expected calibration error over `bins` equal-width confidence bins."""
     if len(labels) == 0:
         return 0.0
-    confidence = probabilities.max(axis=-1)
-    predicted = probabilities.argmax(axis=-1)
     correct = (predicted == labels).astype(np.float64)
     edges = np.linspace(0.0, 1.0, bins + 1)
     total = float(len(labels))
@@ -329,9 +346,15 @@ def expected_calibration_error(
 def negative_log_likelihood(logits: np.ndarray, labels: np.ndarray, temperature: float) -> float:
     if len(labels) == 0:
         return 0.0
-    probabilities = softmax(np.asarray(logits, dtype=np.float64) / temperature)
-    picked = probabilities[np.arange(len(labels)), labels]
-    return float(-np.log(np.maximum(picked, 1e-12)).mean())
+    values = np.asarray(logits)
+    total = 0.0
+    for start in range(0, len(labels), CHUNK):
+        piece = values[start : start + CHUNK].astype(np.float64) / temperature
+        best = piece.max(axis=-1, keepdims=True)
+        normaliser = best[:, 0] + np.log(np.exp(piece - best).sum(axis=-1))
+        picked = piece[np.arange(len(piece)), labels[start : start + CHUNK]]
+        total += float(np.minimum(normaliser - picked, -np.log(1e-12)).sum())
+    return total / len(labels)
 
 
 def fit_temperature(logits: np.ndarray, labels: np.ndarray, *, iterations: int = 200) -> tuple[float, dict]:
@@ -342,24 +365,31 @@ def fit_temperature(logits: np.ndarray, labels: np.ndarray, *, iterations: int =
     that reconciles them.
     """
     before = negative_log_likelihood(logits, labels, 1.0)
-    before_ece = expected_calibration_error(softmax(logits), labels)
+    order, confidence = ranked(logits)
+    before_ece = expected_calibration_error(confidence, order[:, 0], labels)
     if len(labels) == 0:
         return 1.0, {"nll_before": 0.0, "nll_after": 0.0, "ece_before": 0.0, "ece_after": 0.0, "crops": 0}
-    values = torch.from_numpy(np.asarray(logits, dtype=np.float64))
+    values = torch.from_numpy(np.asarray(logits))
     truth = torch.from_numpy(np.asarray(labels, dtype=np.int64))
     log_temperature = torch.zeros((), dtype=torch.float64, requires_grad=True)
     optimizer = torch.optim.LBFGS([log_temperature], lr=0.1, max_iter=iterations, line_search_fn="strong_wolfe")
 
     def closure() -> torch.Tensor:
+        # the loss and its gradient are summed over pieces, so no step holds the split's graph whole
         optimizer.zero_grad()
-        loss = torch.nn.functional.cross_entropy(values / torch.exp(log_temperature), truth)
-        loss.backward()
-        return loss
+        total = torch.zeros((), dtype=torch.float64)
+        for start in range(0, len(truth), CHUNK):
+            piece = values[start : start + CHUNK].double() / torch.exp(log_temperature)
+            loss = torch.nn.functional.cross_entropy(piece, truth[start : start + CHUNK], reduction="sum") / len(truth)
+            loss.backward()
+            total += loss.detach()
+        return total
 
     optimizer.step(closure)
     temperature = float(torch.exp(log_temperature).item())
     after = negative_log_likelihood(logits, labels, temperature)
-    after_ece = expected_calibration_error(softmax(np.asarray(logits, dtype=np.float64) / temperature), labels)
+    order, confidence = ranked(logits, temperature=temperature)
+    after_ece = expected_calibration_error(confidence, order[:, 0], labels)
     return temperature, {
         "nll_before": before,
         "nll_after": after,
@@ -386,19 +416,19 @@ def metrics_for(
     over all the crops is reported beside them.
     """
     labels = np.asarray(labels, dtype=np.int64)
-    probabilities = softmax(np.asarray(logits, dtype=np.float64) / temperature)
+    order, confidence = ranked(logits, k=top_k, temperature=temperature)
+    predicted = order[:, 0]
     chosen = np.ones(len(labels), dtype=bool) if identified is None else np.asarray(identified, dtype=bool)
-    subset = probabilities[chosen], labels[chosen]
     report = {
         "crops": len(labels),
         "identified_crops": int(chosen.sum()),
-        "accuracy_all": float(np.mean(probabilities.argmax(axis=-1) == labels)) if len(labels) else 0.0,
-        "top1": top_k_accuracy(subset[0], subset[1], 1),
-        f"top{top_k}": top_k_accuracy(subset[0], subset[1], top_k),
-        "macro_f1": macro_f1(confusion(subset[0], subset[1], classes)),
-        "ece": expected_calibration_error(probabilities[chosen], labels[chosen], bins=bins),
-        "ece_all": expected_calibration_error(probabilities, labels, bins=bins),
-        "mean_confidence": float(probabilities.max(axis=-1).mean()) if len(labels) else 0.0,
+        "accuracy_all": float(np.mean(predicted == labels)) if len(labels) else 0.0,
+        "top1": top_k_accuracy(order[chosen], labels[chosen], 1),
+        f"top{top_k}": top_k_accuracy(order[chosen], labels[chosen], top_k),
+        "macro_f1": macro_f1(confusion(predicted[chosen], labels[chosen], classes)),
+        "ece": expected_calibration_error(confidence[chosen], predicted[chosen], labels[chosen], bins=bins),
+        "ece_all": expected_calibration_error(confidence, predicted, labels, bins=bins),
+        "mean_confidence": float(confidence.mean()) if len(labels) else 0.0,
         "temperature": float(temperature),
     }
     return report
@@ -438,7 +468,7 @@ def confusion_pairs(
     logits: np.ndarray, labels: np.ndarray, classes: list[str], *, limit: int = 20
 ) -> list[dict[str, Any]]:
     """The pairs a class is most often taken for, for the README's failure cases."""
-    matrix = confusion(logits, labels, len(classes))
+    matrix = confusion(ranked(logits)[0][:, 0], labels, len(classes))
     pairs: list[dict[str, Any]] = []
     for truth in range(len(classes)):
         row = matrix[truth].copy()
