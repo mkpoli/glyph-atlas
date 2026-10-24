@@ -907,7 +907,7 @@
   "privacy.saving.title": "存校錄",
   "privacy.saving.body": "初存校錄時，本站即爲此瀏覽器設無名帳戶，名如anon-1a2b3c，以Cookie維持登入。每存所定，皆并其帳戶、字截與時刻錄之。",
   "privacy.messages.title": "來書",
-  "privacy.messages.body": "由此表所寄之書，并所附聯絡之法，皆送至同好Matrix伺服器（matrix.glyphatlas.org，寄於日本Vultr）中維護者之私室，存於彼處。本站不留副本。網路位址僅用以限一時所寄之書數。",
+  "privacy.messages.body": "由此表所寄之書，并所附聯絡之法，皆送至同好Matrix伺服器（matrix.glyphatlas.org，寄於日本Vultr）中維護者之私室，存於彼處。寄至contact@glyphatlas.org之書，亦錄副本，送於同室。本站不留副本。網路位址僅用以限一時所寄之書數。",
   "privacy.account.title": "登入",
   "privacy.account.body": "帳戶存電郵址、所示之名，若自擇小像，亦存之。以GitHub、Google、Discord、LINE或Kakao登入，本站即得該處之姓名、用者名、電郵址、小像及帳戶編號；隨所連之帳戶存之，唯示於己之帳戶頁，以辨所連者；餘無所求。",
   "privacy.account.methods": "登入碼由Cloudflare Email Service寄送，經雜湊後存十分鐘。通行密鑰唯留公開金鑰於此。已登入之機各留一錄，記其IP位址與瀏覽器名，列於帳戶頁；登出或滿九十日則終止。",
