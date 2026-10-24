@@ -2,7 +2,8 @@
   // The crop's form: the forms of its grapheme as chips, chosen with a click or a number key, and a
   // picker that adds another form to them: a character found by search, a listed variant or derived
   // form, or a shape written as an ideographic description sequence. A choice is held until the dialog
-  // saves; choosing the form the crop already has drops it again.
+  // saves. Every chip toggles: a click chooses it, the crop's own form too, which confirms that form, and
+  // a click on the chosen chip drops the choice.
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
   import CopyValue from './CopyValue.svelte'
@@ -29,15 +30,16 @@
   const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], derived: [] })
   // The bar: the grapheme's first forms, the crop's own form when it is none of them, and what the
   // picker added.
+  const members = $derived(listed.members.filter(member => !others || member.char !== current))
   const bar = $derived.by(() => {
-    const chips = listed.members.filter(member => !others || member.char !== current).slice(0, BAR)
+    const chips = members.slice(0, BAR)
     const has = char => chips.some(chip => chip.char === char)
     if (current && !others && !has(current)) chips.push({ char: current, script: '', lang: listed.variants.find(v => v.char === current)?.lang ?? '' })
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
   // The bar wraps onto further rows; only a grapheme's forms past the first ten wait in the picker.
-  const rest = $derived(listed.members.slice(BAR))
+  const rest = $derived(members.slice(BAR))
   const q = $derived(query.trim().toUpperCase())
   const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
   const sections = $derived([
@@ -45,11 +47,13 @@
     ['variants', t('chips.variants'), listed.variants],
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
-  function choose(char) { onchoose(char === current ? null : char) }
+  function choose(char) { onchoose(char === chosen ? null : char) }
   function add(item) {
+    // Where choosing marks at once, the crop's own form, found by search, would mark nothing.
+    if (others && item.char === current) { picking = false; query = ''; composing = false; return }
     if (!bar.some(chip => chip.char === item.char)) added = [...added, { char: item.char, code_point: item.code_point, script: item.script ?? '', lang: item.lang ?? '' }]
     picking = false; query = ''; composing = false
-    onchoose(item.char === current ? null : item.char)
+    onchoose(item.char)
   }
   // A derived option names how it was made: each substitution of its first route, as made; a
   // registered figure names its sequence and its MJ figure; a regional shape names its regions.
