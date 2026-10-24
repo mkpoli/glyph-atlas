@@ -46,9 +46,6 @@ export const LEGACY_REVIEWER = /^reviewer-[0-9a-f]{8}$/;
 // A user who gives no name is called `anon-` and six hex digits, a shape no reviewer id had.
 const GENERATED = /^anon-[0-9a-f]{6}$/;
 const generatedName = () => 'anon-' + crypto.randomUUID().slice(0, 6);
-// How many old reviewer ids one user may hold: a browser held one, a reader with a few browsers a few.
-// The cap holds when an anonymous user is joined to an account too.
-export const CLAIMS = 5;
 
 function build(env: Env, origin: string, paused: boolean) {
   return betterAuth({
@@ -179,13 +176,10 @@ function build(env: Env, origin: string, paused: boolean) {
           // The link is kept, so that deleting the account deletes the anonymous user too.
           await env.ACCOUNTS.prepare('INSERT OR IGNORE INTO anonymous_links(anonymous,user,at) VALUES(?,?,?)')
             .bind(anonymousUser.user.id, newUser.user.id, new Date().toISOString()).run();
-          // Its old reviewer ids come along up to the account's CLAIMS, the earliest claimed first; the rest
-          // stay with the anonymous user, unclaimable, and are unlinked when the account is deleted.
-          // Its stars too; a crop the account had starred already keeps the account's own.
+          // Its ids, old reviewer ids among them, come along, and its stars too; a crop the account had
+          // starred already keeps the account's own.
           await env.ATLAS.batch([
-            env.ATLAS.prepare(`UPDATE actors SET user=?1 WHERE id IN (SELECT id FROM actors WHERE user=?2 AND via='legacy' ORDER BY at,id
-              LIMIT max(0, ?3 - (SELECT count(*) FROM actors WHERE user=?1 AND via='legacy')))`).bind(newUser.user.id, anonymousUser.user.id, CLAIMS),
-            env.ATLAS.prepare("UPDATE actors SET user=? WHERE user=? AND via IS NOT 'legacy'").bind(newUser.user.id, anonymousUser.user.id),
+            env.ATLAS.prepare('UPDATE actors SET user=? WHERE user=?').bind(newUser.user.id, anonymousUser.user.id),
             env.ATLAS.prepare('INSERT OR IGNORE INTO favourites(user,crop,at) SELECT ?,crop,at FROM favourites WHERE user=?').bind(newUser.user.id, anonymousUser.user.id),
             env.ATLAS.prepare('DELETE FROM favourites WHERE user=?').bind(anonymousUser.user.id),
           ]);
@@ -263,13 +257,11 @@ export async function claim(env: Env, user: Viewer, reviewer: string) {
   if (!LEGACY_REVIEWER.test(reviewer)) return { status: 422, body: { detail: 'Not a reviewer id from before accounts.' } };
   // An actor row with neither user nor `via` is an id that wrote before any account took it, and the
   // first account to send it takes it. One with `via` set was held by an account since deleted, and
-  // stays with nobody. The cap is checked in the same statement, so that claims sent at once stop at it.
-  await env.ATLAS.prepare(`INSERT INTO actors(key,user,via,at) SELECT ?1,?2,'legacy',?3
-    WHERE (SELECT count(*) FROM actors WHERE user=?2 AND via='legacy') < ?4
+  // stays with nobody.
+  await env.ATLAS.prepare(`INSERT INTO actors(key,user,via,at) VALUES(?1,?2,'legacy',?3)
     ON CONFLICT(key) DO UPDATE SET user=excluded.user,via=excluded.via,at=excluded.at WHERE actors.user IS NULL AND actors.via IS NULL`)
-    .bind(reviewer, user.id, Date.now(), CLAIMS).run();
+    .bind(reviewer, user.id, Date.now()).run();
   const found = await env.ATLAS.prepare('SELECT user,via FROM actors WHERE key=?').bind(reviewer).first<{ user: string | null; via: string | null }>();
   if (found?.user === user.id) return { status: 200, body: { reviewer, status: 'held' } };
-  if (found?.user || found?.via) return { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
-  return { status: 429, body: { detail: 'This account already holds as many old reviewer ids as one may.' } };
+  return { status: 409, body: { detail: 'Another account already holds this reviewer id.' } };
 }
