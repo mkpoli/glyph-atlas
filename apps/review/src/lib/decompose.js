@@ -48,7 +48,8 @@ export function roots(text) {
  * A character's descriptions as the box lists them: those with regional shapes first, with their
  * regions (BabelStone's source letters, `HJKP`), then any other. Each is `{ text, regions, tree }`,
  * the tree null where the editor cannot read the sequence (an unencoded `{n}`, a part no description
- * may name), which is then shown as text and not taken.
+ * may name). The structure route drops such sequences today, so this only guards against one that
+ * reaches the box anyway: it is shown as text and not taken.
  */
 export function variants(found) {
   if (!found) return []
@@ -83,15 +84,18 @@ export function searchParts(found, known) {
 }
 
 /**
- * Where a key moves in a tree shown as a list of rows, each `{ level, open, openable }` in reading
- * order, from the row `at`: ArrowDown and ArrowUp to the next and the one before, Home and End to
- * the first and last, ArrowRight opens a closed row or steps into an open one, ArrowLeft closes an
- * open row or steps out to its parent. Answers `{ focus }` (a row index), `{ toggle }` (the row to
- * open or close), or null for a key the tree leaves alone.
+ * Where a key moves in a tree shown as a list of rows, each `{ level, open, openable, swaps }` in
+ * reading order, from the row `at` (and, with `swap`, from that one of its swaps): ArrowDown and
+ * ArrowUp to the next row and the one before, Home and End to the first and last. ArrowRight opens a
+ * closed row, else steps through its swaps, then into it when it is open; ArrowLeft steps back through
+ * the swaps to the row, then closes an open row or steps out to its parent. Answers `{ focus }` (a row
+ * index), `{ toggle }` (the row to open or close), `{ swap }` (a swap's index, null for the row
+ * itself), or null for a key the tree leaves alone.
  */
-export function treeKey(rows, at, key) {
+export function treeKey(rows, at, key, swap = null) {
   const row = rows[at]
   if (!row) return null
+  const swaps = row.swaps?.length ?? 0
   switch (key) {
     case 'ArrowDown': return { focus: Math.min(at + 1, rows.length - 1) }
     case 'ArrowUp': return { focus: Math.max(at - 1, 0) }
@@ -99,9 +103,11 @@ export function treeKey(rows, at, key) {
     case 'End': return { focus: rows.length - 1 }
     case 'ArrowRight':
       if (row.openable && !row.open) return { toggle: at }
+      if ((swap ?? -1) < swaps - 1) return { swap: (swap ?? -1) + 1 }
       if (row.open && rows[at + 1]?.level > row.level) return { focus: at + 1 }
       return { focus: at }
     case 'ArrowLeft': {
+      if (swap !== null) return { swap: swap > 0 ? swap - 1 : null }
       if (row.openable && row.open) return { toggle: at }
       for (let k = at - 1; k >= 0; k--) if (rows[k].level < row.level) return { focus: k }
       return { focus: at }

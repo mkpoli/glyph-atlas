@@ -31,6 +31,7 @@ describe('a character\'s descriptions', () => {
     expect(found.map(v => [v.text, v.regions])).toEqual([['⿳𭁟冖⺼', 'T'], ['⿳𭁟冖⺝', 'HJKP'], ['⿰亻木', '']])
     expect(found[0].tree).toEqual({ op: '⿳', parts: ['𭁟', '冖', '⺼'] })
   })
+  // The structure route drops these today; the box still has to show one that reaches it.
   it('keeps a sequence naming an unencoded component as text, with its encoded parts', () => {
     const [found] = variants(ready(['⿹{22}一']))
     expect(found.tree).toBeNull()
@@ -61,13 +62,13 @@ describe('the parts the component search is asked for', () => {
 })
 
 describe('keys in the tree', () => {
-  // 疑 (open) › ⿰𠤕⿱龴疋 (open) › 𠤕 (closed), ⿱龴疋 (open) › 龴, 疋
+  // 疑 (open) › ⿰𠤕⿱龴疋 (open) › 𠤕 (closed), ⿱龴疋 (open) › 龴 (two swaps), 疋
   const rows = [
     { level: 1, open: true, openable: true },
     { level: 2, open: true, openable: true },
     { level: 3, open: false, openable: true },
     { level: 3, open: true, openable: true },
-    { level: 4, open: false, openable: false },
+    { level: 4, open: false, openable: false, swaps: [{ char: 'コ' }, { char: 'マ' }] },
     { level: 4, open: false, openable: true },
   ]
   it('steps down and up, and to the ends', () => {
@@ -80,7 +81,14 @@ describe('keys in the tree', () => {
   it('opens a closed row and steps into an open one', () => {
     expect(treeKey(rows, 2, 'ArrowRight')).toEqual({ toggle: 2 })
     expect(treeKey(rows, 3, 'ArrowRight')).toEqual({ focus: 4 })
-    expect(treeKey(rows, 4, 'ArrowRight')).toEqual({ focus: 4 })
+    expect(treeKey(rows, 5, 'ArrowRight')).toEqual({ toggle: 5 })
+  })
+  it('steps through a part\'s swaps and back', () => {
+    expect(treeKey(rows, 4, 'ArrowRight')).toEqual({ swap: 0 })
+    expect(treeKey(rows, 4, 'ArrowRight', 0)).toEqual({ swap: 1 })
+    expect(treeKey(rows, 4, 'ArrowRight', 1)).toEqual({ focus: 4 })
+    expect(treeKey(rows, 4, 'ArrowLeft', 1)).toEqual({ swap: 0 })
+    expect(treeKey(rows, 4, 'ArrowLeft', 0)).toEqual({ swap: null })
   })
   it('closes an open row and steps out to the parent', () => {
     expect(treeKey(rows, 3, 'ArrowLeft')).toEqual({ toggle: 3 })
