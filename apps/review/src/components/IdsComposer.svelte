@@ -11,6 +11,8 @@
   // that operator's place and keeps its parts. × takes one level away, keeping its first filled part.
   // A component found, typed into the part field or offered by the variant table replaces the chosen
   // part, and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
+  // The part picker under the tree has three tabs: a component found by name or reading, the parts
+  // palette (IdsParts), and the parts of any character or description typed (IdsFrom).
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
   import CharacterSearch from './CharacterSearch.svelte'
