@@ -18,9 +18,12 @@ def module():
     return importlib.import_module("answers")
 
 
-def answers(publish, monkeypatch, *flags, packs=None, reads=None, sample=None, collection=True):
-    """Run answers.py with the fake D1 and uploads; R2 holds `packs` ({object: bytes}), each read counted in `reads`."""
+def answers(publish, monkeypatch, *flags, packs=None, reads=None, sample=None, collection=True, **constants):
+    """Run answers.py with the fake D1 and uploads; R2 holds `packs` ({object: bytes}), each read counted in `reads`.
+    `constants` replace the module's own (`PER_CHARACTER=1`)."""
     answers_module = module()
+    for name, value in constants.items():
+        monkeypatch.setattr(answers_module, name, value)
     uploaded = []
     monkeypatch.setattr(answers_module, "query", publish.query)
     monkeypatch.setattr(answers_module, "upload", lambda files, prefix: uploaded.append((prefix, [f.name for f in files])))
@@ -274,6 +277,18 @@ def test_the_homepage_sample_copies_each_record_once_and_shards_it_by_shuffle(co
     time.sleep(1.1)  # a publication is named by its second
     answers(publish, monkeypatch, packs=packs, reads=reads, sample=2**31)
     assert reads == []
+
+
+def test_a_group_pool_keeps_the_glyphs_of_lowest_shuffle_of_each_character(corpus_layout, monkeypatch):
+    root, publish, packs = corpus_layout
+    # Kana stands in for a group copied by character: か has two glyphs, the unread one none.
+    answers(publish, monkeypatch, packs=packs, sample=0, WHOLE=("hangul", "kana"), PER_CHARACTER=1)
+    index = answer(root, "gallery/index.json.gz")["pools"]
+    assert index["kana"]["glyphs"] == 1 and index["hangul"]["glyphs"] == 1
+    glyph, atlas = ids(root), sqlite3.connect(root / "out" / "atlas.sqlite")
+    shuffles = dict(atlas.execute("SELECT id, shuffle FROM crops WHERE kind = 1"))
+    lowest = min((glyph["codh:k1"], glyph["codh:k2"]), key=lambda c: (shuffles[c], c))
+    assert [e[0] for e in answer(root, "gallery/kana/0.json.gz")["entries"]] == [lowest]
 
 
 def test_a_record_read_from_another_place_stops_the_publication_before_the_bump(corpus_layout, monkeypatch):
