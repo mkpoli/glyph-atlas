@@ -22,8 +22,8 @@ Each part carries:
 - `first`: the class of its first stroke, 横 豎 撇 點 or 折, where the KanjiVG witnesses agree: the
   character's own entry, every group drawing it whole (`kvg:element`, not marked part, partial or
   variant), and every character whose sequence starts with it under ⿰ ⿱ ⿸. The class is kept when
-  at least 3 witnesses have a class and at least 90% of them agree (`MIN_WITNESSES`,
-  `MIN_AGREEMENT`); 𠂇 starts with 一 in 左 友 and with 丿 in 右 有 布, so it has none. A CJK stroke
+  all its witnesses with a class agree, or, from 3 of them on, at least 90% (`VOTE_FROM`,
+  `VOTE_SHARE`); 𠂇 starts with 一 in 左 友 and with 丿 in 右 有 布, so it has none. A CJK stroke
   is classed as itself. A bare stroke type maps to the five classes by the table `CLASS` (an
   editorial table, after the five classes Chinese dictionaries order strokes by: 提 counts as 横, 豎鉤
   as 豎, 捺 and 提捺 as 點, every turning stroke as 折, and ㇣ as none). A suffixed type (㇑a, which
@@ -320,10 +320,11 @@ def stroke_counts(
 # Operators whose first operand is written first in the characters they describe (⿺ is not: 辶
 # comes last), so a character spelled ⿸𠂇X starts as its 𠂇 does.
 LEADING = set("⿰⿱⿸")
-# A part keeps a first-stroke class when at least this many witnesses have a bare stroke type and at
-# least this share of them agree on one class; otherwise it has none.
-MIN_WITNESSES = 3
-MIN_AGREEMENT = 0.9
+# A part with fewer than `VOTE_FROM` witnesses that have a bare stroke type keeps a first-stroke
+# class only when they all agree (its own entry alone included); from `VOTE_FROM` on, when at least
+# `VOTE_SHARE` of them agree. Otherwise it has none.
+VOTE_FROM = 3
+VOTE_SHARE = 0.9
 
 
 def kanjivg_witnesses(path: Path, ids: dict[str, list[str]]) -> dict[str, list[str | None]]:
@@ -333,9 +334,10 @@ def kanjivg_witnesses(path: Path, ids: dict[str, list[str]]) -> dict[str, list[s
     友 but 丿 first in 右 有 布. The witnesses are the character's own entry, every group drawing it
     whole, and every character with an entry whose sequence starts with it (⿰ ⿱ ⿸ and the component
     as the first operand), whose own first stroke is then the component's. KanjiVG names no 𠂇 group
-    in 右, so only these characters show that 𠂇 starts two ways. A class is kept when at least
-    `MIN_WITNESSES` witnesses have one and at least `MIN_AGREEMENT` of them agree (`agreement`), so a
-    few odd groups do not clear 口's 豎, while 𠂇, split between 一 and 丿, has none. A
+    in 右, so only these characters show that 𠂇 starts two ways. With fewer than `VOTE_FROM`
+    witnesses that have a class, they must all agree; from `VOTE_FROM` on, `VOTE_SHARE` of them must
+    (`agreement`). So 竹's own entry alone keeps its class, a few odd groups do not clear 口's 豎, and
+    𠂇, split between 一 and 丿, has none. A
     witness whose first stroke has no class (a suffixed type such as ㇑a) is left out, and so is a
     group KanjiVG marks as drawing part of the component or a variant shape of it.
     """
@@ -395,7 +397,7 @@ def agreement(witnesses: dict[str, list[str | None]]) -> dict[str, tuple[str | N
             out[char] = (None, 0, 0)
             continue
         cls, agreeing = votes.most_common(1)[0]
-        kept = total >= MIN_WITNESSES and agreeing / total >= MIN_AGREEMENT
+        kept = agreeing == total if total < VOTE_FROM else agreeing / total >= VOTE_SHARE
         out[char] = (cls if kept else None, agreeing, total)
     return out
 
@@ -489,15 +491,14 @@ def log_agreement(rows: list[list], agreed: dict[str, tuple[str | None, int, int
     a column of it would add over 2 KB to the gzipped palette."""
     found = [(row[0], *agreed.get(row[0], (None, 0, 0))) for row in rows if row[5] != "s"]
     kept = [part for part in found if part[1]]
-    few = [part for part in found if 0 < part[3] < MIN_WITNESSES]
-    split = [part for part in found if part[3] >= MIN_WITNESSES and not part[1]]
+    few = [part for part in kept if part[3] < VOTE_FROM]
+    split = [part for part in found if part[3] and not part[1]]
     print(
-        f"first strokes: {len(kept)} kept, {len(few)} with fewer than {MIN_WITNESSES} witnesses, "
-        f"{len(split)} below {MIN_AGREEMENT:.0%} agreement, {len(found) - len(kept) - len(few) - len(split)} unwitnessed"
+        f"first strokes: {len(kept)} kept ({len(few)} of them with fewer than {VOTE_FROM} witnesses, all "
+        f"agreeing), {len(split)} split (under {VOTE_FROM} witnesses disagreeing, or below {VOTE_SHARE:.0%}), "
+        f"{len(found) - len(kept) - len(split)} unwitnessed"
     )
-    print(
-        "  below agreement: " + " ".join(f"{part}({agreeing}/{total})" for part, _, agreeing, total in split)
-    )
+    print("  split: " + " ".join(f"{part}({agreeing}/{total})" for part, _, agreeing, total in split))
     dissent = [part for part in kept if part[2] < part[3]]
     print(
         "  kept with dissent: "

@@ -119,7 +119,7 @@ def _path(kind: str) -> str:
     return f'<path kvg:type="{kind}" d="M0,0"/>'
 
 
-def test_first_strokes_need_three_witnesses_and_ninety_percent(tmp_path):
+def test_first_strokes_by_agreement_of_witnesses(tmp_path):
     dot, vertical, mouth = _path("㇔"), _path("㇑"), f'<g kvg:element="口">{_path("㇑")}</g>'
     path = _kanjivg(
         tmp_path,
@@ -137,10 +137,13 @@ def test_first_strokes_need_three_witnesses_and_ninety_percent(tmp_path):
             "叫": vertical,
             "擡": f'<g kvg:element="口">{dot}</g>',
             "簔": f'<g kvg:element="口" kvg:variant="true">{dot}</g>',
-            # 亠: its own first stroke is a suffixed type, so only the hosts 交 and 亡 witness it.
+            # 亠: its own first stroke is a suffixed type, so only the hosts 交 and 亡 witness it, and
+            # they disagree.
             "亠": _path("㇑a") + _path("㇐"),
             "交": dot,
-            "亡": dot,
+            "亡": _path("㇐"),
+            # 竹: its own entry is its only witness.
+            "竹": _path("㇒") + _path("㇐"),
         },
     )
     ids = {
@@ -152,6 +155,7 @@ def test_first_strokes_need_three_witnesses_and_ninety_percent(tmp_path):
     agreed = build.agreement(build.kanjivg_witnesses(path, ids))
     assert agreed["𠂇"] == (None, 3, 6)
     assert agreed["口"] == ("豎", 10, 11)
-    assert agreed["亠"] == (None, 2, 2)
+    assert agreed["亠"] == (None, 1, 2)
+    assert agreed["竹"] == ("撇", 1, 1)
     first = build.kanjivg_first(path, ids)
-    assert "𠂇" not in first and "亠" not in first and first["口"] == "豎"
+    assert "𠂇" not in first and "亠" not in first and first["口"] == "豎" and first["竹"] == "撇"
