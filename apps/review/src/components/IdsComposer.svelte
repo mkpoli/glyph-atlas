@@ -4,8 +4,9 @@
   // sequence to `onuse` once it is whole.
   //
   // The sequence is held twice, kept in step: as text in the field, which also takes the ASCII
-  // operator names (LR for ⿰), and as a tree of boxes laid out as the operators place their parts,
-  // where an empty slot (written ？) shows as ＋. One part of the tree is chosen at a time. An operator
+  // operator names (LR or lr for ⿰), and as a tree of boxes laid out as the operators place their
+  // parts, where an empty slot shows (and is written) as ＋. A sequence with an empty slot is not
+  // whole; ？ typed into a slot is the part no character names. One part of the tree is chosen at a time. An operator
   // put on a slot splits it, the slot's part first (⿰ on 失 gives ⿰失＋); put on an operator, it takes
   // that operator's place and keeps its parts. × takes one level away, keeping its first filled part.
   // A component found, typed into the part field or offered by the variant table replaces the chosen
@@ -13,8 +14,8 @@
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
   import CharacterSearch from './CharacterSearch.svelte'
-  import { KEYS, OPERATORS, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
-    replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write } from '../lib/ids.js'
+  import { CODES, KEYS, OPERATORS, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
+    replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator } from '../lib/ids.js'
   import { structure } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
@@ -47,7 +48,7 @@
 
   let tree = $state(null), chosen = $state(null), draft = $state(''), piece = $state(''), note = $state('')
   let field = $state(null), slot = $state(null), root = $state(null), query = $state('')
-  let past = $state([]), future = $state([]), typing = false, run = false
+  let past = $state.raw([]), future = $state.raw([]), typing = false, run = false
   // What the variant table says of each component met so far, and the descriptions of each.
   let swaps = $state({}), own = $state({})
   const learn = found => {
@@ -74,10 +75,15 @@
   }
 
   const whole = $derived(write(tree))
-  const usable = $derived(isNode(tree) && isDescription(whole))
-  // What is wrong with the text as typed, once there is some; a name half typed (the L of LR) waits.
+  // What is wrong with the text as typed, once there is some; a name half typed (the L of LR) is
+  // asked to be finished.
   const typed = $derived(parse(draft, { open: true }))
-  const problem = $derived(note || (draft && typed.problem && !/[A-Z]$/.test(draft) ? t(`form.ids.problem.${typed.problem}`) : ''))
+  const problem = $derived(note || (!draft || !typed.problem ? '' : namingOperator(draft) ? t('form.ids.problem.naming')
+    : t(`form.ids.problem.${typed.problem}`)))
+  // The first slot still empty, named by its place: a sequence is whole only once there is none.
+  const gap = $derived(isNode(tree) ? nextEmpty(tree) : null)
+  const pending = $derived(gap ? t('form.ids.problem.empty', { n: gap.at(-1) + 1, name: name(partAt(tree, gap.slice(0, -1)).op) }) : '')
+  const usable = $derived(isNode(tree) && !gap && !typed.problem && isDescription(whole))
   const picked = $derived(chosen ? partAt(tree, chosen) : undefined)
   const text = part => part === null || part === undefined ? '' : write(part)
 
@@ -107,7 +113,8 @@
   function redo() { run = false; if (future.length) { const to = [...past]; future = step(future, to); past = to.slice(-HISTORY) } }
 
   // The field, read as it is typed: ASCII operator names become operators where the caret is.
-  function edit() {
+  function edit(event) {
+    if (event?.isComposing) return
     const typedText = field.value, caret = field.selectionStart ?? typedText.length
     const written = unalias(typedText)
     if (written !== typedText) {
@@ -138,8 +145,9 @@
       else change(swapped.tree, at)
       return
     }
-    // The slot's part stays first; the slot to fill next is the new one beside it.
-    const select = arity(op) === 1 ? at : [...at, part === null ? 0 : 1]
+    // The slot's part stays first; the slot to fill next is the new one beside it, or the operator's
+    // only one when it was empty.
+    const select = part === null ? [...at, 0] : arity(op) === 1 ? at : [...at, 1]
     change(replaceAt(tree, at, wrap(op, part)), select)
   }
   function place(part) {
@@ -150,7 +158,9 @@
   }
   function component(item) { query = ''; if (!disabled) place(item.char) }
   function swap(item) { place(parse(item.char).tree ?? item.char) }
-  function split(sequence) { place(parse(sequence, { open: true }).tree) }
+  function split(sequence) { const found = parse(sequence, { open: true }); if (!found.problem) place(found.tree) }
+  // The descriptions a component can be split into, those the editor can read.
+  const splits = $derived(typeof picked === 'string' ? (own[picked] ?? []).filter(sequence => !parse(sequence, { open: true }).problem) : [])
   function choose(path) {
     chosen = samePath(chosen, path) ? null : path
     note = ''
@@ -177,17 +187,22 @@
     if (chosen) root?.querySelector(`[data-path="${pathKey(chosen)}"]`)?.focus()
   }
   // Keys while the editor has the focus outside a text field: an operator for each key of the number
-  // row and the row under it, Tab through the parts, Backspace to empty one, Ctrl+Z to undo.
+  // row and the row under it, by where it sits so any layout has them, Tab through the parts,
+  // Backspace to empty one, Ctrl+Z to undo. A key the editor takes is its own: it is marked taken, so
+  // the page's own shortcuts (a crop's review letters, the forms page's undo) leave it alone.
   function keydown(event) {
-    if (event.isComposing || disabled) return
+    if (event.isComposing || event.key === 'Process' || disabled) return
     if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
     const command = event.ctrlKey || event.metaKey
     if (command && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); focusChosen(); return }
     if (command && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); focusChosen(); return }
     if (command || event.altKey) return
-    if (KEYS[event.key]) { event.preventDefault(); operator(KEYS[event.key]); focusChosen(); return }
+    const op = event.shiftKey ? null : CODES[event.code] ?? KEYS[event.key]
+    if (op) { event.preventDefault(); operator(op); focusChosen(); return }
     if (event.key === 'Tab' && event.target.closest('.ids-tree') && tree !== null) {
-      const all = paths(tree), at = chosen ? all.findIndex(path => samePath(path, chosen)) : -1
+      // From the part that has the focus, else the chosen one.
+      const from = event.target.closest('[data-path]')?.dataset.path
+      const all = paths(tree), at = all.findIndex(path => from !== undefined ? pathKey(path) === from : samePath(path, chosen))
       const next = at + (event.shiftKey ? -1 : 1)
       if (next < 0 || next >= all.length) return
       event.preventDefault()
@@ -197,7 +212,7 @@
     }
     if (event.key === 'Backspace' || event.key === 'Delete') { event.preventDefault(); empty(target()); focusChosen(); return }
     // Any other character typed goes to the part field.
-    if (event.key.length === 1 && event.key !== ' ') { slot?.focus(); slot?.select() }
+    if (event.key.length === 1 && event.key !== ' ') { event.preventDefault(); slot?.focus(); piece = event.key; tick().then(() => slot?.setSelectionRange(piece.length, piece.length)) }
   }
   function use() { if (usable && !disabled) onuse(whole) }
 </script>
@@ -217,12 +232,13 @@
 {#snippet box(part, path, parent)}
   {@const selected = samePath(chosen, path)}
   {#if isNode(part)}
+    {@const what = parent ? t('form.ids.part', { part: name(part.op), n: parent.n, name: name(parent.op) }) : name(part.op)}
     <div class="ids-node {layout(part.op)}" class:chosen={selected} data-op={part.op}>
       <div class="ids-head">
         <button type="button" class="ids-op" data-path={pathKey(path)} aria-pressed={selected} {disabled}
           aria-label={t('form.ids.node', { name: name(part.op), sequence: write(part) })} title={`${part.op} ${name(part.op)}`}
           onclick={() => choose(path)}>{@render icon(part.op, 14)}</button>
-        <button type="button" class="ids-unwrap" tabindex="-1" {disabled} aria-label={t('form.ids.unwrap')} title={t('form.ids.unwrap')}
+        <button type="button" class="ids-unwrap" tabindex="-1" {disabled} aria-label={t('form.ids.unwrapNode', { what })} title={t('form.ids.unwrap')}
           onclick={() => remove(path)}>×</button>
       </div>
       <div class="ids-parts">
@@ -245,7 +261,7 @@
   <label class="ids-field">
     <span class="ids-title">{t('form.ids.label')}</span>
     <input bind:this={field} value={draft} {disabled} lang="ja" spellcheck="false" autocomplete="off"
-      placeholder="⿰⿱匕失⿱コ疋" aria-invalid={Boolean(problem)} oninput={edit} onblur={() => { run = false; if (!typed.problem) draft = write(tree) }}
+      placeholder="⿰⿱匕失⿱コ疋" aria-invalid={Boolean(problem)} oninput={edit} oncompositionend={() => edit()} onblur={() => { run = false; if (!typed.problem) draft = write(tree) }}
       onkeydown={event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); use() } }} />
   </label>
   <div class="ids-operators" role="group" aria-label={t('form.ids.operators')}>
@@ -268,15 +284,16 @@
     <button type="button" class="ids-undo" disabled={disabled || !past.length} title={t('forms.undo.title')} onclick={undo}>{t('forms.undo')}</button>
     <button type="button" class="ids-redo" disabled={disabled || !future.length} title={t('forms.redo.title')} onclick={redo}>{t('forms.redo')}</button>
   </div>
-  {#if problem}<p class="ids-problem" role="status">{problem}</p>{/if}
-  {#if typeof picked === 'string' && ((swaps[picked] ?? []).length || (own[picked] ?? []).length)}
+  {#if problem}<p class="ids-problem" role="status">{problem}</p>
+  {:else if pending}<p class="ids-pending" role="status">{pending}</p>{/if}
+  {#if typeof picked === 'string' && ((swaps[picked] ?? []).length || splits.length)}
     <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: picked })}>
       <span class="ids-title">{t('form.ids.swaps', { part: picked })}</span>
       <div class="ids-options">
         {#each swaps[picked] ?? [] as item (item.char)}
           <button type="button" class="ids-swap" {disabled} title={`${picked} → ${item.char} · ${item.count}`} onclick={() => swap(item)}>{item.char}</button>
         {/each}
-        {#each own[picked] ?? [] as sequence (sequence)}
+        {#each splits as sequence (sequence)}
           <button type="button" class="ids-swap ids-split" {disabled} title={t('form.ids.split', { part: picked })} onclick={() => split(sequence)}>{sequence}</button>
         {/each}
       </div>
@@ -365,6 +382,7 @@
   .ids-split{font-size:16px;color:var(--muted)}
   .ids-swap:not(:disabled):hover{border-color:var(--accent)}
   .ids-problem{margin:0;font-size:12px;color:var(--fault)}
+  .ids-pending{margin:0;font-size:12px;color:var(--muted)}
   .ids-search{display:flex;flex-direction:column;gap:4px}
   .ids-search :global(.character-search){width:100%;min-width:0}
   .ids-actions{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
