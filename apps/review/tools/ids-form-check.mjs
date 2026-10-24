@@ -260,6 +260,72 @@ try {
   console.log(`PASS ${palettePart} picked from the parts palette tab, its keys its own, undo and redo from it`)
   await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][0].click()`)
 
+  // Take parts from: 疑 typed into the box opens into its description, 𠤕 opened by the arrow key
+  // shows ⿱匕矢, and Enter on 匕 puts it in the chosen slot; a node is taken whole by a click. Parts
+  // typed there list the characters built from them, and one opened from that list gives its parts.
+  const fromRow = (text, kind) => `[...document.querySelectorAll('dialog[open] .ids-from .from-row${kind ? '.' + kind : ''}')].find(r => r.querySelector('.from-take')?.textContent === ${JSON.stringify(text)})`
+  const fromType = text => browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-from input'); i.focus(); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await typeSequence('⿰＋木')
+  await becomes('⿰＋木')
+  await focusPath('0')
+  await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][2].click()`)
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-from input')`)
+  await fromType('疑')
+  await browser.waitFor(`!!${fromRow('⿰𠤕⿱龴疋', 'sequence')}`, 20000)
+  await browser.evaluate(`${fromRow('疑', 'char')}.focus()`)
+  await browser.key('ArrowDown')
+  await browser.key('ArrowDown')
+  assert(await browser.evaluate(`document.activeElement === ${fromRow('𠤕', 'char')}`), 'ArrowDown did not reach 𠤕')
+  await browser.key('ArrowRight')
+  await browser.waitFor(`!!${fromRow('匕', 'char')}`, 20000)
+  // Opening a part says how many parts it came to, in the one live region; loading is not said.
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-from .from-live').textContent === '𠤕: 2 parts'`)
+  assert(await browser.evaluate(`document.querySelectorAll('dialog[open] [role="status"], dialog[open] [aria-live]').length`) >= 1, 'no live region')
+  await browser.evaluate(`${fromRow('匕', 'char')}.focus()`)
+  await browser.key('Enter')
+  await becomes('⿰匕木')
+  await shoot('ids-from-tree', '.ids-search')
+  await browser.evaluate(`${fromRow('⿱龴疋', 'node')}.querySelector('.from-take').click()`)
+  await becomes('⿰⿱龴疋木')
+  // ArrowRight opens a closed part, then reaches the swaps beside it; Enter takes the swap. An
+  // operator key pressed on a row is the tree's, so the sequence keeps its operator.
+  await browser.evaluate(`${fromRow('矢', 'char')}.focus()`)
+  await browser.key('1')
+  await Bun.sleep(150)
+  assert(await value() === '⿰⿱龴疋木', `an operator key on the tree changed the sequence: ${await value()}`)
+  await browser.key('ArrowRight')
+  await browser.waitFor(`${fromRow('矢', 'char')}.getAttribute('aria-expanded') === 'true'`)
+  await browser.key('ArrowRight')
+  await browser.waitFor(`!!${fromRow('矢', 'char')}.querySelector('.from-swap.active')`)
+  const swapped = await browser.evaluate(`${fromRow('矢', 'char')}.querySelector('.from-swap.active').textContent`)
+  await browser.key('Enter')
+  await becomes(`⿰${swapped}木`)
+  assert(!errors.length, 'page errors: ' + errors.join('; '))
+  console.log('PASS 匕 taken from 疑\'s tree by the keyboard, ⿱龴疋 taken whole, a swap reached by ArrowRight')
+
+  await fromType('匕矢')
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-from .from-hit') || !!document.querySelector('dialog[open] .ids-from .from-containing [role="status"]:not(:empty)') && !document.querySelector('dialog[open] .ids-from .from-containing')?.textContent.includes('…')`, 30000)
+  const hit = await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-hit')?.textContent ?? null`)
+  assert(hit, 'no character was found containing 匕 and 矢: ' + await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-containing')?.textContent`))
+  // A typed character closed by the reader stays closed when a found one is opened above it.
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-row[data-key="t0"] .from-toggle').click()`)
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-from .from-row[data-key="t0"]').getAttribute('aria-expanded') === 'false'`)
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-hit').click()`)
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-from .from-row[data-key="x${hit}"]')`)
+  assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-row[data-key="t0"]').getAttribute('aria-expanded')`) === 'false', 'opening a found character reopened a typed one')
+  // The first part in the opened character's own tree, the rows before the next character typed.
+  const leaf = `(() => { const rows = [...document.querySelectorAll('dialog[open] .ids-from .from-row')], at = rows.findIndex(r => r.dataset.key === 'x${hit}')
+    const end = rows.findIndex((r, k) => k > at && r.getAttribute('aria-level') === '1')
+    return rows.slice(at + 1, end < 0 ? undefined : end).find(r => r.classList.contains('char'))?.querySelector('.from-take') })()`
+  await browser.waitFor(`!!${leaf}`, 20000)
+  await shoot('ids-from-containing', '.ids-search')
+  const part = await browser.evaluate(`${leaf}.textContent`)
+  await browser.evaluate(`${leaf}.click()`)
+  await becomes(`⿰${part}木`)
+  assert(!errors.length, 'page errors: ' + errors.join('; '))
+  console.log(`PASS ${hit} found by its parts 匕矢, and its part ${part} taken`)
+  await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][0].click()`)
+
   await typeSequence('⿰𠤕⿱龴疋')
   await becomes('⿰𠤕⿱龴疋')
 
