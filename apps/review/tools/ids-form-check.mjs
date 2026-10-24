@@ -54,9 +54,13 @@ const choosePart = async part => {
 }
 const pick = text => browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-swap')].find(b => b.textContent === ${JSON.stringify(text)}).click()`)
 // The composer at the device's pixel ratio, cropped to the picker.
-async function shoot(name) {
+async function shoot(name, selector = '.form-picker') {
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 2, mobile: false })
-  const box = await browser.evaluate(`(() => { const r = document.querySelector('dialog[open] .form-picker').getBoundingClientRect(); return { x: r.x - 8, y: r.y - 8, width: r.width + 16, height: r.height + 16 } })()`)
+  // A part taller than the window gets a taller window, so nothing scrolls under the dialog's bars.
+  const tall = await browser.evaluate(`document.querySelector('dialog[open] ${selector}').getBoundingClientRect().height`)
+  if (tall > 700) await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: Math.ceil(tall) + 400, deviceScaleFactor: 2, mobile: false })
+  const box = await browser.evaluate(`(() => { const el = document.querySelector('dialog[open] ${selector}'); el.scrollIntoView({ block: 'center' })
+    const r = el.getBoundingClientRect(); return { x: r.x - 8, y: Math.max(0, r.y - 8), width: r.width + 16, height: r.height + 16 } })()`)
   for (const scheme of ['light', 'dark']) {
     await browser.setColorScheme(scheme)
     await Bun.sleep(200)
@@ -230,6 +234,51 @@ try {
   await browser.waitFor(`!!document.querySelector('dialog[open] .ids-tree > [data-op="⿱"]')`)
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS operator keys by position, IME composition, a unary operator on an empty slot, Tab from the focus')
+
+  // Take parts from: 疑 typed into the box opens into its description, 𠤕 opened by the arrow key
+  // shows ⿱匕矢, and Enter on 匕 puts it in the chosen slot; a node is taken whole by a click. Parts
+  // typed there list the characters built from them, and one opened from that list gives its parts.
+  const fromRow = (text, kind) => `[...document.querySelectorAll('dialog[open] .ids-from .from-row${kind ? '.' + kind : ''}')].find(r => r.querySelector('.from-take')?.textContent === ${JSON.stringify(text)})`
+  const fromType = text => browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-from input'); i.focus(); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await typeSequence('⿰＋木')
+  await becomes('⿰＋木')
+  await focusPath('0')
+  await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][2].click()`)
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-from input')`)
+  await fromType('疑')
+  await browser.waitFor(`!!${fromRow('⿰𠤕⿱龴疋', 'sequence')}`, 20000)
+  await browser.evaluate(`${fromRow('疑', 'char')}.focus()`)
+  await browser.key('ArrowDown')
+  await browser.key('ArrowDown')
+  assert(await browser.evaluate(`document.activeElement === ${fromRow('𠤕', 'char')}`), 'ArrowDown did not reach 𠤕')
+  await browser.key('ArrowRight')
+  await browser.waitFor(`!!${fromRow('匕', 'char')}`, 20000)
+  await browser.evaluate(`${fromRow('匕', 'char')}.focus()`)
+  await browser.key('Enter')
+  await becomes('⿰匕木')
+  await shoot('ids-from-tree', '.ids-search')
+  await browser.evaluate(`${fromRow('⿱龴疋', 'node')}.querySelector('.from-take').click()`)
+  await becomes('⿰⿱龴疋木')
+  assert(!errors.length, 'page errors: ' + errors.join('; '))
+  console.log('PASS 匕 taken from 疑\'s tree by the keyboard, and ⿱龴疋 taken whole')
+
+  await fromType('匕矢')
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-from .from-hit') || !!document.querySelector('dialog[open] .ids-from .from-containing [role="status"]:not(:empty)') && !document.querySelector('dialog[open] .ids-from .from-containing')?.textContent.includes('…')`, 30000)
+  const hit = await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-hit')?.textContent ?? null`)
+  assert(hit, 'no character was found containing 匕 and 矢: ' + await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-containing')?.textContent`))
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-from .from-hit').click()`)
+  // The first part in the opened character's own tree, the rows before the next character typed.
+  const leaf = `(() => { const rows = [...document.querySelectorAll('dialog[open] .ids-from .from-row')], at = rows.findIndex(r => r.dataset.key === 'x${hit}')
+    const end = rows.findIndex((r, k) => k > at && r.getAttribute('aria-level') === '1')
+    return rows.slice(at + 1, end < 0 ? undefined : end).find(r => r.classList.contains('char'))?.querySelector('.from-take') })()`
+  await browser.waitFor(`!!${leaf}`, 20000)
+  await shoot('ids-from-containing', '.ids-search')
+  const part = await browser.evaluate(`${leaf}.textContent`)
+  await browser.evaluate(`${leaf}.click()`)
+  await becomes(`⿰${part}木`)
+  assert(!errors.length, 'page errors: ' + errors.join('; '))
+  console.log(`PASS ${hit} found by its parts 匕矢, and its part ${part} taken`)
+  await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][0].click()`)
 
   await typeSequence('⿰𠤕⿱龴疋')
   await becomes('⿰𠤕⿱龴疋')
