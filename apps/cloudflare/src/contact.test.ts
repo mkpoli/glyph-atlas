@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { Problem } from './busy';
-import { MAX_MESSAGE, inboxText, sendContact } from './contact';
+import { MAX_MESSAGE, inboxText, mailText, receiveMail, sendContact } from './contact';
 
 const sent: { url: string; init: RequestInit }[] = [];
 const realFetch = globalThis.fetch;
@@ -62,5 +62,38 @@ describe('a contact-form message', () => {
     answering(200);
     expect(await (await sendContact(env(true, ''), form({ message: 'hi' }))).json()).toEqual({ sent: true });
     expect(sent).toHaveLength(0);
+  });
+});
+
+const raw = [
+  'From: =?UTF-8?B?5bGx55Sw?= <yamada@example.jp>', 'To: contact@glyphatlas.org', 'Subject: =?UTF-8?B?6Kqk6K2Y44Gu5aCx5ZGK?=',
+  'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: 8bit', '', '「字」が「宇」になっています。', '',
+].join('\r\n');
+const mail = (forwarded: string[]) => ({
+  from: 'bounce@example.jp', to: 'contact@glyphatlas.org', raw: new Response(raw).body!, rawSize: raw.length,
+  headers: new Headers(), forward: async (to: string) => { forwarded.push(to) }, setReject: () => {}, reply: async () => {},
+}) as unknown as ForwardableEmailMessage;
+
+describe('a mail to the contact address', () => {
+  it('is forwarded, then posted to the inbox with its sender, subject and text', async () => {
+    answering(200);
+    const forwarded: string[] = [];
+    await receiveMail(mail(forwarded), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org' });
+    expect(forwarded).toEqual(['owner@example.org']);
+    expect(JSON.parse(sent[0].init.body as string).body).toBe(
+      'Mail to contact@glyphatlas.org\nFrom: 山田 <yamada@example.jp>\nSubject: 誤識の報告\n\n「字」が「宇」になっています。');
+  });
+
+  it('is still forwarded when the inbox refuses the post', async () => {
+    answering(500);
+    const forwarded: string[] = [];
+    await receiveMail(mail(forwarded), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org' });
+    expect(forwarded).toHaveLength(1);
+  });
+
+  it('is cut to the message limit in the inbox, and names its attachments', () => {
+    const post = mailText('a@b', '', 'x'.repeat(MAX_MESSAGE + 5), 2);
+    expect(post).toStartWith('Mail to contact@glyphatlas.org\nFrom: a@b\nSubject: (none)\nAttachments: 2\n\n');
+    expect(post).toEndWith('x\n[…]');
   });
 });

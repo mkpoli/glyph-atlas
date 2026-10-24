@@ -28,7 +28,9 @@
   // SIMILAR_INDEX_NAME names the Vectorize index bound as SIMILAR_INDEX, whose pointer the image search reads.
   // CATALOGUE_LAG is how many seconds the edge's copies may stand behind the reviews (`catalogueStamps`).
   // MATRIX_HOMESERVER and MATRIX_INBOX_ROOM are where contact-form messages go (`src/contact.ts`), posted
-  // with the inbox account's token, the secret MATRIX_INBOX_TOKEN.
+  // with the inbox account's token, the secret MATRIX_INBOX_TOKEN. Mail routed to the Worker (contact@) is
+  // forwarded to the secret CONTACT_FORWARD_TO, which must be a verified Email Routing destination, and
+  // posted to the same room.
   "vars": {"MAIL_FROM": "sign-in@glyphatlas.org", "SIMILAR_INDEX_NAME": "glyph-atlas-similar-5dc40a3e", "CATALOGUE_LAG": "60",
            "MATRIX_HOMESERVER": "https://matrix.glyphatlas.org", "MATRIX_INBOX_ROOM": "!Vg3g9ktsIY_VWsL5i6K10iqJX1cuvi-GeEWXTeLPuJw"},
   // BETTER_AUTH_SECRET is a secret, and so is each sign-in provider's app id and secret (GITHUB_CLIENT_ID,
