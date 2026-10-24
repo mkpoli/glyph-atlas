@@ -92,25 +92,34 @@ export const wrap = (op, node) => ({ op, parts: [node, ...Array(arity(op) - 1).f
 
 // The composer's drawing of a description is stored under `ids/<sha256 of its NFC form>.svg`, the
 // name its manifest gives each sequence it draws, and served under /atlas/. Each text is hashed and
-// loaded once a page: `drawings` holds its URL once the image has loaded, null where none is made.
+// loaded once a page, keyed by its NFC form: `drawings` holds its URL once the image has loaded, null
+// where none is made. A miss is asked again after five minutes, as long as the server answers it as
+// missing, so a sequence drawn later or a failed request does not stay as text.
 const drawings = new Map(), loading = new Map()
+const MISS_MS = 5 * 60 * 1000
 
 async function drawingUrl(text) {
-  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text.normalize('NFC'))))
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))
   return `/atlas/ids/${[...bytes].map(b => b.toString(16).padStart(2, '0')).join('')}.svg`
 }
 
 /** The loaded drawing of the description `text`: its URL, null where none is made, undefined until known. */
-export const drawn = text => drawings.get(text)
+export const drawn = text => drawings.get(text.normalize('NFC'))
 
 /** Loads the drawing of the description `text` once, answering its URL or null. */
 export function loadDrawing(text) {
+  text = text.normalize('NFC')
   if (drawings.has(text)) return Promise.resolve(drawings.get(text))
   if (!loading.has(text)) loading.set(text, drawingUrl(text).then(url => new Promise(resolve => {
     const image = new Image()
     image.onload = () => resolve(url)
     image.onerror = () => resolve(null)
     image.src = url
-  }), () => null).then(url => { drawings.set(text, url); loading.delete(text); return url }))
+  }), () => null).then(url => {
+    drawings.set(text, url)
+    loading.delete(text)
+    if (url === null) setTimeout(() => drawings.delete(text), MISS_MS)
+    return url
+  }))
   return loading.get(text)
 }

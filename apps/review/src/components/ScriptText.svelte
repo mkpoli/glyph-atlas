@@ -27,6 +27,7 @@
 
 <style>
   .ids-drawing{position:relative;display:inline-block;width:1em;height:1em;vertical-align:-0.12em;background:currentColor;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
     -webkit-mask:var(--drawing) center/contain no-repeat;mask:var(--drawing) center/contain no-repeat}
   .ids-copy{position:absolute;inset:0;overflow:hidden;white-space:nowrap;color:transparent;clip-path:inset(50%)}
   @media (forced-colors: active){.ids-drawing{forced-color-adjust:none;background:CanvasText}}
