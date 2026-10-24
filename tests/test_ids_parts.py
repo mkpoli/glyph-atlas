@@ -119,24 +119,39 @@ def _path(kind: str) -> str:
     return f'<path kvg:type="{kind}" d="M0,0"/>'
 
 
-def test_a_part_that_starts_two_ways_has_no_first_stroke(tmp_path):
-    # 𠂇's own entry starts with 一, as 左 does; 右 is spelled ⿸𠂇口 and starts with 丿.
+def test_first_strokes_need_three_witnesses_and_ninety_percent(tmp_path):
+    dot, vertical, mouth = _path("㇔"), _path("㇑"), f'<g kvg:element="口">{_path("㇑")}</g>'
     path = _kanjivg(
         tmp_path,
         {
+            # 𠂇 starts with 一 in its own entry, 左 and 友, and with 丿 in 右, 有 and 布.
             "𠂇": _path("㇐") + _path("㇒"),
-            "左": _path("㇐") + _path("㇒") + _path("㇐"),
-            "右": _path("㇒") + _path("㇐") + _path("㇑"),
-            "口": _path("㇑") + _path("㇕") + _path("㇐"),
-            # A variant drawing of 口 starting with a dot is no witness against 口's vertical.
-            "品": f'<g kvg:element="口" kvg:variant="true">{_path("㇔")}</g>',
-            # 亠's own first stroke is a suffixed type; 交, spelled ⿱亠父, starts with a dot.
+            **{char: _path("㇐") + _path("㇒") for char in "左友"},
+            **{char: _path("㇒") + _path("㇐") for char in "右有布"},
+            # 口: its own entry, eight groups and the host 叫 start with a vertical; one group starts
+            # with a dot, and a variant group, which is no witness, with another.
+            "口": vertical + _path("㇕"),
+            "品": mouth * 3,
+            "器": mouth * 4,
+            "呂": mouth,
+            "叫": vertical,
+            "擡": f'<g kvg:element="口">{dot}</g>',
+            "簔": f'<g kvg:element="口" kvg:variant="true">{dot}</g>',
+            # 亠: its own first stroke is a suffixed type, so only the hosts 交 and 亡 witness it.
             "亠": _path("㇑a") + _path("㇐"),
-            "交": _path("㇔") + _path("㇐"),
+            "交": dot,
+            "亡": dot,
         },
     )
-    ids = {"左": ["⿸𠂇工"], "右": ["⿸𠂇口"], "交": ["⿱亠父"]}
+    ids = {
+        **{char: [f"⿸𠂇{rest}"] for char, rest in zip("左友右有布", "工又口月巾", strict=True)},
+        "叫": ["⿰口丩"],
+        "交": ["⿱亠父"],
+        "亡": ["⿱亠𠃊"],
+    }
+    agreed = build.agreement(build.kanjivg_witnesses(path, ids))
+    assert agreed["𠂇"] == (None, 3, 6)
+    assert agreed["口"] == ("豎", 10, 11)
+    assert agreed["亠"] == (None, 2, 2)
     first = build.kanjivg_first(path, ids)
-    assert "𠂇" not in first
-    assert first["左"] == "横" and first["右"] == "撇"
-    assert first["口"] == "豎" and first["亠"] == "點"
+    assert "𠂇" not in first and "亠" not in first and first["口"] == "豎"
