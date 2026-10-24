@@ -200,7 +200,8 @@ def pools(atlas):
         out[glyphs[0][2]] += glyphs if n <= PER_CHARACTER else [
             glyphs[(2 * i + 1) * n // (2 * PER_CHARACTER)] for i in range(PER_CHARACTER)]
     for name in WHOLE:
-        out[name].sort(key=lambda g: (g[1], g[0]))
+        if name in out:
+            out[name].sort(key=lambda g: (g[1], g[0]))
     return out
 
 
