@@ -119,6 +119,14 @@ function build(env: Env, origin: string, paused: boolean) {
             const held = id && await env.ATLAS.prepare('SELECT 1 FROM actors WHERE key=? AND user=?').bind(user.name, id).first();
             if (!held) throw new APIError('BAD_REQUEST', { message: 'This name is an old reviewer id another reviewer may hold.' });
           },
+          // A ban also ends the user's Matrix sign-in: its OAuth tokens are revoked with its sessions.
+          after: async user => {
+            if (!user?.banned) return;
+            await env.ACCOUNTS.batch([
+              env.ACCOUNTS.prepare('DELETE FROM "oauthAccessToken" WHERE "userId"=?').bind(user.id),
+              env.ACCOUNTS.prepare('DELETE FROM "oauthRefreshToken" WHERE "userId"=?').bind(user.id),
+            ]);
+          },
         },
         // Better Auth deletes the user's sessions and sign-in accounts, runs `before`, which marks the user
         // and deletes the anonymous users joined to it, then deletes the user. `after` removes their
@@ -198,12 +206,25 @@ function build(env: Env, origin: string, paused: boolean) {
       oauthProvider({
         loginPage: '/sign-in', consentPage: '/sign-in',
         scopes: ['openid', 'profile', 'email', 'offline_access'],
+        // Clients are only ever added by hand: none registers itself, and no session may create one.
         allowDynamicClientRegistration: false,
+        clientPrivileges: () => false,
         // An anonymous session is no account to sign in with: it is sent to sign in first.
         selectAccount: { shouldRedirect: ({ user }) => Boolean(user.isAnonymous) },
+        // Every token is checked against the user as stored now, a refresh included: an anonymous user
+        // gets none whatever route it took, and neither does a banned one.
+        customIdTokenClaims: ({ user }) => { refuseTokens(user); return {} },
+        customAccessTokenClaims: ({ user }) => { if (user) refuseTokens(user); return {} },
       }),
     ],
   });
+}
+
+/** Refuse a Matrix sign-in token to an anonymous user, or to one whose ban stands. */
+export function refuseTokens(user: Record<string, unknown>) {
+  if (user.isAnonymous) throw new APIError('FORBIDDEN', { message: 'Sign in with an account first.' });
+  const until = user.banExpires ? new Date(user.banExpires as string | Date).getTime() : Infinity;
+  if (user.banned && until > Date.now()) throw new APIError('FORBIDDEN', { message: 'This account is banned.' });
 }
 
 // One instance per origin, freeze state and isolate: the options are the same for every request.
