@@ -29,8 +29,10 @@ export function decodeCursor(value: string | null): { id: number } {
   throw new Problem(422, 'Invalid cursor. Restart the export from its first page.');
 }
 
-/** One page of the export. A missing or damaged object fails the whole page, so no partial page is read
- *  as complete. A review saved here before its evidence was kept is listed without it (`evidence: null`). */
+/** One page of the export. A review whose record cannot be served is listed without it (`evidence: null`),
+ *  with `unavailable` naming why: saved here before evidence was kept, or its object or archive is missing,
+ *  damaged, or lacks it. The page stays complete, so one lost record holds back no later review. A read
+ *  R2 fails to answer fails the page, to be retried. */
 export async function reviewsPage(env: Env, q: URLSearchParams) {
   const after = decodeCursor(q.get('after'));
   const [rows, published] = await env.ATLAS.batch<Json>([
@@ -44,21 +46,30 @@ export async function reviewsPage(env: Env, q: URLSearchParams) {
     const source = row.legacy !== null ? `page:${pageOf(row.crop)}` : row.evidence ? `hash:${row.evidence}` : null;
     if (source) sources.set(source, [...(sources.get(source) ?? []), row]);
   }
-  const selected = new Map<number, Json>(), groups = [...sources];
+  const selected = new Map<number, Json>(), unavailable = new Map<number, string>(), groups = [...sources];
+  for (const row of page) if (row.legacy === null && !row.evidence) unavailable.set(row.id, 'saved before review evidence was kept');
   for (let offset = 0; offset < groups.length; offset += 8) {
     await Promise.all(groups.slice(offset, offset + 8).map(async ([source, rows]) => {
-      const object = source.startsWith('page:') ? await readLegacyReviews(env, Number(source.slice(5)))
-        : await readReviewEvidence(env, source.slice(5));
-      if (!object) throw new Problem(503, 'The reviews moved from the old site are not archived yet.');
+      const legacy = source.startsWith('page:');
+      let object: Record<string, Json> | null;
+      try {
+        object = legacy ? await readLegacyReviews(env, Number(source.slice(5))) : await readReviewEvidence(env, source.slice(5));
+      } catch (error) {
+        // A Problem is the object itself: absent, or bytes that do not read. Anything else is R2 failing to answer.
+        if (!(error instanceof Problem)) throw error;
+        for (const row of rows) unavailable.set(row.id, error.message);
+        return;
+      }
       for (const row of rows) {
-        const stored = object[row.legacy === null ? `crop:${row.crop}` : `legacy:${row.legacy}`];
-        if (!stored) throw new Problem(503, 'A review is missing from its evidence object.');
-        selected.set(row.id, stored);
+        const stored = object?.[legacy ? `legacy:${row.legacy}` : `crop:${row.crop}`];
+        if (stored) selected.set(row.id, stored);
+        else unavailable.set(row.id, !object ? 'The old-site archive of its page is missing.'
+          : legacy ? 'The old-site archive of its page does not hold it.' : 'Its evidence object does not hold it.');
       }
     }));
   }
   // A review without its record names its crop by the source id its page bundle holds.
-  const bare = page.filter(row => row.legacy === null && !row.evidence);
+  const bare = page.filter(row => unavailable.has(row.id));
   const revs = bare.length ? (await env.ATLAS.prepare('SELECT p.id,p.rev FROM json_each(?) j JOIN pages p ON p.id=j.value')
     .bind(JSON.stringify([...new Set(bare.map(row => pageOf(row.crop)))])).all<{ id: number; rev: number }>()).results : [];
   const bundles = new Map(await Promise.all(revs.map(async p => [p.id, await bundle(env, p.id, p.rev)] as const)));
@@ -67,9 +78,9 @@ export async function reviewsPage(env: Env, q: URLSearchParams) {
     const state = { crop: publicId(row.crop), current: !row.superseded, current_revision: row.current_revision };
     const stored = selected.get(row.id);
     if (!stored) {
-      // Saved before this site kept evidence: what the reviewer saw is not recorded, so it cannot be imported.
-      reviews.push({ event: { id: `v3:${row.id}`, target_type: 'unit', target_id: bundles.get(pageOf(row.crop))?.bySlot.get(slotOf(row.crop))?.id ?? publicId(row.crop), field: 'review',
-        at: new Date(row.at).toISOString() }, evidence: null, unavailable: 'saved before review evidence was kept', ...state });
+      // What the reviewer saw is not served, so it cannot be imported; a moved review keeps its old-site id.
+      reviews.push({ event: { id: row.legacy ?? `v3:${row.id}`, target_type: 'unit', target_id: bundles.get(pageOf(row.crop))?.bySlot.get(slotOf(row.crop))?.id ?? publicId(row.crop), field: 'review',
+        at: new Date(row.at).toISOString() }, evidence: null, unavailable: unavailable.get(row.id), ...state });
       continue;
     }
     // The old export left out reviews of crops it no longer held; their records stay for audit.

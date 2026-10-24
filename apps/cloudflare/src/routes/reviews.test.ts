@@ -124,12 +124,39 @@ describe('immutable review export', () => {
     expect(last.next).toBeNull();
   });
 
-  it('fails the whole page when an archive or a review in it is missing', async () => {
-    const { env, add, archive, objects } = setup();
-    archive(1, {});
+  it('lists a review whose record is missing or unreadable as unavailable, and serves the rest of the page', async () => {
+    const { db, env, add, crop, archive, objects } = setup();
+    const legacy = 'cf:12494629-322d-44f2-930d-78fecbf63608';
+    archive(1, { 'legacy:old-1': { event: { id: 'old-1' } } });
     add(1, 16777217, 1, 'old-1');
-    await expect(reviewsPage(env, new URLSearchParams())).rejects.toThrow('missing from');
-    objects.clear();
-    await expect(reviewsPage(env, new URLSearchParams())).rejects.toThrow('not archived');
+    add(2, 16777218, 1, legacy); // moved after the archive was built
+    crop(16777218, 1);
+    add(3, 33554433, 1, 'old-3'); // a page with no archive
+    add(4, 16777219, 1, null);
+    db.exec(`UPDATE submissions SET evidence='${'a'.repeat(64)}' WHERE id=4`); // its object is absent
+    add(5, 16777220, 1, null);
+    db.exec(`UPDATE submissions SET evidence='${'b'.repeat(64)}' WHERE id=5`);
+    objects.set(`v3/review-evidence/${'b'.repeat(64)}.json.gz`, new TextEncoder().encode('not gzip').buffer as ArrayBuffer);
+    archive(1, { 'legacy:old-1': { event: { id: 'old-1' } }, 'legacy:old-6': { event: { id: 'old-6' } } });
+    add(6, 16777221, 1, 'old-6');
+    const { reviews, next } = await reviewsPage(env, new URLSearchParams());
+    expect(next).toBeNull();
+    expect(reviews.map(r => [r.event.id, r.unavailable])).toEqual([
+      ['old-1', undefined],
+      [legacy, 'The old-site archive of its page does not hold it.'],
+      ['old-3', 'The old-site archive of its page is missing.'],
+      ['v3:4', 'Review evidence is unavailable.'],
+      ['v3:5', 'The review evidence object could not be read.'],
+      ['old-6', undefined],
+    ]);
+    expect(reviews[1]).toMatchObject({ evidence: null, crop: publicId(16777218), current: true, current_revision: 1 });
+  });
+
+  it('fails the page when R2 does not answer, so the export is retried', async () => {
+    const { env, add, archive } = setup();
+    archive(1, { 'legacy:old-1': { event: { id: 'old-1' } } });
+    add(1, 16777217, 1, 'old-1');
+    (env as any).MEDIA.get = async () => { throw new Error('R2 unavailable'); };
+    await expect(reviewsPage(env, new URLSearchParams())).rejects.toThrow('R2 unavailable');
   });
 });

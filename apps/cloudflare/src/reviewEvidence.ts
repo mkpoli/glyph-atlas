@@ -29,7 +29,7 @@ async function stored(object: { body: ReadableStream }, what: string, hash?: str
   return reviews;
 }
 
-/** Missing or damaged evidence must fail the export, so a partial page cannot be acknowledged. */
+/** Missing or damaged evidence is a 503: a save stops on it, and the export lists the reviews it held as unavailable. */
 export async function readReviewEvidence(env: Env, hash: string): Promise<Record<string, Json>> {
   if (!/^[0-9a-f]{64}$/.test(hash)) throw new Problem(503, 'Invalid review evidence reference.');
   const object = await env.MEDIA.get(evidenceKey(hash));

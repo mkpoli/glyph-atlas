@@ -195,8 +195,8 @@ The reviews moved from the old site are served from `v3/review-legacy/<page>.jso
 gave them. `review_archive.py --snapshots FILE` builds those archives from the frozen copies of `events`
 and `units` and the old site's publication record (`units.snapshot`) of each collected or retired crop
 they name, which the copies lack; `--send` uploads them. It writes nothing to D1. They are uploaded before
-the Worker deploys: until then the export stops at the first moved review, and a review of a crop the old
-site reviewed is refused with a 503 until its page is archived.
+the Worker deploys: until then the export lists each moved review as `unavailable`, and a review of a crop
+the old site reviewed is refused with a 503 until its page is archived.
 
 ## Publication answers
 
