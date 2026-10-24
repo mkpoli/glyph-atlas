@@ -1,3 +1,4 @@
+import { noteWrite } from './keptViews.js'
 import { t } from './i18n.svelte.js'
 import { isBusy, isPaused, isReload, retryAfter, waitOut } from './busy.svelte.js'
 import { anyKept, deliver, keep, keepable, offline, useSender } from './outbox.svelte.js'
@@ -44,6 +45,7 @@ function settle({ response, value }) {
 }
 
 async function posted(path, body, send, options) {
+  noteWrite()
   const response = await send(path, { ...options, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   return { response, value: await response.json() }
 }
