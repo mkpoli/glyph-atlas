@@ -17,7 +17,7 @@
   // The page view of the page a local crop was cut from, with the crop marked on it.
   const page = $derived(!corpus && item.page_id && item.id ? { href: localize('/pages/' + encodeURIComponent(item.page_id) + '?crop=' + encodeURIComponent(item.id)),
     label: item.page_number ? t('tile.page', { page: item.page_number }) : t('nav.pages'), internal: true } : null)
-  const links = $derived([page, linked.record, linked.honkoku].filter(link => link && link.href !== omit))
+  const links = $derived([page, linked.record, linked.catalogue, linked.honkoku].filter(link => link && link.href !== omit))
 </script>
 
 {#if shown.length || item.dating || credit || links.length}
