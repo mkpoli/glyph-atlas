@@ -1,6 +1,7 @@
 <script>
   import { onMount, tick, untrack } from 'svelte'
-  import { replaceState } from '$app/navigation'
+  import { beforeNavigate, replaceState } from '$app/navigation'
+  import { keepView, keptView } from '../lib/keptViews.js'
   import { page } from '$app/state'
   import { productionLabel } from '../components/ProductionBadge.svelte'
   import { cropDetails, repairOf, workTitle } from '../lib/cropDetails.js'
@@ -123,6 +124,7 @@
     const target = localize(path) + (search && '?' + search)
     // A shallow rewrite leaves `page.url` as it was loaded, so the address bar is what is compared.
     if (location.pathname + location.search !== target) replaceState(target, page.state)
+    here = target
   }
   // The unfiltered homepage, or one narrowed to a script group, shows the collection's own rows and then
   // a bounded corpus sample of the same group. The
@@ -1085,6 +1087,32 @@
     }
   }
   onMount(() => { layout = storedLayout(); zoom = storedZoom() })
+  // Leaving, the view keeps what it shows under its address; coming Back to that address, it shows the
+  // same crops in the same places (`lib/keptViews.js`), and reads nothing again but the crop count.
+  // `here` is the view's own address: while a crop is open the address bar holds the crop's.
+  let here = typeof location === 'undefined' ? '' : location.pathname + location.search
+  const capture = () => $state.snapshot({ data, items, error, grapheme, work, seed, query, filter, picked, expand, local, corpus, visual, analysis,
+    familyTotal, unassignedCount, corpusTotal, corpusOffset, corpusFault, localAfter, corpusAfter, localAnswered, style, styled, dateOrder,
+    yearRange, decadeCounts, decadesFor, localStyles, corpusStyles, corpusAnswered, split, sample, sampleFault, collection, localWithheld,
+    corpusCounts, corpusCountsAsked, runs, runsFailed, runsFor, runKind, homeRuns, scattered, scatteredFor, charRuns, charRunsFor, confirmedHere })
+  beforeNavigate(() => { if (addressed && display.length) keepView(here, capture()) })
+  const back = untrack(() => addressed) ? keptView(here) : null
+  if (back) {
+    data = back.data; items = back.items; error = back.error; grapheme = back.grapheme; work = back.work;
+    seed = back.seed; query = back.query; filter = back.filter; picked = back.picked; expand = back.expand;
+    local = back.local; corpus = back.corpus; visual = back.visual; analysis = back.analysis;
+    familyTotal = back.familyTotal; unassignedCount = back.unassignedCount; corpusTotal = back.corpusTotal;
+    corpusOffset = back.corpusOffset; corpusFault = back.corpusFault; localAfter = back.localAfter;
+    corpusAfter = back.corpusAfter; localAnswered = back.localAnswered; style = back.style; styled = back.styled;
+    dateOrder = back.dateOrder; yearRange = back.yearRange; decadeCounts = back.decadeCounts;
+    decadesFor = back.decadesFor; localStyles = back.localStyles; corpusStyles = back.corpusStyles;
+    corpusAnswered = back.corpusAnswered; split = back.split; sample = back.sample; sampleFault = back.sampleFault;
+    collection = back.collection; localWithheld = back.localWithheld; corpusCounts = back.corpusCounts;
+    corpusCountsAsked = back.corpusCountsAsked; runs = back.runs; runsFailed = back.runsFailed; runsFor = back.runsFor;
+    runKind = back.runKind; homeRuns = back.homeRuns; scattered = back.scattered; scatteredFor = back.scatteredFor;
+    charRuns = back.charRuns; charRunsFor = back.charRunsFor; confirmedHere = back.confirmedHere;
+    loading = false; reach = untrack(() => display.length)
+  }
   // A character's page, and the collection's when no search or filter narrows it, come without the
   // collection's counts by character and by work, which run to hundreds of kilobytes: they are read
   // once the page shows, for the work menu, the grapheme list and the tiles' ranks, and a failed read
@@ -1099,9 +1127,9 @@
       if (!closed && summaryRequest === reading && !data?.categories?.length) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents }
     } catch { /* the next save reads them again */ }
   }
-  onMount(() => { if (!opened && !(first && !first.result.categories?.length)) return; readSummary(); return () => summaryRequest?.abort() })
+  onMount(() => { if (back || !opened && !(first && !first.result.categories?.length)) return; readSummary(); return () => summaryRequest?.abort() })
   // The crop count is read again every half minute while the tab is in view; a hidden tab waits.
-  onMount(() => { const redirected = first ? openEmptyGrapheme(first.result) || openSplit(first.result) : false; if (!collection) readCollection(); if (!first && !opened || showWithheld && !flagged) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(() => document.hidden || readCollection(), 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  onMount(() => { const redirected = !back && first ? openEmptyGrapheme(first.result) || openSplit(first.result) : false; if (!collection) readCollection(); if (!back && (!first && !opened || showWithheld && !flagged)) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(() => document.hidden || readCollection(), 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
   // The first run is the widening the page opened with, already loaded.
