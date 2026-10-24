@@ -157,9 +157,11 @@ try {
   assert(units(config.directory)[second].unicode === 'U+3042', 'a description changed the crop\'s character')
   console.log('PASS a form written as a description is composed, checked and claimed')
 
-  // A character the IVD registers several figures for offers each sequence among its variants, named
-  // by its MJ figure and drawn in MJ Figures: 所 as 所󠄂 (MJ012120) and 所󠄃 (MJ012119). Its regional
-  // shapes follow, named by their regions: ⿰戶斤 (GHTKPV) and ⿰戸斤 (J).
+  // A character's variants are forms of its grapheme: they follow its members on the bar, and the ones
+  // past the bar's ten wait in the picker's Forms. The IVD's figures for it come first, named by their MJ
+  // figure and drawn in MJ Figures: 所 as 所󠄂 (MJ012120) and 所󠄃 (MJ012119). Its regional shapes follow,
+  // named by their regions: ⿰戶斤 (GHTKPV) and ⿰戸斤 (J). A character related otherwise (数) is no
+  // form of it, and is offered under Related.
   // Another crop written as あ, one with an image to name, is renamed 所.
   const others = Object.entries(units(config.directory)).filter(([id, unit]) => unit.active && unit.unicode === 'U+3042' && id !== first && id !== second).map(([id]) => id)
   const [third, renamed] = await browser.evaluate(`(async () => {
@@ -174,18 +176,26 @@ try {
   })()`)
   assert(third && renamed.startsWith('2'), `no crop could be renamed to 所: ${renamed}`)
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(third)}`, { waitFor: ready, timeout: 90000 })
+  await browser.waitFor(`${chips}.length >= 10`, 20000)
+  const card = await (await fetch(`${service.base}/layers/characters/U%2B6240?expand=none`)).json()
+  const members = card.grapheme.members.map(member => member.char)
+  const section = title => `[...document.querySelectorAll('dialog[open] .form-picker .form-section')].find(s => s.querySelector('.form-section-title').textContent === '${title}')?.querySelectorAll('.form-option')`
   await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
-  const options = `[...document.querySelectorAll('dialog[open] .form-picker .form-section')].find(s => s.querySelector('.form-section-title').textContent === 'Variants')?.querySelectorAll('.form-option')`
-  await browser.waitFor(`(${options})?.length > 1`, 20000)
-  const variants = await browser.evaluate(`[...${options}].map(o => o.title)`)
-  assert(variants[0] === 'U+6240 U+E0102\nMJ012120' && variants[1] === 'U+6240 U+E0103\nMJ012119', `the registered figures do not lead the variants: ${JSON.stringify(variants)}`)
-  assert(variants[2] === '⿰戶斤\nGHTKPV' && variants[3] === '⿰戸斤\nJ', `the regional shapes do not follow the figures: ${JSON.stringify(variants)}`)
+  await browser.waitFor(`(${section('Forms')})?.length > 0`, 20000)
+  const onBar = await browser.evaluate(`[...${chips}].map(c => c.querySelector('.script-text').textContent)`)
+  const past = await browser.evaluate(`[...${section('Forms')}].map(o => o.title)`)
+  const related = await browser.evaluate(`[...(${section('Related')} ?? [])].map(o => o.title)`)
+  assert(onBar.length === 10 && members.length === 9 && members.every((member, i) => onBar[i] === member), `the bar does not lead with the grapheme's members: ${JSON.stringify(onBar)}`)
+  assert(onBar[9] === '所\u{E0102}' && past[0] === 'U+6240 U+E0103\nMJ012119', `the registered figures do not follow the members: ${JSON.stringify({ onBar, past })}`)
+  assert(past[1] === '⿰戶斤\nGHTKPV' && past[2] === '⿰戸斤\nJ', `the regional shapes do not follow the figures: ${JSON.stringify(past)}`)
+  assert(!onBar.includes('数') && related.includes('U+6570'), `数 is not offered as related: ${JSON.stringify({ onBar, related })}`)
+  assert(!await browser.evaluate(`(${section('Variants')})?.length > 0`), 'the picker still has a Variants section')
   await browser.waitFor(`[...document.fonts].some(f => f.family.replaceAll('"', '') === 'MJ Figures' && f.status === 'loaded')`, 20000)
   await browser.screenshot(join(screenshots, 'form-picker-variants-light.png'))
   await browser.setColorScheme('dark')
   await browser.screenshot(join(screenshots, 'form-picker-variants-dark.png'))
   await browser.setColorScheme('light')
-  console.log('PASS a character\'s registered figures, then its regional shapes, lead its variants')
+  console.log('PASS a character\'s variants follow its members on the bar, figures first, then its regional shapes')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop form')

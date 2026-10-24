@@ -23,14 +23,16 @@ const REGION_LANG = { G: 'zh-Hans', H: 'zh-HK', M: 'zh-MO', T: 'zh-Hant', J: 'ja
 const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(Boolean) ?? ''
 const cards = new Map()
 /**
- * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then the
- * variants: the figures the IVD registers for `char` when it registers more than one (所󠄂 and 所󠄃),
- * each named by its MJ figure; the shapes BabelStone gives `char` by region when it gives more than
- * one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J); and the variants the sources attest; then the derived
- * ones. A character the layer does not know offers itself alone.
+ * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then its
+ * other forms, as the character's card lists them: the figures the IVD registers for `char` when it
+ * registers more than one (所󠄂 and 所󠄃), each named by its MJ figure; the shapes BabelStone gives
+ * `char` by region when it gives more than one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J); and the
+ * variants the sources attest that a gallery widens to or that one is written for the other. The
+ * characters related otherwise (a loan, a homograph, a grapheme this form also writes) follow as
+ * `related`, and the derived shapes last. A character the layer does not know offers itself alone.
  */
 export function listForms(char) {
-  if (!char) return Promise.resolve({ members: [], variants: [], derived: [] })
+  if (!char) return Promise.resolve({ members: [], variants: [], related: [], derived: [] })
   if (!cards.has(char)) {
     // A sequence the table has no card for (ツ + U+309A) offers itself alone.
     const card = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error))
@@ -44,12 +46,15 @@ export function listForms(char) {
     const loaded = Promise.all([card, registered, described]).then(([card, figures, regional]) => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
       const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) }))
-      const variants = [...figures.map(figure => ({ ...entry(figure), mj: figure.mj })), ...shapes,
-        ...[...card?.variants?.items ?? [], ...card?.variants?.related ?? []].map(entry)]
-      const derived = (card?.variants?.derived ?? []).map(derivedEntry)
+      const found = card?.variants ?? {}
+      const writers = new Set((found.writers ?? []).map(v => v.char)), writes = new Set((found.writes ?? []).map(v => v.char))
+      const forms = [...found.items ?? [], ...(found.related ?? []).filter(v => v.written || writers.has(v.char))].filter(v => !writes.has(v.char))
+      const variants = [...figures.map(figure => ({ ...entry(figure), mj: figure.mj })), ...shapes, ...forms.map(entry)]
+      const related = [...found.items ?? [], ...found.related ?? []].filter(v => !forms.includes(v)).map(entry)
+      const derived = (found.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))
       const fresh = list => list.filter(item => !seen.has(item.char) && seen.add(item.char))
-      return { members, variants: fresh(variants), derived: fresh(derived) }
+      return { members, variants: fresh(variants), related: fresh(related), derived: fresh(derived) }
     })
     // A failed read is asked again next time rather than kept.
     cards.set(char, loaded.then(found => (partial && cards.delete(char), found), error => { cards.delete(char); throw error }))
