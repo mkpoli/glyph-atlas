@@ -133,6 +133,10 @@ describe('choosing pairs and trigrams', () => {
     expect(chosenCrops(tiles, runs, new Set(['a', 'c', 'run:0'])).map(item => item.id)).toEqual(['a', 'c', 'd'])
     expect(chosenCrops(tiles, runs, new Set(['run:1', 'run:2'])).map(item => item.id)).toEqual(['e'])
   })
+  it('keeps the gallery tile\'s copy of a crop a run also holds', () => {
+    const fresh = glyph('c', { revision: 5 }), stale = glyph('c', { revision: 2 })
+    expect(chosenCrops([fresh], [{ id: 'run:0', crops: [stale] }], new Set(['c', 'run:0']))[0].revision).toBe(5)
+  })
   it('reports a run crop the corpus only transcribed, as it reports such a tile', () => {
     const plan = confirmationPlan(chosenCrops([], [{ id: 'run:0', crops: [glyph('c'), glyph('d', { written_character: null, identity_basis: 'normalized_transcription' })] }], new Set(['run:0'])))
     expect(plan.crops.map(item => item.id)).toEqual(['c'])

@@ -620,6 +620,8 @@
   const runTiles = $derived(bare ? slots.flatMap((slot, k) => scattered[k] === null ? [] : [{ ...scattered[k], ...slot }]) : [])
   async function scatter(key) {
     scatteredFor = key; scattered = []
+    // The places are numbered by slot, so a new deal's runs must not inherit the old ones' selection.
+    if ([...selected].some(id => id.startsWith('run:'))) selected = new Set([...selected].filter(id => !id.startsWith('run:')))
     const random = seeded(key ^ 0x5bd1e995)
     try {
       // Each run keeps its place among its kind's counts, which its tile names.
@@ -780,6 +782,7 @@
         return (flagged && !waiting(result.state)) || !fitsGallery(updated) ? [] : [updated]
       }
       keepPlace(id, () => { corpus = corpus.flatMap(replace); sample = sample.flatMap(replace) })
+      runCrops({ [id]: result })
       return
     }
     try {
@@ -788,6 +791,7 @@
       // collection's own rows. Updating the wrong one leaves the tile showing its old state.
       const replace = item => item.id !== id ? [item] : (flagged && !waiting(updated.state)) || !fitsGallery(updated) ? [] : [updated]
       keepPlace(id, () => { if (picked) local = local.flatMap(replace); else items = items.flatMap(replace) })
+      runCrops({ [id]: updated })
       runsChanged()
       const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 })
@@ -855,7 +859,7 @@
   const pressing = (item, index) => ({ onpointerdown: event => pressStart(event, item, index), onpointermove: pressMove, onpointerup: pressLift, onpointercancel: pressLift,
     oncontextmenu: event => { if (swallow || press) event.preventDefault() } })
   function clearSelection() { selected = new Set(); anchor = null; bulkError = '' }
-  function selectShown() { selected = new Set([...tiles, ...runTiles].filter(selectable).map(tile => tile.id)); bulkError = '' }
+  function selectShown() { selected = new Set([...tiles, ...runTiles.filter(run => run.at < tiles.length)].filter(selectable).map(tile => tile.id)); bulkError = '' }
   const tileId = tile => tile?.dataset.unit ?? tile?.dataset.corpus
   /** Focus the tile at `index` of the tiles shown, scrolled into view. */
   function focusTile(index) {
@@ -895,9 +899,13 @@
   function patch(change, now = change) {
     const apply = list => list.flatMap(item => (item.id in change ? (change[item.id] ? [change[item.id]] : []) : [item]))
     items = apply(items); local = apply(local); corpus = apply(corpus); sample = apply(sample)
-    // A run's crops stay in it whatever the gallery shows: the place it shows is still where it was written.
+    runCrops(now)
+  }
+  /** A run's crops take what a save or a read says of them, and keep their box on the page, which only a
+   *  run's own read gives; they stay in the run whatever the gallery shows, as it is still where they were written. */
+  function runCrops(now) {
     if (scattered.some(run => run?.crops?.some(crop => now[crop.id])))
-      scattered = scattered.map(run => run?.crops ? { ...run, crops: run.crops.map(crop => now[crop.id] ?? crop) } : run)
+      scattered = scattered.map(run => run?.crops ? { ...run, crops: run.crops.map(crop => now[crop.id] ? { ...crop, ...now[crop.id] } : crop) } : run)
   }
   /** Tiles the site refused, read again so the grid shows what they are now. */
   async function refresh(ids) {
@@ -1002,7 +1010,9 @@
     const handled = new Set([...answered.map(({ item }) => item), ...kept].flatMap(batch => batch.crops).map(item => item.id)
       .concat(plan.report.map(entry => entry.id)))
     for (const run of runs) if (run.crops.every(crop => handled.has(crop.id))) handled.add(run.id)
-    selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
+    // A run chosen whose place is gone, or could not be read, has nothing left to send.
+    const gone = id => id.startsWith('run:') && !runs.some(run => run.id === id)
+    selected = new Set([...selected].filter(id => !handled.has(id) && !gone(id))); anchor = null
     const stale = outcome.report.filter(entry => entry.reason !== 'flagged').map(entry => entry.id)
     if (stale.length) await refresh(stale)
   }
@@ -1193,7 +1203,7 @@
 <!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
 <!-- A run's select box and tick, drawn inside its tile (`RunTile`). -->
 {#snippet runMarks(item)}{#if selected.has(item.id) || !runChecked(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}{#if runChecked(item)}<span class="tile-verdict checked" aria-hidden="true">✓</span>{/if}{/snippet}
-{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} selected={selected.has(item.id)} checked={runChecked(item)} marks={reviewer && selectable(item) ? runMarks : undefined} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => {})} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{/if}{/snippet}
+{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} selected={selected.has(item.id)} checked={runChecked(item)} marks={reviewer && selectable(item) ? runMarks : undefined} {...pressing(item, i)} onclick={event => { if (selecting && !selectable(item)) event.preventDefault(); else tileClick(event, item, i, () => {}) }} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, null, display, updateItem))} aria-label={t('explore.tile.inspect', { label: shownLabel(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}{@render tileCaption(item)}</button>{/if}{/snippet}
 <!-- The search term in its scripts' colours, and the code points `readable` adds to it. -->
 {#snippet term()}<ScriptText text={query} />{readable.slice(query.length)}{/snippet}
 

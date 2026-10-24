@@ -65,7 +65,10 @@ export function confirmationPlan(items) {
  */
 export function chosenCrops(tiles, runs, selected) {
   const chosen = [...tiles.filter(item => selected.has(item.id)), ...runs.filter(run => selected.has(run.id)).flatMap(run => run.crops ?? [])]
-  return [...new Map(chosen.map(item => [item.id, item])).values()]
+  // The first copy stands: a gallery tile is kept up to date by the inspector's saves before a run's is.
+  const seen = new Map()
+  for (const item of chosen) if (!seen.has(item.id)) seen.set(item.id, item)
+  return [...seen.values()]
 }
 
 /** `crops` cut into confirmation batches of `size`, with submission ids as `correctionBatches` gives them. */

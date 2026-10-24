@@ -32,6 +32,7 @@
 <style>
   .run-tile{color:inherit;text-decoration:none}
   .run-tile.decided-checked{background:var(--good-light)}
+  .run-tile.decided-checked .tile-label{right:38px;overflow:hidden;white-space:nowrap}
   .run-tile.decided-checked::after{content:'';position:absolute;inset:0;z-index:3;border:2px solid var(--good);pointer-events:none}
   .run-tile-image{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:0}
   .run-tile-image :global(svg){max-width:100%;max-height:100%}
