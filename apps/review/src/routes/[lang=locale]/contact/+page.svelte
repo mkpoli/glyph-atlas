@@ -1,6 +1,6 @@
 <script>
   import Seo from '$components/Seo.svelte'
-  import { t, around } from '$lib/i18n.svelte.js'
+  import { t, around, locale } from '$lib/i18n.svelte.js'
   import { CHATS, OTHER_GROUPS, SPACE } from '$lib/community.js'
   const EMAIL = 'contact@glyphatlas.org'
   const REPO = 'https://github.com/mkpoli/glyph-atlas'
@@ -9,6 +9,22 @@
     ['Element', 'https://element.io/download'], ['FluffyChat', 'https://fluffychat.im/'], ['Cinny', 'https://cinny.in/'],
   ]
   const email = $derived(around('contact.email.body', 'email'))
+  const failed = $derived(around('contact.form.failed', 'email'))
+  // The message form posts to the Worker, which hands it to the maintainers' Matrix inbox; no session
+  // is started for it. `website` is a field people never see (`contact.ts`).
+  let message = $state(''), reply = $state(''), website = $state('')
+  let status = $state('idle')
+  async function send(event) {
+    event.preventDefault()
+    if (status === 'sending' || !message.trim()) return
+    status = 'sending'
+    try {
+      const response = await fetch('/api/contact', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message, reply, website, locale: locale() }) })
+      status = response.ok ? 'sent' : response.status === 429 ? 'busy' : 'failed'
+      if (response.ok) { message = ''; reply = '' }
+    } catch { status = 'failed' }
+  }
   const apps = $derived(around('contact.matrix.apps', 'space'))
 </script>
 
@@ -65,6 +81,22 @@
     <h2>{t('contact.email.title')}</h2>
     <p>{email[0]}<a href={`mailto:${EMAIL}`}>{EMAIL}</a>{email[1]}</p>
   </section>
+
+  <section>
+    <h2 id="message">{t('contact.form.title')}</h2>
+    <p>{t('contact.form.body')}</p>
+    <form class="message-form" onsubmit={send} aria-labelledby="message">
+      <label for="contact-message">{t('contact.form.message')}</label>
+      <textarea id="contact-message" rows="6" maxlength="4000" required bind:value={message} oninput={() => { if (status !== 'sending') status = 'idle' }}></textarea>
+      <label for="contact-reply">{t('contact.form.reply')}</label>
+      <input id="contact-reply" maxlength="200" autocomplete="email" placeholder={t('contact.form.replyHint')} bind:value={reply} />
+      <input class="unseen" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" bind:value={website} />
+      <div class="form-foot">
+        <button class="send" type="submit" disabled={status === 'sending' || !message.trim()}>{status === 'sending' ? t('contact.form.sending') : t('contact.form.send')}</button>
+        <p class="form-status" role="status">{#if status === 'sent'}{t('contact.form.sent')}{:else if status === 'busy'}{t('contact.form.busy')}{:else if status === 'failed'}{failed[0]}<a href={`mailto:${EMAIL}`}>{EMAIL}</a>{failed[1]}{/if}</p>
+      </div>
+    </form>
+  </section>
 </article>
 
 <style>
@@ -81,5 +113,16 @@
   .doors a:hover { border-color: var(--line-hover); }
   .doors svg { width: 18px; height: 18px; fill: currentColor; }
   .doors small { color: var(--muted); font-weight: 400; }
+  .message-form { display: grid; gap: 6px; margin-top: 12px; }
+  .message-form label { font-weight: 500; margin-top: 6px; }
+  .message-form textarea, .message-form input { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; box-sizing: border-box; }
+  .message-form textarea { resize: vertical; min-height: 120px; }
+  .message-form textarea:focus-visible, .message-form input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .message-form .unseen { position: absolute; left: -10000px; width: 1px; height: 1px; opacity: 0; }
+  .form-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; }
+  .send { font: inherit; font-weight: 500; padding: 8px 18px; border-radius: 8px; border: 0; background: var(--accent-solid); color: var(--on-color); cursor: pointer; }
+  .send:hover:not(:disabled) { background: var(--accent-solid-hover); }
+  .send:disabled { opacity: .5; cursor: default; }
+  .form-status { margin: 0; color: var(--muted); }
   .apps { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
 </style>

@@ -2,9 +2,9 @@
   import Seo from '$components/Seo.svelte'
   import { t, around } from '$lib/i18n.svelte.js'
   const EMAIL = 'contact@glyphatlas.org'
-  const UPDATED = '2026-10-03'
+  const UPDATED = '2026-10-25'
   const SECTIONS = [
-    ['who', ['body']], ['browsing', ['body', 'measure']], ['saving', ['body']], ['account', ['body', 'methods']],
+    ['who', ['body']], ['browsing', ['body', 'measure']], ['saving', ['body']], ['messages', ['body']], ['account', ['body', 'methods']],
     ['public', ['body', 'gravatar']], ['processors', ['body']], ['choices', ['body']], ['changes', ['body']],
   ]
 </script>
