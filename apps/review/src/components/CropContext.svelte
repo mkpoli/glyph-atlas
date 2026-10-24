@@ -210,7 +210,9 @@
       {/if}
     {/if}
     {#if !loading && !ready && (detailFailed || !contextual || (contextFailed && (!fullPage || fullFailed)))}<span class="crop-only" class:beside-page={page}>{t('crop.only')}</span>{/if}
-    {#if page}<div class="crop-tools crop-page"><a href={page.href} aria-label={t('crop.wholePage')} title={t('crop.wholePage')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z M14 3v4h4"/><rect x="9" y="11" width="4" height="4"/></svg></a></div>{/if}
+    <!-- Leaving for the page would drop a box being drawn, so the link waits for the drawing to end. -->
+    {#if page && !editing}<div class="crop-tools crop-page"><a href={page.href} draggable="false" aria-disabled={disabled || undefined}
+      onclick={event => { if (disabled) event.preventDefault() }} aria-label={t('crop.wholePage')} title={t('crop.wholePage')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z M14 3v4h4"/><rect x="9" y="11" width="4" height="4"/></svg></a></div>{/if}
     <div class="crop-tools" aria-label={t('crop.tools.label')}>
       <button type="button" class="zoom-out" aria-label={t('crop.zoomOut')} title={t('crop.zoomOut')} disabled={disabled || !ready || zoom <= .6} onclick={() => magnify(1 / 1.25)}>−</button>
       <button type="button" class="reset-crop" aria-label={t('crop.returnToCrop')} title={t('crop.returnToCrop.title')} disabled={disabled || !ready} onclick={reset}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4M9 9h6v6H9z"/></svg></button>
@@ -241,7 +243,8 @@
   .crop-page{right:auto;left:12px}
   .crop-tools :is(button,a){display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:5px;background:transparent;font-size:22px;color:var(--ink);cursor:pointer}
   .crop-tools :is(button:enabled,a):hover{background:var(--accent-light)}
-  .crop-tools button:disabled{opacity:.35;cursor:default}
+  .crop-tools :is(button:disabled,a[aria-disabled]){opacity:.35;cursor:default}
+  .crop-tools a[aria-disabled]:hover{background:transparent}
   .crop-tools svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5}
   .crop-only{position:absolute;left:12px;bottom:18px;font-size:11px;color:var(--muted);background:light-dark(rgb(255 255 255 / 90%), rgb(27 27 31 / 90%));padding:4px 7px;border-radius:4px}
   .crop-only.beside-page{left:62px}
