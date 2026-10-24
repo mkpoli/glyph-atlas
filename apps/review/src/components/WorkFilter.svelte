@@ -71,5 +71,6 @@
   .work-menu button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .work-menu small{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .work-none{padding:10px;font-size:12px;color:var(--muted)}
-  @media(max-width:700px){.work-control{padding-left:12px}.work-toggle{max-width:160px;font-size:11px}.work-menu{left:auto;right:0;width:300px}}
+  /* On a narrow screen the control may start a line or end one, so the menu spans the toolbar, under the button. */
+  @media(max-width:700px){.work-control{position:static;padding-left:12px}.work-toggle{max-width:160px;font-size:11px}.work-menu{top:auto;left:0;right:0;width:auto;max-width:none;margin-top:6px}}
 </style>
