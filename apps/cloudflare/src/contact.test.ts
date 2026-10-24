@@ -58,9 +58,13 @@ describe('a contact-form message', () => {
     expect((await refused(sendContact(env(), form({ message: 'hi' })))).status).toBe(502);
   });
 
-  it('is only logged by a Worker with no inbox token', async () => {
+  it('is refused, and not logged, by a Worker with no inbox token', async () => {
     answering(200);
-    expect(await (await sendContact(env(true, ''), form({ message: 'hi' }))).json()).toEqual({ sent: true });
+    const logged: unknown[] = [], log = console.log;
+    console.log = (...args: unknown[]) => { logged.push(args) };
+    try { expect((await refused(sendContact(env(true, ''), form({ message: 'secret words' })))).status).toBe(503) }
+    finally { console.log = log }
     expect(sent).toHaveLength(0);
+    expect(JSON.stringify(logged)).not.toContain('secret words');
   });
 });

@@ -26,8 +26,9 @@ export async function sendContact(env: ContactEnv, request: Request): Promise<Re
   const reply = text(input.reply, MAX_REPLY, 'reply');
   const locale = typeof input.locale === 'string' && /^[A-Za-z0-9-]{1,32}$/.test(input.locale) ? input.locale : null;
   const post = inboxText(message, reply, locale);
-  // Without a token (a local Worker) the message is written to the log instead.
-  if (!env.MATRIX_INBOX_TOKEN) { console.log(JSON.stringify({ event: 'contact_message', post })); return Response.json({ sent: true }) }
+  // A Worker without the token (a local one, or a deploy missing the secret) cannot deliver, and says so;
+  // the message is not logged, since logs are not the inbox.
+  if (!env.MATRIX_INBOX_TOKEN) throw new Problem(503, 'The message form is not set up yet. Write to contact@glyphatlas.org.');
   const room = encodeURIComponent(env.MATRIX_INBOX_ROOM);
   const sent = await fetch(`${env.MATRIX_HOMESERVER}/_matrix/client/v3/rooms/${room}/send/m.room.message/${crypto.randomUUID()}`, {
     method: 'PUT', headers: { authorization: `Bearer ${env.MATRIX_INBOX_TOKEN}`, 'content-type': 'application/json' },
