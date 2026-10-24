@@ -111,7 +111,8 @@ function setup() {
   const cutA = { cut: 0, box: { x: 5, y: 10, w: 20, h: 30 }, image_sha256: other, image: '/atlas/media/old.webp', at: '2026-10-03T15:27:32.712Z' };
   const encodingA = { pixels: 'c'.repeat(64), image: '/atlas/media/enc.webp', at: '2026-10-05T00:00:00.000Z' };
   const pageFacts = { id: pageKey, document: book, title: 'Book', page_number: 5, width: 400, height: 400, service: 'https://x.org/iiif/p',
-    previous: `${book}:3`, next: null, crops: [text.c, text.a, 'hk:gone', text.r, text.b, text.x] };
+    previous: `${book}:3`, next: null, manifest: 'https://x.org/iiif/m.json', canvas: 'https://x.org/iiif/c5', canvas_index: 4,
+    catalogue_url: 'https://x.org/record', crops: [text.c, text.a, 'hk:gone', text.r, text.b, text.x] };
   const objects = new Map<string, Uint8Array>([
     [bundleKey(page, 3), gzipSync(JSON.stringify({ key: pageKey, book: 1, rev: 3, page: pageFacts, crops: [
       { slot: 0, id: text.a, ...bundleEntry(records.a), cuts: [cutA], encodings: [encodingA], cut_at: '2026-10-13T16:53:07.985Z', image_place: ['packs/p', 0, 1] },
@@ -307,6 +308,14 @@ describe('a source page', () => {
     expect(view).toMatchObject({ id: pageKey, document_id: book, document_title: 'Book', seq: 4, previous: `${book}:3`, next: null, drawable: false,
       image_url: 'https://x.org/iiif/p/full/!3000,3000/0/default.jpg' });
     expect(view.crops).toBeUndefined();
+  });
+  it('says where the page can be opened at its source, and when its book was made', async () => {
+    const { get, pageKey, book } = setup();
+    const view = await (await get(`/atlas/pages/${encodeURIComponent(pageKey)}`)).json() as any;
+    expect(view).toMatchObject({ manifest: 'https://x.org/iiif/m.json', canvas: 'https://x.org/iiif/c5', canvas_index: 4,
+      catalogue_url: 'https://x.org/record', honkoku_url: `https://app.honkoku.org/transcription/${book.slice(3)}/5`,
+      dating: { witness: { kind: 'copied', start: 1790, label: '1790' } } });
+    expect(view.dates.map((d: any) => d.id)).toEqual(['d1']);
   });
   it('answers 404 for a page it does not hold, or one with no page record', async () => {
     const { get } = setup();

@@ -194,17 +194,22 @@ async function line(env: Env, ctx: ExecutionContext, url: URL, id: number, name:
 // record names its crops by source id in its order, which its bundle maps to slots; a crop retired or not on
 // the page is left out. The photo is a request of the holder's IIIF image service, its longer side at most
 // PAGE_IMAGE pixels, laid over the page pixels the boxes are given in; a page no service serves is shown as
-// its boxes alone. A page is named by its key.
+// its boxes alone. Beside the record's own source fields (its manifest, canvas and the holder's catalogue
+// record), a page carries its book's dates and its page on みんなで翻刻. A page is named by its key.
 const PAGE_IMAGE = 3000;
+// Part of the edge key of a page's answer: moves when the answer gains or changes a field.
+const PAGE_SHAPE = 2;
 export function pageView(record: Json, crops: { row: Listed; entry: Json }[]): Json {
   const { crops: _, service, page_number, document, title, ...rest } = record;
+  const honkoku = honkokuPage({ page_number }, document);
   return { ...rest, document_id: document, document_title: title, seq: page_number - 1, service: service ?? null,
+    ...(honkoku ? { honkoku_url: honkoku } : {}),
     image_url: service ? `${service}/full/!${PAGE_IMAGE},${PAGE_IMAGE}/0/default.jpg` : null, drawable: false,
     units: crops.map(({ row, entry }) => ({ id: publicId(row.id), line_id: entry.line_id ?? null, box: boxOf(row, entry), character: row.char,
       code_point: null, image: entry.image ?? null, state: recordState(row.state), issue: recordIssue(row.issue), tone: entry.tone ?? null, image_size: entry.image_size ?? null })) };
 }
 async function sourcePage(env: Env, ctx: ExecutionContext, url: URL, key: string) {
-  const cacheKey = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cacheKey = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(`${PAGE_SHAPE}:${await catalogueVersion(env)}`)}`);
   const cached = await caches.default.match(cacheKey);
   if (cached) return await cached.json() as Json;
   const page = await env.ATLAS.prepare('SELECT id,rev FROM pages WHERE key=?').bind(key).first<{ id: number; rev: number }>();
@@ -212,8 +217,8 @@ async function sourcePage(env: Env, ctx: ExecutionContext, url: URL, key: string
   if (!page || !read?.page) throw new Problem(404, 'This page is not in the published collection.');
   const slots = new Map([...read.bySlot.values()].map(entry => [entry.id, entry.slot]));
   const ids = ((read.page.crops ?? []) as string[]).flatMap(text => slots.has(text) ? [page.id * 2 ** 24 + slots.get(text)!] : []);
-  const crops = await listedCrops(env, ids);
-  const body = pageView(read.page, ids.flatMap(id => crops.has(id) ? [crops.get(id)!] : []));
+  const [crops, dates] = await Promise.all([listedCrops(env, ids), bookDates(env, read.page.document ?? null)]);
+  const body = { ...pageView(read.page, ids.flatMap(id => crops.has(id) ? [crops.get(id)!] : [])), ...dates };
   ctx.waitUntil(caches.default.put(cacheKey, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
   return body;
 }
