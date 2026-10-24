@@ -365,6 +365,7 @@
   "history.noMore": "더 이상 편집이 없습니다",
   "history.onlyMine": "내 편집만",
   "history.onlyMine.aria": "내 편집만 보기",
+  "history.reviewer.anonymous": "익명",
   "history.reviewer.you": "본인",
   "history.row.inspect": "{label} 열기",
   "copyId.copy": "ID 복사",

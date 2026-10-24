@@ -863,6 +863,7 @@
   "admin.submission.other.other": "切り出し{count}件の投稿",
   "admin.unavailable.one": "{count}件はそのまま残されました。変更された切り出しがコレクション内に存在しません。",
   "admin.unavailable.other": "{count}件はそのまま残されました。変更された切り出しがコレクション内に存在しません。",
+  "history.reviewer.anonymous": "匿名",
   "history.reviewer.you": "自分",
   "history.byUser": "{name}のレビュー",
   "history.byUser.clear": "全員を表示",

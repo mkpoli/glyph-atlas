@@ -856,6 +856,7 @@
   "admin.submission.other.other": "截片{count}件ノ提出",
   "admin.unavailable.one": "{count}件ハ殘セリ：改メタル截片ガ最早集成ニ無ケレバナリ。",
   "admin.unavailable.other": "{count}件ハ殘セリ：改メタル截片ガ最早集成ニ無ケレバナリ。",
+  "history.reviewer.anonymous": "無名",
   "history.reviewer.you": "己",
   "history.byUser": "{name}ノ校閱",
   "history.byUser.clear": "諸人ヲ示ス",
