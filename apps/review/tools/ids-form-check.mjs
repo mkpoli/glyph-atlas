@@ -54,9 +54,13 @@ const choosePart = async part => {
 }
 const pick = text => browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-swap')].find(b => b.textContent === ${JSON.stringify(text)}).click()`)
 // The composer at the device's pixel ratio, cropped to the picker.
-async function shoot(name) {
+async function shoot(name, selector = '.form-picker') {
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 2, mobile: false })
-  const box = await browser.evaluate(`(() => { const r = document.querySelector('dialog[open] .form-picker').getBoundingClientRect(); return { x: r.x - 8, y: r.y - 8, width: r.width + 16, height: r.height + 16 } })()`)
+  // A part taller than the window gets a taller window, so nothing scrolls under the dialog's bars.
+  const tall = await browser.evaluate(`document.querySelector('dialog[open] ${selector}').getBoundingClientRect().height`)
+  if (tall > 700) await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: Math.ceil(tall) + 400, deviceScaleFactor: 2, mobile: false })
+  const box = await browser.evaluate(`(() => { const el = document.querySelector('dialog[open] ${selector}'); el.scrollIntoView({ block: 'center' })
+    const r = el.getBoundingClientRect(); return { x: r.x - 8, y: Math.max(0, r.y - 8), width: r.width + 16, height: r.height + 16 } })()`)
   for (const scheme of ['light', 'dark']) {
     await browser.setColorScheme(scheme)
     await Bun.sleep(200)
@@ -230,6 +234,25 @@ try {
   await browser.waitFor(`!!document.querySelector('dialog[open] .ids-tree > [data-op="⿱"]')`)
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS operator keys by position, IME composition, a unary operator on an empty slot, Tab from the focus')
+
+  // The parts palette, a tab of the part picker: a part picked fills the chosen slot, and an
+  // operator key pressed on the palette is the palette's, so the sequence keeps its operator.
+  await typeSequence('⿰＋木')
+  await becomes('⿰＋木')
+  await focusPath('0')
+  await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][1].click()`)
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-pick-panel:not([hidden]) .part')`, 20000)
+  const palettePart = await browser.evaluate(`document.querySelector('dialog[open] .ids-pick-panel:not([hidden]) .part').textContent`)
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-pick-panel:not([hidden]) .part').focus()`)
+  await browser.key('2')
+  await Bun.sleep(150)
+  assert(await value() === '⿰＋木', `an operator key on the palette changed the sequence: ${await value()}`)
+  await browser.key('Enter')
+  await becomes(`⿰${palettePart}木`)
+  await shoot('ids-parts-tab', '.ids-search')
+  assert(!errors.length, 'page errors: ' + errors.join('; '))
+  console.log(`PASS ${palettePart} picked from the parts palette tab, and its keys are its own`)
+  await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][0].click()`)
 
   await typeSequence('⿰𠤕⿱龴疋')
   await becomes('⿰𠤕⿱龴疋')
