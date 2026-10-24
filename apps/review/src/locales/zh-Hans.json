@@ -25,6 +25,7 @@
   "bulk.character.label": "赋予所选裁切的字",
   "bulk.character.placeholder": "查找字…",
   "bulk.apply": "标为{char}",
+  "bulk.apply.runs": "字对、三字组含多个字，只能确认",
   "bulk.chooseFirst": "请先选字",
   "bulk.selectAll": "全选当前显示",
   "bulk.clear": "取消选择",

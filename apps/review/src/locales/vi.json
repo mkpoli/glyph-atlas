@@ -22,6 +22,7 @@
   "bulk.character.label": "Chữ gán cho các vùng cắt đã chọn",
   "bulk.character.placeholder": "Tìm chữ…",
   "bulk.apply": "Đánh dấu là {char}",
+  "bulk.apply.runs": "Cặp chữ và bộ ba chữ gồm nhiều chữ nên chỉ có thể xác nhận",
   "bulk.chooseFirst": "Hãy chọn một chữ",
   "bulk.selectAll": "Chọn tất cả đang hiện",
   "bulk.clear": "Bỏ chọn",

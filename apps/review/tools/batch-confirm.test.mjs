@@ -2,7 +2,7 @@
 // toggles, ranges and arrow moves, and the confirmation's batches, bodies and per-crop report.
 import { describe, expect, it } from 'bun:test'
 import { arrowTarget, toggled, withRange } from '../src/lib/selection.js'
-import { confirmationBatches, confirmationBody, confirmationOutcome, confirmationPlan, confirmedCharacter, reportByReason, sendBatches } from '../src/lib/corrections.js'
+import { chosenCrops, confirmationBatches, confirmationBody, confirmationOutcome, confirmationPlan, confirmedCharacter, reportByReason, sendBatches } from '../src/lib/corrections.js'
 import { ROUND_MAX } from '../../cloudflare/src/rounds.ts'
 
 const tile = (id, extra = {}) => ({ id, label: 'あ', revision: 3, image_sha256: 'a'.repeat(64), state: 'pending', ...extra })
@@ -123,5 +123,19 @@ describe('what the site answered', () => {
   it('gathers a report by reason, in a fixed order', () => {
     expect(reportByReason([{ id: 'x', reason: 'unlabelled' }, { id: 'y', reason: 'changed' }, { id: 'z', reason: 'changed' }, { id: 'w', reason: 'checked' }]))
       .toEqual([['changed', ['y', 'z']], ['checked', ['w']], ['unlabelled', ['x']]])
+  })
+})
+
+describe('choosing pairs and trigrams', () => {
+  it('confirms the crops of a chosen run\'s place with the chosen tiles, each once', () => {
+    const tiles = [tile('a'), tile('b'), glyph('c')]
+    const runs = [{ id: 'run:0', crops: [glyph('c'), glyph('d')] }, { id: 'run:1', crops: [glyph('e')] }, { id: 'run:2' }]
+    expect(chosenCrops(tiles, runs, new Set(['a', 'c', 'run:0'])).map(item => item.id)).toEqual(['a', 'c', 'd'])
+    expect(chosenCrops(tiles, runs, new Set(['run:1', 'run:2'])).map(item => item.id)).toEqual(['e'])
+  })
+  it('reports a run crop the corpus only transcribed, as it reports such a tile', () => {
+    const plan = confirmationPlan(chosenCrops([], [{ id: 'run:0', crops: [glyph('c'), glyph('d', { written_character: null, identity_basis: 'normalized_transcription' })] }], new Set(['run:0'])))
+    expect(plan.crops.map(item => item.id)).toEqual(['c'])
+    expect(plan.report).toEqual([{ id: 'd', reason: 'unlabelled' }])
   })
 })

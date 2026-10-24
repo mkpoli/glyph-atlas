@@ -1,6 +1,7 @@
 <script>
   // The bar under a selection in the collection view: how many tiles are chosen, "Looks right" for all of
-  // them, the character to give them all, the result of the last batch save with its undo, and the crops
+  // them, the character to give them all (not while a pair or trigram is chosen, `runs`: its crops are
+  // different characters), the result of the last batch save with its undo, and the crops
   // it could not save, by reason, each of which opens.
   import CharacterSearch from './CharacterSearch.svelte'
   import ContributionTerms from './ContributionTerms.svelte'
@@ -8,7 +9,7 @@
   import Glyph from './Glyph.svelte'
   import { reportByReason } from '../lib/corrections.js'
   import { t } from '../lib/i18n.svelte.js'
-  let { selecting = false, count = 0, target = $bindable(''), busy = false, error = '', done = null, report = [],
+  let { selecting = false, count = 0, runs = 0, target = $bindable(''), busy = false, error = '', done = null, report = [],
     onconfirm, onapply, onselectall, onclear, onleave, onundo, onopen, ondismiss } = $props()
   let query = $state('')
   const groups = $derived(reportByReason(report))
@@ -23,7 +24,7 @@
       <div class="bulk-assign">
         <CharacterSearch compact bind:value={query} label={t('bulk.character.label')} placeholder={t('bulk.character.placeholder')}
           onselect={item => { target = item.char; query = item.char }} />
-        <button disabled={!count || !target || busy} onclick={onapply}>{target ? t('bulk.apply', { char: target }) : t('bulk.chooseFirst')}</button>
+        <button disabled={!count || !target || busy || runs > 0} title={runs ? t('bulk.apply.runs') : undefined} onclick={onapply}>{target ? t('bulk.apply', { char: target }) : t('bulk.chooseFirst')}</button>
       </div>
       <span class="bulk-tools">
         <button class="quiet" disabled={busy} onclick={onselectall}>{t('bulk.selectAll')}</button>

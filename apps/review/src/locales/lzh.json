@@ -21,6 +21,7 @@
   "bulk.character.label": "所予之字",
   "bulk.character.placeholder": "尋字…",
   "bulk.apply": "作{char}",
+  "bulk.apply.runs": "字對、三字含數字，唯可定之",
   "bulk.chooseFirst": "先擇字",
   "bulk.selectAll": "盡選所見",
   "bulk.clear": "釋",

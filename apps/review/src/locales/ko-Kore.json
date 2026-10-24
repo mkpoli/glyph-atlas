@@ -20,6 +20,7 @@
   "bulk.character.label": "選擇한 크롭에 줄 글자",
   "bulk.character.placeholder": "글자 찾기…",
   "bulk.apply": "{char}(으)로 表示",
+  "bulk.apply.runs": "文字 雙과 세 文字 묶음은 여러 글자로 이루어져 確認만 할 수 있습니다",
   "bulk.chooseFirst": "글자를 고르세요",
   "bulk.selectAll": "보이는 것 모두 選擇",
   "bulk.clear": "選擇 解除",
