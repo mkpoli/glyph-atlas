@@ -17,7 +17,7 @@ const READ_POSTS = new Set(['/atlas/similar/query', '/api/contact']);
 // The account routes a page reads with GET and that write nothing once the session is not refreshed.
 // Every other one (a sign-in callback, a passkey challenge, a mailed link) writes.
 const AUTH_READS = new Set(['/get-session', '/list-sessions', '/list-accounts', '/passkey/list-user-passkeys',
-  '/admin/list-users', '/admin/get-user', '/ok', '/error']);
+  '/admin/list-users', '/admin/get-user', '/ok', '/error', '/.well-known/openid-configuration', '/jwks']);
 
 /** Whether a request writes to the database: every POST but a search, and the account routes that sign in. */
 export function writes(method: string, path: string): boolean {

@@ -5,7 +5,8 @@
 // `actors` and `favourites` are in `ATLAS` with what was written.
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
-import { admin, anonymous, emailOTP, lastLoginMethod } from 'better-auth/plugins';
+import { admin, anonymous, emailOTP, jwt, lastLoginMethod } from 'better-auth/plugins';
+import { oauthProvider } from '@better-auth/oauth-provider';
 import { passkey } from '@better-auth/passkey';
 import { MAIL, signInMail } from './mail';
 import { recordProfile } from './connections';
@@ -131,8 +132,9 @@ function build(env: Env, origin: string, paused: boolean) {
     },
     // A code by mail signs in and does nothing else: no passwords to reset, and an address is changed
     // by connecting another account, so every other route that mails a code is off.
+    // The JWT plugin's own `/token` is off: tokens are issued only through the OAuth routes below.
     disabledPaths: ['/email-otp/request-password-reset', '/forget-password/email-otp', '/email-otp/reset-password',
-      '/email-otp/request-email-change', '/email-otp/change-email'],
+      '/email-otp/request-email-change', '/email-otp/change-email', '/token'],
     hooks: {
       // The address a sign-in code goes to is held to SIGN_IN_MAIL before a code is made: a refused
       // request leaves the code already sent in place. The address is lower-cased as the plugin does,
@@ -186,6 +188,19 @@ function build(env: Env, origin: string, paused: boolean) {
           if (LEGACY_REVIEWER.test(anonymousUser.user.name))
             await env.ACCOUNTS.prepare('UPDATE "user" SET name=? WHERE id=?').bind(generatedName(), anonymousUser.user.id).run();
         },
+      }),
+      // The site signs people in to the community's Matrix homeserver as an OpenID Connect provider
+      // (issuer `{origin}/api/auth`). The homeserver is its one client, registered by hand in
+      // `oauthClient` with consent skipped; no client can register itself. ID tokens are RS256, which
+      // every OpenID Connect library reads.
+      // A session read gets no JWT header: only the sign-in for Matrix signs tokens.
+      jwt({ jwks: { keyPairConfig: { alg: 'RS256', modulusLength: 2048 } }, disableSettingJwtHeader: true }),
+      oauthProvider({
+        loginPage: '/sign-in', consentPage: '/sign-in',
+        scopes: ['openid', 'profile', 'email', 'offline_access'],
+        allowDynamicClientRegistration: false,
+        // An anonymous session is no account to sign in with: it is sent to sign in first.
+        selectAccount: { shouldRedirect: ({ user }) => Boolean(user.isAnonymous) },
       }),
     ],
   });

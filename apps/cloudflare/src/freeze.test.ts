@@ -128,4 +128,11 @@ describe('the write freeze', () => {
     expect(writes('POST', '/atlas/similar/query')).toBe(false);
     expect(writes('POST', '/atlas/forms/decisions')).toBe(true);
   });
+
+  it('counts the OpenID discovery and signing keys as reads, and a Matrix sign-in as a write', () => {
+    expect(writes('GET', '/api/auth/.well-known/openid-configuration')).toBe(false);
+    expect(writes('GET', '/api/auth/jwks')).toBe(false);
+    expect(writes('GET', '/api/auth/oauth2/authorize')).toBe(true);
+    expect(writes('POST', '/api/auth/oauth2/token')).toBe(true);
+  });
 });
