@@ -891,24 +891,26 @@
       state: result?.state ?? 'checked', revision: result?.revision ?? item.revision + 1 }
     return (flagged && !waiting(next.state)) || !fitsGallery(next) ? null : next
   }
-  function patch(change) {
+  /** Tiles changed (`null` takes one out of the gallery); `now` is each crop as it is, which a run's crops take. */
+  function patch(change, now = change) {
     const apply = list => list.flatMap(item => (item.id in change ? (change[item.id] ? [change[item.id]] : []) : [item]))
     items = apply(items); local = apply(local); corpus = apply(corpus); sample = apply(sample)
-    // A run's crops take the change too, but stay in it: the place it shows is still where it was written.
-    if (scattered.some(run => run?.crops?.some(crop => change[crop.id])))
-      scattered = scattered.map(run => run?.crops ? { ...run, crops: run.crops.map(crop => change[crop.id] ?? crop) } : run)
+    // A run's crops stay in it whatever the gallery shows: the place it shows is still where it was written.
+    if (scattered.some(run => run?.crops?.some(crop => now[crop.id])))
+      scattered = scattered.map(run => run?.crops ? { ...run, crops: run.crops.map(crop => now[crop.id] ?? crop) } : run)
   }
   /** Tiles the site refused, read again so the grid shows what they are now. */
   async function refresh(ids) {
-    const change = {}
+    const change = {}, current = {}
     await Promise.all(ids.map(async id => {
       const tile = display.find(item => item.id === id) ?? runTiles.flatMap(run => run.crops ?? []).find(item => item.id === id)
       try {
         const now = tile?.origin === 'corpus' ? { ...tile, ...(await request('/atlas/corpus/character?id=' + encodeURIComponent(id))) } : await character(id)
+        current[id] = now
         change[id] = (flagged && !waiting(now.state)) || !fitsGallery(now) ? null : now
       } catch { change[id] = null }
     }))
-    patch(change)
+    patch(change, current)
   }
   async function applyBulk() {
     const target = bulkTarget
@@ -973,12 +975,12 @@
       bulkBusy = false
     }
     if (kept.length && !bulkError) bulkError = t('client.pausedKept')
-    const outcome = confirmationOutcome(answered), before = {}, after = {}
+    const outcome = confirmationOutcome(answered), before = {}, after = {}, now = {}
     for (const item of chosen) {
       const saved = outcome.saved.get(item.id)
       if (!saved) continue
       before[item.id] = item
-      const next = { ...item, state: saved.state, revision: saved.revision }
+      const next = now[item.id] = { ...item, state: saved.state, revision: saved.revision }
       after[item.id] = (flagged && !waiting(next.state)) || !fitsGallery(next) ? null : next
     }
     // Each reported crop keeps its label and origin, so it opens even when reading it again takes its tile away.
@@ -991,7 +993,7 @@
         name: origin === 'corpus' ? t('explore.tile.inspectCorpus', { label: shown }) : t('explore.tile.inspect', { label: shown }) }
     })
     if (outcome.saved.size) {
-      patch(after)
+      patch(after, now)
       confirmedHere = new Set([...confirmedHere, ...outcome.saved.keys()])
       bulkDone = { kind: 'confirm', batches: answered.map(({ item }) => item.id), count: outcome.saved.size, before }
       runsChanged()
