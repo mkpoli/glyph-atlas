@@ -1081,5 +1081,22 @@
   "error.search.submit": "Tìm",
   "error.back": "Quay lại",
   "error.crops.caption.other": "Vùng cắt từ các dãy chữ {runs}",
-  "error.crops.caption.one": "Vùng cắt từ dãy chữ {runs}"
+  "error.crops.caption.one": "Vùng cắt từ dãy chữ {runs}",
+  "contact.title": "Liên hệ và cộng đồng",
+  "contact.intro": "Glyph Atlas được xây dựng công khai. Bạn có thể đặt câu hỏi, chỉ ra chữ bị đọc nhầm hoặc tham gia công việc qua các kênh dưới đây.",
+  "contact.chat.title": "Trò chuyện",
+  "contact.chat.body": "Các phòng trò chuyện của cộng đồng nằm trong một không gian trên Matrix và được kết nối với Discord và Telegram. Tin nhắn gửi ở nơi nào trong ba nơi này cũng được chuyển đến hai nơi còn lại.",
+  "contact.chat.rooms": "Không gian này có một phòng chào đón, các phòng riêng cho tiếng Anh, tiếng Trung, tiếng Nhật, tiếng Hàn và tiếng Việt, cùng một phòng góp ý và một phòng phát triển.",
+  "contact.matrix.title": "Tham gia qua Matrix",
+  "contact.matrix.open": "Mở liên kết Matrix ở trên để vào không gian cộng đồng trong Element. Đây là một ứng dụng Matrix chạy ngay trong trình duyệt.",
+  "contact.matrix.account": "Bạn có thể đăng nhập bằng tài khoản Matrix nào cũng được. Nếu chưa có, chọn Tạo tài khoản: tài khoản trên matrix.org được tạo miễn phí.",
+  "contact.matrix.apps": "Element cũng có bản dành cho điện thoại và máy tính. Bạn có thể dùng ứng dụng Matrix khác để tham gia không gian tại {space}.",
+  "contact.matrix.choose": "Chọn ứng dụng",
+  "contact.github.body": "Mã nguồn và hệ thống theo dõi vấn đề của trang nằm trên GitHub. Để báo lỗi hoặc đề xuất thay đổi, hãy mở một issue; bạn cũng có thể gửi pull request.",
+  "contact.github.repo": "Kho mã nguồn",
+  "contact.github.issue": "Mở issue",
+  "contact.email.title": "Email",
+  "contact.email.body": "Với các việc khác, hãy gửi thư đến {email}.",
+  "contact.others.title": "Các nhóm khác",
+  "contact.others.body": "Tuy mỗi nhóm có trọng tâm riêng, bạn cũng có thể gặp gỡ những người cùng sở thích và trò chuyện về Glyph Atlas trong các nhóm này."
 }

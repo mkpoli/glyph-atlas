@@ -1099,5 +1099,22 @@
   "error.search.label": "查找字",
   "error.search.submit": "查找",
   "error.back": "返回",
-  "error.crops.caption.other": "來自字串{runs}的裁切"
+  "error.crops.caption.other": "來自字串{runs}的裁切",
+  "contact.title": "聯絡與社群",
+  "contact.intro": "Glyph Atlas的建置過程向所有人開放。你可以透過以下管道提問、指出誤識的字，或參與工作。",
+  "contact.chat.title": "聊天",
+  "contact.chat.body": "社群聊天室集中在一個Matrix空間內，並與Discord和Telegram互通。在這三個平台中的任何一個傳送訊息，另外兩個平台也能收到。",
+  "contact.chat.rooms": "空間內設有迎新聊天室，英語、中文、日語、韓語和越南語各有一個聊天室，另有回饋和開發聊天室。",
+  "contact.matrix.title": "透過Matrix加入",
+  "contact.matrix.open": "開啟上方的Matrix連結，即可在Element中進入社群空間。Element是一款可在瀏覽器中使用的Matrix應用程式。",
+  "contact.matrix.account": "用任意Matrix帳號登入即可。若還沒有帳號，請選擇「建立帳號」：matrix.org提供免費帳號。",
+  "contact.matrix.apps": "Element也有手機和電腦版。其他Matrix應用程式同樣可以透過{space}加入此空間。",
+  "contact.matrix.choose": "選擇應用程式",
+  "contact.github.body": "本站的程式碼和問題追蹤都在GitHub上。回報程式錯誤或提出修改建議，請建立議題；也歡迎提交合併請求。",
+  "contact.github.repo": "儲存庫",
+  "contact.github.issue": "建立議題",
+  "contact.email.title": "電子郵件",
+  "contact.email.body": "其他事宜，請來信{email}。",
+  "contact.others.title": "其他群組",
+  "contact.others.body": "這些群組各有側重，你也可以在其中結識志趣相投的人，一起交流有關Glyph Atlas的話題。"
 }

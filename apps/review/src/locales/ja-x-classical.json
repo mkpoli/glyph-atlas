@@ -1089,5 +1089,22 @@
   "error.search.label": "字ヲ索ム",
   "error.search.submit": "索ム",
   "error.back": "戾ル",
-  "error.crops.caption.other": "文字列{runs}ノ截片"
+  "error.crops.caption.other": "文字列{runs}ノ截片",
+  "contact.title": "連絡及ビ共同體",
+  "contact.intro": "字形大圖譜ハ公開ニテ製作セラル。質疑、文字ノ誤讀ノ指摘、或ハ製作ヘノ參與ハ、下記ノ何レノ場ニテモ之ヲ爲サレタシ。",
+  "contact.chat.title": "チャット",
+  "contact.chat.body": "共同體ノチャットハMatrix上ノ一ツノスペースナリ。其ノ各室ハDiscord及ビTelegramトブリッジセラレ、三者ノ何レカニ投稿セラレタルメッセージハ他ノ二者ニモ達ス。",
+  "contact.chat.rooms": "其ノ内ニハ歡迎室、英語・中國語・日本語・韓國語・越南語ノ各室、意見室、及ビ開發室アリ。",
+  "contact.matrix.title": "Matrixニテノ參加",
+  "contact.matrix.open": "上記ノMatrixリンクヲ開カレタシ。ブラウザ上ニテ動作スルMatrixアプリナルElementノスペースニ至ルベシ。",
+  "contact.matrix.account": "何レノMatrixアカウントニテモサインインサレタシ。アカウントヲ有セザル時ハ「Create account」ヲ選擇サレタシ。matrix.orgノアカウントハ無料ナリ。",
+  "contact.matrix.apps": "Elementハ携帶電話及ビ電子計算機ニテモ動作シ、他ノ何レノMatrixアプリニテモ {space} ニテ其ノスペースニ參加スルコトヲ得。",
+  "contact.matrix.choose": "アプリノ選擇",
+  "contact.github.body": "當サイトノコード及ビイシュートラッカーハGitHubニアリ。不具合ノ報告或ハ變更ノ提案ニハIssueヲ作成サレタシ。プルリクエストモ亦歡迎ス。",
+  "contact.github.repo": "リポジトリ",
+  "contact.github.issue": "Issueノ作成",
+  "contact.email.title": "電子メール",
+  "contact.email.body": "其ノ他ノ問ヒ合ハセハ{email}ヘ連絡サレタシ。",
+  "contact.others.title": "其ノ他ノ團體",
+  "contact.others.body": "各々主トスル所ハ異ナレド、此等ノ團體ニテモ同好ノ士ト交ハリ、字形大圖譜ニ就キ語リ合フヲ得。"
 }
