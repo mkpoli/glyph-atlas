@@ -1073,5 +1073,22 @@
   "error.search.submit": "檢索",
   "error.back": "뒤로",
   "error.crops.caption.other": "文字列 {runs}에서 가져온 크롭",
-  "error.crops.caption.one": "文字列 {runs}에서 가져온 크롭"
+  "error.crops.caption.one": "文字列 {runs}에서 가져온 크롭",
+  "contact.title": "問議 및 커뮤니티",
+  "contact.intro": "Glyph Atlas는 만드는 過程을 公開하고 있습니다. 아래 채널에서 質問하거나 잘못 判讀된 글자를 알려 주세요. 作業에 함께 參與하셔도 좋습니다.",
+  "contact.chat.title": "채팅",
+  "contact.chat.body": "커뮤니티 채팅방은 하나의 Matrix 스페이스에 모여 있으며, Discord와 Telegram에도 連結되어 있습니다. 세 플랫폼 中 어디에서 메시지를 보내도 나머지 두 곳에 傳達됩니다.",
+  "contact.chat.rooms": "歡迎房과 英語·中國語·日本語·韓國語·베트남語 채팅방이 各各 하나씩 있으며, 意見을 나누는 방과 開發房도 있습니다.",
+  "contact.matrix.title": "Matrix로 參與하기",
+  "contact.matrix.open": "위의 Matrix 링크를 열면 Element에서 커뮤니티 스페이스로 移動합니다. Element는 브라우저에서 使用할 수 있는 Matrix 앱입니다.",
+  "contact.matrix.account": "어떤 Matrix 計定으로든 로그인할 수 있습니다. 計定이 없다면 ‘計定 만들기’를 選擇하십시오. matrix.org에서 無料로 만들 수 있습니다.",
+  "contact.matrix.apps": "Element는 携帶電話와 컴퓨터에서도 使用할 수 있습니다. 다른 Matrix 앱에서도 {space} 住所로 스페이스에 參與할 수 있습니다.",
+  "contact.matrix.choose": "앱 選擇",
+  "contact.github.body": "사이트 코드와 이슈 管理 페이지는 GitHub에 있습니다. 버그를 提報하거나 修正을 提案하려면 이슈를 登錄해 주세요. 풀 리퀘스트도 歡迎합니다.",
+  "contact.github.repo": "貯藏所",
+  "contact.github.issue": "이슈 登錄",
+  "contact.email.title": "이메일",
+  "contact.email.body": "그 밖의 問議는 {email}로 보내 주세요.",
+  "contact.others.title": "다른 모임",
+  "contact.others.body": "각 모임은 Glyph Atlas와 別個로 構成員들이 直接 運營합니다."
 }

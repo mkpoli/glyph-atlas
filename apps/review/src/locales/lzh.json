@@ -1090,5 +1090,22 @@
   "error.search.label": "尋字",
   "error.search.submit": "尋",
   "error.back": "返",
-  "error.crops.caption.other": "{runs}之截"
+  "error.crops.caption.other": "{runs}之截",
+  "contact.title": "通問與同好",
+  "contact.intro": "Glyph Atlas之編纂皆公開。欲問疑、正誤讀、共襄其事，可由下列諸處。",
+  "contact.chat.title": "共談",
+  "contact.chat.body": "同好聚談於Matrix一空間，諸室與Discord、Telegram互通。於三者之一發言，餘二處皆可見。",
+  "contact.chat.rooms": "設迎新一室，英、漢、日、韓、越五語各一室，另設獻議、開發二室。",
+  "contact.matrix.title": "由Matrix入",
+  "contact.matrix.open": "啟上方Matrix連結，即由Element入此空間。Element爲Matrix程式，可於瀏覽器中用之。",
+  "contact.matrix.account": "任一Matrix帳戶皆可登入。未有者，擇「建立帳戶」；matrix.org設戶無須費。",
+  "contact.matrix.apps": "Element亦可用於手機、電腦；他種Matrix程式亦可由{space}入此空間。",
+  "contact.matrix.choose": "擇程式",
+  "contact.github.body": "本站之碼與議題皆在GitHub。欲報誤、議更易，可立議題；亦納合併之請。",
+  "contact.github.repo": "儲存庫",
+  "contact.github.issue": "立議題",
+  "contact.email.title": "電郵",
+  "contact.email.body": "餘事請致書{email}。",
+  "contact.others.title": "他社",
+  "contact.others.body": "諸社各由其同人自理，不隸於Glyph Atlas。"
 }
