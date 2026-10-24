@@ -1,4 +1,4 @@
-import { t } from './i18n.svelte.js'
+import { t, localize } from './i18n.svelte.js'
 
 // The name a reader sees for a licence id the records carry (data/vocab/licences.yaml), never the id.
 // Creative Commons and the other standard licences go by their short names, which are the same in
@@ -29,4 +29,11 @@ export function sourceLinks(item, corpus = item.origin === 'corpus') {
   const catalogue = !corpus && /^https?:\/\//i.test(item.catalogue_url ?? '') ? { href: item.catalogue_url, label: t('character.sourceCatalogue') } : null
   const honkoku = /^https:\/\/app\.honkoku\.org\//.test(item.honkoku_url ?? '') ? { href: item.honkoku_url, label: t('character.sourceHonkoku') } : null
   return { record, catalogue, honkoku }
+}
+
+/** The page view of the page a local crop was cut from, with the crop marked on it; a corpus glyph has none. */
+export function pageLink(item, corpus = item.origin === 'corpus') {
+  if (corpus || !item.page_id || !item.id) return null
+  return { href: localize('/pages/' + encodeURIComponent(item.page_id) + '?crop=' + encodeURIComponent(item.id)),
+    label: item.page_number ? t('tile.page', { page: item.page_number }) : t('nav.pages'), internal: true }
 }
