@@ -21,7 +21,7 @@ import export_character_variants
 from catalogue_schema import schema
 from PIL import Image
 
-from glyph_atlas import ainu_geometry, export_lock, images, ngrams, refs, style, tone, withdrawn
+from glyph_atlas import ainu_geometry, export_lock, images, ngrams, page_sources, refs, style, tone, withdrawn
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.review import atlas, characters, collection, corpus_source, ledger
 from glyph_atlas.review.context_suggestions import context_guesses
@@ -191,14 +191,15 @@ def page_fields(page) -> dict:
     return {"page_number": page.seq + 1 if page else None, "page_index": page.seq if page else None}
 
 
-def page_record(page, doc, crops, previous, following) -> dict:
+def page_record(page, doc, crops, previous, following, catalogue=None) -> dict:
     """A page as the page view shows it (0078): its book, number and size in the page pixels boxes are
-    given in, its IIIF image service, its credit, the pages before and after it that hold crops, and
-    the ids of its crops in reading order."""
+    given in, its IIIF image service, where it can be opened at its source (`page_sources`), its
+    credit, the pages before and after it that hold crops, and the ids of its crops in reading order."""
     rights = doc.image_rights if doc else None
+    service = images.service_of(page.image or "")
     return {"id": page.id, "document": page.document_id, "title": doc.title if doc else None,
-            "page_number": page.seq + 1, "width": page.width, "height": page.height,
-            "service": images.service_of(page.image or ""), "canvas": page.canvas,
+            "page_number": page.seq + 1, "width": page.width, "height": page.height, "service": service,
+            **page_sources.page_sources(doc.source_refs if doc else None, page.canvas, service, catalogue),
             "holder": doc.holder if doc else None, "licence": str(rights.licence) if rights else None,
             "attribution": rights.attribution if rights else None, "rights_url": rights.evidence if rights else None,
             "previous": previous, "next": following, "crops": crops}
@@ -216,12 +217,14 @@ def page_rows(db, published, units, pages, documents):
     for page_id in held:
         books[pages[page_id].document_id].append(pages[page_id])
     db.execute("DELETE FROM pages")
+    catalogue = page_sources.catalogue_urls((d, doc.source_refs, doc.meta) for d in books if (doc := documents.get(d)))
     for document_id, own in books.items():
         own.sort(key=lambda page: (page.seq, page.id))
         for i, page in enumerate(own):
             crops = [u.id for u in sorted(held[page.id], key=lambda u: (u.line_id or "", u.seq if u.seq is not None else -1, u.id))]
             record = page_record(page, documents.get(document_id), crops,
-                                 own[i - 1].id if i else None, own[i + 1].id if i + 1 < len(own) else None)
+                                 own[i - 1].id if i else None, own[i + 1].id if i + 1 < len(own) else None,
+                                 catalogue.get(document_id))
             db.execute("INSERT INTO pages VALUES (?,?,?)", (page.id, document_id, encoded(record)))
     db.commit()
 

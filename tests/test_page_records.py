@@ -50,7 +50,7 @@ def test_each_page_holding_a_crop_lists_its_crops_in_reading_order_and_its_neigh
     units = {"a": unit("a", "doc:0", "l2"), "b": unit("b", "doc:0", "l1", 1), "c": unit("c", "doc:0", "l1", 0),
              "d": unit("d", "doc:3"), "gone": unit("gone", "doc:2")}
     rights = SimpleNamespace(licence="pd", attribution="Holder", evidence="https://x.org/rights")
-    documents = {"doc": SimpleNamespace(title="Book", holder="Holder", image_rights=rights)}
+    documents = {"doc": SimpleNamespace(title="Book", holder="Holder", image_rights=rights, source_refs={}, meta={})}
     export.page_rows(db, ["a", "b", "c", "d"], units, pages, documents)
     rows = {i: json.loads(d) for i, d in db.execute("SELECT id,data FROM pages")}
     assert set(rows) == {"doc:0", "doc:3"}
@@ -59,7 +59,7 @@ def test_each_page_holding_a_crop_lists_its_crops_in_reading_order_and_its_neigh
     assert (rows["doc:3"]["previous"], rows["doc:3"]["next"]) == ("doc:0", None)
     assert rows["doc:3"] | {"crops": None} == {
         "id": "doc:3", "document": "doc", "title": "Book", "page_number": 4, "width": 100, "height": 200,
-        "service": "https://x.org/iiif/2/p", "canvas": None, "holder": "Holder", "licence": "pd",
+        "service": "https://x.org/iiif/2/p", "manifest": None, "canvas": None, "canvas_index": None, "catalogue_url": None, "holder": "Holder", "licence": "pd",
         "attribution": "Holder", "rights_url": "https://x.org/rights", "previous": "doc:0", "next": None, "crops": None}
 
 
