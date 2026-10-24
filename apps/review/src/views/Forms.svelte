@@ -21,10 +21,9 @@
   import { characterAddress } from '../lib/gallery.js'
   import { originTitle } from '../lib/origin.js'
 
-  // `initial` is what the server rendered: the family list and the family on show, arranged by shape.
-  let { initialFamily = '', initial = null } = $props()
-  const first = untrack(() => initial)
-  let list = $state(first?.list ?? []), filter = $state(''), current = $state(null), code = $state(first?.family?.code_point ?? '')
+  // The family the address names; none, the first of the list. `onshow` is told each family shown.
+  let { initialFamily = '', onshow = () => {} } = $props()
+  let list = $state([]), filter = $state(''), current = $state(null), code = $state(untrack(() => initialFamily))
   let active = $state(0), open = $state(null), glyphs = $state([]), total = $state(0), order = $state('typical')
   let chosen = $state(new Set()), anchor = null, busy = $state(false), error = $state(''), notice = $state('')
   let correcting = $state(false), correction = $state('')
@@ -68,7 +67,7 @@
     : pickedClusters.length === 1 ? t('forms.target.clusterGlyphs', { label: pickedClusters[0].label, count: pickedClusters[0].count })
     : cluster ? t('forms.target.clusterGlyphs', { label: cluster.label, count: cluster.count }) : '')
 
-  async function refreshList() { list = (await loadFamilies()).items }
+  async function refreshList(options) { list = (await loadFamilies(options)).items }
   // A finished cluster is shown with the others of its form, or of its report. One whose glyphs were
   // named one by one goes with the form most of them have.
   const groupOf = c => c.form ?? c.issue ?? c.majority ?? 'reported'
@@ -106,7 +105,6 @@
   // How many of the family's glyphs each form names, against the whole family.
   const usage = $derived((current?.usage ?? []).map(u => ({ ...u, share: current.count ? u.count / current.count : 0 })))
   const percent = share => share >= 0.01 || !share ? number(Math.round(100 * share)) : '<' + number(1)
-  if (first?.family) { const shown = arranged(first.family); current = shown; active = Math.max(0, shown.items.findIndex(isOpen)) }
   async function pick(codePoint, keep = false) {
     error = ''
     code = codePoint
@@ -119,6 +117,7 @@
     // A family picked while this one loaded replaces it.
     if (code !== codePoint) return
     current = arranged(loaded)
+    onshow(current)
     if (keepId) active = Math.max(0, current.items.findIndex(c => c.id === keepId))
     if (!keep) { picked = new Set(); pickAnchor = null; reviewing = false; composing = false; active = Math.max(0, current.items.findIndex(isOpen)); close() }
   }
@@ -341,10 +340,11 @@
   onDestroy(clearContext)
   function scrollActive() { requestAnimationFrame(() => document.querySelector('.form-cluster.active')?.scrollIntoView({ block: 'nearest' })) }
   onMount(async () => {
-    if (first?.family) return
+    // The family on show first; the list of thousands of families after it, or before it when the
+    // address names none.
     try {
-      await refreshList()
-      await pick(initialFamily || list[0]?.code_point)
+      if (!initialFamily) await refreshList()
+      await pick(initialFamily || list[0]?.code_point).finally(() => initialFamily && refreshList({ priority: 'low' }))
     } catch (e) { error = e.message }
   })
 </script>

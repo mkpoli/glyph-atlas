@@ -1,21 +1,8 @@
-import { error, redirect } from '@sveltejs/kit'
-import { families, family } from '$lib/forms.js'
-import { localize } from '$lib/i18n.svelte.js'
+import { error } from '@sveltejs/kit'
 
-// The family list and one family's clusters. The bare /forms address moves to the first family, so
-// each family's page has one address.
-export async function load({ fetch, params, parent }) {
+// The page is sent at once; the browser reads the family on show, then the family list. The bare
+// /forms address shows the first family once the list arrives.
+export async function load({ params, parent }) {
   if (!(await parent()).forms) error(404, 'No clustering has been published.')
-  const list = (await families({ fetch })).items
-  if (!params.family) {
-    if (!list.length) return { initial: { list, family: null } }
-    redirect(307, localize('/forms/' + list[0].code_point, params.lang))
-  }
-  const code = params.family
-  try {
-    return { initial: { list, family: await family(code, 'shape', { fetch }) } }
-  } catch (e) {
-    // A busy database is named, so the page loads itself again once it is back.
-    error(e.status === 404 ? 404 : 503, { message: e.message, code: e.code === 'busy' ? 'busy' : undefined })
-  }
+  return { family: params.family ?? '' }
 }
