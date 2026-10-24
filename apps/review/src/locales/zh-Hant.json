@@ -179,6 +179,7 @@
   "explore.layout.label": "排列方式",
   "explore.layout.collage": "拼貼",
   "explore.layout.grid": "網格",
+  "explore.zoom.label": "大小",
   "explore.heading.atlas": "字譜",
   "explore.heading.flagged": "待修正的字",
   "explore.meta.characters.one": "{count}個字",

@@ -23,7 +23,7 @@
   import NgramGrid from '../components/NgramGrid.svelte'
   import { NGRAM_KINDS, ngramCounts, runOccurrences } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
-  import { collage, tileAspect, LAYOUT_KEY, storedLayout } from '../lib/collage.js'
+  import { collage, collageStyle, tileAspect, LAYOUT_KEY, storedLayout, ZOOMS, ZOOM, ZOOM_KEY, storedZoom } from '../lib/collage.js'
   import RunCandidate from '../components/RunCandidate.svelte'
   import RunStrip from '../components/RunStrip.svelte'
   import RunTile from '../components/RunTile.svelte'
@@ -397,6 +397,13 @@
   function layOut(value) {
     layout = value; remember(LAYOUT_KEY, value)
     document.documentElement.dataset.gallery = value
+  }
+  const collageRules = `<style>${collageStyle()}</style>`
+  // The tile size is the reader's too, remembered and set on the document the same way.
+  let zoom = $state(ZOOM)
+  function zoomTo(value) {
+    zoom = value; remember(ZOOM_KEY, value)
+    document.documentElement.dataset.zoom = String(value)
   }
   // Each shape group of the grapheme view is a block of its own under its heading; any other
   // gallery is one block. A tile's number counts through the whole gallery.
@@ -1077,7 +1084,7 @@
       split = null; query = q; grapheme = g; work = w; filter = group; load()
     }
   }
-  onMount(() => { layout = storedLayout() })
+  onMount(() => { layout = storedLayout(); zoom = storedZoom() })
   // A character's page, and the collection's when no search or filter narrows it, come without the
   // collection's counts by character and by work, which run to hundreds of kilobytes: they are read
   // once the page shows, for the work menu, the grapheme list and the tiles' ranks, and a failed read
@@ -1103,6 +1110,7 @@
 </script>
 
 <svelte:window onkeydown={selectionKeys} />
+<svelte:head>{@html collageRules}</svelte:head>
 
 <!-- After a listing's count: the withheld crops it leaves out, and the way to show or hide them. -->
 {#snippet withheldToggle(after)}{#if !flagged && (showWithheld || withheldCount)}{#if after}<span class="separator">·</span> {/if}<button class="quiet-link" onclick={toggleWithheld} title={t('explore.withheld.about')}>{showWithheld ? t('explore.withheld.hide') : t('explore.withheld.show', { count: withheldCount })}</button>{/if}{/snippet}
@@ -1156,6 +1164,7 @@
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
     {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
+    <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={zoom} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(Number(event.currentTarget.value))} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
     <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
       {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
     </div>
@@ -1219,6 +1228,9 @@
   .browse-unit{display:flex;gap:2px;padding:8px 8px 6px}
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
+  .zoom-control{display:flex;align-items:center;gap:6px;color:var(--muted)}
+  .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
+  .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
   .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
   .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 10px/1 system-ui,sans-serif;color:transparent}
