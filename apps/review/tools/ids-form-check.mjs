@@ -278,6 +278,9 @@ try {
   assert(await browser.evaluate(`document.activeElement === ${fromRow('𠤕', 'char')}`), 'ArrowDown did not reach 𠤕')
   await browser.key('ArrowRight')
   await browser.waitFor(`!!${fromRow('匕', 'char')}`, 20000)
+  // Opening a part says how many parts it came to, in the one live region; loading is not said.
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-from .from-live').textContent === '𠤕: 2 parts'`)
+  assert(await browser.evaluate(`document.querySelectorAll('dialog[open] [role="status"], dialog[open] [aria-live]').length`) >= 1, 'no live region')
   await browser.evaluate(`${fromRow('匕', 'char')}.focus()`)
   await browser.key('Enter')
   await becomes('⿰匕木')
