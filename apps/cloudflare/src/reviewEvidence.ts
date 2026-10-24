@@ -18,7 +18,9 @@ export async function storeReviewEvidence(env: Env, reviews: Record<string, Json
  *  that do not unzip or parse included, is a 503 naming the object, so a caller retries or stops. */
 async function stored(object: { body: ReadableStream }, what: string, hash?: string): Promise<Record<string, Json>> {
   let bytes: ArrayBuffer, saved: unknown;
-  try { bytes = await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() }
+  // Read first: a stream R2 breaks off is R2 failing to answer, never a damaged object.
+  const zipped = await new Response(object.body).arrayBuffer();
+  try { bytes = await new Response(new Response(zipped).body!.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() }
   catch { throw new Problem(503, `The ${what} could not be read.`) }
   if (hash !== undefined && await digest(bytes) !== hash) throw new Problem(503, 'Review evidence failed its integrity check.');
   try { saved = JSON.parse(new TextDecoder().decode(bytes)) }
@@ -29,7 +31,7 @@ async function stored(object: { body: ReadableStream }, what: string, hash?: str
   return reviews;
 }
 
-/** Missing or damaged evidence must fail the export, so a partial page cannot be acknowledged. */
+/** Missing or damaged evidence is a 503: a save stops on it, and the export lists the reviews it held as unavailable. */
 export async function readReviewEvidence(env: Env, hash: string): Promise<Record<string, Json>> {
   if (!/^[0-9a-f]{64}$/.test(hash)) throw new Problem(503, 'Invalid review evidence reference.');
   const object = await env.MEDIA.get(evidenceKey(hash));
