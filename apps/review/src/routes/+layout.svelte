@@ -8,7 +8,8 @@
   import ChatLinks from '../components/ChatLinks.svelte'
   import LinkMark from '../components/LinkMark.svelte'
   import { onMount, untrack } from 'svelte'
-  import { afterNavigate, goto, pushState } from '$app/navigation'
+  import { afterNavigate, beforeNavigate, goto, pushState } from '$app/navigation'
+  import { noteNavigation } from '$lib/keptViews.js'
   import { page } from '$app/state'
   import CharacterDialog from '$components/CharacterDialog.svelte'
   import CorpusDialog from '$components/CorpusDialog.svelte'
@@ -93,6 +94,7 @@
   function exportReviews() { menu = false; exporting = true }
   function showProgress() { menu = false; session.showProgress() }
   // A new page closes whatever the last one left open.
+  beforeNavigate(navigation => noteNavigation(navigation.type))
   afterNavigate(() => { menu = false; inspector.forget() })
   // Once the dialog has gone, by its close button or by Back, the focus returns to what opened it.
   let wasShown = false
