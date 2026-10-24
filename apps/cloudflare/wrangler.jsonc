@@ -27,7 +27,12 @@
   "send_email": [{"name": "EMAIL"}],
   // SIMILAR_INDEX_NAME names the Vectorize index bound as SIMILAR_INDEX, whose pointer the image search reads.
   // CATALOGUE_LAG is how many seconds the edge's copies may stand behind the reviews (`catalogueStamps`).
-  "vars": {"MAIL_FROM": "sign-in@glyphatlas.org", "SIMILAR_INDEX_NAME": "glyph-atlas-similar-5dc40a3e", "CATALOGUE_LAG": "60"},
+  // MATRIX_HOMESERVER and MATRIX_INBOX_ROOM are where contact-form messages go (`src/contact.ts`), posted
+  // with the inbox account's token, the secret MATRIX_INBOX_TOKEN. Mail routed to the Worker (contact@) is
+  // forwarded to the secret CONTACT_FORWARD_TO, which must be a verified Email Routing destination, and
+  // posted to the same room.
+  "vars": {"MAIL_FROM": "sign-in@glyphatlas.org", "SIMILAR_INDEX_NAME": "glyph-atlas-similar-5dc40a3e", "CATALOGUE_LAG": "60",
+           "MATRIX_HOMESERVER": "https://matrix.glyphatlas.org", "MATRIX_INBOX_ROOM": "!Vg3g9ktsIY_VWsL5i6K10iqJX1cuvi-GeEWXTeLPuJw"},
   // BETTER_AUTH_SECRET is a secret, and so is each sign-in provider's app id and secret (GITHUB_CLIENT_ID,
   // GITHUB_CLIENT_SECRET, and GOOGLE_, DISCORD_, LINE_ and KAKAO_ likewise); a provider without them is not offered.
   // BETTER_AUTH_SECRET: `wrangler secret put BETTER_AUTH_SECRET`, and `.dev.vars` locally.
@@ -46,7 +51,9 @@
                  // An image search is a few Vectorize queries and record reads; one address gets 30 a minute.
                  {"name": "REVERSE_QUERIES", "namespace_id": "4404", "simple": {"limit": 30, "period": 60}},
                  // A sign-in code is a mail; one address receives two a minute through each Cloudflare location.
-                 {"name": "SIGN_IN_MAIL", "namespace_id": "4405", "simple": {"limit": 2, "period": 60}}],
+                 {"name": "SIGN_IN_MAIL", "namespace_id": "4405", "simple": {"limit": 2, "period": 60}},
+                 // A contact-form message goes to the maintainers' inbox; one address sends three a minute.
+                 {"name": "CONTACT", "namespace_id": "4406", "simple": {"limit": 3, "period": 60}}],
   // The image search's vectors, one index per classifier encoder (`glyph-atlas-similar-<encoder[:8]>`).
   // `scripts/publish_reverse.sh create` makes it and `publish` fills it; it has to exist before a deploy,
   // and SIMILAR_INDEX_NAME above names it too.

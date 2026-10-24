@@ -13,7 +13,7 @@ export const PAUSED_MESSAGE = 'Changes are paused for now. Everything can still 
 export const writesPaused = (env: Env) => (env as unknown as Record<string, string | undefined>).WRITES_PAUSED === '1';
 
 // A POST that writes nothing: an image search sends a vector and reads its neighbours.
-const READ_POSTS = new Set(['/atlas/similar/query']);
+const READ_POSTS = new Set(['/atlas/similar/query', '/api/contact']);
 // The account routes a page reads with GET and that write nothing once the session is not refreshed.
 // Every other one (a sign-in callback, a passkey challenge, a mailed link) writes.
 const AUTH_READS = new Set(['/get-session', '/list-sessions', '/list-accounts', '/passkey/list-user-passkeys',
