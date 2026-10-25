@@ -35,7 +35,7 @@ const records = {
   永: character('永', [[100, 0, 900, 800]]),
 }
 const files = {
-  'manifest.json': JSON.stringify({ format: 4, files: { layout: { path: 'layout.json' } }, constants, spelled: [] }),
+  'manifest.json': JSON.stringify({ format: 5, files: { layout: { path: 'layout.json' } }, constants, spelled: [] }),
   'layout.json': JSON.stringify(layout),
   ...shards('g', Object.entries(records)),
 }
