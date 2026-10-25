@@ -60,7 +60,7 @@ const cards: Card[] = [
   { char: '鮓', occurrences: 9 }, { char: '鮺', occurrences: 3 }, { char: '鮨', occurrences: 3 }, { char: '蚱', occurrences: 1 },
   { char: 'か゚', occurrences: 6, name: '' }, { char: 'か', occurrences: 300, name: 'HIRAGANA LETTER KA' },
   { char: 'ア', occurrences: 10, name: 'KATAKANA LETTER A' }, { char: 'ア゙', occurrences: 0, name: '' },
-  { char: '滑', occurrences: 12 }, { char: '骨', occurrences: 30 }, { char: '月', occurrences: 400 },
+  { char: '候', occurrences: 50 }, { char: '滑', occurrences: 12 }, { char: '骨', occurrences: 30 }, { char: '月', occurrences: 400 },
   { char: '﨑', occurrences: 2, name: 'CJK COMPATIBILITY IDEOGRAPH-FA11' },
   { char: '𠀀', occurrences: 0 },
   { char: 'ﾈ', occurrences: 0, name: 'HALFWIDTH KATAKANA LETTER NE', ligature: 'ﾈ' },
@@ -90,7 +90,7 @@ const edges: [string, string, string, string, number][] = [
   ['鮓', '鮨', 'simplified', 'unihan', 0], ['時', '旹', 'variant', 'unihan', 1], ['時', '刻', 'variant', 'other', 1], ['時', '鴇', 'variant', 'other', 1],
   ['時', '鴇', 'variant', 'third', 1],
 ];
-const readings = { 'とき': ['時', '刻', '鴇', '朱鷺'], 'ね': ['子', '音', '値'], 'じ': ['時', '事'], 'こく': ['刻', '黒'] };
+const readings = { 'とき': ['時', '刻', '鴇', '朱鷺'], 'ね': ['子', '音', '値'], 'じ': ['時', '事'], 'こく': ['刻', '黒'], 'そうろう': ['候'] };
 const structures: [string, string[], { text: string; regions: string }[] | null][] = [
   ['滑', ['⿰氵骨'], [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }]],
   ['骨', ['⿱⿵冂⿰丨𠃌月'], null],
@@ -233,6 +233,13 @@ describe('a character search', () => {
     expect(await chars('ね')).toEqual(['ね', 'ネ', '𛂒', '𛄧', 'ぬ']);
     expect(await chars('とき')).toEqual(['𛄤', '時', '时', '旹', '刻', '鴇']);
     expect(await chars('鯡')).toEqual(['鯡', '𩹉']);
+  });
+
+  it('finds the kanji of a reading typed in historical kana by its modern spelling', async () => {
+    const chars = async (q: string) => (await suggest(newEnv, ask(q, 8), ctx)).items.map((item: { char: string }) => item.char);
+    expect(await chars('そうろう')).toEqual(['候']);
+    expect(await chars('さふらふ')).toEqual(['候']);
+    expect(await chars('サウラフ')).toEqual(['候']);
   });
 
   it('asks D1 for the names and the family heads only, each by key', async () => {

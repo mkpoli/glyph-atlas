@@ -18,6 +18,7 @@
   import { families as loadFamilies, family as loadFamily, members as loadMembers, paletteOf, split as loadSplit } from '../lib/forms.js'
   import { history, step, undo, redo } from '../lib/formHistory.svelte.js'
   import { number } from '../lib/client.js'
+  import { suggest } from '../lib/layers.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
   import { characterAddress } from '../lib/gallery.js'
   import { originTitle } from '../lib/origin.js'
@@ -45,8 +46,46 @@
   const grouped = c => !isOpen(c) || 2 * c.majority_count > c.count - c.rejected
   const unnamed = c => c.form || c.issue ? 0 : c.count - c.assigned - c.rejected
   const cluster = $derived(current?.items[active] ?? null)
-  const shown = $derived(list.filter(f => !filter.trim() || f.char.includes(filter.trim()) || f.label.includes(filter.trim())
-    || f.code_point.toLowerCase().includes(filter.trim().toLowerCase())))
+  // The box asks the search Explore asks: a character, a variant of it, a reading (そうろう finds 候), a
+  // code point or a description. The list keeps the families of the characters it answers, in its order.
+  let found = $state(null), finding = $state(false), findFailed = $state(false), composingFind = false, findTimer, findRequest = 0, findAbort = null
+  // A character's own family first: 仿 may also stand in 倣's family and still have its own.
+  const familyByChar = $derived.by(() => {
+    const by = new Map(list.map(f => [f.char, f]))
+    for (const f of list) for (const char of f.label.split(/ [=~] /)) if (!by.has(char)) by.set(char, f)
+    return by
+  })
+  const shown = $derived.by(() => {
+    if (!filter.trim()) return list
+    // Only the answer to the query in the box: an older one is never picked from.
+    if (found?.query !== filter) return []
+    const seen = new Set()
+    return found.items.flatMap(item => {
+      const f = familyByChar.get(item.char) ?? familyByChar.get(item.grapheme?.char)
+      if (!f || seen.has(f.code_point)) return []
+      seen.add(f.code_point); return [f]
+    })
+  })
+  function find(text) {
+    clearTimeout(findTimer); findAbort?.abort()
+    const request = ++findRequest
+    findFailed = false
+    if (!text.trim()) { found = null; finding = false; return }
+    finding = true
+    findTimer = setTimeout(async () => {
+      findAbort = new AbortController()
+      try {
+        const answer = await suggest(text, 48, AbortSignal.any([findAbort.signal, AbortSignal.timeout(8000)]))
+        if (request === findRequest) found = { query: text, items: answer?.items ?? [] }
+      } catch {
+        if (request === findRequest) { found = { query: text, items: [] }; findFailed = true }
+      } finally {
+        if (request === findRequest) finding = false
+      }
+    }, 120)
+  }
+  // Characters the search answers that have no family here: the reader is told they have no forms yet.
+  const formless = $derived(found?.query === filter && !shown.length ? found.items.filter(item => !familyByChar.has(item.char)).slice(0, 6).map(item => item.char).join(' ') : '')
   // The list holds thousands of families; only the rows in view, and a few either side, are drawn.
   // ROW is the height the stylesheet gives each row.
   const ROW = 50, OVERSCAN = 10
@@ -56,7 +95,7 @@
     const to = Math.min(shown.length, Math.ceil((listTop + listHeight) / ROW) + OVERSCAN)
     return { from, to, items: shown.slice(from, to) }
   })
-  function refilter() { if (familyList) familyList.scrollTop = 0; listTop = 0 }
+  function refilter() { if (familyList) familyList.scrollTop = 0; listTop = 0; if (!composingFind) find(filter) }
   // A list scrolled before the page hydrated starts from where it was scrolled to.
   $effect(() => { if (familyList) listTop = familyList.scrollTop })
   const byForm = $derived(new Map((current?.forms ?? []).map(f => [f.char, f])))
@@ -372,7 +411,7 @@
     picked = next; pickAnchor = id
   }
   async function rearrange(value) { arrange = value; const id = cluster?.id; await pick(code, true); active = Math.max(0, current.items.findIndex(c => c.id === id)) }
-  onDestroy(clearContext)
+  onDestroy(() => { clearContext(); clearTimeout(findTimer); findAbort?.abort() })
   function scrollActive() { requestAnimationFrame(() => document.querySelector('.form-cluster.active')?.scrollIntoView({ block: 'nearest' })) }
   onMount(async () => {
     // The family on show first; the list of thousands of families after it, or before it when the
@@ -454,7 +493,10 @@
   {#if error}<p class="error-message">{error}</p>{/if}
   <div class="forms-layout">
     <aside class="family-list" aria-label={t('forms.families.label')}>
-      <input type="search" placeholder={t('forms.findFamily.placeholder')} bind:value={filter} oninput={refilter} aria-label={t('forms.findFamily.aria')} />
+      <input type="search" placeholder={t('forms.findFamily.placeholder')} bind:value={filter} oninput={refilter} aria-label={t('forms.findFamily.aria')} aria-busy={finding}
+             oncompositionstart={() => { composingFind = true; find('') }} oncompositionend={() => { composingFind = false; refilter() }}
+             onkeydown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229 && !finding && filter.trim() && shown[0]) { event.preventDefault(); pick(shown[0].code_point) } }} />
+      {#if filter.trim() && !shown.length}<p class="family-status" role="status">{finding || found?.query !== filter ? t('search.searching') : findFailed ? t('search.failed') : formless ? t('forms.findFamily.noForms', { chars: formless }) : t('search.noMatch')}</p>{/if}
       <div class="family-scroll" bind:this={familyList} bind:clientHeight={listHeight} onscroll={event => listTop = event.currentTarget.scrollTop}>
       <ol aria-busy={!list.length && !error} style:padding-top={`${rows.from * ROW}px`} style:padding-bottom={`${(shown.length - rows.to) * ROW}px`}>
         {#if !list.length && !error}{#each Array(12) as _, i (i)}<li class="family-skeleton" aria-hidden="true"><span class="shimmer"></span><span class="shimmer"></span></li>{/each}{/if}
@@ -640,6 +682,7 @@
   .forms-layout{border-top:1px solid var(--line);padding-top:18px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
   .family-list{position:sticky;top:16px;max-height:calc(100dvh - 32px);display:flex;flex-direction:column;gap:10px}
   .family-list input{width:100%;font-size:13px;padding:9px 11px}
+  .family-status{margin:0;font-size:13px;color:var(--muted)}
   .family-scroll{overflow:auto;border-top:1px solid var(--line)}.family-list ol{list-style:none;margin:0;padding:0}
   .family-list li:not(.family-skeleton){height:50px}
   .family-list button{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto 3px;align-content:center;gap:4px 10px;width:100%;height:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 6px;text-align:left}
