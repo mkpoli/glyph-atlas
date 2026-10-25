@@ -8,6 +8,8 @@ import { cropEntries, cropItems, publicId } from '../atlas3';
 import { STALE_CODE, StaleCrop, cropParam, writtenCropField } from '../atlas3Crops';
 import { categoryOf } from '../category';
 import { formOfCrop } from './claims';
+import { inspected } from './crop';
+import { STYLE_KIND, STYLE_TARGET, foundCrop } from '../cropRecords';
 import { body, canonical, compose, graphemeKey, graphemeText, literal, text, writtenCharacter } from '../input';
 import { readRecords, recordKey } from '../records';
 import { addressKey } from '../reverse';
@@ -53,9 +55,9 @@ export const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND co
 // undo leaves them as it set them. A never-reviewed corpus glyph's follow moves its revision with no event
 // (`crops.bumps`), since it has no review to protect.
 export const PUBLISHED = 8;
-// Events the store never counts: marks, and the publication's own (a re-cut clearing a mark, kind 7, and
-// its changes, kind 8).
-export const UNCOUNTED = (e: string) => `(${e}.kind IN (7,${PUBLISHED}) OR ${MARKED(e)})`;
+// Events the store never counts: marks, the publication's own (a re-cut clearing a mark, kind 7, and its
+// changes, kind 8), and a style a reviewer gave a crop here (STYLE_KIND), which the review export leaves out.
+export const UNCOUNTED = (e: string) => `(${e}.kind IN (7,${PUBLISHED},${STYLE_KIND}) OR ${MARKED(e)})`;
 // Only events up to the crop's revision count, so a statement that writes an event before moving the crop
 // on (followCorpus) reads the same count on either side of it.
 export const LOGICAL = (c: string) => `coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at
@@ -366,6 +368,74 @@ export function cropChanges(env: Env, actor: number, key: string, at: number, ch
   if (!changes.length) return [];
   return [...eventStatements(env, actor, key, at, changes), ...applyStatements(env, key, at, [...new Set(changes.map(c => c.kind))], changes)];
 }
+// --- A crop's style ---
+
+// The styles of `data/vocab/style.yaml` a reviewer may give a crop; `unassessed` takes it back to its publication's.
+export const STYLES = ['seal', 'clerical', 'regular', 'running', 'cursive', 'ming', 'gothic', 'mixed'];
+/** A reviewer's style for one crop, as an event of its own (STYLE_KIND) one revision on, answered with the
+ *  crop's record. The crop is listed under the new style at once (its row, overlay and counts move), and a
+ *  publication leaves it as it is while its latest style event names a style (publish.py). The event moves
+ *  the crop's revision, so a view from before is refused, but the store does not count it (UNCOUNTED). `unassessed` gives the crop back the
+ *  style its publication gave it, which the overlay keeps from before the crop's first style event
+ *  (`reviews.base_style`). The client's revision is the record's; a crop changed since is refused, and a
+ *  retry with the same id and values answers with the crop as it is now. */
+export async function setStyle(env: Env, sent: Json, user: string, raw: string): Promise<Json> {
+  const id = text(sent.id, 64, 'submission id', true)!;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Problem(422, 'Invalid submission id.');
+  const style = text(sent.style, 32, 'style', true)!;
+  if (style !== 'unassessed' && !STYLES.includes(style)) throw new Problem(422, 'Unknown style.');
+  const crop = await cropNamed(env, raw, 'character id');
+  if (crop === null) throw new Problem(404, 'This character is not in the published collection.');
+  const key = user + ':' + id, signature = canonical({ target: STYLE_TARGET, crop: publicId(crop), input: { revision: sent.revision ?? null, style } });
+  const answer = async () => { const found = await foundCrop(env, crop); if (!found) throw await missing(env, crop); return await inspected(env, found) };
+  const previous = () => env.ATLAS.prepare('SELECT request FROM submissions WHERE key=?').bind(key).first<{ request: string }>();
+  const before = await previous();
+  if (before) { if (before.request !== signature) throw new Problem(409, 'This style was already saved with different values.'); return await answer() }
+  const found = await foundCrop(env, crop);
+  if (!found) throw await missing(env, crop);
+  if (!standing(found.row, sent.revision)) throw new Problem(409, 'This character changed. Reload it.');
+  // Style codes are the publication's to number; a style no publication has used yet cannot be given here.
+  if (style !== 'unassessed' && !await env.ATLAS.prepare(`SELECT 1 FROM codes WHERE field='style' AND key=?`).bind(style).first())
+    throw new Problem(422, 'No crop in the collection has this style yet, so it cannot be chosen here.');
+  const actor = await actorFor(env, user), at = Date.now();
+  // The style the crop's publication gave it: while a reviewer's style stands, the overlay's from before it
+  // was given; otherwise the crop's own, which publications keep.
+  const published = `CASE WHEN coalesce((SELECT p.style IS NOT NULL FROM events p WHERE p.crop=c.id AND p.kind=${STYLE_KIND} AND p.revision<=c.revision
+    ORDER BY p.revision DESC LIMIT 1),0) THEN (SELECT r.base_style FROM reviews r WHERE r.crop=c.id) ELSE c.style END`;
+  // ?1 the crop, ?2 the submission's key, ?3 the time, ?4 the revision read, ?5 the style chosen.
+  const chosen = `CASE WHEN ?5='unassessed' THEN NULL ELSE (SELECT code FROM codes WHERE field='style' AND key=?5) END`;
+  const moved = `EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.revision=c.revision+1 AND e.submission=(SELECT id FROM submissions WHERE key=?2))`;
+  const cell = 'c.kind,coalesce(c.char,-1),coalesce(c.family,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),c.state,c.quiz,coalesce((c.year-CASE WHEN c.year<0 THEN 9 ELSE 0 END)/10*10,-1)';
+  const tally = (sign: string, where: string) => `INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n)
+    SELECT ${GEN},${cell},${sign}1 FROM crops c WHERE c.id=?1 AND ${where} ON CONFLICT DO UPDATE SET n=n+excluded.n`;
+  const statements = [
+    env.ATLAS.prepare('INSERT INTO submissions(key,actor,request,response,at,evidence) VALUES (?,?,?,?,?,NULL)')
+      .bind(key, actor, signature, JSON.stringify({ target_id: publicId(crop), field: 'style', style }), at),
+    // A revision that moved since it was read leaves the event's revision null, which fails the batch.
+    // It holds the crop's values as they stand, its open issue among them, as every event holds them after it.
+    env.ATLAS.prepare(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,style,quiz,kept_issue)
+      SELECT c.id,(SELECT x.revision+1 FROM crops x WHERE x.id=c.id AND x.revision=?4),c.cut,${GEN},${actor},
+        (SELECT id FROM submissions WHERE key=?2),?3,${STYLE_KIND},c.char,c.state,${chosen},c.quiz,
+        (SELECT coalesce(p.kept_issue,p.issue) FROM events p WHERE p.crop=c.id ORDER BY p.revision DESC LIMIT 1) FROM crops c WHERE c.id=?1`)
+      .bind(crop, key, at, found.row.revision, style),
+    env.ATLAS.prepare(tally('-', moved)).bind(crop, key),
+    env.ATLAS.prepare(`INSERT INTO reviews(crop,gen,at,char,state,style,quiz,base_char,base_state,base_style,base_quiz)
+      SELECT c.id,${GEN},?3,c.char,c.state,coalesce(${chosen.replaceAll('?5', '?4')},${published}),c.quiz,c.char,c.state,${published},c.quiz
+      FROM crops c WHERE c.id=?1 AND ${moved}
+      ON CONFLICT(crop) DO UPDATE SET gen=excluded.gen,at=excluded.at,style=excluded.style,base_style=excluded.base_style`)
+      .bind(crop, key, at, style),
+    env.ATLAS.prepare(`UPDATE crops AS c SET style=(SELECT r.style FROM reviews r WHERE r.crop=c.id),revision=c.revision+1 WHERE c.id=?1 AND ${moved}`)
+      .bind(crop, key),
+    env.ATLAS.prepare(tally('', 'c.revision=?2')).bind(crop, found.row.revision + 1),
+  ];
+  try { await env.ATLAS.batch(statements) }
+  catch (error) {
+    if ((await previous())?.request === signature) return await answer();
+    if (conflict(error)) throw new Problem(409, 'This character changed. Reload it.');
+    throw error;
+  }
+  return await answer();
+}
 // Mark events for crops a round showed or skipped, or a round's undo stopped counting: a crop a review
 // left pending (pending, seen or hard) takes its mark when that changed. A round's own event is of the
 // mark's kind; an undo's names the round's mark event on the crop, if it made one.
@@ -604,6 +674,7 @@ export async function undo(env: Env, request: Request, user: string, id: string)
   if (!found) throw new Problem(404, 'No saved round belongs to this reviewer.');
   // An admin's corpus flags are saved as a submission too; they are no review.
   if (JSON.parse(found.request).target === '@flags') throw new Problem(409, 'A flag is not a review, so it cannot be undone.');
+  if (JSON.parse(found.request).target === STYLE_TARGET) throw new Problem(409, 'A style is not a review, so it cannot be undone. Choose another style instead.');
   const { request: _, ...submission } = found;
   return { id, ...await revert(env, submission, await actorFor(env, user), undefined) };
 }
@@ -652,11 +723,12 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     }
     // Rejecting all of one reviewer's work also passes over their own later changes to the crop that
     // are already undone, and the undos themselves; anyone else's later change, or one of theirs that
-    // still stands, stops it. Marks never do; nor does a publication, which is no one's review.
+    // still stands, stops it. Marks never do; nor does a publication, which is no one's review, nor a style,
+    // which the undo leaves as it is.
     const later = current.revision !== r.revision && (rejection?.reviewer ? await env.ATLAS.prepare(`SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission
-      WHERE e.crop=? AND e.revision>? AND e.kind NOT IN (3,4,${PUBLISHED}) AND (s.actor NOT IN (SELECT value FROM json_each(?)) OR (s.undone=0 AND e.kind IN (0,1,2))) LIMIT 1`)
+      WHERE e.crop=? AND e.revision>? AND e.kind NOT IN (3,4,${PUBLISHED},${STYLE_KIND}) AND (s.actor NOT IN (SELECT value FROM json_each(?)) OR (s.undone=0 AND e.kind IN (0,1,2))) LIMIT 1`)
       .bind(r.crop, r.revision, JSON.stringify(rejection.reviewer)).first()
-      : since.some(e => e.kind !== PUBLISHED));
+      : since.some(e => e.kind !== PUBLISHED && e.kind !== STYLE_KIND));
     if (later) {
       if (await env.ATLAS.prepare('SELECT 1 FROM submissions WHERE id=? AND undone=1').bind(submission.id).first())
         return { results: [], duplicate: true };
@@ -721,6 +793,8 @@ export async function reviewRoute(env: Env, request: Request, path: string, user
     }
     const undone = path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
     if (undone) return json(await undo(env, request, user, decodeURIComponent(undone[1])));
+    const styled = path.match(/^\/atlas\/characters\/([^/]+)\/style$/);
+    if (styled) return json(await setStyle(env, await body(request), user, decodeURIComponent(styled[1])));
     const edit = path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);
     if (edit) return json(await submit(env, request, user, decodeURIComponent(edit[1])));
     return null;

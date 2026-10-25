@@ -7,6 +7,7 @@ import { IN_LIST, people } from '../accounts';
 import { aliasCrop } from '../atlas3Aliases';
 import { Problem } from '../busy';
 import { actorFor, cropChanges, revert, type Submission } from './review';
+import { STYLE_TARGET } from '../cropRecords';
 
 type Json = Record<string, any>;
 export type AdminTools = { text: (value: unknown, max: number, name: string, required?: boolean) => string | null };
@@ -173,6 +174,7 @@ export function summary(request: string): Json {
     const key = answer?.verdict ?? 'other'; counts[key] = (counts[key] ?? 0) + 1; return counts }, {});
   if (target === '@batch') return { kind: 'correction', label: input.character ?? null, verdicts: { wrong: input.crops?.length ?? 0 } };
   if (target === FLAGS) return { kind: 'flag', label: input.finding ?? null, verdicts: { wrong: input.glyphs?.length ?? 0 } };
+  if (target === STYLE_TARGET) return { kind: 'style', target: signed.crop ?? null, label: input.style ?? null, verdicts: {} };
   if (target === null) return { kind: 'round', label: input.label ?? null, verdicts: verdicts(input.answers),
     skipped: input.skipped?.length ?? 0 };
   return { kind: 'crop', target, label: input.character ?? input.reading ?? null, verdicts: verdicts([input]) };
@@ -196,14 +198,15 @@ const REJECT_PAGE = 40;
 // stops before the crops it has put back pass this many.
 const REJECT_CROPS = 250;
 // An admin's flag request is a submission too, but no review: nothing puts a flag back, so a rejection
-// never takes one up.
-const FLAG_REQUEST = `iif(json_valid(request),json_extract(request,'$.target'),NULL)='@flags'`;
+// never takes one up. A reviewer's style for a crop is none either, and is changed by choosing another.
+const TARGET = `iif(json_valid(request),json_extract(request,'$.target'),NULL)`;
+const FLAG_REQUEST = `${TARGET}='@flags'`, NO_REVIEW = `${TARGET} IN ('@flags','${STYLE_TARGET}')`;
 const SUBMISSION = `id,key,actor,at,undone,(SELECT count(*) FROM events e WHERE e.submission=submissions.id AND e.kind IN ${REVIEW_KINDS}) AS crops,
-  ${FLAG_REQUEST} AS flag`;
+  ${FLAG_REQUEST} AS flag,${TARGET}='${STYLE_TARGET}' AS style`;
 export const rejectNamedQuery = () => `SELECT ${SUBMISSION} FROM submissions WHERE key IN (SELECT value FROM json_each(?)) AND undone=0
   ORDER BY at DESC,id DESC`;
 export const rejectReviewerQuery = () => `SELECT ${SUBMISSION} FROM submissions WHERE undone=0 AND actor IN (SELECT value FROM json_each(?1))
-  AND (at,id)<(?2,?3) AND NOT coalesce(${FLAG_REQUEST},0) ORDER BY at DESC,id DESC LIMIT ?4`;
+  AND (at,id)<(?2,?3) AND NOT coalesce(${NO_REVIEW},0) ORDER BY at DESC,id DESC LIMIT ?4`;
 
 export async function reject(env: Env, admin: string, input: Json, tools: AdminTools) {
   const reason = tools.text(input.reason ?? '', 500, 'reason') ?? '';
@@ -213,6 +216,7 @@ export async function reject(env: Env, admin: string, input: Json, tools: AdminT
     if (!keys.length) throw new Problem(422, 'Name the submissions to reject.');
     rows = (await env.ATLAS.prepare(rejectNamedQuery()).bind(JSON.stringify(keys)).all<Submission & { crops: number; flag: number }>()).results;
     if (rows.some(row => (row as { flag?: number }).flag)) throw new Problem(409, 'A flag is not a review, so it cannot be rejected.');
+    if (rows.some(row => (row as { style?: number }).style)) throw new Problem(409, 'A style is not a review, so it cannot be rejected.');
   } else {
     reviewer = await reviewerActors(env, input, tools);
     const before = input.next ? decodeCursor(tools.text(input.next, 512, 'cursor', true)!) : { at: Number.MAX_SAFE_INTEGER, id: 0 };
