@@ -1391,7 +1391,7 @@
   :global(:root[data-gallery="grid"]) .tile-select{top:5px;right:6px}
   :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-caption){grid-template-columns:auto minmax(0,1fr) auto minmax(18px,max-content)}
   :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-production){display:none}
-  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-work){grid-column:1/4}
+  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-caption .tile-work){grid-column:1/4}
   :global(:root[data-gallery="grid"]) .selecting :global(.collage-cell .tile-label){right:28px;overflow:hidden;white-space:nowrap}
   :global(.glyph-tile):hover .tile-select,:global(.glyph-tile):focus-visible .tile-select,.selecting .tile-select{opacity:1}
   @media(hover:none){.tile-select{opacity:.85}}
