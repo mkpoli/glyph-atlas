@@ -132,26 +132,30 @@ def describe() -> v.Descriptions:
     return v.Descriptions(raw, hc.unified())
 
 
-_PASS: tuple[v.Descriptions, list[v.Attested]] | None = None
+_PASS: tuple[v.Descriptions, list[v.Attested], v.PairPlaces] | None = None
 
 
 def _predict(chars: list[str]) -> dict[tuple[str, str], set[tuple[str, str]]]:
     assert _PASS is not None, "the forked workers are handed the descriptions before the pool starts"
-    desc, items = _PASS
-    return v.predictions(desc, items, chars)
+    desc, items, by_pair = _PASS
+    return v.predictions(desc, items, chars, by_pair)
 
 
 def predicted(desc: v.Descriptions, items: list[v.Attested]) -> dict[tuple[str, str], set[tuple[str, str]]]:
     """`v.predictions` over every character, split across the processors (forked, so the
-    descriptions are shared rather than copied)."""
+    descriptions and the places the attesting pairs show, read once here, are shared rather than
+    copied). Each chunk runs in a fresh process: what a derivation keeps of each part and each
+    folded shape never grows past one chunk."""
     global _PASS
-    _PASS = (desc, items)
+    by_pair: v.PairPlaces = {}
+    v.places(desc, {(item.a, item.b): [pair[:2] for pair in item.pairs] for item in items}, by_pair)
+    _PASS = (desc, items, by_pair)
     # Every character with a sequence, the atomic components among them: a component without a
     # description of its own still predicts the bare pair it makes with its equivalent (火, 灬).
     chars = sorted(desc.raw)
     chunks = [chars[i::64] for i in range(64)]
     found: dict[tuple[str, str], set[tuple[str, str]]] = {}
-    with multiprocessing.get_context("fork").Pool(max(1, (os.cpu_count() or 2) - 2)) as pool:
+    with multiprocessing.get_context("fork").Pool(max(1, (os.cpu_count() or 2) - 2), maxtasksperchild=1) as pool:
         for part in pool.imap_unordered(_predict, chunks):
             for sub, pairs in part.items():
                 found.setdefault(sub, set()).update(pairs)
@@ -198,8 +202,11 @@ def main(argv: list[str] | None = None) -> int:
     print("attesting pairs each (first eight):",
           "  ".join(f"{count}×{pair_distribution[count]}" for count in sorted(pair_distribution)[:8]))
     # Tenths, with exactly 1.0 a bin of its own; the small epsilon keeps 3/10 in the 0.3 bin.
-    shares = Counter(min(int(row[4] / row[3] * 10 + 1e-9), 10) for row in table)
+    shares = Counter(min(int(row[4] / row[3] * 10 + 1e-9), 10) for row in table if row[3])
     print("agreement of the kept, by tenth:", "  ".join(f"{k / 10:.1f}×{shares[k]}" for k in sorted(shares)))
+    # A stated substitution is kept whatever it predicts, nothing included.
+    silent = [f"{row[0]}↔{row[1]}" for row in table if not row[3]]
+    print(f"kept predicting nothing: {len(silent)}", " ".join(silent))
     kept_adds = sum(v.adds(desc, row[0], row[1]) for row in table)
     candidate_adds = sum(v.adds(desc, item.a, item.b) for item in candidates)
     print(f"adding a component (政/正): {kept_adds} kept of {candidate_adds} candidates;  "

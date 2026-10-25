@@ -8,8 +8,8 @@ predicts are pairs the graph already gives (`agreeing`). Every character is then
 `STEPS` substitutions, each in a part of its own, at every depth of its decomposition (`derive`): a
 result that is another character's sequence is a derived variant of it, and one no character has is
 an unencoded form, written as its sequence. 嗚 (⿰口烏) gets 呜 through 烏→乌, and ⿰厶烏 through 口→厶.
-A swap between a part and a character that holds it in the same place (广 and 廣, which is ⿸广黃,
-inside ⿸) is made only where the attesting pairs show it in that place (`Maker`).
+A swap between a part and a character that contains it (广 and 廣, which is ⿸广黃; 虫 and 蟲) is
+made only in the places the attesting pairs show it in (`Maker`).
 
 What feeds it is the build script's business: pairs the graph says may be written for each other
 (`refs.WRITTEN_FOR`, simplifications included: a gallery keeps those apart, an attestation does not),
@@ -360,20 +360,46 @@ def slot(operator: str, index: int, count: int) -> Place:
     return operator, index
 
 
-def holds(desc: Descriptions, whole: str, part: str, where: Place) -> bool:
-    """Whether a description of `whole` has `part` in the place `where`: 廣 (⿸广黃) holds 广 as the
-    enclosing part of ⿸. Compared by shape, as `adds` compares."""
-    trees = desc.trees.get(whole, ()) if len(whole) == 1 else [desc.whole(parse(whole))]
+def readings(where: Place) -> tuple[Place, ...]:
+    """The places a part in `where` may stand for: the middle of ⿲ or ⿳ is an end of the ⿰ or ⿱
+    it was flattened from (⿲氵虫工 is ⿰氵⿰虫工 or ⿰⿰氵虫工), so it is also read as either end."""
+    operator, at = where
+    if operator in FLATTENING and isinstance(at, int):
+        return where, (operator, "first"), (operator, "last")
+    return (where,)
+
+
+def contains(desc: Descriptions, whole: str, part: str) -> bool:
+    """Whether `part` is anywhere in a description of `whole`, in any place and at any depth of its
+    parts' own descriptions (to `DEPTH`): 廣 (⿸广黃) holds 广, 蟲 (⿱虫䖵) holds 虫, 宂 (⿱宀几) holds
+    宀. Compared by shape, as `adds` compares."""
     shape = desc.folded_text(desc.part(parse(part)))
-    return any(not isinstance(tree, str) and any(
-        slot(tree[0], at, len(tree[1])) == where and desc.folded_text(inner) == shape
-        for at, inner in enumerate(tree[1])) for tree in trees)
+    seen = {whole}
+
+    def walk(tree: Tree, depth: int) -> bool:
+        if isinstance(tree, str):
+            if desc.leaf(tree) == shape:
+                return True
+            if depth >= DEPTH or tree in seen:
+                return False
+            seen.add(tree)
+            return any(walk(inner, depth + 1) for inner in desc.trees.get(tree, ()))
+        return desc.folded_text(tree) == shape or any(walk(inner, depth) for inner in tree[1])
+
+    trees = desc.trees.get(whole, ()) if len(whole) == 1 else [desc.whole(parse(whole))]
+    return any(not isinstance(tree, str) and walk(tree, 0) for tree in trees)
 
 
-def places(desc: Descriptions, pairs: dict[tuple[str, str], Iterable[tuple[str, str]]]) -> dict[tuple[str, str], set[Place]]:
+#: Each attesting pair with the places it shows each substitution in (`places`).
+PairPlaces = dict[tuple[str, str], dict[tuple[str, str], set[Place]]]
+
+
+def places(desc: Descriptions, pairs: dict[tuple[str, str], Iterable[tuple[str, str]]],
+           by_pair: PairPlaces | None = None) -> dict[tuple[str, str], set[Place]]:
     """Each substitution with the places its attesting pairs show it in: 宀↔宂 at the top of ⿱
-    (㝓 and 䆟), 广↔廣 at either side of ⿰ (圹 and 壙) and never inside ⿸."""
-    by_pair: dict[tuple[str, str], dict[tuple[str, str], set[Place]]] = {}
+    (㝓 and 䆟), 广↔廣 at either side of ⿰ (圹 and 壙) and never inside ⿸. `by_pair` keeps what
+    each pair shows, filled as pairs are read, so a caller can read it again or hand it on."""
+    by_pair = {} if by_pair is None else by_pair
     out: dict[tuple[str, str], set[Place]] = {}
     for sub, attesting in pairs.items():
         out[sub] = set()
@@ -474,20 +500,41 @@ def kept(found: dict[tuple[str, str], Attested]) -> list[Attested]:
     return [item for item in found.values() if item.count >= THRESHOLD and len(item.pairs) >= THRESHOLD]
 
 
-def predictions(desc: Descriptions, items: Iterable[Attested],
-                chars: Iterable[str] | None = None) -> dict[tuple[str, str], set[tuple[str, str]]]:
+def predictions(desc: Descriptions, items: Iterable[Attested], chars: Iterable[str] | None = None,
+                by_pair: PairPlaces | None = None) -> dict[tuple[str, str], set[tuple[str, str]]]:
     """The pairs of encoded characters each substitution of `items` predicts, from `chars` (every
     character of `desc.raw` when None, those with no description of their own included, so the bare
-    pair of two components such as 火 and 灬 is a prediction too). Each pair is in code point order;
-    the pairs that attest a substitution are among its predictions."""
+    pair of two components such as 火 and 灬 is a prediction too), made in the places the attesting
+    pairs show (`places`, with `by_pair` read once by a caller that splits the characters). Each pair
+    is in code point order; the pairs that attest a substitution are among its predictions, except a
+    held-out pair (`Attested.held_out`) predicted only through a place it alone shows: measured as
+    held out, it may not teach the place it is measured in."""
     items = list(items)
+    chars = list(desc.raw) if chars is None else list(chars)
+    by_pair = {} if by_pair is None else by_pair
+    rows = {(item.a, item.b): [pair[:2] for pair in item.pairs] for item in items}
+    shown = places(desc, rows, by_pair)
+    made = Maker(desc, equivalents(items), shown)
     found: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
-    made = Maker(desc, equivalents(items), 1, places(desc, {(item.a, item.b): [pair[:2] for pair in item.pairs]
-                                                           for item in items}))
-    for form in derive(desc, made.table, list(desc.raw) if chars is None else chars, made=made):
+    for form in derive(made, chars):
         if form.encoded:
             (was, became, _), = form.route
             found[ordered(was, became)].add(tuple(sorted((form.char, form.other), key=ord)))
+    here = set(chars)
+    for item in items:
+        sub = (item.a, item.b)
+        for at, (p, q, _) in enumerate(item.pairs):
+            if (p, q) not in found.get(sub, ()) or not item.held_out(at):
+                continue
+            others = set().union(*(by_pair[pair[:2]].get(sub, set()) for other, pair in enumerate(item.pairs)
+                                   if other != at))
+            alone = by_pair[p, q].get(sub, set()) - others
+            without = Maker(desc, made.table, {**shown, sub: others})
+            if all(without.fits(item.a, item.b, where) for where in alone):
+                continue
+            if not any(form.encoded and ordered(*form.route[0][:2]) == sub and {form.char, form.other} == {p, q}
+                       for form in derive(without, [char for char in (p, q) if char in here])):
+                found[sub].discard((p, q))
     return found
 
 
@@ -553,16 +600,15 @@ def equivalents(kept: Iterable[Attested]) -> dict[str, set[str]]:
     return table
 
 
-def derive(desc: Descriptions, table: dict[str, set[str]], chars: Iterable[str] | None = None,
-           steps: int = 1, made: Maker | None = None) -> Iterator[Derived]:
-    """Each character of `chars` (all with a description when None) with up to `steps` substitutions
-    of `table`, each made in a part of its own at any depth: in the character itself, in a part, or
-    in a part of a part's own sequence. A form no character has comes only from the character's own
-    descriptions (`Descriptions.own`), so a flattened reading never writes a second spelling of the
-    same form, and a result of one character that no sequence spells is left out. A form reached by
-    several routes comes once per route. A `made` kept across calls (with the same `desc`, `table`
-    and `steps`) keeps what each part becomes, so a run over every character works each part once."""
-    made = made or Maker(desc, table, steps)
+def derive(made: Maker, chars: Iterable[str] | None = None) -> Iterator[Derived]:
+    """Each character of `chars` (all with a description when None) with up to `made.steps`
+    substitutions of `made.table`, each made in a part of its own at any depth: in the character
+    itself, in a part, or in a part of a part's own sequence. A form no character has comes only
+    from the character's own descriptions (`Descriptions.own`), so a flattened reading never writes
+    a second spelling of the same form, and a result of one character that no sequence spells is left out. A form reached by
+    several routes comes once per route. A `made` kept across calls keeps what each part becomes,
+    so a run over every character works each part once."""
+    desc = made.desc
     for char in desc.trees if chars is None else chars:
         seen: set[tuple[str, frozenset[Step]]] = set()
         for route, tree, own in made.whole(char):
@@ -585,27 +631,37 @@ class Maker:
     """The forms substitutions make of a character, with what a part becomes kept per part: 睘 turns
     into the same forms in 還, 環 and 寰.
 
-    Where one side of a substitution holds the other in the very place a part sits, the swap is made
-    there only if an attesting pair shows it in that place (`fits`, with `places`). 广 and 廣 are
-    attested as whole side parts (圹 ⿰土广, 壙 ⿰土廣), and 廣 is ⿸广黃, so the 广 that encloses 郎 in
-    㢃 (⿸广郎) is the part of 廣, and ⿸廣郎 no form of it; 宂 is ⿱宀几, and 㝓 and 䆟 show 宀↔宂 at
-    the top of ⿱, so 寰 (⿱宀睘) still gives ⿱宂睘."""
+    Where one side of a substitution contains the other (`contains`), the swap is made only in the
+    places its attesting pairs show it in (`fits`, with `places`). 广 and 廣 are attested as whole
+    side parts (圹 ⿰土广, 壙 ⿰土廣), and 廣 is ⿸广黃, so the 广 that encloses 郎 in 㢃 (⿸广郎) is the
+    part of 廣, and ⿸廣郎 no form of it. 虫↔蟲 is shown on the right of ⿰ (融 and 𧖓), never on the
+    left, so 蝦 (⿰虫叚) gives no ⿰蟲叚. 宂 is ⿱宀几, and 㝓 and 䆟 show 宀↔宂 at the top of ⿱, so
+    寰 (⿱宀睘) still gives ⿱宂睘. A swap where neither side contains the other (口 and 曰) is made
+    in any place."""
 
-    def __init__(self, desc: Descriptions, table: dict[str, set[str]], steps: int = 1,
-                 places: dict[tuple[str, str], set[Place]] | None = None):
-        self.desc, self.table, self.steps = desc, table, steps
-        self.places = places or {}
+    def __init__(self, desc: Descriptions, table: dict[str, set[str]],
+                 places: dict[tuple[str, str], set[Place]], steps: int = 1):
+        self.desc, self.table, self.steps, self.places = desc, table, steps, places
         self.parts: dict[tuple[str, int, int], list[tuple[tuple[Step, ...], Tree]]] = {}
         self._fits: dict[tuple[str, str, Place], bool] = {}
+        self._nested: dict[tuple[str, str], bool] = {}
 
     def fits(self, was: str, became: str, where: Place) -> bool:
-        """Whether `was` may become `became` in the place `where`: neither holds the other there, or
-        an attesting pair shows the swap there."""
+        """Whether `was` may become `became` in the place `where`: neither contains the other, or an
+        attesting pair shows the swap there. A middle place of ⿲ or ⿳ is read as each place it may
+        stand for (`readings`)."""
         key = (was, became, where)
         if key not in self._fits:
-            self._fits[key] = (where in self.places.get(ordered(was, became), ())
-                               or not (holds(self.desc, became, was, where) or holds(self.desc, was, became, where)))
+            shown = self.places.get(ordered(was, became), ())
+            self._fits[key] = any(place in shown for place in readings(where)) or not self.nested(was, became)
         return self._fits[key]
+
+    def nested(self, was: str, became: str) -> bool:
+        """Whether one side of the substitution contains the other (`contains`)."""
+        key = ordered(was, became)
+        if key not in self._nested:
+            self._nested[key] = contains(self.desc, *key) or contains(self.desc, *key[::-1])
+        return self._nested[key]
 
     def whole(self, char: str) -> Iterator[tuple[tuple[Step, ...], Tree, bool]]:
         """Each form of `char` with its route, and whether it was made from one of the character's
