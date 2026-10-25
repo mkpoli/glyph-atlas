@@ -195,7 +195,16 @@ PUBLISHED = 8
 # Events the store never counts: marks, and the publication's own (a re-cut clearing a mark, RECUT_KIND 7,
 # and its changes, PUBLISHED). Only events up to the crop's revision count, so a statement that writes an
 # event before moving the crop on reads the same count on either side of it.
-UNCOUNTED = f"(e.kind IN (7,{PUBLISHED}) OR " + MARKED.format(e="e") + ")"
+# A style a reviewer gave one crop on the site (routes/review.ts STYLE_KIND), or took back to the
+# publication's: the store does not count it either.
+STYLE_KIND = 9
+UNCOUNTED = f"(e.kind IN (7,{PUBLISHED},{STYLE_KIND}) OR " + MARKED.format(e="e") + ")"
+# Whether a reviewer gave crop `c` a style of its own: its latest style event names one. A publication
+# leaves such a crop's style as it is, and one taken back to the publication's follows publications again.
+# Crops a statement of the publication's styles names: about 20 bytes each, well under STATEMENT_BYTES.
+BASE_CHUNK = 3000
+OWN_STYLE = (f"coalesce((SELECT e.style IS NOT NULL FROM events e WHERE e.crop=c.id AND e.kind={STYLE_KIND} "
+             "ORDER BY e.revision DESC LIMIT 1),0)")
 def _logical(anchors=True, bumps=True):
     """`LOGICAL`, for a database with or without the anchors (`review_revisions`) and the `bumps` column."""
     anchored = ("(SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at "
@@ -571,12 +580,19 @@ class Mirror:
         # The runs' answers are written again for the books and crops a publish changes (run_answers.py).
         for name, cols in (("run_book_all", "book, size, graphemes"), ("run_second_all", "second"), ("run_third_all", "third")):
             self.runs.execute(f"CREATE INDEX IF NOT EXISTS {name} ON runs({cols})")
+        # Crops D1 last answered as keeping a reviewer's style (OWN_STYLE), as the read-back found them: the local
+        # copy holds D1's row for them, so their style is not the publication's.
+        self.atlas.execute("CREATE TABLE IF NOT EXISTS reviewer_styles(crop INTEGER PRIMARY KEY)")
         self.atlas.commit()
         self.runs.commit()
         self.head, self.runs_sql = [], []
         # Each page's vote entries by slot, read from out/votes/ when first touched, and the pages changed.
         self.votes, self.voted = {}, set()
         self.page_sql = defaultdict(list)
+        # Crops the catalogue speaks for, with the style it gives them: what taking a reviewer's style back returns to.
+        self.base_styles = []
+        # The publication's style for crops whose style changed or that D1 may hold a reviewer's style for.
+        self.style_rows = []
         self.touched_pages = defaultdict(dict)
         self.guarded, self.stale, self.relabelled, self.runs_seen = [], [], [], set()
 
@@ -705,6 +721,12 @@ class Mirror:
                 self.stale.append(cid)
             changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle", "bumps") and old[c] != row[c]
                        and (c not in REVIEW_OWNED or speaks)]
+            # A crop D1 last answered as keeping a reviewer's style: the local row is D1's, not the publication's.
+            marked = self.has("reviewer_styles", "crop", cid)
+            if speaks and (old["style"] != row["style"] or marked):
+                # The style the publication gives the crop, which taking a reviewer's style back returns to: sent when
+                # it moved, or when the local copy holds a reviewer's style in its place.
+                self.base_styles.append((cid, row["style"]))
             own = [c for c in changed if c not in REVIEW_OWNED and c != "cut"]
             reviewed = [c for c in changed if c in REVIEW_OWNED]
             if own:
@@ -724,7 +746,7 @@ class Mirror:
             if row["revision"] != old["revision"]:
                 changed.append("revision")
             if speaks and decided:
-                self.page_sql[pid] += visible_change({c: lit(row[c]) for c in reviewed},
+                self.page_sql[pid] += visible_change({c: lit(row[c]) for c in decided},
                                                      f"FROM crops c WHERE c.id={cid} AND c.revision={base}", catalogue_revision)
                 self.guarded.append(cid)
             elif speaks and (reviewed or catalogue_revision != logical):
@@ -734,10 +756,21 @@ class Mirror:
                     self.page_sql[pid].append(
                         f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},{base} FROM crops "
                         f"WHERE id={cid} AND revision={base} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")
-                if reviewed:
-                    self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in reviewed)} "
+                if decided:
+                    self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in decided)} "
                                               f"WHERE id={cid} AND revision={base};")
                 self.guarded.append(cid)
+            if speaks and ("style" in reviewed or marked):
+                # A style moves no revision. A crop a reviewer gave one on the site keeps it, which only D1 knows:
+                # the store does not count that event, and the local copy may not hold it. One the read-back found
+                # keeping a reviewer's style is sent the publication's even when its local row shows no change, since
+                # the reviewer may have taken theirs back since; it is read back again either way. No page changes, and
+                # no revision guard: what a reviewer decided about the style is OWN_STYLE, and a re-cut or a mark
+                # reset sent before it moves the revision.
+                self.style_rows.append(f"UPDATE crops AS c SET style={lit(row['style'])} WHERE c.id={cid} "
+                                       f"AND NOT {OWN_STYLE} AND c.style IS NOT {lit(row['style'])};")
+                if not self.guarded or self.guarded[-1] != cid:
+                    self.guarded.append(cid)
             if old["kind"] == 1 and given.get("kind") == 1 and not review_columns and "char" in given:
                 # A followed glyph retains its character; the incoming character becomes the base
                 # restored when its decision is withdrawn. Stage exactly what the remote guards allow,
@@ -930,9 +963,13 @@ def deliver(m, run):
             for i in range(0, len(guarded), 1000):
                 chunk = guarded[i:i + 1000]
                 found = {r["id"]: r for r in query(database, f"SELECT * FROM crops WHERE id IN ({','.join(map(str, chunk))})")}
-                # The revision D1 counts for each crop as the store does, which the next publication speaks against.
-                logical = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision FROM crops c "
-                                                              f"WHERE c.id IN ({','.join(map(str, chunk))})")}
+                # The revision D1 counts for each crop as the store does, which the next publication speaks against,
+                # and whether it keeps a reviewer's style. One query, so the read-back adds no round trip.
+                logical = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision,{OWN_STYLE} AS own "
+                                                              f"FROM crops c WHERE c.id IN ({','.join(map(str, chunk))})")}
+                owned = {cid for cid, r in logical.items() if r["own"]}
+                m.atlas.executemany("DELETE FROM reviewer_styles WHERE crop=?", [(cid,) for cid in chunk if cid not in owned])
+                m.atlas.executemany("INSERT OR IGNORE INTO reviewer_styles VALUES(?)", [(cid,) for cid in owned])
                 for cid in chunk:
                     if cid in logical:
                         r = logical[cid]
@@ -1623,8 +1660,8 @@ def main():
     # A book's confirmed style, on each of its crops whose style differs and that no review gave a style
     # of its own, after the crops above. Each chunk moves the tally cells of the crops it changes, then
     # changes them, all under the same guard, so a crop reviewed since keeps its row and its count.
-    restyled, unbooked = defaultdict(list), []
-    own = "NOT EXISTS (SELECT 1 FROM events e WHERE e.crop=c.id AND e.style IS NOT NULL)"
+    restyled, unbooked, based = defaultdict(list), [], []
+    own = f"NOT {OWN_STYLE}"
     if "book_styles" in tables:
         for r in src.execute("SELECT document, style FROM book_styles ORDER BY document"):
             book = m.ids.execute("SELECT id FROM books WHERE key=?", (r["document"],)).fetchone()
@@ -1633,10 +1670,14 @@ def main():
                 continue
             code = m.code("style", r["style"])
             # In tally order, so a chunk's crops share few cells and its tally statements write few rows.
-            found = m.atlas.execute(f"SELECT c.* FROM crops c WHERE c.book=? AND c.kind<2 AND c.style IS NOT ? AND {own} "
+            found = m.atlas.execute("SELECT c.* FROM crops c WHERE c.book=? AND c.kind<2 AND c.style IS NOT ? "
                                     "ORDER BY c.kind, c.char, c.family, c.production, c.style, c.state, c.quiz, c.year, c.id",
                                     (book[0], code)).fetchall()
             restyled[code] += [(c["id"], c["revision"], tuple(tally_cell(c))) for c in found]
+            # Its crops a reviewer gave a style keep theirs; the book's is what taking it back returns to.
+            # From the overlays, not every crop: a publication has few reviews and up to a million crops.
+            based.append(f"UPDATE reviews AS r SET base_style={code} WHERE EXISTS (SELECT 1 FROM crops c "
+                         f"WHERE c.id=r.crop AND c.book={book[0]} AND c.kind<2 AND {OWN_STYLE});")
             m.atlas.executemany("UPDATE crops SET style=? WHERE id=?", [(code, c["id"]) for c in found])
             m.guarded += [c["id"] for c in found]
             n += len(found)
@@ -1656,6 +1697,8 @@ def main():
                 f"{tally} {gen},{restyle_cell},count(*) {changing} GROUP BY {TALLY_CELL} ON CONFLICT DO UPDATE SET n=n+excluded.n;",
                 # A book's style is a fact about the document, not a review's: no revision moves.
                 f"UPDATE crops SET style={code} WHERE id IN (SELECT c.id {changing});"])
+    if based:
+        style_sql.append(based)
 
     # Replacements are numbered once every crop of the catalogue has its id. None removes the field.
     for cid, text_id in naming:
@@ -1854,7 +1897,13 @@ def main():
     if stray:
         sys.exit(f"pages {stray[:5]} have row changes but no new bundle; nothing published")
 
-    groups = [m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)] + flag_sql + style_sql
+    # The publication's style of each crop it speaks for, kept for the crops a reviewer gave one, which only D1 knows.
+    # It changes no page, and writes only the overlay rows of those crops whose base differs.
+    based_sql = [f"UPDATE reviews AS r SET base_style=v.column2 FROM (VALUES {','.join(f'({cid},{lit(code)})' for cid, code in m.base_styles[i:i + BASE_CHUNK])}) "
+                 f"AS v WHERE r.crop=v.column1 AND r.base_style IS NOT v.column2 AND (SELECT {OWN_STYLE} FROM crops c WHERE c.id=r.crop);"
+                 for i in range(0, len(m.base_styles), BASE_CHUNK)]
+    groups = ([m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)] + flag_sql + style_sql
+              + [m.style_rows[i:i + BASE_CHUNK] for i in range(0, len(m.style_rows), BASE_CHUNK)] + ([based_sql] if based_sql else []))
     atlas_parts = write_parts(run, "atlas", [g for g in groups if g])
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))
