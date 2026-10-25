@@ -151,6 +151,8 @@ describe('a crop\'s record', () => {
     expect(response.status).toBe(200);
     const pub = publicId(ids.a);
     const want = { ...withoutNulls(records.a), id: pub, source_id: records.a.id, crop_version: `${pub}@${hash}@10,10,20,30`, crop_editable: true,
+      // The style it is listed under.
+      style: 'unassessed', style_basis: 'none',
       grapheme_claim: null, form: { status: 'single', values: [{ form: 'form:1', scheme: 'unicode', text: '弌', confidence: null }], supporting: ['f1'], by: ['x'] },
       word: { status: 'single', values: [{ word: 'ja/いち', reading: 'いち', class: 'noun', form: null }], methods: ['ruby'], supporting: ['w1'], by: ['x'] },
       honkoku_url: `https://app.honkoku.org/transcription/${book.slice(3)}/5`,
@@ -159,6 +161,19 @@ describe('a crop\'s record', () => {
       dates: [{ id: 'd1', kind: 'copied', of: 'witness', text: '寛政二年', start: 1790, end: 1790, precision: 'year', qualifier: null,
         uncertain: false, day: null, calendar: 'japanese', hutime: null, note: null, tier: 'attested', source: 'src', locator: 'p. 1' }] };
     expect(await response.json()).toEqual(want);
+  });
+
+  it('carries the style its row is listed under', async () => {
+    const { db, get, ids } = setup();
+    db.exec(`INSERT OR IGNORE INTO codes(field,code,key) VALUES('style',90,'regular'); UPDATE crops SET style=90 WHERE id IN (${ids.a},${ids.glyph})`);
+    for (const path of [`/atlas/characters/${publicId(ids.a)}`, `/atlas/corpus/character?id=${publicId(ids.glyph)}`])
+      expect(await (await get(path)).json()).toMatchObject({ style: 'regular', style_basis: 'none' });
+  });
+
+  it('names no style the vocabulary lacks', async () => {
+    const { db, get, ids } = setup();
+    db.exec(`INSERT OR IGNORE INTO codes(field,code,key) VALUES('style',91,'printed'); UPDATE crops SET style=91 WHERE id=${ids.a}`);
+    expect(await (await get(`/atlas/characters/${publicId(ids.a)}`)).json()).toMatchObject({ style: 'unassessed', style_basis: 'none' });
   });
 
   it('takes a flagged crop\'s issue from its last event, an undo included', async () => {
