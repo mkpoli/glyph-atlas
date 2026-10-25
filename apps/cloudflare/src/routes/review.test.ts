@@ -850,6 +850,28 @@ describe('a crop\'s style', () => {
       .toEqual([{ text: '𛂞' }, { text: '𛂞' }]);
   });
 
+  it('takes the crop back to the style its publication gives it now', async () => {
+    const { db, env, ids } = setup();
+    await send(env, `/atlas/characters/${publicId(ids[5])}/style`, { id: uuid(916), revision: 0, style: 'regular' });
+    await send(env, `/atlas/characters/${publicId(ids[5])}/style`, { id: uuid(917), revision: 1, style: 'unassessed' });
+    // A publication then gives the crop's document seal script.
+    db.exec(`INSERT INTO codes(field,code,key) VALUES('style',50,'seal'); UPDATE crops SET style=50 WHERE id=${ids[5]}`);
+    await send(env, `/atlas/characters/${publicId(ids[5])}/style`, { id: uuid(918), revision: 2, style: 'running' });
+    const back = await send(env, `/atlas/characters/${publicId(ids[5])}/style`, { id: uuid(919), revision: 3, style: 'unassessed' });
+    expect(back.body).toMatchObject({ style: 'seal', style_basis: 'none' });
+  });
+
+  it('is no submission its reviewer can undo, and leaves an earlier review undoable', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, `/atlas/characters/${publicId(ids[1])}`, { ...local(ids[1]), id: uuid(920), verdict: 'wrong', issue: 'character', character: 'あ' })).status).toBe(200);
+    await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(921), revision: 1, style: 'seal' }, 'u2');
+    expect((await send(env, `/atlas/rounds/${uuid(921)}/undo`, {}, 'u2')).status).toBe(409);
+    // Another reviewer's style since does not hold back the undo of the review; the style stays.
+    expect((await send(env, `/atlas/rounds/${uuid(920)}/undo`, {})).status).toBe(200);
+    expect(crop(db, ids[1])).toMatchObject({ char: 2 });
+    expect(styleOf(db, ids[1])).toMatchObject({ style: 'seal' });
+  });
+
   it('is no review an admin can reject', async () => {
     const { db, env, ids } = setup();
     await send(env, `/atlas/characters/${publicId(ids[4])}/style`, { id: uuid(914), revision: 0, style: 'seal' });

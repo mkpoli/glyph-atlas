@@ -395,9 +395,10 @@ export async function setStyle(env: Env, sent: Json, user: string, raw: string):
   if (!found) throw await missing(env, crop);
   if (!standing(found.row, sent.revision)) throw new Problem(409, 'This character changed. Reload it.');
   const actor = await actorFor(env, user), at = Date.now();
-  // The style the crop's publication gave it: the overlay's from before its first style event, else its own.
-  const published = `CASE WHEN EXISTS(SELECT 1 FROM events p WHERE p.crop=c.id AND p.kind=${STYLE_KIND} AND p.revision<=c.revision)
-    THEN (SELECT r.base_style FROM reviews r WHERE r.crop=c.id) ELSE c.style END`;
+  // The style the crop's publication gave it: while a reviewer's style stands, the overlay's from before it
+  // was given; otherwise the crop's own, which publications keep.
+  const published = `CASE WHEN coalesce((SELECT p.style IS NOT NULL FROM events p WHERE p.crop=c.id AND p.kind=${STYLE_KIND} AND p.revision<=c.revision
+    ORDER BY p.revision DESC LIMIT 1),0) THEN (SELECT r.base_style FROM reviews r WHERE r.crop=c.id) ELSE c.style END`;
   // ?1 the crop, ?2 the submission's key, ?3 the time, ?4 the revision read, ?5 the style chosen.
   const chosen = `CASE WHEN ?5='unassessed' THEN NULL ELSE (SELECT code FROM codes WHERE field='style' AND key=?5) END`;
   const moved = `EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.revision=c.revision+1 AND e.submission=(SELECT id FROM submissions WHERE key=?2))`;
@@ -672,6 +673,7 @@ export async function undo(env: Env, request: Request, user: string, id: string)
   if (!found) throw new Problem(404, 'No saved round belongs to this reviewer.');
   // An admin's corpus flags are saved as a submission too; they are no review.
   if (JSON.parse(found.request).target === '@flags') throw new Problem(409, 'A flag is not a review, so it cannot be undone.');
+  if (JSON.parse(found.request).target === STYLE_TARGET) throw new Problem(409, 'A style is not a review, so it cannot be undone. Choose another style instead.');
   const { request: _, ...submission } = found;
   return { id, ...await revert(env, submission, await actorFor(env, user), undefined) };
 }
@@ -720,11 +722,12 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     }
     // Rejecting all of one reviewer's work also passes over their own later changes to the crop that
     // are already undone, and the undos themselves; anyone else's later change, or one of theirs that
-    // still stands, stops it. Marks never do; nor does a publication, which is no one's review.
+    // still stands, stops it. Marks never do; nor does a publication, which is no one's review, nor a style,
+    // which the undo leaves as it is.
     const later = current.revision !== r.revision && (rejection?.reviewer ? await env.ATLAS.prepare(`SELECT 1 FROM events e JOIN submissions s ON s.id=e.submission
-      WHERE e.crop=? AND e.revision>? AND e.kind NOT IN (3,4,${PUBLISHED}) AND (s.actor NOT IN (SELECT value FROM json_each(?)) OR (s.undone=0 AND e.kind IN (0,1,2))) LIMIT 1`)
+      WHERE e.crop=? AND e.revision>? AND e.kind NOT IN (3,4,${PUBLISHED},${STYLE_KIND}) AND (s.actor NOT IN (SELECT value FROM json_each(?)) OR (s.undone=0 AND e.kind IN (0,1,2))) LIMIT 1`)
       .bind(r.crop, r.revision, JSON.stringify(rejection.reviewer)).first()
-      : since.some(e => e.kind !== PUBLISHED));
+      : since.some(e => e.kind !== PUBLISHED && e.kind !== STYLE_KIND));
     if (later) {
       if (await env.ATLAS.prepare('SELECT 1 FROM submissions WHERE id=? AND undone=1').bind(submission.id).first())
         return { results: [], duplicate: true };
