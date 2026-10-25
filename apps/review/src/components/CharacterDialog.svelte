@@ -331,9 +331,12 @@
         <div class="credit-beside"><SourceCredit item={data} /></div>
       </div>
       <div class="inspector-right">
-        <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}<StyleField item={data} editable disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} /></div>
+        <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}</div>
         <div class="inspector-title"><CropTitle char={data.label} script={data.script} reading={{ item: data, disabled: busy || !fresh || !Object.hasOwn(data, 'grapheme_claim'), working: value => busy = value, saved: fieldSaved }} /><ZiLink character={data.label} />{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<ReviewState tone="waiting" text={t('character.crop.pending')} />{:else if data.state === 'checked' || repairOf(data)?.kind === 'verified'}<ReviewState tone="checked" text={t('state.checked')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'hard'}<ReviewState tone="waiting" text={t('state.hard')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
-        {#key data.id + ':' + data.crop_version}<CropWord item={data} disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} />{/key}
+        <div class="inspector-words">
+          {#key data.id + ':' + data.crop_version}<CropWord item={data} disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} />{/key}
+          <StyleField item={data} editable disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} />
+        </div>
         {#if issue === 'character' || issue === 'crop'}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
         {#snippet formBar()}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/snippet}
         <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}
@@ -355,6 +358,8 @@
 </dialog>
 
 <style>
+  /* The word and the style it is written in sit on one line; either wraps when the inspector is narrow. */
+  .inspector-words{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px}
   .crop-keys{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 0;font-size:10px;color:var(--muted)}
   .crop-keys button{font-size:10px;padding:4px 8px}
 </style>
