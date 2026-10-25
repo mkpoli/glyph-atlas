@@ -786,6 +786,8 @@ describe('a corpus glyph\'s review', () => {
 });
 
 describe('a crop\'s style', () => {
+  // The styles a publication has numbered; a style none has used yet is refused.
+  const styledSetup = () => { const made = setup(); made.db.exec(`INSERT INTO codes(field,code,key) VALUES('style',1,'regular'),('style',2,'running'),('style',3,'seal')`); return made };
   const styleOf = (db: Database, id: number) => db.query(`SELECT c.revision,s.key AS style,r.style AS overlay,b.key AS base FROM crops c
     LEFT JOIN codes s ON s.field='style' AND s.code=c.style LEFT JOIN reviews r ON r.crop=c.id
     LEFT JOIN codes b ON b.field='style' AND b.code=r.base_style WHERE c.id=?`).get(id) as any;
@@ -793,7 +795,7 @@ describe('a crop\'s style', () => {
     GROUP BY s.key HAVING sum(t.n)<>0`).all() as any[]).map(r => [r.key, r.n]));
 
   it('lists the crop under the style a reviewer gave it, and its record says so', async () => {
-    const { db, env, ids } = setup();
+    const { db, env, ids } = styledSetup();
     const saved = await send(env, `/atlas/characters/${publicId(ids[0])}/style`, { id: uuid(901), revision: 0, style: 'regular' });
     expect(saved.status).toBe(200);
     expect(saved.body).toMatchObject({ id: publicId(ids[0]), style: 'regular', style_basis: 'unit', style_editable: true, revision: 1 });
@@ -805,7 +807,7 @@ describe('a crop\'s style', () => {
   });
 
   it('takes the crop back to its publication\'s style, and a retry answers with the crop as it is', async () => {
-    const { db, env, ids } = setup();
+    const { db, env, ids } = styledSetup();
     await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(902), revision: 0, style: 'running' });
     await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(903), revision: 1, style: 'seal' });
     const back = await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(904), revision: 2, style: 'unassessed' });
@@ -819,15 +821,18 @@ describe('a crop\'s style', () => {
   });
 
   it('refuses a crop changed since it was read, and a style the vocabulary does not hold', async () => {
-    const { db, env, ids } = setup();
+    const { db, env, ids } = styledSetup();
     expect((await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(905), revision: 0, style: 'regular' })).status).toBe(200);
     expect((await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(906), revision: 0, style: 'seal' })).status).toBe(409);
     expect((await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(907), revision: 1, style: 'italic' })).status).toBe(422);
     expect(styleOf(db, ids[1])).toMatchObject({ revision: 1, style: 'regular' });
+    // Clerical script is in the vocabulary, but no publication has numbered it.
+    expect((await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(922), revision: 1, style: 'clerical' })).status).toBe(422);
+    expect(db.query(`SELECT count(*) AS n FROM codes WHERE field='style'`).get()).toEqual({ n: 4 });
   });
 
   it('keeps the crop\'s open issue, and the store\'s count of its revisions', async () => {
-    const { db, env, ids } = setup();
+    const { db, env, ids } = styledSetup();
     expect((await send(env, `/atlas/characters/${publicId(ids[3])}`, { ...local(ids[3]), id: uuid(911), verdict: 'wrong', issue: 'crop' })).status).toBe(200);
     const styled = await send(env, `/atlas/characters/${publicId(ids[3])}/style`, { id: uuid(912), revision: 1, style: 'regular' });
     expect(styled.body).toMatchObject({ state: 'flagged', issue: 'crop', revision: 2 });
@@ -840,7 +845,7 @@ describe('a crop\'s style', () => {
   });
 
   it('leaves a corpus glyph following its cluster\'s form', async () => {
-    const { db, env, ids } = setup();
+    const { db, env, ids } = styledSetup();
     await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(915), revision: 0, style: 'regular' });
     db.exec(`INSERT INTO form_clusters(id,key,family,label,count,coherence,shape_position,size_position,list,form) VALUES(1,'test','U+306F','は',2,1,1,1,'test','𛂞');
       UPDATE crops SET cluster=1 WHERE id IN (${ids[6]},${ids[7]}); INSERT INTO corpus_follow VALUES(${ids[6]}),(${ids[7]})`);
@@ -851,18 +856,18 @@ describe('a crop\'s style', () => {
   });
 
   it('takes the crop back to the style its publication gives it now', async () => {
-    const { db, env, ids } = setup();
+    const { db, env, ids } = styledSetup();
     await send(env, `/atlas/characters/${publicId(ids[5])}/style`, { id: uuid(916), revision: 0, style: 'regular' });
     await send(env, `/atlas/characters/${publicId(ids[5])}/style`, { id: uuid(917), revision: 1, style: 'unassessed' });
     // A publication then gives the crop's document seal script.
-    db.exec(`INSERT INTO codes(field,code,key) VALUES('style',50,'seal'); UPDATE crops SET style=50 WHERE id=${ids[5]}`);
+    db.exec(`UPDATE crops SET style=3 WHERE id=${ids[5]}`);
     await send(env, `/atlas/characters/${publicId(ids[5])}/style`, { id: uuid(918), revision: 2, style: 'running' });
     const back = await send(env, `/atlas/characters/${publicId(ids[5])}/style`, { id: uuid(919), revision: 3, style: 'unassessed' });
     expect(back.body).toMatchObject({ style: 'seal', style_basis: 'none' });
   });
 
   it('is no submission its reviewer can undo, and leaves an earlier review undoable', async () => {
-    const { db, env, ids } = setup();
+    const { db, env, ids } = styledSetup();
     expect((await send(env, `/atlas/characters/${publicId(ids[1])}`, { ...local(ids[1]), id: uuid(920), verdict: 'wrong', issue: 'character', character: 'あ' })).status).toBe(200);
     await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(921), revision: 1, style: 'seal' }, 'u2');
     expect((await send(env, `/atlas/rounds/${uuid(921)}/undo`, {}, 'u2')).status).toBe(409);
@@ -873,14 +878,14 @@ describe('a crop\'s style', () => {
   });
 
   it('is no review an admin can reject', async () => {
-    const { db, env, ids } = setup();
+    const { db, env, ids } = styledSetup();
     await send(env, `/atlas/characters/${publicId(ids[4])}/style`, { id: uuid(914), revision: 0, style: 'seal' });
     await expect(reject(env, 'admin', { submissions: ['u1:' + uuid(914)] }, { text } as any)).rejects.toThrow('A style is not a review');
     expect(styleOf(db, ids[4])).toMatchObject({ style: 'seal' });
   });
 
   it('a later review keeps the style and its publication\'s', async () => {
-    const { db, env, ids } = setup();
+    const { db, env, ids } = styledSetup();
     await send(env, `/atlas/characters/${publicId(ids[2])}/style`, { id: uuid(908), revision: 0, style: 'regular' });
     const reviewed = await send(env, `/atlas/characters/${publicId(ids[2])}`, { id: uuid(909), revision: 1, image_sha256: H, verdict: 'match' });
     expect(reviewed.status).toBe(200);

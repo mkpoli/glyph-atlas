@@ -2,7 +2,7 @@
 // evidence versions, its citation, its neighbours on its line, its model votes, its image, and the source
 // page it sits on. Crops are named by public id; an old text id or a retired crop's id redirects
 // (`atlas3Crops.ts`).
-import { bundle, publicId, pageOf, slotOf } from '../atlas3';
+import { bundle, codeNames, publicId, pageOf, slotOf } from '../atlas3';
 import { cropParam, cropQueryParam, movedPathResponse, movedQueryResponse } from '../atlas3Crops';
 import { catalogueVersion } from '../atlas3Stamps';
 import { cropVotes, restoreVotes } from '../atlas3Votes';
@@ -62,9 +62,13 @@ const FILING = new Set(['asserted', 'accepted', 'adjudicated']);
  *  rest on. A grapheme claim that holds names the grapheme the crop is filed under. */
 export async function inspected(env: Env, found: FoundCrop): Promise<Json> {
   const id = found.row.id, document = documentFor(found);
-  const [graphemes, forms, words, dates] = await Promise.all([cropGraphemes(env, [id]), cropForms(env, [id]), cropWords(env, [id]), bookDates(env, document)]);
+  const [graphemes, forms, words, dates, names] = await Promise.all([cropGraphemes(env, [id]), cropForms(env, [id]), cropWords(env, [id]),
+    bookDates(env, document), codeNames(env)]);
   const claim = graphemes.get(id) ?? null, filed = FILING.has(claim?.status) ? claim!.values[0]?.grapheme : null;
-  const record = { ...found.record, ...(filed ? { grapheme: filed } : {}), grapheme_claim: claim, form: forms.get(id) ?? null, word: words.get(id) ?? null };
+  // The styles a reviewer may give it: those a publication has numbered (`setStyle`).
+  const styles = [...names].filter(([key]) => key.startsWith('style:')).map(([, name]) => name).filter(name => name !== 'unassessed').sort();
+  const record = { ...found.record, ...(filed ? { grapheme: filed } : {}), grapheme_claim: claim, form: forms.get(id) ?? null, word: words.get(id) ?? null,
+    style_choices: styles };
   const honkoku = honkokuPage(record, document);
   return { ...record, ...(honkoku ? { honkoku_url: honkoku } : {}), ...dates };
 }

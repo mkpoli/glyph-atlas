@@ -394,6 +394,9 @@ export async function setStyle(env: Env, sent: Json, user: string, raw: string):
   const found = await foundCrop(env, crop);
   if (!found) throw await missing(env, crop);
   if (!standing(found.row, sent.revision)) throw new Problem(409, 'This character changed. Reload it.');
+  // Style codes are the publication's to number; a style no publication has used yet cannot be given here.
+  if (style !== 'unassessed' && !await env.ATLAS.prepare(`SELECT 1 FROM codes WHERE field='style' AND key=?`).bind(style).first())
+    throw new Problem(422, 'No crop in the collection has this style yet, so it cannot be chosen here.');
   const actor = await actorFor(env, user), at = Date.now();
   // The style the crop's publication gave it: while a reviewer's style stands, the overlay's from before it
   // was given; otherwise the crop's own, which publications keep.
@@ -408,8 +411,6 @@ export async function setStyle(env: Env, sent: Json, user: string, raw: string):
   const statements = [
     env.ATLAS.prepare('INSERT INTO submissions(key,actor,request,response,at,evidence) VALUES (?,?,?,?,?,NULL)')
       .bind(key, actor, signature, JSON.stringify({ target_id: publicId(crop), field: 'style', style }), at),
-    ...(style === 'unassessed' ? [] : [env.ATLAS.prepare(`INSERT OR IGNORE INTO codes(field,code,key) SELECT 'style',coalesce(max(code),0)+1,?
-      FROM codes WHERE field='style'`).bind(style)]),
     // A revision that moved since it was read leaves the event's revision null, which fails the batch.
     // It holds the crop's values as they stand, its open issue among them, as every event holds them after it.
     env.ATLAS.prepare(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,style,quiz,kept_issue)
