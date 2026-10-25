@@ -4,13 +4,13 @@
   // `char` is the character the composer starts from when nothing was typed.
   import IdsComposer from './IdsComposer.svelte'
   import { t } from '../lib/i18n.svelte.js'
-  let { char = '', disabled = false, onuse } = $props()
+  let { char = '', disabled = false, title, onuse } = $props()
   let open = $state(false)
 </script>
 
 <div class="ids-pick">
-  <button type="button" class="ids-open" {disabled} aria-expanded={open} onclick={() => open = !open}>{t('form.ids.compose')}</button>
-  {#if open}
+  <button type="button" class="ids-open" {disabled} {title} aria-expanded={open} onclick={() => open = !open}>{t('form.ids.compose')}</button>
+  {#if open && !disabled}
     <div class="ids-panel"><IdsComposer {disabled} {char} onuse={sequence => { open = false; onuse(sequence) }} /></div>
   {/if}
 </div>
