@@ -74,12 +74,21 @@
   // the same, so the next open reads it afresh.
   function changed(id, result) {
     forgetCrop(id)
-    inspector.update?.(id, result)
+    inspector.update?.(id, result, 'changed')
     written = { ...written, [id]: true }
   }
+  // A write that decided a crop without the inspector closing for it: a line correction, which moves
+  // labels, or a save that landed after the inspector closed or moved on.
+  function reviewed(id, result) {
+    forgetCrop(id)
+    inspector.update?.(id, result, 'saved')
+    written = { ...written, [id]: true }
+  }
+  // The reader declined to judge the crop; a round counts it as skipped.
+  const skipped = id => inspector.update?.(id, null, 'skipped')
   function saved(id, result) {
     forgetCrop(id)
-    inspector.update?.(id, result, true)
+    inspector.update?.(id, result, 'saved')
     written = { ...written, [id]: true }
     savedNotice = t('app.saved')
     setTimeout(() => savedNotice = '', 2000)
@@ -127,7 +136,7 @@
     · <a href={localize('/privacy')}><LinkMark name="privacy" />{t('footer.privacy')}</a>
     · <ChatLinks /></p>
 </footer>
-{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {close} {saved} {previous} {next} {position} {initial} {cited} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {close} {saved} opening={inspector.issue} {previous} {next} {position} {initial} {cited} />{/if}{/if}
+{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {reviewed} {skipped} {close} {saved} {previous} {next} {position} {initial} {cited} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {reviewed} {skipped} {close} {saved} opening={inspector.issue} {previous} {next} {position} {initial} {cited} />{/if}{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}
 <DatabaseStatus />
 {#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}

@@ -4,7 +4,7 @@
   // `{ text, n, kind, rank, crops, page, vertical }`, `rank` its place among its kind's counts; one
   // whose occurrence could not be read has no `crops` and shows its text, and one on its way has no
   // `text` and shows a placeholder. `style` places it in the collage. In select mode the gallery gives it
-  // `selected`, `checked` once every crop it shows is confirmed, `marks` (its select box and tick) and
+  // `selected`, `checked` once every crop it shows is confirmed (a tick after its text), `marks` (its select box) and
   // the handlers of a tile, which it passes on.
   import RunImage from './RunImage.svelte'
   import ScriptText from './ScriptText.svelte'
@@ -23,7 +23,7 @@
   {@render marks?.(run)}
   <span class="run-tile-image" aria-hidden="true" bind:clientWidth={width} bind:clientHeight={height}>{#if run.crops}{#if width && height}<RunImage crops={run.crops} page={run.page} vertical={run.vertical} fill={height / width} />{/if}{:else}<span class="run-tile-text">{run.text}</span>{/if}</span>
   <span class="tile-caption">
-    <span class="tile-label"><span class="tile-glyph"><ScriptText text={run.text} titled={false} /></span></span>
+    <span class="tile-label"><span class="tile-glyph"><ScriptText text={run.text} titled={false} /></span>{#if checked}<span class="tile-verdict" aria-hidden="true">✓</span>{/if}</span>
     <span class="tile-footer"><span class="tile-count" title={run.kind === 'trigram' ? t('tile.countTrigram', { text: run.text, count: run.n, rank: run.rank }) : t('tile.countPair', { text: run.text, count: run.n, rank: run.rank })}>{t('tile.count', { count: run.n })}</span>{#if run.crops && tileDate(run.crops[0])}<span class="tile-year">{tileDate(run.crops[0])}</span>{/if}{#if run.crops && workTitle(run.crops[0])}<span class="tile-work">{workTitle(run.crops[0])}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 </a>
@@ -32,7 +32,6 @@
 <style>
   .run-tile{color:inherit;text-decoration:none}
   .run-tile.decided-checked{background:var(--good-light)}
-  .run-tile.decided-checked .tile-label{right:38px;overflow:hidden;white-space:nowrap}
   .run-tile.decided-checked::after{content:'';position:absolute;inset:0;z-index:3;border:2px solid var(--good);pointer-events:none}
   .run-tile-image{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:0}
   .run-tile-image :global(svg){max-width:100%;max-height:100%}

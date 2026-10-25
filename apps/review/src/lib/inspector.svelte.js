@@ -38,11 +38,14 @@ export function createInspector() {
     get shown() { return page.state.inspect ?? null },
     get queue() { return current() ? state.queue : [] },
     get index() { return current() ? state.queue.findIndex(item => showing(item, page.state.inspect)) : -1 },
-    get update() { return current() ? updateItem : null },
+    // A save may land after the inspector has closed; until another crop is opened or the page changes, it
+    // still reaches the list that opened it.
+    get update() { return current() || !page.state.inspect ? updateItem : null },
     /** The problem the crop was opened to fix, for the crop it was opened on. */
     get issue() { return current() && page.state.inspect?.id === state.opened ? state.issue : null },
-    /** `update(id, record, saved)` hears of each write to a crop: `saved` when it decided the crop, false for a
-     *  field (style, reading, word) that leaves the decision as it was. `issue` opens it with that problem
+    /** `update(id, record, how)` hears what happened to a crop: `saved` when a write decided it (a review, or
+     *  a line correction that moved its label), `changed` for a field (style, reading, word) that leaves the
+     *  decision as it was, and `skipped`, with no record, when the reader declined to judge it. `issue` opens it with that problem
      *  chosen, as a round's Bad crop opens the box editor. */
     inspect(id, collection = [], update = null, origin = 'collection', issue = null) {
       // A crop opened from inside the inspector takes the open one's entry rather than stacking another.

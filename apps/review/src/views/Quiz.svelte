@@ -611,15 +611,24 @@
   function inspectChoice(item, issue = null) {
     inspect(item.id, shown, inspected, item.origin === 'corpus' ? 'corpus' : 'collection', issue)
   }
-  async function inspected(id, result, saved) {
-    const item = items.find(i => i.id === id)
+  async function inspected(id, result, how) {
+    const item = items.find(i => i.id === id), round = roundId
     if (!item) return
-    if (saved) { choices = without(choices, [id]); selected = without(selected, [id]); skipped = without(skipped, [id]) }
+    // A crop skipped in the editor was seen there, so the round records the skip.
+    if (how === 'skipped') { viewed = { ...viewed, [id]: true }; skip([id]); return }
+    // A save decides the crop at once: it leaves the selection, the answers and the skips, and shows as saved.
+    if (how === 'saved') {
+      choices = without(choices, [id]); selected = without(selected, [id]); skipped = without(skipped, [id])
+      markRecorded([item], result?.state === 'flagged' ? 'flagged' : 'assigned')
+      // The last crop of the issue step decided here leaves nothing to show there.
+      if (step !== 'select' && !queue.length) back()
+    }
     // A corpus glyph's save answers with its record; a crop's is read again, as Explore reads it.
     const record = item.origin === 'corpus' ? result : await character(id).catch(() => null)
-    if (closed) return
-    if (record) items = items.map(i => i.id === id ? { ...i, ...record } : i)
-    if (saved) markRecorded([item], (record ?? result)?.state === 'flagged' ? 'flagged' : 'assigned')
+    // The round may have moved on meanwhile; the tile it left is no longer on screen.
+    if (closed || roundId !== round || !record) return
+    items = items.map(i => i.id === id ? { ...i, ...record } : i)
+    if (how === 'saved') markRecorded([item], record.state === 'flagged' ? 'flagged' : 'assigned')
   }
   /**
    * Mark the crop on show as one of its grapheme's forms, as the bar marks a selection: the crop is
