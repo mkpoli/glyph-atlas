@@ -161,32 +161,37 @@ The ruby choice needs the rubies while the parse runs, so rubies and tokens are 
 `atlas text build` writes `text.sqlite` with 0009's pairs and occurrences, the tokens and the
 character maps.
 
-`text.sqlite` numbers every clone page with a text page number, which stays fixed while the
-clone keeps the page. 120,747 clone pages hold text.
+R2 bills a write by the object, whatever its size, so the text layer is stored as few, larger
+objects. 120,747 clone pages hold text.
 
-**Only page objects name crops.** `scripts/atlas3/text.py` writes two kinds of object, and uploads
+**Only page packs name crops.** `scripts/atlas3/text.py` writes two kinds of object and uploads
 only those whose hash changed:
 
 - **Under `v3/text/<build>/`,** the layout's build id, read as `layoutBuild` reads it for votes
   (0008), so that no object names crops of another build:
-  - one object per text page, with its lines, each with its rubies, its tokens and their crops;
-  - `cropped.json.gz`, the set of text pages that have a crop, as a bitmap of about 15 KB.
+  - page packs, `pack/<entry>/<n>.json.gz`: pages 32n to 32n + 31 of one book, each with its
+    lines, rubies, tokens and their crops. A pack is found from the book and the page number
+    alone. A pack over 256 KB decoded is split in halves, `<n>.0` and `<n>.1`, until each half
+    fits;
+  - `pages.json.gz`: the set of text pages that have a crop, as a bitmap of about 15 KB, and the
+    list of split packs. It is small and read often, so an isolate nearly always holds it.
 - **Under `v3/text/`, with no crop ids:**
-  - one object per lexeme with its spellings, counts and periods, and its cropped pages: the text
-    pages where its tokens had crops at the last refresh, most crops first, up to 2,000;
-  - its page index, every text page that holds it with a count, inside the lexeme object up to
-    2,000 pages and in chunks of 2,000 beyond;
-  - one object per 0009 ruby pair, with its counts and cropped pages in the same form, and its
-    occurrences (text page, line, offsets) in chunks of 2,000;
-  - the search shards: spellings by each character of the surface, lemmas by lemma text, and
-    lemma readings by their first two kana.
+  - lexeme shards, 1,024 by the hash of the 語彙素ID. A lexeme's entry holds its spellings,
+    counts and periods, its cropped pages (the text pages where its tokens had crops at the last
+    refresh, most crops first, up to 2,000), and its page index up to 2,000 pages;
+  - page index chunks of 20,000 pages for the lexemes that occur on more than 2,000 pages;
+  - ruby pair shards, 1,024 by the hash of the pair, with each pair's counts, cropped pages and
+    occurrences (text page, line, offsets), and chunks of 20,000 occurrences for the largest pairs;
+  - search shards: 1,024 for spellings by each character of the surface, 256 for lemmas and 256
+    for lemma readings by their first two kana.
 
-**A gallery is assembled at read time,** from the page objects, which hold the current crops:
+**A gallery is assembled at read time,** from the page packs, which hold the current crops:
 
 - The Worker reads the lexeme's cropped pages first, then pages the bitmap marks that were cropped
-  after the last refresh, in the order of the page index.
-- One request reads at most 32 objects, six at a time: the lexeme object, the bitmap and up to 30
-  page objects. It returns the crops found, up to 24, and a cursor to the next page.
+  after the last refresh, in the order of the page index. Pages of one book share packs, so a
+  pack read usually yields several of them.
+- One request reads at most 12 objects and decodes at most 1 MB: the lexeme shard, `pages.json.gz`
+  and up to 10 packs. It returns the crops found, up to 24, and a cursor to the next page.
 - A lexeme whose cropped pages are current fills a gallery in one round of reads. A lexeme whose
   tokens are rarely aligned returns fewer crops per request, and its next page continues from the
   cursor.
@@ -197,56 +202,54 @@ each of the 20 word rows.
 
 **Rebuilds.** `text.py` runs after every `publish.py` run. What it rewrites follows what changed:
 
-- **Crops** (a publication): the page objects of the pages touched, and the bitmap.
-- **A clone page's text, or the dictionary of a book:** that page's object, the lexeme, index and
-  pair objects its tokens and rubies left or joined, the search shards of those spellings,
-  lemmas and readings, and 0009's ranked lists.
+- **Crops** (a publication): the packs of the pages touched, and `pages.json.gz`.
+- **A clone page's text, or the dictionary of a book:** that page's pack, the lexeme, index and
+  pair shards its tokens and rubies left or joined, the search shards of those spellings, lemmas
+  and readings, and 0009's ranked lists.
 - **A witness year,** whether from `books.py` or from a publication's `document_dating`: the
-  lexeme objects of the book's tokens, whose periods depend on it. A year that crosses into
-  another dictionary's range also re-parses the book, as above.
-- **Cropped pages:** refreshed in one batch after a run of publications, at most once a day. The
-  refresh rewrites only the lexeme and pair objects whose cropped pages changed.
-- **A new layout build:** the page objects and the bitmap under the new build id, and the cropped
-  pages of every lexeme and pair. The old page objects stay until the next build replaces them, so
-  a Worker still holding the old build id finds them.
+  lexeme shards of the book's tokens, whose periods depend on it. A year that crosses into another
+  dictionary's range also re-parses the book, as above.
+- **Cropped pages:** refreshed once a week in one batch. The refresh rewrites only the shards
+  whose cropped pages changed. Between refreshes the bitmap finds newer crops.
+- **A new layout build:** every pack and `pages.json.gz` under the new build id, and a refresh of
+  cropped pages. The old packs stay until the next build replaces them, so a Worker still holding
+  the old build id finds them.
 
 ### Performance and cost
 
 Figures are from the full parse above, a 150-entry sample for object sizes, and R2's prices for
-Standard storage: $0.015 per GB-month, $4.50 per million writes (PUT and LIST), $0.36 per million
-reads, with 10 GB, 1 million writes and 10 million reads free each month. R2 rounds usage up to the
-next billing unit, a million operations or a GB-month.
+Standard storage: $0.015 per GB-month, $4.50 per million writes (PUT and LIST) and $0.36 per
+million reads. The account is past the free tier, so every operation is billed. R2 rounds a
+month's usage up to the next million operations and the next GB-month.
 
 | | Objects | Size, gzipped |
 | --- | ---: | ---: |
-| Page objects, tokens only | 120,747 | about 100 MB |
-| Page objects with rubies and crops | 120,747 | about 200 MB, by estimate |
-| Lexeme objects and page indexes | about 98,000 and 12 million entries | about 40 MB, by estimate |
-| Ruby pair objects (0009) | 317,970 | about 60 MB |
-| Search shards | about 12,000 | under 20 MB, by estimate |
+| Page packs | about 8,600 | about 200 MB, by estimate |
+| Lexeme shards and index chunks | 1,024 and about 1,100 | about 40 MB, by estimate |
+| Ruby pair shards (0009) | 1,024 and a few chunks | about 60 MB |
+| Search shards | 1,536 | under 20 MB, by estimate |
+| `pages.json.gz` and the manifest | 2 | under 1 MB |
 
-A page object is 686 bytes gzipped at the median and 2.5 KB at the 99th percentile, before rubies
-and crops. Decoded with its line text, it is 3 KB at the median, 12 KB at the 99th percentile and
-41 KB at most. Parsing the largest takes under a millisecond. The edge cache holds the compressed
-object, so every read decodes and parses it again unless the isolate still holds it (32 objects,
-five minutes, `atlas3Media.ts`).
+A pack decodes to 26 KB at the median and 417 KB at the 99th percentile before the 256 KB split;
+the densest unsplit pack would be 2.5 MB. A page decodes to 3 KB at the median and parses in well
+under a millisecond. The edge cache holds the compressed object, so every read decodes and parses
+it again unless the isolate still holds it (32 objects, five minutes, `atlas3Media.ts`).
 
-- **First load:** about 550,000 writes, billed as one million beyond the free tier ($4.50). Storage
-  is about 0.35 GB, billed as one GB-month beyond the free tier ($0.015 a month).
-- **Each publish run:** one write per page touched and one for the bitmap, plus the manifest: two
-  writes, one read and one listing, as `reference.py` ships. Lists of crops per lexeme would also
-  rewrite one object per lexeme of each book published, 185 for the median book and 1,491 at the
-  90th percentile, twice that with spelling lists. Galleries assembled at read time avoid those.
-- **Daily refresh of cropped pages:** one write per lexeme or pair whose cropped pages changed,
-  bounded by the lexemes and pairs of the books published that day.
-- **A new layout build:** 120,748 page writes and a refresh of every lexeme and pair, about 540,000
-  writes.
-- **A clone pull:** writes follow the pages changed and the objects that depend on them.
-- **Reads:** a crop inspector reads its page object, the same one its Ruby row reads. A gallery
-  request reads at most 32 objects in six rounds, and one round when the cropped pages are current.
-  A million gallery requests at the bound would be 32 million reads, $7.92 beyond the free tier.
-- **Worker CPU:** a gallery request decodes at most 30 page objects, about 360 KB at the 99th
-  percentile, and one lexeme object of at most 2,000 cropped pages and 2,000 index entries.
+| | Writes | Cost at the rate |
+| --- | ---: | ---: |
+| First load | about 13,300 | $0.06 |
+| A publish run | the packs touched (one or two per book), `pages.json.gz` and the manifest: two writes, one read, one listing | under $0.001 |
+| A weekly refresh of cropped pages | at most 2,048 | at most $0.01 |
+| A new layout build | about 8,600 and a refresh | $0.05 |
+| Storage | about 0.35 GB | $0.005 a month |
+
+One page per object would have made the first load about 550,000 writes ($2.48) and every publish
+one write per page. Lists of crops per lexeme would have added one write per lexeme of each book
+published, 185 for the median book and 1,491 at the 90th percentile.
+
+- **Reads:** a crop inspector reads its pack, the same one its Ruby row reads. A gallery request
+  reads at most 12 objects, in two rounds of six; a million requests at the bound are $4.32.
+- **Worker CPU:** a gallery request decodes at most 1 MB of JSON.
 - **Build:** with one process on a loaded machine, reading the clone took 10 minutes, the parse 14,
   and the ruby candidates 20. Four workers should bring the whole build near 12 minutes. It peaked at
   1.9 GB of memory. Ruby candidates are looked up once per distinct base and reading, and each page
@@ -274,7 +277,7 @@ analyser's dictionary.
 1. `atlas text build`: rubies (0009, step 1), the character maps and the tokens, with the ruby test
    and the share of units linked as its figures.
 2. The dictionary choice, by the ruby test over the whole corpus.
-3. `scripts/atlas3/text.py`: R2 objects under the build id, dry run first.
+3. `scripts/atlas3/text.py`: packs and shards, dry run first, with the write count of each run.
 4. Worker routes, the crop and page surfaces, and the lexeme page.
 5. `writes_word` with lexemes, and the `lexeme` column of `words.tsv`.
 
