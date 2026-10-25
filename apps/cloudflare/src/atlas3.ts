@@ -76,6 +76,34 @@ export function bundle(env: Env, page: number, rev: number, sources?: BundleSour
   return read;
 }
 
+// Each crop's bundle entry, by id: from the edge (`entryEdge`) unless the isolate holds its page's bundle or
+// the page holds more than ENTRIES_PER_PAGE of the crops, else from its page's bundle. With `ctx`, each
+// entry read from a bundle is kept at the edge. An entry never changes under its page's revision, so a
+// write may judge a crop by it as well as a listing may show it.
+export async function cropEntries(env: Env, rows: { id: number; rev: number }[], { timing, ctx }: { timing?: Timing; ctx?: ExecutionContext } = {}): Promise<Map<number, Entry | undefined>> {
+  const timed = <T>(name: string, work: Promise<T>) => timing ? timing.beside(name, work) : work;
+  // A page that holds several of the crops asked for is read whole: one bundle read costs less than
+  // asking the edge for each of its entries, as a Worker waits on six reads at a time.
+  const onPage = new Map<number, number>();
+  for (const row of rows) onPage.set(pageOf(row.id), (onPage.get(pageOf(row.id)) ?? 0) + 1);
+  const asked = rows.filter(row => !holdsBundle(pageOf(row.id), row.rev) && onPage.get(pageOf(row.id))! <= ENTRIES_PER_PAGE);
+  // An entry the edge holds but that does not parse is read from its bundle instead.
+  const kept = new Map(await timed('entries', Promise.all(asked.map(async row =>
+    [row.id, await caches.default.match(entryEdge(pageOf(row.id), row.rev, slotOf(row.id)))
+      .then(hit => hit ? hit.json() as Promise<Entry> : null).catch(() => null)] as const))));
+  const pages = new Map(rows.filter(row => !kept.get(row.id)).map(row => [pageOf(row.id), row.rev]));
+  const sources: BundleSources = { held: 0, edge: 0, r2: 0 };
+  const bundles = new Map(await timed('bundles', Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev, sources)] as const))));
+  timing?.note('bundles-from', `kept ${[...kept.values()].filter(Boolean).length} held ${sources.held} edge ${sources.edge} r2 ${sources.r2}`);
+  const fromBundle = (row: { id: number }) => bundles.get(pageOf(row.id))?.bySlot.get(slotOf(row.id));
+  if (ctx) for (const row of asked) {
+    const entry = kept.get(row.id) ? undefined : fromBundle(row);
+    if (entry) ctx.waitUntil(caches.default.put(entryEdge(pageOf(row.id), row.rev, slotOf(row.id)),
+      Response.json(entry, { headers: { 'cache-control': `public, max-age=${BUNDLE_EDGE_SECONDS}, immutable` } })).catch(() => {}));
+  }
+  return new Map(rows.map(row => [row.id, kept.get(row.id) ?? fromBundle(row)] as const));
+}
+
 // Small code tables (state, style, category, issue), the same for every request until a publication adds a
 // code: a listing that meets a code the isolate does not hold reads the table again, once.
 let codes: Promise<Map<string, string>> | null = null;
@@ -119,28 +147,8 @@ export async function cropItems(env: Env, ids: number[], { given = new Map(), kn
   const timed = <T>(name: string, work: Promise<T>) => timing ? timing.beside(name, work) : work;
   const rows = known ?? (await timed('rows', env.ATLAS.prepare(cropRowsQuery()).bind(JSON.stringify(ids)).all<CropRow>())).results;
   const byId = new Map(rows.map(row => [row.id, row]));
-  const unread = rows.filter(row => !given.has(row.id));
-  // A page that holds several of the crops asked for is read whole: one bundle read costs less than
-  // asking the edge for each of its entries, as a Worker waits on six reads at a time.
-  const onPage = new Map<number, number>();
-  for (const row of unread) onPage.set(pageOf(row.id), (onPage.get(pageOf(row.id)) ?? 0) + 1);
-  const asked = unread.filter(row => !holdsBundle(pageOf(row.id), row.rev) && onPage.get(pageOf(row.id))! <= ENTRIES_PER_PAGE);
-  // An entry the edge holds but that does not parse is read from its bundle instead.
-  const kept = new Map(await timed('entries', Promise.all(asked.map(async row =>
-    [row.id, await caches.default.match(entryEdge(pageOf(row.id), row.rev, slotOf(row.id)))
-      .then(hit => hit ? hit.json() as Promise<Entry> : null).catch(() => null)] as const))));
-  const pages = new Map(unread.filter(row => !kept.get(row.id)).map(row => [pageOf(row.id), row.rev]));
-  const sources: BundleSources = { held: 0, edge: 0, r2: 0 };
-  const bundles = new Map(await timed('bundles', Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev, sources)] as const))));
-  timing?.note('bundles-from', `kept ${[...kept.values()].filter(Boolean).length} held ${sources.held} edge ${sources.edge} r2 ${sources.r2}`);
-  const fromBundle = (row: CropRow) => bundles.get(pageOf(row.id))?.bySlot.get(slotOf(row.id));
-  if (ctx) for (const row of asked) {
-    const entry = kept.get(row.id) ? undefined : fromBundle(row);
-    if (entry) ctx.waitUntil(caches.default.put(entryEdge(pageOf(row.id), row.rev, slotOf(row.id)),
-      Response.json(entry, { headers: { 'cache-control': `public, max-age=${BUNDLE_EDGE_SECONDS}, immutable` } })).catch(() => {}));
-  }
-  const entries = new Map(ids.map(id => { const row = byId.get(id);
-    return [id, !row ? undefined : given.get(id) ?? kept.get(id) ?? fromBundle(row)] as const; }));
+  const read = await cropEntries(env, rows.filter(row => !given.has(row.id)), { timing, ctx });
+  const entries = new Map(ids.map(id => [id, !byId.has(id) ? undefined : given.get(id) ?? read.get(id)] as const));
   const pointer = (entry: Entry) => ({ object: entry.record_place[0], offset: entry.record_place[1], size: entry.record_place[2] });
   const wanted = [...entries.values()].filter(entry => entry?.record_place).map(entry => pointer(entry!));
   const records = await timed('records', readRecords(env, wanted));
