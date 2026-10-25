@@ -264,6 +264,8 @@
   "forms.clustersLabel": "佔",
   "forms.context.close": "㨂",
   "forms.context.label": "位置𨕭張",
+  "forms.context.open": "𨷑塳割",
+  "forms.member.open": "𨷑塳割{id}",
   "forms.families.label": "字族",
   "forms.findFamily.aria": "尋字族",
   "forms.findFamily.placeholder": "尋字族…",

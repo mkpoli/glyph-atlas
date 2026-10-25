@@ -271,6 +271,8 @@
   "forms.clustersLabel": "組",
   "forms.context.close": "關閉",
   "forms.context.label": "在頁面中的位置",
+  "forms.context.open": "開啟裁切範圍",
+  "forms.member.open": "開啟裁切範圍{id}",
   "forms.families.label": "字族",
   "forms.findFamily.aria": "查找字族",
   "forms.findFamily.placeholder": "查找字族…",
