@@ -5,9 +5,9 @@
   //
   // The sequence is held twice, kept in step: as text in the field, which also takes the ASCII
   // operator names (LR or lr for ⿰), and as a tree of boxes laid out as the operators place their
-  // parts, where an empty slot shows (and is written) as ＋. A sequence with an empty slot is not
+  // parts, where an empty slot shows (and is written) as ⬚. A sequence with an empty slot is not
   // whole; ？ typed into a slot is the part no character names. One part of the tree is chosen at a time. An operator
-  // put on a slot splits it, the slot's part first (⿰ on 失 gives ⿰失＋); put on an operator, it takes
+  // put on a slot splits it, the slot's part first (⿰ on 失 gives ⿰失⬚); put on an operator, it takes
   // that operator's place and keeps its parts. × takes one level away, keeping its first filled part.
   // A component found, typed into the part field or offered by the variant table replaces the chosen
   // part, and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
@@ -20,7 +20,7 @@
   import IdsFrom from './IdsFrom.svelte'
   import IdsParts from './IdsParts.svelte'
   import { CODES, KEYS, OPERATORS, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
-    replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator } from '../lib/ids.js'
+    replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, EMPTY } from '../lib/ids.js'
   import { lookupChar } from '../lib/decompose.js'
   import { structure } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -289,7 +289,7 @@
     <button type="button" class="ids-part" class:empty={part === null} class:chosen={selected} aria-pressed={selected}
       data-path={pathKey(path)} {disabled} title={part === null ? label : t('form.ids.choose', { part })}
       aria-label={parent ? t('form.ids.part', { part: label, n: parent.n, name: name(parent.op) }) : label}
-      onclick={() => choose(path)}>{part ?? '＋'}</button>
+      onclick={() => choose(path)}>{part ?? EMPTY}</button>
   {/if}
 {/snippet}
 
