@@ -537,8 +537,8 @@
    * through the round. What it writes comes back here: a field (style, reading, word) changes the tile,
    * and a save decides the crop, which leaves the selection and the problems and shows as saved.
    */
-  function inspectChoice(item) {
-    inspect(item.id, shown, inspected, item.origin === 'corpus' ? 'corpus' : 'collection')
+  function inspectChoice(item, issue = null) {
+    inspect(item.id, shown, inspected, item.origin === 'corpus' ? 'corpus' : 'collection', issue)
   }
   async function inspected(id, result, saved) {
     const item = items.find(i => i.id === id)
@@ -856,6 +856,8 @@
       {#key current.id}<CropReview forms={formBar} issue={currentIssue} onissue={assignCurrent} disabled={saving}
         onskip={() => skip([current.id])} skipped={!!skipped[current.id]}
         targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} label={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} onchoose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
+      <!-- The box is redrawn in the inspector, which saves the crop with it. -->
+      {#if currentIssue === 'crop' && current.origin !== 'corpus'}<div class="crop-change"><button type="button" class="quiet-link adjust-crop" disabled={saving} onclick={() => inspectChoice(current, 'crop')}>{t('character.crop.adjust')}</button></div>{/if}
     </QuizFocus>
   {/if}
 

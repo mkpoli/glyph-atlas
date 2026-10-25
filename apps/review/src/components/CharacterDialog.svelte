@@ -36,7 +36,8 @@
   // `initial` is the record the server rendered the page with, so the first load needs no request.
   // `preview` is the list's own row for the crop, drawn while the record loads. `cited` is the cut the
   // page's address cites (`citedCut`), noted over the crop when it is not the one shown.
-  let { id, close, saved, changed = null, onskip = null,
+  // `opening` is a problem the crop was opened to fix, chosen once it has loaded.
+  let { id, close, saved, changed = null, onskip = null, opening = null,
         previous = null, next = null, position = '', initial = null, preview = null, cited = null } = $props()
   const first = untrack(() => initial)
   const session = useSession(), inspector = useInspector()
@@ -111,6 +112,7 @@
       kept = standing(result)
       if (kept) { issue = kept.issue; correction = kept.correction; noneSelected = kept.noneSelected }
       written = kept?.written ?? result.label ?? ''; writtenDirty = kept?.written != null
+      if (opening && !kept) chooseIssue(opening)
     } catch (e) {
       if (closed || current !== generation) return
       replaced = false
