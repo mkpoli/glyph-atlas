@@ -170,6 +170,12 @@ describe('a crop\'s record', () => {
       expect(await (await get(path)).json()).toMatchObject({ style: 'regular', style_basis: 'none' });
   });
 
+  it('names no style the vocabulary lacks', async () => {
+    const { db, get, ids } = setup();
+    db.exec(`INSERT OR IGNORE INTO codes(field,code,key) VALUES('style',91,'printed'); UPDATE crops SET style=91 WHERE id=${ids.a}`);
+    expect(await (await get(`/atlas/characters/${publicId(ids.a)}`)).json()).toMatchObject({ style: 'unassessed', style_basis: 'none' });
+  });
+
   it('takes a flagged crop\'s issue from its last event, an undo included', async () => {
     const { get, ids } = setup();
     const record = await (await get(`/atlas/characters/${publicId(ids.b)}`)).json() as any;

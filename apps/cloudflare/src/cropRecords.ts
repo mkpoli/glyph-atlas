@@ -35,6 +35,10 @@ const MARK_STATES = new Set(['seen', 'hard']);
 // A review saved before the issue was renamed names it `reading`; a record calls it `character`.
 export const recordIssue = (issue: string | null) => issue === 'reading' ? 'character' : issue;
 export const recordState = (state: string | null) => state === null || MARK_STATES.has(state) ? 'pending' : state;
+// The values of `data/vocab/style.yaml`. A row may still carry a code from the old site (`formal`,
+// `printed`); one the vocabulary cannot name is read as unassessed, as a crop with no style is.
+const STYLE_KEYS = new Set(['seal', 'clerical', 'regular', 'running', 'cursive', 'ming', 'gothic', 'mixed', 'unassessed']);
+const recordStyle = (style: string | null) => style !== null && STYLE_KEYS.has(style) ? style : 'unassessed';
 
 export type RecordRow = { id: number; kind: number; book: number; state: string | null; revision: number; cut: number;
   category: string | null; char: string | null; head: string | null; production: string | null; rev: number; page_key: string;
@@ -112,7 +116,7 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   if (!corpus) Object.assign(record, { label: row.char ?? record.label, production: row.production ?? 'unknown', page_id: row.page_key });
   Object.assign(record, { state: recordState(row.state), revision: row.settled });
   // The style the crop is listed under, which its publication gave it; a crop with none is unassessed.
-  Object.assign(record, { style: row.style ?? 'unassessed', style_basis: 'none' });
+  Object.assign(record, { style: recordStyle(row.style), style_basis: 'none' });
   // A review keeps the crop's category on its record, and the issue it stands flagged for.
   if (row.reviewed) record.category = row.category ?? categoryOf(record.label ?? '');
   if (row.reviewed || row.issue !== null) record.issue = record.state !== 'flagged' ? null : recordIssue(row.issue);
