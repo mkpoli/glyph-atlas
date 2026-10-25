@@ -7,7 +7,7 @@ import { formsRoute } from './routes/forms';
 import { similarCrops } from './similar';
 import { cropParam, movedPathResponse } from './atlas3Crops';
 import { drawingFile } from './drawings';
-import { composerFile } from './composer';
+import { composerFile, composerPreflight } from './composer';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { structureOf, suggest, wordChoices } from './routes/search';
 import { auth, claim, providers, viewer } from './auth';
@@ -68,8 +68,8 @@ export const hira = (value: string) => [...literal(value)].map(c => {
   const n = c.codePointAt(0)!; return n >= 0x30a1 && n <= 0x30f6 ? String.fromCodePoint(n - 0x60) : c;
 }).join('');
 const OPEN = { 'access-control-allow-origin': '*' };
-// Reads any site may make: a document's characters and a citation.
-const opened = (path: string) => path.startsWith('/atlas/documents/') || path.startsWith('/atlas/cite/');
+// Reads any site may make: a document's characters, a citation and the composer's export.
+const opened = (path: string) => path.startsWith('/atlas/documents/') || path.startsWith('/atlas/cite/') || path.startsWith('/atlas/composer/');
 // A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
 const characterTools: CharacterTools = { literal, jamoSyllable };
 const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp};
@@ -79,6 +79,8 @@ const routes = {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     const url=new URL(request.url),path=url.pathname,q=url.searchParams;
     try{
+      // Another site asking before it reads the composer's export; this writes nothing, so it is answered under the freeze too.
+      if(request.method==='OPTIONS'&&path.startsWith('/atlas/composer/'))return composerPreflight();
       // The write freeze: one check before any route, so no write is reached while it holds.
       if(writesPaused(env)&&writes(request.method,path)){
         if(request.method==='POST'&&path==='/api/auth/sign-out')return pausedSignOut(request,auth(env,url.origin).options);
