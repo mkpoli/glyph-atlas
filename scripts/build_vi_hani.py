@@ -46,7 +46,7 @@ SOURCES = {"wiktionary", "unihan", "joined", "reviewer"}
 # (email, PIN, the address you@example.org), and stay in Latin letters.
 KEEP = {"CODH", "U", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "ID", "IDS", "Ctrl", "Esc", "Home", "Enter", "Shift", "Tab", "Backspace", "ASCII", "LR", "UD", "ud",
         "click", "qwerty", "zi", "tools", "Wikipedia", "Hentaigana", "roneo", "scan", "Gothic", "B", "C", "J", "K", "M", "S", "V", "W", "X", "Z", "n", "s",
-        "CC", "BY", "SA", "email", "PIN", "you", "example", "org", "Gravatar",
+        "CC", "BY", "SA", "BabelStone", "email", "PIN", "you", "example", "org", "Gravatar",
         "Cloudflare", "Web", "Analytics", "Email", "Service", "GitHub", "Google", "Discord", "LINE", "Kakao", "IP", "cookie",
         "mkpoli", "anon", "a", "b", "c", "HuTime", "hutime", "ap", "MB", "Glyph", "Atlas", "CSL", "web", "JavaScript", "IIIF", "Curation", "Viewer", "Universal", "Manifest",
         "Element", "Matrix", "matrix", "glyphatlas", "contact", "Vultr", "Telegram", "issue", "pull", "request"}
