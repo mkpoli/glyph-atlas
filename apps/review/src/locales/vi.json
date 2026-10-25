@@ -263,6 +263,8 @@
   "forms.clustersLabel": "nhóm",
   "forms.context.close": "Đóng",
   "forms.context.label": "Vị trí trên trang",
+  "forms.context.open": "Mở vùng cắt",
+  "forms.member.open": "Mở vùng cắt {id}",
   "forms.families.label": "Tự tộc",
   "forms.findFamily.aria": "Tìm tự tộc",
   "forms.findFamily.placeholder": "Tìm tự tộc…",

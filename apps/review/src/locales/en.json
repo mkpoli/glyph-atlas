@@ -283,6 +283,8 @@
   "forms.clustersLabel": "clusters",
   "forms.context.close": "Close",
   "forms.context.label": "Glyph on its page",
+  "forms.context.open": "Open crop",
+  "forms.member.open": "Open crop {id}",
   "forms.families.label": "Families",
   "forms.findFamily.aria": "Find a family",
   "forms.findFamily.placeholder": "Find a family…",

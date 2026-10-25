@@ -4,6 +4,7 @@
   // then save and move on. A form key also names the rest of the cluster before moving on, and M
   // marks a cluster that holds more than one form.
   import { onMount } from 'svelte'
+  import { page } from '$app/state'
   import Glyph from './Glyph.svelte'
   import { showsContext } from '../lib/glyphContext.svelte.js'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
@@ -80,7 +81,8 @@
     } catch (e) { error = e.message } finally { busy = false }
   }
   function keydown(event) {
-    if (busy || loading) return
+    // The inspector's keys are its own while it is open over the review.
+    if (busy || loading || page.state.inspect) return
     if (event.target.closest?.('input, textarea') || event.metaKey || event.ctrlKey || event.altKey) {
       if (event.key === 'Enter' && event.target.closest?.('input')) { event.preventDefault(); save() }
       return
