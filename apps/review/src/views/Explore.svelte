@@ -81,6 +81,26 @@
     load()
   }
   const withheldParam = () => !flagged && showWithheld ? 'show' : null
+  // Crops already reviewed (confirmed, flagged or hard to read) can be left out of the gallery, so what
+  // still needs work is all there is to see and select; the choice is remembered. The Flagged view lists
+  // only such crops, so it shows them all. A crop reviewed while on show stays where it is until the next
+  // deal, so no tile moves under the pointer: `onShow` holds every crop the gallery has let through since.
+  let hideReviewed = $state(stored('atlas.hideReviewed', false))
+  let onShow = new Set()
+  const reviewed = item => { const state = tileState(item); return state === 'checked' || waiting(state) }
+  const hidden = item => hideReviewed && !flagged && reviewed(item) && !onShow.has(item.id)
+  function passes(item) {
+    if (hidden(item)) return false
+    onShow.add(item.id); return true
+  }
+  const unreviewed = list => list.filter(passes)
+  function toggleReviewed() {
+    hideReviewed = !hideReviewed; onShow = new Set()
+    remember('atlas.hideReviewed', hideReviewed)
+    // A crop no longer shown is no longer chosen.
+    const shown = new Set(display.map(item => item.id))
+    selected = new Set([...selected].filter(id => id.startsWith('run:') || shown.has(id)))
+  }
   // How many withheld crops the view leaves out: a picked character's from its gallery, else the listing's.
   const withheldCount = $derived(picked ? localWithheld : data?.withheld_count ?? null)
   // A picked character's withheld crops its gallery left out, or null when not counted.
@@ -350,7 +370,10 @@
   // judgement of the crop and are what a reviewer should reach first, while a corpus record's label is
   // the source's own transcription and is mostly right already.
   const homeCorpus = $derived(sample.filter(other => !items.some(unit => sameInk(unit, other))))
-  const baseDisplay = $derived(choosing ? [] : picked ? galleryTiles : [...items, ...homeCorpus])
+  const listed = $derived(choosing ? [] : picked ? galleryTiles : [...items, ...homeCorpus])
+  const baseDisplay = $derived(unreviewed(listed))
+  // How many of the crops loaded are reviewed: left out, or that could be.
+  const reviewedCount = $derived(flagged ? 0 : hideReviewed ? listed.length - baseDisplay.length : listed.filter(reviewed).length)
   function groupOrder(item) {
     const group = visualGroup(item)
     const index = (analysis?.groups ?? []).findIndex(entry => entry.id === group.id)
@@ -361,6 +384,10 @@
   const byId = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
   const display = $derived(picked && expand === 'grapheme'
     ? [...baseDisplay].sort((a, b) => groupOrder(a) - groupOrder(b) || byId(visualGroup(a).id, visualGroup(b).id)) : baseDisplay)
+  // The counts above the gallery are of the crops it shows, by its own rule, read after it has let them through.
+  const shownIn = list => { void baseDisplay; return list.filter(item => !hidden(item)).length }
+  const shownEditable = $derived(shownIn(editable)), shownCorpusOnly = $derived(shownIn(corpusOnly))
+  const shownItems = $derived(shownIn(items)), shownHomeCorpus = $derived(shownIn(homeCorpus))
   // The grapheme view puts a heading over each shape group; crops in no group have none.
   const headed = item => picked && expand === 'grapheme' && visualGroup(item).id !== 'ungrouped'
   const headings = $derived(display.some(headed))
@@ -458,7 +485,7 @@
     catalogueRequest?.abort()
     // A further page goes before the corpus glyphs shown after the collection's own crops, so the tiles
     // from the end of those crops on are drawn again, a slice at a time.
-    if (!append) { showInAddress(); clearSelection() }
+    if (!append) { showInAddress(); clearSelection(); onShow = new Set() }
     const id = ++requestId; loading = true; error = ''; growing = append
     try {
       if (picked) {
@@ -1123,7 +1150,7 @@
     yearRange, decadeCounts, decadesFor: decadeCounts ? decadesFor : '', localStyles, corpusStyles, corpusAnswered, split, sample, sampleFault,
     collection, localWithheld, corpusCounts, corpusCountsAsked: Boolean(corpusCounts), runs, runsFailed, runsFor: runs || runsFailed ? runsFor : null,
     runKind, homeRuns, scattered, scatteredFor: scattered.length ? scatteredFor : null, charRuns,
-    charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, showWithheld, scrollY })
+    charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, onShow: new Set(onShow), showWithheld, scrollY })
   beforeNavigate(navigation => {
     if (!addressed) return
     const state = display.length && (!loading || growing) ? capture() : picked ? null : { seed, showWithheld, partial: true }
@@ -1142,7 +1169,7 @@
     collection = back.collection; localWithheld = back.localWithheld; corpusCounts = back.corpusCounts;
     corpusCountsAsked = back.corpusCountsAsked; runs = back.runs; runsFailed = back.runsFailed; runsFor = back.runsFor;
     runKind = back.runKind; homeRuns = back.homeRuns; scattered = back.scattered; scatteredFor = back.scatteredFor;
-    charRuns = back.charRuns; charRunsFor = back.charRunsFor; confirmedHere = back.confirmedHere;
+    charRuns = back.charRuns; charRunsFor = back.charRunsFor; confirmedHere = back.confirmedHere; onShow = new Set(back.onShow);
     loading = false; reach = untrack(() => display.length)
   }
   const kept = untrack(() => addressed) ? keptView() : null
@@ -1191,6 +1218,8 @@
 <svelte:head>{@html collageRules}</svelte:head>
 
 <!-- After a listing's count: the withheld crops it leaves out, and the way to show or hide them. -->
+<!-- After the counts: the reviewed crops among those loaded, and the way to leave them out or show them. -->
+{#snippet reviewedToggle()}{#if reviewedCount || hideReviewed && !flagged}<span class="separator">·</span> <button class="quiet-link" onclick={toggleReviewed} title={t('explore.reviewed.about')}>{hideReviewed ? t('explore.reviewed.show', { count: reviewedCount }) : t('explore.reviewed.hide', { count: reviewedCount })}</button>{/if}{/snippet}
 {#snippet withheldToggle(after)}{#if !flagged && (showWithheld || withheldCount)}{#if after}<span class="separator">·</span> {/if}<button class="quiet-link" onclick={toggleWithheld} title={t('explore.withheld.about')}>{showWithheld ? t('explore.withheld.hide') : t('explore.withheld.show', { count: withheldCount })}</button>{/if}{/snippet}
 <!-- A crop's label in its script's colour; an unassigned crop says so instead. -->
 {#snippet tileLabel(item)}{#if isUnassigned(item)}{shownLabel(item)}{:else}<ScriptText text={item.label} />{/if}{/snippet}
@@ -1265,10 +1294,11 @@
     {#if expand === 'grapheme'}<VisualGroups {analysis} count={familyTotal} unassigned={unassignedCount} value={visual} onchange={value => { visual = value; load() }} />{/if}
     <p class="find-count" role="status">
       {t('explore.meta.glyphs', { count: display.length })}
-      {#if editable.length}<span class="separator">·</span> {t('explore.count.here', { count: editable.length })}{/if}
-      {#if corpusOnly.length}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: corpusOnly.length })}{/if}
+      {#if shownEditable}<span class="separator">·</span> {t('explore.count.here', { count: shownEditable })}{/if}
+      {#if shownCorpusOnly}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: shownCorpusOnly })}{/if}
       {#if corpusFault}<span class="separator">·</span> <span class="corpus-fault" role="status">{t('explore.samplesUnavailable')}</span> <button class="quiet-link" onclick={() => load()}>{t('common.retry')}</button>{/if}
       {@render withheldToggle(true)}
+      {@render reviewedToggle()}
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
   {/if}
@@ -1278,7 +1308,7 @@
       tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}{/if}
   {#if picked}
   {:else if !query && (items.length || homeCorpus.length || sampleFault)}
-    <p class="find-count" role="status">{#if items.length}{t('explore.count.here', { count: items.length })}{/if}{#if homeCorpus.length}{#if items.length}<span class="separator">·</span> {/if}{t('explore.count.fromCorpus', { count: homeCorpus.length })}{/if}{#if sampleFault}{#if items.length || homeCorpus.length}<span class="separator">·</span> {/if}<span class="corpus-fault" role="status">{sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}{@render withheldToggle(items.length || homeCorpus.length || sampleFault)}{#if loading}<span class="find-pending"> …</span>{/if}</p>
+    <p class="find-count" role="status">{#if shownItems}{t('explore.count.here', { count: shownItems })}{/if}{#if shownHomeCorpus}{#if shownItems}<span class="separator">·</span> {/if}{t('explore.count.fromCorpus', { count: shownHomeCorpus })}{/if}{#if sampleFault}{#if shownItems || shownHomeCorpus}<span class="separator">·</span> {/if}<span class="corpus-fault" role="status">{sampleFault === 'error' ? t('explore.corpus.error') : t('explore.corpus.notLoaded')}</span>{/if}{@render withheldToggle(shownItems || shownHomeCorpus || sampleFault)}{@render reviewedToggle()}{#if loading}<span class="find-pending"> …</span>{/if}</p>
   {:else if !query && withheldCount}
     <p class="find-count" role="status">{@render withheldToggle(false)}</p>
   {:else if query && settled}
