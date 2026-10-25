@@ -10,7 +10,7 @@
   import StyleFilter from '../components/StyleFilter.svelte'
   import PeriodFilter from '../components/PeriodFilter.svelte'
   import { STYLE_GROUPS, styleRank } from '../lib/style.js'
-  import { isUnassigned, writtenLabel, visualGroup, matchesVisualGroup, graphemeChar, claimedGrapheme } from '../lib/identity.js'
+  import { isUnassigned, writtenLabel, visualGroup, matchesVisualGroup, graphemeChar, claimedGrapheme, kanaFolded } from '../lib/identity.js'
   import { categoryOf } from '../../../cloudflare/src/category.ts'
   import Glyph from '../components/Glyph.svelte'
   import ScriptText from '../components/ScriptText.svelte'
@@ -309,8 +309,9 @@
   const shownLabel = item => isUnassigned(item) ? t('corpus.unassigned') : item.label
   // The grapheme a crop's written form belongs to: its own, or the one the counts file its form under.
   const tileGrapheme = item => graphemeChar(item) ?? (tileCounts?.keys.has(item.label) ? charOf(tileCounts.keys.get(item.label)) : null)
-  // The grapheme beside the written form: always when the form is unassigned, else only when it differs.
-  const shownGrapheme = item => { const g = tileGrapheme(item); return g && (isUnassigned(item) || g !== item.label) ? g : null }
+  // The grapheme beside the written form: always when the form is unassigned, else only when it is written
+  // otherwise than the form; katakana counts as its own writing (ハ stands alone, 𛂞 は and 嶋 島 do not).
+  const shownGrapheme = item => { const g = tileGrapheme(item); return g && (isUnassigned(item) || kanaFolded(g) !== kanaFolded(item.label ?? '')) ? g : null }
   // A tile's name for a screen reader: its form, then its grapheme where the caption shows one.
   const tileName = item => shownGrapheme(item) ? `${shownLabel(item)} (${shownGrapheme(item)})` : shownLabel(item)
   const groupLabel = group => group.id === 'unassigned' ? t('corpus.unassigned')

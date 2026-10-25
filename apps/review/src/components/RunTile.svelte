@@ -12,7 +12,7 @@
   import { runAddress } from '../lib/ngrams.js'
   import { workTitle } from '../lib/cropDetails.js'
   import { tileDate } from '../lib/dating.js'
-  import { isUnassigned } from '../lib/identity.js'
+  import { isUnassigned, kanaFolded } from '../lib/identity.js'
 
   let { run, style = '', selected = false, checked = false, marks, ...handlers } = $props()
   // The image's box, so the page around the run fills it as a crop fills its own. The image waits for
@@ -22,14 +22,16 @@
   // source only transcribed has no written form of its own, and its transcription shows faint.
   const forms = $derived(run.crops?.length ? run.crops.map(crop => ({ text: crop.written_character ?? crop.label ?? '', transcribed: isUnassigned(crop) })) : null)
   const written = $derived(forms ? forms.map(form => form.text).join('') : run.text)
-  const named = $derived(written === run.text ? run.text : `${written} (${run.text})`)
+  // The graphemes follow small only where the forms are written otherwise; katakana is its own writing.
+  const differs = $derived(kanaFolded(written) !== kanaFolded(run.text))
+  const named = $derived(differs ? `${written} (${run.text})` : written)
 </script>
 
 {#if run.text}<a class="glyph-tile run-tile collage-cell" class:selected class:decided-checked={checked} {style} data-run={run.id} href={localize(runAddress(run.text))} aria-label={`${named} · ${t('run.occurrences', { count: run.n })}` + (selected ? t('bulk.tileSelected') : '') + (checked ? t('bulk.tileChecked') : '')} {...handlers}>
   {@render marks?.(run)}
   <span class="run-tile-image" aria-hidden="true" bind:clientWidth={width} bind:clientHeight={height}>{#if run.crops}{#if width && height}<RunImage crops={run.crops} page={run.page} vertical={run.vertical} fill={height / width} />{/if}{:else}<span class="run-tile-text">{run.text}</span>{/if}</span>
   <span class="tile-caption">
-    <span class="tile-label"><span class="tile-glyph">{#if forms}{#each forms as form}<span class:transcribed={form.transcribed}><ScriptText text={form.text} titled={false} /></span>{/each}{:else}<ScriptText text={run.text} titled={false} />{/if}</span>{#if written !== run.text}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={run.text} titled={false} /></span>{/if}{#if checked}<span class="tile-verdict" aria-hidden="true">✓</span>{/if}</span>
+    <span class="tile-label"><span class="tile-glyph">{#if forms}{#each forms as form}<span class:transcribed={form.transcribed}><ScriptText text={form.text} titled={false} /></span>{/each}{:else}<ScriptText text={run.text} titled={false} />{/if}</span>{#if differs}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={run.text} titled={false} /></span>{/if}{#if checked}<span class="tile-verdict" aria-hidden="true">✓</span>{/if}</span>
     <span class="tile-footer"><span class="tile-count" title={run.kind === 'trigram' ? t('tile.countTrigram', { text: run.text, count: run.n, rank: run.rank }) : t('tile.countPair', { text: run.text, count: run.n, rank: run.rank })}>{t('tile.count', { count: run.n })}</span>{#if run.crops && tileDate(run.crops[0])}<span class="tile-year">{tileDate(run.crops[0])}</span>{/if}{#if run.crops && workTitle(run.crops[0])}<span class="tile-work">{workTitle(run.crops[0])}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 </a>
