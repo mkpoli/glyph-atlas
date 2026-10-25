@@ -712,6 +712,10 @@ class Mirror:
                 self.stale.append(cid)
             changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle", "bumps") and old[c] != row[c]
                        and (c not in REVIEW_OWNED or speaks)]
+            if speaks and old["style"] != row["style"]:
+                # A crop a reviewer gave a style keeps it; the publication's is what taking it back returns to.
+                self.page_sql[pid].append(f"UPDATE reviews AS r SET base_style={lit(row['style'])} WHERE r.crop={cid} "
+                                          f"AND (SELECT {OWN_STYLE} FROM crops c WHERE c.id=r.crop);")
             if "style" in changed and self.atlas.execute(f"SELECT {OWN_STYLE} FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]:
                 changed.remove("style")
                 row["style"] = old["style"]
@@ -1636,7 +1640,7 @@ def main():
     # A book's confirmed style, on each of its crops whose style differs and that no review gave a style
     # of its own, after the crops above. Each chunk moves the tally cells of the crops it changes, then
     # changes them, all under the same guard, so a crop reviewed since keeps its row and its count.
-    restyled, unbooked = defaultdict(list), []
+    restyled, unbooked, based = defaultdict(list), [], []
     own = f"NOT {OWN_STYLE}"
     if "book_styles" in tables:
         for r in src.execute("SELECT document, style FROM book_styles ORDER BY document"):
@@ -1650,6 +1654,9 @@ def main():
                                     "ORDER BY c.kind, c.char, c.family, c.production, c.style, c.state, c.quiz, c.year, c.id",
                                     (book[0], code)).fetchall()
             restyled[code] += [(c["id"], c["revision"], tuple(tally_cell(c))) for c in found]
+            # Its crops a reviewer gave a style keep theirs; the book's is what taking it back returns to.
+            based.append(f"UPDATE reviews AS r SET base_style={code} WHERE r.crop IN (SELECT c.id FROM crops c "
+                         f"WHERE c.book={book[0]} AND c.kind<2 AND {OWN_STYLE});")
             m.atlas.executemany("UPDATE crops SET style=? WHERE id=?", [(code, c["id"]) for c in found])
             m.guarded += [c["id"] for c in found]
             n += len(found)
@@ -1669,6 +1676,8 @@ def main():
                 f"{tally} {gen},{restyle_cell},count(*) {changing} GROUP BY {TALLY_CELL} ON CONFLICT DO UPDATE SET n=n+excluded.n;",
                 # A book's style is a fact about the document, not a review's: no revision moves.
                 f"UPDATE crops SET style={code} WHERE id IN (SELECT c.id {changing});"])
+    if based:
+        style_sql.append(based)
 
     # Replacements are numbered once every crop of the catalogue has its id. None removes the field.
     for cid, text_id in naming:

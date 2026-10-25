@@ -129,9 +129,14 @@ def test_a_crop_a_review_gave_a_style_keeps_it(layout, monkeypatch, tmp_path):  
     regular = regular[0] if regular else 99
     # The style a review gave it on the site, where the local copy has not seen it yet.
     site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,0,0,0,0,0,0,9,?)", (a1, regular))
+    site.execute("INSERT INTO reviews(crop,gen,at,char,state,style,quiz,base_char,base_state,base_style,base_quiz) "
+                 "SELECT id,0,0,char,state,?,quiz,char,state,style,quiz FROM crops WHERE id=?", (regular, a1))
     site.commit()
     run(publish, monkeypatch, styled(tmp_path / "s.sqlite", [("book:a", "cursive")]), "--approve-styles", "3")
     assert style_of(remote, a1) == "unassessed" and style_of(remote, ids(root)["ex:a2"]) == "cursive"
+    # Taking the reviewer's style back returns to the book's.
+    cursive = site.execute("SELECT code FROM codes WHERE field='style' AND key='cursive'").fetchone()[0]
+    assert site.execute("SELECT base_style FROM reviews WHERE crop=?", (a1,)).fetchone() == (cursive,)
 
 
 def test_a_crop_whose_style_was_taken_back_follows_its_document(layout, monkeypatch, tmp_path):  # noqa: F811
