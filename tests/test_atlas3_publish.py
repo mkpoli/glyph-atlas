@@ -1367,3 +1367,17 @@ def test_a_part_boundary_never_falls_inside_a_guarded_run_change(layout, monkeyp
     assert rows == stats == [(2, "あう", 1), (2, "うえ", 1)]
     for part in (root / "out" / "publish").rglob("runs-*.sql"):
         assert not part.read_text().splitlines()[0].startswith("INSERT INTO run_stats(size,graphemes,n,down) SELECT")
+
+
+def test_a_style_a_reviewer_gave_on_the_site_outlasts_a_catalogue_that_speaks(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    # A reviewer's style on the site that the local copy has not seen: the store does not count it, so the
+    # catalogue still speaks for the crop, and its change of style waits on D1 holding none.
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,0,0,0,0,0,0,?,"
+                 "(SELECT code FROM codes WHERE field='style' AND key='unassessed'))", (a1, publish.STYLE_KIND))
+    site.commit()
+    before = crops(remote)[a1]["style"]
+    row = tuple("cursive" if k == "style" else v for k, v in zip(UNITS, unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10})))
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [row]))
+    assert crops(remote)[a1]["style"] == before

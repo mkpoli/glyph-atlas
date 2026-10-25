@@ -730,12 +730,15 @@ class Mirror:
                 base += 1
                 self.guarded.append(cid)
             decided = [c for c in reviewed if c != "style"]
+            # A style a reviewer gave the crop on the site may not have reached the local copy yet, and the
+            # store does not count it, so a change of style also waits on D1 holding none.
+            kept = f" AND NOT {OWN_STYLE}" if "style" in reviewed else ""
             row["revision"] = base + (1 if decided else 0)
             if row["revision"] != old["revision"]:
                 changed.append("revision")
             if speaks and decided:
                 self.page_sql[pid] += visible_change({c: lit(row[c]) for c in reviewed},
-                                                     f"FROM crops c WHERE c.id={cid} AND c.revision={base}", catalogue_revision)
+                                                     f"FROM crops c WHERE c.id={cid} AND c.revision={base}{kept}", catalogue_revision)
                 self.guarded.append(cid)
             elif speaks and (reviewed or catalogue_revision != logical):
                 page_changed = True
@@ -745,8 +748,8 @@ class Mirror:
                         f"INSERT INTO review_revisions(crop,revision,at) SELECT id,{catalogue_revision},{base} FROM crops "
                         f"WHERE id={cid} AND revision={base} ON CONFLICT(crop) DO UPDATE SET revision=excluded.revision,at=excluded.at;")
                 if reviewed:
-                    self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in reviewed)} "
-                                              f"WHERE id={cid} AND revision={base};")
+                    self.page_sql[pid].append(f"UPDATE crops AS c SET {','.join(f'{c}={lit(row[c])}' for c in reviewed)} "
+                                              f"WHERE c.id={cid} AND c.revision={base}{kept};")
                 self.guarded.append(cid)
             if old["kind"] == 1 and given.get("kind") == 1 and not review_columns and "char" in given:
                 # A followed glyph retains its character; the incoming character becomes the base
