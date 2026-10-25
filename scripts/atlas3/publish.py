@@ -954,6 +954,14 @@ def deliver(m, run):
                 # The revision D1 counts for each crop as the store does, which the next publication speaks against.
                 logical = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision FROM crops c "
                                                               f"WHERE c.id IN ({','.join(map(str, chunk))})")}
+                # A style a reviewer gave on the site, which the store does not count: the local copy learns of it, so a
+                # later publication keeps the crop's style and moves only what taking it back returns to (OWN_STYLE).
+                styles = query(database, f"SELECT e.* FROM events e WHERE e.crop IN ({','.join(map(str, chunk))}) AND e.kind={STYLE_KIND} "
+                                         f"AND e.revision=(SELECT max(f.revision) FROM events f WHERE f.crop=e.crop AND f.kind={STYLE_KIND})")
+                if styles:
+                    cols = [c[1] for c in m.atlas.execute("PRAGMA table_info(events)")]
+                    m.atlas.executemany(f"INSERT OR IGNORE INTO events({','.join(cols)}) VALUES({','.join('?' * len(cols))})",
+                                        [[r.get(c) for c in cols] for r in styles])
                 for cid in chunk:
                     if cid in logical:
                         r = logical[cid]

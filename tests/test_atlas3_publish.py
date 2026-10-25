@@ -1405,3 +1405,24 @@ def test_a_style_the_local_copy_knows_a_reviewer_gave_changes_no_page(layout, mo
     cursive = remote.query("glyph-atlas-v3", "SELECT code FROM codes WHERE field='style' AND key='cursive'")[0]["code"]
     assert crops(remote)[a1]["style"] == before
     assert remote.query("glyph-atlas-v3", f"SELECT base_style FROM reviews WHERE crop={a1}") == [{"base_style": cursive}]
+
+
+def test_a_reviewer_style_read_back_keeps_its_baseline_current(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+    styled = lambda id, name, box=box: tuple(name if k == "style" else v for k, v in zip(UNITS, unit(id, "hl:p1", box)))
+    code = lambda name: remote.query("glyph-atlas-v3", f"SELECT code FROM codes WHERE field='style' AND key='{name}'")[0]["code"]
+    # A publication numbers regular, as publications number every style; then a reviewer gives a1 regular on the site.
+    run(publish, monkeypatch, catalogue(tmp_path / "numbered.sqlite", [styled("ex:a2", "regular", {"x": 10, "y": 0, "w": 10, "h": 10})]))
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) "
+                 "SELECT id,revision+1,cut,0,0,0,0,?,? FROM crops WHERE id=?", (publish.STYLE_KIND, code("regular"), a1))
+    site.execute("INSERT INTO reviews(crop,gen,at,char,state,style,quiz,base_char,base_state,base_style,base_quiz) "
+                 "SELECT id,0,0,char,state,?,quiz,char,state,style,quiz FROM crops WHERE id=?", (code("regular"), a1))
+    site.execute("UPDATE crops SET style=?,revision=revision+1 WHERE id=?", (code("regular"), a1))
+    site.commit()
+    # The first publication reads D1's row back, with the reviewer's style; the next names regular, which the crop already shows.
+    for name in ("cursive", "regular"):
+        run(publish, monkeypatch, catalogue(tmp_path / f"{name}.sqlite", [styled("ex:a1", name)]))
+        assert crops(remote)[a1]["style"] == code("regular")
+        assert remote.query("glyph-atlas-v3", f"SELECT base_style FROM reviews WHERE crop={a1}") == [{"base_style": code(name)}]
