@@ -478,13 +478,14 @@ def predictions(desc: Descriptions, items: Iterable[Attested],
                 chars: Iterable[str] | None = None) -> dict[tuple[str, str], set[tuple[str, str]]]:
     """The pairs of encoded characters each substitution of `items` predicts, from `chars` (every
     character of `desc.raw` when None, those with no description of their own included, so the bare
-    pair of two components such as 火 and 灬 is a prediction too). Each pair is in code point order;
-    the pairs that attest a substitution are among its predictions."""
+    pair of two components such as 火 and 灬 is a prediction too), made in the places the attesting
+    pairs show (`places`). Each pair is in code point order; the pairs that attest a substitution
+    are among its predictions."""
     items = list(items)
+    made = Maker(desc, equivalents(items), places(desc, {(item.a, item.b): [pair[:2] for pair in item.pairs]
+                                                        for item in items}))
     found: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
-    made = Maker(desc, equivalents(items), 1, places(desc, {(item.a, item.b): [pair[:2] for pair in item.pairs]
-                                                           for item in items}))
-    for form in derive(desc, made.table, list(desc.raw) if chars is None else chars, made=made):
+    for form in derive(made, list(desc.raw) if chars is None else chars):
         if form.encoded:
             (was, became, _), = form.route
             found[ordered(was, became)].add(tuple(sorted((form.char, form.other), key=ord)))
@@ -553,16 +554,15 @@ def equivalents(kept: Iterable[Attested]) -> dict[str, set[str]]:
     return table
 
 
-def derive(desc: Descriptions, table: dict[str, set[str]], chars: Iterable[str] | None = None,
-           steps: int = 1, made: Maker | None = None) -> Iterator[Derived]:
-    """Each character of `chars` (all with a description when None) with up to `steps` substitutions
-    of `table`, each made in a part of its own at any depth: in the character itself, in a part, or
-    in a part of a part's own sequence. A form no character has comes only from the character's own
-    descriptions (`Descriptions.own`), so a flattened reading never writes a second spelling of the
-    same form, and a result of one character that no sequence spells is left out. A form reached by
-    several routes comes once per route. A `made` kept across calls (with the same `desc`, `table`
-    and `steps`) keeps what each part becomes, so a run over every character works each part once."""
-    made = made or Maker(desc, table, steps)
+def derive(made: Maker, chars: Iterable[str] | None = None) -> Iterator[Derived]:
+    """Each character of `chars` (all with a description when None) with up to `made.steps`
+    substitutions of `made.table`, each made in a part of its own at any depth: in the character
+    itself, in a part, or in a part of a part's own sequence. A form no character has comes only
+    from the character's own descriptions (`Descriptions.own`), so a flattened reading never writes
+    a second spelling of the same form, and a result of one character that no sequence spells is left out. A form reached by
+    several routes comes once per route. A `made` kept across calls keeps what each part becomes,
+    so a run over every character works each part once."""
+    desc = made.desc
     for char in desc.trees if chars is None else chars:
         seen: set[tuple[str, frozenset[Step]]] = set()
         for route, tree, own in made.whole(char):
@@ -591,10 +591,9 @@ class Maker:
     㢃 (⿸广郎) is the part of 廣, and ⿸廣郎 no form of it; 宂 is ⿱宀几, and 㝓 and 䆟 show 宀↔宂 at
     the top of ⿱, so 寰 (⿱宀睘) still gives ⿱宂睘."""
 
-    def __init__(self, desc: Descriptions, table: dict[str, set[str]], steps: int = 1,
-                 places: dict[tuple[str, str], set[Place]] | None = None):
-        self.desc, self.table, self.steps = desc, table, steps
-        self.places = places or {}
+    def __init__(self, desc: Descriptions, table: dict[str, set[str]],
+                 places: dict[tuple[str, str], set[Place]], steps: int = 1):
+        self.desc, self.table, self.steps, self.places = desc, table, steps, places
         self.parts: dict[tuple[str, int, int], list[tuple[tuple[Step, ...], Tree]]] = {}
         self._fits: dict[tuple[str, str, Place], bool] = {}
 

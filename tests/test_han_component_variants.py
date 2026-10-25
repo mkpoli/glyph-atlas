@@ -92,16 +92,16 @@ def test_a_substitution_makes_one_form_and_never_stacks_with_another():
         v.Attested(*v.ordered("口", "厶"), ((("㒺", "㒺", ("s",)),)), ("㒺/㒺",)),
         v.Attested(*v.ordered("日", "月"), ((("㒺", "㒺", ("s",)),)), ("㒺/㒺",)),
     ])
-    forms = {item.route[0][:2] for item in v.derive(desc, table)}
+    forms = {item.route[0][:2] for item in v.derive(v.Maker(desc, table, {}))}
     assert forms == {("口", "厶"), ("日", "月")}
-    assert len(list(v.derive(desc, table))) == 2, "one step: two substitutions never stack in one form"
+    assert len(list(v.derive(v.Maker(desc, table, {})))) == 2, "one step: two substitutions never stack in one form"
 
 
 def test_two_steps_stack_substitutions_in_different_parts_and_record_each_with_its_depth():
     # 疑 is ⿰𠤕⿱龴疋 and 𠤕 is ⿱匕矢: 矢→失 sits inside 𠤕, 龴→コ beside it.
     desc = descriptions({"疑": ["⿰𠤕⿱龴疋"], "𠤕": ["⿱匕矢"]})
     table = {"矢": {"失"}, "失": {"矢"}, "龴": {"コ"}, "コ": {"龴"}}
-    forms = {item.other: item.route for item in v.derive(desc, table, ["疑"], steps=2)}
+    forms = {item.other: item.route for item in v.derive(v.Maker(desc, table, {}, 2), ["疑"])}
     assert forms["⿰⿱匕失⿱コ疋"] == (("矢", "失", 2), ("龴", "コ", 2))
     assert forms["⿰𠤕⿱コ疋"] == (("龴", "コ", 2),)
     assert all(len(route) <= 2 for route in forms.values())
@@ -110,14 +110,14 @@ def test_two_steps_stack_substitutions_in_different_parts_and_record_each_with_i
 def test_two_steps_never_swap_one_part_twice():
     desc = descriptions({"㒻": ["⿰口日"]})
     table = {"口": {"厶"}, "厶": {"口", "ム"}, "ム": {"厶"}}
-    forms = {item.other for item in v.derive(desc, table, steps=2)}
+    forms = {item.other for item in v.derive(v.Maker(desc, table, {}, 2))}
     assert forms == {"⿰厶日"}, "口→厶 then 厶→ム in the same place is no form of 㒻"
 
 
 def test_a_form_no_character_has_comes_out_as_its_sequence():
     desc = descriptions({"杏": ["⿱宀口"]})
     table = v.equivalents([v.Attested(*v.ordered("口", "厶"), (("杏", "杏", ("s",)),), ("x/y",))])
-    derived = list(v.derive(desc, table))
+    derived = list(v.derive(v.Maker(desc, table, {})))
     assert [(item.other, item.encoded, *item.route[0][:2]) for item in derived] == [
         ("⿱宀厶", False, "口", "厶")]
 
@@ -125,7 +125,7 @@ def test_a_form_no_character_has_comes_out_as_its_sequence():
 def test_a_form_a_character_has_comes_out_as_that_character():
     desc = descriptions({"杏": ["⿱宀口"], "杲": ["⿱宀厶"]})
     table = v.equivalents([v.Attested(*v.ordered("口", "厶"), (("杏", "杲", ("s",)),), ("x/y",))])
-    derived = list(v.derive(desc, table))
+    derived = list(v.derive(v.Maker(desc, table, {})))
     assert {(item.other, item.encoded) for item in derived} == {("杲", True), ("杏", True)}
 
 
@@ -133,7 +133,7 @@ def test_no_form_holding_an_unrepresentable_part_is_written():
     # BabelStone's numbered component ({5}) can be a part, but nothing can display it.
     desc = descriptions({"㐠": ["⿰口{5}"]})
     table = v.equivalents([v.Attested(*v.ordered("口", "厶"), (("㐠", "㐠", ("s",)),), ("x/y",))])
-    assert list(v.derive(desc, table)) == []
+    assert list(v.derive(v.Maker(desc, table, {}))) == []
 
 
 def test_a_component_is_named_by_the_character_it_spells():
@@ -202,7 +202,7 @@ def test_睘_𦊷_writes_還_as_𮟃_and_寰_as_a_form_no_character_has():
     desc = descriptions(IDS_睘)
     found = v.attest(desc, sources(("還", "𮟃"), ("環", "𤨔")))
     assert {(p, q) for p, q, _ in found[v.ordered("睘", "𦊷")].pairs} == {("環", "𤨔"), ("還", "𮟃")}
-    derived = {(d.char, d.other, d.encoded) for d in v.derive(desc, {"睘": {"𦊷"}, "𦊷": {"睘"}})}
+    derived = {(d.char, d.other, d.encoded) for d in v.derive(v.Maker(desc, {"睘": {"𦊷"}, "𦊷": {"睘"}}, {}))}
     assert {("還", "𮟃", True), ("𮟃", "還", True), ("寰", "⿱宀𦊷", False)} <= derived
 
 
@@ -231,7 +231,7 @@ def test_色_𮎜_keeps_the_token_its_sequence_writes():
     assert v.substitutions(desc, "色", "𮎜") == {v.ordered("⺈", "𠂉"): {None}}
     assert v.substitutions(desc, "色", "㓀") == {}
     table = v.equivalents([v.Attested(*v.ordered("⺈", "𠂉"), (), ())])
-    assert {(d.char, d.other) for d in v.derive(desc, table, ["色", "分", "㓀"])} == {("色", "𮎜")}
+    assert {(d.char, d.other) for d in v.derive(v.Maker(desc, table, {}), ["色", "分", "㓀"])} == {("色", "𮎜")}
     by_key = {(row["a"], row["b"]): row for row in rows()}
     assert "色:𮎜" in by_key[v.ordered("⺈", "𠂉")]["pairs"]
     assert v.ordered("刀", "𠂉") not in by_key
@@ -262,7 +262,7 @@ def test_a_description_that_names_a_component_matches_one_that_spells_it_out_acr
     desc = descriptions({"鸂": ["⿰溪鳥"], "溪": ["⿰氵奚"], "奚": ["⿱爫𡗞"], "㶉": ["⿲氵奚鸟"]})
     assert v.substitutions(desc, "鸂", "㶉") == {("鳥", "鸟"): {None}}
     # The form comes out as the character, and the spelled-out reading writes no second sequence.
-    assert {(d.other, d.encoded) for d in v.derive(desc, {"鳥": {"鸟"}}, ["鸂"])} == {("㶉", True)}
+    assert {(d.other, d.encoded) for d in v.derive(v.Maker(desc, {"鳥": {"鸟"}}, {}), ["鸂"])} == {("㶉", True)}
     by_key = {(row["a"], row["b"]): row for row in rows()}
     assert "㶉:鸂" in by_key[v.ordered("鳥", "鸟")]["pairs"]
     # A spelling under an operator it does not flatten into keeps the boundary: ⿱溪鳥 is no ⿰溪鳥.
@@ -275,7 +275,7 @@ def test_a_component_spelled_out_inside_a_description_reads_the_same_shape():
     # 惢 is itself ⿱心𢗰, which flattens 橤 to ⿳心𢗰木; 蘂 still reads ⿳艹惢木.
     desc = descriptions({"蘂": ["⿱艹橤"], "橤": ["⿱惢木"], "惢": ["⿱心𢗰"], "蘃": ["⿳艹歮木"]})
     assert v.substitutions(desc, "蘂", "蘃") == {("惢", "歮"): {None}}
-    assert {(d.other, d.encoded) for d in v.derive(desc, {"惢": {"歮"}}, ["蘂"])} == {("蘃", True)}
+    assert {(d.other, d.encoded) for d in v.derive(v.Maker(desc, {"惢": {"歮"}}, {}), ["蘂"])} == {("蘃", True)}
 
 
 def test_a_pair_that_shares_a_tree_attests_nothing():
@@ -318,7 +318,7 @@ def test_an_attesting_pair_counts_only_where_the_others_predict_it_without_it():
 
 def test_a_substitution_makes_a_form_at_any_depth_of_the_characters_own_sequence():
     desc = descriptions({"㑑": ["⿱⿰宀口大"], "㑒": ["⿱⿰宀厶大"]})
-    derived = list(v.derive(desc, {"口": {"厶"}}, ["㑑"]))
+    derived = list(v.derive(v.Maker(desc, {"口": {"厶"}}, {}), ["㑑"]))
     assert [(d.other, d.encoded, *d.route[0][:2]) for d in derived] == [("㑒", True, "口", "厶")]
 
 
@@ -368,7 +368,7 @@ TABLE_广 = {"广": {"廣"}, "廣": {"广"}}
 
 
 def maker_广(desc: v.Descriptions) -> v.Maker:
-    return v.Maker(desc, TABLE_广, 1, v.places(desc, {("广", "廣"): [("圹", "壙"), ("矿", "礦")]}))
+    return v.Maker(desc, TABLE_广, v.places(desc, {("广", "廣"): [("圹", "壙"), ("矿", "礦")]}))
 
 
 def test_the_places_of_a_substitution_are_where_its_pairs_show_it():
@@ -379,29 +379,29 @@ def test_the_places_of_a_substitution_are_where_its_pairs_show_it():
 def test_a_part_is_never_swapped_for_a_character_that_holds_it_in_the_same_place():
     # The 广 enclosing 郎 is the part of 廣 (⿸广黃), not 廣: ⿸廣郎 is no form of 㢃.
     desc = descriptions(IDS_广)
-    assert "⿸廣郎" not in {d.other for d in v.derive(desc, TABLE_广, ["㢃"], made=maker_广(desc))}
+    assert "⿸廣郎" not in {d.other for d in v.derive(maker_广(desc), ["㢃"])}
     assert not maker_广(desc).fits("广", "廣", v.slot("⿸", 0, 2))
 
 
 def test_a_swap_in_a_place_the_whole_does_not_hold_it_is_still_made():
     desc = descriptions(IDS_广)
-    assert ("壙", True) in {(d.other, d.encoded) for d in v.derive(desc, TABLE_广, ["圹"], made=maker_广(desc))}
-    assert ("圹", True) in {(d.other, d.encoded) for d in v.derive(desc, TABLE_广, ["壙"], made=maker_广(desc))}
+    assert ("壙", True) in {(d.other, d.encoded) for d in v.derive(maker_广(desc), ["圹"])}
+    assert ("圹", True) in {(d.other, d.encoded) for d in v.derive(maker_广(desc), ["壙"])}
 
 
 def test_a_whole_is_never_swapped_for_its_own_part_in_the_place_it_holds_it():
     # The other way round: 廣 enclosing 口 does not become 广 enclosing 口.
     desc = descriptions(IDS_广)
-    assert "⿸广口" not in {d.other for d in v.derive(desc, TABLE_广, ["𢋈"], made=maker_广(desc))}
+    assert "⿸广口" not in {d.other for d in v.derive(maker_广(desc), ["𢋈"])}
 
 
 def test_a_swap_its_pairs_show_in_the_place_the_whole_holds_the_part_is_made_there():
     # 宂 is ⿱宀几 and holds 宀 at the top, where 㝓 and 䆟 show 宀↔宂: 寰 still gives ⿱宂睘.
     desc = descriptions({"宂": ["⿱宀几"], "㝓": ["⿱宀甲"], "䆟": ["⿱宂甲"], "寰": ["⿱宀睘"]})
     table = {"宀": {"宂"}, "宂": {"宀"}}
-    made = v.Maker(desc, table, 1, v.places(desc, {("宀", "宂"): [("㝓", "䆟")]}))
-    assert "⿱宂睘" in {d.other for d in v.derive(desc, table, ["寰"], made=made)}
-    assert "⿱宂睘" not in {d.other for d in v.derive(desc, table, ["寰"])}
+    made = v.Maker(desc, table, v.places(desc, {("宀", "宂"): [("㝓", "䆟")]}))
+    assert "⿱宂睘" in {d.other for d in v.derive(made, ["寰"])}
+    assert "⿱宂睘" not in {d.other for d in v.derive(v.Maker(desc, table, {}), ["寰"])}
 
 
 def test_the_outer_places_of_a_three_part_operator_are_those_of_the_two_part_one():
@@ -410,4 +410,20 @@ def test_the_outer_places_of_a_three_part_operator_are_those_of_the_two_part_one
     assert v.slot("⿲", 1, 3) == ("⿰", 1) != v.slot("⿰", 1, 2)
     # 彳 is the left of 行 (⿲彳二亅), and so the left of a ⿰ too.
     desc = descriptions({"行": ["⿰彳亍"], "亍": ["⿰二亅"], "彴": ["⿰彳勺"]})
-    assert not v.Maker(desc, {"彳": {"行"}, "行": {"彳"}}).fits("彳", "行", v.slot("⿰", 0, 2))
+    assert not v.Maker(desc, {"彳": {"行"}, "行": {"彳"}}, {}).fits("彳", "行", v.slot("⿰", 0, 2))
+
+
+def test_a_swap_below_the_top_is_checked_in_its_own_place():
+    desc = descriptions({**IDS_广, "𣘻": ["⿰木⿸广郎"], "𣛭": ["⿰木⿰土广"]})
+    forms = {d.other for d in v.derive(maker_广(desc), ["𣘻", "𣛭"])}
+    assert "⿰木⿸廣郎" not in forms
+    assert "⿰木壙" in forms
+
+
+def test_one_maker_serves_a_part_in_two_places_whichever_comes_first():
+    desc = descriptions(IDS_广)
+    for order in (["㢃", "圹"], ["圹", "㢃"]):
+        made = maker_广(desc)
+        forms = {(d.char, d.other) for d in v.derive(made, order)}
+        assert ("圹", "壙") in forms
+        assert not {other for char, other in forms if char == "㢃"} & {"⿸廣郎"}
