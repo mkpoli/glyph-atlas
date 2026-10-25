@@ -5,7 +5,7 @@ import { APPROXIMATE, Composer, EMPTY, LookupError, keyOf, parseTree } from './c
 import { ASCENT } from './geometry.js'
 import { svgPath } from './geometry.js'
 import { readLayout } from './layout.js'
-import { bucketOf, hexOf } from './sha256.js'
+import { hexOf } from './sha256.js'
 
 export { LookupError } from './compose.js'
 
@@ -16,47 +16,32 @@ async function unpack(buffer) {
   return await new Response(stream).text()
 }
 
-// Where the export keeps each key's data, by its format (`manifest.format`): the one place that knows
-// file names. Format 1 holds every key in one of 256 buckets, `b/<first byte of sha256(key)>.json`,
-// its host pieces by place under the record's `x`. Format 2 gives each key a file of its own,
-// `g/<hh>/<sha256(key)>.json`, and each (place, operand) its host list, `p/<hh>/<sha256(place TAB
-// operand)>.json`; a record lists the places it has lists in (`P`, absent when it has none). Those
-// files are gzip bytes under a .json name, served as application/octet-stream and unpacked here.
-const hashed = (folder, text) => { const h = hexOf(text); return `${folder}/${h.slice(0, 2)}/${h}.json` }
-const bucket = key => `b/${String(bucketOf(key)).padStart(3, '0')}.json`
-const FORMATS = {
-  1: {
-    recordFile: bucket,
-    hostsFiles: key => [bucket(key)],
-    hostsFile: key => bucket(key),
-    record: (file, key) => file[key] ?? null,
-    hosts: (file, key, place) => file[key]?.x?.[place] ?? [],
-    places: record => Object.keys(record?.x ?? {}),
-  },
-  2: {
-    recordFile: key => hashed('g', key),
-    hostsFiles: () => [],
-    hostsFile: (key, place) => hashed('p', `${place}\t${key}`),
-    record: file => Object.keys(file).length ? file : null,
-    hosts: file => file.hosts ?? [],
-    places: record => record?.P ?? [],
-  },
-}
-// Format 3 keeps format 2's files, and its host lists hold every entry of the composer's index with
-// the fields it ranks by. An entry's cut `c` is null where the composer could not cut it; else its
-// piece as the indices `k` of the host glyph's contours it keeps (or its own outlines `p`), its box
-// `b`, the node's frame `fr`, `wh` for the whole character, the gap `g` and `kv` for a KanjiVG cut,
-// read here onto the entry. A cut marked `pc` was made only under a parity row's exclusion.
+// Where the export keeps each key's data: the one place that knows file names. han-compose's format 4
+// packs the records in `g/<hhh>.json` and the host lists in `p/<hhh>.json`, `hhh` the first three hex
+// digits of the SHA-256 of the key's UTF-8 (of place TAB operand for a host list); each file is an
+// object from the full hash to the record or list, gzip bytes under a .json name, served as
+// application/octet-stream and unpacked here. A record lists the places it has host lists in (`P`,
+// absent when it has none). A host list holds every entry of the composer's index with the fields it
+// ranks by. An entry's cut `c` is null where the composer could not cut it; else its piece as the
+// indices `k` of the host glyph's contours it keeps (or its own outlines `p`), its box `b`, the
+// node's frame `fr`, `wh` for the whole character, the gap `g` and `kv` for a KanjiVG cut, read here
+// onto the entry. A cut marked `pc` was made only under a parity row's exclusion.
+const FORMAT = 4
+const shard = (folder, h) => `${folder}/${h.slice(0, 3)}.json`
 const cutEntry = h => h.c === undefined ? h : h.c === null ? { ...h, c: null } : { ...h, ...h.c, c: true }
-FORMATS[3] = { ...FORMATS[2], hosts: file => (file.hosts ?? []).map(cutEntry) }
+const recordHash = key => hexOf(key)
+const hostsHash = (key, place) => hexOf(`${place}\t${key}`)
+const recordFile = key => shard('g', recordHash(key))
+const hostsFile = (key, place) => shard('p', hostsHash(key, place))
+const recordOf = (file, key) => file[recordHash(key)] ?? null
 
 /**
  * A source of the export's files. `read(name)` answers a file's bytes (an ArrayBuffer) by its name
- * in the export (`manifest.json`, `layout.json`, `b/007.json`), or null where there is no such file;
+ * in the export (`manifest.json`, `layout.json`, `g/07a.json`), or null where there is no such file;
  * `fromUrl` builds one over HTTP.
  */
 export function createSource(read, { concurrency = 6 } = {}) {
-  let ready = null, format = null
+  let ready = null
   // At most `concurrency` files are asked for at once; the rest wait their turn.
   let active = 0
   const waiting = []
@@ -75,8 +60,7 @@ export function createSource(read, { concurrency = 6 } = {}) {
     ready() {
       ready ??= (async () => {
         source.manifest = JSON.parse(await unpack(await read('manifest.json')))
-        format = FORMATS[source.manifest.format]
-        if (!format) throw new Error(`The composer export's format ${source.manifest.format} is not read here.`)
+        if (source.manifest.format !== FORMAT) throw new Error(`The composer export's format ${source.manifest.format} is not read here.`)
         source.layout = readLayout(JSON.parse(await unpack(await read(source.manifest.files.layout.path))))
       })().catch(error => { ready = null; throw error })
       return ready
@@ -92,27 +76,27 @@ export function createSource(read, { concurrency = 6 } = {}) {
       }))
     },
     /** The files holding the records of `keys`, to load before drawing. */
-    filesOf: keys => new Set([...keys].flatMap(key => [format.recordFile(key), ...format.hostsFiles(key)])),
+    filesOf: keys => new Set([...keys].map(recordFile)),
     /** The data a composer reads, noting each file it asked for that is not loaded. */
     store() {
       const missing = new Set()
       const file = name => { const found = files.get(name); if (!found) missing.add(name); return found ?? null }
       return {
         manifest: source.manifest, layout: source.layout, missing,
-        rec: key => { const f = file(format.recordFile(key)); return f ? format.record(f, key) : null },
+        rec: key => { const f = file(recordFile(key)); return f ? recordOf(f, key) : null },
         // A host list in the order of the composer's index (`r`), where the export gives it.
         hosts: (key, place) => {
-          const f = file(format.hostsFile(key, place)), id = `${place}\t${key}`
+          const f = file(hostsFile(key, place)), id = `${place}\t${key}`
           if (!f) return []
           if (!lists.has(id)) {
-            const list = format.hosts(f, key, place)
+            const list = (f[hostsHash(key, place)]?.hosts ?? []).map(cutEntry)
             lists.set(id, list[0]?.r === undefined ? list : list.slice().sort((a, b) => a.r - b.r))
           }
           return lists.get(id)
         },
         places: key => {
-          const f = file(format.recordFile(key))
-          return f ? format.places(format.record(f, key)) : []
+          const f = file(recordFile(key))
+          return f ? recordOf(f, key)?.P ?? [] : []
         },
       }
     },

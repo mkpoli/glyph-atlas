@@ -13,7 +13,12 @@ import { badge, placeholder } from '../src/lib/composer/preview.js'
 
 const constants = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/composer-constants.json'), 'utf8'))
 const hex = text => createHash('sha256').update(text).digest('hex')
-const at = (folder, text) => `${folder}/${hex(text).slice(0, 2)}/${hex(text)}.json`
+// Format 4's shards: each entry under the full hash of its text, in the file its first three hex digits name.
+const shards = (folder, entries) => {
+  const out = {}
+  for (const [text, value] of entries) ((out[`${folder}/${hex(text).slice(0, 3)}.json`] ??= {})[hex(text)] = value)
+  return Object.fromEntries(Object.entries(out).map(([name, file]) => [name, gzipSync(JSON.stringify(file))]))
+}
 const int16 = values => Buffer.from(Int16Array.from(values).buffer).toString('base64')
 // A glyph of boxes, each [x0, y0, x1, y1] in font units: one square contour per box.
 const glyph = boxes => {
@@ -30,9 +35,9 @@ const records = {
   永: character('永', [[100, 0, 900, 800]]),
 }
 const files = {
-  'manifest.json': JSON.stringify({ format: 2, files: { layout: { path: 'layout.json' } }, constants, spelled: [] }),
+  'manifest.json': JSON.stringify({ format: 4, files: { layout: { path: 'layout.json' } }, constants, spelled: [] }),
   'layout.json': JSON.stringify(layout),
-  ...Object.fromEntries(Object.entries(records).map(([key, record]) => [at('g', key), gzipSync(JSON.stringify(record))])),
+  ...shards('g', Object.entries(records)),
 }
 const sourceOf = (fetched = []) => createSource(async name => {
   fetched.push(name)
@@ -86,7 +91,7 @@ describe('the composer', () => {
       return body === undefined ? null : new Uint8Array(Buffer.from(body)).buffer
     })
     await source.ready()
-    await source.load(Array.from({ length: 20 }, (_, i) => at('g', `x${i}`)))
+    await source.load(Array.from({ length: 20 }, (_, i) => `g/${i.toString(16).padStart(3, '0')}.json`))
     expect(most).toBe(6)
   })
 })
