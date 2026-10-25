@@ -78,6 +78,29 @@ through みんなで翻刻.
   creative expression, so a relation table that states no licence (cjkvi-variants) is used as public
   domain, and Wikidata's statements are used under CC0 whichever dictionary they cite.
 
+## Composer drawings
+
+The IDS editor previews a description with a port of han-compose (https://github.com/mkpoli/han-compose,
+MIT) that draws from the composer's web export, served from R2 under `/atlas/composer/<version>/`.
+The export's `manifest.json` lists its sources and their terms, and the export carries the licence
+texts it needs (`OFL.txt`, `MIT-hfhchan-ids.txt`):
+
+- Glyph outlines and the pieces cut from them: Noto Sans CJK JP 2.004 (© 2014-2021 Adobe, with
+  Reserved Font Name 'Source') and Plangothic P1 and P2 (Copyright (c) 2024 Fitzgerald P.
+  Köeingsegg, no Reserved Font Name declared), all under the SIL Open Font License 1.1. A drawing is
+  made from those outlines and is never offered under a font's name.
+- Pieces cut along KanjiVG's component groups, and the hand forms of 𠂇: KanjiVG r20260714,
+  Copyright (C) 2009-2013 Ulrich Apel, CC BY-SA 3.0 (https://kanjivg.tagaini.net/). A drawing that
+  uses them adapts KanjiVG's data and is shared alike under CC BY-SA 3.0 with this notice.
+- Sequences: BabelStone IDS (Andrew West, file date 2025-06-27), public domain as its header states,
+  with han-compose's own replacements (MIT); positional forms from cjkvi-variants
+  `radical-variants.txt` (川幡太一), public domain; the list of characters drawn whole from
+  hfhchan/ids v1.0.2 (Copyright (c) 2021 Henry Chan, MIT).
+- The port (`apps/review/src/lib/composer/`) is MIT, as is the rest of the code.
+
+The editor names the fonts and KanjiVG beside its preview and links here. Drawings stored under
+`/atlas/ids/` are made by the same composer and carry the same terms.
+
 ## Attribution
 
 Each release carries `ATTRIBUTION.md`, generated from the rights fields: one entry per source and per

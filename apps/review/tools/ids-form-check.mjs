@@ -15,12 +15,17 @@
  * into ⿱匕矢, 矢 is swapped for 失 and 龴 for コ from the components the variant table offers, and the
  * result, ⿰⿱匕失⿱コ疋, is saved as the crop's form claim; the crop keeps its character.
  *
+ * The preview beside the tree sets a sequence with an empty slot roughly in the page font; a whole new
+ * sequence is drawn by the composer, from the export named by COMPOSER_EXPORT (a han-compose
+ * `export-web` folder), which the browser is served in place of /atlas/composer/. Without it the
+ * composed step is skipped.
+ *
  * Run through devrun:
  *   devrun bun apps/review/tools/ids-form-check.mjs [--shots DIR]
  */
 import { Database } from 'bun:sqlite'
 import { join } from 'node:path'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import Browser from './browser.mjs'
 import { boot, options, units } from './harness.mjs'
 
@@ -75,6 +80,32 @@ try {
   await browser.writeAs('ids-form-check')
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
+  // The composer's export served from disk where the site serves it from R2: `<version>/<path>`
+  // answers with the folder's `<path>`, a missing file with 404.
+  let storedDrawings = false
+  const exported = process.env.COMPOSER_EXPORT && existsSync(join(process.env.COMPOSER_EXPORT, 'manifest.json')) ? process.env.COMPOSER_EXPORT : null
+  const stored = exported ? JSON.parse(readFileSync(join(exported, 'parity.json'), 'utf8')).rows.find(row => row.d) : null
+  if (exported) {
+    await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*/atlas/composer/*' }, { urlPattern: '*/atlas/ids/*' }] })
+    browser.listeners.push(m => {
+      if (m.method !== 'Fetch.requestPaused') return
+      // Once `storedDrawings` is set, every sequence has a stored drawing: the Python composer's own
+      // drawing of the export's first parity row. None before.
+      if (m.params.request.url.includes('/atlas/ids/')) {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><path d="${stored.d}"/></svg>`
+        browser.send('Fetch.fulfillRequest', { requestId: m.params.requestId, responseCode: storedDrawings ? 200 : 404,
+          responseHeaders: [{ name: 'content-type', value: storedDrawings ? 'image/svg+xml' : 'application/json' }],
+          body: Buffer.from(storedDrawings ? svg : '{}').toString('base64') }).catch(() => {})
+        return
+      }
+      const name = new URL(m.params.request.url).pathname.replace(/^.*\/atlas\/composer\/[^/]+\//, '')
+      const file = join(exported, name)
+      const found = !name.split('/').includes('..') && existsSync(file)
+      browser.send('Fetch.fulfillRequest', { requestId: m.params.requestId, responseCode: found ? 200 : 404,
+        responseHeaders: [{ name: 'content-type', value: /^[gp]\//.test(name) ? 'application/octet-stream' : 'application/json' }],
+        body: found ? readFileSync(file).toString('base64') : '' }).catch(() => {})
+    })
+  }
   const id = Object.entries(units(config.directory)).find(([, unit]) => unit.active && unit.unicode === 'U+3042')[0]
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
   // The crop is named 疑 first, as a review of it.
@@ -326,6 +357,52 @@ try {
   console.log(`PASS ${hit} found by its parts 匕矢, and its part ${part} taken`)
   await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][0].click()`)
 
+  // The preview: a sequence with an empty slot stays rough, in the page font with the slot marked; a
+  // whole one no character draws is drawn by the composer once its data has loaded.
+  await typeSequence('⿰木＋')
+  await becomes('⿰木＋')
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.step === 'rough'
+    && document.querySelectorAll('dialog[open] .ids-preview-large text').length === 1 && !!document.querySelector('dialog[open] .ids-preview-large .slot')`)
+  await shoot('ids-preview-rough', '.ids-view')
+  // Larger than a preview draws, it stays rough and says so.
+  await typeSequence('⿰木⿰木⿰木⿰木⿰木口')
+  await becomes('⿰木⿰木⿰木⿰木⿰木口')
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.label === 'tooLarge'`)
+  await typeSequence('⿰魚⿱山石')
+  await becomes('⿰魚⿱山石')
+  if (!exported) {
+    // With no export to draw from, the composer fails and the preview says so over the rough layout.
+    await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.label === 'failed'`, 30000)
+    assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-preview-label').textContent.trim()`) === 'Could not compose', 'a failed drawing is not said to have failed')
+    assert(await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-preview-large text').length`) === 3, 'a failed drawing does not keep the rough layout')
+    await shoot('ids-preview-failed', '.ids-view')
+    console.log('PASS a sequence too large stays rough, and a drawing that cannot be made says so')
+  }
+  if (exported) {
+    await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.step === 'composed'
+      && (document.querySelector('dialog[open] .ids-preview-large path')?.getAttribute('d') ?? '').length > 200`, 30000)
+    assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-preview figcaption').textContent.trim()`) === 'Preview', 'the composed drawing is not labelled a preview')
+    assert(await browser.evaluate(`!!document.querySelector('dialog[open] .ids-preview-credits a[href*="licensing"]')`), 'the composed drawing names no sources')
+    await shoot('ids-preview-composed', '.ids-view')
+    // An operator the composer does not draw makes the preview approximate.
+    await typeSequence('⿾⿰魚⿱山石')
+    await becomes('⿾⿰魚⿱山石')
+    await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.label === 'approximate'`, 30000)
+    assert((await browser.evaluate(`document.querySelector('dialog[open] .ids-preview-label').textContent`)).includes('⿾'), 'the approximate caption does not name ⿾')
+    await shoot('ids-preview-approximate', '.ids-view')
+    // A sequence the site has drawn shows that drawing, labelled final.
+    storedDrawings = true
+    await typeSequence(stored.s)
+    await becomes(stored.s)
+    await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.step === 'final'`, 30000)
+    assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-preview figcaption').textContent.trim()`) === 'Final drawing', 'the stored drawing is not labelled final')
+    assert(await browser.evaluate(`!!document.querySelector('dialog[open] .ids-preview-credits a[href*="licensing"]')`), 'the stored drawing names no sources')
+    await shoot('ids-preview-final', '.ids-view')
+    storedDrawings = false
+    console.log('PASS the preview stays rough with an empty slot, the composer draws a new sequence, and a stored drawing is final')
+  } else console.log('SKIP the composed preview: set COMPOSER_EXPORT to a han-compose export-web folder')
+  assert(!errors.length, 'page errors: ' + errors.join('; '))
+
   await typeSequence('⿰𠤕⿱龴疋')
   await becomes('⿰𠤕⿱龴疋')
 
@@ -343,6 +420,7 @@ try {
   await pick('コ')
   await browser.waitFor(`document.querySelector('dialog[open] .ids-field input').value === '⿰⿱匕失⿱コ疋'`)
   await shoot('ids-editor-composed')
+  await shoot('ids-view-composed', '.ids-view')
   console.log(`PASS 𠤕 split, 矢 swapped for 失 and 龴 for コ: ${await value()}`)
 
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })

@@ -7,6 +7,7 @@ import { formsRoute } from './routes/forms';
 import { similarCrops } from './similar';
 import { cropParam, movedPathResponse } from './atlas3Crops';
 import { drawingFile } from './drawings';
+import { composerFile } from './composer';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { structureOf, suggest, wordChoices } from './routes/search';
 import { auth, claim, providers, viewer } from './auth';
@@ -116,7 +117,7 @@ const routes = {
           try{return json(await setFavourite(env,me.id,await body(request),ctx))}
           catch(error){if(error instanceof FavouriteError)throw new Problem(error.status,error.message);if(error instanceof StaleCrop)return staleResponse();throw error}
         }
-        if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''));return json(out,status)}
+        if(path==='/api/account/claim'){const {status,body:out}=await claim(env,me,String((await body(request)).reviewer??''),request.headers.get('cf-connecting-ip'));return json(out,status)}
         const reviewed=await reviewRoute(env,request,path,me.id);
         if(reviewed)return reviewed;
         const claimed=await claimWrite(env,request,path,me,claimTools,async()=>{
@@ -174,6 +175,11 @@ const routes = {
         const drawing=await drawingFile(env,path.slice('/atlas/ids/'.length),request,ctx);
         if(!drawing)throw new Problem(404,'No drawing of this sequence.');
         return drawing;
+      }
+      if(path.startsWith('/atlas/composer/')){
+        const file=await composerFile(env,path.slice('/atlas/composer/'.length),request,ctx);
+        if(!file)throw new Problem(404,'No such composer file.');
+        return file;
       }
       if(path.startsWith('/atlas/similar/files/')){
         const file=await modelFile(env,path.slice('/atlas/similar/files/'.length),request,ctx);

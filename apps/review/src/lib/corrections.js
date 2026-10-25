@@ -59,6 +59,18 @@ export function confirmationPlan(items) {
   return { crops, report }
 }
 
+/**
+ * What a selection confirms: each chosen tile, and each crop of the place a chosen pair or trigram
+ * shows (`runs`, each `{ id, crops }`), once each, though a tile of the gallery shows one of them too.
+ */
+export function chosenCrops(tiles, runs, selected) {
+  const chosen = [...tiles.filter(item => selected.has(item.id)), ...runs.filter(run => selected.has(run.id)).flatMap(run => run.crops ?? [])]
+  // The first copy stands: a gallery tile is kept up to date by the inspector's saves before a run's is.
+  const seen = new Map()
+  for (const item of chosen) if (!seen.has(item.id)) seen.set(item.id, item)
+  return [...seen.values()]
+}
+
 /** `crops` cut into confirmation batches of `size`, with submission ids as `correctionBatches` gives them. */
 export const confirmationBatches = (crops, size) => correctionBatches('\u0001confirm', crops, size)
 
