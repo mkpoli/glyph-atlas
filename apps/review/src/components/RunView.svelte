@@ -159,7 +159,7 @@
   {#if !loading && !error && total === 0}<p class="run-empty">{t('run.empty')}</p>{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && items.length}…{/if}</div>
   {#if detail}<RunOccurrence occurrence={detail} {text} close={closeDetail}
-    inspect={(id, origin) => inspect(id, null, crops, null, origin)} />{/if}
+    inspect={(id, origin) => inspect(id, crops, null, origin)} />{/if}
 </section>
 
 <style>

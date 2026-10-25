@@ -1018,7 +1018,7 @@
   function openReported(id) {
     const queue = bulkReport.map(entry => display.find(tile => tile.id === entry.id) ?? { id: entry.id, origin: entry.origin })
     const entry = bulkReport.find(reported => reported.id === id)
-    if (entry) inspect(id, null, queue, updateItem, entry.origin)
+    if (entry) inspect(id, queue, updateItem, entry.origin)
   }
   function select(value) { split = null; grapheme = value; load() }
   // A tile that counts corpus glyphs, which the collection's own listing leaves out, opens its
