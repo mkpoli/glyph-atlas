@@ -31,6 +31,8 @@
   import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { catalogue, character, request, shuffleSeed, number, stored, remember } from '../lib/client.js'
+  import { markForms, unmarkForms } from '../lib/cropForms.js'
+  import { isDescription } from '../lib/ids.js'
   import { confirmationBatches, confirmationBody, confirmationOutcome, chosenCrops, confirmationPlan, correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
   import { arrowTarget, toggled, withRange } from '../lib/selection.js'
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
@@ -870,7 +872,7 @@
     tile?.focus(); tile?.scrollIntoView({ block: 'nearest' })
   }
   function selectionKeys(event) {
-    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || page.state.inspect || event.target.closest?.('input, textarea, select, dialog, [contenteditable]')) return
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || page.state.inspect || event.target.closest?.('input, textarea, select, dialog, [contenteditable], .ids-composer')) return
     if ((event.key === 's' || event.key === 'S') && reviewer && !event.repeat) { event.preventDefault(); if (selecting) stopSelecting(); else startSelecting(); return }
     if (!selecting) return
     if (event.key === 'Escape') { event.preventDefault(); stopSelecting(); return }
@@ -925,6 +927,7 @@
   async function applyBulk() {
     const target = bulkTarget
     if (!target || bulkBusy) return
+    if (isDescription(target)) return describeBulk(target)
     const chosen = display.filter(item => selected.has(item.id) && selectable(item))
     // A tile a person already checked as the character has nothing to change; every other one is sent,
     // and one already written as the character is confirmed.
@@ -1018,9 +1021,38 @@
     const stale = outcome.report.filter(entry => entry.reason !== 'flagged').map(entry => entry.id)
     if (stale.length) await refresh(stale)
   }
+  // A form written as an ideographic description sequence is a claim on each selected crop and no review,
+  // as it is on one crop: the tiles keep their character and take the form.
+  const withForms = marked => Object.fromEntries(marked.flatMap(({ crop }) => { const tile = display.find(item => item.id === crop.id); return tile ? [[crop.id, { ...tile, form: crop.form }]] : [] }))
+  async function describeBulk(target) {
+    const chosen = display.filter(item => selected.has(item.id) && selectable(item))
+    let marked = [], kept = []
+    bulkBusy = true; bulkError = ''; bulkReport = []
+    try { ({ marked, kept } = await markForms(chosen, target)) }
+    catch (e) { marked = e.marked ?? []; kept = e.kept ?? []; bulkError = failure(e) }
+    finally { bulkBusy = false }
+    if (kept.length && !bulkError) bulkError = t('client.pausedKept')
+    if (marked.length) {
+      patch(withForms(marked))
+      bulkDone = { kind: 'form', described: marked, count: marked.length, char: target, kept: 0 }
+    }
+    const handled = new Set([...marked, ...kept.map(crop => ({ crop }))].map(({ crop }) => crop.id))
+    selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
+  }
+  async function undoDescribed(done) {
+    let marked = []
+    bulkBusy = true; bulkError = ''
+    try { ({ marked } = await unmarkForms(done.described)) }
+    catch (e) { marked = e.marked ?? []; bulkError = e.message }
+    finally { bulkBusy = false }
+    patch(withForms(marked))
+    const back = new Set(marked.map(({ crop }) => crop.id)), left = done.described.filter(({ crop }) => !back.has(crop.id))
+    bulkDone = left.length ? { ...done, described: left, count: left.length } : null
+  }
   async function undoBulk() {
     const done = bulkDone
     if (!done || bulkBusy) return
+    if (done.kind === 'form') return undoDescribed(done)
     bulkBusy = true; bulkError = ''
     try {
       const { answered, kept: waiting } = await sendEach([...done.batches].reverse(), id => request(`/atlas/corrections/${id}/undo`, {}))

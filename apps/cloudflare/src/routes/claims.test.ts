@@ -9,7 +9,7 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
 import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
-  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setGrapheme, setWord, wordMethodsQuery, wordNamesQuery, wordOfCrop } from './claims';
+  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, setWord, wordMethodsQuery, wordNamesQuery, wordOfCrop } from './claims';
 import { familyClaims } from '../atlas3Gallery';
 
 // The Workers cache, as far as alias reads use it.
@@ -273,6 +273,40 @@ describe('the crop form picker', () => {
     await expect(pick(null)).rejects.toThrow('409 You have no form on this crop to clear.');
     await expect(pick('⿰木')).rejects.toThrow('422 This description is missing a component.');
     expect(await formOfCrop(env, local)).toMatchObject({ by: ['other'] });
+  });
+});
+
+describe('a batch of form picks', () => {
+  it('claims one value on every crop at once, names its form once, and is undone by sending each replaced value back', async () => {
+    const { db, env, tools, local, corpus, version, post } = setup();
+    await setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form: '還' }, publicId(local), 'reader', tools);
+    const batch = { id: crypto.randomUUID(), crops: [{ id: publicId(local), crop_version: version(local), form: '⿺辶𦊷' },
+      { id: publicId(corpus), crop_version: version(corpus, 'rev1'), form: '⿺辶𦊷' }] };
+    const marked = await post('/atlas/forms', batch) as any;
+    expect(marked.crops.map((c: any) => [c.id, c.form.values[0].text, c.replaced])).toEqual([[publicId(local), '⿺辶𦊷', '還'], [publicId(corpus), '⿺辶𦊷', null]]);
+    expect(db.query('SELECT count(*) AS n FROM forms').get()).toEqual({ n: 2 });
+    expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='represented_by'").get()).toEqual({ n: 2 });
+    // The same batch sent again is the same write.
+    expect((await post('/atlas/forms', batch) as any).crops).toEqual(marked.crops);
+    expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='has_form'").get()).toEqual({ n: 3 });
+    const undone = await setForms(env, { id: crypto.randomUUID(), crops: marked.crops.map((c: any) => ({ id: c.id,
+      crop_version: version(c.id === publicId(local) ? local : corpus, c.id === publicId(local) ? 'px' : 'rev1'), form: c.replaced })) }, 'reader', tools);
+    expect(undone.crops.map((c: any) => [c.id, c.form?.values.map((v: any) => v.text) ?? null])).toEqual([[publicId(local), ['還']], [publicId(corpus), null]]);
+  });
+
+  it('is refused whole when a crop was cut again, naming it, or when a value is no form', async () => {
+    const { db, env, tools, local, corpus, version } = setup();
+    const send = (crops: unknown[]) => setForms(env, { id: crypto.randomUUID(), crops }, 'reader', tools);
+    await expect(send([{ id: publicId(local), crop_version: version(local), form: '⿰木' }])).rejects.toThrow('422 This description is missing a component.');
+    const stale = await send([{ id: publicId(local), crop_version: version(local), form: '還' }, { id: publicId(corpus), crop_version: version(corpus, 'old'), form: '還' }])
+      .catch(error => error);
+    expect(stale.message).toBe('409 Some of these crops were cut again. Reload them.');
+    expect(stale.extra).toEqual({ targets: [{ id: publicId(corpus) }] });
+    await expect(send([{ id: publicId(local), crop_version: version(local), form: '還' }, { id: publicId(local), crop_version: version(local), form: '還' }]))
+      .rejects.toThrow('422 A batch names each crop once.');
+    expect(db.query('SELECT count(*) AS n FROM assertions').get()).toEqual({ n: 0 });
+    // Taking back a claim the reader never made leaves the crop out.
+    expect((await send([{ id: publicId(local), crop_version: version(local), form: null }])).crops).toEqual([]);
   });
 });
 
