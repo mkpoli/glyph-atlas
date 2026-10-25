@@ -584,6 +584,8 @@ class Mirror:
         # Each page's vote entries by slot, read from out/votes/ when first touched, and the pages changed.
         self.votes, self.voted = {}, set()
         self.page_sql = defaultdict(list)
+        # What taking a reviewer's style back returns to, for crops that keep one: no change to a page.
+        self.base_sql = []
         self.touched_pages = defaultdict(dict)
         self.guarded, self.stale, self.relabelled, self.runs_seen = [], [], [], set()
 
@@ -712,11 +714,13 @@ class Mirror:
                 self.stale.append(cid)
             changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle", "bumps") and old[c] != row[c]
                        and (c not in REVIEW_OWNED or speaks)]
-            if speaks and old["style"] != row["style"]:
+            own_style = self.atlas.execute(f"SELECT {OWN_STYLE} FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]
+            if speaks and (old["style"] != row["style"] or own_style):
                 # A crop a reviewer gave a style keeps it; the publication's is what taking it back returns to.
-                self.page_sql[pid].append(f"UPDATE reviews AS r SET base_style={lit(row['style'])} WHERE r.crop={cid} "
-                                          f"AND (SELECT {OWN_STYLE} FROM crops c WHERE c.id=r.crop);")
-            if "style" in changed and self.atlas.execute(f"SELECT {OWN_STYLE} FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]:
+                # D1 may hold a style the local copy has not seen, so the statement checks there.
+                self.base_sql.append(f"UPDATE reviews AS r SET base_style={lit(row['style'])} WHERE r.crop={cid} "
+                                     f"AND r.base_style IS NOT {lit(row['style'])} AND (SELECT {OWN_STYLE} FROM crops c WHERE c.id=r.crop);")
+            if "style" in changed and own_style:
                 changed.remove("style")
                 row["style"] = old["style"]
             own = [c for c in changed if c not in REVIEW_OWNED and c != "cut"]
@@ -1876,7 +1880,7 @@ def main():
     if stray:
         sys.exit(f"pages {stray[:5]} have row changes but no new bundle; nothing published")
 
-    groups = [m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)] + flag_sql + style_sql
+    groups = [m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)] + flag_sql + style_sql + ([m.base_sql] if m.base_sql else [])
     atlas_parts = write_parts(run, "atlas", [g for g in groups if g])
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))

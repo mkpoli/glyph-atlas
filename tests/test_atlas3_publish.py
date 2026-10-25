@@ -1386,3 +1386,22 @@ def test_a_style_a_reviewer_gave_on_the_site_outlasts_a_catalogue_that_speaks(la
     # Taking the reviewer's style back returns to the publication's, which is now cursive.
     cursive = remote.query("glyph-atlas-v3", "SELECT code FROM codes WHERE field='style' AND key='cursive'")[0]["code"]
     assert remote.query("glyph-atlas-v3", f"SELECT base_style FROM reviews WHERE crop={a1}") == [{"base_style": cursive}]
+
+
+def test_a_style_the_local_copy_knows_a_reviewer_gave_changes_no_page(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    for db in (local, site):
+        db.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,0,0,0,0,0,0,?,"
+                   "(SELECT code FROM codes WHERE field='style' AND key='unassessed'))", (a1, publish.STYLE_KIND))
+        db.execute("INSERT INTO reviews(crop,gen,at,char,state,style,quiz,base_char,base_state,base_style,base_quiz) "
+                   "SELECT id,0,0,char,state,style,quiz,char,state,style,quiz FROM crops WHERE id=?", (a1,))
+        db.commit()
+    before = crops(remote)[a1]["style"]
+    row = tuple("cursive" if k == "style" else v for k, v in zip(UNITS, unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10})))
+    # The catalogue's only change is the style of a crop that keeps the reviewer's: no page changes, and it publishes.
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [row]))
+    cursive = remote.query("glyph-atlas-v3", "SELECT code FROM codes WHERE field='style' AND key='cursive'")[0]["code"]
+    assert crops(remote)[a1]["style"] == before
+    assert remote.query("glyph-atlas-v3", f"SELECT base_style FROM reviews WHERE crop={a1}") == [{"base_style": cursive}]
