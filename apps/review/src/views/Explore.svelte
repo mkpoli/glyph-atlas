@@ -677,7 +677,8 @@
     choosing = Boolean(value.trim()) && !hasCharacterPage(value.trim()) && !/^(U\+[0-9a-f]{4,6})(\s+U\+[0-9a-f]{4,6})*$/i.test(value.trim())
     // The character that was on show is gone as soon as typing starts, and the address says so.
     showInAddress()
-    if (choosing) { loading = false; return }
+    // The candidate list draws no gallery, so nothing chosen in it is left to act on.
+    if (choosing) { loading = false; clearSelection(); return }
     // Typing one code point at a time would otherwise search the intermediate text, and a
     // supplementary character arrives as two UTF-16 units while it is being entered.
     searchTimer = setTimeout(() => { submitQuery(value) }, 220)
