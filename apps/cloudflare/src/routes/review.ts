@@ -277,9 +277,11 @@ export async function roundMembers(env: Env, key: string): Promise<string[]> {
 // --- The statements of a change ---
 
 // Who writes: the actor a user writes under, their own id, made on first use.
-export async function actorFor(env: Env, user: string): Promise<number> {
-  const read = () => env.ATLAS.prepare('SELECT id FROM actors WHERE key=?').bind(user).first<{ id: number }>();
-  const found = await read();
+const actorOf = (env: Env, user: string) => env.ATLAS.prepare('SELECT id FROM actors WHERE key=?').bind(user).first<{ id: number }>();
+/** The user's actor, made on their first write. `known` is a lookup already under way. */
+export async function actorFor(env: Env, user: string, known = actorOf(env, user)): Promise<number> {
+  const read = () => actorOf(env, user);
+  const found = await known;
   if (found) return found.id;
   await env.ATLAS.prepare("INSERT OR IGNORE INTO actors(key,user,via,at) VALUES(?,?,'account',?)").bind(user, user, Date.now()).run();
   return (await read())!.id;
@@ -530,13 +532,13 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   const shownRows = observations(shown), passedRows = observations(passed);
   // At the revision validation read: a publication or a write in between leaves the crop unrecorded.
   const observed = `c.id=j.value->>'crop' AND c.cut=j.value->>'cut' AND c.char IS j.value->>'char' AND c.revision=j.value->>'revision' AND c.quiz=1 AND c.kind<2`;
-  // A crop a publication anchored takes its baseline from its bundle record alone; only the others read history.
-  // The reviewer's actor is looked up while the evidence is read and stored.
-  const reviewer = actorFor(env, user);
+  // The reviewer's actor is looked up while the evidence is read and stored; a new one is made only after.
+  const reviewer = actorOf(env, user);
   reviewer.catch(() => {});
+  // A crop a publication anchored takes its baseline from its bundle record alone; only the others read history.
   const priors = await priorBaselines(env, captured.filter(c => c.row.kind === 0 && c.row.anchored === null).map(c => c.row.id));
   const evidence = await captureReviews(env, captured, sent, mode, user, at, priors);
-  const actor = await reviewer;
+  const actor = await actorFor(env, user, reviewer);
   const statements = [env.ATLAS.prepare('INSERT INTO submissions(key,actor,request,response,at,evidence) VALUES (?,?,?,?,?,?)').bind(key, actor, signature, JSON.stringify(result), at, evidence),
     ...eventStatements(env, actor, key, at, changes)];
   if (shown.length) statements.push(env.ATLAS.prepare(`INSERT INTO seen(submission,crop,cut,at)
