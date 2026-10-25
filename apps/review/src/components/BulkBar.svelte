@@ -1,9 +1,10 @@
 <script>
   // The bar under a selection in the collection view: how many tiles are chosen, "Looks right" for all of
-  // them, the character to give them all (not while a pair or trigram is chosen, `runs`: its crops are
-  // different characters), the result of the last batch save with its undo, and the crops
-  // it could not save, by reason, each of which opens.
+  // them, the character to give them all or a form written as an ideographic description sequence (not
+  // while a pair or trigram is chosen, `runs`: its crops are different characters), the result of the
+  // last batch save with its undo, and the crops it could not save, by reason, each of which opens.
   import CharacterSearch from './CharacterSearch.svelte'
+  import IdsPick from './IdsPick.svelte'
   import ContributionTerms from './ContributionTerms.svelte'
   import ScriptText from './ScriptText.svelte'
   import Glyph from './Glyph.svelte'
@@ -26,6 +27,7 @@
           onselect={item => { target = item.char; query = item.char }} />
         <button disabled={!count || !target || busy || runs > 0} title={runs ? t('bulk.apply.runs') : undefined} onclick={onapply}>{target ? t('bulk.apply', { char: target }) : t('bulk.chooseFirst')}</button>
       </div>
+      <IdsPick char={target} disabled={busy || runs > 0} title={runs ? t('bulk.apply.runs') : undefined} onuse={sequence => { target = sequence; query = sequence }} />
       <span class="bulk-tools">
         <button class="quiet" disabled={busy} onclick={onselectall}>{t('bulk.selectAll')}</button>
         <button class="quiet" disabled={busy || !count} onclick={onclear}>{t('bulk.clear')}</button>

@@ -66,7 +66,7 @@
     } catch (e) { if (id === request) failed = e.message }
     finally { if (id === request) loading = false }
   }
-  const open = item => inspect(item.id, null, queue, null, item.origin === 'corpus' ? 'corpus' : 'collection')
+  const open = item => inspect(item.id, queue, null, item.origin === 'corpus' ? 'corpus' : 'collection')
   let track = $state(), overviewWidth = $state(1200)
   // The overview names every century it has room for, at least 44 pixels apart.
   const tickStep = $derived(Math.max(1, Math.ceil(centuries.length * 44 / Math.max(1, overviewWidth))))

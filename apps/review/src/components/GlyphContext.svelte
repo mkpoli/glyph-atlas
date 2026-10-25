@@ -5,6 +5,10 @@
   import { corpusCharacter } from '../lib/client.js'
   import { glyphContext } from '../lib/glyphContext.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
+  import { cropAddress } from '../lib/inspector.svelte.js'
+
+  // `onopen(id, event)` opens the glyph shown in the crop inspector; without it, its id links to its page.
+  let { onopen = null } = $props()
 
   // Records already asked for, so passing the pointer back over a glyph shows it without a request.
   const records = new Map()
@@ -37,7 +41,7 @@
       {:else if data || failed}<span class="context-missing">{t('character.image.unavailable')}</span>
       {:else}<span class="shimmer"></span>{/if}
     </div>
-    <code class="context-id">{id}</code>
+    <a class="context-id" href={cropAddress(id, 'corpus')} onclick={event => onopen?.(id, event)}><code>{id}</code><span aria-hidden="true">↗</span><span class="open-label">{t('forms.context.open')}</span></a>
   </aside>
 {/if}
 
@@ -55,6 +59,10 @@
   .context-figure>span.shimmer{flex:1;border-radius:12px}
   .context-figure :global(.crop-viewport){height:260px}
   .context-missing{margin:auto;font-size:12px;color:var(--muted)}
-  .context-id{font-size:9px;color:var(--muted);overflow-wrap:anywhere}
+  .context-id{display:flex;align-items:baseline;gap:6px;font-size:9px;color:var(--muted);overflow-wrap:anywhere;text-decoration:none}
+  .context-id code{font-size:inherit}
+  .open-label{font-size:11px;text-decoration:underline;text-underline-offset:2px}
+  .glyph-context:not(.pinned) .open-label{display:none}
+  .context-id:hover{color:var(--ink)}
   @media(max-width:700px){.glyph-context,.glyph-context.left{left:16px;right:16px;width:auto}.context-figure,.context-figure :global(.crop-viewport){height:200px}}
 </style>
