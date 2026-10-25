@@ -55,7 +55,13 @@ def page_data(run: Path, decisions: dict, form: np.ndarray, stats: dict) -> dict
     old = site[idx]
     rng = np.random.default_rng(0)
 
+    colour = np.load(run / "colour.npz")
+    pic, pic_size = colour["colour"], colour["size"]
+
     def thumb(i: int, edge: int = 64) -> str:
+        h, w = pic_size[i]
+        if h:
+            return _webp(pic[i, :h, :w], edge)
         h, w = size[i]
         return _webp(grey[i, :h, :w], edge)
 
