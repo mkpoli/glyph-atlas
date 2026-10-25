@@ -32,3 +32,17 @@ def test_the_index_replaces_both_tables_of_the_reference_input(tmp_path, monkeyp
     assert db.execute("SELECT query, component, total FROM han_component_names ORDER BY 1").fetchall() == [
         ("⺡", "氵", 1), ("⼥", "女", 2), ("女", "女", 2), ("子", "子", 1), ("氵", "氵", 1)]
     assert {n for (n,) in db.execute("SELECT name FROM written")} == {"han_components", "han_component_names"}
+
+
+def test_no_component_rows_leave_the_reference_input_as_it_was(tmp_path, monkeypatch):
+    monkeypatch.setattr(export.han_components, "rows", list)
+    path = tmp_path / "reference-input.sqlite"
+    with reference_input.writing(path) as db:
+        db.execute("INSERT INTO han_components VALUES('乙', 0, 1, 'U+4E59', 1, 1)")
+    try:
+        export.main(["--input", str(path)])
+    except SystemExit as stop:
+        assert "left as it was" in str(stop)
+    else:
+        raise AssertionError("an empty index was written")
+    assert sqlite3.connect(path).execute("SELECT count(*) FROM han_components").fetchone() == (1,)

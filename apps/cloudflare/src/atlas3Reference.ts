@@ -167,6 +167,8 @@ function indexOf(points: number[], point: number): number {
 export async function componentMatches(env: Env, wanted: Map<string, number>, limit: number, ctx?: ExecutionContext) {
   const none = { codes: [] as string[], more: false };
   const names = await readComponentNames(env, `${PREFIX}components/names.json.gz`, ctx) as ComponentNames | null;
+  // An index loaded empty answers nothing; say so where the Worker's logs show it.
+  if (names && !names.same) console.warn('component index: components/names.json.gz names no component');
   if (!names || wanted.size > COMPONENT_PARTS) return none;
   // Two typed forms of one component (⺡ and 氵) ask for it twice.
   const parts = new Map<string, number>();
