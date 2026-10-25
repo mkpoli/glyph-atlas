@@ -1426,3 +1426,25 @@ def test_a_reviewer_style_read_back_keeps_its_baseline_current(layout, monkeypat
         run(publish, monkeypatch, catalogue(tmp_path / f"{name}.sqlite", [styled("ex:a1", name)]))
         assert crops(remote)[a1]["style"] == code("regular")
         assert remote.query("glyph-atlas-v3", f"SELECT base_style FROM reviews WHERE crop={a1}") == [{"base_style": code(name)}]
+
+
+def test_a_reviewer_style_taken_back_on_the_site_follows_publications_again(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+    styled = lambda name: tuple(name if k == "style" else v for k, v in zip(UNITS, unit("ex:a1", "hl:p1", box)))
+    code = lambda name: remote.query("glyph-atlas-v3", f"SELECT code FROM codes WHERE field='style' AND key='{name}'")[0]["code"]
+    unassessed = code("unassessed")
+    # The local copy knows a reviewer's style; on the site the reviewer has since taken it back.
+    for db in (local, site):
+        db.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,0,0,0,0,0,0,?,?)",
+                   (a1, publish.STYLE_KIND, unassessed))
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,1,0,0,0,0,0,?,NULL)", (a1, publish.STYLE_KIND))
+    site.execute("UPDATE crops SET revision=revision+1 WHERE id=?", (a1,))
+    for db in (local, site):
+        db.commit()
+    # The first publication meets a revision it did not know and reads the crop back; the next gives it the style.
+    for name in ("cursive", "cursive"):
+        run(publish, monkeypatch, catalogue(tmp_path / f"{name}-{len(list(tmp_path.iterdir()))}.sqlite", [styled(name)]))
+    assert crops(remote)[a1]["style"] == code("cursive")
