@@ -12,6 +12,7 @@
   "app.nav.aria": "主要 機能",
   "app.saved": "貯藏됨",
   "bulk.tileSelected": ", 選擇됨",
+  "bulk.tileChecked": ", 確認됨",
   "bulk.tooMany": "짧은 時間에 修正이 너무 많습니다. 1分쯤 기다린 뒤 다시 해 보세요.",
   "bulk.refused.other": "{count}個는 불러온 뒤 바뀌었거나 이미 確認되었습니다. 選擇을 풀고 지금 狀態를 보여 줍니다.",
   "bulk.label": "選擇한 크롭",

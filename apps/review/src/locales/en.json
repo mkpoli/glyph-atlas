@@ -14,6 +14,7 @@
   "app.keptHere": "Kept on this device",
   "app.notSaved": "Not saved",
   "bulk.tileSelected": ", selected",
+  "bulk.tileChecked": ", confirmed",
   "bulk.tooMany": "Too many corrections at once. Wait a minute and try again.",
   "bulk.refused.other": "{count} crops changed since the page loaded or were already checked by someone; they were deselected and shown as they are now.",
   "bulk.refused.one": "{count} crop changed since the page loaded or was already checked by someone; it was deselected and shown as it is now.",

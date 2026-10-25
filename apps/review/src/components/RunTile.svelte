@@ -19,7 +19,7 @@
   let width = $state(0), height = $state(0)
 </script>
 
-{#if run.text}<a class="glyph-tile run-tile collage-cell" class:selected class:decided-checked={checked} {style} data-run={run.id} href={localize(runAddress(run.text))} aria-label={`${run.text} · ${t('run.occurrences', { count: run.n })}`} {...handlers}>
+{#if run.text}<a class="glyph-tile run-tile collage-cell" class:selected class:decided-checked={checked} {style} data-run={run.id} href={localize(runAddress(run.text))} aria-label={`${run.text} · ${t('run.occurrences', { count: run.n })}` + (selected ? t('bulk.tileSelected') : '') + (checked ? t('bulk.tileChecked') : '')} {...handlers}>
   {@render marks?.(run)}
   <span class="run-tile-image" aria-hidden="true" bind:clientWidth={width} bind:clientHeight={height}>{#if run.crops}{#if width && height}<RunImage crops={run.crops} page={run.page} vertical={run.vertical} fill={height / width} />{/if}{:else}<span class="run-tile-text">{run.text}</span>{/if}</span>
   <span class="tile-caption">
