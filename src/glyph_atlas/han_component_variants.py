@@ -360,6 +360,15 @@ def slot(operator: str, index: int, count: int) -> Place:
     return operator, index
 
 
+def readings(where: Place) -> tuple[Place, ...]:
+    """The places a part in `where` may stand for: the middle of ⿲ or ⿳ is an end of the ⿰ or ⿱
+    it was flattened from (⿲氵虫工 is ⿰氵⿰虫工 or ⿰⿰氵虫工), so it is also read as either end."""
+    operator, at = where
+    if operator in FLATTENING and isinstance(at, int):
+        return where, (operator, "first"), (operator, "last")
+    return (where,)
+
+
 def holds(desc: Descriptions, whole: str, part: str, where: Place) -> bool:
     """Whether a description of `whole` has `part` in the place `where`: 廣 (⿸广黃) holds 广 as the
     enclosing part of ⿸. Compared by shape, as `adds` compares."""
@@ -599,11 +608,14 @@ class Maker:
 
     def fits(self, was: str, became: str, where: Place) -> bool:
         """Whether `was` may become `became` in the place `where`: neither holds the other there, or
-        an attesting pair shows the swap there."""
+        an attesting pair shows the swap there. A middle place of ⿲ or ⿳ is read as each place it
+        may stand for (`readings`)."""
         key = (was, became, where)
         if key not in self._fits:
-            self._fits[key] = (where in self.places.get(ordered(was, became), ())
-                               or not (holds(self.desc, became, was, where) or holds(self.desc, was, became, where)))
+            read = readings(where)
+            shown = self.places.get(ordered(was, became), ())
+            self._fits[key] = any(place in shown for place in read) or not any(
+                holds(self.desc, became, was, place) or holds(self.desc, was, became, place) for place in read)
         return self._fits[key]
 
     def whole(self, char: str) -> Iterator[tuple[tuple[Step, ...], Tree, bool]]:

@@ -413,6 +413,18 @@ def test_the_outer_places_of_a_three_part_operator_are_those_of_the_two_part_one
     assert not v.Maker(desc, {"彳": {"行"}, "行": {"彳"}}, {}).fits("彳", "行", v.slot("⿰", 0, 2))
 
 
+def test_the_middle_of_a_flattened_operator_is_read_as_either_end_it_came_from():
+    # ⿲氵虫工 is ⿰氵⿰虫工 or ⿰⿰氵虫工, so its middle 虫 is an end of a ⿰, where 䖵 (⿰虫虫) holds 虫.
+    desc = descriptions({"㳊": ["⿲氵虫工"], "䖵": ["⿰虫虫"]})
+    made = v.Maker(desc, {"虫": {"䖵"}, "䖵": {"虫"}}, {})
+    assert v.readings(v.slot("⿲", 1, 3)) == (("⿰", 1), ("⿰", "first"), ("⿰", "last"))
+    assert not made.fits("虫", "䖵", v.slot("⿲", 1, 3))
+    assert "⿲氵䖵工" not in {d.other for d in v.derive(made, ["㳊"])}
+    # Shown at an end by a pair, the swap is made in the middle too.
+    shown = v.Maker(desc, made.table, {v.ordered("虫", "䖵"): {("⿰", "last")}})
+    assert shown.fits("虫", "䖵", v.slot("⿲", 1, 3))
+
+
 def test_a_swap_below_the_top_is_checked_in_its_own_place():
     desc = descriptions({**IDS_广, "𣘻": ["⿰木⿸广郎"], "𣛭": ["⿰木⿰土广"]})
     forms = {d.other for d in v.derive(maker_广(desc), ["𣘻", "𣛭"])}
