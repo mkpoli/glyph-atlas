@@ -28,8 +28,15 @@
   }
   const apps = $derived(around('contact.matrix.apps', 'space'))
   // The IRC picker starts on the channel for the page's language; lzh pages are Chinese.
-  const spoken = locale() === 'lzh' ? 'zh' : locale().split('-')[0]
-  let irc, picked = $state(IRC_CHANNELS.filter(item => item.language === spoken).map(item => item.channel))
+  const spoken = $derived(locale() === 'lzh' ? 'zh' : locale().split('-')[0])
+  let irc, picked = $state([])
+  $effect.pre(() => { picked = IRC_CHANNELS.filter(item => item.language === spoken).map(item => item.channel) })
+  // Only a press on the backdrop closes the dialog, not one in its padding.
+  function outside(event) {
+    const box = irc.getBoundingClientRect()
+    if (event.target === irc && (event.clientX < box.left || event.clientX > box.right
+        || event.clientY < box.top || event.clientY > box.bottom)) irc.close()
+  }
   const joined = $derived(IRC_CHANNELS.map(item => item.channel).filter(channel => picked.includes(channel)).join(','))
 </script>
 
@@ -46,7 +53,7 @@
       {#each CHATS as chat (chat.name)}
         <li>
           {#if chat.mark === 'irc'}
-            <button type="button" aria-haspopup="dialog" onclick={() => irc.showModal()}><LinkMark name={chat.mark} />{chat.name}</button>
+            <a href={chat.href} rel="noopener" target="_blank" aria-haspopup="dialog" onclick={event => { event.preventDefault(); irc.showModal() }}><LinkMark name={chat.mark} />{chat.name}</a>
           {:else}
             <a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}</a>
           {/if}
@@ -110,10 +117,10 @@
   </section>
 </article>
 
-<dialog class="irc" bind:this={irc} onclick={event => { if (event.target === irc) irc.close() }} aria-labelledby="irc-title">
+<dialog class="irc" bind:this={irc} onclick={outside} aria-labelledby="irc-title">
   <header><h2 id="irc-title">{t('contact.irc.title')}</h2><button type="button" class="icon-button" aria-label={t('contact.irc.close')} onclick={() => irc.close()}>×</button></header>
   <p>{t('contact.irc.body')}</p>
-  <fieldset class="channels" aria-labelledby="irc-title">
+  <fieldset class="channels">
     {#each IRC_CHANNELS as item (item.channel)}
       <label><input type="checkbox" value={item.channel} bind:group={picked} /><span lang={item.lang}>{item.name}</span><code>{item.channel}</code></label>
     {/each}
@@ -137,9 +144,8 @@
   .contact ol { padding-left: 1.4em; display: grid; gap: 4px; }
   .contact code { font-size: 13px; padding: 1px 5px; border-radius: 4px; background: var(--surface-sunken); }
   .doors { list-style: none; padding: 0; margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px; }
-  .doors a, .doors button { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; font-weight: 500; }
-  .doors button { font: inherit; font-weight: 500; color: inherit; cursor: pointer; }
-  .doors a:hover, .doors button:hover { border-color: var(--line-hover); }
+  .doors a { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; font-weight: 500; }
+  .doors a:hover { border-color: var(--line-hover); }
   .doors :global(.link-mark) { width: 18px; height: 18px; margin: 0; vertical-align: 0; }
   .doors small { color: var(--muted); font-weight: 400; }
   .message-form { display: grid; gap: 6px; margin-top: 12px; }
