@@ -457,7 +457,7 @@ def _maker() -> han_component_variants.Maker:
     desc = _descriptions()
     places = han_component_variants.places(desc, {
         sub: [(pair["a"], pair["b"]) for pair in row["pairs"]] for sub, row in component_variants().items()})
-    return han_component_variants.Maker(desc, _substitution_table(), han_component_variants.STEPS, places)
+    return han_component_variants.Maker(desc, _substitution_table(), places, han_component_variants.STEPS)
 
 
 @cache
@@ -493,7 +493,7 @@ def _derive(char: str) -> list[dict[str, Any]]:
     ⿰⿱匕失⿱コ疋 for 疑 (𠤕 is ⿱匕矢), never a sequence rebuilt three levels down.
     """
     found: dict[str, dict[str, Any]] = {}
-    for form in han_component_variants.derive(_descriptions(), _substitution_table(), [char], made=_maker()):
+    for form in han_component_variants.derive(_maker(), [char]):
         if form.encoded:
             if tuple(sorted((char, form.other), key=ord)) in _stated_pairs():
                 continue
