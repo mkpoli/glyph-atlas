@@ -1,0 +1,514 @@
+<title>__CHAR__ Abbreviation Forms</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: a single reading column of evidence panels, wide panels scroll inside themselves. */
+:root {
+  --bg: #f1f2ee; --panel: #fbfbf8; --ink: #1d2126; --muted: #5d646c; --line: #d7dad3;
+  --accent: #2c4a7a; --accent-soft: #dfe5ef; --warn: #a3542a; --thumb: none; --thumb-bg: #ffffff;
+  --display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --body: "IBM Plex Sans", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --g0: #2f6db5; --g1: #c4572f; --g2: #3f8f5a; --g3: #8a5bb0; --g4: #b58a1c; --g5: #2b9aa0;
+  --g6: #b8477a; --g7: #6b7a2a; --g8: #7a5636; --g9: #4f5fa8; --g10: #a83d3d; --g11: #3c7f86;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15181c; --panel: #1c2026; --ink: #e5e7ea; --muted: #9aa2ab; --line: #30363e;
+  --accent: #9db7e3; --accent-soft: #263247; --warn: #e3936b; --thumb: invert(1) contrast(1.1); --thumb-bg: #ffffff;
+  --g0: #6ea3e6; --g1: #ea8a63; --g2: #74c08c; --g3: #b994dc; --g4: #e0bb55; --g5: #5fc6cb;
+  --g6: #e07fae; --g7: #a9b95d; --g8: #c39a74; --g9: #8e9ce0; --g10: #e07a7a; --g11: #74b7be;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15181c; --panel: #1c2026; --ink: #e5e7ea; --muted: #9aa2ab; --line: #30363e;
+  --accent: #9db7e3; --accent-soft: #263247; --warn: #e3936b; --thumb: invert(1) contrast(1.1); --thumb-bg: #ffffff;
+  --g0: #6ea3e6; --g1: #ea8a63; --g2: #74c08c; --g3: #b994dc; --g4: #e0bb55; --g5: #5fc6cb;
+  --g6: #e07fae; --g7: #a9b95d; --g8: #c39a74; --g9: #8e9ce0; --g10: #e07a7a; --g11: #74b7be;
+  color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--body); }
+main { max-width: 1120px; margin: 0 auto; padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px; }
+h1 { font: 700 2.1rem/1.2 var(--display); margin: 0; text-wrap: balance; }
+h1 .han { font-size: 1.3em; margin-right: .15em; }
+h2 { font: 700 1.35rem/1.3 var(--display); margin: 0 0 4px; text-wrap: balance; }
+p { margin: 0; max-width: 70ch; }
+.lede { color: var(--muted); }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.note { font-size: 13px; color: var(--muted); }
+.chip { display: inline-flex; align-items: center; gap: 4px; font: 12px/1 var(--mono); padding: 4px 7px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+.chip:hover, .chip:focus-visible { border-color: var(--accent); outline: none; }
+.chip.flag { border-style: dashed; color: var(--warn); }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+img.t { filter: var(--thumb); background: var(--thumb-bg); border-radius: 3px; object-fit: contain; }
+
+.forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+.form { border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 10px; align-content: start; background: var(--bg); }
+.form .draws { display: flex; gap: 8px; justify-content: center; }
+.form svg { width: 100%; max-width: 130px; aspect-ratio: 1; fill: var(--ink);
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 50% 50%; background-position: center; border: 1px solid var(--line); border-radius: 4px; }
+.form h3 { margin: 0; font: 600 14px/1.3 var(--body); }
+.form p { font-size: 13px; color: var(--muted); }
+.form .chips, .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.han-card { display: grid; place-items: center; font: 500 92px/1 var(--display); aspect-ratio: 1; max-width: 130px; width: 100%; justify-self: center;
+  border: 1px solid var(--line); border-radius: 4px; }
+.verdict { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; display: grid; gap: 8px; }
+.verdict ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 78ch; }
+
+.pairs { display: flex; flex-wrap: wrap; gap: 10px; }
+.pair { display: grid; grid-template-columns: 56px 56px; gap: 2px; }
+.pair img { width: 56px; height: 56px; }
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; max-width: 78ch; font-size: 14px; }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.controls label { font-weight: 500; }
+input[type=range] { width: min(320px, 100%); accent-color: var(--accent); }
+.stat { font: 13px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--bg); color: var(--ink); font: 13px var(--body); padding: 5px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--panel); }
+
+.tree-wrap { overflow-x: auto; }
+.tree { display: grid; grid-template-columns: minmax(470px, 1fr) 360px; min-width: 830px; }
+.leaf { box-sizing: border-box; display: flex; align-items: center; gap: 8px; height: 52px; border-bottom: 1px solid var(--line); padding-right: 8px; cursor: pointer; }
+.leaf:hover, .leaf.on { background: var(--accent-soft); }
+.leaf .name { width: 92px; flex: none; font: 12px/1.25 var(--mono); display: grid; gap: 1px; }
+.leaf .name b { font: 600 13px var(--mono); display: flex; align-items: center; gap: 5px; }
+.leaf .name span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.leaf .strip { display: flex; gap: 3px; overflow: hidden; }
+.leaf img { width: 40px; height: 44px; flex: none; }
+.leaf img.s { width: 32px; height: 44px; opacity: .85; }
+.leaf .sep { width: 1px; height: 36px; background: var(--line); flex: none; margin: 0 3px; }
+#treeSvg { display: block; }
+#treeSvg .link { fill: none; stroke-width: 2; }
+#treeSvg .hit { fill: transparent; cursor: pointer; }
+#treeSvg text { font: 10px var(--mono); fill: var(--muted); }
+
+.gallery-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.gallery { display: grid; gap: 14px; max-height: 660px; overflow: auto; }
+.gal-row { display: grid; gap: 6px; }
+.gal-row h4 { margin: 0; font: 600 13px var(--mono); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gal-row h4 small { font: 12px var(--mono); color: var(--muted); font-weight: 400; }
+.gal-imgs { display: flex; flex-wrap: wrap; gap: 4px; }
+.gal-imgs img { width: 58px; height: 64px; }
+
+.xt-wrap { overflow-x: auto; }
+table.xt { border-collapse: collapse; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+table.xt th, table.xt td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.xt th { color: var(--muted); font-weight: 400; }
+table.xt th.g { text-align: center; cursor: pointer; }
+table.xt td.c { position: relative; min-width: 36px; }
+table.xt tr.check td:first-child, table.xt tr.check th { color: var(--accent); font-weight: 600; }
+table.xt td.c span { position: relative; }
+table.xt td.c i { position: absolute; inset: 2px; border-radius: 2px; background: var(--accent); }
+
+.split { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 16px; }
+@media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+#plot { width: 100%; height: 620px; min-width: 0; }
+.peek { display: grid; gap: 8px; align-content: start; }
+.peek img { width: 150px; height: 165px; }
+.svg-wrap { overflow-x: auto; }
+#sil text { font: 10px var(--mono); fill: var(--muted); }
+#sil .bar { cursor: pointer; }
+dl.method { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: 14px; }
+dl.method dt { color: var(--muted); }
+dl.method dd { margin: 0; min-width: 0; }
+a { color: var(--accent); }
+@media (max-width: 560px) { dl.method { grid-template-columns: 1fr; } dl.method dd { margin-bottom: 6px; } }
+.cmp-wrap { overflow-x: auto; }
+table.cmp { border-collapse: separate; border-spacing: 4px; font: 12px var(--mono); min-width: 860px; }
+table.cmp th { font-weight: 600; text-align: left; padding: 2px 4px; }
+table.cmp th.f { display: flex; align-items: center; gap: 6px; }
+table.cmp td.c { white-space: nowrap; padding-right: 6px; }
+table.cmp td.cell { width: 24%; vertical-align: top; border: 1px solid var(--line); border-radius: 6px; padding: 4px; cursor: pointer; background: var(--panel); }
+table.cmp td.cell.major { border-color: var(--muted); }
+table.cmp td.cell.minor { border: 1.5px dashed var(--warn); }
+table.cmp td.cell.empty { cursor: default; opacity: .45; }
+table.cmp td.cell.on { outline: 2px solid var(--accent); }
+.cell .n { color: var(--muted); display: block; margin-bottom: 3px; }
+.cell .ths { display: flex; flex-wrap: wrap; gap: 2px; }
+.cell .ths img { width: 30px; height: 30px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.detail { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.detail h3 { margin: 0 0 8px; font: 600 14px var(--body); }
+.detail .grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.detail figure { margin: 0; display: grid; justify-items: center; gap: 1px; font: 11px var(--mono); color: var(--muted); }
+.detail figure img { width: 60px; height: 60px; }
+.pop { position: fixed; z-index: 50; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: 380px; }
+.pop h4 { margin: 0 0 6px; font: 600 12px var(--mono); }
+.pop .ths { display: flex; flex-wrap: wrap; gap: 3px; }
+.pop img { width: 42px; height: 42px; }
+.how { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 10px 0 14px; }
+.how > div { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--bg); font-size: 14px; }
+.how b { display: block; margin-bottom: 4px; }
+.how p { margin: 0; }
+ul.plain { margin: 0; padding-left: 18px; }
+.stale { color: var(--warn); }
+</style>
+
+<main>
+  <header style="display:grid;gap:8px">
+    <h1><span class="han">__CHAR__</span>Abbreviation forms</h1>
+    <p class="lede" id="lede"></p>
+    <p class="note stale" id="stale" hidden>The decisions file was written for another run of this analysis, so its shape cluster numbers may not match the clusters below. Rebuild the decisions from this run before relying on the forms.</p>
+  </header>
+
+  <section>
+    <h2>Proposed forms</h2>
+    <p class="note">Each card links to the shape clusters (L1–L24, below) that most of its crops come from. The drawings are normalised editorial representatives, not attested glyphs.</p>
+    <div class="forms" id="forms"></div>
+    <div class="verdict"><b>Reading of the evidence</b><ol id="verdict"></ol></div>
+  </section>
+
+  <section>
+    <h2>From crop to shape</h2>
+    <p class="note">Each crop is restored to clean ink and compared by a model trained to ignore ink weight, dry-brush texture, broken strokes, slant and position. Whether a crop is a written __CHAR__ at all is left to the site's character classifier.</p>
+    <ol class="steps">
+      <li>Pick the crisp crops: high contrast, sharp edges, few specks, at most four pieces of ink. Their ink, with gaps closed and edges smoothed, is the clean state.</li>
+      <li>Train a restoration network on copies of those crops made to look worse: faint, blurred or dry-brush ink, stained or grainy paper, specks, blots and fragments of a neighbouring character. It learns to return the clean ink.</li>
+      <li>Restore every crop, drop specks and edge fragments, trim it to the ink and fit it into a 96-pixel frame, keeping its proportions.</li>
+      <li>Train an encoder on the restored images alone: two randomly altered copies of a crop must be matched to each other and to no other crop. The alterations change position, size, proportions, slant, ink weight, broken strokes, blur, specks and stray fragments, so the encoder learns to disregard them.</li>
+          <li>Decide written __CHAR__ or abbreviation with the site's own character classifier, which reads the character better than any shape measure; sort the abbreviations by shape (steps 1–4).</li>
+</ol>
+    <div class="pairs" id="pairs"></div>
+    <p class="note" id="emptyNote"></p>
+  </section>
+
+  <section>
+    <h2>Hierarchy</h2>
+    <p class="note">Ward tree over every crop, shown down to 24 shape clusters. Each row shows five crops and three of them restored, with the site clusters most of its crops came from. Click a row or a branch point to inspect it; the slider cuts the tree into <i>k</i> groups and colours every view.</p>
+    <div class="controls">
+      <label for="k">Groups</label>
+      <input type="range" id="k" min="2" max="24" value="6">
+      <span class="stat" id="kstat"></span>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="tree-wrap"><div class="tree"><div id="leaves"></div><svg id="treeSvg"></svg></div></div>
+  </section>
+
+  <section id="gallerySec">
+    <div class="gallery-head"><h2 id="galTitle">Crops</h2>
+      <div class="seg" role="group" aria-label="Show"><button type="button" id="showCrops" aria-pressed="true">Crops</button><button type="button" id="showShapes" aria-pressed="false">Restored</button></div></div>
+    <span class="note" id="galNote"></span>
+    <div class="gallery" id="gallery"></div>
+  </section>
+
+  <section>
+    <h2>Site clusters, shape clusters and forms</h2>
+    <p class="note">Each band is a set of crops, running from the site's cluster (left) through the shape cluster it lands in (middle) to the proposed form (right). Band width is the number of crops, and colour is the form. Bands of fewer than five crops are left out. Hover a band or a node for counts; drag a node to untangle.</p>
+    <div class="controls"><label><input type="checkbox" id="flowMid" checked> Show shape clusters</label></div>
+    <div id="flow" style="height:960px"></div>
+  </section>
+
+  <section>
+    <h2>Crop by crop: site clusters against forms</h2>
+    <div class="how">
+      <div><b>Site clusters (C1–C__NSITE__)</b><p>The site's character classifier is trained to tell characters apart. Each crop of __CHAR__ passes through it, and the layer just before its answer is kept as a 512-number description of the crop. Spherical k-means then splits the crops into __NSITE__ groups by those descriptions (method <code>classifier-penultimate/spherical-kmeans-v1</code>, revision __REVISION__). Because the classifier learnt to give every way of writing __CHAR__ the same answer, it recognises a written __CHAR__ reliably, but the differences left between groups are partly form and partly paper, crop box and ink weight.</p></div>
+      <div><b>Proposed forms</b><p>The same classifier decides only whether a crop is a written __CHAR__ or an abbreviation. Each abbreviation is restored to clean ink and described by an encoder trained on the __CHAR__ crops to disregard paper, ink weight, texture and position, so only the stroke shape is left to compare. A Ward tree groups those descriptions into shape clusters, and its main branches become the forms.</p></div>
+    </div>
+    <p class="note">Each row is a site cluster and each column a proposed form; a cell holds the crops of that cluster placed in that form. Read across a row to see whether a site cluster holds one shape; read down a column to see whether a form does. Dashed cells are the crops the two groupings disagree on. Click a cell to see up to 40 of its crops with their shape cluster.</p>
+    <div class="cmp-wrap"><table class="cmp" id="cmp"></table></div>
+    <div class="detail" id="cmpDetail"><p class="note">Click a cell.</p></div>
+  </section>
+
+  <section>
+    <h2>Where the site's clusters went</h2>
+    <p class="note">Share of each site cluster's crops in each group of the current cut. Highlighted rows are the site clusters the decisions name as checks. Click a column to inspect that group.</p>
+    <div class="xt-wrap"><table class="xt" id="xt"></table></div>
+  </section>
+
+  <section>
+    <h2>Shape space</h2>
+    <p class="note">3-D UMAP of the encoder features; 60 crops per shape cluster are drawn, coloured by the current cut, with L labels at cluster centres. Hover a point to see its crop; drag to rotate; click to open its cluster.</p>
+    <div class="split"><div id="plot"></div>
+      <div class="peek"><img class="t" id="peekImg" alt="Crop under the pointer" hidden><span class="stat" id="peekTxt">Hover a point</span></div></div>
+  </section>
+
+  <section>
+    <h2>How separable is each cut?</h2>
+    <p class="note">Mean silhouette of the crops when the tree is cut into <i>k</i> groups, measured on the encoder features (cosine, 4,000 sampled). Higher means tighter, better-separated groups. Click a bar to apply that cut.</p>
+    <div class="svg-wrap"><svg id="sil" width="700" height="170" viewBox="0 0 700 170"></svg></div>
+  </section>
+
+  <section>
+    <h2>Method and sources</h2>
+    <dl class="method">
+      <dt>Crops</dt><dd>Glyph Atlas forms page for __CHAR__, <a href="https://glyphatlas.org/en/forms/__CODE__">glyphatlas.org/en/forms/__CODE__</a>, clustering revision __REVISION__; C numbers are the site's cluster numbers. Pixels cut from the corpus scans behind that page, at most 160 px on the long side.</dd>
+      <dt>Restoration</dt><dd>U-Net (Ronneberger, Fischer &amp; Brox 2015, arXiv:1505.04597), four levels, 32–256 channels, trained from scratch for __STEPS__ steps on __CRISP__ crisp crops of __CHAR__ (contrast ≥ 0.55, edge sharpness ≥ 0.35, specks &lt; 2% of ink, ≤ 4 pieces, ink already near its smoothed form). Targets: Otsu ink without specks and edge fragments, closed and smoothed (Gaussian σ 1.2). Inputs: the same crops, synthetically degraded. Binary cross-entropy plus Dice loss, 96 px. Thresholding and filtering with scikit-image 0.26.</dd>
+      <dt>Encoder</dt><dd>ResNet-18 (He et al. 2016, arXiv:1512.03385; timm <code>resnet18</code>, one input channel, no pretrained weights) trained contrastively on the __USABLE__ restored crops of __CHAR__ alone, with no labels: SimCLR objective (Chen et al. 2020, arXiv:2002.05709), temperature 0.1, batch 512, __EPOCHS__ epochs at 64 px. Two encoders were trained, the second with stronger ink-weight changes, and their 512-d features joined, centred and L2-normalised. Replacing hand-written cleaning with a learned model follows a suggestion by 金沢クレハ (刈羽マキ) on Discord, 24 October 2026 (personal communication, unpublished), who proposed a variational autoencoder followed by k-means; a contrastive encoder was used instead so that pixel layout does not dominate the features.</dd>
+      <dt>__CHAR__ or abbreviation</dt><dd id="writtenMethod"></dd>
+      <dt>Tree</dt><dd>UMAP to 10 dimensions (McInnes, Healy &amp; Melville 2018, arXiv:1802.03426; n_neighbors 30, min_dist 0, cosine, seed 0), then SciPy Ward linkage over all crops. The 24 leaves are the tree cut into 24 groups; the branches above them are the tree's own top merges. Branch lengths use a square-root scale.</dd>
+      <dt>3-D map</dt><dd>UMAP of the 10-d coordinates to 3-d (n_neighbors 30, min_dist 0.2). Local neighbourhoods are kept; distances between far groups are not to scale.</dd>
+      <dt>Limits</dt><dd><span id="limits"></span></dd>
+      <dt id="sourcesTerm">Also</dt><dd id="sourcesDef"><ul id="sources" class="plain"></ul></dd>
+      <dt>Drawings</dt><dd>Editorial normalisations drawn from contact sheets of each group's crops, 1000-unit em, one filled path each.</dd>
+    </dl>
+  </section>
+</main>
+
+<script id="data" type="application/json">__DATA__</script>
+<script id="svgs" type="application/json">__SVGS__</script>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<script>
+const POP = Object.assign(document.createElement('div'), { className: 'pop', hidden: true }); document.body.appendChild(POP);
+function showPop(x, y, title, thumbs) {
+  POP.innerHTML = `<h4>${title}</h4>` + (thumbs.length ? `<div class="ths">${thumbs.slice(0, 16).map(b => `<img class="t" alt="" src="data:image/webp;base64,${b}">`).join('')}</div>` : '');
+  POP.hidden = false;
+  const r = POP.getBoundingClientRect();
+  POP.style.left = Math.min(x + 14, innerWidth - r.width - 8) + 'px';
+  POP.style.top = (y + 14 + r.height > innerHeight ? y - r.height - 10 : y + 14) + 'px';
+}
+const hidePop = () => { POP.hidden = true; };
+const D = JSON.parse(document.getElementById('data').textContent);
+const SVG = JSON.parse(document.getElementById('svgs').textContent);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const L = D.leaves, NL = L.length, NODES = D.nodes, ROOT = NODES.length - 1;
+const name = c => 'L' + (c + 1);
+const webp = b => `data:image/webp;base64,${b}`, png = b => `data:image/png;base64,${b}`;
+const topOld = (c, n = 3) => L[c].old.map((v, i) => [v, i]).filter(([v]) => v > 0).sort((a, b) => b[0] - a[0]).slice(0, n);
+const leafSet = arr => arr.map(x => x - 1);
+
+const FORMS = D.forms;
+const ST = D.stats || {}, CH = D.meta.char, fmt = v => v.toLocaleString('en-GB');
+const VERDICT = [
+  ...(ST.agree === undefined ? [] : [`The site's classifier and the shape model agree on written ${CH} against abbreviation for ${fmt(ST.agree)} of ${fmt(ST.agree + ST.disagree)} crops. The classifier decides the other ${fmt(ST.disagree)}: ${fmt(ST.to_written)} become ${CH} and ${fmt(ST.to_abbreviation)} become abbreviations.`]),
+  ...D.notes,
+];
+
+// forms
+// the site clusters most of whose crops went to form i
+const mostly = i => { const s = Object.keys(D.matrix).map(Number).map(c => { const tot = D.matrix[c].reduce((a, x) => a + x.n, 0); return [c, tot ? D.matrix[c][i].n / tot : 0]; }).filter(([, v]) => v >= 0.5).sort((a, b) => b[1] - a[1]);
+  return s.length ? 'Most of ' + s.map(([c, v]) => `C${c} (${Math.round(100 * v)}%)`).join(', ') : 'No site cluster mostly'; };
+document.getElementById('forms').innerHTML = FORMS.map((f, i) => {
+  const vis = f.svgs ? `<div class="draws">${f.svgs.map(k => SVG[k]).join('')}</div>`
+    : f.han ? `<div class="han-card" lang="ja">${f.han}</div>`
+    : f.crop !== undefined ? `<div class="draws"><img class="t" style="width:130px;height:130px" alt="A crop from ${name(f.crop)}" src="${webp(L[f.crop].crops[f.cropAt ?? 0])}"></div>` : '';
+  const n = D.formCount ? D.formCount[i] : f.leaves.reduce((s, l) => s + L[l - 1].count, 0);
+  return `<div class="form">${vis}<h3>${f.title} <span class="stat">${n.toLocaleString('en-GB')}</span></h3><p>${f.text}</p><p class="stat">${mostly(i)}</p>
+    <div class="chips"><button class="chip${f.flag ? ' flag' : ''}" data-ls="${f.leaves.join(',')}">all</button>${f.leaves.map(l => `<button class="chip${f.flag ? ' flag' : ''}" data-ls="${l}">${name(l - 1)}</button>`).join('')}</div></div>`;
+}).join('');
+document.querySelectorAll('#forms svg').forEach(s => s.setAttribute('aria-hidden', 'true'));
+document.getElementById('forms').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) { show(leafSet(b.dataset.ls.split(',').map(Number))); jump(); } });
+document.getElementById('verdict').innerHTML = VERDICT.map(v => `<li>${v}</li>`).join('');
+const jump = () => document.getElementById('gallerySec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+// crop → shape examples
+const ex = L.map((l, i) => [i, 0]).filter(([i]) => i % 2 === 0 && L[i].count).slice(0, 10);
+document.getElementById('pairs').innerHTML = ex.map(([c, j]) => `<div class="pair" title="${name(c)}"><img class="t" alt="" src="${webp(L[c].crops[j])}"><img class="t" alt="" src="${png(L[c].shapes[j])}"></div>`).join('');
+document.getElementById('emptyNote').textContent = `${D.empty} of ${D.total.toLocaleString('en-GB')} crops had too little contrast or no pixels on disk and are left out.`;
+document.getElementById('limits').textContent = `Restoration is learned from crisp crops of this character, so it can sharpen a faint stroke into a confident one or join strokes that were separate; compare the crop with its restored image before relying on it. The encoder learns with no labels, so what it treats as similar follows from the alterations chosen for training, and heavy ink blots still pull crops together. ${D.empty} crops are left out. The tree is a guide for looking at the crops.`;
+document.getElementById('lede').textContent = `All ${fmt(D.total)} crops of ${D.meta.code_point} on Glyph Atlas, sorted one by one: the site's character classifier decides which are a written ${CH}, and stroke shape sorts the abbreviations. Use it to decide which shapes become separate forms.`;
+document.getElementById('stale').hidden = !D.meta.stale;
+document.getElementById('writtenMethod').textContent = ST.agree === undefined ? 'No form is marked as the written character, so every crop keeps the form of its shape cluster.' : `Logistic regression (scikit-learn, class-balanced) on the site classifier's 512-d penultimate embedding, L2-normalised. A site cluster counts as written ${CH} when most of its crops fall in the written form's shape clusters (here C${ST.written_clusters.join(', C')}). The regression learns from the crops where site cluster and shape cluster agree (${(100 * ST.held_out_accuracy).toFixed(1)}% five-fold accuracy on them, a figure inflated because the site's clusters come from the same embedding) and decides the crops where they disagree. A crop moved out of ${CH} takes the majority form of its 15 nearest abbreviated crops in the encoder space.`;
+document.getElementById('sources').innerHTML = D.sources.map(s => `<li>${s}</li>`).join('');
+if (!D.sources.length) ['sourcesTerm', 'sourcesDef'].forEach(id => document.getElementById(id).remove());
+
+// tree geometry
+const ROW = 52;
+const pos = {};
+function place(k) {
+  const kids = NODES[k].kids.map(kd => 'node' in kd ? place(kd.node) : { y: kd.leaf * ROW + ROW / 2, h: 0, leaves: [kd.leaf] });
+  return pos[k] = { y: (kids[0].y + kids[1].y) / 2, h: NODES[k].h, leaves: [...kids[0].leaves, ...kids[1].leaves], kids };
+}
+place(ROOT);
+const maxH = NODES[ROOT].h;
+
+let k = 6, groupOf = {}, colourOf = {}, selected = null, mode = 'crops';
+function applyCut() {
+  const g = D.cuts[k].groups, seen = new Map();
+  for (let c = 0; c < NL; c++) if (!seen.has(g[c])) seen.set(g[c], seen.size);
+  for (let c = 0; c < NL; c++) { groupOf[c] = seen.get(g[c]); colourOf[c] = css(`--g${groupOf[c] % 12}`); }
+  document.getElementById('kstat').textContent = `k = ${k} · silhouette ${D.cuts[k].sil.toFixed(3)}`;
+  const groups = [...seen.values()].map(gi => [...Array(NL).keys()].filter(c => groupOf[c] === gi));
+  document.getElementById('legend').innerHTML = groups.map(ms => `<button class="chip" data-ls="${ms.join(',')}"><span class="dot" style="background:${colourOf[ms[0]]}"></span>${ms.length > 1 ? name(ms[0]) + '–' + name(ms[ms.length - 1]) : name(ms[0])}</button>`).join('');
+  drawTree(); drawPlotColours(); drawSil(); drawXT(groups);
+}
+document.getElementById('legend').addEventListener('mousemove', e => { const b = e.target.closest('.chip'); if (!b) return hidePop(); const ls = b.dataset.ls.split(',').map(Number); showPop(e.clientX, e.clientY, `${b.textContent} · ${ls.reduce((s, l) => s + L[l].count, 0).toLocaleString('en-GB')} crops`, lThumbs(ls)); });
+document.getElementById('legend').addEventListener('mouseleave', hidePop);
+document.getElementById('legend').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) show(b.dataset.ls.split(',').map(Number)); });
+
+const leavesEl = document.getElementById('leaves');
+leavesEl.innerHTML = L.map((l, c) => `<div class="leaf" data-c="${c}" tabindex="0"><div class="name"><b><span class="dot"></span>${name(c)}</b><span>${l.count} · ${topOld(c, 2).map(([, i]) => 'C' + i).join(' ')}</span></div>
+  <div class="strip">${l.crops.slice(0, 5).map(b => `<img class="t" alt="" src="${webp(b)}">`).join('')}<span class="sep"></span>${l.shapes.slice(0, 3).map(b => `<img class="t s" alt="" src="${png(b)}">`).join('')}</div></div>`).join('');
+leavesEl.addEventListener('click', e => { const r = e.target.closest('.leaf'); if (r) show([+r.dataset.c]); });
+leavesEl.addEventListener('keydown', e => { const r = e.target.closest('.leaf'); if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); show([+r.dataset.c]); } });
+
+function drawTree() {
+  const svg = document.getElementById('treeSvg'), W = 360, H = NL * ROW, pad = 12;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H + 20}`); svg.setAttribute('width', W); svg.setAttribute('height', H + 20);
+  const x = h => pad + Math.sqrt(h / maxH) * (W - 2 * pad - 10);
+  const col = nd => new Set(nd.leaves.map(c => groupOf[c])).size === 1 ? colourOf[nd.leaves[0]] : css('--muted');
+  let out = '';
+  const nodesSorted = Object.entries(pos);
+  nodesSorted.forEach(([, nd]) => {
+    nd.kids.forEach(ch => out += `<path class="link" stroke="${col(ch)}" d="M${x(ch.h)} ${ch.y}H${x(nd.h)}"/>`);
+    out += `<path class="link" stroke="${col(nd)}" d="M${x(nd.h)} ${nd.kids[0].y}V${nd.kids[1].y}"/>`;
+  });
+  const hk = D.cuts[k].height, hk1 = D.cuts[k + 1]?.height ?? 0, cx = x((hk + hk1) / 2);
+  out += `<line x1="${cx}" x2="${cx}" y1="0" y2="${H}" stroke="${css('--accent')}" stroke-dasharray="4 4" stroke-width="1.5"/>`;
+  nodesSorted.forEach(([i, nd]) => out += `<g class="node" data-i="${i}"><circle cx="${x(nd.h)}" cy="${nd.y}" r="4" fill="${col(nd)}"/><circle class="hit" cx="${x(nd.h)}" cy="${nd.y}" r="11"><title>${nd.leaves.length} clusters</title></circle></g>`);
+  svg.innerHTML = out;
+  leavesEl.querySelectorAll('.leaf').forEach(r => r.querySelector('.dot').style.background = colourOf[r.dataset.c]);
+}
+document.getElementById('treeSvg').addEventListener('click', e => { const g = e.target.closest('.node'); if (g) show([...pos[g.dataset.i].leaves].sort((a, b) => a - b)); });
+
+function show(cs) {
+  selected = new Set(cs);
+  leavesEl.querySelectorAll('.leaf').forEach(r => r.classList.toggle('on', selected.has(+r.dataset.c)));
+  const total = cs.reduce((s, c) => s + L[c].count, 0);
+  document.getElementById('galTitle').textContent = cs.length > 6 ? `${cs.length} shape clusters` : cs.map(name).join(', ');
+  document.getElementById('galNote').textContent = `${total.toLocaleString('en-GB')} crops; up to 48 per cluster, from its centre outwards`;
+  renderGallery(); drawPlotColours();
+}
+function renderGallery() {
+  if (!selected) return;
+  document.getElementById('gallery').innerHTML = [...selected].map(c => `<div class="gal-row"><h4><span class="dot" style="background:${colourOf[c]}"></span>${name(c)} · ${L[c].count}
+    <small>${topOld(c, 5).map(([v, i]) => `C${i} ${Math.round(100 * v / L[c].count)}%`).join(' · ')}</small></h4>
+    <div class="gal-imgs">${(mode === 'crops' ? L[c].crops.map(b => `<img class="t" alt="" src="${webp(b)}">`) : L[c].shapes.map(b => `<img class="t" alt="" src="${png(b)}">`)).join('')}</div></div>`).join('');
+}
+for (const [id, m] of [['showCrops', 'crops'], ['showShapes', 'shapes']]) document.getElementById(id).addEventListener('click', () => {
+  mode = m; document.getElementById('showCrops').setAttribute('aria-pressed', m === 'crops'); document.getElementById('showShapes').setAttribute('aria-pressed', m === 'shapes'); renderGallery(); });
+
+// crosstab: site cluster x current group
+function drawXT(groups) {
+  const checks = new Set(D.checks);
+  const rows = [...D.checks, ...[...Array(D.nsite).keys()].map(i => i + 1).filter(c => !checks.has(c))];
+  let h = `<thead><tr><th>site</th><th>crops</th>${groups.map(ms => `<th class="g" data-ls="${ms.join(',')}"><span class="dot" style="display:inline-block;background:${colourOf[ms[0]]}"></span> ${ms.length > 1 ? name(ms[0]) + '–' + name(ms[ms.length - 1]) : name(ms[0])}</th>`).join('')}</tr></thead><tbody>`;
+  rows.forEach(c => {
+    const tot = L.reduce((s, l) => s + l.old[c], 0);
+    h += `<tr class="${checks.has(c) ? 'check' : ''}"><td>C${c}</td><td>${tot}</td>${groups.map(ms => { const v = ms.reduce((s, l) => s + L[l].old[c], 0) / Math.max(1, tot);
+      return `<td class="c"><i style="opacity:${(v * 0.85).toFixed(2)}"></i><span style="color:${v > 0.5 ? 'var(--panel)' : 'inherit'}">${v >= 0.005 ? Math.round(v * 100) : ''}</span></td>`; }).join('')}</tr>`;
+  });
+  document.getElementById('xt').innerHTML = h + '</tbody>';
+}
+document.getElementById('xt').addEventListener('click', e => { const th = e.target.closest('th.g'); if (th) { show(th.dataset.ls.split(',').map(Number)); jump(); } });
+
+// 3-D
+const P = D.points; let plotReady = false;
+function drawPlot() {
+  if (!window.Plotly) { document.getElementById('plot').innerHTML = '<p class="note">The 3-D view needs Plotly, which did not load.</p>'; return; }
+  const ink = css('--ink'), line = css('--line');
+  const axis = { showticklabels: false, title: '', gridcolor: line, zerolinecolor: line, showbackground: false };
+  Plotly.newPlot('plot', [
+    { type: 'scatter3d', mode: 'markers', x: P.map(p => p[1]), y: P.map(p => p[2]), z: P.map(p => p[3]), marker: { size: 3, opacity: 0.8, color: P.map(p => colourOf[p[0]]) }, hoverinfo: 'none' },
+    { type: 'scatter3d', mode: 'text', x: D.xyz_centre.map(v => v[0]), y: D.xyz_centre.map(v => v[1]), z: D.xyz_centre.map(v => v[2]), text: L.map((_, c) => name(c)),
+      textfont: { color: ink, size: 12, family: 'IBM Plex Mono, monospace' }, hoverinfo: 'none' },
+  ], { paper_bgcolor: 'rgba(0,0,0,0)', margin: { l: 0, r: 0, t: 0, b: 0 }, showlegend: false,
+    scene: { aspectmode: 'cube', xaxis: axis, yaxis: axis, zaxis: axis, camera: { eye: { x: 1.3, y: 1.3, z: 0.8 } } } }, { displaylogo: false, responsive: true });
+  const el = document.getElementById('plot');
+  el.on('plotly_hover', ev => { const pt = ev.points[0]; if (pt.curveNumber !== 0) return; const p = P[pt.pointNumber];
+    const im = document.getElementById('peekImg'); im.src = webp(D.pthumbs[pt.pointNumber]); im.hidden = false;
+    document.getElementById('peekTxt').textContent = `${name(p[0])} · site C${p[4]}`; });
+  el.on('plotly_click', ev => { const pt = ev.points[0]; if (pt.curveNumber === 0) show([P[pt.pointNumber][0]]); });
+  plotReady = true;
+}
+function drawPlotColours() {
+  if (!plotReady) return;
+  const has = selected && selected.size;
+  Plotly.restyle('plot', { 'marker.color': [P.map(p => colourOf[p[0]])], 'marker.size': [P.map(p => has && selected.has(p[0]) ? 4.5 : (has ? 1.8 : 3))] }, [0]);
+}
+
+function drawSil() {
+  const ks = Object.keys(D.cuts).map(Number), W = 700, H = 170, l = 34, b = 22, bw = (W - l - 6) / ks.length, ymax = 0.25;
+  const y = v => (H - b) - (v / ymax) * (H - b - 10);
+  let s = '';
+  [0, 0.1, 0.2].forEach(t => s += `<line x1="${l}" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="${css('--line')}"/><text x="${l - 6}" y="${y(t) + 3}" text-anchor="end">${t.toFixed(1)}</text>`);
+  ks.forEach((kk, i) => { const v = D.cuts[kk].sil;
+    s += `<rect class="bar" data-k="${kk}" x="${l + i * bw + 2}" y="${y(v)}" width="${bw - 4}" height="${y(0) - y(v)}" rx="2" fill="${kk === k ? css('--accent') : css('--muted')}" opacity="${kk === k ? 1 : 0.45}"><title>k = ${kk}: ${v.toFixed(3)}</title></rect>
+      <text x="${l + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${kk}</text>`; });
+  document.getElementById('sil').innerHTML = s;
+}
+document.getElementById('sil').addEventListener('click', e => { const r = e.target.closest('.bar'); if (r) { k = +r.dataset.k; document.getElementById('k').value = k; applyCut(); } });
+
+document.getElementById('k').addEventListener('input', e => { k = +e.target.value; applyCut(); });
+applyCut(); drawPlot(); show([14, 15, 16, 17]);
+// crops behind a coloured element, for the hover card
+const mix = lists => { const out = []; for (let j = 0; out.length < 16 && lists.some(l => j < l.length); j++) lists.forEach(l => { if (j < l.length && out.length < 16) out.push(l[j]); }); return out; };
+const cThumbs = c => mix(D.matrix[c].filter(x => x.n).sort((a, b) => b.n - a.n).map(x => x.items.map(i => i[0])));
+const fThumbs = f => mix(Object.keys(D.matrix).filter(c => D.matrix[c][f].n).sort((a, b) => D.matrix[b][f].n - D.matrix[a][f].n).map(c => D.matrix[c][f].items.slice(0, 4).map(i => i[0])));
+const lThumbs = ls => mix(ls.map(l => L[l].crops));
+const fIndex = title => FORMS.findIndex(f => f.title === title);
+
+// crop-by-crop matrix
+(function () {
+  const M = D.matrix, fcol = i => css('--g' + i);
+  const rows = Object.keys(M).map(Number).filter(c => M[c].some(x => x.n));
+  const lead = c => { const n = M[c].map(x => x.n); return n.indexOf(Math.max(...n)); };
+  rows.sort((a, b) => lead(a) - lead(b) || a - b);
+  let h = '<tr><th>site</th>' + FORMS.map((f, i) => `<th><span class="f" style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${fcol(i)}"></span>${f.title}</span></th>`).join('') + '</tr>';
+  for (const c of rows) {
+    const tot = M[c].reduce((s, x) => s + x.n, 0), lf = lead(c);
+    h += `<tr><td class="c"><b>C${c}</b><br><span class="stat">${tot.toLocaleString('en-GB')}</span></td>` + M[c].map((x, f) => {
+      if (!x.n) return '<td class="cell empty"></td>';
+      const cls = f === lf ? 'major' : (x.n >= 5 ? 'minor' : '');
+      return `<td class="cell ${cls}" data-c="${c}" data-f="${f}"><span class="n">${x.n.toLocaleString('en-GB')} · ${Math.round(100 * x.n / tot)}%</span><span class="ths">${x.items.slice(0, 8).map(([b]) => `<img class="t" alt="" src="${webp(b)}">`).join('')}</span></td>`;
+    }).join('') + '</tr>';
+  }
+  const tb = document.getElementById('cmp'); tb.innerHTML = h;
+  tb.querySelectorAll('tr:first-child th').forEach((th, j) => { if (!j) return; th.addEventListener('mousemove', e => showPop(e.clientX, e.clientY, `${FORMS[j - 1].title} · ${(D.formCount ? D.formCount[j - 1] : 0).toLocaleString('en-GB')} crops`, fThumbs(j - 1))); th.addEventListener('mouseleave', hidePop); });
+  tb.addEventListener('click', e => {
+    const td = e.target.closest('td.cell[data-c]'); if (!td) return;
+    tb.querySelectorAll('td.on').forEach(x => x.classList.remove('on')); td.classList.add('on');
+    const c = +td.dataset.c, f = +td.dataset.f, x = M[c][f];
+    document.getElementById('cmpDetail').innerHTML = `<h3>C${c} → ${FORMS[f].title} <span class="stat">${x.n.toLocaleString('en-GB')} crops${x.n > x.items.length ? `, ${x.items.length} shown` : ''}</span></h3>
+      <div class="grid">${x.items.map(([b, l]) => `<figure><img class="t" alt="Crop from C${c} in L${l}" src="${webp(b)}"><figcaption>L${l}</figcaption></figure>`).join('')}</div>`;
+  });
+})();
+
+// site clusters → shape clusters → forms
+function drawFlow() {
+  if (!window.Plotly) { document.getElementById('flow').innerHTML = '<p class="note">The flow chart needs Plotly, which did not load.</p>'; return; }
+  const mid = document.getElementById('flowMid').checked;
+  const formOf = {}; FORMS.forEach((f, i) => f.leaves.forEach(l => formOf[l - 1] = i));
+  const fcol = FORMS.map((_, i) => css('--g' + i));
+  const rgba = (h, a) => { const n = parseInt(h.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+  const olds = []; for (let c = 1; c <= D.nsite; c++) if (D.oldcount[c]) olds.push(c);
+  const lead = c => { const s = D.matrix[c].map(x => x.n); return s.indexOf(Math.max(...s)); };
+  olds.sort((a, b) => lead(a) - lead(b) || a - b);
+  const label = [], color = [], idx = {};
+  olds.forEach(c => { idx['C' + c] = label.length; label.push(`C${c}`); color.push(css('--muted')); });
+  const lead2 = i => D.lform[i].indexOf(Math.max(...D.lform[i]));
+  if (mid) L.forEach((l, i) => { idx['L' + i] = label.length; label.push(name(i)); color.push(fcol[lead2(i)]); });
+  FORMS.forEach((f, i) => { idx['F' + i] = label.length; label.push(f.title); color.push(fcol[i]); });
+  const src = [], dst = [], val = [], lc = [];
+  const add = (a, b, v, f) => { if (v >= 5) { src.push(idx[a]); dst.push(idx[b]); val.push(v); lc.push(rgba(fcol[f], 0.38)); } };
+  if (mid) {
+    olds.forEach(c => L.forEach((l, i) => add('C' + c, 'L' + i, l.old[c], lead2(i))));
+    L.forEach((l, i) => D.lform[i].forEach((v, f) => add('L' + i, 'F' + f, v, f)));
+  } else {
+    olds.forEach(c => FORMS.forEach((f, j) => add('C' + c, 'F' + j, D.matrix[c][j].n, j)));
+  }
+  const ink = css('--ink');
+  Plotly.react('flow', [{ type: 'sankey', arrangement: 'snap',
+    node: { label, color, pad: 6, thickness: 14, line: { width: 0 }, hoverinfo: 'none' },
+    link: { source: src, target: dst, value: val, color: lc, hoverinfo: 'none' } }],
+    { paper_bgcolor: 'rgba(0,0,0,0)', margin: { l: 4, r: 4, t: 8, b: 8 }, font: { color: ink, size: 11, family: 'IBM Plex Mono, monospace' } },
+    { displayModeBar: false, responsive: true });
+}
+document.getElementById('flowMid').addEventListener('change', drawFlow);
+function flowThumbs(p) {
+  const key = lab => lab.startsWith('C') && /^C\d+$/.test(lab) ? ['C', +lab.slice(1)] : /^L\d+$/.test(lab) ? ['L', +lab.slice(1) - 1] : ['F', fIndex(lab)];
+  if (p.source && p.target) {
+    const [a, x] = key(p.source.label), [b, y] = key(p.target.label);
+    if (a === 'C' && b === 'L') return D.cl[`${x}-${y + 1}`] || [];
+    if (a === 'L' && b === 'F') return D.lf[`${x + 1}-${y}`] || [];
+    if (a === 'C' && b === 'F') return D.matrix[x][y].items.map(i => i[0]);
+    return [];
+  }
+  const [a, x] = key(p.label);
+  return a === 'C' ? cThumbs(x) : a === 'L' ? L[x].crops : fThumbs(x);
+}
+const flowEl = document.getElementById('flow');
+function hookFlow() {
+  if (!window.Plotly || !flowEl.on) return;
+  flowEl.on('plotly_hover', ev => { const p = ev.points[0]; if (!p) return; const t = p.source ? `${p.source.label} → ${p.target.label} · ${p.value.toLocaleString('en-GB')} crops` : `${p.label} · ${p.value.toLocaleString('en-GB')} crops`; showPop(ev.event.clientX, ev.event.clientY, t, flowThumbs(p)); });
+  flowEl.on('plotly_unhover', hidePop);
+}
+drawFlow();
+hookFlow();
+
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { drawFlow(); applyCut(); if (plotReady) { Plotly.purge('plot'); drawPlot(); } });
+</script>

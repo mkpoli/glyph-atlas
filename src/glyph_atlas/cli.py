@@ -1693,6 +1693,72 @@ def forms_clean(
     typer.echo(json.dumps(clean(root, source, out, reviews=reviews), ensure_ascii=False))
 
 
+special_app = typer.Typer(help="Abbreviated forms of one character, regrouped crop by crop by stroke shape.", no_args_is_help=True)
+forms_app.add_typer(special_app, name="special")
+
+
+@special_app.command("run")
+def special_run(
+    code: Annotated[str, typer.Argument(help="family code point, such as U+5019")],
+    root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
+    forms: Annotated[Path, typer.Option(help="form clustering revision")] = Path("work/forms/current"),
+    out: Annotated[Path, typer.Option(help="directory of the runs, one per family")] = Path("work/special-forms"),
+    steps: Annotated[int, typer.Option(help="restoration training steps")] = 6000,
+    epochs: Annotated[int, typer.Option(help="encoder training epochs")] = 100,
+) -> None:
+    """Restore, encode and tree one family's crops (needs CUDA; about 25 minutes for 12,000 crops).
+
+    Run it as a batch job: `systemd-run --user --slice=batch.slice -p MemorySwapMax=0 --same-dir -- atlas forms special run U+5019`.
+    """
+    from .special_forms import pipeline, run_dir
+
+    typer.echo(json.dumps(pipeline.run(code, run_dir(code, out), root=root, forms=forms, steps=steps, epochs=epochs,
+                                       log=lambda m: typer.echo(m, err=True)), ensure_ascii=False))
+
+
+@special_app.command("report")
+def special_report(
+    code: Annotated[str, typer.Argument(help="family code point, such as U+5019")],
+    decisions: Annotated[Path | None, typer.Option(help="decisions file (default data/forms/special/<code>.yaml)")] = None,
+    out: Annotated[Path, typer.Option(help="directory of the runs, one per family")] = Path("work/special-forms"),
+) -> None:
+    """Apply the decisions crop by crop and write `forms.tsv` and `report.html` into the run.
+
+    Without a decisions file, a proposal of six unnamed forms, the tree's top branches, is written as
+    `proposal.yaml` in the run and used, to be edited and moved to `data/forms/special/`.
+    """
+    import numpy as np
+    import yaml
+
+    from .special_forms import DECISIONS, LEAVES, decide, report, run_dir, tree
+
+    run = run_dir(code, out)
+    meta = json.loads((run / "run.json").read_text())
+    path = decisions or DECISIONS / f"{code}.yaml"
+    if not path.exists():
+        z = np.load(run / "tree.npz")["z"]
+        leaf, top = tree.cut(z, LEAVES), tree.cut(z, 6)
+        groups = [sorted({int(l) for l in np.unique(leaf[top == g])}) for g in range(1, 7)]
+        path = run / "proposal.yaml"
+        path.write_text(yaml.safe_dump(decide.proposal(code, meta["run"], groups), allow_unicode=True, sort_keys=False))
+        typer.echo(f"no decisions for {code}; proposal written to {path}", err=True)
+    chosen = decide.load(path, LEAVES)
+    data = np.load(run / "crops.npz")
+    idx = np.load(run / "idx.npy")
+    leaf = tree.cut(np.load(run / "tree.npz")["z"], LEAVES)
+    form, stats = decide.assign(chosen["forms"], leaf, data["site"][idx].astype(int), data["emb"][idx], np.load(run / "features.npy"))
+    titles = [f["title"] for f in chosen["forms"]]
+    with (run / "forms.tsv").open("w") as tsv:
+        tsv.write("id\tsite_cluster\tshape_cluster\tform\n")
+        for i, l, f in zip(idx, leaf, form, strict=True):
+            tsv.write(f"{data['ids'][i]}\t{int(data['site'][i])}\t{int(l)}\t{titles[f]}\n")
+    char = chr(int(code.removeprefix("U+"), 16))
+    page = report.render(run, chosen, path.parent / "drawings", report.page_data(run, chosen, form, stats), char)
+    (run / "report.html").write_text(page)
+    typer.echo(json.dumps({"forms": dict(zip(titles, np.bincount(form, minlength=len(titles)).tolist(), strict=True)),
+                           **stats, "report": str(run / "report.html")}, ensure_ascii=False))
+
+
 for name, module in (
     ("tables", tables_app),
     ("images", images_app),
