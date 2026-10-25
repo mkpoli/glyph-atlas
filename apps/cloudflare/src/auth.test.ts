@@ -231,7 +231,7 @@ describe('deleting a user', () => {
     expect(rows(stays).session).toBe(1);
     // The deleted user's old reviewer id is nobody's to claim.
     const other = { id: stays, name: 'stays', image: null, anonymous: false, admin: false };
-    expect((await claim(env, other, 'reviewer-0000000a')).status).toBe(409);
+    expect((await claim({ ...env, OLD_IDS: { limit: async () => ({ success: true }) } } as unknown as Env, other, 'reviewer-0000000a', null)).status).toBe(409);
   });
   it('deletes its uploaded pictures and the anonymous users joined to it, with their sessions', async () => {
     const { call, send, jar, code, accounts, atlas, media, gone, stays, rows } = await seeded('https://joined.glyphatlas.org');
