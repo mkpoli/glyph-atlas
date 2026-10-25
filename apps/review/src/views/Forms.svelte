@@ -164,10 +164,16 @@
     untrack(async () => {
       edited = false
       if (!open) return
-      const wasOpen = open, request = ++membersRequest
-      const read = await loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order)
-      if (request === membersRequest && open === wasOpen) { glyphs = read.items; total = read.total; chosen = new Set([...chosen].filter(id => read.items.some(glyph => glyph.id === id))) }
-      if (splitK && open === wasOpen) groups = (await loadSplit(wasOpen, splitK)).groups
+      const wasOpen = open, k = splitK, request = ++membersRequest
+      const [read, split] = await Promise.all([loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order),
+        k ? loadSplit(wasOpen, k) : null])
+      // Only the answer for the cluster and split still on show replaces them; a selected glyph stays
+      // selected while either list still holds it.
+      if (request !== membersRequest || open !== wasOpen || splitK !== k) return
+      glyphs = read.items; total = read.total; anchor = null
+      if (split) groups = split.groups
+      const shown = new Set([...read.items.map(glyph => glyph.id), ...(split?.groups.flatMap(group => group.ids) ?? [])])
+      chosen = new Set([...chosen].filter(id => shown.has(id)))
     })
   })
   function close() { clearContext(); membersRequest++; open = null; glyphs = []; loadingMembers = false; chosen = new Set(); anchor = null; splitK = 0; groups = [] }
