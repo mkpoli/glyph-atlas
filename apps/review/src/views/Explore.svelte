@@ -1389,10 +1389,14 @@
   .tile-select{position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:2px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:700 11px/1 system-ui,sans-serif;opacity:0;transition:opacity .12s}
   :global(:root:not([data-gallery="grid"])) .tile-select{right:1px;bottom:1px;width:16px;height:16px;font-size:10px}
   :global(:root[data-gallery="grid"]) .tile-select{top:5px;right:6px}
-  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-caption){grid-template-columns:auto minmax(0,1fr) auto minmax(18px,max-content)}
-  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-production){display:none}
-  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-caption .tile-work){grid-column:1/4}
-  :global(:root[data-gallery="grid"]) .selecting :global(.collage-cell .tile-label){right:28px;overflow:hidden;white-space:nowrap}
+  /* Wherever the box shows (select mode, a hovered or focused tile, every tile on a touch screen) the caption
+     makes room for it, and a long label gives way before the tick after it. */
+  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-caption),:global(:root:not([data-gallery="grid"]) .collage-cell:has(> .tile-select):is(:hover,:focus-visible) .tile-caption){grid-template-columns:auto minmax(0,1fr) auto minmax(18px,max-content)}
+  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-production),:global(:root:not([data-gallery="grid"]) .collage-cell:has(> .tile-select):is(:hover,:focus-visible) .tile-production){display:none}
+  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-caption .tile-work),:global(:root:not([data-gallery="grid"]) .collage-cell:has(> .tile-select):is(:hover,:focus-visible) .tile-caption .tile-work){grid-column:1/4}
+  :global(:root[data-gallery="grid"]) .selecting :global(.collage-cell .tile-label),:global(:root[data-gallery="grid"] .collage-cell:has(> .tile-select):is(:hover,:focus-visible) .tile-label){right:28px;overflow:hidden;white-space:nowrap}
+  :global(:root[data-gallery="grid"]) .selecting :global(.collage-cell .tile-glyph),:global(:root[data-gallery="grid"] .collage-cell:has(> .tile-select):is(:hover,:focus-visible) .tile-glyph){min-width:0;overflow:hidden;text-overflow:ellipsis}
+  @media(hover:none){:global(:root:not([data-gallery="grid"]) .glyph-tile.collage-cell:has(> .tile-select) .tile-caption){grid-template-columns:auto minmax(0,1fr) auto minmax(18px,max-content)}:global(:root:not([data-gallery="grid"]) .glyph-tile.collage-cell:has(> .tile-select) .tile-production){display:none}:global(:root:not([data-gallery="grid"]) .glyph-tile.collage-cell:has(> .tile-select) .tile-caption .tile-work){grid-column:1/4}:global(:root[data-gallery="grid"] .glyph-tile.collage-cell:has(> .tile-select) .tile-label){right:28px;overflow:hidden;white-space:nowrap}:global(:root[data-gallery="grid"] .glyph-tile.collage-cell:has(> .tile-select) .tile-glyph){min-width:0;overflow:hidden;text-overflow:ellipsis}}
   :global(.glyph-tile):hover .tile-select,:global(.glyph-tile):focus-visible .tile-select,.selecting .tile-select{opacity:1}
   @media(hover:none){.tile-select{opacity:.85}}
   /* A selected tile is ringed and washed over its image, and its box is filled and ticked, so the state
