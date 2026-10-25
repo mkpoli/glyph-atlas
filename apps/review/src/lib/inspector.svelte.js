@@ -38,7 +38,9 @@ export function createInspector() {
     get shown() { return page.state.inspect ?? null },
     get queue() { return current() ? state.queue : [] },
     get index() { return current() ? state.queue.findIndex(item => showing(item, page.state.inspect)) : -1 },
-    get update() { return current() ? updateItem : null },
+    // A save may land after the inspector has closed; until another crop is opened or the page changes, it
+    // still reaches the list that opened it.
+    get update() { return current() || !page.state.inspect ? updateItem : null },
     /** The problem the crop was opened to fix, for the crop it was opened on. */
     get issue() { return current() && page.state.inspect?.id === state.opened ? state.issue : null },
     /** `update(id, record, how)` hears what happened to a crop: `saved` when a write decided it (a review, or

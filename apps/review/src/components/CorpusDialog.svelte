@@ -31,7 +31,7 @@
   // `changed` hears about a write that keeps the dialog open (a written form), as the crop dialog's does.
   // `preview` is the list's own row for the glyph, drawn while the record loads.
   // `cited` is the cut the page's address cites (`citedCut`), noted over the glyph when it is not the one shown.
-  let { id, close, saved, changed = null, skipped = null, previous = null, next = null, position = '', initial = null, preview = null, cited = null } = $props()
+  let { id, close, saved, changed = null, reviewed = null, skipped = null, previous = null, next = null, position = '', initial = null, preview = null, cited = null } = $props()
   const first = untrack(() => initial)
   const session = useSession(), inspector = useInspector()
   // Going on to the next crop disables the focused save button while it loads, which drops its focus;
@@ -120,7 +120,9 @@
     try {
       leaving = advancing ? target : null
       const result = await request('/atlas/corpus/reviews', { id: submission.id, ...payload })
+      // A save that lands after the dialog closed or moved on still decided its glyph.
       if (!closed && current === generation) saved(target, result)
+      else reviewed?.(target, result)
     } catch (e) { if (!closed && current === generation) error = e.message }
     finally { busy = false }
   }

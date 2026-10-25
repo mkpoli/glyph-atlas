@@ -77,7 +77,8 @@
     inspector.update?.(id, result, 'changed')
     written = { ...written, [id]: true }
   }
-  // A write that decided a crop without closing the inspector: a line correction, which moves labels.
+  // A write that decided a crop without the inspector closing for it: a line correction, which moves
+  // labels, or a save that landed after the inspector closed or moved on.
   function reviewed(id, result) {
     forgetCrop(id)
     inspector.update?.(id, result, 'saved')
@@ -135,7 +136,7 @@
     · <a href={localize('/privacy')}><LinkMark name="privacy" />{t('footer.privacy')}</a>
     · <ChatLinks /></p>
 </footer>
-{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {close} {saved} {skipped} {previous} {next} {position} {initial} {cited} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {reviewed} {skipped} {close} {saved} opening={inspector.issue} {previous} {next} {position} {initial} {cited} />{/if}{/if}
+{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {reviewed} {skipped} {close} {saved} {previous} {next} {position} {initial} {cited} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {reviewed} {skipped} {close} {saved} opening={inspector.issue} {previous} {next} {position} {initial} {cited} />{/if}{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}
 <DatabaseStatus />
 {#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}

@@ -614,7 +614,8 @@
   async function inspected(id, result, how) {
     const item = items.find(i => i.id === id), round = roundId
     if (!item) return
-    if (how === 'skipped') { skip([id]); return }
+    // A crop skipped in the editor was seen there, so the round records the skip.
+    if (how === 'skipped') { viewed = { ...viewed, [id]: true }; skip([id]); return }
     // A save decides the crop at once: it leaves the selection, the answers and the skips, and shows as saved.
     if (how === 'saved') {
       choices = without(choices, [id]); selected = without(selected, [id]); skipped = without(skipped, [id])
