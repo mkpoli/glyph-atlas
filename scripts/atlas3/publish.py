@@ -764,9 +764,11 @@ class Mirror:
                 # A style moves no revision. A crop a reviewer gave one on the site keeps it, which only D1 knows:
                 # the store does not count that event, and the local copy may not hold it. One the read-back found
                 # keeping a reviewer's style is sent the publication's even when its local row shows no change, since
-                # the reviewer may have taken theirs back since; it is read back again either way. No page changes.
+                # the reviewer may have taken theirs back since; it is read back again either way. No page changes, and
+                # no revision guard: what a reviewer decided about the style is OWN_STYLE, and a re-cut or a mark
+                # reset sent before it moves the revision.
                 self.style_rows.append(f"UPDATE crops AS c SET style={lit(row['style'])} WHERE c.id={cid} "
-                                       f"AND c.revision={row['revision']} AND NOT {OWN_STYLE} AND c.style IS NOT {lit(row['style'])};")
+                                       f"AND NOT {OWN_STYLE} AND c.style IS NOT {lit(row['style'])};")
                 if not self.guarded or self.guarded[-1] != cid:
                     self.guarded.append(cid)
             if old["kind"] == 1 and given.get("kind") == 1 and not review_columns and "char" in given:
