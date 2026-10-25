@@ -8,8 +8,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { createDrawer } from '../src/lib/composer/client.js'
-import { LIMITS, compose, createSource, size, tooLarge } from '../src/lib/composer/index.js'
-import { caption } from '../src/lib/composer/preview.js'
+import { LIMITS, compose, createSource, size, sketch, svgBox, tooLarge } from '../src/lib/composer/index.js'
+import { badge, placeholder } from '../src/lib/composer/preview.js'
 
 const constants = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/composer-constants.json'), 'utf8'))
 const hex = text => createHash('sha256').update(text).digest('hex')
@@ -132,14 +132,61 @@ describe('the drawer', () => {
   })
 })
 
-describe('the preview caption', () => {
-  it('says preview, approximate, final, failed or too large, with the credits that apply', () => {
-    expect(caption('rough')).toEqual({ label: 'draft', params: {}, credits: null })
-    expect(caption('capped')).toEqual({ label: 'tooLarge', params: {}, credits: null })
-    expect(caption('failed')).toEqual({ label: 'failed', params: {}, credits: null })
-    expect(caption('composed', { approximate: [], kanjivg: false })).toEqual({ label: 'draft', params: {}, credits: 'creditsFonts' })
-    expect(caption('composed', { approximate: [], kanjivg: true }).credits).toBe('credits')
-    expect(caption('composed', { approximate: ['⿾', '㇯'], kanjivg: false })).toEqual({ label: 'approximate', params: { ops: '⿾ ㇯' }, credits: 'creditsFonts' })
-    expect(caption('final')).toEqual({ label: 'final', params: {}, credits: 'credits' })
+describe('the preview badge', () => {
+  it('says preview, approximate, final, failed or too large', () => {
+    expect(badge('loading')).toEqual({ label: 'draft', params: {} })
+    expect(badge('capped')).toEqual({ label: 'tooLarge', params: {} })
+    expect(badge('failed')).toEqual({ label: 'failed', params: {} })
+    expect(badge('composed', { approximate: [] })).toEqual({ label: 'draft', params: {} })
+    expect(badge('composed', { approximate: ['⿾', '㇯'] })).toEqual({ label: 'approximate', params: { ops: '⿾ ㇯' } })
+    expect(badge('final')).toEqual({ label: 'final', params: {} })
+  })
+})
+
+// A layout that puts the two operands of ⿰ in fixed boxes, whatever they are: the network's weights
+// are zero and its last biases are the boxes, in thousandths.
+const LEFT = [40, -80, 440, 840], RIGHT = [560, -80, 960, 840]
+const fixed = { ...layout, seeds: [[{ shape: [ops.length + 2 * 81, 8], data: Buffer.alloc(2 * (ops.length + 162) * 8).toString('base64') },
+  Buffer.from(Float32Array.from([...LEFT, ...RIGHT].map(v => v / 1000)).buffer).toString('base64')]] }
+const fixedSource = () => createSource(async name => {
+  const body = name === 'layout.json' ? JSON.stringify(fixed) : files[name]
+  return body === undefined ? null : new Uint8Array(Buffer.from(body)).buffer
+})
+
+// Boxes to a hundredth of a unit: the layout's boxes come through float32 weights.
+const near = box => box.map(v => Math.round(v * 100) / 100)
+const nearSlots = slots => slots.map(s => ({ ...s, box: near(s.box) }))
+
+describe('an empty slot', () => {
+  it('composes: the filled parts as the whole sequence draws them, the slot a placeholder in its box', async () => {
+    const source = fixedSource()
+    const open = await compose(source, '⿰木＋'), whole = await compose(source, '⿰木口')
+    expect(open.d.length).toBeGreaterThan(20)
+    expect(open.origins).toEqual(['glyph 木'])
+    expect(open.parts[0].box).toEqual(whole.parts[0].box)
+    expect(nearSlots(open.slots)).toEqual([{ index: 0, box: svgBox(RIGHT) }])
+    expect(whole.slots).toEqual([])
+    expect(open.stroke).toHaveLength(2)
+  })
+  it('is numbered in reading order, nested or not, and a tree of empty slots draws no ink', async () => {
+    const source = fixedSource()
+    const drawn = await compose(source, '⿰＋⿱口＋')
+    expect(drawn.slots.map(s => s.index)).toEqual([0, 1])
+    expect(near(drawn.slots[0].box)).toEqual(svgBox(LEFT))
+    const empty = await compose(source, '⿰＋＋')
+    expect(empty.d).toBe('')
+    expect(empty.slots.map(s => near(s.box))).toEqual([svgBox(LEFT), svgBox(RIGHT)])
+    expect((await compose(source, '＋')).slots).toHaveLength(1)
+  })
+  it('stands where the layout puts it before anything is drawn', async () => {
+    const leaves = await sketch(fixedSource(), '⿰木＋')
+    expect(nearSlots(leaves)).toEqual([{ index: 0, box: svgBox(LEFT), empty: false }, { index: 1, box: svgBox(RIGHT), empty: true }])
+  })
+  it('is drawn as a rounded box inset by half a stroke, its dots a stroke apart', () => {
+    const p = placeholder([100, 100, 400, 800], 80)
+    expect(p).toMatchObject({ x: 140, y: 140, width: 320, height: 720 })
+    expect(p.gap).toBeGreaterThan(p.dot)
+    expect(p.plus).toBeGreaterThan(0)
+    expect(placeholder([0, 0, 60, 60], 80).plus).toBe(0)
   })
 })

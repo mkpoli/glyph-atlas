@@ -10,6 +10,13 @@ export const OPERATORS = [
   ['⿺', 2], ['⿻', 2], ['⿼', 2], ['⿽', 2], ['⿾', 1], ['⿿', 1], ['㇯', 2], ['〾', 1],
 ]
 const ARITY = new Map(OPERATORS)
+/** Each operator's name, a key under `form.ids.op.`. */
+export const OP_NAMES = {
+  '⿰': 'leftRight', '⿱': 'aboveBelow', '⿲': 'leftMiddleRight', '⿳': 'aboveMiddleBelow', '⿴': 'surround',
+  '⿵': 'fromAbove', '⿶': 'fromBelow', '⿷': 'fromLeft', '⿸': 'fromUpperLeft', '⿹': 'fromUpperRight',
+  '⿺': 'fromLowerLeft', '⿻': 'overlaid', '⿼': 'fromRight', '⿽': 'fromLowerRight', '⿾': 'mirrored',
+  '⿿': 'rotated', '㇯': 'subtracted', '〾': 'variant',
+}
 /** The key that puts each operator in the editor, as the number row and the row under it run: 1–9, 0,
  *  - and = for ⿰ to ⿻, then q w e r t y for ⿼ ⿽ ⿾ ⿿ ㇯ 〾. */
 export const KEYS = Object.fromEntries([...'1234567890-=qwerty'].map((key, i) => [key, OPERATORS[i][0]]))

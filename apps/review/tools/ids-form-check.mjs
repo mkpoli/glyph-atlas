@@ -83,6 +83,10 @@ try {
   // The composer's export served from disk where the site serves it from R2: `<version>/<path>`
   // answers with the folder's `<path>`, a missing file with 404.
   let storedDrawings = false
+  // While `held` is set, the export's record and host files wait, so the first drawing's loading
+  // state can be seen; `release` sends them.
+  let held = Boolean(process.env.COMPOSER_EXPORT), waiting = []
+  const release = () => { held = false; for (const send of waiting.splice(0)) send() }
   const exported = process.env.COMPOSER_EXPORT && existsSync(join(process.env.COMPOSER_EXPORT, 'manifest.json')) ? process.env.COMPOSER_EXPORT : null
   const stored = exported ? JSON.parse(readFileSync(join(exported, 'parity.json'), 'utf8')).rows.find(row => row.d) : null
   if (exported) {
@@ -101,9 +105,11 @@ try {
       const name = new URL(m.params.request.url).pathname.replace(/^.*\/atlas\/composer\/[^/]+\//, '')
       const file = join(exported, name)
       const found = !name.split('/').includes('..') && existsSync(file)
-      browser.send('Fetch.fulfillRequest', { requestId: m.params.requestId, responseCode: found ? 200 : 404,
+      const send = () => browser.send('Fetch.fulfillRequest', { requestId: m.params.requestId, responseCode: found ? 200 : 404,
         responseHeaders: [{ name: 'content-type', value: /^[gp]\//.test(name) ? 'application/octet-stream' : 'application/json' }],
         body: found ? readFileSync(file).toString('base64') : '' }).catch(() => {})
+      if (held && /^[gp]\//.test(name)) waiting.push(send)
+      else send()
     })
   }
   const id = Object.entries(units(config.directory)).find(([, unit]) => unit.active && unit.unicode === 'U+3042')[0]
@@ -129,6 +135,17 @@ try {
   await browser.evaluate('document.querySelector("dialog[open] .form-compose").click()')
   await browser.waitFor(`document.querySelector('dialog[open] .ids-field input')?.value === '⿰𠤕⿱龴疋'`, 20000)
   console.log('PASS the editor starts from 疑\'s own description')
+  if (exported) {
+    // The first drawing, its data still loading: placeholders where the layout puts each part.
+    await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.step === 'loading'
+      && document.querySelectorAll('dialog[open] .ids-preview-large .slot.faint').length === 3 && !document.querySelector('dialog[open] .ids-preview text')`, 20000)
+      .catch(async error => { throw new Error(`${error.message}; the preview: ${await browser.evaluate(`JSON.stringify({ ...document.querySelector('dialog[open] .ids-preview')?.dataset, slots: [...document.querySelectorAll('dialog[open] .ids-preview-large .slot')].map(s => s.getAttribute('class')), text: document.querySelector('dialog[open] .ids-field input').value, aria: document.querySelector('dialog[open] .ids-preview').getAttribute('aria-label') })`)}`) })
+    await Bun.sleep(400)
+    await shoot('ids-preview-loading', '.ids-view')
+    release()
+    await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.step !== 'loading'`, 30000)
+    console.log('PASS the first drawing shows placeholders where the layout puts each part until it is done')
+  }
 
   // Typing into the picker's search leaves the draft alone, and a unary operator round a chosen part
   // leaves nothing chosen that is not there.
@@ -357,49 +374,63 @@ try {
   console.log(`PASS ${hit} found by its parts 匕矢, and its part ${part} taken`)
   await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-pick-tabs [role="tab"]')][0].click()`)
 
-  // The preview: a sequence with an empty slot stays rough, in the page font with the slot marked; a
-  // whole one no character draws is drawn by the composer once its data has loaded.
-  await typeSequence('⿰木＋')
-  await becomes('⿰木＋')
-  await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.step === 'rough'
-    && document.querySelectorAll('dialog[open] .ids-preview-large text').length === 1 && !!document.querySelector('dialog[open] .ids-preview-large .slot')`)
-  await shoot('ids-preview-rough', '.ids-view')
-  // Larger than a preview draws, it stays rough and says so.
+  // The preview draws nothing in a font. Until the composer has drawn, each part is a placeholder
+  // where the layout (or an even share) puts it; the badge names the state, and a note says why a
+  // drawing failed or was not made.
+  const preview = `document.querySelector('dialog[open] .ids-preview')`
+  const fontFree = () => browser.evaluate(`!document.querySelector('dialog[open] .ids-preview text')`)
+  const badgeText = () => browser.evaluate(`document.querySelector('dialog[open] .ids-preview-badge').textContent.trim()`)
+  // Larger than a preview draws, it shows placeholders and says so.
   await typeSequence('⿰木⿰木⿰木⿰木⿰木口')
   await becomes('⿰木⿰木⿰木⿰木⿰木口')
-  await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.label === 'tooLarge'`)
-  await typeSequence('⿰魚⿱山石')
-  await becomes('⿰魚⿱山石')
+  await browser.waitFor(`${preview}?.dataset.label === 'tooLarge' && document.querySelectorAll('dialog[open] .ids-preview-large .slot').length === 6`)
+  assert(await badgeText() === 'Too large' && await fontFree(), 'a sequence too large is not shown as placeholders with its badge')
+  await shoot('ids-preview-too-large', '.ids-view')
+  await typeSequence('⿰魚⿱山＋')
+  await becomes('⿰魚⿱山＋')
   if (!exported) {
-    // With no export to draw from, the composer fails and the preview says so over the rough layout.
-    await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.label === 'failed'`, 30000)
-    assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-preview-label').textContent.trim()`) === 'Could not compose', 'a failed drawing is not said to have failed')
-    assert(await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-preview-large text').length`) === 3, 'a failed drawing does not keep the rough layout')
+    // With no export to draw from, the composer fails and the preview says so over placeholders.
+    await browser.waitFor(`${preview}?.dataset.label === 'failed'`, 30000)
+    assert(await badgeText() === 'Failed', 'a failed drawing is not badged as failed')
+    assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-preview-note').textContent.trim()`) === 'The composer could not draw this sequence.', 'a failed drawing has no note')
+    assert(await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-preview-large .slot').length`) === 3 && await fontFree(), 'a failed drawing does not show placeholders')
     await shoot('ids-preview-failed', '.ids-view')
-    console.log('PASS a sequence too large stays rough, and a drawing that cannot be made says so')
+    console.log('PASS a sequence too large and a drawing that cannot be made show placeholders and say so')
   }
   if (exported) {
-    await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.step === 'composed'
-      && (document.querySelector('dialog[open] .ids-preview-large path')?.getAttribute('d') ?? '').length > 200`, 30000)
-    assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-preview figcaption').textContent.trim()`) === 'Preview', 'the composed drawing is not labelled a preview')
-    assert(await browser.evaluate(`!!document.querySelector('dialog[open] .ids-preview-credits a[href*="licensing"]')`), 'the composed drawing names no sources')
+    // An empty slot: the filled parts drawn, the slot a placeholder, the chosen slot marked.
+    await browser.waitFor(`${preview}?.dataset.step === 'composed'
+      && (document.querySelector('dialog[open] .ids-preview-large path.ink')?.getAttribute('d') ?? '').length > 200
+      && document.querySelectorAll('dialog[open] .ids-preview-large .slot').length === 1`, 30000)
+    assert(await badgeText() === 'Preview' && await fontFree(), 'the drawing with an empty slot is not a preview')
+    await focusPath('1.1')
+    await browser.waitFor(`!!document.querySelector('dialog[open] .ids-preview-large .slot.selected')`)
+    await shoot('ids-preview-empty-slot', '.ids-view')
+    // The slot filled: the drawing stays until the new one is done, and fades into it.
+    await typeSequence('⿰魚⿱山石')
+    await becomes('⿰魚⿱山石')
+    assert(await browser.evaluate(`(document.querySelector('dialog[open] .ids-preview-large path.ink')?.getAttribute('d') ?? '').length > 200`), 'the last drawing did not stay while the next was drawn')
+    await browser.waitFor(`${preview}?.dataset.step === 'composed' && !document.querySelector('dialog[open] .ids-preview-large .slot')`, 30000)
+    assert(await browser.evaluate(`!!document.querySelector('dialog[open] .ids-sources[href*="licensing"]')`), 'the editor names no sources')
+    await Bun.sleep(300)
     await shoot('ids-preview-composed', '.ids-view')
     // An operator the composer does not draw makes the preview approximate.
     await typeSequence('⿾⿰魚⿱山石')
     await becomes('⿾⿰魚⿱山石')
-    await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.label === 'approximate'`, 30000)
-    assert((await browser.evaluate(`document.querySelector('dialog[open] .ids-preview-label').textContent`)).includes('⿾'), 'the approximate caption does not name ⿾')
+    await browser.waitFor(`${preview}?.dataset.label === 'approximate'`, 30000)
+    assert((await browser.evaluate(`document.querySelector('dialog[open] .ids-preview-note').textContent`)).includes('Mirrored'), 'the approximate note does not name ⿾')
+    await Bun.sleep(300)
     await shoot('ids-preview-approximate', '.ids-view')
-    // A sequence the site has drawn shows that drawing, labelled final.
+    // A sequence the site has drawn shows that drawing in the same frame, badged final.
     storedDrawings = true
     await typeSequence(stored.s)
     await becomes(stored.s)
-    await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.step === 'final'`, 30000)
-    assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-preview figcaption').textContent.trim()`) === 'Final drawing', 'the stored drawing is not labelled final')
-    assert(await browser.evaluate(`!!document.querySelector('dialog[open] .ids-preview-credits a[href*="licensing"]')`), 'the stored drawing names no sources')
+    await browser.waitFor(`${preview}?.dataset.step === 'final'`, 30000)
+    assert(await badgeText() === 'Final', 'the stored drawing is not badged final')
+    await Bun.sleep(300)
     await shoot('ids-preview-final', '.ids-view')
     storedDrawings = false
-    console.log('PASS the preview stays rough with an empty slot, the composer draws a new sequence, and a stored drawing is final')
+    console.log('PASS an empty slot is a placeholder beside drawn parts, the drawing stays until the next, ⿾ is approximate, and a stored drawing is final')
   } else console.log('SKIP the composed preview: set COMPOSER_EXPORT to a han-compose export-web folder')
   assert(!errors.length, 'page errors: ' + errors.join('; '))
 

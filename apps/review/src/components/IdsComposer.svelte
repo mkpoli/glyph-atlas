@@ -19,7 +19,7 @@
   import IdsPreview from './IdsPreview.svelte'
   import IdsFrom from './IdsFrom.svelte'
   import IdsParts from './IdsParts.svelte'
-  import { CODES, KEYS, OPERATORS, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
+  import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator } from '../lib/ids.js'
   import { lookupChar } from '../lib/decompose.js'
   import { structure } from '../lib/layers.js'
@@ -30,12 +30,6 @@
   // places of its parts inside it (dashed), each a line or a box as [left, top, right, bottom] in a
   // unit square; ⿻ is two boxes over each other, the first in the accent. 〾 marks its part as a
   // variant, drawn as a wave.
-  const NAMES = {
-    '⿰': 'leftRight', '⿱': 'aboveBelow', '⿲': 'leftMiddleRight', '⿳': 'aboveMiddleBelow', '⿴': 'surround',
-    '⿵': 'fromAbove', '⿶': 'fromBelow', '⿷': 'fromLeft', '⿸': 'fromUpperLeft', '⿹': 'fromUpperRight',
-    '⿺': 'fromLowerLeft', '⿻': 'overlaid', '⿼': 'fromRight', '⿽': 'fromLowerRight', '⿾': 'mirrored',
-    '⿿': 'rotated', '㇯': 'subtracted', '〾': 'variant',
-  }
   const KEY = Object.fromEntries(Object.entries(KEYS).map(([key, op]) => [op, key]))
   const ICON = {
     '⿰': [[.5, 0, .5, 1]], '⿱': [[0, .5, 1, .5]], '⿲': [[.33, 0, .33, 1], [.67, 0, .67, 1]], '⿳': [[0, .33, 1, .33], [0, .67, 1, .67]],
@@ -45,12 +39,14 @@
     '㇯': [[.3, .3, .7, .7]], '〾': [],
   }
   const OUTER = { '⿻': [0, 0, .75, .75] }
-  const name = op => t(`form.ids.op.${NAMES[op]}`)
+  const name = op => t(`form.ids.op.${OP_NAMES[op]}`)
   // How the box tree lays a node's parts out: in a row, in a column, the second inside the first, or
   // one over the other.
   const LAYOUT = { '⿰': 'row', '⿲': 'row', '⿱': 'column', '⿳': 'column', '⿻': 'stack', '㇯': 'stack', '⿾': 'stack', '⿿': 'stack', '〾': 'stack' }
   const layout = op => LAYOUT[op] ?? 'enclosure'
   const HISTORY = 100
+  // Where the preview's drawings come from and the terms they carry.
+  const SOURCES = 'https://github.com/mkpoli/glyph-atlas/blob/main/docs/licensing.md#composer-drawings'
 
   let tree = $state(null), chosen = $state(null), draft = $state(''), piece = $state(''), note = $state('')
   let field = $state(null), slot = $state(null), root = $state(null), query = $state('')
@@ -311,7 +307,7 @@
     <div class="ids-tree" role="group" aria-label={t('form.ids.structure')}>
       {@render box(tree, [], null)}
     </div>
-    <IdsPreview {tree} sequence={whole} whole={usable} />
+    <IdsPreview {tree} sequence={whole} {chosen} />
   </div>
   <div class="ids-tools">
     <label class="ids-slot">
@@ -360,7 +356,7 @@
     {/each}
   </div>
   <div class="ids-actions">
-    <p class="ids-keys">{t('form.ids.keys')}</p>
+    <p class="ids-keys">{t('form.ids.keys')} <a class="ids-sources" href={SOURCES} rel="noopener" target="_blank">{t('form.ids.sources')}</a></p>
     <button type="button" class="ids-use" disabled={disabled || !usable} onclick={use}>{t('form.ids.use')}</button>
   </div>
 </div>
@@ -451,5 +447,6 @@
   .ids-pick-panel[hidden]{display:none}
   .ids-actions{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
   .ids-keys{margin:0;font-size:11px;line-height:1.5;color:var(--muted)}
+  .ids-sources{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
   .ids-use{flex:none;padding:5px 14px}
 </style>
