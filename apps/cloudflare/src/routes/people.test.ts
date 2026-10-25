@@ -176,9 +176,11 @@ describe('the history', () => {
     const { env } = setup();
     const { items } = await history(env, new URLSearchParams(), 'u1', tools);
     expect(items.map((i: Json) => [i.kind, i.id, i.reviewer.name, i.reviewer.mine])).toEqual([
-      ['undo', '7', 'anon-00aa11', false], ['passed', 'u1:r2', 'Ada', true], ['review', '6', 'Ada', true], ['review', '5', 'Ada', true],
-      ['review', '4', 'reviewer-0000000f', false], ['review', '3', 'anon-00aa11', false], ['review', '2', 'Ada', true],
-      ['passed', 'reviewer-0000000a:r1', 'Ada', true], ['review', '1', 'Ada', true]]);
+      ['undo', '7', 'anon-00aa11', false], ['passed', 'r6', 'Ada', true], ['review', '6', 'Ada', true], ['review', '5', 'Ada', true],
+      ['review', '4', null, false], ['review', '3', 'anon-00aa11', false], ['review', '2', 'Ada', true],
+      ['passed', 'r1', 'Ada', true], ['review', '1', 'Ada', true]]);
+    // No answer names an old reviewer id, which is all it takes to claim one.
+    expect(JSON.stringify(items)).not.toContain('reviewer-');
     const byId = new Map(items.map((i: Json) => [i.id, i]));
     expect(byId.get('7')).toMatchObject({ undoes: '3', label: 'あ', verdict: null, round: null, batch: null });
     expect(byId.get('3')).toMatchObject({ batch: 'b1', round: null, character: 'ア', issue: 'character' });
@@ -186,7 +188,7 @@ describe('the history', () => {
     expect(byId.get('5')).toMatchObject({ character: 'い', label: 'い' });
     expect(byId.get('1')).toMatchObject({ round: 'r1', target: publicId(crops.a.id) });
     expect(byId.get('1').dating.witness).toMatchObject({ start: 1700, hutime: 'q' });
-    expect(byId.get('u1:r2')).toMatchObject({ passed: 2, label: 'い', round: 'u1:r2', target: null, dating: {} });
+    expect(byId.get('r6')).toMatchObject({ passed: 2, label: 'い', round: 'r2', target: null, dating: {} });
   });
 
   it('reads each page by index, never the whole journal', () => {
@@ -229,7 +231,7 @@ describe('the history', () => {
     const legacy = btoa(JSON.stringify([minute(5), 'cf:e5']));
     expect(decodeCursor(legacy)).toEqual({ at: ms(5), src: 0, id: 0 });
     const { items } = await history(env, new URLSearchParams({ before: legacy }), null, tools);
-    expect(items.map((i: Json) => i.id)).toEqual(['4', '3', '2', 'reviewer-0000000a:r1', '1']);
+    expect(items.map((i: Json) => i.id)).toEqual(['4', '3', '2', 'r1', '1']);
   });
 
   it('lists the undo of a review and leaves out a mark and the undo that clears it', async () => {

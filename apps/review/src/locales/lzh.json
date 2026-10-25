@@ -345,6 +345,7 @@
   "history.noMore": "無復所改",
   "history.onlyMine": "唯己所改",
   "history.onlyMine.aria": "唯示己所改",
+  "history.reviewer.anonymous": "無名",
   "history.reviewer.you": "己",
   "history.row.inspect": "開{label}",
   "copyId.copy": "抄ID",

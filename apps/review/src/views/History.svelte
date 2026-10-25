@@ -114,10 +114,11 @@
 {#snippet label(text)}{#if text}<ScriptText {text} />{:else}{t('history.noLabel')}{/if}{/snippet}
 
 {#snippet reviewer(item)}
-  {@const who = item.reviewer ?? { name: item.actor, user: null, image: null, mine: false }}
-  <span class="history-actor" class:mine={who.mine} class:unclaimed={!who.user} title={who.name}>
-    <span class="avatar history-avatar" aria-hidden="true">{#if who.image}<img src={who.image} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}{initial(who.name)}{/if}</span>
-    <span class="history-name">{who.name}{#if who.mine}<small>{t('history.reviewer.you')}</small>{/if}</span>
+  {@const who = item.reviewer ?? { name: null, user: null, image: null, mine: false }}
+  {@const name = who.name ?? t('history.reviewer.anonymous')}
+  <span class="history-actor" class:mine={who.mine} class:unclaimed={!who.user} title={name}>
+    <span class="avatar history-avatar" aria-hidden="true">{#if who.image}<img src={who.image} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}{who.name ? initial(who.name) : '?'}{/if}</span>
+    <span class="history-name">{name}{#if who.mine}<small>{t('history.reviewer.you')}</small>{/if}</span>
   </span>
 {/snippet}
 
