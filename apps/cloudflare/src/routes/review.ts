@@ -531,9 +531,12 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   // At the revision validation read: a publication or a write in between leaves the crop unrecorded.
   const observed = `c.id=j.value->>'crop' AND c.cut=j.value->>'cut' AND c.char IS j.value->>'char' AND c.revision=j.value->>'revision' AND c.quiz=1 AND c.kind<2`;
   // A crop a publication anchored takes its baseline from its bundle record alone; only the others read history.
+  // The reviewer's actor is looked up while the evidence is read and stored.
+  const reviewer = actorFor(env, user);
+  reviewer.catch(() => {});
   const priors = await priorBaselines(env, captured.filter(c => c.row.kind === 0 && c.row.anchored === null).map(c => c.row.id));
   const evidence = await captureReviews(env, captured, sent, mode, user, at, priors);
-  const actor = await actorFor(env, user);
+  const actor = await reviewer;
   const statements = [env.ATLAS.prepare('INSERT INTO submissions(key,actor,request,response,at,evidence) VALUES (?,?,?,?,?,?)').bind(key, actor, signature, JSON.stringify(result), at, evidence),
     ...eventStatements(env, actor, key, at, changes)];
   if (shown.length) statements.push(env.ATLAS.prepare(`INSERT INTO seen(submission,crop,cut,at)
