@@ -25,7 +25,7 @@
   }
   // Read again when another user signs in.
   $effect(() => { session.state.user?.id; load() })
-  const open = item => inspector.inspect(item.id, null, shown, null, item.origin === 'corpus' ? 'corpus' : 'collection')
+  const open = item => inspector.inspect(item.id, shown, null, item.origin === 'corpus' ? 'corpus' : 'collection')
 </script>
 
 <section class="explore favourites">

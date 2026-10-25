@@ -45,7 +45,8 @@
   // `wrangler versions secret put/delete` instead, which makes another version without deploying it. It is
   // never a var here, since a var of the same name would block the secret.
   // Batch corrections change up to 144 crops a request; one address gets 20 of them a minute. A claim,
-  // an action on one or a crop's form names one crop, and one address gets 30 a minute.
+  // an action on one or a crop's form names one crop, a batch of forms up to 48; one address gets 30
+  // of these a minute.
   "ratelimits": [{"name": "CORRECTIONS", "namespace_id": "4401", "simple": {"limit": 20, "period": 60}},
                  {"name": "CLAIMS", "namespace_id": "4403", "simple": {"limit": 30, "period": 60}},
                  // An image search is a few Vectorize queries and record reads; one address gets 30 a minute.

@@ -1,7 +1,8 @@
 <script>
   // The bar over a round's selection: how many crops are chosen, the forms of the round's grapheme to
-  // mark them as, and the result of the last marking with its undo.
+  // mark them as, a form written as an ideographic description sequence instead, and the result of the last marking with its undo.
   import FormChips from './FormChips.svelte'
+  import IdsPick from './IdsPick.svelte'
   import { t } from '../lib/i18n.svelte.js'
   let { count = 0, forms = [], grapheme = '', busy = false, error = '', done = null,
     onassign, onclear, onundo, ondismiss } = $props()
@@ -16,6 +17,7 @@
   {#if count}
     <b class="selection-count">{t('bulk.selected', { count })}</b>
     <FormChips {forms} disabled={busy} label={t('quiz.forms.label', { char: grapheme })} title={char => t('bulk.apply', { char })} onchoose={onassign} />
+    <IdsPick char={grapheme} disabled={busy} onuse={onassign} />
     <button class="quiet" disabled={busy} onclick={onclear}>{t('bulk.clear')}</button>
   {/if}
   {#if error}<p class="form-error" role="alert">{error}</p>{/if}

@@ -14,6 +14,7 @@
   import GlyphContext from '../components/GlyphContext.svelte'
   import { fromAction } from 'svelte/attachments'
   import { showsContext, clearContext } from '../lib/glyphContext.svelte.js'
+  import { useInspector, cropAddress } from '../lib/inspector.svelte.js'
   import { families as loadFamilies, family as loadFamily, members as loadMembers, paletteOf, split as loadSplit } from '../lib/forms.js'
   import { history, step, undo, redo } from '../lib/formHistory.svelte.js'
   import { number } from '../lib/client.js'
@@ -187,6 +188,33 @@
     const request = membersRequest, page = await loadMembers(open, glyphs.length, 240, order)
     if (request === membersRequest) glyphs = [...glyphs, ...page.items]
   }
+  // A glyph opens in the crop inspector, stepping through the glyphs on show. A save there may move a
+  // glyph to another form or character, so the open cluster is read again once the inspector closes.
+  const inspector = useInspector()
+  let edited = $state(false)
+  function openCrop(id, event) {
+    if (event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return
+    event?.preventDefault(); clearContext()
+    const shown = splitK ? groups.flatMap(group => group.items) : glyphs
+    inspector.inspect(id, null, shown.map(glyph => ({ id: glyph.id, origin: 'corpus' })), () => { edited = true }, 'corpus')
+  }
+  $effect(() => {
+    if (page.state.inspect || !edited) return
+    untrack(async () => {
+      edited = false
+      if (!open) return
+      const wasOpen = open, k = splitK, request = ++membersRequest
+      const [read, split] = await Promise.all([loadMembers(wasOpen, 0, Math.min(500, Math.max(240, glyphs.length)), order),
+        k ? loadSplit(wasOpen, k) : null])
+      // Only the answer for the cluster and split still on show replaces them; a selected glyph stays
+      // selected while either list still holds it.
+      if (request !== membersRequest || open !== wasOpen || splitK !== k) return
+      glyphs = read.items; total = read.total; anchor = null
+      if (split) groups = split.groups
+      const shown = new Set([...read.items.map(glyph => glyph.id), ...(split?.groups.flatMap(group => group.ids) ?? [])])
+      chosen = new Set([...chosen].filter(id => shown.has(id)))
+    })
+  })
   function close() { clearContext(); membersRequest++; open = null; glyphs = []; loadingMembers = false; chosen = new Set(); anchor = null; splitK = 0; groups = [] }
   async function divide(k) {
     splitK = k; chosen = new Set(); anchor = null; groups = []; loadingSplit = Boolean(k)
@@ -344,7 +372,8 @@
   const clusterIssue = issue => issue === 'mixed' ? t('forms.mixed') : issue === 'crop' ? t('forms.cluster.crop') : t('forms.cluster.character', { char: current.char })
   function leaveReview(index) { reviewing = false; active = Math.min(index, current.items.length - 1); scrollActive() }
   function keydown(event) {
-    if (historyKeys(event) || reviewing) return
+    // The inspector's keys are its own while it is open over the page.
+    if (page.state.inspect || historyKeys(event) || reviewing) return
     if (!current || event.target.closest?.('input, textarea, .ids-composer') || event.metaKey || event.ctrlKey || event.altKey) return
     const keys = '1234567890'
     if (keys.includes(event.key) && palette[keys.indexOf(event.key)]) { event.preventDefault(); apply(palette[keys.indexOf(event.key)].char) }
@@ -397,6 +426,20 @@
 </script>
 
 <svelte:window onkeydown={keydown} />
+
+<!-- A glyph of the open cluster: a click selects it for the form buttons, ↗ opens it in the inspector. -->
+{#snippet member(glyph, select, dated)}
+  <div class="member-cell">
+    <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
+            aria-pressed={chosen.has(glyph.id)} onclick={select} use:showsContext={{ id: glyph.id }}>
+      {#if glyph.image}<Glyph item={glyph} alt="" />{/if}
+      {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
+      {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
+      {#if dated && tileDate(glyph)}<span class="member-year">{tileDate(glyph)}</span>{/if}
+    </button>
+    <a class="member-open" href={cropAddress(glyph.id, 'corpus')} aria-label={t('forms.member.open', { id: glyph.id })} title={t('forms.member.open', { id: glyph.id })} onclick={event => openCrop(glyph.id, event)}>↗</a>
+  </div>
+{/snippet}
 
 <!-- Where a form of the family comes from: its 字母, else its 字源. -->
 {#snippet source(char)}{#if byForm.get(char)?.jibo}<ScriptText text={byForm.get(char).jibo} />{:else}<OriginText origin={byForm.get(char)?.origin} />{/if}{/snippet}
@@ -582,12 +625,7 @@
                     <button class="quiet-link" onclick={() => selectGroup(group)}>{group.ids.every(id => chosen.has(id)) ? t('forms.selectAll.deselect', { count: group.count }) : t('forms.selectAll.select', { count: group.count })}</button></header>
                   <div class="member-grid">
                     {#each group.items as glyph (glyph.id)}
-                      <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
-                              aria-pressed={chosen.has(glyph.id)} onclick={() => toggleId(glyph.id)} use:showsContext={{ id: glyph.id }}>
-                        {#if glyph.image}<Glyph item={glyph} alt="" />{/if}
-                        {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
-                        {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
-                      </button>
+                      {@render member(glyph, () => toggleId(glyph.id), false)}
                     {/each}
                   </div>
                   {#if group.count > group.items.length}<p class="split-more">{t('forms.moreLikeThese', { count: group.count - group.items.length })}</p>{/if}
@@ -597,13 +635,7 @@
             <div class="member-grid" aria-busy={loadingMembers}>
               {#if loadingMembers}{#each Array(Math.min(cluster.count, 36)) as _, i (i)}<span class="member shimmer" aria-hidden="true"></span>{/each}{/if}
               {#each glyphs as glyph, i (glyph.id)}
-                <button class="member" class:selected={chosen.has(glyph.id)} class:own={glyph.basis === 'form_glyph'}
-                        aria-pressed={chosen.has(glyph.id)} onclick={event => toggle(i, event)} use:showsContext={{ id: glyph.id }}>
-                  {#if glyph.image}<Glyph item={glyph} alt="" />{/if}
-                  {#if glyph.reported}<span class="member-flag" title={t('forms.reported', { reason: glyph.reported })}>{glyph.character ?? '⚠'}</span>
-                  {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
-                  {#if tileDate(glyph)}<span class="member-year">{tileDate(glyph)}</span>{/if}
-                </button>
+                {@render member(glyph, event => toggle(i, event), true)}
               {/each}
             </div>
             {#if !loadingMembers && glyphs.length < total}<div class="load-more"><button onclick={more}>{t('forms.showMore', { count: total - glyphs.length })}</button></div>{/if}
@@ -642,7 +674,7 @@
     {/if}
   </div>
   {#if notice}<div class="save-toast" role="status">{notice}</div>{/if}
-  <GlyphContext />
+  <GlyphContext onopen={openCrop} />
 </section>
 
 <style>
@@ -725,6 +757,11 @@
   .palette-skeleton{display:flex;gap:6px;padding:14px 0;border-bottom:1px solid var(--line)}.palette-skeleton span{width:66px;height:82px;border-radius:7px}
   .cluster-skeleton{padding:12px 12px 16px}.cluster-skeleton .line-skeleton{width:120px;margin-bottom:10px}.cluster-skeleton .cluster-samples span{aspect-ratio:1;border-radius:3px}
   span.member{display:block}
+  .member-cell{position:relative}.member-cell>.member{width:100%}
+  .member-open{position:absolute;right:3px;bottom:3px;display:grid;place-items:center;width:22px;height:22px;border-radius:5px;font-size:12px;line-height:1;color:var(--muted);text-decoration:none;background:var(--surface);opacity:0;transition:opacity .12s}
+  .member-cell:hover .member-open,.member-open:focus-visible,.member-cell:has(.selected) .member-open{opacity:1}
+  .member-open:hover{color:var(--ink);background:var(--accent-light)}
+  @media(hover:none){.member-open{opacity:1}}
   .member{position:relative;aspect-ratio:1;padding:6px;border:1.5px solid transparent;border-radius:5px;background:var(--surface-sunken)}
   .member.selected{border-color:var(--accent);background:light-dark(#e7e3ff, rgb(156 146 255 / 20%))}
   .member.own{border-style:dashed;border-color:light-dark(#b3acd9, #8c80bb)}
