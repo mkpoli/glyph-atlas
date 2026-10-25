@@ -160,7 +160,7 @@ const nearSlots = slots => slots.map(s => ({ ...s, box: near(s.box) }))
 describe('an empty slot', () => {
   it('composes: the filled parts as the whole sequence draws them, the slot a placeholder in its box', async () => {
     const source = fixedSource()
-    const open = await compose(source, '⿰木＋'), whole = await compose(source, '⿰木口')
+    const open = await compose(source, '⿰木⬚'), whole = await compose(source, '⿰木口')
     expect(open.d.length).toBeGreaterThan(20)
     expect(open.origins).toEqual(['glyph 木'])
     expect(open.parts[0].box).toEqual(whole.parts[0].box)
@@ -170,16 +170,16 @@ describe('an empty slot', () => {
   })
   it('is numbered in reading order, nested or not, and a tree of empty slots draws no ink', async () => {
     const source = fixedSource()
-    const drawn = await compose(source, '⿰＋⿱口＋')
+    const drawn = await compose(source, '⿰⬚⿱口⬚')
     expect(drawn.slots.map(s => s.index)).toEqual([0, 1])
     expect(near(drawn.slots[0].box)).toEqual(svgBox(LEFT))
-    const empty = await compose(source, '⿰＋＋')
+    const empty = await compose(source, '⿰⬚⬚')
     expect(empty.d).toBe('')
     expect(empty.slots.map(s => near(s.box))).toEqual([svgBox(LEFT), svgBox(RIGHT)])
-    expect((await compose(source, '＋')).slots).toHaveLength(1)
+    expect((await compose(source, '⬚')).slots).toHaveLength(1)
   })
   it('stands where the layout puts it before anything is drawn', async () => {
-    const leaves = await sketch(fixedSource(), '⿰木＋')
+    const leaves = await sketch(fixedSource(), '⿰木⬚')
     expect(nearSlots(leaves)).toEqual([{ index: 0, box: svgBox(LEFT), empty: false }, { index: 1, box: svgBox(RIGHT), empty: true }])
   })
   it('is drawn as a rounded box inset by half a stroke, its dots a stroke apart', () => {

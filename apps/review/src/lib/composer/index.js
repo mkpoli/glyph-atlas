@@ -169,7 +169,7 @@ export async function sketch(source, sequence) {
 /**
  * `sequence` drawn by the composer: `{ d, cut, slots, stroke, parts, origins, kanjivg, approximate }`,
  * `d` the SVG path of its outlines in a 1000-unit box (y down, nonzero fill), `cut` the path of what
- * ㇯ takes away (empty when nothing is), `slots` each empty slot (＋) as `{ index, box }`, numbered in
+ * ㇯ takes away (empty when nothing is), `slots` each empty slot (⬚) as `{ index, box }`, numbered in
  * reading order, in the box the layout gave it (as `svgBox` gives it), `stroke` the stroke widths
  * the drawing is weighted to, across x and y, `parts` each drawn part's origin and box, `origins`
  * where each part came from, `kanjivg` whether a part was cut along KanjiVG's groups or a hand form

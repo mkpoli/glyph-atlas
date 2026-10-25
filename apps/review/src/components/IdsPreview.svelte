@@ -12,7 +12,7 @@
   import { tooLarge } from '../lib/composer/index.js'
   import { FACE, STROKE, badge, placeholder } from '../lib/composer/preview.js'
   import { roughLayout } from '../lib/composer/rough.js'
-  import { OP_NAMES, leaves, loadDrawing, samePath } from '../lib/ids.js'
+  import { OP_NAMES, leaves, loadDrawing, samePath, EMPTY } from '../lib/ids.js'
   import { t } from '../lib/i18n.svelte.js'
   let { tree, sequence = '', chosen = null } = $props()
 
@@ -33,7 +33,7 @@
     step = 'loading'
     let live = true
     const timer = setTimeout(() => {
-      const whole = !text.includes('＋')
+      const whole = !text.includes(EMPTY)
       let final = false
       if (whole) loadDrawing(text).then(url => {
         if (!live || !url) return

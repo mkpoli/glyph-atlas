@@ -14,6 +14,7 @@
 // a key the export lacks or whose file is not loaded yet (which the caller loads before drawing again).
 import { EM_BOX, area, count, drawnContours, fill, fitted, grown, groupRings, makePart, mapped, partInk, partOf,
   placed, pointsBox, pyRound, raster, rings, scaleOf, shrunk, square, stretchOf, union, within } from './geometry.js'
+import { EMPTY } from '../ids.js'
 import { features, forward } from './layout.js'
 
 export class LookupError extends Error { name = 'LookupError' }
@@ -46,12 +47,12 @@ export function parseTree(sequence, arity) {
 /** A node written out again as a sequence. */
 export const keyOf = node => typeof node === 'string' ? node : node[0] + node.slice(1).map(keyOf).join('')
 
-/** An empty slot, as the editor writes it (`lib/ids.js` EMPTY). The composer lays a tree with empty
+/** An empty slot, as the editor writes it. The composer lays a tree with empty
  *  slots out as it would a whole one, each empty slot an operand it knows nothing of (the layout
  *  reads its place's defaults, its ink is the unknown operand's), and draws no ink there: the slot
  *  becomes a placeholder in the box its node gave it. han-compose itself draws no empty slots. */
-export const EMPTY = '＋'
-/** Whether a node is an empty slot, numbered in reading order (`＋0`, `＋1`, …) by `compose`. */
+export { EMPTY }
+/** Whether a node is an empty slot, numbered in reading order (`⬚0`, `⬚1`, …) by `compose`. */
 export const isEmpty = node => typeof node === 'string' && node[0] === EMPTY
 
 /** The operators this port draws beyond the composer's, with rooms and turns of its own choosing: a
