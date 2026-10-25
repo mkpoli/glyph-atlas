@@ -2,7 +2,7 @@
   import Seo from '$components/Seo.svelte'
   import LinkMark from '$components/LinkMark.svelte'
   import { t, around, locale } from '$lib/i18n.svelte.js'
-  import { CHATS, OTHER_GROUPS, SPACE } from '$lib/community.js'
+  import { CHATS, IRC_CHANNELS, IRC_WEB, OTHER_GROUPS, SPACE } from '$lib/community.js'
   const EMAIL = 'contact@glyphatlas.org'
   const REPO = 'https://github.com/mkpoli/glyph-atlas'
   // Matrix apps someone can join the space with besides Element on the web.
@@ -27,6 +27,10 @@
     } catch { status = 'failed' }
   }
   const apps = $derived(around('contact.matrix.apps', 'space'))
+  // The IRC picker starts on the channel for the page's language; lzh pages are Chinese.
+  const spoken = locale() === 'lzh' ? 'zh' : locale().split('-')[0]
+  let picked = $state(IRC_CHANNELS.filter(item => item.language === spoken).map(item => item.channel))
+  const joined = $derived(IRC_CHANNELS.map(item => item.channel).filter(channel => picked.includes(channel)).join(','))
 </script>
 
 <Seo title={t('contact.title')} description={t('contact.intro')} />
@@ -57,6 +61,23 @@
       {#each APPS as [name, href] (name)}<li><a {href} rel="noopener" target="_blank">{name} ↗</a></li>{/each}
       <li><a href={`https://matrix.to/#/${SPACE}`} rel="noopener" target="_blank">{t('contact.matrix.choose')} ↗</a></li>
     </ul>
+  </section>
+
+  <section>
+    <h2 id="irc">{t('contact.irc.title')}</h2>
+    <p>{t('contact.irc.body')}</p>
+    <fieldset class="channels" aria-labelledby="irc">
+      {#each IRC_CHANNELS as item (item.channel)}
+        <label><input type="checkbox" value={item.channel} bind:group={picked} /><span><span lang={item.lang}>{item.name}</span><code>{item.channel}</code></span></label>
+      {/each}
+    </fieldset>
+    {#if joined}
+      <div class="irc-open">
+        <a class="send" href={IRC_WEB + joined} rel="noopener" target="_blank">{t('contact.irc.open')} ↗</a>
+        <code>/join {joined}</code>
+      </div>
+    {/if}
+    <p>{t('contact.irc.history')}</p>
   </section>
 
   <section>
@@ -125,5 +146,15 @@
   .send:hover:not(:disabled) { background: var(--accent-solid-hover); }
   .send:disabled { opacity: .5; cursor: default; }
   .form-status { margin: 0; color: var(--muted); }
+  .channels { border: 0; padding: 0; margin: 12px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+  .channels label { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; cursor: pointer; min-width: 0; line-height: 1.4; }
+  .channels label:hover { border-color: var(--line-hover); }
+  .channels label:has(input:checked) { border-color: var(--accent); }
+  .channels input { accent-color: var(--accent-solid); margin: 0; flex-shrink: 0; }
+  .channels label > span { display: grid; min-width: 0; }
+  .channels code { color: var(--muted); background: none; padding: 0; font-size: 12px; overflow-wrap: anywhere; }
+  .irc-open { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 12px; }
+  .irc-open a.send { text-decoration: none; display: inline-block; }
+  .irc-open code { overflow-wrap: anywhere; }
   .apps { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
 </style>
