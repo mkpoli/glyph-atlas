@@ -169,7 +169,8 @@ async function sendPicks(picks) {
     try {
       result = await request('/atlas/forms', { id, crops: part.map(({ crop, form }) => ({ id: crop.id, crop_version: crop.crop_version, form })) })
     } catch (error) {
-      if (error?.kept) { kept.push(...part.map(pick => pick.crop)); continue }
+      // A kept batch carries its id in the outbox; the same picks made again later are a new submission.
+      if (error?.kept) { answered(); kept.push(...part.map(pick => pick.crop)); continue }
       if (error?.status) answered()
       throw Object.assign(error ?? new Error(), { marked, kept })
     }

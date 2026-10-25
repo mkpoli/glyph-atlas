@@ -204,8 +204,9 @@ export async function setForms(env: Env, input: Json, actor: string, tools: Clai
     await planForm(env, { key, actor, crop, representation: representations[i], own: owns[i], at }, plan, named, ledger);
     picked.push({ crop: crop.id, replaced: owns[i]?.text ?? null });
   }
-  await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, picked }, ledger);
-  return answer(picked);
+  // The response saved is the answer: a retry that landed first saved what it replaced.
+  const committed = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, picked }, ledger);
+  return answer(committed.picked ?? []);
 }
 
 // The id of the claim that names a form, in the shape of the site's other ids and the same for every
