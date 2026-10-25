@@ -439,3 +439,18 @@ def test_one_maker_serves_a_part_in_two_places_whichever_comes_first():
         forms = {(d.char, d.other) for d in v.derive(made, order)}
         assert ("圹", "壙") in forms
         assert not {other for char, other in forms if char == "㢃"} & {"⿸廣郎"}
+
+
+def test_a_held_out_pair_does_not_teach_the_place_it_is_measured_in():
+    # 庀/𢇁 alone show 广↔廣 inside ⿸, where 廣 holds 广: held out, its own place is set aside, so it
+    # is no prediction; 圹/壙 and 矿/礦 share their place and predict each other.
+    desc = descriptions({**IDS_广, "庀": ["⿸广匕"], "𢇁": ["⿸廣匕"]})
+    found = v.attest(desc, sources(("圹", "壙"), ("矿", "礦"), ("庀", "𢇁")))
+    item = found[("广", "廣")]
+    assert item.held_out(2)
+    predicted = v.predictions(desc, [item])[("广", "廣")]
+    assert {("圹", "壙"), ("矿", "礦")} <= predicted
+    assert ("庀", "𢇁") not in predicted
+    # With two pairs it is not held out, and it is predicted as the pair it attests.
+    two = v.attest(desc, sources(("圹", "壙"), ("庀", "𢇁")))[("广", "廣")]
+    assert ("庀", "𢇁") in v.predictions(desc, [two])[("广", "廣")]

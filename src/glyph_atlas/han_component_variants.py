@@ -379,10 +379,16 @@ def holds(desc: Descriptions, whole: str, part: str, where: Place) -> bool:
         for at, inner in enumerate(tree[1])) for tree in trees)
 
 
-def places(desc: Descriptions, pairs: dict[tuple[str, str], Iterable[tuple[str, str]]]) -> dict[tuple[str, str], set[Place]]:
+#: Each attesting pair with the places it shows each substitution in (`places`).
+PairPlaces = dict[tuple[str, str], dict[tuple[str, str], set[Place]]]
+
+
+def places(desc: Descriptions, pairs: dict[tuple[str, str], Iterable[tuple[str, str]]],
+           by_pair: PairPlaces | None = None) -> dict[tuple[str, str], set[Place]]:
     """Each substitution with the places its attesting pairs show it in: 宀↔宂 at the top of ⿱
-    (㝓 and 䆟), 广↔廣 at either side of ⿰ (圹 and 壙) and never inside ⿸."""
-    by_pair: dict[tuple[str, str], dict[tuple[str, str], set[Place]]] = {}
+    (㝓 and 䆟), 广↔廣 at either side of ⿰ (圹 and 壙) and never inside ⿸. `by_pair` keeps what
+    each pair shows, filled as pairs are read, so a caller can read it again or hand it on."""
+    by_pair = {} if by_pair is None else by_pair
     out: dict[tuple[str, str], set[Place]] = {}
     for sub, attesting in pairs.items():
         out[sub] = set()
@@ -483,21 +489,41 @@ def kept(found: dict[tuple[str, str], Attested]) -> list[Attested]:
     return [item for item in found.values() if item.count >= THRESHOLD and len(item.pairs) >= THRESHOLD]
 
 
-def predictions(desc: Descriptions, items: Iterable[Attested],
-                chars: Iterable[str] | None = None) -> dict[tuple[str, str], set[tuple[str, str]]]:
+def predictions(desc: Descriptions, items: Iterable[Attested], chars: Iterable[str] | None = None,
+                by_pair: PairPlaces | None = None) -> dict[tuple[str, str], set[tuple[str, str]]]:
     """The pairs of encoded characters each substitution of `items` predicts, from `chars` (every
     character of `desc.raw` when None, those with no description of their own included, so the bare
     pair of two components such as 火 and 灬 is a prediction too), made in the places the attesting
-    pairs show (`places`). Each pair is in code point order; the pairs that attest a substitution
-    are among its predictions."""
+    pairs show (`places`, with `by_pair` read once by a caller that splits the characters). Each pair
+    is in code point order; the pairs that attest a substitution are among its predictions, except a
+    held-out pair (`Attested.held_out`) predicted only through a place it alone shows: measured as
+    held out, it may not teach the place it is measured in."""
     items = list(items)
-    made = Maker(desc, equivalents(items), places(desc, {(item.a, item.b): [pair[:2] for pair in item.pairs]
-                                                        for item in items}))
+    chars = list(desc.raw) if chars is None else list(chars)
+    by_pair = {} if by_pair is None else by_pair
+    rows = {(item.a, item.b): [pair[:2] for pair in item.pairs] for item in items}
+    shown = places(desc, rows, by_pair)
+    made = Maker(desc, equivalents(items), shown)
     found: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
-    for form in derive(made, list(desc.raw) if chars is None else chars):
+    for form in derive(made, chars):
         if form.encoded:
             (was, became, _), = form.route
             found[ordered(was, became)].add(tuple(sorted((form.char, form.other), key=ord)))
+    here = set(chars)
+    for item in items:
+        sub = (item.a, item.b)
+        for at, (p, q, _) in enumerate(item.pairs):
+            if (p, q) not in found.get(sub, ()) or not item.held_out(at):
+                continue
+            others = set().union(*(by_pair[pair[:2]].get(sub, set()) for other, pair in enumerate(item.pairs)
+                                   if other != at))
+            alone = by_pair[p, q].get(sub, set()) - others
+            without = Maker(desc, made.table, {**shown, sub: others})
+            if all(without.fits(item.a, item.b, where) for where in alone):
+                continue
+            if not any(form.encoded and ordered(*form.route[0][:2]) == sub and {form.char, form.other} == {p, q}
+                       for form in derive(without, [char for char in (p, q) if char in here])):
+                found[sub].discard((p, q))
     return found
 
 
