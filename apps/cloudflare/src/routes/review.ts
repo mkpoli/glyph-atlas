@@ -9,7 +9,7 @@ import { STALE_CODE, StaleCrop, cropParam, writtenCropField } from '../atlas3Cro
 import { categoryOf } from '../category';
 import { formOfCrop } from './claims';
 import { inspected } from './crop';
-import { STYLE_KIND, foundCrop } from '../cropRecords';
+import { STYLE_KIND, STYLE_TARGET, foundCrop } from '../cropRecords';
 import { body, canonical, compose, graphemeKey, graphemeText, literal, text, writtenCharacter } from '../input';
 import { readRecords, recordKey } from '../records';
 import { addressKey } from '../reverse';
@@ -55,9 +55,9 @@ export const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND co
 // undo leaves them as it set them. A never-reviewed corpus glyph's follow moves its revision with no event
 // (`crops.bumps`), since it has no review to protect.
 export const PUBLISHED = 8;
-// Events the store never counts: marks, and the publication's own (a re-cut clearing a mark, kind 7, and
-// its changes, kind 8).
-export const UNCOUNTED = (e: string) => `(${e}.kind IN (7,${PUBLISHED}) OR ${MARKED(e)})`;
+// Events the store never counts: marks, the publication's own (a re-cut clearing a mark, kind 7, and its
+// changes, kind 8), and a style a reviewer gave a crop here (STYLE_KIND), which the review export leaves out.
+export const UNCOUNTED = (e: string) => `(${e}.kind IN (7,${PUBLISHED},${STYLE_KIND}) OR ${MARKED(e)})`;
 // Only events up to the crop's revision count, so a statement that writes an event before moving the crop
 // on (followCorpus) reads the same count on either side of it.
 export const LOGICAL = (c: string) => `coalesce((SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at
@@ -374,7 +374,8 @@ export function cropChanges(env: Env, actor: number, key: string, at: number, ch
 export const STYLES = ['seal', 'clerical', 'regular', 'running', 'cursive', 'ming', 'gothic', 'mixed'];
 /** A reviewer's style for one crop, as an event of its own (STYLE_KIND) one revision on, answered with the
  *  crop's record. The crop is listed under the new style at once (its row, overlay and counts move), and a
- *  publication leaves it as it is (publish.py: a review owns the style). `unassessed` gives the crop back the
+ *  publication leaves it as it is while its latest style event names a style (publish.py). The event moves
+ *  the crop's revision, so a view from before is refused, but the store does not count it (UNCOUNTED). `unassessed` gives the crop back the
  *  style its publication gave it, which the overlay keeps from before the crop's first style event
  *  (`reviews.base_style`). The client's revision is the record's; a crop changed since is refused, and a
  *  retry with the same id and values answers with the crop as it is now. */
@@ -385,7 +386,7 @@ export async function setStyle(env: Env, sent: Json, user: string, raw: string):
   if (style !== 'unassessed' && !STYLES.includes(style)) throw new Problem(422, 'Unknown style.');
   const crop = await cropNamed(env, raw, 'character id');
   if (crop === null) throw new Problem(404, 'This character is not in the published collection.');
-  const key = user + ':' + id, signature = canonical({ target: publicId(crop), style: { revision: sent.revision ?? null, style } });
+  const key = user + ':' + id, signature = canonical({ target: STYLE_TARGET, crop: publicId(crop), input: { revision: sent.revision ?? null, style } });
   const answer = async () => { const found = await foundCrop(env, crop); if (!found) throw await missing(env, crop); return await inspected(env, found) };
   const previous = () => env.ATLAS.prepare('SELECT request FROM submissions WHERE key=?').bind(key).first<{ request: string }>();
   const before = await previous();
@@ -409,9 +410,11 @@ export async function setStyle(env: Env, sent: Json, user: string, raw: string):
     ...(style === 'unassessed' ? [] : [env.ATLAS.prepare(`INSERT OR IGNORE INTO codes(field,code,key) SELECT 'style',coalesce(max(code),0)+1,?
       FROM codes WHERE field='style'`).bind(style)]),
     // A revision that moved since it was read leaves the event's revision null, which fails the batch.
-    env.ATLAS.prepare(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,style,quiz)
+    // It holds the crop's values as they stand, its open issue among them, as every event holds them after it.
+    env.ATLAS.prepare(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,style,quiz,kept_issue)
       SELECT c.id,(SELECT x.revision+1 FROM crops x WHERE x.id=c.id AND x.revision=?4),c.cut,${GEN},${actor},
-        (SELECT id FROM submissions WHERE key=?2),?3,${STYLE_KIND},c.char,c.state,${chosen},c.quiz FROM crops c WHERE c.id=?1`)
+        (SELECT id FROM submissions WHERE key=?2),?3,${STYLE_KIND},c.char,c.state,${chosen},c.quiz,
+        (SELECT coalesce(p.kept_issue,p.issue) FROM events p WHERE p.crop=c.id ORDER BY p.revision DESC LIMIT 1) FROM crops c WHERE c.id=?1`)
       .bind(crop, key, at, found.row.revision, style),
     env.ATLAS.prepare(tally('-', moved)).bind(crop, key),
     env.ATLAS.prepare(`INSERT INTO reviews(crop,gen,at,char,state,style,quiz,base_char,base_state,base_style,base_quiz)

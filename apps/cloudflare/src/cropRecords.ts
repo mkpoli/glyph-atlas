@@ -41,8 +41,9 @@ export type RecordRow = { id: number; kind: number; book: number; state: string 
   document: string; x: number | null; y: number | null; w: number | null; h: number | null; issue: string | null;
   reviewed: number; written: number; settled: number; redrawn_at: number | null; cluster_key: string | null; form_row: number; glyph_set: number; form: string | null; form_issue: string | null;
   form_character: string | null; written_family: string | null; style: string | null; own_style: number | null };
-// The event of a style a reviewer gave one crop (`style` set) or took back to its publication's (`style` null).
-export const STYLE_KIND = 9;
+// The event of a style a reviewer gave one crop (`style` set) or took back to its publication's (`style` null),
+// and its submission's target: no review, so the export, a rejection and the counts leave it out.
+export const STYLE_KIND = 9, STYLE_TARGET = '@style';
 // An event that only moved a mark: a round's seen or hard (kinds 3 and 4), or an undo (kind 5) of a round
 // that took one away. The old site kept marks beside the crop and never moved its revision for them.
 const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id=${e}.reverses),3) IN (3,4)))`;

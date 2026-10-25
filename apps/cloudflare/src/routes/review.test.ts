@@ -11,6 +11,8 @@ import { body, canonical, literal, text } from '../input';
 import { setForm, type ClaimTools } from './claims';
 import { STALE_CODE } from '../atlas3Crops';
 import { reviewsPage } from './reviews';
+import { reject } from './admin';
+import { followCorpus } from './forms';
 import { readReviewEvidence } from '../reviewEvidence';
 import { cropChanges, reviewCrops, reviewCropsQuery, reviewRoute, revert, roundMembersQuery, type Submission } from './review';
 
@@ -822,6 +824,37 @@ describe('a crop\'s style', () => {
     expect((await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(906), revision: 0, style: 'seal' })).status).toBe(409);
     expect((await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(907), revision: 1, style: 'italic' })).status).toBe(422);
     expect(styleOf(db, ids[1])).toMatchObject({ revision: 1, style: 'regular' });
+  });
+
+  it('keeps the crop\'s open issue, and the store\'s count of its revisions', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, `/atlas/characters/${publicId(ids[3])}`, { ...local(ids[3]), id: uuid(911), verdict: 'wrong', issue: 'crop' })).status).toBe(200);
+    const styled = await send(env, `/atlas/characters/${publicId(ids[3])}/style`, { id: uuid(912), revision: 1, style: 'regular' });
+    expect(styled.body).toMatchObject({ state: 'flagged', issue: 'crop', revision: 2 });
+    const page = await reviewsPage(env, new URLSearchParams());
+    expect(page.reviews.map((r: any) => [r.expected_revision, r.current_revision])).toEqual([[0, 1]]);
+    // A review after it names the crop's revision and is the next one the store counts.
+    expect((await send(env, `/atlas/characters/${publicId(ids[3])}`, { ...local(ids[3], { revision: 2 }), id: uuid(913), verdict: 'match' })).status).toBe(200);
+    expect((await reviewsPage(env, new URLSearchParams())).reviews.map((r: any) => [r.expected_revision, r.current_revision])).toEqual([[0, 2], [1, 2]]);
+    expect(db.query('SELECT revision FROM crops WHERE id=?').get(ids[3])).toEqual({ revision: 3 });
+  });
+
+  it('leaves a corpus glyph following its cluster\'s form', async () => {
+    const { db, env, ids } = setup();
+    await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(915), revision: 0, style: 'regular' });
+    db.exec(`INSERT INTO form_clusters(id,key,family,label,count,coherence,shape_position,size_position,list,form) VALUES(1,'test','U+306F','は',2,1,1,1,'test','𛂞');
+      UPDATE crops SET cluster=1 WHERE id IN (${ids[6]},${ids[7]}); INSERT INTO corpus_follow VALUES(${ids[6]}),(${ids[7]})`);
+    // The follow's own statements are not this route's, so they run outside the scan check.
+    await followCorpus({ ...env, ATLAS: d1(db) } as Env);
+    expect(db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id IN (?,?) ORDER BY c.id').all(ids[6], ids[7]))
+      .toEqual([{ text: '𛂞' }, { text: '𛂞' }]);
+  });
+
+  it('is no review an admin can reject', async () => {
+    const { db, env, ids } = setup();
+    await send(env, `/atlas/characters/${publicId(ids[4])}/style`, { id: uuid(914), revision: 0, style: 'seal' });
+    await expect(reject(env, 'admin', { submissions: ['u1:' + uuid(914)] }, { text } as any)).rejects.toThrow('A style is not a review');
+    expect(styleOf(db, ids[4])).toMatchObject({ style: 'seal' });
   });
 
   it('a later review keeps the style and its publication\'s', async () => {
