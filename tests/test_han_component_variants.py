@@ -376,7 +376,7 @@ def test_the_places_of_a_substitution_are_where_its_pairs_show_it():
     assert v.places(desc, {("广", "廣"): [("圹", "壙"), ("矿", "礦")]}) == {("广", "廣"): {("⿰", "last")}}
 
 
-def test_a_part_is_never_swapped_for_a_character_that_holds_it_in_the_same_place():
+def test_a_part_is_never_swapped_for_a_character_containing_it_where_no_pair_shows_the_swap():
     # The 广 enclosing 郎 is the part of 廣 (⿸广黃), not 廣: ⿸廣郎 is no form of 㢃.
     desc = descriptions(IDS_广)
     assert "⿸廣郎" not in {d.other for d in v.derive(maker_广(desc), ["㢃"])}
@@ -389,13 +389,13 @@ def test_a_swap_in_a_place_the_whole_does_not_hold_it_is_still_made():
     assert ("圹", True) in {(d.other, d.encoded) for d in v.derive(maker_广(desc), ["壙"])}
 
 
-def test_a_whole_is_never_swapped_for_its_own_part_in_the_place_it_holds_it():
+def test_a_whole_is_never_swapped_for_its_own_part_where_no_pair_shows_the_swap():
     # The other way round: 廣 enclosing 口 does not become 广 enclosing 口.
     desc = descriptions(IDS_广)
     assert "⿸广口" not in {d.other for d in v.derive(maker_广(desc), ["𢋈"])}
 
 
-def test_a_swap_its_pairs_show_in_the_place_the_whole_holds_the_part_is_made_there():
+def test_a_swap_its_pairs_show_in_a_place_is_made_there_though_one_side_contains_the_other():
     # 宂 is ⿱宀几 and holds 宀 at the top, where 㝓 and 䆟 show 宀↔宂: 寰 still gives ⿱宂睘.
     desc = descriptions({"宂": ["⿱宀几"], "㝓": ["⿱宀甲"], "䆟": ["⿱宂甲"], "寰": ["⿱宀睘"]})
     table = {"宀": {"宂"}, "宂": {"宀"}}
@@ -414,9 +414,11 @@ def test_the_outer_places_of_a_three_part_operator_are_those_of_the_two_part_one
 
 
 def test_the_middle_of_a_flattened_operator_is_read_as_either_end_it_came_from():
-    # ⿲氵虫工 is ⿰氵⿰虫工 or ⿰⿰氵虫工, so its middle 虫 is an end of a ⿰, where 䖵 (⿰虫虫) holds 虫.
+    # ⿲氵虫工 is ⿰氵⿰虫工 or ⿰⿰氵虫工, so its middle 虫 is an end of a ⿰.
     desc = descriptions({"㳊": ["⿲氵虫工"], "䖵": ["⿰虫虫"]})
-    made = v.Maker(desc, {"虫": {"䖵"}, "䖵": {"虫"}}, {})
+    made = v.Maker(desc, {"虫": {"䖵"}, "䖵": {"虫"}}, {v.ordered("虫", "䖵"): {("⿰", 1)}})
+    assert made.fits("虫", "䖵", v.slot("⿲", 1, 3))
+    made = v.Maker(desc, {"虫": {"䖵"}, "䖵": {"虫"}}, {v.ordered("虫", "䖵"): {("⿱", "last")}})
     assert v.readings(v.slot("⿲", 1, 3)) == (("⿰", 1), ("⿰", "first"), ("⿰", "last"))
     assert not made.fits("虫", "䖵", v.slot("⿲", 1, 3))
     assert "⿲氵䖵工" not in {d.other for d in v.derive(made, ["㳊"])}
@@ -442,7 +444,7 @@ def test_one_maker_serves_a_part_in_two_places_whichever_comes_first():
 
 
 def test_a_held_out_pair_does_not_teach_the_place_it_is_measured_in():
-    # 庀/𢇁 alone show 广↔廣 inside ⿸, where 廣 holds 广: held out, its own place is set aside, so it
+    # 庀/𢇁 alone show 广↔廣 inside ⿸, and 廣 (⿸广黃) contains 广: held out, its own place is set aside, so it
     # is no prediction; 圹/壙 and 矿/礦 share their place and predict each other.
     desc = descriptions({**IDS_广, "庀": ["⿸广匕"], "𢇁": ["⿸廣匕"]})
     found = v.attest(desc, sources(("圹", "壙"), ("矿", "礦"), ("庀", "𢇁")))
@@ -454,3 +456,28 @@ def test_a_held_out_pair_does_not_teach_the_place_it_is_measured_in():
     # With two pairs it is not held out, and it is predicted as the pair it attests.
     two = v.attest(desc, sources(("圹", "壙"), ("庀", "𢇁")))[("广", "廣")]
     assert ("庀", "𢇁") in v.predictions(desc, [two])[("广", "廣")]
+
+
+#: 蟲 is ⿱虫䖵 and 䖵 ⿰虫虫; 融/𧖓 show 虫↔蟲 on the right of ⿰, 蛊/蠱 at the bottom of ⿱.
+IDS_虫 = {"蝦": ["⿰虫叚"], "蟲": ["⿱虫䖵"], "䖵": ["⿰虫虫"], "融": ["⿰鬲虫"], "𧖓": ["⿰鬲蟲"],
+         "蛊": ["⿱皿虫"], "蠱": ["⿱皿蟲"], "螎": ["⿰虫鬲"]}
+TABLE_虫 = {"虫": {"蟲", "䖵"}, "蟲": {"虫"}, "䖵": {"虫"}}
+
+
+def test_a_part_contained_deeper_in_the_other_side_is_swapped_only_where_pairs_show_it():
+    desc = descriptions(IDS_虫)
+    shown = v.places(desc, {v.ordered("虫", "蟲"): [("融", "𧖓"), ("蛊", "蠱")],
+                            v.ordered("虫", "䖵"): [("蛊", "蠱")]})
+    assert shown[v.ordered("虫", "蟲")] == {("⿰", "last"), ("⿱", "last")}
+    made = v.Maker(desc, TABLE_虫, shown)
+    # 蟲 holds 虫 at the top of ⿱ and twice more inside 䖵, never as the left of ⿰: 蝦 keeps its 虫.
+    assert v.contains(desc, "蟲", "虫") and not v.contains(desc, "虫", "蟲")
+    forms = {d.other for d in v.derive(made, ["蝦"])}
+    assert not forms & {"⿰蟲叚", "⿰䖵叚"}
+    assert ("𧖓", True) in {(d.other, d.encoded) for d in v.derive(made, ["融"])}
+
+
+def test_a_swap_where_neither_side_contains_the_other_is_made_anywhere():
+    desc = descriptions({"㕦": ["⿰口叚"], "㫚": ["⿱日叚"]})
+    made = v.Maker(desc, {"口": {"曰"}, "曰": {"口"}}, {})
+    assert "⿰曰叚" in {d.other for d in v.derive(made, ["㕦"])}

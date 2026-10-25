@@ -8,8 +8,8 @@ predicts are pairs the graph already gives (`agreeing`). Every character is then
 `STEPS` substitutions, each in a part of its own, at every depth of its decomposition (`derive`): a
 result that is another character's sequence is a derived variant of it, and one no character has is
 an unencoded form, written as its sequence. 嗚 (⿰口烏) gets 呜 through 烏→乌, and ⿰厶烏 through 口→厶.
-A swap between a part and a character that holds it in the same place (广 and 廣, which is ⿸广黃,
-inside ⿸) is made only where the attesting pairs show it in that place (`Maker`).
+A swap between a part and a character that contains it (广 and 廣, which is ⿸广黃; 虫 and 蟲) is
+made only in the places the attesting pairs show it in (`Maker`).
 
 What feeds it is the build script's business: pairs the graph says may be written for each other
 (`refs.WRITTEN_FOR`, simplifications included: a gallery keeps those apart, an attestation does not),
@@ -369,14 +369,25 @@ def readings(where: Place) -> tuple[Place, ...]:
     return (where,)
 
 
-def holds(desc: Descriptions, whole: str, part: str, where: Place) -> bool:
-    """Whether a description of `whole` has `part` in the place `where`: 廣 (⿸广黃) holds 广 as the
-    enclosing part of ⿸. Compared by shape, as `adds` compares."""
-    trees = desc.trees.get(whole, ()) if len(whole) == 1 else [desc.whole(parse(whole))]
+def contains(desc: Descriptions, whole: str, part: str) -> bool:
+    """Whether `part` is anywhere in a description of `whole`, in any place and at any depth of its
+    parts' own descriptions (to `DEPTH`): 廣 (⿸广黃) holds 广, 蟲 (⿱虫䖵) holds 虫, 宂 (⿱宀几) holds
+    宀. Compared by shape, as `adds` compares."""
     shape = desc.folded_text(desc.part(parse(part)))
-    return any(not isinstance(tree, str) and any(
-        slot(tree[0], at, len(tree[1])) == where and desc.folded_text(inner) == shape
-        for at, inner in enumerate(tree[1])) for tree in trees)
+    seen = {whole}
+
+    def walk(tree: Tree, depth: int) -> bool:
+        if isinstance(tree, str):
+            if desc.leaf(tree) == shape:
+                return True
+            if depth >= DEPTH or tree in seen:
+                return False
+            seen.add(tree)
+            return any(walk(inner, depth + 1) for inner in desc.trees.get(tree, ()))
+        return desc.folded_text(tree) == shape or any(walk(inner, depth) for inner in tree[1])
+
+    trees = desc.trees.get(whole, ()) if len(whole) == 1 else [desc.whole(parse(whole))]
+    return any(not isinstance(tree, str) and walk(tree, 0) for tree in trees)
 
 
 #: Each attesting pair with the places it shows each substitution in (`places`).
@@ -620,29 +631,37 @@ class Maker:
     """The forms substitutions make of a character, with what a part becomes kept per part: 睘 turns
     into the same forms in 還, 環 and 寰.
 
-    Where one side of a substitution holds the other in the very place a part sits, the swap is made
-    there only if an attesting pair shows it in that place (`fits`, with `places`). 广 and 廣 are
-    attested as whole side parts (圹 ⿰土广, 壙 ⿰土廣), and 廣 is ⿸广黃, so the 广 that encloses 郎 in
-    㢃 (⿸广郎) is the part of 廣, and ⿸廣郎 no form of it; 宂 is ⿱宀几, and 㝓 and 䆟 show 宀↔宂 at
-    the top of ⿱, so 寰 (⿱宀睘) still gives ⿱宂睘."""
+    Where one side of a substitution contains the other (`contains`), the swap is made only in the
+    places its attesting pairs show it in (`fits`, with `places`). 广 and 廣 are attested as whole
+    side parts (圹 ⿰土广, 壙 ⿰土廣), and 廣 is ⿸广黃, so the 广 that encloses 郎 in 㢃 (⿸广郎) is the
+    part of 廣, and ⿸廣郎 no form of it. 虫↔蟲 is shown on the right of ⿰ (融 and 𧖓), never on the
+    left, so 蝦 (⿰虫叚) gives no ⿰蟲叚. 宂 is ⿱宀几, and 㝓 and 䆟 show 宀↔宂 at the top of ⿱, so
+    寰 (⿱宀睘) still gives ⿱宂睘. A swap where neither side contains the other (口 and 曰) is made
+    in any place."""
 
     def __init__(self, desc: Descriptions, table: dict[str, set[str]],
                  places: dict[tuple[str, str], set[Place]], steps: int = 1):
         self.desc, self.table, self.steps, self.places = desc, table, steps, places
         self.parts: dict[tuple[str, int, int], list[tuple[tuple[Step, ...], Tree]]] = {}
         self._fits: dict[tuple[str, str, Place], bool] = {}
+        self._nested: dict[tuple[str, str], bool] = {}
 
     def fits(self, was: str, became: str, where: Place) -> bool:
-        """Whether `was` may become `became` in the place `where`: neither holds the other there, or
-        an attesting pair shows the swap there. A middle place of ⿲ or ⿳ is read as each place it
-        may stand for (`readings`)."""
+        """Whether `was` may become `became` in the place `where`: neither contains the other, or an
+        attesting pair shows the swap there. A middle place of ⿲ or ⿳ is read as each place it may
+        stand for (`readings`)."""
         key = (was, became, where)
         if key not in self._fits:
-            read = readings(where)
             shown = self.places.get(ordered(was, became), ())
-            self._fits[key] = any(place in shown for place in read) or not any(
-                holds(self.desc, became, was, place) or holds(self.desc, was, became, place) for place in read)
+            self._fits[key] = any(place in shown for place in readings(where)) or not self.nested(was, became)
         return self._fits[key]
+
+    def nested(self, was: str, became: str) -> bool:
+        """Whether one side of the substitution contains the other (`contains`)."""
+        key = ordered(was, became)
+        if key not in self._nested:
+            self._nested[key] = contains(self.desc, *key) or contains(self.desc, *key[::-1])
+        return self._nested[key]
 
     def whole(self, char: str) -> Iterator[tuple[tuple[Step, ...], Tree, bool]]:
         """Each form of `char` with its route, and whether it was made from one of the character's
