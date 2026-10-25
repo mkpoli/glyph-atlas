@@ -46,6 +46,14 @@ export function parseTree(sequence, arity) {
 /** A node written out again as a sequence. */
 export const keyOf = node => typeof node === 'string' ? node : node[0] + node.slice(1).map(keyOf).join('')
 
+/** An empty slot, as the editor writes it (`lib/ids.js` EMPTY). The composer lays a tree with empty
+ *  slots out as it would a whole one, each empty slot an operand it knows nothing of (the layout
+ *  reads its place's defaults, its ink is the unknown operand's), and draws no ink there: the slot
+ *  becomes a placeholder in the box its node gave it. han-compose itself draws no empty slots. */
+export const EMPTY = '＋'
+/** Whether a node is an empty slot, numbered in reading order (`＋0`, `＋1`, …) by `compose`. */
+export const isEmpty = node => typeof node === 'string' && node[0] === EMPTY
+
 /** The operators this port draws beyond the composer's, with rooms and turns of its own choosing: a
  *  preview using them is approximate, and no stored drawing has them. */
 export const APPROXIMATE = ['⿾', '⿿', '〾', '㇯', '⿼', '⿽']
@@ -78,7 +86,8 @@ export class Composer {
 
   arity = ch => this.arities.get(ch) ?? 0
   parse = sequence => parseTree(sequence, this.arity)
-  rec = key => this.data.rec(key)
+  // A key holding an empty slot has no record and no hosts: nothing is asked for it.
+  rec = key => key.includes(EMPTY) ? null : this.data.rec(key)
   excluded = ch => this.exclude.has(ch)
   slot = (op, i) => this.SLOTS[op] ? this.SLOTS[op][i] : `${op}${i}`
 
@@ -126,10 +135,51 @@ export class Composer {
   // ---------------------------------------------------------------- the composer's entry
   /** The parts drawing `sequence`, weighted. */
   compose(sequence) {
-    const tree = this.parse(sequence)
-    const out = this.node(tree, this.face.slice(), true)
+    let slots = 0
+    const number = node => node === EMPTY ? `${EMPTY}${slots++}` : Array.isArray(node) ? [node[0], ...node.slice(1).map(number)] : node
+    const out = this.node(number(this.parse(sequence)), this.face.slice(), true)
     if (!this.partial) this.balance(out)
     return out
+  }
+
+  /**
+   * Where each leaf of `sequence` goes before anything of it is drawn, from the layout alone: the
+   * learned boxes where the composer would ask the network (reading whatever records are loaded, a
+   * place's defaults for the rest), even shares of the axis elsewhere, and for an enclosure the
+   * region and its `INSIDE`. Answers `{ index, box, empty }` per leaf in reading order, boxes in
+   * font units, y up.
+   */
+  sketch(sequence) {
+    const out = []
+    const walk = (node, region, atRoot) => {
+      if (!Array.isArray(node)) { out.push({ index: out.length, box: region, empty: node === EMPTY }); return }
+      const op = node[0], kids = node.slice(1)
+      if (kids.length === 2 && this.layout && (atRoot ? this.layout.ops.includes(op) : op === '⿰' || op === '⿱')) {
+        let boxes = this.predict(op, kids)
+        if (!atRoot) { const frame = union(boxes); boxes = boxes.map(b => mapped(b, frame, region)) }
+        if (boxes.every(b => b[2] > b[0] && b[3] > b[1])) { kids.forEach((kid, i) => walk(kid, boxes[i], false)); return }
+      }
+      if (op in this.AXIS) {
+        const axis = this.AXIS[op], lo = region[axis], span = (region[axis + 2] - lo) / kids.length
+        kids.forEach((kid, i) => {
+          const box = region.slice(), k = axis ? kids.length - 1 - i : i
+          box[axis] = lo + k * span
+          box[axis + 2] = lo + (k + 1) * span
+          walk(kid, box, false)
+        })
+      } else if (this.INSIDE[op]) {
+        walk(kids[0], region, false)
+        const [x0, y0, x1, y1] = this.INSIDE[op], w = region[2] - region[0], h = region[3] - region[1]
+        walk(kids[1], [region[0] + x0 * w, region[1] + y0 * h, region[0] + x1 * w, region[1] + y1 * h], false)
+      } else kids.forEach(kid => walk(kid, region, false))
+    }
+    walk(this.parse(sequence), this.face.slice(), true)
+    return out
+  }
+
+  /** An empty slot's placeholder: no ink, in the box its node gives it, with the slot's number. */
+  placeholder(node, region) {
+    return { ...placed(makePart([], region.slice()), region.slice(), region.slice(), 0, 'empty'), empty: Number(node.slice(1)) }
   }
 
   /** What an operand may be drawn as in `place`: itself, the character a sequence describes, then
@@ -150,6 +200,7 @@ export class Composer {
   /** The host pieces of `written` in `place`; with `uncut`, also the entries the export lists without
    *  a piece, which the composer weighs before finding it cannot cut them. */
   hostsOf(written, place, uncut = false) {
+    if (written.includes(EMPTY)) return []
     const list = this.data.hosts(written, place)
     return uncut ? list : list.filter(h => this.cutOf(h))
   }
@@ -185,6 +236,7 @@ export class Composer {
   }
 
   node(node, region, atRoot = false) {
+    if (isEmpty(node)) return [this.placeholder(node, region)]
     const C = this.C
     let encoded = typeof node === 'string' ? node : this.spelled.has(keyOf(node)) ? null : this.bySequence(keyOf(node))
     if (atRoot && typeof node !== 'string') {
@@ -497,6 +549,7 @@ export class Composer {
   /** A sequence drawn whole somewhere in the font, in any place but the left or the top (`_instance`). */
   instance(node, region) {
     const C = this.C, k = keyOf(node)
+    if (k.includes(EMPTY)) return null
     const names = [k, ...(this.bySequence(k) ? [this.bySequence(k)] : [])]
     if (names.some(n => this.excluded(n)) && !this.stroked(node)) return null
     let best = null
@@ -678,7 +731,10 @@ export class Composer {
     const curve = (density, axis) => C.STEM_CURVE[axis][0] + C.STEM_CURVE[axis][1] * density / 1000
     const density = group.reduce((s, p) => { const [sx, sy] = scaleOf(p); return s + partInk(p.part) * (sx + sy) / 2 }, 0)
     const ratio = [0, 1].map(axis => stem[axis][1] / stem[axis][0] - 1)
+    // The stroke widths the whole drawing is brought to, which a placeholder's outline follows.
+    this.stroke = [curve(density, 0), curve(density, 1)]
     for (const p of group) {
+      if (p.empty !== undefined) continue
       const weight = [], target = p.target.slice(), scale = scaleOf(p)
       for (const axis of [0, 1]) {
         const extent = p.source[axis + 2] - p.source[axis]
