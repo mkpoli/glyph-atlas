@@ -41,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--input", type=Path, help="the reference input to write (default: reference-input.sqlite in ATLAS3_DIR)")
     args = parser.parse_args(argv)
     rows = sorted(component_rows())
+    if not rows:
+        raise SystemExit("no character the character table holds has a component; the reference input is left as it was")
     totals = Counter(row[0] for row in rows)
     with reference_input.writing(args.input) as db:
         counts = {"han_components": reference_input.replace(db, "han_components", rows),

@@ -2,6 +2,8 @@
 
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/reference.py          # translate, report, send nothing
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/reference.py --send   # and load it
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/reference.py --only components [--send]
+    python3 scripts/atlas3/reference.py --check https://glyphatlas.org      # ask the site the PROBES
 
 Reads the reference input (`glyph_atlas.reference_input`, which `export_graphemes.py`,
 `export_character_variants.py` and `export_components_cloudflare.py` write) and writes two things.
@@ -36,6 +38,15 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
   for the group of characters that share them.
 - `components/names.json.gz`: what a person may type for each component: `same`, the components typed
   as themselves, as one string, and `other`, `{typed: component}` for the rest.
+
+The component objects must answer each of PROBES (日月 finds 明) before anything is sent, and an empty
+`han_components` or `han_component_names` stops the load. `--only components` makes and sends those
+objects alone: it reads neither D1 nor the local copies, keeps every other path of the manifest as R2
+gives it, and reports to `out/reference-components-report.txt`. `--check URL` asks the site's
+`/layers/suggest` for each probe after a load. The probe here is looser than the Worker's search,
+which scans at most COMPONENT_SCAN characters of the rarest component, so `--check` is the authority.
+Every `--send` takes `work/atlas-v3/out/reference.lock` in the main checkout (SEND_LOCK) from reading
+the manifest to writing it back, and stops at once while another sender holds it.
 
 A shard is the first hex digits of the SHA-256 of its key as UTF-8 text: the head's code point(s)
 (`U+3042`) for a summary, the character itself (`好`) for the IDS.
@@ -76,6 +87,8 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 from collections import defaultdict
 
 from build import OUT, ROOT, char_text
@@ -113,6 +126,13 @@ READINGS = ROOT / "data" / "vocab" / "kanji-readings.json"
 # ones the query names itself: those it takes are among the first 49.
 READING_CARDS = 49
 PLAIN_NAME = re.compile(r"^(.*IDEOGRAPH-)([0-9A-F]{4,6})$")
+# Component searches the index must answer: the typed components, and one character they find.
+PROBES = {"日月": "明", "匕矢": "彘"}
+COMPONENTS = "components/"
+# The lock every --send takes, full or --only components, from reading R2's manifest to writing it back:
+# two senders would each drop the other's paths. It lies in the main checkout's work/atlas-v3/out
+# whatever ATLAS3_DIR names, the worktree's checkout included; None finds it there.
+SEND_LOCK = None
 
 
 INPUT = None
@@ -250,6 +270,10 @@ class Objects:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(data)
 
+    def keep(self, made):
+        """Every path of R2's manifest outside `made` (a path prefix), kept as R2 gives it."""
+        self.manifest.update({rel: h for rel, h in self.held.items() if not rel.startswith(made)})
+
     def changed(self):
         return sum(k[3] for k in self.kinds.values())
 
@@ -383,8 +407,7 @@ def translate(atlas, mirror, path, objects):
     scratch.close()
     scratch_path.unlink()
 
-    for rel, text in component_lists():
-        objects.put(rel, text)
+    put_components(objects)
 
     out.executemany("INSERT INTO component_variants VALUES(?,?,?)", [(a, b, v[0]) for (a, b), v in pairs.items()])
     # The names a search looks a term up by, each under its card's one code point as an integer
@@ -471,6 +494,9 @@ def component_list(rows):
 
 def component_lists():
     """(path, JSON text) of each component's list and of the names a person may type."""
+    for table in ("han_components", "han_component_names"):
+        if source(table).execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is None:
+            sys.exit(f"{table} in the reference input is empty; {GENERATORS[table]} writes it")
     rows = source("han_components").execute(
         "SELECT component, tier, size, code_point, n, direct FROM han_components ORDER BY component")
     component, held = None, []
@@ -489,6 +515,69 @@ def component_lists():
         else:
             other[query] = c
     yield "components/names.json.gz", compact({"same": "".join(same), "other": other})
+
+
+def component_search(read, term):
+    """The characters holding every component `term` names, as often as it names it, from the objects
+    `read` gives by path (None when absent); None when the names object is absent."""
+    names = read(f"{COMPONENTS}names.json.gz")
+    if names is None:
+        return None
+    wanted = defaultdict(int)
+    for typed in term:
+        component = names["other"].get(typed) or (typed if typed in names["same"] else None)
+        if component is None:
+            return set()
+        wanted[component] += 1
+    found = None
+    for component, n in wanted.items():
+        listed = read(f"{COMPONENTS}{object_key(code_point_of(component))}.json.gz")
+        if listed is None:
+            return set()
+        held = set()
+        for _tier, _size, steps, flags in listed["groups"]:
+            point = 0
+            for k, (step, flag) in enumerate(zip(steps, flags, strict=True)):
+                point = point + step if k else step
+                if flag >> 1 >= n:
+                    held.add(chr(point))
+        found = held if found is None else found & held
+    return found or set()
+
+
+def probe_components(read):
+    """Each probe whose character the objects do not find."""
+    problems = []
+    for term, char in PROBES.items():
+        found = component_search(read, term)
+        if found is None:
+            problems.append(f"{term}: no {COMPONENTS}names.json.gz")
+        elif char not in found:
+            problems.append(f"{term}: {char} not among the {len(found)} characters found")
+    return problems
+
+
+def put_components(objects):
+    """Hand the component objects to `objects`, once they answer every probe."""
+    made = dict(component_lists())
+    problems = probe_components(lambda rel: json.loads(made[rel]) if rel in made else None)
+    if problems:
+        sys.exit("the component index fails its probes; nothing sent:\n" + "\n".join(problems))
+    for rel, text in made.items():
+        objects.put(rel, text)
+
+
+def check_site(base):
+    """Ask the site's /layers/suggest for each probe; the probes it does not answer."""
+    problems = []
+    for term, char in PROBES.items():
+        url = f"{base.rstrip('/')}/layers/suggest?q={urllib.parse.quote(term)}&limit=48"
+        request = urllib.request.Request(url, headers={"user-agent": "glyph-atlas-check"})
+        with urllib.request.urlopen(request, timeout=60) as answer:
+            chars = [item.get("char") for item in json.load(answer).get("items", [])]
+        if char not in chars:
+            problems.append(f"{term}: {char} not among {''.join(c or '?' for c in chars) or 'no items'}")
+    return problems
 
 
 def has(db, table):
@@ -641,7 +730,12 @@ def report(ref, written, objects, gone, notes, parts):
     lines.append(f"{'total':<22}{total[0]:>11,}{total[1]:>14,}{total[2]:>14,}")
     lines.append(f"{parts} parts; each also writes its stamp in imports (2 rows)")
     lines.append("")
-    lines.append(f"{'R2 objects':<22}{'objects':>11}{'bytes':>14}{'largest':>12}{'to send':>10}{'bytes':>14}")
+    return "\n".join(lines) + "\n" + object_report(objects, gone, notes)
+
+
+def object_report(objects, gone, notes):
+    """R2 objects and bytes by kind, those to send, and the notes."""
+    lines = [f"{'R2 objects':<22}{'objects':>11}{'bytes':>14}{'largest':>12}{'to send':>10}{'bytes':>14}"]
     for kind, k in sorted(objects.kinds.items()):
         lines.append(f"{kind:<22}{k[0]:>11,}{k[1]:>14,}{k[2]:>12,}{k[3]:>10,}{k[4]:>14,}")
     sums = [sum(k[i] for k in objects.kinds.values()) for i in range(5)]
@@ -664,10 +758,69 @@ def migrate(atlas):
     print("migration 0004 applied", flush=True)
 
 
+def send_lock_path():
+    """work/atlas-v3/out/reference.lock in the main checkout (the one git keeps its common directory in)."""
+    if SEND_LOCK is not None:
+        return SEND_LOCK
+    root, dot_git = ROOT, ROOT / ".git"
+    if dot_git.is_file():  # a worktree: `gitdir: <main>/.git/worktrees/<name>`, whose commondir names <main>/.git
+        gitdir = (ROOT / dot_git.read_text().split("gitdir:", 1)[1].strip()).resolve()
+        if (gitdir / "commondir").is_file():
+            root = (gitdir / (gitdir / "commondir").read_text().strip()).resolve().parent
+    return root / "work" / "atlas-v3" / "out" / "reference.lock"
+
+
+def take_send_lock():
+    """The send lock, held until the process exits; another sender holding it stops this one."""
+    path = send_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    held = open(path, "w")  # noqa: SIM115 -- held until the process exits
+    try:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        sys.exit(f"another reference.py --send holds {path}; rerun once it has finished")
+    return held
+
+
+def components_only(send):
+    """Make the component objects and, with `send`, upload the changed ones; no D1 read or write."""
+    OUT.mkdir(parents=True, exist_ok=True)
+    lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    sending = take_send_lock() if send else None  # noqa: F841 -- held until the process exits
+    held = fetch_manifest()
+    if send and not held:
+        sys.exit(f"R2 has no {PREFIX}{MANIFEST}; load the whole reference first")
+    stage = OUT / "reference-components-send"
+    shutil.rmtree(stage, ignore_errors=True)
+    objects = Objects(held, stage if send else None)
+    put_components(objects)
+    objects.keep(COMPONENTS)
+    gone = objects.gone()
+    text = object_report(objects, gone, {"probes answered": len(PROBES)})
+    (OUT / "reference-components-report.txt").write_text(text)
+    print(text, flush=True)
+    if not send:
+        print("dry run: nothing sent", flush=True)
+        return
+    if objects.changed() or gone:
+        ship(objects, stage, gone)
+    print("component index loaded", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--send", action="store_true", help="load the rows into glyph-atlas-v3 and upload the objects")
+    parser.add_argument("--only", choices=("components",), help="make (and with --send, upload) these objects alone")
+    parser.add_argument("--check", metavar="URL", help="ask the site at URL for each probe; exit 1 on a miss")
     args = parser.parse_args()
+    if args.check:
+        problems = check_site(args.check)
+        print("\n".join(problems) or f"{len(PROBES)} probes answered", flush=True)
+        sys.exit(1 if problems else 0)
+    if args.only == "components":
+        components_only(args.send)
+        return
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
     mirror = sqlite3.connect(f"file:{OUT / 'mirror.sqlite'}?mode=ro", uri=True)
@@ -676,6 +829,7 @@ def main():
     atlas = sqlite3.connect(OUT / "atlas.sqlite") if args.send else \
         sqlite3.connect(f"file:{OUT / 'atlas.sqlite'}?mode=ro", uri=True)
     if args.send:
+        sending = take_send_lock()  # noqa: F841 -- held until the process exits
         build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")

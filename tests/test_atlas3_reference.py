@@ -1,3 +1,4 @@
+import fcntl
 import gzip
 import hashlib
 import importlib
@@ -29,10 +30,13 @@ def group(*crops):
 
 # The readings table the load reads, written by `sources` beside the input.
 READINGS = {}
+COMPONENTS = [("女", 0, 2, "U+597D", 1, 1), ("女", 1, 3, "U+5973", 1, 1), ("女", 0, 2, "U+5982", 2, 0)]
+# 如 holds 女 twice; the probe the load must answer in these tests.
+PROBES = {"女女": "如"}
 
 
 def sources(root, cards=(), variants=(), derived=(), writers=(), substitutions=(("氵", "水", 3, "[]"),), words=None,
-            readings=None, aliases=(),
+            readings=None, aliases=(), components=None, component_names=None,
             cited=(("variant_sources", '{"cjkvi-variants":"x"}'), ("word_sources", '{"honkoku-ruby":"y"}'))):
     """The reference input, every table written."""
     READINGS["path"] = root / "kanji-readings.json"
@@ -47,8 +51,8 @@ def sources(root, cards=(), variants=(), derived=(), writers=(), substitutions=(
                 ("word_spellings", [("ja/ばかり/副助詞", "許", "dictionary", "x", "attested", "source", "", "", "許（ばかり）",
                                      None, None)]),
                 ("han_ids", [("好", '["⿰女子"]', None)]),
-                ("han_components", [("女", 0, 2, "U+597D", 1, 1), ("女", 1, 3, "U+5973", 1, 1), ("女", 0, 2, "U+5982", 2, 0)]),
-                ("han_component_names", [("女", "女", 3), ("⼥", "女", 3)])):
+                ("han_components", COMPONENTS if components is None else components),
+                ("han_component_names", [("女", "女", 3), ("⼥", "女", 3)] if component_names is None else component_names)):
             reference_input.replace(db, table, rows)
         for key, value in cited:
             reference_input.put_source(db, key, value)
@@ -71,7 +75,7 @@ class Bucket:
         return self.objects.get("v3/reference/manifest.json.gz", {})
 
 
-def load(remote, monkeypatch, *flags, bucket=None):
+def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES):
     for name in ("reference", "load_history"):
         sys.modules.pop(name, None)
     module = importlib.import_module("reference")
@@ -85,6 +89,8 @@ def load(remote, monkeypatch, *flags, bucket=None):
     monkeypatch.setattr(module, "remove", bucket.remove)
     monkeypatch.setattr(module, "fetch_manifest", bucket.manifest)
     monkeypatch.setattr(module, "READINGS", READINGS["path"])
+    monkeypatch.setattr(module, "PROBES", probes)
+    monkeypatch.setattr(module, "SEND_LOCK", READINGS["path"].parent / "lock" / "reference.lock")
     monkeypatch.setattr(sys, "argv", ["reference.py", *flags])
     module.main()
     remote.dbs["glyph-atlas-v3"].row_factory = None
@@ -379,3 +385,114 @@ def test_a_table_no_generator_wrote_stops_the_load(layout, monkeypatch):  # noqa
         reference_input.replace(db, "characters", [card("あ")])
     with pytest.raises(SystemExit, match="export_character_variants.py writes it"):
         load(remote, monkeypatch)
+
+
+@pytest.mark.parametrize("table", ["han_components", "han_component_names"])
+def test_an_empty_component_table_stops_the_load(layout, monkeypatch, table):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")], **{"components" if table == "han_components" else "component_names": []})
+    for flags in ((), ("--only", "components")):
+        with pytest.raises(SystemExit, match=f"{table} in the reference input is empty"):
+            load(remote, monkeypatch, *flags)
+
+
+def test_a_probe_the_index_does_not_answer_stops_the_load_before_anything_is_sent(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")])
+    bucket = Bucket()
+    # 好 holds 女 once, so 女女 does not find it; 子 is no component the names give.
+    for probes in ({"女女": "好"}, {"女子": "好"}):
+        for flags in (("--send",), ("--only", "components")):
+            with pytest.raises(SystemExit, match="fails its probes"):
+                load(remote, monkeypatch, *flags, bucket=bucket, probes=probes)
+    assert bucket.objects == {} and remote.dbs["glyph-atlas-v3"].execute("SELECT count(*) FROM words").fetchone() == (0,)
+
+
+def test_only_components_sends_the_component_objects_alone_and_touches_no_d1(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")])
+    bucket = load(remote, monkeypatch, "--send")
+    others = {k: v for k, v in bucket.manifest().items() if not k.startswith("components/")}
+    assert others and "components/U+5973.json.gz" in bucket.manifest()
+    # The index again with 子 for 女: 女's list leaves R2, 子's comes, and nothing else changes.
+    sources(root, cards=[card("あ", occurrences=9)], components=[("子", 0, 2, "U+597D", 1, 1), ("子", 0, 2, "U+5B57", 2, 0)],
+            component_names=[("子", "子", 2)])
+
+    def no_d1(*_args, **_kwargs):
+        raise AssertionError("--only components reached D1")
+
+    monkeypatch.setattr(remote, "send", no_d1)
+    monkeypatch.setattr(remote, "query", no_d1)
+    puts, char = bucket.puts, bucket.objects["v3/reference/char/U+3042.json.gz"]
+    load(remote, monkeypatch, "--only", "components", bucket=bucket, probes={"子子": "字"})
+    assert bucket.puts == puts  # a dry run sends nothing
+    report = (root / "out" / "reference-components-report.txt").read_text()
+    assert "components" in report and "objects to delete: 1" in report and "char " not in report
+    load(remote, monkeypatch, "--only", "components", "--send", bucket=bucket, probes={"子子": "字"})
+    assert bucket.objects["v3/reference/components/names.json.gz"] == {"same": "子", "other": {}}
+    assert "v3/reference/components/U+5973.json.gz" not in bucket.objects
+    assert bucket.objects["v3/reference/components/U+5B50.json.gz"]["total"] == 2
+    assert bucket.objects["v3/reference/char/U+3042.json.gz"] == char
+    manifest = bucket.manifest()
+    assert {k: v for k, v in manifest.items() if not k.startswith("components/")} == others
+    assert sorted(k for k in manifest if k.startswith("components/")) == ["components/U+5B50.json.gz", "components/names.json.gz"]
+    assert not (root / "out" / "reference-components-send").exists()
+
+
+def test_only_components_sends_nothing_where_r2_has_no_manifest(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")])
+    with pytest.raises(SystemExit, match="load the whole reference first"):
+        load(remote, monkeypatch, "--only", "components", "--send")
+
+
+def test_the_site_check_fails_a_probe_the_search_does_not_answer(monkeypatch):
+    sys.modules.pop("reference", None)
+    module = importlib.import_module("reference")
+    answers = {"日月": ["明", "朝"], "匕矢": []}
+
+    class Answer:
+        def __init__(self, term):
+            self.body = json.dumps({"items": [{"char": c} for c in answers[term]]}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self, *_):
+            return self.body
+
+    def urlopen(request, timeout):
+        term = module.urllib.parse.unquote(request.full_url.split("q=")[1].split("&")[0])
+        return Answer(term)
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", urlopen)
+    assert module.check_site("https://example.test/") == ["匕矢: 彘 not among no items"]
+
+
+@pytest.mark.parametrize("flags", [("--send",), ("--only", "components", "--send")])
+def test_a_second_sender_stops_while_another_holds_the_send_lock(layout, monkeypatch, flags):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")])
+    bucket = load(remote, monkeypatch, "--send")
+    puts = bucket.puts
+    lock = root / "lock" / "reference.lock"
+    with open(lock, "w") as other:
+        fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(SystemExit, match="another reference.py --send holds"):
+            load(remote, monkeypatch, *flags, bucket=bucket)
+    assert bucket.puts == puts
+    # A dry run takes no send lock.
+    with open(lock, "w") as other:
+        fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        load(remote, monkeypatch, "--only", "components", bucket=bucket)
+
+
+def test_the_send_lock_lies_in_the_main_checkout(monkeypatch):
+    sys.modules.pop("reference", None)
+    module = importlib.import_module("reference")
+    path = module.send_lock_path()
+    assert path.parts[-4:] == ("work", "atlas-v3", "out", "reference.lock")
+    assert (path.parents[3] / ".git").is_dir()
