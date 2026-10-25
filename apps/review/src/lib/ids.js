@@ -30,7 +30,9 @@ const COMPONENTS = [[0x2E80, 0x2FDF], [0x30A1, 0x30FA], [0x31C0, 0x31EE], [0x340
 /** The part no character names. */
 export const UNKNOWN = '？'
 /** A slot still to fill, as the editor writes it: never a component, so a draft holding one is never saved. */
-export const EMPTY = '＋'
+export const EMPTY = '⬚'
+/** Read as an empty slot too, as drafts were once written: ＋ reads as the component 十 in CJK text. */
+const EMPTY_READ = new Set([EMPTY, '＋'])
 
 const isSelector = char => char !== undefined && /^[︀-️\u{E0100}-\u{E01EF}]$/u.test(char)
 export const isComponent = char => {
@@ -48,9 +50,9 @@ export const isSequence = text => arity([...text ?? ''][0]) > 0
  * `component` (a part no description may name), `missing` (an operator short of descriptions),
  * `extra` (more than its operators take) or `character` (empty, too long, or no operator first).
  *
- * With `open`, as the editor reads a draft, a slot still to fill is `null`: ＋ and every part an
+ * With `open`, as the editor reads a draft, a slot still to fill is `null`: ⬚ (or ＋) and every part an
  * operator is still missing at the end read as one, an empty text is the empty tree, and a lone
- * component stands as a tree of its own (⿰亻 is ⿰亻 and an empty slot, ⿰＋木 an empty slot and 木).
+ * component stands as a tree of its own (⿰亻 is ⿰亻 and an empty slot, ⿰⬚木 an empty slot and 木).
  * ？ stays the component it is, the part no character names.
  */
 export function parse(text, { open = false } = {}) {
@@ -63,7 +65,7 @@ export function parse(text, { open = false } = {}) {
     if (char === undefined) { if (open) return null; throw 'missing' }
     const n = arity(char)
     if (!n) {
-      if (open && char === EMPTY) return null
+      if (open && EMPTY_READ.has(char)) return null
       if (!isComponent(char)) throw 'component'
       return isSelector(chars[at]) ? char + chars[at++] : char
     }
@@ -116,7 +118,7 @@ export const isDescription = text => isSequence(text) && !parse(text).problem
 /** Whether `part` is a node, an operator with its parts. */
 export const isNode = part => part !== null && typeof part === 'object'
 
-/** A tree written back as a description, an empty slot as ＋. */
+/** A tree written back as a description, an empty slot as ⬚. */
 export const write = tree => tree === null ? EMPTY : isNode(tree) ? tree.op + tree.parts.map(write).join('') : tree
 
 /** Every component of a tree with its path (the part indices down to it), in reading order; an empty
@@ -156,14 +158,14 @@ export function replaceAt(tree, path, part) {
 export const partAt = (tree, path) => path.reduce((node, i) => isNode(node) ? node.parts[i] : undefined, tree)
 
 /** `node` under `op`: the node first and an empty slot for every other part the operator takes, so a
- *  component can be split in place (⿰ round 失 gives ⿰失＋). */
+ *  component can be split in place (⿰ round 失 gives ⿰失⬚). */
 export const wrap = (op, node) => ({ op, parts: [node, ...Array(arity(op) - 1).fill(null)] })
 
 /** `tree` with the part at `path` emptied. */
 export const clear = (tree, path) => replaceAt(tree, path, null)
 
 /** `tree` with the node at `path` taken away, one level: its first part that is not empty stands in
- *  its place (⿰＋木 gives 木), or an empty slot where all are. A component is left as it is. */
+ *  its place (⿰⬚木 gives 木), or an empty slot where all are. A component is left as it is. */
 export function unwrap(tree, path) {
   const node = partAt(tree, path)
   if (!isNode(node)) return tree
@@ -173,7 +175,7 @@ export function unwrap(tree, path) {
 /**
  * `tree` with the node at `path` under the operator `op` instead, its parts kept in order: answers
  * `{ tree }`, or `{ problem: 'drop' }` when `op` takes fewer parts and one it would drop is filled.
- * Parts it takes beyond the old ones are empty slots (⿰亻木 as ⿲ is ⿲亻木＋).
+ * Parts it takes beyond the old ones are empty slots (⿰亻木 as ⿲ is ⿲亻木⬚).
  */
 export function swapOp(tree, path, op) {
   const node = partAt(tree, path), n = arity(op)
