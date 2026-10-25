@@ -14,8 +14,8 @@
   import { t } from '../lib/i18n.svelte.js'
   // The values of `data/vocab/style.yaml`, in the order a reviewer reaches for them.
   const STYLES = ['regular', 'running', 'cursive', 'clerical', 'seal', 'ming', 'gothic', 'mixed']
-  // `item` is the crop as the server reports it; a server that reports no style (the hosted site)
-  // gets nothing here. `saved` receives the crop as it is after an edit. `working` tells the dialog
+  // `item` is the crop as the server reports it, a collected crop or a corpus glyph; a server that reports
+  // no style gets nothing here. `saved` receives the crop as it is after an edit. `working` tells the dialog
   // a save is under way, so its own save waits: both carry the crop's revision. In a review round
   // (`editable` false) the style is only shown, since a change would move the revision the round
   // was dealt at and the round's save would be refused.
@@ -44,7 +44,7 @@
 {#if item?.style}
   <div class="style-field">
     <!-- A style nobody assessed says nothing, so only the menu to set one is shown. -->
-    {#if item.style !== 'unassessed'}<span class="style-value">{t('style.label')}: <b>{t(`style.kind.${item.style}`)}</b>
+    {#if item.style !== 'unassessed' && STYLES.includes(item.style)}<span class="style-value">{t('style.label')}: <b>{t(`style.kind.${item.style}`)}</b>
       {#if item.style_basis !== 'none'}<span class="style-basis">{t(`style.basis.${basis}`)}</span>{/if}</span>{/if}
     {#if item.style_editable && editable}
       <label class="style-own">{item.style === 'unassessed' ? t('style.label') : t('style.own')}
