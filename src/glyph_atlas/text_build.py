@@ -33,12 +33,15 @@ from .refs import to_hiragana
 SCHEMA_VERSION = 1
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE dictionaries (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, version TEXT NOT NULL);
+-- release: the UniDic version its README names; sha256: of its sys.dic
+CREATE TABLE dictionaries (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, release TEXT NOT NULL, sha256 TEXT NOT NULL);
 CREATE TABLE books (
   entry TEXT PRIMARY KEY, project TEXT NOT NULL, label TEXT NOT NULL,
   dictionary INTEGER NOT NULL REFERENCES dictionaries(id));
+-- Every clone page ever numbered keeps its number; present is 0 for one with no text in this build.
 CREATE TABLE pages (
-  id INTEGER PRIMARY KEY, entry TEXT NOT NULL REFERENCES books(entry), page INTEGER NOT NULL,
+  id INTEGER PRIMARY KEY, entry TEXT NOT NULL, page INTEGER NOT NULL, present INTEGER NOT NULL,
   UNIQUE (entry, page));
 -- state: 0 parsed, 1 kanbun (not parsed), 2 no reading text
 CREATE TABLE lines (
@@ -63,8 +66,8 @@ CREATE TABLE tokens (
 CREATE TABLE pairs (
   id INTEGER PRIMARY KEY, rb TEXT NOT NULL, side TEXT NOT NULL, rt TEXT NOT NULL,
   UNIQUE (rb, side, rt));
--- outcome of the ruby test, for a right ruby forced as one token: agreed (the parse's own entry
--- has the reading), chosen (another entry of the base has it), unmatched, unknown; NULL otherwise
+-- outcome of the ruby test for a forced right ruby (tokens.AGREED, CHOSEN, UNMATCHED, NO_ENTRY);
+-- NULL for a ruby the parse was not forced on, a left ruby, or a 〻 reading
 CREATE TABLE rubies (
   page INTEGER NOT NULL, line INTEGER NOT NULL, element INTEGER NOT NULL, side TEXT NOT NULL,
   pair INTEGER NOT NULL REFERENCES pairs(id), typed TEXT NOT NULL, source TEXT NOT NULL,
@@ -78,7 +81,6 @@ CREATE INDEX rubies_pair ON rubies(pair);
 CREATE INDEX pairs_rt ON pairs(rt);
 """
 KINDS = {"main": 0, "warigaki": 1}
-OUTCOMES = {tk.RUBY: "agreed", tk.RUBY_UNMATCHED: "unmatched", tk.UNKNOWN: "unknown"}
 
 _ANALYSER: tk.Analyser | None = None
 
@@ -117,12 +119,10 @@ def _entry(job: tuple[str, str, str]) -> tuple[str, list[tuple]]:
             if not raw.strip():
                 continue
             reading = tk.read_line(raw)
-            parsed = [] if reading.kanbun else _ANALYSER.line(reading)
+            parsed, outcome = ([], {}) if reading.kanbun else _ANALYSER.line(reading)
             state = 1 if reading.kanbun else (0 if reading.runs else 2)
             runs = [(KINDS[run.kind], run.text, _offsets(run.offsets)) for run in reading.runs]
             words = [(t.run, t.start, t.end, t.entry, tk.BASES.index(t.basis)) for t in parsed]
-            outcome = {t.ruby: ("chosen" if t.chosen else OUTCOMES.get(t.basis))
-                       for t in parsed if t.ruby is not None}
             marks = [(mark.element, side, mark.base, typed, mark.source, _offsets(mark.base_offsets),
                       outcome.get(number) if side == "right" else None)
                      for number, mark in enumerate(reading.marks) for side, typed in mark.readings.items()]
@@ -139,6 +139,7 @@ class _Writer:
         self.db = db
         self.previous = previous
         self.next_page = max(previous.values(), default=0) + 1
+        self.seen: set[tuple[str, int]] = set()
         self.forms: dict[tuple, int] = {}
         self.lexemes: set[int] = set()
         self.pairs: dict[tuple[str, str, str], int] = {}
@@ -177,7 +178,8 @@ class _Writer:
         f = self.figures
         for number, lines in pages:
             page = self.page_id(entry, number)
-            self.db.execute("INSERT INTO pages VALUES (?,?,?)", (page, entry, number))
+            self.seen.add((entry, number))
+            self.db.execute("INSERT INTO pages VALUES (?,?,?,1)", (page, entry, number))
             f["pages"] += 1
             for index, raw, state, runs, words, marks in lines:
                 self.db.execute("INSERT INTO lines VALUES (?,?,?,?)", (page, index, raw, state))
@@ -233,9 +235,8 @@ def build(clone: Path, out: Path, dictionary: Path, *, projects: list[str] | Non
     staging.unlink(missing_ok=True)
     db = sqlite3.connect(staging)
     db.executescript("PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;" + SCHEMA)
-    probe = tk.Analyser(dictionary)
-    db.execute("INSERT INTO dictionaries VALUES (1,?,?)", (probe.name, probe.version))
-    del probe
+    db.execute("INSERT INTO dictionaries VALUES (1,?,?,?)",
+               (Path(dictionary).name, tk.release(dictionary), tk.fingerprint(dictionary)))
     writer = _Writer(db, previous)
     listed = list(jobs(clone, projects))
     books = {job[2]: info for job, info in listed}
@@ -245,6 +246,9 @@ def build(clone: Path, out: Path, dictionary: Path, *, projects: list[str] | Non
         writer.entry(entry, pages)
         if done % 200 == 0:
             db.commit()
+    # Pages numbered before and holding no text now keep their numbers, so none is given to another.
+    db.executemany("INSERT INTO pages VALUES (?,?,?,0)",
+                   [(ident, entry, page) for (entry, page), ident in previous.items() if (entry, page) not in writer.seen])
     figures = dict(sorted(writer.figures.items()))
     figures.update(books=len(books), lexemes=len(writer.lexemes), forms=len(writer.forms), pairs=len(writer.pairs))
     meta = {

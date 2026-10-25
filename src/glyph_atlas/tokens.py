@@ -5,21 +5,25 @@ into the text the analyser sees and the constraints its rubies set, and turns th
 into tokens.
 
 - **Reading text:** the characters `koji` marks `main` or `inserted` that stand outside every
-  ruby's reading field and outside what a 見せ消ち strikes out. A correction nested in a reading
-  takes the role `inserted`, so the field is tested as `rubies.marks` tests it. A 割書, its
-  columns in reading order, is a run of its own. A damage mark, a space or a note ends a run, so no token spans one.
+  ruby's reading field. What a 見せ消ち strikes out is skipped, so the corrected word stays whole. A
+  correction nested in a reading takes the role `inserted`, so the field is tested as
+  `rubies.marks` tests it. A 割書, its columns in reading order, is a run of its own. A damage mark,
+  a space or a note ends a run, so no token spans one.
 - **Kanbun:** a line with 返り点 is read in another order than it is written, so it is not parsed.
 - **Ruby constraints:** a right ruby whose base lies whole and contiguous in one run is forced to
-  token boundaries. A base that holds no other ruby must be one token; one that holds another is
-  bounded at its ends only. A base broken by a damage mark lies in two runs and is not forced.
-- **Ruby choice:** among the dictionary's entries spelt by a one-token base, the one whose kana match
-  the ruby on `kana_key` is forced in a second parse of the line.
+  token boundaries. A base whose ruby holds another ruby must start and end at token boundaries;
+  the others must be one token. A base broken by a damage mark lies in two runs and is not forced.
+- **Ruby choice:** a one-token base keeps the parse's entry when its kana match the ruby on
+  `kana_key`. Otherwise the entry of the base whose kana match is forced in a second parse of the
+  run. A bounded base is tested on the joined kana of its tokens.
 
-Every token is in the `parsed` tier; `basis` says how its entry was reached.
+Every token is in the `parsed` tier. `basis` says how its entry was reached, and the outcome of each
+ruby is kept beside the tokens.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -36,13 +40,17 @@ FIELDS = (
     "kana_base", "form", "form_base", "atype", "acon_type", "amod_type", "lid", "lemma_id",
 )
 #: Roles whose characters are read as the document's text.
-READ_ROLES = frozenset({"main", "inserted"})
+READ_ROLES = frozenset({"main", "inserted", "warigaki"})
 #: Roles that end a run: a token never spans damage.
 BREAK_ROLES = frozenset({"gap", "unreadable"})
 
-#: How a token's entry was reached.
+#: How a token's entry was reached: the parse alone, a ruby choosing another entry of its base, a
+#: ruby whose reading no entry of its base has, or no entry spelling the surface at all.
 PARSED, RUBY, RUBY_UNMATCHED, UNKNOWN = "parsed", "ruby", "ruby-unmatched", "unknown"
 BASES = (PARSED, RUBY, RUBY_UNMATCHED, UNKNOWN)
+#: The outcome of the ruby test for a forced right ruby: the parse's entry has the reading, another
+#: entry of the base has it, none has it, or a token of the base has no entry.
+AGREED, CHOSEN, UNMATCHED, NO_ENTRY = "agreed", "chosen", "unmatched", "unknown"
 
 
 # --------------------------------------------------------------------------------------------
@@ -50,26 +58,25 @@ BASES = (PARSED, RUBY, RUBY_UNMATCHED, UNKNOWN)
 
 _SMALL = str.maketrans("ぁぃぅぇぉゃゅょっゎゕゖ", "あいうえおやゆよつわかけ")
 _MEDIAL = str.maketrans("はひふへほ", "わいうえお")
-#: Historical spellings of long vowels and their modern readings, voiced forms included.
+#: Historical spellings and their modern readings, applied after voicing is removed.
 _HISTORICAL = (
     ("やう", "よう"), ("かう", "こう"), ("さう", "そう"), ("たう", "とう"), ("なう", "のう"),
-    ("はう", "ほう"), ("まう", "もう"), ("らう", "ろう"), ("わう", "おう"), ("がう", "ごう"),
-    ("ざう", "ぞう"), ("だう", "どう"), ("ばう", "ぼう"), ("ぱう", "ぽう"), ("あう", "おう"),
+    ("まう", "もう"), ("らう", "ろう"), ("わう", "おう"), ("あう", "おう"),
     ("しう", "しゆう"), ("ちう", "ちゆう"), ("にう", "にゆう"), ("りう", "りゆう"), ("きう", "きゆう"),
-    ("ぎう", "ぎゆう"), ("じう", "じゆう"), ("てう", "ちよう"), ("せう", "しよう"), ("けう", "きよう"),
-    ("げう", "ぎよう"), ("ぜう", "じよう"), ("でう", "ぢよう"), ("えう", "よう"), ("くわ", "か"),
-    ("ぐわ", "が"), ("いう", "ゆう"), ("おほ", "おお"), ("ゐ", "い"), ("ゑ", "え"), ("を", "お"),
-    ("ぢ", "じ"), ("づ", "ず"),
+    ("てう", "ちよう"), ("せう", "しよう"), ("けう", "きよう"), ("えう", "よう"), ("いう", "ゆう"),
+    ("くわ", "か"), ("ゐ", "い"), ("ゑ", "え"), ("を", "お"),
 )
 _VOICING = frozenset("゙゚")
 
 
-def kana_key(text: str) -> str:
+def kana_key(text: str, *, voicing: bool = False) -> str:
     """`text` folded so that a historical or unvoiced spelling meets the modern kana of an entry.
 
-    Katakana become hiragana and iteration marks are written out. Small kana, the long-vowel mark,
-    medial は行 (as わ行), historical long vowels (やう, かう, てう and the like), くわ, ゐ ゑ を and
-    voicing marks are folded. Transcribers often leave voicing unmarked (てかた for 手形).
+    Katakana become hiragana and iteration marks are written out. Voicing marks (unless `voicing`),
+    small kana and the long-vowel mark are dropped, then medial は行 is read as わ行 and historical
+    long vowels (やう, かう, てう and the like), くわ and ゐ ゑ を are folded. Transcribers often leave
+    voicing unmarked (てかた for 手形), so the ruby test tries the key with voicing first and the one
+    without it after.
     """
     out: list[str] = []
     for char in to_hiragana(text):
@@ -77,12 +84,15 @@ def kana_key(text: str) -> str:
             out.append(out[-1])
         elif not char.isspace():
             out.append(char)
-    folded = "".join(out).replace("ー", "").translate(_SMALL)
+    # ぢ and づ are read as じ and ず before voicing is dropped (はぢ for 恥, ハジ).
+    joined = "".join(out).replace("ー", "").replace("ぢ", "じ").replace("づ", "ず")
+    decomposed = unicodedata.normalize("NFD", joined)
+    folded = unicodedata.normalize("NFC", "".join(char for char in decomposed if voicing or char not in _VOICING))
+    folded = folded.translate(_SMALL)
     folded = folded[:1] + folded[1:].translate(_MEDIAL)
     for old, new in _HISTORICAL:
         folded = folded.replace(old, new)
-    decomposed = unicodedata.normalize("NFD", folded)
-    return unicodedata.normalize("NFC", "".join(char for char in decomposed if char not in _VOICING))
+    return folded
 
 
 # --------------------------------------------------------------------------------------------
@@ -100,7 +110,8 @@ class Run:
 
 @dataclass(frozen=True)
 class Constraint:
-    """A right ruby forced on a run: its characters `start:end` of the run, and whether as one token."""
+    """A right ruby forced on a run: characters `start:end` of the run, as one token (`whole`) or
+    bounded at its ends. `ruby` is the ruby's index in `Reading.marks`."""
 
     run: int
     start: int
@@ -123,45 +134,45 @@ class Reading:
 def read_line(raw: str) -> Reading:
     """The runs of `raw` and the constraints its right rubies set on them."""
     parsed = koji.parse(raw)
+    marks = rubies.marks(raw)
     if any(char.role == "kaeriten" for char in parsed.chars):
-        return Reading([], rubies.marks(raw), [], kanbun=True)
-    elements = {element.id: element for element in koji.walk(parsed.nodes) if element.kind == "ruby"}
-    fields = {ident: rubies._fields(raw, element) for ident, element in elements.items()}
+        return Reading([], marks, [], kanbun=True)
+    elements = {element.id: element for element in koji.walk(parsed.nodes)}
+    fields = {ident: rubies._fields(raw, element) for ident, element in elements.items() if element.kind == "ruby"}
     struck = rubies._struck(raw, parsed)
     runs: list[Run] = []
     current: Run | None = None
-    current_key: tuple[str, int] | None = None
+    current_key: int | None = None
     for char in parsed.chars:
         if char.role in rubies.SIDES or any(
                 node in fields and rubies._field_at(fields[node], char.start) is not None for node in char.path):
             continue
-        if char.start in struck or char.role in BREAK_ROLES or char.text.isspace():
+        if char.start in struck or char.role == "cancelled":
+            continue
+        if char.role in BREAK_ROLES or char.text.isspace() or char.role not in READ_ROLES:
             current = None
             continue
-        if char.role == "warigaki":
-            key = ("warigaki", next((node for node in char.path if node not in fields), -1))
-        elif char.role in READ_ROLES:
-            key = ("main", 0)
-        else:
-            current = None
-            continue
+        # The innermost 割書 that is not one of its columns names the run; main text is run -1.
+        key = next((node for node in reversed(char.path)
+                    if elements[node].kind == "warigaki" and "column" not in elements[node].attrs), -1)
         if current is None or key != current_key:
-            current, current_key = Run(key[0]), key
+            current, current_key = Run("main" if key == -1 else "warigaki"), key
             runs.append(current)
         current.text += char.text
         current.offsets.append(char.start)
-    marks = rubies.marks(raw)
-    return Reading(runs, marks, constraints(runs, marks))
+    spans = {ident: (element.start, element.end) for ident, element in elements.items()}
+    return Reading(runs, marks, constraints(runs, marks, spans))
 
 
-def constraints(runs: list[Run], marks: list[rubies.Mark]) -> list[Constraint]:
+def constraints(runs: list[Run], marks: list[rubies.Mark], spans: dict[int, tuple[int, int]]) -> list[Constraint]:
     """The boundaries the right rubies of a line force, outermost first.
 
-    A base must lie in one run as a contiguous stretch of it. A base that holds another ruby's base
-    is bounded at its ends; the others are forced to one token.
+    A base must lie in one run as a contiguous stretch of it. A ruby whose element holds another
+    forced ruby's element is bounded at its ends, even when the two bases are the same characters;
+    the others are forced to one token. `spans` gives each element's bounds in the raw line.
     """
     where = {offset: (index, at) for index, run in enumerate(runs) for at, offset in enumerate(run.offsets)}
-    spans: list[tuple[int, int, int, str, int]] = []
+    placed_marks: list[tuple[int, int, int, str, int, tuple[int, int]]] = []
     for number, mark in enumerate(marks):
         reading = mark.readings.get("right")
         if not reading or not mark.base_offsets or any(offset not in where for offset in mark.base_offsets):
@@ -171,11 +182,11 @@ def constraints(runs: list[Run], marks: list[rubies.Mark]) -> list[Constraint]:
         positions = [at for index, at in placed if index == run]
         if len(positions) != len(placed) or positions != list(range(positions[0], positions[-1] + 1)):
             continue
-        spans.append((run, positions[0], positions[-1] + 1, reading, number))
+        placed_marks.append((run, positions[0], positions[-1] + 1, reading, number, spans[mark.element]))
     found = []
-    for run, start, end, reading, number in spans:
-        holds = any((o_run, o_start, o_end) != (run, start, end) and o_run == run
-                    and start <= o_start and o_end <= end for o_run, o_start, o_end, _, _ in spans)
+    for run, start, end, reading, number, (outer_start, outer_end) in placed_marks:
+        holds = any(other != number and outer_start < o_start and o_end < outer_end
+                    for _, _, _, _, other, (o_start, o_end) in placed_marks)
         found.append(Constraint(run, start, end, not holds, reading, number))
     return _consistent(found)
 
@@ -183,7 +194,7 @@ def constraints(runs: list[Run], marks: list[rubies.Mark]) -> list[Constraint]:
 def _consistent(found: list[Constraint]) -> list[Constraint]:
     """The constraints that nest or stand apart; a base that only overlaps another is dropped."""
     kept: list[Constraint] = []
-    for item in sorted(found, key=lambda c: (c.run, c.start, -c.end)):
+    for item in sorted(found, key=lambda c: (c.run, c.start, -c.end, c.whole)):
         clash = any(other.run == item.run and other.start < item.end and item.start < other.end
                     and not (other.start <= item.start and item.end <= other.end and not other.whole)
                     for other in kept)
@@ -215,11 +226,11 @@ class Entry:
 
 
 def entry(surface: str, feature: str) -> Entry:
-    """The node `surface` with its raw MeCab feature string; a node with too few fields is unknown."""
+    """The node `surface` with its raw MeCab feature string. A node with too few fields is MeCab's
+    guess for a surface no entry spells, and its lexical fields stay empty."""
     values = _split(feature)
     if len(values) < len(FIELDS):
-        pos = ",".join(value for value in values[:4] if value != "*")
-        return Entry(surface, None, "", "", pos, "", "", "")
+        return Entry(surface, None, "", "", "", "", "", "")
     named = dict(zip(FIELDS, values, strict=True))
     pos = "-".join(named[key] for key in ("pos1", "pos2", "pos3", "pos4") if named[key] != "*")
     return Entry(surface, int(named["lemma_id"]), named["lemma"], named["lform"], pos,
@@ -248,7 +259,8 @@ def _split(feature: str) -> list[str]:
 
 @dataclass(frozen=True)
 class Token:
-    """A token of a run: characters `start:end` of the run, its entry and how it was reached."""
+    """A token of a run: characters `start:end` of the run, its entry and how it was reached.
+    `ruby` is the index of the ruby forced on exactly this token, if any."""
 
     run: int
     start: int
@@ -256,12 +268,55 @@ class Token:
     entry: Entry
     basis: str
     ruby: int | None = None
-    chosen: bool = False
 
 
-#: Characters MeCab's partial-parse input gives a meaning: a line break ends a segment, a tab
-#: begins a constraint.
-_UNSAFE = re.compile(r"[\t\r\n]")
+#: Characters that MeCab's partial-parse input reads as structure (a line break ends a segment, a
+#: tab begins a constraint) or that its C code cannot take (NUL and the other controls). Each is
+#: replaced by one character, so offsets hold.
+_UNSAFE = re.compile(r"[\x00-\x1f\x7f]")
+#: A segment of exactly this text would end the sentence.
+_TERMINATOR = "EOS"
+
+
+def _pattern(found: Entry) -> str:
+    """A partial-parse pattern that admits only entries of `found`'s lemma with its kana."""
+    values = ["*"] * (FIELDS.index("kana") + 1)
+    values[FIELDS.index("lform")] = found.reading
+    values[FIELDS.index("lemma")] = found.lemma
+    values[FIELDS.index("kana")] = found.kana
+    return ",".join(values)
+
+
+def release(dictionary: Path) -> str:
+    """The UniDic release named in the dictionary's README (`ver. 2025.12`), or empty."""
+    readme = Path(dictionary) / "README.md"
+    if readme.exists():
+        match = re.search(r"ver\.\s*(\d{4}\.\d{2})", readme.read_text(encoding="utf-8", errors="replace"))
+        if match:
+            return match.group(1)
+    return ""
+
+
+def fingerprint(dictionary: Path) -> str:
+    """SHA-256 of the dictionary's `sys.dic`, so a changed dictionary under one name is told apart."""
+    digest = hashlib.sha256()
+    with (Path(dictionary) / "sys.dic").open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _match(parsed: Entry, entries: tuple[Entry, ...], reading: str) -> Entry | None:
+    """The entry a ruby's reading picks: the parse's own or another of the base's entries whose kana
+    match it with voicing, else without voicing; None when no entry matches."""
+    for voicing in (True, False):
+        want = kana_key(reading, voicing=voicing)
+        if kana_key(parsed.kana, voicing=voicing) == want:
+            return parsed
+        found = next((e for e in entries if kana_key(e.kana, voicing=voicing) == want), None)
+        if found is not None:
+            return found
+    return None
 
 
 class Analyser:
@@ -275,8 +330,6 @@ class Analyser:
         self._parser = fugashi.GenericTagger(f"-r /dev/null -p -d {self.dictionary}")
         self._lookup = fugashi.GenericTagger(f"-r /dev/null -a -d {self.dictionary}")
         self._entries: dict[str, tuple[Entry, ...]] = {}
-        info = self._parser.dictionary_info
-        self.version = str(info[0]["version"]) if info else ""
 
     def entries(self, surface: str) -> tuple[Entry, ...]:
         """Every dictionary entry spelt exactly `surface`, in the dictionary's order."""
@@ -284,7 +337,7 @@ class Analyser:
         if found is None:
             found = tuple(dict.fromkeys(
                 entry(node.surface, node.feature_raw)
-                for node in self._lookup.parseToNodeList(surface)
+                for node in self._lookup.parseToNodeList(_UNSAFE.sub("・", surface))
                 if node.surface == surface and len(_split(node.feature_raw)) >= len(FIELDS)))
             self._entries[surface] = found
         return found
@@ -296,60 +349,78 @@ class Analyser:
         segments = []
         for left, right in pairwise(cuts):
             piece = _UNSAFE.sub("・", text[left:right])
-            pattern = forced.get((left, right), None)
-            segments.append(f"{piece}\t{pattern}" if (left, right) in forced and pattern is not None else piece)
+            pattern = forced.get((left, right))
+            if pattern is None and piece == _TERMINATOR:
+                pattern = "*"
+            segments.append(piece if pattern is None else f"{piece}\t{pattern}")
         found, at = [], 0
         for node in self._parser.parseToNodeList("\n".join(segments) + "\nEOS\n"):
             found.append((at, at + len(node.surface), entry(node.surface, node.feature_raw)))
             at += len(node.surface)
+        if at != len(text):
+            raise ValueError(f"the parse covers {at} of {len(text)} characters of {text!r}")
         return found
 
-    def run(self, text: str, run: int, forced: list[Constraint]) -> list[Token]:
-        """The tokens of one run, the run's constraints applied and its rubies choosing entries."""
-        spans: dict[tuple[int, int], str | None] = {
-            (c.start, c.end): ("*" if c.whole else None) for c in forced}
+    def run(self, text: str, run: int, forced: list[Constraint]) -> tuple[list[Token], dict[int, str]]:
+        """The tokens of one run and the outcome of each of its forced rubies."""
+        spans: dict[tuple[int, int], str | None] = {(c.start, c.end): ("*" if c.whole else None) for c in forced}
         nodes = self._parse(text, spans)
-        chosen: dict[tuple[int, int], tuple[Entry, int]] = {}
-        unmatched: dict[tuple[int, int], int] = {}
+        outcomes: dict[int, str] = {}
+        replaced: dict[tuple[int, int], Entry] = {}
         for item in forced:
-            if not item.whole:
+            if not item.whole or "〻" in item.reading:
                 continue
-            node = next((n for n in nodes if (n[0], n[1]) == (item.start, item.end)), None)
-            if node is None or not node[2].known or "〻" in item.reading:
+            node = next((found for start, end, found in nodes if (start, end) == (item.start, item.end)), None)
+            if node is None or not node.known:
+                outcomes[item.ruby] = NO_ENTRY
                 continue
-            want = kana_key(item.reading)
-            if kana_key(node[2].kana) == want or kana_key(node[2].reading) == want:
-                chosen[(item.start, item.end)] = (node[2], item.ruby)
-                continue
-            match = next((e for e in self.entries(text[item.start:item.end])
-                          if kana_key(e.kana) == want or kana_key(e.reading) == want), None)
+            match = _match(node, self.entries(text[item.start:item.end]), item.reading)
             if match is None:
-                unmatched[(item.start, item.end)] = item.ruby
+                outcomes[item.ruby] = UNMATCHED
+            elif match == node:
+                outcomes[item.ruby] = AGREED
             else:
-                chosen[(item.start, item.end)] = (match, item.ruby)
-                spans[(item.start, item.end)] = f"*,*,*,*,*,*,{match.reading},{match.lemma}"
-        replaced = {span for span in chosen if spans[span] not in ("*", None)}
+                replaced[(item.start, item.end)] = match
+                spans[(item.start, item.end)] = _pattern(match)
         if replaced:
             nodes = self._parse(text, spans)
-        rubies_at = {(c.start, c.end): c.ruby for c in forced if c.whole}
+        at = {(start, end): found for start, end, found in nodes}
+        for span, match in replaced.items():
+            got = at.get(span)
+            ruby = next(c.ruby for c in forced if c.whole and (c.start, c.end) == span)
+            ok = got is not None and got.lemma_id == match.lemma_id and kana_key(got.kana) == kana_key(match.kana)
+            outcomes[ruby] = CHOSEN if ok else UNMATCHED
+        for item in forced:
+            if item.whole or "〻" in item.reading:
+                continue
+            inside = [found for start, end, found in nodes if item.start <= start and end <= item.end]
+            if any(not found.known for found in inside):
+                outcomes[item.ruby] = NO_ENTRY
+            else:
+                joined = kana_key("".join(found.kana for found in inside))
+                outcomes[item.ruby] = AGREED if joined == kana_key(item.reading) else UNMATCHED
+        whole = {(c.start, c.end): c.ruby for c in forced if c.whole}
         tokens = []
         for start, end, found in nodes:
-            span = (start, end)
+            ruby = whole.get((start, end))
+            outcome = outcomes.get(ruby) if ruby is not None else None
             if not found.known:
                 basis = UNKNOWN
-            elif span in chosen and chosen[span][0].lemma_id == found.lemma_id:
+            elif outcome == CHOSEN:
                 basis = RUBY
-            elif span in rubies_at and (span in chosen or span in unmatched):
+            elif outcome == UNMATCHED:
                 basis = RUBY_UNMATCHED
             else:
                 basis = PARSED
-            changed = span in replaced and basis == RUBY
-            tokens.append(Token(run, start, end, found, basis, rubies_at.get(span), changed))
-        return tokens
+            tokens.append(Token(run, start, end, found, basis, ruby))
+        return tokens, outcomes
 
-    def line(self, reading: Reading) -> list[Token]:
-        """The tokens of every run of a line."""
+    def line(self, reading: Reading) -> tuple[list[Token], dict[int, str]]:
+        """The tokens of every run of a line, and the outcome of each forced ruby by its index."""
         out: list[Token] = []
+        outcomes: dict[int, str] = {}
         for index, run in enumerate(reading.runs):
-            out.extend(self.run(run.text, index, [c for c in reading.constraints if c.run == index]))
-        return out
+            found, results = self.run(run.text, index, [c for c in reading.constraints if c.run == index])
+            out.extend(found)
+            outcomes.update(results)
+        return out, outcomes
