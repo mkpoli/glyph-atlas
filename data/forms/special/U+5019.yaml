@@ -1,0 +1,38 @@
+code_point: U+5019
+run: 191a10b35330
+forms:
+  - title: 候
+    written: true
+    leaves: [1, 2, 3, 4, 5]
+    text: >-
+      Every written 候, from full to cursive: full (L1), half-cursive (L2), cursive (L3, L5) and 亻 before a
+      ん-like body (L4). These grade into each other, so they share one category.
+  - title: ん / h shape
+    drawings: [n-shape]
+    leaves: [6, 7]
+    text: A falling stroke with a branch or arch, ん-like (L6) or λ-like (L7).
+  - title: Zigzag / ゝ
+    drawings: [dotted, long-ten]
+    leaves: [8, 9, 10, 11, 12]
+    text: >-
+      One stroke with a kink, compact or tall. L9 is the same stroke written with a heavy blot at the turn,
+      from which short arms stick out.
+  - title: Contained stroke
+    drawings: [contained-dot]
+    leaves: [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    text: >-
+      The most reduced form: one short stroke, hooked, straight or curved. L15 is the same stroke written as
+      a blot; L19 carries a stroke of the preceding character cut into the crop.
+checks: [27, 3, 6, 19, 24, 15, 22, 16]
+notes:
+  - >-
+    The first split of the shape tree is written 候 (L1–L5) against the abbreviations. The abbreviations
+    then divide into branched and kinked strokes (L6–L12), where ん/h and the zigzag are siblings, and
+    single contained strokes (L13–L24).
+  - >-
+    Full, half-cursive and cursive 候 grade into each other and are annotated as one category; only the
+    three abbreviations get forms of their own.
+  - >-
+    Short kinked strokes sit on the border of zigzag and contained stroke, and some site clusters split
+    between the two (C14, C28).
+sources: []
