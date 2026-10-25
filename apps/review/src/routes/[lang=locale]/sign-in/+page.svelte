@@ -22,7 +22,7 @@
   // homeserver asked them to sign in again, so the page stays.
   const forMatrix = $derived(page.url.searchParams.has('sig'))
   // The homeserver's "Switch accounts" asks which account to use (`prompt=select_account`). A reader who
-  // is signed in goes on with that account or signs out and in as another; the provider then asks again.
+  // is signed in goes on with that account, or signs out and signs in as another, which then goes on.
   const choosing = $derived(forMatrix && (page.url.searchParams.get('prompt') ?? '').split(' ').includes('select_account')
     && session.state.user && !session.state.user.anonymous)
   let busy = $state(false), failed = $state(false)

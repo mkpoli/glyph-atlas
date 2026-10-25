@@ -332,6 +332,27 @@ describe('the Matrix sign-in provider', () => {
     expect(back.searchParams.get('code')).toBeTruthy();
   });
 
+  it('gives an anonymous session no token, even through the continue step the sign-in page uses', async () => {
+    const { send, call, accounts, env } = setup('https://anon-continue.glyphatlas.org');
+    expect(await call('/sign-in/anonymous', {})).toBe(200);
+    const hash = async (value: string) => Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))).toString('base64url');
+    accounts.query(`INSERT INTO "oauthClient"("id","clientId","clientSecret","redirectUris","skipConsent","scopes") VALUES('c','c',?,'["https://matrix.example/cb"]',1,'["openid","profile","email"]')`).run(await hash('client-secret'));
+    const verifier = 'v'.repeat(43);
+    const query = new URLSearchParams({ response_type: 'code', client_id: 'c', redirect_uri: 'https://matrix.example/cb', scope: 'openid profile',
+      state: 's', code_challenge: await hash(verifier), code_challenge_method: 'S256', prompt: 'select_account' });
+    const page = new URL((await send(`/oauth2/authorize?${query}`, undefined)).headers.get('location')!, 'https://anon-continue.glyphatlas.org');
+    expect(page.pathname).toBe('/sign-in');
+    const chosen = await (await send('/oauth2/continue', { selected: true, oauth_query: page.search.slice(1) })).json() as { url?: string };
+    const code = chosen.url ? new URL(chosen.url).searchParams.get('code') : null;
+    // The provider hands the code out; the token exchange, form-encoded as the homeserver sends it, is what refuses.
+    expect(code).toBeTruthy();
+    const token = await auth(env, 'https://anon-continue.glyphatlas.org').handler(new Request('https://anon-continue.glyphatlas.org/api/auth/oauth2/token', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: `Basic ${btoa('c:client-secret')}` },
+      body: new URLSearchParams({ grant_type: 'authorization_code', code: code!, redirect_uri: 'https://matrix.example/cb', code_verifier: verifier }) }));
+    expect(token.status).toBe(403);
+    expect(await token.json()).toEqual({ message: 'Sign in with an account first.' });
+  });
+
   it('revokes a user\'s Matrix tokens when an admin bans them', async () => {
     const { call, signIn, accounts } = setup('https://bans.glyphatlas.org');
     const banned = await signIn('member@example.org');
