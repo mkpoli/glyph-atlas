@@ -11,7 +11,7 @@
   import Glyph from '../components/Glyph.svelte'
   import CropReview from '../components/CropReview.svelte'
   import CropForm from '../components/CropForm.svelte'
-  import { setForm, restoreForm } from '../lib/cropForms.js'
+  import { claimForm, restoreForm } from '../lib/cropForms.js'
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
   import FormBar from '../components/FormBar.svelte'
@@ -426,7 +426,7 @@
     const done = formDone
     if (!done || saving) return
     saving = true; formError = ''
-    const left = [...done.batches]
+    const left = [...done.batches], claims = { ...done.claims }
     const gone = batch => left.splice(left.indexOf(batch), 1)
     try {
       // Newest batch first. An undo is a change of its own, so a batch's crops are read again for the
@@ -445,15 +445,18 @@
       waiting.forEach(gone)
       if (waiting.length) formError = t('client.pausedKept')
       // A claimed form is taken back once its crop's correction is: the reader's earlier claim returns.
-      if (!left.length) for (const [id, claim] of Object.entries(done.claims ?? {})) {
+      // One that fails stays for the next Undo.
+      if (!left.length) for (const [id, claim] of Object.entries(claims)) {
         const { crop } = await restoreForm(items.find(i => i.id === id) ?? claim.before, claim.before, claim.replaced)
+        delete claims[id]
         items = items.map(i => i.id === id ? { ...i, ...crop } : i)
         unmark([id])
       }
     } catch (e) { (e.kept ?? []).forEach(gone); formError = e.message }
     finally {
       saving = false
-      formDone = left.length ? { ...done, batches: left, count: left.reduce((n, batch) => n + batch.ids.length, 0) } : null
+      const count = left.reduce((n, batch) => n + batch.ids.length, 0) || Object.keys(claims).length
+      formDone = left.length || Object.keys(claims).length ? { ...done, batches: left, claims, count } : null
     }
   }
   /** A marking taken back: the crops are undecided again and back among the selected problems. */
@@ -573,22 +576,24 @@
   /**
    * Mark the crop on show as one of its grapheme's forms, as the bar marks a selection: the crop is
    * decided, leaves the problems to answer, and the step goes on to the next one. A form outside the
-   * grapheme (a variant, a derived shape, a description) is claimed on the crop first, and the crop is
-   * confirmed as the character it is written as.
+   * grapheme (a variant, a derived shape, a description) leaves the crop the character it is written as,
+   * which the marking confirms.
    */
   async function markCurrent(form) {
     if (!current || form == null || saving || loading) return
     const item = current
-    let crop = item, claim = null
-    if (!members.includes(form)) {
-      saving = true; error = ''; errorStatus = 0
-      try {
-        const { crop: claimed, replaced } = await setForm(item, form)
-        crop = { ...item, ...claimed }; claim = { form, replaced, before: item }
-      } catch (e) { error = e.message; errorStatus = e.status ?? 0; return }
-      finally { saving = false }
-    }
-    await assignForm(claim ? item.written_character ?? item.label : form, [crop], claim)
+    // The form is claimed first, as the inspector's form bar claims it; the correction then names a form
+    // of the grapheme as the crop's character, or confirms the character any other form is written as.
+    let claim
+    saving = true; error = ''; errorStatus = 0
+    try {
+      const { crop, replaced } = await claimForm(item, form)
+      claim = { form, replaced, before: item, crop: { ...item, ...crop } }
+    } catch (e) { error = e.message; errorStatus = e.status ?? 0; return }
+    finally { saving = false }
+    await assignForm(members.includes(form) ? form : item.written_character ?? item.label, [claim.crop], claim)
+    // A correction that did not go takes the claim back with it, so the crop stands as it was.
+    if (!markedAs[item.id]) await claimForm(claim.crop, claim.replaced).catch(() => {})
     await tick()
     if (!queue.length) back()
   }
