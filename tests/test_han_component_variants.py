@@ -359,3 +359,55 @@ def test_a_stated_substitution_carries_the_statement_as_its_own_pair_beside_the_
     assert item.count == 2 and len(item.contexts_of) == len(item.pairs)
     alone = v.stated({}, "コ", "龴", "someone")
     assert (alone.pairs, alone.count) == ((("コ", "龴", ("someone",)),), 1)
+
+
+#: 广 and 廣 are attested as whole side parts (圹 and 壙); 廣 is ⿸广黃, with 广 as its enclosing part.
+IDS_广 = {"㢃": ["⿸广郎"], "廣": ["⿸广黃"], "圹": ["⿰土广"], "壙": ["⿰土廣"], "𢋈": ["⿸廣口"],
+         "矿": ["⿰石广"], "礦": ["⿰石廣"]}
+TABLE_广 = {"广": {"廣"}, "廣": {"广"}}
+
+
+def maker_广(desc: v.Descriptions) -> v.Maker:
+    return v.Maker(desc, TABLE_广, 1, v.places(desc, {("广", "廣"): [("圹", "壙"), ("矿", "礦")]}))
+
+
+def test_the_places_of_a_substitution_are_where_its_pairs_show_it():
+    desc = descriptions(IDS_广)
+    assert v.places(desc, {("广", "廣"): [("圹", "壙"), ("矿", "礦")]}) == {("广", "廣"): {("⿰", "last")}}
+
+
+def test_a_part_is_never_swapped_for_a_character_that_holds_it_in_the_same_place():
+    # The 广 enclosing 郎 is the part of 廣 (⿸广黃), not 廣: ⿸廣郎 is no form of 㢃.
+    desc = descriptions(IDS_广)
+    assert "⿸廣郎" not in {d.other for d in v.derive(desc, TABLE_广, ["㢃"], made=maker_广(desc))}
+    assert not maker_广(desc).fits("广", "廣", v.slot("⿸", 0, 2))
+
+
+def test_a_swap_in_a_place_the_whole_does_not_hold_it_is_still_made():
+    desc = descriptions(IDS_广)
+    assert ("壙", True) in {(d.other, d.encoded) for d in v.derive(desc, TABLE_广, ["圹"], made=maker_广(desc))}
+    assert ("圹", True) in {(d.other, d.encoded) for d in v.derive(desc, TABLE_广, ["壙"], made=maker_广(desc))}
+
+
+def test_a_whole_is_never_swapped_for_its_own_part_in_the_place_it_holds_it():
+    # The other way round: 廣 enclosing 口 does not become 广 enclosing 口.
+    desc = descriptions(IDS_广)
+    assert "⿸广口" not in {d.other for d in v.derive(desc, TABLE_广, ["𢋈"], made=maker_广(desc))}
+
+
+def test_a_swap_its_pairs_show_in_the_place_the_whole_holds_the_part_is_made_there():
+    # 宂 is ⿱宀几 and holds 宀 at the top, where 㝓 and 䆟 show 宀↔宂: 寰 still gives ⿱宂睘.
+    desc = descriptions({"宂": ["⿱宀几"], "㝓": ["⿱宀甲"], "䆟": ["⿱宂甲"], "寰": ["⿱宀睘"]})
+    table = {"宀": {"宂"}, "宂": {"宀"}}
+    made = v.Maker(desc, table, 1, v.places(desc, {("宀", "宂"): [("㝓", "䆟")]}))
+    assert "⿱宂睘" in {d.other for d in v.derive(desc, table, ["寰"], made=made)}
+    assert "⿱宂睘" not in {d.other for d in v.derive(desc, table, ["寰"])}
+
+
+def test_the_outer_places_of_a_three_part_operator_are_those_of_the_two_part_one():
+    assert v.slot("⿲", 0, 3) == v.slot("⿰", 0, 2) == ("⿰", "first")
+    assert v.slot("⿳", 2, 3) == v.slot("⿱", 1, 2) == ("⿱", "last")
+    assert v.slot("⿲", 1, 3) == ("⿰", 1) != v.slot("⿰", 1, 2)
+    # 彳 is the left of 行 (⿲彳二亅), and so the left of a ⿰ too.
+    desc = descriptions({"行": ["⿰彳亍"], "亍": ["⿰二亅"], "彴": ["⿰彳勺"]})
+    assert not v.Maker(desc, {"彳": {"行"}, "行": {"彳"}}).fits("彳", "行", v.slot("⿰", 0, 2))

@@ -204,8 +204,9 @@ function build(env: Env, origin: string, paused: boolean) {
         // Clients are only ever added by hand: none registers itself, and no session may create one.
         allowDynamicClientRegistration: false,
         clientPrivileges: () => false,
-        // An anonymous session is no account to sign in with: it is sent to sign in first.
-        selectAccount: { shouldRedirect: ({ user }) => Boolean(user.isAnonymous) },
+        // An anonymous session is no account to sign in with: it is sent to sign in first. The sign-in page
+        // also answers the homeserver's "Switch accounts" (`prompt=select_account`).
+        selectAccount: { page: '/sign-in', shouldRedirect: ({ user }) => Boolean(user.isAnonymous) },
         // Every token is checked against the user as stored now, a refresh included: an anonymous user
         // gets none whatever route it took, and neither does a banned one.
         customIdTokenClaims: ({ user }) => { refuseTokens(user); return {} },
