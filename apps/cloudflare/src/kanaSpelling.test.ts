@@ -21,7 +21,21 @@ describe('a reading in historical kana', () => {
     // あふ is あう (会う) before あう could be read おう.
     expect(modernSpellings('あふ')[0]).toBe('あう');
   });
+  it('reads the correspondences 現代仮名遣い lists for ぢ, ふ, くゎ and ゃう', () => {
+    expect(modernSpellings('でふ')).toContain('じょう');
+    expect(modernSpellings('でう')).toContain('じょう');
+    expect(modernSpellings('あふぐ')).toContain('あおぐ');
+    expect(modernSpellings('たふれる')).toContain('たおれる');
+    expect(modernSpellings('くゎん')).toContain('かん');
+    expect(modernSpellings('しゃう')).toContain('しょう');
+  });
+  it('keeps the written-out spelling before the は-row step', () => {
+    expect(modernSpellings('はゝ')).toContain('はは');
+    expect(modernSpellings('つゞみ')).toContain('つづみ');
+  });
   it('writes out ゝ and ゞ', () => {
+    expect(modernSpellings('すヾ')).toContain('すず');
+    expect(modernSpellings('さヽ')).toContain('ささ');
     expect(modernSpellings('さゝ')).toContain('ささ');
     expect(modernSpellings('すゞ')).toContain('すず');
     expect(modernSpellings('はゞかる')).toContain('はばかる');
