@@ -20,6 +20,7 @@ interface __BaseEnv_Env {
 	CATALOGUE_LAG: "60";
 	MATRIX_HOMESERVER: "https://matrix.glyphatlas.org";
 	MATRIX_INBOX_ROOM: "!Vg3g9ktsIY_VWsL5i6K10iqJX1cuvi-GeEWXTeLPuJw";
+	MATRIX_SPACE: "!tAixKWzQ3GHEkR1gcG67BftSDQuN0pOqx9m54d_YU8k";
 	BETTER_AUTH_SECRET: string;
 	GITHUB_CLIENT_ID: string;
 	GITHUB_CLIENT_SECRET: string;
@@ -39,7 +40,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "MAIL_FROM" | "SIMILAR_INDEX_NAME" | "CATALOGUE_LAG" | "MATRIX_HOMESERVER" | "MATRIX_INBOX_ROOM" | "BETTER_AUTH_SECRET" | "GITHUB_CLIENT_ID" | "GITHUB_CLIENT_SECRET" | "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET" | "DISCORD_CLIENT_ID" | "DISCORD_CLIENT_SECRET">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "MAIL_FROM" | "SIMILAR_INDEX_NAME" | "CATALOGUE_LAG" | "MATRIX_HOMESERVER" | "MATRIX_INBOX_ROOM" | "MATRIX_SPACE" | "BETTER_AUTH_SECRET" | "GITHUB_CLIENT_ID" | "GITHUB_CLIENT_SECRET" | "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET" | "DISCORD_CLIENT_ID" | "DISCORD_CLIENT_SECRET">> {}
 }
 
 // Begin runtime types

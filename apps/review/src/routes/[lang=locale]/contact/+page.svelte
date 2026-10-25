@@ -27,6 +27,9 @@
     } catch { status = 'failed' }
   }
   const apps = $derived(around('contact.matrix.apps', 'space'))
+  // How many people each chat place has, keyed by its mark; read once the page is open (`community.ts`).
+  let members = $state({})
+  $effect(() => { fetch('/api/community').then(response => response.ok ? response.json() : {}).then(found => { members = found }).catch(() => {}) })
   // The IRC picker starts on the channel for the page's language; lzh pages are Chinese.
   const spoken = $derived(locale() === 'lzh' ? 'zh' : locale().split('-')[0])
   let irc, picked = $state([])
@@ -55,7 +58,7 @@
           {#if chat.mark === 'irc'}
             <a href={chat.href} rel="noopener" target="_blank" aria-haspopup="dialog" onclick={event => { event.preventDefault(); irc.showModal() }}><LinkMark name={chat.mark} />{chat.name}</a>
           {:else}
-            <a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}</a>
+            <a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}{#if typeof members[chat.mark] === 'number'}<small>{t('contact.chat.members', { count: members[chat.mark] })}</small>{/if}</a>
           {/if}
         </li>
       {/each}

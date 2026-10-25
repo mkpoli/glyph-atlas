@@ -1200,6 +1200,7 @@
   "contact.intro": "Glyph Atlas的建设过程向所有人开放。你可以通过以下渠道提问、指出误识的字，或参与工作。",
   "contact.chat.title": "聊天",
   "contact.chat.body": "社区聊天室集中在一个Matrix空间内，各聊天室与Discord、Telegram和IRC（Libera.Chat）互通。在任何一处发消息，其他各处也能收到。",
+  "contact.chat.members.other": "{count}人",
   "contact.chat.rooms": "空间内设有迎新聊天室，英语、中文、日语、韩语和越南语各有一个聊天室，另有分享新奇发现的聊天室、提问聊天室、反馈聊天室和开发聊天室。",
   "contact.matrix.title": "通过Matrix加入",
   "contact.matrix.open": "打开上方的Matrix链接，即可在浏览器中打开社区聊天应用。",
