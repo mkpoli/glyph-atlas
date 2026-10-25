@@ -97,9 +97,9 @@
   function toggleReviewed() {
     hideReviewed = !hideReviewed; onShow = new Set()
     remember('atlas.hideReviewed', hideReviewed)
-    // A crop no longer shown is no longer chosen.
-    const shown = new Set(display.map(item => item.id))
-    selected = new Set([...selected].filter(id => id.startsWith('run:') || shown.has(id)))
+    // A crop or run no longer shown is no longer chosen, and a range starts again.
+    const shown = new Set([...display, ...runTiles.filter(run => run.at < display.length)].map(item => item.id))
+    selected = new Set([...selected].filter(id => shown.has(id))); anchor = null
   }
   // How many withheld crops the view leaves out: a picked character's from its gallery, else the listing's.
   const withheldCount = $derived(picked ? localWithheld : data?.withheld_count ?? null)
@@ -1150,7 +1150,7 @@
     yearRange, decadeCounts, decadesFor: decadeCounts ? decadesFor : '', localStyles, corpusStyles, corpusAnswered, split, sample, sampleFault,
     collection, localWithheld, corpusCounts, corpusCountsAsked: Boolean(corpusCounts), runs, runsFailed, runsFor: runs || runsFailed ? runsFor : null,
     runKind, homeRuns, scattered, scatteredFor: scattered.length ? scatteredFor : null, charRuns,
-    charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, onShow: new Set(onShow), showWithheld, scrollY })
+    charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, onShow: new Set(onShow), hideReviewed, showWithheld, scrollY })
   beforeNavigate(navigation => {
     if (!addressed) return
     const state = display.length && (!loading || growing) ? capture() : picked ? null : { seed, showWithheld, partial: true }
@@ -1169,7 +1169,9 @@
     collection = back.collection; localWithheld = back.localWithheld; corpusCounts = back.corpusCounts;
     corpusCountsAsked = back.corpusCountsAsked; runs = back.runs; runsFailed = back.runsFailed; runsFor = back.runsFor;
     runKind = back.runKind; homeRuns = back.homeRuns; scattered = back.scattered; scatteredFor = back.scatteredFor;
-    charRuns = back.charRuns; charRunsFor = back.charRunsFor; confirmedHere = back.confirmedHere; onShow = new Set(back.onShow);
+    charRuns = back.charRuns; charRunsFor = back.charRunsFor; confirmedHere = back.confirmedHere;
+    // Reviewed crops hidden since the view was left are hidden in it too.
+    onShow = back.hideReviewed === hideReviewed ? new Set(back.onShow) : new Set();
     loading = false; reach = untrack(() => display.length)
   }
   const kept = untrack(() => addressed) ? keptView() : null
