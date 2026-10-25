@@ -707,6 +707,23 @@ describe('a batch correction', () => {
     expect(refused).toEqual({ status: 409, body: { detail: 'Some of these crops changed or were already checked. Reload them.',
       targets: [{ id: publicId(ids[5]), reason: 'changed' }] } });
   });
+
+  it('judges crops a listing just showed by their entries at the edge, without reading their page', async () => {
+    const { db, env, ids, page, objects } = setup();
+    const entry = (slot: number) => ({ slot, id: `hk:${page}:${slot}`, label: '', image_sha256: H, image: `/atlas/media/${slot}.webp`,
+      box: { x: 10 * slot, y: 0, w: 10, h: 10 }, context: true, context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 10 * slot, y: 0, w: 10, h: 10 },
+      source_scale: [1, 1] });
+    const edge = new Map([0, 4].map(slot => [`${ORIGIN}/_entries/${page}-1/${slot}`, entry(slot)]));
+    objects.delete(bundleKey(page, 1));
+    const caches = (globalThis as any).caches;
+    (globalThis as any).caches = { default: { match: async (request: Request) => edge.has(request.url) ? Response.json(edge.get(request.url)) : undefined, put: async () => {} } };
+    try {
+      const ok = await send(env, '/atlas/corrections', { id: uuid(1), character: 'あ', crops: [local(ids[0]), local(ids[4])] });
+      expect(ok.status).toBe(200);
+      expect(ok.body.results.map((r: any) => r.target_id)).toEqual([publicId(ids[0]), publicId(ids[4])]);
+      expect(crop(db, ids[0])).toMatchObject({ char: 4, state: 1, revision: 1 });
+    } finally { (globalThis as any).caches = caches; }
+  });
 });
 
 describe('a crop\'s issue', () => {

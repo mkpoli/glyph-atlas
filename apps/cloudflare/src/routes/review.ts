@@ -4,7 +4,7 @@
 // the `reviews` overlay, seen marks and skips, and the reviewer's totals.
 import { Problem } from '../busy';
 import { captureReviews, priorBaselines, type ReviewedInput } from '../reviewCapture';
-import { bundle, cropItems, pageOf, publicId, slotOf } from '../atlas3';
+import { cropEntries, cropItems, publicId } from '../atlas3';
 import { STALE_CODE, StaleCrop, cropParam, writtenCropField } from '../atlas3Crops';
 import { categoryOf } from '../category';
 import { formOfCrop } from './claims';
@@ -94,9 +94,8 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
   const found = new Map<number, Current | Problem>();
   if (!ids.length) return found;
   const rows = (await env.ATLAS.prepare(reviewCropsQuery()).bind(JSON.stringify([...new Set(ids)])).all<CropRow>()).results;
-  const pages = new Map(rows.map(row => [pageOf(row.id), row.rev]));
-  const bundles = new Map(await Promise.all([...pages].map(async ([page, rev]) => [page, await bundle(env, page, rev)] as const)));
-  const entries = new Map(rows.map(row => [row.id, bundles.get(pageOf(row.id))?.bySlot.get(slotOf(row.id))]));
+  // A crop a listing just showed has its entry at the edge, which spares reading its page's whole bundle.
+  const entries = await cropEntries(env, rows);
   const pointer = (entry: Json) => ({ object: entry.record_place[0], offset: entry.record_place[1], size: entry.record_place[2] });
   const records = await readRecords(env, [...entries.values()].filter(entry => entry?.record_place).map(entry => pointer(entry!)));
   for (const row of rows) {
