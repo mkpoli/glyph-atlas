@@ -803,6 +803,8 @@
     left[Math.min(at, left.length - 1)]?.focus()
   }
   async function updateItem(id, result) {
+    // A skip writes nothing, so the tile stands.
+    if (!result) return
     if (result?.origin === 'corpus') {
       // A grapheme claim moves the glyph between families, and their tiles count it there.
       const before = [...(corpus ?? []), ...(sample ?? [])].find(row => row.id === id)

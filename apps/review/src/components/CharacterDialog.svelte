@@ -37,7 +37,8 @@
   // `preview` is the list's own row for the crop, drawn while the record loads. `cited` is the cut the
   // page's address cites (`citedCut`), noted over the crop when it is not the one shown.
   // `opening` is a problem the crop was opened to fix, chosen once it has loaded.
-  let { id, close, saved, changed = null, onskip = null, opening = null,
+  // `reviewed` hears of a crop a line correction decided, `skipped` of one the reader declined to judge.
+  let { id, close, saved, changed = null, reviewed = null, skipped = null, onskip = null, opening = null,
         previous = null, next = null, position = '', initial = null, preview = null, cited = null } = $props()
   const first = untrack(() => initial)
   const session = useSession(), inspector = useInspector()
@@ -214,6 +215,7 @@
     if (busy) return
     discardProposals()
     if (onskip) { onskip(); return }
+    skipped?.(data?.id ?? id)
     if (advancing) { next(); return }
     close()
   }
@@ -281,12 +283,12 @@
   /** A line correction changed this crop and its neighbours: the lists behind the dialog hear of each, and this crop is read again. */
   async function relined(result) {
     const target = data.id
-    for (const { target_id } of result.results) if (target_id !== target) character(target_id, { wait: false }).then(record => changed?.(target_id, record), () => {})
+    for (const { target_id } of result.results) if (target_id !== target) character(target_id, { wait: false }).then(record => reviewed?.(target_id, record), () => {})
     const record = await readCrop(target)
+    reviewed?.(target, record)
     if (closed || data?.id !== target) return
     data = record; issue = null; correction = null; noneSelected = false; form = null; kept = null; submission = null
     written = record.label ?? ''; writtenDirty = false
-    changed?.(target, record)
   }
   /** Leave the editing, keeping the box, with the focus on what follows it. */
   async function endCrop() {
