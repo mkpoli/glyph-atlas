@@ -522,7 +522,7 @@
       if (light) readSummary()
       if (!append) await showSample(id, sampled, result.items)
     } catch (e) { if (!closed && id === requestId && e.name !== 'AbortError') error = e.message }
-    finally { if (!closed && id === requestId) loading = false }
+    finally { if (!closed && id === requestId) { loading = false; growing = false } }
   }
   // A gallery the server rendered reads its decades once it is in the browser.
   $effect(() => { const code = picked?.code_point, scope = expand; if (code) untrack(() => loadDecades(code, scope)) })
@@ -700,6 +700,7 @@
     const target = picked.code_point
     const current = ++pickId
     const id = ++requestId
+    growing = true
     loading = true
     try {
       const page = await layerCandidates(target, 60, corpusAfter,
@@ -711,7 +712,7 @@
       corpusTotal = page.glyphs ?? corpusTotal
     } catch (e) {
       if (!closed && current === pickId && id === requestId) corpusFault = e.status === 502 ? 'error' : 'not-loaded'
-    } finally { if (!closed && id === requestId) loading = false }
+    } finally { if (!closed && id === requestId) { loading = false; growing = false } }
   }
   // Choosing a candidate is choosing what to look at: the grid becomes that character's gallery.
   // `scope` is an address's: `exact`, `family` or `variants`; without one the card's default applies.
@@ -1099,9 +1100,9 @@
     runKind, homeRuns, scattered, scatteredFor: scattered.length ? scatteredFor : null, charRuns,
     charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, showWithheld, scrollY })
   beforeNavigate(navigation => {
-    if (!addressed || picked && !display.length) return
+    if (!addressed) return
     const state = display.length && (!loading || growing) ? capture() : picked ? null : { seed, showWithheld, partial: true }
-    if (state) keepView([current, navigation.type === 'popstate' ? null : entry()], state)
+    keepView([current, navigation.type === 'popstate' ? null : entry()], state)
   })
   function restore(back) {
     data = back.data; items = back.items; error = back.error; grapheme = back.grapheme; work = back.work;
@@ -1132,7 +1133,8 @@
     const view = navigation.type === 'popstate' && addressed ? keptView() : null
     if (!view || view.partial || view.showWithheld !== showWithheld) return
     // Reads the view had on their way answer for what it showed before.
-    requestId += 1; catalogueRequest?.abort()
+    requestId += 1; pickId += 1; runsRequest += 1; catalogueRequest?.abort()
+    clearTimeout(searchTimer); choosing = false
     restore(view); clearSelection(); shownExpand = expand
     tick().then(() => scrollTo(0, view.scrollY))
   })
