@@ -29,7 +29,7 @@
   const apps = $derived(around('contact.matrix.apps', 'space'))
   // The IRC picker starts on the channel for the page's language; lzh pages are Chinese.
   const spoken = locale() === 'lzh' ? 'zh' : locale().split('-')[0]
-  let picked = $state(IRC_CHANNELS.filter(item => item.language === spoken).map(item => item.channel))
+  let irc, picked = $state(IRC_CHANNELS.filter(item => item.language === spoken).map(item => item.channel))
   const joined = $derived(IRC_CHANNELS.map(item => item.channel).filter(channel => picked.includes(channel)).join(','))
 </script>
 
@@ -44,7 +44,13 @@
     <p>{t('contact.chat.body')}</p>
     <ul class="doors">
       {#each CHATS as chat (chat.name)}
-        <li><a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}</a></li>
+        <li>
+          {#if chat.mark === 'irc'}
+            <button type="button" aria-haspopup="dialog" onclick={() => irc.showModal()}><LinkMark name={chat.mark} />{chat.name}</button>
+          {:else}
+            <a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}</a>
+          {/if}
+        </li>
       {/each}
     </ul>
     <p>{t('contact.chat.rooms')}</p>
@@ -61,23 +67,6 @@
       {#each APPS as [name, href] (name)}<li><a {href} rel="noopener" target="_blank">{name} ↗</a></li>{/each}
       <li><a href={`https://matrix.to/#/${SPACE}`} rel="noopener" target="_blank">{t('contact.matrix.choose')} ↗</a></li>
     </ul>
-  </section>
-
-  <section>
-    <h2 id="irc">{t('contact.irc.title')}</h2>
-    <p>{t('contact.irc.body')}</p>
-    <fieldset class="channels" aria-labelledby="irc">
-      {#each IRC_CHANNELS as item (item.channel)}
-        <label><input type="checkbox" value={item.channel} bind:group={picked} /><span><span lang={item.lang}>{item.name}</span><code>{item.channel}</code></span></label>
-      {/each}
-    </fieldset>
-    {#if joined}
-      <div class="irc-open">
-        <a class="send" href={IRC_WEB + joined} rel="noopener" target="_blank">{t('contact.irc.open')} ↗</a>
-        <code>/join {joined}</code>
-      </div>
-    {/if}
-    <p>{t('contact.irc.history')}</p>
   </section>
 
   <section>
@@ -121,6 +110,23 @@
   </section>
 </article>
 
+<dialog class="irc" bind:this={irc} onclick={event => { if (event.target === irc) irc.close() }} aria-labelledby="irc-title">
+  <header><h2 id="irc-title">{t('contact.irc.title')}</h2><button type="button" class="icon-button" aria-label={t('contact.irc.close')} onclick={() => irc.close()}>×</button></header>
+  <p>{t('contact.irc.body')}</p>
+  <fieldset class="channels" aria-labelledby="irc-title">
+    {#each IRC_CHANNELS as item (item.channel)}
+      <label><input type="checkbox" value={item.channel} bind:group={picked} /><span lang={item.lang}>{item.name}</span><code>{item.channel}</code></label>
+    {/each}
+  </fieldset>
+  {#if joined}
+    <div class="irc-open">
+      <a class="send" href={IRC_WEB + joined} rel="noopener" target="_blank">{t('contact.irc.open')} ↗</a>
+      <code>/join {joined}</code>
+    </div>
+  {/if}
+  <p class="irc-note">{t('contact.irc.history')}</p>
+</dialog>
+
 <style>
   .contact { max-width: 720px; margin: auto; padding: 40px 20px 64px; font-size: 14px; line-height: 1.7; }
   .contact h1 { font-size: 30px; font-weight: 500; letter-spacing: -.6px; }
@@ -131,8 +137,9 @@
   .contact ol { padding-left: 1.4em; display: grid; gap: 4px; }
   .contact code { font-size: 13px; padding: 1px 5px; border-radius: 4px; background: var(--surface-sunken); }
   .doors { list-style: none; padding: 0; margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px; }
-  .doors a { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; font-weight: 500; }
-  .doors a:hover { border-color: var(--line-hover); }
+  .doors a, .doors button { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; font-weight: 500; }
+  .doors button { font: inherit; font-weight: 500; color: inherit; cursor: pointer; }
+  .doors a:hover, .doors button:hover { border-color: var(--line-hover); }
   .doors :global(.link-mark) { width: 18px; height: 18px; margin: 0; vertical-align: 0; }
   .doors small { color: var(--muted); font-weight: 400; }
   .message-form { display: grid; gap: 6px; margin-top: 12px; }
@@ -146,15 +153,19 @@
   .send:hover:not(:disabled) { background: var(--accent-solid-hover); }
   .send:disabled { opacity: .5; cursor: default; }
   .form-status { margin: 0; color: var(--muted); }
-  .channels { border: 0; padding: 0; margin: 12px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
-  .channels label { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; cursor: pointer; min-width: 0; line-height: 1.4; }
-  .channels label:hover { border-color: var(--line-hover); }
-  .channels label:has(input:checked) { border-color: var(--accent); }
+  .irc { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: var(--surface); box-shadow: 0 24px 80px var(--shadow); font-size: 13px; line-height: 1.6; }
+  .irc::backdrop { background: var(--backdrop); backdrop-filter: blur(3px); }
+  .irc header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+  .irc h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .irc .icon-button { font-size: 24px; color: var(--muted); padding: 2px 6px; }
+  .channels { border: 0; padding: 0; margin: 10px 0; display: grid; gap: 0; }
+  .channels label { display: flex; align-items: center; gap: 10px; padding: 5px 4px; border-radius: 6px; cursor: pointer; min-width: 0; }
+  .channels label:hover { background: var(--surface-sunken); }
   .channels input { accent-color: var(--accent-solid); margin: 0; flex-shrink: 0; }
-  .channels label > span { display: grid; min-width: 0; }
-  .channels code { color: var(--muted); background: none; padding: 0; font-size: 12px; overflow-wrap: anywhere; }
-  .irc-open { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 12px; }
+  .channels code { margin-left: auto; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; text-align: right; }
+  .irc-open { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .irc-open a.send { text-decoration: none; display: inline-block; }
-  .irc-open code { overflow-wrap: anywhere; }
+  .irc-open code { font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--surface-sunken); overflow-wrap: anywhere; }
+  .irc-note { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
   .apps { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
 </style>

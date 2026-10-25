@@ -1203,6 +1203,7 @@
   "contact.irc.body": "各室ハLibera.Chat上ニ固有ノチャンネルヲ有ス。希望ノモノニチェックヲ入レウェブチャットニテ併セテ開クカ、又ハ示サレタルコマンドニテ何レノIRCクライアントヨリモ參加サレタシ。",
   "contact.irc.open": "Libera.Chatニテ開ク",
   "contact.irc.history": "IRCハ履歷ヲ殘サズ、接續中ノ發言ノミ表示サル。以前ノメッセージハMatrixニテ讀ムコトヲ得。",
+  "contact.irc.close": "閉ヅ",
   "contact.others.title": "其ノ他ノ團體",
   "contact.others.body": "各々主トスル所ハ異ナレド、此等ノ團體ニテモ同好ノ士ト交ハリ、字形大圖譜ニ就キ語リ合フヲ得。",
   "contact.form.title": "書信ノ送信",

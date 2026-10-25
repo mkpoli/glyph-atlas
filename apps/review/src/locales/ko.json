@@ -1195,6 +1195,7 @@
   "contact.irc.body": "각 채팅방에는 Libera.Chat 채널이 하나씩 있습니다. 참여할 채널을 체크하면 웹 채팅에서 한꺼번에 열 수 있습니다. 어떤 IRC 클라이언트에서든 표시된 명령어로 참여할 수도 있습니다.",
   "contact.irc.open": "Libera.Chat에서 열기",
   "contact.irc.history": "IRC는 대화 기록을 보관하지 않아 접속 중에 오가는 메시지만 볼 수 있습니다. 이전 메시지는 Matrix에서 읽을 수 있습니다.",
+  "contact.irc.close": "닫기",
   "contact.others.title": "다른 모임",
   "contact.others.body": "각 모임마다 주로 다루는 주제는 다르지만, 이 모임들에서도 관심사가 같은 사람들을 만나 Glyph Atlas에 관해 이야기를 나눌 수 있습니다.",
   "contact.form.title": "메시지 보내기",
