@@ -31,7 +31,7 @@
   // `changed` hears about a write that keeps the dialog open (a written form), as the crop dialog's does.
   // `preview` is the list's own row for the glyph, drawn while the record loads.
   // `cited` is the cut the page's address cites (`citedCut`), noted over the glyph when it is not the one shown.
-  let { id, close, saved, changed = null, previous = null, next = null, position = '', initial = null, preview = null, cited = null } = $props()
+  let { id, close, saved, changed = null, reviewed = null, skipped = null, previous = null, next = null, position = '', initial = null, preview = null, cited = null } = $props()
   const first = untrack(() => initial)
   const session = useSession(), inspector = useInspector()
   // Going on to the next crop disables the focused save button while it loads, which drops its focus;
@@ -76,7 +76,7 @@
   // Rendered open on the server, reopened as a modal once the script runs.
   onMount(() => { if (dialog.open) dialog.close(); dialog.showModal(); return () => { closed = true; generation++ } })
   // A skip goes where a save would: on to the next crop when the reader goes through the list in a row.
-  function skip() { if (!busy) { if (advancing) next(); else close() } }
+  function skip() { if (!busy) { skipped?.(data?.id ?? id); if (advancing) next(); else close() } }
   // A grapheme saved for one glyph may come back after the dialog has moved on; the record on screen is
   // replaced only when it is that glyph.
   function graphemeSaved(record) { changed?.(record.id, record); if (!closed && record.id === data?.id) data = record }
@@ -120,7 +120,9 @@
     try {
       leaving = advancing ? target : null
       const result = await request('/atlas/corpus/reviews', { id: submission.id, ...payload })
+      // A save that lands after the dialog closed or moved on still decided its glyph.
       if (!closed && current === generation) saved(target, result)
+      else reviewed?.(target, result)
     } catch (e) { if (!closed && current === generation) error = e.message }
     finally { busy = false }
   }

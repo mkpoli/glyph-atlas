@@ -16,7 +16,7 @@
   import { cropEntry } from '$worker/citation.ts'
   import FavouriteButton from './FavouriteButton.svelte'
   import { onMount, untrack, tick } from 'svelte'
-  import { character, request, suggestionsFor } from '../lib/client.js'
+  import { request, suggestionsFor } from '../lib/client.js'
   import { readCrop } from '../lib/cropCache.js'
   import { decision, isSingle, offersSuggestions, greetSuggestions } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -37,7 +37,8 @@
   // `preview` is the list's own row for the crop, drawn while the record loads. `cited` is the cut the
   // page's address cites (`citedCut`), noted over the crop when it is not the one shown.
   // `opening` is a problem the crop was opened to fix, chosen once it has loaded.
-  let { id, close, saved, changed = null, onskip = null, opening = null,
+  // `reviewed` hears of a crop a line correction decided, `skipped` of one the reader declined to judge.
+  let { id, close, saved, changed = null, reviewed = null, skipped = null, onskip = null, opening = null,
         previous = null, next = null, position = '', initial = null, preview = null, cited = null } = $props()
   const first = untrack(() => initial)
   const session = useSession(), inspector = useInspector()
@@ -214,6 +215,7 @@
     if (busy) return
     discardProposals()
     if (onskip) { onskip(); return }
+    skipped?.(data?.id ?? id)
     if (advancing) { next(); return }
     close()
   }
@@ -265,7 +267,9 @@
       leaving = advancing ? target : null
       const result = await request(route, { id: submission.id, ...payload })
       inspector.remember(target, { choices: decided })
+      // A save that lands after the dialog closed or moved on still decided its crop.
       if (!closed && current === generation) saved(target, result)
+      else reviewed?.(target, result)
     } catch (e) { if (!closed && current === generation) error = e.message }
     finally { busy = false }
   }
@@ -278,15 +282,14 @@
     if (decided?.revision != null && decided.revision === data?.revision && result.id === data.id) inspector.remember(result.id, { ...decided, revision: result.revision })
     if (!closed && result.id === data?.id) data = result
   }
-  /** A line correction changed this crop and its neighbours: the lists behind the dialog hear of each, and this crop is read again. */
+  /** A line correction decided the crops it wrote: the lists behind the dialog hear of each from its answer, and this crop is read again. */
   async function relined(result) {
     const target = data.id
-    for (const { target_id } of result.results) if (target_id !== target) character(target_id, { wait: false }).then(record => changed?.(target_id, record), () => {})
+    for (const entry of result.results) reviewed?.(entry.target_id, entry)
     const record = await readCrop(target)
     if (closed || data?.id !== target) return
     data = record; issue = null; correction = null; noneSelected = false; form = null; kept = null; submission = null
     written = record.label ?? ''; writtenDirty = false
-    changed?.(target, record)
   }
   /** Leave the editing, keeping the box, with the focus on what follows it. */
   async function endCrop() {

@@ -104,9 +104,9 @@ retained in source references, including when several volumes share it.
 Volumes can also share the Hán title, so a document's title is `title_han · title`,
 both verbatim; the romanised title carries the volume (quyển thượng, hạ);
 processing status such as `complete` does not establish that OCR was corrected.
-The OCR and catalogue are offered for attributed research use and carry a
-`restricted` text licence, so the corpus stays off the site: the published corpus
-summary leaves out every corpus whose source is `restricted`. Scan permissions
+The OCR transcribes pre-modern works and is public domain (`PD`), credited to
+Việt Điển. Its stated terms (attributed research use) stay as `holder_terms`. A work
+the catalogue dates after 1900 keeps a `restricted` text licence. Scan permissions
 remain unstated until checked against the holding library. API access supplies no
 reuse licence for the images.
 

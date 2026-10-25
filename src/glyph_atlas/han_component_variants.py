@@ -8,6 +8,8 @@ predicts are pairs the graph already gives (`agreeing`). Every character is then
 `STEPS` substitutions, each in a part of its own, at every depth of its decomposition (`derive`): a
 result that is another character's sequence is a derived variant of it, and one no character has is
 an unencoded form, written as its sequence. 嗚 (⿰口烏) gets 呜 through 烏→乌, and ⿰厶烏 through 口→厶.
+A swap between a part and a character that holds it in the same place (广 and 廣, which is ⿸广黃,
+inside ⿸) is made only where the attesting pairs show it in that place (`Maker`).
 
 What feeds it is the build script's business: pairs the graph says may be written for each other
 (`refs.WRITTEN_FOR`, simplifications included: a gallery keeps those apart, an attestation does not),
@@ -52,6 +54,8 @@ STROKES = set("一丨丶丿乀乁乙乚乛亅𠃉𠃊𠃋𠃌𠃍𠃎𠃑𠄌�
 UNENCODED = re.compile(r"\{\d+\}")
 
 Tree = str | tuple[str, tuple["Tree", ...]]
+#: Where a part sits in its parent: the operator and the part's place in it (`slot`).
+Place = tuple[str, str | int]
 
 
 def parse(sequence: str) -> Tree:
@@ -278,13 +282,15 @@ def _unique(items: list) -> list:
     return out
 
 
-def substitutions(desc: Descriptions, a: str, b: str) -> dict[tuple[str, str], set[tuple[str, str] | None]]:
+def substitutions(desc: Descriptions, a: str, b: str,
+                  places: dict[tuple[str, str], set[Place]] | None = None) -> dict[tuple[str, str], set[tuple[str, str] | None]]:
     """The components `a` and `b` differ in when they differ in exactly one, at every level, each with
     the substitution it was found inside (None at the top): 強 and 强 give 𧈧→虽, and 厶→口 inside it.
     Empty when they differ at the top or in more than one part. A single stroke is no component.
 
     Empty too when the two share a tree: one analysis says they are the same shape, so their other
-    analyses show each character's own looseness rather than a way the two differ. Only trees of a
+    analyses show each character's own looseness rather than a way the two differ. `places`, when
+    given, gathers the place (`slot`) each substitution was found in. Only trees of a
     common source region are compared when the two have any (免 is ⿱⺈… in G, H, T, K and P and
     ⿱{2}儿 in J, and 𭀠 is ⿱𠂉… in J, so 免's J tree is the one set against 𭀠); with none in
     common, every tree is. A shared tree counts whatever its regions.
@@ -302,7 +308,7 @@ def substitutions(desc: Descriptions, a: str, b: str) -> dict[tuple[str, str], s
     found: dict[tuple[str, str], set[tuple[str, str] | None]] = defaultdict(set)
     flat: dict[tuple[str, str], set[tuple[str, str] | None]] = defaultdict(set)
     for x, y in compared or [(x, y) for x in ours for y in theirs]:
-        _single(desc, x, y, 0, None, found if text(x) in own and text(y) in own else flat)
+        _single(desc, x, y, 0, None, found if text(x) in own and text(y) in own else flat, places)
     for sub, hosts in flat.items():
         hosts = hosts - {None} if sub in found else hosts
         found[sub] |= hosts
@@ -310,7 +316,8 @@ def substitutions(desc: Descriptions, a: str, b: str) -> dict[tuple[str, str], s
 
 
 def _single(desc: Descriptions, x: Tree, y: Tree, depth: int, host: tuple[str, str] | None,
-            found: dict[tuple[str, str], set[tuple[str, str] | None]]) -> None:
+            found: dict[tuple[str, str], set[tuple[str, str] | None]],
+            places: dict[tuple[str, str], set[Place]] | None = None) -> None:
     """Record the one part in which the nodes `x` and `y` differ, and the chain inside it."""
     if isinstance(x, str) or isinstance(y, str) or x[0] != y[0] or len(x[1]) != len(y[1]):
         return
@@ -324,11 +331,13 @@ def _single(desc: Descriptions, x: Tree, y: Tree, depth: int, host: tuple[str, s
         return
     sub = ordered(text(p), text(q))
     found[sub].add(host)
+    if places is not None:
+        places.setdefault(sub, set()).add(slot(x[0], differ[0], len(x[1])))
     if depth + 1 < DEPTH:
         for inner_p in desc.expansions(p):
             for inner_q in desc.expansions(q):
                 if desc.folded_text(inner_p) != desc.folded_text(inner_q):
-                    _single(desc, inner_p, inner_q, depth + 1, sub, found)
+                    _single(desc, inner_p, inner_q, depth + 1, sub, found, places)
 
 
 def stroke(part: Tree) -> bool:
@@ -339,6 +348,41 @@ def stroke(part: Tree) -> bool:
 def ordered(p: str, q: str) -> tuple[str, str]:
     """A substitution's own spelling: the shorter (then smaller) side first."""
     return (p, q) if (len(p), p) <= (len(q), q) else (q, p)
+
+
+def slot(operator: str, index: int, count: int) -> Place:
+    """Where a part sits: the operator and the part's place in it, the outer places of ⿲ and ⿳
+    read as those of ⿰ and ⿱ (the left of ⿲ is the left of ⿰), since `_flatten` turns one into the
+    other."""
+    two = {three: two for two, three in FLATTENING.items()}.get(operator, operator)
+    if two in FLATTENING:
+        return two, "first" if index == 0 else "last" if index == count - 1 else index
+    return operator, index
+
+
+def holds(desc: Descriptions, whole: str, part: str, where: Place) -> bool:
+    """Whether a description of `whole` has `part` in the place `where`: 廣 (⿸广黃) holds 广 as the
+    enclosing part of ⿸. Compared by shape, as `adds` compares."""
+    trees = desc.trees.get(whole, ()) if len(whole) == 1 else [desc.whole(parse(whole))]
+    shape = desc.folded_text(desc.part(parse(part)))
+    return any(not isinstance(tree, str) and any(
+        slot(tree[0], at, len(tree[1])) == where and desc.folded_text(inner) == shape
+        for at, inner in enumerate(tree[1])) for tree in trees)
+
+
+def places(desc: Descriptions, pairs: dict[tuple[str, str], Iterable[tuple[str, str]]]) -> dict[tuple[str, str], set[Place]]:
+    """Each substitution with the places its attesting pairs show it in: 宀↔宂 at the top of ⿱
+    (㝓 and 䆟), 广↔廣 at either side of ⿰ (圹 and 壙) and never inside ⿸."""
+    by_pair: dict[tuple[str, str], dict[tuple[str, str], set[Place]]] = {}
+    out: dict[tuple[str, str], set[Place]] = {}
+    for sub, attesting in pairs.items():
+        out[sub] = set()
+        for pair in attesting:
+            if pair not in by_pair:
+                by_pair[pair] = {}
+                substitutions(desc, *pair, places=by_pair[pair])
+            out[sub] |= by_pair[pair].get(sub, set())
+    return out
 
 
 def adds(desc: Descriptions, a: str, b: str) -> bool:
@@ -436,8 +480,11 @@ def predictions(desc: Descriptions, items: Iterable[Attested],
     character of `desc.raw` when None, those with no description of their own included, so the bare
     pair of two components such as 火 and 灬 is a prediction too). Each pair is in code point order;
     the pairs that attest a substitution are among its predictions."""
+    items = list(items)
     found: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
-    for form in derive(desc, equivalents(items), list(desc.raw) if chars is None else chars):
+    made = Maker(desc, equivalents(items), 1, places(desc, {(item.a, item.b): [pair[:2] for pair in item.pairs]
+                                                           for item in items}))
+    for form in derive(desc, made.table, list(desc.raw) if chars is None else chars, made=made):
         if form.encoded:
             (was, became, _), = form.route
             found[ordered(was, became)].add(tuple(sorted((form.char, form.other), key=ord)))
@@ -536,11 +583,29 @@ def derive(desc: Descriptions, table: dict[str, set[str]], chars: Iterable[str] 
 
 class Maker:
     """The forms substitutions make of a character, with what a part becomes kept per part: 睘 turns
-    into the same forms in 還, 環 and 寰."""
+    into the same forms in 還, 環 and 寰.
 
-    def __init__(self, desc: Descriptions, table: dict[str, set[str]], steps: int = 1):
+    Where one side of a substitution holds the other in the very place a part sits, the swap is made
+    there only if an attesting pair shows it in that place (`fits`, with `places`). 广 and 廣 are
+    attested as whole side parts (圹 ⿰土广, 壙 ⿰土廣), and 廣 is ⿸广黃, so the 广 that encloses 郎 in
+    㢃 (⿸广郎) is the part of 廣, and ⿸廣郎 no form of it; 宂 is ⿱宀几, and 㝓 and 䆟 show 宀↔宂 at
+    the top of ⿱, so 寰 (⿱宀睘) still gives ⿱宂睘."""
+
+    def __init__(self, desc: Descriptions, table: dict[str, set[str]], steps: int = 1,
+                 places: dict[tuple[str, str], set[Place]] | None = None):
         self.desc, self.table, self.steps = desc, table, steps
+        self.places = places or {}
         self.parts: dict[tuple[str, int, int], list[tuple[tuple[Step, ...], Tree]]] = {}
+        self._fits: dict[tuple[str, str, Place], bool] = {}
+
+    def fits(self, was: str, became: str, where: Place) -> bool:
+        """Whether `was` may become `became` in the place `where`: neither holds the other there, or
+        an attesting pair shows the swap there."""
+        key = (was, became, where)
+        if key not in self._fits:
+            self._fits[key] = (where in self.places.get(ordered(was, became), ())
+                               or not (holds(self.desc, became, was, where) or holds(self.desc, was, became, where)))
+        return self._fits[key]
 
     def whole(self, char: str) -> Iterator[tuple[tuple[Step, ...], Tree, bool]]:
         """Each form of `char` with its route, and whether it was made from one of the character's
@@ -558,8 +623,12 @@ class Maker:
             return []
         operator, parts = tree
         combos: list[tuple[tuple[Step, ...], tuple[Tree, ...]]] = [((), ())]
-        for part in parts:
-            options = self.part(part, depth + 1, budget)
+        for at, part in enumerate(parts):
+            where = slot(operator, at, len(parts))
+            # A swap of the part itself is its one step at the part's own depth; the cache in `part`
+            # has no place, so the place is checked here.
+            options = [(route, new) for route, new in self.part(part, depth + 1, budget)
+                       if len(route) != 1 or route[0][2] != depth + 1 or self.fits(*route[0][:2], where)]
             grown = []
             for route, done in combos:
                 grown.append((route, (*done, part)))
