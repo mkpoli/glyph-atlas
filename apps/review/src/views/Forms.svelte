@@ -196,7 +196,7 @@
     if (event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return
     event?.preventDefault(); clearContext()
     const shown = splitK ? groups.flatMap(group => group.items) : glyphs
-    inspector.inspect(id, null, shown.map(glyph => ({ id: glyph.id, origin: 'corpus' })), () => { edited = true }, 'corpus')
+    inspector.inspect(id, shown.map(glyph => ({ id: glyph.id, origin: 'corpus' })), () => { edited = true }, 'corpus')
   }
   $effect(() => {
     if (page.state.inspect || !edited) return
