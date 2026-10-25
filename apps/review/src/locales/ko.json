@@ -287,6 +287,7 @@
   "forms.member.open": "크롭 {id} 열기",
   "forms.families.label": "패밀리",
   "forms.findFamily.aria": "패밀리 찾기",
+  "forms.findFamily.noForms": "{chars}의 패밀리는 아직 없습니다.",
   "forms.findFamily.placeholder": "패밀리 찾기…",
   "forms.followCluster": "클러스터 따르기",
   "forms.glyphs.count.other": "글리프 {count}개",

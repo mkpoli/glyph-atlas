@@ -275,6 +275,7 @@
   "forms.member.open": "開啟裁切範圍{id}",
   "forms.families.label": "字族",
   "forms.findFamily.aria": "查找字族",
+  "forms.findFamily.noForms": "{chars}尚無字族。",
   "forms.findFamily.placeholder": "查找字族…",
   "forms.followCluster": "沿用本組",
   "forms.glyphs.count.other": "{count}個字形",

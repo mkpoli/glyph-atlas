@@ -266,6 +266,7 @@
   "forms.member.open": "開截{id}",
   "forms.families.label": "字族",
   "forms.findFamily.aria": "尋字族",
+  "forms.findFamily.noForms": "{chars}未有字族。",
   "forms.findFamily.placeholder": "尋字族…",
   "forms.followCluster": "從群",
   "forms.glyphs.count.other": "字形{count}",

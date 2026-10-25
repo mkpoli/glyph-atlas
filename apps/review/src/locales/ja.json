@@ -271,6 +271,7 @@
   "forms.member.open": "切り出し{id}を開く",
   "forms.families.label": "系列",
   "forms.findFamily.aria": "系列を検索",
+  "forms.findFamily.noForms": "{chars}の系列はまだありません。",
   "forms.findFamily.placeholder": "系列を検索…",
   "forms.followCluster": "クラスタの字体に合わせる",
   "forms.glyphs.count.other": "字形{count}件",
