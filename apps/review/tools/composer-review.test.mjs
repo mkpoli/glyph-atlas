@@ -186,7 +186,5 @@ describe('an empty slot', () => {
     const p = placeholder([100, 100, 400, 800], 80)
     expect(p).toMatchObject({ x: 140, y: 140, width: 320, height: 720 })
     expect(p.gap).toBeGreaterThan(p.dot)
-    expect(p.plus).toBeGreaterThan(0)
-    expect(placeholder([0, 0, 60, 60], 80).plus).toBe(0)
   })
 })

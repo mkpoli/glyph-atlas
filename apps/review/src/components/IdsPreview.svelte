@@ -72,10 +72,6 @@
     <rect x={p.x} y={p.y} width={p.width} height={p.height} rx={p.rx} class="slot-fill" />
     <rect x={p.x} y={p.y} width={p.width} height={p.height} rx={p.rx} class="slot-line"
       stroke-width={p.dot} pathLength={p.dots} stroke-dasharray="0 1" />
-    {#if p.plus && !faint}
-      {@const cx = p.x + p.width / 2}{@const cy = p.y + p.height / 2}
-      <path class="slot-plus" stroke-width={p.line} d="M{cx - p.plus} {cy}H{cx + p.plus}M{cx} {cy - p.plus}V{cy + p.plus}" />
-    {/if}
   </g>
 {/snippet}
 
@@ -135,11 +131,10 @@
   .ink{fill:currentColor}
   .slot-fill{fill:color-mix(in srgb,var(--accent) 6%,transparent)}
   .slot-line{fill:none;stroke:color-mix(in srgb,var(--accent) 50%,var(--muted));stroke-linecap:round}
-  .slot-plus{fill:none;stroke:color-mix(in srgb,var(--accent) 40%,var(--muted));stroke-linecap:round}
   .slot.faint .slot-fill{fill:color-mix(in srgb,var(--ink) 3%,transparent)}
   .slot.faint .slot-line{stroke:color-mix(in srgb,var(--ink) 20%,transparent)}
   .slot.selected .slot-fill{fill:color-mix(in srgb,var(--accent) 16%,transparent)}
-  .slot.selected .slot-line,.slot.selected .slot-plus{stroke:var(--accent)}
+  .slot.selected .slot-line{stroke:var(--accent)}
   .ids-preview-badge{padding:0 7px;border-radius:999px;font-size:11px;line-height:18px;color:var(--muted);border:1px solid var(--line);white-space:nowrap}
   .ids-preview[data-label="final"] .ids-preview-badge{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
   .ids-preview[data-label="approximate"] .ids-preview-badge{color:var(--uncertain,var(--muted))}

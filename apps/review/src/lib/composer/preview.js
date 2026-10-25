@@ -25,20 +25,17 @@ export const STROKE = 80
 
 /**
  * A placeholder in `box` ([x, y, width, height], y down): a rounded rectangle inset by half a stroke,
- * outlined in dots a stroke wide, with a small ＋ at its centre once it is large enough. `stroke` is
- * the stroke width of the drawing beside it. Answers `{ x, y, width, height, rx, dot, gap, dots, plus, line }`:
- * the rectangle, the dots' width, their spacing and how many go round, the half-length of the cross's arms (0 for none) and
- * the width of its lines.
+ * outlined in dots a stroke wide. `stroke` is the stroke width of the drawing beside it. Answers
+ * `{ x, y, width, height, rx, dot, gap, dots }`: the rectangle, the dots' width, their spacing and how
+ * many go round.
  */
 export function placeholder(box, stroke = STROKE) {
   const [bx, by, bw, bh] = box
   const s = Math.max(24, Math.min(stroke, Math.min(bw, bh) / 5))
   const inset = Math.min(s / 2, bw / 4, bh / 4)
   const width = Math.max(bw - 2 * inset, 1), height = Math.max(bh - 2 * inset, 1)
-  const side = Math.min(width, height)
-  const rx = Math.min(side * 0.18, 3 * s)
+  const rx = Math.min(Math.min(width, height) * 0.18, 3 * s)
   // As many dots as fit the outline at about a stroke and a bit apart, so they close evenly round it.
   const perimeter = 2 * (width + height) - 8 * rx + 2 * Math.PI * rx
-  return { x: bx + inset, y: by + inset, width, height, rx, dot: s * 0.42, gap: s * 1.15, dots: Math.max(4, Math.round(perimeter / (s * 1.15))),
-    plus: side >= 3.5 * s ? Math.min(side * 0.14, 2.2 * s) : 0, line: s * 0.42 }
+  return { x: bx + inset, y: by + inset, width, height, rx, dot: s * 0.42, gap: s * 1.15, dots: Math.max(4, Math.round(perimeter / (s * 1.15))) }
 }
