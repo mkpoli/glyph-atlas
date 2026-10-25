@@ -11,6 +11,9 @@ export function graphemeChar(item) {
   const point = item?.grapheme?.code_point ?? item?.grapheme
   return typeof point === 'string' && /^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$/i.test(point) ? graphemeText(point) : null
 }
+/** `text` with its katakana written as hiragana (ハ → は). A katakana form shares its hiragana's grapheme,
+ *  yet is written apart, so a caption needs no grapheme beside it. */
+export const kanaFolded = text => text.replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))
 export const writtenLabel = item => isUnassigned(item) ? 'Unassigned'
   : item?.written_character ?? item?.label ?? item?.char ?? ''
 

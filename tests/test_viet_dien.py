@@ -67,6 +67,7 @@ def test_import_replay_and_search(tmp_path, http_server):
     assert doc.meta["viet_dien"]["year"] == 1937
     assert doc.origin == "unknown" and doc.production == "unknown" and not doc.dating
     assert doc.image_rights is None
+    # The catalogue dates this work 1937, after PUBLIC_DOMAIN_UNTIL.
     assert doc.text_rights.licence == Licence.RESTRICTED
     assert [p.seq for p in pages] == [0, 2]
     assert [p.meta["corrected"] for p in pages] == [False, True]
@@ -104,6 +105,15 @@ def test_import_replay_and_search(tmp_path, http_server):
     assert payload["source"]["text_rights"]["licence"] == "restricted"
     assert payload["source"]["text_rights"]["attribution"] == vd.ATTRIBUTION
 
+
+@pytest.mark.parametrize(("year", "licence", "holder"), [
+    (1880, Licence.PUBLIC_DOMAIN, Licence.RESTRICTED),
+    (None, Licence.PUBLIC_DOMAIN, Licence.RESTRICTED),
+    (1901, Licence.RESTRICTED, None),
+])
+def test_the_text_of_a_public_domain_work_is_public_domain(year, licence, holder):
+    rights = vd.text_rights(year)
+    assert (rights.licence, rights.holder_terms, rights.attribution) == (licence, holder, vd.ATTRIBUTION)
 
 
 def test_explicit_ids_and_page_limit(tmp_path, http_server):

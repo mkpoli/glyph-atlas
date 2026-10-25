@@ -21,6 +21,9 @@ atlas = "glyph_atlas.cli:app"
 
 [project.optional-dependencies]
 data = ["odfpy>=1.4"]
+# The text layer (`atlas text build`): MeCab through fugashi, with a period UniDic that is
+# downloaded separately (decision 0010).
+text = ["fugashi>=1.5"]
 # The 국립중앙도서관 collector (`atlas` importers `nlk`): reads embedded page images
 # straight out of a PDF, without re-encoding them.
 pdf = ["pymupdf>=1.24"]
@@ -42,6 +45,16 @@ detector = [
     "scipy>=1.16",
     # The character classifier: ConvNeXt-tiny, with the ImageNet-22k checkpoint
     "timm>=1.0",
+]
+# Special forms (`atlas forms special`): restoration, contrastive shape encoder, UMAP and Ward tree.
+special-forms = [
+    "torch>=2.14",
+    "timm>=1.0",
+    "numpy>=2",
+    "scipy>=1.16",
+    "scikit-image>=0.26",
+    "scikit-learn>=1.7",
+    "umap-learn>=0.5",
 ]
 
 [dependency-groups]

@@ -29,6 +29,7 @@ repair_app = typer.Typer(help="Diagnose and repair systematic character-to-detec
 forms_app = typer.Typer(help="Cluster glyphs by shape so their forms can be assigned.", no_args_is_help=True)
 quality_app = typer.Typer(help="Measure how well the scans show each crop.", no_args_is_help=True)
 similar_app = typer.Typer(help="Embed published crops and find the ones that look alike.", no_args_is_help=True)
+text_app = typer.Typer(help="The transcriptions' rubies and words, parsed into text.sqlite.", no_args_is_help=True)
 
 
 @app.callback()
@@ -1580,6 +1581,26 @@ def ruby_spellings(
     typer.echo(f"-> {out}")
 
 
+@text_app.command("build")
+def text_build(
+    dictionary: Annotated[Path, typer.Option(envvar="GLYPH_ATLAS_UNIDIC",
+                                             help="a period UniDic for MeCab (unidic-kinsei-edo-v202512)")],
+    clone: Annotated[Path | None, typer.Option(help="みんなで翻刻データ clone; cache/honkoku-data when unset")] = None,
+    out: Annotated[Path, typer.Option(help="the text layer")] = Path("work/text/text.sqlite"),
+    project: Annotated[list[str] | None, typer.Option(help="only these projects")] = None,
+    workers: Annotated[int, typer.Option(help="processes parsing the entries")] = 4,
+) -> None:
+    """Parse every line of the clone into tokens, steered by its rubies, and write the rubies and
+    tokens to text.sqlite (decisions 0009, 0010)."""
+    from . import text_build as builder
+    from .importers import honkoku_data
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    figures = builder.build(clone or honkoku_data.default_clone(), out, dictionary, projects=project, workers=workers)
+    typer.echo(json.dumps(figures, ensure_ascii=False))
+    typer.echo(f"-> {out}")
+
+
 @quality_app.command("index")
 def quality_index(
     store: Annotated[Path, typer.Option(help="review store whose crops are measured")] = Path("work/ainu-gallery"),
@@ -1693,6 +1714,72 @@ def forms_clean(
     typer.echo(json.dumps(clean(root, source, out, reviews=reviews), ensure_ascii=False))
 
 
+special_app = typer.Typer(help="Abbreviated forms of one character, regrouped crop by crop by stroke shape.", no_args_is_help=True)
+forms_app.add_typer(special_app, name="special")
+
+
+@special_app.command("run")
+def special_run(
+    code: Annotated[str, typer.Argument(help="family code point, such as U+5019")],
+    root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
+    forms: Annotated[Path, typer.Option(help="form clustering revision")] = Path("work/forms/current"),
+    out: Annotated[Path, typer.Option(help="directory of the runs, one per family")] = Path("work/special-forms"),
+    steps: Annotated[int, typer.Option(help="restoration training steps")] = 6000,
+    epochs: Annotated[int, typer.Option(help="encoder training epochs")] = 100,
+) -> None:
+    """Restore, encode and tree one family's crops (needs CUDA; 15 to 30 minutes for 12,000 crops).
+
+    Run it as a batch job: `systemd-run --user --slice=batch.slice -p MemorySwapMax=0 --same-dir -- atlas forms special run U+5019`.
+    """
+    from .special_forms import pipeline, run_dir
+
+    typer.echo(json.dumps(pipeline.run(code, run_dir(code, out), root=root, forms=forms, steps=steps, epochs=epochs,
+                                       log=lambda m: typer.echo(m, err=True)), ensure_ascii=False))
+
+
+@special_app.command("report")
+def special_report(
+    code: Annotated[str, typer.Argument(help="family code point, such as U+5019")],
+    decisions: Annotated[Path | None, typer.Option(help="decisions file (default data/forms/special/<code>.yaml)")] = None,
+    out: Annotated[Path, typer.Option(help="directory of the runs, one per family")] = Path("work/special-forms"),
+) -> None:
+    """Apply the decisions crop by crop and write `forms.tsv` and `report.html` into the run.
+
+    Without a decisions file, a proposal of six unnamed forms, the tree's top branches, is written as
+    `proposal.yaml` in the run and used, to be edited and moved to `data/forms/special/`.
+    """
+    import numpy as np
+    import yaml
+
+    from .special_forms import DECISIONS, LEAVES, decide, report, run_dir, tree
+
+    run = run_dir(code, out)
+    meta = json.loads((run / "run.json").read_text())
+    path = decisions or DECISIONS / f"{code}.yaml"
+    if not path.exists():
+        z = np.load(run / "tree.npz")["z"]
+        leaf, top = tree.cut(z, LEAVES), tree.cut(z, 6)
+        groups = [sorted({int(l) for l in np.unique(leaf[top == g])}) for g in range(1, 7)]
+        path = run / "proposal.yaml"
+        path.write_text(yaml.safe_dump(decide.proposal(code, meta["run"], groups), allow_unicode=True, sort_keys=False))
+        typer.echo(f"no decisions for {code}; proposal written to {path}", err=True)
+    chosen = decide.load(path, LEAVES)
+    data = np.load(run / "crops.npz")
+    idx = np.load(run / "idx.npy")
+    leaf = tree.cut(np.load(run / "tree.npz")["z"], LEAVES)
+    form, stats = decide.assign(chosen["forms"], leaf, data["site"][idx].astype(int), data["emb"][idx], np.load(run / "features.npy"))
+    titles = [f["title"] for f in chosen["forms"]]
+    with (run / "forms.tsv").open("w") as tsv:
+        tsv.write("id\tsite_cluster\tshape_cluster\tform\n")
+        for i, l, f in zip(idx, leaf, form, strict=True):
+            tsv.write(f"{data['ids'][i]}\t{int(data['site'][i])}\t{int(l)}\t{titles[f]}\n")
+    char = chr(int(code.removeprefix("U+"), 16))
+    page = report.render(run, chosen, path.parent / "drawings", report.page_data(run, chosen, form, stats), char)
+    (run / "report.html").write_text(page)
+    typer.echo(json.dumps({"forms": dict(zip(titles, np.bincount(form, minlength=len(titles)).tolist(), strict=True)),
+                           **stats, "report": str(run / "report.html")}, ensure_ascii=False))
+
+
 for name, module in (
     ("tables", tables_app),
     ("images", images_app),
@@ -1708,6 +1795,7 @@ for name, module in (
     ("forms", forms_app),
     ("quality", quality_app),
     ("similar", similar_app),
+    ("text", text_app),
 ):
     app.add_typer(module, name=name)
 

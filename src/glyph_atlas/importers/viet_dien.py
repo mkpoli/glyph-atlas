@@ -23,13 +23,26 @@ from urllib.parse import urlencode, urljoin
 import httpx
 
 from .. import net, tables
-from ..schema import Document, Licence, Page, PageText, Rights
+from ..schema import PUBLIC_DOMAIN_UNTIL, Document, Licence, Page, PageText, Rights
 
 SOURCE = "viet-dien"
 BASE = "https://viet-dien.com"
 TERMS = f"{BASE}/data"
 ATTRIBUTION = "Việt Điển, Albert Errickson; source collections: Digitizing Vietnam and holding libraries"
 REUSE = "The OCR text and the catalogue compilation are offered for research use with attribution."
+
+
+def text_rights(year: int | None) -> Rights:
+    """The page text of a public-domain work is public domain; Việt Điển's own terms stay as `holder_terms`.
+
+    The OCR, a few pages of it corrected by hand, transcribes the work character for character and has
+    no authorship of its own. A work the catalogue dates after `PUBLIC_DOMAIN_UNTIL` may still be in copyright, so its
+    text keeps the stated terms. An undated one is taken as pre-modern, as `Document` takes its images.
+    """
+    if year is not None and year > PUBLIC_DOMAIN_UNTIL:
+        return Rights(licence=Licence.RESTRICTED, attribution=ATTRIBUTION, evidence=TERMS)
+    return Rights(licence=Licence.PUBLIC_DOMAIN, attribution=ATTRIBUTION, evidence=TERMS,
+                  holder_terms=Licence.RESTRICTED)
 
 
 class API:
@@ -154,7 +167,7 @@ def records(detail: dict, listing: dict, pages: list[tuple[dict, str]], revision
         # Volumes can share title_han (道教源流 in three volumes); the romanised title names the volume.
         title=" · ".join(dict.fromkeys(t for t in (detail.get("title_han"), detail.get("title")) if t)),
         source_refs=refs,
-        text_rights=Rights(licence=Licence.RESTRICTED, attribution=ATTRIBUTION, evidence=TERMS),
+        text_rights=text_rights(listing.get("year")),
         meta={"viet_dien": {**listing, **detail}, "revision": revision,
               "text_reuse_terms": REUSE, "image_reuse_terms": "Follow the holding library's terms.",
               "title_romanized": detail["title"], "identity_basis": "api_id"},

@@ -4,8 +4,9 @@ import { ALIASES, CODES, KEYS, namingOperator, OPERATORS, clear, leaves, nextEmp
 const tree = text => parse(text, { open: true }).tree
 
 describe('a draft read as the editor reads it', () => {
-  it('reads ＋ and the parts still missing at the end as empty slots', () => {
+  it('reads ⬚ and the parts still missing at the end as empty slots', () => {
     expect(tree('⿰亻')).toEqual({ op: '⿰', parts: ['亻', null] })
+    expect(tree('⿰⬚木')).toEqual({ op: '⿰', parts: [null, '木'] })
     expect(tree('⿰＋木')).toEqual({ op: '⿰', parts: [null, '木'] })
     expect(tree('')).toBeNull()
     expect(tree('木')).toBe('木')
@@ -23,10 +24,12 @@ describe('a draft read as the editor reads it', () => {
     expect(tree('⿰？木')).toEqual({ op: '⿰', parts: ['？', '木'] })
     expect(parse('⿰？木').problem).toBeUndefined()
   })
-  it('writes an empty slot as ＋, which no saved description takes', () => {
-    for (const text of ['⿰⿱匕失⿱コ疋', '⿲亻＋木', '⿲亻？木', '⿾疋', '⿻＋＋']) expect(write(tree(text))).toBe(text)
-    expect(write(null)).toBe('＋')
+  it('writes an empty slot as ⬚, which no saved description takes', () => {
+    for (const text of ['⿰⿱匕失⿱コ疋', '⿲亻⬚木', '⿲亻？木', '⿾疋', '⿻⬚⬚']) expect(write(tree(text))).toBe(text)
+    expect(write(null)).toBe('⬚')
+    expect(parse('⿰⬚木').problem).toBe('component')
     expect(parse('⿰＋木').problem).toBe('component')
+    expect(write(tree('⿰＋木'))).toBe('⿰⬚木')
   })
 })
 
@@ -57,13 +60,13 @@ describe('ASCII operator names', () => {
 describe('the editor verbs', () => {
   const t = tree('⿰亻⿱七木')
   it('split a slot: the part first, then empty slots', () => {
-    expect(write(wrap('⿲', '木'))).toBe('⿲木＋＋')
+    expect(write(wrap('⿲', '木'))).toBe('⿲木⬚⬚')
     expect(wrap('⿾', '疋')).toEqual({ op: '⿾', parts: ['疋'] })
   })
   it('swap an operator and keep its parts', () => {
     expect(write(swapOp(t, [1], '⿻').tree)).toBe('⿰亻⿻七木')
-    expect(write(swapOp(t, [], '⿲').tree)).toBe('⿲亻⿱七木＋')
-    expect(write(swapOp(tree('⿲亻木＋'), [], '⿰').tree)).toBe('⿰亻木')
+    expect(write(swapOp(t, [], '⿲').tree)).toBe('⿲亻⿱七木⬚')
+    expect(write(swapOp(tree('⿲亻木⬚'), [], '⿰').tree)).toBe('⿰亻木')
   })
   it('refuse a swap that would drop a filled part', () => {
     expect(swapOp(tree('⿲亻木口'), [], '⿰')).toEqual({ problem: 'drop' })
@@ -71,18 +74,18 @@ describe('the editor verbs', () => {
   })
   it('remove one level, keeping the first part that is filled', () => {
     expect(write(unwrap(t, [1]))).toBe('⿰亻七')
-    expect(write(unwrap(tree('⿰＋木'), []))).toBe('木')
-    expect(unwrap(tree('⿰＋＋'), [])).toBeNull()
+    expect(write(unwrap(tree('⿰⬚木'), []))).toBe('木')
+    expect(unwrap(tree('⿰⬚⬚'), [])).toBeNull()
     expect(unwrap(t, [0])).toBe(t)
   })
   it('clear a slot', () => {
-    expect(write(clear(t, [1, 0]))).toBe('⿰亻⿱＋木')
+    expect(write(clear(t, [1, 0]))).toBe('⿰亻⿱⬚木')
     expect(clear(t, [])).toBeNull()
   })
 })
 
 describe('moving through a tree', () => {
-  const t = tree('⿰＋⿱七＋')
+  const t = tree('⿰⬚⿱七⬚')
   it('steps through every part in reading order', () => {
     expect(paths(t)).toEqual([[], [0], [1], [1, 0], [1, 1]])
     expect(leaves(t).map(leaf => leaf.char)).toEqual([null, '七', null])
