@@ -151,3 +151,37 @@ export async function restoreForm(after, before, replaced = null) {
   // A renaming back is a review, which a claim put back with it names.
   return { crop: (await claimForm(now, replaced, replaced ? review : null)).crop, reviewed }
 }
+
+// A selection marked as a form outside its grapheme (an ideographic description sequence) is a batch of
+// form picks, each 48 crops: a claim on each crop and no review, as `setForm` marks one crop with such a
+// form. The batch names the version of each crop the reader saw, read again for a record that lacks it.
+export const FORM_BATCH = 48
+const picksOf = async (crops, form) => Promise.all(crops.map(async crop => ({ crop: crop.crop_version ? crop : { ...crop, ...await reread(crop) }, form })))
+async function sendPicks(picks) {
+  const batches = []
+  for (let from = 0; from < picks.length; from += FORM_BATCH) batches.push(picks.slice(from, from + FORM_BATCH))
+  // A batch answered gives `{ crop, replaced }` for each crop it changed; one kept while writes are
+  // paused goes once they resume.
+  const marked = [], kept = []
+  for (const part of batches) {
+    const { id, answered } = submission(['forms', ...part.map(({ crop, form }) => `${crop.id}@${crop.crop_version}@${form ?? ''}`)])
+    let result
+    try {
+      result = await request('/atlas/forms', { id, crops: part.map(({ crop, form }) => ({ id: crop.id, crop_version: crop.crop_version, form })) })
+    } catch (error) {
+      if (error?.kept) { kept.push(...part.map(pick => pick.crop)); continue }
+      if (error?.status) answered()
+      throw Object.assign(error ?? new Error(), { marked, kept })
+    }
+    answered()
+    const byId = new Map(part.map(({ crop }) => [crop.id, crop]))
+    for (const { id: target, form, replaced } of result.crops ?? []) if (byId.has(target)) marked.push({ crop: { ...byId.get(target), form }, replaced: replaced ?? null })
+  }
+  return { marked, kept }
+}
+/** Mark `crops` as `form`, a batch of picks at a time. Answers `{ marked, kept }`: each crop changed as
+ *  it now stands with the value of the reader's own claim the marking replaced, and the crops kept while
+ *  writes are paused. A failure carries the same two for the batches sent before it. */
+export const markForms = async (crops, form) => sendPicks(await picksOf(crops, form))
+/** Take back `markForms`: each crop's replaced value is claimed again, or the reader's claim taken back. */
+export const unmarkForms = marked => sendPicks(marked.map(({ crop, replaced }) => ({ crop, form: replaced })))

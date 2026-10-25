@@ -11,7 +11,8 @@
   import Glyph from '../components/Glyph.svelte'
   import CropReview from '../components/CropReview.svelte'
   import CropForm from '../components/CropForm.svelte'
-  import { setForm, restoreForm } from '../lib/cropForms.js'
+  import { setForm, restoreForm, markForms, unmarkForms } from '../lib/cropForms.js'
+  import { isDescription } from '../lib/ids.js'
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
   import FormBar from '../components/FormBar.svelte'
@@ -371,6 +372,7 @@
   const CORRECTION_BATCH = 144
   async function assignForm(form) {
     if (saving || loading || step !== 'select') return
+    if (isDescription(form)) return describeSelection(form)
     const chosen = openSelection.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
     if (!chosen.length) return
     const crops = chosen.filter(i => !((i.written_character || i.label) === form && i.state === 'checked'))
@@ -412,9 +414,42 @@
     selected = without(selected, handled); choices = without(choices, handled); anchor = null
     for (const id of refused) drop(id)
   }
+  /**
+   * Mark the selected crops as a form written as an ideographic description sequence: a claim on each
+   * and no review, as marking one crop with it is, so the crops stay in the round for their character.
+   */
+  async function describeSelection(form) {
+    const chosen = openSelection.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
+    if (!chosen.length) return
+    let marked = [], kept = []
+    saving = true; formError = ''
+    try { ({ marked, kept } = await markForms(chosen, form)) }
+    catch (e) {
+      marked = e.marked ?? []; kept = e.kept ?? []
+      formError = e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
+    } finally { saving = false }
+    if (kept.length && !formError) formError = t('client.pausedKept')
+    const now = new Map(marked.map(({ crop }) => [crop.id, crop.form]))
+    items = items.map(i => now.has(i.id) ? { ...i, form: now.get(i.id) } : i)
+    if (marked.length) formDone = { described: marked, count: marked.length, char: form, kept: 0 }
+    const handled = [...marked.map(({ crop }) => crop.id), ...kept.map(crop => crop.id)]
+    selected = without(selected, handled); choices = without(choices, handled); anchor = null
+  }
+  async function undoDescribed(done) {
+    saving = true; formError = ''
+    let marked = []
+    try { ({ marked } = await unmarkForms(done.described)) }
+    catch (e) { marked = e.marked ?? []; formError = e.message }
+    finally { saving = false }
+    const now = new Map(marked.map(({ crop }) => [crop.id, crop.form]))
+    items = items.map(i => now.has(i.id) ? { ...i, form: now.get(i.id) } : i)
+    const left = done.described.filter(({ crop }) => !now.has(crop.id))
+    formDone = left.length ? { ...done, described: left, count: left.length } : null
+  }
   async function undoForm() {
     const done = formDone
     if (!done || saving) return
+    if (done.described) return undoDescribed(done)
     saving = true; formError = ''
     const left = [...done.batches]
     const gone = batch => left.splice(left.indexOf(batch), 1)
