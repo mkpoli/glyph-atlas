@@ -27,7 +27,7 @@
           onselect={item => { target = item.char; query = item.char }} />
         <button disabled={!count || !target || busy || runs > 0} title={runs ? t('bulk.apply.runs') : undefined} onclick={onapply}>{target ? t('bulk.apply', { char: target }) : t('bulk.chooseFirst')}</button>
       </div>
-      <IdsPick char={target} disabled={busy} onuse={sequence => { target = sequence; query = sequence }} />
+      <IdsPick char={target} disabled={busy || runs > 0} title={runs ? t('bulk.apply.runs') : undefined} onuse={sequence => { target = sequence; query = sequence }} />
       <span class="bulk-tools">
         <button class="quiet" disabled={busy} onclick={onselectall}>{t('bulk.selectAll')}</button>
         <button class="quiet" disabled={busy || !count} onclick={onclear}>{t('bulk.clear')}</button>
