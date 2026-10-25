@@ -437,7 +437,7 @@ export class Composer {
         } else return this.node(['⿰', ...children], frameOf)
       }
       if (op in this.ENCLOSE && i === 1 && groups[0].every(p => p.origin.startsWith('glyph'))) {
-        groups.push([placed(source, source.box, fitted(source.box, box, C.STRETCH), drawn.n, `learned ${drawn.h}`)])
+        groups.push([placed(source, source.box, fitted(source.box, box, C.STRETCH), this.ink(drawn.h), `learned ${drawn.h}`)])
         this.fit(groups[0], groups[1], frameOf, stem, C, { room: box })
         continue
       }
@@ -451,7 +451,7 @@ export class Composer {
           if (stretchOf(source.box, room) > C.STRETCH) {
             groups.push(this.node(child, room))
             anchor = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]
-          } else groups.push([this.place(source, room, drawn.n, `learned ${drawn.h}`)])
+          } else groups.push([this.place(source, room, this.ink(drawn.h), `learned ${drawn.h}`)])
           this.fit(groups[0], groups[1], frameOf, stem, C, { room, anchor })
           continue
         }
@@ -464,7 +464,7 @@ export class Composer {
         }
       }
       if (op in this.AXIS && stretchOf(source.box, box) > C.STRETCH) return null
-      groups.push([placed(source, source.box, box, drawn.n, `learned ${drawn.h}`)])
+      groups.push([placed(source, source.box, box, this.ink(drawn.h), `learned ${drawn.h}`)])
       if (op === '⿸' && Array.isArray(children[0]) && i === 1 && this.collide(groups[0], groups[1], frameOf, 256) > C.COLLIDE)
         this.fit(groups[0], groups[1], frameOf, stem, C, { size: 256, room: box })
       if (C.CLEARED.includes(op) && i === 1 && this.collide(groups[0], groups[1], frameOf, 64) > C.COLLIDE) {
@@ -505,7 +505,7 @@ export class Composer {
     }
     const [cost, chain] = best.reduce((a, b) => b[0] < a[0] ? b : a)
     if (cost > C.TRANSPLANT_TOLERANCE * (children.length - 1)) return null
-    return chain.map(([, h]) => { const piece = this.pieceOf(h); return placed(piece, piece.box, piece.box.slice(), h.n, `transplant ${h.h}`) })
+    return chain.map(([, h]) => { const piece = this.pieceOf(h); return placed(piece, piece.box, piece.box.slice(), this.ink(h.h), `transplant ${h.h}`) })
   }
 
   // ---------------------------------------------------------------- no layout to follow
@@ -539,7 +539,7 @@ export class Composer {
       box[axis] = lo + a * span
       box[axis + 2] = lo + b * span
       const part = this.host(op, i, child, [...children.slice(0, i), ...children.slice(i + 1)], box)
-      if (part) groups.push([placed(part.piece, part.piece.box, fitted(part.piece.box, box, C.STRETCH), part.record.n, `host ${part.record.h}`)])
+      if (part) groups.push([placed(part.piece, part.piece.box, fitted(part.piece.box, box, C.STRETCH), this.ink(part.record.h), `host ${part.record.h}`)])
       else groups.push(this.row(child, box, children.length))
     })
     this.space(axis, groups)
@@ -577,7 +577,7 @@ export class Composer {
     }
     if (!best) return null
     const piece = this.pieceOf(best[1])
-    return placed(piece, piece.box, region.slice(), best[1].n, `instance ${best[1].h}`)
+    return placed(piece, piece.box, region.slice(), this.ink(best[1].h), `instance ${best[1].h}`)
   }
 
   // ---------------------------------------------------------------- overlays
@@ -629,7 +629,7 @@ export class Composer {
     return children.flatMap((child, j) => {
       const box = mapped(shares[j], [0, 0, 1, 1], region)
       const donor = chosen.find(t => t.written[j] === keys[j])
-      if (donor) { const piece = this.pieceOf(donor.pieces[j]); return [placed(piece, piece.box, box, donor.pieces[j].n, `overlay ${donor.ch}`)] }
+      if (donor) { const piece = this.pieceOf(donor.pieces[j]); return [placed(piece, piece.box, box, this.ink(donor.ch), `overlay ${donor.ch}`)] }
       return this.node(child, box)
     })
   }
@@ -649,7 +649,7 @@ export class Composer {
       const room = [rooms[i][0] - grow, rooms[i][1], rooms[i][2] + grow, rooms[i][3]]
       const found = this.host('⿰', i, child, [tree[2 - i]], room)
       if (!found) return this.node(child, room)
-      return [placed(found.piece, found.piece.box, fitted(found.piece.box, room, C.CELL_STRETCH), found.record.n, `host ${found.record.h}`)]
+      return [placed(found.piece, found.piece.box, fitted(found.piece.box, room, C.CELL_STRETCH), this.ink(found.record.h), `host ${found.record.h}`)]
     })
   }
 
