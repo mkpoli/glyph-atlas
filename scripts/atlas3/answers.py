@@ -72,46 +72,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cloudflare_schema import category_of
 from publish_collection_status import site_row, status
 
-from glyph_atlas import registry
-from glyph_atlas.schema import Licence
-
 # The collection's working folders, which its status is read from.
 COLLECTION = Path(__file__).resolve().parents[2] / "work/honkoku-collection"
 # The corpus summary `/layers/summary` serves, as the corpus index build writes it.
 CORPUS_INDEX = Path(__file__).resolve().parents[2] / "work/corpus-index/index.json"
 
 SHARDS = 256
-
-
-def public_corpus_index(path: Path, restricted: set[str] | None = None) -> dict:
-    """The corpus index summary without the corpora whose source is restricted: those stay off the site.
-
-    Every other corpus is kept as the index wrote it. A dropped corpus's documents come off the total,
-    and the characters are counted again from the index's `chars.parquet` over the corpora that remain.
-    Its pages come off the total too; an index built before per-corpus page counts cannot say how many
-    those are, so its summary goes out without a page total until the index is rebuilt.
-    """
-    summary = json.loads(path.read_text())
-    if restricted is None:
-        restricted = {s.id for s in registry.load() if s.licence is Licence.RESTRICTED}
-    away = [c for c in summary.get("corpora", []) if c.get("corpus") in restricted]
-    if not away:
-        return summary
-    import pyarrow.parquet as pq
-
-    kept = [c for c in summary["corpora"] if c.get("corpus") not in restricted]
-    names = {c["corpus"] for c in kept}
-    chars = pq.read_table(path.parent / "chars.parquet", columns=["corpora"]).column("corpora").to_pylist()
-    public = {**summary, "corpora": kept,
-              "documents": summary["documents"] - sum(c.get("documents") or 0 for c in away),
-              "characters": sum(1 for row in chars if names & set((row or "").split(",")))}
-    if all("pages" in c for c in away if not c.get("skipped")):
-        public["pages"] = summary["pages"] - sum(c.get("pages") or 0 for c in away)
-    else:
-        del public["pages"]
-        print(f"{path} has no page count for {', '.join(c['corpus'] for c in away)}; the corpus summary goes out "
-              "without a page total until the index is rebuilt", flush=True)
-    return public
 PUB_PREFIX = "v3/pub/"
 POINTER_PREFIX = "v3/"
 CELL = ("kind", "style", "state", "quiz", "decade", "visual_group", "n")
@@ -401,7 +367,7 @@ def publication(dry_run, read=None):
     # Each only where its source is: a run away from the collection's working folders (a Codespace) keeps
     # the published collection status rather than one read from no folders.
     site = {**({"collection": status()} if COLLECTION.is_dir() else {}),
-            **({"corpus_index": public_corpus_index(CORPUS_INDEX)} if CORPUS_INDEX.exists() else {})}
+            **({"corpus_index": json.loads(CORPUS_INDEX.read_text())} if CORPUS_INDEX.exists() else {})}
     digest = answers_digest(folder, site)
     last = OUT / "answers-published.json"
     published = json.loads(last.read_text()) if last.exists() else {}
