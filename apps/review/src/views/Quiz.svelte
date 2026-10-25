@@ -38,6 +38,8 @@
   let recorded = $state({})
   // Crops of `recorded` whose save is kept on this device while writes are paused, not yet sent.
   let keptHere = $state({})
+  // The form each crop was marked as here, which its tile shows in place of the label it was dealt with.
+  let markedAs = $state({})
   // A crop this round already decided, by a saved problem or a form it was marked as, is not judged again.
   const decidedHere = id => recorded[id] === 'flagged' || recorded[id] === 'assigned'
   // Crops at least half of which have been on screen this round. Only these can be recorded as seen:
@@ -145,7 +147,7 @@
   const stale = $derived(Boolean(error) && errorStatus === 409)
   const canNext = $derived(rounds.some(c => c.pending > 0 && c.label !== grapheme))
   function snapshot() {
-    return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, keptHere, suggestions, contextSuggestions,
+    return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, keptHere, markedAs, suggestions, contextSuggestions,
       roundId, roundSeed, hasMore, nextCursor, production, summary: data, entry })
   }
   function checkpoint() {
@@ -154,11 +156,11 @@
   function restoreRound(round) {
     production = round.production; data = round.summary
     grapheme = round.grapheme; members = round.members; items = round.items; choices = round.choices; selected = round.selected
-    skipped = round.skipped; recorded = round.recorded ?? {}; keptHere = round.keptHere ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
+    skipped = round.skipped; recorded = round.recorded ?? {}; keptHere = round.keptHere ?? {}; markedAs = round.markedAs ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
     roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextCursor = round.nextCursor ?? null
     entry = round.entry ?? null
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
-    anchor = null; formDone = null; formError = ''; lastMark = null
+    anchor = null; formDone = null; formError = ''
   }
   function visit(index, { followed = false } = {}) {
     if (saving || loading || index < 0 || index >= history.length || index === historyIndex) return
@@ -362,17 +364,21 @@
     selected = {}; at = 0; anchor = null
   }
   /**
-   * Mark the selected crops as one form of the round's grapheme, as Explore's bar marks a selection:
-   * a batch correction each 144 crops, undone together. A crop already checked as that form has
-   * nothing to change; a refused crop leaves the round, which deals it again as it now stands.
+   * Mark crops as one form of the round's grapheme, as Explore's bar marks a selection: a batch
+   * correction each 144 crops, undone together. The bar marks the selection, and the crop on show is
+   * marked alone (`markCurrent`), so both end the same way: the tile names the form and reads as saved.
+   * `claim` is a form claimed on the crop beforehand, `{ form, replaced, before }`, which the tile names
+   * and an undo takes back. A crop already checked as that form has nothing to change; a refused crop
+   * leaves the round, which deals it again as it now stands.
    */
   // A marking and its undo hold the round as a save does: nothing moves to another round meanwhile.
   let formError = $state(''), formDone = $state(null)
   const CORRECTION_BATCH = 144
-  async function assignForm(form) {
-    if (saving || loading || step !== 'select') return
-    const chosen = openSelection.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
+  async function assignForm(form, chosen = null, claim = null) {
+    if (saving || loading || (!chosen && step !== 'select')) return
+    chosen ??= openSelection.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
     if (!chosen.length) return
+    const shown = claim?.form ?? form
     const crops = chosen.filter(i => !((i.written_character || i.label) === form && i.state === 'checked'))
     let kept = chosen.length - crops.length, refused = [], answered = [], waiting = []
     const saved = [], before = {}, after = {}
@@ -399,15 +405,19 @@
     // Batches kept while writes are paused go once they resume: their crops are decided here meanwhile.
     const waited = waiting.flatMap(batch => batch.crops)
     if (waited.length) {
-      markRecorded(waited, 'assigned')
+      markRecorded(waited, 'assigned'); markAs(waited, shown)
       for (const batch of waiting) markKept(batch.crops, keyOf('/atlas/corrections', batch))
       if (!formError) formError = t('client.pausedKept')
     }
-    const handled = [...Object.keys(after), ...waited.map(i => i.id), ...chosen.filter(i => !crops.includes(i)).map(i => i.id), ...refused]
-    if (saved.length) {
+    const unchanged = chosen.filter(i => !crops.includes(i))
+    const handled = [...Object.keys(after), ...waited.map(i => i.id), ...unchanged.map(i => i.id), ...refused]
+    // A claimed form holds on a crop that was already checked, so that crop is marked as well.
+    const claimed = claim ? unchanged : []
+    if (saved.length || claimed.length) {
       items = items.map(i => after[i.id] ?? i)
-      markRecorded(Object.values(after), 'assigned')
-      formDone = { batches: saved, count: Object.keys(after).length, char: form, before, kept }
+      markRecorded([...Object.values(after), ...claimed], 'assigned'); markAs([...Object.values(after), ...claimed], shown)
+      formDone = { batches: saved, count: Object.keys(after).length + claimed.length, char: shown, before, kept,
+        claims: claim ? Object.fromEntries([...Object.keys(after), ...claimed.map(i => i.id)].map(id => [id, claim])) : {} }
     }
     selected = without(selected, handled); choices = without(choices, handled); anchor = null
     for (const id of refused) drop(id)
@@ -430,15 +440,26 @@
           return [id, { ...i, ...(i.origin === 'corpus' ? await corpusCharacter(id) : await character(id)) }]
         })))
         items = items.map(i => now[i.id] ?? i)
-        recorded = without(recorded, batch.ids)
+        unmark(batch.ids)
       })
       waiting.forEach(gone)
       if (waiting.length) formError = t('client.pausedKept')
+      // A claimed form is taken back once its crop's correction is: the reader's earlier claim returns.
+      if (!left.length) for (const [id, claim] of Object.entries(done.claims ?? {})) {
+        const { crop } = await restoreForm(items.find(i => i.id === id) ?? claim.before, claim.before, claim.replaced)
+        items = items.map(i => i.id === id ? { ...i, ...crop } : i)
+        unmark([id])
+      }
     } catch (e) { (e.kept ?? []).forEach(gone); formError = e.message }
     finally {
       saving = false
       formDone = left.length ? { ...done, batches: left, count: left.reduce((n, batch) => n + batch.ids.length, 0) } : null
     }
+  }
+  /** A marking taken back: the crops are undecided again and back among the selected problems. */
+  function unmark(ids) {
+    recorded = without(recorded, ids); markedAs = without(markedAs, ids)
+    selected = { ...selected, ...Object.fromEntries(ids.map(id => [id, true])) }
   }
   function without(map, ids) {
     const next = { ...map }
@@ -550,40 +571,26 @@
     })
   }
   /**
-   * Mark the crop on show as one of its grapheme's forms, as the inspector's form bar does: the crop is
-   * decided, leaves the problems to answer, and the step goes on to the next one.
+   * Mark the crop on show as one of its grapheme's forms, as the bar marks a selection: the crop is
+   * decided, leaves the problems to answer, and the step goes on to the next one. A form outside the
+   * grapheme (a variant, a derived shape, a description) is claimed on the crop first, and the crop is
+   * confirmed as the character it is written as.
    */
-  // The last crop marked here, so it can be marked back: { id, form, before, after, reviewed, replaced }.
-  let lastMark = $state(null)
   async function markCurrent(form) {
     if (!current || form == null || saving || loading) return
     const item = current
-    saving = true; error = ''; errorStatus = 0
-    try {
-      const { crop, reviewed, replaced } = await setForm(item, form)
-      items = items.map(i => i.id === item.id ? { ...i, ...crop } : i)
-      // A form that named the crop's character decided it; a written form alone leaves it for the round.
-      if (reviewed) markRecorded([item], 'assigned')
-      selected = without(selected, [item.id]); choices = without(choices, [item.id])
-      lastMark = { id: item.id, form, before: item, after: { ...item, ...crop }, reviewed, replaced }
-    } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
-    finally { saving = false }
+    let crop = item, claim = null
+    if (!members.includes(form)) {
+      saving = true; error = ''; errorStatus = 0
+      try {
+        const { crop: claimed, replaced } = await setForm(item, form)
+        crop = { ...item, ...claimed }; claim = { form, replaced, before: item }
+      } catch (e) { error = e.message; errorStatus = e.status ?? 0; return }
+      finally { saving = false }
+    }
+    await assignForm(claim ? item.written_character ?? item.label : form, [crop], claim)
     await tick()
     if (!queue.length) back()
-  }
-  /** Mark the last crop back as the form it had, and put it back among the problems. */
-  async function undoMark() {
-    const mark = lastMark
-    if (!mark || saving) return
-    saving = true; error = ''; errorStatus = 0
-    try {
-      const { crop } = await restoreForm(mark.after, mark.before, mark.replaced)
-      items = items.map(i => i.id === mark.id ? { ...i, ...crop } : i)
-      recorded = without(recorded, [mark.id])
-      selected = { ...selected, [mark.id]: true }
-      lastMark = null
-    } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
-    finally { saving = false }
   }
   function chooseSuggestion(id, value, noneSelected = false) {
     const current = choices[id]
@@ -665,6 +672,7 @@
     const here = map => Object.fromEntries(Object.entries(map ?? {}).filter(([id]) => dealt.has(id)))
     choices = here(round.choices); selected = here(round.selected); skipped = here(round.skipped)
   }
+  function markAs(crops, form) { markedAs = { ...markedAs, ...Object.fromEntries(crops.map(crop => [crop.id, form])) } }
   function markRecorded(crops, how) { recorded = { ...recorded, ...Object.fromEntries(crops.map(crop => [crop.id, how])) } }
   /** Mark `crops` as decided by the save kept under `key`, until it is sent or refused. */
   function markKept(crops, key) { keptHere = { ...keptHere, ...Object.fromEntries(crops.map(crop => [crop.id, key])) } }
@@ -820,7 +828,7 @@
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
           <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
           <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
-          <div class="quiz-production">{#if item.label !== graphemeLabel}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+          <div class="quiz-production">{#if markedAs[item.id]}<span class="quiz-written">→ <ScriptText text={markedAs[item.id]} /></span>{:else if item.label !== graphemeLabel}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
     </div>
@@ -851,7 +859,7 @@
     <QuizFocus items={queue} {skipped} index={focusIndex} label={t('quiz.focus.chooseProblem')} disabled={saving} onback={back} onjump={jump} onprev={() => move(-1)} onnext={() => move(1)}>
       <!-- One panel per crop, so a search begun for one crop never shows in the next one's. -->
       {#snippet formBar()}<CropForm crop={current} others onchoose={markCurrent} disabled={saving || loading} />
-        {#if lastMark}<p class="mark-done" role="status">{t('bulk.done', { count: 1, char: lastMark.form })}<button class="quiet-link" disabled={saving} onclick={undoMark}>{t('bulk.undo')}</button></p>{/if}{/snippet}
+        {#if formDone}<p class="mark-done" role="status">{t('bulk.done', { count: formDone.count, char: formDone.char })}<button class="quiet-link" disabled={saving} onclick={undoForm}>{t('bulk.undo')}</button></p>{/if}{#if formError}<p class="mark-done mark-error" role="alert">{formError}</p>{/if}{/snippet}
       {#key current.id}<CropReview forms={formBar} issue={currentIssue} onissue={assignCurrent} disabled={saving}
         onskip={() => skip([current.id])} skipped={!!skipped[current.id]}
         targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} label={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} onchoose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
@@ -933,4 +941,5 @@
   /* The form bar sits over the actions, on a row of its own. */
   .quiz-actionbar { flex-wrap:wrap; }
   .mark-done { display:flex; gap:10px; align-items:center; margin:-6px 0 12px; font-size:12px; color:var(--muted); }
+  .mark-error { color:var(--wrong); }
 </style>
