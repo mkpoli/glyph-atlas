@@ -68,3 +68,29 @@ def test_frame_keeps_aspect_and_marks_faint_crops_empty():
     assert quality[0] > 0.5
     _, mask, quality = frame_one((np.full((160, 160), 200, np.uint8), (160, 160)))
     assert mask.max() == 0 and quality[0] == 0
+
+
+def test_assign_lets_the_classifier_decide_crops_the_groupings_disagree_on():
+    pytest.importorskip("sklearn")
+    rng = np.random.default_rng(0)
+    forms = [{"title": "候", "written": True, "leaves": [1]}, {"title": "ん", "leaves": [2]}, {"title": "ゝ", "leaves": [3]}]
+    # site cluster 1 is written, 2 abbreviated; the embedding separates them along its first axis
+    site = np.repeat([1, 2], 60)
+    emb = np.c_[np.where(site == 1, 1.0, -1.0), rng.normal(0, 0.1, (120, 3))]
+    leaf = np.where(site == 1, 1, rng.choice([2, 3], 120))
+    leaf[0] = 2       # a written crop the shape tree put among the abbreviations
+    leaf[70] = 1      # an abbreviation the shape tree put among the written
+    features = np.c_[(leaf == 3).astype(float), rng.normal(0, 0.1, (120, 3))]
+    form, stats = decide.assign(forms, leaf, site, emb, features)
+    assert form[0] == 0
+    assert form[70] in (1, 2)
+    assert stats["disagree"] == 2 and stats["to_written"] == 1 and stats["to_abbreviation"] == 1
+
+
+def test_assign_falls_back_to_shape_when_no_site_cluster_is_mostly_written():
+    pytest.importorskip("sklearn")
+    forms = [{"title": "候", "written": True, "leaves": [1]}, {"title": "ん", "leaves": [2]}]
+    leaf = np.array([1] * 20 + [2] * 80)
+    form, stats = decide.assign(forms, leaf, np.ones(100, int), np.ones((100, 3)), np.ones((100, 3)))
+    assert form.tolist() == [0] * 20 + [1] * 80
+    assert stats["skipped"] and stats["written_clusters"] == []

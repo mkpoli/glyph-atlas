@@ -18,7 +18,7 @@ systemd-run --user --slice=batch.slice -p MemorySwapMax=0 --same-dir -- uv run a
 uv run atlas forms special report U+XXXX
 ```
 
-`run` needs the corpus pixels under `work/` and a CUDA GPU; it takes about half an hour for 12,000 crops. With no
+`run` needs the corpus pixels under `work/` and a CUDA GPU; it takes 15 to 30 minutes for 12,000 crops and needs at least 500 usable ones. With no
 decisions file yet, `report` writes `work/special-forms/U+XXXX/proposal.yaml`, a first grouping of the shape
 clusters into six unnamed forms, and a `report.html` built from it. Look at the shape clusters on the
 report, then copy the proposal here as `U+XXXX.yaml`, merge or split groups, name the forms, and

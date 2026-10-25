@@ -10,6 +10,9 @@ import numpy as np
 
 from . import crops, encoder, ink, restore, tree
 
+#: Least usable crops a family needs: enough for the encoder's batches and for 24 shape clusters of some size.
+MIN_CROPS = 500
+
 
 def run(code: str, out: Path, *, root: Path, forms: Path, steps: int = 6000, epochs: int = 100,
         device: str = "cuda", log=print) -> dict:
@@ -36,6 +39,8 @@ def run(code: str, out: Path, *, root: Path, forms: Path, steps: int = 6000, epo
 
     if not (out / "features.npy").exists():
         idx = np.nonzero(refit.max(axis=(1, 2)) > 0)[0]
+        if len(idx) < MIN_CROPS:
+            raise ValueError(f"{code}: {len(idx)} usable crops; a shape tree needs at least {MIN_CROPS}")
         log(f"encoders on {len(idx)} crops")
         light = encoder.train(refit[idx], epochs=epochs, seed=0, device=device)
         heavy = encoder.train(refit[idx], epochs=epochs, seed=1, heavy=True, device=device)

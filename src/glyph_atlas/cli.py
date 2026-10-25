@@ -1706,7 +1706,7 @@ def special_run(
     steps: Annotated[int, typer.Option(help="restoration training steps")] = 6000,
     epochs: Annotated[int, typer.Option(help="encoder training epochs")] = 100,
 ) -> None:
-    """Restore, encode and tree one family's crops (needs CUDA; about 25 minutes for 12,000 crops).
+    """Restore, encode and tree one family's crops (needs CUDA; 15 to 30 minutes for 12,000 crops).
 
     Run it as a batch job: `systemd-run --user --slice=batch.slice -p MemorySwapMax=0 --same-dir -- atlas forms special run U+5019`.
     """

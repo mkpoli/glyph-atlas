@@ -31,6 +31,11 @@ from pathlib import Path
 import numpy as np
 import yaml
 
+#: Least crops of each side (written, abbreviated) the classifier needs among the agreed crops.
+MIN_CLASS = 10
+#: Abbreviated neighbours that vote on the form of a crop moved out of the written form.
+NEIGHBOURS = 15
+
 
 def load(path: Path, leaves: int) -> dict:
     data = yaml.safe_load(path.read_text())
@@ -70,14 +75,22 @@ def assign(forms: list[dict], leaf: np.ndarray, site: np.ndarray, emb: np.ndarra
     clusters = [c for c in np.unique(site) if in_shape[site == c].mean() > 0.5]
     in_site = np.isin(site, clusters)
     agree = in_site == in_shape
+    if min(in_site[agree].sum(), (~in_site[agree]).sum()) < MIN_CLASS:
+        # The site clusters give too few examples of one side to learn from: the shape clusters decide.
+        return by_shape, {"written_clusters": [int(c) for c in clusters], "skipped": True}
     x = emb / np.linalg.norm(emb, axis=1, keepdims=True)
     clf = LogisticRegression(C=1.0, max_iter=2000, class_weight="balanced")
     held = cross_val_predict(clf, x[agree], in_site[agree], cv=5, method="predict_proba")[:, 1]
     clf.fit(x[agree], in_site[agree])
     is_written = np.where(agree, in_site, clf.predict_proba(x)[:, 1] > 0.5)
-    abbreviated = ~in_shape
-    knn = KNeighborsClassifier(15, metric="cosine").fit(features[abbreviated], by_shape[abbreviated])
-    form = np.where(is_written, written, np.where(in_shape, knn.predict(features), by_shape))
+    form = np.where(is_written, written, by_shape)
+    moved = in_shape & ~is_written
+    if moved.any():
+        abbreviated = ~in_shape
+        if not abbreviated.any():
+            raise ValueError("crops leave the written form, but no shape cluster is an abbreviation to give them")
+        knn = KNeighborsClassifier(min(NEIGHBOURS, int(abbreviated.sum())), metric="cosine")
+        form[moved] = knn.fit(features[abbreviated], by_shape[abbreviated]).predict(features[moved])
     return form, {
         "written_clusters": [int(c) for c in clusters],
         "agree": int(agree.sum()),
