@@ -161,36 +161,77 @@ The ruby choice needs the rubies while the parse runs, so rubies and tokens are 
 `atlas text build` writes `text.sqlite` with 0009's pairs and occurrences, the tokens and the
 character maps.
 
-`scripts/atlas3/text.py` writes these objects under `v3/text/<build>/`. `<build>` is the layout's
-build id, read as `layoutBuild` reads it for votes (0008), so an object never names crops of
-another build. Only objects whose hash changed are uploaded.
+`text.sqlite` numbers every clone page with a text page number, which stays fixed while the
+clone keeps the page. 120,747 clone pages hold text.
 
-- One object per page with the page's lines, each with its rubies, its tokens and their crops.
-- One object per lexeme with its spellings, counts and periods, and the first page of its tokens.
-- Token lists of 500 occurrences per object for each lexeme and each spelling, in book and page
-  order, each occurrence with its book, page, line, offsets and crops. A gallery reads one list
-  object a page.
-- Search shards:
-  - spellings, by each character of the surface;
-  - lemmas, by lemma text;
-  - lemma readings, by their first two kana.
+**Only page objects name crops.** `scripts/atlas3/text.py` writes two kinds of object, and uploads
+only those whose hash changed:
 
-The size is estimated at 0.5 GB gzipped in about 400,000 objects, most of it the token lists of
-particles; the first build measures it. D1 holds no token rows. `words` gains a `lexeme` column:
-one migration, then one rewrite of each of the 20 word rows.
+- **Under `v3/text/<build>/`,** the layout's build id, read as `layoutBuild` reads it for votes
+  (0008), so that no object names crops of another build:
+  - one object per text page, with its lines, each with its rubies, its tokens and their crops;
+  - `cropped.json.gz`, the set of text pages that have a crop, as a bitmap of about 15 KB.
+- **Under `v3/text/`, with no crop ids:**
+  - one object per lexeme with its spellings, counts and periods;
+  - its page index, the text pages that hold it with a count each, inside the lexeme object up to
+    2,000 pages and in chunks of 2,000 beyond;
+  - one object per 0009 ruby pair, with its occurrences as text page, line and offsets;
+  - the search shards: spellings by each character of the surface, lemmas by lemma text, and
+    lemma readings by their first two kana.
+
+**A gallery is assembled at read time.** The Worker takes the lexeme's page index, keeps the pages
+the bitmap marks, and reads those page objects until it has a page of crops. A ruby pair's gallery
+works the same way. A gallery of 24 crops reads at most 24 page objects, and fewer where a page
+holds the word more than once. They are read six at a time, the number of R2 reads a Worker may
+have waiting at once, and held in the isolate as other shards are.
+
+**D1** holds no token rows. `words` gains a `lexeme` column: one migration, then one rewrite of
+each of the 20 word rows.
 
 **Rebuilds.** `text.py` runs after every `publish.py` run, and when a book's witness year changes in
-`books.py`. It rebuilds a page's objects when any of these changes:
+`books.py`.
 
-- the clone revision;
-- the dictionary chosen for its book, or that dictionary's version;
-- its crops.
+- **Publishing** changes crops only, so it rewrites the page objects of the pages it touched and the
+  bitmap, and nothing else.
+- **A new clone revision, or another dictionary for a book,** re-parses the pages whose text or
+  dictionary changed and rewrites the lexeme, index and pair objects their tokens left or joined.
+- **A changed witness year** rewrites the lexeme objects of the book's tokens, since their periods
+  depend on it.
+- **A new layout build** writes the page objects and the bitmap under the new build id. The old ones
+  stay until the next build replaces them, so a Worker still holding the old build id finds its
+  objects. The objects with no crop ids are untouched.
 
-A changed token rewrites the lexeme and spelling objects it left and the ones it joined. A book
-whose witness year changes rewrites the lexeme objects of its tokens, whose periods depend on it,
-even when its tokens stay the same. A new layout build writes the whole tree under the new build
-id. The old tree stays until the next build replaces it, so a Worker still holding the old build
-id finds its objects.
+### Performance and cost
+
+Figures are from the full parse above, a 150-entry sample for object sizes, and R2's prices for
+Standard storage: $0.015 per GB-month, $4.50 per million writes, $0.36 per million reads, with
+10 GB, 1 million writes and 10 million reads free each month.
+
+| | Objects | Size, gzipped |
+| --- | ---: | ---: |
+| Page objects, tokens only | 120,747 | about 100 MB |
+| Page objects with rubies and crops | 120,747 | about 200 MB, by estimate |
+| Lexeme objects and page indexes | about 98,000 and 12 million entries | about 40 MB, by estimate |
+| Ruby pair objects (0009) | 317,970 | about 60 MB |
+| Search shards | about 12,000 | under 20 MB, by estimate |
+
+A median page object is 686 bytes gzipped, and the 99th percentile 2.5 KB, before rubies and crops.
+
+- **First load:** about 550,000 writes, inside the free million in a month with no other large
+  load, $2.48 at full price. Storage is about 0.35 GB, half a cent a month.
+- **Each publish run:** one write per page touched, plus the bitmap. A list per lexeme with crop ids
+  would also rewrite one object per lexeme of each book published: 185 for the median book and
+  1,491 at the 90th percentile, twice that with spelling lists. Read-time galleries keep that cost
+  at zero.
+- **A new layout build:** 120,748 writes.
+- **A clone pull:** writes follow the pages changed.
+- **Reads:** a crop inspector reads its page object, the same one its Ruby row reads. A lexeme page
+  reads the lexeme object, one index chunk, the bitmap and up to 24 page objects, uncached. A
+  million gallery views would be about 27 million reads, $6 past the free tier.
+- **Build:** with one process on a loaded machine, reading the clone took 10 minutes, the parse 14,
+  and the ruby candidates 20. Four workers should bring the whole build near 12 minutes. It peaked at
+  1.9 GB of memory. Ruby candidates are looked up once per distinct base and reading, and each page
+  is re-parsed only when its input changes.
 
 ### What the site shows
 
