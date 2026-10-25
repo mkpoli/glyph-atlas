@@ -54,7 +54,9 @@
                  // A sign-in code is a mail; one address receives two a minute through each Cloudflare location.
                  {"name": "SIGN_IN_MAIL", "namespace_id": "4405", "simple": {"limit": 2, "period": 60}},
                  // A contact-form message goes to the maintainers' inbox; one address sends three a minute.
-                 {"name": "CONTACT", "namespace_id": "4406", "simple": {"limit": 3, "period": 60}}],
+                 {"name": "CONTACT", "namespace_id": "4406", "simple": {"limit": 3, "period": 60}},
+                 // A browser claims its one old reviewer id on sign-in; one address may send three a minute.
+                 {"name": "OLD_IDS", "namespace_id": "4407", "simple": {"limit": 3, "period": 60}}],
   // The image search's vectors, one index per classifier encoder (`glyph-atlas-similar-<encoder[:8]>`).
   // `scripts/publish_reverse.sh create` makes it and `publish` fills it; it has to exist before a deploy,
   // and SIMILAR_INDEX_NAME above names it too.

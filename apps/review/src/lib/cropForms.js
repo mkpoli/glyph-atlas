@@ -4,11 +4,11 @@ import { drawFigure, figuresOf } from './mjFigures.js'
 
 /**
  * What a crop is written as, read and set through the calls the interface uses and nothing else:
- * `listForms` for the forms a crop may be marked as, `setForm` to mark it, and `restoreForm` to take a
- * marking back. A form is a claim in the site's ledger (docs/design/form-model.md): the reader names a
- * value (a character, a character with a variation selector, or an ideographic description sequence),
- * the site files it under that value's form, and the claim rests on the evidence version the reader
- * saw (`crop_version`). A crop's record carries the forms that hold on it now, as `form`.
+ * `listForms` for the forms a crop may be marked as, `setForm` to mark one crop, and `markForms` and
+ * `unmarkForms` to claim a form on many crops and take it back. A form is a claim in the site's ledger
+ * (docs/design/form-model.md): the reader names a value (a character, a character with a variation
+ * selector, or an ideographic description sequence), the site files it under that value's form, and
+ * the claim rests on the evidence version the reader saw (`crop_version`). A crop's record carries the forms that hold on it now, as `form`.
  */
 
 /** `U+3042` for あ, `U+1B09E U+3099` for 𛂞 with a voicing mark: the key of the character's card. */
@@ -122,7 +122,7 @@ async function writeCharacter(crop, character) {
 /**
  * Mark `crop` as `form`, and answer `{ crop, reviewed, replaced }`: the crop as it now stands, whether
  * the marking was itself a review of it, and the value of the reader's own form claim it replaced
- * (null for none), which `restoreForm` puts back.
+ * (null for none).
  *
  * A form that is an encoded member of the crop's own grapheme (仮 and 假, は and 𛂞) is that character,
  * so the crop is reviewed as written with it, and the form is claimed on it. Any other form (a variant,
@@ -138,23 +138,8 @@ export async function setForm(crop, form) {
   return { ...await claimForm(named.crop, form, named.review), reviewed: true }
 }
 
-/**
- * Take back a marking: `after` is the crop as `setForm` left it, `before` as it was, and `replaced` the
- * reader's own form claim the marking replaced, as `setForm` answered it. A crop renamed by the
- * marking is named back, which is a review; the reader's earlier form is claimed again, or, when they
- * had none, their claim is taken back.
- */
-export async function restoreForm(after, before, replaced = null) {
-  const was = before.written_character ?? before.label
-  let now = after, reviewed = false, review = null
-  if ((after.written_character ?? after.label) !== was) { ({ crop: now, review } = await writeCharacter(after, was)); reviewed = true }
-  // A renaming back is a review, which a claim put back with it names.
-  return { crop: (await claimForm(now, replaced, replaced ? review : null)).crop, reviewed }
-}
-
-// A selection marked as a form outside its grapheme (an ideographic description sequence) is a batch of
-// form picks, each 48 crops: a claim on each crop and no review, as `setForm` marks one crop with such a
-// form. The batch names the version of each crop the reader saw, read again for a record that lacks it.
+// A form claimed on many crops at once is a batch of form picks, each 48 crops: a claim on each crop and
+// no review, as `claimForm` makes on one. The batch names the version of each crop the reader saw, read again for a record that lacks it.
 export const FORM_BATCH = 48
 const picksOf = async (crops, form) => Promise.all(crops.map(async crop => ({ crop: crop.crop_version ? crop : { ...crop, ...await reread(crop) }, form })))
 async function sendPicks(picks) {
