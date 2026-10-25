@@ -452,8 +452,12 @@ def _substitution_table() -> dict[str, set[str]]:
 
 @cache
 def _maker() -> han_component_variants.Maker:
-    """One derivation kept across characters, so 睘 is worked once for 還, 環 and 寰."""
-    return han_component_variants.Maker(_descriptions(), _substitution_table(), han_component_variants.STEPS)
+    """One derivation kept across characters, so 睘 is worked once for 還, 環 and 寰. Each kept
+    substitution carries the places its attesting pairs show it in (`han_component_variants.places`)."""
+    desc = _descriptions()
+    places = han_component_variants.places(desc, {
+        sub: [(pair["a"], pair["b"]) for pair in row["pairs"]] for sub, row in component_variants().items()})
+    return han_component_variants.Maker(desc, _substitution_table(), han_component_variants.STEPS, places)
 
 
 @cache
