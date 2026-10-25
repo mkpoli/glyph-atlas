@@ -95,15 +95,17 @@ def book_styles(confirmed: dict[str, dict]) -> list[tuple[str, str]]:
 
 
 def layout_styles(documents: set[str], mirror, atlas) -> list[int]:
-    """Crops of the confirmed documents a review gave a style of their own in the layout: an event
-    that set a style, or a review whose style differs from the one the crop was shown with."""
+    """Crops of the confirmed documents a review gave a style of their own in the layout: a latest
+    style event that names a style (publish.py OWN_STYLE), or a review whose style differs from the one
+    the crop was shown with."""
     books = [row[0] for document in sorted(documents)
              if (row := mirror.execute("SELECT id FROM books WHERE key=?", (document,)).fetchone())]
     found = set()
     for i in range(0, len(books), 500):
         marks = ",".join("?" * len(books[i:i + 500]))
         found.update(r[0] for r in atlas.execute(
-            f"SELECT e.crop FROM events e JOIN crops c ON c.id=e.crop WHERE e.style IS NOT NULL AND c.book IN ({marks})",
+            f"SELECT c.id FROM crops c WHERE c.book IN ({marks}) AND (SELECT e.style IS NOT NULL FROM events e "
+            f"WHERE e.crop=c.id AND e.kind=9 ORDER BY e.revision DESC LIMIT 1)",
             books[i:i + 500]))
         found.update(r[0] for r in atlas.execute(
             f"SELECT r.crop FROM reviews r JOIN crops c ON c.id=r.crop WHERE r.style IS NOT r.base_style AND c.book IN ({marks})",

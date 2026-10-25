@@ -195,7 +195,14 @@ PUBLISHED = 8
 # Events the store never counts: marks, and the publication's own (a re-cut clearing a mark, RECUT_KIND 7,
 # and its changes, PUBLISHED). Only events up to the crop's revision count, so a statement that writes an
 # event before moving the crop on reads the same count on either side of it.
-UNCOUNTED = f"(e.kind IN (7,{PUBLISHED}) OR " + MARKED.format(e="e") + ")"
+# A style a reviewer gave one crop on the site (routes/review.ts STYLE_KIND), or took back to the
+# publication's: the store does not count it either.
+STYLE_KIND = 9
+UNCOUNTED = f"(e.kind IN (7,{PUBLISHED},{STYLE_KIND}) OR " + MARKED.format(e="e") + ")"
+# Whether a reviewer gave crop `c` a style of its own: its latest style event names one. A publication
+# leaves such a crop's style as it is, and one taken back to the publication's follows publications again.
+OWN_STYLE = (f"coalesce((SELECT e.style IS NOT NULL FROM events e WHERE e.crop=c.id AND e.kind={STYLE_KIND} "
+             "ORDER BY e.revision DESC LIMIT 1),0)")
 def _logical(anchors=True, bumps=True):
     """`LOGICAL`, for a database with or without the anchors (`review_revisions`) and the `bumps` column."""
     anchored = ("(SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at "
@@ -705,6 +712,9 @@ class Mirror:
                 self.stale.append(cid)
             changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle", "bumps") and old[c] != row[c]
                        and (c not in REVIEW_OWNED or speaks)]
+            if "style" in changed and self.atlas.execute(f"SELECT {OWN_STYLE} FROM crops c WHERE c.id=?", (cid,)).fetchone()[0]:
+                changed.remove("style")
+                row["style"] = old["style"]
             own = [c for c in changed if c not in REVIEW_OWNED and c != "cut"]
             reviewed = [c for c in changed if c in REVIEW_OWNED]
             if own:
@@ -1624,7 +1634,7 @@ def main():
     # of its own, after the crops above. Each chunk moves the tally cells of the crops it changes, then
     # changes them, all under the same guard, so a crop reviewed since keeps its row and its count.
     restyled, unbooked = defaultdict(list), []
-    own = "NOT EXISTS (SELECT 1 FROM events e WHERE e.crop=c.id AND e.style IS NOT NULL)"
+    own = f"NOT {OWN_STYLE}"
     if "book_styles" in tables:
         for r in src.execute("SELECT document, style FROM book_styles ORDER BY document"):
             book = m.ids.execute("SELECT id FROM books WHERE key=?", (r["document"],)).fetchone()

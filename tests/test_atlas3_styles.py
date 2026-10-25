@@ -128,10 +128,23 @@ def test_a_crop_a_review_gave_a_style_keeps_it(layout, monkeypatch, tmp_path):  
     regular = site.execute("SELECT code FROM codes WHERE field='style' AND key='regular'").fetchone()
     regular = regular[0] if regular else 99
     # The style a review gave it on the site, where the local copy has not seen it yet.
-    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,0,0,0,0,0,0,0,?)", (a1, regular))
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,0,0,0,0,0,0,9,?)", (a1, regular))
     site.commit()
     run(publish, monkeypatch, styled(tmp_path / "s.sqlite", [("book:a", "cursive")]), "--approve-styles", "3")
     assert style_of(remote, a1) == "unassessed" and style_of(remote, ids(root)["ex:a2"]) == "cursive"
+
+
+def test_a_crop_whose_style_was_taken_back_follows_its_document(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    regular = site.execute("SELECT code FROM codes WHERE field='style' AND key='regular'").fetchone()
+    regular = regular[0] if regular else 99
+    # A reviewer gave it a style, then took it back to the publication's: its latest style event names none.
+    site.executemany("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,?,0,0,0,0,0,9,?)",
+                     [(a1, -2, regular), (a1, -1, None)])
+    site.commit()
+    run(publish, monkeypatch, styled(tmp_path / "s.sqlite", [("book:a", "cursive")]), "--approve-styles", "3")
+    assert style_of(remote, a1) == "cursive"
 
 
 def test_a_layout_crop_with_a_style_of_its_own_stops_the_catalogue(layout, tmp_path):  # noqa: F811
@@ -139,7 +152,7 @@ def test_a_layout_crop_with_a_style_of_its_own_stops_the_catalogue(layout, tmp_p
     mirror, atlas = sqlite3.connect(root / "out" / "mirror.sqlite"), sqlite3.connect(root / "out" / "atlas.sqlite")
     assert styles.layout_styles({"book:a"}, mirror, atlas) == []
     a2 = ids(root)["ex:a2"]
-    atlas.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,9,0,0,0,0,0,0,1)", (a2,))
+    atlas.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,9,0,0,0,0,0,9,1)", (a2,))
     assert styles.layout_styles({"book:a", "hl:never"}, mirror, atlas) == [a2]
     assert styles.layout_styles({"codh:b"}, mirror, atlas) == []
 
