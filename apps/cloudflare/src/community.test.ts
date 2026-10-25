@@ -21,15 +21,21 @@ describe('member counts', () => {
       'https://matrix.example/_matrix/client/v3/rooms/!space%3Aexample/joined_members': () => Response.json({ joined: {
         '@mkpoli:glyphatlas.org': {}, '@reader:matrix.org': {}, '@ops:glyphatlas.org': {}, '@inbox:glyphatlas.org': {},
         '@discord_1089404483068506122:glyphatlas.org': {}, '@telegram_8954644733:glyphatlas.org': {}, '@irc_libera_mkpoli:glyphatlas.org': {},
+        '@ops:matrix.org': {},
       } }),
     });
-    expect(await counts(env())).toEqual({ matrix: 2, discord: 2, telegram: 3 });
+    expect(await counts(env())).toEqual({ matrix: 3, discord: 2, telegram: 3 });
   });
 
   it('are null for a place that cannot be read', async () => {
     answering({});
     expect(await counts(env())).toEqual({ matrix: null, discord: null, telegram: null });
     expect((await counts(env(undefined))).matrix).toBeNull();
+  });
+
+  it('are null when a platform answers with a page that is not JSON', async () => {
+    answering({ '': () => new Response('<html>busy</html>') });
+    expect(await counts(env())).toEqual({ matrix: null, discord: null, telegram: null });
   });
 
   it('read Telegram’s grouped digits', () => {
