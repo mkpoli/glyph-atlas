@@ -274,12 +274,15 @@ analyser's dictionary.
 
 ## Order of work
 
-1. `atlas text build`: rubies (0009, step 1), the character maps and the tokens, with the ruby test
-   and the share of units linked as its figures.
-2. The dictionary choice, by the ruby test over the whole corpus.
-3. `scripts/atlas3/text.py`: packs and shards, dry run first, with the write count of each run.
-4. Worker routes, the crop and page surfaces, and the lexeme page.
-5. `writes_word` with lexemes, and the `lexeme` column of `words.tsv`.
+1. `atlas text build`: rubies (0009, step 1) and tokens from the clone alone, with the ruby test as
+   its figures.
+2. The character maps from the datasets' lines to the clone's, and the crops of each token and
+   ruby base through the mirror, with the share of units linked as its figure. They need the
+   datasets and `out/mirror.sqlite`, which step 1 does not read.
+3. The dictionary choice, by the ruby test over the whole corpus.
+4. `scripts/atlas3/text.py`: packs and shards, dry run first, with the write count of each run.
+5. Worker routes, the crop and page surfaces, and the lexeme page.
+6. `writes_word` with lexemes, and the `lexeme` column of `words.tsv`.
 
 0009's steps 3 to 6 follow on the same objects.
 
