@@ -209,6 +209,8 @@ export class Composer {
    *  count; null for an entry the composer could not cut. An entry carries its piece's outlines
    *  (`p`), or the indices of the host glyph's contours it keeps (`k`). */
   cutOf(h) {
+    // A cut only a parity drawing made, under its exclusion, is no cut for a sequence typed whole.
+    if (h.pc && !this.exclude.size) return null
     if (h.p) return { box: h.b, count: h.p.length }
     if (h.k) return { box: h.b, count: h.k.length }
     return null
@@ -322,9 +324,14 @@ export class Composer {
       for (const [h, alien] of candidates) {
         if (this.excluded(h.h)) continue
         if (hand !== null) {
-          const here = [...h.ok.slice(0, h.i), written, ...h.ok.slice(h.i)]
-          const named = h.d ? this.bySequence(h.op + here.join('')) ?? '' : this.bySequence(h.op + here.join('')) ?? h.h
-          if (this.rec(named)?.hand !== hand) continue
+          // The export names the hand an entry's node writes (`hd`); before it did, it is looked up.
+          let writes = h.hd
+          if (writes === undefined && h.c === undefined) {
+            const here = [...h.ok.slice(0, h.i), written, ...h.ok.slice(h.i)]
+            const named = h.d ? this.bySequence(h.op + here.join('')) ?? '' : this.bySequence(h.op + here.join('')) ?? h.h
+            writes = this.rec(named)?.hand
+          }
+          if (writes !== hand) continue
         }
         let exact = h.op === op && h.ok.length === siblingKeys.length && h.ok.every((k, j) => k === siblingKeys[j])
         exact = exact && h.j === 1

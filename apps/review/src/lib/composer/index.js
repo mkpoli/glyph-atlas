@@ -43,11 +43,11 @@ const FORMATS = {
   },
 }
 // Format 3 keeps format 2's files, and its host lists hold every entry of the composer's index with
-// the fields it ranks by; an entry's cut `c` is null where the composer could not cut it, else the
-// indices of the host glyph's contours it keeps with their box, read here as `k` and `b`. The
-// outlines come from the host's own record when a piece is chosen.
-const cutEntry = h => h.c === undefined || h.k ? h
-  : h.c === null ? { ...h, c: null } : { ...h, k: Array.isArray(h.c) ? h.c : h.c.k, b: Array.isArray(h.c) ? h.b : h.c.b }
+// the fields it ranks by. An entry's cut `c` is null where the composer could not cut it; else its
+// piece as the indices `k` of the host glyph's contours it keeps (or its own outlines `p`), its box
+// `b`, the node's frame `fr`, `wh` for the whole character, the gap `g` and `kv` for a KanjiVG cut,
+// read here onto the entry. A cut marked `pc` was made only under a parity row's exclusion.
+const cutEntry = h => h.c === undefined ? h : h.c === null ? { ...h, c: null } : { ...h, ...h.c, c: true }
 FORMATS[3] = { ...FORMATS[2], hosts: file => (file.hosts ?? []).map(cutEntry) }
 
 /**
