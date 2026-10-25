@@ -76,8 +76,11 @@ The parse misses a ruby in three ways:
   recorded clone revision. The `ar:` and `hl:` datasets hold their own copies of the lines.
   Collection wraps each document `？` as `【？】`, and Honkoku-Lines keeps its own snapshot, so their
   offsets are not the clone's, and parsing them as well would count each text twice.
-- **The reading text of a line:** the characters `koji` marks `main` or `inserted`, the corrected
-  text of a 見せ消ち. Struck-out text, rubies, notes, 送り仮名 and 返り点 are left out. A 割書 is
+- **The reading text of a line:** the characters `koji` marks `main` or `inserted` (the corrected
+  text of a 見せ消ち) that stand outside every ruby's reading field. A correction nested in a
+  reading (`《振り仮名：恵｜《見せ消ち：カ｜メグ》》`) takes the role `inserted`, so membership is
+  tested by field, as `rubies.marks` tests it. Struck-out text, rubies, notes, 送り仮名 and 返り点
+  are left out. A 割書 is
   parsed as a run of its own. A damage mark (`gap`, `unreadable`) ends a run, so no token spans
   one.
 - **Each character keeps its raw offset.** A token records the offsets of the characters it holds,
@@ -94,6 +97,8 @@ The parse misses a ruby in three ways:
 - **Boundaries:** a right ruby's base is forced to start and end at token boundaries (MeCab
   partial parsing). A base that holds no other ruby is forced to be one token. A base that holds
   one, such as 孿胎 over 孿, is bounded at its ends only, and the inner base is forced in turn.
+  Run boundaries come first: a base with a damage mark in it (`乙■丙`) is not forced, and its ruby
+  stays a pair with no token.
 - **Choice:** among the dictionary's entries for a one-token base, the one whose kana match the
   ruby on the key wins. A base whose reading is several tokens is compared on their joined kana.
 - **No entry with that reading:** the token keeps the parse's best entry and is marked
@@ -118,16 +123,17 @@ and the site labels it as the analyser's reading.
 
 ### Tokens reach crops through a character map
 
-A unit is placed on a dataset line, and that line was derived from a clone line. The build maps
-each dataset line to its clone line, from the entry, the page and the line position, and its
-characters to the clone line's offsets:
+A unit is placed on a dataset line, and that line was derived from a clone line. Line positions do
+not agree between them: collection numbers lines after dropping blank ones, and Honkoku-Lines keeps
+its snapshot's index. The build therefore pairs the lines of a page by aligning the two sequences
+of lines on their reading text, and pairs only lines whose texts agree. It then maps each paired
+line's characters to the clone line's offsets:
 
 - `ar:` lines carry the transcriber's text in `meta` wherever collection changed it, so the map
   removes the `【】` that collection added.
-- `hl:` lines are matched to the clone line of the same entry, page and position, character by
-  character.
-- A character that differs between the two texts gets no offset, and the units on it link to no
-  token. The share of units linked is one of the build's figures.
+- `hl:` lines are mapped character by character.
+- A line with no pair, or a character that differs between the paired texts, gets no offset, and
+  the units on it link to no token. The share of units linked is one of the build's figures.
 
 The units placed on a token's characters (`rubies.unit_tokens`) become crop ids through
 `out/mirror.sqlite` (0009). Ruby bases join crops through the same map.
@@ -180,9 +186,11 @@ one migration, then one rewrite of each of the 20 word rows.
 - the dictionary chosen for its book, or that dictionary's version;
 - its crops.
 
-A changed token rewrites the lexeme and spelling objects it left and the ones it joined. A new
-layout build writes the whole tree under the new build id, and the old tree is deleted once the
-Worker reads the new one.
+A changed token rewrites the lexeme and spelling objects it left and the ones it joined. A book
+whose witness year changes rewrites the lexeme objects of its tokens, whose periods depend on it,
+even when its tokens stay the same. A new layout build writes the whole tree under the new build
+id. The old tree stays until the next build replaces it, so a Worker still holding the old build
+id finds its objects.
 
 ### What the site shows
 
