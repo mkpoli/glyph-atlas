@@ -272,6 +272,9 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
    the copy was produced, each in the type its role takes.
    No hover zoom: the edges of a written stroke must stay in view. */
 .tile-caption{display:contents}
+/* A confirmed or flagged tile's mark follows its character in the caption, off the image. */
+.tile-verdict{flex:none;align-self:center;font:700 12px/1 system-ui,sans-serif;color:var(--good)}
+.decided-flagged .tile-verdict{color:var(--wrong)}
 :root:not([data-gallery="grid"]) .collage-cell .glyph-image{transform:none}
 :root:not([data-gallery="grid"]) .collage-cell .tile-details{bottom:var(--collage-caption);padding-bottom:10px}:root:not([data-gallery="grid"]) .collage-cell .tile-caption{position:absolute;bottom:0;left:0;right:0;display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,max-content);grid-template-rows:auto auto;column-gap:6px;row-gap:1px;align-items:baseline;align-content:start;height:var(--collage-caption);padding:5px 1px 0;text-align:start;background:var(--paper);z-index:3}
 /* The footer's parts take the caption's cells: the years face the character, the production the work.
@@ -297,6 +300,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 /* The grid of squares takes as many columns as fit at the reader's tile size (`--tile-w`). */
 :root[data-gallery="grid"] .glyph-grid.collage{grid-template-columns:repeat(auto-fill,minmax(var(--tile-w,100px),1fr))}
 :root[data-gallery="grid"] .glyph-grid.collage .collage-cell{height:calc(var(--tile-w,100px) * 1.15);min-height:0}
-:root[data-gallery="grid"] .glyph-grid.collage .glyph-tile{padding:calc(var(--tile-w,100px) * .15) calc(var(--tile-w,100px) * .12) calc(var(--tile-w,100px) * .18)}
+/* The top margin holds the character and the select box above the image at every size. */
+:root[data-gallery="grid"] .glyph-grid.collage .glyph-tile{padding:max(calc(var(--tile-w,100px) * .15), 27px) calc(var(--tile-w,100px) * .12) calc(var(--tile-w,100px) * .18)}
 /* A tile out of view is not laid out or painted until it nears the viewport; its box is set either way. */
 .collage-cell{content-visibility:auto;contain-intrinsic-size:auto 160px}
