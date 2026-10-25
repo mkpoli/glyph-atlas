@@ -40,7 +40,7 @@ export type RecordRow = { id: number; kind: number; book: number; state: string 
   category: string | null; char: string | null; head: string | null; production: string | null; rev: number; page_key: string;
   document: string; x: number | null; y: number | null; w: number | null; h: number | null; issue: string | null;
   reviewed: number; written: number; settled: number; redrawn_at: number | null; cluster_key: string | null; form_row: number; glyph_set: number; form: string | null; form_issue: string | null;
-  form_character: string | null; written_family: string | null };
+  form_character: string | null; written_family: string | null; style: string | null };
 // An event that only moved a mark: a round's seen or hard (kinds 3 and 4), or an undo (kind 5) of a round
 // that took one away. The old site kept marks beside the crop and never moved its revision for them.
 const MARKED = (e: string) => `(${e}.kind IN (3,4) OR (${e}.kind=5 AND coalesce((SELECT k.kind FROM events k WHERE k.id=${e}.reverses),3) IN (3,4)))`;
@@ -73,9 +73,10 @@ export const recordQuery = () => `SELECT c.id,c.kind,c.book,s.key AS state,c.rev
   c.revision-${MARKS('c')} AS settled,
   fc.key AS cluster_key,fg.crop IS NOT NULL AS form_row,fg.decision IS NOT fg.carried AS glyph_set,iif(fg.crop IS NULL,fc.form,fg.form) AS form,
   iif(fg.crop IS NULL,nullif(fc.issue,'mixed'),fg.issue) AS form_issue,iif(fg.crop IS NULL,fc.character,fg.character) AS form_character,
-  iif(fg.crop IS NULL,fc.written_family,fg.written_family) AS written_family
+  iif(fg.crop IS NULL,fc.written_family,fg.written_family) AS written_family,st.key AS style
   FROM crops c JOIN pages pg ON pg.id=c.id>>24 JOIN books b ON b.id=c.book
   LEFT JOIN codes s ON s.field='state' AND s.code=c.state LEFT JOIN codes k ON k.field='category' AND k.code=c.category
+  LEFT JOIN codes st ON st.field='style' AND st.code=c.style
   LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN graphemes h ON h.id=g.head LEFT JOIN productions p ON p.id=c.production
   LEFT JOIN reviews r ON r.crop=c.id LEFT JOIN form_glyphs fg ON fg.crop=c.id LEFT JOIN form_clusters fc ON fc.id=coalesce(fg.cluster,c.cluster)
   WHERE c.id=?1 AND c.kind<2`;
@@ -110,6 +111,8 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   Object.assign(record, { id: publicId(row.id), source_id: source });
   if (!corpus) Object.assign(record, { label: row.char ?? record.label, production: row.production ?? 'unknown', page_id: row.page_key });
   Object.assign(record, { state: recordState(row.state), revision: row.settled });
+  // The style the crop is listed under, which its publication gave it; a crop with none is unassessed.
+  Object.assign(record, { style: row.style ?? 'unassessed', style_basis: 'none' });
   // A review keeps the crop's category on its record, and the issue it stands flagged for.
   if (row.reviewed) record.category = row.category ?? categoryOf(record.label ?? '');
   if (row.reviewed || row.issue !== null) record.issue = record.state !== 'flagged' ? null : recordIssue(row.issue);
