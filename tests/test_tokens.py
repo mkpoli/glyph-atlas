@@ -47,6 +47,7 @@ def test_the_reading_text_leaves_out_rubies_notes_and_struck_text():
 def test_damage_marks_and_spaces_end_a_run():
     assert _runs("甲■乙") == [("main", "甲"), ("main", "乙")]
     assert _runs("甲　乙") == [("main", "甲"), ("main", "乙")]
+    assert _runs("面\x08体") == [("main", "面"), ("main", "体")]
 
 
 def test_a_warigaki_is_a_run_of_its_own():

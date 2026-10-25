@@ -8,7 +8,7 @@ into tokens.
   ruby's reading field. What a 見せ消ち strikes out is skipped, so the corrected word stays whole. A
   correction nested in a reading takes the role `inserted`, so the field is tested as
   `rubies.marks` tests it. A 割書, its columns in reading order, is a run of its own. A damage mark,
-  a space or a note ends a run, so no token spans one.
+  a space, a control character or a note ends a run, so no token spans one.
 - **Kanbun:** a line with 返り点 is read in another order than it is written, so it is not parsed.
 - **Ruby constraints:** a right ruby whose base lies whole and contiguous in one run is forced to
   token boundaries. A base whose ruby holds another ruby must start and end at token boundaries;
@@ -149,7 +149,8 @@ def read_line(raw: str) -> Reading:
             continue
         if char.start in struck or char.role == "cancelled":
             continue
-        if char.role in BREAK_ROLES or char.text.isspace() or char.role not in READ_ROLES:
+        if (char.role in BREAK_ROLES or char.role not in READ_ROLES or char.text.isspace()
+                or unicodedata.category(char.text[0]) == "Cc"):
             current = None
             continue
         # The innermost 割書 that is not one of its columns names the run; main text is run -1.
