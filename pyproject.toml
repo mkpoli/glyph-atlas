@@ -21,6 +21,9 @@ atlas = "glyph_atlas.cli:app"
 
 [project.optional-dependencies]
 data = ["odfpy>=1.4"]
+# The text layer (`atlas text build`): MeCab through fugashi, with a period UniDic that is
+# downloaded separately (decision 0010).
+text = ["fugashi>=1.5"]
 # The 국립중앙도서관 collector (`atlas` importers `nlk`): reads embedded page images
 # straight out of a PDF, without re-encoding them.
 pdf = ["pymupdf>=1.24"]
