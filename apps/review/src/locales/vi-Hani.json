@@ -266,6 +266,7 @@
   "forms.context.label": "位置𨕭張",
   "forms.families.label": "字族",
   "forms.findFamily.aria": "尋字族",
+  "forms.findFamily.noForms": "𣗓𣎏字族朱{chars}。",
   "forms.findFamily.placeholder": "尋字族…",
   "forms.followCluster": "蹺字樣𧵑佔",
   "forms.glyphs.count.other": "{count}字形",

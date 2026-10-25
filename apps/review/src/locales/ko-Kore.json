@@ -278,6 +278,7 @@
   "forms.context.label": "페이지 속 位置",
   "forms.families.label": "패밀리",
   "forms.findFamily.aria": "패밀리 檢索",
+  "forms.findFamily.noForms": "{chars}의 패밀리는 아직 없습니다.",
   "forms.findFamily.placeholder": "패밀리 檢索…",
   "forms.followCluster": "群集을 따름",
   "forms.glyphs.count.other": "글리프 {count}個",

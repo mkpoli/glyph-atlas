@@ -262,6 +262,7 @@
   "forms.context.label": "紙面上ノ位置",
   "forms.families.label": "字族",
   "forms.findFamily.aria": "字族ヲ索ム",
+  "forms.findFamily.noForms": "{chars}ノ字族ハ未ダ無シ。",
   "forms.findFamily.placeholder": "字族ヲ索ム…",
   "forms.followCluster": "群ニ從フ",
   "forms.glyphs.count.other": "字形{count}",

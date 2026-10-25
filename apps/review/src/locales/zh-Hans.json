@@ -273,6 +273,7 @@
   "forms.context.label": "在页面中的位置",
   "forms.families.label": "字族",
   "forms.findFamily.aria": "查找字族",
+  "forms.findFamily.noForms": "{chars}尚无字族。",
   "forms.findFamily.placeholder": "查找字族…",
   "forms.followCluster": "沿用本组",
   "forms.glyphs.count.other": "{count}个字形",
