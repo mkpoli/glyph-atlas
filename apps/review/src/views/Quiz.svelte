@@ -603,22 +603,23 @@
     items = items.filter(i => i.id !== id)
     choices = without(choices, [id]); selected = without(selected, [id]); skipped = without(skipped, [id])
   }
-  function inspectChoice(item) {
-    // A corpus glyph opens in the corpus reviewer, which saves its own review; the round then drops it.
-    if (item.origin === 'corpus') { inspect(item.id, null, [], drop, 'corpus'); return }
-    inspect(item.id, value => {
-      if (!value) return
-      if (value.skip) { skip([item.id]); return }
-      if (skipped[item.id] || failed[item.id]) return
-      if (value.unselect || value.verdict === 'match') {
-        choices = without(choices, [item.id])
-        selected = { ...selected, [item.id]: false }
-        return
-      }
-      choices = { ...choices, [item.id]: value }
-      selected = { ...selected, [item.id]: true }
-      if (offersSuggestions(value.issue)) suggest(item)
-    })
+  /**
+   * Open a crop in the inspector, the same editor and the same saves as everywhere else; its arrows step
+   * through the round. What it writes comes back here: a field (style, reading, word) changes the tile,
+   * and a save decides the crop, which leaves the selection and the problems and shows as saved.
+   */
+  function inspectChoice(item, issue = null) {
+    inspect(item.id, shown, inspected, item.origin === 'corpus' ? 'corpus' : 'collection', issue)
+  }
+  async function inspected(id, result, saved) {
+    const item = items.find(i => i.id === id)
+    if (!item) return
+    if (saved) { choices = without(choices, [id]); selected = without(selected, [id]); skipped = without(skipped, [id]) }
+    // A corpus glyph's save answers with its record; a crop's is read again, as Explore reads it.
+    const record = item.origin === 'corpus' ? result : await character(id).catch(() => null)
+    if (closed) return
+    if (record) items = items.map(i => i.id === id ? { ...i, ...record } : i)
+    if (saved) markRecorded([item], (record ?? result)?.state === 'flagged' ? 'flagged' : 'assigned')
   }
   /**
    * Mark the crop on show as one of its grapheme's forms, as the bar marks a selection: the crop is
@@ -908,6 +909,8 @@
       {#key current.id}<CropReview forms={formBar} issue={currentIssue} onissue={assignCurrent} disabled={saving}
         onskip={() => skip([current.id])} skipped={!!skipped[current.id]}
         targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} label={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} onchoose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
+      <!-- The box is redrawn in the inspector, which saves the crop with it. -->
+      {#if currentIssue === 'crop' && current.origin !== 'corpus'}<div class="crop-change"><button type="button" class="quiet-link adjust-crop" disabled={saving} onclick={() => inspectChoice(current, 'crop')}>{t('character.crop.adjust')}</button></div>{/if}
     </QuizFocus>
   {/if}
 

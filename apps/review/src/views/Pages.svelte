@@ -127,7 +127,7 @@
   function choose(unit) {
     if (!unit) return
     if (onPage(unit)) open = unit
-    else inspect(unit.id, null, data.units.filter(item => item.character && !onPage(item)).map(item => ({ id: item.id })))
+    else inspect(unit.id, data.units.filter(item => item.character && !onPage(item)).map(item => ({ id: item.id })))
   }
   function changed(message) {
     notice = message
