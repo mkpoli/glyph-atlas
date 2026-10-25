@@ -172,40 +172,50 @@ only those whose hash changed:
   - one object per text page, with its lines, each with its rubies, its tokens and their crops;
   - `cropped.json.gz`, the set of text pages that have a crop, as a bitmap of about 15 KB.
 - **Under `v3/text/`, with no crop ids:**
-  - one object per lexeme with its spellings, counts and periods;
-  - its page index, the text pages that hold it with a count each, inside the lexeme object up to
+  - one object per lexeme with its spellings, counts and periods, and its cropped pages: the text
+    pages where its tokens had crops at the last refresh, most crops first, up to 2,000;
+  - its page index, every text page that holds it with a count, inside the lexeme object up to
     2,000 pages and in chunks of 2,000 beyond;
-  - one object per 0009 ruby pair, with its occurrences as text page, line and offsets;
+  - one object per 0009 ruby pair, with its counts and cropped pages in the same form, and its
+    occurrences (text page, line, offsets) in chunks of 2,000;
   - the search shards: spellings by each character of the surface, lemmas by lemma text, and
     lemma readings by their first two kana.
 
-**A gallery is assembled at read time.** The Worker takes the lexeme's page index, keeps the pages
-the bitmap marks, and reads those page objects until it has a page of crops. A ruby pair's gallery
-works the same way. A gallery of 24 crops reads at most 24 page objects, and fewer where a page
-holds the word more than once. They are read six at a time, the number of R2 reads a Worker may
-have waiting at once, and held in the isolate as other shards are.
+**A gallery is assembled at read time,** from the page objects, which hold the current crops:
+
+- The Worker reads the lexeme's cropped pages first, then pages the bitmap marks that were cropped
+  after the last refresh, in the order of the page index.
+- One request reads at most 32 objects, six at a time: the lexeme object, the bitmap and up to 30
+  page objects. It returns the crops found, up to 24, and a cursor to the next page.
+- A lexeme whose cropped pages are current fills a gallery in one round of reads. A lexeme whose
+  tokens are rarely aligned returns fewer crops per request, and its next page continues from the
+  cursor.
+- A pair gallery reads the same way, from the pair's cropped pages.
 
 **D1** holds no token rows. `words` gains a `lexeme` column: one migration, then one rewrite of
 each of the 20 word rows.
 
-**Rebuilds.** `text.py` runs after every `publish.py` run, and when a book's witness year changes in
-`books.py`.
+**Rebuilds.** `text.py` runs after every `publish.py` run. What it rewrites follows what changed:
 
-- **Publishing** changes crops only, so it rewrites the page objects of the pages it touched and the
-  bitmap, and nothing else.
-- **A new clone revision, or another dictionary for a book,** re-parses the pages whose text or
-  dictionary changed and rewrites the lexeme, index and pair objects their tokens left or joined.
-- **A changed witness year** rewrites the lexeme objects of the book's tokens, since their periods
-  depend on it.
-- **A new layout build** writes the page objects and the bitmap under the new build id. The old ones
-  stay until the next build replaces them, so a Worker still holding the old build id finds its
-  objects. The objects with no crop ids are untouched.
+- **Crops** (a publication): the page objects of the pages touched, and the bitmap.
+- **A clone page's text, or the dictionary of a book:** that page's object, the lexeme, index and
+  pair objects its tokens and rubies left or joined, the search shards of those spellings,
+  lemmas and readings, and 0009's ranked lists.
+- **A witness year,** whether from `books.py` or from a publication's `document_dating`: the
+  lexeme objects of the book's tokens, whose periods depend on it. A year that crosses into
+  another dictionary's range also re-parses the book, as above.
+- **Cropped pages:** refreshed in one batch after a run of publications, at most once a day. The
+  refresh rewrites only the lexeme and pair objects whose cropped pages changed.
+- **A new layout build:** the page objects and the bitmap under the new build id, and the cropped
+  pages of every lexeme and pair. The old page objects stay until the next build replaces them, so
+  a Worker still holding the old build id finds them.
 
 ### Performance and cost
 
 Figures are from the full parse above, a 150-entry sample for object sizes, and R2's prices for
-Standard storage: $0.015 per GB-month, $4.50 per million writes, $0.36 per million reads, with
-10 GB, 1 million writes and 10 million reads free each month.
+Standard storage: $0.015 per GB-month, $4.50 per million writes (PUT and LIST), $0.36 per million
+reads, with 10 GB, 1 million writes and 10 million reads free each month. R2 rounds usage up to the
+next billing unit, a million operations or a GB-month.
 
 | | Objects | Size, gzipped |
 | --- | ---: | ---: |
@@ -215,19 +225,28 @@ Standard storage: $0.015 per GB-month, $4.50 per million writes, $0.36 per milli
 | Ruby pair objects (0009) | 317,970 | about 60 MB |
 | Search shards | about 12,000 | under 20 MB, by estimate |
 
-A median page object is 686 bytes gzipped, and the 99th percentile 2.5 KB, before rubies and crops.
+A page object is 686 bytes gzipped at the median and 2.5 KB at the 99th percentile, before rubies
+and crops. Decoded with its line text, it is 3 KB at the median, 12 KB at the 99th percentile and
+41 KB at most. Parsing the largest takes under a millisecond. The edge cache holds the compressed
+object, so every read decodes and parses it again unless the isolate still holds it (32 objects,
+five minutes, `atlas3Media.ts`).
 
-- **First load:** about 550,000 writes, inside the free million in a month with no other large
-  load, $2.48 at full price. Storage is about 0.35 GB, half a cent a month.
-- **Each publish run:** one write per page touched, plus the bitmap. A list per lexeme with crop ids
-  would also rewrite one object per lexeme of each book published: 185 for the median book and
-  1,491 at the 90th percentile, twice that with spelling lists. Read-time galleries keep that cost
-  at zero.
-- **A new layout build:** 120,748 writes.
-- **A clone pull:** writes follow the pages changed.
-- **Reads:** a crop inspector reads its page object, the same one its Ruby row reads. A lexeme page
-  reads the lexeme object, one index chunk, the bitmap and up to 24 page objects, uncached. A
-  million gallery views would be about 27 million reads, $6 past the free tier.
+- **First load:** about 550,000 writes, billed as one million beyond the free tier ($4.50). Storage
+  is about 0.35 GB, billed as one GB-month beyond the free tier ($0.015 a month).
+- **Each publish run:** one write per page touched and one for the bitmap, plus the manifest: two
+  writes, one read and one listing, as `reference.py` ships. Lists of crops per lexeme would also
+  rewrite one object per lexeme of each book published, 185 for the median book and 1,491 at the
+  90th percentile, twice that with spelling lists. Galleries assembled at read time avoid those.
+- **Daily refresh of cropped pages:** one write per lexeme or pair whose cropped pages changed,
+  bounded by the lexemes and pairs of the books published that day.
+- **A new layout build:** 120,748 page writes and a refresh of every lexeme and pair, about 540,000
+  writes.
+- **A clone pull:** writes follow the pages changed and the objects that depend on them.
+- **Reads:** a crop inspector reads its page object, the same one its Ruby row reads. A gallery
+  request reads at most 32 objects in six rounds, and one round when the cropped pages are current.
+  A million gallery requests at the bound would be 32 million reads, $7.92 beyond the free tier.
+- **Worker CPU:** a gallery request decodes at most 30 page objects, about 360 KB at the 99th
+  percentile, and one lexeme object of at most 2,000 cropped pages and 2,000 index entries.
 - **Build:** with one process on a loaded machine, reading the clone took 10 minutes, the parse 14,
   and the ruby candidates 20. Four workers should bring the whole build near 12 minutes. It peaked at
   1.9 GB of memory. Ruby candidates are looked up once per distinct base and reading, and each page
