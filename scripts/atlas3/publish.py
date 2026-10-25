@@ -591,6 +591,8 @@ class Mirror:
         self.page_sql = defaultdict(list)
         # Crops the catalogue speaks for, with the style it gives them: what taking a reviewer's style back returns to.
         self.base_styles = []
+        # The publication's style for crops whose style changed or that D1 may hold a reviewer's style for.
+        self.style_rows = []
         self.touched_pages = defaultdict(dict)
         self.guarded, self.stale, self.relabelled, self.runs_seen = [], [], [], set()
 
@@ -719,7 +721,9 @@ class Mirror:
                 self.stale.append(cid)
             changed = [c for c in CROP_COLS[1:] if c not in ("revision", "shuffle", "bumps") and old[c] != row[c]
                        and (c not in REVIEW_OWNED or speaks)]
-            if speaks and (old["style"] != row["style"] or self.has("reviewer_styles", "crop", cid)):
+            # A crop D1 last answered as keeping a reviewer's style: the local row is D1's, not the publication's.
+            marked = self.has("reviewer_styles", "crop", cid)
+            if speaks and (old["style"] != row["style"] or marked):
                 # The style the publication gives the crop, which taking a reviewer's style back returns to: sent when
                 # it moved, or when the local copy holds a reviewer's style in its place.
                 self.base_styles.append((cid, row["style"]))
@@ -756,11 +760,15 @@ class Mirror:
                     self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in decided)} "
                                               f"WHERE id={cid} AND revision={base};")
                 self.guarded.append(cid)
-            if speaks and "style" in reviewed:
+            if speaks and ("style" in reviewed or marked):
                 # A style moves no revision. A crop a reviewer gave one on the site keeps it, which only D1 knows:
-                # the store does not count that event, and the local copy may not hold it.
-                self.page_sql[pid].append(f"UPDATE crops AS c SET style={lit(row['style'])} WHERE c.id={cid} "
-                                          f"AND c.revision={row['revision']} AND NOT {OWN_STYLE};")
+                # the store does not count that event, and the local copy may not hold it. One the read-back found
+                # keeping a reviewer's style is sent the publication's even when its local row shows no change, since
+                # the reviewer may have taken theirs back since; it is read back again either way. No page changes.
+                self.style_rows.append(f"UPDATE crops AS c SET style={lit(row['style'])} WHERE c.id={cid} "
+                                       f"AND c.revision={row['revision']} AND NOT {OWN_STYLE} AND c.style IS NOT {lit(row['style'])};")
+                if not self.guarded or self.guarded[-1] != cid:
+                    self.guarded.append(cid)
             if old["kind"] == 1 and given.get("kind") == 1 and not review_columns and "char" in given:
                 # A followed glyph retains its character; the incoming character becomes the base
                 # restored when its decision is withdrawn. Stage exactly what the remote guards allow,
@@ -1891,7 +1899,8 @@ def main():
     based_sql = [f"UPDATE reviews AS r SET base_style=v.column2 FROM (VALUES {','.join(f'({cid},{lit(code)})' for cid, code in m.base_styles[i:i + BASE_CHUNK])}) "
                  f"AS v WHERE r.crop=v.column1 AND r.base_style IS NOT v.column2 AND (SELECT {OWN_STYLE} FROM crops c WHERE c.id=r.crop);"
                  for i in range(0, len(m.base_styles), BASE_CHUNK)]
-    groups = [m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)] + flag_sql + style_sql + ([based_sql] if based_sql else [])
+    groups = ([m.head] + [m.page_sql[pid] for pid in sorted(m.page_sql)] + flag_sql + style_sql
+              + [m.style_rows[i:i + BASE_CHUNK] for i in range(0, len(m.style_rows), BASE_CHUNK)] + ([based_sql] if based_sql else []))
     atlas_parts = write_parts(run, "atlas", [g for g in groups if g])
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))

@@ -1448,3 +1448,28 @@ def test_a_reviewer_style_taken_back_on_the_site_follows_publications_again(layo
     for name in ("cursive", "cursive"):
         run(publish, monkeypatch, catalogue(tmp_path / f"{name}-{len(list(tmp_path.iterdir()))}.sqlite", [styled(name)]))
     assert crops(remote)[a1]["style"] == code("cursive")
+
+
+def test_a_reviewer_style_taken_back_after_a_read_back_takes_the_next_publication(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+    styled = lambda id, name, box=box: tuple(name if k == "style" else v for k, v in zip(UNITS, unit(id, "hl:p1", box)))
+    code = lambda name: remote.query("glyph-atlas-v3", f"SELECT code FROM codes WHERE field='style' AND key='{name}'")[0]["code"]
+    run(publish, monkeypatch, catalogue(tmp_path / "numbered.sqlite", [styled("ex:a2", "regular", {"x": 10, "y": 0, "w": 10, "h": 10}),
+                                                                       styled("ex:a1", "cursive")]))
+    # A reviewer gives a1 regular; a publication then reads that back.
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) SELECT id,revision+1,cut,0,0,0,0,?,? FROM crops WHERE id=?",
+                 (publish.STYLE_KIND, code("regular"), a1))
+    site.execute("UPDATE crops SET style=?,revision=revision+1 WHERE id=?", (code("regular"), a1))
+    site.commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "again.sqlite", [styled("ex:a1", "seal")]))
+    assert crops(remote)[a1]["style"] == code("regular")
+    # The reviewer takes it back to cursive; the next catalogue names regular, which the local copy already shows.
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) SELECT id,revision+1,cut,0,0,0,0,?,NULL FROM crops WHERE id=?",
+                 (publish.STYLE_KIND, a1))
+    site.execute("UPDATE crops SET style=?,revision=revision+1 WHERE id=?", (code("cursive"), a1))
+    site.commit()
+    for name in ("first", "second"):
+        run(publish, monkeypatch, catalogue(tmp_path / f"{name}.sqlite", [styled("ex:a1", "regular")]))
+    assert crops(remote)[a1]["style"] == code("regular")
