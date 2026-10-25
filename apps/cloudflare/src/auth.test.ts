@@ -315,6 +315,23 @@ describe('the Matrix sign-in provider', () => {
     expect(() => refuseTokens({ isAnonymous: false, banned: false })).not.toThrow();
   });
 
+  it('answers the homeserver\'s "Switch accounts" on the sign-in page, then goes on with the chosen account', async () => {
+    const { send, signIn, accounts } = setup('https://switch.glyphatlas.org');
+    await signIn('member@example.org');
+    accounts.query(`INSERT INTO "oauthClient"("id","clientId","redirectUris","skipConsent","scopes") VALUES('c','c','["https://matrix.example/cb"]',1,'["openid","profile","email"]')`).run();
+    const query = new URLSearchParams({ response_type: 'code', client_id: 'c', redirect_uri: 'https://matrix.example/cb', scope: 'openid profile',
+      state: 's', code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM', code_challenge_method: 'S256', prompt: 'select_account' });
+    const asked = await send(`/oauth2/authorize?${query}`, undefined);
+    const page = new URL(asked.headers.get('location')!, 'https://switch.glyphatlas.org');
+    expect(page.pathname).toBe('/sign-in');
+    expect(page.searchParams.get('prompt')).toBe('select_account');
+    expect(page.searchParams.has('sig')).toBe(true);
+    const chosen = await send('/oauth2/continue', { selected: true, oauth_query: page.search.slice(1) });
+    const back = new URL(((await chosen.json()) as { url: string }).url);
+    expect(back.origin + back.pathname).toBe('https://matrix.example/cb');
+    expect(back.searchParams.get('code')).toBeTruthy();
+  });
+
   it('revokes a user\'s Matrix tokens when an admin bans them', async () => {
     const { call, signIn, accounts } = setup('https://bans.glyphatlas.org');
     const banned = await signIn('member@example.org');
