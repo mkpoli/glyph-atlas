@@ -96,7 +96,7 @@ const submission = (parts, review = null) => {
 /** Claim `form` as the crop's, on the version the reader has; with `form` null take back the reader's
  *  own claim. The crop keeps its character, review and revision. Answers the crop with its form now,
  *  and `replaced`, the value of the reader's own claim the save took back (null for none). */
-async function claimForm(crop, form, review = null) {
+export async function claimForm(crop, form, review = null) {
   // A record read from a listing may not name its version; the crop as it stands does.
   const seen = crop.crop_version ? crop : { ...crop, ...await reread(crop) }
   const { id, review: named, answered } = submission(['form', crop.id, seen.crop_version, form ?? ''], review)
