@@ -783,6 +783,58 @@ describe('a corpus glyph\'s review', () => {
   });
 });
 
+describe('a crop\'s style', () => {
+  const styleOf = (db: Database, id: number) => db.query(`SELECT c.revision,s.key AS style,r.style AS overlay,b.key AS base FROM crops c
+    LEFT JOIN codes s ON s.field='style' AND s.code=c.style LEFT JOIN reviews r ON r.crop=c.id
+    LEFT JOIN codes b ON b.field='style' AND b.code=r.base_style WHERE c.id=?`).get(id) as any;
+  const styles = (db: Database) => Object.fromEntries((db.query(`SELECT s.key,sum(t.n) AS n FROM tally t JOIN codes s ON s.field='style' AND s.code=t.style
+    GROUP BY s.key HAVING sum(t.n)<>0`).all() as any[]).map(r => [r.key, r.n]));
+
+  it('lists the crop under the style a reviewer gave it, and its record says so', async () => {
+    const { db, env, ids } = setup();
+    const saved = await send(env, `/atlas/characters/${publicId(ids[0])}/style`, { id: uuid(901), revision: 0, style: 'regular' });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ id: publicId(ids[0]), style: 'regular', style_basis: 'unit', style_editable: true, revision: 1 });
+    expect(styleOf(db, ids[0])).toEqual({ revision: 1, style: 'regular', overlay: (db.query(`SELECT code FROM codes WHERE field='style' AND key='regular'`).get() as any).code, base: 'cursive' });
+    expect(styles(db)).toEqual({ cursive: -1, regular: 1 });
+    expect(db.query('SELECT kind,style IS NOT NULL AS own,label,state FROM events WHERE crop=?').get(ids[0])).toEqual({ kind: 9, own: 1, label: 1, state: 0 });
+    // The character, state and quiz are the crop's as they were.
+    expect(crop(db, ids[0])).toMatchObject({ char: 1, state: 0, quiz: 1 });
+  });
+
+  it('takes the crop back to its publication\'s style, and a retry answers with the crop as it is', async () => {
+    const { db, env, ids } = setup();
+    await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(902), revision: 0, style: 'running' });
+    await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(903), revision: 1, style: 'seal' });
+    const back = await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(904), revision: 2, style: 'unassessed' });
+    expect(back.body).toMatchObject({ style: 'cursive', style_basis: 'none', revision: 3 });
+    expect(styleOf(db, ids[6])).toMatchObject({ revision: 3, style: 'cursive', base: 'cursive' });
+    expect(styles(db)).toEqual({});
+    const again = await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(904), revision: 2, style: 'unassessed' });
+    expect(again).toMatchObject({ status: 200, body: { style: 'cursive', revision: 3 } });
+    expect((await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(904), revision: 2, style: 'seal' })).status).toBe(409);
+    expect(db.query('SELECT count(*) AS n FROM events WHERE crop=?').get(ids[6])).toEqual({ n: 3 });
+  });
+
+  it('refuses a crop changed since it was read, and a style the vocabulary does not hold', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(905), revision: 0, style: 'regular' })).status).toBe(200);
+    expect((await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(906), revision: 0, style: 'seal' })).status).toBe(409);
+    expect((await send(env, `/atlas/characters/${publicId(ids[1])}/style`, { id: uuid(907), revision: 1, style: 'italic' })).status).toBe(422);
+    expect(styleOf(db, ids[1])).toMatchObject({ revision: 1, style: 'regular' });
+  });
+
+  it('a later review keeps the style and its publication\'s', async () => {
+    const { db, env, ids } = setup();
+    await send(env, `/atlas/characters/${publicId(ids[2])}/style`, { id: uuid(908), revision: 0, style: 'regular' });
+    const reviewed = await send(env, `/atlas/characters/${publicId(ids[2])}`, { id: uuid(909), revision: 1, image_sha256: H, verdict: 'match' });
+    expect(reviewed.status).toBe(200);
+    expect(styleOf(db, ids[2])).toMatchObject({ revision: 2, style: 'regular', base: 'cursive' });
+    const back = await send(env, `/atlas/characters/${publicId(ids[2])}/style`, { id: uuid(910), revision: 2, style: 'unassessed' });
+    expect(back.body).toMatchObject({ style: 'cursive', state: 'checked' });
+  });
+});
+
 describe('the statements', () => {
   it('the routes ran read every table through an index', () => {
     expect(scans.size).toBeGreaterThan(20);

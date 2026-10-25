@@ -151,6 +151,8 @@ describe('a crop\'s record', () => {
     expect(response.status).toBe(200);
     const pub = publicId(ids.a);
     const want = { ...withoutNulls(records.a), id: pub, source_id: records.a.id, crop_version: `${pub}@${hash}@10,10,20,30`, crop_editable: true,
+      // The style it is listed under, which a reviewer may change.
+      style: 'unassessed', style_basis: 'none', style_editable: true,
       grapheme_claim: null, form: { status: 'single', values: [{ form: 'form:1', scheme: 'unicode', text: '弌', confidence: null }], supporting: ['f1'], by: ['x'] },
       word: { status: 'single', values: [{ word: 'ja/いち', reading: 'いち', class: 'noun', form: null }], methods: ['ruby'], supporting: ['w1'], by: ['x'] },
       honkoku_url: `https://app.honkoku.org/transcription/${book.slice(3)}/5`,
