@@ -404,7 +404,7 @@
   let zoom = $state(ZOOM)
   function zoomTo(value) {
     zoom = value; remember(ZOOM_KEY, value)
-    document.documentElement.dataset.zoom = String(value)
+    document.documentElement.dataset.tileSize = String(value)
   }
   // Each shape group of the grapheme view is a block of its own under its heading; any other
   // gallery is one block. A tile's number counts through the whole gallery.
@@ -1217,7 +1217,7 @@
     <span class="toolbar-space"></span>
     <ImageStyleToggle {ink} onchange={onink} />
     {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
-    <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={zoom} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(Number(event.currentTarget.value))} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
+    <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
     <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
       {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
     </div>

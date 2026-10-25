@@ -256,7 +256,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 /* The collage (`lib/collage.js`): tiles in columns of one width, each as tall as its crop, at the place
    worked out for the number of columns the gallery's width takes. A tile's place is its column (`--cell-c`),
    the height of the crops above it as a share of their width (`--cell-y`) and how many tiles stand above it
-   (`--cell-n`); a block is as tall as its tallest column (`--collage-h`). The reader's tile size (`data-zoom`) sets the
+   (`--cell-n`); a block is as tall as its tallest column (`--collage-h`). The reader's tile size (`data-tile-size`) sets the
    narrowest a column may be, and so how many columns there are; `collageStyle` writes those rules. The
    grid of squares (`data-gallery="grid"`) lays the same tiles out in rows. */
 .glyph-grid.collage{container-type:inline-size}
@@ -287,13 +287,16 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 :root:not([data-gallery="grid"]) .collage-cell .tile-caption:not(:has(.tile-production)) .tile-work{grid-column:1/-1}
 :root:not([data-gallery="grid"]) .collage-cell .tile-caption:not(:has(.tile-year)) .tile-withheld{grid-column:4;justify-self:end}
 @media(max-width:700px){:root:not([data-gallery="grid"]) .collage-cell .tile-work{grid-column:1/-1}}
+/* Below the default tile size the work takes the whole second line and the production is left to the tile's details. */
+:root:is([data-tile-size="70"],[data-tile-size="80"],[data-tile-size="90"]):not([data-gallery="grid"]) .collage-cell .tile-production{display:none}
+:root:is([data-tile-size="70"],[data-tile-size="80"],[data-tile-size="90"]):not([data-gallery="grid"]) .collage-cell .tile-work{grid-column:1/-1}
 :root:not([data-gallery="grid"]) .collage-cell .tile-arrow{display:none}
 :root:not([data-gallery="grid"]) .collage-cell:focus-visible{z-index:1;outline-offset:-3px}
 :root:not([data-gallery="grid"]) .glyph-grid.collage .visual-grid-heading{background:none}
 :root[data-gallery="grid"] .collage-block{display:contents}
 /* The grid of squares takes as many columns as fit at the reader's tile size (`--tile-w`). */
-:root[data-gallery="grid"] .glyph-grid.collage{grid-template-columns:repeat(auto-fill,minmax(var(--tile-w,130px),1fr))}
-:root[data-gallery="grid"] .glyph-grid.collage .collage-cell{height:calc(var(--tile-w,130px) * 1.15);min-height:0}
-:root[data-gallery="grid"] .glyph-grid.collage .glyph-tile{padding:calc(var(--tile-w,130px) * .15) calc(var(--tile-w,130px) * .12) calc(var(--tile-w,130px) * .18)}
+:root[data-gallery="grid"] .glyph-grid.collage{grid-template-columns:repeat(auto-fill,minmax(var(--tile-w,100px),1fr))}
+:root[data-gallery="grid"] .glyph-grid.collage .collage-cell{height:calc(var(--tile-w,100px) * 1.15);min-height:0}
+:root[data-gallery="grid"] .glyph-grid.collage .glyph-tile{padding:calc(var(--tile-w,100px) * .15) calc(var(--tile-w,100px) * .12) calc(var(--tile-w,100px) * .18)}
 /* A tile out of view is not laid out or painted until it nears the viewport; its box is set either way. */
 .collage-cell{content-visibility:auto;contain-intrinsic-size:auto 160px}
