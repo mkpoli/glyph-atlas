@@ -97,15 +97,21 @@ describe('claims on reviewer ids from before accounts', () => {
     expect(keys).toEqual(['203.0.113.9']);
     expect(atlas.query("SELECT user FROM actors WHERE key='reviewer-0000000b'").get()).toEqual({ user: null });
   });
-  it('stop at five, also when two are sent at once', async () => {
+  it('let an account hold as many as its browsers sent', async () => {
     const { env: base, atlas } = setup(), env = limited(base);
-    atlas.exec(`INSERT INTO actors(key,user,via,at) VALUES('reviewer-00000001','u2','legacy',1),('reviewer-00000002','u2','legacy',1),
-      ('reviewer-00000003','u2','legacy',1),('reviewer-00000004','u2','legacy',1)`);
-    wrote(atlas, 'reviewer-0000000a', 'reviewer-0000000b');
-    const statuses = (await Promise.all(['a', 'b'].map(id => claim(env, anon, `reviewer-0000000${id}`, null)))).map(r => r.status);
+    const ids = ['1', '2', '3', '4', '5', '6', '7'].map(id => `reviewer-0000000${id}`);
+    wrote(atlas, ...ids);
+    for (const id of ids) expect((await claim(env, anon, id, null)).status).toBe(200);
+    expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user='u2' AND via='legacy'").get()).toEqual({ n: 7 });
+  });
+  it('give an id sent by two accounts at once to one of them', async () => {
+    const { env: base, atlas } = setup(), env = limited(base);
+    wrote(atlas, 'reviewer-0000000a');
+    const as = (id: string) => ({ ...anon, id });
+    const statuses = (await Promise.all(['u2', 'u3'].map(id => claim(env, as(id), 'reviewer-0000000a', null)))).map(r => r.status);
     expect(statuses.sort()).toEqual([200, 409]);
-    expect(atlas.query("SELECT count(*) AS n FROM actors WHERE user='u2' AND via='legacy'").get()).toEqual({ n: 5 });
+    const holder = (atlas.query("SELECT user FROM actors WHERE key='reviewer-0000000a'").get() as { user: string }).user;
     // A claim of an id the account already holds still answers that it holds it.
-    expect((await claim(env, anon, 'reviewer-00000001', null)).status).toBe(200);
+    expect((await claim(env, as(holder), 'reviewer-0000000a', null)).status).toBe(200);
   });
 });
