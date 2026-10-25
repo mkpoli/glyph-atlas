@@ -12,6 +12,7 @@ import { idsCharacter } from '../category';
 import { componentTerm } from '../components';
 import { hira } from '../index';
 import { integer, literal } from '../input';
+import { modernSpellings } from '../kanaSpelling';
 import { describedCard } from './character';
 
 type Json = any;
@@ -65,16 +66,18 @@ async function cardsOf(env: Env, codes: string[], held: Map<string, Json>, ctx?:
 
 // The kanji a kana query is a Japanese reading of (scripts/build_kanji_readings.py), after the kana it
 // names: とき finds 𛄤, then 時 and 刻. A reading lists its kanji most attested first, so a list takes
-// only the ones it can show, whose cards come in the reading's shard.
+// only the ones it can show, whose cards come in the reading's shard. A query in historical kana also
+// reads the modern spellings it may stand for (`kanaSpelling.ts`): さふらふ finds 候 by そうろう.
 const KANA_TERM = /^[\p{Script=Hiragana}\p{Script=Katakana}ー]+$/u;
 async function readingKanji(env: Env, index: NameIndex, term: string, found: Hit[], limit: number, ctx?: ExecutionContext) {
   if (!KANA_TERM.test(term)) return { hits: [] as Hit[], unread: 0, cards: new Map<string, Json>() };
-  const reading = await readingObject(env, hira(term), ctx);
+  const typed = hira(term);
+  const readings = await Promise.all([typed, ...modernSpellings(typed)].map(reading => readingObject(env, reading, ctx)));
   const listed = new Set(found.map(hit => textOf(hit.code)));
-  const all = (reading?.kanji ?? []).filter(char => !listed.has(char));
+  const all = [...new Set(readings.flatMap(reading => reading?.kanji ?? []))].filter(char => !listed.has(char));
   const wanted = all.slice(0, Math.max(0, limit + 1 - found.length));
   return { hits: wanted.filter(char => index.occurrences.has(cp(char))).map(char => ({ code: cp(char), rank: 5 })),
-    unread: all.length - wanted.length, cards: familyCards(reading?.families ?? {}) };
+    unread: all.length - wanted.length, cards: new Map(readings.flatMap(reading => [...familyCards(reading?.families ?? {})])) };
 }
 
 // The 異体字 of a one-character query, after what the query names: a reader who types 鯡 is shown 𩹉.
