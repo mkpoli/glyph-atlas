@@ -104,11 +104,13 @@
     })
   })
   $effect(() => {
+    // Read the rows first, so the effect runs again after each redraw the $effect.pre saw.
+    const current = rows
     const key = handOn
-    if (!key || rows.some(row => row.key === key)) return
+    if (!key || current.some(row => row.key === key)) return
     handOn = null
     const base = key.replace(/\/(loading|failed)$/, '')
-    const next = rows.find(row => row.key.startsWith(`${base}/`)) ?? rows.find(row => row.key === base)
+    const next = current.find(row => row.key.startsWith(`${base}/`)) ?? current.find(row => row.key === base)
     if (next) focusRow(next.key)
   })
   // The live region says when a character's descriptions fail, each time, and how many parts a row
@@ -211,6 +213,7 @@
     const controller = new AbortController()
     found = { status: 'loading', items: [] }
     const timer = setTimeout(() => suggest(query, FOUND_MAX, controller.signal).then(result => {
+      if (controller.signal.aborted) return
       const all = result?.items ?? []
       const items = all.filter(item => item.rank === COMPONENT_RANK && item.char)
       found = { status: !items.length && all.length ? 'named' : 'ready', items, more: Boolean(result?.more) && items.length > 0 }
