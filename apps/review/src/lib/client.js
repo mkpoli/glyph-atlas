@@ -11,7 +11,13 @@ export const afterWrite = listener => { writeListeners.add(listener); return () 
 // server as well as in the browser. `wait: false` reports a busy database at once, for a read made
 // ahead of the reader.
 export async function request(path, body, { fetch: send = fetch, wait = true, ...options } = {}) {
-  if (body !== undefined) return typeof window === 'undefined' ? settle(await posted(path, body, send, options)) : save(path, body, send, options)
+  if (body !== undefined) {
+    if (typeof window === 'undefined') return settle(await posted(path, body, send, options))
+    // Views kept for Back (`keptViews.js`) are dropped when a write leaves and again when it is answered,
+    // so a view kept while it was on its way, or kept in the outbox, is not shown either.
+    noteWrite()
+    try { return await save(path, body, send, options) } finally { noteWrite() }
+  }
   const answer = async () => {
     let response = await send(path, options)
     // An old crop address answers with the crop's public one. A browser follows it; the page server's
@@ -45,7 +51,6 @@ function settle({ response, value }) {
 }
 
 async function posted(path, body, send, options) {
-  noteWrite()
   const response = await send(path, { ...options, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   return { response, value: await response.json() }
 }

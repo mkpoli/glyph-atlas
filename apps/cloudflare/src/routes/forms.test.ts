@@ -352,12 +352,15 @@ describe('the forms routes on glyph-atlas-v3', () => {
       '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1');
     await send({ kind: 'cluster', cluster: 'U+306F/0', form: '𛂞' });
     await send({ kind: 'glyph', units: [publicId(glyphs[2].crop)], form: '𛂙' });
+    // The user's own key names the user; an old reviewer id nobody holds names nobody.
+    fresh.db.exec(`INSERT OR IGNORE INTO actors(key,user,via,at) VALUES('u1','u1','account',1);
+      UPDATE form_decisions SET actor='reviewer-0000000f' WHERE kind='glyph'`);
     const log = await formsRoute(fresh.env, new Request('https://atlas.test/atlas/forms/decisions.jsonl'), '/atlas/forms/decisions.jsonl',
       new URLSearchParams(), tools, ctx()) as Response;
     const lines = (await log.text()).trim().split('\n').map(line => JSON.parse(line));
     expect(lines.map(({ id: _i, at: _a, ...rest }) => rest)).toEqual([
       { actor: 'u1', kind: 'cluster', family: FAMILY, form: '𛂞', cluster: 'U+306F/0', revision: 'r1', units: [], note: '', list: '1-l1' },
-      { actor: 'u1', kind: 'glyph', family: FAMILY, form: '𛂙', cluster: null, revision: 'r1', units: [publicId(glyphs[2].crop)], note: '' }]);
+      { actor: null, kind: 'glyph', family: FAMILY, form: '𛂙', cluster: null, revision: 'r1', units: [publicId(glyphs[2].crop)], note: '' }]);
     expect(fresh.db.query('SELECT crops FROM form_decisions WHERE kind=?').get('glyph')).toEqual({ crops: JSON.stringify([glyphs[2].crop]) });
   });
 

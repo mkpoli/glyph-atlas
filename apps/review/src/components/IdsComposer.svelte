@@ -11,11 +11,16 @@
   // that operator's place and keeps its parts. × takes one level away, keeping its first filled part.
   // A component found, typed into the part field or offered by the variant table replaces the chosen
   // part, and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
+  // The part picker under the tree has three tabs: a component found by name or reading, the parts
+  // palette (IdsParts), and the parts of any character or description typed (IdsFrom).
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
   import CharacterSearch from './CharacterSearch.svelte'
+  import IdsFrom from './IdsFrom.svelte'
+  import IdsParts from './IdsParts.svelte'
   import { CODES, KEYS, OPERATORS, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator } from '../lib/ids.js'
+  import { lookupChar } from '../lib/decompose.js'
   import { structure } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
@@ -49,14 +54,24 @@
   let tree = $state(null), chosen = $state(null), draft = $state(''), piece = $state(''), note = $state('')
   let field = $state(null), slot = $state(null), root = $state(null), query = $state('')
   let past = $state.raw([]), future = $state.raw([]), typing = false, run = false
-  // What the variant table says of each component met so far, and the descriptions of each.
-  let swaps = $state({}), own = $state({})
-  const learn = found => {
-    if (!found) return
-    swaps = { ...swaps, ...found.substitutes }
-    own = { ...own, [found.char]: found.sequences }
+  // What the structure route answered for each character met so far (its descriptions and regional
+  // shapes, or that it is loading or failed), and what the variant table says of each component in
+  // them. Each character is asked once, again only after a failure.
+  let swaps = $state({}), known = $state({})
+  const asking = new Map()
+  function read(c, { again = false } = {}) {
+    if (!c) return Promise.resolve(null)
+    if (asking.has(c) && !(again && known[c]?.status === 'failed')) return asking.get(c)
+    known = { ...known, [c]: { status: 'loading' } }
+    const asked = structure(c).then(found => {
+      swaps = { ...swaps, ...found.substitutes }
+      known = { ...known, [c]: { status: 'ready', sequences: found.sequences ?? [], shapes: found.shapes ?? [] } }
+      return known[c]
+    }, () => { known = { ...known, [c]: { status: 'failed' } }; return known[c] })
+    asking.set(c, asked)
+    return asked
   }
-  const read = async c => { if (!(c in own)) { own = { ...own, [c]: [] }; learn(await structure(c).catch(() => null)) } return own[c] }
+  const sequencesOf = c => known[c]?.sequences ?? []
 
   // Each crop starts again: from a description the reader had typed into the search, or else from
   // the character's own. What is typed into the search afterwards leaves the draft alone.
@@ -66,7 +81,7 @@
       const typed = isSequence(start) ? start : ''
       past = []; future = []; note = ''
       reset(typed)
-      if (!typed && of) read(of).then(found => { if (!draft && found?.length) reset(found[0]) })
+      if (!typed && of) read(of).then(found => { if (!draft && found?.sequences?.length) reset(found.sequences[0]) })
     })
   })
   function reset(text) {
@@ -100,7 +115,7 @@
     if (!typing) draft = write(next)
     const part = select ? partAt(next, select) : undefined
     piece = text(part)
-    if (typeof part === 'string') read(part)
+    if (typeof part === 'string') read(lookupChar(part))
   }
   // One step back or forward: the state left is kept on the other side.
   function step(from, to) {
@@ -159,14 +174,16 @@
   function component(item) { query = ''; if (!disabled) place(item.char) }
   function swap(item) { place(parse(item.char).tree ?? item.char) }
   function split(sequence) { const found = parse(sequence, { open: true }); if (!found.problem) place(found.tree) }
+  // A part or a node taken from the parts palette or the "Take parts from" tree, as written.
+  function take(written) { const found = parse(written, { open: true }); if (!disabled && !found.problem && found.tree !== null) place(found.tree) }
   // The descriptions a component can be split into, those the editor can read.
-  const splits = $derived(typeof picked === 'string' ? (own[picked] ?? []).filter(sequence => !parse(sequence, { open: true }).problem) : [])
+  const splits = $derived(typeof picked === 'string' ? sequencesOf(lookupChar(picked)).filter(sequence => !parse(sequence, { open: true }).problem) : [])
   function choose(path) {
     chosen = samePath(chosen, path) ? null : path
     note = ''
     const part = chosen ? partAt(tree, chosen) : undefined
     piece = text(part)
-    if (typeof part === 'string') read(part)
+    if (typeof part === 'string') read(lookupChar(part))
   }
   function remove(path) { if (!disabled && isNode(partAt(tree, path))) change(unwrap(tree, path), path) }
   function empty(path) { if (!disabled && path && partAt(tree, path) !== null) change(clear(tree, path), path) }
@@ -193,9 +210,13 @@
   function keydown(event) {
     if (event.isComposing || event.key === 'Process' || disabled) return
     if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
-    const command = event.ctrlKey || event.metaKey
-    if (command && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); focusChosen(); return }
-    if (command && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); focusChosen(); return }
+    // Undo and redo work from anywhere in the editor; the focus stays in a picker that has it.
+    const command = event.ctrlKey || event.metaKey, inPicker = Boolean(event.target.closest?.('.ids-pick-tabs, .ids-pick-panel'))
+    const after = () => { if (!inPicker) focusChosen() }
+    if (command && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); after(); return }
+    if (command && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); after(); return }
+    // Any other key a picker handles, or pressed inside one (its tabs, its grid, its tree), is the picker's own.
+    if (event.defaultPrevented || inPicker) return
     if (command || event.altKey) return
     const op = event.shiftKey ? null : CODES[event.code] ?? KEYS[event.key]
     if (op) { event.preventDefault(); operator(op); focusChosen(); return }
@@ -215,6 +236,21 @@
     if (event.key.length === 1 && event.key !== ' ') { event.preventDefault(); slot?.focus(); piece = event.key; tick().then(() => slot?.setSelectionRange(piece.length, piece.length)) }
   }
   function use() { if (usable && !disabled) onuse(whole) }
+
+  // The part picker's tabs: a component found by name or reading, the parts palette, and the parts of
+  // any character or description typed. Arrow keys, Home and End move between them.
+  const uid = $props.id()
+  const PICKERS = ['find', 'parts', 'from']
+  let picker = $state('find'), opened = $state(new Set(['find'])), pickButtons = $state([])
+  function open(tab) { picker = tab; if (!opened.has(tab)) opened = new Set([...opened, tab]) }
+  function pickKey(event, index) {
+    const last = PICKERS.length - 1
+    const to = { ArrowRight: index === last ? 0 : index + 1, ArrowLeft: index === 0 ? last : index - 1, Home: 0, End: last }[event.key]
+    if (to === undefined) return
+    event.preventDefault()
+    open(PICKERS[to])
+    pickButtons[to]?.focus()
+  }
 </script>
 
 {#snippet icon(op, size)}
@@ -286,11 +322,11 @@
   </div>
   {#if problem}<p class="ids-problem" role="status">{problem}</p>
   {:else if pending}<p class="ids-pending" role="status">{pending}</p>{/if}
-  {#if typeof picked === 'string' && ((swaps[picked] ?? []).length || splits.length)}
+  {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length)}
     <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: picked })}>
       <span class="ids-title">{t('form.ids.swaps', { part: picked })}</span>
       <div class="ids-options">
-        {#each swaps[picked] ?? [] as item (item.char)}
+        {#each swaps[lookupChar(picked)] ?? [] as item (item.char)}
           <button type="button" class="ids-swap" {disabled} title={`${picked} → ${item.char} · ${item.count}`} onclick={() => swap(item)}>{item.char}</button>
         {/each}
         {#each splits as sequence (sequence)}
@@ -301,7 +337,23 @@
   {/if}
   <div class="ids-search">
     <span class="ids-title">{chosen && picked !== null ? t('form.ids.replace', { part: write(picked) }) : t('form.ids.insert')}</span>
-    <CharacterSearch compact codePoints bind:value={query} label={t('form.ids.search')} placeholder={t('search.placeholder')} onselect={component} />
+    <div class="ids-pick-tabs" role="tablist" aria-label={t('form.ids.pick.label')}>
+      {#each PICKERS as tab, index (tab)}
+        <button type="button" role="tab" id={`${uid}-pick-${tab}`} aria-controls={opened.has(tab) ? `${uid}-pick-${tab}-panel` : undefined} bind:this={pickButtons[index]}
+          class:active={picker === tab} aria-selected={picker === tab} tabindex={picker === tab ? 0 : -1}
+          onclick={() => open(tab)} onkeydown={event => pickKey(event, index)}>{t(`form.ids.pick.${tab}`)}</button>
+      {/each}
+    </div>
+    <!-- A picker once opened stays, hidden while another is shown, so what was typed in it is kept. -->
+    {#each PICKERS as tab (tab)}
+      {#if opened.has(tab)}
+        <div class="ids-pick-panel" role="tabpanel" id={`${uid}-pick-${tab}-panel`} aria-labelledby={`${uid}-pick-${tab}`} hidden={picker !== tab}>
+          {#if tab === 'find'}<CharacterSearch compact codePoints bind:value={query} label={t('form.ids.search')} placeholder={t('search.placeholder')} onselect={component} />
+          {:else if tab === 'parts'}<IdsParts {disabled} onpick={take} />
+          {:else}<IdsFrom {known} {swaps} lookup={read} {disabled} ontake={take} />{/if}
+        </div>
+      {/if}
+    {/each}
   </div>
   <div class="ids-actions">
     <p class="ids-keys">{t('form.ids.keys')}</p>
@@ -385,6 +437,11 @@
   .ids-pending{margin:0;font-size:12px;color:var(--muted)}
   .ids-search{display:flex;flex-direction:column;gap:4px}
   .ids-search :global(.character-search){width:100%;min-width:0}
+  .ids-pick-tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--line);padding-bottom:4px}
+  .ids-pick-tabs button{border:0;background:transparent;font-size:12px;padding:6px 10px;border-radius:5px;color:var(--muted)}
+  .ids-pick-tabs button.active{background:var(--surface-selected);color:var(--ink)}
+  .ids-pick-panel{min-width:0}
+  .ids-pick-panel[hidden]{display:none}
   .ids-actions{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
   .ids-keys{margin:0;font-size:11px;line-height:1.5;color:var(--muted)}
   .ids-use{flex:none;padding:5px 14px}

@@ -34,3 +34,32 @@ describe('kept views', () => {
     at(9); expect(keptView()).toEqual({ seed: 9 })
   })
 })
+
+describe('kept views after going on from an entry', () => {
+  beforeEach(() => { noteWrite(); noteNavigation('link') })
+  it('forgets the entries past the one a link reaches, whose numbers it gives again', async () => {
+    const { noteArrival } = await import('../src/lib/keptViews.js')
+    at(1); keepView([1], { seed: 1 })
+    at(2); keepView([2], { seed: 2 })
+    at(2); noteArrival('link')
+    noteNavigation('popstate')
+    at(2); expect(keptView()).toBeNull()
+    at(1); expect(keptView()).toEqual({ seed: 1 })
+  })
+  it('keeps them on Back or Forward', async () => {
+    const { noteArrival } = await import('../src/lib/keptViews.js')
+    at(2); keepView([2], { seed: 2 })
+    at(1); noteArrival('popstate')
+    noteNavigation('popstate')
+    at(2); expect(keptView()).toEqual({ seed: 2 })
+  })
+})
+
+describe('leaving with nothing to keep', () => {
+  it('drops the view kept earlier for that entry', () => {
+    noteWrite(); noteNavigation('link')
+    at(3); keepView([3], { seed: 3 }); keepView([3], null)
+    noteNavigation('popstate')
+    expect(keptView()).toBeNull()
+  })
+})

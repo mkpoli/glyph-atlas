@@ -92,21 +92,22 @@ export type HistoryRow = { src: 0 | 1; id: number; at: number; actor: number; cr
   issue: number | null; text: string | null; reverses: number | null; passed: number | null; label: string | null;
   key: string | null; target_type: string | null; target: string | null; request_id: string | null;
   kind_key: string | null; issue_key: string | null; shown_text: string | null; named_text: string | null; book: number | null };
-export type Reviewer = { user: string | null; name: string; image: string | null };
+export type Reviewer = { user: string | null; name: string | null; image: string | null };
 
 /** A history row as the page shows it. A round's or batch's id is the request's own, as its undo
- *  names it; a passed round is named by its submission key. */
+ *  names it. A passed round is listed by its submission's number, since its key begins with the actor
+ *  key, and an old reviewer id is all it takes to claim one. `actor` tells reviewers apart by number. */
 export function historyItem(row: HistoryRow, reviewer: Reviewer, me: string | null = null): Json {
   const who = { ...reviewer, mine: Boolean(me && reviewer.user === me) };
   const at = new Date(row.at).toISOString();
-  if (row.src === 1) return { id: row.key, at, target: null, label: row.label, kind: 'passed', reviewer: who,
-    passed: Number(row.passed), verdict: null, issue: null, character: null, text: null, round: row.key, batch: null, undoes: null };
+  if (row.src === 1) return { id: `r${row.id}`, at, target: null, label: row.label, kind: 'passed', reviewer: who, actor: row.actor,
+    passed: Number(row.passed), verdict: null, issue: null, character: null, text: null, round: row.request_id, batch: null, undoes: null };
   const kind = row.kind_key, undo = kind === 'undo';
   // A round's request has no target, a batch's names '@batch', a single review's names its crop.
   const round = !undo && row.target_type === 'null', batch = !undo && row.target === '@batch';
   return {
     id: String(row.id), at, target: publicId(row.crop!), label: row.shown_text, kind: undo ? 'undo' : 'review',
-    reviewer: who,
+    reviewer: who, actor: row.actor,
     verdict: undo ? null : kind ?? null,
     issue: undo ? null : recordedIssue(row.issue_key),
     character: undo ? null : row.named_text,
@@ -140,8 +141,8 @@ export async function history(env: Env, q: URLSearchParams, me: string | null, t
   const [people, dating] = await Promise.all([actorPeople(env, page.map(row => row.actor)), bookDating(env, page.map(row => row.book))]);
   const items = page.map(row => {
     const person = people.get(row.actor);
-    // A reviewer id nobody holds is shown by itself.
-    const reviewer = { user: person?.user ?? null, name: person?.name ?? person?.key ?? String(row.actor), image: person?.image ?? null };
+    // A reviewer id nobody holds is shown with no name: the id is all it takes to claim it.
+    const reviewer = { user: person?.user ?? null, name: person?.user ? person.name ?? null : null, image: person?.image ?? null };
     return { ...historyItem(row, reviewer, me), dating: (row.book !== null && dating.get(row.book)) || {} };
   });
   // The cursor is the last row returned; the next page starts strictly after it.

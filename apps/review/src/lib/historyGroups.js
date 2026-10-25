@@ -1,7 +1,7 @@
 // A reviewer's run of work reads as one group in the history: rows by the same reviewer, each within
 // `gap` of the one before, newest first as the history lists them.
 export const GAP = 10 * 60 * 1000
-export const who = item => item.reviewer?.user ?? item.reviewer?.name ?? item.actor
+export const who = item => item.reviewer?.user ?? item.actor
 
 export function groupRuns(rows, gap = GAP) {
   const groups = []
