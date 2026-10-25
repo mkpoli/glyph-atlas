@@ -48,13 +48,16 @@
   // The box asks the search Explore asks: a character, a variant of it, a reading (そうろう finds 候), a
   // code point or a description. The list keeps the families of the characters it answers, in its order.
   let found = $state(null), finding = $state(false), findFailed = $state(false), composingFind = false, findTimer, findRequest = 0, findAbort = null
+  // A character's own family first: 仿 may also stand in 倣's family and still have its own.
   const familyByChar = $derived.by(() => {
-    const by = new Map()
-    for (const f of list) for (const char of [f.char, ...f.label.split(/ [=~] /)]) if (!by.has(char)) by.set(char, f)
+    const by = new Map(list.map(f => [f.char, f]))
+    for (const f of list) for (const char of f.label.split(/ [=~] /)) if (!by.has(char)) by.set(char, f)
     return by
   })
   const shown = $derived.by(() => {
-    if (!filter.trim() || !found) return filter.trim() ? [] : list
+    if (!filter.trim()) return list
+    // Only the answer to the query in the box: an older one is never picked from.
+    if (found?.query !== filter) return []
     const seen = new Set()
     return found.items.flatMap(item => {
       const f = familyByChar.get(item.char) ?? familyByChar.get(item.grapheme?.char)
@@ -81,7 +84,7 @@
     }, 120)
   }
   // Characters the search answers that have no family here: the reader is told they have no forms yet.
-  const formless = $derived(found && !shown.length ? found.items.filter(item => !familyByChar.has(item.char)).slice(0, 6).map(item => item.char).join(' ') : '')
+  const formless = $derived(found?.query === filter && !shown.length ? found.items.filter(item => !familyByChar.has(item.char)).slice(0, 6).map(item => item.char).join(' ') : '')
   // The list holds thousands of families; only the rows in view, and a few either side, are drawn.
   // ROW is the height the stylesheet gives each row.
   const ROW = 50, OVERSCAN = 10
@@ -448,8 +451,9 @@
   <div class="forms-layout">
     <aside class="family-list" aria-label={t('forms.families.label')}>
       <input type="search" placeholder={t('forms.findFamily.placeholder')} bind:value={filter} oninput={refilter} aria-label={t('forms.findFamily.aria')} aria-busy={finding}
-             oncompositionstart={() => { composingFind = true }} oncompositionend={() => { composingFind = false; refilter() }} />
-      {#if filter.trim() && !shown.length}<p class="family-status" role="status">{finding ? t('search.searching') : findFailed ? t('search.failed') : formless ? t('forms.findFamily.noForms', { chars: formless }) : t('search.noMatch')}</p>{/if}
+             oncompositionstart={() => { composingFind = true; find('') }} oncompositionend={() => { composingFind = false; refilter() }}
+             onkeydown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229 && !finding && filter.trim() && shown[0]) { event.preventDefault(); pick(shown[0].code_point) } }} />
+      {#if filter.trim() && !shown.length}<p class="family-status" role="status">{finding || found?.query !== filter ? t('search.searching') : findFailed ? t('search.failed') : formless ? t('forms.findFamily.noForms', { chars: formless }) : t('search.noMatch')}</p>{/if}
       <div class="family-scroll" bind:this={familyList} bind:clientHeight={listHeight} onscroll={event => listTop = event.currentTarget.scrollTop}>
       <ol aria-busy={!list.length && !error} style:padding-top={`${rows.from * ROW}px`} style:padding-bottom={`${(shown.length - rows.to) * ROW}px`}>
         {#if !list.length && !error}{#each Array(12) as _, i (i)}<li class="family-skeleton" aria-hidden="true"><span class="shimmer"></span><span class="shimmer"></span></li>{/each}{/if}
