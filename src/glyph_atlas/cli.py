@@ -29,6 +29,7 @@ repair_app = typer.Typer(help="Diagnose and repair systematic character-to-detec
 forms_app = typer.Typer(help="Cluster glyphs by shape so their forms can be assigned.", no_args_is_help=True)
 quality_app = typer.Typer(help="Measure how well the scans show each crop.", no_args_is_help=True)
 similar_app = typer.Typer(help="Embed published crops and find the ones that look alike.", no_args_is_help=True)
+text_app = typer.Typer(help="The transcriptions' rubies and words, parsed into text.sqlite.", no_args_is_help=True)
 
 
 @app.callback()
@@ -1580,6 +1581,26 @@ def ruby_spellings(
     typer.echo(f"-> {out}")
 
 
+@text_app.command("build")
+def text_build(
+    dictionary: Annotated[Path, typer.Option(envvar="GLYPH_ATLAS_UNIDIC",
+                                             help="a period UniDic for MeCab (unidic-kinsei-edo-v202512)")],
+    clone: Annotated[Path | None, typer.Option(help="みんなで翻刻データ clone; cache/honkoku-data when unset")] = None,
+    out: Annotated[Path, typer.Option(help="the text layer")] = Path("work/text/text.sqlite"),
+    project: Annotated[list[str] | None, typer.Option(help="only these projects")] = None,
+    workers: Annotated[int, typer.Option(help="processes parsing the entries")] = 4,
+) -> None:
+    """Parse every line of the clone into tokens, steered by its rubies, and write the rubies and
+    tokens to text.sqlite (decisions 0009, 0010)."""
+    from . import text_build as builder
+    from .importers import honkoku_data
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    figures = builder.build(clone or honkoku_data.default_clone(), out, dictionary, projects=project, workers=workers)
+    typer.echo(json.dumps(figures, ensure_ascii=False))
+    typer.echo(f"-> {out}")
+
+
 @quality_app.command("index")
 def quality_index(
     store: Annotated[Path, typer.Option(help="review store whose crops are measured")] = Path("work/ainu-gallery"),
@@ -1774,6 +1795,7 @@ for name, module in (
     ("forms", forms_app),
     ("quality", quality_app),
     ("similar", similar_app),
+    ("text", text_app),
 ):
     app.add_typer(module, name=name)
 
