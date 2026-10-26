@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { ALIASES, CODES, KEYS, namingOperator, OPERATORS, clear, leaves, nextEmpty, parse, partAt, paths, swapOp, unalias, unwrap, wrap, write } from '../src/lib/ids.js'
+import { ALIASES, CODES, KEYS, isComponent, isLetter, namingOperator, OPERATORS, clear, leaves, nextEmpty, parse, partAt, paths, swapOp, unalias, unwrap, wrap, write } from '../src/lib/ids.js'
 
 const tree = text => parse(text, { open: true }).tree
 
@@ -13,9 +13,19 @@ describe('a draft read as the editor reads it', () => {
   })
   it('still names what is wrong', () => {
     expect(parse('⿰亻木林', { open: true }).problem).toBe('extra')
-    expect(parse('⿰亻a', { open: true }).problem).toBe('component')
+    expect(parse('⿰亻!', { open: true }).problem).toBe('component')
+  })
+  it('holds letters and digits in a draft, which the preview draws', () => {
+    expect(tree('⿸广⿰KO')).toEqual({ op: '⿸', parts: ['广', { op: '⿰', parts: ['K', 'O'] }] })
+    for (const char of ['a', '0', 'Ω', 'Ж', 'あ', '가', 'ㄱ', 'Ｋ']) {
+      expect(isLetter(char)).toBe(true)
+      expect(tree(`⿰木${char}`).parts[1]).toBe(char)
+    }
+    for (const char of ['!', '\u3164', 'ꙮ']) expect(isLetter(char)).toBe(false)
   })
   it('leaves a saved description as strict as before', () => {
+    expect(parse('⿸广⿰KO').problem).toBe('component')
+    expect(isComponent('K')).toBe(false)
     expect(parse('⿰亻').problem).toBe('missing')
     expect(parse('木').problem).toBe('character')
     expect(parse('⿰？木').tree).toEqual({ op: '⿰', parts: ['？', '木'] })
