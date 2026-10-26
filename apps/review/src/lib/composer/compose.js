@@ -10,9 +10,10 @@
 // draws its second operand as a cut out of the first, and ⿼ ⿽ enclose from the right and the lower
 // right, their inner part placed in the room the outer one leaves.
 //
-// Everything here is synchronous. `data.rec(key)` answers a key's record, `data.hosts(key, place)` the
-// pieces hosts give it there and `data.places(key)` the places it is held in; each answers empty for
-// a key the export lacks or whose file is not loaded yet (which the caller loads before drawing again).
+// Everything here is synchronous. `data.rec(key)` answers a key's record, `data.hosts(key, place)`
+// every host entry of it there, cut or not, and `data.places(key)` the places it is held in; each
+// answers empty for a key the export lacks or whose file is not loaded yet (which the caller loads
+// before drawing again).
 import { EM_BOX, area, count, drawnContours, fill, fitted, grown, groupRings, makePart, mapped, partInk, partOf,
   placed, pointsBox, pyRound, raster, rings, scaleOf, shrunk, square, stretchOf, union, within } from './geometry.js'
 import { EMPTY } from '../ids.js'
@@ -20,9 +21,8 @@ import { features, forward } from './layout.js'
 
 export class LookupError extends Error { name = 'LookupError' }
 
-/** The first `n` hosts of a list in the composer's index order: by position `r` where the export
- *  gives it (a list may leave out entries the composer cannot cut), else by place in the list. */
-const upTo = (list, n) => list[0]?.r === undefined ? list.slice(0, n) : list.filter(h => h.r < n)
+/** The first `n` hosts of a list in the composer's index order, by each entry's position `r`. */
+const upTo = (list, n) => list.filter(h => h.r < n)
 
 const isSelector = ch => ch !== undefined && /^[︀-️\u{E0100}-\u{E01EF}]$/u.test(ch)
 
@@ -334,14 +334,8 @@ export class Composer {
       for (const [h, alien] of candidates) {
         if (this.excluded(h.h)) continue
         if (hand !== null) {
-          // The export names the hand an entry's node writes (`hd`); before it did, it is looked up.
-          let writes = h.hd
-          if (writes === undefined && h.c === undefined) {
-            const here = [...h.ok.slice(0, h.i), written, ...h.ok.slice(h.i)]
-            const named = h.d ? this.bySequence(h.op + here.join('')) ?? '' : this.bySequence(h.op + here.join('')) ?? h.h
-            writes = this.rec(named)?.hand
-          }
-          if (writes !== hand) continue
+          // The hand an entry's node writes (`hd`).
+          if (h.hd !== hand) continue
         }
         let exact = h.op === op && h.ok.length === siblingKeys.length && h.ok.every((k, j) => k === siblingKeys[j])
         exact = exact && h.j === 1

@@ -28,7 +28,7 @@ async function unpack(buffer) {
 // onto the entry. A cut marked `pc` was made only under a parity row's exclusion.
 const FORMAT = 5
 const shard = (folder, h) => `${folder}/${h.slice(0, 3)}.json`
-const cutEntry = h => h.c === undefined ? h : h.c === null ? { ...h, c: null } : { ...h, ...h.c, c: true }
+const cutEntry = h => h.c === null ? { ...h } : { ...h, ...h.c, c: true }
 const recordHash = key => hexOf(key)
 const hostsHash = (key, place) => hexOf(`${place}\t${key}`)
 const recordFile = key => shard('g', recordHash(key))
@@ -84,13 +84,13 @@ export function createSource(read, { concurrency = 6 } = {}) {
       return {
         manifest: source.manifest, layout: source.layout, missing,
         rec: key => { const f = file(recordFile(key)); return f ? recordOf(f, key) : null },
-        // A host list in the order of the composer's index (`r`), where the export gives it.
+        // A host list in the order of the composer's index (`r`).
         hosts: (key, place) => {
           const f = file(hostsFile(key, place)), id = `${place}\t${key}`
           if (!f) return []
           if (!lists.has(id)) {
             const list = (f[hostsHash(key, place)]?.hosts ?? []).map(cutEntry)
-            lists.set(id, list[0]?.r === undefined ? list : list.slice().sort((a, b) => a.r - b.r))
+            lists.set(id, list.sort((a, b) => a.r - b.r))
           }
           return lists.get(id)
         },
