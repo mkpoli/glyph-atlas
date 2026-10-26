@@ -1367,3 +1367,109 @@ def test_a_part_boundary_never_falls_inside_a_guarded_run_change(layout, monkeyp
     assert rows == stats == [(2, "あう", 1), (2, "うえ", 1)]
     for part in (root / "out" / "publish").rglob("runs-*.sql"):
         assert not part.read_text().splitlines()[0].startswith("INSERT INTO run_stats(size,graphemes,n,down) SELECT")
+
+
+def test_a_style_a_reviewer_gave_on_the_site_outlasts_a_catalogue_that_speaks(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    # A reviewer's style on the site that the local copy has not seen: the store does not count it, so the
+    # catalogue still speaks for the crop, and its change of style waits on D1 holding none.
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,0,0,0,0,0,0,?,"
+                 "(SELECT code FROM codes WHERE field='style' AND key='unassessed'))", (a1, publish.STYLE_KIND))
+    site.execute("INSERT INTO reviews(crop,gen,at,char,state,style,quiz,base_char,base_state,base_style,base_quiz) "
+                 "SELECT id,0,0,char,state,style,quiz,char,state,style,quiz FROM crops WHERE id=?", (a1,))
+    site.commit()
+    before = crops(remote)[a1]["style"]
+    row = tuple("cursive" if k == "style" else v for k, v in zip(UNITS, unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10})))
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [row]))
+    assert crops(remote)[a1]["style"] == before
+    # Taking the reviewer's style back returns to the publication's, which is now cursive.
+    cursive = remote.query("glyph-atlas-v3", "SELECT code FROM codes WHERE field='style' AND key='cursive'")[0]["code"]
+    assert remote.query("glyph-atlas-v3", f"SELECT base_style FROM reviews WHERE crop={a1}") == [{"base_style": cursive}]
+
+
+def test_a_style_the_local_copy_knows_a_reviewer_gave_changes_no_page(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    for db in (local, site):
+        db.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,0,0,0,0,0,0,?,"
+                   "(SELECT code FROM codes WHERE field='style' AND key='unassessed'))", (a1, publish.STYLE_KIND))
+        db.execute("INSERT INTO reviews(crop,gen,at,char,state,style,quiz,base_char,base_state,base_style,base_quiz) "
+                   "SELECT id,0,0,char,state,style,quiz,char,state,style,quiz FROM crops WHERE id=?", (a1,))
+        db.commit()
+    before = crops(remote)[a1]["style"]
+    row = tuple("cursive" if k == "style" else v for k, v in zip(UNITS, unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10})))
+    # The catalogue's only change is the style of a crop that keeps the reviewer's: no page changes, and it publishes.
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [row]))
+    cursive = remote.query("glyph-atlas-v3", "SELECT code FROM codes WHERE field='style' AND key='cursive'")[0]["code"]
+    assert crops(remote)[a1]["style"] == before
+    assert remote.query("glyph-atlas-v3", f"SELECT base_style FROM reviews WHERE crop={a1}") == [{"base_style": cursive}]
+
+
+def test_a_reviewer_style_read_back_keeps_its_baseline_current(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+    styled = lambda id, name, box=box: tuple(name if k == "style" else v for k, v in zip(UNITS, unit(id, "hl:p1", box)))
+    code = lambda name: remote.query("glyph-atlas-v3", f"SELECT code FROM codes WHERE field='style' AND key='{name}'")[0]["code"]
+    # A publication numbers regular, as publications number every style; then a reviewer gives a1 regular on the site.
+    run(publish, monkeypatch, catalogue(tmp_path / "numbered.sqlite", [styled("ex:a2", "regular", {"x": 10, "y": 0, "w": 10, "h": 10})]))
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) "
+                 "SELECT id,revision+1,cut,0,0,0,0,?,? FROM crops WHERE id=?", (publish.STYLE_KIND, code("regular"), a1))
+    site.execute("INSERT INTO reviews(crop,gen,at,char,state,style,quiz,base_char,base_state,base_style,base_quiz) "
+                 "SELECT id,0,0,char,state,?,quiz,char,state,style,quiz FROM crops WHERE id=?", (code("regular"), a1))
+    site.execute("UPDATE crops SET style=?,revision=revision+1 WHERE id=?", (code("regular"), a1))
+    site.commit()
+    # The first publication reads D1's row back, with the reviewer's style; the next names regular, which the crop already shows.
+    for name in ("cursive", "regular"):
+        run(publish, monkeypatch, catalogue(tmp_path / f"{name}.sqlite", [styled("ex:a1", name)]))
+        assert crops(remote)[a1]["style"] == code("regular")
+        assert remote.query("glyph-atlas-v3", f"SELECT base_style FROM reviews WHERE crop={a1}") == [{"base_style": code(name)}]
+
+
+def test_a_reviewer_style_taken_back_on_the_site_follows_publications_again(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+    styled = lambda name: tuple(name if k == "style" else v for k, v in zip(UNITS, unit("ex:a1", "hl:p1", box)))
+    code = lambda name: remote.query("glyph-atlas-v3", f"SELECT code FROM codes WHERE field='style' AND key='{name}'")[0]["code"]
+    unassessed = code("unassessed")
+    # The local copy knows a reviewer's style; on the site the reviewer has since taken it back.
+    for db in (local, site):
+        db.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,0,0,0,0,0,0,?,?)",
+                   (a1, publish.STYLE_KIND, unassessed))
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) VALUES(?,1,0,0,0,0,0,?,NULL)", (a1, publish.STYLE_KIND))
+    site.execute("UPDATE crops SET revision=revision+1 WHERE id=?", (a1,))
+    for db in (local, site):
+        db.commit()
+    # The first publication meets a revision it did not know and reads the crop back; the next gives it the style.
+    for name in ("cursive", "cursive"):
+        run(publish, monkeypatch, catalogue(tmp_path / f"{name}-{len(list(tmp_path.iterdir()))}.sqlite", [styled(name)]))
+    assert crops(remote)[a1]["style"] == code("cursive")
+
+
+def test_a_reviewer_style_taken_back_after_a_read_back_takes_the_next_publication(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, site = ids(root)["ex:a1"], remote.dbs["glyph-atlas-v3"]
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+    styled = lambda id, name, box=box: tuple(name if k == "style" else v for k, v in zip(UNITS, unit(id, "hl:p1", box)))
+    code = lambda name: remote.query("glyph-atlas-v3", f"SELECT code FROM codes WHERE field='style' AND key='{name}'")[0]["code"]
+    run(publish, monkeypatch, catalogue(tmp_path / "numbered.sqlite", [styled("ex:a2", "regular", {"x": 10, "y": 0, "w": 10, "h": 10}),
+                                                                       styled("ex:a1", "cursive")]))
+    # A reviewer gives a1 regular; a publication then reads that back.
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) SELECT id,revision+1,cut,0,0,0,0,?,? FROM crops WHERE id=?",
+                 (publish.STYLE_KIND, code("regular"), a1))
+    site.execute("UPDATE crops SET style=?,revision=revision+1 WHERE id=?", (code("regular"), a1))
+    site.commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "again.sqlite", [styled("ex:a1", "seal")]))
+    assert crops(remote)[a1]["style"] == code("regular")
+    # The reviewer takes it back to cursive; the next catalogue names regular, which the local copy already shows.
+    site.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,style) SELECT id,revision+1,cut,0,0,0,0,?,NULL FROM crops WHERE id=?",
+                 (publish.STYLE_KIND, a1))
+    site.execute("UPDATE crops SET style=?,revision=revision+1 WHERE id=?", (code("cursive"), a1))
+    site.commit()
+    for name in ("first", "second"):
+        run(publish, monkeypatch, catalogue(tmp_path / f"{name}.sqlite", [styled("ex:a1", "regular")]))
+    assert crops(remote)[a1]["style"] == code("regular")
