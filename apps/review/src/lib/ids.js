@@ -39,6 +39,35 @@ export const isComponent = char => {
   const point = char?.codePointAt(0)
   return point !== undefined && COMPONENTS.some(([low, high]) => point >= low && point <= high)
 }
+/**
+ * The letters and digits a draft may hold beyond a saved form's components, so the preview draws a
+ * ligature such as ⿸广⿰KO: every letter (category L) and decimal digit of Latin, IPA, Greek,
+ * Cyrillic, hiragana, katakana, Hangul (syllables and jamo), the full- and half-width forms and the
+ * kana supplements that the composer's sans fonts draw (Noto Sans CJK JP 2.004, Plangothic P1 and
+ * P2 2.9.5795), Hangul fillers left out. Read from the fonts' cmaps by han-compose's
+ * `web_export.letters`, which writes the composer's records for the same set.
+ */
+const LETTERS = [
+  [0x30, 0x39], [0x41, 0x5A], [0x61, 0x7A], [0xAA, 0xAA], [0xB5, 0xB5], [0xBA, 0xBA], [0xC0, 0xD6],
+  [0xD8, 0xF6], [0xF8, 0x103], [0x110, 0x113], [0x11A, 0x11B], [0x128, 0x12C], [0x12E, 0x12E],
+  [0x130, 0x130], [0x132, 0x132], [0x143, 0x144], [0x147, 0x148], [0x14C, 0x14F], [0x152, 0x153],
+  [0x168, 0x16D], [0x192, 0x192], [0x197, 0x197], [0x1A0, 0x1A1], [0x1AF, 0x1B0], [0x1CD, 0x1DC],
+  [0x1F8, 0x1F9], [0x208, 0x208], [0x20A, 0x20A], [0x251, 0x251], [0x261, 0x261], [0x295, 0x295],
+  [0x38A, 0x38A], [0x391, 0x3A1], [0x3A3, 0x3AA], [0x3B1, 0x3C9], [0x3F5, 0x3F5], [0x401, 0x401],
+  [0x404, 0x404], [0x406, 0x407], [0x410, 0x44F], [0x451, 0x451], [0x4C0, 0x4C0], [0x4CF, 0x4CF],
+  [0x1100, 0x115E], [0x1161, 0x11FF], [0x1E2C, 0x1E2C], [0x1E2E, 0x1E2E], [0x1E3E, 0x1E3F],
+  [0x1EA0, 0x1EF9], [0x1F38, 0x1F3F], [0x1FD8, 0x1FDB], [0x3041, 0x3096], [0x309D, 0x309F],
+  [0x30A1, 0x30FA], [0x30FC, 0x30FF], [0x3131, 0x3163], [0x3165, 0x318E], [0x31F0, 0x31FF],
+  [0xA960, 0xA97C], [0xAC00, 0xD7A3], [0xD7B0, 0xD7C6], [0xD7CB, 0xD7FB], [0xFF10, 0xFF19],
+  [0xFF21, 0xFF3A], [0xFF41, 0xFF5A], [0xFF66, 0xFF9F], [0xFFA1, 0xFFBE], [0xFFC2, 0xFFC7],
+  [0xFFCA, 0xFFCF], [0xFFD2, 0xFFD7], [0xFFDA, 0xFFDC], [0x1B000, 0x1B122], [0x1B132, 0x1B132],
+  [0x1B150, 0x1B152], [0x1B155, 0x1B155], [0x1B164, 0x1B167]
+]
+/** Whether `char` is a letter or digit a draft may hold (`LETTERS`). */
+export const isLetter = char => {
+  const point = char?.codePointAt(0)
+  return point !== undefined && LETTERS.some(([low, high]) => point >= low && point <= high)
+}
 export const arity = char => ARITY.get(char) ?? 0
 
 /** Whether `text` is written as a description, which starts with an operator. */
@@ -53,7 +82,8 @@ export const isSequence = text => arity([...text ?? ''][0]) > 0
  * With `open`, as the editor reads a draft, a slot still to fill is `null`: ⬚ (or ＋) and every part an
  * operator is still missing at the end read as one, an empty text is the empty tree, and a lone
  * component stands as a tree of its own (⿰亻 is ⿰亻 and an empty slot, ⿰⬚木 an empty slot and 木).
- * ？ stays the component it is, the part no character names.
+ * ？ stays the component it is, the part no character names. A draft may also hold letters and
+ * digits (`isLetter`), which the preview draws but no saved form names.
  */
 export function parse(text, { open = false } = {}) {
   const chars = [...text ?? '']
@@ -66,7 +96,7 @@ export function parse(text, { open = false } = {}) {
     const n = arity(char)
     if (!n) {
       if (open && EMPTY_READ.has(char)) return null
-      if (!isComponent(char)) throw 'component'
+      if (!isComponent(char) && !(open && isLetter(char))) throw 'component'
       return isSelector(chars[at]) ? char + chars[at++] : char
     }
     return { op: char, parts: Array.from({ length: n }, read) }

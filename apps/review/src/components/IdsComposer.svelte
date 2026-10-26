@@ -20,7 +20,7 @@
   import IdsFrom from './IdsFrom.svelte'
   import IdsParts from './IdsParts.svelte'
   import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
-    replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, EMPTY } from '../lib/ids.js'
+    replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
   import { lookupChar } from '../lib/decompose.js'
   import { structure } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -94,7 +94,9 @@
     : t(`form.ids.problem.${typed.problem}`)))
   // The first slot still empty, named by its place: a sequence is whole only once there is none.
   const gap = $derived(isNode(tree) ? nextEmpty(tree) : null)
-  const pending = $derived(gap ? t('form.ids.problem.empty', { n: gap.at(-1) + 1, name: name(partAt(tree, gap.slice(0, -1)).op) }) : '')
+  // A whole draft holding a letter (⿸广⿰KO) is drawn but cannot be saved as a form.
+  const pending = $derived(gap ? t('form.ids.problem.empty', { n: gap.at(-1) + 1, name: name(partAt(tree, gap.slice(0, -1)).op) })
+    : leaves(tree).some(leaf => !isComponent(leaf.char)) ? t('form.ids.problem.component') : '')
   const usable = $derived(isNode(tree) && !gap && !typed.problem && isDescription(whole))
   const picked = $derived(chosen ? partAt(tree, chosen) : undefined)
   const text = part => part === null || part === undefined ? '' : write(part)
