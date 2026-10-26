@@ -3,7 +3,9 @@ import { plugin } from 'bun'
 import { readFile } from 'node:fs/promises'
 import { compile } from 'svelte/compiler'
 import { render } from 'svelte/server'
-import { indexCollection } from '../src/lib/seo.js'
+import * as seo from '../src/lib/seo.js'
+const { indexCollection } = seo
+mock.module('$lib/seo.js', () => seo)
 
 const LOCALES = ['en', 'ja', 'zh-Hant', 'lzh', 'ja-x-classical'].map(tag => ({ tag }))
 const HREFLANG = LOCALES.slice(0, 3)
@@ -12,7 +14,7 @@ const delocalize = pathname => {
   const [, tag, ...rest] = pathname.split('/')
   return { tag, path: '/' + rest.join('/') }
 }
-const language = { LOCALES, HREFLANG, localize, delocalize, t: key => key }
+const language = { LOCALES, HREFLANG, localize, delocalize, t: key => key, locale: () => delocalize(page.url.pathname).tag }
 mock.module('../src/lib/i18n.svelte.js', () => language)
 mock.module('$lib/i18n.svelte.js', () => language)
 const page = { url: new URL('https://atlas.test/en') }
@@ -21,12 +23,17 @@ mock.module('../src/lib/forms.js', () => ({ familyCodes: async () => ['U+304B'] 
 mock.module('../src/lib/client.js', () => ({ catalogue: async () => ({ categories: [] }) }))
 mock.module('../src/lib/issues.js', () => ({ hasCharacterPage: () => true, pointOf: value => value }))
 plugin({ name: 'seo-server-render', setup(build) {
-  build.onLoad({ filter: /Seo\.svelte$/ }, async ({ path }) => ({
+  build.onLoad({ filter: /\.svelte$/ }, async ({ path }) => ({
     contents: compile(await readFile(path, 'utf8'), { filename: path, generate: 'server' }).js.code,
     loader: 'js',
   }))
 } })
 const { default: Seo } = await import('../src/components/Seo.svelte')
+mock.module('$components/Seo.svelte', () => ({ default: Seo }))
+mock.module('$views/Explore.svelte', () => ({ default: () => {} }))
+mock.module('$lib/inspector.svelte.js', () => ({ useInspector: () => ({ inspect() {} }) }))
+mock.module('$lib/session.svelte.js', () => ({ useSession: () => ({ state: { ink: 'original' }, setInk() {} }) }))
+const { default: Collection } = await import('../src/routes/[lang=locale]/+page.svelte')
 const { pagePaths, urlset } = await import('../src/lib/sitemap.js')
 const { GET: robots } = await import('../src/routes/robots.txt/+server.js')
 
@@ -34,6 +41,14 @@ describe('search indexing', () => {
   it('indexes the collection and tracking links, excluding search and filter results', () => {
     for (const query of ['', 'utm_source=news', 'group=all', 'q=%20']) expect(indexCollection(new URLSearchParams(query))).toBe(true)
     for (const query of ['q=two+words', 'grapheme=U%2B304B', 'work=book', 'group=kana']) expect(indexCollection(new URLSearchParams(query))).toBe(false)
+  })
+  it('wires collection query parameters into rendered page metadata', () => {
+    for (const [query, indexed] of [['?utm_source=news', true], ['?q=two+words', false]]) {
+      page.url = new URL(`https://atlas.test/en${query}`)
+      const { head } = render(Collection, { props: { data: { explore: {} } } })
+      expect(head.includes('rel="canonical"')).toBe(indexed)
+      expect(head.includes('noindex, follow')).toBe(!indexed)
+    }
   })
   it('renders canonical and reciprocal language links without query parameters', () => {
     page.url = new URL('https://atlas.test/ja/character/U+304B?order=year')
