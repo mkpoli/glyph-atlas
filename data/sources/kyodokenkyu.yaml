@@ -1,0 +1,184 @@
+# Source snapshots and catalogue metadata; upstream text and image rights are recorded separately.
+id: kyodokenkyu
+name: 古典中国語コーパス共同研究班 — linked kanbun corpora
+publisher: 京都大学人文科学研究所 古典中国語コーパス共同研究班
+kind: transcription-corpus
+url: http://kanji.zinbun.kyoto-u.ac.jp/~yasuoka/kyodokenkyu/
+licence: unknown
+attribution: 古典中国語コーパス共同研究班
+notes:
+- 'The local text import preserves UD annotations with unknown reuse rights: the inspected repository snapshots
+  contain no explicit licence.'
+- Each text page is a logical upstream file; sentence lines have no image coordinates or established scan alignment.
+- Scans are separate documents. IIIF supplies image dimensions; gallery dimensions remain zero until images
+  are fetched.
+- The research index is archived in full. Collection covers its eleven kanbun editors and seven directly identified
+  scan resources; conference papers, external dataset announcements and catalogue-only links remain references.
+index:
+  url: http://kanji.zinbun.kyoto-u.ac.jp/~yasuoka/kyodokenkyu/
+  sha256: 309f3e434bf98388f9ad64be5248b72b3d178e4a483a1783398f7e10b29b6050
+  bytes: 37720
+repositories:
+  ud-ja-kanbun:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/gitlab/Kanbun/ud-ja-kanbun
+    revision: 08c46f48a7745bbd95ffce896c4d2e0295bb3f39
+    archive:
+      url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/gitlab/api/v4/projects/Kanbun%2Fud-ja-kanbun/repository/archive.zip?sha=08c46f48a7745bbd95ffce896c4d2e0295bb3f39
+      sha256: d9e01542fd070af3e9cca8896c1ae1fec597606e1b0f78f014e4f2af748bdc92
+      bytes: 6533206
+  ud-kanbun:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/gitlab/Kanbun/ud-kanbun
+    revision: aed08720e409ade9d5f67a2136a765091b640749
+    archive:
+      url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/gitlab/api/v4/projects/Kanbun%2Fud-kanbun/repository/archive.zip?sha=aed08720e409ade9d5f67a2136a765091b640749
+      sha256: 3aab55f4d7c6b8c096f31fc80e35dae9656992e266b496570b457dc4f94dcd27
+      bytes: 18685829
+corpora:
+- id: nihonshoki
+  title: 日本書紀
+  repository: ud-ja-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/Nihonshoki.html
+    sha256: af8eaa6b43d6df5029e013a13359db44cdf2accdb71536f3f638a570b3f0cfce
+    bytes: 11514
+- id: ryoiki
+  title: 日本靈異記
+  repository: ud-ja-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/Ryoiki.html
+    sha256: 32891da7878845cc6f1d2fa1a0606f7e486794b895366d524c2357aa49d22178
+    bytes: 19045
+- id: goseibai
+  title: 御成敗式目
+  repository: ud-ja-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/Goseibai.html
+    sha256: 18cca0b08cbadefbc40040f71c8163024a498e96efc35bafccda9eb141a2022e
+    bytes: 13176
+- id: nihongafu
+  title: 日本樂府
+  repository: ud-ja-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/Nihongafu.html
+    sha256: 3db13ea05b7931f76b77e07341d5e23e2dcfce74e8c4a5f849033257322a77bd
+    bytes: 12932
+- id: nihonkanshi1
+  title: 日本漢詩 上
+  repository: ud-ja-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/NihonKanshi1.html
+    sha256: 6aa001da8b44f0283cf2a5194cfae059ff37bf5d3e811e0902a9c59ddc415cde
+    bytes: 17614
+- id: nihonkanshi2
+  title: 日本漢詩 下
+  repository: ud-ja-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/NihonKanshi2.html
+    sha256: 39cb5f529475d6711f67165f9a2e6c1085d2f27041bc64b1f821c5fc04a0a592
+    bytes: 17633
+- id: ezogashima
+  title: 狄島夜話記
+  repository: ud-ja-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/Ezogashima.html
+    sha256: 98de2257678a7fa18592932dc7a15d9212e18b8cf7ea4da3e45b18bd30e81e1d
+    bytes: 7814
+- id: matsushima
+  title: 松島夜話
+  repository: ud-ja-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/Matsushima.html
+    sha256: 4e7d8c7af9156f6b17af752b10638b4321ccde32281dbe311b74f166c697f175
+    bytes: 9469
+- id: 18shilue
+  title: 十八史略
+  repository: ud-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/18shilue.html
+    sha256: 8e35cf98f515cecfe688d400a84a32a757e193f2a22b4b703cfad361b0656880
+    bytes: 8438
+- id: bunhen
+  title: 文變
+  repository: ud-ja-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/Bunhen.html
+    sha256: 471f4c465da37a3872b27578ac57b8519602d8c92436ba1dbc061c3f3177dcfc
+    bytes: 8309
+- id: harasaihin
+  title: 原采蘋詩集
+  repository: ud-ja-kanbun
+  editor:
+    url: https://corpus.kanji.zinbun.kyoto-u.ac.jp/db-machine/~yasuoka/kyodokenkyu/ud-kanbun/conllusvg/HaraSaihin.html
+    sha256: 3871386af0c6b2e35b749369b5feca3debf9cc1650c1420e5dd7990fc118a8f9
+    bytes: 9556
+scans:
+- id: kyoto
+  title: 松島夜話 2巻
+  format: iiif
+  holder: 京都大学附属図書館
+  image_licence: bespoke-free
+  catalogue: https://rmda.kulib.kyoto-u.ac.jp/item/rb00035936
+  source:
+    url: https://rmda.kulib.kyoto-u.ac.jp/iiif/metadata_manifest/RB00035936/manifest.json
+    sha256: a037acf77eb0a3a6d06d62ba098e62d8798bccfb9a6a28d0f35e8def55eec81b
+    bytes: 93532
+- id: '200004394'
+  title: 文變
+  format: iiif
+  holder: 国文学研究資料館
+  image_licence: PDM-1.0
+  catalogue: https://kokusho.nijl.ac.jp/biblio/200004394/
+  source:
+    url: https://kokusho.nijl.ac.jp/biblio/200004394/manifest
+    sha256: 1ddb4863708118e84853ae9041a0a7af9bf940e35043e83d61766524cb195d91
+    bytes: 26059
+- id: '100437678'
+  title: 原采蘋詩集
+  format: iiif
+  holder: 慶應義塾大学附属研究所斯道文庫; 国文学研究資料館
+  image_licence: CC-BY-NC-4.0
+  catalogue: https://kokusho.nijl.ac.jp/biblio/100437678/
+  source:
+    url: https://kokusho.nijl.ac.jp/biblio/100437678/manifest
+    sha256: d7c454e097eb9d40606baab1fbe5e16a5ac6128c3ae275bea556b674bf2c97be
+    bytes: 47375
+- id: '200004383'
+  title: 日本樂府
+  format: iiif
+  holder: 国文学研究資料館
+  image_licence: PDM-1.0
+  catalogue: https://kokusho.nijl.ac.jp/biblio/200004383/
+  source:
+    url: https://kokusho.nijl.ac.jp/biblio/200004383/manifest
+    sha256: ddd48b860e7e8d9947d9244fc82208c4cc6b82a3cf12a970a7b21800aa8f4027
+    bytes: 108129
+- id: '100304391'
+  title: 點例
+  format: iiif
+  holder: 筑波大学附属図書館; 国文学研究資料館
+  image_licence: unknown
+  catalogue: https://kokusho.nijl.ac.jp/biblio/100304391/
+  source:
+    url: https://kokusho.nijl.ac.jp/biblio/100304391/manifest
+    sha256: 7027c64fad4b5d87b2d8fa6c95451cc6ec744bd9085ee1d13ca766bbf1f62188
+    bytes: 57514
+- id: matsushima-gallery
+  title: 松島夜話 (半カット版)
+  format: gallery
+  holder: 京都大学附属図書館 (1-26/シ/26)
+  image_licence: unknown
+  catalogue: https://rmda.kulib.kyoto-u.ac.jp/item/rb00035936
+  source:
+    url: http://kanji.zinbun.kyoto-u.ac.jp/~yasuoka/kyodokenkyu/2025-12-19/matsushima/
+    sha256: b0ce2daf3794701952f5151d66baefbf952544f64dbac4254a699c31d3ff4b5c
+    bytes: 11529
+- id: bunhen-gallery
+  title: 文變 (半カット版)
+  format: gallery
+  holder: 新潟大学附属図書館 (佐野文庫38-17)
+  image_licence: unknown
+  catalogue: http://kanji.zinbun.kyoto-u.ac.jp/~yasuoka/kyodokenkyu/2026-07-17/bunhen/
+  source:
+    url: http://kanji.zinbun.kyoto-u.ac.jp/~yasuoka/kyodokenkyu/2026-07-17/bunhen/
+    sha256: d5efd134808d32c70cf1560aa9b65c8b12f7852d03ddfa19538950ca44351281
+    bytes: 2755

@@ -235,7 +235,7 @@ def discover(root: str | Path = DEFAULT_ROOT) -> list[Corpus]:
             continue
         if child.name in DERIVED_CORPORA or _declares_itself_derived(child):
             continue
-        directory = child
+        directory = child.resolve() if child.is_symlink() else child
         if child.name in {"honkoku-data", "wikisource"}:
             source = "honkoku" if child.name == "honkoku-data" else "wikisource"
             current = base / f"{source}-collection" / "current"
