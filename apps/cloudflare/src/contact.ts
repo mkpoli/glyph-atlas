@@ -41,9 +41,9 @@ export async function spamOdds(ai: MailEnv['AI'], address: string, mail: { from:
   try {
     const asked = ai.run(SPAM_MODEL as never, { model: 'clef-flash', state: { ...mail, text: head(mail.text, MAX_MESSAGE).text },
       questions: { spam: SPAM_QUESTION } } as never) as Promise<{ answers?: { spam?: { noul?: unknown } } }>;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('timed out')), SPAM_TIMEOUT) });
-    const answer = await Promise.race([asked, late]).finally(() => clearTimeout(timer));
+    const answer = await Promise.race([asked, late]).finally(() => { if (timer !== null) clearTimeout(timer) });
     const odds = answer.answers?.spam?.noul;
     return typeof odds === 'number' ? odds : null;
   } catch (error) {
