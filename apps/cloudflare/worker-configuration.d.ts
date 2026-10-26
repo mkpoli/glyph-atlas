@@ -8,6 +8,7 @@ interface __BaseEnv_Env {
 	ACCOUNTS: D1Database;
 	SIMILAR_INDEX: VectorizeIndex;
 	EMAIL: SendEmail;
+	AI: Ai;
 	CORRECTIONS: RateLimit;
 	CLAIMS: RateLimit;
 	REVERSE_QUERIES: RateLimit;

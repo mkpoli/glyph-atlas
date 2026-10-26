@@ -25,6 +25,8 @@
   "r2_buckets": [{"binding": "MEDIA", "bucket_name": "glyph-atlas"}],
   // Sign-in codes are sent from MAIL_FROM, on a domain onboarded to Email Sending.
   "send_email": [{"name": "EMAIL"}],
+  // Workers AI: Clef-flash judges whether a mail to the contact address is spam (`src/contact.ts`).
+  "ai": {"binding": "AI"},
   // SIMILAR_INDEX_NAME names the Vectorize index bound as SIMILAR_INDEX, whose pointer the image search reads.
   // CATALOGUE_LAG is how many seconds the edge's copies may stand behind the reviews (`catalogueStamps`).
   // MATRIX_HOMESERVER and MATRIX_INBOX_ROOM are where contact-form messages go (`src/contact.ts`), posted
