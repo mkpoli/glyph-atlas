@@ -1,7 +1,8 @@
 // A port of han-compose's composer (`compose.py`, `Composer.compose`) over its web export: a sequence
 // drawn from parts other characters' designers drew. The export carries what the composer reads
-// when it draws: the learned layout, each character's glyph, and the pieces its hosts give each
-// operand in each place, already cut and ranked as `Composer._ranked` would weigh them. What it
+// when it draws: the learned layout, each character's glyph, and every host of each operand in each
+// place in the composer's index order, each with its cut; `ranked` weighs the whole list against
+// the target as `Composer._ranked` does, so an entry with no clean cut still takes a place. What it
 // does not carry (teachers, KanjiVG's groups for overlays, the standalone model) falls back the way
 // the composer falls back without them: rows of three share their axis by `SHARES`.
 //
