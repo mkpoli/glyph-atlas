@@ -73,7 +73,11 @@ describe('search indexing', () => {
   it('keeps crop images crawlable while excluding the account API', async () => {
     const body = await robots({ url: new URL('https://atlas.test/robots.txt') }).text()
     expect(body).toContain('Allow: /atlas/media/')
-    expect(body).toContain('Disallow: /api/')
+    for (const path of ['auth', 'account', 'admin', 'favourites']) expect(body).toContain(`Disallow: /api/${path}`)
+    const blocked = body.split('\n').filter(line => line.startsWith('Disallow: ')).map(line => line.slice(10))
+    for (const path of ['/api/ranking', '/api/community', '/api/avatars/example']) {
+      expect(blocked.some(prefix => path.startsWith(prefix))).toBe(false)
+    }
     expect(body).toContain('Sitemap: https://atlas.test/sitemap.xml')
   })
 })

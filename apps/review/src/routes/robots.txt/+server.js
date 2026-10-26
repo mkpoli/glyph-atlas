@@ -5,7 +5,10 @@ Disallow: /atlas
 Disallow: /layers
 Disallow: /images/
 Disallow: /reviews
-Disallow: /api/
+Disallow: /api/auth
+Disallow: /api/account
+Disallow: /api/admin
+Disallow: /api/favourites
 
 Sitemap: ${url.origin}/sitemap.xml
 `, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=3600' } })
