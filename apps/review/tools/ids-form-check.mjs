@@ -381,9 +381,10 @@ try {
   const fontFree = () => browser.evaluate(`!document.querySelector('dialog[open] .ids-preview text')`)
   const badgeText = () => browser.evaluate(`document.querySelector('dialog[open] .ids-preview-badge').textContent.trim()`)
   // Larger than a preview draws, it shows placeholders and says so.
-  await typeSequence('⿰木⿰木⿰木⿰木⿰木口')
-  await becomes('⿰木⿰木⿰木⿰木⿰木口')
-  await browser.waitFor(`${preview}?.dataset.label === 'tooLarge' && document.querySelectorAll('dialog[open] .ids-preview-large .slot').length === 6`)
+  const tooDeep = '⿰木'.repeat(9) + '口'
+  await typeSequence(tooDeep)
+  await becomes(tooDeep)
+  await browser.waitFor(`${preview}?.dataset.label === 'tooLarge' && document.querySelectorAll('dialog[open] .ids-preview-large .slot').length === 10`)
   assert(await badgeText() === 'Too large' && await fontFree(), 'a sequence too large is not shown as placeholders with its badge')
   await shoot('ids-preview-too-large', '.ids-view')
   await typeSequence('⿰魚⿱山⬚')
@@ -421,6 +422,15 @@ try {
     assert((await browser.evaluate(`document.querySelector('dialog[open] .ids-preview-note').textContent`)).includes('Mirrored'), 'the approximate note does not name ⿾')
     await Bun.sleep(300)
     await shoot('ids-preview-approximate', '.ids-view')
+    // The deepest attested sequences are drawn: 𰻞 nests six levels.
+    const biang = '⿺辶⿳穴⿰月⿰⿲⿱幺長⿱言馬⿱幺長刂心'
+    await typeSequence(biang)
+    await becomes(biang)
+    await browser.waitFor(`${preview}?.dataset.step === 'composed'
+      && (document.querySelector('dialog[open] .ids-preview-large path.ink')?.getAttribute('d') ?? '').length > 2000`, 60000)
+    assert(await badgeText() === 'Preview' && await fontFree(), 'the six-level sequence of 𰻞 is not drawn')
+    await Bun.sleep(300)
+    await shoot('ids-preview-deep', '.ids-view')
     // A sequence the site has drawn shows that drawing in the same frame, badged final.
     storedDrawings = true
     await typeSequence(stored.s)
@@ -430,7 +440,7 @@ try {
     await Bun.sleep(300)
     await shoot('ids-preview-final', '.ids-view')
     storedDrawings = false
-    console.log('PASS an empty slot is a placeholder beside drawn parts, the drawing stays until the next, ⿾ is approximate, and a stored drawing is final')
+    console.log('PASS an empty slot is a placeholder beside drawn parts, the drawing stays until the next, ⿾ is approximate, the six levels of 𰻞 are drawn, and a stored drawing is final')
   } else console.log('SKIP the composed preview: set COMPOSER_EXPORT to a han-compose export-web folder')
   assert(!errors.length, 'page errors: ' + errors.join('; '))
 

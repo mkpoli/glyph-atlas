@@ -67,14 +67,19 @@ describe('the composer', () => {
   })
   it('draws nothing larger than its limits', async () => {
     const chain = n => '⿰木'.repeat(n) + '口'
-    expect(LIMITS).toEqual({ nodes: 12, depth: 4 })
+    const nest = n => n ? ['⿰', '木', nest(n - 1)] : '口'
+    expect(LIMITS).toEqual({ nodes: 24, depth: 8 })
     expect(size({ op: '⿰', parts: ['木', { op: '⿱', parts: ['口', null] }] })).toEqual({ nodes: 2, depth: 2 })
-    expect(tooLarge(['⿰', '木', ['⿰', '木', ['⿰', '木', ['⿰', '木', '口']]]])).toBe(false)
-    expect(tooLarge(['⿰', '木', ['⿰', '木', ['⿰', '木', ['⿰', '木', ['⿰', '木', '口']]]]])).toBe(true)
-    const wide = { op: '⿲', parts: Array.from({ length: 3 }, () => ({ op: '⿲', parts: Array.from({ length: 3 }, () => ({ op: '⿰', parts: ['木', '口'] })) })) }
-    expect(size(wide)).toEqual({ nodes: 13, depth: 3 })
-    expect(tooLarge(wide)).toBe(true)
-    await expect(compose(sourceOf(), chain(5))).rejects.toThrow('larger than a preview draws')
+    expect(tooLarge(nest(8))).toBe(false)
+    expect(tooLarge(nest(9))).toBe(true)
+    const biang = ['⿺', '辶', ['⿳', '穴', ['⿰', '月', ['⿰', ['⿲', ['⿱', '幺', '長'], ['⿱', '言', '馬'], ['⿱', '幺', '長']], '刂']], '心']]
+    expect(size(biang)).toEqual({ nodes: 8, depth: 6 })
+    expect(tooLarge(biang)).toBe(false)
+    const wide = { op: '⿲', parts: Array.from({ length: 5 }, () => ({ op: '⿲', parts: Array.from({ length: 3 }, () => ({ op: '⿰', parts: ['木', '口'] })) })) }
+    expect(size(wide)).toEqual({ nodes: 21, depth: 3 })
+    expect(tooLarge(wide)).toBe(false)
+    expect(tooLarge({ op: '⿲', parts: [wide, wide, '口'] })).toBe(true)
+    await expect(compose(sourceOf(), chain(9))).rejects.toThrow('larger than a preview draws')
   })
   it('fails when its manifest is missing or a file cannot be fetched', async () => {
     await expect(compose(createSource(async () => { throw new Error('manifest.json: 404') }), '⿰木口')).rejects.toThrow('404')
