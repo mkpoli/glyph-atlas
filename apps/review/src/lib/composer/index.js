@@ -116,9 +116,9 @@ export function fromUrl(base, { suffix = '', fetch: get = globalThis.fetch } = {
 }
 
 const ROUNDS = 16
-/** The largest description drawn: more operators, or deeper nesting, than any character needs, and
- *  more work than a preview can spend. */
-export const LIMITS = { nodes: 12, depth: 4 }
+/** The largest description drawn. Every sequence BabelStone lists fits: the deepest nest six levels
+ *  (𰻞, 𦧄) and the largest holds 21 operators (𦧄). */
+export const LIMITS = { nodes: 24, depth: 8 }
 
 /** How many operators a tree has, and how deep they nest: a parsed tree (['⿰', …]) or the editor's
  *  (`{ op, parts }`). */
