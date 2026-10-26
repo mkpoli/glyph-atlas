@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { Problem } from './busy';
-import { MAX_MESSAGE, MAX_PARSED_MAIL, SPAM_THRESHOLD, htmlText, inboxText, mailText, receiveMail, sendContact } from './contact';
+import { MAX_MESSAGE, MAX_PARSED_MAIL, SPAM_THRESHOLD, heldText, htmlText, inboxText, mailText, receiveMail, sendContact } from './contact';
 
 const sent: { url: string; init: RequestInit }[] = [];
 const realFetch = globalThis.fetch;
@@ -152,6 +152,11 @@ describe('a mail that looks like spam', () => {
     await receiveMail(mail([], abused), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org', AI: clef(0, asked) } as never);
     expect(asked).toHaveLength(0);
     expect(JSON.parse(sent[0].init.body as string).body).toStartWith('Held as likely spam (100%): 山田 <noreply@appsheet.com>');
+  });
+
+  it('keeps a held mail to one line however long its subject', () => {
+    expect(heldText('A <a@example.org>', 'x\n'.repeat(500), 0.9)).toBe(
+      `Held as likely spam (90%): A <a@example.org> — ${'x '.repeat(100).slice(0, 200)}…. The forwarded copy has the whole mail.`);
   });
 
   it('asks Clef about the sender, subject and text', async () => {

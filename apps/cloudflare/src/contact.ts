@@ -23,6 +23,8 @@ export const ABUSED_SENDERS = new Set(['noreply@appsheet.com']);
 export const SPAM_THRESHOLD = 0.8;
 /** Clef-flash reads a mail and answers yes or no with a probability. */
 const SPAM_MODEL = '@cf/cloudflare/clef-flash';
+/** A Clef answer slower than this counts as none, and the mail is posted in full. */
+const SPAM_TIMEOUT = 8000;
 const SPAM_QUESTION = {
   type: 'noul',
   instructions: 'Is this mail spam, phishing, a scam or bulk marketing, rather than a message written to the maintainers of Glyph Atlas, a website about historical CJK glyphs?',
@@ -37,19 +39,23 @@ export async function spamOdds(ai: MailEnv['AI'], address: string, mail: { from:
   if (ABUSED_SENDERS.has(address.toLowerCase())) return 1;
   if (!ai) return null;
   try {
-    const answer = await ai.run(SPAM_MODEL as never, { model: 'clef-flash', state: { ...mail, text: head(mail.text, MAX_MESSAGE).text },
-      questions: { spam: SPAM_QUESTION } } as never) as { answers?: { spam?: { noul?: unknown } } };
+    const asked = ai.run(SPAM_MODEL as never, { model: 'clef-flash', state: { ...mail, text: head(mail.text, MAX_MESSAGE).text },
+      questions: { spam: SPAM_QUESTION } } as never) as Promise<{ answers?: { spam?: { noul?: unknown } } }>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('timed out')), SPAM_TIMEOUT) });
+    const answer = await Promise.race([asked, late]).finally(() => clearTimeout(timer));
     const odds = answer.answers?.spam?.noul;
     return typeof odds === 'number' ? odds : null;
   } catch (error) {
-    console.error(JSON.stringify({ event: 'spam_check_failed', error: String(error).slice(0, 200) }));
+    console.error(JSON.stringify({ event: 'spam_check_failed', error: error instanceof Error ? error.name : 'unknown' }));
     return null;
   }
 }
 
-/** The one-line inbox post for a mail held as likely spam. */
+/** The one-line inbox post for a mail held as likely spam; sender and subject are kept to one short line each. */
 export function heldText(from: string, subject: string, odds: number): string {
-  return `Held as likely spam (${Math.round(odds * 100)}%): ${from} — ${subject || '(no subject)'}. The forwarded copy has the whole mail.`;
+  const line = (value: string) => { const { text, cut } = head(value.replace(/\s+/g, ' ').trim(), 200); return text + (cut ? '…' : '') };
+  return `Held as likely spam (${Math.round(odds * 100)}%): ${line(from)} — ${line(subject) || '(no subject)'}. The forwarded copy has the whole mail.`;
 }
 
 /** Post one message to the inbox room; false when it could not be delivered. */
