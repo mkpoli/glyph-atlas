@@ -763,6 +763,8 @@ class Dataset:
 
     def __init__(self, directory: Path) -> None:
         self.directory = Path(directory)
+        if self.directory.is_symlink():
+            self.directory = self.directory.resolve()
         self.tables: dict[str, Path | None] = {}
         for name in TABLES:
             file = self.directory / f"{name}.parquet"

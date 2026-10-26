@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from glyph_atlas import tables
+from glyph_atlas.corpus.sources import discover
 from glyph_atlas.importers import kyodokenkyu as k
 from glyph_atlas.schema import Licence
 
@@ -65,7 +66,10 @@ def test_import_pinned_corpus_without_inventing_alignment(tmp_path, monkeypatch)
     out = tmp_path / "out"
     result = k.collect(source, out, cache)
     assert (result["documents"], result["text_segments"], result["sentences"], result["scan_pages"]) == (2, 2, 2, 2)
+    assert out.is_symlink()
     dataset = tables.Dataset(out)
+    corpus = next(c for c in discover(tmp_path) if c.name == "out")
+    original_snapshot = out.resolve()
     assert dataset.validate() == []
     pages = list(dataset.read("pages"))
     text_pages = [p for p in pages if p.meta.get("record_kind") == "text-segment"]
@@ -80,6 +84,28 @@ def test_import_pinned_corpus_without_inventing_alignment(tmp_path, monkeypatch)
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in out.glob("*.parquet")}
     assert k.collect(source, out, cache) == result
     assert hashes == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in out.glob("*.parquet")}
+    config["corpora"][0]["title"] = "Revised title"
+    source.write_text(yaml.safe_dump(config), encoding="utf-8")
+    k.collect(source, out, cache)
+    assert out.resolve() != original_snapshot
+    assert dataset.directory == corpus.directory == original_snapshot
+    assert next(d for d in dataset.read("documents") if d.text_rights).title == "Book"
+    assert next(d for d in tables.Dataset(out).read("documents") if d.text_rights).title == "Revised title"
+    latest_snapshot = out.resolve()
+    real_replace = k.os.replace
+
+    def interrupted_switch(src, dest):
+        if dest == out:
+            raise OSError("interrupted snapshot switch")
+        return real_replace(src, dest)
+
+    monkeypatch.setattr(k.os, "replace", interrupted_switch)
+    with pytest.raises(OSError, match="interrupted snapshot switch"):
+        k.collect(source, out, cache)
+    assert out.resolve() == latest_snapshot
+    assert tables.Dataset(out).validate() == []
+    monkeypatch.setattr(k.os, "replace", real_replace)
+    hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in out.glob("*.parquet")}
     (cache / config["corpora"][0]["editor"]["sha256"]).write_bytes(b"changed")
     with pytest.raises(ValueError, match="Snapshot mismatch"):
         k.collect(source, out, cache)

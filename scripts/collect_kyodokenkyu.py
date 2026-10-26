@@ -4,6 +4,8 @@
 
 Page images are referenced remotely. UD text segments have no inferred scan
 alignment. CoNLL-U annotations retain unknown rights pending upstream evidence.
+The output symlink selects a complete snapshot; earlier snapshots remain in the
+sibling .<output-name>-versions directory.
 """
 import argparse
 import json

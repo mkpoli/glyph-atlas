@@ -8,18 +8,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import tempfile
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urljoin, urlsplit
+from uuid import uuid4
 
 import yaml
 
 from .. import net, tables
 from ..schema import Document, Licence, Line, Page, PageText, Register, Rights
 from .honkoku_data import canvas_page, canvases
+from .honkoku_queue import publish_directory
 from .iiif_collection import text as iiif_text
 
 SOURCE = "kyodokenkyu"
@@ -182,6 +185,8 @@ def scan_records(book: dict, payload: bytes):
 
 def collect(source: Path, out: Path, cache: Path) -> dict:
     config = yaml.safe_load(source.read_text(encoding="utf-8"))
+    if out.exists() and not out.is_symlink():
+        raise ValueError("Output must be absent or a snapshot symlink; choose a new output directory")
     cache.mkdir(parents=True, exist_ok=True)
     index = fetch(config["index"], cache)
     parsed_index = Links()
@@ -207,8 +212,9 @@ def collect(source: Path, out: Path, cache: Path) -> dict:
     summary = {"corpora": counts, "documents": len(documents), "text_segments": len(texts),
                "sentences": len(lines), "scan_pages": len(pages) - len(texts), "character_crops": 0}
     # Stage and validate the complete result before replacing an existing import.
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".kyodokenkyu-", dir=out.parent) as tmp:
+    versions = out.parent / f".{out.name}-versions"
+    versions.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".staging-", dir=versions) as tmp:
         staging = Path(tmp)
         for name, records, model in [("documents", documents, Document), ("pages", pages, Page),
                                      ("page_texts", texts, PageText), ("lines", lines, Line)]:
@@ -217,16 +223,26 @@ def collect(source: Path, out: Path, cache: Path) -> dict:
         if errors:
             raise ValueError("Invalid import: " + "; ".join(errors[:10]))
         tables.Dataset(staging).merge([], staging, command="collect kyodokenkyu")
-        manifest = json.loads((staging / "MANIFEST.json").read_text())
+        manifest = json.loads((staging / "MANIFEST.json").read_text(encoding="utf-8"))
         manifest["collection"] = summary
         manifest["source_config_sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
-        (staging / "MANIFEST.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+        (staging / "MANIFEST.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                                              encoding="utf-8")
         (staging / "source-links.json").write_text(json.dumps({"source": config["url"], "links": links},
-                                                            ensure_ascii=False, indent=2) + "\n")
-        out.mkdir(parents=True, exist_ok=True)
+                                                            ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        generation = versions / uuid4().hex
+        publish_directory(staging, generation)
+        # Retain prior snapshots for readers that pinned them before this switch.
         with tables.locked(out):
-            for path in sorted(staging.glob("*.parquet")):
-                path.replace(out / path.name)
-            (staging / "source-links.json").replace(out / "source-links.json")
-            (staging / "MANIFEST.json").replace(out / "MANIFEST.json")
+            link = out.with_name(f".{out.name}-{uuid4().hex}.next")
+            try:
+                link.symlink_to(generation.relative_to(out.parent), target_is_directory=True)
+                os.replace(link, out)
+                descriptor = os.open(out.parent, os.O_DIRECTORY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+            finally:
+                link.unlink(missing_ok=True)
     return summary
