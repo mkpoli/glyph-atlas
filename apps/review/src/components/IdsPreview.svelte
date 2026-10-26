@@ -43,7 +43,7 @@
       })
       composerDrawer().draw(text, sketch => { if (live) sketched = { text, leaves: sketch } }).then(answer => {
         if (!live || final) return
-        if (answer.status === 'composed') { shown = { key: ++shownCount, drawn: answer.drawn }; step = 'composed' }
+        if (answer.status === 'composed') { shown = { key: ++shownCount, drawn: answer.drawn, text }; step = 'composed' }
         else if (answer.status === 'failed') { shown = null; step = 'failed' }
       })
     }, 150)
@@ -62,7 +62,8 @@
   // Whether the part at a leaf lies in the part being edited.
   const inChosen = index => Boolean(chosen && parts[index] && (samePath(parts[index].path, chosen)
     || parts[index].path.length > chosen.length && chosen.every((x, i) => x === parts[index].path[i])))
-  // An empty slot of a drawing by its number, as the leaf it is.
+  // An empty slot of a drawing by its number, as the leaf it is. A drawing kept on screen while the
+  // next is drawn marks none: its slots are numbered in its own sequence, not the tree's.
   const slotLeaf = number => parts.map((leaf, index) => ({ leaf, index })).filter(({ leaf }) => leaf.char === null)[number]?.index
 </script>
 
@@ -89,7 +90,7 @@
                 <mask id="{id}-{name}"><rect width="1000" height="1000" fill="#fff" /><path d={drawn.cut} fill="#000" /></mask>
               {/if}
               {#each drawn.slots as s (s.index)}
-                {@render slot(s.box, drawn.stroke?.[0] ?? STROKE, inChosen(slotLeaf(s.index)), false)}
+                {@render slot(s.box, drawn.stroke?.[0] ?? STROKE, shown.text === sequence && inChosen(slotLeaf(s.index)), false)}
               {/each}
               <path class="ink" d={drawn.d} mask={drawn.cut ? `url(#${id}-${name})` : undefined} />
             </svg>
