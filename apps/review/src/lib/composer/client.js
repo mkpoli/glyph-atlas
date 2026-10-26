@@ -4,9 +4,10 @@
 // cache, the export's files being immutable.
 
 /**
- * A drawer over workers made by `makeWorker`, drawing from the export at `base`. `draw(sequence)`
- * answers `{ status: 'composed', drawn }`, `{ status: 'failed', error }`, or `{ status: 'cancelled' }`
- * when it was replaced or `cancel` was called first.
+ * A drawer over workers made by `makeWorker`, drawing from the export at `base`. `draw(sequence,
+ * onSketch)` answers `{ status: 'composed', drawn }`, `{ status: 'failed', error }`, or `{ status:
+ * 'cancelled' }` when it was replaced or `cancel` was called first; `onSketch` hears where the layout
+ * puts each part before the drawing is done.
  */
 export function createDrawer(makeWorker, base) {
   let worker = null, pending = null, next = 0
@@ -20,19 +21,20 @@ export function createDrawer(makeWorker, base) {
     end()
     settle({ status: 'cancelled' })
   }
-  function draw(sequence) {
+  function draw(sequence, onSketch = null) {
     cancel()
     if (!worker) {
       worker = makeWorker()
       worker.onmessage = ({ data }) => {
         if (data.id !== pending?.id) return
+        if (data.sketch) { pending.onSketch?.(data.sketch); return }
         settle(data.error === undefined ? { status: 'composed', drawn: data.drawn } : { status: 'failed', error: data.error })
       }
       worker.onerror = event => { event?.preventDefault?.(); end(); settle({ status: 'failed', error: String(event?.message ?? 'worker failed') }) }
     }
     const id = ++next
     return new Promise(resolve => {
-      pending = { id, resolve }
+      pending = { id, resolve, onSketch }
       worker.postMessage({ id, sequence, base })
     })
   }

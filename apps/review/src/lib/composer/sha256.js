@@ -1,5 +1,5 @@
-// SHA-256 run synchronously, so the composer can name the bucket of any key it meets while it draws
-// (the export keeps a key in bucket `sha256(key as UTF-8)[0]`).
+// SHA-256 run synchronously, so the composer can name the shard of any key it meets while it draws
+// (the export files a key under the first three hex digits of `sha256(key as UTF-8)`).
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01,
   0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
@@ -42,7 +42,5 @@ export function sha256(data) {
 }
 
 const encoder = new TextEncoder()
-/** The bucket a key of the export lives in: the first byte of the SHA-256 of its UTF-8. */
-export const bucketOf = key => sha256(encoder.encode(key))[0]
 /** The SHA-256 of a text's UTF-8, in hex. */
 export const hexOf = text => [...sha256(encoder.encode(text))].map(b => b.toString(16).padStart(2, '0')).join('')

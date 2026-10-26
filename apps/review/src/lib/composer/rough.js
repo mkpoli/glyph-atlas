@@ -1,5 +1,5 @@
-// A description laid out roughly, before any drawing data has loaded: each component set in the page
-// font in a box its operators give it, in a unit square with y down. ⿰ ⿲ split it into columns,
+// A description laid out roughly, before even the composer's layout has loaded: each part in a box its
+// operators give it, in a unit square with y down, where the preview's placeholders stand. ⿰ ⿲ split it into columns,
 // ⿱ ⿳ into rows, an enclosure puts its first part in the whole box and its second where the
 // composer's `INSIDE` puts a part no host shows, ⿻ and ㇯ lay both parts over the whole box (㇯'s
 // second as a cut), ⿾ mirrors and ⿿ turns what it holds. A tree is the editor's (`lib/ids.js`):

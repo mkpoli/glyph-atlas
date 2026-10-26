@@ -267,6 +267,16 @@ export const placed = (part, source, target, native, origin, weight = [0, 0]) =>
 export const scaleOf = p => [(p.target[2] - p.target[0]) / Math.max(p.source[2] - p.source[0], 1),
   (p.target[3] - p.target[1]) / Math.max(p.source[3] - p.source[1], 1)]
 
+/** A placed part's target box as drawn, after its `flips`. */
+export function drawnBox(p) {
+  let [x0, y0, x1, y1] = p.target
+  for (const f of p.flips ?? []) {
+    if (f.x) [x0, x1] = [2 * f.about[0] - x1, 2 * f.about[0] - x0]
+    if (f.y) [y0, y1] = [2 * f.about[1] - y1, 2 * f.about[1] - y0]
+  }
+  return [x0, y0, x1, y1]
+}
+
 /** A placed part's contours as drawn: flat [x, y, …] arrays in font units, y up. */
 export function drawnContours(p) {
   const [sx, sy] = scaleOf(p)
