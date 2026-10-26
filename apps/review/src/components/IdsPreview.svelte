@@ -88,10 +88,10 @@
               {#if drawn.cut}
                 <mask id="{id}-{name}"><rect width="1000" height="1000" fill="#fff" /><path d={drawn.cut} fill="#000" /></mask>
               {/if}
-              <path class="ink" d={drawn.d} mask={drawn.cut ? `url(#${id}-${name})` : undefined} />
               {#each drawn.slots as s (s.index)}
                 {@render slot(s.box, drawn.stroke?.[0] ?? STROKE, inChosen(slotLeaf(s.index)), false)}
               {/each}
+              <path class="ink" d={drawn.d} mask={drawn.cut ? `url(#${id}-${name})` : undefined} />
             </svg>
           {/if}
         </div>
