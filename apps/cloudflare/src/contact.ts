@@ -17,10 +17,9 @@ type InboxEnv = Pick<Env, 'MATRIX_HOMESERVER' | 'MATRIX_INBOX_ROOM'> & { MATRIX_
 type ContactEnv = InboxEnv & Pick<Env, 'CONTACT'>;
 type MailEnv = InboxEnv & { CONTACT_FORWARD_TO?: string; AI?: Pick<Ai, 'run'> };
 
-/** Senders whose mail to this address has only ever been abuse of a public app or form builder. */
-export const ABUSED_SENDERS = new Set(['noreply@appsheet.com']);
-/** A mail Clef rates spam at this probability or above is held to one line. */
-export const SPAM_THRESHOLD = 0.8;
+/** A mail Clef rates spam at this probability or above is held to one line; genuine mail rated 0.21 at
+ * most and spam 0.69 or more when it was calibrated. */
+export const SPAM_THRESHOLD = 0.5;
 /** Clef-flash reads a mail and answers yes or no with a probability. */
 const SPAM_MODEL = '@cf/cloudflare/clef-flash';
 /** A Clef answer slower than this counts as none, and the mail is posted in full. */
@@ -34,9 +33,8 @@ const SPAM_QUESTION = {
   },
 };
 
-/** How likely a mail is spam: 1 for an abused sender, Clef's probability otherwise, null when Clef cannot be asked. */
-export async function spamOdds(ai: MailEnv['AI'], address: string, mail: { from: string; subject: string; text: string }): Promise<number | null> {
-  if (ABUSED_SENDERS.has(address.toLowerCase())) return 1;
+/** How likely a mail is spam by Clef's reading, or null when Clef cannot be asked. */
+export async function spamOdds(ai: MailEnv['AI'], mail: { from: string; subject: string; text: string }): Promise<number | null> {
   if (!ai) return null;
   try {
     const asked = ai.run(SPAM_MODEL as never, { model: 'clef-flash', state: { ...mail, text: head(mail.text, MAX_MESSAGE).text },
@@ -133,7 +131,7 @@ export async function receiveMail(message: ForwardableEmailMessage, env: MailEnv
   const from = mail.from ? [mail.from.name, mail.from.address && `<${mail.from.address}>`].filter(Boolean).join(' ') : message.from;
   const text = mail.text?.trim() ? mail.text : mail.html ? htmlText(mail.html) : '';
   // A mail that cannot be judged is posted in full.
-  const odds = await spamOdds(env.AI, mail.from?.address ?? message.from, { from, subject: mail.subject ?? '', text });
+  const odds = await spamOdds(env.AI, { from, subject: mail.subject ?? '', text });
   if (odds !== null && odds >= SPAM_THRESHOLD) await postToInbox(env, heldText(from, mail.subject ?? '', odds));
   else await postToInbox(env, mailText(from, mail.subject ?? '', text, mail.attachments.length));
 }

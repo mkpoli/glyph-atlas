@@ -127,7 +127,6 @@ describe('a mail that looks like spam', () => {
   // Clef's answer for every mail, or a failure.
   const clef = (odds: number | Error, asked: unknown[] = []) => ({ run: async (_model: string, input: unknown) => {
     asked.push(input); if (odds instanceof Error) throw odds; return { answers: { spam: { type: 'noul', noul: odds } } } } });
-  const abused = raw.replace('<yamada@example.jp>', '<noreply@appsheet.com>');
 
   it('is forwarded whole and posted as one line when Clef rates it spam', async () => {
     answering(200);
@@ -144,14 +143,6 @@ describe('a mail that looks like spam', () => {
       await receiveMail(mail([]), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org', AI: clef(odds) } as never);
       expect(JSON.parse(sent.at(-1)!.init.body as string).body).toStartWith('Mail to contact@glyphatlas.org\n');
     }
-  });
-
-  it('is held without asking Clef when it comes from an abused sender', async () => {
-    answering(200);
-    const asked: unknown[] = [];
-    await receiveMail(mail([], abused), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org', AI: clef(0, asked) } as never);
-    expect(asked).toHaveLength(0);
-    expect(JSON.parse(sent[0].init.body as string).body).toStartWith('Held as likely spam (100%): 山田 <noreply@appsheet.com>');
   });
 
   it('keeps a held mail to one line however long its subject', () => {
