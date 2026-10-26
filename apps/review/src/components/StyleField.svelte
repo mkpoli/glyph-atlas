@@ -22,6 +22,8 @@
   let { item, editable = true, disabled = false, working = null, saved } = $props()
   let error = $state('')
   const own = $derived(item?.style_basis === 'unit' ? item.style : 'unassessed')
+  // A server that names the styles it can store (`style_choices`) offers only those.
+  const choices = $derived(item?.style_choices ? STYLES.filter(value => item.style_choices.includes(value)) : STYLES)
   // The server names the basis `document-confirmed`; a catalogue key has no hyphen.
   const basis = $derived((item?.style_basis ?? 'none').replaceAll('-', '_'))
 
@@ -50,7 +52,7 @@
       <label class="style-own">{item.style === 'unassessed' ? t('style.label') : t('style.own')}
         <select value={own} {disabled} onchange={choose}>
           <option value="unassessed">{t('style.inherit')}</option>
-          {#each STYLES as value}<option {value}>{t(`style.kind.${value}`)}</option>{/each}
+          {#each choices as value}<option {value}>{t(`style.kind.${value}`)}</option>{/each}
         </select>
       </label>
     {/if}
