@@ -173,6 +173,14 @@ export class Composer {
         walk(kids[0], region, false)
         const [x0, y0, x1, y1] = this.INSIDE[op], w = region[2] - region[0], h = region[3] - region[1]
         walk(kids[1], [region[0] + x0 * w, region[1] + y0 * h, region[0] + x1 * w, region[1] + y1 * h], false)
+      } else if (op === MIRROR || op === ROTATE) {
+        // About the region's centre, as `flipped` draws it: ⿾ mirrors each box, ⿿ turns it half round.
+        const from = out.length
+        walk(kids[0], region, atRoot)
+        for (const leaf of out.slice(from)) {
+          const [x0, y0, x1, y1] = leaf.box, turned = op === ROTATE
+          leaf.box = [region[0] + region[2] - x1, turned ? region[1] + region[3] - y1 : y0, region[0] + region[2] - x0, turned ? region[1] + region[3] - y0 : y1]
+        }
       } else kids.forEach(kid => walk(kid, region, false))
     }
     walk(this.parse(sequence), this.face.slice(), true)

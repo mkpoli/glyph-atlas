@@ -187,6 +187,17 @@ describe('an empty slot', () => {
     const leaves = await sketch(fixedSource(), '⿰木⬚')
     expect(nearSlots(leaves)).toEqual([{ index: 0, box: svgBox(LEFT), empty: false }, { index: 1, box: svgBox(RIGHT), empty: true }])
   })
+  it('changes sides under ⿾ and ⿿ as the drawing does', async () => {
+    const source = fixedSource()
+    for (const op of ['⿾', '⿿']) {
+      const leaves = await sketch(source, `${op}⿰木⬚`), drawn = await compose(source, `${op}⿰木⬚`)
+      expect(near(leaves[1].box)).toEqual(near(drawn.slots[0].box))
+      // The slot moves to the left, and 木 to the right.
+      const [x, , w] = drawn.slots[0].box
+      expect(x + w).toBeLessThan(drawn.parts[0].box[0] + 1)
+      expect(x + w).toBeLessThan(520)
+    }
+  })
   it('is drawn as a rounded box inset by half a stroke, its dots a stroke apart', () => {
     const p = placeholder([100, 100, 400, 800], 80)
     expect(p).toMatchObject({ x: 140, y: 140, width: 320, height: 720 })

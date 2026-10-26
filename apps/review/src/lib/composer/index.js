@@ -3,7 +3,7 @@
 // fetched once a page; a gzipped one (the site stores them so) is unpacked with DecompressionStream.
 import { APPROXIMATE, Composer, EMPTY, LookupError, keyOf, parseTree } from './compose.js'
 import { ASCENT } from './geometry.js'
-import { svgPath } from './geometry.js'
+import { drawnBox, svgPath } from './geometry.js'
 import { readLayout } from './layout.js'
 import { hexOf } from './sha256.js'
 
@@ -180,8 +180,8 @@ export async function compose(source, sequence, { exclude = [], face = null } = 
     if (failure) throw failure
     const ink = drawn.filter(p => p.empty === undefined)
     return { d: svgPath(ink.filter(p => !p.cut)), cut: svgPath(ink.filter(p => p.cut)),
-      slots: drawn.filter(p => p.empty !== undefined).map(p => ({ index: p.empty, box: svgBox(p.target) })),
-      stroke: composer.stroke ?? null, parts: ink.map(p => ({ origin: p.origin, box: svgBox(p.target) })), origins: ink.map(p => p.origin),
+      slots: drawn.filter(p => p.empty !== undefined).map(p => ({ index: p.empty, box: svgBox(drawnBox(p)) })),
+      stroke: composer.stroke ?? null, parts: ink.map(p => ({ origin: p.origin, box: svgBox(drawnBox(p)) })), origins: ink.map(p => p.origin),
       kanjivg: Boolean(composer.handForms) || drawn.some(p => p.part.kv), approximate: [...new Set([...sequence].filter(ch => APPROXIMATE.includes(ch)))] }
   }
   throw new LookupError(`${sequence} needs more data than ${ROUNDS} rounds load.`)
