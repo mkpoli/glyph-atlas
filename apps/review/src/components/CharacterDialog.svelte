@@ -94,7 +94,10 @@
     error = ''; form = null; issue = null; correction = null; noneSelected = false; box = null; editingBox = false
     written = ''; writtenDirty = false; kept = null
     contextSuggestions = null; contextSuggesting = false
-    loaded = false; imageFailed = false; suggestions = null; suggesting = false; submission = null
+    // The server-rendered record's image is already mounted; its load may have come before this effect,
+    // so keep what it reported. A record fetched now starts over.
+    if (!preloaded) { loaded = false; imageFailed = false }
+    suggestions = null; suggesting = false; submission = null
     if (leaving && target !== leaving) { refocus = true; leaving = null }
     try {
       const result = preloaded ?? await readCrop(target)

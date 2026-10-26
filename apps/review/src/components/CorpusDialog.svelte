@@ -55,7 +55,10 @@
     // The list's row stands in until the record arrives; nothing can be saved from it.
     data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded)
     error = ''; form = null; issue = null; correction = null; noneSelected = false
-    loaded = false; imageFailed = false; submission = null
+    // The server-rendered record's image is already mounted; its load may have come before this effect,
+    // so keep what it reported. A record fetched now starts over.
+    if (!preloaded) { loaded = false; imageFailed = false }
+    submission = null
     if (leaving && target !== leaving) { refocus = true; leaving = null }
     dialog?.scrollTo({ top: 0 })
     try {
