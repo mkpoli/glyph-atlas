@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { Problem } from './busy';
-import { MAX_MESSAGE, MAX_PARSED_MAIL, htmlText, inboxText, mailText, receiveMail, sendContact } from './contact';
+import { MAX_MESSAGE, MAX_PARSED_MAIL, SPAM_THRESHOLD, heldText, htmlText, inboxText, mailText, receiveMail, sendContact } from './contact';
 
 const sent: { url: string; init: RequestInit }[] = [];
 const realFetch = globalThis.fetch;
@@ -120,5 +120,51 @@ describe('a mail to the contact address', () => {
 
   it('strips markup from an HTML part', () => {
     expect(htmlText('<script>x()</script><b>bold</b>&lt;tag&gt;')).toBe('bold<tag>');
+  });
+});
+
+describe('a mail that looks like spam', () => {
+  // Clef's answer for every mail, or a failure.
+  const clef = (odds: number | Error, asked: unknown[] = []) => ({ run: async (_model: string, input: unknown) => {
+    asked.push(input); if (odds instanceof Error) throw odds; return { answers: { spam: { type: 'noul', noul: odds } } } } });
+  const abused = raw.replace('<yamada@example.jp>', '<noreply@appsheet.com>');
+
+  it('is forwarded whole and posted as one line when Clef rates it spam', async () => {
+    answering(200);
+    const forwarded: string[] = [];
+    await receiveMail(mail(forwarded), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org', AI: clef(0.93) } as never);
+    expect(forwarded).toEqual(['owner@example.org']);
+    expect(JSON.parse(sent[0].init.body as string).body).toBe(
+      'Held as likely spam (93%): 山田 <yamada@example.jp> — 誤識の報告. The forwarded copy has the whole mail.');
+  });
+
+  it('is posted in full below the threshold, or when Clef cannot answer', async () => {
+    for (const odds of [SPAM_THRESHOLD - 0.01, new Error('AI down')]) {
+      answering(200);
+      await receiveMail(mail([]), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org', AI: clef(odds) } as never);
+      expect(JSON.parse(sent.at(-1)!.init.body as string).body).toStartWith('Mail to contact@glyphatlas.org\n');
+    }
+  });
+
+  it('is held without asking Clef when it comes from an abused sender', async () => {
+    answering(200);
+    const asked: unknown[] = [];
+    await receiveMail(mail([], abused), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org', AI: clef(0, asked) } as never);
+    expect(asked).toHaveLength(0);
+    expect(JSON.parse(sent[0].init.body as string).body).toStartWith('Held as likely spam (100%): 山田 <noreply@appsheet.com>');
+  });
+
+  it('keeps a held mail to one line however long its subject', () => {
+    expect(heldText('A <a@example.org>', 'x\n'.repeat(500), 0.9)).toBe(
+      `Held as likely spam (90%): A <a@example.org> — ${'x '.repeat(100).slice(0, 200)}…. The forwarded copy has the whole mail.`);
+  });
+
+  it('asks Clef about the sender, subject and text', async () => {
+    answering(200);
+    const asked: any[] = [];
+    await receiveMail(mail([]), { ...env(), CONTACT_FORWARD_TO: 'owner@example.org', AI: clef(0.1, asked) } as never);
+    expect(asked[0].model).toBe('clef-flash');
+    expect(asked[0].state).toEqual({ from: '山田 <yamada@example.jp>', subject: '誤識の報告', text: '「字」が「宇」になっています。\n' });
+    expect(asked[0].questions.spam.type).toBe('noul');
   });
 });
