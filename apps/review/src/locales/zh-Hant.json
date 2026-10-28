@@ -1204,7 +1204,7 @@
   "contact.title": "聯絡與社群",
   "contact.intro": "Glyph Atlas的建置過程向所有人開放。你可以透過以下管道提問、指出誤識的字，或參與工作。",
   "contact.chat.title": "聊天",
-  "contact.chat.body": "社群聊天室集中在一個Matrix空間內，各聊天室與Discord、Telegram和IRC（Libera.Chat）互通。在任何一處傳送訊息，其他各處也能收到。",
+  "contact.chat.body": "社群聊天室集中在一個Matrix空間內，各聊天室與Discord、Telegram、IRC（Libera.Chat）和QQ互通。在任何一處傳送訊息，其他各處也能收到。",
   "contact.chat.members.other": "{count}人",
   "contact.chat.rooms": "空間內設有迎新聊天室，英語、中文、日語、韓語和越南語各有一個聊天室，另有分享新奇發現的聊天室、提問聊天室、回饋聊天室和開發聊天室。",
   "contact.matrix.title": "透過Matrix加入",
