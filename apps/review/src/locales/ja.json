@@ -1201,7 +1201,7 @@
   "contact.title": "お問い合わせとコミュニティ",
   "contact.intro": "Glyph Atlasはオープンに制作されています。質問や文字の誤読の指摘、制作への参加は、以下のいずれかの場所をご利用ください。",
   "contact.chat.title": "チャット",
-  "contact.chat.body": "コミュニティチャットはMatrix上の1つのスペースです。各ルームはDiscord、Telegram、およびIRC（Libera.Chat）とブリッジ接続されているため、いずれか1か所に投稿されたメッセージは他のすべてにも届きます。",
+  "contact.chat.body": "コミュニティチャットはMatrix上の1つのスペースです。各ルームはDiscord、Telegram、IRC（Libera.Chat）およびQQとブリッジ接続されているため、いずれか1か所に投稿されたメッセージは他のすべてにも届きます。",
   "contact.chat.members.other": "{count}人",
   "contact.chat.rooms": "ウェルカムルーム、英語・中国語・日本語・韓国語・ベトナム語の各言語ルーム、興味深い発見のルーム、質問のルーム、フィードバックルーム、開発ルームが用意されています。",
   "contact.matrix.title": "Matrixで参加する",
