@@ -15,6 +15,7 @@
   import { isUnassigned, kanaFolded } from '../lib/identity.js'
 
   let { run, style = '', selected = false, checked = false, marks, ...handlers } = $props()
+  const detailsId = $props.id()
   // The image's box, so the page around the run fills it as a crop fills its own. The image waits for
   // it, so the run's region is asked for once, in the tile's shape.
   let width = $state(0), height = $state(0)
@@ -27,8 +28,9 @@
   const named = $derived(differs ? `${written} (${run.text})` : written)
 </script>
 
-{#if run.text}<a class="glyph-tile run-tile collage-cell" class:selected class:decided-checked={checked} {style} data-run={run.id} href={localize(runAddress(run.text))} aria-label={`${named} · ${t('run.occurrences', { count: run.n })}` + (selected ? t('bulk.tileSelected') : '') + (checked ? t('bulk.tileChecked') : '')} {...handlers}>
+{#if run.text}<a class="glyph-tile run-tile collage-cell" class:selected class:decided-checked={checked} {style} data-run={run.id} href={localize(runAddress(run.text))} aria-label={`${named} · ${t('run.occurrences', { count: run.n })}` + (selected ? t('bulk.tileSelected') : '') + (checked ? t('bulk.tileChecked') : '')} aria-describedby={detailsId} {...handlers}>
   {@render marks?.(run)}
+  <span id={detailsId} class="tile-details"><span>{run.kind === 'trigram' ? t('tile.countTrigram', { text: run.text, count: run.n, rank: run.rank }) : t('tile.countPair', { text: run.text, count: run.n, rank: run.rank })}</span></span>
   <span class="run-tile-image" aria-hidden="true" bind:clientWidth={width} bind:clientHeight={height}>{#if run.crops}{#if width && height}<RunImage crops={run.crops} page={run.page} vertical={run.vertical} fill={height / width} />{/if}{:else}<span class="run-tile-text">{run.text}</span>{/if}</span>
   <span class="tile-caption">
     <span class="tile-label"><span class="tile-glyph">{#if forms}{#each forms as form}<span class:transcribed={form.transcribed}><ScriptText text={form.text} titled={false} /></span>{/each}{:else}<ScriptText text={run.text} titled={false} />{/if}</span>{#if differs}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={run.text} titled={false} /></span>{/if}{#if checked}<span class="tile-verdict" aria-hidden="true">✓</span>{/if}</span>

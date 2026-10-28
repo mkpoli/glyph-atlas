@@ -3,7 +3,6 @@
   import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation'
   import { entry, keepView, keptView } from '../lib/keptViews.js'
   import { page } from '$app/state'
-  import { productionLabel } from '../components/ProductionBadge.svelte'
   import { cropDetails, repairOf, workTitle } from '../lib/cropDetails.js'
   import { tileDate, datingLine, eventLabel } from '../lib/dating.js'
   import VisualGroups from '../components/VisualGroups.svelte'
@@ -214,8 +213,8 @@
   }
   /** A tile's count: its form's glyphs, then its grapheme's where that holds more (`text`); what they
    *  are, with their places among all forms and graphemes (`lines`, the count's title); and the places
-   *  alone (`ranks`, the hover panel's, below a caption that shows the counts). A crop that names no
-   *  grapheme takes its form's from the counts. */
+   *  alone (`ranks`, the hover panel's, below the count it no longer puts in the collage caption). A
+   *  crop that names no grapheme takes its form's from the counts. */
   function tileCount(item) {
     if (!tileCounts || isUnassigned(item)) return null
     const key = item.grapheme?.code_point ?? item.grapheme ?? tileCounts.keys.get(item.label)
@@ -237,17 +236,16 @@
   // The hover panel's details, less what the caption under it shows whole. A line the caption also
   // gives comes as `{ cut, whole, short }`: the panel shows `whole` where the caption cuts its `cut`
   // part short or hides it (`markCut`), and `short`, what the line adds, where it shows it whole: the
-  // work's page, the copy's date of composition beside its year, nothing beside its production.
+  // work's page and the copy's date of composition beside its year.
   function panelDetails(item) {
-    const production = productionLabel(item), dating = datingLine(item), composed = item.dating?.composed
+    const dating = datingLine(item), composed = item.dating?.composed
     const work = workTitle(item), page = item.page_number ? t('tile.page', { page: item.page_number }) : null
-    return cropDetails(item).map(line => line === production ? { cut: 'production', whole: line, short: null }
-      : line === dating && tileDate(item) ? { cut: 'year', whole: line, short: composed ? eventLabel('composed', composed) : null }
+    return cropDetails(item).map(line => line === dating && tileDate(item) ? { cut: 'year', whole: line, short: composed ? eventLabel('composed', composed) : null }
       : work && line === [work, page].filter(Boolean).join(' · ') ? { cut: 'work', whole: line, short: page } : line)
   }
   /** Marks each part of a tile's caption that is cut short or hidden, so its hover panel gives it whole. */
   function markCut(tile) {
-    for (const part of ['work', 'year', 'production']) {
+    for (const part of ['work', 'year']) {
       const shown = tile.querySelector('.tile-' + part)
       tile.toggleAttribute('data-cut-' + part, !!shown && (!shown.offsetParent || shown.scrollWidth > shown.clientWidth + 1))
     }
@@ -1264,19 +1262,18 @@
 {#snippet withheldToggle(after)}{#if !flagged && (showWithheld || withheldCount)}{#if after}<span class="separator">·</span> {/if}<button class="quiet-link" onclick={toggleWithheld} title={t('explore.withheld.about')}>{showWithheld ? t('explore.withheld.hide') : t('explore.withheld.show', { count: withheldCount })}</button>{/if}{/snippet}
 <!-- A crop's label in its script's colour; an unassigned crop says so instead. -->
 {#snippet tileLabel(item)}{#if isUnassigned(item)}{shownLabel(item)}{:else}<ScriptText text={item.label} />{/if}{/snippet}
-<!-- The collage centres the label below the image with one line of what the crop is: withheld, its
-     years, how it was produced, its work. The square grid positions the same two at its top and
-     bottom through the caption's display:contents. -->
+<!-- The collage puts the label and date on the first row, the source on the second. Counts stay in the
+     hover details. The square grid positions the label and footer at its top and bottom through display:contents. -->
 {#snippet tileCaption(item)}
   <span class="tile-caption">
     <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}</span>
-    <span class="tile-footer">{#if tileCount(item)}{@const count = tileCount(item)}<span class="tile-count" title={[...count.lines, t('tile.countScope')].join('\n')}>{count.text}</span>{/if}{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if productionLabel(item)}<span class="tile-production">{productionLabel(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
+    <span class="tile-footer">{#if tileCount(item)}{@const count = tileCount(item)}<span class="tile-count" title={[...count.lines, t('tile.countScope')].join('\n')}>{count.text}</span>{/if}{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 {/snippet}
 <!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
 <!-- A run's select box, drawn inside its tile (`RunTile`), which ticks its own caption. -->
 {#snippet runMarks(item)}{#if selected.has(item.id) || !runChecked(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}{/snippet}
-{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} selected={selected.has(item.id)} checked={runChecked(item)} marks={reviewer && selectable(item) ? runMarks : undefined} {...pressing(item, i)} onclick={event => { if (selecting && !selectable(item)) event.preventDefault(); else tileClick(event, item, i, () => {}) }} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspect', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#each tileCount(item)?.ranks ?? [] as line}<span>{line}</span>{/each}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{@render tileCaption(item)}</button>{/if}{/snippet}
+{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} selected={selected.has(item.id)} checked={runChecked(item)} marks={reviewer && selectable(item) ? runMarks : undefined} {...pressing(item, i)} onclick={event => { if (selecting && !selectable(item)) event.preventDefault(); else tileClick(event, item, i, () => {}) }} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspect', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{@render tileCaption(item)}</button>{/if}{/snippet}
 <!-- The search term in its scripts' colours, and the code points `readable` adds to it. -->
 {#snippet term()}<ScriptText text={query} />{readable.slice(query.length)}{/snippet}
 
@@ -1391,19 +1388,15 @@
   /* The box that selects a tile shows on hover or focus, and on every tile in select mode or on a touch screen.
      A class on the gallery says the mode is on: a `:has()` there restyled every tile each time tiles were added.
      It sits off the image, so it never hides a stroke or a 濁点: in the collage at the end of the caption's
-     second line, where the production gives way to it in select mode (the tile's details still name it), and
+     second line, with the source keeping clear of it, and
      in the square grid in the margin above the image. */
   .tile-select{position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:2px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:700 11px/1 system-ui,sans-serif;opacity:0;transition:opacity .12s}
   :global(:root:not([data-gallery="grid"])) .tile-select{right:1px;bottom:1px;width:16px;height:16px;font-size:10px}
   :global(:root[data-gallery="grid"]) .tile-select{top:5px;right:6px}
-  /* Wherever the box shows (select mode, a hovered or focused tile, every tile on a touch screen) the caption
-     makes room for it, and a long label gives way before the tick after it. */
-  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-caption),:global(:root:not([data-gallery="grid"]) .collage-cell:has(> .tile-select):is(:hover,:focus-visible) .tile-caption){grid-template-columns:auto minmax(0,1fr) auto minmax(18px,max-content)}
-  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-production),:global(:root:not([data-gallery="grid"]) .collage-cell:has(> .tile-select):is(:hover,:focus-visible) .tile-production){display:none}
-  :global(:root:not([data-gallery="grid"])) .selecting :global(.collage-cell .tile-caption .tile-work),:global(:root:not([data-gallery="grid"]) .collage-cell:has(> .tile-select):is(:hover,:focus-visible) .tile-caption .tile-work){grid-column:1/4}
+  /* Wherever the box shows, the source keeps clear of it, and a long label gives way before the tick after it. */
   :global(:root[data-gallery="grid"]) .selecting :global(.collage-cell .tile-label),:global(:root[data-gallery="grid"] .collage-cell:has(> .tile-select):is(:hover,:focus-visible) .tile-label){right:28px;overflow:hidden;white-space:nowrap}
   :global(:root[data-gallery="grid"]) .selecting :global(.collage-cell .tile-glyph),:global(:root[data-gallery="grid"] .collage-cell:has(> .tile-select):is(:hover,:focus-visible) .tile-glyph){min-width:0;overflow:hidden;text-overflow:ellipsis}
-  @media(hover:none){:global(:root:not([data-gallery="grid"]) .glyph-tile.collage-cell:has(> .tile-select) .tile-caption){grid-template-columns:auto minmax(0,1fr) auto minmax(18px,max-content)}:global(:root:not([data-gallery="grid"]) .glyph-tile.collage-cell:has(> .tile-select) .tile-production){display:none}:global(:root:not([data-gallery="grid"]) .glyph-tile.collage-cell:has(> .tile-select) .tile-caption .tile-work){grid-column:1/4}:global(:root[data-gallery="grid"] .glyph-tile.collage-cell:has(> .tile-select) .tile-label){right:28px;overflow:hidden;white-space:nowrap}:global(:root[data-gallery="grid"] .glyph-tile.collage-cell:has(> .tile-select) .tile-glyph){min-width:0;overflow:hidden;text-overflow:ellipsis}}
+  @media(hover:none){:global(:root[data-gallery="grid"] .glyph-tile.collage-cell:has(> .tile-select) .tile-label){right:28px;overflow:hidden;white-space:nowrap}:global(:root[data-gallery="grid"] .glyph-tile.collage-cell:has(> .tile-select) .tile-glyph){min-width:0;overflow:hidden;text-overflow:ellipsis}}
   :global(.glyph-tile):hover .tile-select,:global(.glyph-tile):focus-visible .tile-select,.selecting .tile-select{opacity:1}
   @media(hover:none){.tile-select{opacity:.85}}
   /* A selected tile is ringed and washed over its image, and its box is filled and ticked, so the state
@@ -1415,19 +1408,15 @@
   :global(.glyph-tile.selected) .tile-select{opacity:1;z-index:5;background:var(--accent-solid);border-color:var(--accent-solid)}
   .selecting :global(.glyph-tile:focus-visible){z-index:2}
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
-  .tile-production{font-family:"GenZui Sans",system-ui,sans-serif;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* The copy's year, the tile's one date: in the footer's small type, its digits all one width. */
   .tile-year{flex-shrink:0;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-  /* Short of room, the work's title gives way first and the production after it, each to an ellipsis;
+  /* Long source titles shorten in the caption and remain complete in the hover details;
      on a phone a wide range does too, and a square tile there keeps its room for the years. */
-  .tile-production{flex:0 1 auto;min-width:0}
   .tile-withheld,.tile-count{flex-shrink:0;white-space:nowrap}
   .glyph-tile:not([data-cut-work]) .panel-whole[data-part="work"],:global(.glyph-tile[data-cut-work]) .panel-short[data-part="work"],
-  .glyph-tile:not([data-cut-year]) .panel-whole[data-part="year"],:global(.glyph-tile[data-cut-year]) .panel-short[data-part="year"],
-  .glyph-tile:not([data-cut-production]) .panel-whole[data-part="production"]{display:none}
+  .glyph-tile:not([data-cut-year]) .panel-whole[data-part="year"],:global(.glyph-tile[data-cut-year]) .panel-short[data-part="year"]{display:none}
   .tile-work{flex:0 1000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   @media(max-width:700px){.tile-year{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}:global(:root[data-gallery="grid"]) .tile-footer:has(.tile-year) .tile-work{display:none}}
-  @media(max-width:700px){.tile-production{display:none}}
   .glyph-tile.decided-checked{background:var(--good-light)}
   .glyph-tile.decided-flagged{background:var(--wrong-light)}
   .glyph-tile.decided-checked:hover{background:light-dark(#e0ece4, rgb(130 205 163 / 18%))}
