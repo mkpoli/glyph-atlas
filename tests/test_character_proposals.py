@@ -82,3 +82,22 @@ def test_a_box_at_the_top_edge_is_cut_without_leaving_the_image() -> None:
     parts = sorted((p for p in out if p.x == COLUMNS[1] and p.y < 2 * PITCH), key=lambda p: p.y)
     assert len(parts) == 2
     assert parts[0].y == 0 and parts[1].y >= SIDE
+
+
+def test_a_box_inside_a_character_box_is_dropped() -> None:
+    grid = [cell(column, row) for column in range(len(COLUMNS)) for row in range(ROWS)]
+    inner = Box(x=COLUMNS[0] + 8, y=TOP + 2 * PITCH + 8, w=12, h=12)
+    out = split_boxes(page(grid), proposals([*grid, inner]))
+    assert len(out) == len(grid)
+    assert not any((p.x, p.y, p.w, p.h) == (inner.x, inner.y, inner.w, inner.h) for p in out)
+
+
+def test_two_boxes_over_one_character_are_joined() -> None:
+    grid = [cell(column, row) for column in range(len(COLUMNS)) for row in range(ROWS)]
+    split = [Box(x=COLUMNS[2], y=TOP + 5 * PITCH, w=SIDE, h=SIDE // 2),
+             Box(x=COLUMNS[2], y=TOP + 5 * PITCH + SIDE // 2, w=SIDE, h=SIDE // 2)]
+    boxes = [box for box in grid if not (box.x == COLUMNS[2] and box.y == TOP + 5 * PITCH)] + split
+    out = split_boxes(page(grid), proposals(boxes))
+    parts = [p for p in out if p.x == COLUMNS[2] and TOP + 4 * PITCH < p.y < TOP + 6 * PITCH]
+    assert len(parts) == 1
+    assert parts[0].h >= SIDE - 1
