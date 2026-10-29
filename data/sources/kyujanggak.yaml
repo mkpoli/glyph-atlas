@@ -1,0 +1,42 @@
+id: kyujanggak
+name: 규장각한국학연구원 원문검색서비스 — 양안
+publisher: 서울대학교 규장각한국학연구원
+holder: 서울대학교 규장각한국학연구원
+kind: image-collection
+url: https://kyudb.snu.ac.kr/
+licence: bespoke-free
+licence_evidence: https://kyu.snu.ac.kr/news/faq/
+attribution: 서울대학교 규장각한국학연구원
+access:
+  gwangmu_catalogue: https://kyudb.snu.ac.kr/book/list.do?book_cate=MGO07&focus=&mid=MGO
+  image_list: https://kyudb.snu.ac.kr/pf01/viewImgList.do
+  viewer: https://kyudb.snu.ac.kr/pf01/rendererImg.do
+  image: https://kyudb.snu.ac.kr/ImageServlet.do
+  method: The image list is a POST with item_cd, book_cd and vol_no. The viewer supplies the image path used by ImageServlet.
+collections:
+  - book_cd: GK18324_00
+    item_cd: FND
+    vol_no: '0001'
+    title: 慶尙道昌原府所在龍洞宮田畓庚子量案
+    shelfmark: 奎18324
+    date: 1722
+    date_literal: 景宗2年(1722)
+    catalogue: https://kyudb.snu.ac.kr/book/view.do?book_cd=GK18324_00&mid=MOK&target=master
+    image_path: /data01/stream/FND/IMG/GK18324_00/GK18324_00_0001/
+    image_list_sha256: 424f6f03cd5afe3857b81d6ceccd7c326bf862fe0adc1911f5c22809166b690b
+    image_list_bytes: 19141
+    pages: 75
+prospective_records:
+  - title: 慶尙南道山淸郡量案
+    shelfmark: 奎17689-v.1-15
+    description: A 1904 Gwangmu land register; the catalogue identifies 15 volumes.
+    evidence: https://kyudb.snu.ac.kr/book/list.do?book_cate=MGO07&focus=&mid=MGO
+  - title: 京畿道水原郡量案
+    shelfmark: 奎17651-v.1-73
+    description: A 1900 Gwangmu land register; the catalogue identifies 73 volumes.
+    evidence: https://kyudb.snu.ac.kr/book/list.do?book_cate=MGO07&focus=&mid=MGO
+notes:
+  - The institute's FAQ says material published on its website may be freely used with attribution to 서울대학교 규장각한국학연구원.
+  - The 광무양안 catalogue is one part of the institute's land-register holdings; it is not a complete catalogue of Joseon land registers.
+  - The collector imports the Changwon volume's page images, preserving inserted slips as separate images. It does not provide transcriptions or character boxes.
+  - Verify the rights and image access for each additional selected record before collection.
