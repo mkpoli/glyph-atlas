@@ -1,9 +1,10 @@
 # Plan
 
-The archive covers historical Japanese writing across works, genres, and collections. The first
-Hokkaido works are a pilot. Source acquisition continues across Honkoku and Japanese Wikisource;
-coverage is measured separately for discovered works, collected transcriptions, scanned pages,
-extracted characters, and human-reviewed forms. The resource survey below dates to 2026-09-11.
+The archive covers historical writing in Chinese characters and the scripts written with them across
+the Sinosphere. The first sources are Japanese: the Hokkaido works are a pilot, and source
+acquisition continues across Honkoku and Japanese Wikisource. Coverage is measured separately for
+discovered works, collected transcriptions, scanned pages, extracted characters, and human-reviewed
+forms. The resource survey below dates to 2026-09-11 and covers the Japanese sources.
 
 ## 1. The dataset
 
