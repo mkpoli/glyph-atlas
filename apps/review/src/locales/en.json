@@ -1208,7 +1208,7 @@
   "line.box": "{label}, choose this box",
   "common.cancel": "Cancel",
   "line.redraw": "Redraw box",
-  "line.redraw.pick": "Choose a crop in the run to redraw its box.",
+  "line.redraw.pick": "Choose a crop to redraw its box.",
   "line.noBox": "This crop’s box cannot be redrawn.",
   "favourites.title": "Favourites",
   "favourites.add": "Add to favourites",
