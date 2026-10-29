@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import tempfile
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlencode
@@ -63,15 +64,24 @@ def build(book: dict, rows: list[dict], held: list[images.ImageRecord]) -> tuple
     return document, pages
 
 
-def collect(source: Path, out: Path, cache: Path, image_cache: Path | None = None) -> dict:
+def collect(source: Path, out: Path, cache: Path, image_cache: Path | None = None,
+            books: Sequence[str] | None = None) -> dict:
+    """Collect the volumes named as `book_cd:vol_no`, or every volume the source lists."""
     config = yaml.safe_load(source.read_text(encoding="utf-8"))
+    wanted = list(dict.fromkeys(books or []))
+    listed = [f"{book['book_cd']}:{book['vol_no']}" for book in config["collections"]]
+    unknown = sorted(set(wanted) - set(listed))
+    if unknown:
+        raise ValueError("Volume not in the source record: " + ", ".join(unknown))
+    selected = [book for book, key in zip(config["collections"], listed, strict=True)
+                if not wanted or key in wanted]
     if out.exists() and not out.is_symlink():
         raise ValueError("Output must be absent or a snapshot symlink")
     if any((out / name).exists() for name in ("review.sqlite", "reviews.jsonl")):
         raise ValueError("Output has review data; collect into a new directory to preserve it")
     documents, pages = [], []
     with httpx.Client(timeout=60, follow_redirects=True) as client:
-        for book in config["collections"]:
+        for book in selected:
             list_path = net.download(IMAGE_LIST, cache / (book["image_list_sha256"] + ".json"),
                                      method="POST", data={k: book[k] for k in ("item_cd", "book_cd", "vol_no")},
                                      expected="json", client=client)

@@ -26,17 +26,29 @@ collections:
     image_list_sha256: 424f6f03cd5afe3857b81d6ceccd7c326bf862fe0adc1911f5c22809166b690b
     image_list_bytes: 19141
     pages: 75
+  - book_cd: GK17689_00
+    item_cd: FND
+    vol_no: '0001'
+    title: 慶尙南道山淸郡量案
+    shelfmark: 奎17689-v.1
+    date: 1904
+    date_literal: 光武8年(1904)
+    catalogue: https://kyudb.snu.ac.kr/book/view.do?book_cd=GK17689_00&mid=MOK&target=master
+    image_path: /data01/stream/FND/IMG/GK17689_00/GK17689_00_0001/
+    image_list_sha256: f270090c0805d192a5e2cc5357bf4f0f59c1fcab15fbb7a77a90ae1ae9ae060c
+    image_list_bytes: 46501
+    pages: 183
 prospective_records:
-  - title: 慶尙南道山淸郡量案
-    shelfmark: 奎17689-v.1-15
-    description: A 1904 Gwangmu land register; the catalogue identifies 15 volumes.
-    evidence: https://kyudb.snu.ac.kr/book/list.do?book_cate=MGO07&focus=&mid=MGO
   - title: 京畿道水原郡量案
     shelfmark: 奎17651-v.1-73
     description: A 1900 Gwangmu land register; the catalogue identifies 73 volumes.
-    evidence: https://kyudb.snu.ac.kr/book/list.do?book_cate=MGO07&focus=&mid=MGO
+    evidence: https://kyudb.snu.ac.kr/book/view.do?book_cd=GK17651_00&mid=MOK&target=master
+  - title: 京畿道水原郡量案
+    shelfmark: 奎17650-v.1-66
+    description: A 1903 register of the same district; the catalogue identifies 66 volumes.
+    evidence: https://kyudb.snu.ac.kr/book/view.do?book_cd=GK17650_00&mid=MOK&target=master
 notes:
   - The institute's FAQ says material published on its website may be freely used with attribution to 서울대학교 규장각한국학연구원.
   - The 광무양안 catalogue is one part of the institute's land-register holdings; it is not a complete catalogue of Joseon land registers.
-  - The collector imports the Changwon volume's page images, preserving inserted slips as separate images. It does not provide transcriptions or character boxes.
+  - The collector imports each selected volume's page images, preserving inserted slips as separate images. It does not provide transcriptions or character boxes.
   - Verify the rights and image access for each additional selected record before collection.
