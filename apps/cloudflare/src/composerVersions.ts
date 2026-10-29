@@ -4,5 +4,6 @@ export const COMPOSER_VERSIONS = ['bd0829bc6fbf-sans-compose-layout-v4-f5+letter
   'bd0829bc6fbf-sans-compose-layout-v4-f5',
   '6bf8919-kaisho-compose-layout-v4-kaisho-f5',
   'a1851bf-serif-bmp-compose-layout-v4-serif-f5',
+  '62af8c26f961-serif-compose-layout-v4-serif-f5',
   '6bf8919-kaisho-compose-layout-v4-kaisho-f5+ownhosts'] as const;
 export const COMPOSER_VERSION = COMPOSER_VERSIONS[0];
