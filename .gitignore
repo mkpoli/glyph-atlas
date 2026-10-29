@@ -19,6 +19,8 @@ logs/
 *.jpeg
 *.png
 *.webp
+# The author's face on the sponsor button and in its dialog.
+!apps/review/static/sponsor-*.webp
 *.tif
 *.tiff
 .DS_Store
