@@ -9,7 +9,7 @@
 </script>
 
 <button class="sponsor" aria-label={t('sponsor.label')} aria-haspopup="dialog" aria-expanded={open} onclick={() => open = true}>
-  <span class="face" aria-hidden="true"><img src="/sponsor-face.webp" alt="" width="24" height="24" decoding="async" /><svg class="badge" viewBox="0 0 24 24"><path d={heart} /></svg></span>
+  <span class="face" aria-hidden="true"><img src="/sponsor-face.webp" alt="" width="24" height="24" decoding="async" /><svg class="face-heart" viewBox="0 0 24 24"><path d={heart} /></svg></span>
   <span class="label">{t('sponsor.label')}</span>
 </button>
 
@@ -52,9 +52,9 @@
   .sponsor:active { transform: scale(.97); }
   .face { position: relative; flex: none; width: 26px; height: 26px; }
   .face img { display: block; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 1.5px var(--sp-ring), 0 0 0 2.5px var(--sp-line); }
-  .badge { position: absolute; right: -4px; bottom: -3px; width: 12px; height: 12px; fill: var(--sp-heart); stroke: var(--sp-ring); stroke-width: 2.5; paint-order: stroke;
+  .face-heart { position: absolute; right: -4px; bottom: -3px; width: 12px; height: 12px; fill: var(--sp-heart); stroke: var(--sp-ring); stroke-width: 2.5; paint-order: stroke;
     overflow: visible; transform-origin: 50% 60%; animation: beat 2.8s ease-in-out infinite; }
-  .sponsor:hover .badge, .sponsor:focus-visible .badge { animation: bounce .6s ease-in-out infinite; }
+  .sponsor:hover .face-heart, .sponsor:focus-visible .face-heart { animation: bounce .6s ease-in-out infinite; }
   @media (max-width: 700px) { .sponsor { width: 44px; height: 44px; padding: 0; justify-content: center; } .label { display: none; } .face { width: 30px; height: 30px; } }
 
   .sponsor-dialog { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 16px;
