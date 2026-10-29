@@ -288,6 +288,13 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 :root:not([data-gallery="grid"]) .collage-cell .tile-count{display:none}
 :root:not([data-gallery="grid"]) .collage-cell .tile-work{grid-area:2/1/3/-1;padding-right:18px;font-family:inherit;font-size:11px;line-height:1.3;color:var(--muted)}
 :root:not([data-gallery="grid"]) .collage-cell .tile-arrow{display:none}
+/* A run's two lines are its own: the writing holds the first whole, the work and the year the
+   second, the year at its right. The box a reviewer selects it with takes the corner above. */
+:root:not([data-gallery="grid"]) .collage-cell.run-tile .tile-caption{display:flex;flex-direction:column;align-items:stretch}
+:root:not([data-gallery="grid"]) .collage-cell.run-tile .tile-footer{display:flex;align-items:baseline;gap:4px;position:static;inset:auto}
+:root:not([data-gallery="grid"]) .collage-cell.run-tile .tile-work{flex:1 1 auto;min-width:0;padding-right:0}
+:root:not([data-gallery="grid"]) .collage-cell.run-tile .tile-year{flex:none;order:1;margin-left:auto}
+:root:not([data-gallery="grid"]) .collage-cell.run-tile .tile-select{top:1px;right:1px;bottom:auto}
 :root:not([data-gallery="grid"]) .collage-cell:focus-visible{z-index:1;outline-offset:-3px}
 :root:not([data-gallery="grid"]) .glyph-grid.collage .visual-grid-heading{background:none}
 :root[data-gallery="grid"] .collage-block{display:contents}
