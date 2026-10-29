@@ -4,14 +4,14 @@
   "type": "module",
   "scripts": {
     "types": "wrangler types",
-    "check": "tsc --noEmit",
+    "check": "tsrs --noEmit",
     "test": "bun test --isolate",
     "deploy": "bun run --cwd ../review build && wrangler deploy",
     "dev": "bun run --cwd ../review build && wrangler dev"
   },
   "devDependencies": {
-    "wrangler": "4.135.0",
-    "typescript": "~5.9.3"
+    "tsrs": "0.20.1-ts7.1.0-beta",
+    "wrangler": "4.135.0"
   },
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.7",
