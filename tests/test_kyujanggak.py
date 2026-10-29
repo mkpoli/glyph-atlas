@@ -121,3 +121,47 @@ def test_failed_switch_leaves_no_generation(tmp_path, monkeypatch):
         kyujanggak.collect(source, out, tmp_path / "cache")
     assert list((tmp_path / ".dataset-versions").iterdir()) == []
     assert not out.exists()
+
+
+def second_volume(book, rows):
+    other = dict(book, book_cd="GK17689_00", title="Second volume", shelfmark="奎17689-v.1",
+                 date=1904, date_literal="光武8年(1904)")
+    moved = [dict(row, BOOK_CD="GK17689_00", FILE_NM=row["FILE_NM"].replace("GK18324_00", "GK17689_00"))
+             for row in rows]
+    payload = json.dumps({"list": moved}).encode()
+    other.update(image_list_sha256=hashlib.sha256(payload).hexdigest(), image_list_bytes=len(payload))
+    return other, payload
+
+
+def test_book_selection_collects_one_volume(tmp_path, monkeypatch):
+    first, rows, payload = fixture()
+    first["image_path"] = "/data01/stream/FND/IMG/GK18324_00/GK18324_00_0001/"
+    second, payload2 = second_volume(first, rows)
+    source = tmp_path / "source.yaml"
+    source.write_text(yaml.safe_dump({"collections": [first, second]}))
+    payloads = {"GK18324_00": payload, "GK17689_00": payload2}
+
+    def download(url, path, **kwargs):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payloads[kwargs["data"]["book_cd"]])
+        return path
+
+    monkeypatch.setattr(kyujanggak.net, "download", download)
+    monkeypatch.setattr(kyujanggak.images, "fetch", lambda url, **kwargs: ImageRecord(
+        url=url, sha256="a" * 64, width=100, height=200, bytes=10, fetched_at=datetime.now(UTC)))
+    out = tmp_path / "dataset"
+    summary = kyujanggak.collect(source, out, tmp_path / "cache", books=["GK17689_00:0001"])
+    assert summary["documents"] == 1 and summary["pages"] == 2
+    assert Dataset(out).read("documents")[0].id.startswith("kyujanggak:GK17689_00")
+
+
+def test_unlisted_volume_is_rejected_before_download(tmp_path, monkeypatch):
+    book, _, _payload = fixture()
+    book["image_path"] = "/data01/stream/FND/IMG/GK18324_00/GK18324_00_0001/"
+    source = tmp_path / "source.yaml"
+    source.write_text(yaml.safe_dump({"collections": [book]}))
+    calls = []
+    monkeypatch.setattr(kyujanggak.net, "download", lambda *args, **kwargs: calls.append(args))
+    with pytest.raises(ValueError, match="not in the source record"):
+        kyujanggak.collect(source, tmp_path / "dataset", tmp_path / "cache", books=["GK00000_00:0001"])
+    assert calls == []
