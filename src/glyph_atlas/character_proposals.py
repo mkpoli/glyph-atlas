@@ -44,6 +44,8 @@ SPLIT_PITCHES = 1.5
 MIN_PART = 0.4
 #: A box this share of whose area lies in a larger box is that character's part, not a character.
 NESTED = 0.9
+#: A column whose boxes are closer than this share of the page's character size has no usable pitch.
+NARROW_PITCH = 0.3
 #: Two boxes whose combined height is at most this many pitches are one character
 #: when the paper between them is no more than `GAP` of a pitch.
 MERGED = 1.25
@@ -108,10 +110,12 @@ def split_boxes(image: Image.Image, proposals: list[Proposal], *,
     cut: dict[int, list[Box]] = {}
     for chain in chains:
         steps = [lower.y - upper.y for upper, lower in pairwise(chain)]
-        short = [step for step in steps if step < ADJACENT * size]
+        short = [step for step in steps if 0 < step < ADJACENT * size]
         if not short:
             continue
         pitch = float(np.median(short))
+        if pitch < NARROW_PITCH * size:
+            continue
         for box in chain:
             parts = max(1, round(box.h / pitch))
             if parts < 2 or box.h < pitches * pitch or box.h / parts < MIN_PART * pitch:
@@ -177,10 +181,12 @@ def _merge_fragments(proposals: list[Proposal]) -> list[Proposal]:
     for chain in family:
         rows = [position[id(box)] for box in chain]
         steps = [lower.y - upper.y for upper, lower in pairwise(chain)]
-        short = [step for step in steps if step < ADJACENT * size]
+        short = [step for step in steps if 0 < step < ADJACENT * size]
         if not short:
             continue
         pitch = float(np.median(short))
+        if pitch < NARROW_PITCH * size:
+            continue
         row = 0
         while row + 1 < len(rows):
             upper, lower = rows[row], rows[row + 1]
