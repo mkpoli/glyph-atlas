@@ -1,6 +1,6 @@
 <script>
   // The header's Sponsor pill, led by the author's face, and the dialog it opens: the author's
-  // portrait, why they need help, then three steps that end at the Ko-fi button. Ko-fi handles the
+  // portrait, what a tip pays for, then three steps that end at the Ko-fi button. Ko-fi handles the
   // amount and the payment; companies can write in for an ad on the site.
   import { t } from '$lib/i18n.svelte.js'
   let open = $state(false), dialog = $state()
