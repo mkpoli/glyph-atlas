@@ -42,6 +42,12 @@ NMS = 0.2
 SPLIT_PITCHES = 1.5
 #: A part shorter than this share of a pitch is a sliver, so its box is left whole.
 MIN_PART = 0.4
+#: A box this share of whose area lies in a larger box is that character's part, not a character.
+NESTED = 0.9
+#: Two boxes whose combined height is at most this many pitches are one character
+#: when the paper between them is no more than `GAP` of a pitch.
+MERGED = 1.25
+GAP = 0.15
 
 
 @dataclass(frozen=True)
@@ -66,7 +72,7 @@ def proposer(onnx: Path, *, score: float = SCORE, nms: float = NMS, split: bool 
     settings: tuple[Any, ...] = (model, score, nms, detect.TILE, detect.OVERLAP, detect.CONTAIN, detect.INK,
                                  detect.INK_PERCENTILE, detect.INK_REFERENCE)
     if split:
-        settings += (("split", SPLIT_PITCHES, MIN_PART),)
+        settings += (("split", 2, SPLIT_PITCHES, MIN_PART, NESTED, MERGED, GAP),)
     return f"{FAMILY}-{hashlib.sha256(repr(settings).encode()).hexdigest()[:12]}"
 
 
@@ -80,7 +86,8 @@ def propose(image: Image.Image, detector: Any, *, split: bool = False) -> list[P
 
 def split_boxes(image: Image.Image, proposals: list[Proposal], *,
                 pitches: float = SPLIT_PITCHES) -> list[Proposal]:
-    """`proposals` with each box that is more than `pitches` of its column's pitch tall cut in two.
+    """`proposals` refined for a page of columns: a box inside another character dropped, a box that
+    holds two stacked characters cut, and two boxes that hold one character joined.
 
     The boxes a page's detector found give its columns and their pitch: the median step between
     neighbouring boxes of a column. A box of about two pitches holds two stacked characters, and is
@@ -90,6 +97,7 @@ def split_boxes(image: Image.Image, proposals: list[Proposal], *,
     """
     from .column_proposals import ADJACENT, SHORTEST, SLACK, columns, ink, trimmed
 
+    proposals = _drop_nested(proposals)
     if not proposals:
         return []
     boxes = [Box(x=p.x, y=p.y, w=p.w, h=p.h) for p in proposals]
@@ -124,11 +132,74 @@ def split_boxes(image: Image.Image, proposals: list[Proposal], *,
             if len(edges) > 2:
                 cut[position[id(box)]] = [Box(x=box.x, y=top, w=box.w, h=bottom - top)
                                           for top, bottom in pairwise(edges)]
-    if not cut:
-        return list(proposals)
     out: list[Proposal] = []
     for index, proposal in enumerate(proposals):
         for box in cut.get(index, [Box(x=proposal.x, y=proposal.y, w=proposal.w, h=proposal.h)]):
             out.append(Proposal(x=box.x, y=box.y, w=box.w, h=box.h, score=proposal.score,
                                 kind=proposal.kind, features=dict(proposal.features)))
-    return out
+    return _merge_fragments(out)
+
+
+def _drop_nested(proposals: list[Proposal]) -> list[Proposal]:
+    """`proposals` without a box `NESTED` of whose area lies in a larger box: the detector read a part
+    of a character as a character of its own."""
+    boxes = [Box(x=p.x, y=p.y, w=p.w, h=p.h) for p in proposals]
+    keep = []
+    for index, box in enumerate(boxes):
+        inner = any(
+            other is not box and other.w * other.h > box.w * box.h
+            and _overlap(box, other) >= NESTED * box.w * box.h
+            for position, other in enumerate(boxes) if position != index
+        )
+        if not inner:
+            keep.append(proposals[index])
+    return keep
+
+
+def _overlap(a: Box, b: Box) -> int:
+    return (max(0, min(a.x + a.w, b.x + b.w) - max(a.x, b.x))
+            * max(0, min(a.y + a.h, b.y + b.h) - max(a.y, b.y)))
+
+
+def _merge_fragments(proposals: list[Proposal]) -> list[Proposal]:
+    """`proposals` with two boxes of one column joined when together they are one character tall and
+    `GAP` of a pitch or less stands between them."""
+    from .column_proposals import ADJACENT, SHORTEST, columns, trimmed
+
+    if not proposals:
+        return []
+    boxes = [Box(x=p.x, y=p.y, w=p.w, h=p.h) for p in proposals]
+    position = {id(box): index for index, box in enumerate(boxes)}
+    size = float(np.median([max(box.w, box.h) for box in boxes]))
+    family = [chain for chain in (trimmed(column) for column in columns(boxes, size)) if len(chain) >= SHORTEST]
+    alive = [True] * len(boxes)
+    joined = 0
+    for chain in family:
+        rows = [position[id(box)] for box in chain]
+        steps = [lower.y - upper.y for upper, lower in pairwise(chain)]
+        short = [step for step in steps if step < ADJACENT * size]
+        if not short:
+            continue
+        pitch = float(np.median(short))
+        row = 0
+        while row + 1 < len(rows):
+            upper, lower = rows[row], rows[row + 1]
+            if not (alive[upper] and alive[lower]):
+                row += 1
+                continue
+            a, b = boxes[upper], boxes[lower]
+            gap = b.y - (a.y + a.h)
+            if -0.2 * pitch <= gap <= GAP * pitch and a.h + b.h <= MERGED * pitch:
+                left, right = min(a.x, b.x), max(a.x + a.w, b.x + b.w)
+                boxes[upper] = Box(x=left, y=a.y, w=right - left, h=b.y + b.h - a.y)
+                alive[lower] = False
+                rows.pop(row + 1)
+                joined += 1
+                row = max(0, row - 1)
+            else:
+                row += 1
+    if not joined:
+        return proposals
+    return [Proposal(x=boxes[index].x, y=boxes[index].y, w=boxes[index].w, h=boxes[index].h,
+                     score=proposal.score, kind=proposal.kind, features=dict(proposal.features))
+            for index, proposal in enumerate(proposals) if alive[index]]
