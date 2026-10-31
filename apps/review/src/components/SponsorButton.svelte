@@ -5,6 +5,8 @@
   import { t } from '$lib/i18n.svelte.js'
   let open = $state(false), dialog = $state()
   $effect(() => { if (open && dialog && !dialog.open) dialog.showModal() })
+  // The supporter roll is a custom element served by supporters.mkpo.li; the dialog loads it the first time it opens.
+  $effect(() => { if (open) import(/* @vite-ignore */ 'https://supporters.mkpo.li/roll.js').catch(() => {}) })
   // A click on the backdrop closes the dialog; one on its own scrollbar also targets the dialog, so
   // only a click outside its box counts.
   function outside(event) {
@@ -44,6 +46,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18v12H3zM3 7l9 6 9-6" /></svg>
         <span class="copy"><strong>{t('sponsor.company')}</strong><small>{t('sponsor.companyHint')}</small></span>
       </a>
+      <supporters-roll label={t('sponsor.supporters')} anonymous={t('sponsor.anonymous')}></supporters-roll>
       <p class="thanks">{t('sponsor.thanks')}</p>
     </div>
   </dialog>
@@ -109,6 +112,7 @@
   .company:hover { background: var(--surface-selected); color: var(--ink); }
   .company svg { flex: none; width: 16px; height: 16px; margin-top: 2px; }
   .company .copy strong { font-size: 12.5px; color: var(--ink); }
+  supporters-roll { --sp-text: var(--ink); --sp-muted: var(--muted); }
   .thanks { font-size: 12.5px; line-height: 1.5; color: var(--muted); text-align: center; }
   @keyframes beat { 0%, 70%, 100% { transform: scale(1) } 78% { transform: scale(1.18) } 86% { transform: scale(.96) } 93% { transform: scale(1.1) } }
   @keyframes bounce { 0%, 100% { transform: translateY(0) scale(1) } 40% { transform: translateY(-2px) scale(1.18) rotate(-8deg) } }
