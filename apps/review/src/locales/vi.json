@@ -1198,7 +1198,7 @@
   "contact.title": "Liên hệ và cộng đồng",
   "contact.intro": "Glyph Atlas được xây dựng công khai. Bạn có thể đặt câu hỏi, chỉ ra chữ bị đọc nhầm hoặc tham gia công việc qua các kênh dưới đây.",
   "contact.chat.title": "Trò chuyện",
-  "contact.chat.body": "Các phòng trò chuyện của cộng đồng nằm trong một không gian trên Matrix và được kết nối với Discord, Telegram, IRC (Libera.Chat) và QQ. Tin nhắn gửi ở một nơi sẽ được chuyển đến tất cả những nơi còn lại.",
+  "contact.chat.body": "Các phòng trò chuyện của cộng đồng nằm trong một không gian trên Matrix và được kết nối với Discord, Telegram, QQ và IRC (Libera.Chat). Tin nhắn gửi ở một nơi sẽ được chuyển đến tất cả những nơi còn lại.",
   "contact.chat.members.other": "{count} thành viên",
   "contact.chat.rooms": "Không gian này có một phòng chào đón, các phòng riêng cho tiếng Anh, tiếng Trung, tiếng Nhật, tiếng Hàn và tiếng Việt, một phòng cho những phát hiện thú vị, một phòng hỏi đáp, một phòng góp ý và một phòng phát triển.",
   "contact.matrix.title": "Tham gia qua Matrix",
