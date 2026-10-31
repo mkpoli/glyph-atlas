@@ -30,6 +30,19 @@
   // How many people each chat place has, keyed by its mark; read once the page is open (`community.ts`).
   let members = $state({})
   $effect(() => { fetch('/api/community').then(response => response.ok ? response.json() : {}).then(found => { members = found }).catch(() => {}) })
+  // Recent messages from the public rooms, so someone who has not signed in can see what the chat is like
+  // before joining (`preview.ts`). The panel stays out of the page until there is something to show.
+  let preview = $state(undefined)
+  $effect(() => { fetch('/api/preview').then(response => response.ok ? response.json() : []).then(found => { preview = found }).catch(() => { preview = [] }) })
+  // A message reads as a time today, and as a date and time before that, so a quiet room still looks alive.
+  const at = (seconds) => {
+    const when = new Date(seconds)
+    const today = new Date()
+    const sameDay = when.toDateString() === today.toDateString()
+    return when.toLocaleString(locale(), sameDay
+      ? { hour: '2-digit', minute: '2-digit' }
+      : { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
   // The IRC picker starts on the channel for the page's language; lzh pages are Chinese.
   const spoken = $derived(locale() === 'lzh' ? 'zh' : locale().split('-')[0])
   let irc, picked = $state([])
@@ -58,13 +71,33 @@
           {#if chat.mark === 'irc'}
             <a href={chat.href} rel="noopener" target="_blank" aria-haspopup="dialog" onclick={event => { event.preventDefault(); irc.showModal() }}><LinkMark name={chat.mark} />{chat.name}</a>
           {:else}
-            <a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}{#if typeof members[chat.mark] === 'number'}<small>{t('contact.chat.members', { count: members[chat.mark] })}</small>{/if}</a>
+            <a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}{#if chat.count !== false && typeof members[chat.mark] === 'number'}<small>{t('contact.chat.members', { count: members[chat.mark] })}</small>{/if}</a>
           {/if}
         </li>
       {/each}
     </ul>
     <p>{t('contact.chat.rooms')}</p>
   </section>
+
+  {#if preview?.length}
+    <section>
+      <h2>{t('contact.preview.title')}</h2>
+      <p>{t('contact.preview.body')}</p>
+      <div class="preview">
+        {#each preview as room (room.alias)}
+          <article>
+            <h3>{room.name}</h3>
+            <ul>
+              {#each room.messages as line, index (index)}
+                <li><span class="who">{line.name}</span> <span class="what">{line.body}</span> <time datetime={new Date(line.at).toISOString()}>{at(line.at)}</time></li>
+              {/each}
+            </ul>
+          </article>
+        {/each}
+      </div>
+      <p class="preview-note">{t('contact.preview.note')}</p>
+    </section>
+  {/if}
 
   <section>
     <h2>{t('contact.matrix.title')}</h2>
@@ -151,6 +184,20 @@
   .doors a:hover { border-color: var(--line-hover); }
   .doors :global(.link-mark) { width: 18px; height: 18px; margin: 0; vertical-align: 0; }
   .doors small { color: var(--muted); font-weight: 400; }
+  .preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+  .preview article { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+  .preview h3 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+  .preview ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; }
+  /* A message may hold an IDS description (⿰𠤕⿱龴疋). Plangothic draws the rare ideographs it names, but no
+     bundled font draws the operators themselves (U+2FF0-2FFB), so those come from a reader's own fonts where
+     it has them (`apps/review/static/fonts/README.md`). */
+  @font-face { font-family: "IDS Parts"; src: url("/fonts/Plangothic-ids-parts.woff2") format("woff2"); font-display: swap; unicode-range: U+2E80-2EFF, U+31E4-31EF, U+20000-3FFFF; }
+  @font-face { font-family: "IDS Strokes"; src: url("/fonts/NotoSansCJKjp-ids-strokes.woff2") format("woff2"); font-display: swap; unicode-range: U+31C0-31E3; }
+  .preview li { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; font-family: Inter, "Helvetica Neue", Arial, "Noto Sans", "IDS Parts", "IDS Strokes", "GenZui Sans", sans-serif; }
+  .preview .who { font-weight: 500; }
+  .preview .who::after { content: ':'; }
+  .preview time { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .preview-note { color: var(--muted); font-size: 12px; }
   .message-form { display: grid; gap: 6px; margin-top: 12px; }
   .message-form label { font-weight: 500; margin-top: 6px; }
   .message-form textarea, .message-form input { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; box-sizing: border-box; }

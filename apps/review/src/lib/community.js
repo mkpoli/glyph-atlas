@@ -3,8 +3,14 @@
 // community's Element at chat.glyphatlas.org, where a Glyph Atlas account signs in. Each `mark` names a
 // `LinkMark`.
 export const SPACE = '#glyphatlas:glyphatlas.org'
+// The space, addressed by matrix.to rather than by one app, for people who use a Matrix app of their own
+// or who want to see the rooms before signing in.
+export const MATRIX_TO = `https://matrix.to/#/${SPACE}`
 export const CHATS = [
-  { name: 'Matrix', mark: 'matrix', href: 'https://chat.glyphatlas.org/#/room/#glyphatlas:glyphatlas.org' },
+  // Matrix and matrix.to open the same space by different doors, so neither carries the member count:
+  // one head count beside two doors to one place would read as two places.
+  { name: 'Matrix', mark: 'matrix', href: 'https://chat.glyphatlas.org/#/room/#glyphatlas:glyphatlas.org', count: false },
+  { name: 'matrix.to', mark: 'matrix', href: MATRIX_TO, count: false },
   { name: 'Discord', mark: 'discord', href: 'https://discord.gg/DR25YeAYSg' },
   { name: 'Telegram', mark: 'telegram', href: 'https://t.me/+Q4wiIzMijRwzOWE1' },
   { name: 'IRC', mark: 'irc', href: 'https://web.libera.chat/#glyphatlas' },
