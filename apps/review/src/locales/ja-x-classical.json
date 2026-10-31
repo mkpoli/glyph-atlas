@@ -1194,7 +1194,7 @@
   "contact.title": "連絡及ビ共同體",
   "contact.intro": "字形大圖譜ハ公開ニテ製作セラル。質疑、文字ノ誤讀ノ指摘、或ハ製作ヘノ參與ハ、下記ノ何レノ場ニテモ之ヲ爲サレタシ。",
   "contact.chat.title": "ちゃっと",
-  "contact.chat.body": "共同體ノちゃっとハMatrix上ノ一ツノすぺーすナリ。其ノ各室ハDiscord、Telegram、QQ及ビIRC（Libera.Chat）トぶりっじセラレ、何レカ一處ニ投稿セラレタルめっせーじハ他ノ凡テニモ達ス。",
+  "contact.chat.body": "共同體ノちゃっとハMatrix上ノ一ツノすぺーすナリ。各室ハDiscord、Telegram、IRC（Libera.Chat）トぶりっじセラレ、漢文ノ室ハQQトモぶりっじセラル。何レカ一處ニ投稿セラレタルめっせーじハ其ノ室トぶりっじセラレタル凡テノ所ニモ達ス。",
   "contact.chat.members.other": "{count}人",
   "contact.chat.rooms": "其ノ内ニハ歡迎室、英語・中國語・日本語・韓國語・越南語ノ各室、興味深キ發見ノ室、質疑ノ室、意見室、及ビ開發室アリ。",
   "contact.matrix.title": "Matrixニテノ參加",

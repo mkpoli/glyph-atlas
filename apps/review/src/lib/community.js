@@ -1,7 +1,7 @@
-// The community’s chat: one Matrix space, bridged to a Discord server, a Telegram group, a QQ group and
-// IRC channels on Libera.Chat, so a message sent in one place appears in all. The Matrix door opens the
-// space in the community's Element at chat.glyphatlas.org, where a Glyph Atlas account signs in. Each
-// `mark` names a `LinkMark`.
+// The community’s chat: one Matrix space, bridged to a Discord server, a Telegram group and IRC
+// channels on Libera.Chat, so a message sent in one place appears in all; QQ is bridged to the Chinese
+// room alone. The Matrix door opens the space in the community's Element at chat.glyphatlas.org, where a
+// Glyph Atlas account signs in. Each `mark` names a `LinkMark`.
 export const SPACE = '#glyphatlas:glyphatlas.org'
 export const CHATS = [
   { name: 'Matrix', mark: 'matrix', href: 'https://chat.glyphatlas.org/#/room/#glyphatlas:glyphatlas.org' },
