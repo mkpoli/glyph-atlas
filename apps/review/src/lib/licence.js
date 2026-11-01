@@ -35,5 +35,5 @@ export function sourceLinks(item, corpus = item.origin === 'corpus') {
 export function pageLink(item, corpus = item.origin === 'corpus') {
   if (corpus || !item.page_id || !item.id) return null
   return { href: localize('/pages/' + encodeURIComponent(item.page_id) + '?crop=' + encodeURIComponent(item.id)),
-    label: item.page_number ? t('tile.page', { page: item.page_number }) : t('nav.pages'), internal: true }
+    label: item.page_number ? t('tile.page', { page: item.page_number }) : t('books.pages.heading'), internal: true }
 }

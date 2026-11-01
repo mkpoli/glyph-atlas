@@ -214,18 +214,23 @@ try {
   await browser.waitFor(`document.querySelector('.export-foot [role="status"]').textContent.startsWith('Could not save.')`)
   assert(await browser.evaluate('window.saveAborted === true'), 'a failed write is aborted')
 
-  // A page at position 0 is page 1, in the page list and in the page's own view.
-  await browser.goto(`${service.base}/en/pages`, { waitFor: `document.querySelector('a[href*="doc-1%3Ap1"]') !== null` })
+  // A book is found by a word of its title, and a page at position 0 is page 1 in its list and in the
+  // page's own view.
+  await browser.goto(`${service.base}/en/books`, { waitFor: `document.querySelector('a[href*="doc-1"]') !== null` })
+  await browser.evaluate(`(() => { const field = document.querySelector('.books-find'); field.value = 'calibration book a'; field.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await browser.waitFor(`document.querySelectorAll('.book-card').length === 1 && document.querySelector('.book-title').textContent === 'Calibration book A'`)
+  await browser.goto(`${service.base}/en/books/doc-1`, { waitFor: `document.querySelector('a[href*="doc-1%3Ap1"]') !== null` })
   const listed = await browser.evaluate(`document.querySelector('a[href*="doc-1%3Ap1"] span').textContent`)
   assert(listed === 'Page 1', `the page list names doc-1:p1 ${listed}`)
   await browser.goto(`${service.base}/en/pages/doc-1%3Ap1`, { waitFor: `document.querySelector('.page-title') !== null` })
   const title = await browser.evaluate(`document.querySelector('.page-title').textContent`)
   assert(title.endsWith('Page 1'), `the page view is titled ${title}`)
+  assert(await browser.evaluate(`document.querySelector('.page-toolbar a.quiet-link').getAttribute('href')`) === '/en/books/doc-1', 'the page links back to its book')
 
   assert(errors.length === 0, `page errors: ${errors.join('; ')}`)
   console.log(`display: ${exploreFilters.length} crops unfiltered by default, ${greyFilters.length} grayscale under B&W,`)
   console.log(`         aligned crop opening and pan/reset, focus in the suggestions, Enter chose a candidate,`)
-  console.log(`         export saved ${files[0]} (${body.reviews.length} reviews), page 1 is the page at position 0`)
+  console.log(`         export saved ${files[0]} (${body.reviews.length} reviews), book search reached a page, page 1 is the page at position 0`)
 } finally {
   if (browser) await browser.close()
   await service.stop()
