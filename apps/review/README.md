@@ -5,7 +5,9 @@ A character atlas over the local Atlas review journal.
 - **Explore** shows shuffled character crops, with character filters and kana/kanji groups.
 - **Quick review** deals crops by grapheme, 48 to a round and 24 more on request. Select mismatches, choose an illustrated error type, then save. **Select all** handles rounds with widespread errors.
 - **Flagged** collects unresolved human decisions. The character reviewer advances through the visible collection after each save, preserving its order and scroll position.
-- **Pages** lists the page photos of the dataset and shows each one with its boxes. It appears only on the local review service.
+- **Books** finds a book by a word of its title, holder, shelfmark, genre or date, and opens it: the book's
+  pages, each with its box count, lead to the page photo with its boxes. Both views appear only on the
+  local review service.
 
 The inspector shows the character and a small surrounding region.
 
@@ -96,7 +98,7 @@ Counts describe available cached crops and review decisions; they are not an acc
 ## Drawing boxes
 
 Pages without units, such as photographs whose interlinear marks were never boxed, are boxed by hand.
-Open a page under **Pages**, turn on **Draw** (or press `D`) and drag across a mark. Scroll to zoom,
+Open a page from a book under **Books**, turn on **Draw** (or press `D`) and drag across a mark. Scroll to zoom,
 drag to move, `+`/`-` to zoom and `0` to fit the page. Boxes are stored in page pixels.
 
 The box is saved as soon as it is drawn, as a `manual` unit that is not yet identified. The dialog that

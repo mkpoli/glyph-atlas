@@ -18,11 +18,13 @@ from PIL import Image
 from glyph_atlas import tables
 from glyph_atlas.review.server import create_app
 from glyph_atlas.review.store import Store, apply, replay
-from glyph_atlas.schema import Document, Line, Page, Unit
+from glyph_atlas.schema import Dating, Document, Licence, Line, Page, Rights, Unit
 
 DOCUMENT = "khs:fixture"
 PAGE = f"{DOCUMENT}:1"
 OTHER = f"{DOCUMENT}:2"
+MISCELLANY = "khs:miscellany"
+MISCELLANY_PAGE = f"{MISCELLANY}:1"
 CLIENT = "reviewer-fixture"
 
 
@@ -37,12 +39,20 @@ def dataset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (folder / f"{digest}.jpg").write_bytes(image.read_bytes())
     root = tmp_path / "dataset"
     root.mkdir()
-    tables.write(root / "documents.parquet", [Document(id=DOCUMENT, title="Photographs")], Document)
+    tables.write(root / "documents.parquet", [
+        Document(id=DOCUMENT, title="Photographs", shelfmark="K 1-1", holder="国立国会図書館",
+                 image_rights=Rights(licence=Licence.PUBLIC_DOMAIN, holder="国立国会図書館",
+                                     attribution="国立国会図書館所蔵")),
+        Document(id=MISCELLANY, title="Printed miscellany", shelfmark="WA 8-1", holder="印刷博物館",
+                 genre=["poetry"], dating=[Dating(literal="文政3", kind="publication")]),
+    ], Document)
     tables.write(root / "pages.parquet", [
         # The record is twice the cached photo's size: boxes are in the record's pixels.
         Page(id=OTHER, document_id=DOCUMENT, seq=2, image="https://example.org/2.jpg", width=800, height=600),
         Page(id=PAGE, document_id=DOCUMENT, seq=1, image="https://example.org/1.jpg", width=800, height=600,
              sha256=digest),
+        Page(id=MISCELLANY_PAGE, document_id=MISCELLANY, seq=1, image="https://example.org/m1.jpg",
+             width=800, height=600),
     ], Page)
     return root
 
@@ -57,10 +67,56 @@ def draw(api: TestClient, box: dict, page: str = PAGE, key: str | None = None):
                     json={"box": box, "client_id": CLIENT, "idempotency_key": key or str(uuid4())})
 
 
-def test_pages_lists_every_page_of_a_dataset_without_units(api: TestClient) -> None:
-    body = api.get("/atlas/pages").json()
-    assert body["documents"] == [{"id": DOCUMENT, "title": "Photographs", "units": 0, "pages": [
-        {"id": PAGE, "seq": 1, "units": 0}, {"id": OTHER, "seq": 2, "units": 0}]}]
+def test_the_book_list_names_each_book_with_its_pages_and_boxes(api: TestClient) -> None:
+    body = api.get("/atlas/books").json()
+    assert (body["total"], body["query"], body["offset"], body["limit"]) == (2, None, 0, 48)
+    photographs, miscellany = body["books"]
+    assert (photographs["id"], photographs["title"], photographs["shelfmark"]) == (DOCUMENT, "Photographs", "K 1-1")
+    assert (photographs["page_count"], photographs["box_count"]) == (2, 0)
+    assert (photographs["holder"], photographs["licence"], photographs["attribution"]) == \
+        ("国立国会図書館", "PD", "国立国会図書館所蔵")
+    assert (miscellany["id"], miscellany["holder"], miscellany["genre"]) == (MISCELLANY, "印刷博物館", ["poetry"])
+    assert miscellany["dating"]["witness"] == {"kind": "printed", "text": "文政3", "start": None, "end": None}
+
+
+def test_a_book_is_found_by_its_title_holder_shelfmark_genre_or_date(api: TestClient) -> None:
+    found = lambda q: [book["id"] for book in api.get("/atlas/books", params={"q": q}).json()["books"]]
+    assert found("photog") == [DOCUMENT]
+    assert found("印刷") == [MISCELLANY]
+    assert found("wa 8-1") == [MISCELLANY]
+    assert found("poetry") == [MISCELLANY]
+    assert found("文政3") == [MISCELLANY]
+    # Every word has to be found, whichever field holds it.
+    assert found("printed 印刷") == [MISCELLANY]
+    assert found("printed photographs") == []
+    # A word starts one of the book's words; a fragment inside one finds nothing.
+    assert found("alibration") == []
+    assert api.get("/atlas/books", params={"q": "nothing"}).json()["total"] == 0
+
+
+def test_the_book_list_pages_through_the_books_it_found(api: TestClient) -> None:
+    first = api.get("/atlas/books", params={"limit": 1}).json()
+    second = api.get("/atlas/books", params={"limit": 1, "offset": 1}).json()
+    assert (first["total"], second["total"]) == (2, 2)
+    assert [book["id"] for book in first["books"]] == [DOCUMENT]
+    assert [book["id"] for book in second["books"]] == [MISCELLANY]
+
+
+def test_a_book_names_its_pages_in_order_and_its_credit(api: TestClient) -> None:
+    book = api.get(f"/atlas/books/{DOCUMENT}").json()
+    assert (book["title"], book["page_count"], book["box_count"]) == ("Photographs", 2, 0)
+    assert book["licence"] == "PD" and book["holder"] == "国立国会図書館"
+    assert [page["id"] for page in book["pages"]] == [PAGE, OTHER]
+    assert api.get("/atlas/books/nope").status_code == 404
+
+
+def test_a_page_names_its_book_and_the_book_credit(api: TestClient) -> None:
+    page = api.get(f"/atlas/pages/{PAGE}").json()
+    assert (page["document_id"], page["document_title"]) == (DOCUMENT, "Photographs")
+    assert (page["holder"], page["licence"], page["attribution"]) == \
+        ("国立国会図書館", "PD", "国立国会図書館所蔵")
+    # No manifest is recorded, so the page opens in no outside viewer.
+    assert (page["manifest"], page["canvas_index"]) == (None, None)
 
 
 def test_a_page_names_its_photo_and_whether_boxes_can_be_drawn(api: TestClient) -> None:
@@ -94,7 +150,7 @@ def test_the_first_box_creates_the_page_line_and_later_boxes_reuse_it(api: TestC
     assert len(Store(dataset).lines_of_page(PAGE)) == 1
     page = api.get(f"/atlas/pages/{PAGE}").json()
     assert [unit["id"] for unit in page["units"]] == [f"{PAGE}:l1:m1", f"{PAGE}:l1:m2"]
-    assert api.get("/atlas/pages").json()["documents"][0]["pages"][0]["units"] == 2
+    assert api.get(f"/atlas/books/{DOCUMENT}").json()["pages"][0]["units"] == 2
 
 
 def test_a_repeated_draw_answers_the_first_unit(api: TestClient, dataset: Path) -> None:

@@ -36,7 +36,7 @@
   let menuButton, menuRoot, menu = $state(false), exporting = $state(false), savedNotice = $state('')
   const path = $derived(delocalize(page.url.pathname).path)
   // A run's page is part of Explore; a round's address is part of Quick Review.
-  const section = $derived(path.startsWith('/pages') ? '/pages' : path.startsWith('/forms') ? '/forms' : path.startsWith('/review/') ? '/review' : path.startsWith('/sequence/') ? '/' : path)
+  const section = $derived(path.startsWith('/pages') || path.startsWith('/books') ? '/books' : path.startsWith('/forms') ? '/forms' : path.startsWith('/review/') ? '/review' : path.startsWith('/sequence/') ? '/' : path)
   // A crop page is a crop opened over the collection; a crop the inspector opened takes over from it.
   // Closing it moves to the collection's address in place, and Back opens it again.
   // A shallow Back to the list keeps the crop route mounted, so the address must still be the crop's.
@@ -117,7 +117,7 @@
   })
 </script>
 
-{#snippet destinations()}<a class:active={section === '/'} aria-current={section === '/' ? 'page' : undefined} href={localize('/')}>{t('nav.explore')}</a>{#if data.forms}<a class:active={section === '/forms'} aria-current={section === '/forms' ? 'page' : undefined} href={localize('/forms')}>{t('nav.forms')}</a>{/if}{#if data.pages}<a class:active={section === '/pages'} aria-current={section === '/pages' ? 'page' : undefined} href={localize('/pages')}>{t('nav.pages')}</a>{/if}<a class:active={section === '/flagged'} aria-current={section === '/flagged' ? 'page' : undefined} href={localize('/flagged')}>{t('nav.flagged')}</a><a class:active={section === '/history'} aria-current={section === '/history' ? 'page' : undefined} href={localize('/history')}>{t('nav.history')}</a>{/snippet}
+{#snippet destinations()}<a class:active={section === '/'} aria-current={section === '/' ? 'page' : undefined} href={localize('/')}>{t('nav.explore')}</a>{#if data.forms}<a class:active={section === '/forms'} aria-current={section === '/forms' ? 'page' : undefined} href={localize('/forms')}>{t('nav.forms')}</a>{/if}{#if data.books}<a class:active={section === '/books'} aria-current={section === '/books' ? 'page' : undefined} href={localize('/books')}>{t('nav.books')}</a>{/if}<a class:active={section === '/flagged'} aria-current={section === '/flagged' ? 'page' : undefined} href={localize('/flagged')}>{t('nav.flagged')}</a><a class:active={section === '/history'} aria-current={section === '/history' ? 'page' : undefined} href={localize('/history')}>{t('nav.history')}</a>{/snippet}
 <!-- The menu closes on Escape, handing focus back to its button, and on a tap or click outside it. -->
 <svelte:window onkeydown={event => { if (menu && event.key === 'Escape') { menu = false; menuButton.focus() } }} onpointerdown={event => { if (menu && !menuRoot.contains(event.target)) menu = false }} />
 <header class="site-header"><a href={localize('/')} class="wordmark" aria-label={t('app.home.aria')}><svg class="atlas-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path class="cell" d="M4 4h9v9H4z" fill="currentColor"/><path class="cell" d="M19 4h9v9h-9z" fill="currentColor"/><path class="cell" d="M4 19h9v9H4z" fill="currentColor"/><path class="open-cell" d="M19 19h9v9h-9z" stroke="currentColor" stroke-width="2" pathLength="1"/></svg>{#if localName()}<span class="local-name" lang={locale()}>{localName()}</span>{:else}<span lang="en">GLYPH <b>ATLAS</b></span>{/if}<small class="slogan" lang="ja">Let's 集字!</small></a>

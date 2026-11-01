@@ -5,27 +5,20 @@
   import SourceCredit from '../components/SourceCredit.svelte'
   import CopyValue from '../components/CopyValue.svelte'
   import { viewerLinks } from '../lib/iiifViewers.js'
-  import { number } from '../lib/client.js'
-  import { pageList, pageRecord, drawBox } from '../lib/pages.js'
+  import { pageRecord, drawBox } from '../lib/pages.js'
   import { t, localize } from '../lib/i18n.svelte.js'
   // A page with every box drawn over its photo: on the site, the published page and its crops, the
-  // photo from the holder's IIIF image service; on the local review service, every page of the dataset,
-  // where with Draw on a drag on the photo records a new box in page pixels that then asks for its
-  // character. `focus` is a crop the page opens on, marked and centred; `index` says the list of every
-  // page is served.
-  // `initial` is the page as the server rendered it, shown at once.
-  let { pageId = '', focus = '', index = false, initial = null, inspect } = $props()
-  let documents = $state(null), data = $state(null), error = $state(''), notice = $state('')
+  // photo from the holder's IIIF image service; on the local review service, every page of the
+  // dataset, where with Draw on a drag on the photo records a new box in page pixels that then asks
+  // for its character. `focus` is a crop the page opens on, marked and centred. `initial` is the page
+  // as the server rendered it, shown at once.
+  let { pageId = '', focus = '', initial = null, inspect } = $props()
+  let data = $state(null), error = $state(''), notice = $state('')
   let stage = $state(null), list = $state(null), scale = $state(1), tx = $state(0), ty = $state(0), fitted = 1
   let drawing = $state(false), draft = $state(null), busy = $state(false), open = $state(null)
   let drag = null, closed = false, generation = 0
   const MIN_BOX = 3
 
-  async function loadList() {
-    error = ''
-    try { const result = await pageList(); if (!closed) documents = result.documents }
-    catch (e) { if (!closed) error = e.message }
-  }
   async function loadPage(id, { keepView = false } = {}) {
     const current = ++generation
     error = ''
@@ -154,7 +147,7 @@
     const id = pageId
     closed = false
     if (id && initial?.id === id) { generation++; data = initial; drawing = false; tick().then(() => { if (!closed) { fit(); centreFocus() } }) }
-    else if (id) { data = null; drawing = false; loadPage(id) } else { data = null; loadList() }
+    else if (id) { data = null; drawing = false; loadPage(id) }
   })
   // Another crop of the same page opens on it without reloading the page.
   $effect(() => {
@@ -179,98 +172,76 @@
 
 <svelte:window onkeydown={keys} />
 
-{#if pageId}
-  <section class="page-view">
-    <div class="page-toolbar">
-      {#if index}<a class="quiet-link" href={localize('/pages')}>← {t('pages.back')}</a>{/if}
-      {#if data}
-        <strong class="page-title">{data.document_title ?? data.document_id} · {t('pages.pageNumber', { number: data.seq + 1 })}</strong>
-        <span class="toolbar-space"></span>
-        {#if data.drawable}
-          <button class="draw-toggle" class:active={drawing} aria-pressed={drawing} onclick={() => drawing = !drawing}
-                  title={t('pages.draw.hint')}>{drawing ? t('pages.draw.on') : t('pages.draw.off')} <kbd>D</kbd></button>
-        {:else if index}
-          <span class="page-note">{t('pages.draw.unavailable')}</span>
-        {/if}
-        <div class="zoom-controls">
-          <button aria-label={t('pages.zoom.out')} onclick={() => zoomCentre(0.8)}>−</button>
-          <button aria-label={t('pages.zoom.fit')} onclick={fit}>{Math.round(scale * 100)}%</button>
-          <button aria-label={t('pages.zoom.in')} onclick={() => zoomCentre(1.25)}>+</button>
-        </div>
-        <a class="quiet-link" class:disabled={!data.previous} aria-disabled={!data.previous} href={data.previous ? localize('/pages/' + encodeURIComponent(data.previous)) : undefined}>{t('pages.previous')}</a>
-        <a class="quiet-link" class:disabled={!data.next} aria-disabled={!data.next} href={data.next ? localize('/pages/' + encodeURIComponent(data.next)) : undefined}>{t('pages.next')}</a>
-      {/if}
-    </div>
-    {#if data && !index}
-      <div class="page-sources">
-        <SourceCredit item={credit} />
-        <!-- The manifest with its copy button, then the viewers that open it at this page. -->
-        {#if viewers}<p class="page-viewers"><span class="copyable"><a href={viewers.manifest} target="_blank" rel="noreferrer">{t('pages.source.manifest')}</a><CopyValue value={viewers.manifest} /></span>{'\u00a0· '}{t('pages.source.openIn')}<a href={viewers.curation} target="_blank" rel="noreferrer">{t('pages.source.curationViewer')}</a>{'\u00a0· '}<a href={viewers.universal} target="_blank" rel="noreferrer">{t('pages.source.universalViewer')}</a></p>{/if}
-      </div>
-    {/if}
-    {#if error}<div class="error-message" role="alert">{error}<button onclick={() => loadPage(pageId)}>{t('common.retry')}</button></div>{/if}
+<section class="page-view">
+  <div class="page-toolbar">
     {#if data}
-      <div class="page-workspace">
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="page-stage" class:drawing={drawing && data.drawable} bind:this={stage}
-             onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={() => { drag = null; draft = null }}>
-          <!-- A page with no photo is a blank sheet of its size, its boxes where they stand on it. -->
-          <div class="page-sheet" class:blank={!data.image_url} style="width:{data.width}px;height:{data.height}px;transform:translate({tx}px,{ty}px) scale({scale})">
-            {#if data.image_url}<img src={data.image_url} alt={t('pages.photoAlt', { number: data.seq + 1 })} draggable="false" />{/if}
-            <svg viewBox="0 0 {data.width} {data.height}" aria-hidden="true">
-              {#each data.units as unit (unit.id)}
-                {#if unit.box}
-                  <rect data-unit={unit.id} class="unit-box" class:manual={unit.manual || (unit.detected && !unit.proposed)} class:proposed={unit.proposed} class:unidentified={!unit.character}
-                        class:focused={unit.id === focus} x={unit.box.x} y={unit.box.y} width={unit.box.w} height={unit.box.h} vector-effect="non-scaling-stroke" />
-                {/if}
-              {/each}
-              {#if draft}<rect class="draft-box" x={draft.x} y={draft.y} width={draft.w} height={draft.h} vector-effect="non-scaling-stroke" />{/if}
-            </svg>
-          </div>
-          {#if !data.image_url}<p class="stage-status">{t('pages.photoMissing')}</p>{/if}
-          {#if busy}<p class="stage-status" role="status">{t('common.saving')}</p>{/if}
-        </div>
-        <aside class="page-boxes" bind:this={list}>
-          <h2>{t('pages.boxes.count', { count: data.units.length })}{#if proposedCount}<span class="proposed-count">{t('pages.boxes.proposed', { count: proposedCount })}</span>{/if}</h2>
-          {#if data.drawable}<p class="page-note">{t('pages.draw.hint')}</p>{/if}
-          {#if data.units.length}
-            <ul>
-              {#each data.units as unit (unit.id)}
-                <li><button onclick={() => choose(unit)} class:manual={onPage(unit) && !unit.proposed} class:proposed={unit.proposed} class:focused={unit.id === focus}>
-                  <span class="box-glyph">{#if unit.image}<img src={unit.image} alt="" loading="lazy" />{:else if unit.character}<ReferenceGlyph char={unit.character} code_point={unit.code_point ?? ''} size="sm" />{:else}<span class="box-none">?</span>{/if}</span>
-                  <span class="box-name">{unitLabel(unit)}</span>
-                  <small>{origin(unit)}</small>
-                </button></li>
-              {/each}
-            </ul>
-          {/if}
-        </aside>
+      <a class="quiet-link" href={localize('/books/' + encodeURIComponent(data.document_id))}>← {t('books.back')}</a>
+      <strong class="page-title">{data.document_title ?? data.document_id} · {t('pages.pageNumber', { number: data.seq + 1 })}</strong>
+      <span class="toolbar-space"></span>
+      {#if data.drawable}
+        <button class="draw-toggle" class:active={drawing} aria-pressed={drawing} onclick={() => drawing = !drawing}
+                title={t('pages.draw.hint')}>{drawing ? t('pages.draw.on') : t('pages.draw.off')} <kbd>D</kbd></button>
+      {:else}
+        <span class="page-note">{t('pages.draw.unavailable')}</span>
+      {/if}
+      <div class="zoom-controls">
+        <button aria-label={t('pages.zoom.out')} onclick={() => zoomCentre(0.8)}>−</button>
+        <button aria-label={t('pages.zoom.fit')} onclick={fit}>{Math.round(scale * 100)}%</button>
+        <button aria-label={t('pages.zoom.in')} onclick={() => zoomCentre(1.25)}>+</button>
       </div>
-    {:else if !error}<p class="find-count" role="status">{t('pages.loading')}</p>{/if}
-  </section>
-  {#if open && data}<DrawnBoxDialog unit={open} page={data} close={() => open = null} {changed} />{/if}
-  {#if notice}<div class="save-toast" role="status">✓ {notice}</div>{/if}
-{:else}
-  <section class="explore pages-index">
-    <h1 class="visually-hidden">{t('pages.heading')}</h1>
-    {#if error}<div class="error-message" role="alert">{error}<button onclick={loadList}>{t('common.retry')}</button></div>{/if}
-    {#if !documents && !error}<p class="find-count" role="status">{t('pages.loading')}</p>
-    {:else if documents && !documents.length}<div class="empty"><span class="empty-mark">∅</span><h2>{t('pages.empty')}</h2></div>
-    {:else if documents}
-      {#each documents as document (document.id)}
-        <article class="page-document">
-          <h2>{document.title || document.id}</h2>
-          <p class="page-note">{t('pages.document.pages', { count: document.pages.length })} · {t('pages.boxes.count', { count: document.units })}</p>
-          <ol>
-            {#each document.pages as page (page.id)}
-              <li><a href={localize('/pages/' + encodeURIComponent(page.id))}><span>{t('pages.pageNumber', { number: page.seq + 1 })}</span>{#if page.units}<small>{number(page.units)}</small>{/if}</a></li>
-            {/each}
-          </ol>
-        </article>
-      {/each}
+      <a class="quiet-link" class:disabled={!data.previous} aria-disabled={!data.previous} href={data.previous ? localize('/pages/' + encodeURIComponent(data.previous)) : undefined}>{t('pages.previous')}</a>
+      <a class="quiet-link" class:disabled={!data.next} aria-disabled={!data.next} href={data.next ? localize('/pages/' + encodeURIComponent(data.next)) : undefined}>{t('pages.next')}</a>
     {/if}
-  </section>
-{/if}
+  </div>
+  {#if data && (credit.holder || credit.licence || credit.attribution || viewers)}
+    <div class="page-sources">
+      {#if credit.holder || credit.licence || credit.attribution}<SourceCredit item={credit} />{/if}
+      <!-- The manifest with its copy button, then the viewers that open it at this page. -->
+      {#if viewers}<p class="page-viewers"><span class="copyable"><a href={viewers.manifest} target="_blank" rel="noreferrer">{t('pages.source.manifest')}</a><CopyValue value={viewers.manifest} /></span>{'\u00a0· '}{t('pages.source.openIn')}<a href={viewers.curation} target="_blank" rel="noreferrer">{t('pages.source.curationViewer')}</a>{'\u00a0· '}<a href={viewers.universal} target="_blank" rel="noreferrer">{t('pages.source.universalViewer')}</a></p>{/if}
+    </div>
+  {/if}
+  {#if error}<div class="error-message" role="alert">{error}<button onclick={() => loadPage(pageId)}>{t('common.retry')}</button></div>{/if}
+  {#if data}
+    <div class="page-workspace">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="page-stage" class:drawing={drawing && data.drawable} bind:this={stage}
+           onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={() => { drag = null; draft = null }}>
+        <!-- A page with no photo is a blank sheet of its size, its boxes where they stand on it. -->
+        <div class="page-sheet" class:blank={!data.image_url} style="width:{data.width}px;height:{data.height}px;transform:translate({tx}px,{ty}px) scale({scale})">
+          {#if data.image_url}<img src={data.image_url} alt={t('pages.photoAlt', { number: data.seq + 1 })} draggable="false" />{/if}
+          <svg viewBox="0 0 {data.width} {data.height}" aria-hidden="true">
+            {#each data.units as unit (unit.id)}
+              {#if unit.box}
+                <rect data-unit={unit.id} class="unit-box" class:manual={unit.manual || (unit.detected && !unit.proposed)} class:proposed={unit.proposed} class:unidentified={!unit.character}
+                      class:focused={unit.id === focus} x={unit.box.x} y={unit.box.y} width={unit.box.w} height={unit.box.h} vector-effect="non-scaling-stroke" />
+              {/if}
+            {/each}
+            {#if draft}<rect class="draft-box" x={draft.x} y={draft.y} width={draft.w} height={draft.h} vector-effect="non-scaling-stroke" />{/if}
+          </svg>
+        </div>
+        {#if !data.image_url}<p class="stage-status">{t('pages.photoMissing')}</p>{/if}
+        {#if busy}<p class="stage-status" role="status">{t('common.saving')}</p>{/if}
+      </div>
+      <aside class="page-boxes" bind:this={list}>
+        <h2>{t('pages.boxes.count', { count: data.units.length })}{#if proposedCount}<span class="proposed-count">{t('pages.boxes.proposed', { count: proposedCount })}</span>{/if}</h2>
+        {#if data.drawable}<p class="page-note">{t('pages.draw.hint')}</p>{/if}
+        {#if data.units.length}
+          <ul>
+            {#each data.units as unit (unit.id)}
+              <li><button onclick={() => choose(unit)} class:manual={onPage(unit) && !unit.proposed} class:proposed={unit.proposed} class:focused={unit.id === focus}>
+                <span class="box-glyph">{#if unit.image}<img src={unit.image} alt="" loading="lazy" />{:else if unit.character}<ReferenceGlyph char={unit.character} code_point={unit.code_point ?? ''} size="sm" />{:else}<span class="box-none">?</span>{/if}</span>
+                <span class="box-name">{unitLabel(unit)}</span>
+                <small>{origin(unit)}</small>
+              </button></li>
+            {/each}
+          </ul>
+        {/if}
+      </aside>
+    </div>
+  {:else if !error}<p class="find-count" role="status">{t('pages.loading')}</p>{/if}
+</section>
+{#if open && data}<DrawnBoxDialog unit={open} page={data} close={() => open = null} {changed} />{/if}
+{#if notice}<div class="save-toast" role="status">✓ {notice}</div>{/if}
 
 <style>
   .page-view{display:flex;flex-direction:column;height:calc(100dvh - 89px);padding:0 4.4vw 16px}
@@ -325,13 +296,6 @@
   .page-boxes .manual small{color:var(--accent)}
   .page-boxes .proposed small,.proposed-count{color:var(--proposed)}
   .proposed-count::before{content:'·';margin:0 6px;color:var(--muted)}
-  .pages-index{padding-bottom:40px}
-  .page-document{border-top:1px solid var(--line);padding:18px 0}
-  .page-document h2{font-size:17px;font-weight:500;margin-bottom:4px}
-  .page-document ol{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
-  .page-document a{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;padding:7px 11px;font-size:12px;background:var(--surface)}
-  .page-document a:hover{border-color:var(--line-strong)}
-  .page-document small{background:var(--accent-light);color:var(--accent);border-radius:10px;padding:1px 7px;font-size:10px}
   @media(max-width:700px){
     .page-view{height:calc(100dvh - 73px);padding:0 16px 12px}
     .page-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}
