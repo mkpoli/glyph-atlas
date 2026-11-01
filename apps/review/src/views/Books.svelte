@@ -12,11 +12,6 @@
   let { initialQuery = '' } = $props()
   let find = $state(initialQuery), books = $state([]), total = $state(0), loading = $state(true), error = $state('')
   let answered = 0, closed = false, timer
-  // The query in the address, as a search writes it and as a link opens it. `find` holds what the
-  // reader has typed; a query that arrives from elsewhere takes its place.
-  const asked = $derived(page.url.searchParams.get('q')?.trim() ?? '')
-  let shownFor = null
-  $effect(() => { const wanted = asked; if (shownFor !== null && wanted !== shownFor) { find = wanted; load() } shownFor = wanted })
 
   const address = query => localize('/books') + (query ? '?' + new URLSearchParams({ q: query }) : '')
 
@@ -42,7 +37,6 @@
   }
 
   onMount(() => {
-    shownFor = asked
     load()
     return () => { closed = true; clearTimeout(timer) }
   })
@@ -63,10 +57,17 @@
     <ul class="book-list">
       {#each books as book (book.id)}
         <li class="book-card">
-          <a class="book-title" href={localize('/books/' + encodeURIComponent(book.id))} lang="ja">{book.title || book.id}</a>
-          <span class="book-meta">{#if book.shelfmark}<span class="book-shelfmark">{book.shelfmark}</span>{/if}<ProductionBadge item={book} />{#if Object.keys(book.dating).length}<DateMark item={book} />{/if}
-            <span class="book-counts">{t('books.pages', { count: book.page_count })} · {t('pages.boxes.count', { count: book.box_count })}</span></span>
-          {#if book.holder || book.licence}<SourceCredit item={book} />{/if}
+          <!-- The cover is hidden from a screen reader and out of the tab order: the title below opens
+               the same book, and the photo says nothing it does not. -->
+          <span class="book-cover" role="presentation">
+            {#if book.cover_url}<img src={book.cover_url} alt="" loading="lazy" decoding="async" />{:else}<span class="cover-none">∅</span>{/if}
+          </span>
+          <div class="book-text">
+            <a class="book-title" href={localize('/books/' + encodeURIComponent(book.id))} lang="ja">{book.title || book.id}</a>
+            <span class="book-meta">{#if book.shelfmark}<span class="book-shelfmark">{book.shelfmark}</span>{/if}<ProductionBadge item={book} />{#if Object.keys(book.dating).length}<DateMark item={book} />{/if}
+              <span class="book-counts">{t('books.pages', { count: book.page_count })} · {t('pages.boxes.count', { count: book.box_count })}</span></span>
+            {#if book.holder || book.licence}<SourceCredit item={book} />{/if}
+          </div>
         </li>
       {/each}
     </ul>
@@ -82,7 +83,13 @@
   .books-head h1{font-size:28px;font-weight:500;letter-spacing:-.6px;margin:0}
   .books-find{width:100%;font-size:14px;padding:10px 12px;border-color:var(--line-strong)}
   .book-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
-  .book-card{display:grid;gap:4px;padding:14px 10px;border-bottom:1px solid var(--line);font-size:13px;min-height:78px;align-content:center}
+  .book-card{display:grid;grid-template-columns:63px minmax(0,1fr);gap:16px;align-items:center;padding:12px 10px;border-bottom:1px solid var(--line);font-size:13px}
+  /* The cover is the book's first page, small: it stands where the first letter of the title is, and
+     keeps that height on every row. */
+  .book-cover{display:block;height:84px;width:63px;border:1px solid var(--line);border-radius:4px;background:var(--surface-sunken);overflow:hidden}
+  .book-cover img{width:100%;height:100%;object-fit:cover;object-position:top center}
+  .cover-none{display:grid;place-items:center;height:100%;font-size:15px;color:var(--faint)}
+  .book-text{display:grid;gap:4px;min-width:0}
   .book-title{font-size:15px;font-weight:500;justify-self:start}
   .book-shelfmark{font-size:11px;color:var(--ink-soft)}
   .book-meta{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}

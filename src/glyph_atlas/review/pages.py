@@ -1,9 +1,14 @@
 """The books of a dataset, their page photos and the character boxes on the pages.
 
     GET  /atlas/books                    the books a query finds, with their page and box counts
-    GET  /atlas/books/{book_id}          one book, its credit and its pages in order
+    GET  /atlas/books/{book_id}          one book, its cover, its credit and its pages in order
+    GET  /atlas/thumbnail/{sha256}        one photo of the image cache, shrunk to 320 pixels and as JPEG
     GET  /atlas/pages/{page_id}          one page, the URL of its photo and every active unit on it
     POST /atlas/pages/{page_id}/units     record a character box drawn on the photo
+
+A book is shown by the first page of its copy whose photo is cached (`covering_page`). A page is
+shown, in a list or on a filmstrip, by `/atlas/thumbnail/<its image's checksum>`: the cache file
+shrunk to a small JPEG, held in `cache/images/thumbs` and served for a year under that checksum.
 
 A drawn box is a unit with `method` `manual`, on the page's own line (`Store.draw_unit`). It starts
 unidentified; the character is set through `POST /layers/units/{id}`, and a box drawn by mistake is
@@ -20,10 +25,15 @@ drawing.
 
 from __future__ import annotations
 
+import io
 import re
+import tempfile
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
+from PIL import Image
 
 from .. import page_sources
 from ..production import production_info
@@ -31,6 +41,10 @@ from ..schema import Document, Page, ReviewState, Unit
 from .atlas import written_identity
 from .characters import page_digest
 from .store import DETECT, MANUAL, DrawRequest, Store
+
+#: The longest side of a thumbnail, in pixels, and where its JPEG is kept under the image cache.
+THUMBNAIL_EDGE = 320
+THUMBNAIL_DIR = "thumbs"
 
 #: How a `Dating.kind` is written for the interface, whose date keys are `date.kind.<name>`.
 DATE_KINDS = {"composition": "composed", "copying": "copied", "publication": "printed", "impression": "printed"}
@@ -58,6 +72,43 @@ def credit_of(document: Document | None) -> dict[str, Any]:
             "rights_url": rights.evidence if rights else None}
 
 
+def cover_url(page: Page | None) -> str | None:
+    """Where the photo that shows a page in small is: its thumbnail, under the checksum the image
+    cache holds it by."""
+    from .server import cached_image
+
+    if page is None:
+        return None
+    digest = page_digest(page)
+    return f"/atlas/thumbnail/{digest}" if digest and cached_image(digest) else None
+
+
+def thumbnail(sha256: str) -> bytes:
+    """A cached page photo shrunk to `THUMBNAIL_EDGE`: the JPEG in `thumbs/`, written on first use,
+    so a list of pages reads small files as often as it reads the originals."""
+    from .server import cached_image
+
+    source = cached_image(sha256)
+    if source is None:
+        raise HTTPException(404, f"{sha256} is not in the image cache")
+    folder = source.parent.parent / THUMBNAIL_DIR
+    made = folder / f"{source.stem}.jpg"
+    if made.exists():
+        return made.read_bytes()
+    with Image.open(source) as picture:
+        small = picture.convert("RGB")
+        small.thumbnail((THUMBNAIL_EDGE, THUMBNAIL_EDGE), Image.Resampling.LANCZOS)
+        output = io.BytesIO()
+        small.save(output, format="JPEG", quality=80)
+    folder.mkdir(parents=True, exist_ok=True)
+    # Two readers asking at once each write a file of their own, and the JPEG takes the name of one
+    # of them whole: nobody reads half a picture, and either copy is the same picture.
+    with tempfile.NamedTemporaryFile(dir=folder, suffix=".part", delete=False) as partial:
+        partial.write(output.getvalue())
+    Path(partial.name).replace(made)
+    return output.getvalue()
+
+
 def router(store: Store) -> APIRouter:
     api = APIRouter()
 
@@ -82,6 +133,10 @@ def router(store: Store) -> APIRouter:
             "revision": revision,
         }
 
+    def covering_page(pages: list[Page]) -> Page | None:
+        """The page that shows a book: the first page of its copy whose photo is cached."""
+        return next((page for page in pages if cover_url(page)), None)
+
     def book_item(document: Document, pages: list[Page], counts: dict[str, int]) -> dict[str, Any]:
         return {
             "id": document.id,
@@ -91,6 +146,7 @@ def router(store: Store) -> APIRouter:
             **production_info(document),
             **credit_of(document),
             "dating": dating_of(document),
+            "cover_url": cover_url(covering_page(pages)),
             "page_count": len(pages),
             "box_count": sum(counts.get(page.id, 0) for page in pages),
         }
@@ -144,7 +200,8 @@ def router(store: Store) -> APIRouter:
         pages = ordered_pages().get(book_id, [])
         return {**book_item(document, pages, counts),
                 "pages": [{"id": page.id, "seq": page.seq, "units": counts.get(page.id, 0),
-                           "width": page.width, "height": page.height} for page in pages]}
+                           "width": page.width, "height": page.height, "thumb_url": cover_url(page)}
+                          for page in pages]}
 
     @api.get("/atlas/pages/{page_id}")
     def page(page_id: str) -> dict[str, Any]:
@@ -190,6 +247,13 @@ def router(store: Store) -> APIRouter:
                                        record.canvas, record.image, catalogue),
             "units": [unit_item(unit, revisions.get(unit.id, 0)) for unit in units],
         }
+
+    @api.get("/atlas/thumbnail/{sha256}")
+    def thumb(sha256: str) -> Response:
+        """A page photo as a small JPEG, from the image cache and shrunk on first use."""
+        return Response(thumbnail(sha256), media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=31536000, immutable",
+                                 "ETag": f'"thumb-{sha256}"'})
 
     @api.post("/atlas/pages/{page_id}/units", status_code=201)
     def draw(page_id: str, request: DrawRequest) -> dict[str, Any]:

@@ -41,9 +41,10 @@
       <!-- Every tile carries its box count, so the row keeps one rhythm; a page without boxes greys it. -->
       <ol class="book-pages">
         {#each book.pages as page (page.id)}
-          <li><a href={localize('/pages/' + encodeURIComponent(page.id))}>
-            <span>{t('pages.pageNumber', { number: page.seq + 1 })}</span>
-            <small class:zero={!page.units}>{page.units ? number(page.units) : 0}</small>
+          <li><a class:shapeless={!page.width || !page.height} href={localize('/pages/' + encodeURIComponent(page.id))}>
+            <span class="page-photo" style={page.width && page.height ? `aspect-ratio:${page.width}/${page.height}` : ''}>{#if page.thumb_url}<img src={page.thumb_url} alt="" loading="lazy" decoding="async" />{:else}<span class="photo-none">∅</span>{/if}</span>
+            <span class="page-label"><span>{t('pages.pageNumber', { number: page.seq + 1 })}</span>
+              <small class:zero={!page.units}>{page.units ? number(page.units) : 0}</small></span>
           </a></li>
         {/each}
       </ol>
@@ -61,8 +62,15 @@
   .book-facts .copyable{display:inline-flex;align-items:center;gap:4px;color:var(--faint)}
   .book-facts code{font-size:11px}
   .book-pages-head{font-size:13px;font-weight:500;margin:0 0 8px}
-  .book-pages{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:6px}
-  .book-pages a{display:flex;align-items:center;justify-content:space-between;gap:8px;white-space:nowrap;border:1px solid var(--line);border-radius:6px;padding:9px 11px;font-size:12px;background:var(--surface)}
+  .book-pages{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:12px}
+  /* A page is shown by its photo, in the shape the page has, with its number and its box count below;
+     a record without a size gives the photo the shape of most pages (3:4). */
+  .book-pages a{display:grid;gap:6px;border:1px solid var(--line);border-radius:6px;padding:6px 6px 8px;font-size:12px;background:var(--surface)}
+  .page-photo{display:block;aspect-ratio:3/4;border-radius:3px;background:var(--surface-sunken);overflow:hidden}
+  .shapeless .page-photo{aspect-ratio:3/4}
+  .page-photo img{width:100%;height:100%;object-fit:cover;object-position:top center}
+  .photo-none{display:grid;place-items:center;height:100%;font-size:15px;color:var(--faint)}
+  .page-label{display:flex;align-items:baseline;justify-content:space-between;gap:6px;white-space:nowrap;padding:0 2px}
   .book-pages a:hover{border-color:var(--line-strong)}
   .book-pages small.zero{background:var(--surface-selected);color:var(--muted)}
   .book-pages small{min-width:26px;text-align:center;background:var(--accent-light);color:var(--accent);border-radius:10px;padding:1px 7px;font-size:10px;font-variant-numeric:tabular-nums}

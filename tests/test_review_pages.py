@@ -1,4 +1,4 @@
-"""Drawing character boxes on a page photo, against a dataset with pages and no lines.
+"""Reading a dataset's books and pages, and drawing character boxes on a page photo.
 
 The fixture is what a photograph-only source leaves on disk: documents and pages, no `lines` or
 `units` table. The page image is a real JPEG in a cache under `tmp_path`, because setting a character
@@ -8,6 +8,7 @@ checks the crop can be cut from it.
 from __future__ import annotations
 
 import hashlib
+import io
 from pathlib import Path
 from uuid import uuid4
 
@@ -108,6 +109,30 @@ def test_a_book_names_its_pages_in_order_and_its_credit(api: TestClient) -> None
     assert book["licence"] == "PD" and book["holder"] == "国立国会図書館"
     assert [page["id"] for page in book["pages"]] == [PAGE, OTHER]
     assert api.get("/atlas/books/nope").status_code == 404
+
+
+def test_a_book_is_shown_by_its_first_page_whose_photo_is_cached(
+    api: TestClient, dataset: Path
+) -> None:
+    thumb = api.get(f"/atlas/books/{DOCUMENT}").json()["cover_url"]
+    assert thumb == f"/atlas/thumbnail/{api.get(f'/atlas/pages/{PAGE}').json()['image_sha256']}"
+    # The second page of the book has no cached photo, so the book it alone forms is shown by none.
+    assert api.get(f"/atlas/books/{MISCELLANY}").json()["cover_url"] is None
+    pages = api.get(f"/atlas/books/{DOCUMENT}").json()["pages"]
+    assert [page["thumb_url"] for page in pages] == [thumb, None]
+
+
+def test_a_thumbnail_is_the_photo_shrunk_to_a_small_jpeg(api: TestClient, dataset: Path) -> None:
+    sha256 = api.get(f"/atlas/pages/{PAGE}").json()["image_sha256"]
+    response = api.get(f"/atlas/thumbnail/{sha256}")
+    assert response.status_code == 200 and response.headers["content-type"] == "image/jpeg"
+    with Image.open(io.BytesIO(response.content)) as small:
+        assert (small.format, max(small.size)) == ("JPEG", 320)
+    # The JPEG is kept beside the cache, so the next reader reads it rather than making it again.
+    kept = dataset.parent / "cache" / "images" / "thumbs" / f"{sha256}.jpg"
+    assert kept.read_bytes() == response.content
+    assert api.get("/atlas/thumbnail/" + "0" * 64).status_code == 404
+    assert api.get("/atlas/thumbnail/not-a-checksum").status_code == 404
 
 
 def test_a_page_names_its_book_and_the_book_credit(api: TestClient) -> None:
