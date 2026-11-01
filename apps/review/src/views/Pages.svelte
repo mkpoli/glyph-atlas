@@ -175,7 +175,8 @@
 <section class="page-view">
   <div class="page-toolbar">
     {#if data}
-      <a class="quiet-link" href={localize('/books/' + encodeURIComponent(data.document_id))}>← {t('books.back')}</a>
+      <!-- The book the page was photographed from; a page of a record that names no book goes to the list. -->
+      <a class="quiet-link" href={data.document_id ? localize('/books/' + encodeURIComponent(data.document_id)) : localize('/books')}>← {t('books.back')}</a>
       <strong class="page-title">{data.document_title ?? data.document_id} · {t('pages.pageNumber', { number: data.seq + 1 })}</strong>
       <span class="toolbar-space"></span>
       {#if data.drawable}

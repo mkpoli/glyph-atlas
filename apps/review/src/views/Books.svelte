@@ -12,6 +12,11 @@
   let { initialQuery = '' } = $props()
   let find = $state(initialQuery), books = $state([]), total = $state(0), loading = $state(true), error = $state('')
   let answered = 0, closed = false, timer
+  // The query in the address, as a search writes it and as a link opens it. `find` holds what the
+  // reader has typed; a query that arrives from elsewhere takes its place.
+  const asked = $derived(page.url.searchParams.get('q')?.trim() ?? '')
+  let shownFor = null
+  $effect(() => { const wanted = asked; if (shownFor !== null && wanted !== shownFor) { find = wanted; load() } shownFor = wanted })
 
   const address = query => localize('/books') + (query ? '?' + new URLSearchParams({ q: query }) : '')
 
@@ -37,6 +42,7 @@
   }
 
   onMount(() => {
+    shownFor = asked
     load()
     return () => { closed = true; clearTimeout(timer) }
   })
