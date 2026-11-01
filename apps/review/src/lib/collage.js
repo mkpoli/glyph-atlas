@@ -80,7 +80,7 @@ export function collageStyle() {
     // The gallery's own width inside the page's padding, which is 4.4vw of the screen either side.
     const beyond = `calc(100vw * .912 / ${WIDEST} + ${GAP}px)`
     const fill = width === ZOOM ? `min(${smallest}px + 4vw - 4px, ${WIDE})` : `clamp(${smallest}px + 4vw - 4px, ${beyond}, ${width}px + 2vw)`
-    rules.push(`${root}{--tile-w:${width}px;--tile-fill:${fill}}`)
+    rules.push(`:root{--tile-w:${ZOOM}px;--tile-fill:${ZOOMS[0]}px}${root}{--tile-w:${width}px;--tile-fill:${fill}}`)
     for (const n of COLUMNS.slice(1)) rules.push(`@container gallery (min-width:${n * width + (n - 1) * GAP}px){${root} .collage-block{--collage-cols:${n};--collage-h:var(--collage-h${n})}${root} .collage-cell{--cell-c:var(--cell-c${n});--cell-y:var(--cell-y${n});--cell-n:var(--cell-n${n})}}`)
   })
   rules.push(`@container gallery (min-width:${COLUMNS.at(-1) * ZOOMS[0] + (COLUMNS.at(-1) - 1) * GAP}px){:root .collage-block{--collage-cols:${WIDEST};--collage-h:var(--collage-h${WIDEST})}:root .collage-cell{--cell-c:var(--cell-c${WIDEST});--cell-y:var(--cell-y${WIDEST});--cell-n:var(--cell-n${WIDEST})}}`)
