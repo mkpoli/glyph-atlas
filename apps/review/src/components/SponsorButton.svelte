@@ -117,7 +117,8 @@
     border-radius: 999px; background: #202020; color: #fff; box-shadow: 0 6px 16px rgb(var(--tip) / .32); transition: transform .18s ease, box-shadow .18s ease; }
   .tip:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgb(var(--tip) / .42); }
   .tip:active { transform: scale(.98); }
-  .ofuse { --tip: 40 130 167; border-color: #2882a7; background: #2882a7; }
+  /* OFUSE Blue (#2882a7) taken 4% darker, so the white labels reach 4.5:1. */
+  .ofuse { --tip: 38 125 160; border-color: #267da0; background: #267da0; }
   .mark { display: block; flex: none; width: 38px; height: 30px; object-fit: contain; }
   .arrow { flex: none; width: 18px; height: 18px; }
   .copy { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
