@@ -26,8 +26,9 @@ drawing.
 from __future__ import annotations
 
 import io
-import os
 import re
+import tempfile
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -100,10 +101,11 @@ def thumbnail(sha256: str) -> bytes:
         output = io.BytesIO()
         small.save(output, format="JPEG", quality=80)
     folder.mkdir(parents=True, exist_ok=True)
-    # A reader asking at the same moment may be writing the same file; it lands whole or not at all.
-    partial = folder / f".{source.stem}.{os.getpid()}.part"
-    partial.write_bytes(output.getvalue())
-    partial.replace(made)
+    # Two readers asking at once each write a file of their own, and the JPEG takes the name of one
+    # of them whole: nobody reads half a picture, and either copy is the same picture.
+    with tempfile.NamedTemporaryFile(dir=folder, suffix=".part", delete=False) as partial:
+        partial.write(output.getvalue())
+    Path(partial.name).replace(made)
     return output.getvalue()
 
 

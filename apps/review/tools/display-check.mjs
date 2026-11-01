@@ -219,9 +219,8 @@ try {
   await browser.goto(`${service.base}/en/books`, { waitFor: `document.querySelector('a[href*="doc-1"]') !== null` })
   await browser.evaluate(`(() => { const field = document.querySelector('.books-find'); field.value = 'calibration book a'; field.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await browser.waitFor(`document.querySelectorAll('.book-card').length === 1 && document.querySelector('.book-title').textContent === 'Calibration book A'`)
-  await browser.goto(`${service.base}/en/books/doc-1`, { waitFor: `document.querySelector('a[href*="doc-1%3Ap1"]') !== null` })
   // Each page tile is its photo, small.
-  assert(await browser.evaluate(`document.querySelector('a[href*="doc-1%3Ap1"] img')?.naturalWidth > 0`), 'the page tile shows no photo')
+  await browser.goto(`${service.base}/en/books/doc-1`, { waitFor: `document.querySelector('a[href*="doc-1%3Ap1"] img')?.naturalWidth > 0` })
   const listed = await browser.evaluate(`document.querySelector('a[href*="doc-1%3Ap1"] .page-label span').textContent`)
   assert(listed === 'Page 1', `the page list names doc-1:p1 ${listed}`)
   await browser.goto(`${service.base}/en/pages/doc-1%3Ap1`, { waitFor: `document.querySelector('.page-title') !== null` })
