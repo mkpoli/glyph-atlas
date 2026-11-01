@@ -1,6 +1,7 @@
-// The one mail the site sends: a sign-in code. It is written in the reader's site language and carries
-// that language's own name for the site, the way the site header does. Its last line is the origin-bound
-// form (`@host #code`) that lets a browser offer the code only on this site.
+// The one mail the site sends: a sign-in code. It is written in the reader's site language, English
+// where the mail has none, and carries that language's own name for the site, the way the site header
+// does. Its last line is the origin-bound form (`@host #code`) that lets a browser offer the code only
+// on this site.
 //
 // The card is drawn with the site's design tokens (apps/review/src/app.css) and cannot use custom
 // properties, since mail clients strip them, so each colour is written out at its light-mode value. The
@@ -57,14 +58,22 @@ const cells = (code: string) => code.split('').map((digit) =>
   + `font-size:24px;font-weight:500;line-height:54px;color:#6356e5;text-align:center">${digit}</td>`)
   .join('<td width="8" style="width:8px"></td>');
 
+// English is the backup: a reader whose language the mail does not have is written to in English, the
+// language the site itself falls back to.
+export const BACKUP = 'en';
+
+// The language a code is written in: the one asked for, or the backup when the mail has no words for
+// it. The tags accepted are the site's (`apps/review/src/locales`); `mailLocale` picks the request's.
+export const mailTag = (locale: string) => (Object.hasOwn(MAIL, locale) ? locale : BACKUP);
+
 export function signInMail(locale: string, code: string, host: string) {
-  const words = MAIL[locale] ?? MAIL.en;
+  const tag = mailTag(locale), words = MAIL[tag];
   const subject = words.subject.replace('{code}', code);
   const text = `${words.intro}\n\n${code}\n\n${words.expiry}\n${words.ignore}\n\n@${host} #${code}\n`;
   const name = words.latin
     ? `<span style="font-size:12px;font-weight:750;letter-spacing:1.2px">${words.name}</span>`
     : `<span style="font-size:17px;font-weight:700;letter-spacing:.12em">${words.name}</span>`;
-  const html = `<!doctype html><html lang="${Object.hasOwn(MAIL, locale) ? locale : 'en'}"><head>`
+  const html = `<!doctype html><html lang="${tag}"><head>`
     + `<meta charset="utf-8"><meta name="viewport" content="width=device-width">`
     + `<meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">`
     + `<title>${subject}</title></head>`

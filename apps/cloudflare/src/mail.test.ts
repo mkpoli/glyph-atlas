@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { mailLocale } from './auth';
-import { MAIL, signInMail } from './mail';
+import { MAIL, BACKUP, mailTag, signInMail } from './mail';
 
 const asking = (headers: Record<string, string>) => new Request('https://glyphatlas.org/', { headers });
 
@@ -14,6 +14,30 @@ describe('the sign-in mail', () => {
   });
   it('ends with the origin-bound code line', () => {
     expect(signInMail('ja', '123456', 'glyphatlas.org').text.trimEnd().endsWith('@glyphatlas.org #123456')).toBe(true);
+  });
+  it('is English, the site\'s own backup, for a reader whose language it does not have', () => {
+    for (const locale of ['fr', 'fr-FR', 'de', 'pag', 'ja-JP', 'zh-TW', '', 'EN', 'xx-YY']) {
+      const mail = signInMail(locale, '995110', 'glyphatlas.org');
+      expect(mailTag(locale)).toBe('en');
+      expect(mail.html).toContain('<html lang="en">');
+      expect(mail.html).toContain('GLYPH ATLAS</span>');
+      expect(mail.subject).toBe(MAIL.en.subject.replace('{code}', '995110'));
+      expect(mail.text.startsWith(MAIL.en.intro)).toBe(true);
+    }
+    // The backup is a language the mail carries, and the one the site falls back to.
+    expect(Object.keys(MAIL)).toContain(BACKUP);
+    expect(BACKUP).toBe('en');
+  });
+  it('keeps a language it has, the region and script a request names already settled by mailLocale', () => {
+    expect(mailTag('ja')).toBe('ja');
+    expect(mailTag('ja-x-classical')).toBe('ja-x-classical');
+    expect(mailTag('ko-Kore')).toBe('ko-Kore');
+    expect(mailTag('vi-Hani')).toBe('vi-Hani');
+    expect(mailTag(mailLocale(asking({ 'accept-language': 'vi-VN' })))).toBe('vi');
+    expect(mailTag(mailLocale(asking({ 'accept-language': 'zh-TW' })))).toBe('zh-Hant');
+    expect(mailTag(mailLocale(asking({ 'accept-language': 'de-DE,de;q=0.9,en;q=0.8' })))).toBe('en');
+    expect(mailTag(mailLocale(asking({ 'accept-language': 'pt-BR' })))).toBe('en');
+    expect(mailTag(mailLocale(asking({})))).toBe('en');
   });
   it('names the site in the reader\'s language, and in letterspaced caps only for English', () => {
     expect(signInMail('ja', '123456', 'glyphatlas.org').html).toContain('字形大図譜</span>');
