@@ -15,10 +15,14 @@ try {
     const file = join(out, `${locale}.html`)
     await Bun.write(file, html)
     // A mail body never hydrates, so `goto` (which waits for the app) cannot load it: navigate and
-    // wait for the load event alone.
-    const loaded = browser.once('Page.loadEventFired', 15000).catch(() => null)
-    await browser.send('Page.navigate', { url: `file://${file}` })
+    // wait for the load event alone. Chromium loads its own error page when a file cannot be read, so
+    // the address is checked too; a shot is taken only of the mail asked for.
+    const url = `file://${file}`
+    const loaded = browser.once('Page.loadEventFired', 15000)
+    await browser.send('Page.navigate', { url })
     await loaded
+    const shown = await browser.evaluate('location.href')
+    if (shown !== url) throw new Error(`${locale}: loaded ${shown} instead of ${url}`)
     await browser.screenshot(join(out, `${locale}.png`))
     console.log(locale, '->', join(out, `${locale}.png`))
   }
