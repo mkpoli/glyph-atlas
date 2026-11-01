@@ -1,7 +1,8 @@
 # Chat server
 
 How the community chat runs, how to get into its server, and how to bring it back. The chat is a
-Matrix homeserver for `glyphatlas.org`; Discord, Telegram and Libera.Chat (IRC) are bridged to it.
+Matrix homeserver for `glyphatlas.org`; Discord, Telegram and Libera.Chat (IRC) are bridged to it, and
+QQ to the Chinese room alone.
 Nothing secret is written here: each secret is named by the file that holds it on the maintainer's
 machine, under `~/.config/glyph-atlas-matrix/`.
 
@@ -140,3 +141,7 @@ Each public room in the space has a Discord channel, a Telegram topic and a Libe
 4. In the IRC bridge's network room: `PLUMB <room id> #glyphatlas-<room>`, then register the channel
    with ChanServ and remove its secret mode (`MODE #channel -s`).
 5. Redact the setup commands from the room.
+
+The Chinese room (中文, `#glyphatlas-zh`) is also bridged to the QQ group
+[字形大图谱｜Glyph Atlas](https://qm.qq.com/q/bKrGelyYIE), so QQ reaches that room only. The QQ
+bridge is not listed under *What runs*; its unit and config are recorded on the server that runs it.
