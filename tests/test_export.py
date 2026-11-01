@@ -10,12 +10,14 @@ import pytest
 
 from glyph_atlas import export, tables
 from glyph_atlas.schema import (
+    PAGE_SCOPE,
     Box,
     Classification,
     Document,
     Group,
     Licence,
     Line,
+    LineRole,
     Page,
     PageText,
     Register,
@@ -605,3 +607,65 @@ def test_a_page_whose_only_record_is_its_text_is_released(tmp_path):
 def test_modern_kana_rewrites_old_forms_and_leaves_modern_katakana(unicode, expected):
     unit = Unit(id="u", unicode=unicode, classification=Classification.IDENTIFIED)
     assert export.Normaliser.load().value("modern_kana", unit) == expected
+
+
+def scan_only_dataset(tmp_path: Path, *, text: str = "", text_rights: Rights | None = None,
+                      image_rights: Rights | None = FREE, ruby: bool = False) -> Path:
+    """One document with page images and proposed boxes; `text` puts words on its page-scope line."""
+    directory = tmp_path / "work" / "scan-only"
+    directory.mkdir(parents=True)
+    documents = [Document(id="scan:A", title="scan only", image_rights=image_rights,
+                          text_rights=text_rights, meta={"extraction_status": "pending"})]
+    pages = [page("scan:A:p1", "scan:A", 1)]
+    lines = [Line(id="scan:A:p1:L1", page_id="scan:A:p1", seq=1, box=Box(x=0, y=0, w=1000, h=1400),
+                  role=LineRole.OTHER, text_raw=text, text=text, meta={"scope": PAGE_SCOPE})]
+    units = [Unit(id="scan:A:p1:L1:0", document_id="scan:A", page_id="scan:A:p1",
+                  line_id="scan:A:p1:L1", seq=0, box=Box(x=100, y=100, w=40, h=40),
+                  script=Script.HAN, method="detect", review=ReviewState.MACHINE,
+                  meta={"proposer": "characters-abc"})]
+    tables.write(directory / "documents.parquet", documents, Document)
+    tables.write(directory / "pages.parquet", pages, Page)
+    tables.write(directory / "lines.parquet", lines, Line)
+    tables.write(directory / "units.parquet", units, Unit)
+    if ruby:
+        rubies = [Ruby(id="scan:A:p1:L1:ruby0:right", page_id="scan:A:p1", line_id="scan:A:p1:L1",
+                       base="字", side="right", text="じ", reading="じ", span="mono", source="振り仮名")]
+        tables.write(directory / "rubies.parquet", rubies, Ruby)
+    tables.Dataset(directory).merge([], directory, command="atlas import scan")
+    return directory
+
+
+def test_a_document_with_no_text_is_admitted_by_its_image_rights(tmp_path: Path):
+    """A scan-only collection has no text right to state, so the image right carries its release."""
+    source = scan_only_dataset(tmp_path)
+    out = tmp_path / "release"
+    counts = export.release([source], out, review=[ReviewState.MACHINE.value], include_machine=True)
+    assert counts["documents"] == 1
+    assert counts["units"] == 1
+    assert tables.Dataset(out).validate() == []
+
+
+def test_a_document_with_no_text_keeps_the_text_right_path(tmp_path: Path):
+    """A document the text-only rule admitted stays in when its images state no rights."""
+    source = scan_only_dataset(tmp_path, text_rights=FREE, image_rights=None)
+    out = tmp_path / "release"
+    counts = export.release([source], out, review=[ReviewState.MACHINE.value], include_machine=True)
+    assert counts["documents"] == 1
+    assert counts["units"] == 1
+    assert counts["crops"] == 0
+
+
+def test_a_document_that_carries_text_still_needs_its_text_rights(tmp_path: Path):
+    """The image right does not stand in for a missing text right when the document has words."""
+    source = scan_only_dataset(tmp_path, text="字")
+    with pytest.raises(export.ExportError, match="no document"):
+        export.release([source], tmp_path / "release", review=[ReviewState.MACHINE.value],
+                       include_machine=True)
+
+
+def test_a_ruby_is_text_and_needs_its_text_rights(tmp_path: Path):
+    """A reading on an otherwise empty page line is still the transcriber's string."""
+    source = scan_only_dataset(tmp_path, ruby=True)
+    with pytest.raises(export.ExportError, match="no document"):
+        export.release([source], tmp_path / "release", review=[ReviewState.MACHINE.value],
+                       include_machine=True)
