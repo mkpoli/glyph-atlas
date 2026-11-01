@@ -225,7 +225,7 @@
 <style>
   .crop-viewer{width:100%;min-width:0}
   /* Keep the scan canvas, shade and crop mask independent of the UI scheme. */
-  .crop-viewport{height:380px;position:relative;container-type:size;overflow:clip;border-radius:12px;background:light-dark(#ebe8e3, #ebe8e3);isolation:isolate;touch-action:none;outline-offset:4px;user-select:none}
+  .crop-viewport{--crop-height:380px;height:var(--crop-height);position:relative;container-type:size;overflow:clip;border-radius:12px;background:light-dark(#ebe8e3, #ebe8e3);isolation:isolate;touch-action:none;outline-offset:4px;user-select:none}
   .crop-viewport.ready{cursor:grab}
   .crop-viewport.dragging{cursor:grabbing}
   .crop-viewport:focus-visible{outline:2px solid var(--accent)}
