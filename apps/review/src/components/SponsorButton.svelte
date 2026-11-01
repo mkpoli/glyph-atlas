@@ -1,6 +1,7 @@
 <script>
   // The header's Sponsor pill, led by the author's face, and the dialog it opens: the author's
   // portrait, what a tip pays for, then three steps that end at the Ko-fi and OFUSE buttons. Each
+  // button carries its service's own mark and colour, unaltered as both brand kits require. Each
   // service handles the amount and the payment; companies can write in to sponsor too. OFUSE is a
   // Japanese service, so Japanese readers see it first.
   import { t, base } from '$lib/i18n.svelte.js'
@@ -52,7 +53,7 @@
 
 {#snippet kofi()}
   <a class="tip kofi" href="https://ko-fi.com/mkpoli" target="_blank" rel="noreferrer">
-    <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4ZM16 11h2a2.5 2.5 0 0 1 0 5h-2M7 3v3M11 2v3M15 3v3" /></svg></span>
+    <img class="mark" src="/brand/kofi-symbol.svg" alt="" width="34" height="27" />
     <span class="copy"><strong>Ko-fi</strong><small>{t('sponsor.kofi')}</small></span>
     <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
   </a>
@@ -60,7 +61,7 @@
 
 {#snippet ofuse()}
   <a class="tip ofuse" href="https://ofuse.me/mkpoli" target="_blank" rel="noreferrer">
-    <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5h17v11h-17ZM3.5 8.5l8.5 6 8.5-6" /><path d="M12 9.6s-2.6-1.5-2.6-3.3a1.4 1.4 0 0 1 2.6-.8 1.4 1.4 0 0 1 2.6.8c0 1.8-2.6 3.3-2.6 3.3Z" fill="currentColor" stroke="none" /></svg></span>
+    <img class="mark" src="/brand/ofuse-icon.svg" alt="" width="26" height="28" />
     <span class="copy"><strong>OFUSE</strong><small>{t('sponsor.ofuse')}</small></span>
     <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
   </a>
@@ -112,13 +113,12 @@
   .steps li::before { content: counter(step); display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%;
     background: var(--sp-ink); color: var(--sp-soft); font-size: 11px; font-weight: 700; line-height: 1; transform: translateY(-1px); }
   .tips { display: flex; flex-direction: column; gap: 10px; }
-  .tip { --tip: 216 27 96; display: flex; align-items: center; gap: 12px; padding: 12px 18px 12px 12px; border-radius: 999px; background: linear-gradient(135deg, #d81b60, #b0124f);
-    color: #fff; box-shadow: 0 6px 16px rgb(var(--tip) / .32); transition: transform .18s ease, box-shadow .18s ease; }
+  .tip { --tip: 32 32 32; display: flex; align-items: center; gap: 12px; padding: 12px 18px 12px 12px; border: 1px solid light-dark(#202020, rgb(255 255 255 / .2));
+    border-radius: 999px; background: #202020; color: #fff; box-shadow: 0 6px 16px rgb(var(--tip) / .32); transition: transform .18s ease, box-shadow .18s ease; }
   .tip:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgb(var(--tip) / .42); }
   .tip:active { transform: scale(.98); }
-  .ofuse { --tip: 201 79 26; background: linear-gradient(135deg, #c94f1a, #a8380f); }
-  .mark { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 50%; background: rgb(255 255 255 / .22); }
-  .mark svg { width: 20px; height: 20px; }
+  .ofuse { --tip: 40 130 167; border-color: #2882a7; background: #2882a7; }
+  .mark { display: block; flex: none; width: 38px; height: 30px; object-fit: contain; }
   .arrow { flex: none; width: 18px; height: 18px; }
   .copy { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
   .copy strong { font-size: 13.5px; font-weight: 700; }
