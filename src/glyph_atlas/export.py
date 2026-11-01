@@ -12,7 +12,9 @@ sits on are different rights:
 A document whose text may go out but whose images may not keeps its records: the coordinates still
 describe a rectangle on a page the user can reach at the holder's address, and the release carries
 no crop for it. A document whose text may not go out is absent entirely, because the transcriber's
-string is the record.
+string is the record. A document that carries no transcription has no such string; either of its
+rights admits it, so a scan-only collection reaches a release through its images while the documents
+the text rule admitted stay in.
 
 Referential closure is kept: a unit's line and page and document are in the release, a line is there
 because a unit of it is, a group because every unit of it is. The derived normalisation columns are
@@ -365,7 +367,9 @@ def _apply_filters(
     """Filter the merged tables in place, keeping the closure, and add the derived columns."""
     dataset = tables.Dataset(out)
     documents = dataset.read("documents")
-    kept_documents = [document for document in documents if _document_ok(document, target)]
+    text_documents = _documents_with_text(dataset)
+    kept_documents = [document for document in documents
+                      if _document_ok(document, target, has_text=document.id in text_documents)]
     if not kept_documents:
         raise ExportError(
             f"no document of {out} may be redistributed under {target.value}; "
@@ -496,14 +500,62 @@ def _apply_filters(
     }
 
 
-def _document_ok(document: Document, target: Licence) -> bool:
-    """Whether the document's text may be redistributed into a release licensed as `target`.
+def _document_ok(document: Document, target: Licence, *, has_text: bool) -> bool:
+    """Whether the document may be redistributed into a release licensed as `target`.
 
-    The transcription and the record metadata are what a unit is; the image is addressed rather than
-    copied, so a document whose images may not be redistributed still keeps its records, with the
-    rectangle on the holder's page and no crop. `images_ok` answers the image question separately.
+    A document that contributes text is admitted by its text rights. The transcription and the
+    record metadata are what a unit is; the image is addressed rather than copied, so a document
+    whose images may not be redistributed still keeps its records, with the rectangle on the
+    holder's page and no crop. `images_ok` answers the image question separately.
+
+    A document that contributes no text — a scan-only collection, whose units are boxes a detector
+    proposed — is admitted by either right. The text right keeps every document the text-only rule
+    admitted; the image right adds the scan-only collection, with the same withdrawal guard
+    `images_ok` applies to crops.
     """
-    return rights_ok(document.text_rights, target)
+    if rights_ok(document.text_rights, target):
+        return True
+    return not has_text and images_ok(document, target)
+
+
+def _documents_with_text(dataset: tables.Dataset) -> set[str]:
+    """The ids of the documents a release carries text from.
+
+    Text is a line with words, a whole-page transcription, a ruby's base or reading, or a unit that
+    names a character. The page-scope line `atlas review propose-characters` writes holds no words:
+    it is the record of the pages the boxes sit on, so it does not make its document a text document.
+    """
+    found: set[str] = set()
+    pages = ({page.id: page.document_id for page in dataset.read("pages")}
+             if dataset.tables["pages"] is not None else {})
+    if dataset.tables["page_texts"] is not None:
+        for text in dataset.read("page_texts"):
+            document_id = pages.get(text.page_id)
+            if document_id:
+                found.add(document_id)
+    if dataset.tables["lines"] is not None:
+        for batch in dataset.scan("lines", columns=["page_id", "text", "text_raw"]):
+            for record in batch:
+                document_id = pages.get(record.page_id)
+                if document_id and document_id not in found and ((record.text or "").strip()
+                                                                 or (record.text_raw or "").strip()):
+                    found.add(document_id)
+    if dataset.tables["rubies"] is not None:
+        for batch in dataset.scan("rubies", columns=["page_id", "base", "text", "reading"]):
+            for record in batch:
+                document_id = pages.get(record.page_id)
+                if document_id and document_id not in found and (
+                        (record.base or "").strip() or (record.text or "").strip()
+                        or (record.reading or "").strip()):
+                    found.add(document_id)
+    if dataset.tables["units"] is not None:
+        for batch in dataset.scan("units", columns=["page_id", "document_id", "text_source", "unicode"]):
+            for record in batch:
+                document_id = record.document_id or pages.get(record.page_id)
+                if document_id and document_id not in found and (
+                        (record.text_source or "").strip() or (record.unicode or "").strip()):
+                    found.add(document_id)
+    return found
 
 
 def rights_ok(rights: Rights | None, target: Licence) -> bool:
