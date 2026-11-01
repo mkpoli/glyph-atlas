@@ -162,10 +162,6 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .nearby figcaption button.active{color:var(--accent);border-color:var(--accent)}
 @media(max-width:700px){.inspector-figure{gap:10px}.nearby{flex-basis:104px}.nearby .context-region img{max-height:130px}.nearby .context-region{max-height:142px}}
 .menu-status{font-size:11px;color:var(--muted);padding:8px 14px 2px}
-/* On a tall screen the crop keeps the whole height it is given, and the page around it is drawn to
-   fill that height through the crop (`CropContext`). */
-.inspector-figure .crop-viewport{--crop-height:340px}
-@media(min-height:800px){.inspector{--crop-height:min(640px,calc(100dvh - 160px))}}
 
 .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 /* On a wide screen the inspector is a workspace, the way a round is: the crop stays in view on the
@@ -175,7 +171,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .character-dialog{inset:0;width:100vw;max-width:100vw;background:var(--paper);box-shadow:none}
 .character-dialog[open]{display:flex;flex-direction:column}
 .character-dialog[open]>.inspector{flex:1 0 auto;width:100%}
-.character-dialog .inspector{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);column-gap:48px;align-items:start;padding:18px 4.4vw 28px}
+.character-dialog .inspector{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);column-gap:48px;align-items:start;padding:18px max(4.4vw,calc((100vw - 1440px)/2 + 4.4vw)) 28px}
 .character-dialog .inspector>*{grid-column:2;min-width:0}
 .character-dialog .inspector>.inspector-header,.character-dialog .inspector>.inspector-skeleton{grid-column:1/-1}
 .character-dialog .inspector-header{background:var(--paper);border-bottom:1px solid var(--line);margin-bottom:18px}
@@ -183,10 +179,10 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 .character-dialog .inspector{align-content:start}
 .character-dialog .inspector>.inspector-page{grid-column:1;grid-row:3}
 .character-dialog .inspector>.inspector-right{grid-column:2;grid-row:3}
-.character-dialog .inspector-figure .crop-viewport{--crop-height:560px}
-.character-dialog .context-text{max-height:240px;overflow:auto}
+.character-dialog .inspector-figure .crop-viewport{height:560px}
+.character-dialog .context-text{height:72px;overflow:hidden}.character-dialog .context-text p{max-height:3.6em}
 .character-dialog .inspector-title{margin-top:0}
-.character-dialog .inspector-savebar{background:var(--overlay-page);flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;padding:14px 4.4vw}
+.character-dialog .inspector-savebar{background:var(--overlay-page);flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;padding:14px max(4.4vw,calc((100vw - 1440px)/2 + 4.4vw))}
 .character-dialog .inspector-savebar .primary{width:auto;min-width:300px}
 .character-dialog .inspector-savebar .looks-right{align-self:auto}
 .character-dialog .inspector-savebar .advance-switch{order:-2;margin-right:auto;align-self:center}
@@ -196,15 +192,16 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 /* The crop keeps its size from crop to crop: the crop alone in a box of one size, the page around it
    in another further down, so stepping changes only the pixels inside them. On a narrow screen the
    columns dissolve into one, the page above the decision. */
-.inspector-figure.shimmer{height:var(--crop-height,340px);border-radius:12px}
+.inspector-figure .crop-viewport{height:340px}
+.inspector-figure.shimmer{height:340px;border-radius:12px}
 /* The dialog keeps room for its scrollbar, so content growing never narrows the page view and reframes it. */
 .character-dialog{scrollbar-gutter:stable}
 .character-dialog .inspector-figure{display:block}
-.figure-note{display:flex;align-items:center;justify-content:center;height:var(--crop-height,340px);border-radius:12px;background:#ebe8e3;color:#5a5862;font-size:12px}
+.figure-note{display:flex;align-items:center;justify-content:center;height:340px;border-radius:12px;background:#ebe8e3;color:#5a5862;font-size:12px}
 /* The crop's ID, out of the decision: small and quiet in the header, still selectable and copyable. */
 .inspector-header .record-id{margin:0 auto 0 0;min-width:0}.inspector-header .record-id code{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .inspector-production{min-height:22px}
-@media(min-width:1000px){.character-dialog .inspector{--crop-height:560px}}
+@media(min-width:1000px){.character-dialog .inspector-figure.shimmer,.character-dialog .figure-note{height:560px}}
 @media(max-width:999px){.inspector-page+.inspector-right{margin-top:16px}.inspector-production:empty{display:none}}
 /* The source line sits under the crop on a wide screen and after everything else on a narrow one, so
    it never pushes the decision down. */
