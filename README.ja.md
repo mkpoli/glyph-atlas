@@ -24,6 +24,12 @@ uv run pytest
 uv run atlas sources
 ```
 
+## スポンサー
+
+字形大圖譜は個人で開発しており、外部からの資金援助はなく、どなたでも無料でご利用いただけます。お役に立っているようでしたら、[Ko-fi](https://ko-fi.com/mkpoli)でチップをいただけると、改善を続ける時間になります。スポンサーにご興味のある企業様は、mkpoli@mkpo.liまでご連絡ください。
+
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/mkpoli)
+
 ## ライセンス
 
 コード: MIT（`LICENSE`）。ここで作成するデータセットのレコードとアノテーション: CC BY-SA 4.0（`LICENSE-DATA`）。上流の画像とテキストはそれぞれの条件を保ち、`data/sources/`に列挙され、各レコードに付与される。

@@ -101,3 +101,24 @@ def test_two_boxes_over_one_character_are_joined() -> None:
     parts = [p for p in out if p.x == COLUMNS[2] and TOP + 4 * PITCH < p.y < TOP + 6 * PITCH]
     assert len(parts) == 1
     assert parts[0].h >= SIDE - 1
+
+
+def test_boxes_chained_at_one_height_do_not_break_the_pitch() -> None:
+    # Six boxes on one row, each within the chain's reach of the next: every step of that chain is
+    # zero, so the column has no pitch to take a cut from.
+    grid = [cell(column, row) for column in range(len(COLUMNS)) for row in range(ROWS)]
+    row = [Box(x=COLUMNS[2] + n * 10, y=TOP + 4 * PITCH, w=SIDE, h=SIDE) for n in range(6)]
+    out = split_boxes(page(grid), proposals([*grid, *row]))
+    kept = {(p.x, p.y, p.w, p.h) for p in out}
+    # The first box of `row` sits where the grid's own box does; the others must survive.
+    assert all((box.x, box.y, box.w, box.h) in kept for box in row[1:])
+
+
+def test_the_pass_can_run_again_on_its_own_output() -> None:
+    grid = [cell(column, row) for column in range(len(COLUMNS)) for row in range(ROWS)]
+    merged = Box(x=COLUMNS[1], y=TOP + 3 * PITCH, w=SIDE, h=2 * PITCH)
+    boxes = [box for box in grid if not (box.x == COLUMNS[1] and round((box.y - TOP) / PITCH) in (3, 4))]
+    boxes.append(merged)
+    first = split_boxes(page(grid), proposals(boxes))
+    second = split_boxes(page(grid), first)
+    assert len(second) >= len(first)

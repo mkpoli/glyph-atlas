@@ -28,6 +28,7 @@
   }
   const apps = $derived(around('contact.matrix.apps', 'space'))
   // How many people each chat place has, keyed by its mark; read once the page is open (`community.ts`).
+  // IRC keeps no membership and QQ publishes none, so those marks carry no count.
   let members = $state({})
   $effect(() => { fetch('/api/community').then(response => response.ok ? response.json() : {}).then(found => { members = found }).catch(() => {}) })
   // The IRC picker starts on the channel for the page's language; lzh pages are Chinese.
