@@ -1,8 +1,7 @@
 # Chat server
 
 How the community chat runs, how to get into its server, and how to bring it back. The chat is a
-Matrix homeserver for `glyphatlas.org`; Discord, Telegram and Libera.Chat (IRC) are bridged to it, and
-QQ to the Chinese room alone.
+Matrix homeserver for `glyphatlas.org`; Discord, Telegram, QQ and Libera.Chat (IRC) are bridged to it.
 Nothing secret is written here: each secret is named by the file that holds it on the maintainer's
 machine, under `~/.config/glyph-atlas-matrix/`.
 
@@ -42,15 +41,16 @@ The server's Tailscale key is set never to expire (Tailscale admin console → M
 | `mautrix-discord` | Discord bridge | `/var/lib/mautrix-discord` (config, registration, SQLite) |
 | `mautrix-telegram` | Telegram bridge | `/var/lib/mautrix-telegram` |
 | `heisenbridge` | IRC bridge to Libera.Chat | `/var/lib/heisenbridge` (Python venv, registration); its state lives in Matrix account data |
+| `qq-bridge` | QQ bridge: the official QQ bot, one group | `/var/lib/qq-bridge` (config, registration, state); program in `/opt/qq-bridge` (source, venv) |
 | `cloudflared` | The tunnel `glyphatlas-matrix` | `/etc/cloudflared/config.yml` and the tunnel's credential file beside it |
 | `tailscaled` | Tailscale | — |
 | `chat-backup.timer` | Nightly backup | `/usr/local/sbin/chat-backup` |
 
-The three bridges declare `Requires=continuwuity.service`: stopping the homeserver stops them, and
-starting it does not start them. Start all four together:
+The four bridges declare `Requires=continuwuity.service`: stopping the homeserver stops them, and
+starting it does not start them. Start all five together:
 
 ```sh
-systemctl restart continuwuity mautrix-discord mautrix-telegram heisenbridge
+systemctl restart continuwuity mautrix-discord mautrix-telegram heisenbridge qq-bridge
 ```
 
 **The tunnel.** `matrix.glyphatlas.org` is a proxied CNAME to the tunnel. `config.yml` sends
@@ -108,10 +108,11 @@ age -d -i ~/.config/glyph-atlas-matrix/backup-age-key.txt backup.age | zstd -dc 
 ```
 
 The archive holds `data/continuwuity-db` (the homeserver database), `data/mautrix-*` (bridge
-databases and configs), `data/heisenbridge/registration.yaml`, and `etc/` (homeserver, tunnel,
-systemd units). On a fresh server: install the same software versions, put the files back in the
-places listed under *What runs*, start `continuwuity`, then the bridges, then `cloudflared`. The
-tunnel's credential file brings `matrix.glyphatlas.org` back without touching DNS.
+databases and configs), `data/heisenbridge/registration.yaml`, `data/qq-bridge` (the QQ bridge's
+config, registration and state), `opt/qq-bridge/src` (the QQ bridge's program), and `etc/`
+(homeserver, tunnel, systemd units). On a fresh server: install the same software versions, put the
+files back in the places listed under *What runs*, start `continuwuity`, then the bridges, then
+`cloudflared`. The tunnel's credential file brings `matrix.glyphatlas.org` back without touching DNS.
 
 ## Updating
 
@@ -121,6 +122,8 @@ upgrading, since their configuration changes between versions:
 - continuwuity — a single static binary from its Forgejo releases;
 - mautrix-discord and mautrix-telegram — binaries in their directories;
 - heisenbridge — `pip install -U heisenbridge` in its venv;
+- qq-bridge — a Python program in `/opt/qq-bridge` (source in `src`, virtualenv in `venv`); copy the
+  changed files in and restart the service;
 - cloudflared — from Cloudflare's apt repository, so it updates with the system;
 - Element at chat.glyphatlas.org — `apps/chat` in this repository, pinned by version and checksum.
 
@@ -129,7 +132,8 @@ Take a backup before upgrading the homeserver.
 ## Bridged rooms
 
 Each public room in the space has a Discord channel, a Telegram topic and a Libera.Chat channel
-(`#glyphatlas` for 歡迎 · Welcome, `#glyphatlas-<room>` for the others). To add a room:
+(`#glyphatlas` for 歡迎 · Welcome, `#glyphatlas-<room>` for the others). The five language rooms also
+feed the QQ group; see *QQ* below. To add a room:
 
 1. Create the Matrix room (public, history readable by anyone; the bridge bots at power level 50),
    the Discord channel, and the Telegram topic, and post once in the topic.
@@ -142,6 +146,45 @@ Each public room in the space has a Discord channel, a Telegram topic and a Libe
    with ChanServ and remove its secret mode (`MODE #channel -s`).
 5. Redact the setup commands from the room.
 
-The Chinese room (中文, `#glyphatlas-zh`) is also bridged to the QQ group
-[字形大图谱｜Glyph Atlas](https://qm.qq.com/q/bKrGelyYIE), so QQ reaches that room only. The QQ
-bridge is not listed under *What runs*; its unit and config are recorded on the server that runs it.
+## QQ
+
+The QQ group [字形大图谱｜Glyph Atlas](https://qm.qq.com/q/bKrGelyYIE) is one chat, so the bridge
+mirrors the five language rooms — English, 中文, 日本語, 한국어 and Tiếng Việt — into it, prefixing
+each text message with its room (`[日本語] name: …`). A message written in QQ is posted to
+`#zh:glyphatlas.org`. 歡迎 · Welcome, 奇字 · Curiosities, 詢問 · Questions, 聯絡 · Feedback and 開發 · Dev
+have no QQ counterpart.
+
+The bridge is the QQ app `Glyph Atlas Matrix` (app id in `qq-appid`, secret in `qq-app-secret`) and
+talks to the homeserver as the appservice `@qqbot:glyphatlas.org`. Its configuration,
+`/var/lib/qq-bridge/config.toml`, lists the group and every mirrored room:
+
+```toml
+[qq]
+app_id = "<app id>"
+app_secret = "<app secret>"
+group = "<group openid>"
+incoming = "#zh:glyphatlas.org"
+
+[[room]]
+alias = "#ja:glyphatlas.org"
+label = "日本語"
+```
+
+`label` is the tag QQ shows; `incoming` is the room QQ messages are posted to. Adding a room means
+adding a `[[room]]` entry and restarting `qq-bridge`. In the QQ group, `!qq id` replies with the
+group's openid and `!qq status` says the bridge is running.
+
+**Replaying history.** QQ limits how much a bot may push, so history is replayed once, in batches:
+several room messages per QQ message, each line stamped with its time (Asia/Shanghai) and room.
+Events already carried to QQ are skipped, so a run can be repeated after a failure, and images and
+files appear as `[圖片]` and the like rather than as the media themselves. Stop the bridge while it
+runs, then start it again:
+
+```sh
+systemctl stop qq-bridge
+runuser -u qq-bridge -- env PYTHONPATH=/opt/qq-bridge/src /opt/qq-bridge/venv/bin/python \
+  -m qq_bridge backfill --config /var/lib/qq-bridge/config.toml --dry-run
+runuser -u qq-bridge -- env PYTHONPATH=/opt/qq-bridge/src /opt/qq-bridge/venv/bin/python \
+  -m qq_bridge backfill --config /var/lib/qq-bridge/config.toml
+systemctl start qq-bridge
+```
