@@ -1361,7 +1361,6 @@
     <!-- The line the counts take once the rows are in, held so the collage does not move down then. -->
     <p class="find-count" aria-hidden="true">&#8203;</p>
   {/if}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="glyph-grid collage" class:selecting bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading && mounted}>
     {#if loading && !display.length}<noscript><p class="noscript-note">{t('explore.noscript')}</p></noscript><div class="collage-block" style={skeleton.block}>{#each skeleton.tiles as style}<div class="glyph-skeleton collage-cell" {style}></div>{/each}</div>
     {:else}{#each sections as section (section.key)}{#if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{/each}{/if}
@@ -1386,12 +1385,20 @@
   .zoom-control{display:flex;align-items:center;gap:6px;color:var(--muted)}
   /* What the collection is shown as, and how, stays together as one group wherever the toolbar puts it. */
   .collection-tools{display:contents}
-  @media(min-width:1700px){.collection-tools{display:flex;align-items:center;gap:14px}}
+  /* Wide screens keep the toolbar's controls on one row: the find box takes the room it needs, the
+     categories follow it, and the tools of the page take the rest, starting where the toolbar meets the
+     budget the find box may take on any width. Below that, the tools begin a row of their own. */
+  .page-tools{display:contents}
+  @media(min-width:1700px){
+    .page-tools{display:flex;flex:1;align-items:center;justify-content:flex-end;gap:28px}
+    .collection-tools{display:flex;align-items:center;gap:14px}
+    .collection-toolbar :global(.character-search){flex:0 0 420px}
+  }
   /* The server cannot know the reader's size, so the slider waits for the page to wake rather than show the wrong one. */
   :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
   .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
   .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
-  .select-toggle{gap:6px;font-size:12px;padding:6px 11px;color:var(--muted)}
+  .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
   .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
   .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 10px/1 system-ui,sans-serif;color:transparent}
   .select-toggle[aria-pressed="true"] .select-mark{color:inherit}

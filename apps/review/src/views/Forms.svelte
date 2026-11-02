@@ -678,7 +678,7 @@
 </section>
 
 <style>
-  .forms{padding:24px 4.4vw 60px;margin:auto}
+  .forms{padding:24px 4.4vw 60px}
   .forms-layout{border-top:1px solid var(--line);padding-top:18px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
   .family-list{position:sticky;top:16px;max-height:calc(100dvh - 32px);display:flex;flex-direction:column;gap:10px}
   .family-list input{width:100%;font-size:13px;padding:9px 11px}

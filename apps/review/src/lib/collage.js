@@ -68,22 +68,21 @@ export function collage(aspects) {
  * The rules query the gallery by its container name (`app.css`), being inside the block they style.
  * Past `WIDEST` columns a gallery stops adding them and the tiles grow to fill the width instead: the
  * default, in `WIDE`; another size, to the width the smallest size already gives that column count, so
- * a larger size is still the wider tile.
+ * a larger size is still the wider tile. The grid of squares takes its width from the same rules.
  */
 export function collageStyle() {
   const rules = COLUMNS.flatMap(n => [
     `@property --cell-c${n}{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y${n}{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n${n}{syntax:"<number>";inherits:false;initial-value:0}@property --collage-h${n}{syntax:"*";inherits:false}`])
   const others = ZOOMS.filter(width => width !== ZOOM).map(width => `[data-tile-size="${width}"]`).join(',')
+  // The gallery's own width inside the page's padding, which is 4.4vw of the screen either side.
+  const beyond = `calc(100vw * .912 / ${WIDEST} + ${GAP}px)`
+  rules.push(`:root{--tile-w:${ZOOM}px;--tile-fill:${ZOOMS[0]}px}`)
   ZOOMS.forEach(width => {
     const root = width === ZOOM ? `:root:not(${others})` : `:root[data-tile-size="${width}"]`
-    const smallest = Math.min(width, ZOOMS[0])
-    // The gallery's own width inside the page's padding, which is 4.4vw of the screen either side.
-    const beyond = `calc(100vw * .912 / ${WIDEST} + ${GAP}px)`
-    const fill = width === ZOOM ? `min(${smallest}px + 4vw - 4px, ${WIDE})` : `clamp(${smallest}px + 4vw - 4px, ${beyond}, ${width}px + 2vw)`
-    rules.push(`:root{--tile-w:${ZOOM}px;--tile-fill:${ZOOMS[0]}px}${root}{--tile-w:${width}px;--tile-fill:${fill}}`)
+    const fill = width === ZOOM ? `min(${ZOOMS[0]}px + 4vw - 4px, ${WIDE})` : `clamp(${ZOOMS[0]}px + 4vw - 4px, ${beyond}, ${width}px + 2vw)`
+    rules.push(`${root}{--tile-w:${width}px;--tile-fill:${fill}}`)
     for (const n of COLUMNS.slice(1)) rules.push(`@container gallery (min-width:${n * width + (n - 1) * GAP}px){${root} .collage-block{--collage-cols:${n};--collage-h:var(--collage-h${n})}${root} .collage-cell{--cell-c:var(--cell-c${n});--cell-y:var(--cell-y${n});--cell-n:var(--cell-n${n})}}`)
   })
-  rules.push(`@container gallery (min-width:${COLUMNS.at(-1) * ZOOMS[0] + (COLUMNS.at(-1) - 1) * GAP}px){:root .collage-block{--collage-cols:${WIDEST};--collage-h:var(--collage-h${WIDEST})}:root .collage-cell{--cell-c:var(--cell-c${WIDEST});--cell-y:var(--cell-y${WIDEST});--cell-n:var(--cell-n${WIDEST})}}`)
   return rules.join('\n')
 }
 
