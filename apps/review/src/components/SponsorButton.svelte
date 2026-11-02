@@ -1,8 +1,10 @@
 <script>
   // The header's Sponsor pill, led by the author's face, and the dialog it opens: the author's
-  // portrait, what a tip pays for, then three steps that end at the Ko-fi button. Ko-fi handles the
-  // amount and the payment; companies can write in to sponsor too.
-  import { t } from '$lib/i18n.svelte.js'
+  // portrait, what a tip pays for, then three steps that end at the Ko-fi and OFUSE buttons. Each
+  // button carries its service's own mark and colour, unaltered as both brand kits require. Each
+  // service handles the amount and the payment; companies can write in to sponsor too. OFUSE is a
+  // Japanese service, so Japanese readers see it first.
+  import { t, base } from '$lib/i18n.svelte.js'
   let open = $state(false), dialog = $state()
   $effect(() => { if (open && dialog && !dialog.open) dialog.showModal() })
   // The supporter roll is a custom element served by supporters.mkpo.li; the dialog loads it the first time it opens.
@@ -14,6 +16,7 @@
     const box = dialog.getBoundingClientRect()
     if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) dialog.close()
   }
+  const ofuseFirst = $derived(base() === 'ja')
   const heart = 'M12 21s-8.5-5.1-8.5-11.3A4.7 4.7 0 0 1 12 6.9a4.7 4.7 0 0 1 8.5 2.8C20.5 15.9 12 21 12 21Z'
 </script>
 
@@ -37,11 +40,7 @@
         <h3>{t('sponsor.howTo')}</h3>
         <ol class="steps" role="list"><li>{t('sponsor.step1')}</li><li>{t('sponsor.step2')}</li><li>{t('sponsor.step3')}</li></ol>
       </section>
-      <a class="kofi" href="https://ko-fi.com/mkpoli" target="_blank" rel="noreferrer">
-        <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4ZM16 11h2a2.5 2.5 0 0 1 0 5h-2M7 3v3M11 2v3M15 3v3" /></svg></span>
-        <span class="copy"><strong>Ko-fi</strong><small>{t('sponsor.kofi')}</small></span>
-        <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
-      </a>
+      <div class="tips">{#if ofuseFirst}{@render ofuse()}{@render kofi()}{:else}{@render kofi()}{@render ofuse()}{/if}</div>
       <a class="company" href="mailto:mkpoli@mkpo.li?subject=Sponsorship%20on%20glyphatlas.org">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18v12H3zM3 7l9 6 9-6" /></svg>
         <span class="copy"><strong>{t('sponsor.company')}</strong><small>{t('sponsor.companyHint')}</small></span>
@@ -51,6 +50,22 @@
     </div>
   </dialog>
 {/if}
+
+{#snippet kofi()}
+  <a class="tip kofi" href="https://ko-fi.com/mkpoli" target="_blank" rel="noreferrer">
+    <img class="mark" src="/brand/kofi-symbol.svg" alt="" width="34" height="27" />
+    <span class="copy"><strong>Ko-fi</strong><small>{t('sponsor.kofi')}</small></span>
+    <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+  </a>
+{/snippet}
+
+{#snippet ofuse()}
+  <a class="tip ofuse" href="https://ofuse.me/mkpoli" target="_blank" rel="noreferrer">
+    <img class="mark" src="/brand/ofuse-icon.svg" alt="" width="26" height="28" />
+    <span class="copy"><strong>OFUSE</strong><small>{t('sponsor.ofuse')}</small></span>
+    <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+  </a>
+{/snippet}
 
 <style>
   .sponsor, .sponsor-dialog { --sp-ink: light-dark(#c2185b, #ffb3cd); --sp-heart: light-dark(#ff4f88, #ff7aa6); --sp-line: light-dark(#ffc2d6, #6b2c47);
@@ -97,17 +112,19 @@
   .steps li { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.45; counter-increment: step; }
   .steps li::before { content: counter(step); display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%;
     background: var(--sp-ink); color: var(--sp-soft); font-size: 11px; font-weight: 700; line-height: 1; transform: translateY(-1px); }
-  .kofi { display: flex; align-items: center; gap: 12px; padding: 12px 18px 12px 12px; border-radius: 999px; background: linear-gradient(135deg, #d81b60, #b0124f);
-    color: #fff; box-shadow: 0 6px 16px rgb(216 27 96 / .32); transition: transform .18s ease, box-shadow .18s ease; }
-  .kofi:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgb(216 27 96 / .42); }
-  .kofi:active { transform: scale(.98); }
-  .mark { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 50%; background: rgb(255 255 255 / .22); }
-  .mark svg { width: 20px; height: 20px; }
+  .tips { display: flex; flex-direction: column; gap: 10px; }
+  .tip { --tip: 32 32 32; display: flex; align-items: center; gap: 12px; padding: 12px 18px 12px 12px; border: 1px solid light-dark(#202020, rgb(255 255 255 / .2));
+    border-radius: 999px; background: #202020; color: #fff; box-shadow: 0 6px 16px rgb(var(--tip) / .32); transition: transform .18s ease, box-shadow .18s ease; }
+  .tip:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgb(var(--tip) / .42); }
+  .tip:active { transform: scale(.98); }
+  /* OFUSE Blue (#2882a7) taken 4% darker, so the white labels reach 4.5:1. */
+  .ofuse { --tip: 38 125 160; border-color: #267da0; background: #267da0; }
+  .mark { display: block; flex: none; width: 38px; height: 30px; object-fit: contain; }
   .arrow { flex: none; width: 18px; height: 18px; }
   .copy { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
   .copy strong { font-size: 13.5px; font-weight: 700; }
   .copy small { font-size: 12px; line-height: 1.4; }
-  .kofi .copy strong { font-size: 15px; }
+  .tip .copy strong { font-size: 15px; }
   .company { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border-radius: 12px; color: var(--muted); }
   .company:hover { background: var(--surface-selected); color: var(--ink); }
   .company svg { flex: none; width: 16px; height: 16px; margin-top: 2px; }
