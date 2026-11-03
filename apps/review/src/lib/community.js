@@ -21,6 +21,7 @@ export const IRC_CHANNELS = [
   { channel: '#glyphatlas-ja', name: '日本語', lang: 'ja', language: 'ja' },
   { channel: '#glyphatlas-ko', name: '한국어', lang: 'ko', language: 'ko' },
   { channel: '#glyphatlas-vi', name: 'Tiếng Việt', lang: 'vi', language: 'vi' },
+  { channel: '#glyphatlas-tangut', name: '党項 · Tangut' },
   { channel: '#glyphatlas-curiosities', name: '奇字 · Curiosities' },
   { channel: '#glyphatlas-questions', name: '詢問 · Questions' },
   { channel: '#glyphatlas-feedback', name: '聯絡 · Feedback' },
