@@ -12,14 +12,14 @@
   let { initialQuery = '' } = $props()
   let find = $state(initialQuery), books = $state([]), total = $state(0), loading = $state(true), error = $state('')
   let answered = 0, closed = false, timer
-  // The query the address holds. A search writes it as the reader types; a link to another query, or
-  // Back, brings one in. `written` is the query this view put there, so its own writes are not read
-  // back as a new search.
+  // The query the address holds. A search writes it as the reader types, and a link to another
+  // query, or Back, brings one in. A query the field already holds is this view's own write, so it
+  // is not searched again.
   const asked = $derived(page.url.searchParams.get('q')?.trim() ?? '')
-  let written = null, seen = null
+  let seen = null
   $effect(() => {
     const wanted = asked
-    if (seen !== null && wanted !== seen && wanted !== written) { find = wanted; load() }
+    if (seen !== null && wanted !== seen && wanted !== find.trim()) { find = wanted; load() }
     seen = wanted
   })
 
@@ -41,15 +41,13 @@
   function search() {
     clearTimeout(timer)
     timer = setTimeout(() => {
-      const query = find.trim()
-      written = query
-      replaceState(address(query), page.state)
+      replaceState(address(find.trim()), page.state)
       load()
     }, 200)
   }
 
   onMount(() => {
-    seen = written = asked
+    seen = asked
     load()
     return () => { closed = true; clearTimeout(timer) }
   })
