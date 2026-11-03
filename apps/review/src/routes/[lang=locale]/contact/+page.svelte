@@ -1,7 +1,7 @@
 <script>
   import Seo from '$components/Seo.svelte'
   import LinkMark from '$components/LinkMark.svelte'
-  import { t, around, locale } from '$lib/i18n.svelte.js'
+  import { t, around, locale, formatDateTime } from '$lib/i18n.svelte.js'
   import { CHATS, IRC_CHANNELS, IRC_WEB, OTHER_GROUPS, SPACE } from '$lib/community.js'
   const EMAIL = 'contact@glyphatlas.org'
   const REPO = 'https://github.com/mkpoli/glyph-atlas'
@@ -31,6 +31,16 @@
   // IRC keeps no membership and QQ publishes none, so those marks carry no count.
   let members = $state({})
   $effect(() => { fetch('/api/community').then(response => response.ok ? response.json() : {}).then(found => { members = found }).catch(() => {}) })
+  // Recent messages from the public rooms, so someone who has not signed in can see what the chat is like
+  // before joining (`preview.ts`). The panel stays out of the page until there is something to show.
+  let preview = $state(undefined)
+  $effect(() => { fetch('/api/preview').then(response => response.ok ? response.json() : []).then(found => { preview = found }).catch(() => { preview = [] }) })
+  // A message reads as a time today, and as a date and time before that, so a quiet room still looks alive.
+  // The site's own formatter writes the date in the page's language, classical numerals included.
+  const at = (stamp) => {
+    const sameDay = new Date(stamp).toDateString() === new Date().toDateString()
+    try { return formatDateTime(stamp, { date: !sameDay }) } catch { return '' }
+  }
   // The IRC picker starts on the channel for the page's language; lzh pages are Chinese.
   const spoken = $derived(locale() === 'lzh' ? 'zh' : locale().split('-')[0])
   let irc, picked = $state([])
@@ -59,13 +69,35 @@
           {#if chat.mark === 'irc'}
             <a href={chat.href} rel="noopener" target="_blank" aria-haspopup="dialog" onclick={event => { event.preventDefault(); irc.showModal() }}><LinkMark name={chat.mark} />{chat.name}</a>
           {:else}
-            <a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}{#if typeof members[chat.mark] === 'number'}<small>{t('contact.chat.members', { count: members[chat.mark] })}</small>{/if}</a>
+            <a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}{#if chat.count !== false && typeof members[chat.mark] === 'number'}<small>{t('contact.chat.members', { count: members[chat.mark] })}</small>{/if}</a>
           {/if}
         </li>
       {/each}
     </ul>
     <p>{t('contact.chat.rooms')}</p>
   </section>
+
+  {#if preview?.length}
+    <!-- A look at the rooms, folded away: the page is mostly about reaching the maintainers, and a wall
+         of messages would push that form off the screen. A native disclosure needs no script. -->
+    <details class="preview-section">
+      <summary><h2>{t('contact.preview.title')}</h2></summary>
+      <p>{t('contact.preview.body')}</p>
+      <div class="preview">
+        {#each preview as room (room.alias)}
+          <article>
+            <h3>{room.name}</h3>
+            <ul>
+              {#each room.messages as line, index (index)}
+                <li><span class="meta"><span class="who">{line.name}</span><time datetime={new Date(line.at).toISOString()}>{at(line.at)}</time></span><span class="what">{line.body}</span></li>
+              {/each}
+            </ul>
+          </article>
+        {/each}
+      </div>
+      <p class="preview-note">{t('contact.preview.note')}</p>
+    </details>
+  {/if}
 
   <section>
     <h2>{t('contact.matrix.title')}</h2>
@@ -152,6 +184,30 @@
   .doors a:hover { border-color: var(--line-hover); }
   .doors :global(.link-mark) { width: 18px; height: 18px; margin: 0; vertical-align: 0; }
   .doors small { color: var(--muted); font-weight: 400; }
+  .preview-section { margin-top: 28px; }
+  /* The summary lines up with the sections' own headings; its own marker shows that it opens. */
+  .preview-section summary { cursor: pointer; display: flex; align-items: center; gap: 6px; list-style: none; }
+  .preview-section h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .preview-section summary::-webkit-details-marker { display: none; }
+  .preview-section summary::marker { content: ''; }
+  .preview-section summary::before { content: '▸'; font-size: 12px; color: var(--muted); transition: transform .15s; }
+  .preview-section[open] summary::before { transform: rotate(90deg); }
+  .preview-section > p { margin-top: 8px; }
+  .preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+  .preview article { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+  .preview h3 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .preview ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+  /* A message may hold an IDS description (⿰𠤕⿱龴疋). Plangothic draws the rare ideographs it names, but no
+     bundled font draws the operators themselves (U+2FF0-2FFB), so those come from a reader's own fonts where
+     it has them (`apps/review/static/fonts/README.md`). */
+  @font-face { font-family: "IDS Parts"; src: url("/fonts/Plangothic-ids-parts.woff2") format("woff2"); font-display: swap; unicode-range: U+2E80-2EFF, U+31E4-31EF, U+20000-3FFFF; }
+  @font-face { font-family: "IDS Strokes"; src: url("/fonts/NotoSansCJKjp-ids-strokes.woff2") format("woff2"); font-display: swap; unicode-range: U+31C0-31E3; }
+  .preview li { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 13.5px; line-height: 1.55; overflow-wrap: anywhere; font-family: Inter, "Helvetica Neue", Arial, "Noto Sans", "IDS Parts", "IDS Strokes", "GenZui Sans", sans-serif; }
+  .preview .meta { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .preview .who { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preview .who::after { content: ':'; font-weight: 400; }
+  .preview time { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .preview-note { color: var(--muted); font-size: 12px; }
   .message-form { display: grid; gap: 6px; margin-top: 12px; }
   .message-form label { font-weight: 500; margin-top: 6px; }
   .message-form textarea, .message-form input { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; box-sizing: border-box; }
