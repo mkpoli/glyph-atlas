@@ -132,8 +132,8 @@ Take a backup before upgrading the homeserver.
 ## Bridged rooms
 
 Each public room in the space has a Discord channel, a Telegram topic and a Libera.Chat channel
-(`#glyphatlas` for 歡迎 · Welcome, `#glyphatlas-<room>` for the others). The five language rooms also
-feed the QQ group; see *QQ* below. To add a room:
+(`#glyphatlas` for 歡迎 · Welcome, `#glyphatlas-<room>` for the others). QQ mirrors the public rooms
+in use, apart from 管理 · Admin and 收件 · Inbox; see *QQ* below. To add a room:
 
 1. Create the Matrix room (public, history readable by anyone; the bridge bots at power level 50),
    the Discord channel, and the Telegram topic, and post once in the topic.
@@ -149,10 +149,10 @@ feed the QQ group; see *QQ* below. To add a room:
 ## QQ
 
 The QQ group [字形大图谱｜Glyph Atlas](https://qm.qq.com/q/bKrGelyYIE) is one chat, so the bridge
-mirrors the five language rooms — English, 中文, 日本語, 한국어 and Tiếng Việt — into it, prefixing
-each text message with its room (`[日本語] name: …`). A message written in QQ is posted to
-`#zh:glyphatlas.org`. 歡迎 · Welcome, 奇字 · Curiosities, 詢問 · Questions, 聯絡 · Feedback and 開發 · Dev
-have no QQ counterpart.
+mirrors the public rooms in use — 歡迎 · Welcome, English, 中文, 日本語, 한국어, Tiếng Việt, 奇字 ·
+Curiosities, 詢問 · Questions, 聯絡 · Feedback, 開發 · Dev, 談話 · Chatting, 投稾 · Posts, 事務 · Affairs and
+IDS Workshop — prefixing each text message with its room (`[日本語] name: …`). A message written in QQ
+is posted to `#zh:glyphatlas.org`. 管理 · Admin and 收件 · Inbox stay out of QQ.
 
 The bridge is the QQ app `Glyph Atlas Matrix` (app id in `qq-appid`, secret in `qq-app-secret`) and
 talks to the homeserver as the appservice `@qqbot:glyphatlas.org`. Its configuration,
@@ -176,15 +176,20 @@ group's openid and `!qq status` says the bridge is running.
 
 **Replaying history.** QQ limits how much a bot may push, so history is replayed once, in batches:
 several room messages per QQ message, each line stamped with its time (Asia/Shanghai) and room.
-Events already carried to QQ are skipped, so a run can be repeated after a failure, and images and
-files appear as `[圖片]` and the like rather than as the media themselves. Stop the bridge while it
-runs, then start it again:
+Events already carried to QQ are skipped, so a run can be repeated after a failure. Images and files
+appear as `[圖片]` and the like in those batches; `media` sends the images themselves afterwards, in
+time order, a few seconds apart, skipping the ones QQ already has. Stop the bridge while either runs,
+then start it again:
 
 ```sh
 systemctl stop qq-bridge
-runuser -u qq-bridge -- env PYTHONPATH=/opt/qq-bridge/src /opt/qq-bridge/venv/bin/python \
-  -m qq_bridge backfill --config /var/lib/qq-bridge/config.toml --dry-run
-runuser -u qq-bridge -- env PYTHONPATH=/opt/qq-bridge/src /opt/qq-bridge/venv/bin/python \
-  -m qq_bridge backfill --config /var/lib/qq-bridge/config.toml
+qq() {
+  runuser -u qq-bridge -- env PYTHONPATH=/opt/qq-bridge/src /opt/qq-bridge/venv/bin/python \
+    -m qq_bridge "$@" --config /var/lib/qq-bridge/config.toml
+}
+qq backfill --dry-run
+qq backfill
+qq media --dry-run
+qq media
 systemctl start qq-bridge
 ```
