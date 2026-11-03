@@ -1,7 +1,7 @@
 <script>
   import Seo from '$components/Seo.svelte'
   import LinkMark from '$components/LinkMark.svelte'
-  import { t, around, locale } from '$lib/i18n.svelte.js'
+  import { t, around, locale, formatDateTime } from '$lib/i18n.svelte.js'
   import { CHATS, IRC_CHANNELS, IRC_WEB, OTHER_GROUPS, SPACE } from '$lib/community.js'
   const EMAIL = 'contact@glyphatlas.org'
   const REPO = 'https://github.com/mkpoli/glyph-atlas'
@@ -36,13 +36,10 @@
   let preview = $state(undefined)
   $effect(() => { fetch('/api/preview').then(response => response.ok ? response.json() : []).then(found => { preview = found }).catch(() => { preview = [] }) })
   // A message reads as a time today, and as a date and time before that, so a quiet room still looks alive.
-  const at = (seconds) => {
-    const when = new Date(seconds)
-    const today = new Date()
-    const sameDay = when.toDateString() === today.toDateString()
-    return when.toLocaleString(locale(), sameDay
-      ? { hour: '2-digit', minute: '2-digit' }
-      : { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  // The site's own formatter writes the date in the page's language, classical numerals included.
+  const at = (stamp) => {
+    const sameDay = new Date(stamp).toDateString() === new Date().toDateString()
+    try { return formatDateTime(stamp, { date: !sameDay }) } catch { return '' }
   }
   // The IRC picker starts on the channel for the page's language; lzh pages are Chinese.
   const spoken = $derived(locale() === 'lzh' ? 'zh' : locale().split('-')[0])
@@ -84,7 +81,7 @@
     <!-- A look at the rooms, folded away: the page is mostly about reaching the maintainers, and a wall
          of messages would push that form off the screen. A native disclosure needs no script. -->
     <details class="preview-section">
-      <summary>{t('contact.preview.title')}</summary>
+      <summary><h2>{t('contact.preview.title')}</h2></summary>
       <p>{t('contact.preview.body')}</p>
       <div class="preview">
         {#each preview as room (room.alias)}
@@ -189,7 +186,8 @@
   .doors small { color: var(--muted); font-weight: 400; }
   .preview-section { margin-top: 28px; }
   /* The summary lines up with the sections' own headings; its own marker shows that it opens. */
-  .preview-section summary { font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; list-style: none; }
+  .preview-section summary { cursor: pointer; display: flex; align-items: center; gap: 6px; list-style: none; }
+  .preview-section h2 { margin: 0; font-size: 16px; font-weight: 600; }
   .preview-section summary::-webkit-details-marker { display: none; }
   .preview-section summary::marker { content: ''; }
   .preview-section summary::before { content: '▸'; font-size: 12px; color: var(--muted); transition: transform .15s; }
@@ -204,7 +202,7 @@
      it has them (`apps/review/static/fonts/README.md`). */
   @font-face { font-family: "IDS Parts"; src: url("/fonts/Plangothic-ids-parts.woff2") format("woff2"); font-display: swap; unicode-range: U+2E80-2EFF, U+31E4-31EF, U+20000-3FFFF; }
   @font-face { font-family: "IDS Strokes"; src: url("/fonts/NotoSansCJKjp-ids-strokes.woff2") format("woff2"); font-display: swap; unicode-range: U+31C0-31E3; }
-  .preview li { display: flex; flex-direction: column; gap: 1px; font-size: 13.5px; line-height: 1.55; overflow-wrap: anywhere; font-family: Inter, "Helvetica Neue", Arial, "Noto Sans", "IDS Parts", "IDS Strokes", "GenZui Sans", sans-serif; }
+  .preview li { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 13.5px; line-height: 1.55; overflow-wrap: anywhere; font-family: Inter, "Helvetica Neue", Arial, "Noto Sans", "IDS Parts", "IDS Strokes", "GenZui Sans", sans-serif; }
   .preview .meta { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
   .preview .who { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .preview .who::after { content: ':'; font-weight: 400; }
