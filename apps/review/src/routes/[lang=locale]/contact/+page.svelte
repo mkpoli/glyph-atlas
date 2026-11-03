@@ -188,8 +188,7 @@
   .doors :global(.link-mark) { width: 18px; height: 18px; margin: 0; vertical-align: 0; }
   .doors small { color: var(--muted); font-weight: 400; }
   .preview-section { margin-top: 28px; }
-  /* The summary lines up with the sections' own headings, and carries a marker of its own so it reads as
-     something to open rather than a heading that happens to be clickable. */
+  /* The summary lines up with the sections' own headings; its own marker shows that it opens. */
   .preview-section summary { font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; list-style: none; }
   .preview-section summary::-webkit-details-marker { display: none; }
   .preview-section summary::marker { content: ''; }
