@@ -1,14 +1,17 @@
 import { request } from './client.js'
 
-// The page photos and the boxes on them. Only the local review service serves these routes; the
-// hosted Worker answers 404, so the Pages view and its drawing tools stay hidden there.
-export async function pagesAvailable(send = fetch) {
+// The books and the page photos of a dataset. Only the local review service serves these routes; the
+// hosted Worker answers 404, so the Books view and the drawing tools stay hidden there.
+export async function booksAvailable(send = fetch) {
   try {
-    const response = await send('/atlas/pages', { method: 'GET' })
+    const response = await send('/atlas/books?limit=1', { method: 'GET' })
     return response.ok && (response.headers.get('content-type') || '').includes('application/json')
   } catch { return false }
 }
-export const pageList = () => request('/atlas/pages')
+/** The books a query finds, `offset` books on from the first. A blank query finds every book. */
+export const bookList = (query = '', offset = 0) =>
+  request('/atlas/books?' + new URLSearchParams({ q: query, offset: String(offset) }))
+export const bookRecord = id => request('/atlas/books/' + encodeURIComponent(id))
 export const pageRecord = id => request('/atlas/pages/' + encodeURIComponent(id))
 export const drawBox = (pageId, body) => request('/atlas/pages/' + encodeURIComponent(pageId) + '/units', body)
 /** A character named for a drawn box goes through the character layer, as any identity correction does. */

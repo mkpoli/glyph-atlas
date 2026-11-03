@@ -10,12 +10,19 @@
 // gallery leave every tile before them where it was.
 import { cropShape } from './cropPaint.js'
 
+/** The most columns a gallery uses: a few large tiles read better than many small ones they scroll past. */
+const WIDEST = 10
 /** The column counts the stylesheet chooses between by the gallery's width and the tile size. */
-export const COLUMNS = Array.from({ length: 20 }, (_, i) => i + 2)
-/** The tile sizes the reader chooses between, smallest first: the narrowest a column may be, in CSS pixels. */
+export const COLUMNS = Array.from({ length: WIDEST - 1 }, (_, i) => i + 2)
+/** The tile sizes the reader chooses between, smallest first: the narrowest a column may be, in CSS pixels.
+ *  A size past the widest column count is reached by screen width alone, at the same tile width. */
 export const ZOOMS = [70, 80, 90, 100, 130, 170, 220]
 /** The tile size a reader who has not chosen one sees, in the middle of the choice. */
 export const ZOOM = 100
+/** The size of a tile on a wide screen that has not been scaled: the size the sixth column in a full-width
+ *  gallery takes at the default tile size (columns the reader can ask for grew wider at the widths beyond
+ *  the tenth column, and a wide screen should not pay for that). Images are shown up to this multiple. */
+const WIDE = 'clamp(166px, 12.6vw, 440px)'
 /** The gap between columns once the gallery is wide enough for three. */
 const GAP = 12
 /** How far a crop's height may run from its width: a very flat or very tall crop is shown in a tile at this limit. */
@@ -58,15 +65,23 @@ export function collage(aspects) {
  * The stylesheet that picks the column count: for each tile size, as many columns as fit at that
  * width or wider (`--tile-w`, which the grid of squares uses too). The size is the document's
  * `data-tile-size`, a width of `ZOOMS`; a document without one, or with another value, takes `ZOOM`.
+ * The rules query the gallery by its container name (`app.css`), being inside the block they style.
+ * Past `WIDEST` columns a gallery stops adding them and the tiles grow to fill the width instead: the
+ * default, in `WIDE`; another size, to the width the smallest size already gives that column count, so
+ * a larger size is still the wider tile. The grid of squares takes its width from the same rules.
  */
 export function collageStyle() {
   const rules = COLUMNS.flatMap(n => [
     `@property --cell-c${n}{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y${n}{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n${n}{syntax:"<number>";inherits:false;initial-value:0}@property --collage-h${n}{syntax:"*";inherits:false}`])
   const others = ZOOMS.filter(width => width !== ZOOM).map(width => `[data-tile-size="${width}"]`).join(',')
+  // The gallery's own width inside the page's padding, which is 4.4vw of the screen either side.
+  const beyond = `calc(100vw * .912 / ${WIDEST} + ${GAP}px)`
+  rules.push(`:root{--tile-w:${ZOOM}px;--tile-fill:${ZOOMS[0]}px}`)
   ZOOMS.forEach(width => {
     const root = width === ZOOM ? `:root:not(${others})` : `:root[data-tile-size="${width}"]`
-    rules.push(`${root}{--tile-w:${width}px}`)
-    for (const n of COLUMNS.slice(1)) rules.push(`@container (min-width:${n * width + (n - 1) * GAP}px){${root} .collage-block{--collage-cols:${n};--collage-h:var(--collage-h${n})}${root} .collage-cell{--cell-c:var(--cell-c${n});--cell-y:var(--cell-y${n});--cell-n:var(--cell-n${n})}}`)
+    const fill = width === ZOOM ? `min(${ZOOMS[0]}px + 4vw - 4px, ${WIDE})` : `clamp(${ZOOMS[0]}px + 4vw - 4px, ${beyond}, ${width}px + 2vw)`
+    rules.push(`${root}{--tile-w:${width}px;--tile-fill:${fill}}`)
+    for (const n of COLUMNS.slice(1)) rules.push(`@container gallery (min-width:${n * width + (n - 1) * GAP}px){${root} .collage-block{--collage-cols:${n};--collage-h:var(--collage-h${n})}${root} .collage-cell{--cell-c:var(--cell-c${n});--cell-y:var(--cell-y${n});--cell-n:var(--cell-n${n})}}`)
   })
   return rules.join('\n')
 }

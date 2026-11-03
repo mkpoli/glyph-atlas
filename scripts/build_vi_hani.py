@@ -48,7 +48,7 @@ KEEP = {"CODH", "U", "Unicode", "HI", "Lab", "Minna", "de", "Honkoku", "JSON", "
         "click", "qwerty", "zi", "tools", "Wikipedia", "Hentaigana", "roneo", "scan", "Gothic", "B", "C", "J", "K", "M", "S", "V", "W", "X", "Z", "n", "s",
         "CC", "BY", "SA", "BabelStone", "email", "PIN", "you", "example", "org", "Gravatar",
         "Cloudflare", "Web", "Analytics", "Email", "Service", "GitHub", "Google", "Discord", "LINE", "Kakao", "IP", "cookie",
-        "mkpoli", "anon", "a", "b", "c", "HuTime", "hutime", "ap", "MB", "Glyph", "Atlas", "CSL", "web", "JavaScript", "IIIF", "Curation", "Viewer", "Universal", "Manifest",
+        "mkpoli", "mkpo", "li", "anon", "a", "b", "c", "HuTime", "hutime", "ap", "MB", "Glyph", "Atlas", "CSL", "web", "JavaScript", "IIIF", "Curation", "Viewer", "Universal", "Manifest",
         "Element", "Matrix", "matrix", "glyphatlas", "contact", "Vultr", "IRC", "Libera", "Chat", "Telegram", "QQ", "issue", "pull", "request",
         "Noto", "Sans", "CJK", "JP", "Plangothic", "SIL", "OFL", "KanjiVG"}
 

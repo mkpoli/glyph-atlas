@@ -1309,16 +1309,22 @@
     <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
     <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else load() }} />
     <span class="toolbar-space"></span>
-    <ImageStyleToggle {ink} onchange={onink} />
-    {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
-    <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
-    <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
-      {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
+    <!-- The collection and the page: set aside on a wide screen, where they stand apart from what
+         narrows the collection. -->
+    <div class="page-tools">
+      <div class="collection-tools">
+        <ImageStyleToggle {ink} onchange={onink} />
+        {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
+        <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
+        <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
+          {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
+        </div>
+        <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
+        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
+        {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
+      </div>
+      <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
     </div>
-    <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
-    {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
-    {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
-    <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
   </div>
   {#if imaging}<ImageSearch given={imaging} onclose={() => imaging = null} {inspect} />{/if}
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
@@ -1377,6 +1383,17 @@
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
   .zoom-control{display:flex;align-items:center;gap:6px;color:var(--muted)}
+  /* What the collection is shown as, and how, stays together as one group wherever the toolbar puts it. */
+  .collection-tools{display:contents}
+  /* Wide screens keep the toolbar's controls on one row: the find box takes the room it needs, the
+     categories follow it, and the tools of the page take the rest, starting where the toolbar meets the
+     budget the find box may take on any width. Below that, the tools begin a row of their own. */
+  .page-tools{display:contents}
+  @media(min-width:1700px){
+    .page-tools{display:flex;flex:1;align-items:center;justify-content:flex-end;gap:28px}
+    .collection-tools{display:flex;align-items:center;gap:14px}
+    .collection-toolbar :global(.character-search){flex:0 0 420px}
+  }
   /* The server cannot know the reader's size, so the slider waits for the page to wake rather than show the wrong one. */
   :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
   .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}

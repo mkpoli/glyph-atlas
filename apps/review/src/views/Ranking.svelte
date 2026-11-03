@@ -36,10 +36,10 @@
 </section>
 
 <style>
-  .ranking { max-width: 820px; padding-bottom: 48px; }
+  .ranking { padding-bottom: 48px; }
   .ranking-head h1 { font-size: 28px; font-weight: 500; letter-spacing: -.6px; margin: 6px 0 6px; }
   .ranking-hint { font-size: 12px; line-height: 1.5; color: var(--muted); margin-bottom: 18px; }
-  .ranking-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  .ranking-list { list-style: none; margin: 0; padding: 0; max-width: 820px; border-top: 1px solid var(--line); }
   .ranking-list li { display: flex; align-items: center; gap: 14px; padding: 12px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
   .ranking-list li.mine { background: var(--accent-hover); }
   .ranking-place { flex: 0 0 34px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
