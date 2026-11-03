@@ -80,8 +80,10 @@
   </section>
 
   {#if preview?.length}
-    <section>
-      <h2>{t('contact.preview.title')}</h2>
+    <!-- A look at the rooms, folded away: the page is mostly about reaching the maintainers, and a wall
+         of messages would push that form off the screen. A native disclosure needs no script. -->
+    <details class="preview-section">
+      <summary>{t('contact.preview.title')}</summary>
       <p>{t('contact.preview.body')}</p>
       <div class="preview">
         {#each preview as room (room.alias)}
@@ -89,14 +91,14 @@
             <h3>{room.name}</h3>
             <ul>
               {#each room.messages as line, index (index)}
-                <li><span class="who">{line.name}</span> <span class="what">{line.body}</span> <time datetime={new Date(line.at).toISOString()}>{at(line.at)}</time></li>
+                <li><span class="meta"><span class="who">{line.name}</span><time datetime={new Date(line.at).toISOString()}>{at(line.at)}</time></span><span class="what">{line.body}</span></li>
               {/each}
             </ul>
           </article>
         {/each}
       </div>
       <p class="preview-note">{t('contact.preview.note')}</p>
-    </section>
+    </details>
   {/if}
 
   <section>
@@ -184,18 +186,28 @@
   .doors a:hover { border-color: var(--line-hover); }
   .doors :global(.link-mark) { width: 18px; height: 18px; margin: 0; vertical-align: 0; }
   .doors small { color: var(--muted); font-weight: 400; }
+  .preview-section { margin-top: 28px; }
+  /* The summary lines up with the sections' own headings, and carries a marker of its own so it reads as
+     something to open rather than a heading that happens to be clickable. */
+  .preview-section summary { font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; list-style: none; }
+  .preview-section summary::-webkit-details-marker { display: none; }
+  .preview-section summary::marker { content: ''; }
+  .preview-section summary::before { content: '▸'; font-size: 12px; color: var(--muted); transition: transform .15s; }
+  .preview-section[open] summary::before { transform: rotate(90deg); }
+  .preview-section > p { margin-top: 8px; }
   .preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
   .preview article { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 10px 12px; min-width: 0; }
-  .preview h3 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
-  .preview ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; }
+  .preview h3 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .preview ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
   /* A message may hold an IDS description (⿰𠤕⿱龴疋). Plangothic draws the rare ideographs it names, but no
      bundled font draws the operators themselves (U+2FF0-2FFB), so those come from a reader's own fonts where
      it has them (`apps/review/static/fonts/README.md`). */
   @font-face { font-family: "IDS Parts"; src: url("/fonts/Plangothic-ids-parts.woff2") format("woff2"); font-display: swap; unicode-range: U+2E80-2EFF, U+31E4-31EF, U+20000-3FFFF; }
   @font-face { font-family: "IDS Strokes"; src: url("/fonts/NotoSansCJKjp-ids-strokes.woff2") format("woff2"); font-display: swap; unicode-range: U+31C0-31E3; }
-  .preview li { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; font-family: Inter, "Helvetica Neue", Arial, "Noto Sans", "IDS Parts", "IDS Strokes", "GenZui Sans", sans-serif; }
-  .preview .who { font-weight: 500; }
-  .preview .who::after { content: ':'; }
+  .preview li { display: flex; flex-direction: column; gap: 1px; font-size: 13.5px; line-height: 1.55; overflow-wrap: anywhere; font-family: Inter, "Helvetica Neue", Arial, "Noto Sans", "IDS Parts", "IDS Strokes", "GenZui Sans", sans-serif; }
+  .preview .meta { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .preview .who { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preview .who::after { content: ':'; font-weight: 400; }
   .preview time { color: var(--muted); font-size: 11px; white-space: nowrap; }
   .preview-note { color: var(--muted); font-size: 12px; }
   .message-form { display: grid; gap: 6px; margin-top: 12px; }

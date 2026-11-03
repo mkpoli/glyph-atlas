@@ -15,8 +15,8 @@ export const PREVIEW_ROOMS = [
 // A room's messages are read one request each; the edge serves every visitor from one read a minute.
 const MAX_AGE = 60, RETRY_AGE = 30;
 const TIMEOUT = 5000;
-// Enough to fill the panel without turning it into an archive.
-const LIMIT = 12;
+// Enough for a look at a room without turning the panel into an archive.
+const LIMIT = 6;
 // The longest message body kept; a longer one is cut with an ellipsis.
 const MAX_BODY = 400;
 

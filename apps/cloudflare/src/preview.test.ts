@@ -93,6 +93,12 @@ describe('preview room messages', () => {
     expect(await messages()).toEqual([]);
   });
 
+  it('keeps the six latest messages a room has', async () => {
+    serving(Array.from({ length: 9 }, (_, index) => event('@a:glyphatlas.org', `m${8 - index}`, 2000 - index)));
+    const found = await messages();
+    expect(found.map(message => message.body)).toEqual(['m3', 'm4', 'm5', 'm6', 'm7', 'm8']);
+  });
+
   it('keeps only the rooms that have something to show', async () => {
     answering({
       [ALIAS]: () => Response.json({ room_id: '!room:example' }),
