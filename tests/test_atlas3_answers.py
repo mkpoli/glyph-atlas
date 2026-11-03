@@ -127,14 +127,47 @@ def test_a_dry_run_bumps_nothing_and_uploads_nothing(layout, monkeypatch):  # no
     assert remote.query("glyph-atlas-v3", "SELECT gen FROM generation")[0]["gen"] == 1
 
 
-def test_review_events_on_the_new_layout_stop_a_publication_before_the_bump(layout, monkeypatch):  # noqa: F811
+def test_review_rows_on_the_new_layout_are_absorbed_before_the_bump(layout, monkeypatch):  # noqa: F811
     _root, publish, remote = layout
-    remote.dbs["glyph-atlas-v3"].execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,0,0)")
-    module_uploads = []
-    with pytest.raises(SystemExit):
-        module_uploads = answers(publish, monkeypatch, sample=0)
-    assert module_uploads == []
-    assert remote.query("glyph-atlas-v3", "SELECT gen FROM generation")[0]["gen"] == 1
+    crop = remote.dbs["glyph-atlas-v3"].execute("SELECT id,char,state,quiz FROM crops LIMIT 1").fetchone()
+    remote.dbs["glyph-atlas-v3"].execute("INSERT INTO reviews(crop,gen,at,char,state,quiz) VALUES(?,?,?,?,?,?)",
+                                         (crop[0], 1, 0, crop[1], crop[2], crop[3]))
+    uploaded = answers(publish, monkeypatch, sample=0)
+    assert uploaded[-1] == ("v3/", ["pointer.json"])
+    assert remote.query("glyph-atlas-v3", "SELECT gen FROM generation")[0]["gen"] == 2
+
+
+def test_absorbing_a_review_moves_its_count(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    answers(publish, monkeypatch, sample=0)
+    db = remote.dbs["glyph-atlas-v3"]
+    crop = db.execute("SELECT c.id,c.char,c.quiz FROM crops c JOIN graphemes g ON g.id=c.char WHERE g.text='い'").fetchone()
+    flagged = db.execute("SELECT code FROM codes WHERE field='state' AND key='flagged'").fetchone()[0]
+    db.execute("INSERT INTO reviews(crop,gen,at,char,state,quiz) VALUES(?,?,?,?,?,?)",
+               (crop[0], 2, 0, crop[1], flagged, crop[2]))
+    db.commit()
+    time.sleep(1.1)  # a publication is named by its second
+    answers(publish, monkeypatch, sample=0)
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert atlas.execute("SELECT state FROM crops WHERE id=?", (crop[0],)).fetchone()[0] == flagged
+    assert [c[2] for c in shard_of(root, crop[1])["chars"][str(crop[1])]] == [flagged]
+    pointer = json.loads(gzip.decompress(max((root / "out" / "pub").glob("pointer-*/pointer.json")).read_bytes()))
+    assert pointer["through_gen"] == 2
+
+
+def test_a_dry_run_rolls_the_absorption_back(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    answers(publish, monkeypatch, sample=0)
+    db = remote.dbs["glyph-atlas-v3"]
+    crop = db.execute("SELECT c.id,c.char,c.state,c.quiz FROM crops c JOIN graphemes g ON g.id=c.char WHERE g.text='い'").fetchone()
+    flagged = db.execute("SELECT code FROM codes WHERE field='state' AND key='flagged'").fetchone()[0]
+    db.execute("INSERT INTO reviews(crop,gen,at,char,state,quiz) VALUES(?,?,?,?,?,?)",
+               (crop[0], 2, 0, crop[1], flagged, crop[3]))
+    db.commit()
+    time.sleep(1.1)
+    answers(publish, monkeypatch, "--dry-run", sample=0)
+    atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert atlas.execute("SELECT state FROM crops WHERE id=?", (crop[0],)).fetchone()[0] == crop[2]
 
 
 def test_a_review_landing_before_the_bump_keeps_the_pointer(layout, monkeypatch):  # noqa: F811
@@ -143,20 +176,12 @@ def test_a_review_landing_before_the_bump_keeps_the_pointer(layout, monkeypatch)
 
     def racing(database, sql):
         if sql.startswith("UPDATE generation"):
-            real(database, "INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,0,0)")
+            real(database, "INSERT INTO reviews(crop,gen,at,char,state,quiz) VALUES(1,1,0,NULL,0,0)")
         return real(database, sql)
 
     monkeypatch.setattr(publish, "query", racing)
-    uploaded = []
     with pytest.raises(SystemExit):
-        uploaded = answers(publish, monkeypatch, sample=0)
-    assert uploaded == []
-
-
-def test_the_history_load_s_events_count_as_absorbed(layout, monkeypatch):  # noqa: F811
-    _root, publish, remote = layout
-    remote.dbs["glyph-atlas-v3"].execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,0,1,1,0,0)")
-    assert answers(publish, monkeypatch, sample=0)[-1] == ("v3/", ["pointer.json"])
+        answers(publish, monkeypatch, sample=0)
 
 
 def test_a_bump_another_run_made_stops_this_one(layout, monkeypatch):  # noqa: F811

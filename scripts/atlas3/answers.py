@@ -10,9 +10,11 @@ answer plus the `tally` rows above `through_gen` (decision record 0005). Answers
 publication's (out/answers-published.json, a digest of every file less its `pub` and of the site values)
 publish nothing: no bump, no object, no row.
 
-The counts come from the local copy of glyph-atlas-v3, which every publish replays. Reviews on the
-new layout are absorbed by reading their events; until that exists, a database holding events is
-refused.
+The counts come from the local copy of glyph-atlas-v3, which every publish replays. Reviews written
+since the last publication are absorbed first: the generation is bumped so the layer cannot grow, the
+`reviews` rows it covers are replayed on the local copy's crops (the columns a review sets), and the
+answers are built from the result. `tally` still carries the counts of reviews above `through_gen`, so
+the answers name what the publication itself holds.
 
 - `counts/<shard>.json.gz`: per character (grapheme id, in shard id % SHARDS), one cell per kind,
   style, state, withheld, witness decade and visual group, with its number of crops. Codes are the
@@ -302,9 +304,65 @@ def gallery(atlas, folder, pub, read):
     return files, pools_index
 
 
-def unabsorbed(through):
-    """Whether glyph-atlas-v3 holds a review event of a generation from 1 to `through`."""
-    return query("glyph-atlas-v3", f"SELECT count(*) AS n FROM events WHERE gen > 0 AND gen <= {through}")[0]["n"] > 0
+#: The crop columns a review sets; the `reviews` row holds them as the review left them.
+REVIEW_COLUMNS = ("char", "state", "style", "quiz")
+
+
+def reviewed(since, through):
+    """The review rows glyph-atlas-v3 holds above `since` and through `through`.
+
+    `reviews` is the layer a review writes: one row per crop, its generation, and the values it set.
+    The table holds the reviews since the last publication; the range keeps a row an earlier
+    publication did not prune out of this one's way. D1 sessions answer in commit order, so a read
+    after the bump cannot include a review of a later generation.
+    """
+    return query("glyph-atlas-v3",
+                 f"SELECT crop,{','.join(REVIEW_COLUMNS)} FROM reviews WHERE gen > {since} AND gen <= {through}")
+
+
+def absorb(atlas, rows):
+    """Replay review rows on the local copy's crops; a crop the copy does not hold is reported and skipped.
+
+    The writes stay in the caller's transaction: they are committed once the publication they belong
+    to has gone out, and rolled back by a dry run.
+    """
+    assignment = ", ".join(f"{name}=?" for name in REVIEW_COLUMNS)
+    refreshed = 0
+    for row in rows:
+        cursor = atlas.execute(f"UPDATE crops SET {assignment} WHERE id=?",
+                               [row[name] for name in REVIEW_COLUMNS] + [row["crop"]])
+        if cursor.rowcount == 1:
+            refreshed += 1
+        else:
+            print(f"reviewed crop {row['crop']} is not in the local copy; skipped", file=sys.stderr)
+    return refreshed
+
+
+def bump(pub, through):
+    """Move the generation past `through` and stamp the publication in one statement."""
+    query("glyph-atlas-v3", f"UPDATE generation SET gen = {through + 1} WHERE id = 0 AND gen = {through}; "
+                            f"INSERT INTO imports(stamp, at) SELECT 'pub:{pub}', unixepoch() WHERE changes() = 1")
+    if not applied("glyph-atlas-v3", f"pub:{pub}"):
+        sys.exit(f"another publication bumped generation {through}; nothing published")
+
+
+def answered_through():
+    """The generation the last publication answered through, read from the pointer it moved.
+
+    The state file names the publication; its pointer names the generation. No publication yet, or a
+    state file from before the generation was recorded, answers through zero.
+    """
+    last = OUT / "answers-published.json"
+    if not last.exists():
+        return 0
+    published = json.loads(last.read_text())
+    if isinstance(published.get("through_gen"), int):
+        return published["through_gen"]
+    if published.get("pub"):
+        pointer = OUT / "pub" / f"pointer-{published['pub']}" / "pointer.json"
+        if pointer.exists():
+            return json.loads(gzip.decompress(pointer.read_bytes()))["through_gen"]
+    return 0
 
 
 def answers_digest(folder, site):
@@ -343,7 +401,19 @@ def publication(dry_run, read=None):
     pub = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     atlas = sqlite3.connect(OUT / "atlas.sqlite")
     folder = OUT / "pub" / pub
-    # The sample's records are read before the bump, so a failed read leaves the generation where it was.
+    through = query("glyph-atlas-v3", "SELECT gen FROM generation WHERE id = 0")[0]["gen"]
+    since = answered_through()
+    pending = reviewed(since, through)
+    if pending and not dry_run:
+        # The bump fences the layer: reviews written from here carry the next generation and stay in
+        # `tally`, while the rows this publication answers through cannot grow. Read again after it, so
+        # a review that landed just before the fence is answered too.
+        bump(pub, through)
+        pending = reviewed(since, through)
+    refreshed = absorb(atlas, pending)
+    if refreshed:
+        print(f"absorbed {refreshed} reviewed crops through generation {through}", flush=True)
+    # The sample's records are read before the pointer moves, so a failed read leaves it where it was.
     sampled, pool_sizes = gallery(atlas, folder, pub, read or r2_reader())
     shards = defaultdict(dict)
     for char, rows in cells(atlas, "char", "char IS NOT NULL").items():
@@ -371,26 +441,17 @@ def publication(dry_run, read=None):
     digest = answers_digest(folder, site)
     last = OUT / "answers-published.json"
     published = json.loads(last.read_text()) if last.exists() else {}
-    if published.get("digest") == digest:
+    if not pending and published.get("digest") == digest:
         shutil.rmtree(folder)
         print(f"the answers equal publication {published['pub']}'s; nothing published", flush=True)
         return
-    through = query("glyph-atlas-v3", "SELECT gen FROM generation WHERE id = 0")[0]["gen"]
-    # Every review up to G is in the answers. None is absorbed yet, so a database holding one is refused,
-    # before the bump and again after it, since a review can land at G until the bump. The history load
-    # writes its events at generation 0, and the local copy holds them: they count as absorbed.
-    if unabsorbed(through):
-        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; nothing published")
-    if not dry_run:
-        # Reviews written after the bump carry the next generation, so the answers stand through G. The
-        # bump names G and stamps this publication in the same statement, so a resent statement cannot
-        # bump twice and only the run whose stamp is there made it.
-        query("glyph-atlas-v3", f"UPDATE generation SET gen = {through + 1} WHERE id = 0 AND gen = {through}; "
-                                f"INSERT INTO imports(stamp, at) SELECT 'pub:{pub}', unixepoch() WHERE changes() = 1")
-        if not applied("glyph-atlas-v3", f"pub:{pub}"):
-            sys.exit(f"another publication bumped generation {through}; nothing published")
-    if unabsorbed(through):
-        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; the pointer stays")
+    # A review that landed before the bump is answered above; one that lands after it carries the next
+    # generation, stays in `tally`, and is absorbed next time. Without a review the generation moves
+    # only when the answers themselves changed.
+    if not pending and not dry_run:
+        bump(pub, through)
+        if reviewed(since, through):
+            sys.exit("a review landed while the answers were built; the pointer stays")
 
     pointer = write(OUT / "pub" / f"pointer-{pub}" / "pointer.json", {"pub": pub, "through_gen": through})
     characters_counted = sum(len(s) for s in shards.values())
@@ -399,6 +460,7 @@ def publication(dry_run, read=None):
           f"{sum(len(v) for v in unread.values())} unread cells, {len(browse)} browse cells, {len(glyphs)} corpus cells, "
           f"gallery {', '.join(f'{k} {v['glyphs']}' for k, v in pool_sizes.items())} -> {folder}", flush=True)
     if dry_run:
+        atlas.rollback()
         print("dry run: nothing uploaded; the generation was not bumped", flush=True)
         return
     upload([f for f in files if f.parent.name == "counts"], f"{PUB_PREFIX}{pub}/counts/")
@@ -410,7 +472,8 @@ def publication(dry_run, read=None):
         query("glyph-atlas-v3", "; ".join(site_row(k, v) for k, v in site.items()))
     # The pointer moves last, once everything it names is in place.
     upload([pointer], POINTER_PREFIX)
-    last.write_text(json.dumps({"pub": pub, "digest": digest}) + "\n")
+    atlas.commit()
+    last.write_text(json.dumps({"pub": pub, "digest": digest, "through_gen": through}) + "\n")
     print(f"v3/pointer.json names {pub}", flush=True)
 
 
