@@ -12,6 +12,16 @@
   let { initialQuery = '' } = $props()
   let find = $state(initialQuery), books = $state([]), total = $state(0), loading = $state(true), error = $state('')
   let answered = 0, closed = false, timer
+  // The query the address holds. A search writes it as the reader types, and a link to another
+  // query, or Back, brings one in. A query the field already holds is this view's own write, so it
+  // is not searched again.
+  const asked = $derived(page.url.searchParams.get('q')?.trim() ?? '')
+  let seen = null
+  $effect(() => {
+    const wanted = asked
+    if (seen !== null && wanted !== seen && wanted !== find.trim()) { find = wanted; load() }
+    seen = wanted
+  })
 
   const address = query => localize('/books') + (query ? '?' + new URLSearchParams({ q: query }) : '')
 
@@ -37,6 +47,7 @@
   }
 
   onMount(() => {
+    seen = asked
     load()
     return () => { closed = true; clearTimeout(timer) }
   })

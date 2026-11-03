@@ -219,6 +219,10 @@ try {
   await browser.goto(`${service.base}/en/books`, { waitFor: `document.querySelector('a[href*="doc-1"]') !== null` })
   await browser.evaluate(`(() => { const field = document.querySelector('.books-find'); field.value = 'calibration book a'; field.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await browser.waitFor(`document.querySelectorAll('.book-card').length === 1 && document.querySelector('.book-title').textContent === 'Calibration book A'`)
+  // The same view handed another query from outside, as a link or Back does: the field and the list
+  // take the query the address holds. `b` opens a word of both books, so both are listed.
+  await browser.evaluate(`history.pushState({}, '', '/en/books?q=calibration+book+b'); dispatchEvent(new PopStateEvent('popstate', { state: {} }))`)
+  await browser.waitFor(`document.querySelector('.books-find').value === 'calibration book b' && document.querySelectorAll('.book-card').length === 2`)
   // Each page tile is its photo, small.
   await browser.goto(`${service.base}/en/books/doc-1`, { waitFor: `document.querySelector('a[href*="doc-1%3Ap1"] img')?.naturalWidth > 0` })
   const listed = await browser.evaluate(`document.querySelector('a[href*="doc-1%3Ap1"] .page-label span').textContent`)
