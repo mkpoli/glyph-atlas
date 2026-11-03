@@ -105,7 +105,10 @@ does the same with the character detector's boxes on pages that have no transcri
 the script the source is written in (`--script tangut`). With `--split`, the page's boxes are refined
 for text written in columns: a box lying inside a larger one is dropped as a part of that character,
 a box that holds two stacked characters is cut at the row of least ink where the column's pitch puts
-the cut, and two boxes whose paper gap and combined height make one character are joined. A unit with no character that is filed
+the cut, a box that is tall or wide against the page's own boxes is cut where a band of paper across
+it leaves two parts of similar size, a box twice a character long is cut at its row of least ink
+where the characters touch, and two boxes whose paper gap and combined height make one character are
+joined. A unit with no character that is filed
 under a script is a crop of the collection, grouped by that script and published with an empty
 character; it counts towards its book, under no character, and is left out of review rounds until a
 reader names it.

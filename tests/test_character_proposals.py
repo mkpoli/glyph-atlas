@@ -122,3 +122,35 @@ def test_the_pass_can_run_again_on_its_own_output() -> None:
     first = split_boxes(page(grid), proposals(boxes))
     second = split_boxes(page(grid), first)
     assert len(second) >= len(first)
+
+
+def test_a_marginal_box_over_two_characters_is_cut_at_the_band_between_them() -> None:
+    grid = [cell(column, row) for column in range(len(COLUMNS)) for row in range(ROWS)]
+    # Two characters at the leaf's right edge, outside the columns, in one detector box.
+    upper = Box(x=480, y=100, w=40, h=40)
+    lower = Box(x=480, y=160, w=40, h=40)
+    merged = Box(x=480, y=100, w=40, h=100)
+    out = split_boxes(page([*grid, upper, lower]), proposals([*grid, merged]))
+    parts = [p for p in out if p.x == 480]
+    assert len(parts) == 2
+    assert parts[0].y == merged.y and parts[1].y == merged.y + 50
+
+
+def test_a_single_character_box_keeps_its_gaps() -> None:
+    grid = [cell(column, row) for column in range(len(COLUMNS)) for row in range(ROWS)]
+    # One character drawn small in a box that is under the page's median height: its stroke gaps
+    # are not a band between two characters.
+    small = Box(x=480, y=300, w=40, h=45)
+    out = split_boxes(page([*grid, Box(x=480, y=310, w=40, h=40)]), proposals([*grid, small]))
+    assert [(p.x, p.y, p.w, p.h) for p in out if p.x == 480] == [(small.x, small.y, small.w, small.h)]
+
+
+def test_a_box_over_two_characters_side_by_side_is_cut_between_the_columns() -> None:
+    grid = [cell(column, row) for column in range(len(COLUMNS)) for row in range(ROWS)]
+    left = Box(x=470, y=300, w=40, h=40)
+    right = Box(x=520, y=300, w=40, h=40)
+    merged = Box(x=470, y=300, w=90, h=40)
+    out = split_boxes(page([*grid, left, right]), proposals([*grid, merged]))
+    parts = sorted((p for p in out if p.y == 300 and p.x >= 470), key=lambda p: p.x)
+    assert len(parts) == 2
+    assert parts[0].x == merged.x and parts[1].x + parts[1].w == merged.x + merged.w
