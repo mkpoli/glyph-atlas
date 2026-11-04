@@ -1,0 +1,25 @@
+# 田中尚房's manuscript dictionary of disease names, digitised by the National Diet Library.
+# The manuscript is the author's own copy (自筆稿本), 田中叢書 第7冊; the register records the
+# series and call number, the manifest the 128 images of this volume.
+#
+# Read on 2026-11-04 from https://dl.ndl.go.jp/api/iiif/2538234/manifest.json. Image 78, in the
+# に section, carries the 皻鼻 entry: にきみばな, 俗に ざくろばな, and 順和's ときみばな on the
+# same opening. The NDL fulltext is an unverified OCR of the manuscript.
+id: ndl-2538234
+name: 病名集
+publisher: 国立国会図書館
+holder: 国立国会図書館
+kind: image-collection
+url: https://dl.ndl.go.jp/pid/2538234
+licence: PDM-1.0
+licence_evidence: https://dl.ndl.go.jp/ja/iiif_license.html
+attribution: 国立国会図書館デジタルコレクション（https://dl.ndl.go.jp/pid/2538234）
+books:
+  - id: ndl:2538234
+    title: 病名集
+    manifest: https://dl.ndl.go.jp/api/iiif/2538234/manifest.json
+    source_url: https://dl.ndl.go.jp/pid/2538234
+notes:
+  - 田中尚房の自筆稿本、田中叢書 第7冊、請求記号 831-5。IIIF manifest は128画像。
+  - 第78画像に「皻鼻」があり、にきみばな、俗に ざくろばな とある。
+  - NDL の fulltext-json は手稿の未検証 OCR で、文字の同定には使えない。
