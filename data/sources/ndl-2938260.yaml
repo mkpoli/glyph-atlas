@@ -1,0 +1,23 @@
+# 山田武太郎's 新式節用辞典, 春陽堂, 1892. A Meiji printed dictionary, registered for its
+# readings rather than its letterforms: the type is not a hand-written glyph.
+#
+# Read on 2026-11-04 from https://dl.ndl.go.jp/api/iiif/2938260/manifest.json. Image 204, in the
+# に section, prints 皻鼻 with the ruby ニキミバナ and the gloss ざくろばな.
+id: ndl-2938260
+name: 新式 節用辞典
+publisher: 春陽堂
+holder: 国立国会図書館
+kind: image-collection
+url: https://dl.ndl.go.jp/pid/2938260
+licence: PDM-1.0
+licence_evidence: https://dl.ndl.go.jp/ja/iiif_license.html
+attribution: 国立国会図書館デジタルコレクション（https://dl.ndl.go.jp/pid/2938260）
+books:
+  - id: ndl:2938260
+    title: 新式 節用辞典
+    manifest: https://dl.ndl.go.jp/api/iiif/2938260/manifest.json
+    source_url: https://dl.ndl.go.jp/pid/2938260
+notes:
+  - 山田武太郎（美妙斎）著、春陽堂、1892年12月27日。IIIF manifest は364画像。
+  - 第204画像（に之部）に「皻鼻」があり、ルビ ニキミバナ、語釈 ざくろばな。
+  - 印刷活字の字典なので、字形の資料ではなく読みと語の資料として使う。
