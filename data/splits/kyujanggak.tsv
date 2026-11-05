@@ -1,0 +1,5 @@
+# Kyujanggak registers split by volume: the 1722 Changwon register trains, the 1904 Shanqing volume
+# validates, so a fine-tune is measured on a volume it has not seen.
+bid	title	production	split
+kyujanggak:GK18324_00:0001	慶尙道昌原府所在龍洞宮田畓庚子量案	handwritten	train
+kyujanggak:GK17689_00:0001	慶尙南道山淸郡量案	handwritten	val

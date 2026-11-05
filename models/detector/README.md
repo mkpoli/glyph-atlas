@@ -31,6 +31,26 @@ under `work/detector/tiles/`) is read from those instead.
 - Augmentation is brightness and contrast jitter only. A character mirrored or rotated is a
   different character, so neither is used.
 
+### A source the detector was not trained on
+
+The Kyujanggak land registers are written in dense vertical columns whose characters vary in size
+from one table to the next. On them the detector puts one box over two characters and here and there
+a box over part of one, so `atlas review propose-characters --split` refines the boxes before review.
+Boxes drawn by a reviewer in the review workspace are the ground truth a fine-tune needs.
+
+`data/splits/kyujanggak.tsv` splits the two collected volumes by book: the 1722 Changwon register
+trains and the 1904 Shanqing volume validates, so a fine-tune is measured on a volume it has not
+seen. Build the tiles from a dataset that carries the drawn boxes:
+
+```sh
+python scripts/build_detector_data.py --dataset work/kyujanggak-review \
+    --splits data/splits/kyujanggak.tsv --out work/detector-kyujanggak --image-cache work/kyu-cache
+```
+
+The `--image-cache` matters: the builder reads every row of the cache index and stats each file,
+and the shared cache sits on a 9p mount where that takes hours. A cache of just the dataset's pages
+skips the scan; `work/kyu-cache` is one, written with the dataset's pages' rows and files.
+
 ## Hyperparameters
 
 Every value lives in `config.yaml`; `train.py` refuses to start when the densest training tile holds
