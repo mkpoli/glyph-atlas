@@ -56,6 +56,10 @@
   let loading = $state(false), failed = $state(false), answer = $state(null)
   let options = $state([]), closed = false, timer, generation = 0
   let pending = null, composing = false, quiet = false, list = $state(null)
+  // The list takes the side of the box with room for it: the box under a selection sits at the bottom
+  // edge of the window, where a list below it would run off the page.
+  let flipped = $state(false), room = $state(null)
+  const MIN_BELOW = 200   // less than this under the box shows too few rows to choose from
 
   // The graphemes the candidates belong to, once each and in the candidates' order, and the candidates
   // that belong to none the page holds.
@@ -236,6 +240,56 @@
     options[index]?.scrollIntoView({ block: 'nearest' })
   })
 
+  /** The part of the window the list may fill: the visible viewport, less any panel between it and
+   * the box that clips what it holds (a dialog, a scrolling pane). */
+  function visibleBounds() {
+    const view = window.visualViewport
+    const top = view?.offsetTop ?? 0
+    const bounds = { top, bottom: top + (view?.height ?? window.innerHeight) }
+    for (let node = root?.parentElement; node && node !== document.body; node = node.parentElement) {
+      const style = getComputedStyle(node)
+      if (style.overflowX === 'visible' && style.overflowY === 'visible') continue
+      const rect = node.getBoundingClientRect()
+      bounds.top = Math.max(bounds.top, rect.top)
+      bounds.bottom = Math.min(bounds.bottom, rect.bottom)
+    }
+    return bounds
+  }
+
+  /** Open the list above the box when the window leaves too little below it, and cap its height to
+   * the space that side has. */
+  function place() {
+    if (!open || !root) return
+    const box = root.getBoundingClientRect(), bounds = visibleBounds()
+    const below = bounds.bottom - box.bottom - 8, above = box.top - bounds.top - 8
+    flipped = below < MIN_BELOW && above > below
+    room = Math.max(0, Math.floor(flipped ? above : below))
+  }
+
+  // The window changes under an open list (a phone keyboard, a resize, a panel scrolled), so the side
+  // is chosen again.
+  $effect(() => {
+    if (!open || !root) { flipped = false; room = null; return }
+    place()
+    const view = window.visualViewport
+    let frame = 0
+    const again = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => { frame = 0; place() })
+    }
+    window.addEventListener('resize', again)
+    document.addEventListener('scroll', again, { capture: true, passive: true })
+    view?.addEventListener('resize', again)
+    view?.addEventListener('scroll', again)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', again)
+      document.removeEventListener('scroll', again, { capture: true })
+      view?.removeEventListener('resize', again)
+      view?.removeEventListener('scroll', again)
+    }
+  })
+
   onMount(() => {
     if (autofocus) input?.focus()
     return () => { closed = true; clearTimeout(timer); pending?.abort() }
@@ -261,7 +315,7 @@
   </button></div>
 {/snippet}
 
-<div class="character-search" class:compact bind:this={root} onfocusout={blurred}>
+<div class="character-search" class:compact class:flipped style={room == null ? undefined : `--candidate-room:${room}px`} bind:this={root} onfocusout={blurred}>
   <form class="find" role="search" onsubmit={e => { e.preventDefault(); if (onsubmit) onsubmit(value); else choose() }}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
     {#if token}<button type="button" class="find-token" aria-label={tokenLabel} onclick={() => { ontokenclear(); input?.focus() }}><ScriptText text={token} /> ×</button>{/if}

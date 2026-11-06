@@ -161,14 +161,14 @@ export class Browser {
 
   /**
    * Make every page a disposable reviewer's. A fixture has no account service, so the page is told it
-   * is signed in as `clientId`, and each JSON write carries the id the page server would add for a
-   * signed-in account.
+   * is signed in as `clientId`, anonymous unless asked otherwise, and each JSON write carries the id
+   * the page server would add for a signed-in account.
    */
-  async writeAs(clientId) {
+  async writeAs(clientId, { anonymous = true } = {}) {
     await this.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
       const send = window.fetch
       window.fetch = (input, init = {}) => {
-        if (String(input) === '/api/account') return Promise.resolve(Response.json({ user: { id: ${JSON.stringify(clientId)}, name: ${JSON.stringify(clientId)}, anonymous: true } }))
+        if (String(input) === '/api/account') return Promise.resolve(Response.json({ user: { id: ${JSON.stringify(clientId)}, name: ${JSON.stringify(clientId)}, anonymous: ${anonymous} } }))
         if (init.method === 'POST' && typeof init.body === 'string') {
           try { init = { ...init, body: JSON.stringify({ ...JSON.parse(init.body), client_id: ${JSON.stringify(clientId)} }) } } catch {}
         }
