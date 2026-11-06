@@ -8,6 +8,8 @@
   },
   "app.name": "字形大圖譜",
   "app.home.aria": "字形大圖譜 入口",
+  "app.sites": "사이트",
+  "app.sites.more": "다른 文字 體系 프로젝트",
   "app.menu": "메뉴",
   "app.nav.aria": "主要 機能",
   "app.saved": "貯藏됨",
