@@ -9,8 +9,9 @@
     { name: 'Jurchen Input', href: 'https://jurchen.mkpo.li/', logo: '/sites/jurchen-input.svg' },
     { name: 'IDS Workshop', href: 'https://ids.mkpo.li/', logo: '/sites/ids-workshop.svg' },
   ]
-  // The gallery has a page for each of these languages; any other reads the English one.
-  const more = $derived(`https://scripts.mkpo.li/${['ja', 'zh-Hans', 'zh-Hant', 'ko'].includes(locale()) ? `${locale()}/` : ''}`)
+  // The gallery has pages in these languages; each other locale goes to the closest one, and the rest to the English root.
+  const GALLERY = { ja: 'ja/', 'ja-x-classical': 'ja/', 'zh-Hans': 'zh-Hans/', 'zh-Hant': 'zh-Hant/', lzh: 'zh-Hant/', 'vi-Hani': 'zh-Hant/', ko: 'ko/', 'ko-Kore': 'ko/' }
+  const more = $derived(`https://scripts.mkpo.li/${GALLERY[locale()] ?? ''}`)
 
   let open = $state(false)
   let root = $state()
@@ -27,7 +28,10 @@
     if (refocus) trigger?.focus()
   }
 
+  // These keys belong to the trigger; the page's shortcuts must not see them.
   function onTriggerKey(event) {
+    if (!['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) return
+    event.stopPropagation()
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       show()
@@ -66,12 +70,12 @@
 {#snippet symbol()}<svg class="atlas-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path class="cell" d="M4 4h9v9H4z" fill="currentColor"/><path class="cell" d="M19 4h9v9h-9z" fill="currentColor"/><path class="cell" d="M4 19h9v9H4z" fill="currentColor"/><path class="open-cell" d="M19 19h9v9h-9z" stroke="currentColor" stroke-width="2" pathLength="1"/></svg>{/snippet}
 
 <div class="site-select" bind:this={root}>
-  <button bind:this={trigger} type="button" class="wordmark" aria-haspopup="menu" aria-expanded={open} aria-label={t('app.sites')} onclick={() => (open ? hide() : show())} onkeydown={onTriggerKey}>
+  <button bind:this={trigger} type="button" class="wordmark" aria-haspopup="menu" aria-expanded={open} aria-label={`${t('app.name')}: ${t('app.sites')}`} onclick={() => (open ? hide() : show())} onkeydown={onTriggerKey}>
     {@render symbol()}{@render children()}<svg class="site-chevron" class:up={open} viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 3.5 5 7l3.5-3.5"/></svg>
   </button>
   {#if open}
     <div class="site-menu" role="menu" tabindex="-1" aria-label={t('app.sites')} onkeydown={onMenuKey}>
-      <a role="menuitem" tabindex="-1" href={localize('/')} aria-current="page" aria-label={t('app.home.aria')} onclick={() => hide()}>
+      <a role="menuitem" tabindex="-1" href={localize('/')} aria-current="true" aria-label={t('app.home.aria')} onclick={() => hide()}>
         {@render symbol()}<span>{t('app.name')}</span>
         <svg class="site-tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5"/></svg>
       </a>
