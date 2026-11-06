@@ -59,7 +59,7 @@
     `${s.was} → ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n+ ')).join('\n\n')
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
   // Three levels: the 字種 (the grapheme, and any other grapheme this form also writes, 后: 後), its 字体
-  // (the grapheme's own forms, then the 異体字 outside it, the ones a gallery widens to first), and the
+  // (the grapheme's own forms and the 異体字 outside it, the ones a gallery widens to first), and the
   // characters related otherwise (a loan, a homograph, a fallback reduction). A form that writes this
   // grapheme and a character of its own (後: 后) is a 字体 tagged as shared. A card cached before rows
   // carried `written` lists every unwidening pair as related; one cached before the writers has neither.
@@ -78,6 +78,12 @@
   const written = $derived([...variants.items, ...variants.related.filter(v => v.written || writers.has(v.code_point))]
     .filter(v => !own.has(v.code_point)).sort((a, b) => writers.has(b.code_point) - writers.has(a.code_point)))
   const related = $derived(variants.related.filter(v => !v.written && !writers.has(v.code_point) && !own.has(v.code_point)))
+  // The 字体 row: own forms and 異体字 in one list, the most used first, by the number each chip shows —
+  // the crops filed here and the corpus glyphs recorded. Ties keep the order they came in.
+  const forms = $derived([...members, ...written].sort((a, b) => crops(b) - crops(a)))
+  const memberPoints = $derived(new Set(members.map(member => member.code_point)))
+  // What each of the first two rows lists: the graphemes this form writes, and its forms.
+  const graphemeCount = $derived((selfGrapheme ? 1 : 0) + writes.length)
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
   // for it: characters that write the same word, kept out of the variant tiers and the widening. A card
   // cached before the word tables existed has no `words`; it reads as none.
@@ -94,7 +100,7 @@
 {#if card}
   <div class="character-layers" aria-label={t('chips.layers.label')}>
     <div class="layer-row">
-      <span class="layer-label">{t('chips.grapheme')}</span>
+      <span class="layer-label">{t('chips.grapheme')}<small class="count">{formatNumber(graphemeCount)}</small></span>
       <div class="variant-chips">
         {#if selfGrapheme}<a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char))}><ScriptText text={grapheme.char} lang="zh" titled={false} /></a>{/if}
         {#each writes as v (v.code_point)}
@@ -103,19 +109,22 @@
       </div>
     </div>
     <div class="layer-row">
-      <span class="layer-label">{t('chips.forms')}</span>
+      <span class="layer-label">{t('chips.forms')}<small class="count">{formatNumber(forms.length)}</small></span>
       <div class="character-members">
         {#if members.length > 1}<button class="family" class:active={expand === 'grapheme'} aria-pressed={expand === 'grapheme'}
           onclick={() => expand = 'grapheme'}>{t('chips.allForms')}</button>{/if}
-        {#each members as member (member.code_point)}
-          <div class="member-choice"><button class="member" class:active={expand !== 'grapheme' && member.code_point === card.code_point}
-            aria-pressed={expand !== 'grapheme' && member.code_point === card.code_point}
-            aria-label={t('chips.showCharacter', { char: member.char })} onclick={() => onselect(member.code_point)}>
-            <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" />
-          </button>{#if member.code_point === card.code_point}<ZiLink character={member.char} compact />{/if}</div>
-        {/each}
-        {#each written as v (v.code_point)}
-          <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if sharedWriters.has(v.code_point)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !v.widens}{mainRelation(v)}{#if crops(v)}{' · '}{/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
+        {#each forms as form (form.code_point)}
+          {#if memberPoints.has(form.code_point)}
+            <div class="member-choice"><button class="member" class:active={expand !== 'grapheme' && form.code_point === card.code_point}
+              aria-pressed={expand !== 'grapheme' && form.code_point === card.code_point}
+              aria-label={crops(form) ? `${t('chips.showCharacter', { char: form.char })} · ${formatNumber(crops(form))}`
+                : t('chips.showCharacter', { char: form.char })} onclick={() => onselect(form.code_point)}>
+              <ReferenceGlyph char={form.char} code_point={form.code_point} script={form.script} size="md" />
+              {#if crops(form)}<small class="use">{formatNumber(crops(form))}</small>{/if}
+            </button>{#if form.code_point === card.code_point}<ZiLink character={form.char} compact />{/if}</div>
+          {:else}
+            <a class="variant" href={localize(characterAddress(form.code_point))} title={relationTitle(form)}><ScriptText text={form.char} script={form.script} lang="zh" titled={false} />{#if named(form)}<small class="code">{form.code_point}</small>{/if}{#if sharedWriters.has(form.code_point)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !form.widens}{mainRelation(form)}{#if crops(form)}{' · '}{/if}{/if}{#if crops(form)}{formatNumber(crops(form))}{/if}</small></a>
+          {/if}
         {/each}
         {#if variants.derived.length}
           <details class="derived">
@@ -201,6 +210,7 @@
   /* A label sits on the first line of chips, however many lines a row wraps to. */
   .layer-row{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
   .layer-label{font-size:11px;color:var(--muted);min-width:76px;line-height:43px}
+  .layer-label .count{margin-left:5px;font-variant-numeric:tabular-nums}
   .layer-legend{padding-left:92px}
   @media(max-width:600px){.layer-legend{padding-left:0}}
   .family{align-self:flex-start;padding:8px 14px;background:transparent}
@@ -208,6 +218,7 @@
   .variant-chips > .variant, .character-members > .variant{min-height:43px;box-sizing:border-box;align-items:center}
   .member-choice{display:flex;flex-direction:column;align-items:center;gap:4px}
   .member{display:flex;align-items:center;gap:10px;padding:8px 12px;background:transparent}
+  .member .use{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .active{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
   .forms-row{font-size:12px;color:var(--muted);align-items:center}
   .forms-row .layer-label{line-height:normal}
