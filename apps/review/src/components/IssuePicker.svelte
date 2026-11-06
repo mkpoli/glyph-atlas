@@ -1,11 +1,13 @@
 <script>
   import { issues, issueTitle, issueHint, addsIssue, skipLabel, skipHint, SKIP_KEY } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
+  import IssueHelp from './IssueHelp.svelte'
   // `skip`, when given, adds a Skip card: not a problem, and chosen only while the crop is skipped.
   let { chosen = [], choose, disabled = false, suggested = null, compact = false, skip = null, skipped = false } = $props()
 </script>
 <div class="issue-picker" class:compact aria-label={t('issue.picker.label')}>
   {#each issues as issue}
+    <div class="issue-card-wrap">
     <button type="button" class="issue-card" class:chosen={chosen.includes(issue.id)} data-issue={issue.id} disabled={disabled} aria-pressed={chosen.includes(issue.id)} onclick={() => choose(issue.id)}>
       <span class="issue-example" class:joined={issue.id === 'merged'} class:cropped={issue.id === 'crop'} aria-hidden="true">
         {#if addsIssue(chosen, issue.id)}<b class="issue-adds">+</b>{/if}
@@ -17,6 +19,8 @@
       <span class="issue-name">{issueTitle(issue.id)}</span><span class="issue-hint">{issueHint(issue.id)}</span><kbd class="issue-key" aria-hidden="true">{issue.key.toUpperCase()}</kbd>
       {#if suggested === issue.id}<span class="suggested-tag">{t('issue.suggested')}</span>{/if}
     </button>
+    <IssueHelp {issue} />
+    </div>
   {/each}
   {#if skip}
     <button type="button" class="issue-card skip-card" class:chosen={skipped} data-issue="skip" {disabled} aria-pressed={skipped} onclick={skip}>

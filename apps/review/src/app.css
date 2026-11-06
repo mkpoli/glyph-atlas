@@ -84,6 +84,10 @@
 
 /* Illustrated issue choices shared by the round and the continuous reviewer. */
 .issue-picker{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.issue-card-wrap{position:relative;min-width:0}.issue-card-wrap>.issue-card{width:100%;height:100%;padding-right:46px}.issue-card-wrap>.issue-card.chosen{padding-right:45px}
+.issue-help{position:absolute;top:2px;right:2px;width:40px;height:40px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:15px;font-weight:600;line-height:1}.issue-help:hover,.issue-help:focus-visible{background:var(--accent-hover);color:var(--accent)}
+.issue-card-wrap .suggested-tag{right:44px}
+.issue-popover:popover-open{position:fixed;inset:auto;margin:0;width:240px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 6px 24px var(--shadow);font-size:12px;line-height:1.4;z-index:10}.issue-popover strong,.issue-popover small{display:block}.issue-popover small{margin-top:8px;color:var(--muted);line-height:1.4}.issue-popover span{color:var(--muted)}.issue-popover .issue-popover-mismatch{display:block;font-size:17px;color:var(--ink)}.issue-popover-image{display:block;max-width:100%;height:90px;object-fit:contain;margin:8px 0}
 .issue-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:6px;padding:15px;border:1px solid light-dark(#e3e2e9, #323039);background:light-dark(#fafafb, #202025);border-radius:10px;min-width:0;transition:background .15s,border-color .15s}
 .issue-card:hover:not(:disabled){border-color:var(--accent);background:var(--accent-hover)}
 .issue-card.chosen{border:2px solid var(--accent);padding:14px;background:light-dark(#f0edff, rgb(156 146 255 / 16%))}

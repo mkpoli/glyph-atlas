@@ -1,0 +1,64 @@
+#!/usr/bin/env bun
+import { mkdirSync } from 'node:fs'
+import Browser from './browser.mjs'
+import { boot, options } from './harness.mjs'
+const config = options(), service = await boot(config)
+let browser, failures = 0
+const shots = '/tmp/atlas-issue-popovers'
+mkdirSync(shots, { recursive: true })
+const check = (ok, message) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${message}`); if (!ok) failures++ }
+try {
+  browser = await Browser.launch({ width: 1440, height: 1000 })
+  await browser.writeAs('issue-popover-check')
+  await browser.goto(service.base + '/en', { waitFor: 'document.querySelectorAll(".glyph-tile").length > 0' })
+  let p = await browser.centre('.glyph-tile'); await browser.click(p.x,p.y)
+  await browser.waitFor('document.querySelector("dialog[open] .crop-viewport")?.dataset.ready === "true"')
+  const trigger = 'dialog[open] .issue-card-wrap:first-child .issue-help'
+  const popup = 'dialog[open] .issue-card-wrap:first-child .issue-popover'
+  await browser.evaluate(`document.querySelector(${JSON.stringify(trigger)}).scrollIntoView({block:'center'})`)
+  await browser.send('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:2,mobile:false})
+  await browser.setColorScheme('light')
+  p = await browser.centre(trigger)
+  await browser.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:p.x,y:p.y})
+  await Bun.sleep(250)
+  check(await browser.evaluate(`document.querySelector(${JSON.stringify(popup)}).matches(':popover-open')`), 'mouse hover opens')
+  await browser.waitFor(`${JSON.stringify(popup)} && document.querySelector(${JSON.stringify(popup)}).querySelector('img').complete`)
+  check(await browser.evaluate(`document.querySelector(${JSON.stringify(popup)}).querySelector('img').naturalWidth > 0`), 'example image loads')
+  check(await browser.evaluate(`(() => { const p=document.querySelector(${JSON.stringify(popup)}), r=p.getBoundingClientRect(); return r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && document.elementFromPoint(r.left+10,r.top+10)?.closest('.issue-popover')===p })()`), 'popover appears above modal without viewport clipping')
+  for (const scheme of ['light','dark']) { await browser.setColorScheme(scheme); await Bun.sleep(200); await browser.screenshot(`${shots}/${scheme}.png`) }
+  check(await browser.evaluate(`(() => { const a=[...document.querySelectorAll(${JSON.stringify(popup+' a')})]; return a.length===2 && a[0].href==='https://codh.rois.ac.jp/char-shape/book/200021851/manifest.json' && a[1].href==='https://creativecommons.org/licenses/by-sa/4.0/' && a.every(x=>x.target==='_blank' && x.rel.includes('noopener')) })()`), 'source links have expected destinations and safety attributes')
+  check(await browser.evaluate(`document.querySelector(${JSON.stringify(popup)}).innerText.includes('て → か')`), 'example label is visible')
+  console.log('LINKS', await browser.evaluate(`JSON.stringify([...document.querySelectorAll(${JSON.stringify(popup+' a')})].map(a=>[a.href,a.target,a.rel]))`))
+  await browser.key('Escape')
+  check(await browser.evaluate(`!document.querySelector(${JSON.stringify(popup)}).matches(':popover-open') && !!document.querySelector('dialog[open]')`), 'Escape closes popover without closing inspector')
+  await browser.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:5,y:5}); await Bun.sleep(200)
+  await browser.evaluate(`document.querySelector(${JSON.stringify(trigger)}).focus()`); await Bun.sleep(100)
+  check(await browser.evaluate(`document.querySelector(${JSON.stringify(popup)}).matches(':popover-open')`), 'keyboard focus opens')
+  await browser.key('Tab'); await Bun.sleep(180)
+  console.log('TAB-FOCUS', await browser.evaluate('document.activeElement.outerHTML.slice(0,300)'))
+  check(await browser.evaluate(`document.activeElement.closest(${JSON.stringify(popup)}) !== null`), 'Tab moves focus from trigger to source link')
+  await browser.key('Escape'); await Bun.sleep(150)
+  check(await browser.evaluate(`document.activeElement === document.querySelector(${JSON.stringify(trigger)}) && !document.querySelector(${JSON.stringify(popup)}).matches(':popover-open')`), 'Escape from source link restores trigger focus without reopening')
+  await browser.evaluate('document.activeElement.blur()'); await Bun.sleep(200)
+  p = await browser.centre(trigger); await browser.click(p.x,p.y)
+  check(await browser.evaluate(`document.querySelector(${JSON.stringify(popup)}).matches(':popover-open')`), 'click opens popover')
+  check(await browser.evaluate(`document.querySelector('dialog [data-issue="character"]').getAttribute('aria-pressed') === 'false'`), 'help click does not select issue')
+  await browser.key('Escape'); await browser.evaluate('document.activeElement.blur()'); await Bun.sleep(200)
+  await browser.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1})
+  p = await browser.centre(trigger)
+  await browser.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:p.x,y:p.y}]})
+  await browser.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]}); await Bun.sleep(250)
+  check(await browser.evaluate(`document.querySelector(${JSON.stringify(popup)}).matches(':popover-open')`), 'touch tap opens popover')
+  await browser.send('Emulation.setTouchEmulationEnabled',{enabled:false})
+  await browser.key('Escape'); await browser.evaluate('document.activeElement.blur()'); await Bun.sleep(200)
+  p = await browser.centre('dialog [data-issue="character"]'); await browser.click(p.x,p.y)
+  check(await browser.evaluate(`document.querySelector('dialog [data-issue="character"]').getAttribute('aria-pressed') === 'true'`), 'issue card still selects')
+  await browser.setViewport(390,844)
+  await browser.send('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:2,mobile:true})
+  await browser.evaluate(`document.querySelector(${JSON.stringify(trigger)}).scrollIntoView({block:'center'})`)
+  p = await browser.centre(trigger); await browser.click(p.x,p.y)
+  for (const scheme of ['light','dark']) { await browser.setColorScheme(scheme); await Bun.sleep(200); await browser.screenshot(`${shots}/mobile-${scheme}-2x.png`) }
+  check(await browser.evaluate(`(() => { const r=document.querySelector(${JSON.stringify(popup)}).getBoundingClientRect(); return r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight })()`), 'mobile popover fits viewport')
+  console.log('Screenshots:',shots)
+} finally { await browser?.close(); await service.stop() }
+if (failures) process.exitCode = 1
