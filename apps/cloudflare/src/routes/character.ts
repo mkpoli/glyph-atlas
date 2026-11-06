@@ -215,6 +215,24 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
   });
 }
 
+/** The family's own forms (the card's `grapheme.members`), by character, each with the crops filed
+ *  under it here and the corpus glyphs recorded for it: the 字体 row lists its forms by these. A member
+ *  the card's object names has an id already; the rest are looked up in `graphemes`. */
+async function memberUsage(env: Env, ctx: ExecutionContext, origin: string, card: Card, version: string) {
+  const members: { char: string }[] = card.detail.grapheme?.members ?? [];
+  if (!members.length) return {};
+  return edge(ctx, new Request(`${origin}/layers/members?c=${encodeURIComponent(card.detail.char)}&v=${encodeURIComponent(version)}`), async () => {
+    const known = card.object?.ids ?? {};
+    const ids = new Map<string, number>(members.flatMap(({ char }) => Object.hasOwn(known, char) ? [[char, known[char]] as const] : []));
+    const missing = members.map(({ char }) => char).filter(char => !ids.has(char));
+    if (missing.length) for (const row of (await env.ATLAS.prepare(graphemeIdsQuery()).bind(JSON.stringify(missing)).all<{ id: number; text: string }>()).results)
+      ids.set(row.text, row.id);
+    const counts = await characterCounts(env, [...ids.values()]);
+    const count = (char: string, kind: number) => ids.has(char) ? sum(counts.get(ids.get(char)!), kind) : 0;
+    return Object.fromEntries(members.map(({ char }) => [char, { count: count(char, 0), corpus_count: count(char, 1) }]));
+  });
+}
+
 // Words.
 
 // The spellings of every word a character is cited as writing (decision record 0004): the words by the
@@ -519,7 +537,7 @@ function chronologyFilter(q: URLSearchParams): ChronologyFilter {
 // table holds a few dozen rows.
 export const productionsQuery = () => `SELECT id FROM productions WHERE key=? OR substr(key,1,?)=?`;
 // Characters by text, through `graphemes`' unique key.
-export const graphemeIdsQuery = () => `SELECT id FROM graphemes WHERE text IN (SELECT value FROM json_each(?))`;
+export const graphemeIdsQuery = () => `SELECT id,text FROM graphemes WHERE text IN (SELECT value FROM json_each(?))`;
 type Ranked = { id: number; decade: number | null; shuffle: number; bucket: number };
 const DECADE = (year: string) => `CASE WHEN ${year} IS NULL THEN NULL ELSE (${year} - (((${year} % 10) + 10) % 10)) END`;
 /** The statements that read one source's crops for the time axis, the dated and the undated, on either
@@ -633,13 +651,17 @@ export async function cards(env: Env, list: 'graphemes' | 'ligatures', q: URLSea
   return { items, total: items.length };
 }
 
-/** The character page (`/layers/characters/:cp`): the card's detail, its 異体字 and words. Its crops
- *  are `/layers/occurrences`, which pages them. */
+/** The character page (`/layers/characters/:cp`): the card's detail, its 異体字 and words, and the
+ *  counts of its family's forms. Its crops are `/layers/occurrences`, which pages them. */
 export async function characterPage(env: Env, ctx: ExecutionContext, url: URL, value: string, tools: CharacterTools) {
   const card = await characterCard(env, value, tools, ctx), { detail } = card;
   const version = await catalogueVersion(env);
-  const [variants, words] = await Promise.all([variantsOf(env, ctx, url.origin, card, version), wordsOf(env, ctx, url.origin, detail.char, version)]);
-  return { ...detail, variants, words, query: detail.code_point };
+  const [variants, words, usage] = await Promise.all([variantsOf(env, ctx, url.origin, card, version),
+    wordsOf(env, ctx, url.origin, detail.char, version), memberUsage(env, ctx, url.origin, card, version)]);
+  // A card with no `members` keeps none: an empty list would read as a family with no forms.
+  const listed = detail.grapheme?.members;
+  const members = listed?.map((member: Json) => ({ ...member, ...(usage[member.char] ?? {}) }));
+  return { ...detail, ...(listed ? { grapheme: { ...detail.grapheme, members } } : {}), variants, words, query: detail.code_point };
 }
 
 const CITABLE_CHARACTER = /^U\+[0-9A-Fa-f]{4,6}(-U\+[0-9A-Fa-f]{4,6})*$/;

@@ -432,6 +432,18 @@ def _grapheme_head(character: Character, counts: dict[str, int]) -> dict[str, An
     }
 
 
+def _member_usage(members: list[dict[str, Any]], counts: dict[str, int]) -> list[dict[str, Any]]:
+    """A family's forms, each with the crops filed under it here and the corpus glyphs recorded for it.
+
+    The card's 字体 row lists its forms by these, most used first, as the Worker's does; a corpus that
+    does not answer leaves its numbers at zero rather than failing the card.
+    """
+    corpus, _ = corpus_source.safe(corpus_source.counts, [member["char"] for member in members])
+    return [{**member, "count": counts.get(member["code_point"], 0),
+             "corpus_count": int(((corpus or {}).get(member["char"]) or {}).get("n_glyphs") or 0)}
+            for member in members]
+
+
 def _family(character: Character) -> dict[str, Any]:
     """The grapheme family of a character, or a family of itself when no grapheme names it."""
     return refs.grapheme_info(character.code_point) or _own_family(character)
@@ -461,13 +473,14 @@ def character_view(character: Character, layer: Layers, *, expand: str = "none",
     candidates = candidate_summary(character.char, live=character_corpus_counts(character.char),
                                    local=counts.get(character.code_point, 0))
     row = _row(character, counts)
+    head = _grapheme_head(character, counts)
     return {
         **row,
         "default_scope": "grapheme" if candidates["requires_family_scope"] else row["default_scope"],
         "alias": character.alias,
         "category": character.category,
         "confusables": [to_row(refs.character(code_point)) for code_point in character.confusables],
-        "grapheme": _grapheme_head(character, counts),
+        "grapheme": {**head, "members": _member_usage(head["members"], counts)},
         # A modern kana's 字源, from its Japanese Wikipedia articles: where its shape came from, which
         # is not a 字母 (the kanji a hentaigana is a form of) and is shown apart from one.
         "origin": refs.origin_of(character.code_point),
