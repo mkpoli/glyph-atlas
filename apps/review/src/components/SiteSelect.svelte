@@ -11,7 +11,7 @@
   ]
   // The gallery has pages in these languages; each other locale goes to the closest one, and the rest to the English root.
   const GALLERY = { ja: 'ja/', 'ja-x-classical': 'ja/', 'zh-Hans': 'zh-Hans/', 'zh-Hant': 'zh-Hant/', lzh: 'zh-Hant/', 'vi-Hani': 'zh-Hant/', ko: 'ko/', 'ko-Kore': 'ko/' }
-  const more = $derived(`https://scripts.mkpo.li/${GALLERY[locale()] ?? ''}`)
+  const more = $derived(`https://moji.mkpo.li/${GALLERY[locale()] ?? ''}`)
 
   let open = $state(false)
   let root = $state()
