@@ -65,9 +65,9 @@ export function historyQuery(actors: number[] | null, label: { text: string; sho
     events.push(cursor.src === 0 ? `(at,id)<(${at},${bind(cursor.id)})` : `at<=${at}`);
     rounds.push(cursor.src === 0 ? `at<${at}` : `(at,id)<(${at},${bind(cursor.id)})`);
   }
-  const event = (filter: string[]) => `SELECT 0 AS src,id,at,actor,crop,kind,issue,shown,named,text,reverses,submission,NULL AS passed,NULL AS label
+  const event = (filter: string[]) => `SELECT 0 AS src,id,at,actor,crop,kind,issue,kept_issue,shown,named,text,reverses,submission,NULL AS passed,NULL AS label
     FROM events WHERE ${filter.join(' AND ')}`;
-  const round = (filter: string[]) => `SELECT 1 AS src,id,at,actor,NULL AS crop,NULL AS kind,NULL AS issue,NULL AS shown,NULL AS named,
+  const round = (filter: string[]) => `SELECT 1 AS src,id,at,actor,NULL AS crop,NULL AS kind,NULL AS issue,NULL AS kept_issue,NULL AS shown,NULL AS named,
     NULL AS text,NULL AS reverses,id AS submission,(SELECT count(*) FROM seen k WHERE k.submission=submissions.id) AS passed,
     ${ROUND_LABEL} AS label FROM submissions WHERE ${filter.join(' AND ')}`;
   const arms = actors === null ? [event(events), round(rounds)]
@@ -75,11 +75,11 @@ export function historyQuery(actors: number[] | null, label: { text: string; sho
   // Each row's request is read for its kind (round, batch or one crop) and id, its kind, issue and
   // labels by key, and its crop's book by the page the crop id names.
   const sql = `SELECT h.*,s.key,json_type(s.request,'$.target') AS target_type,json_extract(s.request,'$.target') AS target,
-    json_extract(s.request,'$.input.id') AS request_id,kc.key AS kind_key,ic.key AS issue_key,gs.text AS shown_text,
+    json_extract(s.request,'$.input.id') AS request_id,kc.key AS kind_key,ic.key AS issue_key,kept.key AS kept_key,gs.text AS shown_text,
     gn.text AS named_text,pg.book
     FROM (${arms.join(' UNION ALL ')} ORDER BY at DESC,src DESC,id DESC LIMIT ?${values.length + 1}) h
     LEFT JOIN submissions s ON s.id=h.submission LEFT JOIN codes kc ON kc.field='kind' AND kc.code=h.kind
-    LEFT JOIN codes ic ON ic.field='issue' AND ic.code=h.issue LEFT JOIN graphemes gs ON gs.id=h.shown
+    LEFT JOIN codes ic ON ic.field='issue' AND ic.code=h.issue LEFT JOIN codes kept ON kept.field='issue' AND kept.code=h.kept_issue LEFT JOIN graphemes gs ON gs.id=h.shown
     LEFT JOIN graphemes gn ON gn.id=h.named LEFT JOIN pages pg ON pg.id=h.crop>>24 ORDER BY h.at DESC,h.src DESC,h.id DESC`;
   return { sql, values };
 }
@@ -91,7 +91,7 @@ export const recordedIssue = (issue: unknown) => issue === 'reading' ? 'characte
 export type HistoryRow = { src: 0 | 1; id: number; at: number; actor: number; crop: number | null; kind: number | null;
   issue: number | null; text: string | null; reverses: number | null; passed: number | null; label: string | null;
   key: string | null; target_type: string | null; target: string | null; request_id: string | null;
-  kind_key: string | null; issue_key: string | null; shown_text: string | null; named_text: string | null; book: number | null };
+  kind_key: string | null; issue_key: string | null; kept_key: string | null; shown_text: string | null; named_text: string | null; book: number | null };
 export type Reviewer = { user: string | null; name: string | null; image: string | null };
 
 /** A history row as the page shows it. A round's or batch's id is the request's own, as its undo
@@ -110,6 +110,8 @@ export function historyItem(row: HistoryRow, reviewer: Reviewer, me: string | nu
     reviewer: who, actor: row.actor,
     verdict: undo ? null : kind ?? null,
     issue: undo ? null : recordedIssue(row.issue_key),
+    // The issue the crop stays reported for beside the one this review names.
+    ...(!undo && row.kept_key ? { also: recordedIssue(row.kept_key) } : {}),
     character: undo ? null : row.named_text,
     text: undo ? null : row.text,
     round: round ? row.request_id : null,

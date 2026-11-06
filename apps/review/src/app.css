@@ -91,6 +91,7 @@
 .issue-card:disabled{opacity:1;cursor:default;color:var(--muted);background:var(--surface-disabled);border-color:var(--line)}.issue-card:disabled .issue-example{opacity:.55}.issue-card:disabled .issue-name{color:var(--muted)}
 .issue-picker.compact .issue-card:disabled{background:var(--surface-disabled);color:light-dark(#73717e, #9d9da6);border-color:light-dark(#e9e8ed, #323039)}
 .issue-example{height:42px;display:flex;align-items:center;justify-content:flex-start;gap:7px;font-size:29px;font-weight:500;color:light-dark(#3c394c, #dad5ef);line-height:1}
+.issue-adds{font-size:15px;font-weight:600;color:var(--accent);margin-right:1px}
 .issue-example svg{height:27px;width:27px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .issue-example .example-old{color:light-dark(#afabbc, #9b95ad);text-decoration:line-through;text-decoration-color:light-dark(#c6939c, #d597a2)}
 .issue-example.joined{position:relative;gap:1px;padding:0 4px;border:1px dashed light-dark(#aaa4bd, #8d849f);border-radius:4px}

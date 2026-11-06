@@ -22,6 +22,8 @@ export const KIND = { match: 0, wrong: 1, unsure: 2, seen: 3, hard: 4, undo: 5 }
 const VERDICTS = [KIND.match, KIND.wrong, KIND.unsure];
 const STATE = { pending: 0, checked: 1, flagged: 2, seen: 3, hard: 4 } as const;
 const ISSUES = ['character', 'merged', 'crop', 'blank', 'other', 'unclear', 'reading'];
+// What a crop holds can be wrong while its box is wrong too.
+const BESIDE_A_BAD_CROP = ['character', 'merged'];
 const issueCode = (issue: string | null | undefined) => issue == null ? null : ISSUES.indexOf(issue);
 // `reading` is the old name of `character` (the old site's migration 0055).
 const issueName = (code: number | null) => code == null ? null : code === 6 ? 'character' : ISSUES[code] ?? null;
@@ -244,6 +246,9 @@ function validateAnswer(answer: Json, row: Current, round: boolean, corpus = fal
   if (answer.verdict === 'match' && (answer.character || answer.correction || answer.issue))
     throw new Problem(422, 'A matching crop cannot also have an issue.');
   if (answer.verdict === 'wrong' && !answer.issue) throw new Problem(422, 'Choose an issue.');
+  // A bad crop can be reported beside what the crop holds; a box redrawn here has already fixed it.
+  if (answer.bad_crop !== undefined && (answer.bad_crop !== true || batch || answer.box !== undefined || answer.verdict !== 'wrong' || !BESIDE_A_BAD_CROP.includes(answer.issue)))
+    throw new Problem(422, 'A bad crop is reported beside a wrong or joined character.');
   for (const field of ['character', 'correction']) text(answer[field], 32, field);
   // Typed characters describe a joined crop; one character is named as `character`.
   if (answer.correction && answer.issue !== 'merged') throw new Problem(422, 'Typed characters belong to a joined-character issue.');
@@ -252,12 +257,12 @@ function validateAnswer(answer: Json, row: Current, round: boolean, corpus = fal
   if (answer.verdict === 'wrong' && answer.character && literal(answer.character) === current.written_character)
     throw new Problem(422, 'Choose a different character or a different issue.');
   if (answer.box !== undefined) {
-    // A redrawn box is the crop's fix: saved as a match on the pixels it names, never in a round. A line's
-    // crop may also be relabelled in the same save.
+    // A redrawn box is the crop's fix: saved as a match on the pixels it names, or beside a wrong or
+    // joined character, never in a round. A line's crop may also be relabelled in the same save.
     if (round || corpus || (batch && !line)) throw new Problem(422, 'This crop cannot be redrawn here.');
     const fixed = answer.verdict === 'match' && answer.issue == null && !answer.character && !answer.correction;
-    const relabelled = line && answer.verdict === 'wrong' && answer.issue === 'character' && answer.character && !answer.correction;
-    if (!fixed && !relabelled) throw new Problem(422, 'A redrawn crop is saved as fixed.');
+    const beside = answer.verdict === 'wrong' && (line ? answer.issue === 'character' && answer.character && !answer.correction : BESIDE_A_BAD_CROP.includes(answer.issue));
+    if (!fixed && !beside) throw new Problem(422, 'A redrawn crop is saved as fixed.');
     answer.box = redrawnBox(answer.box, current);
   }
 }
@@ -563,8 +568,10 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
       throw new Problem(422, 'Choose a written character or report an issue.');
     if (round && (!row.quiz || !members!.includes(current.label))) throw new Problem(409, 'This round changed. Reload it.');
     const written = answer.character ? literal(answer.character) : null;
-    // A batch names the character only: a crop reported for its box, a blank or a merge stays reported.
-    const kept = batch && current.state === 'flagged' && current.issue && current.issue !== 'character' ? current.issue : null;
+    // A bad crop reported beside a wrong character leaves the crop reported for its box, even with the
+    // character named. A batch names the character only: a crop reported for its box, a blank or a merge
+    // stays reported.
+    const kept = answer.bad_crop ? 'crop' : batch && current.state === 'flagged' && current.issue && current.issue !== 'character' ? current.issue : null;
     const resolved = !kept && (answer.verdict === 'match' || Boolean(answer.issue === 'character' && written));
     changes.push({ crop: row.id, expected: row.revision, cut: row.cut, 
       ...(row.kind === 0 ? { pageRevision: row.pageRevision } : {}), kind: KIND[answer.verdict as 'match'], label: written ?? (row.char === null ? null : row.label),

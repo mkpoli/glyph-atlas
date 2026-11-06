@@ -42,7 +42,7 @@ jobs:
         working-directory: apps/cloudflare
       - run: bun install --frozen-lockfile
         working-directory: apps/review
-      - run: bun test tools/seo.test.mjs
+      - run: bun test --isolate tools/seo.test.mjs tools/issues.test.mjs
         working-directory: apps/review
       - run: bun run build
         working-directory: apps/review

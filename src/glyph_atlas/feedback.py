@@ -270,6 +270,7 @@ def _local_parts(event: Mapping[str, Any], record: Mapping[str, Any]) -> dict[st
         "door": "local",
         "verdict": _text(evidence.get("verdict")) or _text(request.get("verdict")),
         "issue": _text(evidence.get("issue")) or _text(request.get("issue")),
+        "kept_issue": _text(evidence.get("kept_issue")),
         # Free text stays free text. It is never promoted to a proposal.
         "note": _text(evidence.get("note")) or _text(request.get("note")),
         "original_identity": _text(character.get("label")),
@@ -308,6 +309,7 @@ def _corpus_parts(event: Mapping[str, Any], record: Mapping[str, Any]) -> dict[s
         "door": "corpus",
         "verdict": _text(new.get("verdict")),
         "issue": _text(new.get("issue")),
+        "kept_issue": _text(new.get("kept_issue")),
         "note": _text(new.get("note")),
         "original_identity": original,
         "original_reading": _text(reviewed.get("reading")),
@@ -410,6 +412,10 @@ def _decide(parts: Mapping[str, Any], trusted: bool) -> tuple[str, list[str], li
         flags.append(FLAG_SOURCE_LABEL_DIFFERS)
 
     joined = _joined_text(suggestions, proposed)
+
+    # A crop still reported for its box is no clean example of what it holds, one character or several.
+    if verdict == "wrong" and parts.get("kept_issue") == "crop":
+        return "crop", quarantine, flags, proposed
 
     # ---- a merge is never a single character ------------------------------------
     if issue == "merged":

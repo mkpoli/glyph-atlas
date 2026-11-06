@@ -429,7 +429,7 @@
   "issue.merged.hint": "Two or more in one crop",
   "issue.merged.title": "Joined characters",
   "issue.picker.label": "Problem",
-  "issue.character.hint": "A single whole character, but a different one",
+  "issue.character.hint": "A different character",
   "issue.character.title": "Wrong character",
   "issue.selected": "Selected",
   "issue.suggested": "Suggested",

@@ -21,7 +21,7 @@ export const cropAddress = (id, origin = 'collection') =>
  * `inspect` that set them, and an entry with another key (Forward to a crop opened before) has none.
  */
 export function createInspector() {
-  const state = $state({ queue: [], key: 0, issue: null, opened: null })
+  const state = $state({ queue: [], key: 0, opening: null, opened: null })
   let updateItem = null, lastFocus = null, closing = false
   // What this page saved for each crop, so stepping back to one shows the decision it was given.
   const decisions = {}
@@ -42,16 +42,16 @@ export function createInspector() {
     // still reaches the list that opened it.
     get update() { return current() || !page.state.inspect ? updateItem : null },
     /** The problem the crop was opened to fix, for the crop it was opened on. */
-    get issue() { return current() && page.state.inspect?.id === state.opened ? state.issue : null },
+    get opening() { return current() && page.state.inspect?.id === state.opened ? state.opening : null },
     /** `update(id, record, how)` hears what happened to a crop: `saved` when a write decided it (a review, or
      *  a line correction that moved its label), `changed` for a field (style, reading, word) that leaves the
-     *  decision as it was, and `skipped`, with no record, when the reader declined to judge it. `issue` opens it with that problem
+     *  decision as it was, and `skipped`, with no record, when the reader declined to judge it. `opening` opens it with those problems
      *  chosen, as a round's Bad crop opens the box editor. */
-    inspect(id, collection = [], update = null, origin = 'collection', issue = null) {
+    inspect(id, collection = [], update = null, origin = 'collection', opening = null) {
       // A crop opened from inside the inspector takes the open one's entry rather than stacking another.
       const open = Boolean(page.state.inspect)
       if (!open) lastFocus = document.activeElement
-      Object.assign(state, { queue: [...collection], key: state.key + 1, issue, opened: id })
+      Object.assign(state, { queue: [...collection], key: state.key + 1, opening, opened: id })
       updateItem = update
       show(id, origin, !open)
     },
@@ -74,7 +74,7 @@ export function createInspector() {
       else replaceState(cropAddress(id, origin), page.state)
     },
     /** A new page has nothing of the last one's to step through. */
-    forget() { Object.assign(state, { queue: [], key: state.key + 1, issue: null, opened: null }); updateItem = null; lastFocus = null },
+    forget() { Object.assign(state, { queue: [], key: state.key + 1, opening: null, opened: null }); updateItem = null; lastFocus = null },
     /** The entry changed (a close landed, or Forward reopened a crop): a close may go back again. */
     settle() { closing = false },
     restoreFocus() { if (lastFocus?.isConnected) lastFocus.focus() },

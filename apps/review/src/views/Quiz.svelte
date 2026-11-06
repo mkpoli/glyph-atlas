@@ -21,7 +21,7 @@
   import { cropDetails } from '../lib/cropDetails.js'
   import { keptCrops, keptState, keyOf } from '../lib/outbox.svelte.js'
   import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
-  import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint } from '../lib/issues.js'
+  import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint, toggleIssue, issueFields } from '../lib/issues.js'
   import { firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
   import { unslug } from '../lib/gallery.js'
@@ -128,6 +128,8 @@
   const current = $derived(step === 'select' ? null : queue[focusIndex] ?? null)
   // A character correction is chosen through the wrong-character card, so it shows as that card.
   const currentIssue = $derived(current ? choices[current.id]?.issue ?? null : null)
+  const chosenIssues = choice => choice ? [choice.issue, ...(choice.bad_crop ? ['crop'] : [])] : []
+  const currentIssues = $derived(current ? chosenIssues(choices[current.id]) : [])
   const answered = $derived(selectedItems.every(i => choices[i.id] || skipped[i.id]))
   const decided = $derived(remaining.filter(i => choices[i.id]?.verdict === 'wrong').length)
   // A selected crop still needs an explicit issue before it can be saved.
@@ -533,14 +535,16 @@
     if (!fits) return { correction: null, character: null }
     return issue === 'merged' ? { correction, character: null } : { correction: null, character: correction }
   }
-  /** The answer for one crop, from step two: its own issue, never a shared one. */
-  function assign(id, issue) {
+  /** The answer for one crop, from step two: its own problems, never shared ones. Pressing a chosen card takes it back. */
+  function assign(id, pressed) {
     if (saving) return
-    const previous = choices[id]?.issue ?? null
-    const kept = compatible(choices[id], issue, previous)
-    choices = { ...choices, [id]: { verdict: 'wrong', issue, ...kept } }
+    const next = toggleIssue(chosenIssues(choices[id]), pressed)
+    if (next.length) {
+      const { bad_crop: _, ...kept } = compatible(choices[id], next[0], choices[id]?.issue ?? null)
+      choices = { ...choices, [id]: { verdict: 'wrong', ...kept, ...issueFields(next) } }
+    } else choices = without(choices, [id])
     if (skipped[id]) skipped = without(skipped, [id])
-    if (offersSuggestions(issue)) suggest(items.find(i => i.id === id))
+    if (pressed === next[0] && offersSuggestions(pressed)) suggest(items.find(i => i.id === id))
     error = ''; errorStatus = 0
   }
   /** Choose the current crop's issue. The candidates, when the issue has any, open under the cards. */
@@ -548,7 +552,7 @@
     if (!current) return
     const id = current.id
     assign(current.id, issue)
-    if (!offersSuggestions(issue)) return
+    if (!offersSuggestions(issue) || choices[id]?.issue !== issue) return
     await tick()
     if (current?.id === id) greetSuggestions(suggestionsElement, { focus: true })
   }
@@ -608,8 +612,8 @@
    * through the round. What it writes comes back here: a field (style, reading, word) changes the tile,
    * and a save decides the crop, which leaves the selection and the problems and shows as saved.
    */
-  function inspectChoice(item, issue = null) {
-    inspect(item.id, shown, inspected, item.origin === 'corpus' ? 'corpus' : 'collection', issue)
+  function inspectChoice(item, opening = null) {
+    inspect(item.id, shown, inspected, item.origin === 'corpus' ? 'corpus' : 'collection', opening)
   }
   async function inspected(id, result, how) {
     const item = items.find(i => i.id === id), round = roundId
@@ -652,7 +656,7 @@
     if (!current) return
     // One character names the character, except under joined characters, which picks them in turn.
     choices = { ...choices, [id]: value && isSingle(value) && current.issue !== 'merged'
-      ? { verdict: 'wrong', issue: 'character', character: value, correction: null, noneSelected: false }
+      ? { verdict: 'wrong', issue: 'character', character: value, correction: null, noneSelected: false, ...(current.bad_crop ? { bad_crop: true } : {}) }
       // Typed characters belong to a joined crop; on any other issue they name nothing.
       : { ...current, character: null, correction: current.issue === 'merged' ? value : null, noneSelected } }
   }
@@ -915,11 +919,11 @@
       <!-- One panel per crop, so a search begun for one crop never shows in the next one's. -->
       {#snippet formBar()}<CropForm crop={current} others onchoose={markCurrent} disabled={saving || loading} />
         {#if formDone}<p class="mark-done" role="status">{t('bulk.done', { count: formDone.count, char: formDone.char })}<button class="quiet-link" disabled={saving} onclick={undoForm}>{t('bulk.undo')}</button></p>{/if}{#if formError}<p class="mark-done mark-error" role="alert">{formError}</p>{/if}{/snippet}
-      {#key current.id}<CropReview forms={formBar} issue={currentIssue} onissue={assignCurrent} disabled={saving}
+      {#key current.id}<CropReview forms={formBar} issues={currentIssues} onissue={assignCurrent} disabled={saving}
         onskip={() => skip([current.id])} skipped={!!skipped[current.id]}
         targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} label={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} onchoose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
       <!-- The box is redrawn in the inspector, which saves the crop with it. -->
-      {#if currentIssue === 'crop' && current.origin !== 'corpus'}<div class="crop-change"><button type="button" class="quiet-link adjust-crop" disabled={saving} onclick={() => inspectChoice(current, 'crop')}>{t('character.crop.adjust')}</button></div>{/if}
+      {#if currentIssues.includes('crop') && current.origin !== 'corpus'}<div class="crop-change"><button type="button" class="quiet-link adjust-crop" disabled={saving} onclick={() => inspectChoice(current, { issues: currentIssues, character: choices[current.id].character, correction: choices[current.id].correction })}>{t('character.crop.adjust')}</button></div>{/if}
     </QuizFocus>
   {/if}
 

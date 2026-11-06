@@ -160,9 +160,9 @@ def _step(record, before):
                 or not all(type(box[key]) is int for key in box) or box["x"] < 0 or box["y"] < 0
                 or box["w"] < 2 or box["h"] < 2):
             raise Rejected("redrawn box is malformed")
-        # A redrawn box is the crop's fix: on its own, or, in a line correction, beside the character it names.
-        relabelled = verdict == "wrong" and issue == "character" and written
-        if not (verdict == "match" and issue in (None, "character") and not written) and not relabelled:
+        # A redrawn box is the crop's fix: on its own, or beside a wrong or joined character.
+        beside = verdict == "wrong" and issue in ("character", "merged")
+        if not (verdict == "match" and issue in (None, "character") and not written) and not beside:
             raise Rejected("a redrawn box is saved as the crop's fix")
         after["box"] = {key: box[key] for key in ("x", "y", "w", "h")}
         recrop = evidence.get("recrop")
@@ -173,7 +173,8 @@ def _step(record, before):
     if (correction.get("unicode") != " ".join(refs.to_code_points(after["label"]))
             or correction.get("box") != after["box"]):
         raise Rejected("saved effective state disagrees with the explicit correction")
-    # A batch confirmation leaves a crop reported for its box, a blank or a merge reported (`kept_issue`).
+    # A bad crop reported beside a wrong or joined character leaves the crop reported for its box, and a
+    # batch confirmation leaves a crop reported for its box, a blank or a merge reported (`kept_issue`).
     kept = evidence.get("kept_issue")
     # It stands beside whatever the batch saved for the crop, which leaves it disputed.
     if kept is not None and recorded_terms.issue(kept) not in ("merged", "crop", "blank", "other"):

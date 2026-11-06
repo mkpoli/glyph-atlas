@@ -419,7 +419,7 @@
   "issue.merged.hint": "一個裁切中含兩個以上的字",
   "issue.merged.title": "字相連",
   "issue.picker.label": "錯誤類型",
-  "issue.character.hint": "完整單字，實爲別字",
+  "issue.character.hint": "實爲別字",
   "issue.character.title": "錯字",
   "issue.selected": "已選取",
   "issue.suggested": "建議",

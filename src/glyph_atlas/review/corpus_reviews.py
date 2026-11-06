@@ -31,6 +31,8 @@ class CorpusEdit(BaseModel):
     character: str | None = Field(default=None, max_length=32)
     correction: str | None = Field(default=None, max_length=32)
     note: str = Field(default="", max_length=2000)
+    #: The box is wrong too, beside a wrong or joined character.
+    bad_crop: bool = False
 
 
 def _json(value: Any) -> str:
@@ -144,8 +146,10 @@ class CorpusReviews:
             result.update(written_character=written, identity_basis="human_review", identity_status="assigned")
         return {**result, "label": written, "char": written,
                 "code_point": " ".join(refs.to_code_points(written)),
-                "state": "checked" if choice.get("verdict") == "match" or choice.get("character") else "flagged",
-                "suggestions": choice.get("suggestions", []), "issue": recorded_terms.issue(choice.get("issue")),
+                "state": "checked" if (choice.get("verdict") == "match" or choice.get("character"))
+                         and not choice.get("kept_issue") else "flagged",
+                "suggestions": choice.get("suggestions", []),
+                "issue": recorded_terms.issue(choice.get("kept_issue") or choice.get("issue")),
                 "review_event": record["id"], "actor_kind": record["actor_kind"]}
 
     def detail(self, identity: str) -> dict:
@@ -201,6 +205,7 @@ class CorpusReviews:
                 if character == source["label"]:
                     character = None
             choice = {"verdict": edit.verdict, "issue": edit.issue, "character": character,
+                      **({"kept_issue": "crop"} if edit.bad_crop else {}),
                       "correction": edit.correction, "note": edit.note, "suggestions": suggestions or []}
             db.execute("INSERT INTO glyph_reviews(id,identity,client_id,request,source,decision,actor_kind,at) "
                        "VALUES (?,?,?,?,?,?,?,?)", (str(edit.id), edit.identity, edit.client_id, _json(payload),

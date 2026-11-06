@@ -18,7 +18,7 @@
   import { onMount, untrack, tick } from 'svelte'
   import { request, suggestionsFor } from '../lib/client.js'
   import { readCrop } from '../lib/cropCache.js'
-  import { decision, isSingle, offersSuggestions, greetSuggestions } from '../lib/issues.js'
+  import { decision, isSingle, offersSuggestions, greetSuggestions, toggleIssue } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   import { cropAddress, useInspector } from '../lib/inspector.svelte.js'
   import CropContext from './CropContext.svelte'
@@ -51,7 +51,10 @@
   // A crop opened on its own has nowhere to go on to.
   const advancing = $derived(!onskip && session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
-  let issue = $state(null), noneSelected = $state(false), correction = $state(null)
+  let issues = $state([]), noneSelected = $state(false), correction = $state(null)
+  // The main problem chosen; a bad crop can stand beside it.
+  const issue = $derived(issues[0] ?? null)
+  const badCrop = $derived(issues.includes('crop'))
   // The form the reviewer chose for the crop, held until the save; null keeps the one it has.
   let form = $state(null)
   // The character a reviewer chose for a wrong-character crop, and whether one was chosen: an
@@ -62,7 +65,7 @@
   // The decision this page already saved for the crop, restored when the reader steps back to it. While
   // the choices on screen are still that decision, the save button shows it chosen and only moves on.
   let kept = $state(null)
-  const choicesNow = () => ({ issue, correction: issue ? correction : null, noneSelected, written: writtenDirty ? written : null })
+  const choicesNow = () => ({ issues, correction: issue ? correction : null, noneSelected, written: writtenDirty ? written : null })
   const settled = $derived(Boolean(kept) && box == null && form == null && JSON.stringify(choicesNow()) === JSON.stringify(kept))
   let contextSuggestions = $state(null), contextSuggesting = $state(false)
   let closed = false, generation = 0, submission = null, figure = $state(null), suggestionsElement = $state(null)
@@ -91,7 +94,7 @@
     dialog?.scrollTo({ top: 0 })
     // The list's row stands in until the record arrives; nothing can be saved from it.
     data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded); asked = false
-    error = ''; form = null; issue = null; correction = null; noneSelected = false; box = null; editingBox = false
+    error = ''; form = null; issues = []; correction = null; noneSelected = false; box = null; editingBox = false
     written = ''; writtenDirty = false; kept = null
     contextSuggestions = null; contextSuggesting = false
     // The server-rendered record's image is already mounted; its load may have come before this effect,
@@ -114,9 +117,9 @@
       if (result.image !== data?.image) loaded = false
       data = result; fresh = true
       kept = standing(result)
-      if (kept) { issue = kept.issue; correction = kept.correction; noneSelected = kept.noneSelected }
+      if (kept) { issues = kept.issues; correction = kept.correction; noneSelected = kept.noneSelected }
       written = kept?.written ?? result.label ?? ''; writtenDirty = kept?.written != null
-      if (opening && !kept) chooseIssue(opening)
+      if (opening && !kept) reopen(opening)
     } catch (e) {
       if (closed || current !== generation) return
       replaced = false
@@ -151,16 +154,27 @@
     else if (event.key === 'ArrowRight' && next) { event.preventDefault(); next() }
   }
   function chooseIssue(value) {
-    if (issue === 'character') { written = data?.label ?? ''; writtenDirty = false }
-    issue = value; correction = null; noneSelected = false; submission = null
-    // A crop is redrawn only for a bad crop; choosing another problem drops the new box.
-    if (value !== 'crop') { box = null; editingBox = false }
+    const next = toggleIssue(issues, value), main = next[0] ?? null
+    submission = null
+    // What was chosen for the main problem goes with it; a bad crop beside it changes neither.
+    if (main !== issue) {
+      if (issue === 'character') { written = data?.label ?? ''; writtenDirty = false }
+      correction = null; noneSelected = false
+    }
+    issues = next
+    // A crop is redrawn only for a bad crop; taking that back drops the new box.
+    if (!next.includes('crop')) { box = null; editingBox = false }
     // A bad crop is redrawn there and then, where the crop can be adjusted.
-    else if (data?.context && data.context_box && data.crop_editable !== false) beginCrop()
+    else if (value === 'crop' && data?.context && data.context_box && data.crop_editable !== false) beginCrop()
     // The suggestion area appears with this choice, so the next action is the one focused. An issue
     // with no suggestions moves nothing, and no later arrival takes the focus back.
-    if (!offersSuggestions(value)) return
+    if (!offersSuggestions(value) || !next.includes(value)) return
     queueMicrotask(() => greetSuggestions(suggestionsElement, { focus: true }))
+  }
+  /** Take up what a round chose for this crop when it sent the reader here to redraw it. */
+  function reopen({ issues: chosen, character = null, correction: typed = null }) {
+    for (const each of chosen) chooseIssue(each)
+    if (character || typed) chooseSuggestion(character ?? typed)
   }
   /** A suggestion that is one character names the character, so it corrects the written identity. */
   function chooseSuggestion(value, none = false) {
@@ -173,7 +187,8 @@
       // One character names the character: the chosen value is carried as the written identity, and
       // the suggestion list highlights it from `written` rather than from `correction`. A round
       // takes typed characters only for a joined crop, so nothing goes into `correction`.
-      written = value; writtenDirty = true; correction = null; noneSelected = false; issue = 'character'
+      written = value; writtenDirty = true; correction = null; noneSelected = false
+      if (issue !== 'character') issues = toggleIssue(issues, 'character')
       return
     }
     // Typed characters belong to a joined crop; on any other issue they name nothing, and a character
@@ -193,7 +208,7 @@
     const { choices } = decided
     if (decided.revision == null) {
       // A character written into the crop shows as its label; any other decision as its state.
-      const holds = choices.written != null ? choices.written === record.label : record.state === (choices.issue ? 'flagged' : 'checked')
+      const holds = choices.written != null ? choices.written === record.label : record.state === (choices.issues.length ? 'flagged' : 'checked')
       if (!holds) return null
       inspector.remember(record.id, { choices, revision: record.revision })
       return choices
@@ -203,7 +218,7 @@
 
   /** Drop every pending proposal: "It looks right" writes a review, not the corrections on screen. */
   function discardProposals() {
-    issue = null; correction = null; noneSelected = false
+    issues = []; correction = null; noneSelected = false
     written = data?.label ?? ''; writtenDirty = false
     box = null; editingBox = false; form = null
   }
@@ -230,10 +245,13 @@
     if (matches) discardProposals()
     // The decision already saved is not sent again.
     if (settled) { if (advancing) { leaving = target; next() } else close(); return }
-    // A bad crop redrawn here is fixed by the save, so the crop is reviewed with its new box.
-    const fixed = issue === 'crop' && box
-    const value = matches || !issue || fixed ? { verdict: 'match' } : { ...decision(issue), correction }
-    const decided = value.verdict === 'match' ? { issue: null, correction: null, noneSelected: false, written: null } : choicesNow()
+    // A bad crop redrawn here is fixed by the save: alone, the crop is reviewed with its new box, and
+    // beside another problem the box is saved with that problem.
+    const fixed = badCrop && box
+    const value = matches || !issue || (fixed && issue === 'crop') ? { verdict: 'match' } : { ...decision(issue), correction }
+    const decided = value.verdict === 'match' ? { issues: [], correction: null, noneSelected: false, written: null }
+      : { ...choicesNow(), issues: fixed ? issues.filter(each => each !== 'crop') : issues }
+    const beside = fixed ? { box } : value.verdict === 'wrong' && issues.length > 1 ? { bad_crop: true } : {}
     busy = true; error = ''
     // A chosen form is written first, and the review that follows names the revision it left. A wrong
     // character names the crop's character itself, so a form chosen beside it is not written.
@@ -261,9 +279,9 @@
           verdict: matches ? 'match' : decision(issue || 'character').verdict,
           issue: ['character', 'crop', 'merged', 'blank', 'other'].includes(issue)
             ? issue : 'character',
-          character: written }
+          character: written, ...beside }
       : { revision: data.revision, image_sha256: data.image_sha256,
-          ...value, issue: resolvedIssue, ...(fixed ? { box } : {}) }
+          ...value, issue: resolvedIssue, ...beside }
     const signature = JSON.stringify(payload)
     if (!submission || submission.signature !== signature) submission = { signature, id: crypto.randomUUID() }
     try {
@@ -291,7 +309,7 @@
     for (const entry of result.results) reviewed?.(entry.target_id, entry)
     const record = await readCrop(target)
     if (closed || data?.id !== target) return
-    data = record; issue = null; correction = null; noneSelected = false; form = null; kept = null; submission = null
+    data = record; issues = []; correction = null; noneSelected = false; form = null; kept = null; submission = null
     written = record.label ?? ''; writtenDirty = false
   }
   /** Leave the editing, keeping the box, with the focus on what follows it. */
@@ -340,11 +358,11 @@
           {#key data.id + ':' + data.crop_version}<CropWord item={data} disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} />{/key}
           <StyleField item={data} editable disabled={busy || !fresh} working={value => busy = value} saved={fieldSaved} />
         </div>
-        {#if issue === 'character' || issue === 'crop'}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
+        {#if issue === 'character' || badCrop}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
         {#snippet formBar()}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/snippet}
-        <CropReview forms={formBar} {issue} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}
+        <CropReview forms={formBar} {issues} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} onskip={skip}
           targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
-        {#if issue === 'crop' && data.context && data.crop_editable !== false && (box || !editingBox)}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
+        {#if badCrop && data.context && data.crop_editable !== false && (box || !editingBox)}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
         <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
       </div>
       <div class="credit-after"><SourceCredit item={data} /></div>

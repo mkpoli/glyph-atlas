@@ -51,6 +51,29 @@ try {
   assert(await browser.evaluate('!!document.querySelector("dialog[open] .crop-review [data-issue=skip]")'), 'the inspector has no Skip card')
   console.log('PASS W M B X choose the problem cards')
 
+  // A bad crop stands beside a wrong or joined character; a blank stands alone; a card pressed again is taken back.
+  {
+    const chosen = () => browser.evaluate(`[...document.querySelectorAll('dialog[open] .issue-card[aria-pressed="true"]')].map(card => card.dataset.issue).join(' ')`)
+    const adding = () => browser.evaluate(`[...document.querySelectorAll('dialog[open] .issue-card:has(.issue-adds)')].map(card => card.dataset.issue).join(' ')`)
+    const press = async (key, expected) => {
+      await browser.evaluate('document.activeElement?.blur()')
+      await browser.key(key)
+      await browser.waitFor(`[...document.querySelectorAll('dialog[open] .issue-card[aria-pressed="true"]')].map(card => card.dataset.issue).join(' ') === ${JSON.stringify(expected)}`)
+    }
+    await press('x', '')
+    assert(await adding() === '', 'a card offers to add with nothing chosen')
+    await press('w', 'character')
+    assert(await adding() === 'crop', 'a wrong character offers no bad crop beside it')
+    await press('b', 'character crop')
+    assert(await chosen() === 'character crop', 'a wrong character and a bad crop are not both chosen')
+    await press('m', 'merged crop')
+    await press('b', 'merged')
+    await press('b', 'merged crop')
+    await press('x', 'blank')
+    await press('x', '')
+    console.log('PASS a bad crop stands beside a wrong or joined character')
+  }
+
   const position = await browser.evaluate(shown)
   // B took the keyboard into the page view to redraw the crop, where the arrows belong to the view.
   await browser.evaluate('document.activeElement?.blur()')
@@ -146,6 +169,30 @@ try {
   assert(events(config.directory).length === skipMark, 'Skip wrote something')
   console.log('PASS S skips without writing')
 
+  // A character named beside a bad crop is written, and the crop stays reported for its box.
+  {
+    await browser.evaluate(`document.querySelector('.glyph-grid [data-unit="${ids[3]}"]').click()`)
+    await browser.waitFor(ready, 60000)
+    await browser.key('w')
+    await browser.waitFor('document.querySelectorAll("dialog[open] .suggestion-options button").length > 0', 60000)
+    const named = await browser.evaluate('document.querySelector("dialog[open] .suggestion-options button").textContent.trim()')
+    await browser.evaluate('document.querySelector("dialog[open] .suggestion-options button").click()')
+    await browser.evaluate('document.activeElement?.blur()')
+    await browser.key('b')
+    await browser.waitFor(`${pressed('character')} && ${pressed('crop')}`)
+    const mark = events(config.directory).length
+    await browser.evaluate('document.querySelector(".save-character").click()')
+    await browser.waitFor(`document.querySelector("dialog[open]") === null || document.querySelector(".save-character").classList.contains("chosen")`, 30000)
+    const review = events(config.directory).slice(mark).find(event => event.field === 'review')
+    assert(review, `nothing was saved for ${named}`)
+    const evidence = JSON.parse(review.evidence)
+    assert(evidence.kept_issue === 'crop' && evidence.issue === 'character', `the bad crop was not kept: ${review.evidence.slice(0, 200)}`)
+    assert(review.new === 'disputed', `a crop still reported for its box became ${review.new}`)
+    await browser.evaluate('document.querySelector("dialog[open] .close-inspector")?.click()')
+    await browser.waitFor('document.querySelector("dialog[open]") === null')
+    console.log('PASS a character named beside a bad crop is saved with the crop still reported')
+  }
+
   // Quick Review's review step answers the same keys.
   await browser.goto(`${service.base}/en/review?grapheme=U%2B3042`, { waitFor: 'document.querySelectorAll(".quiz-tile img").length > 1 && !document.querySelector(".quiz-submit .primary")?.disabled', timeout: 90000 })
   await browser.waitFor('[...document.querySelectorAll(".quiz-tile img")].every(i => i.complete)', 30000)
@@ -158,6 +205,15 @@ try {
   await browser.key('s')
   await browser.waitFor(`document.querySelector('.quiz-focus [data-issue="skip"]')?.getAttribute('aria-pressed') === 'true' || document.querySelector('.focus-thumb.skipped') !== null`)
   console.log('PASS Quick Review answers the same keys with the same panel')
+  await browser.key('w')
+  await browser.waitFor(`document.querySelector('.quiz-focus [data-issue="character"]')?.getAttribute('aria-pressed') === 'true'`)
+  await browser.evaluate('document.activeElement?.blur()')
+  await browser.key('b')
+  await browser.waitFor(`document.querySelector('.quiz-focus [data-issue="character"]')?.getAttribute('aria-pressed') === 'true' && document.querySelector('.quiz-focus [data-issue="crop"]')?.getAttribute('aria-pressed') === 'true'`)
+  assert(await browser.evaluate('!!document.querySelector(".quiz-focus .adjust-crop")'), 'a bad crop beside a wrong character offers no way to redraw it')
+  await browser.key('b')
+  await browser.key('w')
+  console.log('PASS Quick Review keeps a bad crop beside a wrong character')
 
   // Its form bar marks the crop on show, with the same number keys as the inspector's.
   await browser.waitFor('document.querySelectorAll(".quiz-focus .crop-form .form-chip").length > 1', 30000)

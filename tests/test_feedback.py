@@ -67,6 +67,7 @@ def local_record(
     request_reading=None,
     kind="character-review",
     quiz_character=None,
+    kept_issue=None,
 ):
     """One local character review, shaped exactly as the export writes it."""
     reading = label if reading is None else reading
@@ -118,6 +119,8 @@ def local_record(
         evidence["suggested_reading"] = suggested
     if layer is not None:
         evidence["layer"] = layer
+    if kept_issue:
+        evidence["kept_issue"] = kept_issue
     if quiz_character is not None:
         evidence["suggested_character"] = quiz_character
     if request_reading is not None:
@@ -345,6 +348,46 @@ class TestTheSuppliedPatterns:
         assert record.decision == "crop"
         assert record.proposed_box == box
         assert record.source_box == BOX  # the source box is untouched
+
+    def test_a_named_character_on_a_crop_still_reported_for_its_box_is_no_clean_example(self):
+        records = normalize_export(
+            export(
+                local_record(
+                    "rv00000036",
+                    verdict="wrong",
+                    issue="character",
+                    label="や",
+                    character="ゆ",
+                    new="disputed",
+                    kept_issue="crop",
+                )
+            )
+        )
+        assert records[0].decision == "crop"
+
+    def test_a_joined_crop_still_reported_for_its_box_is_no_clean_example(self):
+        records = normalize_export(
+            export(
+                local_record(
+                    "rv00000037",
+                    verdict="wrong",
+                    issue="merged",
+                    label="や",
+                    correction="やゆ",
+                    new="disputed",
+                    kept_issue="crop",
+                )
+            )
+        )
+        assert records[0].decision == "crop"
+        assert not training_pairs(records)
+
+    def test_a_corpus_character_on_a_crop_still_reported_for_its_box_is_no_clean_example(self):
+        record = corpus_record(char="い", issue="character", actor_kind="human")
+        record["event"]["new"]["kept_issue"] = "crop"
+        records = normalize_export(export(record))
+        assert records[0].decision == "crop"
+        assert not training_pairs(records)
 
     def test_a_user_report_is_reported_and_not_trusted(self):
         """The live corpus record: prose and a suggestion, but nobody verified it."""

@@ -91,7 +91,7 @@ export async function captureReviews(env: Env, inputs: ReviewedInput[], sent: Js
       evidence: JSON.stringify(evidence), at: new Date(at).toISOString() };
     if (row.kind === 1) {
       records[`crop:${row.id}`] = { origin: 'corpus', event: { ...event, new: { verdict: answer.verdict,
-        issue: answer.issue ?? null, character: change.named ?? null, correction: change.text ?? null, note: answer.note ?? '' } },
+        issue: answer.issue ?? null, ...(kept ? { kept_issue: kept } : {}), character: change.named ?? null, correction: change.text ?? null, note: answer.note ?? '' } },
         reviewed: character, source_update: { identity: row.sourceId, source_revision: character.source_revision,
           source: character.source, box: character.box,
           original_character: character.source_code_point ? literal(character.source_code_point) : character.source_label,
