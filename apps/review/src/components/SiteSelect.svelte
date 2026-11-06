@@ -7,6 +7,7 @@
   const SITES = [
     { name: 'Tangut Input', href: 'https://tangut.mkpo.li/', logo: '/sites/tangut-input.svg' },
     { name: 'Jurchen Input', href: 'https://jurchen.mkpo.li/', logo: '/sites/jurchen-input.svg' },
+    { name: 'Han Input', href: 'https://han.mkpo.li/', logo: '/sites/han-input.svg' },
     { name: 'IDS Workshop', href: 'https://ids.mkpo.li/', logo: '/sites/ids-workshop.svg' },
   ]
   // The gallery has pages in these languages; each other locale goes to the closest one, and the rest to the English root.
