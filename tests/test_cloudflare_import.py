@@ -380,6 +380,31 @@ def test_corpus_and_existing_local_exports_pass_through(store):
     assert bridge.ingest_cloudflare(store, source, apply=True) == (source, {"counts": {}, "items": []})
 
 
+def beside_a_bad_crop(record):
+    """A character named with the box still wrong: the Worker keeps the crop reported for its box."""
+    evidence = json.loads(record["event"]["evidence"])
+    evidence["kept_issue"] = "crop"
+    evidence["request"]["bad_crop"] = True
+    record["event"].update(new="disputed", evidence=json.dumps(evidence, ensure_ascii=False))
+
+
+def test_a_character_named_beside_a_bad_crop_imports_disputed_with_its_character(store):
+    record, _ = remote(baseline(store))
+    beside_a_bad_crop(record)
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"].get("rejected") is None
+    unit = store.unit("u")
+    assert bridge.identity_text(unit.unicode) == "を" and unit.review == "disputed"
+
+
+def test_a_character_named_beside_a_bad_crop_cannot_claim_confirmation(store):
+    record, _ = remote(baseline(store))
+    beside_a_bad_crop(record)
+    record["event"]["new"] = "reviewed"
+    _, report = bridge.ingest_cloudflare(store, payload(record), apply=True)
+    assert report["counts"] == {"rejected": 1} and not store.events()
+
+
 def test_crop_with_identity_edit_cannot_claim_confirmation(store):
     record, _ = remote(baseline(store), issue="crop")
     record["event"]["new"] = "reviewed"

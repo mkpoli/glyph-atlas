@@ -270,6 +270,7 @@ def _local_parts(event: Mapping[str, Any], record: Mapping[str, Any]) -> dict[st
         "door": "local",
         "verdict": _text(evidence.get("verdict")) or _text(request.get("verdict")),
         "issue": _text(evidence.get("issue")) or _text(request.get("issue")),
+        "kept_issue": _text(evidence.get("kept_issue")),
         # Free text stays free text. It is never promoted to a proposal.
         "note": _text(evidence.get("note")) or _text(request.get("note")),
         "original_identity": _text(character.get("label")),
@@ -446,7 +447,8 @@ def _decide(parts: Mapping[str, Any], trusted: bool) -> tuple[str, list[str], li
         return "accepted-match", quarantine, flags, proposed
 
     if verdict == "wrong":
-        if issue == "crop":
+        # A crop still reported for its box is no clean example of the character it now names.
+        if issue == "crop" or parts.get("kept_issue") == "crop":
             return "crop", quarantine, flags, proposed
         if issue == "reading":
             # The reviewer's own proposal first. The saved effective reading is the

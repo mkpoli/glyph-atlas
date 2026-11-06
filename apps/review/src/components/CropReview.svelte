@@ -5,10 +5,11 @@
   import IssuePicker from './IssuePicker.svelte'
   import CharacterSuggestions from './CharacterSuggestions.svelte'
   import { issueForKey, offersSuggestions, SKIP_KEY, NONE_KEY } from '../lib/issues.js'
-  let { issue = null, onissue, suggested = null, disabled = false, onskip, skipped = false,
+  let { issues = [], onissue, suggested = null, disabled = false, onskip, skipped = false,
     targetId = '', result = null, loading = false, contextResult = null, contextLoading = false,
     label = '', value = null, noneSelected = false, onchoose, element = $bindable(null), forms = null } = $props()
   let root = $state(null)
+  const issue = $derived(issues[0] ?? null)
 
   // A letter chooses a card, S skips and N says none of the suggestions fits. Keys typed into a field
   // are the field's, and so are keys typed in the IDS editor; a review under an open dialog leaves them
@@ -30,7 +31,7 @@
 
 <div class="crop-review" bind:this={root}>
   {@render forms?.()}
-  <IssuePicker value={issue} choose={onissue} {suggested} {disabled} skip={onskip} {skipped} />
+  <IssuePicker chosen={issues} choose={onissue} {suggested} {disabled} skip={onskip} {skipped} />
   <CharacterSuggestions {targetId} bind:element {result} {loading} {contextResult} {contextLoading} {issue}
     {label} {value} {noneSelected} {disabled} choose={onchoose} />
 </div>

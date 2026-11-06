@@ -145,7 +145,7 @@
                   <span class="history-time">{when(item.at)}</span>
                   {@render reviewer(item)}
                   <span class="history-label">{@render label(item.label)}</span>
-                  <span class="history-decision"><ScriptLine line={decisionText(item)} /></span>
+                  <span class="history-decision"><ScriptLine line={decisionText(item)} />{#if item.also && hasIssueTitle(item.also)} · {t(`issue.${item.also}.title`)}{/if}</span>
                 </div>
               {:else}
                 <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
@@ -153,7 +153,7 @@
                   <span class="history-time">{when(item.at)}</span>
                   {@render reviewer(item)}
                   <span class="history-label">{@render label(item.label)}</span>
-                  <span class="history-decision"><ScriptLine line={decisionText(item)} /></span>
+                  <span class="history-decision"><ScriptLine line={decisionText(item)} />{#if item.also && hasIssueTitle(item.also)} · {t(`issue.${item.also}.title`)}{/if}</span>
                   {#if tileDate(item)}<span class="history-year">{tileDate(item)}</span>{/if}
                 </button>
               {/if}

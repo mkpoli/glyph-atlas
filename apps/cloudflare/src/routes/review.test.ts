@@ -728,6 +728,68 @@ describe('a batch correction', () => {
   });
 });
 
+describe('a bad crop beside what the crop holds', () => {
+  const box = { x: 30, y: 1, w: 12, h: 9 };
+  const path = (id: number) => `/atlas/characters/${publicId(id)}`;
+  const issues = (db: Database, n: number) => db.query('SELECT kind,issue,kept_issue,text FROM events WHERE submission=(SELECT id FROM submissions WHERE key=?)').get(`u1:${uuid(n)}`);
+
+  it('keeps a named character and leaves the crop reported for its box', async () => {
+    const { db, env, ids } = setup();
+    const saved = await send(env, path(ids[0]), { ...local(ids[0]), id: uuid(1), verdict: 'wrong', issue: 'character', character: 'あ', bad_crop: true });
+    expect(saved.body.results[0].state).toBe('flagged');
+    expect(issues(db, 1)).toEqual({ kind: 1, issue: 0, kept_issue: 2, text: null });
+    expect(crop(db, ids[0])).toMatchObject({ char: 4, state: 2 });
+    expect(((await reviewCrops(env, [ids[0]])).get(ids[0]) as any).data).toMatchObject({ label: 'あ', state: 'flagged', issue: 'crop' });
+  });
+
+  it('keeps what a joined crop holds beside a bad crop', async () => {
+    const { db, env, ids } = setup();
+    expect((await send(env, path(ids[0]), { ...local(ids[0]), id: uuid(1), verdict: 'wrong', issue: 'merged', correction: 'あい', bad_crop: true })).status).toBe(200);
+    expect(issues(db, 1)).toEqual({ kind: 1, issue: 1, kept_issue: 2, text: 'あい' });
+  });
+
+  it('takes a round\'s crop reported for both, and an undo restores it', async () => {
+    const { db, env, ids } = setup();
+    const round = await send(env, '/atlas/rounds', { id: uuid(1), grapheme: 'U+306F', answers: [{ ...local(ids[0]), verdict: 'wrong', issue: 'character', character: 'あ', bad_crop: true }] });
+    expect(round.status).toBe(200);
+    expect(crop(db, ids[0])).toMatchObject({ char: 4, state: 2 });
+    await send(env, `/atlas/rounds/${uuid(1)}/undo`, {});
+    expect(crop(db, ids[0]).state).toBe(0);
+    expect(crop(db, ids[0]).char).not.toBe(4);
+  });
+
+  it('checks a crop whose character is named and whose box is redrawn in one save', async () => {
+    const { db, env, ids } = setup();
+    const saved = await send(env, path(ids[0]), { ...local(ids[0]), id: uuid(1), verdict: 'wrong', issue: 'character', character: 'あ', box });
+    expect(saved.body.results[0].state).toBe('checked');
+    expect(crop(db, ids[0])).toMatchObject({ char: 4, state: 1 });
+    expect(db.query('SELECT x,y,w,h FROM reviews WHERE crop=?').get(ids[0])).toEqual(box);
+  });
+
+  it('leaves a joined crop reported when its box is redrawn', async () => {
+    const { db, env, ids } = setup();
+    const saved = await send(env, path(ids[0]), { ...local(ids[0]), id: uuid(1), verdict: 'wrong', issue: 'merged', correction: 'あい', box });
+    expect(saved.body.results[0].state).toBe('flagged');
+    expect(db.query('SELECT x,y,w,h FROM reviews WHERE crop=?').get(ids[0])).toEqual(box);
+  });
+
+  it.each([
+    ['alone', { verdict: 'wrong', issue: 'crop', bad_crop: true }],
+    ['beside a blank', { verdict: 'wrong', issue: 'blank', bad_crop: true }],
+    ['on a match', { verdict: 'match', bad_crop: true }],
+    ['with a redrawn box', { verdict: 'wrong', issue: 'character', character: 'あ', bad_crop: true, box }],
+    ['as anything but true', { verdict: 'wrong', issue: 'character', character: 'あ', bad_crop: false }],
+  ])('refuses one %s', async (_, answer) => {
+    const { env, ids } = setup();
+    expect((await send(env, path(ids[0]), { ...local(ids[0]), id: uuid(1), ...answer })).body.detail).toBe('A bad crop is reported beside a wrong or joined character.');
+  });
+
+  it('refuses a redrawn box beside a blank', async () => {
+    const { env, ids } = setup();
+    expect((await send(env, path(ids[0]), { ...local(ids[0]), id: uuid(1), verdict: 'wrong', issue: 'blank', box })).body.detail).toBe('A redrawn crop is saved as fixed.');
+  });
+});
+
 describe('a crop\'s issue', () => {
   it('stays the one it was reported for when a batch names only its character, and the event keeps the answer', async () => {
     const { db, env, ids } = setup();

@@ -15,6 +15,22 @@ export const issueForKey = key => issues.find(issue => issue.key === key.toLower
 export const SKIP_KEY = 's'
 /** The key that says none of the suggestions fits. */
 export const NONE_KEY = 'n'
+/**
+ * The cards chosen once `id` is pressed, the main problem first. Pressing a chosen card takes it back.
+ *
+ * A wrong character, joined characters and a blank each say what the crop holds, so one replaces
+ * another. A bad crop says where its box lies, which can be true beside the first two; a blank has no
+ * character to cut well or badly.
+ */
+export function toggleIssue(chosen, id) {
+  if (chosen.includes(id)) return chosen.filter(other => other !== id)
+  if (id === 'crop') return chosen.includes('blank') ? ['crop'] : [...chosen, 'crop']
+  return id === 'blank' ? ['blank'] : [id, ...chosen.filter(other => other === 'crop')]
+}
+/** Whether pressing a card adds to the cards chosen rather than replacing them. */
+export const addsIssue = (chosen, id) => toggleIssue(chosen, id).length > Math.max(chosen.length, 1)
+/** What a save says of the cards chosen: the main problem, and a bad crop beside it. */
+export const issueFields = chosen => ({ issue: chosen[0] ?? null, ...(chosen.length > 1 ? { bad_crop: true } : {}) })
 export const issueTitle = id => issues.some(i => i.id === id) ? t(`issue.${id}.title`) : t('issue.selected')
 export const issueHint = id => t(`issue.${id}.hint`)
 export const decision = issue => ({ verdict: 'wrong', issue, correction: null })

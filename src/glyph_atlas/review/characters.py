@@ -131,6 +131,8 @@ class LayerEdit(BaseModel):
     note: str = Field(default="", max_length=2000)
     verdict: Literal["match", "wrong", "unsure"] = "wrong"
     issue: Literal["character", "crop", "merged", "blank", "unclear", "other"] = "character"
+    #: The box is wrong too, beside a wrong or joined character: the crop stays reported for it.
+    bad_crop: bool = False
 
 
 def _source_digest(store: Store, unit: Unit) -> str | None:
@@ -1243,6 +1245,7 @@ def router(store: Store) -> APIRouter:
                   "script": str(unit.script), "box": unit.box.model_dump() if unit.box else None}
         evidence_base = {"kind": "character-review", "request": edit.model_dump(mode="json"),
                          "issue": edit.issue, "note": edit.note, "before": before,
+                         **({"kept_issue": "crop"} if edit.bad_crop else {}),
                          "snapshot": {"character": _item(store, unit, current), "image_sha256": digest},
                          "image_sha256": edit.image_sha256, "revision": current}
         requests: list[ReviewRequest] = []
@@ -1299,7 +1302,8 @@ def router(store: Store) -> APIRouter:
         # record is checked rather than left flagged. Everything else stays disputed — a crop, joined
         # characters, a blank, `unclear` — and so does a wrong-character issue
         # whose character is the one already stored, which is a contradiction and not a correction.
-        resolved = (edit.verdict == "wrong" and edit.issue == "character" and "character" in changed)
+        resolved = (edit.verdict == "wrong" and edit.issue == "character" and "character" in changed
+                    and not edit.bad_crop)
 
         written = identity if "character" in changed else stored_identity(unit)
         correction = {

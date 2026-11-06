@@ -24,7 +24,7 @@
   import { request } from '../lib/client.js'
   import { readCrop } from '../lib/cropCache.js'
   import { cropAddress, useInspector } from '../lib/inspector.svelte.js'
-  import { isSingle, offersSuggestions, greetSuggestions } from '../lib/issues.js'
+  import { isSingle, offersSuggestions, greetSuggestions, toggleIssue, issueFields } from '../lib/issues.js'
   import { t } from '../lib/i18n.svelte.js'
   import CropReview from './CropReview.svelte'
   import CropContext from './CropContext.svelte'
@@ -43,7 +43,9 @@
   $effect(() => { if (refocus && loaded && fresh && !busy && saveButton) { refocus = false; tick().then(() => saveButton?.focus({ preventScroll: true })) } })
   const advancing = $derived(session.state.advance && Boolean(next))
   let dialog, data = $state(first), error = $state(''), busy = $state(false)
-  let issue = $state(null), noneSelected = $state(false), correction = $state(null)
+  let issues = $state([]), noneSelected = $state(false), correction = $state(null)
+  // The main problem chosen; a bad crop can stand beside it.
+  const issue = $derived(issues[0] ?? null)
   // The form the reviewer chose for the glyph, held until the save; null keeps the one it has.
   let form = $state(null)
   let loaded = $state(false), imageFailed = $state(false), suggestionsElement = $state(null)
@@ -54,7 +56,7 @@
     swapped = false
     // The list's row stands in until the record arrives; nothing can be saved from it.
     data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded)
-    error = ''; form = null; issue = null; correction = null; noneSelected = false
+    error = ''; form = null; issues = []; correction = null; noneSelected = false
     // The server-rendered record's image is already mounted; its load may have come before this effect,
     // so keep what it reported. A record fetched now starts over.
     if (!preloaded) { loaded = false; imageFailed = false }
@@ -93,15 +95,17 @@
     else if (event.key === 'ArrowRight' && next) { event.preventDefault(); next() }
   }
   async function chooseIssue(value) {
-    issue = value; correction = null; noneSelected = false; submission = null
-    if (offersSuggestions(value)) { await tick(); greetSuggestions(suggestionsElement, { focus: true }) }
+    const next = toggleIssue(issues, value)
+    if (next[0] !== issue) { correction = null; noneSelected = false }
+    issues = next; submission = null
+    if (offersSuggestions(value) && next.includes(value)) { await tick(); greetSuggestions(suggestionsElement, { focus: true }) }
   }
   function choose(value, none = false) { correction = value; noneSelected = none; submission = null }
   async function save(matches = false) {
     if (busy || !data || !fresh || !loaded || imageFailed) return
     const target = id, current = generation
     if (data.identity_status === 'unassigned' && (matches || !issue)) return
-    if (matches) { issue = null; correction = null; noneSelected = false; form = null }
+    if (matches) { issues = []; correction = null; noneSelected = false; form = null }
     busy = true; error = ''
     // A chosen form is written first, and the review that follows names the revision it left. A wrong
     // character names the glyph's character itself, so a form chosen beside it is not written.
@@ -117,7 +121,7 @@
     }
     const payload = { identity: target, revision: data.revision,
       source_revision: data.source_revision, verdict: issue ? 'wrong' : 'match',
-      issue, ...(issue && correction ? isSingle(correction)
+      ...issueFields(issues), ...(issue && correction ? isSingle(correction)
         ? { character: correction, issue: 'character' } : { correction } : {}) }
     const signature = JSON.stringify(payload)
     if (!submission || submission.signature !== signature) submission = { signature, id: crypto.randomUUID() }
@@ -157,10 +161,10 @@
         {#if data.needs_segmentation || data.identity_status === 'unassigned' || (data.written_character ?? data.label) !== data.source_label}<p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: sourceName })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if data.identity_status !== 'unassigned' && (data.written_character ?? data.label) !== data.source_label}<span> → <b lang="ja">{data.written_character ?? data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>{/if}
         {#if data.identity_status === 'unassigned'}
           <div class="assignment-options"><FormChips forms={data.family_members ?? []} chosen={issue === 'character' ? correction : null} disabled={busy || !fresh} label={t('corpus.assign.label')}
-            onchoose={char => { chooseIssue('character'); choose(char) }} /></div>
+            onchoose={char => { if (issue !== 'character') chooseIssue('character'); choose(char) }} /></div>
         {/if}
         {#snippet formBar()}{#if data.identity_status !== 'unassigned' && !data.needs_segmentation}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh} />{/if}{/snippet}
-        <CropReview forms={formBar} {issue} onissue={chooseIssue} disabled={busy || !fresh} suggested={data.state === 'flagged' ? data.issue : null} onskip={skip}
+        <CropReview forms={formBar} {issues} onissue={chooseIssue} disabled={busy || !fresh} suggested={data.state === 'flagged' ? data.issue : null} onskip={skip}
           targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={{ candidates: data.suggestions }} label={data.label} value={correction} onchoose={choose} />
         <SimilarCrops id={data.id} label={data.label} ready={fresh && loaded} />
       </div>

@@ -558,6 +558,8 @@ class Answer(BaseModel):
     correction: str | None = Field(default=None, max_length=32)
     #: The written identity the reviewer says this crop is, as a character or a `U+XXXX` sequence.
     character: str | None = Field(default=None, max_length=32)
+    #: The box is wrong too, beside a wrong or joined character: the crop stays reported for it.
+    bad_crop: bool = False
 
 
 class Seen(BaseModel):
@@ -622,6 +624,8 @@ class CharacterEdit(BaseModel):
     correction: str | None = Field(default=None, max_length=32)
     note: str = Field(default="", max_length=2000)
     box: Box | None = None
+    #: The box is wrong too, beside a wrong or joined character: the crop stays reported for it.
+    bad_crop: bool = False
 
 
 class StyleEdit(BaseModel):
@@ -1282,6 +1286,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             base = answer.revision
             evidence = json.dumps({"kind": "visual-quiz", "round": str(round.id), "grapheme": round.grapheme,
                                    "label": shown(unit), "verdict": answer.verdict, "issue": answer.issue,
+                                   **({"kept_issue": "crop"} if answer.bad_crop else {}),
                                    "suggested_text": correction,
                                    "suggested_character": identity,
                                    "snapshot": snapshot(unit, revision),
@@ -1297,7 +1302,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 base += 1
             requests.append(ReviewRequest(
                 target_type="unit", target_id=answer.id, field="review",
-                new="reviewed" if answer.verdict == "match" or written else "disputed",
+                new="reviewed" if (answer.verdict == "match" or written) and not answer.bad_crop else "disputed",
                 base_revision=base, client_id=round.client_id,
                 idempotency_key=prefix + answer.id, evidence=evidence,
             ))
@@ -1354,7 +1359,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                     evidence = json.loads(event.evidence) if event.evidence else {}
                 except ValueError:
                     evidence = {}
-                open_issue[event.target_id] = (recorded_terms.issue(evidence.get("issue")) if isinstance(evidence, dict) else None) \
+                open_issue[event.target_id] = (recorded_terms.issue(evidence.get("kept_issue") or evidence.get("issue")) if isinstance(evidence, dict) else None) \
                     if event.new == ReviewState.DISPUTED else None
         refused, chosen, unchanged = [], [], []
         for crop in correction.crops:
@@ -1459,6 +1464,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             revision += 1
         evidence = json.dumps({"kind": "character-review", "verdict": edit.verdict,
                                "issue": edit.issue, "note": edit.note, "suggested_text": correction,
+                               **({"kept_issue": "crop"} if edit.bad_crop else {}),
                                "request": edit.model_dump(mode="json"),
                                "snapshot": snapshot(unit, current_revision),
                                "correction": {"box": edit.box.model_dump()
