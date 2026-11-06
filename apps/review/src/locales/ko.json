@@ -8,6 +8,8 @@
   },
   "app.name": "자형대도보",
   "app.home.aria": "자형대도보 홈",
+  "app.sites": "사이트",
+  "app.sites.more": "다른 문자 프로젝트",
   "app.menu": "메뉴",
   "app.nav.aria": "주 메뉴",
   "app.saved": "저장됨",

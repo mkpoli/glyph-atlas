@@ -11,6 +11,8 @@
   },
   "app.name": "字形大图谱",
   "app.home.aria": "字形大图谱首页",
+  "app.sites": "网站",
+  "app.sites.more": "更多文字项目",
   "app.menu": "菜单",
   "app.nav.aria": "主导航",
   "app.saved": "已保存",

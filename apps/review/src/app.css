@@ -313,3 +313,22 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 :root[data-gallery="grid"] .glyph-grid.collage .glyph-tile{padding:max(15%, 27px) 12% 18%}
 /* A tile out of view is not laid out or painted until it nears the viewport; its box is set either way. */
 .collage-cell{content-visibility:auto;contain-intrinsic-size:auto 160px}
+/* The logo is a select of the input sites; its menu takes the header menu's surface. */
+.site-select{position:relative;flex-shrink:0}
+.site-select>.wordmark{border:0;background:transparent;padding:6px 8px;margin:-6px -8px;border-radius:8px;text-align:left}
+.site-select>.wordmark:not(:disabled):hover{background:var(--accent-hover)}
+.site-chevron{width:10px;height:10px;flex:none;color:var(--muted);transition:transform 120ms ease}
+.site-chevron.up{transform:rotate(180deg)}
+.site-menu{position:absolute;top:calc(100% + 14px);left:-8px;z-index:5;width:248px;max-width:calc(100vw - 28px);background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 30px var(--shadow-menu);padding:6px;outline:none}
+.site-menu a{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:7px;font-size:13px;letter-spacing:0;outline:none}
+.site-menu a:hover,.site-menu a:focus-visible{background:var(--accent-hover)}
+.site-menu a:focus-visible{outline:2px solid var(--focus-ring);outline-offset:-2px}
+.site-menu a[aria-current]{background:var(--accent-light)}
+.site-menu a>span:first-of-type{flex:1;min-width:0}
+.site-menu img,.site-menu .atlas-symbol{width:28px;height:28px;flex:none}
+.site-menu img{border-radius:6px}
+.site-tick{width:16px;height:16px;flex:none;color:var(--accent)}
+.site-menu .site-more{justify-content:space-between;margin-top:6px;padding-block:11px 9px;border-top:1px solid var(--line);border-radius:0 0 7px 7px;color:var(--muted);font-size:12px}
+.site-out{color:var(--muted)}
+@media(max-width:700px){.site-select>.wordmark{margin:-6px -8px}.site-menu{top:calc(100% + 10px)}}
+.site-menu .atlas-symbol *{animation:none}
