@@ -72,6 +72,28 @@ try {
     return await browser.evaluate(`document.querySelector('.character-layers').innerText.split(String.fromCharCode(10)).join(' · ')`)
   })
 
+  await step('each layer row states how many it lists, and the forms in the order of use', async () => {
+    // The 字種 and 字体 rows name their count beside the label; the 字体 row then lists the forms most
+    // used first, by the number on each chip. A fixture form with no crops counts as unused, so a row
+    // where every chip is unused has no order to check.
+    const rows = await browser.evaluate(`[...document.querySelectorAll('.character-layers .layer-row')].map(row => {
+      const label = row.querySelector('.layer-label'), count = label?.querySelector('.count')
+      if (!count) return null
+      const chips = [...row.querySelectorAll(':scope > .variant-chips > .variant, :scope > .character-members > .member-choice > .member, :scope > .character-members > .variant')]
+      const uses = chips.map(chip => {
+        const text = (chip.querySelector('.use') ?? [...chip.querySelectorAll('small')].pop())?.textContent ?? ''
+        const found = text.match(/[0-9]+/g)
+        return found ? Number(found[found.length - 1].replace(/,/g, '')) : 0
+      })
+      return { label: label.textContent.replace(/[0-9]+$/, ''), count: Number(count.textContent.replace(/[^0-9]/g, '')), chips: chips.length, uses }
+    }).filter(Boolean)`)
+    assert(rows.length >= 2, `only ${rows.length} layer row(s) state a count`)
+    for (const row of rows) assert(row.count === row.chips, `${row.label} states ${row.count} but lists ${row.chips}`)
+    const used = rows.filter(row => row.uses.some(Boolean))
+    for (const row of used) assert(row.uses.every((n, i) => i === 0 || row.uses[i - 1] >= n), `${row.label} is not most used first: ${row.uses.join(' ')}`)
+    return rows.map(row => `${row.label} ${row.count}/${row.chips}`).join(' · ') + (used.length ? '' : ' (no form counted)')
+  })
+
   await step('widening to the grapheme renders the card and throws nothing', async () => {
     // A second query after the first renders a whole card, and widening it to the grapheme changes
     // the gallery without throwing. Escape and refocus repeat what a reader does between keystrokes.

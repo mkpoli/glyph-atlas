@@ -130,7 +130,9 @@ beforeAll(() => {
   objects.set('v3/pointer.json', json({ pub: 'T', through_gen: 4 }));
   const filed = CROPS.filter(c => c.visual);
   objects.set('v3/reference/char/U+6642.json.gz', json({ grapheme: G.時,
-    data: card('時', { grapheme: { code_point: 'U+6642', char: '時' } }), detail: card('時', { grapheme: { code_point: 'U+6642', char: '時' }, visual_analysis: { groups: [] } }),
+    data: card('時', { grapheme: { code_point: 'U+6642', char: '時' } }), detail: card('時', { grapheme: { code_point: 'U+6642', char: '時',
+      members: [{ code_point: 'U+6642', char: '時' }, { code_point: 'U+65F6', char: '时' }, { code_point: 'U+65F9', char: '旹' }, { code_point: 'U+5446', char: '呆' }] },
+      visual_analysis: { groups: [] } }),
     variants: [['旹', 'variant', 'src1', '', 0, 1], ['旹', 'variant', 'src2', '', 0, 1], ['峕', 'variant', 'src1', '', 1, 1], ['时', 'simplified', 'src2', '', 0, 1]],
     derived: [['⿰日寺', [[['日', '目']]]]], substitutions: [['日', '目', 4, [{ a: '昨', b: '眲', sources: ['src3'] }]]],
     writes: [], writers: [['时', 1]], ids: { 時: G.時, 旹: G.旹, 峕: G.峕, 时: G.时 } }));
@@ -177,6 +179,10 @@ describe('a character page', () => {
       routes: [[{ was: '日', became: '目', count: 4, pairs: [{ a: '昨', b: '眲', sources: ['src3'] }] }]] }]);
     expect(body.variants.writers).toEqual([{ char: '时', code_point: 'U+65F6', shared: true }]);
     expect(body.variants.sources).toEqual({ 'derived-ids': 'derived-ids', src1: 'Source One', src2: 'src2', src3: 'src3' });
+    // The family's forms count what is filed here and recorded in the corpus; 呆 has no grapheme row,
+    // so its lookup finds nothing and it reads as unused rather than failing the card.
+    expect(body.grapheme.members.map((m: any) => [m.char, m.count, m.corpus_count]))
+      .toEqual([['時', 5, 2], ['时', 1, 0], ['旹', 1, 0], ['呆', 0, 0]]);
     expect(body.words.items[0].spellings.map((s: any) => [s.spelling, s.current])).toEqual([['時', true], ['刻', false]]);
     expect(body.words.sources).toEqual({ dict: 'A dictionary' });
   });
