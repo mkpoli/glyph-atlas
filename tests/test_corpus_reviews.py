@@ -150,6 +150,14 @@ def test_a_review_round_trips_and_the_source_is_never_written(corpus):
     assert (corpus["index"] / "reviews.sqlite").is_file(), "the journal is the one file written"
 
 
+def test_a_character_named_beside_a_bad_crop_stays_flagged_for_its_box(corpus):
+    response, _ = save(corpus["client"], UNIT, bad_crop=True)
+    assert response.status_code == 200, response.text
+    saved = response.json()
+    assert saved["label"] == NU
+    assert saved["state"] == "flagged" and saved["issue"] == "crop"
+
+
 def test_the_encoded_identity_and_the_transcription_are_two_layers(corpus):
     # What the resolver reports: the encoded character and the source's own transcription.
     resolved = details.detail(corpus["api"], UNIT)

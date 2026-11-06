@@ -146,8 +146,10 @@ class CorpusReviews:
             result.update(written_character=written, identity_basis="human_review", identity_status="assigned")
         return {**result, "label": written, "char": written,
                 "code_point": " ".join(refs.to_code_points(written)),
-                "state": "checked" if choice.get("verdict") == "match" or choice.get("character") else "flagged",
-                "suggestions": choice.get("suggestions", []), "issue": recorded_terms.issue(choice.get("issue")),
+                "state": "checked" if (choice.get("verdict") == "match" or choice.get("character"))
+                         and not choice.get("kept_issue") else "flagged",
+                "suggestions": choice.get("suggestions", []),
+                "issue": recorded_terms.issue(choice.get("kept_issue") or choice.get("issue")),
                 "review_event": record["id"], "actor_kind": record["actor_kind"]}
 
     def detail(self, identity: str) -> dict:

@@ -784,6 +784,17 @@ describe('a bad crop beside what the crop holds', () => {
     expect((await send(env, path(ids[0]), { ...local(ids[0]), id: uuid(1), ...answer })).body.detail).toBe('A bad crop is reported beside a wrong or joined character.');
   });
 
+  it('leaves a corpus glyph named beside a bad crop flagged for its box', async () => {
+    const { env, ids, objects } = setup();
+    const saved = await send(env, '/atlas/corpus/reviews', { id: uuid(1), identity: publicId(ids[6]), revision: 0, source_revision: G,
+      verdict: 'wrong', issue: 'character', character: 'ハ', bad_crop: true });
+    expect(saved.body).toMatchObject({ label: 'ハ', state: 'flagged', event: { state: 'flagged' } });
+    // The training rules read a corpus review from its record's `new`.
+    const stored = [...objects.entries()].find(([key]) => key.startsWith('v3/review-evidence/'))![1] as Uint8Array;
+    const { reviews } = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(stored as Uint8Array<ArrayBuffer>)));
+    expect((Object.values(reviews) as any[]).map(record => record.event.new.kept_issue)).toEqual(['crop']);
+  });
+
   it('refuses a redrawn box beside a blank', async () => {
     const { env, ids } = setup();
     expect((await send(env, path(ids[0]), { ...local(ids[0]), id: uuid(1), verdict: 'wrong', issue: 'blank', box })).body.detail).toBe('A redrawn crop is saved as fixed.');

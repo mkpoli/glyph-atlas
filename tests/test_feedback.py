@@ -365,6 +365,30 @@ class TestTheSuppliedPatterns:
         )
         assert records[0].decision == "crop"
 
+    def test_a_joined_crop_still_reported_for_its_box_is_no_clean_example(self):
+        records = normalize_export(
+            export(
+                local_record(
+                    "rv00000037",
+                    verdict="wrong",
+                    issue="merged",
+                    label="や",
+                    correction="やゆ",
+                    new="disputed",
+                    kept_issue="crop",
+                )
+            )
+        )
+        assert records[0].decision == "crop"
+        assert not training_pairs(records)
+
+    def test_a_corpus_character_on_a_crop_still_reported_for_its_box_is_no_clean_example(self):
+        record = corpus_record(char="い", issue="character", actor_kind="human")
+        record["event"]["new"]["kept_issue"] = "crop"
+        records = normalize_export(export(record))
+        assert records[0].decision == "crop"
+        assert not training_pairs(records)
+
     def test_a_user_report_is_reported_and_not_trusted(self):
         """The live corpus record: prose and a suggestion, but nobody verified it."""
         records = normalize_export(
