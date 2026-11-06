@@ -27,8 +27,14 @@ try {
   check(await browser.evaluate(`(() => { const p=document.querySelector(${JSON.stringify(popup)}), r=p.getBoundingClientRect(); return r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && document.elementFromPoint(r.left+10,r.top+10)?.closest('.issue-popover')===p })()`), 'popover appears above modal without viewport clipping')
   for (const scheme of ['light','dark']) { await browser.setColorScheme(scheme); await Bun.sleep(200); await browser.screenshot(`${shots}/${scheme}.png`) }
   check(await browser.evaluate(`(() => { const a=[...document.querySelectorAll(${JSON.stringify(popup+' a')})]; return a.length===2 && a[0].href==='https://codh.rois.ac.jp/char-shape/book/200021851/manifest.json' && a[1].href==='https://creativecommons.org/licenses/by-sa/4.0/' && a.every(x=>x.target==='_blank' && x.rel.includes('noopener')) })()`), 'source links have expected destinations and safety attributes')
+  check(await browser.evaluate(`document.querySelector(${JSON.stringify(popup+' a')}).lang === 'ja'`), 'Japanese attribution declares its language')
   check(await browser.evaluate(`document.querySelector(${JSON.stringify(popup)}).innerText.includes('て → か')`), 'example label is visible')
+  await browser.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:5,y:5})
+  await browser.evaluate(`window.dispatchEvent(new Event('scroll'))`)
+  await Bun.sleep(200)
+  check(await browser.evaluate(`!document.querySelector(${JSON.stringify(popup)}).matches(':popover-open')`), 'scroll does not cancel hover dismissal')
   console.log('LINKS', await browser.evaluate(`JSON.stringify([...document.querySelectorAll(${JSON.stringify(popup+' a')})].map(a=>[a.href,a.target,a.rel]))`))
+  await browser.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:p.x,y:p.y})
   await browser.key('Escape')
   check(await browser.evaluate(`!document.querySelector(${JSON.stringify(popup)}).matches(':popover-open') && !!document.querySelector('dialog[open]')`), 'Escape closes popover without closing inspector')
   await browser.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:5,y:5}); await Bun.sleep(200)
@@ -58,7 +64,21 @@ try {
   await browser.evaluate(`document.querySelector(${JSON.stringify(trigger)}).scrollIntoView({block:'center'})`)
   p = await browser.centre(trigger); await browser.click(p.x,p.y)
   for (const scheme of ['light','dark']) { await browser.setColorScheme(scheme); await Bun.sleep(200); await browser.screenshot(`${shots}/mobile-${scheme}-2x.png`) }
-  check(await browser.evaluate(`(() => { const r=document.querySelector(${JSON.stringify(popup)}).getBoundingClientRect(); return r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight })()`), 'mobile popover fits viewport')
+  check(await browser.evaluate(`(() => { const p=document.querySelector(${JSON.stringify(popup)}), r=p.getBoundingClientRect(); return p.matches(':popover-open') && r.width>0 && r.height>0 && r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight })()`), 'mobile popover is open and fits viewport')
+  await browser.key('Escape'); await browser.evaluate('document.activeElement.blur()')
+  await browser.send('Emulation.setDeviceMetricsOverride', {width:390,height:300,deviceScaleFactor:2,mobile:true})
+  // Place the trigger in the middle of the short viewport, clear of the inspector's sticky footer.
+  await browser.evaluate(`Object.assign(document.querySelector(${JSON.stringify(trigger)}).style, {position:'fixed', top:'130px', right:'20px', zIndex:'100'})`)
+  p = await browser.centre(trigger); await browser.click(p.x,p.y)
+  check(await browser.evaluate(`(() => { const p=document.querySelector(${JSON.stringify(popup)}), t=document.querySelector(${JSON.stringify(trigger)}), r=t.getBoundingClientRect(), b=p.getBoundingClientRect(); return p.matches(':popover-open') && b.height>0 && b.top>=0 && b.bottom<=innerHeight && document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===t })()`), 'short viewport keeps open popover in bounds and trigger accessible')
+  await browser.screenshot(`${shots}/short-mobile.png`)
+  await browser.evaluate(`(() => { const p=document.querySelector(${JSON.stringify(popup)}); p.scrollTop=p.scrollHeight })()`)
+  await Bun.sleep(200)
+  check(await browser.evaluate(`(() => { const p=document.querySelector(${JSON.stringify(popup)}), a=p.querySelector('a'), r=p.getBoundingClientRect(), link=a.getBoundingClientRect(); return p.matches(':popover-open') && p.scrollTop>0 && link.top>=r.top && link.bottom<=r.bottom })()`), 'short viewport can scroll to the attribution link')
+  await browser.evaluate(`window.dispatchEvent(new Event('resize'))`)
+  check(await browser.evaluate(`document.querySelector(${JSON.stringify(popup)}).scrollTop > 0`), 'repositioning preserves popup scroll')
+  await browser.click(p.x,p.y)
+  check(await browser.evaluate(`!document.querySelector(${JSON.stringify(popup)}).matches(':popover-open')`), 'trigger dismisses popover in short viewport')
   console.log('Screenshots:',shots)
 } finally { await browser?.close(); await service.stop() }
 if (failures) process.exitCode = 1

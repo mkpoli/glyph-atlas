@@ -11,16 +11,27 @@
   let returningFocus = false
   let timer
 
-  function show() {
-    clearTimeout(timer)
-    if (!popup.matches(':popover-open')) popup.showPopover()
+  function position() {
+    const scrollTop = popup.scrollTop
+    popup.style.maxHeight = ''
     const anchor = trigger.getBoundingClientRect()
     const box = popup.getBoundingClientRect()
     const left = Math.max(8, Math.min(anchor.left, window.innerWidth - box.width - 8))
     const below = anchor.bottom + 6
-    const top = below + box.height <= window.innerHeight - 8 ? below : Math.max(8, anchor.top - box.height - 6)
+    const spaceBelow = Math.max(0, window.innerHeight - 8 - below)
+    const spaceAbove = Math.max(0, anchor.top - 6 - 8)
+    const placeBelow = box.height <= spaceBelow || (box.height > spaceAbove && spaceBelow >= spaceAbove)
+    popup.style.maxHeight = `${placeBelow ? spaceBelow : spaceAbove}px`
+    popup.scrollTop = scrollTop
+    const height = popup.getBoundingClientRect().height
+    const top = placeBelow ? below : anchor.top - height - 6
     popup.style.left = `${left}px`
     popup.style.top = `${top}px`
+  }
+  function show() {
+    clearTimeout(timer)
+    if (!popup.matches(':popover-open')) popup.showPopover()
+    position()
     open = true
   }
   function hide() {
@@ -51,7 +62,10 @@
         }
       }
     }
-    function reposition() { if (popup.matches(':popover-open')) show() }
+    function reposition(event) {
+      if (event.type === 'scroll' && event.target instanceof Node && popup.contains(event.target)) return
+      if (popup.matches(':popover-open')) position()
+    }
     document.addEventListener('keydown', escape, true)
     window.addEventListener('resize', reposition)
     window.addEventListener('scroll', reposition, true)
@@ -73,5 +87,5 @@
   <img class="issue-popover-image" src={`/issue-examples/${issue.id}.jpg`} alt={t(`issue.example.${issue.id}`)} />
   {#if issue.id === 'character'}<span class="issue-popover-mismatch" aria-hidden="true">て → か</span>{/if}
   <span>{issueHint(issue.id)}</span>
-  <small>{t('issue.example.notice')} <a href="https://codh.rois.ac.jp/char-shape/book/200021851/manifest.json" target="_blank" rel="noopener">日本古典籍データセット（国文研所蔵）CODH配信</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="license noopener">CC BY-SA 4.0</a></small>
+  <small>{t('issue.example.notice')} <a href="https://codh.rois.ac.jp/char-shape/book/200021851/manifest.json" lang="ja" target="_blank" rel="noopener">日本古典籍データセット（国文研所蔵）CODH配信</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="license noopener">CC BY-SA 4.0</a></small>
 </div>
