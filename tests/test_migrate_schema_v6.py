@@ -99,6 +99,16 @@ def test_a_dry_run_changes_nothing(tmp_path, capsys):
     assert not archive.exists()
 
 
+def test_a_newer_manifest_is_not_downgraded(tmp_path, capsys):
+    root = tmp_path / "old"
+    path = v5_dataset(root)
+    (root / tables.MANIFEST_NAME).write_text(json.dumps({"schema_version": 7, "tables": ["units"]}))
+    migrate.main([str(tmp_path), "--apply", "--archive", str(tmp_path / "readings.jsonl")])
+    assert "reading" not in pq.read_schema(path).names
+    manifest = json.loads((root / tables.MANIFEST_NAME).read_text())
+    assert manifest["schema_version"] == 7
+
+
 def test_the_migration_archives_telling_readings_and_drops_the_column(tmp_path, capsys):
     root = tmp_path / "old"
     path = v5_dataset(root)

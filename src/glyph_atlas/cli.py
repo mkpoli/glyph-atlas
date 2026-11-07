@@ -1103,7 +1103,11 @@ def import_tangut_coins(
     """Import West's Tangut coin photographs and drawings, to crop and identify their characters."""
     from .importers import tangut_coins
 
-    summary = tangut_coins.collect(source or tangut_coins.DEFAULT_SOURCE, out, cache=cache)
+    try:
+        summary = tangut_coins.collect(source or tangut_coins.DEFAULT_SOURCE, out, cache=cache)
+    except tangut_coins.CoinSourceError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1) from error
     typer.echo(f"documents     {summary['documents']:>10}")
     typer.echo(f"pages         {summary['pages']:>10}")
     typer.echo(f"photographs   {summary['photographs']:>10}")

@@ -68,7 +68,7 @@ One physical exemplar (a copy, a manuscript, an archival document).
 | `text_register` | `wabun`, `kanbun`, `kanbun-kundoku`, `sorobun`, `mixed`, `unknown` |
 | `dating` | what the corpus's own source states, as its importer read it: each with `literal` as written (文政3), `start` and `end` years, `kind` (composition, copying, publication, impression), `evidence`. Every dated statement about a document, this one and those of other sources, becomes a claim in `dates` below |
 | `hands` | free-text notes on scribes where known |
-| `image_kind` | what the document's page images show: `flat-reproduction` (the default), `object-photograph`, `editorial-diagram` or `mixed`. Only a flat reproduction is taken as public domain; every other value keeps the stated terms (`docs/licensing.md`). Version 7 added the field; a table written before it reads as `flat-reproduction` |
+| `image_kind` | what the document's page images show: `flat-reproduction` (the default), `object-photograph`, `editorial-diagram` or `mixed`. Only a flat reproduction of a pre-modern work is taken as public domain; every other value keeps the stated terms. A reader older than version 7 drops the column and treats the images as flat, so it must not read a dataset whose manifest states a newer version (`docs/licensing.md`). Version 7 added the field; a table written before it reads as `flat-reproduction` |
 | `image_rights`, `text_rights` | licence, holder, attribution string, evidence URL, date checked; `holder_terms` keeps the holder's own statement where the images of a public-domain work are recorded as PD (`docs/licensing.md`) |
 
 ### pages

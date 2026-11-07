@@ -162,7 +162,6 @@ def _document(config: dict[str, Any], coin: dict[str, Any],
                     "linked_from_image": image.get("linked_from_image"),
                     "reading_index": image.get("reading_index")}
                    for image in coin_images],
-        "rights_note": "No reuse licence or photographer credit is stated in the article.",
     }
     return Document(
         id=create_id(coin),

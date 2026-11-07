@@ -200,7 +200,10 @@ def migrate_manifest(dataset: Path) -> bool:
     if not target.is_file():
         return False
     manifest = json.loads(target.read_text(encoding="utf-8"))
-    if manifest.get("schema_version") == TARGET_VERSION:
+    current = manifest.get("schema_version")
+    if isinstance(current, int) and current >= TARGET_VERSION:
+        # A dataset written by a newer schema is left as it is: migrating one table must not
+        # relabel the whole dataset as older.
         return False
     manifest["schema_version"] = TARGET_VERSION
     target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

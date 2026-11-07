@@ -5,8 +5,10 @@ from pathlib import Path
 import pyarrow.parquet as pq
 import pytest
 import yaml
+from typer.testing import CliRunner
 
 from glyph_atlas import images, registry, tables
+from glyph_atlas.cli import app
 from glyph_atlas.importers import tangut_coins
 from glyph_atlas.schema import Dating, Document, Licence, Page, Rights
 
@@ -128,6 +130,7 @@ def test_collect_writes_a_document_per_coin_with_its_images_as_pages(tmp_path):
     assert fusheng.meta["status"] == "disputed"
     assert fusheng.meta["example_url"] == "http://www.zeno.ru/showphoto.php?photo=16068"
     assert fusheng.meta["reading_order"] == "top-right-bottom-left"
+    assert fusheng.meta["reading_system"] == "Li Fanwen (1997)"
     assert fusheng.meta["source_notes"] == ["Worn coins and fakes are described; no authenticity determination is made."]
     assert fusheng.meta["article_sha256"] == "abc"
     assert [reading["inscription"] for reading in fusheng.meta["readings"]] == ["𗼃𗼕𘏨𘔭", "𗣼𗧯𘏨𘔭"]
@@ -205,16 +208,32 @@ def test_a_non_flat_document_restores_a_holder_statement_moved_to_licence():
     assert document.image_rights.holder_terms is None
 
 
-def test_a_table_written_before_the_field_reads_as_flat(tmp_path):
-    path = tmp_path / "documents.parquet"
+def test_tables_written_before_the_field_read_as_flat(tmp_path):
+    documents = tmp_path / "documents.parquet"
     document = Document(id="old", title="old", image_rights=Rights(licence=Licence.UNKNOWN, attribution="old"))
-    tables.write(path, [document], Document)
-    pq.write_table(pq.read_table(path).drop(["image_kind"]), path)
-    assert tables.read(path, Document)[0].image_kind == "flat-reproduction"
+    tables.write(documents, [document], Document)
+    pq.write_table(pq.read_table(documents).drop(["image_kind"]), documents)
+    assert tables.read(documents, Document)[0].image_kind == "flat-reproduction"
+    pages = tmp_path / "pages.parquet"
+    page = Page(id="old:1", document_id="old", seq=0, image="https://example.org/1.jpg", width=10, height=10)
+    tables.write(pages, [page], Page)
+    pq.write_table(pq.read_table(pages).drop(["image_kind"]), pages)
+    assert tables.read(pages, Page)[0].image_kind == "flat-reproduction"
+
+
+def test_the_command_refuses_a_bad_source_and_writes_nothing(tmp_path):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("id: not-the-coin-source\n", encoding="utf-8")
+    out = tmp_path / "out"
+    result = CliRunner().invoke(app, ["import", "tangut-coins", "--source", str(bad), "--out", str(out)])
+    assert result.exit_code == 1
+    assert "not the babelstone-tangut-coins source record" in result.output
+    assert not (out / "documents.parquet").exists()
 
 
 def test_the_source_record_lists_every_coin_and_image():
     config = yaml.safe_load((ROOT / "data/sources/babelstone-tangut-coins.yaml").read_text(encoding="utf-8"))
+    assert config["id"] == tangut_coins.SOURCE_ID
     registered = {source.id: source for source in registry.load()}
     assert registered[tangut_coins.SOURCE_ID].name == "Tangut Coins"
     assert registered[tangut_coins.SOURCE_ID].licence is Licence.UNKNOWN
