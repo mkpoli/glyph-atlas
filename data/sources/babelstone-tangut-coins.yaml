@@ -1,0 +1,206 @@
+# Source: Andrew West, BabelStone Blog, "Tangut Coins" (2007-01-29; revised 2017-01-01).
+# Bibliographic facts and attributed reading candidates; image and article reuse rights unknown.
+id: babelstone-tangut-coins
+name: Tangut Coins
+publisher: Andrew West, BabelStone Blog
+kind: image-collection
+url: https://www.babelstone.co.uk/Blog/2007/01/tangut-coins.html
+released: 2007-01-29
+version: "2017-01-01"
+licence: unknown
+licence_evidence: https://www.babelstone.co.uk/Blog/2007/01/tangut-coins.html
+attribution: Andrew West, “Tangut Coins”, BabelStone Blog, 29 January 2007 (revised 1 January 2017)
+checked: 2026-11-07
+article_sha256: f8d6299b8bdfa08d8fe926f666fde913f7dcbe0eb2c6737a884fc15f5015c0ab
+counts:
+  coin_types: 6
+  photographs: 4
+  editorial_diagrams: 7
+notes:
+  - No reuse licence or photographer credits are stated in the article. Links to third-party coin pages do not establish ownership or permission for these files.
+  - Photographs depict three-dimensional objects; the age of a coin does not establish the rights of its photograph. Editorial diagrams depict proposed readings.
+  - The Fusheng and Bingde diagrams are alternative readings of the same coin type. West also questions the Zhenguan and Zhengde reign-period identifications.
+  - West describes worn coins and circulating fakes. These records make no independent authenticity determination.
+  - The seal, manuscript extract and Bushell character chart in the article are outside this coin-image selection.
+reading_order: top-right-bottom-left
+reading_system: Li Fanwen, Xia-Han Zidian (1997), as quoted in West's table; reconstructed pronunciation
+coins:
+  - id: fusheng
+    title: 福聖承道 寶錢 (Fusheng / Bingde)
+    label: Fusheng / Bingde Baoqian
+    reign_period_as_reported: Fusheng Chengdao 福聖承道 [1053-1056]
+    status: disputed
+    note: West leaves Fusheng, Bingde or another reading unresolved; both diagrams concern the same coin type.
+    readings:
+      - label: Fusheng Baoqian 福聖寶錢
+        inscription: 𗼃𗼕𘏨𘔭
+        reconstruction: śjɨj ljo ljɨ̣ dzjɨj
+      - label: Bingde Baoqian 稟德寶錢
+        inscription: 𗣼𗧯𘏨𘔭
+        reconstruction: tśhja ꞏji̲j ljɨ̣ dzjɨj
+    example_url: http://www.zeno.ru/showphoto.php?photo=16068
+  - id: daan
+    title: 大安 寶錢 (Da'an)
+    label: Da'an Baoqian
+    reign_period_as_reported: Da'an 大安 [1076-1085]
+    status: clear-in-source
+    note: West describes this reading as clear; the article supplies an editorial diagram only.
+    readings:
+      - label: Da'an Baoqian 大安寶錢
+        inscription: 𘜶𗵐𘏨𘔭
+        reconstruction: tha nej ljɨ̣ dzjɨj
+    example_url: http://www.zeno.ru/showphoto.php?photo=1084
+  - id: zhenguan
+    title: 貞觀 寶錢 (Zhenguan / Guande)
+    label: Zhenguan / Guande Baoqian
+    reign_period_as_reported: Zhenguan 貞觀 [1102-1114]
+    status: disputed
+    note: West reads the top and right characters as virtue and observe, and questions the Zhenguan reign-period identification.
+    readings:
+      - label: Zhenguan Baoqian 貞觀寶錢 / Guande Baoqian 觀德寶錢
+        inscription: 𗣼𘝯𘏨𘔭
+        reconstruction: tśhja bio̲ ljɨ̣ dzjɨj
+    example_url: http://www.zeno.ru/showphoto.php?photo=78
+  - id: zhengde
+    title: 正德 寶錢 (Zhengde / Zhide)
+    label: Zhengde / Zhide Baoqian
+    reign_period_as_reported: Zhengde 正德 [1127-1134]
+    status: disputed
+    note: West treats the second character as uncertain and questions the Zhengde reign-period identification.
+    readings:
+      - label: Zhengde Baoqian 正德寶錢 / Zhide Baoqian 治德寶錢
+        inscription: 𗣼𘇚𘏨𘔭
+        reconstruction: tśhja mji̲ ljɨ̣ dzjɨj
+  - id: qianyou
+    title: 乾祐 寶錢 (Qianyou)
+    label: Qianyou Baoqian
+    reign_period_as_reported: Qianyou 乾祐 [1171-1193]
+    status: clear-in-source
+    note: West describes this reading as clear; the article supplies an editorial diagram only.
+    readings:
+      - label: Qianyou Baoqian 乾祐寶錢
+        inscription: 𘀗𘑨𘏨𘔭
+        reconstruction: tshjwu ꞏwu ljɨ̣ dzjɨj
+    example_url: http://www.zeno.ru/showphoto.php?photo=16071
+  - id: tianqing
+    title: 天慶 寶錢 (Tianqing)
+    label: Tianqing Baoqian
+    reign_period_as_reported: Tianqing 天慶 [1194-1205]
+    status: clear-in-source
+    note: West describes this reading as clear.
+    readings:
+      - label: Tianqing Baoqian 天慶寶錢
+        inscription: 𘓺𘅝𘏨𘔭
+        reconstruction: ŋwər ljwu ljɨ̣ dzjɨj
+    example_url: http://www.zeno.ru/showphoto.php?photo=1332
+images:
+  - id: fusheng-photo
+    coin: fusheng
+    kind: object-photograph
+    label: Fusheng / Bingde Baoqian — photograph (reading disputed)
+    image: https://www.babelstone.co.uk/Tangut/Images/FushengBaoqian.jpg
+    linked_from_image: http://www.zeno.ru/showphoto.php?photo=16068
+    width: 272
+    height: 271
+    bytes: 38703
+    sha256: 85fd72cdf72e9eab1e3021731b706befbf723345c45380894f6604dc7e413836
+  - id: zhenguan-photo
+    coin: zhenguan
+    kind: object-photograph
+    label: Zhenguan / Guande Baoqian — photograph (identification disputed)
+    image: https://www.babelstone.co.uk/Tangut/Images/ZhenguanBaoqian.jpg
+    linked_from_image: http://www.hqcoin.com/bbs/TopicOther.asp?t=5&BoardID=356&id=26449
+    width: 290
+    height: 291
+    bytes: 27329
+    sha256: 91152c74ecd37a8e4e13a19bdba8064538ad0c320b4a08ee17b1f2d0c891cfdc
+  - id: zhengde-photo
+    coin: zhengde
+    kind: object-photograph
+    label: Zhengde / Zhide Baoqian — photograph (identification disputed)
+    image: https://www.babelstone.co.uk/Tangut/Images/ZhengdeBaoqian.jpg
+    linked_from_image: http://www.hqcoin.com/bbs/TopicOther.asp?t=5&BoardID=356&id=26449
+    width: 300
+    height: 311
+    bytes: 28215
+    sha256: 557834e8c7c06d1cb7e75047503a41733a1c744c50374fa29184c167041e4c65
+  - id: tianqing-photo
+    coin: tianqing
+    kind: object-photograph
+    label: Tianqing Baoqian — photograph
+    image: https://www.babelstone.co.uk/Tangut/Images/TianqingBaoqian.jpg
+    linked_from_image: http://www.zeno.ru/showphoto.php?photo=1332
+    width: 300
+    height: 295
+    bytes: 20284
+    sha256: 588179a1c49816f6be2eca1037d85db97a339490b588934b4f0caaed387fa8fd
+  - id: fusheng-diagram
+    coin: fusheng
+    kind: editorial-diagram
+    label: Fusheng Baoqian — editorial diagram (disputed alternative)
+    image: https://www.babelstone.co.uk/Tangut/Images/FushengBaoqianCoin.jpg
+    reading_index: 0
+    width: 232
+    height: 232
+    bytes: 13263
+    sha256: b505ef6fe55d2bcb1ff49af48bec0d7ef208552b1179dfd13a4bd6a30e01b6b9
+  - id: bingde-diagram
+    coin: fusheng
+    kind: editorial-diagram
+    label: Bingde Baoqian — editorial diagram (disputed alternative)
+    image: https://www.babelstone.co.uk/Tangut/Images/BingdeBaoqianCoin.jpg
+    reading_index: 1
+    width: 232
+    height: 232
+    bytes: 13848
+    sha256: 37f19608e879bdebc6e1e540e46bf1184d192944fb59fb4c9164a296c3149a17
+  - id: daan-diagram
+    coin: daan
+    kind: editorial-diagram
+    label: Da'an Baoqian — editorial diagram
+    image: https://www.babelstone.co.uk/Tangut/Images/DaanBaoqianCoin.jpg
+    reading_index: 0
+    width: 232
+    height: 232
+    bytes: 13789
+    sha256: 7387d5633ca882e5ab2c743fb1deac873a4446b4d8975c0c25086f320750ebb7
+  - id: zhenguan-diagram
+    coin: zhenguan
+    kind: editorial-diagram
+    label: Zhenguan / Guande Baoqian — editorial diagram (identification disputed)
+    image: https://www.babelstone.co.uk/Tangut/Images/ZhenguanBaoqianCoin.jpg
+    reading_index: 0
+    width: 232
+    height: 232
+    bytes: 13707
+    sha256: 06f6915535ab6eccff3cf057af69de59f037089abcef16c9d4a81b0531b3023b
+  - id: zhengde-diagram
+    coin: zhengde
+    kind: editorial-diagram
+    label: Zhengde / Zhide Baoqian — editorial diagram (identification disputed)
+    image: https://www.babelstone.co.uk/Tangut/Images/ZhengdeBaoqianCoin.jpg
+    reading_index: 0
+    width: 232
+    height: 232
+    bytes: 13827
+    sha256: b3e1849e3089273698213767e341d987b9b2fa1264730dbdeb978a7b12c15ba1
+  - id: qianyou-diagram
+    coin: qianyou
+    kind: editorial-diagram
+    label: Qianyou Baoqian — editorial diagram
+    image: https://www.babelstone.co.uk/Tangut/Images/QianyouBaoqianCoin.jpg
+    reading_index: 0
+    width: 232
+    height: 232
+    bytes: 13583
+    sha256: 639309b25680b43009140774ca91a0b0c621a7a598298e33e0551b704498e44f
+  - id: tianqing-diagram
+    coin: tianqing
+    kind: editorial-diagram
+    label: Tianqing Baoqian — editorial diagram
+    image: https://www.babelstone.co.uk/Tangut/Images/TianqingBaoqianCoin.jpg
+    reading_index: 0
+    width: 232
+    height: 232
+    bytes: 13943
+    sha256: cbbf6f6499ad40c0bae2a4f78911a1bdae3d4d990467d0f17d03706cd266361a

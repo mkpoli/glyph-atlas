@@ -126,6 +126,13 @@ dated after 1900 may be a work still in copyright and keeps its holder's terms; 
 is taken as pre-modern, which is the dataset's scope. Holder terms are contractual and bind those who
 accepted them; the attribution and source lines holders ask for are kept on every record.
 
+The rule covers flat originals. A photograph of a three-dimensional object has a photographer's
+own rights whatever the age of the object, and an editorial drawing is a modern work; neither is a
+reproduction that carries no copyright of its own. `Document.image_kind` marks such records, and they
+keep the licence and terms they state. The Tangut coin source
+(`data/sources/babelstone-tangut-coins.yaml`) records four photographs and seven drawings of Western
+Xia coins; the article states no licence or photographer credit, so their records say `unknown`.
+
 A compilation may be protected under Articles 12 and 12-2. CC BY-SA 4.0 claims nothing over material
 that needs no permission (its section 2(a)(2)). The dataset states its own rights as applying to the
 annotations and the compilation. Contributors agree to CC BY-SA 4.0 for their annotations; a

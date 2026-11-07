@@ -1094,6 +1094,25 @@ def import_hng_kiridashi(
     typer.echo(f"-> {out}")
 
 
+@import_app.command("tangut-coins")
+def import_tangut_coins(
+    source: Annotated[Path, typer.Option(help="the source record")] = Path("data/sources/babelstone-tangut-coins.yaml"),
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/tangut-coins"),
+    cache: Annotated[Path | None, typer.Option(help="image cache directory")] = None,
+) -> None:
+    """Import West's Tangut coin photographs and drawings, to crop and identify their characters."""
+    from .importers import tangut_coins
+
+    summary = tangut_coins.collect(source, out, cache=cache)
+    typer.echo(f"documents     {summary['documents']:>10}")
+    typer.echo(f"pages         {summary['pages']:>10}")
+    typer.echo(f"photographs   {summary['photographs']:>10}")
+    typer.echo(f"drawings      {summary['diagrams']:>10}")
+    for missing in summary["unavailable"]:
+        typer.echo(f"unavailable {missing['image']}: {missing['error']}", err=True)
+    typer.echo(f"-> {out}")
+
+
 @audit_app.command("sample")
 def audit_sample(
     directory: Annotated[Path, typer.Argument(help="dataset directory holding the run's units")],
