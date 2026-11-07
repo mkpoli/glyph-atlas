@@ -192,15 +192,17 @@ def migrate_store(path: Path, *, apply: bool) -> dict[str, int]:
     return counts
 
 
+TARGET_VERSION = 2
+
 def migrate_manifest(dataset: Path) -> bool:
     """Set the dataset manifest's schema version; return whether it changed."""
     target = dataset / tables.MANIFEST_NAME
     if not target.is_file():
         return False
     manifest = json.loads(target.read_text(encoding="utf-8"))
-    if manifest.get("schema_version") == tables.SCHEMA_VERSION:
+    if manifest.get("schema_version") == TARGET_VERSION:
         return False
-    manifest["schema_version"] = tables.SCHEMA_VERSION
+    manifest["schema_version"] = TARGET_VERSION
     target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return True
 

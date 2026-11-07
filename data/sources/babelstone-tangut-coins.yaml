@@ -10,7 +10,7 @@ version: "2017-01-01"
 licence: unknown
 licence_evidence: https://www.babelstone.co.uk/Blog/2007/01/tangut-coins.html
 attribution: Andrew West, “Tangut Coins”, BabelStone Blog, 29 January 2007 (revised 1 January 2017)
-checked: 2026-11-07
+checked: "2026-11-07"
 article_sha256: f8d6299b8bdfa08d8fe926f666fde913f7dcbe0eb2c6737a884fc15f5015c0ab
 counts:
   coin_types: 6
@@ -22,11 +22,12 @@ notes:
   - The Fusheng and Bingde diagrams are alternative readings of the same coin type. West also questions the Zhenguan and Zhengde reign-period identifications.
   - West describes worn coins and circulating fakes. These records make no independent authenticity determination.
   - The seal, manuscript extract and Bushell character chart in the article are outside this coin-image selection.
+  - The article digest is the one read by hand on the checked date; the import does not fetch or recheck the article.
 reading_order: top-right-bottom-left
 reading_system: Li Fanwen, Xia-Han Zidian (1997), as quoted in West's table; reconstructed pronunciation
 coins:
   - id: fusheng
-    title: 福聖承道 寶錢 (Fusheng / Bingde)
+    title: 福聖寶錢 / 稟德寶錢 (Fusheng / Bingde)
     label: Fusheng / Bingde Baoqian
     reign_period_as_reported: Fusheng Chengdao 福聖承道 [1053-1056]
     status: disputed
@@ -40,7 +41,7 @@ coins:
         reconstruction: tśhja ꞏji̲j ljɨ̣ dzjɨj
     example_url: http://www.zeno.ru/showphoto.php?photo=16068
   - id: daan
-    title: 大安 寶錢 (Da'an)
+    title: 大安寶錢 (Da'an)
     label: Da'an Baoqian
     reign_period_as_reported: Da'an 大安 [1076-1085]
     status: clear-in-source
@@ -51,7 +52,7 @@ coins:
         reconstruction: tha nej ljɨ̣ dzjɨj
     example_url: http://www.zeno.ru/showphoto.php?photo=1084
   - id: zhenguan
-    title: 貞觀 寶錢 (Zhenguan / Guande)
+    title: 貞觀寶錢 / 觀德寶錢 (Zhenguan / Guande)
     label: Zhenguan / Guande Baoqian
     reign_period_as_reported: Zhenguan 貞觀 [1102-1114]
     status: disputed
@@ -62,7 +63,7 @@ coins:
         reconstruction: tśhja bio̲ ljɨ̣ dzjɨj
     example_url: http://www.zeno.ru/showphoto.php?photo=78
   - id: zhengde
-    title: 正德 寶錢 (Zhengde / Zhide)
+    title: 正德寶錢 / 治德寶錢 (Zhengde / Zhide)
     label: Zhengde / Zhide Baoqian
     reign_period_as_reported: Zhengde 正德 [1127-1134]
     status: disputed
@@ -72,7 +73,7 @@ coins:
         inscription: 𗣼𘇚𘏨𘔭
         reconstruction: tśhja mji̲ ljɨ̣ dzjɨj
   - id: qianyou
-    title: 乾祐 寶錢 (Qianyou)
+    title: 乾祐寶錢 (Qianyou)
     label: Qianyou Baoqian
     reign_period_as_reported: Qianyou 乾祐 [1171-1193]
     status: clear-in-source
@@ -83,7 +84,7 @@ coins:
         reconstruction: tshjwu ꞏwu ljɨ̣ dzjɨj
     example_url: http://www.zeno.ru/showphoto.php?photo=16071
   - id: tianqing
-    title: 天慶 寶錢 (Tianqing)
+    title: 天慶寶錢 (Tianqing)
     label: Tianqing Baoqian
     reign_period_as_reported: Tianqing 天慶 [1194-1205]
     status: clear-in-source
@@ -137,7 +138,7 @@ images:
   - id: fusheng-diagram
     coin: fusheng
     kind: editorial-diagram
-    label: Fusheng Baoqian — editorial diagram (disputed alternative)
+    label: Fusheng Baoqian — editorial diagram (standard reading)
     image: https://www.babelstone.co.uk/Tangut/Images/FushengBaoqianCoin.jpg
     reading_index: 0
     width: 232
@@ -147,7 +148,7 @@ images:
   - id: bingde-diagram
     coin: fusheng
     kind: editorial-diagram
-    label: Bingde Baoqian — editorial diagram (disputed alternative)
+    label: Bingde Baoqian — editorial diagram (alternative reading)
     image: https://www.babelstone.co.uk/Tangut/Images/BingdeBaoqianCoin.jpg
     reading_index: 1
     width: 232

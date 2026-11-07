@@ -178,11 +178,12 @@ class Document(BaseModel):
     text_register: Register = Register.UNKNOWN
     dating: list[Dating] = Field(default_factory=list, description="several dates may apply, e.g. composition and copying")
     hands: list[str] = Field(default_factory=list)
-    image_kind: Literal["flat-reproduction", "object-photograph", "editorial-diagram"] = Field(
+    image_kind: Literal["flat-reproduction", "object-photograph", "editorial-diagram", "mixed"] = Field(
         default="flat-reproduction",
-        description="what the page images show: a flat original such as a book page or a print, a "
-        "photograph of a three-dimensional object, or an editorial drawing. A table without the column "
-        "reads as flat-reproduction.",
+        description="what the document's page images show: a flat original such as a book page or a "
+        "print, a photograph of a three-dimensional object, an editorial drawing, or more than one of "
+        "these. Only flat reproductions receive the public-domain reproduction rule; every other value "
+        "keeps the terms it states. A table without the column reads as flat-reproduction.",
     )
     image_rights: Rights | None = None
     text_rights: Rights | None = None
@@ -238,6 +239,10 @@ class Page(BaseModel):
     sha256: str | None = None
     transcription: dict[str, str] = Field(default_factory=dict, description="source id, entry id, revision")
     style: Style = Field(default=style.UNASSESSED, description="style of the letterforms on the page; unassessed takes the document's")
+    image_kind: Literal["flat-reproduction", "object-photograph", "editorial-diagram"] = Field(
+        default="flat-reproduction",
+        description="what this page's image shows; a table without the column reads as flat-reproduction",
+    )
     meta: dict[str, Any] = Field(default_factory=dict)
 
 

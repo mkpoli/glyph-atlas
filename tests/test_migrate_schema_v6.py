@@ -110,7 +110,7 @@ def test_the_migration_archives_telling_readings_and_drops_the_column(tmp_path, 
     assert "reading" not in pq.read_schema(path).names
     assert {unit.id: unit.text_source for unit in tables.read(path, Unit)}["ku"] == "久"
     manifest = json.loads((root / tables.MANIFEST_NAME).read_text())
-    assert manifest["schema_version"] == tables.SCHEMA_VERSION == 6
+    assert manifest["schema_version"] == 6
 
     rows = store_rows(root)
     assert all("reading" not in json.loads(data) for _, data in rows["units"] + rows["imported"])
