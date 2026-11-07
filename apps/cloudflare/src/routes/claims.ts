@@ -9,7 +9,7 @@ import { cropGraphemes } from '../cropPanels';
 import { formOf, slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
 import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, graphemeKey, headKeys, keyText, ledgerPage, type LedgerTools, type Member,
-  ownedActors, planAction, planClaim, PREDICATES, type Plan, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
+  ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
 import { readRecords, recordKey } from '../records';
 import { refileRuns } from './runs';
 import { anchoredForm, representationId, typed, type FormProblem, type Representation } from '../representation';
@@ -253,6 +253,70 @@ export async function setGrapheme(env: Env, input: Json, named: string, actor: s
   return { id: publicId(crop.id), grapheme_claim: (await cropGraphemes(env, [crop.id])).get(crop.id) ?? null, replaced: result.replaced ?? null };
 }
 
+// A form's `written_for` claims: the graphemes the form writes. A claim is not about a crop, so it has
+// no evidence version and survives every recut.
+const FORM_ID = /^fm:[0-9a-f]{32}$/;
+const FILED = new Set(['asserted', 'accepted', 'adjudicated']);
+export const writtenForQuery = () => `SELECT c.object AS grapheme,c.status,c.members,c.claims
+  FROM current_claims c WHERE c.subject=? AND c.predicate='written_for' AND c.scope=''`;
+/** The graphemes a form is written for, each with who says so now: a form of several graphemes has one
+ *  row each. A slot people disagree on holds no grapheme until it is adjudicated. */
+export async function writtenForOf(env: Env, form: string): Promise<{ grapheme: string; char: string; by: string[] }[]> {
+  const rows = (await env.ATLAS.prepare(writtenForQuery()).bind(form).all<{ grapheme: string; status: string; members: string; claims: string }>()).results;
+  return rows.filter(row => FILED.has(row.status)).flatMap(row => {
+    const by = [...new Set((JSON.parse(row.claims) as Json[]).filter(c => c.standing).map(c => c.asserted_by as string))];
+    return [...new Set((JSON.parse(row.members) as Json[]).flatMap(m => m.object ? [m.object as string] : []))]
+      .map(grapheme => ({ grapheme, char: keyText(grapheme), by }));
+  }).sort((a, b) => a.grapheme < b.grapheme ? -1 : a.grapheme > b.grapheme ? 1 : 0);
+}
+// The actor's own live claim that this form writes this grapheme: one range of `assertion_object`.
+export const ownWrittenForQuery = (owned: string) => `SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='written_for'
+  AND a.scope='' AND a.slot=? AND (a.asserted_by=? OR a.asserted_by IN ${owned})
+  AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid DESC LIMIT 1`;
+/** Say that a form is written for a grapheme (`remove` false), or take back the reader's own claim
+ *  (`remove` true). A form can be written for several graphemes; each is a claim of its own. The answer
+ *  names the form's graphemes now, so a picker can show the form on another crop of the family. */
+export async function setWrittenFor(env: Env, input: Json, form: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
+  const ledger = ledgerTools(env, tools, ctx);
+  const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ form, input });
+  const saved = await savedSubmission(env, key, signature, tools.fail);
+  if (saved) return { id: form, written_for: await writtenForOf(env, form), replaced: saved.replaced ?? null };
+  if (!FORM_ID.test(form) || !await env.ATLAS.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first()) tools.fail(404, 'No such form.');
+  const grapheme = input.grapheme == null ? null : tools.text(input.grapheme, 64, 'grapheme', true)!;
+  if (!graphemeKey(grapheme)) tools.fail(422, 'Name a grapheme by its code points.');
+  if (!(await headKeys(env, [grapheme])).length) {
+    const row = await env.ATLAS.prepare(graphemeHeadQuery()).bind(keyText(grapheme)).first<{ family: string | null }>();
+    tools.fail(422, row ? `This character is filed under ${row.family}.` : 'No such character.');
+  }
+  const remove = input.remove === true;
+  const own = await env.ATLAS.prepare(ownWrittenForQuery(ownedActors(actor))).bind(form, grapheme, actor).first<{ id: string }>();
+  const linked = (await writtenForOf(env, form)).some(value => value.grapheme === grapheme);
+  if (remove && !own) tools.fail(409, `You have not said this form writes ${keyText(grapheme)}.`);
+  const at = new Date().toISOString();
+  // A claim already standing is not made again; a picker that lost the answer is told what holds, and
+  // the answer is saved so a retry reads it.
+  if (!remove && own && linked) {
+    await env.ATLAS.prepare('INSERT OR IGNORE INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
+      .bind(key, actor, signature, JSON.stringify({ submission: key, subject: form, replaced: null }), at).run();
+    return { id: form, written_for: await writtenForOf(env, form), replaced: null };
+  }
+  const plan: Plan = { statements: [], keys: [] };
+  if (own) {
+    const retract = await planAction(env, { key: key + '/retract', actor, target: own.id, action: 'retract',
+      reason: remove ? 'cleared' : 'replaced', admin: false, at }, ledger);
+    plan.statements.push(...retract.statements); plan.keys.push(...retract.keys);
+  }
+  if (!remove) {
+    const member: Member = { object: grapheme, value: null, confidence: null, confidence_scheme: null };
+    checkClaims('written_for', [member], { [grapheme]: 'grapheme' }, tools.fail);
+    const claim = await planSubjectClaim(env, { key, actor, subject: form, predicate: 'written_for', scope: '', members: [member],
+      at, method: 'form-picker' }, ledger);
+    plan.statements.push(...claim.statements); plan.keys.push(...claim.keys);
+  }
+  await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: form, replaced: remove ? grapheme : null }, ledger);
+  return { id: form, written_for: await writtenForOf(env, form), replaced: remove ? grapheme : null };
+}
+
 /** Set the reader's word for one crop (decision 0004), or retract their own latest claim with `word: null`. */
 export async function setWord(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
   const ledger = ledgerTools(env, tools, ctx), spec = PREDICATES.writes_word;
@@ -310,15 +374,17 @@ export async function bookDates(env: Env, book: number | null): Promise<Json> {
 /** A write to the ledger: a claim, an action on one, or a crop's form, word or grapheme. `null` for another path. */
 export async function claimWrite(env: Env, request: Request, path: string, me: { id: string; admin: boolean }, tools: ClaimTools,
   limit: () => Promise<void>, ctx?: ExecutionContext): Promise<Json | Response | null> {
-  const acted = path.match(/^\/atlas\/claims\/([^/]+)\/actions$/), picked = path.match(/^\/atlas\/characters\/([^/]+)\/(form|word|grapheme)$/);
-  if (path !== '/atlas/claims' && path !== '/atlas/forms' && !acted && !picked) return null;
+  const acted = path.match(/^\/atlas\/claims\/([^/]+)\/actions$/), picked = path.match(/^\/atlas\/characters\/([^/]+)\/(form|word|grapheme)$/),
+    linked = path.match(/^\/atlas\/forms\/([^/]+)\/written_for$/);
+  if (path !== '/atlas/claims' && path !== '/atlas/forms' && !acted && !picked && !linked) return null;
   // A claim, an action or a crop's form is a few small rows, and one address is held to a rate.
   await limit();
   const input = await tools.body(request);
   let target = '';
-  try { target = decodeURIComponent((acted ?? picked)?.[1] ?? '') } catch { tools.fail(404, acted ? 'No such claim.' : NOT_HERE) }
+  try { target = decodeURIComponent((acted ?? picked ?? linked)?.[1] ?? '') } catch { tools.fail(404, acted ? 'No such claim.' : linked ? 'No such form.' : NOT_HERE) }
   try {
     if (path === '/atlas/forms') return await setForms(env, input, me.id, tools, ctx);
+    if (linked) return await setWrittenFor(env, input, target, me.id, tools, ctx);
     if (picked) return picked[2] === 'word' ? await setWord(env, input, target, me.id, tools, ctx)
       : picked[2] === 'grapheme' ? await setGrapheme(env, input, target, me.id, tools, ctx) : await setForm(env, input, target, me.id, tools, ctx);
     const ledger = ledgerTools(env, tools, ctx);

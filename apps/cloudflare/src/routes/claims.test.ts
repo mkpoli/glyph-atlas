@@ -9,7 +9,8 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
 import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
-  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, setWord, wordMethodsQuery, wordNamesQuery, wordOfCrop } from './claims';
+  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, setWord, setWrittenFor, wordMethodsQuery, wordNamesQuery, wordOfCrop,
+  writtenForOf, writtenForQuery } from './claims';
 import { familyClaims } from '../atlas3Gallery';
 
 // The Workers cache, as far as alias reads use it.
@@ -273,6 +274,59 @@ describe('the crop form picker', () => {
     await expect(pick(null)).rejects.toThrow('409 You have no form on this crop to clear.');
     await expect(pick('⿰木')).rejects.toThrow('422 This description is missing a component.');
     expect(await formOfCrop(env, local)).toMatchObject({ by: ['other'] });
+  });
+});
+
+describe('a form written for a grapheme', () => {
+  const AFTER = 'U+5F8C', QUEEN = 'U+540E';
+  // 後 and 后 head families of their own; 从 is filed under 從. A described form of the local crop is
+  // the form these claims are about.
+  async function forms() {
+    const found = setup();
+    found.db.exec(`INSERT INTO graphemes(id,text,head) VALUES(1,'後',1),(2,'后',2),(3,'從',3),(4,'从',3);`);
+    const made = await setForm(found.env, { id: crypto.randomUUID(), crop_version: found.version(found.local), form: '⿺辶𦊷' },
+      publicId(found.local), 'reader', found.tools);
+    const form = made.form!.values[0].form!;
+    const add = (grapheme: string | null, remove = false, actor = 'reader', id = crypto.randomUUID()) =>
+      setWrittenFor(found.env, { id, grapheme, remove }, form, actor, found.tools);
+    return { ...found, form, add };
+  }
+
+  it('names a form as written for one grapheme and then another, and takes one claim back', async () => {
+    const { db, form, add } = await forms();
+    const saved = await add(AFTER);
+    expect(saved).toMatchObject({ id: form, written_for: [{ grapheme: AFTER, char: '後', by: ['reader'] }], replaced: null });
+    expect(db.query("SELECT subject,crop,cut,object FROM current_claims WHERE predicate='written_for'").get())
+      .toEqual({ subject: form, crop: null, cut: null, object: AFTER });
+    expect(await add(AFTER)).toEqual(saved);
+    await add(QUEEN);
+    expect((await add(AFTER, true)).written_for.map((v: any) => v.grapheme)).toEqual([QUEEN]);
+    await expect(add(AFTER, true)).rejects.toThrow('409 You have not said this form writes 後.');
+  });
+
+  it('takes back only the reader\'s own claim, and names only a grapheme that heads its family', async () => {
+    const { db, env, tools, form, add } = await forms();
+    await add(AFTER);
+    await add(AFTER, false, 'other');
+    expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='written_for'").get()).toEqual({ n: 2 });
+    expect((await add(AFTER, true, 'other')).written_for).toEqual([{ grapheme: AFTER, char: '後', by: ['reader'] }]);
+    await expect(add(AFTER, true, 'third')).rejects.toThrow('409 You have not said this form writes 後.');
+    await expect(add('U+4ECE')).rejects.toThrow('422 This character is filed under 從.');
+    await expect(add('U+9999')).rejects.toThrow('422 No such character.');
+    await expect(add('後')).rejects.toThrow('422 Name a grapheme by its code points.');
+    await expect(add('U+005F8C')).rejects.toThrow('422 Name a grapheme by its code points.');
+    await expect(setWrittenFor(env, { id: crypto.randomUUID(), grapheme: AFTER }, 'fm:' + '0'.repeat(32), 'reader', tools))
+      .rejects.toThrow('404 No such form.');
+  });
+
+  it('reads the form\'s graphemes from its current claims, not from every claim ever made', async () => {
+    const { db, env, form, add } = await forms();
+    await add(AFTER);
+    db.exec(`INSERT INTO assertion_actions(id,assertion,action,actor,at)
+      SELECT 'reject',id,'reject','voter','now' FROM assertions WHERE predicate='written_for'`);
+    await env.ATLAS.batch(resolveSlots(env, [[form, 'written_for', '', AFTER]]));
+    expect(await writtenForOf(env, form)).toEqual([]);
+    expect(db.query(writtenForQuery()).all(form)).toEqual([expect.objectContaining({ status: 'rejected' })]);
   });
 });
 

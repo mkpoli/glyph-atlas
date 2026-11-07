@@ -1010,8 +1010,17 @@ def router(store: Store) -> APIRouter:
     ) -> dict[str, Any]:
         """One character: its layers, the forms of its grapheme, and the ink that carries it."""
         row = known(code_point)
-        return {"query": row.code_point, "expand": expand, **character_view(
-            row, layer(), expand=expand, state=state, limit=limit, offset=offset)}
+        view = character_view(row, layer(), expand=expand, state=state, limit=limit, offset=offset)
+        # A described form a reviewer said is written for this grapheme joins its 字体 row, as on the
+        # Worker's card. A form the card already lists as a member or a variant is not listed twice.
+        grapheme = (view.get("grapheme") or {}).get("code_point")
+        if grapheme:
+            listed = {member["char"] for member in (view.get("grapheme") or {}).get("members", [])}
+            for group in ("items", "related", "derived"):
+                listed |= {entry["char"] for entry in view["variants"].get(group, []) if entry.get("char")}
+            view["variants"] = {**view["variants"],
+                                "forms": [form for form in store.written_forms(grapheme) if form["char"] not in listed]}
+        return {"query": row.code_point, "expand": expand, **view}
 
     @api.get("/layers/occurrences")
     def occurrences(

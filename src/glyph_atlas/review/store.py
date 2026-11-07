@@ -1178,6 +1178,23 @@ class Store:
         with self._lock, self._connection() as conn:
             return crop_forms.forms_for(conn, versions)
 
+    def set_written_for(self, **written: Any) -> dict[str, Any]:
+        """Say a form is written for a grapheme, or take the claim back (`crop_forms.set_written_for`), and
+        return the graphemes the form writes now."""
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            crop_forms.set_written_for(conn, **written)
+            return {"id": written["form"], "written_for": crop_forms.written_for(conn, written["form"])}
+
+    def written_for(self, form: str) -> list[dict[str, Any]]:
+        """The graphemes a form is written for (`crop_forms.written_for`)."""
+        with self._lock, self._connection() as conn:
+            return crop_forms.written_for(conn, form)
+
+    def written_forms(self, grapheme: str) -> list[dict[str, Any]]:
+        """The described forms a grapheme's card carries (`crop_forms.written_forms`)."""
+        with self._lock, self._connection() as conn:
+            return crop_forms.written_forms(conn, grapheme)
+
     def resolve_claims(self, version_of, subjects: Iterable[str] | None = None) -> int:
         """Resolve the slots of `subjects` again, or every slot; `version_of` names each crop's current version."""
         with self._lock, self._connection() as conn, self._transaction(conn):

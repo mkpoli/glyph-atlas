@@ -4,30 +4,33 @@
   // or derived character, a character found by search, or a shape written as an ideographic description
   // sequence. A choice is held until the dialog saves. Every chip toggles: a click chooses it, the crop's
   // own form too, which confirms that form, and a click on the chosen chip drops the choice.
+  // A described form the crop already has can be recorded as written for its grapheme (written_for), so
+  // the form joins the grapheme's 字体 on every card and in every picker of the family.
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
   import CopyValue from './CopyValue.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
-  import { listForms, formOf } from '../lib/cropForms.js'
+  import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
+  import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
   // its own form would mark nothing.
   let { crop, chosen = null, onchoose, disabled = false, others = false } = $props()
-  let offered = $state({ char: null, members: [], variants: [], related: [], derived: [] }), added = $state([])
+  let offered = $state({ char: null, members: [], variants: [], related: [], derived: [], linked: [], grapheme: null }), added = $state([])
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
-  let composing = $state(false)
+  let composing = $state(false), linking = $state(false), linkError = $state(''), linkedByMe = $state(false)
   const written = $derived(crop?.written_character ?? crop?.label ?? '')
   const current = $derived(formOf(crop))
   const BAR = 10
   $effect(() => {
     void crop?.id
     const char = written
-    added = []; picking = false; query = ''; failed = false; composing = false
+    added = []; picking = false; query = ''; failed = false; composing = false; linking = false; linkError = ''; linkedByMe = false
     listForms(char).then(found => { if (char === written) offered = { char, ...found } })
-      .catch(() => { if (char === written) { offered = { char, members: [{ char }], variants: [], related: [], derived: [] }; failed = true } })
+      .catch(() => { if (char === written) { offered = { char, members: [{ char }], variants: [], related: [], derived: [], linked: [], grapheme: null }; failed = true } })
   })
-  const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], related: [], derived: [] })
+  const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], related: [], derived: [], linked: [], grapheme: null })
   // The grapheme's forms: its members, then its variants.
   const forms = $derived([...listed.members, ...listed.variants].filter(form => !others || form.char !== current))
   // The bar: the grapheme's first forms, the crop's own form when it is none of them, and what the
@@ -41,6 +44,15 @@
   })
   // The bar wraps onto further rows; only the forms past the first ten, and not on it, wait in the picker.
   const rest = $derived(forms.slice(BAR).filter(form => !bar.some(chip => chip.char === form.char)))
+  // The crop's own form as the site holds it: one value, and not disputed. Only a described form can be
+  // added to the grapheme's 字体 here; encoded characters already have a card row of their own.
+  const saved = $derived(crop?.form?.status === 'disputed' ? null : (crop?.form?.values ?? []).find(value => value.form) ?? null)
+  const linkedChars = $derived(new Set((listed.linked ?? []).map(item => item.char)))
+  const linkedHere = $derived(Boolean(saved && linkedChars.has(saved.text)))
+  const knownForm = $derived(Boolean(saved && [...listed.members, ...listed.variants].some(item => item.char === saved.text && !linkedChars.has(item.char))))
+  const grapheme = $derived(listed.grapheme?.code_point ?? crop?.grapheme ?? null)
+  const canLink = $derived(Boolean(saved && saved.scheme === 'ids' && !linkedHere && !knownForm && !chosen && grapheme && !disabled && !failed))
+  const me = $derived(signedInUser()?.id ?? null)
   const q = $derived(query.trim().toUpperCase())
   const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
   const sections = $derived([
@@ -49,6 +61,32 @@
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   function choose(char) { onchoose(char === chosen ? null : char) }
+  // The grapheme's forms changed for every crop of its family, so the card is read again after a save.
+  async function reload() {
+    const char = written
+    try { const found = await listForms(char); if (found && char === written) offered = { char, ...found } }
+    catch { /* the save stands; the card reads again next time */ }
+  }
+  async function link() {
+    if (!canLink || linking) return
+    linking = true; linkError = ''
+    try {
+      const result = await setWrittenFor(saved.form, grapheme)
+      linkedByMe = Boolean(me && (result?.written_for ?? []).find(value => value.grapheme === grapheme)?.by?.includes(me))
+      await reload()
+    } catch (error) { linkError = error.message }
+    finally { linking = false }
+  }
+  async function unlink() {
+    if (linking) return
+    linking = true; linkError = ''
+    try {
+      await setWrittenFor(saved.form, grapheme, true)
+      linkedByMe = false
+      await reload()
+    } catch (error) { linkError = error.message }
+    finally { linking = false }
+  }
   function add(item) {
     // Where choosing marks at once, the crop's own form, found by search, would mark nothing.
     if (others && item.char === current) { picking = false; query = ''; composing = false; return }
@@ -87,6 +125,19 @@
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+⌕'}</button>
   </div>
+  {#if linkedHere || canLink}
+    <div class="form-link">
+      {#if linkedHere}
+        <span class="form-linked">✓ {t('form.link.linked', { char: written })}</span>
+        {#if linkedByMe}<button type="button" class="form-unlink" disabled={disabled || linking} onclick={unlink}
+          aria-label={t('form.link.remove', { char: written })} title={t('form.link.remove', { char: written })}>×</button>{/if}
+      {:else}
+        <button type="button" class="form-link-add" disabled={disabled || linking} aria-busy={linking} onclick={link}>
+          {t('form.link.add', { char: written })}</button>
+      {/if}
+      {#if linkError}<span class="form-link-error" role="alert">{linkError}</span>{/if}
+    </div>
+  {/if}
   {#if picking}
     <div class="form-picker" role="dialog" aria-label={t('form.add')}>
       <CharacterSearch compact codePoints autofocus bind:value={query} label={t('form.add')} placeholder={t('search.placeholder')} onselect={add} />
@@ -130,4 +181,12 @@
   .form-option:not(:disabled):hover{border-color:var(--accent)}
   .form-compose{align-self:flex-start;font-size:13px;padding:4px 10px}
   .form-note{margin:0;font-size:11px;color:var(--muted)}
+  .form-link{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;line-height:1.4}
+  .form-link-add{border:0;background:transparent;color:var(--accent);padding:0;font:inherit;font-size:12px;text-align:left;
+    text-decoration:underline;text-underline-offset:3px}
+  .form-link-add:not(:disabled):hover{color:var(--ink)}
+  .form-linked{color:var(--muted)}
+  .form-unlink{border:0;background:transparent;color:var(--muted);padding:0 2px;font-size:15px;line-height:1}
+  .form-unlink:not(:disabled):hover{color:var(--wrong)}
+  .form-link-error{color:var(--wrong)}
 </style>
