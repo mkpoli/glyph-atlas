@@ -42,15 +42,16 @@ The server's Tailscale key is set never to expire (Tailscale admin console → M
 | `mautrix-telegram` | Telegram bridge | `/var/lib/mautrix-telegram` |
 | `heisenbridge` | IRC bridge to Libera.Chat | `/var/lib/heisenbridge` (Python venv, registration); its state lives in Matrix account data |
 | `qq-bridge` | QQ bridge: the official QQ bot, one group | `/var/lib/qq-bridge` (config, registration, state); program in `/opt/qq-bridge` (source, venv) |
+| `ids-bot` | Answers a description with its IDS Workshop page | `/opt/ids-bot/ids_bot.py`; token in `/etc/ids-bot/token`, sync position in `/var/lib/ids-bot/state.json` |
 | `cloudflared` | The tunnel `glyphatlas-matrix` | `/etc/cloudflared/config.yml` and the tunnel's credential file beside it |
 | `tailscaled` | Tailscale | — |
 | `chat-backup.timer` | Nightly backup | `/usr/local/sbin/chat-backup` |
 
-The four bridges declare `Requires=continuwuity.service`: stopping the homeserver stops them, and
-starting it does not start them. Start all five together:
+The bridges and the IDS bot declare `Requires=continuwuity.service`: stopping the homeserver stops
+them, and starting it does not start them. Start all six together:
 
 ```sh
-systemctl restart continuwuity mautrix-discord mautrix-telegram heisenbridge qq-bridge
+systemctl restart continuwuity mautrix-discord mautrix-telegram heisenbridge qq-bridge ids-bot
 ```
 
 **The tunnel.** `matrix.glyphatlas.org` is a proxied CNAME to the tunnel. `config.yml` sends
@@ -124,6 +125,8 @@ upgrading, since their configuration changes between versions:
 - heisenbridge — `pip install -U heisenbridge` in its venv;
 - qq-bridge — a Python program in `/opt/qq-bridge` (source in `src`, virtualenv in `venv`); copy the
   changed files in and restart the service;
+- ids-bot — `apps/ids-bot/ids_bot.py` in this repository; copy the file to `/opt/ids-bot/ids_bot.py`
+  and restart the service;
 - cloudflared — from Cloudflare's apt repository, so it updates with the system;
 - Element at chat.glyphatlas.org — `apps/chat` in this repository, pinned by version and checksum.
 
@@ -193,3 +196,65 @@ qq media --dry-run
 qq media
 systemctl start qq-bridge
 ```
+
+## IDS bot
+
+`@idsbot:glyphatlas.org` joins every room in the server's public directory and answers a message that
+carries an ideographic description with the IDS Workshop page for it: `⿱⿻韦丷吋` gets
+https://ids.mkpo.li/⿱⿻韦丷吋. A description must stand between spaces or punctuation, so a sentence
+that merely uses the operator (用⿰表示) is left alone. Its answers follow the sync stream, so they
+reach the bridged rooms too. Its own messages, edits and messages that already link the Workshop get
+no answer.
+
+The program is `apps/ids-bot/ids_bot.py`, standard library only. On the server, make its account and
+directory:
+
+```sh
+useradd --system --user-group --home /var/lib/ids-bot --shell /usr/sbin/nologin ids-bot
+install -d -o ids-bot -g ids-bot /var/lib/ids-bot
+install -d -o root -g ids-bot /opt/ids-bot
+install -d -m 750 -o root -g ids-bot /etc/ids-bot
+```
+
+From a checkout of this repository, copy the program in and give it to the service's group:
+
+```sh
+scp apps/ids-bot/ids_bot.py root@glyphatlas-matrix:/opt/ids-bot/ids_bot.py
+ssh root@glyphatlas-matrix 'chown root:ids-bot /opt/ids-bot/ids_bot.py; chmod 640 /opt/ids-bot/ids_bot.py'
+```
+
+In `#admins`, `!admin users create idsbot` makes the account and prints a password;
+`!admin users issue-token idsbot <password>` prints its token. Put the token in
+`/etc/ids-bot/token`, owned by root and readable by the `ids-bot` group (the maintainer's copy is
+`idsbot-token`), and set the account's display name to `IDS bot`.
+
+The unit is `/etc/systemd/system/ids-bot.service`:
+
+```ini
+[Unit]
+Description=IDS bot (links descriptions to the IDS Workshop)
+After=network-online.target continuwuity.service
+Requires=continuwuity.service
+
+[Service]
+User=ids-bot
+Group=ids-bot
+WorkingDirectory=/var/lib/ids-bot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/ids-bot/ids_bot.py \
+  --homeserver http://127.0.0.1:6167 --token-file /etc/ids-bot/token --state /var/lib/ids-bot/state.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/ids-bot
+MemoryMax=100M
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`systemctl daemon-reload` then `systemctl enable --now ids-bot`. The bot reads the directory again
+every hour, so a new public room needs no restart; a room is covered once it is published there.
