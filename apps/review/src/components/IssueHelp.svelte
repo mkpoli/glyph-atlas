@@ -87,7 +87,9 @@
   <span>{issueHint(issue.id)}</span>
   {#each issue.examples as example}
     <figure class="issue-popover-example">
-      <img src={`/issue-examples/${example.image}`} alt="" />
+      <div class="issue-popover-frame">
+        <img src={`/issue-examples/${example.image}`} alt="" />
+      </div>
       <figcaption>{t(`issue.example.${issue.id}.${example.case}`)}</figcaption>
     </figure>
   {/each}

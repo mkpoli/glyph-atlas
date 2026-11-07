@@ -402,7 +402,7 @@
   "issue.example.character.kanji": "以「干」標爲「千」。",
   "issue.example.merged.vertical": "「か」與「て」同在一截。",
   "issue.example.merged.columns": "「く」與「知」同在一截。",
-  "issue.example.crop.cut": "「か」爲框所截。",
+  "issue.example.crop.cut": "「か」之部分爲框所截。",
   "issue.example.crop.edge": "框兼取版框線與鄰字之筆畫。",
   "issue.example.blank.paper": "素紙。",
   "issue.example.blank.mark": "紙上之墨漬。",

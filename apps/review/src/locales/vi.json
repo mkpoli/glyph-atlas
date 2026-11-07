@@ -415,7 +415,7 @@
   "issue.example.merged.vertical": "Hai chữ か và て trong cùng một vùng cắt.",
   "issue.example.merged.columns": "Hai chữ く và 知 trong cùng một vùng cắt.",
   "issue.example.crop.cut": "Khung cắt làm mất một phần chữ か.",
-  "issue.example.crop.edge": "Khung cắt lấy cả mép trang và nét chữ bên cạnh.",
+  "issue.example.crop.edge": "Khung cắt lấy cả khung bản và nét chữ bên cạnh.",
   "issue.example.blank.paper": "Giấy trắng.",
   "issue.example.blank.mark": "Vết bẩn trên giấy.",
   "issue.character.hint": "Là chữ khác",

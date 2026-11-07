@@ -25,6 +25,32 @@ try {
   await browser.waitFor(`${JSON.stringify(popup)} && [...document.querySelector(${JSON.stringify(popup)}).querySelectorAll('img')].every(img => img.complete)`)
   check(await browser.evaluate(`(() => { const imgs=[...document.querySelector(${JSON.stringify(popup)}).querySelectorAll('img')]; return imgs.length===2 && imgs.every(img => img.naturalWidth > 0) })()`), 'both example images load')
   check(await browser.evaluate(`(() => { const figs=[...document.querySelector(${JSON.stringify(popup)}).querySelectorAll('figure')]; return figs.length===2 && figs.every(f => f.querySelector('figcaption')?.textContent.trim()) })()`), 'each example carries a caption')
+  // A crop whose file has not arrived fills its frame already, so the open popover cannot grow over its trigger.
+  const openHeight = await browser.evaluate(`document.querySelector(${JSON.stringify(popup)}).getBoundingClientRect().height`)
+  await browser.evaluate(`(() => { const p=document.querySelector(${JSON.stringify(popup)}); p.querySelectorAll('img').forEach(img => { img.dataset.src = img.getAttribute('src'); img.removeAttribute('src') }) })()`)
+  await Bun.sleep(150)
+  check(await browser.evaluate(`(() => { const p=document.querySelector(${JSON.stringify(popup)}), t=document.querySelector(${JSON.stringify(trigger)}), r=t.getBoundingClientRect(); return p.getBoundingClientRect().height === ${openHeight} && r.top >= 0 && r.bottom <= innerHeight && document.elementFromPoint(r.x+r.width/2,r.y+r.height/2) === t })()`), 'an example frame holds its place before the image arrives')
+  await browser.evaluate(`(() => { const p=document.querySelector(${JSON.stringify(popup)}); p.querySelectorAll('img').forEach(img => { img.src = img.dataset.src }) })()`)
+  await browser.waitFor(`[...document.querySelector(${JSON.stringify(popup)}).querySelectorAll('img')].every(img => img.complete && img.naturalWidth > 0)`, 10000)
+  check(await browser.evaluate(`document.querySelector(${JSON.stringify(popup)}).getBoundingClientRect().height === ${openHeight}`), 'a late example image does not resize the open popover')
+
+  // Each of the other choices lists its own two captioned cases.
+  for (const [index, id] of ['merged', 'crop', 'blank'].entries()) {
+    const otherTrigger = `dialog[open] .issue-card-wrap:nth-child(${index + 2}) .issue-help`
+    const otherPopup = `dialog[open] .issue-card-wrap:nth-child(${index + 2}) .issue-popover`
+    await browser.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:5,y:5})
+    await Bun.sleep(200)
+    const point = await browser.centre(otherTrigger)
+    await browser.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:point.x,y:point.y})
+    await browser.waitFor(`document.querySelector(${JSON.stringify(otherPopup)}).matches(':popover-open')`)
+    await browser.waitFor(`[...document.querySelector(${JSON.stringify(otherPopup)}).querySelectorAll('img')].every(img => img.complete && img.naturalWidth > 0)`, 10000)
+    check(await browser.evaluate(`(() => { const f=[...document.querySelector(${JSON.stringify(otherPopup)}).querySelectorAll('figure')]; return f.length===2 && f.every(x => x.querySelector('figcaption')?.textContent.trim() && x.querySelector('img')?.naturalWidth > 0) })()`), `${id} shows two captioned examples`)
+  }
+  await browser.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:5,y:5})
+  await Bun.sleep(200)
+  p = await browser.centre(trigger)
+  await browser.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:p.x,y:p.y})
+  await browser.waitFor(`document.querySelector(${JSON.stringify(popup)}).matches(':popover-open')`)
   check(await browser.evaluate(`(() => { const p=document.querySelector(${JSON.stringify(popup)}), r=p.getBoundingClientRect(); return r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && document.elementFromPoint(r.left+10,r.top+10)?.closest('.issue-popover')===p })()`), 'popover appears above modal without viewport clipping')
   for (const scheme of ['light','dark']) {
     await browser.setColorScheme(scheme)

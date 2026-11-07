@@ -417,7 +417,7 @@
   "issue.example.character.kanji": "「干」に「千」のラベルが付いている。",
   "issue.example.merged.vertical": "「か」と「て」が一緒に切り出されている。",
   "issue.example.merged.columns": "「く」と「知」が一緒に切り出されている。",
-  "issue.example.crop.cut": "枠が「か」を切っている。",
+  "issue.example.crop.cut": "枠が「か」の一部を切っている。",
   "issue.example.crop.edge": "枠に頁の枠線と隣の字の筆画が入り込んでいる。",
   "issue.example.blank.paper": "白紙。",
   "issue.example.blank.mark": "紙の汚れ。",

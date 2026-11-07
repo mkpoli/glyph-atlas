@@ -425,7 +425,7 @@
   "issue.example.character.kanji": "「干」被標爲「千」。",
   "issue.example.merged.vertical": "「か」和「て」在同一個裁切裡。",
   "issue.example.merged.columns": "「く」和「知」在同一個裁切裡。",
-  "issue.example.crop.cut": "框把「か」切掉了。",
+  "issue.example.crop.cut": "框把「か」切掉了一部分。",
   "issue.example.crop.edge": "框把版框線和鄰字的筆畫也帶了進來。",
   "issue.example.blank.paper": "空白紙面。",
   "issue.example.blank.mark": "紙上的污漬。",
