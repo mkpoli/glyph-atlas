@@ -4,10 +4,34 @@ import { t } from './i18n.svelte.js'
 // language switch is reflected without rebuilding this list. The keys are letters, because the
 // number keys choose a crop's form.
 export const issues = [
-  { id: 'character', example: 'ア → カ', key: 'w' },
-  { id: 'merged', example: 'アカ', key: 'm' },
-  { id: 'crop', example: 'ア', key: 'b' },
-  { id: 'blank', example: '', key: 'x' },
+  {
+    id: 'character', example: 'ア → カ', key: 'w',
+    examples: [
+      { image: 'character-kana.jpg', case: 'kana' },
+      { image: 'character-kanji.jpg', case: 'kanji' },
+    ],
+  },
+  {
+    id: 'merged', example: 'アカ', key: 'm',
+    examples: [
+      { image: 'merged-vertical.jpg', case: 'vertical' },
+      { image: 'merged-columns.jpg', case: 'columns' },
+    ],
+  },
+  {
+    id: 'crop', example: 'ア', key: 'b',
+    examples: [
+      { image: 'crop-cut.jpg', case: 'cut' },
+      { image: 'crop-edge.jpg', case: 'edge' },
+    ],
+  },
+  {
+    id: 'blank', example: '', key: 'x',
+    examples: [
+      { image: 'blank-paper.jpg', case: 'paper' },
+      { image: 'blank-mark.jpg', case: 'mark' },
+    ],
+  },
 ]
 /** The issue a key chooses, or null. */
 export const issueForKey = key => issues.find(issue => issue.key === key.toLowerCase())?.id ?? null

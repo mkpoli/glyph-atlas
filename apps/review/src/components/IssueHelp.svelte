@@ -84,8 +84,12 @@
 <div bind:this={popup} id={`${id}-example`} class="issue-popover" popover="auto" role="dialog" tabindex="-1" aria-label={issueTitle(issue.id)}
   onpointerenter={() => clearTimeout(timer)} onpointerleave={leave} onfocusout={leave} ontoggle={event => { open = event.newState === 'open'; if (!open) pinned = false }}>
   <strong>{issueTitle(issue.id)}</strong>
-  <img class="issue-popover-image" src={`/issue-examples/${issue.id}.jpg`} alt={t(`issue.example.${issue.id}`)} />
-  {#if issue.id === 'character'}<span class="issue-popover-mismatch" aria-hidden="true">て → か</span>{/if}
   <span>{issueHint(issue.id)}</span>
+  {#each issue.examples as example}
+    <figure class="issue-popover-example">
+      <img src={`/issue-examples/${example.image}`} alt="" />
+      <figcaption>{t(`issue.example.${issue.id}.${example.case}`)}</figcaption>
+    </figure>
+  {/each}
   <small>{t('issue.example.notice')} <a href="https://codh.rois.ac.jp/char-shape/book/200021851/manifest.json" lang="ja" target="_blank" rel="noopener">日本古典籍データセット（国文研所蔵）CODH配信</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="license noopener">CC BY-SA 4.0</a></small>
 </div>
