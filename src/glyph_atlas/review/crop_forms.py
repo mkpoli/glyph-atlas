@@ -16,12 +16,28 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from .. import refs, representation
+from ..structures import Structure
 from . import ledger
 from .ledger import Claim, LedgerError
 
 METHOD = "form-picker"
 #: The statuses of a form's `written_for` slot that file it on a grapheme's card.
 FILED = ("asserted", "accepted", "adjudicated")
+
+
+def ensure_structure(conn: sqlite3.Connection, structure: Structure, *, actor: str, at: str) -> str:
+    """Write a structure's row if it is new and return its id.
+
+    The id is derived from the canonical tree and the policy, so two reviewers who derive the same
+    structure name one row. Rows are immutable; a policy change makes a new id.
+    """
+    conn.execute(
+        "INSERT OR IGNORE INTO structures(id,label,tree,scheme,version,policy,created_by,created_at) "
+        "VALUES(?,?,?,?,?,?,?,?)",
+        (structure.id, structure.label, json.dumps(structure.tree, ensure_ascii=False),
+         structure.scheme, structure.version, structure.policy, actor, at),
+    )
+    return structure.id
 
 
 def ensure_form(conn: sqlite3.Connection, named: representation.Representation, *, key: str, actor: str, at: str,

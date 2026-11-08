@@ -139,6 +139,34 @@ def _character_note(row: object) -> str:
 
 
 @app.command()
+def structure(
+    char: Annotated[list[str] | None, typer.Argument(help="characters or code points, U+5CF0 or 峰")] = None,
+) -> None:
+    """Show the 構形 a character's IDS descriptions write.
+
+    A structure is a character's components and their arrangement, with no stroke design. 峰
+    (⿰山夆) and 峯 (⿱山夆) are two; ⿱艹早 and ⿱⿰十十早 read one, ⿱艸早, because BabelStone writes
+    the 艹 component itself as ⿰十十.
+    """
+    from . import refs, structures
+
+    if not char:
+        raise typer.BadParameter("Name a character or a code point.")
+    for value in char:
+        point = value if value.upper().startswith("U+") else refs.to_code_point(value)
+        row = refs.character(point)
+        if row is None:
+            typer.echo(f"{value} is not in the character layer")
+            continue
+        found = structures.for_character(row.char)
+        typer.echo(f"{row.code_point} {row.char}")
+        if not found:
+            typer.echo("  no IDS description")
+        for item in found:
+            typer.echo(f"  {item.label}  {item.id}")
+
+
+@app.command()
 def coverage(
     out: Annotated[Path, typer.Option(help="write the coverage table here")] = Path("work/coverage.tsv"),
     directories: Annotated[

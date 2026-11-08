@@ -51,6 +51,13 @@ def _forms() -> dict[str, str]:
     return {row[0]: row[1] for row in read_rows("han-component-forms.tsv")}
 
 
+def forms() -> dict[str, str]:
+    """The character each component form stands for, one hop (`han-component-forms.tsv`): ⺡ is 氵
+    and 氵 is 水. A chain is followed by the caller (`structures.canonical`). Do not change the
+    shared index."""
+    return _forms()
+
+
 @cache
 def unified() -> dict[str, str]:
     """Radical characters Unicode unifies with an ideograph (⺡ is 氵); a query is read through these."""
