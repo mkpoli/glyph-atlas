@@ -1111,7 +1111,7 @@ def import_tangut_coins(
     typer.echo(f"documents     {summary['documents']:>10}")
     typer.echo(f"pages         {summary['pages']:>10}")
     typer.echo(f"photographs   {summary['photographs']:>10}")
-    typer.echo(f"drawings      {summary['diagrams']:>10}")
+    typer.echo(f"skipped       {len(summary['skipped']):>10}")
     typer.echo(f"-> {out}")
 
 

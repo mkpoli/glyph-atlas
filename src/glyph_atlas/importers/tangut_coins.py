@@ -1,15 +1,18 @@
-"""Collect the Western Xia coin images from Andrew West's "Tangut Coins".
+"""Collect the Western Xia coin photographs from Andrew West's "Tangut Coins".
 
 The article prints a photograph of a specimen for four coin types and an editorial drawing of the
-inscription for all six. Both kinds are images of three-dimensional coins: a photograph has its own
-rights whatever the age of the coin, and a drawing is a modern work. The documents therefore take
-`image_kind` `object-photograph`, `editorial-diagram` or `mixed`, not `flat-reproduction`, so the
-public-domain reproduction rule leaves their stated terms alone (`docs/licensing.md`).
+inscription for all six. Only the photographs are imported: a drawing sets the characters in type over
+a white field, so it is not an image of the coin's ink and is no evidence of a written form. The two
+types the article knows only from a drawing are kept in the source record, with their readings, but
+have no document.
 
-One document is one coin type, with its images as pages in the article's order. Each page records its
-own `image_kind`; the document records the aggregate, and `mixed` when its pages differ. The readings
-and the reported reign periods are quoted from the article; the classifications there are disputed
-ones and stay in `meta` as reported.
+A photograph of a three-dimensional object has its own rights whatever the age of the coin, so the
+documents take `image_kind` `object-photograph`, not `flat-reproduction`, and the public-domain
+reproduction rule leaves their stated terms alone (`docs/licensing.md`).
+
+One document is one coin type, with its photographs as pages in the article's order. The readings and
+the reported reign periods are quoted from the article; the classifications there are disputed ones
+and stay in `meta` as reported.
 
 The images are fetched into `cache/images` and the pages record the fetched checksum, width and
 height, which must equal the values the source record pins. Any failed fetch or changed image stops
@@ -58,12 +61,18 @@ def collect(
 
     documents: list[Document] = []
     pages: list[Page] = []
+    skipped: list[str] = []
     for coin in coins:
         coin_images = [image for image in all_images if image.get("coin") == coin["id"]]
         if not coin_images:
-            raise CoinSourceError(f"{source}: {coin['id']} has no image")
+            skipped.append(coin["id"])
+            continue
         held: dict[str, images.ImageRecord] = {}
         for image in coin_images:
+            if image.get("kind") != "object-photograph":
+                raise CoinSourceError(
+                    f"{source}: {image['id']} is a {image.get('kind')}; only coin photographs are imported"
+                )
             try:
                 record = fetch(image["image"], root=cache)
             except (net.DownloadError, images.ImageError) as error:
@@ -88,10 +97,9 @@ def collect(
         "article_sha256": config.get("article_sha256"),
         "documents": len(documents),
         "pages": len(pages),
-        "photographs": sum(1 for page in pages if page.image_kind == "object-photograph"),
-        "diagrams": sum(1 for page in pages if page.image_kind == "editorial-diagram"),
+        "photographs": len(pages),
+        "skipped": skipped,
         "coins": [{"id": document.id, "title": document.title, "status": document.meta.get("status"),
-                   "kind": document.image_kind,
                    "pages": sum(1 for page in pages if page.document_id == document.id)}
                   for document in documents],
     }
@@ -141,8 +149,6 @@ def _rights(config: dict[str, Any]) -> Rights:
 
 def _document(config: dict[str, Any], coin: dict[str, Any],
               coin_images: list[dict[str, Any]]) -> Document:
-    kinds = [image["kind"] for image in coin_images]
-    kind = kinds[0] if len(set(kinds)) == 1 else "mixed"
     rights = _rights(config)
     meta = {
         "source": SOURCE_ID,
@@ -169,7 +175,7 @@ def _document(config: dict[str, Any], coin: dict[str, Any],
         source_refs={SOURCE_ID: coin["id"]},
         production="inscribed/metal",
         origin="china",
-        image_kind=kind,
+        image_kind="object-photograph",
         image_rights=rights,
         text_rights=rights.model_copy(),
         meta=meta,

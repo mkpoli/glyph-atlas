@@ -48,6 +48,14 @@ coins:
         inscription: 𗼃𗼕𘏨𘔭
       - label: Bingde Baoqian 稟德寶錢
         inscription: 𗣼𗧯𘏨𘔭
+  - id: zhenguan
+    title: 貞觀寶錢 / 觀德寶錢 (Zhenguan / Guande)
+    label: Zhenguan / Guande Baoqian
+    reign_period_as_reported: Zhenguan 貞觀 [1102-1114]
+    status: disputed
+    readings:
+      - label: Zhenguan Baoqian 貞觀寶錢
+        inscription: 𗣼𘝯𘏨𘔭
   - id: daan
     title: 大安寶錢 (Da'an)
     label: Da'an Baoqian
@@ -67,6 +75,19 @@ images:
     height: 271
     bytes: 38703
     sha256: aa
+  - id: zhenguan-photo
+    coin: zhenguan
+    kind: object-photograph
+    label: Photograph
+    image: https://example.org/zhenguan.jpg
+    linked_from_image: https://example.org/forum
+    width: 290
+    height: 291
+    bytes: 27329
+    sha256: bb
+"""
+
+DIAGRAM = """
   - id: fusheng-diagram
     coin: fusheng
     kind: editorial-diagram
@@ -76,16 +97,6 @@ images:
     width: 232
     height: 232
     bytes: 13263
-    sha256: bb
-  - id: daan-diagram
-    coin: daan
-    kind: editorial-diagram
-    label: Da'an Baoqian
-    image: https://example.org/daan-drawing.jpg
-    reading_index: 0
-    width: 232
-    height: 232
-    bytes: 13789
     sha256: cc
 """
 
@@ -100,33 +111,29 @@ def fake_fetch(records: dict[str, images.ImageRecord]):
     return fetch, seen
 
 
-def test_collect_writes_a_document_per_coin_with_its_images_as_pages(tmp_path):
+def test_collect_imports_photographs_and_skips_types_without_one(tmp_path):
     source = tmp_path / "coins.yaml"
     source.write_text(FIXTURE, encoding="utf-8")
     fetched = {
         "https://example.org/fusheng.jpg": record("https://example.org/fusheng.jpg", "aa", 272, 271, 38703),
-        "https://example.org/fusheng-drawing.jpg": record(
-            "https://example.org/fusheng-drawing.jpg", "bb", 232, 232, 13263),
-        "https://example.org/daan-drawing.jpg": record("https://example.org/daan-drawing.jpg", "cc", 232, 232, 13789),
+        "https://example.org/zhenguan.jpg": record("https://example.org/zhenguan.jpg", "bb", 290, 291, 27329),
     }
     fetch, seen = fake_fetch(fetched)
     out = tmp_path / "coins"
     summary = tangut_coins.collect(source, out, fetch=fetch)
 
     assert seen == list(fetched)
-    assert (summary["documents"], summary["pages"]) == (2, 3)
-    assert (summary["photographs"], summary["diagrams"]) == (1, 2)
+    assert (summary["documents"], summary["pages"], summary["photographs"]) == (2, 2, 2)
+    assert summary["skipped"] == ["daan"]
     documents = {document.id: document for document in tables.read(out / "documents.parquet", Document)}
     pages = {page.id: page for page in tables.read(out / "pages.parquet", Page)}
-    assert set(documents) == {"babelstone-tangut-coins:fusheng", "babelstone-tangut-coins:daan"}
-    assert set(pages) == {
-        "babelstone-tangut-coins:fusheng:fusheng-photo",
-        "babelstone-tangut-coins:fusheng:fusheng-diagram",
-        "babelstone-tangut-coins:daan:daan-diagram",
-    }
+    assert set(documents) == {"babelstone-tangut-coins:fusheng", "babelstone-tangut-coins:zhenguan"}
+    assert set(pages) == {"babelstone-tangut-coins:fusheng:fusheng-photo",
+                          "babelstone-tangut-coins:zhenguan:zhenguan-photo"}
     fusheng = documents["babelstone-tangut-coins:fusheng"]
     assert fusheng.title == "福聖寶錢 / 稟德寶錢 (Fusheng / Bingde)"
-    assert (fusheng.image_kind, fusheng.production, fusheng.origin) == ("mixed", "inscribed/metal", "china")
+    assert (fusheng.image_kind, fusheng.production, fusheng.origin) == (
+        "object-photograph", "inscribed/metal", "china")
     assert fusheng.meta["status"] == "disputed"
     assert fusheng.meta["example_url"] == "http://www.zeno.ru/showphoto.php?photo=16068"
     assert fusheng.meta["reading_order"] == "top-right-bottom-left"
@@ -134,30 +141,29 @@ def test_collect_writes_a_document_per_coin_with_its_images_as_pages(tmp_path):
     assert fusheng.meta["source_notes"] == ["Worn coins and fakes are described; no authenticity determination is made."]
     assert fusheng.meta["article_sha256"] == "abc"
     assert [reading["inscription"] for reading in fusheng.meta["readings"]] == ["𗼃𗼕𘏨𘔭", "𗣼𗧯𘏨𘔭"]
-    assert [image["kind"] for image in fusheng.meta["images"]] == ["object-photograph", "editorial-diagram"]
-    assert [image["page"] for image in fusheng.meta["images"]] == [
-        "babelstone-tangut-coins:fusheng:fusheng-photo",
-        "babelstone-tangut-coins:fusheng:fusheng-diagram",
-    ]
-    assert documents["babelstone-tangut-coins:daan"].image_kind == "editorial-diagram"
+    assert [image["id"] for image in fusheng.meta["images"]] == ["fusheng-photo"]
     assert fusheng.image_rights.licence is Licence.UNKNOWN
     assert fusheng.image_rights.holder_terms is None
     assert fusheng.image_rights.evidence == "https://example.org/terms"
     assert fusheng.image_rights.attribution == "Andrew West, Tangut Coins (fixture)"
     assert fusheng.image_rights.checked == date(2026, 11, 7)
-    first, second = pages["babelstone-tangut-coins:fusheng:fusheng-photo"], pages[
-        "babelstone-tangut-coins:fusheng:fusheng-diagram"]
+    first = pages["babelstone-tangut-coins:fusheng:fusheng-photo"]
     assert (first.seq, first.width, first.height, first.sha256) == (0, 272, 271, "aa")
     assert (first.image, first.image_kind) == ("https://example.org/fusheng.jpg", "object-photograph")
     assert first.meta == {"label": "Photograph",
                           "linked_from_image": "http://www.zeno.ru/showphoto.php?photo=16068"}
-    assert (second.seq, second.image_kind) == (1, "editorial-diagram")
-    assert second.meta == {"label": "Fusheng Baoqian", "reading_index": 0}
     manifest = json.loads((out / "MANIFEST.json").read_text(encoding="utf-8"))
     assert manifest["schema_version"] == tables.SCHEMA_VERSION == 7
-    assert manifest["tables"] == {"documents": 2, "pages": 3}
+    assert manifest["tables"] == {"documents": 2, "pages": 2}
     assert manifest["command"] == "atlas import tangut-coins"
-    assert manifest["collection"]["photographs"] == 1
+    assert manifest["collection"]["skipped"] == ["daan"]
+
+
+def test_a_drawing_in_the_record_is_refused(tmp_path):
+    source = tmp_path / "coins.yaml"
+    source.write_text(FIXTURE.replace("images:\n", "images:" + DIAGRAM + "\n", 1), encoding="utf-8")
+    with pytest.raises(tangut_coins.CoinSourceError, match="editorial-diagram; only coin photographs"):
+        tangut_coins.collect(source, tmp_path / "coins", fetch=lambda url, *, root=None: None)
 
 
 def test_a_changed_image_stops_the_import_before_any_table(tmp_path):
@@ -231,7 +237,7 @@ def test_the_command_refuses_a_bad_source_and_writes_nothing(tmp_path):
     assert not (out / "documents.parquet").exists()
 
 
-def test_the_source_record_lists_every_coin_and_image():
+def test_the_source_record_lists_photographs_and_the_excluded_drawings():
     config = yaml.safe_load((ROOT / "data/sources/babelstone-tangut-coins.yaml").read_text(encoding="utf-8"))
     assert config["id"] == tangut_coins.SOURCE_ID
     registered = {source.id: source for source in registry.load()}
@@ -241,23 +247,21 @@ def test_the_source_record_lists_every_coin_and_image():
             == "Andrew West, “Tangut Coins”, BabelStone Blog, 29 January 2007 (revised 1 January 2017)")
     coins = {coin["id"]: coin for coin in config["coins"]}
     assert len(coins) == config["counts"]["coin_types"] == 6
-    assert len(config["images"]) == 11
-    assert sum(1 for image in config["images"] if image["kind"] == "object-photograph") == config["counts"]["photographs"] == 4
-    assert sum(1 for image in config["images"] if image["kind"] == "editorial-diagram") == config["counts"]["editorial_diagrams"] == 7
+    assert len(config["images"]) == config["counts"]["photographs"] == 4
+    assert all(image["kind"] == "object-photograph" for image in config["images"])
+    assert "editorial_diagrams" not in config["counts"]
     assert config["checked"] == "2026-11-07"
     assert config["reading_order"] == "top-right-bottom-left"
     assert sum(1 for coin in config["coins"] if coin.get("example_url")) == 5
+    assert any("white field" in note and "excluded" in note for note in config["notes"])
     for image in config["images"]:
         assert image["coin"] in coins
         assert image["image"].startswith("https://www.babelstone.co.uk/Tangut/Images/")
         assert len(image["sha256"]) == 64
         assert image["width"] > 0 and image["height"] > 0 and image["bytes"] > 0
         assert image["label"]
-        if image["kind"] == "editorial-diagram":
-            assert 0 <= image["reading_index"] < len(coins[image["coin"]]["readings"])
-        else:
-            assert image.get("linked_from_image")
-    assert {coin["id"] for coin in config["coins"]} == {image["coin"] for image in config["images"]}
+        assert image.get("linked_from_image")
+    assert {coin["id"] for coin in config["coins"]} == {image["coin"] for image in config["images"]} | {"daan", "qianyou"}
     assert coins["fusheng"]["title"] == "福聖寶錢 / 稟德寶錢 (Fusheng / Bingde)"
 
 
@@ -270,15 +274,11 @@ def test_the_real_record_composes_without_network(tmp_path):
     }
     out = tmp_path / "coins"
     summary = tangut_coins.collect(source, out, fetch=lambda url, *, root=None: fetched[url])
-    assert (summary["documents"], summary["pages"]) == (6, 11)
-    assert (summary["photographs"], summary["diagrams"]) == (4, 7)
+    assert (summary["documents"], summary["pages"], summary["photographs"]) == (4, 4, 4)
+    assert summary["skipped"] == ["daan", "qianyou"]
     documents = {document.id: document for document in tables.read(out / "documents.parquet", Document)}
     pages = list(tables.read(out / "pages.parquet", Page))
-    fusheng = documents["babelstone-tangut-coins:fusheng"]
-    assert fusheng.title == "福聖寶錢 / 稟德寶錢 (Fusheng / Bingde)"
-    assert fusheng.image_kind == "mixed"
-    assert [page.seq for page in pages if page.document_id == fusheng.id] == [0, 1, 2]
-    assert [page.image_kind for page in pages if page.document_id == fusheng.id] == [
-        "object-photograph", "editorial-diagram", "editorial-diagram"]
-    assert documents["babelstone-tangut-coins:daan"].image_kind == "editorial-diagram"
+    assert set(documents) == {f"babelstone-tangut-coins:{coin}" for coin in ("fusheng", "zhenguan", "zhengde", "tianqing")}
+    assert all(document.image_kind == "object-photograph" for document in documents.values())
+    assert all(page.image_kind == "object-photograph" for page in pages)
     assert all(document.image_rights.licence is Licence.UNKNOWN for document in documents.values())

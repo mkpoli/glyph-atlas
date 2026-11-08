@@ -15,11 +15,11 @@ article_sha256: f8d6299b8bdfa08d8fe926f666fde913f7dcbe0eb2c6737a884fc15f5015c0ab
 counts:
   coin_types: 6
   photographs: 4
-  editorial_diagrams: 7
 notes:
   - No reuse licence or photographer credits are stated in the article. Links to third-party coin pages do not establish ownership or permission for these files.
-  - Photographs depict three-dimensional objects; the age of a coin does not establish the rights of its photograph. Editorial diagrams depict proposed readings.
-  - The Fusheng and Bingde diagrams are alternative readings of the same coin type. West also questions the Zhenguan and Zhengde reign-period identifications.
+  - Photographs depict three-dimensional objects; the age of a coin does not establish the rights of its photograph.
+  - The Fusheng and Bingde readings are alternatives for the same coin type. West also questions the Zhenguan and Zhengde reign-period identifications.
+  - "The article’s seven drawings of the inscriptions are excluded: they set the characters in type over a white field, so they are not images of the coins’ ink. Only the four photographs are imported."
   - West describes worn coins and circulating fakes. These records make no independent authenticity determination.
   - The seal, manuscript extract and Bushell character chart in the article are outside this coin-image selection.
   - The article digest is the one read by hand on the checked date; the import does not fetch or recheck the article.
@@ -31,7 +31,7 @@ coins:
     label: Fusheng / Bingde Baoqian
     reign_period_as_reported: Fusheng Chengdao 福聖承道 [1053-1056]
     status: disputed
-    note: West leaves Fusheng, Bingde or another reading unresolved; both diagrams concern the same coin type.
+    note: West leaves Fusheng, Bingde or another reading unresolved; both readings concern the same coin type.
     readings:
       - label: Fusheng Baoqian 福聖寶錢
         inscription: 𗼃𗼕𘏨𘔭
@@ -45,7 +45,7 @@ coins:
     label: Da'an Baoqian
     reign_period_as_reported: Da'an 大安 [1076-1085]
     status: clear-in-source
-    note: West describes this reading as clear; the article supplies an editorial diagram only.
+    note: West describes this reading as clear; the article supplies an editorial diagram only, so this type has no photograph in this import.
     readings:
       - label: Da'an Baoqian 大安寶錢
         inscription: 𘜶𗵐𘏨𘔭
@@ -77,7 +77,7 @@ coins:
     label: Qianyou Baoqian
     reign_period_as_reported: Qianyou 乾祐 [1171-1193]
     status: clear-in-source
-    note: West describes this reading as clear; the article supplies an editorial diagram only.
+    note: West describes this reading as clear; the article supplies an editorial diagram only, so this type has no photograph in this import.
     readings:
       - label: Qianyou Baoqian 乾祐寶錢
         inscription: 𘀗𘑨𘏨𘔭
@@ -135,73 +135,3 @@ images:
     height: 295
     bytes: 20284
     sha256: 588179a1c49816f6be2eca1037d85db97a339490b588934b4f0caaed387fa8fd
-  - id: fusheng-diagram
-    coin: fusheng
-    kind: editorial-diagram
-    label: Fusheng Baoqian — editorial diagram (standard reading)
-    image: https://www.babelstone.co.uk/Tangut/Images/FushengBaoqianCoin.jpg
-    reading_index: 0
-    width: 232
-    height: 232
-    bytes: 13263
-    sha256: b505ef6fe55d2bcb1ff49af48bec0d7ef208552b1179dfd13a4bd6a30e01b6b9
-  - id: bingde-diagram
-    coin: fusheng
-    kind: editorial-diagram
-    label: Bingde Baoqian — editorial diagram (alternative reading)
-    image: https://www.babelstone.co.uk/Tangut/Images/BingdeBaoqianCoin.jpg
-    reading_index: 1
-    width: 232
-    height: 232
-    bytes: 13848
-    sha256: 37f19608e879bdebc6e1e540e46bf1184d192944fb59fb4c9164a296c3149a17
-  - id: daan-diagram
-    coin: daan
-    kind: editorial-diagram
-    label: Da'an Baoqian — editorial diagram
-    image: https://www.babelstone.co.uk/Tangut/Images/DaanBaoqianCoin.jpg
-    reading_index: 0
-    width: 232
-    height: 232
-    bytes: 13789
-    sha256: 7387d5633ca882e5ab2c743fb1deac873a4446b4d8975c0c25086f320750ebb7
-  - id: zhenguan-diagram
-    coin: zhenguan
-    kind: editorial-diagram
-    label: Zhenguan / Guande Baoqian — editorial diagram (identification disputed)
-    image: https://www.babelstone.co.uk/Tangut/Images/ZhenguanBaoqianCoin.jpg
-    reading_index: 0
-    width: 232
-    height: 232
-    bytes: 13707
-    sha256: 06f6915535ab6eccff3cf057af69de59f037089abcef16c9d4a81b0531b3023b
-  - id: zhengde-diagram
-    coin: zhengde
-    kind: editorial-diagram
-    label: Zhengde / Zhide Baoqian — editorial diagram (identification disputed)
-    image: https://www.babelstone.co.uk/Tangut/Images/ZhengdeBaoqianCoin.jpg
-    reading_index: 0
-    width: 232
-    height: 232
-    bytes: 13827
-    sha256: b3e1849e3089273698213767e341d987b9b2fa1264730dbdeb978a7b12c15ba1
-  - id: qianyou-diagram
-    coin: qianyou
-    kind: editorial-diagram
-    label: Qianyou Baoqian — editorial diagram
-    image: https://www.babelstone.co.uk/Tangut/Images/QianyouBaoqianCoin.jpg
-    reading_index: 0
-    width: 232
-    height: 232
-    bytes: 13583
-    sha256: 639309b25680b43009140774ca91a0b0c621a7a598298e33e0551b704498e44f
-  - id: tianqing-diagram
-    coin: tianqing
-    kind: editorial-diagram
-    label: Tianqing Baoqian — editorial diagram
-    image: https://www.babelstone.co.uk/Tangut/Images/TianqingBaoqianCoin.jpg
-    reading_index: 0
-    width: 232
-    height: 232
-    bytes: 13943
-    sha256: cbbf6f6499ad40c0bae2a4f78911a1bdae3d4d990467d0f17d03706cd266361a
