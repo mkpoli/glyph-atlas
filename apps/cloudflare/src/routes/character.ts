@@ -172,6 +172,35 @@ function derivedOf(object: CharacterObject) {
   });
 }
 const sum = (cells: Cell[] | undefined, kind: number) => (cells ?? []).filter(c => c.kind === kind).reduce((n, c) => n + c.n, 0);
+/** The forms a family carries through a reviewer's `written_for` claim: shapes Unicode lacks, written as
+ *  an IDS, which no character card holds. Each counts the family's crops a person marked with it, here
+ *  and in the corpus; a form already on the card as a member or a static variant is not listed twice. */
+export const writtenFormsQuery = () => `SELECT c.subject AS form,r.scheme,r.value FROM current_claims c
+  JOIN forms f ON f.id=c.subject JOIN representations r ON r.id=f.anchor
+  WHERE c.predicate='written_for' AND c.object=? AND c.scope='' AND r.scheme='ids'
+    AND c.status IN ('asserted','accepted','adjudicated') ORDER BY r.value`;
+export const writtenFormUseQuery = () => `SELECT c.object AS form,
+  sum(CASE WHEN k.kind=0 THEN 1 ELSE 0 END) AS count,sum(CASE WHEN k.kind=1 THEN 1 ELSE 0 END) AS corpus_count
+  FROM current_claims c JOIN crops k ON k.id=c.crop LEFT JOIN reviews r ON r.crop=k.id
+  WHERE c.predicate='has_form' AND c.scope='' AND c.slot='' AND c.status IN ('asserted','accepted','adjudicated')
+    AND c.cut=k.cut+(r.x IS NOT NULL) AND c.object IN (SELECT value FROM json_each(?1))
+    AND (k.char IN (SELECT value FROM json_each(?2)) OR k.family IN (SELECT value FROM json_each(?2)))
+  GROUP BY c.object`;
+async function writtenForms(env: Env, card: Card, rows: Json[], predicted: Json[]) {
+  const head = card.detail.grapheme?.code_point ?? card.detail.code_point;
+  const family = await familyOf(env, card);
+  if (!head || !family.members.length) return [];
+  const linked = (await env.ATLAS.prepare(writtenFormsQuery()).bind(head).all<{ form: string; scheme: string; value: string }>()).results;
+  const known = new Set([...(card.detail.grapheme?.members ?? []).map((m: Json) => m.char), ...rows.map(r => r.char), ...predicted.map(r => r.char)]);
+  const fresh = linked.filter(row => !known.has(row.value));
+  if (!fresh.length) return [];
+  const used = (await env.ATLAS.prepare(writtenFormUseQuery()).bind(JSON.stringify(fresh.map(row => row.form)), JSON.stringify(family.members))
+    .all<{ form: string; count: number; corpus_count: number }>()).results;
+  const counts = new Map(used.map(row => [row.form, row]));
+  return fresh.map(row => ({ char: row.value, code_point: null, form: row.form, scheme: row.scheme,
+    count: counts.get(row.form)?.count ?? 0, corpus_count: counts.get(row.form)?.corpus_count ?? 0 }))
+    .sort((a, b) => (b.count + b.corpus_count) - (a.count + a.corpus_count) || (a.char < b.char ? -1 : a.char > b.char ? 1 : 0));
+}
 /** The characters `char` shares an edge with, as the card lists them: `items` a gallery widens to (a
  *  pair with a widening edge and none that keeps it apart), `related` the rest, each most attested first
  *  (sources, then code point), every edge kept; `written` marks a pair one of whose edges says one may
@@ -204,13 +233,14 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     const rows = shown.map(entry => ({ ...entry, sources: [...new Set(entry.relations.map(r => r.source))].sort(),
       count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
     const predicted = derived.map(entry => ({ ...entry, count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
+    const forms = await writtenForms(env, card, rows, predicted);
     const used = new Set(rows.flatMap(row => row.sources));
     for (const entry of predicted) for (const source of entry.sources) used.add(source);
     if (predicted.length) used.add(DERIVED_IDS);
     const writes = (object?.writes ?? []).map(([c]) => ({ char: c, code_point: cp(c) }));
     const writers = (object?.writers ?? []).map(([c, shared]) => ({ char: c, code_point: cp(c), shared: !!shared }));
     const own = !(object?.writes ?? []).some(([, mine]) => mine === 0);
-    return { items: rows.filter(row => row.widens), related: rows.filter(row => !row.widens), derived: predicted,
+    return { items: rows.filter(row => row.widens), related: rows.filter(row => !row.widens), derived: predicted, forms,
       total: byChar.size, writes, writers, own, sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? source])) };
   });
 }

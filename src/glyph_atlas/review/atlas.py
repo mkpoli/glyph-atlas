@@ -698,6 +698,16 @@ class FormEdit(BaseModel):
     review: UUID | None = None
 
 
+class WrittenForEdit(BaseModel):
+    """A reviewer saying that a form is written for a grapheme, or taking their own claim back."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    grapheme: str = Field(pattern=r"^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6}){0,3}$", max_length=64)
+    remove: bool = False
+
+
 def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
     from .server import cached_image
 
@@ -1532,6 +1542,20 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             raise HTTPException(409, "This crop was cut again. Reload it.")
         return ledger_call(store.set_form, key=key, actor=edit.client_id, request=request, crop=unit_id, crop_version=version,
                            form=identity_text(edit.form) if edit.form and edit.form.strip() else None)
+
+    @api.post("/atlas/forms/{form}/written_for")
+    def set_written_for(form: str, edit: WrittenForEdit) -> dict:
+        """Say a form is written for a grapheme, or take back the reader's own claim, as the Worker does.
+
+        A form can be written for several graphemes, and the claim is not about a crop, so it names no
+        evidence version and no recut takes it back. The answer names the graphemes the form writes now.
+        """
+        key, request = f"{edit.client_id}:{edit.id}", edit.model_dump(mode="json")
+        previous = ledger_call(store.claim_submission, key=key, request=request)
+        if previous is not None:
+            return {"id": form, "written_for": store.written_for(form)}
+        return ledger_call(store.set_written_for, key=key, actor=edit.client_id, request=request, form=form,
+                           grapheme=edit.grapheme, remove=edit.remove)
 
     def schedule_refinement(background: BackgroundTasks, unit_ids: set[str]) -> None:
         from .refine import background_refine

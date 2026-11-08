@@ -53,6 +53,14 @@
    ],
    "cardinality": "many"
   },
+  "written_for": {
+   "label": "a grapheme a form is written for, named by the family's key (U+4E07); a form can write several (后 writes 後 and 后)",
+   "subject": "form",
+   "objects": [
+    "grapheme"
+   ],
+   "cardinality": "many"
+  },
   "writes_word": {
    "label": "the word a crop writes at its place in the text; each crop of a spelling of several characters (而已) writes the whole word",
    "subject": "crop",

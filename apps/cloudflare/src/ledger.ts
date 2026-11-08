@@ -198,6 +198,20 @@ export async function planClaim(env: Env, claim: { key: string; actor: string; c
   return { statements, keys, crops: [crop.id], assertions: ids };
 }
 
+/** The rows of one claim about a subject that is no crop: a form, a grapheme or a book. It rests on no
+ *  evidence version, so nothing is checked against a cut, and no crop row is written. */
+export async function planSubjectClaim(env: Env, claim: { key: string; actor: string; subject: string; predicate: string;
+  scope: string; members: Member[]; tier?: string; method?: string | null; at: string }, tools: LedgerTools) {
+  const { key, actor, subject, predicate, scope, members, at } = claim;
+  const set = members.length > 1 ? 'cf:' + crypto.randomUUID() : null, ids = members.map(() => 'cf:' + crypto.randomUUID());
+  const statements = members.map((m, i) => env.ATLAS.prepare(`INSERT INTO assertions(id,submission,subject,predicate,scope,slot,object,value,alternative_set,tier,asserted_by,asserted_at,confidence,confidence_scheme,method)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ids[i], key, subject, predicate, scope, slotOf(predicate, m, tools.canonical), m.object,
+    m.value === null ? null : tools.canonical(m.value), set, claim.tier ?? 'observed', actor, at, m.confidence, m.confidence_scheme, claim.method ?? null));
+  if (PREDICATES[predicate].cardinality === 'one') statements.push(retractOwn(env, { key, actor, subject, predicate, scope, at, by: ids[0], owned: tools.owned(actor) }));
+  const keys = [...new Set(members.map(m => slotOf(predicate, m, tools.canonical)))].map((slot): Slot => [subject, predicate, scope, slot]);
+  return { statements, keys, assertions: ids };
+}
+
 /** The rows of one action by `actor` on claim `target`: a retraction is the asserter's (under any id
  *  they hold), an accept or a reject anyone else's, an adjudication an admin's; retracting one
  *  alternative retracts its set. */

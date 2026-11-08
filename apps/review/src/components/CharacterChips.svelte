@@ -6,6 +6,7 @@
   import { characterEntry } from '$worker/citation.ts'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import ScriptText from './ScriptText.svelte'
+  import FormText from './FormText.svelte'
   import OriginText from './OriginText.svelte'
   import { countsLabel } from '../lib/layers.js'
   import { page } from '$app/state'
@@ -78,6 +79,9 @@
   const written = $derived([...variants.items, ...variants.related.filter(v => v.written || writers.has(v.code_point))]
     .filter(v => !own.has(v.code_point)).sort((a, b) => writers.has(b.code_point) - writers.has(a.code_point)))
   const related = $derived(variants.related.filter(v => !v.written && !writers.has(v.code_point) && !own.has(v.code_point)))
+  // The described forms a reviewer said are written for this grapheme (`written_for`): a shape Unicode
+  // lacks has no character page, so it joins the 字体 row as its own sequence with its crop count.
+  const described = $derived(variants.forms ?? [])
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
   // for it: characters that write the same word, kept out of the variant tiers and the widening. A card
   // cached before the word tables existed has no `words`; it reads as none.
@@ -116,6 +120,9 @@
         {/each}
         {#each written as v (v.code_point)}
           <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if sharedWriters.has(v.code_point)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !v.widens}{mainRelation(v)}{#if crops(v)}{' · '}{/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
+        {/each}
+        {#each described as v (v.form ?? v.char)}
+          <span class="variant unencoded" title={crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : v.char}><FormText text={v.char} />{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</span>
         {/each}
         {#if variants.derived.length}
           <details class="derived">

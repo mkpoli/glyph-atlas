@@ -8,7 +8,7 @@ import { SHARDS, currentPointer, phasesOf, rangeCountQuery, rangeQuery, type Gal
 import { corpusFormsQuery, datingQuery } from '../atlas3Listing';
 import { cropSlotsQuery } from '../cropPanels';
 import { composedCountQuery, composedQuery, chronologyQueries, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery,
-  wordSpellingsQuery, writtenVariants } from './character';
+  wordSpellingsQuery, writtenFormsQuery, writtenFormUseQuery, writtenVariants } from './character';
 import worker from '../index';
 
 // The Workers cache.
@@ -185,6 +185,25 @@ describe('a character page', () => {
     expect((await get('/layers/characters/U+9F98')).status).toBe(404);
     const { status, body } = await get('/layers/characters/' + encodeURIComponent('⿰日寺'));
     expect([status, body.char]).toEqual([200, '⿰日寺']);
+  });
+
+  it('lists a described form a reviewer said is written for the grapheme, counted by the family\'s crops', async () => {
+    const form = 'fm:' + '1'.repeat(32), representation = 'rp:' + '2'.repeat(32);
+    const derivedForm = 'fm:' + '3'.repeat(32), derivedRepresentation = 'rp:' + '4'.repeat(32);
+    db.exec(`INSERT INTO forms(id,anchor,created_by,created_at) VALUES
+        ('${form}','${representation}','reader','now'),('${derivedForm}','${derivedRepresentation}','reader','now');
+      INSERT INTO representations(id,scheme,value,namespace,version) VALUES
+        ('${representation}','ids','⿰木木',NULL,NULL),('${derivedRepresentation}','ids','⿰日寺',NULL,NULL);`);
+    for (const [written, value] of [[form, '⿰木木'], [derivedForm, '⿰日寺']])
+      db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+        VALUES(?,'written_for','',?,NULL,NULL,'asserted',?,'[{"object":"U+6642","assertion":"a"}]','[]','[]','r','now')`)
+        .run(written, 'U+6642', 'U+6642');
+    const target = cropId(PAGE_A, 0);
+    db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+      VALUES(?,'has_form','','',?,0,'asserted',?,'[]','[]','[]','r','now')`).run(publicId(target), target, form);
+    const { body } = await get('/layers/characters/U+6642');
+    // The derived form is already a row of the card, so the linked claim does not list it twice.
+    expect(body.variants.forms).toEqual([{ char: '⿰木木', code_point: null, form, scheme: 'ids', count: 1, corpus_count: 0 }]);
   });
 });
 
@@ -372,7 +391,9 @@ describe('every query of the character routes', () => {
     for (const [sql, values, index] of [[membersQuery(), [G.時], 'grapheme_head'], [groupKeysQuery(), ['[1]'], 'PRIMARY KEY'],
       [visualQuery(), [1], 'crop_visual'], [composedQuery(), [], 'book_date_axis'], [graphemeIdsQuery(), ['["時"]'], 'sqlite_autoindex_graphemes'],
       [corpusFormsQuery(), ['[1]'], 'INTEGER PRIMARY KEY'], [datingQuery(), ['["a"]'], 'PRIMARY KEY'], [cropSlotsQuery(), ['[1]', 'has_form'], 'current_claim_crop'],
-      [wordSpellingsQuery(), ['時'], 'word_spelling_spelling'], [productionsQuery(), ['printed', 8, 'printed/'], 'SCAN productions']] as [string, unknown[], string][]) {
+      [wordSpellingsQuery(), ['時'], 'word_spelling_spelling'], [productionsQuery(), ['printed', 8, 'printed/'], 'SCAN productions'],
+      [writtenFormsQuery(), ['U+6642'], 'current_claim_object'],
+      [writtenFormUseQuery(), ['["fm:1"]', '[300,301,302]'], 'current_claim_object']] as [string, unknown[], string][]) {
       const found = plan(sql, values);
       expect(found).toContain(index);
       // The productions are a few dozen rows; every other table is read by key or index.
