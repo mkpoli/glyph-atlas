@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from glyph_atlas import representation, structures
@@ -13,12 +16,29 @@ from glyph_atlas.cli import app
 from glyph_atlas.review import crop_forms, ledger
 from glyph_atlas.review.ledger import Claim
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def test_a_named_part_and_a_component_form_are_one_structure():
-    # ⿰十十 is BabelStone's analysis of 艹, and ⿰亻匕 spells 化; ⺡ is 氵 is 水.
+    # ⿰十十 is BabelStone's analysis of 艹, and ⿰亻匕 spells 化; ⺡ is 氵 and 氵 at the left is 水.
     assert structures.for_ids("⿱⿰十十早") == structures.for_ids("⿱艹早")
     assert structures.for_ids("⿱艹⿰亻匕") == structures.for_ids("⿱艹化")
     assert structures.for_ids("⿰⺡骨") == structures.for_ids("⿰水骨")
+    assert structures.for_ids("⿰亻木") == structures.for_ids("⿰人木")
+
+
+def test_an_index_equivalence_is_not_a_composition():
+    # 苗/苖, 細/紳, 鴨/鴫 and 情/心 differ in a component; 田/由/申, 甲/田 and 忄/心 are
+    # radical-index rows, not composition.
+    assert structures.for_ids("⿱艹田").id != structures.for_ids("⿱艹由").id
+    assert structures.for_ids("⿰糸田").id != structures.for_ids("⿰糸申").id
+    assert structures.for_ids("⿰甲鳥").id != structures.for_ids("⿰田鳥").id
+    assert structures.for_ids("⿰忄青").id != structures.for_ids("⿰心青").id
+
+
+def test_a_radical_form_folds_only_in_its_position():
+    assert structures.for_ids("⿰東阝").label == "⿰東邑"
+    assert structures.for_ids("⿰阝東").label == "⿰阝東"
 
 
 def test_a_different_arrangement_is_a_different_structure():
@@ -30,6 +50,10 @@ def test_a_different_arrangement_is_a_different_structure():
 
 def test_a_spelled_part_reads_as_the_character_it_spells():
     assert [item.label for item in structures.for_character("花")] == ["⿱艸化"]
+
+
+def test_a_named_component_and_its_spelled_form_stay_distinct():
+    assert {item.label for item in structures.for_character("画")} == {"⿱一𰢵", "⿱一⿶凵由"}
 
 
 def test_a_character_without_a_description_has_none():
@@ -44,17 +68,39 @@ def test_an_approximate_or_malformed_description_names_no_structure():
         structures.for_ids("⿰木")
 
 
+def test_a_written_description_may_keep_an_unnamed_part():
+    assert structures.for_ids("⿰木？").label == "⿰木？"
+
+
 def test_a_form_structure_comes_from_its_anchor():
     assert [item.label for item in structures.for_representation(representation.typed("⿱⿰十十早"))] == ["⿱艸早"]
     assert [item.label for item in structures.for_representation(representation.typed("峰"))] == ["⿰山夆"]
     assert structures.for_representation(representation.Representation("mj", "MJ012345")) == []
 
 
+def test_a_representation_that_names_no_structure_returns_none():
+    assert structures.for_representation(representation.Representation("ids", "〾⿰木木")) == []
+    assert structures.for_representation(representation.Representation("ivs", "")) == []
+
+
+@pytest.mark.parametrize("char", ["峰", "峯", "花", "啓", "庶", "丏"])
+def test_a_canonical_label_names_its_own_structure(char):
+    found = structures.for_character(char)
+    assert found
+    for item in found:
+        assert structures.for_ids(item.label) == item
+
+
 def test_an_id_is_derived_from_the_canonical_tree_and_the_policy():
     item = structures.for_ids("⿱艹早")
-    assert item.id.startswith("st:") and len(item.id) == 35
+    assert re.fullmatch(r"st:[0-9a-f]{32}", item.id)
     assert item.id == structures.for_ids("⿱⿰十十早").id
     assert item.id != structures.for_ids("⿱早艹").id
+
+
+def test_the_ids_version_is_the_source_files():
+    source = yaml.safe_load((ROOT / "data/sources/babelstone-ids.yaml").read_text(encoding="utf-8"))
+    assert structures.VERSION in source["version"]
 
 
 def test_the_catalogue_names_the_structure_layer():
@@ -72,6 +118,10 @@ def test_ensure_structure_writes_one_immutable_row():
     assert db.execute("SELECT label,tree,scheme,version,policy,created_by FROM structures").fetchone() == (
         item.label, json.dumps(item.tree, ensure_ascii=False), item.scheme, item.version, item.policy, "ann")
     assert db.execute("SELECT count(*) FROM structures").fetchone()[0] == 1
+    with pytest.raises(sqlite3.DatabaseError, match="structure_immutable"):
+        db.execute("UPDATE structures SET label='x' WHERE id=?", (item.id,))
+    with pytest.raises(sqlite3.DatabaseError, match="structure_immutable"):
+        db.execute("DELETE FROM structures WHERE id=?", (item.id,))
 
 
 def test_a_form_structure_claim_resolves():

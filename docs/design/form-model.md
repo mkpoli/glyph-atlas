@@ -22,16 +22,16 @@ identity are separate predicates, even where the default policy groups their end
 **Form.** A stable opaque id for a category of written appearance. A form needs no name, no encoding
 and no structure. Forms make a tree by refinement: each has at most one parent, and a root has none.
 Every other relation between forms is a typed link: resembles, transitional-between, derived-from
-(あ from 安), substitutes-for, corresponds-to (a 草書 form and the 楷書 forms it writes) and
+(あ from 安), substitutes-for, corresponds-to (planned: a 草書 form and the 楷書 forms it writes) and
 written-for a grapheme or character. A form can be written for several graphemes (子 as the kanji 子
 and as the kana ね); a crop's own identity claim says which one it reads as.
 
 **Structure (構形).** A canonical component tree: the components a form is built from and their
 arrangement, with no stroke design. A form realizes zero, one or several structures, and a structure
-is realized by many forms; a character can have several (峰 ⿰山夆, 峯 ⿱山夆). An IDS is a
-representation of a structure, never its identity: the id is derived from the canonical tree and the
-policy version (`glyph_atlas.structures`). A reviewer's `has_structure` claim is the authority; the
-derivation from the IDS is a proposal.
+is realized by many forms; a character can have several through its forms (峰 ⿰山夆, 峯 ⿱山夆).
+An IDS is a representation of a structure, never its identity: the id is derived from the
+canonical tree and the policy version (`glyph_atlas.structures`). A reviewer's `has_structure` claim
+is the authority; the derivation from the IDS is a proposal.
 
 **Representation.** A way of naming a form: a Unicode sequence, an Ideographic Variation Sequence, an
 MJ id, a GlyphWiki name, an IDS (kept exactly as written; a normalised IDS is only a versioned search
