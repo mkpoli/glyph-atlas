@@ -13,6 +13,7 @@ on:
       - 'pyproject.toml'
       - 'uv.lock'
       - 'apps/cloudflare/migrations/**'
+      - 'apps/ids-bot/**'
       - 'apps/cloudflare/src/**'
       - 'apps/review/src/locales/**'
       - 'apps/review/static/fonts/**'
@@ -34,5 +35,5 @@ jobs:
       # onnxruntime come with the dev group so the detector's ONNX tests and the synthetic renderings
       # run here rather than skipping.
       - run: uv sync --group dev --extra data --extra pdf
-      - run: uv run ruff check src tests scripts models
+      - run: uv run ruff check src tests scripts models apps/ids-bot
       - run: uv run pytest -q

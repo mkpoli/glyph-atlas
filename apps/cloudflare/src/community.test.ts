@@ -20,6 +20,7 @@ describe('member counts', () => {
       'https://t.me/': () => new Response('<div class="tgme_page_extra">4 members, 3 online</div>'),
       'https://matrix.example/_matrix/client/v3/rooms/!space%3Aexample/joined_members': () => Response.json({ joined: {
         '@mkpoli:glyphatlas.org': {}, '@reader:matrix.org': {}, '@ops:glyphatlas.org': {}, '@inbox:glyphatlas.org': {},
+        '@idsbot:glyphatlas.org': {},
         '@discord_1089404483068506122:glyphatlas.org': {}, '@telegram_8954644733:glyphatlas.org': {}, '@irc_libera_mkpoli:glyphatlas.org': {},
         '@ops:matrix.org': {},
       } }),

@@ -10,9 +10,9 @@ const TIMEOUT = 5000;
 
 // The bridge's own bot is a member of the Discord server and of the Telegram group; it is not a person.
 const BRIDGE_BOTS = 1;
-// Matrix accounts that serve the bridges and the inbox, never people: the ops account, the bridges' bots
-// and the users they puppet for Discord, Telegram and IRC.
-const SERVICE = /^@(ops|inbox|heisenbridge|discordbot|telegrambot|discord_\d+|telegram_\d+|irc_[^:]+):glyphatlas\.org$/;
+// Matrix accounts that serve the community rather than speak for a person: ops, the inbox, the IDS
+// bot, the bridges' bots and the users they puppet for Discord, Telegram and IRC.
+const SERVICE = /^@(ops|inbox|idsbot|heisenbridge|discordbot|telegrambot|discord_\d+|telegram_\d+|irc_[^:]+):glyphatlas\.org$/;
 
 type CommunityEnv = Pick<Env, 'MATRIX_HOMESERVER' | 'MATRIX_SPACE'> & { MATRIX_INBOX_TOKEN?: string };
 export type Counts = { matrix: number | null; discord: number | null; telegram: number | null };
