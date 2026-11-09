@@ -1207,7 +1207,6 @@
   "contact.chat.members.other": "{count}名",
   "contact.chat.rooms": "歡迎房과 英語·中國語·日本語·韓國語·베트남語 채팅방이 各各 하나씩 있으며, 興味로운 發見을 나누는 방, 質問房, 意見을 나누는 방, 開發房도 있습니다.",
   "contact.matrix.title": "Matrix로 參與하기",
-  "contact.matrix.open": "위의 Matrix 링크를 여십시오. 브라우저에서 커뮤니티 채팅 앱이 열립니다.",
   "contact.matrix.account": "이 사이트에서 쓰는 Glyph Atlas 計定으로 로그인하고 使用者 이름을 選擇하십시오. 곧바로 스페이스와 歡迎房에 參與하게 됩니다.",
   "contact.matrix.apps": "Element는 携帶電話와 컴퓨터에서도 使用할 수 있습니다. 다른 Matrix 서버에 計定이 있다면 어떤 Matrix 앱에서든 {space} 住所로 스페이스에 參與할 수 있습니다.",
   "contact.matrix.choose": "앱 選擇",

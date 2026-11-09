@@ -1293,7 +1293,6 @@
   "contact.preview.body": "The rooms are open to read, so here is what was said lately. Sign in to take part.",
   "contact.preview.note": "Read from the community’s own server just now; it may lag a minute behind.",
   "contact.matrix.title": "Joining on Matrix",
-  "contact.matrix.open": "Open the Matrix link above. It opens the community’s chat app in the browser.",
   "contact.matrix.account": "Sign in with your Glyph Atlas account, the same one as on this site, and choose a username. You join the space and its welcome room straight away.",
   "contact.matrix.apps": "Element also runs on phones and computers. With an account on another Matrix server, any Matrix app can join the space at {space}.",
   "contact.matrix.choose": "Pick an app",
