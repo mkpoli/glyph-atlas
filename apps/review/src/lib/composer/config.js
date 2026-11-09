@@ -10,7 +10,9 @@ export { COMPOSER_VERSION }
 const BASE = import.meta.env?.VITE_COMPOSER_BASE || 'https://ids-input-composer.mkpoli.workers.dev/'
 
 let drawer = null
-/** The page's one drawer, drawing in a worker from the current export. */
-export const composerDrawer = () => drawer ??= createDrawer(
+/** A drawer of its own over the current export, so a caller's drawings never cancel the editor's. */
+export const createComposerDrawer = () => createDrawer(
   () => new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }),
   new URL(`${BASE}${COMPOSER_VERSION}/`, location.href).href)
+/** The page's one drawer, drawing in a worker from the current export. */
+export const composerDrawer = () => drawer ??= createComposerDrawer()

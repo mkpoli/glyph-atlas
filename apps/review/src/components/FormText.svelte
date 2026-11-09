@@ -1,10 +1,11 @@
 <script>
   // A form as the picker and the form bar show it: a character in its script's colour, or a shape
   // Unicode lacks, named by its ideographic description sequence and marked as one, which `ScriptText`
-  // draws in the colour of Han. Hovering shows the sequence as written. A registered figure, a
-  // character with an ideographic variation selector, is drawn in MJ Figures, the font that maps its
-  // sequence. `stacked` sets the tag under the form, as a card's label; `lang` the language whose fonts
-  // draw it (a regional shape).
+  // draws in the colour of Han, from the browser composer where the export holds no image of the
+  // sequence. Hovering shows the sequence as written. A registered figure, a character with an
+  // ideographic variation selector, is drawn in MJ Figures, the font that maps its sequence.
+  // `stacked` sets the tag under the form, as a card's label; `lang` the language whose fonts draw it
+  // (a regional shape).
   import ScriptText from './ScriptText.svelte'
   import { isDescription } from '../lib/ids.js'
   import { FAMILY, drawFigure, isFigure } from '../lib/mjFigures.js'
@@ -17,7 +18,7 @@
 </script>
 
 {#if described}
-  <span class="ids-form" class:stacked title={text}><ScriptText {text} script="han" {lang} titled={false} /><small class="ids-tag">{t('form.ids.tag')}</small></span>
+  <span class="ids-form" class:stacked title={text}><ScriptText {text} script="han" {lang} titled={false} composer /><small class="ids-tag">{t('form.ids.tag')}</small></span>
 {:else if figure}
   <span class="figure-form" style:font-family={`"${FAMILY}", serif`}><ScriptText {text} {script} /></span>
 {:else}
