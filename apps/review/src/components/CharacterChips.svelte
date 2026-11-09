@@ -59,6 +59,8 @@
   const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + (v.routes ?? []).map(route => route.map(s =>
     `${s.was} → ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n+ ')).join('\n\n')
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
+  // What a chip's number counts: the crops filed under it here and the corpus glyphs recorded for it.
+  const glyphCount = v => crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : undefined
   // Three levels: the 字種 (the grapheme, and any other grapheme this form also writes, 后: 後), its 字体
   // (the grapheme's own forms, then the 異体字 outside it, the ones a gallery widens to first), and the
   // characters related otherwise (a loan, a homograph, a fallback reduction). A form that writes this
@@ -100,9 +102,9 @@
     <div class="layer-row">
       <span class="layer-label">{t('chips.grapheme')}</span>
       <div class="variant-chips">
-        {#if selfGrapheme}<a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char))}><ScriptText text={grapheme.char} lang="zh" titled={false} /></a>{/if}
+        {#if selfGrapheme}<a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char))} title={glyphCount(grapheme)}><ScriptText text={grapheme.char} lang="zh" titled={false} />{#if crops(grapheme)}<small>{formatNumber(crops(grapheme))}</small>{/if}</a>{/if}
         {#each writes as v (v.code_point)}
-          <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={shareLabel(v)}><ScriptText text={v.char} lang="zh" titled={false} />{#if shared}<small class="share">{t('chips.shared')}</small>{/if}</a>
+          <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={glyphCount(v) ? `${shareLabel(v)}\n${glyphCount(v)}` : shareLabel(v)}><ScriptText text={v.char} lang="zh" titled={false} />{#if shared}<small class="share">{t('chips.shared')}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
         {/each}
       </div>
     </div>
@@ -114,8 +116,10 @@
         {#each members as member (member.code_point)}
           <div class="member-choice"><button class="member" class:active={expand !== 'grapheme' && member.code_point === card.code_point}
             aria-pressed={expand !== 'grapheme' && member.code_point === card.code_point}
-            aria-label={t('chips.showCharacter', { char: member.char })} onclick={() => onselect(member.code_point)}>
+            aria-label={crops(member) ? `${t('chips.showCharacter', { char: member.char })} · ${formatNumber(crops(member))}`
+              : t('chips.showCharacter', { char: member.char })} title={glyphCount(member)} onclick={() => onselect(member.code_point)}>
             <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" />
+            {#if crops(member)}<small class="use">{formatNumber(crops(member))}</small>{/if}
           </button>{#if member.code_point === card.code_point}<ZiLink character={member.char} compact />{/if}</div>
         {/each}
         {#each written as v (v.code_point)}
@@ -215,6 +219,7 @@
   .variant-chips > .variant, .character-members > .variant{min-height:43px;box-sizing:border-box;align-items:center}
   .member-choice{display:flex;flex-direction:column;align-items:center;gap:4px}
   .member{display:flex;align-items:center;gap:10px;padding:8px 12px;background:transparent}
+  .member .use{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .active{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
   .forms-row{font-size:12px;color:var(--muted);align-items:center}
   .forms-row .layer-label{line-height:normal}
