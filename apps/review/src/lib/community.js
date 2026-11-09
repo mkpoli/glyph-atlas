@@ -1,16 +1,15 @@
 // The community’s chat: one Matrix space, bridged to a Discord server, a Telegram group and IRC
 // channels on Libera.Chat, so a message sent in one place appears in all; QQ is bridged to the Chinese
-// room alone. The Matrix door opens the space in the community's Element at chat.glyphatlas.org, where a
-// Glyph Atlas account signs in. Each `mark` names a `LinkMark`.
+// room alone. The Matrix door opens a picker: the space in the community's Element at chat.glyphatlas.org,
+// where a Glyph Atlas account signs in, or matrix.to for any other app. Each `mark` names a `LinkMark`.
 export const SPACE = '#glyphatlas:glyphatlas.org'
 // The space, addressed by matrix.to rather than by one app, for people who use a Matrix app of their own
 // or who want to see the rooms before signing in.
 export const MATRIX_TO = `https://matrix.to/#/${SPACE}`
 export const CHATS = [
-  // Matrix and matrix.to open the same space by different doors, so neither carries the member count:
+  // The Matrix door carries no member count: the picker behind it offers two ways into one space, and
   // one head count beside two doors to one place would read as two places.
   { name: 'Matrix', mark: 'matrix', href: 'https://chat.glyphatlas.org/#/room/#glyphatlas:glyphatlas.org', count: false },
-  { name: 'matrix.to', mark: 'matrix', href: MATRIX_TO, count: false },
   { name: 'Discord', mark: 'discord', href: 'https://discord.gg/DR25YeAYSg' },
   { name: 'Telegram', mark: 'telegram', href: 'https://t.me/+Q4wiIzMijRwzOWE1' },
   { name: 'QQ', mark: 'qq', href: 'https://qm.qq.com/q/bKrGelyYIE' },

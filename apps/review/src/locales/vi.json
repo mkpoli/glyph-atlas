@@ -1233,7 +1233,6 @@
   "contact.preview.body": "Các phòng mở để đọc, nên đây là những gì được đăng gần đây. Đăng nhập để trò chuyện.",
   "contact.preview.note": "Đọc từ máy chủ của cộng đồng ngay lúc này; có thể lệch khoảng một phút.",
   "contact.matrix.title": "Tham gia qua Matrix",
-  "contact.matrix.open": "Mở liên kết Matrix ở trên. Ứng dụng trò chuyện của cộng đồng sẽ mở ngay trong trình duyệt.",
   "contact.matrix.account": "Đăng nhập bằng tài khoản Glyph Atlas bạn dùng trên trang này, rồi chọn tên người dùng. Bạn sẽ được tham gia ngay vào không gian cộng đồng và phòng chào đón.",
   "contact.matrix.apps": "Element cũng chạy trên điện thoại và máy tính. Nếu có tài khoản trên một máy chủ Matrix khác, bạn có thể dùng ứng dụng Matrix nào cũng được để tham gia không gian tại {space}.",
   "contact.matrix.choose": "Chọn ứng dụng",
