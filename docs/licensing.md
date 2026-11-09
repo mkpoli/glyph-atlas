@@ -16,8 +16,8 @@ because a scan of a public-domain page may carry no copyright of its own.
 | CC BY-SA 2.1 JP (MJ table, NINJAL images) | included as an adaptation: article 5 of that licence allows derivative works under a newer version or another jurisdiction's licence with the same elements; notices and modifications recorded |
 | 공공누리 제1유형(출처표시), KOGL Type 1 (국립한글박물관) | included with the source named; the record keeps the KOGL notice, and the image itself is never described as CC BY-SA |
 | Bespoke free-reuse terms (京都大学 RMDA, 国立公文書館, 木簡庫) | included when the terms allow copying, modification and redistribution; the terms URI and the obligations are stored on the record, and the image itself is never described as CC BY-SA |
-| NC, ND, research-only, permission-required or unstated, on a work dated up to 1900 or undated | included as public domain (see below); the holder's statement is kept in `holder_terms` |
-| NC, ND, research-only, permission-required or unstated, on a work dated after 1900 | never in a release build; the record may exist with coordinates and no crop, provided the text and metadata it carries are themselves clear |
+| NC, ND, research-only, permission-required or unstated, on a flat reproduction of a work dated up to 1900 or undated | included as public domain (see below); the holder's statement is kept in `holder_terms`. A photograph of an object or an editorial drawing is not a flat reproduction and keeps the terms |
+| NC, ND, research-only, permission-required or unstated, on a flat reproduction of a work dated after 1900 | never in a release build; the record may exist with coordinates and no crop, provided the text and metadata it carries are themselves clear |
 
 ## Image holders seen in the upstreams
 
@@ -125,6 +125,15 @@ statement moves to `holder_terms`, where it stays as evidence of what the holder
 dated after 1900 may be a work still in copyright and keeps its holder's terms; an undated document
 is taken as pre-modern, which is the dataset's scope. Holder terms are contractual and bind those who
 accepted them; the attribution and source lines holders ask for are kept on every record.
+
+The rule covers flat originals. A photograph of a three-dimensional object may carry a
+photographer's own rights whatever the age of the object, and an editorial drawing may be a modern
+work; neither is treated as a reproduction that carries no copyright of its own. `Document.image_kind` marks such records, and they
+keep the licence and terms they state. The Tangut coin source
+(`data/sources/babelstone-tangut-coins.yaml`) records four photographs of Western Xia coins; the
+article states no licence or photographer credit, so their records say `unknown`. The article's seven
+drawings are excluded: they set the characters in type over a white field, so they are not images of
+the coins' ink.
 
 A compilation may be protected under Articles 12 and 12-2. CC BY-SA 4.0 claims nothing over material
 that needs no permission (its section 2(a)(2)). The dataset states its own rights as applying to the

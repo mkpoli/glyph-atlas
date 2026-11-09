@@ -47,8 +47,9 @@ from .schema import RETIRED_UNIT_FIELDS, Box, Document, Group, Line, Page, PageT
 #: and a shape id names a form. A table that still holds either column reads as without it while every
 #: value is empty (`schema.RETIRED_UNIT_FIELDS`).
 #: Version 6 removed `Unit.reading`: a crop is its character, and the kana a character stands for is
-#: character data.
-SCHEMA_VERSION = 6
+#: character data. Version 7 added `Document.image_kind` and `Page.image_kind`: a table written before
+#: reads them as `flat-reproduction`, which is how its images were treated.
+SCHEMA_VERSION = 7
 BATCH_SIZE = 65_536
 MANIFEST_NAME = "MANIFEST.json"
 
