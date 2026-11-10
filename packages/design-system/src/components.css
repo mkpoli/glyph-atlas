@@ -1,0 +1,220 @@
+/* Components for Glyph Atlas surfaces. Class names are prefixed `ga-` so the
+   review app can adopt one control at a time without touching its own CSS. */
+
+/* Buttons. The app's default button, primary action and quiet link, named. */
+.ga-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ga-space-2);
+  min-height: var(--ga-control-height);
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--ga-radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--ga-text-base);
+  line-height: 1.2;
+  text-decoration: none;
+}
+.ga-button:hover { border-color: var(--line-strong); }
+.ga-button:disabled { opacity: .45; cursor: default; }
+
+.ga-button--primary {
+  min-height: var(--ga-control-height-lg);
+  padding: 13px 20px;
+  border-color: var(--accent-solid);
+  background: var(--accent-solid);
+  color: var(--on-color);
+  font-size: var(--ga-text-base);
+  font-weight: 500;
+}
+.ga-button--primary:hover { border-color: var(--accent-solid-hover); background: var(--accent-solid-hover); }
+
+.ga-button--quiet {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--ga-text-md);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ga-button--quiet:hover { color: var(--ink); }
+
+.ga-button--icon {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+}
+
+/* Fields. */
+.ga-field { display: grid; gap: 6px; min-width: 0; }
+.ga-label { color: var(--ink); font-size: var(--ga-text-md); font-weight: 550; }
+.ga-hint { color: var(--muted); font-size: var(--ga-text-md); line-height: 1.45; }
+.ga-error { color: var(--wrong); font-size: var(--ga-text-md); }
+
+.ga-input,
+.ga-select,
+.ga-textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--ga-control-height);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--ga-radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--ga-text-lg);
+}
+.ga-textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
+.ga-input:hover, .ga-select:hover, .ga-textarea:hover { border-color: var(--line-strong); }
+.ga-input[aria-invalid="true"], .ga-select[aria-invalid="true"], .ga-textarea[aria-invalid="true"] { border-color: var(--wrong); }
+
+/* A checkbox or radio with its label, at a finger's height. */
+.ga-choice { display: flex; align-items: center; gap: 9px; min-height: var(--ga-control-height); font-size: var(--ga-text-lg); cursor: pointer; }
+.ga-choice input { flex: none; accent-color: var(--accent-solid); }
+
+/* Category pills: a labelled checkbox that reads as a checkbox row. The box is
+   the control; the label is the target. `checked`, hover and focus-visible match
+   the review app's selected surfaces. */
+.ga-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--ga-control-height);
+  padding: 0 12px 0 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--ga-radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--ga-text-lg);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ga-pill:hover { border-color: var(--line-strong); }
+.ga-pill input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.ga-pill__box {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface);
+}
+.ga-pill__box svg { width: 12px; height: 12px; opacity: 0; }
+.ga-pill:has(input:checked) { border-color: var(--accent); background: var(--accent-light); }
+.ga-pill:has(input:checked) .ga-pill__box { border-color: var(--accent-solid); background: var(--accent-solid); }
+.ga-pill:has(input:checked) .ga-pill__box svg { opacity: 1; }
+.ga-pill:has(input:focus-visible) { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.ga-pill:has(input:disabled) { opacity: .55; cursor: default; }
+.ga-pill:has(input:disabled) .ga-pill__box { background: var(--surface-disabled); }
+
+/* Status badges. Colour is never the only signal: the label carries the state. */
+.ga-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--ga-radius-xs);
+  background: var(--surface-badge);
+  color: var(--muted);
+  font-size: var(--ga-text-sm);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.ga-badge--live { color: var(--accent); background: var(--accent-light); }
+.ga-badge--checked { color: var(--good); background: var(--good-light); }
+.ga-badge--uncertain { color: var(--uncertain-ink); background: var(--uncertain-badge); }
+.ga-badge--proposed { color: var(--proposed); background: var(--accent-light); }
+.ga-badge--wrong { color: var(--wrong); background: var(--wrong-light); }
+.ga-badge__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+
+/* Tabs used above a list. The active tab carries a surface, not only a colour. */
+.ga-tabs { display: flex; gap: 6px; }
+.ga-tab {
+  border: 0;
+  background: transparent;
+  padding: 8px 15px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: var(--ga-text-md);
+}
+.ga-tab[aria-selected="true"] { background: var(--surface-selected); color: var(--ink); }
+.ga-tab:hover { color: var(--ink); }
+
+/* A surface for one record, crop or form. */
+.ga-card {
+  padding: var(--ga-space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--ga-radius-lg);
+  background: var(--surface);
+}
+.ga-card__title { font-size: var(--ga-text-xl); font-weight: 500; line-height: 1.3; }
+.ga-card__meta { color: var(--muted); font-size: var(--ga-text-md); }
+
+/* A toolbar: search, filters and one quiet action. */
+.ga-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ga-space-3);
+  padding: var(--ga-space-3) 0;
+  border-top: 1px solid var(--line);
+}
+
+/* The header menu, as a static panel. */
+.ga-menu {
+  width: 240px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--ga-radius-lg);
+  background: var(--surface);
+  box-shadow: 0 12px 30px var(--shadow-menu);
+}
+.ga-menu__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--ga-control-height);
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--ga-radius-md);
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--ga-text-base);
+  text-align: left;
+}
+.ga-menu__item:hover { background: var(--accent-hover); }
+.ga-menu__label {
+  display: block;
+  padding: 10px 10px 4px;
+  color: var(--muted);
+  font-family: var(--ga-font-mono);
+  font-size: var(--ga-text-xs);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* Empty state. */
+.ga-empty { padding: 64px 20px; text-align: center; }
+.ga-empty__mark { display: block; margin-bottom: 14px; color: var(--accent); font-size: 38px; }
+.ga-empty__title { margin-bottom: 6px; font-size: var(--ga-text-2xl); font-weight: 500; letter-spacing: -.7px; }
+.ga-empty__hint { color: var(--muted); font-size: var(--ga-text-base); }
