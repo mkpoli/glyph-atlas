@@ -8,7 +8,11 @@
     ".": "./src/index.css",
     "./tokens.css": "./src/tokens.css",
     "./base.css": "./src/base.css",
-    "./components.css": "./src/components.css"
+    "./components.css": "./src/components.css",
+    "./index.css": "./src/index.css"
   },
-  "files": ["src", "README.md"]
+  "files": [
+    "src",
+    "README.md"
+  ]
 }

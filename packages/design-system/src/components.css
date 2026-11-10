@@ -32,7 +32,7 @@
 .ga-button--primary:hover { border-color: var(--accent-solid-hover); background: var(--accent-solid-hover); }
 
 .ga-button--quiet {
-  min-height: 0;
+  min-height: var(--ga-control-height);
   padding: 0;
   border: 0;
   background: transparent;
@@ -44,8 +44,8 @@
 .ga-button--quiet:hover { color: var(--ink); }
 
 .ga-button--icon {
-  width: 32px;
-  min-height: 32px;
+  width: var(--ga-control-height);
+  min-height: var(--ga-control-height);
   padding: 0;
   border-color: transparent;
   background: transparent;

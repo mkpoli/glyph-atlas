@@ -277,7 +277,7 @@
   .demo { display: grid; gap: 16px; }
   .demo.grid { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px; }
   .demo h3 { margin: 0; font-size: var(--ga-text-base); font-weight: 550; }
-  .demo-row { display: flex; align-items: center; gap: 10px; }
+  .demo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .demo-row.wrap { flex-wrap: wrap; }
   .demo pre { margin: 0; overflow-x: auto; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--ga-radius-sm); background: var(--surface-sunken); color: var(--muted); font-size: 11px; }
   .demo pre code { font-family: var(--ga-font-mono); }
