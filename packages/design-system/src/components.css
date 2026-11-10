@@ -150,6 +150,9 @@
 /* Tabs used above a list. The active tab carries a surface, not only a colour. */
 .ga-tabs { display: flex; gap: 6px; }
 .ga-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ga-control-height);
   border: 0;
   background: transparent;
   padding: 8px 15px;
@@ -157,7 +160,8 @@
   color: var(--muted);
   font-size: var(--ga-text-md);
 }
-.ga-tab[aria-selected="true"] { background: var(--surface-selected); color: var(--ink); }
+button.ga-tab { cursor: pointer; }
+.ga-tab[aria-selected="true"], .ga-tab[aria-pressed="true"], .ga-tab.is-active { background: var(--surface-selected); color: var(--ink); }
 .ga-tab:hover { color: var(--ink); }
 
 /* A surface for one record, crop or form. */

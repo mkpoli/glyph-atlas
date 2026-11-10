@@ -1,11 +1,19 @@
 <script>
+  import { onMount } from 'svelte'
+  import { setTheme } from '$lib/theme.js'
   import '@glyph-atlas/design-system/components.css'
 
   let scheme = $state('system')
+  onMount(() => {
+    const read = () => { scheme = document.documentElement.dataset.theme || 'system' }
+    read()
+    const observer = new MutationObserver(read)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => observer.disconnect()
+  })
   function choose(value) {
+    setTheme(value)
     scheme = value
-    if (value === 'system') delete document.documentElement.dataset.theme
-    else document.documentElement.dataset.theme = value
   }
 
   const surfaceTokens = ['paper', 'surface', 'surface-sunken', 'surface-subtle', 'surface-tile', 'surface-selected', 'surface-badge', 'surface-quiet']
@@ -176,7 +184,7 @@
     <header class="section-head"><p class="overline">Components</p><h2>Surfaces</h2><p>Tabs, cards, menus and empty states share one border, one radius and the surface token.</p></header>
     <div class="demo">
       <div class="demo-row">
-        <div class="ga-tabs" role="tablist">{#each ['All', 'Unreviewed', 'Flagged'] as tab, i (tab)}<button class="ga-tab" role="tab" aria-selected={i === 0}>{tab}</button>{/each}</div>
+        <div class="ga-tabs" aria-label="Filter tabs example"><span class="ga-tab is-active">All</span><span class="ga-tab">Unreviewed</span><span class="ga-tab">Flagged</span></div>
       </div>
       <div class="demo-row">
         <article class="ga-card">
@@ -199,7 +207,7 @@
     <div class="demo">
       <div class="ga-toolbar">
         <input class="ga-input search" placeholder="Find a character or U+2A6A5" aria-label="Find a character" />
-        <div class="ga-tabs" role="tablist"><button class="ga-tab" role="tab" aria-selected="true">All</button><button class="ga-tab" role="tab">Unreviewed</button><button class="ga-tab" role="tab">Flagged</button></div>
+        <div class="ga-tabs" aria-label="Filter tabs example"><span class="ga-tab is-active">All</span><span class="ga-tab">Unreviewed</span><span class="ga-tab">Flagged</span></div>
         <button class="ga-button ga-button--quiet">Shuffle</button>
       </div>
     </div>

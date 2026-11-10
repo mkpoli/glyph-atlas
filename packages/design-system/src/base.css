@@ -5,10 +5,16 @@
 *::before,
 *::after { box-sizing: border-box; }
 
-html {
+:root {
   color-scheme: light dark;
-  -webkit-text-size-adjust: 100%;
+  font-family: var(--ga-font-ui);
+  color: var(--ink);
+  background: var(--paper);
+  font-synthesis: none;
+  font-weight: 400;
 }
+
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;

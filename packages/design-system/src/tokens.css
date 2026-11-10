@@ -3,11 +3,6 @@
    a component and this documentation all resolve the same colour in both schemes. */
 :root {
   color-scheme: light dark;
-  font-family: Inter,"Helvetica Neue",Arial,"Noto Sans","GenZui Sans","Noto Serif Tangut",sans-serif;
-  color: var(--ink);
-  background: var(--paper);
-  font-synthesis: none;
-  font-weight: 400;
   --paper: light-dark(#fafafa, #121215);
   --surface: light-dark(#fff, #1b1b1f);
   --surface-sunken: light-dark(#f1f1f3, #232329);

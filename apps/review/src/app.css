@@ -1,5 +1,15 @@
 @import '@glyph-atlas/design-system/tokens.css';
 
+/* The page defaults sit here as well as in the package's base.css, because the
+   review app imports only the tokens and keeps its own element rules. */
+:root {
+  font-family: var(--ga-font-ui);
+  color: var(--ink);
+  background: var(--paper);
+  font-synthesis: none;
+  font-weight: 400;
+}
+
 /* A scheme the reader chose in the menu overrides the system's. The tokens themselves live in
    packages/design-system and are imported above. */
 :root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
