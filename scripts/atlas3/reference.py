@@ -398,7 +398,12 @@ def translate(atlas, mirror, path, objects):
         objects.put(rel, text)
     structures = defaultdict(dict)
     for char, sequences, shapes in source("han_ids").execute("SELECT char, sequences, shapes FROM han_ids"):
-        structure = structure_layer.for_character(char)
+        try:
+            structure = structure_layer.for_character(char)
+        except ValueError:
+            # A reading that does not settle names no structure; the load goes on without it.
+            structure = None
+            notes["characters whose structure does not settle"] += 1
         structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None,
                                                      [structure.id, structure.label] if structure else None]
     for key, chars in structures.items():
