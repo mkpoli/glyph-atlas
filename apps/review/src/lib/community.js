@@ -30,6 +30,8 @@ export const IRC_CHANNELS = [
   { channel: '#glyphatlas-jurchen', name: '女真 · Jurchen' },
   { channel: '#glyphatlas-khitan', name: '契丹 · Khitan' },
   { channel: '#glyphatlas-sinograph', name: '漢字 · Sinograph' },
+  { channel: '#glyphatlas-atlas', name: '字形大圖譜 · Atlas' },
+  { channel: '#glyphatlas-compendium', name: '珍字集覽 · Compendium' },
   { channel: '#glyphatlas-curiosities', name: '奇字 · Curiosities' },
   { channel: '#glyphatlas-questions', name: '詢問 · Questions' },
   { channel: '#glyphatlas-feedback', name: '聯絡 · Feedback' },
