@@ -183,4 +183,4 @@ def test_the_cli_prints_a_structure():
 def test_the_cli_reads_a_bare_code_point():
     result = CliRunner().invoke(app, ["structure", "5CF0", "U+8AAC"])
     assert result.exit_code == 0, result.output
-    assert "U+5CF0 峰  ⿰山夆" in result.output and "U+8AAC 說  ⿰言兌" in result.output
+    assert "U+5CF0 峰  ⿰山夆" in result.output and "U+8AAC 説  ⿰言兌" in result.output
