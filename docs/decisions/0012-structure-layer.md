@@ -109,6 +109,8 @@ encoded apart share a structure when only a unified component separates them (�
   reader names a form's structure by a character that has it (`POST /atlas/forms/<form>/structure`),
   and the structure's row is written with its first claim. The site's database is the ledger, so
   no publication carries structure rows to it.
+- A form described by an IDS no character has (`⿺辶𦊷`) has a structure in `glyph_atlas.structures`
+  and none on the site yet: the Worker holds no tables to read it with, and no character names it.
 - The correspondence link and the 構形 row in the picker follow.
 - `/layers/structure` still names the IDS descriptions; when the layer's routes arrive it becomes
   `/layers/ids`, so "structure" names one thing.
