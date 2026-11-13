@@ -17,6 +17,10 @@ Unencoded components keep BabelStone's numbers (`{108}`) and an unrepresentable 
     uv sync --extra data
     .venv/bin/python scripts/build_han_components.py
 
+`data/vocab/han-component-ucv.tsv`, one row per entry of the IRG's lists of unifiable and non-unifiable
+component variations (IWDS `iwds.xml`): the entry's number, its list, its level and the component
+shapes it names (戶 户 戸), each a character or a description, with ⬚ for any component.
+
 Downloads are cached under `cache/components/`. IDS.TXT is not versioned upstream, so its own `File Date`
 header and the file's digest go into the table header; `--refresh` fetches everything again.
 """
@@ -27,10 +31,12 @@ import argparse
 import hashlib
 import re
 import unicodedata
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import yaml
 
+from glyph_atlas.han_components import TOKEN, _parse
 from glyph_atlas.net import download
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +49,9 @@ EQUIVALENT_URL = f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/Equivale
 CJKVI_REVISION = "e4f1da248c9737a243f9930b5dc497cef5d5ae16"
 RADICALS_URL = f"https://raw.githubusercontent.com/cjkvi/cjkvi-variants/{CJKVI_REVISION}/radical-variants.txt"
 RADICAL_TAGS = {"cjkvi/radical-variant", "cjkvi/radical-variant-simplified"}
+IWDS_REVISION = "8302302d615ff1c1f60ae335b118b10060be0ed4"
+IWDS_URL = f"https://raw.githubusercontent.com/yi-bai/iwds/{IWDS_REVISION}/iwds.xml"
+IWDS_SHA256 = "886b426ea3d1d329749e02b32cccd5082d31d6cf1b996ea37bdae5ac593ca491"
 
 SEQUENCE = re.compile(r"^\^(?P<ids>[^$]+)\$(?:\((?P<regions>[^)]*)\))?$")
 
@@ -124,6 +133,24 @@ def component_forms(unified: list, radical: list) -> list[tuple[str, str, str, s
     return sorted(seen.values(), key=lambda row: (row[0], row[1]))
 
 
+def ucv_rows(text: str) -> list[tuple[str, str, str, str]]:
+    """(entry, list, level, components) for every entry of the IWDS file, in its order.
+
+    `<components>` writes an entry's shapes one after another; each is cut where its description
+    ends (`⿱宀丯⿱宀丰` is two shapes, `戶户戸` three).
+    """
+    rows = []
+    for entry in ET.fromstring(text).iter("entry"):
+        tokens = TOKEN.findall("".join((entry.findtext("components") or "").split()))
+        shapes, at = [], 0
+        while at < len(tokens):
+            _, end = _parse(tokens, at)
+            shapes.append("".join(tokens[at:end]))
+            at = end
+        rows.append((entry.get("id", ""), entry.get("kind", ""), entry.get("level", ""), " ".join(shapes)))
+    return rows
+
+
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
 
@@ -153,6 +180,9 @@ def main(argv: list[str] | None = None) -> int:
     ids_path = fetch(IDS_URL, cache / "IDS.TXT")
     equivalent_path = fetch(EQUIVALENT_URL, cache / UNICODE_VERSION / "EquivalentUnifiedIdeograph.txt")
     radicals_path = fetch(RADICALS_URL, cache / "cjkvi" / "radical-variants.txt")
+    iwds_path = fetch(IWDS_URL, cache / "iwds" / IWDS_REVISION / "iwds.xml")
+    if hashlib.sha256(iwds_path.read_bytes()).hexdigest() != IWDS_SHA256:
+        raise ValueError(f"{iwds_path} is not the pinned iwds.xml")
 
     ids_text = ids_path.read_text(encoding="utf-8")
     rows = ids_rows(ids_text)
@@ -193,7 +223,22 @@ def main(argv: list[str] | None = None) -> int:
     (args.out / "han-component-forms.tsv").write_text(
         "\n".join(form_lines + ["\t".join(row) for row in forms]) + "\n", encoding="utf-8"
     )
-    print(f"{len(rows)} ideographs, {len(forms)} component forms -> {args.out}")
+    variations = ucv_rows(iwds_path.read_text(encoding="utf-8"))
+    ucv_lines = header(
+        "Component variations the IRG lists as unifiable or not unifiable",
+        ["iwds"],
+        [
+            f"#   iwds: {IWDS_URL} sha256:{IWDS_SHA256[:16]}",
+            "# components: space-separated shapes, each a character or a description; ⬚ is any component.",
+            "# columns: entry, list, level, components",
+            f"# rows: {len(variations)}",
+            "entry\tlist\tlevel\tcomponents",
+        ],
+    )
+    (args.out / "han-component-ucv.tsv").write_text(
+        "\n".join(ucv_lines + ["\t".join(row) for row in variations]) + "\n", encoding="utf-8"
+    )
+    print(f"{len(rows)} ideographs, {len(forms)} component forms, {len(variations)} variations -> {args.out}")
     return 0
 
 

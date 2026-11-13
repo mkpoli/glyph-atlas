@@ -60,11 +60,14 @@ through みんなで翻刻.
 - GlyphWiki glyphs: free for any use without attribution, per the site's licence page.
 - CHISE IDS: GPL-2.0-or-later, excluded from the CC BY-SA core; a separately licensed aggregate is
   possible in principle and is not planned.
-- Component tables (`data/vocab/han-ids.tsv`, `data/vocab/han-component-forms.tsv`): BabelStone
+- Component tables (`data/vocab/han-ids.tsv`, `data/vocab/han-component-forms.tsv`,
+  `data/vocab/han-component-ucv.tsv`): BabelStone
   IDS.TXT, whose header states that IDS sequences are facts not eligible for copyright and waives any
   claim to the file's format, used as public domain and credited; Unicode's
   EquivalentUnifiedIdeograph.txt (Unicode License v3); cjkvi-variants `radical-variants.txt`, used as
-  public domain like the rest of that database. BabelStone's data descends in part from Kawabata
+  public domain like the rest of that database; the IRG's lists of unifiable and non-unifiable
+  component variations from the IWDS data files, which state no licence and are used as public
+  domain, each row being a fact about two shapes. BabelStone's data descends in part from Kawabata
   Taichi's IDS, which derives from CHISE; the atlas reads only BabelStone's file.
 - IDS parts palette (`apps/review/static/palette/ids-parts.json`, record `data/sources/ids-parts.yaml`):
   the components of BabelStone's sequences (public domain), the ones hfhchan/ids v1.0.2 leaves
