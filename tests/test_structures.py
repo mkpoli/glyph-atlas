@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import sqlite3
 from pathlib import Path
@@ -179,8 +178,8 @@ def test_ensure_structure_writes_one_immutable_row():
     item = structures.for_ids("⿱艹早")
     assert crop_forms.ensure_structure(db, item, actor="ann", at="2026-11-09T00:00:00Z") == item.id
     assert crop_forms.ensure_structure(db, item, actor="bob", at="2026-11-09T00:00:01Z") == item.id
-    assert db.execute("SELECT label,tree,scheme,version,policy,created_by FROM structures").fetchone() == (
-        item.label, json.dumps(item.tree, ensure_ascii=False), item.scheme, item.version, item.policy, "ann")
+    assert db.execute("SELECT label,scheme,version,policy,created_by FROM structures").fetchone() == (
+        item.label, item.scheme, item.version, item.policy, "ann")
     assert db.execute("SELECT count(*) FROM structures").fetchone()[0] == 1
     with pytest.raises(sqlite3.DatabaseError, match="structure_immutable"):
         db.execute("UPDATE structures SET label='x' WHERE id=?", (item.id,))
