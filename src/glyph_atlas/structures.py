@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import re
+import unicodedata
 from dataclasses import dataclass
 from functools import cache
 
@@ -273,7 +274,9 @@ def _whole(char: str) -> str:
 
 def for_character(char: str) -> Structure | None:
     """The structure of a character: its first description's, or that of the character the IRG
-    unifies it with. A character with no description that names a composition has none."""
+    unifies it with. A compatibility ideograph has its unified ideograph's (說 U+F96F has 說's). A
+    character with no description that names a composition has none."""
+    char = unicodedata.normalize("NFC", char)
     for candidate in dict.fromkeys((_whole(char), char)):
         if found := _descriptions(candidate):
             return from_tree(found[0])

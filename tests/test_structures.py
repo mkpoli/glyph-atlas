@@ -89,6 +89,10 @@ def test_a_character_has_one_structure_whatever_its_regional_descriptions():
     assert structures.for_ids("⿰糸⿸耳又") == structures.for_character("緅")
 
 
+def test_a_compatibility_ideograph_has_its_unified_ideographs_structure():
+    assert structures.for_character("\uf96f") == structures.for_character("說")
+
+
 def test_a_character_described_as_itself_is_its_own_structure():
     assert structures.for_character("一").label == "一"
 
