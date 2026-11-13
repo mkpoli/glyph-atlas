@@ -3,6 +3,7 @@ import json
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 from PIL import Image
 
 from glyph_atlas import allograph_pack, form_clusters
@@ -14,7 +15,7 @@ def test_write_packs_the_family_and_leaves_out_per_holder_images(tmp_path, monke
     ids = ["codh:a", "hi:b", "hl:c", "codh:other"]
     pq.write_table(pa.table({"id": ids, "family": ["U+5019"] * 3 + ["U+4E00"], "cluster": ["small", "big", "big", "x"]}),
                    forms / "units.parquet")
-    (forms / "clusters.json").write_text(json.dumps({"families": {"U+5019": {"clusters": [{"id": "big"}, {"id": "small"}]}}}))
+    (forms / "clusters.json").write_text(json.dumps({"families": {"U+5019": {"clusters": [{"id": "big", "label": "Cluster 3"}, {"id": "small", "label": "Cluster 1"}]}}}))
     np.save(forms / "embeddings.npy", np.arange(8, dtype=np.float32).reshape(4, 2))
     (forms / "manifest.json").write_text(json.dumps({"revision": "rev1"}))
     Image.new("L", (40, 80), 30).save(tmp_path / "a.png")
@@ -27,8 +28,20 @@ def test_write_packs_the_family_and_leaves_out_per_holder_images(tmp_path, monke
     assert stats == {"pack": str(tmp_path / "out" / "U+5019.npz"), "crops": 2, "with_pixels": 1, "left_out": 1, "revision": "rev1"}
     pack = np.load(stats["pack"])
     assert pack["ids"].tolist() == ["codh:a", "hi:b"]
-    assert pack["classifier_cluster"].tolist() == [2, 1]
+    assert pack["classifier_cluster"].tolist() == [1, 3]
     assert pack["embedding"].tolist() == [[0, 1], [2, 3]]
     assert pack["size"].tolist() == [[80, 40], [0, 0]]
-    assert pack["grey"][0, :80, :40].max() == 30 and pack["grey"][0, 80:, :].min() == 255
+    assert pack["grey"][0, :80, :40].max() == 30 and pack["grey"][0, 80:, :].min() == 255 and pack["grey"][0, :, 40:].min() == 255
     assert str(pack["code_point"]) == "U+5019" and str(pack["revision"]) == "rev1"
+
+
+def test_write_refuses_a_clustering_whose_crops_left_the_corpus(tmp_path, monkeypatch):
+    forms = tmp_path / "forms"
+    forms.mkdir()
+    pq.write_table(pa.table({"id": ["codh:a", "codh:gone"], "family": ["U+5019"] * 2, "cluster": ["big", "big"]}), forms / "units.parquet")
+    (forms / "clusters.json").write_text(json.dumps({"families": {"U+5019": {"clusters": [{"id": "big", "label": "Cluster 1"}]}}}))
+    np.save(forms / "embeddings.npy", np.zeros((2, 2), np.float32))
+    monkeypatch.setattr(form_clusters, "glyphs", lambda root, wanted: [{"id": "codh:a", "corpus": "codh-full"}])
+    monkeypatch.setattr(form_clusters, "Pixels", lambda root: lambda glyph: None)
+    with pytest.raises(ValueError, match="1 clustered crops are no longer in the corpus"):
+        allograph_pack.write(tmp_path, forms, "U+5019", tmp_path / "out")

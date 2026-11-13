@@ -11,7 +11,7 @@ form cluster of each, in one `.npz` file:
     grey                 (n, 160, 160) uint8, the crop in its top-left corner on white
     size                 (n, 2) height and width of the crop inside `grey`; 0 when its pixels are not on disk
     embedding            (n, d) float32, the character classifier's penultimate layer
-    classifier_cluster   (n,) int16, numbered as the forms page numbers them, from 1, largest first
+    classifier_cluster   (n,) int16, the number in the cluster's label, as the forms page shows it
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ PACKED = ("codh-full", "hilab")
 
 
 def write(root: Path, forms: Path, code: str, out: Path) -> dict:
-    """Write `out/<code>.npz` and return its counts."""
+    """Write `out/<code>.npz` and return its counts; `left_out` are the crops of corpora outside `PACKED`."""
     import numpy as np
     import pyarrow.compute as pc
     import pyarrow.parquet as pq
@@ -41,20 +41,23 @@ def write(root: Path, forms: Path, code: str, out: Path) -> dict:
         raise ValueError(f"{code}: no clustered crops in {forms}")
     ids = units.column("id").take(rows).to_pylist()
     family = json.loads((forms / "clusters.json").read_text())["families"][code]
-    number = {c["id"]: i + 1 for i, c in enumerate(family["clusters"])}
+    number = {c["id"]: int(c["label"].removeprefix("Cluster ")) for c in family["clusters"]}
     cluster = np.array([number[c] for c in units.column("cluster").take(rows).to_pylist()], np.int16)
     embedding = np.asarray(np.load(forms / "embeddings.npy", mmap_mode="r")[rows], np.float32)
 
     pos = {g: i for i, g in enumerate(ids)}
     pixels, by_file = form_clusters.Pixels(root), defaultdict(list)
-    packed = np.zeros(len(ids), bool)
+    packed, found = np.zeros(len(ids), bool), np.zeros(len(ids), bool)
     for glyph in form_clusters.glyphs(root, set(ids)):
+        found[pos[glyph["id"]]] = True
         if glyph["corpus"] not in PACKED:
             continue
         packed[pos[glyph["id"]]] = True
         at = pixels(glyph)
         if at:
             by_file[str(at[0])].append((glyph["id"], at[1]))
+    if not found.all():
+        raise ValueError(f"{code}: {int((~found).sum())} clustered crops are no longer in the corpus; cluster again")
     grey = np.full((len(ids), EDGE, EDGE), 255, np.uint8)
     size = np.zeros((len(ids), 2), np.int32)
     for file, items in by_file.items():
