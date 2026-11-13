@@ -11,7 +11,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from glyph_atlas import representation, structures
+from glyph_atlas import han_component_variants, han_components, representation, structures
 from glyph_atlas.cli import app
 from glyph_atlas.review import crop_forms, ledger
 from glyph_atlas.review.ledger import Claim
@@ -28,12 +28,11 @@ def test_a_named_part_and_a_component_form_are_one_structure():
 
 
 def test_an_index_equivalence_is_not_a_composition():
-    # 苗/苖, 細/紳, 鴨/鴫 and 情/心 differ in a component; 田/由/申, 甲/田 and 忄/心 are
-    # radical-index rows, not composition.
+    # 苗/苖, 細/紳 and 鴨/鴫 differ in a component; 田/由/申 and 甲/田 are radical-index rows.
     assert structures.for_ids("⿱艹田").id != structures.for_ids("⿱艹由").id
     assert structures.for_ids("⿰糸田").id != structures.for_ids("⿰糸申").id
     assert structures.for_ids("⿰甲鳥").id != structures.for_ids("⿰田鳥").id
-    assert structures.for_ids("⿰忄青").id != structures.for_ids("⿰心青").id
+    assert structures.for_character("細") != structures.for_character("紳")
 
 
 def test_a_radical_form_folds_only_in_its_position():
@@ -42,23 +41,50 @@ def test_a_radical_form_folds_only_in_its_position():
 
 
 def test_a_different_arrangement_is_a_different_structure():
-    peak, = structures.for_character("峰")
-    mount, = structures.for_character("峯")
+    peak, mount = structures.for_character("峰"), structures.for_character("峯")
     assert (peak.label, mount.label) == ("⿰山夆", "⿱山夆")
     assert peak.id != mount.id
 
 
 def test_a_spelled_part_reads_as_the_character_it_spells():
-    assert [item.label for item in structures.for_character("花")] == ["⿱艸化"]
+    assert structures.for_character("花").label == "⿱艸化"
 
 
-def test_a_named_component_and_its_spelled_form_stay_distinct():
-    assert {item.label for item in structures.for_character("画")} == {"⿱一𰢵", "⿱一⿶凵由"}
+@pytest.mark.parametrize("chars", ["說説", "內内", "戶户戸", "靑青", "清淸", "吳吴呉", "煮煑"])
+def test_shapes_the_irg_unifies_are_one_structure(chars):
+    # IRG N2978, level 1: 兌 兑, 內 内, 戶 户 戸, 靑 青, 吳 吴 呉; 灬 is 火 at the bottom.
+    assert len({structures.for_character(char) for char in chars}) == 1
 
 
-def test_a_character_without_a_description_has_none():
-    assert structures.for_character("あ") == []
-    assert structures.for_character("一") == []
+def test_a_unified_shape_reads_as_the_first_its_entry_names():
+    assert structures.for_character("説").label == "⿰言兌"
+    assert structures.for_character("納").label == "⿰糸內"
+    assert structures.for_ids("⿰糹内") == structures.for_character("納")
+
+
+def test_two_characters_the_irg_lists_together_stay_apart_unless_they_are_variants():
+    # 主 and 龶 are one shape at the top of 青 (entry 201), and 住 is still ⿰亻主; level 2 lists 壬
+    # and 王 with 任 and 仼 as characters the variation tells apart.
+    assert structures.for_character("住").label == "⿰人主"
+    assert structures.for_character("任") != structures.for_character("仼")
+    assert structures.for_character("土") != structures.for_character("士")
+
+
+def test_a_character_has_one_structure_whatever_its_regional_descriptions():
+    # 胃 is ⿱田⺝ in one region and ⿱田⺼ in another; 緅 is ⿰糹取 and ⿰糸⿸耳又.
+    stomach = structures.for_character("胃")
+    assert stomach.label == "⿱田月"
+    assert structures.for_ids("⿱田⺼") == stomach
+    assert structures.for_ids("⿰糸⿸耳又") == structures.for_character("緅")
+
+
+def test_a_character_described_as_itself_is_its_own_structure():
+    assert structures.for_character("一").label == "一"
+
+
+def test_a_character_without_a_usable_description_has_none():
+    assert structures.for_character("あ") is None
+    assert structures.for_character("七") is None  # 〾⿻一乚: approximate
 
 
 def test_an_approximate_or_malformed_description_names_no_structure():
@@ -73,22 +99,28 @@ def test_a_written_description_may_keep_an_unnamed_part():
 
 
 def test_a_form_structure_comes_from_its_anchor():
-    assert [item.label for item in structures.for_representation(representation.typed("⿱⿰十十早"))] == ["⿱艸早"]
-    assert [item.label for item in structures.for_representation(representation.typed("峰"))] == ["⿰山夆"]
-    assert structures.for_representation(representation.Representation("mj", "MJ012345")) == []
+    assert structures.for_representation(representation.typed("⿱⿰十十早")).label == "⿱艸早"
+    assert structures.for_representation(representation.typed("峰")).label == "⿰山夆"
+    assert structures.for_representation(representation.Representation("mj", "MJ012345")) is None
 
 
 def test_a_representation_that_names_no_structure_returns_none():
-    assert structures.for_representation(representation.Representation("ids", "〾⿰木木")) == []
-    assert structures.for_representation(representation.Representation("ivs", "")) == []
+    assert structures.for_representation(representation.Representation("ids", "〾⿰木木")) is None
+    assert structures.for_representation(representation.Representation("ivs", "")) is None
 
 
-@pytest.mark.parametrize("char", ["峰", "峯", "花", "啓", "庶", "丏"])
+@pytest.mark.parametrize("char", ["峰", "峯", "花", "啓", "庶", "丏", "説", "靑", "胃", "戶"])
 def test_a_canonical_label_names_its_own_structure(char):
-    found = structures.for_character(char)
-    assert found
-    for item in found:
-        assert structures.for_ids(item.label) == item
+    item = structures.for_character(char)
+    assert structures.from_tree(han_component_variants.parse(item.label)) == item
+    assert structures.for_ids(item.label) == item
+
+
+def test_every_description_settles_on_a_label_that_reads_as_itself():
+    for char in list(han_components._sequences())[::40]:
+        item = structures.for_character(char)
+        if item:
+            assert structures.from_tree(han_component_variants.parse(item.label)) == item, char
 
 
 def test_an_id_is_derived_from_the_canonical_tree_and_the_policy():
@@ -101,6 +133,7 @@ def test_an_id_is_derived_from_the_canonical_tree_and_the_policy():
 def test_the_ids_version_is_the_source_files():
     source = yaml.safe_load((ROOT / "data/sources/babelstone-ids.yaml").read_text(encoding="utf-8"))
     assert structures.VERSION in source["version"]
+    assert f"File Date {structures.VERSION}" in (ROOT / "data/vocab/han-ids.tsv").read_text(encoding="utf-8")[:2000]
 
 
 def test_the_catalogue_names_the_structure_layer():
@@ -141,7 +174,13 @@ def test_a_form_structure_claim_resolves():
     assert row == ("asserted", item.id)
 
 
-def test_the_cli_prints_each_structure():
+def test_the_cli_prints_a_structure():
     result = CliRunner().invoke(app, ["structure", "峰", "峯"])
     assert result.exit_code == 0, result.output
     assert "⿰山夆" in result.output and "⿱山夆" in result.output and "st:" in result.output
+
+
+def test_the_cli_reads_a_bare_code_point():
+    result = CliRunner().invoke(app, ["structure", "5CF0", "U+8AAC"])
+    assert result.exit_code == 0, result.output
+    assert "U+5CF0 峰  ⿰山夆" in result.output and "U+8AAC 說  ⿰言兌" in result.output

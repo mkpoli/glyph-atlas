@@ -28,8 +28,8 @@ FILED = ("asserted", "accepted", "adjudicated")
 def ensure_structure(conn: sqlite3.Connection, structure: Structure, *, actor: str, at: str) -> str:
     """Write a structure's row if it is new and return its id.
 
-    The id is derived from the canonical tree and the policy, so two reviewers who derive the same
-    structure name one row. Rows are immutable; a policy change makes a new id.
+    The id is derived from the canonical text, the scheme and the policy, so two reviewers who derive
+    the same structure name one row. Rows are immutable; a policy change makes a new id.
     """
     conn.execute(
         "INSERT OR IGNORE INTO structures(id,label,tree,scheme,version,policy,created_by,created_at) "

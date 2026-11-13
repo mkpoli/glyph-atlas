@@ -28,10 +28,11 @@ and as the kana ね); a crop's own identity claim says which one it reads as.
 
 **Structure (構形).** A canonical component tree: the components a form is built from and their
 arrangement, with no stroke design. A form realizes zero, one or several structures, and a structure
-is realized by many forms; a character can have several through its forms (峰 ⿰山夆, 峯 ⿱山夆).
-An IDS is a representation of a structure, never its identity: the id is derived from the
-canonical tree and the policy version (`glyph_atlas.structures`). A reviewer's `has_structure` claim
-is the authority; the derivation from the IDS is a proposal.
+is realized by many forms. A character has one derived structure, whatever its regional glyphs,
+and a grapheme has several through its characters (峰 ⿰山夆, 峯 ⿱山夆); 說 and 説 share one. An
+IDS is a representation of a structure, never its identity: the id is derived from the canonical
+text and the policy (`glyph_atlas.structures`). A reviewer's `has_structure` claim is the
+authority; the derivation from the IDS is a proposal.
 
 **Representation.** A way of naming a form: a Unicode sequence, an Ideographic Variation Sequence, an
 MJ id, a GlyphWiki name, an IDS (kept exactly as written; a normalised IDS is only a versioned search
