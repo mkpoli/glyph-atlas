@@ -28,6 +28,17 @@ def test_a_named_part_and_a_component_form_are_one_structure():
     assert structures.for_ids("⿰亻木") == structures.for_ids("⿰人木")
 
 
+def test_a_part_spelled_with_a_read_component_is_still_named():
+    # 休 is ⿰亻木 in BabelStone; a description that writes the part ⿰人木 names the same character.
+    assert structures.for_ids("⿱⿰人木？") == structures.for_ids("⿱⿰亻木？")
+    assert structures.for_ids("⿱⿰人木？").label == "⿱休？"
+    assert structures.for_ids("⿰言⿱丷兄") == structures.for_character("說")
+
+
+def test_a_variation_selector_in_a_description_is_dropped():
+    assert structures.for_ids("⿰葛\U000e0100木") == structures.for_ids("⿰葛木")
+
+
 def test_an_index_equivalence_is_not_a_composition():
     # 苗/苖, 細/紳 and 鴨/鴫 differ in a component; 田/由/申 and 甲/田 are radical-index rows.
     assert structures.for_ids("⿱艹田").id != structures.for_ids("⿱艹由").id
