@@ -126,7 +126,11 @@
           <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if sharedWriters.has(v.code_point)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !v.widens}{mainRelation(v)}{#if crops(v)}{' · '}{/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
         {/each}
         {#each described as v (v.form ?? v.char)}
-          <span class="variant unencoded" title={crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : v.char}><FormText text={v.char} />{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</span>
+          {#if v.form}
+            <a class="variant" href={localize('/form/' + encodeURIComponent(v.form))} title={crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : v.char}><FormText text={v.char} />{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
+          {:else}
+            <span class="variant unencoded" title={crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : v.char}><FormText text={v.char} />{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</span>
+          {/if}
         {/each}
         {#if variants.derived.length}
           <details class="derived">
