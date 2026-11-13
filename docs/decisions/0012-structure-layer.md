@@ -105,11 +105,11 @@ encoded apart share a structure when only a unified component separates them (�
   structure stays unassigned.
 - The `structures` table is immutable. A canonicalization change makes new ids and leaves claims as
   they were written.
-- This change adds the canonical tree, the derivation, the `structures` table and the
-  `has_structure` predicate. The claim route, the correspondence link and the 構形 row in the picker
-  follow; the claim route also adds `structures` to the publication's ledger lists
-  (`ledger.FORM_TABLES`, `prepare_publication.LEDGER_LINES`), and until then no structure row is
-  published.
+- The site reads each character's structure from its IDS reference shards and derives none. A
+  reader names a form's structure by a character that has it (`POST /atlas/forms/<form>/structure`),
+  and the structure's row is written with its first claim. The site's database is the ledger, so
+  no publication carries structure rows to it.
+- The correspondence link and the 構形 row in the picker follow.
 - `/layers/structure` still names the IDS descriptions; when the layer's routes arrive it becomes
   `/layers/ids`, so "structure" names one thing.
 
