@@ -8,7 +8,7 @@
   import ScriptText from './ScriptText.svelte'
   import FormText from './FormText.svelte'
   import OriginText from './OriginText.svelte'
-  import { countsLabel } from '../lib/layers.js'
+  import { countsLabel, structures as readStructures } from '../lib/layers.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
   import { characterAddress, graphemeAddress } from '../lib/gallery.js'
@@ -81,6 +81,19 @@
   const written = $derived([...variants.items, ...variants.related.filter(v => v.written || writers.has(v.code_point))]
     .filter(v => !own.has(v.code_point)).sort((a, b) => writers.has(b.code_point) - writers.has(a.code_point)))
   const related = $derived(variants.related.filter(v => !v.written && !writers.has(v.code_point) && !own.has(v.code_point)))
+  // The 構形 of the grapheme's 字体, each with the characters that share it (峰 and 峯 are two, 說 and 説
+  // one). A character with no structure, and a site that knows none yet, shows no row.
+  const HAN = /^\p{Script=Han}$/u
+  const composedOf = $derived([...new Set([...members, ...written].map(v => v.char).filter(char => HAN.test(char ?? '')))].join(''))
+  let composed = $state([])
+  $effect(() => {
+    const chars = composedOf
+    composed = []
+    if (!chars) return
+    let live = true
+    readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => {})
+    return () => { live = false }
+  })
   // The described forms a reviewer said are written for this grapheme (`written_for`): a shape Unicode
   // lacks has no character page, so it joins the 字体 row as its own sequence with its crop count.
   const described = $derived(variants.forms ?? [])
@@ -108,6 +121,16 @@
         {/each}
       </div>
     </div>
+    {#if composed.length}
+      <div class="layer-row">
+        <span class="layer-label">{t('chips.structure')}</span>
+        <div class="variant-chips">
+          {#each composed as s (s.id)}
+            <span class="variant structure" title={s.chars.join(' ')}><span lang="zh">{s.label}</span>{#if [...composedOf].length > 1}<small lang="zh">{s.chars.join('')}</small>{/if}</span>
+          {/each}
+        </div>
+      </div>
+    {/if}
     <div class="layer-row">
       <span class="layer-label">{t('chips.forms')}</span>
       <div class="character-members">
@@ -240,6 +263,8 @@
   .derived summary small{font-variant-numeric:tabular-nums}
   .derived[open] summary{margin-bottom:6px}
   .variant small{font-size:11px;color:var(--muted)}
+  .variant.structure{font-size:15px}
+  .variant.structure small{font-size:15px}
   .variant small.share{color:var(--accent)}
   .word-crops{font-size:12px;color:var(--muted);align-self:center}
   .word-reading{font-size:15px;align-self:center;margin-right:4px}

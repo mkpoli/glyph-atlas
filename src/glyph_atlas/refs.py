@@ -453,6 +453,19 @@ def descriptions() -> han_component_variants.Descriptions:
     return _descriptions()
 
 
+def structure_groups(chars: str) -> dict[str, Any]:
+    """The 構形 of each character named, as groups of the characters that share one, in the order
+    named, as the Worker's `/layers/structures` answers. A character with no structure is in no
+    group."""
+    from . import structures
+
+    groups: dict[str, dict[str, Any]] = {}
+    for char in dict.fromkeys(chars):
+        if structure := structures.for_character(char):
+            groups.setdefault(structure.id, {"id": structure.id, "label": structure.label, "chars": []})["chars"].append(char)
+    return {"items": list(groups.values())}
+
+
 @cache
 def _substitution_table() -> dict[str, set[str]]:
     """Each component mapped to the ones the kept substitutions put in its place, both ways."""

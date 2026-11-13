@@ -45,6 +45,7 @@
   "bulk.report.missing": "所藏 資料에 더 以上 없음 ({count})",
   "bulk.report.unavailable": "判斷할 이미지 없음 ({count})",
   "bulk.report.unlabelled": "確認할 글자가 한 글자로 定해져 있지 않음 ({count})",
+  "chips.structure": "構成",
   "word.label": "單語",
   "word.none": "指定된 單語 없음",
   "word.set": "單語 指定",

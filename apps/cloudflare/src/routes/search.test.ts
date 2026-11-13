@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { IDS_DIGITS, SUMMARY_DIGITS, componentMatches, referenceShard } from '../atlas3Reference';
-import { choiceSpellingsQuery, headsQuery, namesQuery, idsOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
+import { choiceSpellingsQuery, headsQuery, namesQuery, idsOf, structuresOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
 
 // The edge cache.
 const edge = new Map<string, Response>();
@@ -94,6 +94,7 @@ const readings = { 'とき': ['時', '刻', '鴇', '朱鷺'], 'ね': ['子', '�
 const structures: [string, string[], { text: string; regions: string }[] | null, [string, string]?][] = [
   ['滑', ['⿰氵骨'], [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }], ['st:00000000000000000000000000000001', '⿰水骨']],
   ['骨', ['⿱⿵冂⿰丨𠃌月'], null],
+  ['磆', ['⿰石骨'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
 ];
 const substitutions: [string, string, number][] = [['氵', '水', 40], ['月', '⺼', 12], ['骨', '𩨗', 3], ['冂', '月', 2]];
 
@@ -275,6 +276,14 @@ describe("the IDS editor's structure", () => {
     expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/ids?c=%E6%BB%91&v='))).toBe(true);
     await expect(idsOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name one character.');
     await expect(idsOf(newEnv, ctx, 'https://new.test', '滑骨')).rejects.toThrow('Name one character.');
+  });
+
+  it('groups the characters named by the structure they share and leaves out one with none', async () => {
+    // 滑 U+F904 is a compatibility ideograph of 滑.
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆骨滑\uf904')).toEqual({ items: [
+      { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '磆', '\uf904'] }] });
+    expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/structures?c='))).toBe(true);
+    await expect(structuresOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name a character.');
   });
 
   it('reads the substitutes by either end of the pair', () => {

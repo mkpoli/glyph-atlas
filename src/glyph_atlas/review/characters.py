@@ -1026,6 +1026,13 @@ def router(store: Store) -> APIRouter:
         """
         return suggest(q, layer(), limit=limit)
 
+    @api.get("/layers/structures")
+    def structures(c: str = "") -> dict[str, Any]:
+        """The 構形 groups of the characters named, as the Worker answers it."""
+        if not c:
+            raise HTTPException(422, "Name a character.")
+        return refs.structure_groups(c[:48])
+
     @api.get("/layers/ids")
     def ids(c: str = "") -> dict[str, Any]:
         """What the form picker's IDS editor starts from: the character's descriptions and the
