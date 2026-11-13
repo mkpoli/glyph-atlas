@@ -58,11 +58,13 @@ export async function readingKanji(env: Env, reading: string, ctx?: ExecutionCon
   return shard && Object.hasOwn(shard, reading) ? shard[reading] : null;
 }
 
-// A character's ideographic descriptions and regional shapes, or null.
-export async function characterIds(env: Env, char: string, ctx?: ExecutionContext): Promise<{ sequences: string[]; shapes: Json[] | null } | null> {
+// A character's ideographic descriptions, regional shapes and 構形 (docs/decisions/0012), or null. A
+// shard written before the structure layer holds no third value.
+export type Structure = { id: string; label: string };
+export async function characterIds(env: Env, char: string, ctx?: ExecutionContext): Promise<{ sequences: string[]; shapes: Json[] | null; structure: Structure | null } | null> {
   const shard = await readIds(env, `${PREFIX}ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`, ctx);
   const found = shard && Object.hasOwn(shard, char) ? shard[char] : null;
-  return found ? { sequences: found[0], shapes: found[1] } : null;
+  return found ? { sequences: found[0], shapes: found[1], structure: found[2] ? { id: found[2][0], label: found[2][1] } : null } : null;
 }
 
 // Every card's name: `names` as [code point, name, occurrences], and the names that are a prefix and

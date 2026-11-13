@@ -46,8 +46,12 @@ describe('reference objects', () => {
   });
 
   it('find a structure and answer null for a character the shard lacks', async () => {
-    const { env } = bucket({ [`v3/reference/ids/${await referenceShard('姥', IDS_DIGITS)}.json.gz`]: { '姥': [['⿰女老'], null] } });
-    expect(await characterIds(env, '姥')).toEqual({ sequences: ['⿰女老'], shapes: null });
+    const { env } = bucket({
+      [`v3/reference/ids/${await referenceShard('姥', IDS_DIGITS)}.json.gz`]: { '姥': [['⿰女老'], null, ['st:0123456789abcdef0123456789abcdef', '⿰女老']] },
+      [`v3/reference/ids/${await referenceShard('峰', IDS_DIGITS)}.json.gz`]: { '峰': [['⿰山夆'], null] } });
+    expect(await characterIds(env, '姥')).toEqual({ sequences: ['⿰女老'], shapes: null,
+      structure: { id: 'st:0123456789abcdef0123456789abcdef', label: '⿰女老' } });
+    expect(await characterIds(env, '峰')).toEqual({ sequences: ['⿰山夆'], shapes: null, structure: null });
     expect(await characterIds(env, 'constructor')).toBeNull();
   });
 

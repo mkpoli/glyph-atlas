@@ -192,7 +192,7 @@ export async function idsOf(env: Env, ctx: ExecutionContext, origin: string, cha
       .slice(0, SUBSTITUTES_SHOWN);
     if (found.length) substitutes[part] = found;
   }
-  const found = { char, sequences, shapes, substitutes };
+  const found = { char, sequences, shapes, structure: described?.structure ?? null, substitutes };
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${KEPT}` } })));
   return found;
 }

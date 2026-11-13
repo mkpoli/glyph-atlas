@@ -9,7 +9,7 @@ import sys
 import pytest
 from test_atlas3_publish import ids, layout  # noqa: F401 -- `layout` is the fixture
 
-from glyph_atlas import reference_input
+from glyph_atlas import reference_input, structures
 
 
 def card(char, head=None, detail=None, members=None, occurrences=0, name=None):
@@ -149,7 +149,10 @@ def test_a_card_is_one_object_with_its_edges_and_the_layout_numbers_its_characte
     summary = bucket.objects[f"v3/reference/summary/{shard('U+3042')}.json.gz"]
     assert list(summary) == ["U+3042"] and set(summary["U+3042"]) == {"U+3042", "U+1B002"}
     assert bucket.objects["v3/reference/list/graphemes/0.json.gz"]["total"] == 2
-    assert bucket.objects[f"v3/reference/ids/{shard('好', 2)}.json.gz"] == {"好": [["⿰女子"], None]}
+    structure = structures.for_character("好")
+    assert structure.label == "⿰女子"
+    assert bucket.objects[f"v3/reference/ids/{shard('好', 2)}.json.gz"] == {
+        "好": [["⿰女子"], None, [structure.id, structure.label]]}
     assert db.execute("SELECT * FROM component_variants ORDER BY a").fetchall() == [("安", "阿", 2), ("氵", "水", 3)]
     # A component's characters by tier and size, code points as steps, flags n * 2 + direct.
     assert bucket.objects["v3/reference/components/U+5973.json.gz"] == {

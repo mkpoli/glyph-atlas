@@ -2,7 +2,7 @@
 
 import json
 
-from glyph_atlas import refs
+from glyph_atlas import refs, structures
 
 
 def test_a_form_no_character_has_is_derived_as_its_sequence_with_its_evidence():
@@ -72,6 +72,8 @@ def test_the_ids_editor_starts_from_the_characters_description_with_each_compone
     assert found["sequences"] == ["⿰𠤕⿱龴疋"]
     assert {"char": "コ", "count": 1} in found["substitutes"]["龴"]
     assert refs.ids_of("𠤕")["sequences"] == ["⿱匕矢"]
+    assert found["structure"] == {"id": structures.for_character("疑").id, "label": "⿰𠤕⿱龴疋"}
+    assert refs.ids_of("あ")["structure"] is None
     assert "失" in {row["char"] for row in refs.substitutes("矢")}
 
 
