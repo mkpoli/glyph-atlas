@@ -263,6 +263,13 @@ def test_suggest_finds_a_character_by_its_components(dataset):
         assert first["char"] == "滑" and first["rank"] == 7 and first["reason"].startswith("built from"), term
 
 
+def test_the_ids_route_gives_a_characters_descriptions(dataset):
+    found = client(dataset).get("/layers/ids", params={"c": "滑"}).json()
+    assert found["char"] == "滑" and "⿰氵骨" in found["sequences"]
+    assert client(dataset).get("/layers/ids", params={"c": "滑骨"}).status_code == 422
+    assert client(dataset).get("/layers/structure", params={"c": "滑"}).status_code == 404
+
+
 def test_suggest_reaches_historical_forms_from_the_modern_kana(dataset):
     """ネ leads to the alternate NE, ヨリ to both yori ligatures, 子 to the kana written as it."""
     api = client(dataset)

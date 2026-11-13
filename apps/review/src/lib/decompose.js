@@ -1,5 +1,5 @@
 // What the IDS editor's "Take parts from" box reads: the characters or the description typed there,
-// each character's descriptions from `/layers/structure` (BabelStone IDS) with the source regions of
+// each character's descriptions from `/layers/ids` (BabelStone IDS) with the source regions of
 // each, and the way the tree of them is stepped through by keys.
 import { isComponent, isDescription, leaves, parse, unalias } from './ids.js'
 
@@ -24,7 +24,7 @@ export function tokens(text) {
 /** The number of BabelStone's unencoded component `{n}`, or null for any other token. */
 export const unencoded = token => /^\{(\d+)\}$/.exec(token ?? '')?.[1] ?? null
 
-/** The character `/layers/structure` is asked about for a part: its variation selector dropped. */
+/** The character `/layers/ids` is asked about for a part: its variation selector dropped. */
 export const lookupChar = part => [...(part ?? '')][0] ?? ''
 
 /** Whether the structure route can be asked about `part`: one encoded component, not ？. */
