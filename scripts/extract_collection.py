@@ -20,16 +20,11 @@ parser.add_argument("--status",action="store_true")
 parser.add_argument("--pages",type=int,default=3)
 parser.add_argument("--seconds",type=int,default=600)
 parser.add_argument("--max-lines",type=int,default=64)
-parser.add_argument("--ndl-cpu",action="store_true",
-                    help="run NDL's sequence model on the CPU (faster than CUDA for its one-crop reads)")
-parser.add_argument("--ndl-threads",type=int,default=2,help="CPU threads for NDL's model with --ndl-cpu")
-parser.add_argument("--switch-ndl",action="store_true",
-                    help="re-pin the queue to this worker's NDL provider; only once every worker has stopped")
 parser.add_argument("--supplement-every",type=int,default=2,
                     help="take a supplement of a page completed under an earlier policy every N pages; 0 never")
 args = parser.parse_args()
-if min(args.pages,args.seconds,args.max_lines,args.ndl_threads) < 1 or args.supplement_every < 0:
-    parser.error("positive page/time/line/thread limits and a nonnegative supplement interval required")
+if min(args.pages,args.seconds,args.max_lines) < 1 or args.supplement_every < 0:
+    parser.error("positive page/time/line limits and a nonnegative supplement interval required")
 # Workers of this version share the queue, each holding `.worker.lock` shared; a worker of the
 # single-worker version takes it exclusively, so neither starts while the other runs.
 guard = ExitStack()
@@ -73,8 +68,7 @@ with guard:
         except TimeoutError:
             print(json.dumps({"maintenance":"another worker holds it"}),flush=True)
         try:
-            engine = Engine(ndl_cpu=args.ndl_cpu,ndl_threads=args.ndl_threads)
-            queue.pin("ndl_provider",engine.ndl_provider,replace=args.switch_ndl)
+            engine = Engine()
             result = run(queue,engine,pages=args.pages,seconds=args.seconds,
                          max_lines=args.max_lines,store=store,supplement_every=args.supplement_every)
         except Exception as exc:  # noqa: BLE001 — publish a redacted worker failure for the supervisor
