@@ -32,10 +32,9 @@ def ensure_structure(conn: sqlite3.Connection, structure: Structure, *, actor: s
     the same structure name one row. Rows are immutable; a policy change makes a new id.
     """
     conn.execute(
-        "INSERT OR IGNORE INTO structures(id,label,tree,scheme,version,policy,created_by,created_at) "
-        "VALUES(?,?,?,?,?,?,?,?)",
-        (structure.id, structure.label, json.dumps(structure.tree, ensure_ascii=False),
-         structure.scheme, structure.version, structure.policy, actor, at),
+        "INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) "
+        "VALUES(?,?,?,?,?,?,?)",
+        (structure.id, structure.label, structure.scheme, structure.version, structure.policy, actor, at),
     )
     return structure.id
 
