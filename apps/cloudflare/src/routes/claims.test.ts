@@ -374,7 +374,18 @@ describe('a form that realizes a structure', () => {
     expect((await say('峯')).structures.map((v: any) => v.label).sort()).toEqual(['⿰山夆', '⿱山夆']);
     expect((await say('峰', true)).replaced).toBe(beside);
     expect((await say('峰', true, 'other')).structures).toEqual([{ structure: above, label: '⿱山夆', by: ['reader'] }]);
-    await expect(say('峰', true)).rejects.toThrow('409 You have not said this form has the structure of 峰.');
+    await expect(say('峰', true)).rejects.toThrow('409 You have not said this form has this structure.');
+  });
+
+  it('takes a claim back by the id of its structure, and refuses one id for two requests', async () => {
+    const { env, tools, form, say, beside } = await forms();
+    const id = crypto.randomUUID();
+    await say('峰', false, 'reader', id);
+    await expect(say('峯', false, 'reader', id)).rejects.toThrow('409');
+    const taken = await setStructure(env, { id: crypto.randomUUID(), structure: beside, remove: true }, form, 'reader', tools);
+    expect(taken).toEqual({ id: form, structures: [], replaced: beside });
+    await expect(setStructure(env, { id: crypto.randomUUID(), structure: 'st:x', remove: true }, form, 'reader', tools))
+      .rejects.toThrow('422 Name a structure by its id.');
   });
 
   it('refuses a character with no structure, a mismatched id, and a form that is not there', async () => {

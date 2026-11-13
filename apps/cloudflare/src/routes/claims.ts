@@ -345,25 +345,37 @@ export async function structureId(label: string, scheme: string, policy: string)
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`structure\n${label}\n${scheme}\n${policy}`));
   return 'st:' + [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
+const STRUCTURE_ID = /^st:[0-9a-f]{32}$/;
 /** Say that a form realizes the structure of a character (`remove` false), or take back the reader's own
- *  claim (`remove` true). A form can realize several structures; each is a claim of its own. The
- *  structure's row is written with its first claim. */
+ *  claim (`remove` true), which may name the structure by its id: a claim made under an earlier policy
+ *  is one no character names any more. A form can realize several structures; each is a claim of its
+ *  own. The structure's row is written with its first claim, under the version the policy object
+ *  names at that moment. */
 export async function setStructure(env: Env, input: Json, form: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
   const ledger = ledgerTools(env, tools, ctx);
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ form, structure: input });
   const saved = await savedSubmission(env, key, signature, tools.fail);
   if (saved) return { id: form, structures: await structuresOf(env, form), replaced: saved.replaced ?? null };
   if (!FORM_ID.test(form) || !await env.ATLAS.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first()) tools.fail(404, 'No such form.');
-  const char = tools.text(input.char, 8, 'char', true)!;
-  if ([...char].length !== 1) tools.fail(422, 'Name one character.');
-  const [described, source] = await Promise.all([characterIds(env, char, ctx), structureSource(env, ctx)]);
-  const structure = described?.structure ?? tools.fail(422, `No structure is known for ${char}.`);
-  // A shard and a policy from two loads would name a row its id does not describe.
-  if (!source || await structureId(structure.label, source.scheme, source.policy) !== structure.id) tools.fail(503, 'The structures are being loaded.');
   const remove = input.remove === true;
+  let structure: { id: string; label: string }, source: Awaited<ReturnType<typeof structureSource>> = null;
+  if (remove && input.structure != null) {
+    const named = tools.text(input.structure, 64, 'structure', true)!;
+    if (!STRUCTURE_ID.test(named)) tools.fail(422, 'Name a structure by its id.');
+    structure = { id: named, label: '' };
+  } else {
+    const char = tools.text(input.char, 8, 'char', true)!;
+    if ([...char].length !== 1) tools.fail(422, 'Name one character.');
+    const [described, read] = await Promise.all([characterIds(env, char, ctx), structureSource(env, ctx)]);
+    // No policy object: no reference load has carried structures yet.
+    source = read ?? tools.fail(503, 'The structures are being loaded.');
+    structure = described?.structure ?? tools.fail(422, `No structure is known for ${char}.`);
+    // A shard and a policy from two loads would name a row its id does not describe.
+    if (await structureId(structure.label, source.scheme, source.policy) !== structure.id) tools.fail(503, 'The structures are being loaded.');
+  }
   const own = await env.ATLAS.prepare(ownStructureQuery(ownedActors(actor))).bind(form, structure.id, actor).first<{ id: string }>();
   const held = (await structuresOf(env, form)).some(value => value.structure === structure.id);
-  if (remove && !own) tools.fail(409, `You have not said this form has the structure of ${char}.`);
+  if (remove && !own) tools.fail(409, 'You have not said this form has this structure.');
   const at = new Date().toISOString();
   if (!remove && own && held) {
     await env.ATLAS.prepare('INSERT OR IGNORE INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
