@@ -261,7 +261,9 @@ def summary(counts: Counter, overlaps: list[float]) -> dict:
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("build")
+    builder = commands.add_parser("build")
+    builder.add_argument("--train", action="store_true",
+                         help="list the training books instead, as train-pages.jsonl, for models/refiner")
     runner = commands.add_parser("run")
     runner.add_argument("--cutter", default="consensus")
     runner.add_argument("--split", default="val", choices=("val", "test"))
@@ -270,7 +272,7 @@ def main():
     runner.add_argument("--records", action="store_true", help="also write one record a character")
     args = parser.parse_args()
     if args.command == "build":
-        build()
+        build(("train",), "train-pages.jsonl") if args.train else build()
     else:
         run(args)
 
