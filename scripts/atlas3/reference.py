@@ -23,8 +23,11 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
   (scripts/build_kanji_readings.py) with its kanji, most attested first, and the families of the first
   READING_CARDS of them, as `{reading: {"kanji": [...], "families": {head: {code point: data}}}}`, in
   the shard of the reading (SUMMARY_DIGITS). A kana search reads the one shard for the kanji it lists.
-- `ids/<shard>.json.gz`: each character's ideographic descriptions and regional shapes, by the
-  character itself, in the shard of the character (IDS_DIGITS).
+- `ids/<shard>.json.gz`: each character's ideographic descriptions, regional shapes and 構形
+  (`glyph_atlas.structures`: its id and label, or null), by the character itself, in the shard of the
+  character (IDS_DIGITS).
+- `structure.json.gz`: the scheme, source version and policy the shards' structures were read under,
+  which a `structures` row records.
 - `names.json.gz`: every card's name and how often it occurs, for a search by name or code point.
   `names` is `[code point, name, occurrences]` for the cards whose name says more than
   `<prefix>IDEOGRAPH-<hex of its code point>`; `plain` gives the rest as `[prefix, code points,
@@ -96,6 +99,7 @@ from load_history import built, deliver, row_statements, stamped
 from publish import BUCKET, CF, R2_REMOTE, applied, lit, send, upload
 
 from glyph_atlas import reference_input
+from glyph_atlas import structures as structure_layer
 
 SCHEMA = CF / "migrations-atlas" / "0004_reference.sql"
 PREFIX = "v3/reference/"
@@ -394,9 +398,18 @@ def translate(atlas, mirror, path, objects):
         objects.put(rel, text)
     structures = defaultdict(dict)
     for char, sequences, shapes in source("han_ids").execute("SELECT char, sequences, shapes FROM han_ids"):
-        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None]
+        try:
+            structure = structure_layer.for_character(char)
+        except ValueError:
+            # A reading that does not settle names no structure; the load goes on without it.
+            structure = None
+            notes["characters whose structure does not settle"] += 1
+        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None,
+                                                     [structure.id, structure.label] if structure else None]
     for key, chars in structures.items():
         objects.put(f"ids/{key}.json.gz", compact(dict(sorted(chars.items()))))
+    objects.put("structure.json.gz", compact({"scheme": structure_layer.SCHEME, "version": structure_layer.VERSION,
+                                              "policy": structure_layer.POLICY}))
     objects.put("names.json.gz", names_list(scratch.execute("SELECT code_point, name, occurrences FROM cards ORDER BY sort")))
     for list_name, column in (("graphemes", "several"), ("ligatures", "ligature")):
         total = scratch.execute(f"SELECT count(*) FROM cards WHERE {column}").fetchone()[0]

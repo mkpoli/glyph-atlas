@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { IDS_DIGITS, SUMMARY_DIGITS, componentMatches, referenceShard } from '../atlas3Reference';
-import { choiceSpellingsQuery, headsQuery, namesQuery, structureOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
+import { choiceSpellingsQuery, headsQuery, namesQuery, idsOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
 
 // The edge cache.
 const edge = new Map<string, Response>();
@@ -91,8 +91,8 @@ const edges: [string, string, string, string, number][] = [
   ['時', '鴇', 'variant', 'third', 1],
 ];
 const readings = { 'とき': ['時', '刻', '鴇', '朱鷺'], 'ね': ['子', '音', '値'], 'じ': ['時', '事'], 'こく': ['刻', '黒'], 'そうろう': ['候'] };
-const structures: [string, string[], { text: string; regions: string }[] | null][] = [
-  ['滑', ['⿰氵骨'], [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }]],
+const structures: [string, string[], { text: string; regions: string }[] | null, [string, string]?][] = [
+  ['滑', ['⿰氵骨'], [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }], ['st:00000000000000000000000000000001', '⿰水骨']],
   ['骨', ['⿱⿵冂⿰丨𠃌月'], null],
 ];
 const substitutions: [string, string, number][] = [['氵', '水', 40], ['月', '⺼', 12], ['骨', '𩨗', 3], ['冂', '月', 2]];
@@ -168,9 +168,9 @@ for (const [reading, kanji] of Object.entries(readings)) {
   const name = `v3/reference/readings/${await referenceShard(reading, SUMMARY_DIGITS)}.json.gz`;
   objects[name] = { ...(objects[name] as object ?? {}), [reading]: { kanji, families: familiesOf(kanji.slice(0, 49)) } };
 }
-for (const [char, sequences, shapes] of structures) {
+for (const [char, sequences, shapes, structure] of structures) {
   const name = `v3/reference/ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`;
-  objects[name] = { ...(objects[name] as object ?? {}), [char]: [sequences, shapes] };
+  objects[name] = { ...(objects[name] as object ?? {}), [char]: structure ? [sequences, shapes, structure] : [sequences, shapes] };
 }
 // Component lists as reference.component_list writes them.
 const byComponent = new Map<string, Row[]>();
@@ -268,12 +268,13 @@ describe('a component search', () => {
 
 describe("the IDS editor's structure", () => {
   it('answers with its sequences, shapes and substitutes, kept at the edge by the catalogue version', async () => {
-    expect(await structureOf(newEnv, ctx, 'https://new.test', '滑')).toEqual({ char: '滑', sequences: ['⿰氵骨'],
+    expect(await idsOf(newEnv, ctx, 'https://new.test', '滑')).toEqual({ char: '滑', sequences: ['⿰氵骨'],
       shapes: [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }],
+      structure: { id: 'st:00000000000000000000000000000001', label: '⿰水骨' },
       substitutes: { '氵': [{ char: '水', count: 40 }], '骨': [{ char: '𩨗', count: 3 }] } });
-    expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/structure?c=%E6%BB%91&v='))).toBe(true);
-    await expect(structureOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name one character.');
-    await expect(structureOf(newEnv, ctx, 'https://new.test', '滑骨')).rejects.toThrow('Name one character.');
+    expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/ids?c=%E6%BB%91&v='))).toBe(true);
+    await expect(idsOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name one character.');
+    await expect(idsOf(newEnv, ctx, 'https://new.test', '滑骨')).rejects.toThrow('Name one character.');
   });
 
   it('reads the substitutes by either end of the pair', () => {
