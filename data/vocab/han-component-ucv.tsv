@@ -1,620 +1,621 @@
 # Component variations the IRG lists as unifiable or not unifiable; see scripts/build_han_components.py.
-# source iwds: IWDS data files (UCV and NUCV lists); PD (https://github.com/yi-bai/iwds/tree/8302302d615ff1c1f60ae335b118b10060be0ed4); IRG, UCS Ideograph Unifiable Component Variations List (IRG N2978, version 2026-10-20), from the IWDS data files
+# source iwds: IWDS data files (UCV and NUCV lists); PD (https://github.com/yi-bai/iwds/tree/8302302d615ff1c1f60ae335b118b10060be0ed4); IRG, UCS Ideograph Unifiable Component Variations List (version 2026-10-20), from the IWDS data files
 #   iwds: https://raw.githubusercontent.com/yi-bai/iwds/8302302d615ff1c1f60ae335b118b10060be0ed4/iwds.xml sha256:886b426ea3d1d329
 # components: space-separated shapes, each a character or a description; ⬚ is any component.
-# columns: entry, list, level, components
+# disunified: space-separated groups of characters encoded apart although they differ by the variation.
+# columns: entry, list, level, components, disunified
 # rows: 613
-entry	list	level	components
-1	unifiable	2	壬 王 𡈼
-2	unifiable	2	舌
-3	unifiable	1	耒
-4	unifiable	1	⿱宀丯 ⿱宀丰 ⿱宀龶
-4a	unifiable	1	害 𡧱
-5	unifiable	1	丰 丯 龶
-5b	unifiable	1	契 𢍆 𢍠 𭑕 𭚘
-6	unifiable	1	丰
-7	unifiable	1	戶 户 戸
-8	unifiable	2	天 夭
-8a	unifiable	1	烕 ⿵戊天
-9	unifiable	1	兼
-11	unifiable	1	敎 教
-13	unifiable	1	卬 卭
-15	unifiable	1	歲 歳
-16	unifiable	2	叁 参
-17	unifiable	2	參 叄
-17a	unifiable	1	參 㕘
-18	unifiable	1	屯
-19	unifiable	1	反
-20	unifiable	1	𱼀
-21	unifiable	1	月 𱼀
-21a	unifiable	1	⿱髟⿰彡⬚ ⿱髟⿰氵⬚
-22	unifiable	1	丷 八
-23	unifiable	1	䒑 ⿱八一
-24	unifiable	1	半
-25	unifiable	1	平
-26	unifiable	1	龹 𠔉
-27	unifiable	1	兌 兑 兊
-27a	unifiable	1	叜
-27b	unifiable	2	𬉸 谷
-28	unifiable	1	𡭔 ⺌
-30	unifiable	1	率
-32	unifiable	1	眔 𥄳
-32a	unifiable	1	水 氺
-33	unifiable	1	羽
-34	unifiable	1	翟
-35	unifiable	1	弱
-36	unifiable	1	爫
-37	unifiable	2	十 𠂇
-38	unifiable	1	半
-39	unifiable	1	卯 
-40	unifiable	1	非
-41	unifiable	1	凢 凣
-42	unifiable	1	处
-43	unifiable	1	卧 臥
-44	unifiable	1	勺
-45	unifiable	1	卜 ⺊
-46	unifiable	1	糸 糹
-47	unifiable	2	⿰二⬚ ⿰冫⬚
-48	unifiable	1	勻 匀
-49	unifiable	2	戌 戍
-50	unifiable	1	蔑
-51	unifiable	1	盇 𥁋
-51b	unifiable	1	血
-52	unifiable	1	氐
-53	unifiable	2	月 ⺼
-54	unifiable	1	凡 凢
-55	unifiable	2	凡 卂
-56	unifiable	2	凡
-57	unifiable	1	巩
-58	unifiable	1	
-60	unifiable	1	 水 尿
-61	unifiable	1	永
-61a	unifiable	2	永 𣱵
-62	unifiable	1	亠
-63	unifiable	1	广
-64	unifiable	2	亽 亼
-65	unifiable	1	龍
-66	unifiable	1	丹
-67	unifiable	1	与
-68	unifiable	1	甫 ⿺𤰔丶
-69	unifiable	1	甬 ⿱龴田
-69b	unifiable	1	勇 ⿱⺈男 ⿱刀男
-70	unifiable	1	吿 告 ⿱𠂒龴
-70b	unifiable	1	呆 𣎼
-71	unifiable	1	唐
-72	unifiable	2	士 𰀁
-73	unifiable	1	周
-74	unifiable	1	畀 𢌿
-75	unifiable	1	冉
-76	unifiable	1	冓
-77	unifiable	1	舍 舎
-78	unifiable	1	 𭃂
-79	unifiable	2	 𭃂 冄
-80	unifiable	2	彐 𫜹 ⺕
-82	unifiable	1	 𰀂 𰀄
-82a	unifiable	2	⿱⬚ ⿱⬚𰀄 ⿱⬚亡
-83	unifiable	2	毌 田
-84	unifiable	2	另 叧 𠮠
-85	unifiable	1	坙 巠
-86	unifiable	1	㴳
-87	unifiable	2	圣 𢀖
-88	unifiable	2	圼 𭥐
-89	unifiable	2	𱼭 𬛸
-90	unifiable	2	舀 𱬹 ⿱爫罒
-91	unifiable	1	角
-92	unifiable	2	夂 夊
-92a	unifiable	2	歹
-93	unifiable	2	亏 亐
-93b	unifiable	1	雩 𩁹
-94	unifiable	2	峀
-95	unifiable	1	画
-96	unifiable	2	屮 山
-97	unifiable	1	电 
-98	unifiable	1	臿 𢆍 𦥛
-100	unifiable	1	羊 𦍌
-101	unifiable	1	善
-102	unifiable	1	聿 
-103	unifiable	1	丑
-104	unifiable	1	丸
-105	unifiable	1	耳
-106	unifiable	1	刃 刄
-107	unifiable	1	匆
-108	unifiable	1	爽 𡙁
-109	unifiable	1	⿻巾㸚 ⿻巾𠈌 
-109b	unifiable	1	廷 𢌜
-109c	unifiable	2	余
-109d	unifiable	1	𧵩 ⿱𠆴貝 責 ⿱束貝
-109e	unifiable	2	畬 畲 𤲞
-109f	unifiable	1	𨑲 迋
-110	unifiable	1	具
-111	unifiable	1	直 ⿱𥃭心
-112	unifiable	1	眞 真
-113	unifiable	1	県
-114	unifiable	2	且 旦
-114a	unifiable	2	助 𦔳
-115	unifiable	1	查 査
-116	unifiable	1	亶 ⿱㐭且 𮧊 ⿱面旦
-117	unifiable	1	尢 𡯁
-118	unifiable	2	冃 日 曰
-119	unifiable	2	儿 几
-119a	unifiable	2	冗 𠕴
-120	unifiable	2	己 㔾
-121	unifiable	2	己 巳
-122	unifiable	2	己 已
-123	unifiable	2	巳 㔾
-124	unifiable	1	䙴
-125	unifiable	1	𠬝 㞋
-126	unifiable	2	夲 本
-127	unifiable	2	义 叉
-128	unifiable	1	㠯
-129	unifiable	2	么 幺
-130	unifiable	1	𠄢
-132	unifiable	2	谷 𧮫
-132a	unifiable	2	由 𠙹 凷 𠙽
-132b	unifiable	1	寕 𡨴
-132c	unifiable	2	夐
-133	unifiable	1	产 ⿱文厂
-133a	unifiable	1	彦 ⿸产𡿨
-134	unifiable	1	鬲
-136	unifiable	1	甚
-137	unifiable	1	灰
-138	unifiable	1	禸
-139	unifiable	1	禸
-139a	unifiable	2	具 ⿱目大
-139b	unifiable	1	菴 𤲅
-140	unifiable	2	匕 𠤎
-141	unifiable	2	七 匕 𠤎
-141a	unifiable	2	幼 㓜
-141b	unifiable	2	刀 力
-141c	unifiable	2	尼
-141d	unifiable	2	倉 𫝉 ⿱亽君 ⿱亼君
-141e	unifiable	2	攴 支
-142	unifiable	1	巨
-143	unifiable	2	亡 亾 兦
-144	unifiable	1	丗 𠀍
-145	unifiable	1	寧
-146	unifiable	2	入 𠆢
-147	unifiable	2	夾 㚒
-148	unifiable	1	內 内
-149	unifiable	1	刀 𠂊 ⺈ 勹
-149a	unifiable	2	 ⿱⺈𠔿 ⿱刀㓁
-149b	unifiable	2	負 𧴥
-150	unifiable	2	丆 厂
-151	unifiable	1	北
-151a	unifiable	1	農 𭆒
-151b	unifiable	1	⿱亠子 ⿱𠂉子
-151c	unifiable	1	乞 𠧒
-151d	unifiable	1	哀 𭈆 ⿳𠂉口𧘇
-151e	unifiable	2	衣 ⿱𠂉𧘇
-152	unifiable	2	卝 艹
-153	unifiable	1	兹 玆 茲
-154	unifiable	2	𠦄 ⿱十卄
-155	unifiable	1	華
-156	unifiable	1	垂
-157	unifiable	1	異
-158	unifiable	1	畢 𭺾
-159	unifiable	2	襾 覀
-160	unifiable	1	龜
-161	unifiable	1	𠁁 𬻞 𠨣
-162	unifiable	2	𦣝 𦣞 ⿰㇓臣
-163	unifiable	2	臣 𦣞
-164	unifiable	2	姫 姬
-165	unifiable	1	煕 𤋮
-166	unifiable	1	凞
-167	unifiable	1	𠘑
-168	unifiable	2	臼 𦥑 ⿱丿罒
-169	unifiable	1	𦥔
-170	unifiable	1	叟 ⿱申又
-171	unifiable	1	电 
-172	unifiable	1	奄 𡘹
-173	unifiable	1	臾 㬰 
-173a	unifiable	1	寅 𡩟
-174	unifiable	1	巢
-175	unifiable	1	寛 寬
-176	unifiable	1	冊 册 𠕁
-177	unifiable	1	𠕋
-178	unifiable	1	丽
-178a	unifiable	2	沓 㳫
-178b	unifiable	2	春 舂
-179	unifiable	1	廾
-180	unifiable	2	幵 开
-181	unifiable	1	并 幷
-182	unifiable	2	毋 毌 母
-183	unifiable	1	毎 每
-184	unifiable	1	黑 黒
-184a	unifiable	2	墨 𱗐
-185	unifiable	1	熏 𤋱
-186	unifiable	2	東 柬
-187	unifiable	2	曽 曾 𭦌
-188	unifiable	1	會 㑹 ⿳亼田日
-188a	unifiable	2	雨
-188b	unifiable	2	⿰孛⬚ ⿰⿱龸子⬚
-189	unifiable	1	免
-190	unifiable	1	卑
-191	unifiable	1	⺶ 
-193	unifiable	1	𠫓 ⿱亠厶
-194	unifiable	2	夂 攵 文
-195	unifiable	1	瓜
-196	unifiable	1	丩
-197	unifiable	2	巿 市
-199	unifiable	2	艮 
-200	unifiable	1	叀 
-201	unifiable	1	主 龶
-202	unifiable	1	敖
-202a	unifiable	1	𧹘
-204	unifiable	1	成
-205	unifiable	1	及
-206	unifiable	1	止 
-207	unifiable	1	 𠂛
-208	unifiable	1	堽
-209	unifiable	2	匚 匸
-210	unifiable	1	㐄
-210a	unifiable	2	㐄 牛
-211	unifiable	1	牙
-212	unifiable	1	旡
-213	unifiable	1	兓 兟
-213a	unifiable	2	朁 替 㬱
-214	unifiable	2	兀 几
-215	unifiable	1	今 𫝆
-216	unifiable	1	 ⿱乛耳
-217	unifiable	1	𠃬 
-218	unifiable	1	𢏚 
-219	unifiable	1	冫 ⺀
-220	unifiable	2	殳 𠬛 
-220a	unifiable	2	殳 𪠲 ⿱𠀃乂 ⿱口攵 ⿱𠚤攵 ⿱𠚤又
-221	unifiable	2	丌 兀
-222	unifiable	2	儿 八
-222a	unifiable	2	圥 ⿱土八 ⿱㞢儿 ⿱㞢八
-222b	unifiable	2	冏 囧
-223	unifiable	1	穴
-224	unifiable	2	㕣 公
-225	unifiable	1	垔
-226	unifiable	1	楞
-227	unifiable	2	賣 𧶠 ⿳山大買
-228	unifiable	2	朮 术
-229	unifiable	2	林 𣏟
-230	unifiable	2	麻
-230a	unifiable	2	⿳𠂊灬⬚ ⿳𠂉灬⬚ ⿳亠灬⬚
-230b	unifiable	2	⿳𠂊⬚ ⿳𠂉⬚
-231	unifiable	1	亇
-232	unifiable	1	尓 尔 尒
-232a	unifiable	1	幾 㡬
-232b	unifiable	1	泡 ⿰氵⿱𠂉巳
-232c	unifiable	1	垂 𡸁
-232d	unifiable	1	虎 ⿸虍人
-232e	unifiable	1	朵 朶
-232f	unifiable	2	𧾷 𤴔
-232g	unifiable	2	羲 𦏁
-232h	unifiable	2	戊 戉
-232i	unifiable	1	婬
-232j	unifiable	2	夗 夘
-233	unifiable	1	木 朩
-234	unifiable	1	𠂢 𧘇
-235	unifiable	1	乂
-236	unifiable	1	八
-237	unifiable	1	入
-238	unifiable	1	网 𦉳
-239	unifiable	2	大 犬
-241	unifiable	1	者
-242	unifiable	1	杀 𣏂
-243	unifiable	2	免 兔
-244	unifiable	1	莧 萈
-245	unifiable	1	辶
-246	unifiable	2	豕 豖
-247	unifiable	2	叉 㕚
-248	unifiable	1	丈 𠀋
-249	unifiable	2	丸 九
-250	unifiable	2	尢 尤
-251	unifiable	1	单 単
-252	unifiable	2	玉 王
-254	unifiable	1	曳 曵
-255	unifiable	2	朮 𣎳
-256	unifiable	2	友 犮 叐
-256c	unifiable	1	戾 戻 𭠅
-258	unifiable	1	筑 𥬑
-260	unifiable	1	𢛳 ⿳十罒心
-261	unifiable	1	徴 徵
-262	unifiable	1	微
-263	unifiable	1	𡵂 𡵉 ⿳一几 ⿳一几
-264	unifiable	1	隆 𨺓
-264a	not-unifiable		 ⿱士冖
-265	unifiable	1	壳
-266	unifiable	1	𥞤 ⿳士冖禾 ⿱士𠖀
-267	unifiable	1	寜 寧
-268	unifiable	1	 
-270	unifiable	2	巛 𡿧
-271	unifiable	1	鳯 鳳
-272	unifiable	1	皐 臯 ⿱白干 ⿱白丰
-274	unifiable	1	戋 㦮
-275	unifiable	1	蚩 𧈪 ⿱山虫
-275a	unifiable	2	虫 䖝
-276	unifiable	1	堇 ⿱廿⿻口土
-277	unifiable	1	宐
-278	unifiable	1	㬅 𭦟
-279	unifiable	1	焭 煢
-280	unifiable	1	底 㡳
-281	unifiable	1	奥 奧
-282	unifiable	1	粤 粵
-283	unifiable	2	少 𣥂
-284	unifiable	1	𡭴 𡭽 𡮂
-285	unifiable	1	篡 簒
-286	unifiable	1	吕 呂
-287	unifiable	1	卑 𤰞
-288	unifiable	1	虽 𧈧
-289	unifiable	1	肙 䏍
-290	unifiable	1	兖 兗
-291	unifiable	1	衮 袞
-292	unifiable	2	員 貟
-293	unifiable	1	 ⿱口𧘇 ⿱厶𧘇
-294	unifiable	1	厤 𠩵
-295	unifiable	1	缶 𠙻
-296	unifiable	1	羕 𣴎
-297	unifiable	1	羡 羨
-298	unifiable	1	盗 盜
-298b	unifiable	1	㿜
-298c	unifiable	1	印
-298d	unifiable	1	玄 𤣥
-298e	unifiable	1	力 𠠲
-298f	unifiable	1	 ⿱𠂉天 ⿱𠂉夫
-298g	unifiable	1	僕 ⿰彳菐
-298h	unifiable	1	條 𭛹
-298i	unifiable	1	決 决
-298j	unifiable	1	对 対
-298k	unifiable	1	奎
-298l	unifiable	1	睿 䜭
-298m	unifiable	1	匝
-298n	unifiable	1	聊 𦕅
-298o	unifiable	2	屰 𭁄
-298p	unifiable	1	齊
-298q	unifiable	1	㡀 𰏘
-298r	unifiable	1	㐱 ⿱大彡
-298s	unifiable	1	辛 𨐌
-298t	unifiable	1	屑 㞕
-298u	unifiable	2	𰕎
-298v	unifiable	2	辜
-298w	unifiable	2	𦉍 罌 ⿱䀠瓦 甖 䀠 賏
-298x	unifiable	2	埀
-298y	unifiable	2	⿰亻丨 亻
-298z	unifiable	2	專
-298za	unifiable	2	來
-298zb	unifiable	1	⿱丵𠮛 ⿱丵口
-298zc	unifiable	2	康 𥹺
-298zd	unifiable	2	彖 𧰲
-299	unifiable	1	黃 黄
-300	unifiable	1	堇 菫 𦰌
-301	unifiable	1	𦰩  ⿱艹㕦
-303	unifiable	1	廿 龷
-304	unifiable	1	寉 隺
-304b	unifiable	2	貝 ⿱且八
-305	unifiable	1	⿱ＸＹ ⿸ＸＹ
-306	unifiable	1	睿 𥈠
-306b	unifiable	1	⿸虍⿳一八𥃦 ⿳⺊冖⿳七一⿱八𥃦 ⿸𬟩目 ⿳⺊冖⿳七火目
-307	unifiable	1	⿰ＸＹ ⿺ＸＹ
-307b	unifiable	1	⿰⬚焦 ⿱⿰⬚隹灬
-307c	unifiable	2	⿱艹⿰⬚⬚ ⿰⬚⿱艹⬚
-307d	unifiable	1	啟 啓
-307e	unifiable	2	⿱雨⿰⬚⬚ ⿰⬚⿱雨⬚
-307f	unifiable	2	⿱𥫗⿰⬚⬚ ⿰⬚⿱𥫗⬚
-308	unifiable	1	尨
-309	unifiable	1	取
-310	unifiable	1	梟
-311	unifiable	1	虍
-312	unifiable	2	土 士
-312a	unifiable	2	吉 𠮷
-312b	unifiable	1	𠚏
-312c	unifiable	1	𢛢
-312d	unifiable	2	⿱𣪊⬚ ⿹𣪊⬚
-312e	unifiable	2	未 末
-313	unifiable	1	吳 吴 呉
-314	unifiable	1	争 爭
-315	unifiable	1	為 爲
-316	unifiable	1	口 
-317	unifiable	1	回 囬 囙 囘
-317c	unifiable	1	嗇 𮧌
-318	unifiable	1	圖 圗
-319	unifiable	1	靑 青 𤯞 𤯝
-320	unifiable	1	昷 𥁕
-321	unifiable	1	同 
-322	unifiable	1	魚 𩵋 𮫬 𮫮 𤉯 ⿱𧢲大 𤋳
-322b	unifiable	1	耎 䎡
-323	unifiable	1	曷 ⿱日匂
-324	unifiable	1	賴 頼
-325	not-unifiable		閒 間
-326	unifiable	2	丏 丐
-327	unifiable	1	疐 𤴡
-328	unifiable	1	乑 𧰨
-329	unifiable	1	眾 衆
-329a	unifiable	1	聚 𬥁
-330	unifiable	1	壽 夀
-331	unifiable	1	兎 兔
-332	unifiable	1	衛 衞
-333a	unifiable	2	禀 稟
-334	unifiable	1	廩 廪
-335	unifiable	1	頙 𩑠
-336	unifiable	2	釆 采
-337	unifiable	1	亷 廉
-338	unifiable	1	冎
-339	unifiable	1	骨
-340	unifiable	2	乙 𠃉
-341	unifiable	1	稽 𥡴
-341b	unifiable	1	𥻳 ⿰𥘈籴
-342	unifiable	1	舉 擧 𦦙
-342a	unifiable	1	举 挙
-343	unifiable	1	卻 郤
-343a	unifiable	2	卩 阝
-344	unifiable	1	切 ⿰土刀
-345	unifiable	2	巟 㐬
-346	unifiable	2	凡 丸
-348	unifiable	1	𡝤 婁
-349	unifiable	1	犀 𫵠
-350	unifiable	1	荒
-351	unifiable	1	罔 㒺
-352	unifiable	1	𣎆 𦝠 𦟀
-352a	unifiable	1	吂 ⿱亾口
-352b	unifiable	1	𮊵 羸 ⿳亡罒⿰羘几 ⿱吂⿰羘几
-352c	unifiable	2	⿳亡罒⿲月⬚丸 ⿳𠫓罒⿲月⬚丸
-353	unifiable	1	门
-354	unifiable	1	言
-354a	unifiable	1	簔
-354b	unifiable	2	尢 兀 九 尣 元 兄
-354c	unifiable	2	⿱大干 𭑃 ⿱大𰀁 𡗢
-354d	unifiable	2	爪 瓜 𤓰
-354e	unifiable	1	刧 刼 劫
-354f	unifiable	2	鬲 𮫙
-354g	unifiable	2	弓 𠔃
-354h	unifiable	2	達 𨔶 逹
-354i	unifiable	2	䂓 規
-354j	unifiable	1	呙 ⿱口禸
-355	unifiable	2	皀 
-356	unifiable	1	皀 𠧢
-357	unifiable	1	
-358	unifiable	1	飠 𩙿
-359	unifiable	1	象 𧰼
-360	unifiable	1	巤
-361	unifiable	1	囪 囱
-362	unifiable	1	示 礻
-363	unifiable	2	丬 爿
-363a	not-unifiable		壮 壯
-363b	not-unifiable		状 狀
-363c	not-unifiable		妆 妝
-364	unifiable	1	臧
-365	unifiable	1	庶 庻
-366	unifiable	1	𠔥
-367	unifiable	1	軗 𣪠
-368	unifiable	2	业
-369	unifiable	1	並
-370	unifiable	1	虚 虛
-370a	unifiable	1	戲 戱
-371	unifiable	1	蒙 𫎇
-372	unifiable	1	彐 彑
-373	unifiable	2	彐 彑
-374	unifiable	2	寽 ⿳爫丿寸
-375	unifiable	1	䍃
-376	unifiable	2	甾 畄 𠚋
-381	unifiable	1	㱿 𣪊
-382	unifiable	2	⿰⬚冒 ⿰⬚冒 ⿰⬚冐
-383	unifiable	1	畫 畵
-384	unifiable	1	俞 兪
-386	unifiable	1	恵 惠
-387	unifiable	1	専 專
-388	unifiable	1	晉 晋 𣈆
-389	unifiable	1	疌 ⿳⺊彐龰 ⿳⺊龰
-390	unifiable	2	缶 𦈢 𬼉
-391	unifiable	1	羮 羹
-392	unifiable	1	带 帯
-393	unifiable	1	龰 
-394	unifiable	2	函
-395	unifiable	1	亟 凾
-397	unifiable	1	𣦼 𣦻 ⿰歹又
-397a	unifiable	1	殄 𱥃
-397b	unifiable	2	歹 歺
-398	unifiable	2	吅 ⿴口丨
-399	not-unifiable		龠 𠎤 ⿳亼罒𠕁
-400	not-unifiable		帯 帶
-400a	unifiable	1	𢃄 帶
-401	unifiable	1	奂 奐 烉
-401b	not-unifiable		⿳⺈罒火 烉
-401c	not-unifiable		𭑏 奐
-402	not-unifiable		网 罒
-402a	unifiable	2	罒 𦉪 罓
-403	not-unifiable		火 灬
-404	not-unifiable	1	艸 艹
-405	unifiable	1	攵 攴
-406	not-unifiable		亀 龜
-407	unifiable	1	龜 ⿷目
-408	unifiable	1	工
-409	not-unifiable		𩫏
-410	unifiable	1	乖 ⿱丿
-411	unifiable	2	⿲人⬚人 ⿲口⬚口 ⿲厶⬚厶 ⿲人⬚口 ⿲口⬚厶 ⿲厶⬚人 ⿲人⬚厶 ⿲口⬚人 ⿲厶⬚口
-412	unifiable	2	乎 𠂠
-413	unifiable	1	黎 𪏭
-414	unifiable	1	𡍮 ⿱一
-415	unifiable	1	尞 𤊽
-416	unifiable	1	票 㶾 ⿳覀二火
-417	unifiable	2	⿱⬚月 ⿱⬚肉
-418	unifiable	2	眉 𭕘 睂
-419	unifiable	1	尋 𡬶
-420	unifiable	2	𦙃 ⿱⿺𠃊口目
-421	unifiable	1	覃 ⿱覀𤰞
-422	unifiable	2	朿 束
-423	unifiable	1	走 𧺆 𣥚
-424	unifiable	1	奇 竒
-425	unifiable	1	或 𢦙
-426	unifiable	1	⿱止缶
-427	unifiable	1	卵 𡖉
-427a	unifiable	2	夘 卯
-428	unifiable	2	久 乆
-429	unifiable	2	⿱八夂 ⿱小又
-430	unifiable	1	氵 氺
-430a	unifiable	1	⿱䒑八 ⿳⿰一一一⿰一一
-431	unifiable	2	⿳一八个 𣎴
-432	unifiable	1	各 ⿱叉口
-433	unifiable	1	𣶒 ⿲丿⿳八一八丨
-434	unifiable	1	𧴲 𧴪
-435	unifiable	2	⿱上⬚ ⿱匕⬚ ⿱⿺乚二⬚
-436	unifiable	1	⿰龺⿱大⬚ ⿰龺⿱人⬚ ⿰龺⿱𠂉⬚
-437	unifiable	1	享 ⿳亠丷子
-438	unifiable	2	凹
-439	unifiable	1	瓦 𭂬 ⿵几二 𭺛 𭺜
-440	unifiable	1	𡉵 ⿰土𪟨 ⿻北乚
-441	unifiable	1	鬼
-442	unifiable	1	粦 ⿱𰉗⿰夕𰀁 ⿱𰉗舛
-442a	unifiable	1	桀 𱣎
-443	unifiable	1	鹿 𢉖
-444	unifiable	1	⿱此⬚
-445	unifiable	2	⿱死⬚ ⿱夗⬚
-446	unifiable	1	豈 ⿱止豆
-447	unifiable	1	㖾
-448	unifiable	1	賓 賔
-449	unifiable	1	罙
-450	unifiable	1	夒
-451	unifiable	1	辰 𮝾 𫝕
-452	unifiable	1	枼 𭩠 𣏋 𣐂 枽
-453	unifiable	2	氐 𰚷 弖 𢆰
-454	unifiable	1	⿱廿巾 ⿱廿帀 ⿱龷巾
-454a	unifiable	1	滿 𱧼
-455	unifiable	1	詹 𦧕 𭉵
-456	unifiable	1	雚 𮥿
-456a	unifiable	1	⿱龷隹 ⿱业隹
-457	unifiable	2	解 觧
-458	unifiable	2	翏
-459	unifiable	1	番 畨
-460	unifiable	2	易 昜
-461	unifiable	2	虖 𧆠
-462	unifiable	1	脊
-463	unifiable	1	𫥎
-464	unifiable	1	頟 𬱃
-464b	unifiable	1	𱂥 ⿰名页
-465	unifiable	1	曼 𭦟 𭦗
-466	unifiable	1	祭 𥙊
-467	unifiable	2	旨 𣅀
-468	unifiable	2	肉 𠕎 𮌇 ⿴囗仌
-469	unifiable	2	史 㕜
-470	unifiable	2	丮 𢩦 𠃨
-471	unifiable	2	奈 柰 𥘾
-472	unifiable	1	韋 𮧯
-473	unifiable	1	其
-474	unifiable	1	矛 𭿵
-475	unifiable	1	允 𠃔
-476	unifiable	2	蟸 蠡
-477	unifiable	1	繭 𧁧
-478	unifiable	2	忄 巾
-479	unifiable	2	朋 ⿰月习
-480	unifiable	2	蒲
-481	unifiable	1	宣 𭁴
-482	unifiable	1	隂 陰
-483	unifiable	1	畱 𤲢
-484	unifiable	2	𣬉
-485	unifiable	2	隷 隸 𨽻 𨽾 𫕙 𨽹
-486	unifiable	2	虍 𭅰 𮓗 𭅯 𬻉
-487	unifiable	2	兜 兠
-488	unifiable	2	老 𦒳
-489	unifiable	2	叚 𫨻
-490	unifiable	2	莽 莾
-491	unifiable	2	彝 𢑱 𢑴 彛
-492	unifiable	2	鼎 𣇓 𪔂
-493	unifiable	2	离 𮂬
-494	unifiable	2	𣳾 𭜮
-495	unifiable	2	囟 𦥓 𠚁 ⿱人凶 ⿱八⿶凵人 𲘟
-496a	unifiable	2	𢽠
-496b	unifiable	2	𢽃
+entry	list	level	components	disunified
+1	unifiable	2	壬 王 𡈼	任仼 壬王𡈼 抂𢪭 枉𣐅 狂狅 現𧠒 祍𥘛 紝𥿁 軖軠 迋𨑳 閏𨳝 頊𩑙 㕵𠰃 䚾𧥶 𡔞𤣴 𦬬𦬰 𨓏𨓒 𩂊𩂐 忹𢗖
+2	unifiable	2	舌	
+3	unifiable	1	耒	
+4	unifiable	1	⿱宀丯 ⿱宀丰 ⿱宀龶	
+4a	unifiable	1	害 𡧱	
+5	unifiable	1	丰 丯 龶	
+5b	unifiable	1	契 𢍆 𢍠 𭑕 𭚘	
+6	unifiable	1	丰	𠕛𠱬
+7	unifiable	1	戶 户 戸	
+8	unifiable	2	天 夭	乔𡗤 天夭 洖𣵗 祅祆 蚕𧉕 訞䚶
+8a	unifiable	1	烕 ⿵戊天	
+9	unifiable	1	兼	
+11	unifiable	1	敎 教	
+13	unifiable	1	卬 卭	卬卭 䒢𦭎 䭹𩢞 𩾱𪀃
+15	unifiable	1	歲 歳	
+16	unifiable	2	叁 参	毵𣮟
+17	unifiable	2	參 叄	慘𢠊 㺑𤡙
+17a	unifiable	1	參 㕘	
+18	unifiable	1	屯	
+19	unifiable	1	反	
+20	unifiable	1	𱼀	
+21	unifiable	1	月 𱼀	
+21a	unifiable	1	⿱髟⿰彡⬚ ⿱髟⿰氵⬚	
+22	unifiable	1	丷 八	丷八 𠔅𡰤
+23	unifiable	1	䒑 ⿱八一	位𠇸 兮𠔃 䆥𡩙 𧿝𧿪
+24	unifiable	1	半	
+25	unifiable	1	平	
+26	unifiable	1	龹 𠔉	龹𠔉 𠈖𠈫
+27	unifiable	1	兌 兑 兊	
+27a	unifiable	1	叜	䤇𨡻 䤹𨨿 𠊯𠋢 𠝠𠝬 𣮯𣮸 𥈃𥈟 𥔉𥔑
+27b	unifiable	2	𬉸 谷	
+28	unifiable	1	𡭔 ⺌	当𢑐
+30	unifiable	1	率	
+32	unifiable	1	眔 𥄳	瘝𤸄 眔𥄳 鰥𩹌 𦾽𦿚
+32a	unifiable	1	水 氺	
+33	unifiable	1	羽	
+34	unifiable	1	翟	
+35	unifiable	1	弱	
+36	unifiable	1	爫	
+37	unifiable	2	十 𠂇	十𠂇 邗䢴
+38	unifiable	1	半	
+39	unifiable	1	卯 	
+40	unifiable	1	非	
+41	unifiable	1	凢 凣	
+42	unifiable	1	处	
+43	unifiable	1	卧 臥	卧臥
+44	unifiable	1	勺	
+45	unifiable	1	卜 ⺊	
+46	unifiable	1	糸 糹	糸糹
+47	unifiable	2	⿰二⬚ ⿰冫⬚	
+48	unifiable	1	勻 匀	
+49	unifiable	2	戌 戍	戌戍 荗𦮠 㖅𠲌
+50	unifiable	1	蔑	
+51	unifiable	1	盇 𥁋	盇𥁋
+51b	unifiable	1	血	
+52	unifiable	1	氐	
+53	unifiable	2	月 ⺼	幐㬺 朌肦 朏胐 朐胊 朓脁 朘脧 朣膧 朦䑃 朧𦢫 胶㬵 脼𣍷 腘𦛢 膒𦟾 㬶𦛩 㬻䐠 䏞𦚜 𣍦𦙿 𣎅𦝲 𣎛𦠈 𣎟𦠅 𦊈𦚋 𦡂𦡦
+54	unifiable	1	凡 凢	
+55	unifiable	2	凡 卂	凡卂 杋㭄 煢𠙦 芃䒖 茕䒮 訉訊 軐軓 迅𨑙 骪𩨖 鳵𩾨 㷀𤈺 㺬𤣲 䭵𩡰 𤜢𤜦 𤬨𤬫 𥃴𥃵
+56	unifiable	2	凡	𩖛𩖜
+57	unifiable	1	巩	
+58	unifiable	1		
+60	unifiable	1	 水 尿	
+61	unifiable	1	永	
+61a	unifiable	2	永 𣱵	銢𨥭
+62	unifiable	1	亠	
+63	unifiable	1	广	
+64	unifiable	2	亽 亼	亼亽
+65	unifiable	1	龍	
+66	unifiable	1	丹	
+67	unifiable	1	与	
+68	unifiable	1	甫 ⿺𤰔丶	
+69	unifiable	1	甬 ⿱龴田	
+69b	unifiable	1	勇 ⿱⺈男 ⿱刀男	
+70	unifiable	1	吿 告 ⿱𠂒龴	
+70b	unifiable	1	呆 𣎼	
+71	unifiable	1	唐	
+72	unifiable	2	士 𰀁	
+73	unifiable	1	周	
+74	unifiable	1	畀 𢌿	畀𢌿 㑭𠉶 𡌸𡌹 𢍚𤱿 𢮅𢮧
+75	unifiable	1	冉	
+76	unifiable	1	冓	
+77	unifiable	1	舍 舎	舍舎
+78	unifiable	1	 𭃂	
+79	unifiable	2	 𭃂 冄	那𨙻 𦐃𦐎 𩑞𩑫
+80	unifiable	2	彐 𫜹 ⺕	当𢑐
+82	unifiable	1	 𰀂 𰀄	
+82a	unifiable	2	⿱⬚ ⿱⬚𰀄 ⿱⬚亡	
+83	unifiable	2	毌 田	毌田
+84	unifiable	2	另 叧 𠮠	另叧𠮠 𠕕𠡋
+85	unifiable	1	坙 巠	
+86	unifiable	1	㴳	
+87	unifiable	2	圣 𢀖	劲𠡍 圣𢀖 柽𣐕 泾𣲾 烃𤇂 硁𥑋 胫𦙾
+88	unifiable	2	圼 𭥐	𧨚𧨤
+89	unifiable	2	𱼭 𬛸	涅湼 㘿𡍤 㷐𤉊 䛼𧨚 𣒋𣕕 𦛠𦞆
+90	unifiable	2	舀 𱬹 ⿱爫罒	
+91	unifiable	1	角	𣁀𧥙
+92	unifiable	2	夂 夊	夂夊 汷𣲋
+92a	unifiable	2	歹	
+93	unifiable	2	亏 亐	亏亐 杇𣏓 㢪𢎰 𨚛𨚤
+93b	unifiable	1	雩 𩁹	
+94	unifiable	2	峀	
+95	unifiable	1	画	
+96	unifiable	2	屮 山	匩𠥆 屮山 屵𠨲 屾艸 崮𡹍 巂雟 芔𡷈 豈𧯛 㞣𡵳 㞭𡗡 㞷𡉚 𠕓𡴊 𡎨𡴠 𡯪𡯭 𡴁𡵏 𡴇𡵞 𡴎𡶫 𡴛𡹆 𡴜𡸱 𡴞𡹿 𡴥𡼁 𡴦𡼡 𢔷𢔺 𢼟𢽃 𣳫𣵭 𤈹𤉞 𦭠𦭫
+97	unifiable	1	电 	
+98	unifiable	1	臿 𢆍 𦥛	歃㰱 臿𢆍𦥛 䮢𩣙 𠜕𠝞 𤿪𥀈
+100	unifiable	1	羊 𦍌	羊𦍌
+101	unifiable	1	善	
+102	unifiable	1	聿 	
+103	unifiable	1	丑	
+104	unifiable	1	丸	执𢩾
+105	unifiable	1	耳	
+106	unifiable	1	刃 刄	釰釼
+107	unifiable	1	匆	
+108	unifiable	1	爽 𡙁	爽𡙁 𠓵𠓷
+109	unifiable	1	⿻巾㸚 ⿻巾𠈌 	
+109b	unifiable	1	廷 𢌜	
+109c	unifiable	2	余	
+109d	unifiable	1	𧵩 ⿱𠆴貝 責 ⿱束貝	
+109e	unifiable	2	畬 畲 𤲞	
+109f	unifiable	1	𨑲 迋	
+110	unifiable	1	具	
+111	unifiable	1	直 ⿱𥃭心	
+112	unifiable	1	眞 真	窴𥧑
+113	unifiable	1	県	
+114	unifiable	2	且 旦	且旦 伹但 刞𠛣 助𠡎 呾咀 坥坦 妲姐 怚怛 抯担 柤柦 樝𣙁 沮泹 炟𤇅 狙狚 疸疽 砠𥑲 祖𥘵 笡笪 組䋎 罝𦊥 胆䏣 苴𦬹 蛆䖧 袒袓 觛𧣞 詚詛 趄䞡 跙𨀏 鉏鉭 靻靼 鴠鴡 㡹㡺 䣯𨠚 䪶𩑰 䱇䱉 䵣𪐵 𡨋𡨕 𢲶𢴈 𤇁𤇙
+114a	unifiable	2	助 𦔳	
+115	unifiable	1	查 査	
+116	unifiable	1	亶 ⿱㐭且 𮧊 ⿱面旦	
+117	unifiable	1	尢 𡯁	
+118	unifiable	2	冃 日 曰	抇𢪏 晟𠕠 杲𠕖 汨汩 𠕝𣆚 𠕦𣈯
+119	unifiable	2	儿 几	儿几 允𠘭 充𠘺 冗㓁 売壳 尣𡯂 鈗𨥡 鳬𠒎 𢪚𢪨
+119a	unifiable	2	冗 𠕴	
+120	unifiable	2	己 㔾	卺巹 屺𡴱 岂𡴼 己㔾 忋𢖭 氾𣲆 芑𦫾 𥐗𥐦 𨊠𨊲
+121	unifiable	2	己 巳	圮圯 妃𡚱 屺𡵆 己巳 改攺 杞𣏌 汜𣲆 釲𨥈 魢𩵗 㞯𡵒 㰝𣢇 𡊈𡊓 𢚓𢚢 𤓿𤔂 巽𢁉
+122	unifiable	2	己 已	圮𡉏 屺𡴾 己已 玘𤣱 䄫𥝗 𢩵𢩽
+123	unifiable	2	巳 㔾	厄𢀴 巳㔾 砈𥑉 𡱹𡲏 𡴱𡵆 𦫾𦬊
+124	unifiable	1	䙴	
+125	unifiable	1	𠬝 㞋	㞋𠬝 𤵓𤵧 𨋁𨋚
+126	unifiable	2	夲 本	㤒㤓
+127	unifiable	2	义 叉	义叉 舣䑡 靫𩉠 䂘𥐟 𤜥𤜫
+128	unifiable	1	㠯	
+129	unifiable	2	么 幺	么幺 庅𢇝 懡𢣗 㭃𣏈 𢩻𢩼 𩑑𩑗
+130	unifiable	1	𠄢	
+132	unifiable	2	谷 𧮫	谷𧮫
+132a	unifiable	2	由 𠙹 凷 𠙽	由𠙹 𥇗𥇤 𨸸𫔼
+132b	unifiable	1	寕 𡨴	
+132c	unifiable	2	夐	
+133	unifiable	1	产 ⿱文厂	
+133a	unifiable	1	彦 ⿸产𡿨	
+134	unifiable	1	鬲	𦦝𦦧
+136	unifiable	1	甚	
+137	unifiable	1	灰	𤉺𤊮
+138	unifiable	1	禸	
+139	unifiable	1	禸	
+139a	unifiable	2	具 ⿱目大	
+139b	unifiable	1	菴 𤲅	
+140	unifiable	2	匕 𠤎	匕𠤎 㔫𡯃 𡚧𡚨
+141	unifiable	2	七 匕 𠤎	叱𠮟 梍梎 皀皂 𡨇𡨗 𣳃𣳊 𨚛𨚤 𩵏𩵐 𩾔𩾕
+141a	unifiable	2	幼 㓜	
+141b	unifiable	2	刀 力	
+141c	unifiable	2	尼	
+141d	unifiable	2	倉 𫝉 ⿱亽君 ⿱亼君	
+141e	unifiable	2	攴 支	
+142	unifiable	1	巨	
+143	unifiable	2	亡 亾 兦	
+144	unifiable	1	丗 𠀍	丗𠀍
+145	unifiable	1	寧	
+146	unifiable	2	入 𠆢	亼𠓛 仐𠓝 仒𠓞 仚屳 仝㒰 入𠆢 尒𡭗 氼𣱸 㞤㞥 䓥𠌓 𠈮𧾺 𠌆𠓳 𡌵𦚙 𥃦𥃮 𦔴𦔵
+147	unifiable	2	夾 㚒	夾㚒 陜陝 鿃䀹 䛟𧧵
+148	unifiable	1	內 内	
+149	unifiable	1	刀 𠂊 ⺈ 勹	刀𠂊 召𠮥 𡴲𡴻 𥄘𥄟
+149a	unifiable	2	 ⿱⺈𠔿 ⿱刀㓁	
+149b	unifiable	2	負 𧴥	
+150	unifiable	2	丆 厂	丆厂
+151	unifiable	1	北	
+151a	unifiable	1	農 𭆒	
+151b	unifiable	1	⿱亠子 ⿱𠂉子	
+151c	unifiable	1	乞 𠧒	
+151d	unifiable	1	哀 𭈆 ⿳𠂉口𧘇	
+151e	unifiable	2	衣 ⿱𠂉𧘇	
+152	unifiable	2	卝 艹	卝艹 苜𥄕 苟茍 萑雈 𠇎𢌯 𢇂𢇅 𦍋𦬒 𦤄𦤅 𨵿𨶚
+153	unifiable	1	兹 玆 茲	兹玆茲 磁𥔵 𡙛𡙠
+154	unifiable	2	𠦄 ⿱十卄	卉𠦄 𢱭𢳎 𨒍𨓄
+155	unifiable	1	華	
+156	unifiable	1	垂	
+157	unifiable	1	異	
+158	unifiable	1	畢 𭺾	
+159	unifiable	2	襾 覀	𧟠𧟡 𧟤𧟥 𧟱𧟵 𧟳𧟶
+160	unifiable	1	龜	䶯𡤞 𤒅𪚱
+161	unifiable	1	𠁁 𬻞 𠨣	
+162	unifiable	2	𦣝 𦣞 ⿰㇓臣	𦣝𦣞
+163	unifiable	2	臣 𦣞	宦宧 弫弬 栕𣐵 臣𦣞 茝茞 賾𦣱 頣頤 𠱸𠲬 𤇴𤇸 𤱥𤱻 𦂳𦃂 𦚟𦚠 𩠝𩠡 𩠞𩠢
+164	unifiable	2	姫 姬	
+165	unifiable	1	煕 𤋮	煕𤋮
+166	unifiable	1	凞	
+167	unifiable	1	𠘑	
+168	unifiable	2	臼 𦥑 ⿱丿罒	臼𦥑 萖𦯵
+169	unifiable	1	𦥔	
+170	unifiable	1	叟 ⿱申又	
+171	unifiable	1	电 	電𩃓 𠀻𠒞 𥥗𥦣 𩄱𩆇
+172	unifiable	1	奄 𡘹	奄𡘹 淹𣼜 腌𦟩 䁆𥉱
+173	unifiable	1	臾 㬰 	斔螤 臾㬰 𥑷𥔢 𧊠𧍳 𪀙𪃪 䶾𣢧
+173a	unifiable	1	寅 𡩟	
+174	unifiable	1	巢	剿𠟾 勦𠢶 薻𧃡 轈𨏋 䜈𧭄 𠞰𠟿
+175	unifiable	1	寛 寬	
+176	unifiable	1	冊 册 𠕁	𠂥𠂨 𣆑𣌧 𦙱𦙽
+177	unifiable	1	𠕋	𠛹𠜂
+178	unifiable	1	丽	
+178a	unifiable	2	沓 㳫	
+178b	unifiable	2	春 舂	
+179	unifiable	1	廾	𥫠𥫲
+180	unifiable	2	幵 开	刑𠛬 幵开 𢆚𢆞 𣥎𣥭
+181	unifiable	1	并 幷	偋𠌸 剏𠝵 𠆕𢆣 𥰅𥲂 𧩱𧫮
+182	unifiable	2	毋 毌 母	𦰓𦲝
+183	unifiable	1	毎 每	
+184	unifiable	1	黑 黒	
+184a	unifiable	2	墨 𱗐	
+185	unifiable	1	熏 𤋱	熏𤋱 爋𤑛
+186	unifiable	2	東 柬	倲𠋖 埬堜 娻媡 徚𢔅 揀㨂 朄𣌾 東柬 棟楝 欄𣟬 氭𣱨 涷湅 瑓𤦪 菄萰 蝀𧍴 闌䦨 鯟鰊 㖦𠷬 𤗗𤗛 𧡍𧡴 𧹩𧹯
+187	unifiable	2	曽 曾 𭦌	
+188	unifiable	1	會 㑹 ⿳亼田日	會㑹 繪𦅩
+188a	unifiable	2	雨	
+188b	unifiable	2	⿰孛⬚ ⿰⿱龸子⬚	
+189	unifiable	1	免	
+190	unifiable	1	卑	
+191	unifiable	1	⺶ 	
+193	unifiable	1	𠫓 ⿱亠厶	
+194	unifiable	2	夂 攵 文	夂攵 夑𣀢 汷㳊 𡕕𢻯 𡙋𡙐 𩅗𩅬
+195	unifiable	1	瓜	
+196	unifiable	1	丩	
+197	unifiable	2	巿 市	巿市 杮柿 㤄𢘥 𩦔𩦴
+199	unifiable	2	艮 	
+200	unifiable	1	叀 	𢮛𢮨
+201	unifiable	1	主 龶	主龶 𧉉𧉶
+202	unifiable	1	敖	厫𠪭 㥿𢢡 摮𢶗 滶𣿗 熬𤏺 獒𤢝 聱𦗷 蔜𦽠 贅𧸟 遨𨗯 䦋𨲶 鰲𩼡 䵅𪍾 鼇𪓾
+202a	unifiable	1	𧹘	
+204	unifiable	1	成	
+205	unifiable	1	及	
+206	unifiable	1	止 	
+207	unifiable	1	 𠂛	
+208	unifiable	1	堽	
+209	unifiable	2	匚 匸	匚匸 𠥇𠥵
+210	unifiable	1	㐄	
+210a	unifiable	2	㐄 牛	
+211	unifiable	1	牙	
+212	unifiable	1	旡	
+213	unifiable	1	兓 兟	
+213a	unifiable	2	朁 替 㬱	
+214	unifiable	2	兀 几	兀几 冗𠕶 抏𢪁 芁𦬂 髠髡 𠘩𠤐 𡵂𡵧 𥃯𥃺 𥩕𥩗 𧿊𧿙 𩁸𩂁
+215	unifiable	1	今 𫝆	今𫝆
+216	unifiable	1	 ⿱乛耳	
+217	unifiable	1	𠃬 	𥙸𥛈
+218	unifiable	1	𢏚 	𢄛𢅂 𤛒𤛴 𦒛𦒞 𦒫𦒯 𦓃𦓆 𨢫𨣊
+219	unifiable	1	冫 ⺀	
+220	unifiable	2	殳 𠬛 	股𦘿 𤣻𤤄
+220a	unifiable	2	殳 𪠲 ⿱𠀃乂 ⿱口攵 ⿱𠚤攵 ⿱𠚤又	𣳚没 𥏏殹 𨫁𨨻 𨱮𨱚 𬽹伇 𭃒𠚹 𭛠役 𭠘投 𭮈殁 𭮭𫨻 𭮰㱿 𭮱殷 𭮶殸 𭮺𣪵 𭮼毄 𮎆般 𮘂設 𮝇軗
+221	unifiable	2	丌 兀	丌兀 亓元 㚦𡚲 䟚𧿙 𥾎𥾕 𧿁𧿄
+222	unifiable	2	儿 八	儿八 四𡆦 貌𧳖 䡚𨌓 𡿚𡿟 𣴟𣴼 𦎊𦎔 𦛤𦛮
+222a	unifiable	2	圥 ⿱土八 ⿱㞢儿 ⿱㞢八	
+222b	unifiable	2	冏 囧	
+223	unifiable	1	穴	
+224	unifiable	2	㕣 公	
+225	unifiable	1	垔	
+226	unifiable	1	楞	
+227	unifiable	2	賣 𧶠 ⿳山大買	賣𧶠
+228	unifiable	2	朮 术	怷怸 朮术 蒁𦳯
+229	unifiable	2	林 𣏟	林𣏟 菻𦱍 潸𣽽
+230	unifiable	2	麻	痲痳
+230a	unifiable	2	⿳𠂊灬⬚ ⿳𠂉灬⬚ ⿳亠灬⬚	
+230b	unifiable	2	⿳𠂊⬚ ⿳𠂉⬚	
+231	unifiable	1	亇	
+232	unifiable	1	尓 尔 尒	𣍨𦙳 𧦽𧧂 𤱏𬏂
+232a	unifiable	1	幾 㡬	
+232b	unifiable	1	泡 ⿰氵⿱𠂉巳	
+232c	unifiable	1	垂 𡸁	
+232d	unifiable	1	虎 ⿸虍人	
+232e	unifiable	1	朵 朶	
+232f	unifiable	2	𧾷 𤴔	
+232g	unifiable	2	羲 𦏁	
+232h	unifiable	2	戊 戉	
+232i	unifiable	1	婬	
+232j	unifiable	2	夗 夘	
+233	unifiable	1	木 朩	木朩
+234	unifiable	1	𠂢 𧘇	
+235	unifiable	1	乂	
+236	unifiable	1	八	
+237	unifiable	1	入	
+238	unifiable	1	网 𦉳	网𦉳
+239	unifiable	2	大 犬	伏㐲 吠𠯈 大犬 夶㹜 奖𤟒 奘𤞛 奜猆 忕𢗗 扷𢪺 杕枤 汏汱 獘𡚁 芖𦬫 闃𨵢 馱䭾 默𪐝 㚟𤟭 㧋𢪂 㺉𣪨 䲦𩿁 䲪𩿛 𡉑𡉩 𡗻𤝟 𢁖𤜧 𤣂𤳦 𦨐𦨚 𩡱𩡷 器𠾖 突𥤮 臭𦤀 類𩔖
+241	unifiable	1	者	
+242	unifiable	1	杀 𣏂	杀𣏂 𨐖𨐘 𨦅𨦾 𩲺𩳘 𩳃𩳙
+243	unifiable	2	免 兔	免兔 冕𠕤 凂𠗟 娩婏 寃𡨚 挽𢯂 梚㭸 莬菟 鮸𩸃 㕙𠬍 㜶𡤎 𠠤𠠥 𥦙𥦱 𥱃𥳿 𩣦𩣮 𩾃𩾅
+244	unifiable	1	莧 萈	莧萈 𦎽𦏊
+245	unifiable	1	辶	
+246	unifiable	2	豕 豖	椓㭬 涿𣵠 篴𥳤 豕豖 豚䐁 豛𧰵 豰𣫔 㞘𡱰 䖶𧌮 䦠𨴯 𦎇𦎜 𧱎𧱧 𧱓𧱦 琢𤥨
+247	unifiable	2	叉 㕚	叉㕚 䀑𥄗
+248	unifiable	1	丈 𠀋	丈𠀋
+249	unifiable	2	丸 九	丸九 㐜𠂃
+250	unifiable	2	尢 尤	厖𠩇 娏𡛪 尢尤 尨𡯎 蛖𧊑 訧𧥩 䓼𦳨 𡯙𡯟 𡯤𡯮 𡯺𩑣 𡰍𡰓 𡰎𩾵 𡰗𡰜 𦬍𦬓
+251	unifiable	1	单 単	戦𢧐
+252	unifiable	2	玉 王	匡匤 抂𢫛 橍𣜝 玉王 玨珏 玴𤤙 琞𣈂 璋𤨼 璧𤩹 筐筺 蚟𧉣 閏閠 飪𩚽 鳿𩿱 㓘𤥔 㻗𤦅 㼁𤩺 𠾽𡀊 𡉠𡊩 𤣔𤣗 𤦂𤦒 𤫊𩆜 𨙼𨚝
+254	unifiable	1	曳 曵	曳曵 𢘽𢚕 𤤺𤥟
+255	unifiable	2	朮 𣎳	朮𣎳
+256	unifiable	2	友 犮 叐	友犮 妭𡛀 盋𥁊 翇𦐓 胈𦙓 苃茇 鮁𩵼 㧞𢬌 𢇬𢇷
+256c	unifiable	1	戾 戻 𭠅	
+258	unifiable	1	筑 𥬑	筑𥬑
+260	unifiable	1	𢛳 ⿳十罒心	聴𦗟
+261	unifiable	1	徴 徵	
+262	unifiable	1	微	
+263	unifiable	1	𡵂 𡵉 ⿳一几 ⿳一几	𡵂𡵉 𢼸𣁋
+264	unifiable	1	隆 𨺓	隆𨺓
+264a	not-unifiable		 ⿱士冖	壳売 瑴㲄 觳𣫅 鷇𪃟 𣒆𣓘 𣚯𣫎 𣪬𤚲 𣫃𣫌 𦾫𧂣 𧎅𧏚 𪅏𪆪
+265	unifiable	1	壳	𣒆𣓘 𪅏𪆪
+266	unifiable	1	𥞤 ⿳士冖禾 ⿱士𠖀	濲瀔
+267	unifiable	1	寜 寧	
+268	unifiable	1	 	潟澙 獡𤡯
+270	unifiable	2	巛 𡿧	巛𡿧 淄湽 錙鍿 𧇄𧇕
+271	unifiable	1	鳯 鳳	
+272	unifiable	1	皐 臯 ⿱白干 ⿱白丰	嘷噑 暭曍 槹橰 獋獔 皐臯
+274	unifiable	1	戋 㦮	戋㦮 栈桟 笺䇳
+275	unifiable	1	蚩 𧈪 ⿱山虫	蚩𧈪 𨔢𨖀
+275a	unifiable	2	虫 䖝	
+276	unifiable	1	堇 ⿱廿⿻口土	斳𣂷 騹𩥕 𡅤𡅸
+277	unifiable	1	宐	
+278	unifiable	1	㬅 𭦟	㬅𭦟
+279	unifiable	1	焭 煢	橩𣜧 㒌𠎽 𦺺𦽓
+280	unifiable	1	底 㡳	底㡳
+281	unifiable	1	奥 奧	
+282	unifiable	1	粤 粵	
+283	unifiable	2	少 𣥂	少𣥂
+284	unifiable	1	𡭴 𡭽 𡮂	虩𧈅 隙𨻶 𡄼𡅗 𡭴𡭽𡮂 𧎾𧐑 𧯈𧯊
+285	unifiable	1	篡 簒	
+286	unifiable	1	吕 呂	
+287	unifiable	1	卑 𤰞	俾𠈷 卑𤰞 捭𢬽 渒𣴪 脾𦜉 𠩲𠩶
+288	unifiable	1	虽 𧈧	虽𧈧 雖𨿽
+289	unifiable	1	肙 䏍	姢娟 涓㳙 琄㻆 駽𩢺 鵑䳌 㯞𣚓 䧎𨹆 𢛋𢞈 𦊰𦋀 𦮌𦮻
+290	unifiable	1	兖 兗	萒𦳆
+291	unifiable	1	衮 袞	磙𥕦 蓘蔉 𨍽𨎊
+292	unifiable	2	員 貟	傊𠋏 員貟 塤𡎖 鶰𪃰 𧶀𧶊 𩆹𩇂 𤠔𪻅
+293	unifiable	1	 ⿱口𧘇 ⿱厶𧘇	袁𡋡𡊮 逺遠
+294	unifiable	1	厤 𠩵	厤𠩵 厯𠪱 暦曆 歴歷 瀝𤁋 𠪠𦠓 𠪾𢟍
+295	unifiable	1	缶 𠙻	愮𢝾 缶𠙻 𠙄𠙈
+296	unifiable	1	羕 𣴎	漾𣻌 羕𣴎
+297	unifiable	1	羡 羨	羡羨 𦅗𦆀
+298	unifiable	1	盗 盜	盗盜
+298b	unifiable	1	㿜	
+298c	unifiable	1	印	
+298d	unifiable	1	玄 𤣥	
+298e	unifiable	1	力 𠠲	
+298f	unifiable	1	 ⿱𠂉天 ⿱𠂉夫	族𪯶
+298g	unifiable	1	僕 ⿰彳菐	
+298h	unifiable	1	條 𭛹	
+298i	unifiable	1	決 决	
+298j	unifiable	1	对 対	
+298k	unifiable	1	奎	
+298l	unifiable	1	睿 䜭	
+298m	unifiable	1	匝	
+298n	unifiable	1	聊 𦕅	
+298o	unifiable	2	屰 𭁄	
+298p	unifiable	1	齊	
+298q	unifiable	1	㡀 𰏘	
+298r	unifiable	1	㐱 ⿱大彡	
+298s	unifiable	1	辛 𨐌	
+298t	unifiable	1	屑 㞕	
+298u	unifiable	2	𰕎	
+298v	unifiable	2	辜	
+298w	unifiable	2	𦉍 罌 ⿱䀠瓦 甖 䀠 賏	
+298x	unifiable	2	埀	
+298y	unifiable	2	⿰亻丨 亻	
+298z	unifiable	2	專	
+298za	unifiable	2	來	
+298zb	unifiable	1	⿱丵𠮛 ⿱丵口	
+298zc	unifiable	2	康 𥹺	
+298zd	unifiable	2	彖 𧰲	
+299	unifiable	1	黃 黄	
+300	unifiable	1	堇 菫 𦰌	堇菫𦰌 謹𧫴
+301	unifiable	1	𦰩  ⿱艹㕦	
+303	unifiable	1	廿 龷	
+304	unifiable	1	寉 隺	寉隺 搉㩁 榷𣙜
+304b	unifiable	2	貝 ⿱且八	
+305	unifiable	1	⿱ＸＹ ⿸ＸＹ	
+306	unifiable	1	睿 𥈠	叡𠮉 濬𤀹 睿𥈠 𧯕𧯖
+306b	unifiable	1	⿸虍⿳一八𥃦 ⿳⺊冖⿳七一⿱八𥃦 ⿸𬟩目 ⿳⺊冖⿳七火目	
+307	unifiable	1	⿰ＸＹ ⿺ＸＹ	勀勊 訄𧥠 鳩𩾛 𠅣𡕧 𠓓𨮠 𡚮𡚰 𡥸𡲪
+307b	unifiable	1	⿰⬚焦 ⿱⿰⬚隹灬	
+307c	unifiable	2	⿱艹⿰⬚⬚ ⿰⬚⿱艹⬚	
+307d	unifiable	1	啟 啓	
+307e	unifiable	2	⿱雨⿰⬚⬚ ⿰⬚⿱雨⬚	
+307f	unifiable	2	⿱𥫗⿰⬚⬚ ⿰⬚⿱𥫗⬚	
+308	unifiable	1	尨	
+309	unifiable	1	取	
+310	unifiable	1	梟	
+311	unifiable	1	虍	
+312	unifiable	2	土 士	凷𠙽 吉𠮷 土士 垚壵 墫壿 壯𡉟 志𢖽 扗𢩿 㐊㐋 㽵𤴶 𧺑𧺔
+312a	unifiable	2	吉 𠮷	
+312b	unifiable	1	𠚏	
+312c	unifiable	1	𢛢	
+312d	unifiable	2	⿱𣪊⬚ ⿹𣪊⬚	
+312e	unifiable	2	未 末	
+313	unifiable	1	吳 吴 呉	
+314	unifiable	1	争 爭	挣掙 狰猙 睁睜
+315	unifiable	1	為 爲	
+316	unifiable	1	口 	亭𠅘 亮𠅙 亳𠅢 諄𧩽 𧓂𧓚
+317	unifiable	1	回 囬 囙 囘	回囬 廻廽 蛔蜖 𩞒𩞮 卣㔽 㤙𢙍 𠰸𠲛 𤤨㻁 𪜭佪 𬵈鮰 𭰊洄
+317c	unifiable	1	嗇 𮧌	
+318	unifiable	1	圖 圗	
+319	unifiable	1	靑 青 𤯞 𤯝	
+320	unifiable	1	昷 𥁕	𩟣𩟤
+321	unifiable	1	同 	𦦝𦦧 𦦞𦦡
+322	unifiable	1	魚 𩵋 𮫬 𮫮 𤉯 ⿱𧢲大 𤋳	蘅𧄇 蘓𧁨 衡𢖍 魚𩵋 鮕𩾀 𩷟𩾉 𩸙𩸺 𩼇𩾍
+322b	unifiable	1	耎 䎡	
+323	unifiable	1	曷 ⿱日匂	
+324	unifiable	1	賴 頼	賴頼 𪈈𪈐
+325	not-unifiable		閒 間	僩僴 嫺𡢃 憪𢢀 撊𢵧 橌橺 澗㵎 燗𤏐 癇癎 瞯瞷 磵礀 簡𥳑 繝𦅘 蕑蕳 襇襉 覵覸 譋𧬘 鐗鐧 閒間 鬜鬝 鷳鷼 𡼏𡼥 𧯎𧯑 𨅍𨆀 𨣇𨣉 𨰓𨰝 𩻘𩻾 𪙨𪙩
+326	unifiable	2	丏 丐	丏丐 髩𩬆 䞛𧺪 𡜷𡝏 𡧍𡧎 𡪛𧶎 𢗔𢗙 𣴩𣵈 𧉄𧉝
+327	unifiable	1	疐 𤴡	疐𤴡 𠏴𠐑 𢷐𢷟 𨆫𨇈
+328	unifiable	1	乑 𧰨	𣽍𣾄
+329	unifiable	1	眾 衆	潀潨 𩅉𩅧
+329a	unifiable	1	聚 𬥁	
+330	unifiable	1	壽 夀	擣𢷬 燽𤐭
+331	unifiable	1	兎 兔	寃𡨘
+332	unifiable	1	衛 衞	讆讏 躗躛
+333a	unifiable	2	禀 稟	凛凜 壈𡒄 廩廪 懍懔 檁檩 燣燷 癛癝 禀稟 𡀀𡀫 𨎹𨎺
+334	unifiable	1	廩 廪	廩廪
+335	unifiable	1	頙 𩑠	頙𩑠
+336	unifiable	2	釆 采	宷寀 釆采 䎹𦖗 𠀭𤔁 𥹄𨤐
+337	unifiable	1	亷 廉	亷廉 濂濓 燫𤒄 蠊𧒲 鐮䥥 𢅏𢅖 𤅃𤅄 𧸖𧸜 𩼔𩼖
+338	unifiable	1	冎	
+339	unifiable	1	骨	
+340	unifiable	2	乙 𠃉	乙𠃉
+341	unifiable	1	稽 𥡴	稽𥡴
+341b	unifiable	1	𥻳 ⿰𥘈籴	
+342	unifiable	1	舉 擧 𦦙	擧舉𦦙 攑㩮 櫸欅𣟱
+342a	unifiable	1	举 挙	
+343	unifiable	1	卻 郤	卻郤 𦃁𦃛
+343a	unifiable	2	卩 阝	
+344	unifiable	1	切 ⿰土刀	𢗧𢘰
+345	unifiable	2	巟 㐬	巟㐬 鯍𩶶 䀮𥆨 𢂙𢂠 𥿼𦀠 𧧢𧨆
+346	unifiable	2	凡 丸	丸凡
+348	unifiable	1	𡝤 婁	婁𡝤 數𢿙 㜢𡡎 𣰝𣰢
+349	unifiable	1	犀 𫵠	
+350	unifiable	1	荒	𤠛𤠤 𥠸𥡃
+351	unifiable	1	罔 㒺	罔㒺 蝄𧍑
+352	unifiable	1	𣎆 𦝠 𦟀	嬴𡣍 羸𦏞 贏𦢼
+352a	unifiable	1	吂 ⿱亾口	
+352b	unifiable	1	𮊵 羸 ⿳亡罒⿰羘几 ⿱吂⿰羘几	
+352c	unifiable	2	⿳亡罒⿲月⬚丸 ⿳𠫓罒⿲月⬚丸	
+353	unifiable	1	门	
+354	unifiable	1	言	
+354a	unifiable	1	簔	
+354b	unifiable	2	尢 兀 九 尣 元 兄	兀尢 卼尯 尬𡯓 尰𡰁 尳𡰅 㞊𥚋 䲫𡰎 𠚯𡯇 𡰝𡰞 𡵈𡵉 𦬂𦬍 𩱽𩲄 九尢 尬𠆷 尳𩨔 旭𡯙 頄𡯺 𠄁𡯾 𠠵𡯄 𡯎𢒂 𡯥𧈤 𡰎𩾛 𧗝𧗢
+354c	unifiable	2	⿱大干 𭑃 ⿱大𰀁 𡗢	
+354d	unifiable	2	爪 瓜 𤓰	
+354e	unifiable	1	刧 刼 劫	
+354f	unifiable	2	鬲 𮫙	
+354g	unifiable	2	弓 𠔃	
+354h	unifiable	2	達 𨔶 逹	
+354i	unifiable	2	䂓 規	
+354j	unifiable	1	呙 ⿱口禸	
+355	unifiable	2	皀 	即卽 哏唣 根梍梎 槩㮣 泿𣴡 𣢣𣢼
+356	unifiable	1	皀 𠧢	匓𠣿 廏𢋁 皀𠧢 㲃𣪘 𠛵𠜷
+357	unifiable	1		
+358	unifiable	1	飠 𩙿	
+359	unifiable	1	象 𧰼	象𧰼
+360	unifiable	1	巤	
+361	unifiable	1	囪 囱	囪囱
+362	unifiable	1	示 礻	𥜨𥜪
+363	unifiable	2	丬 爿	丬爿 酱𨡓 𠬧𤕭 𢈧𢉎
+363a	not-unifiable		壮 壯	
+363b	not-unifiable		状 狀	
+363c	not-unifiable		妆 妝	
+364	unifiable	1	臧	
+365	unifiable	1	庶 庻	庶庻 𡂪𡂭
+366	unifiable	1	𠔥	
+367	unifiable	1	軗 𣪠	墼𡐊 軗𣪠 𣤖𣤢 𤮈𤮛
+368	unifiable	2	业	㗼𡁖 𩑃𩑄
+369	unifiable	1	並	
+370	unifiable	1	虚 虛	
+370a	unifiable	1	戲 戱	
+371	unifiable	1	蒙 𫎇	曚𣋡 靀𩆬 䙩𧞑 𤯼𤯾 𧭊𧭙
+372	unifiable	1	彐 彑	彙彚 𡩀𡩚 𨔡𨔵
+373	unifiable	2	彐 彑	彛彜
+374	unifiable	2	寽 ⿳爫丿寸	
+375	unifiable	1	䍃	愮𢝾
+376	unifiable	2	甾 畄 𠚋	巢巣 甾畄
+381	unifiable	1	㱿 𣪊	㱿𣪊
+382	unifiable	2	⿰⬚冒 ⿰⬚冒 ⿰⬚冐	冒冐 媢𡝭 帽㡌 𤊻焨 瑁𤦛 艒䑵 㪞𢽢 㴘𣶀 𢝌𢛡 𣔺𣓍 𩐲𩐯
+383	unifiable	1	畫 畵	畫畵
+384	unifiable	1	俞 兪	
+386	unifiable	1	恵 惠	鏸𨫍
+387	unifiable	1	専 專	
+388	unifiable	1	晉 晋 𣈆	瑨𤨁
+389	unifiable	1	疌 ⿳⺊彐龰 ⿳⺊龰	倢偼 啑𠸝 捷㨗 睫𥈤 萐𦵉 蓵𦻴 誱𧪌 𣓉𣕹 𧐥𧑻
+390	unifiable	2	缶 𦈢 𬼉	卸缷 摇𢳸 欫缼 珤𤥖 磘𥕬 祹𥚬 缶𦈢 罅𦉑 罎𦉡 衘䘖 醄𨡒 㗸𠾑 𤮫𤮬 𦉋𦉌 𩛒𩛕 𩝓𩝩 𩢿𩣜
+391	unifiable	1	羮 羹	𦢋𦣍
+392	unifiable	1	带 帯	带帯
+393	unifiable	1	龰 	足𠯁 縦𦂵
+394	unifiable	2	函	
+395	unifiable	1	亟 凾	𣶬𣷉
+397	unifiable	1	𣦼 𣦻 ⿰歹又	粲𥹏 餐䬸
+397a	unifiable	1	殄 𱥃	
+397b	unifiable	2	歹 歺	
+398	unifiable	2	吅 ⿴口丨	品𠯮 單𠦤 𧙬𧚾
+399	not-unifiable		龠 𠎤 ⿳亼罒𠕁	瀹㵸 籥𥵋
+400	not-unifiable		帯 帶	
+400a	unifiable	1	𢃄 帶	
+401	unifiable	1	奂 奐 烉	唤喚 奂奐 寏𡨡 愌𢚾 换換 涣渙 焕煥 瑍𤥺 痪瘓 㛟𡞵
+401b	not-unifiable		⿳⺈罒火 烉	
+401c	not-unifiable		𭑏 奐	
+402	not-unifiable		网 罒	网罒 罛𦊡 罜𦊝 罟𦊟 罠𦊞 罦𦋄 罧𦋗 罨𦋙 罩𦋚 罪𦋛 罬𦋖 罭䍞 置𦋘 罯𦋫 署𦋧 罳𦋮 罵𦋻 罷𦋼 罹𦌐 罽𦌞 罾𦌝 罿𦌜 羅𦌴 羆𦌲 詈𧧧 買𧵽 䁲𥋻 䍐䍑 䍖𦊠 䍘𦊮 䍜𦋜 䍡𦌏 䒽𦭝 𦉽𦉾 𦊂𦊍 𦊘𦊜 𦊪𦊴 𦊾𦋑 𦌁𦌑 𦌬𦌳 𦌭𦌱 𦌾𦍃 𦍈𦍊
+402a	unifiable	2	罒 𦉪 罓	
+403	not-unifiable		火 灬	喣𤉵 庶𢉙 杰𤆰 樜𣙃 樵𣛑 淡𣷇 火灬 灸𤆐 烈烮 烋𤈢 烲焎 焄𤉅 焚㷊 焣㷅 焦𤊙 然𤉷 煎𤋎 煑煮 煦𤋗 照𤋜 煭𤋴 煲㷛 熈㷩 熊熋 熙𤌇 熟𤍨 熬𤎅 熱𤍽 熹𤏴 燕㷼 爢㸏 盡䀆 缹𤈣 羔羙 蟅𧐚 謶𧫽 讌𧮃 賮𧷇 遮𨖓 鑣𨯄 鷦𪆅 㶨㶪 㶵𤇲 㷳𤎝 㷶𤏛 㸈𤒏 㸐𤓉 䖄𧆋 䳿𪆈 𢶕𢶨 𤆅𤆋 𤇕𤇫 𤈈𤈉 𤉉𤉌 𤊽𤋯 𤊾𦵅 𤌉𤌽 𤌩𩬊 𤍱𩃏 𤎩𨼾 𤎯𤎰 𤎴𤎵 𤎼𤏅 𤐧𤐸 𤑏𤑐 𤑜𤑨 𤒉𤒓 𤓜𤓞 𤓪𤓬 𤡮𤢅 𩏶𩏷
+404	not-unifiable	1	艸 艹	艸艹 莀𨑆 蓰𦹼 𦬠𦬧 𦬦𦬫 𦯜𦯦 𦱍𦲬
+405	unifiable	1	攵 攴	攴攵 攺𢻰 敀𤽐 敂𢼒 敆㪉 敋𢼛 敌𢼤 敍敘 敠敪 敤㪙 敥𢽻 敧𢽽 敨㪗 敩𢽾 敭𢾙 敯𢾞 敱敳 敲㪣 數𢿘 敺𢿛 敽敿 敾㪨 斀𣀈 斁𣀇 斅斆 枚𣏽 炇𤆝 牧𤘴 玫㺳 絛𠍞 致𦤺 變𣀵 贁𣀕 軙𨊴 㢭𢎿 㪃𢼔 㪆𢼕 㪊𢽏 㪋𢽎 㪐𢽲 㪑𢽱 㪛𢾤 㪧𢿴 㳊𣲏 䍩𢼝 䵇𪎘 𡵨𡵲 𢪊𢪛 𢻫𢻱 𢻼𢼈 𢼂𤕝 𢼗𥘦 𢼦𢼭 𢼨𢼮 𢼩𢼶 𢼫𢼬 𢼯𢼴 𢼹𢽊 𢼼𢽐 𢼾𢽋 𢽚𢽴 𢽜𢽷 𢽢𢽵 𢽣𢽶 𢽪𢽰 𢽫𢾣 𢾁𢾝 𢾅𢾖 𢾊𢾛 𢾋𢾡 𢾍𢾕 𢾎𢾜 𢾑𢾚 𢾲𢾼 𢾺𢾻 𢿍𣁛 𢿏𢿖 𢿕𢿜 𢿢𢿳 𢿣𢿲 𢿦𢿽 𢿧𢿵 𢿨𢿱 𢿾𣀉 𣀃𣀊 𣀓𣀘 𣀛𣀠 𣀜𣀡 𣀤𣀩 𣀧𩀼 𣀶𣀹 𣀸𣀺 𣀻𣀼 𥃊𥃎 𨈙𨈡 𩉩𩉲 𪌏𪌑 𪔻𪔿 坆𪢺 𡛇𪥩 𤯛𪯉
+406	not-unifiable		亀 龜	亀龜 櫷𪳥 穐龝 鬮𩰘 䦰𨷺 𠼓𪚩
+407	unifiable	1	龜 ⿷目	𥤚𥤛
+408	unifiable	1	工	江𣲅
+409	not-unifiable		𩫏	
+410	unifiable	1	乖 ⿱丿	
+411	unifiable	2	⿲人⬚人 ⿲口⬚口 ⿲厶⬚厶 ⿲人⬚口 ⿲口⬚厶 ⿲厶⬚人 ⿲人⬚厶 ⿲口⬚人 ⿲厶⬚口	
+412	unifiable	2	乎 𠂠	
+413	unifiable	1	黎 𪏭	
+414	unifiable	1	𡍮 ⿱一	
+415	unifiable	1	尞 𤊽	
+416	unifiable	1	票 㶾 ⿳覀二火	
+417	unifiable	2	⿱⬚月 ⿱⬚肉	
+418	unifiable	2	眉 𭕘 睂	
+419	unifiable	1	尋 𡬶	
+420	unifiable	2	𦙃 ⿱⿺𠃊口目	
+421	unifiable	1	覃 ⿱覀𤰞	
+422	unifiable	2	朿 束	
+423	unifiable	1	走 𧺆 𣥚	
+424	unifiable	1	奇 竒	㟢嵜 崎﨑 倚𠋣 掎𢰤 欹𣣱 琦𤦺 碕𥔎 㚡𥪼 綺𦂶 錡𨪆 𨵤𨵎 𠵇𫫀 埼𫮍 椅𬃪 寄𭔃 敧𭣿 旖𭥃 猗𭸟 㾨𭼝 䛴𮘩 騎𮪍
+425	unifiable	1	或 𢦙	䰥𩳠 掝𭠵 淢𣴤 𧣼𧣱
+426	unifiable	1	⿱止缶	
+427	unifiable	1	卵 𡖉	
+427a	unifiable	2	夘 卯	
+428	unifiable	2	久 乆	汣𣲄 畞𤱑 𥤯𥤳
+429	unifiable	2	⿱八夂 ⿱小又	
+430	unifiable	1	氵 氺	
+430a	unifiable	1	⿱䒑八 ⿳⿰一一一⿰一一	
+431	unifiable	2	⿳一八个 𣎴	
+432	unifiable	1	各 ⿱叉口	
+433	unifiable	1	𣶒 ⿲丿⿳八一八丨	
+434	unifiable	1	𧴲 𧴪	
+435	unifiable	2	⿱上⬚ ⿱匕⬚ ⿱⿺乚二⬚	
+436	unifiable	1	⿰龺⿱大⬚ ⿰龺⿱人⬚ ⿰龺⿱𠂉⬚	
+437	unifiable	1	享 ⿳亠丷子	
+438	unifiable	2	凹	
+439	unifiable	1	瓦 𭂬 ⿵几二 𭺛 𭺜	
+440	unifiable	1	𡉵 ⿰土𪟨 ⿻北乚	
+441	unifiable	1	鬼	
+442	unifiable	1	粦 ⿱𰉗⿰夕𰀁 ⿱𰉗舛	
+442a	unifiable	1	桀 𱣎	
+443	unifiable	1	鹿 𢉖	
+444	unifiable	1	⿱此⬚	
+445	unifiable	2	⿱死⬚ ⿱夗⬚	
+446	unifiable	1	豈 ⿱止豆	
+447	unifiable	1	㖾	
+448	unifiable	1	賓 賔	
+449	unifiable	1	罙	
+450	unifiable	1	夒	
+451	unifiable	1	辰 𮝾 𫝕	
+452	unifiable	1	枼 𭩠 𣏋 𣐂 枽	
+453	unifiable	2	氐 𰚷 弖 𢆰	
+454	unifiable	1	⿱廿巾 ⿱廿帀 ⿱龷巾	㒼䓣
+454a	unifiable	1	滿 𱧼	
+455	unifiable	1	詹 𦧕 𭉵	
+456	unifiable	1	雚 𮥿	
+456a	unifiable	1	⿱龷隹 ⿱业隹	
+457	unifiable	2	解 觧	
+458	unifiable	2	翏	
+459	unifiable	1	番 畨	
+460	unifiable	2	易 昜	
+461	unifiable	2	虖 𧆠	
+462	unifiable	1	脊	
+463	unifiable	1	𫥎	
+464	unifiable	1	頟 𬱃	
+464b	unifiable	1	𱂥 ⿰名页	
+465	unifiable	1	曼 𭦟 𭦗	
+466	unifiable	1	祭 𥙊	
+467	unifiable	2	旨 𣅀	
+468	unifiable	2	肉 𠕎 𮌇 ⿴囗仌	
+469	unifiable	2	史 㕜	
+470	unifiable	2	丮 𢩦 𠃨	
+471	unifiable	2	奈 柰 𥘾	
+472	unifiable	1	韋 𮧯	
+473	unifiable	1	其	
+474	unifiable	1	矛 𭿵	
+475	unifiable	1	允 𠃔	
+476	unifiable	2	蟸 蠡	
+477	unifiable	1	繭 𧁧	
+478	unifiable	2	忄 巾	
+479	unifiable	2	朋 ⿰月习	
+480	unifiable	2	蒲	
+481	unifiable	1	宣 𭁴	
+482	unifiable	1	隂 陰	
+483	unifiable	1	畱 𤲢	
+484	unifiable	2	𣬉	
+485	unifiable	2	隷 隸 𨽻 𨽾 𫕙 𨽹	
+486	unifiable	2	虍 𭅰 𮓗 𭅯 𬻉	
+487	unifiable	2	兜 兠	
+488	unifiable	2	老 𦒳	
+489	unifiable	2	叚 𫨻	
+490	unifiable	2	莽 莾	
+491	unifiable	2	彝 𢑱 𢑴 彛	
+492	unifiable	2	鼎 𣇓 𪔂	
+493	unifiable	2	离 𮂬	
+494	unifiable	2	𣳾 𭜮	
+495	unifiable	2	囟 𦥓 𠚁 ⿱人凶 ⿱八⿶凵人 𲘟	
+496a	unifiable	2	𢽠	
+496b	unifiable	2	𢽃	

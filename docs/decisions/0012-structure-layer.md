@@ -45,28 +45,41 @@ rules until the text is stable:
 1. A part that spells a character is that character (`⿰亻匕` is 化), and a ⿰/⿱ chain flattens.
 2. A radical form is the character it writes (`data/vocab/han-component-forms.tsv`). Unicode's
    equivalences hold anywhere (⺡ is 氵); CJKVI's radical variants hold in the position their row
-   names (氵 at the left is 水, 灬 at the bottom is 火). A CJKVI row with no position (甲 and 田, 才
-   and 手) indexes a radical and folds nothing.
-3. Shapes the IRG lists as unifiable at level 1 are one component, read as the first the entry names
+   names (氵 at the left is 水, 灬 at the bottom is 火, 讠 at the left is 言). A CJKVI row with no
+   position (甲 and 田, 才 and 手) indexes a radical and folds nothing, and the row for 䒑 is not
+   read: it is 艸 at the top of 兹 and 丷 over 一 at the top of 前, 羊 and 益 (IRG entry 23).
+3. Shapes the IRG lists as unifiable at level 1 are one component, read as the first its entry names
    (`data/vocab/han-component-ucv.tsv`: 戶 户 戸, 內 内, 兌 兑). The list unifies shapes where they
    vary, and two of them can be different characters elsewhere (主 and 龶), so two characters of an
    entry are one component only when the 異体字 graph also gives them as variants. Level 2 is not
-   read: its entries list characters the variation tells apart (壬 and 王: 任 and 仼).
+   read: it pairs shapes that are different characters elsewhere (土 and 士, 壬 and 王).
 
 A character has one structure, that of its first description. Unicode unified its regional glyphs,
 so its other descriptions are spellings of the same structure (納 is `⿰糹内` in one region and
 `⿰糹內` in another; 胃 is `⿱田⺝` and `⿱田⺼`), and a written IDS that matches one names that
-structure. A character the IRG unifies with another has that character's structure (内 has 內's).
+structure. A character the IRG unifies with another has that character's structure (内 has 內's),
+unless the list gives the two as encoded apart (丷 and 八 are one component inside 兌 and two
+characters on their own).
 
-Rule 2 is wider than Unicode's unification: the IRG lists 艸 and 艹, 火 and 灬, 网 and 罒 as not
-unifiable for encoding, and they are one component here.
+The rules are wider than Unicode's unification. The IRG lists 艸 and 艹, 火 and 灬, 网 and 罒 as not
+unifiable for encoding, and they are one component here; so are the simplified radicals 讠, 钅, 纟
+and 饣 with 言, 金, 糸 and 食 (說, 説 and 说 are one structure). Characters the IRG lists as
+encoded apart share a structure when only a unified component separates them (敱 and 敳, by 攵 and
+攴).
 
 ## Limits
 
 - A regional difference Unicode unified inside one code point is one structure (槱 is `⿰木⿱酉灬`
   in one region and `⿱梄灬` in another).
-- BabelStone describes some characters alike (未 and 末 are both `⿻一木`), and they share a
-  structure. A structure is compared among the forms of one character, where this does no harm.
+- BabelStone describes some characters alike (未 and 末 are both `⿻一木`; 由, 甲 and 申), and a
+  radical form can make two characters alike (釖 `⿰金刀` and 釗 `⿰金刂`). They share a structure.
+  A structure is compared among the forms of one character, where this does no harm.
+- A description two characters hold names one of them: the character whose own structure it is,
+  else the lowest code point.
+- A label can hold BabelStone's number for an unencoded component (即 is `⿰{18}卩`); such a
+  structure has no written IDS.
+- The id does not carry the versions of the two component tables. `structures.TABLES` pins their
+  digests to the policy, so a table that changes is met with a decision about a new policy.
 - 忄 has no position in CJKVI's table and stays 忄; every description writes it so.
 - Of 97,680 described characters, 188 have only approximate, subtracting or unrepresentable
   descriptions and no structure.
@@ -75,7 +88,7 @@ unifiable for encoding, and they are one component here.
 
 - 峰 `U+5CF0` `⿰山夆` and 峯 `U+5CEF` `⿱山夆` are two structures of one character
   (`data/vocab/han-ids.tsv`; BabelStone IDS.TXT, file date 2025-06-27).
-- 說 `U+8AAA` and 説 `U+8AAC` are one structure, `⿰言兌`: IRG N2978 entry 27 unifies 兌 兑 兊.
+- 說 `U+8AAA` and 説 `U+8AAC` are one structure, `⿰言兌`: the IRG list's entry 27 unifies 兌 兑 兊.
 - 艹 `U+8279` is `⿻一⿰丨丨(GJ)` and `⿰十十(HTK)` in BabelStone, so `⿱⿰十十早` reads `⿱艸早`: a
   joined 艹 and two 十 are one structure and two designs.
 - 氵 `U+6C35` is 水 at the left in `data/vocab/han-component-forms.tsv` (CJKVI radical-variant), so
@@ -107,8 +120,9 @@ unifiable for encoding, and they are one component here.
   `data/sources/unicode-ucd.yaml`, `data/sources/iwds.yaml`.
 - `data/vocab/han-ids.tsv`, `data/vocab/han-component-forms.tsv`,
   `data/vocab/han-component-ucv.tsv`.
-- IRG N2978, UCS Ideograph Unifiable Component Variations List, version 2026-10-20
-  (https://www.unicode.org/irg/docs/n2978-Complete.pdf), read through the IWDS data file.
+- IRG, UCS Ideograph Unifiable Component Variations List, version 2026-10-20, read through the
+  IWDS data file (`data/sources/iwds.yaml`); the entry numbers are the list's. The document's
+  number and its definition of the two levels were not checked against the published PDF.
 - 王寧『漢字構形學導論』(商務印書館, 2015), for 異寫字 and 異構字; cited from memory of the
   framework, not checked against the page.
 - `src/glyph_atlas/structures.py`, the derivation.

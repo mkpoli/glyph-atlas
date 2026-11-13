@@ -6,16 +6,17 @@ url: https://github.com/yi-bai/iwds
 revision: 8302302d615ff1c1f60ae335b118b10060be0ed4
 licence: PD
 licence_evidence: https://github.com/yi-bai/iwds/tree/8302302d615ff1c1f60ae335b118b10060be0ed4
-attribution: IRG, UCS Ideograph Unifiable Component Variations List (IRG N2978, version 2026-10-20), from the IWDS data files
+attribution: IRG, UCS Ideograph Unifiable Component Variations List (version 2026-10-20), from the IWDS data files
 access:
   file: https://raw.githubusercontent.com/yi-bai/iwds/{revision}/iwds.xml
 format:
-  entry: "<entry id kind level> with <components>: the component shapes of one variation, written one after another as characters and descriptions; ⬚ stands for any component"
+  entry: "<entry id kind level> with <components>: the component shapes of one variation, written one after another as characters and descriptions; ⬚ stands for any component. <disunified>: comma-separated groups of characters encoded apart although they differ by the variation"
   kind: "unifiable (the UCV list) or not-unifiable (the NUCV list)"
   level: "1 or 2 on a unifiable entry, as the published list prints it"
 notes:
   - The repository states no licence. The atlas treats the rows as public domain, each being a fact that the IRG lists two component shapes as unifiable or not, which carries no creative expression.
-  - The list is published as IRG N2978 (https://www.unicode.org/irg/docs/n2978-Complete.pdf); the atlas reads the data file the document is generated from, at the revision above, and did not read the document's own definition of the two levels.
-  - Level-2 entries list characters their variation tells apart (壬 and 王: 任 and 仼), so the structure layer reads level 1 only.
+  - The atlas reads the data file the published list is generated from, at the revision above; the `ucv.html` generated at that revision prints "Version Oct/20/2026". The document number N2978 (https://www.unicode.org/irg/docs/n2978-Complete.pdf) and the document's definition of the two levels were not checked against the PDF.
+  - Level-2 entries pair shapes that are different characters elsewhere (土 and 士, 壬 and 王, 月 and ⺼); the structure layer reads level 1 only.
+  - Entries of both levels list characters encoded apart although they differ by the variation (`disunified`); the table keeps them.
   - Unversioned beyond the repository revision; the table header records the digest of the copy read.
 checked: 2026-11-14

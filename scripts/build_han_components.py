@@ -19,7 +19,8 @@ Unencoded components keep BabelStone's numbers (`{108}`) and an unrepresentable 
 
 `data/vocab/han-component-ucv.tsv`, one row per entry of the IRG's lists of unifiable and non-unifiable
 component variations (IWDS `iwds.xml`): the entry's number, its list, its level and the component
-shapes it names (戶 户 戸), each a character or a description, with ⬚ for any component.
+shapes it names (戶 户 戸), each a character or a description, with ⬚ for any component, and the
+characters it lists as encoded apart all the same (丷八).
 
 Downloads are cached under `cache/components/`. IDS.TXT is not versioned upstream, so its own `File Date`
 header and the file's digest go into the table header; `--refresh` fetches everything again.
@@ -133,11 +134,12 @@ def component_forms(unified: list, radical: list) -> list[tuple[str, str, str, s
     return sorted(seen.values(), key=lambda row: (row[0], row[1]))
 
 
-def ucv_rows(text: str) -> list[tuple[str, str, str, str]]:
-    """(entry, list, level, components) for every entry of the IWDS file, in its order.
+def ucv_rows(text: str) -> list[tuple[str, str, str, str, str]]:
+    """(entry, list, level, components, disunified) for every entry of the IWDS file, in its order.
 
     `<components>` writes an entry's shapes one after another; each is cut where its description
-    ends (`⿱宀丯⿱宀丰` is two shapes, `戶户戸` three).
+    ends (`⿱宀丯⿱宀丰` is two shapes, `戶户戸` three). `<disunified>` lists the characters encoded
+    apart although they differ by the variation, a group to a comma; its chart marks are dropped.
     """
     rows = []
     for entry in ET.fromstring(text).iter("entry"):
@@ -147,7 +149,9 @@ def ucv_rows(text: str) -> list[tuple[str, str, str, str]]:
             _, end = _parse(tokens, at)
             shapes.append("".join(tokens[at:end]))
             at = end
-        rows.append((entry.get("id", ""), entry.get("kind", ""), entry.get("level", ""), " ".join(shapes)))
+        apart = [re.sub(r"[\s*$#…]", "", group) for group in (entry.findtext("disunified") or "").split(",")]
+        rows.append((entry.get("id", ""), entry.get("kind", ""), entry.get("level", ""), " ".join(shapes),
+                     " ".join(group for group in apart if group)))
     return rows
 
 
@@ -230,9 +234,10 @@ def main(argv: list[str] | None = None) -> int:
         [
             f"#   iwds: {IWDS_URL} sha256:{IWDS_SHA256[:16]}",
             "# components: space-separated shapes, each a character or a description; ⬚ is any component.",
-            "# columns: entry, list, level, components",
+            "# disunified: space-separated groups of characters encoded apart although they differ by the variation.",
+            "# columns: entry, list, level, components, disunified",
             f"# rows: {len(variations)}",
-            "entry\tlist\tlevel\tcomponents",
+            "entry\tlist\tlevel\tcomponents\tdisunified",
         ],
     )
     (args.out / "han-component-ucv.tsv").write_text(

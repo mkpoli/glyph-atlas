@@ -118,8 +118,11 @@ def test_a_variation_entry_is_cut_into_its_shapes():
         '<ucv><group><subgroup>'
         '<entry id="7" kind="unifiable" level="1"><components>戶户戸</components></entry>'
         '<entry id="4" kind="unifiable" level="1"><components>⿱宀丯⿱宀丰</components></entry>'
+        '<entry id="22" kind="unifiable" level="1"><components>丷八</components>'
+        '<disunified>丷八,忹*𢗖*</disunified></entry>'
         '<entry id="417" kind="unifiable" level="2"><components>⿱⬚月⿱⬚肉</components></entry>'
         '<entry id="402" kind="not-unifiable"><components>网罒</components></entry>'
         '</subgroup></group></ucv>')
-    assert rows == [("7", "unifiable", "1", "戶 户 戸"), ("4", "unifiable", "1", "⿱宀丯 ⿱宀丰"),
-                    ("417", "unifiable", "2", "⿱⬚月 ⿱⬚肉"), ("402", "not-unifiable", "", "网 罒")]
+    assert rows == [("7", "unifiable", "1", "戶 户 戸", ""), ("4", "unifiable", "1", "⿱宀丯 ⿱宀丰", ""),
+                    ("22", "unifiable", "1", "丷 八", "丷八 忹𢗖"),
+                    ("417", "unifiable", "2", "⿱⬚月 ⿱⬚肉", ""), ("402", "not-unifiable", "", "网 罒", "")]

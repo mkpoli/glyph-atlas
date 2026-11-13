@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -52,7 +53,7 @@ def test_a_spelled_part_reads_as_the_character_it_spells():
 
 @pytest.mark.parametrize("chars", ["說説", "內内", "戶户戸", "靑青", "清淸", "吳吴呉", "煮煑"])
 def test_shapes_the_irg_unifies_are_one_structure(chars):
-    # IRG N2978, level 1: 兌 兑, 內 内, 戶 户 戸, 靑 青, 吳 吴 呉; 灬 is 火 at the bottom.
+    # The IRG list, level 1: 兌 兑, 內 内, 戶 户 戸, 靑 青, 吳 吴 呉; 灬 is 火 at the bottom.
     assert len({structures.for_character(char) for char in chars}) == 1
 
 
@@ -109,18 +110,37 @@ def test_a_representation_that_names_no_structure_returns_none():
     assert structures.for_representation(representation.Representation("ivs", "")) is None
 
 
-@pytest.mark.parametrize("char", ["峰", "峯", "花", "啓", "庶", "丏", "説", "靑", "胃", "戶"])
-def test_a_canonical_label_names_its_own_structure(char):
-    item = structures.for_character(char)
-    assert structures.from_tree(han_component_variants.parse(item.label)) == item
-    assert structures.for_ids(item.label) == item
-
-
-def test_every_description_settles_on_a_label_that_reads_as_itself():
-    for char in list(han_components._sequences())[::40]:
+def test_every_label_names_its_own_structure():
+    for char in han_components._sequences():
         item = structures.for_character(char)
-        if item:
-            assert structures.from_tree(han_component_variants.parse(item.label)) == item, char
+        if item is None:
+            continue
+        assert structures.from_tree(han_component_variants.parse(item.label)) == item, char
+        if len(item.label) > 1 and "{" not in item.label:
+            assert structures.for_ids(item.label) == item, char
+
+
+def test_a_radical_row_that_is_another_shape_elsewhere_is_not_read():
+    # CJKVI gives 䒑 as 艸 at the top; in 前 it is 丷 over 一 (IRG entry 23).
+    assert structures.for_character("前").label == "⿱䒑刖"
+    assert structures.for_character("前") != structures.for_character("𦮯")
+
+
+def test_characters_the_irg_lists_as_encoded_apart_keep_their_own_structure():
+    # Entry 22 unifies 丷 and 八 as components and lists the two characters as disunified.
+    assert structures.for_character("八") != structures.for_character("丷")
+    assert structures.for_character("兌") == structures.for_character("兑")
+
+
+def test_a_description_that_is_a_characters_own_structure_names_it():
+    # 黒 has 黑's structure, and ⿱里火 is 𭴬's own.
+    assert structures.for_character("黒") == structures.for_character("黑")
+    assert structures.for_ids("⿱里火") == structures.for_character("𭴬")
+
+
+def test_the_policy_names_the_tables_it_reads():
+    for name, digest in structures.TABLES.items():
+        assert hashlib.sha256((ROOT / "data/vocab" / name).read_bytes()).hexdigest()[:16] == digest, name
 
 
 def test_an_id_is_derived_from_the_canonical_tree_and_the_policy():
