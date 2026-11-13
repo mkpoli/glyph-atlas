@@ -9,7 +9,7 @@ import { cropParam, movedPathResponse } from './atlas3Crops';
 import { drawingFile } from './drawings';
 import { composerFile, composerPreflight } from './composer';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
-import { idsOf, suggest, wordChoices } from './routes/search';
+import { idsOf, structuresOf, suggest, wordChoices } from './routes/search';
 import { auth, claim, providers, viewer } from './auth';
 import { AVATAR_PATH, avatar, setAvatar } from './avatar';
 import { ranking } from './routes/ranking';
@@ -203,6 +203,7 @@ const routes = {
       if(path==='/layers/word-choices')return json({items:await wordChoices(env,text(q.get('q')??'',128,'reading')??'',[...(q.get('c')??'')].slice(0,4))});
       if(path==='/layers/suggest')return json(await suggest(env,q,ctx));
       if(path==='/layers/ids')return json(await idsOf(env,ctx,url.origin,q.get('c')||''));
+      if(path==='/layers/structures')return json(await structuresOf(env,ctx,url.origin,q.get('c')||''));
       if(path==='/layers/search'){const found=await suggest(env,q,ctx);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
       if(layer)return json(await characterPage(env,ctx,url,decodeURIComponent(layer[1]),characterTools));

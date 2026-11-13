@@ -108,6 +108,7 @@
   "chips.relation.substitute": "代用",
   "chips.relation.nonCognate": "別字",
   "chips.relation.spoofing": "紛らわしい字",
+  "chips.structure": "構形",
   "chips.variantSources": "出典",
   "chips.words": "語",
   "chips.wordCrops.other": "{count}例",

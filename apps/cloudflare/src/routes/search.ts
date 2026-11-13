@@ -197,6 +197,32 @@ export async function idsOf(env: Env, ctx: ExecutionContext, origin: string, cha
   return found;
 }
 
+// At most this many characters are grouped in one answer: a family's forms and its written variants.
+export const STRUCTURE_CHARS = 48;
+/** The 構形 of each character named, as groups of the characters that share one (峰 and 峯 are two
+ *  groups, 說 and 説 one), in the order the characters were named. A character with no structure is in
+ *  no group. */
+export async function structuresOf(env: Env, ctx: ExecutionContext, origin: string, chars: string) {
+  const named = [...new Set(chars)].slice(0, STRUCTURE_CHARS);
+  if (!named.length) throw new Problem(422, 'Name a character.');
+  const key = new Request(`${origin}/layers/structures?c=${encodeURIComponent(named.join(''))}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json();
+  const groups = new Map<string, { id: string; label: string; chars: string[] }>();
+  // A compatibility ideograph has its unified ideograph's structure (說 U+F96F has 說's).
+  const described = await Promise.all(named.map(char => characterIds(env, char.normalize('NFC'), ctx)));
+  named.forEach((char, i) => {
+    const structure = described[i]?.structure;
+    if (!structure) return;
+    const group = groups.get(structure.id) ?? { ...structure, chars: [] };
+    group.chars.push(char);
+    groups.set(structure.id, group);
+  });
+  const found = { items: [...groups.values()] };
+  ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${KEPT}` } })));
+  return found;
+}
+
 // At most this many words are offered.
 const CHOICES_MAX = 20;
 // Spellings find their words by the spelling index, readings by a range of the word key; a reading
