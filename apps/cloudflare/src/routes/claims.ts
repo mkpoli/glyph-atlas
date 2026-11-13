@@ -3,6 +3,7 @@
 // claims they rest on. Crops are named by public id at this boundary and by integer id inside.
 import { bundle, pageOf, publicId, slotOf as cropSlot } from '../atlas3';
 import { aliasCrop } from '../atlas3Aliases';
+import { characterIds, structureSource } from '../atlas3Reference';
 import { StaleCrop, cropQueryParam, movedQueryResponse, staleResponse, writtenCropField } from '../atlas3Crops';
 import { formSlot } from '../cropForms';
 import { cropGraphemes } from '../cropPanels';
@@ -317,6 +318,89 @@ export async function setWrittenFor(env: Env, input: Json, form: string, actor: 
   return { id: form, written_for: await writtenForOf(env, form), replaced: remove ? grapheme : null };
 }
 
+// A form's `has_structure` claims: the 構形 the form realizes (docs/decisions/0012-structure-layer.md).
+// A structure is named by a character that has it, since the Worker reads structures and derives none.
+export const structuresQuery = () => `SELECT c.status,c.members,c.claims FROM current_claims c
+  WHERE c.subject=? AND c.predicate='has_structure' AND c.scope=''`;
+export const structureLabelsQuery = () => 'SELECT id,label FROM structures WHERE id IN (SELECT value FROM json_each(?))';
+/** The structures a form realizes, each with its label and who says so now. */
+export async function structuresOf(env: Env, form: string): Promise<{ structure: string; label: string; by: string[] }[]> {
+  const rows = (await env.ATLAS.prepare(structuresQuery()).bind(form).all<{ status: string; members: string; claims: string }>()).results;
+  const found = rows.filter(row => FILED.has(row.status)).flatMap(row => {
+    const by = [...new Set((JSON.parse(row.claims) as Json[]).filter(c => c.standing).map(c => c.asserted_by as string))];
+    return [...new Set((JSON.parse(row.members) as Json[]).flatMap(m => m.object ? [m.object as string] : []))].map(structure => ({ structure, by }));
+  });
+  if (!found.length) return [];
+  const labels = new Map((await env.ATLAS.prepare(structureLabelsQuery()).bind(JSON.stringify(found.map(value => value.structure)))
+    .all<{ id: string; label: string }>()).results.map(row => [row.id, row.label]));
+  return found.map(value => ({ ...value, label: labels.get(value.structure) ?? '' }))
+    .sort((a, b) => a.structure < b.structure ? -1 : a.structure > b.structure ? 1 : 0);
+}
+// The actor's own live claim that this form realizes this structure: one range of `assertion_object`.
+export const ownStructureQuery = (owned: string) => `SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='has_structure'
+  AND a.scope='' AND a.slot=? AND (a.asserted_by=? OR a.asserted_by IN ${owned})
+  AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid DESC LIMIT 1`;
+/** The id `glyph_atlas.structures` gives a label under a scheme and a policy. */
+export async function structureId(label: string, scheme: string, policy: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`structure\n${label}\n${scheme}\n${policy}`));
+  return 'st:' + [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 32);
+}
+const STRUCTURE_ID = /^st:[0-9a-f]{32}$/;
+/** Say that a form realizes the structure of a character (`remove` false), or take back the reader's own
+ *  claim (`remove` true), which may name the structure by its id: a claim made under an earlier policy
+ *  is one no character names any more. A form can realize several structures; each is a claim of its
+ *  own. The structure's row is written with its first claim, under the version the policy object
+ *  names at that moment. */
+export async function setStructure(env: Env, input: Json, form: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
+  const ledger = ledgerTools(env, tools, ctx);
+  const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ form, structure: input });
+  const saved = await savedSubmission(env, key, signature, tools.fail);
+  if (saved) return { id: form, structures: await structuresOf(env, form), replaced: saved.replaced ?? null };
+  if (!FORM_ID.test(form) || !await env.ATLAS.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first()) tools.fail(404, 'No such form.');
+  const remove = input.remove === true;
+  let structure: { id: string; label: string }, source: Awaited<ReturnType<typeof structureSource>> = null;
+  if (remove && input.structure != null) {
+    const named = tools.text(input.structure, 64, 'structure', true)!;
+    if (!STRUCTURE_ID.test(named)) tools.fail(422, 'Name a structure by its id.');
+    structure = { id: named, label: '' };
+  } else {
+    const char = tools.text(input.char, 8, 'char', true)!;
+    if ([...char].length !== 1) tools.fail(422, 'Name one character.');
+    const [described, read] = await Promise.all([characterIds(env, char, ctx), structureSource(env, ctx)]);
+    // No policy object: no reference load has carried structures yet.
+    source = read ?? tools.fail(503, 'The structures are being loaded.');
+    structure = described?.structure ?? tools.fail(422, `No structure is known for ${char}.`);
+    // A shard and a policy from two loads would name a row its id does not describe.
+    if (await structureId(structure.label, source.scheme, source.policy) !== structure.id) tools.fail(503, 'The structures are being loaded.');
+  }
+  const own = await env.ATLAS.prepare(ownStructureQuery(ownedActors(actor))).bind(form, structure.id, actor).first<{ id: string }>();
+  const held = (await structuresOf(env, form)).some(value => value.structure === structure.id);
+  if (remove && !own) tools.fail(409, 'You have not said this form has this structure.');
+  const at = new Date().toISOString();
+  if (!remove && own && held) {
+    await env.ATLAS.prepare('INSERT OR IGNORE INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
+      .bind(key, actor, signature, JSON.stringify({ submission: key, subject: form, replaced: null }), at).run();
+    return { id: form, structures: await structuresOf(env, form), replaced: null };
+  }
+  const plan: Plan = { statements: [], keys: [] };
+  if (own) {
+    const retract = await planAction(env, { key: key + '/retract', actor, target: own.id, action: 'retract',
+      reason: remove ? 'cleared' : 'replaced', admin: false, at }, ledger);
+    plan.statements.push(...retract.statements); plan.keys.push(...retract.keys);
+  }
+  if (!remove) {
+    const member: Member = { object: structure.id, value: null, confidence: null, confidence_scheme: null };
+    checkClaims('has_structure', [member], { [structure.id]: 'structure' }, tools.fail);
+    plan.statements.push(env.ATLAS.prepare('INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,?,?,?,?,?)')
+      .bind(structure.id, structure.label, source!.scheme, source!.version, source!.policy, actor, at));
+    const claim = await planSubjectClaim(env, { key, actor, subject: form, predicate: 'has_structure', scope: '', members: [member],
+      at, method: 'form-picker' }, ledger);
+    plan.statements.push(...claim.statements); plan.keys.push(...claim.keys);
+  }
+  await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: form, replaced: remove ? structure.id : null }, ledger);
+  return { id: form, structures: await structuresOf(env, form), replaced: remove ? structure.id : null };
+}
+
 /** Set the reader's word for one crop (decision 0004), or retract their own latest claim with `word: null`. */
 export async function setWord(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
   const ledger = ledgerTools(env, tools, ctx), spec = PREDICATES.writes_word;
@@ -375,7 +459,7 @@ export async function bookDates(env: Env, book: number | null): Promise<Json> {
 export async function claimWrite(env: Env, request: Request, path: string, me: { id: string; admin: boolean }, tools: ClaimTools,
   limit: () => Promise<void>, ctx?: ExecutionContext): Promise<Json | Response | null> {
   const acted = path.match(/^\/atlas\/claims\/([^/]+)\/actions$/), picked = path.match(/^\/atlas\/characters\/([^/]+)\/(form|word|grapheme)$/),
-    linked = path.match(/^\/atlas\/forms\/([^/]+)\/written_for$/);
+    linked = path.match(/^\/atlas\/forms\/([^/]+)\/(written_for|structure)$/);
   if (path !== '/atlas/claims' && path !== '/atlas/forms' && !acted && !picked && !linked) return null;
   // A claim, an action or a crop's form is a few small rows, and one address is held to a rate.
   await limit();
@@ -384,7 +468,8 @@ export async function claimWrite(env: Env, request: Request, path: string, me: {
   try { target = decodeURIComponent((acted ?? picked ?? linked)?.[1] ?? '') } catch { tools.fail(404, acted ? 'No such claim.' : linked ? 'No such form.' : NOT_HERE) }
   try {
     if (path === '/atlas/forms') return await setForms(env, input, me.id, tools, ctx);
-    if (linked) return await setWrittenFor(env, input, target, me.id, tools, ctx);
+    if (linked) return linked[2] === 'structure' ? await setStructure(env, input, target, me.id, tools, ctx)
+      : await setWrittenFor(env, input, target, me.id, tools, ctx);
     if (picked) return picked[2] === 'word' ? await setWord(env, input, target, me.id, tools, ctx)
       : picked[2] === 'grapheme' ? await setGrapheme(env, input, target, me.id, tools, ctx) : await setForm(env, input, target, me.id, tools, ctx);
     const ledger = ledgerTools(env, tools, ctx);
@@ -398,7 +483,7 @@ export async function claimWrite(env: Env, request: Request, path: string, me: {
 // Subjects that are no crop by their shape: form and representation ids, word ids, and book keys.
 export const bookKeyQuery = () => 'SELECT 1 FROM books WHERE key=?';
 async function cropShaped(env: Env, subject: string) {
-  if (/^(fm|rp):/.test(subject) || subject.includes('/')) return false;
+  if (/^(fm|rp|st):/.test(subject) || subject.includes('/')) return false;
   return !subject.includes(':') || !await env.ATLAS.prepare(bookKeyQuery()).bind(subject).first();
 }
 
