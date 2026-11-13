@@ -29,6 +29,7 @@ policy change makes new ids, so an id issued today keeps its meaning. The decisi
 from __future__ import annotations
 
 import hashlib
+import itertools
 import re
 from dataclasses import dataclass
 from functools import cache
@@ -62,6 +63,11 @@ OPEN = re.compile("[⬚Ａ-Ｚ\ue000-\uf8ff]")
 UNREAD = frozenset({"䒑"})
 #: How many times `canonical` re-reads a tree before giving up; a reading settles within four.
 PASSES = 8
+#: How many ways of writing a part's components `_spelled` tries before leaving the part spelled out.
+SPELLINGS = 64
+#: The variation selectors a written description may carry after a component; a structure has no
+#: stroke design, so they are dropped.
+SELECTORS = re.compile("[\ufe00-\ufe0f\U000e0100-\U000e01ef]")
 
 
 @dataclass(frozen=True)
@@ -180,6 +186,41 @@ def _components(tree: Tree) -> Tree:
     return _unified().get(text(tree), tree)
 
 
+@cache
+def _writings() -> dict[tuple[str, str | None], tuple[str, ...]]:
+    """The shapes read as a component at a position, the other way round from `_radical` and
+    `_unified`: 人 at the left may have been written 亻, and 兌 anywhere 兑."""
+    found: dict[tuple[str, str | None], list[str]] = {}
+    for (form, position), char in _folds().items():
+        if position is not None:
+            found.setdefault((char, position), []).append(form)
+    for shape, head in _unified().items():
+        if len(shape) == 1 and isinstance(head, str):
+            found.setdefault((head, None), []).append(shape)
+    return {key: tuple(forms) for key, forms in found.items()}
+
+
+def _spelled(tree: Tree, top: bool = True) -> Tree:
+    """`tree` with every part that spells a character once its components are written as the
+    sources write them named as that character: ⿰人木 inside a description is 休, which BabelStone
+    spells ⿰亻木. The description itself is never renamed."""
+    if isinstance(tree, str):
+        return tree
+    operator, parts = tree
+    parts = tuple(_spelled(part, False) for part in parts)
+    if top:
+        return operator, parts
+    slots = SLOTS.get(operator, ())
+    choices = [(part, *_writings().get((part, slots[index] if index < len(slots) else None), ()),
+                *_writings().get((part, None), ())) if isinstance(part, str) else (part,)
+               for index, part in enumerate(parts)]
+    named = refs.descriptions().named
+    for written in itertools.islice(itertools.product(*choices), 1, SPELLINGS):
+        if (char := named.get(refs.descriptions().folded_text((operator, written)))) is not None:
+            return char
+    return operator, parts
+
+
 def canonical(tree: Tree) -> Tree:
     """The structure a parsed description writes.
 
@@ -188,7 +229,7 @@ def canonical(tree: Tree) -> Tree:
     """
     current = tree
     for _ in range(PASSES):
-        following = _components(_plain(current))
+        following = _components(_plain(_spelled(current)))
         if text(following) == text(current):
             return following
         current = following
@@ -267,7 +308,7 @@ def for_ids(sequence: str) -> Structure:
         raise ValueError("Not a well-formed ideographic description sequence.")
     if set(sequence) & (han_component_variants.SKIPPED - {"？"}):
         raise ValueError("An approximate or subtracting description names no structure.")
-    written = from_tree(han_component_variants.parse(sequence))
+    written = from_tree(han_component_variants.parse(SELECTORS.sub("", sequence)))
     spelled = _spellings().get(written.label)
     return for_character(spelled) or written if spelled else written
 

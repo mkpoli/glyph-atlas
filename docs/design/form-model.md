@@ -28,7 +28,7 @@ and as the kana ね); a crop's own identity claim says which one it reads as.
 
 **Structure (構形).** A canonical component tree: the components a form is built from and their
 arrangement, with no stroke design. A form realizes zero, one or several structures, and a structure
-is realized by many forms. A character has one derived structure, whatever its regional glyphs,
+is realized by many forms. A character has at most one derived structure, whatever its regional glyphs,
 and a grapheme has several through its characters (峰 ⿰山夆, 峯 ⿱山夆); 說 and 説 share one. An
 IDS is a representation of a structure, never its identity: the id is derived from the canonical
 text and the policy (`glyph_atlas.structures`). A reviewer's `has_structure` claim is the
