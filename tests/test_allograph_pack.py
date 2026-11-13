@@ -1,0 +1,55 @@
+import json
+
+import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pytest
+from PIL import Image
+
+from glyph_atlas import allograph_pack, form_clusters
+
+
+def test_write_packs_the_family_and_leaves_out_per_holder_images(tmp_path, monkeypatch):
+    forms = tmp_path / "forms"
+    forms.mkdir()
+    ids = ["codh:a", "hi:b", "hl:c", "codh:moved", "codh:other"]
+    pq.write_table(pa.table({"id": ids, "family": ["U+5019"] * 4 + ["U+4E00"], "cluster": ["small", "big", "big", "big", "x"]}),
+                   forms / "units.parquet")
+    (forms / "clusters.json").write_text(json.dumps({"families": {"U+5019": {"clusters": [{"id": "big", "label": "Cluster 3"}, {"id": "small", "label": "Cluster 1"}]}}}))
+    np.save(forms / "embeddings.npy", np.arange(10, dtype=np.float32).reshape(5, 2))
+    (forms / "manifest.json").write_text(json.dumps({"revision": "rev1"}))
+    Image.new("L", (40, 80), 30).save(tmp_path / "a.png")
+    Image.new("L", (100, 100), 30).save(tmp_path / "page.png")
+
+    corpus = {"codh:a": "codh-full", "hi:b": "hilab", "hl:c": "honkoku-lines", "codh:moved": "codh-full"}
+    family = {"codh:moved": "U+5F8C"}
+    monkeypatch.setattr(form_clusters, "glyphs", lambda root, wanted: [
+        {"id": i, "corpus": corpus[i], "family": family.get(i, "U+5019")} for i in sorted(wanted)])
+    # codh:a is a pre-cut crop; hi:b is a box running 10 px past the right edge of its page
+    at = {"codh:a": (tmp_path / "a.png", None), "hi:b": (tmp_path / "page.png", (90, 0, 20, 50))}
+    monkeypatch.setattr(form_clusters, "Pixels", lambda root: lambda glyph: at.get(glyph["id"]))
+    monkeypatch.setattr(form_clusters, "changed_inputs", lambda root, manifest: ["units codh-full"])
+
+    stats = allograph_pack.write(tmp_path, forms, "U+5019", tmp_path / "out")
+    assert stats == {"pack": str(tmp_path / "out" / "U+5019.npz"), "crops": 2, "with_pixels": 2, "left_out": 1, "relabelled": 1, "revision": "rev1",
+                     "changed": ["units codh-full"]}
+    pack = np.load(stats["pack"])
+    assert pack["ids"].tolist() == ["codh:a", "hi:b"]
+    assert pack["classifier_cluster"].tolist() == [1, 3]
+    assert pack["embedding"].tolist() == [[0, 1], [2, 3]]
+    assert pack["size"].tolist() == [[80, 40], [50, 10]]
+    assert pack["grey"][1, :50, :10].max() == 30
+    assert pack["grey"][0, :80, :40].max() == 30 and pack["grey"][0, 80:, :].min() == 255 and pack["grey"][0, :, 40:].min() == 255
+    assert str(pack["code_point"]) == "U+5019" and str(pack["revision"]) == "rev1"
+
+
+def test_write_refuses_a_clustering_whose_crops_left_the_corpus(tmp_path, monkeypatch):
+    forms = tmp_path / "forms"
+    forms.mkdir()
+    pq.write_table(pa.table({"id": ["codh:a", "codh:gone"], "family": ["U+5019"] * 2, "cluster": ["big", "big"]}), forms / "units.parquet")
+    (forms / "clusters.json").write_text(json.dumps({"families": {"U+5019": {"clusters": [{"id": "big", "label": "Cluster 1"}]}}}))
+    np.save(forms / "embeddings.npy", np.zeros((2, 2), np.float32))
+    monkeypatch.setattr(form_clusters, "glyphs", lambda root, wanted: [{"id": "codh:a", "corpus": "codh-full", "family": "U+5019"}])
+    monkeypatch.setattr(form_clusters, "Pixels", lambda root: lambda glyph: None)
+    with pytest.raises(ValueError, match="1 clustered crops are no longer in the corpus"):
+        allograph_pack.write(tmp_path, forms, "U+5019", tmp_path / "out")

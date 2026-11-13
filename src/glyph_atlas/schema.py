@@ -178,6 +178,13 @@ class Document(BaseModel):
     text_register: Register = Register.UNKNOWN
     dating: list[Dating] = Field(default_factory=list, description="several dates may apply, e.g. composition and copying")
     hands: list[str] = Field(default_factory=list)
+    image_kind: Literal["flat-reproduction", "object-photograph", "editorial-diagram", "mixed"] = Field(
+        default="flat-reproduction",
+        description="what the document's page images show: a flat original such as a book page or a "
+        "print, a photograph of a three-dimensional object, an editorial drawing, or more than one of "
+        "these. Only flat reproductions receive the public-domain reproduction rule; every other value "
+        "keeps the terms it states. A table without the column reads as flat-reproduction.",
+    )
     image_rights: Rights | None = None
     text_rights: Rights | None = None
     meta: dict[str, Any] = Field(default_factory=dict, description="upstream fields with no column of their own")
@@ -191,10 +198,18 @@ class Document(BaseModel):
         the photograph carries no copyright. Where the holder states one, `licence` becomes PD and
         the statement moves to `holder_terms`. A document dated after `PUBLIC_DOMAIN_UNTIL` keeps
         its holder's terms; an undated one is taken as pre-modern, which is the dataset's scope.
-        The rule runs again whenever a field is assigned, so rights set after construction follow it.
+        A photograph of an object and an editorial drawing are works of their own, so a document of
+        those kinds keeps the terms it states. The rule runs again whenever a field is assigned, so
+        rights set after construction follow it.
         """
         rights = self.image_rights
         if rights is None:
+            return self
+        if self.image_kind != "flat-reproduction":
+            if rights.holder_terms is not None:
+                self.__dict__["image_rights"] = rights.model_copy(
+                    update={"licence": rights.holder_terms, "holder_terms": None}
+                )
             return self
         ends = [dating.end or dating.start for dating in self.dating if dating.end or dating.start]
         if ends and max(ends) > PUBLIC_DOMAIN_UNTIL:
@@ -224,6 +239,10 @@ class Page(BaseModel):
     sha256: str | None = None
     transcription: dict[str, str] = Field(default_factory=dict, description="source id, entry id, revision")
     style: Style = Field(default=style.UNASSESSED, description="style of the letterforms on the page; unassessed takes the document's")
+    image_kind: Literal["flat-reproduction", "object-photograph", "editorial-diagram"] = Field(
+        default="flat-reproduction",
+        description="what this page's image shows; a table without the column reads as flat-reproduction",
+    )
     meta: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -7,7 +7,7 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { SHARDS, currentPointer, phasesOf, rangeCountQuery, rangeQuery, type GalleryQuery, type Phase, type Source } from '../atlas3Gallery';
 import { corpusFormsQuery, datingQuery } from '../atlas3Listing';
 import { cropSlotsQuery } from '../cropPanels';
-import { composedCountQuery, composedQuery, chronologyQueries, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery,
+import { composedCountQuery, composedQuery, chronologyQueries, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery, writeFamiliesQuery,
   wordSpellingsQuery, writtenFormsQuery, writtenFormUseQuery, writtenVariants } from './character';
 import worker from '../index';
 
@@ -130,10 +130,12 @@ beforeAll(() => {
   objects.set('v3/pointer.json', json({ pub: 'T', through_gen: 4 }));
   const filed = CROPS.filter(c => c.visual);
   objects.set('v3/reference/char/U+6642.json.gz', json({ grapheme: G.時,
-    data: card('時', { grapheme: { code_point: 'U+6642', char: '時' } }), detail: card('時', { grapheme: { code_point: 'U+6642', char: '時' }, visual_analysis: { groups: [] } }),
+    data: card('時', { grapheme: { code_point: 'U+6642', char: '時' } }), detail: card('時', { grapheme: { code_point: 'U+6642', char: '時',
+      members: [{ code_point: 'U+6642', char: '時' }, { code_point: 'U+65F6', char: '时' }, { code_point: 'U+65F9', char: '旹' }, { code_point: 'U+5446', char: '呆' }] },
+      visual_analysis: { groups: [] } }),
     variants: [['旹', 'variant', 'src1', '', 0, 1], ['旹', 'variant', 'src2', '', 0, 1], ['峕', 'variant', 'src1', '', 1, 1], ['时', 'simplified', 'src2', '', 0, 1]],
     derived: [['⿰日寺', [[['日', '目']]]]], substitutions: [['日', '目', 4, [{ a: '昨', b: '眲', sources: ['src3'] }]]],
-    writes: [], writers: [['时', 1]], ids: { 時: G.時, 旹: G.旹, 峕: G.峕, 时: G.时 } }));
+    writes: [['旹', 1], ['峕', 1]], writers: [['时', 1]], ids: { 時: G.時, 旹: G.旹, 峕: G.峕, 时: G.时 } }));
   objects.set('v3/reference/char/U+306D.json.gz', json({ grapheme: G.ね, data: card('ね', { grapheme: { code_point: 'U+306D', char: 'ね' } }),
     detail: card('ね', { grapheme: { code_point: 'U+306D', char: 'ね' }, visual_analysis: { status: 'ready', groups: [{ code: 1, label: 'Group 1', count: 2,
       representatives: [{ crop: id(filed[0]), source_label: 'ね' }], anchors: [{ crop: id(filed[1]), distance: 0.1 }] }] } }),
@@ -177,6 +179,13 @@ describe('a character page', () => {
       routes: [[{ was: '日', became: '目', count: 4, pairs: [{ a: '昨', b: '眲', sources: ['src3'] }] }]] }]);
     expect(body.variants.writers).toEqual([{ char: '时', code_point: 'U+65F6', shared: true }]);
     expect(body.variants.sources).toEqual({ 'derived-ids': 'derived-ids', src1: 'Source One', src2: 'src2', src3: 'src3' });
+    // The 字体 row counts each form's images, the 字種 row its grapheme's: 時's family bills 7 crops and
+    // 2 corpus glyphs, and 呆, with no grapheme row, reads as unused rather than failing the card.
+    expect(body.grapheme.members.map((m: any) => [m.char, m.count, m.corpus_count]))
+      .toEqual([['時', 5, 2], ['时', 1, 0], ['旹', 1, 0], ['呆', 0, 0]]);
+    expect([body.grapheme.count, body.grapheme.corpus_count]).toEqual([7, 2]);
+    // 峕 heads its own family row, so its one crop is counted once, not twice.
+    expect(body.variants.writes.map((w: any) => [w.char, w.count, w.corpus_count])).toEqual([['旹', 1, 0], ['峕', 1, 0]]);
     expect(body.words.items[0].spellings.map((s: any) => [s.spelling, s.current])).toEqual([['時', true], ['刻', false]]);
     expect(body.words.sources).toEqual({ dict: 'A dictionary' });
   });
@@ -389,7 +398,7 @@ describe('every query of the character routes', () => {
       }
     }
     for (const [sql, values, index] of [[membersQuery(), [G.時], 'grapheme_head'], [groupKeysQuery(), ['[1]'], 'PRIMARY KEY'],
-      [visualQuery(), [1], 'crop_visual'], [composedQuery(), [], 'book_date_axis'], [graphemeIdsQuery(), ['["時"]'], 'sqlite_autoindex_graphemes'],
+      [visualQuery(), [1], 'crop_visual'], [composedQuery(), [], 'book_date_axis'], [graphemeIdsQuery(), ['["時"]'], 'sqlite_autoindex_graphemes'], [writeFamiliesQuery(), ['[302]'], 'grapheme_head'],
       [corpusFormsQuery(), ['[1]'], 'INTEGER PRIMARY KEY'], [datingQuery(), ['["a"]'], 'PRIMARY KEY'], [cropSlotsQuery(), ['[1]', 'has_form'], 'current_claim_crop'],
       [wordSpellingsQuery(), ['時'], 'word_spelling_spelling'], [productionsQuery(), ['printed', 8, 'printed/'], 'SCAN productions'],
       [writtenFormsQuery(), ['U+6642'], 'current_claim_object'],

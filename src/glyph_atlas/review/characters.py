@@ -434,6 +434,21 @@ def _grapheme_head(character: Character, counts: dict[str, int]) -> dict[str, An
     }
 
 
+def _family_usage(members: list[dict[str, Any]], counts: dict[str, int]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """A family's forms, each with the crops filed under it here and the corpus glyphs recorded for it,
+    and the family's totals.
+
+    The card states each form's images in its 字体 row and the grapheme's in its 字種 row, as the
+    Worker's does; a corpus that does not answer leaves its numbers at zero.
+    """
+    corpus, _ = corpus_source.safe(corpus_source.counts, [member["char"] for member in members])
+    forms = [{**member, "count": counts.get(member["code_point"], 0),
+              "corpus_count": int(((corpus or {}).get(member["char"]) or {}).get("n_glyphs") or 0)}
+             for member in members]
+    return forms, {"count": sum(form["count"] for form in forms),
+                   "corpus_count": sum(form["corpus_count"] for form in forms)}
+
+
 def _family(character: Character) -> dict[str, Any]:
     """The grapheme family of a character, or a family of itself when no grapheme names it."""
     return refs.grapheme_info(character.code_point) or _own_family(character)
@@ -463,13 +478,15 @@ def character_view(character: Character, layer: Layers, *, expand: str = "none",
     candidates = candidate_summary(character.char, live=character_corpus_counts(character.char),
                                    local=counts.get(character.code_point, 0))
     row = _row(character, counts)
+    head = _grapheme_head(character, counts)
+    members, images = _family_usage(head["members"], counts)
     return {
         **row,
         "default_scope": "grapheme" if candidates["requires_family_scope"] else row["default_scope"],
         "alias": character.alias,
         "category": character.category,
         "confusables": [to_row(refs.character(code_point)) for code_point in character.confusables],
-        "grapheme": _grapheme_head(character, counts),
+        "grapheme": {**head, "members": members, **images},
         # A modern kana's 字源, from its Japanese Wikipedia articles: where its shape came from, which
         # is not a 字母 (the kanji a hentaigana is a form of) and is shown apart from one.
         "origin": refs.origin_of(character.code_point),
@@ -584,6 +601,23 @@ def _widened_corpus(chars: list[str], limit: int, offset: int, visual_group: str
     return {"items": items[offset:offset + limit], "total": min(total, WIDENED_CAP)}, fault
 
 
+def _write_families(point: str, counts: dict[str, int]) -> list[dict[str, Any]]:
+    """The graphemes besides its own that a reduced form writes, each with its family's images.
+
+    A grapheme is a family of characters: the 字種 row states what the whole family holds here and in
+    the corpus, as the Worker's does.
+    """
+    heads = refs.also_writes(point)
+    families = {head: (refs.grapheme_info(head) or {}).get("members")
+                or [{"code_point": head, "char": refs.to_char(head)}] for head in heads}
+    corpus, _ = corpus_source.safe(corpus_source.counts,
+                                   list(dict.fromkeys(m["char"] for members in families.values() for m in members)))
+    return [{"code_point": head, "char": refs.to_char(head),
+             "count": sum(counts.get(m["code_point"], 0) for m in members),
+             "corpus_count": sum(int(((corpus or {}).get(m["char"]) or {}).get("n_glyphs") or 0) for m in members)}
+            for head, members in families.items()]
+
+
 def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     """The characters `char` is related to in the 異体字 graph, as the Worker's card lists them.
 
@@ -616,7 +650,7 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     point = refs.to_code_point(char)
     return {"items": [r for r in rows if r["widens"]], "related": [r for r in rows if not r["widens"]],
             "derived": predictions, "total": len(widening) + len(other),
-            "writes": [{"code_point": head, "char": refs.to_char(head)} for head in refs.also_writes(point)],
+            "writes": _write_families(point, counts),
             "writers": [{**writer, "shared": refs.own_grapheme(writer["code_point"])
                          or len(refs.also_writes(writer["code_point"])) > 1}
                         for writer in (refs.grapheme_info(point) or {}).get("writers", [])],
