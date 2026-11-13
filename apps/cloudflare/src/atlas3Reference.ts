@@ -23,7 +23,7 @@ export const SUMMARY_DIGITS = 3, IDS_DIGITS = 2;
 // Each kind of object has its own isolate copies, as many as a request of that kind reads: a character
 // page one card, a search one reading, the list a component search answers up to 48 families, and the
 // component search up to COMPONENT_PARTS lists.
-const readCard = heldObjects<Json>(32), readSummary = heldObjects<Json>(64), readIds = heldObjects<Json>(16), readReadings = heldObjects<Json>(16),
+const readCard = heldObjects<Json>(32), readSummary = heldObjects<Json>(64), readIds = heldObjects<Json>(16), readStructureSource = heldObjects<Json>(1), readReadings = heldObjects<Json>(16),
   readNames = heldObjects<Json>(1), readList = heldObjects<Json>(4), readComponentNames = heldObjects<Json>(1),
   readComponents = heldObjects<Json>(COMPONENT_PARTS);
 
@@ -65,6 +65,13 @@ export async function characterIds(env: Env, char: string, ctx?: ExecutionContex
   const shard = await readIds(env, `${PREFIX}ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`, ctx);
   const found = shard && Object.hasOwn(shard, char) ? shard[char] : null;
   return found ? { sequences: found[0], shapes: found[1], structure: found[2] ? { id: found[2][0], label: found[2][1] } : null } : null;
+}
+
+// The scheme, source version and policy the shards' structures were read under, or null before a
+// reference load that carries structures.
+export type StructureSource = { scheme: string; version: string; policy: string };
+export async function structureSource(env: Env, ctx?: ExecutionContext): Promise<StructureSource | null> {
+  return await readStructureSource(env, `${PREFIX}structure.json.gz`, ctx) as StructureSource | null;
 }
 
 // Every card's name: `names` as [code point, name, occurrences], and the names that are a prefix and

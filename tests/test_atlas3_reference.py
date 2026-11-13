@@ -153,6 +153,8 @@ def test_a_card_is_one_object_with_its_edges_and_the_layout_numbers_its_characte
     assert structure.label == "⿰女子"
     assert bucket.objects[f"v3/reference/ids/{shard('好', 2)}.json.gz"] == {
         "好": [["⿰女子"], None, [structure.id, structure.label]]}
+    assert bucket.objects["v3/reference/structure.json.gz"] == {
+        "scheme": structures.SCHEME, "version": structures.VERSION, "policy": structures.POLICY}
     assert db.execute("SELECT * FROM component_variants ORDER BY a").fetchall() == [("安", "阿", 2), ("氵", "水", 3)]
     # A component's characters by tier and size, code points as steps, flags n * 2 + direct.
     assert bucket.objects["v3/reference/components/U+5973.json.gz"] == {

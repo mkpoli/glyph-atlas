@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { gzipSync } from 'node:zlib';
-import { IDS_DIGITS, LIST_PAGE, SUMMARY_DIGITS, cardList, characterObject, characterIds, familySummaries, referenceShard } from './atlas3Reference';
+import { IDS_DIGITS, LIST_PAGE, SUMMARY_DIGITS, cardList, characterObject, characterIds, familySummaries, referenceShard, structureSource } from './atlas3Reference';
 
 const edge = new Map<string, Response>();
 (globalThis as any).caches = { default: {
@@ -53,6 +53,11 @@ describe('reference objects', () => {
       structure: { id: 'st:0123456789abcdef0123456789abcdef', label: '⿰女老' } });
     expect(await characterIds(env, '峰')).toEqual({ sequences: ['⿰山夆'], shapes: null, structure: null });
     expect(await characterIds(env, 'constructor')).toBeNull();
+  });
+
+  it('name the policy the structures were read under, or null before a load carries one', async () => {
+    const source = { scheme: 'babelstone-ids', version: '2025-06-27', policy: 'structure-v1' };
+    expect(await structureSource(bucket({ 'v3/reference/structure.json.gz': source }).env)).toEqual(source);
   });
 
   it('page a list across two objects at most', async () => {

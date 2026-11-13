@@ -26,6 +26,8 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
 - `ids/<shard>.json.gz`: each character's ideographic descriptions, regional shapes and 構形
   (`glyph_atlas.structures`: its id and label, or null), by the character itself, in the shard of the
   character (IDS_DIGITS).
+- `structure.json.gz`: the scheme, source version and policy the shards' structures were read under,
+  which a `structures` row records.
 - `names.json.gz`: every card's name and how often it occurs, for a search by name or code point.
   `names` is `[code point, name, occurrences]` for the cards whose name says more than
   `<prefix>IDEOGRAPH-<hex of its code point>`; `plain` gives the rest as `[prefix, code points,
@@ -401,6 +403,8 @@ def translate(atlas, mirror, path, objects):
                                                      [structure.id, structure.label] if structure else None]
     for key, chars in structures.items():
         objects.put(f"ids/{key}.json.gz", compact(dict(sorted(chars.items()))))
+    objects.put("structure.json.gz", compact({"scheme": structure_layer.SCHEME, "version": structure_layer.VERSION,
+                                              "policy": structure_layer.POLICY}))
     objects.put("names.json.gz", names_list(scratch.execute("SELECT code_point, name, occurrences FROM cards ORDER BY sort")))
     for list_name, column in (("graphemes", "several"), ("ligatures", "ligature")):
         total = scratch.execute(f"SELECT count(*) FROM cards WHERE {column}").fetchone()[0]
