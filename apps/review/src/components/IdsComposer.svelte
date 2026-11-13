@@ -22,7 +22,7 @@
   import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
   import { lookupChar } from '../lib/decompose.js'
-  import { structure } from '../lib/layers.js'
+  import { ids } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
 
@@ -51,7 +51,7 @@
   let tree = $state(null), chosen = $state(null), draft = $state(''), piece = $state(''), note = $state('')
   let field = $state(null), slot = $state(null), root = $state(null), query = $state('')
   let past = $state.raw([]), future = $state.raw([]), typing = false, run = false
-  // What the structure route answered for each character met so far (its descriptions and regional
+  // What the IDS route answered for each character met so far (its descriptions and regional
   // shapes, or that it is loading or failed), and what the variant table says of each component in
   // them. Each character is asked once, again only after a failure.
   let swaps = $state({}), known = $state({})
@@ -60,7 +60,7 @@
     if (!c) return Promise.resolve(null)
     if (asking.has(c) && !(again && known[c]?.status === 'failed')) return asking.get(c)
     known = { ...known, [c]: { status: 'loading' } }
-    const asked = structure(c).then(found => {
+    const asked = ids(c).then(found => {
       swaps = { ...swaps, ...found.substitutes }
       known = { ...known, [c]: { status: 'ready', sequences: found.sequences ?? [], shapes: found.shapes ?? [] } }
       return known[c]
