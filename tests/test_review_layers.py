@@ -274,6 +274,9 @@ def test_the_structures_route_groups_characters_by_the_structure_they_share(data
     found = client(dataset).get("/layers/structures", params={"c": "峰峯說説あ"}).json()["items"]
     assert [(item["label"], item["chars"]) for item in found] == [("⿰山夆", ["峰"]), ("⿱山夆", ["峯"]), ("⿰言兌", ["說", "説"])]
     assert client(dataset).get("/layers/structures").status_code == 422
+    # Duplicates are dropped before the cap, as the Worker does.
+    many = "峰" * 60 + "峯"
+    assert [item["chars"] for item in client(dataset).get("/layers/structures", params={"c": many}).json()["items"]] == [["峰"], ["峯"]]
 
 
 def test_suggest_reaches_historical_forms_from_the_modern_kana(dataset):

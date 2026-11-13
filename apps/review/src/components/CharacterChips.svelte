@@ -84,14 +84,14 @@
   // The 構形 of the grapheme's 字体, each with the characters that share it (峰 and 峯 are two, 說 and 説
   // one). A character with no structure, and a site that knows none yet, shows no row.
   const HAN = /^\p{Script=Han}$/u
-  const composedOf = $derived([...new Set([...members, ...written].map(v => v.char).filter(char => HAN.test(char ?? '')))].join(''))
+  const composedOf = $derived([...new Set([...members, ...written].map(v => v.char).filter(char => HAN.test(char ?? '')))].slice(0, 48).join(''))
+  // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
   let composed = $state([])
   $effect(() => {
     const chars = composedOf
-    composed = []
-    if (!chars) return
+    if (!chars) { composed = []; return }
     let live = true
-    readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => {})
+    readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => { if (live) composed = [] })
     return () => { live = false }
   })
   // The described forms a reviewer said are written for this grapheme (`written_for`): a shape Unicode
@@ -126,7 +126,7 @@
         <span class="layer-label">{t('chips.structure')}</span>
         <div class="variant-chips">
           {#each composed as s (s.id)}
-            <span class="variant structure" title={s.chars.join(' ')}><span lang="zh">{s.label}</span>{#if [...composedOf].length > 1}<small lang="zh">{s.chars.join('')}</small>{/if}</span>
+            <span class="variant structure"><span lang="zh">{s.label}</span>{#if [...composedOf].length > 1}<span class="sharing"><ScriptText text={s.chars.join('')} lang="zh" titled={false} /></span>{/if}</span>
           {/each}
         </div>
       </div>
@@ -264,7 +264,7 @@
   .derived[open] summary{margin-bottom:6px}
   .variant small{font-size:11px;color:var(--muted)}
   .variant.structure{font-size:15px}
-  .variant.structure small{font-size:15px}
+  .variant.structure:hover{border-color:var(--line)}
   .variant small.share{color:var(--accent)}
   .word-crops{font-size:12px;color:var(--muted);align-self:center}
   .word-reading{font-size:15px;align-self:center;margin-right:4px}
