@@ -1,10 +1,10 @@
 # Form model
 
 How the Atlas records what a crop is, what it looks like, and who said so. Every statement about a
-crop, a form or a grapheme is an attributed assertion in one ledger; current values are a resolution
-of that ledger, kept as indexed tables for the galleries. Reclassifying a form changes the current
-interpretation of the collection, while the crops, the source statements and each reviewer's claims
-stay recoverable with their original meaning.
+crop, a form, a structure or a grapheme is an attributed assertion in one ledger; current values are a
+resolution of that ledger, kept as indexed tables for the galleries. Reclassifying a form changes the
+current interpretation of the collection, while the crops, the source statements and each reviewer's
+claims stay recoverable with their original meaning.
 
 ## Entities
 
@@ -22,9 +22,17 @@ identity are separate predicates, even where the default policy groups their end
 **Form.** A stable opaque id for a category of written appearance. A form needs no name, no encoding
 and no structure. Forms make a tree by refinement: each has at most one parent, and a root has none.
 Every other relation between forms is a typed link: resembles, transitional-between, derived-from
-(あ from 安), substitutes-for, and written-for a grapheme or character. A form can be written for
-several graphemes (子 as the kanji 子 and as the kana ね); a crop's own identity claim says which one it
-reads as.
+(あ from 安), substitutes-for, corresponds-to (planned: a 草書 form and the 楷書 forms it writes) and
+written-for a grapheme or character. A form can be written for several graphemes (子 as the kanji 子
+and as the kana ね); a crop's own identity claim says which one it reads as.
+
+**Structure (構形).** A canonical component tree: the components a form is built from and their
+arrangement, with no stroke design. A form realizes zero, one or several structures, and a structure
+is realized by many forms. A character has at most one derived structure, whatever its regional glyphs,
+and a grapheme has several through its characters (峰 ⿰山夆, 峯 ⿱山夆); 說 and 説 share one. An
+IDS is a representation of a structure, never its identity: the id is derived from the canonical
+text and the policy (`glyph_atlas.structures`). A reviewer's `has_structure` claim is the
+authority; the derivation from the IDS is a proposal.
 
 **Representation.** A way of naming a form: a Unicode sequence, an Ideographic Variation Sequence, an
 MJ id, a GlyphWiki name, an IDS (kept exactly as written; a normalised IDS is only a versioned search
@@ -33,7 +41,8 @@ representation is never its identity. A code point anchors at most one broad for
 of that character; narrower forms can carry the same representation as an approximation.
 
 **Structural analysis.** An attributed component tree for a form, with its scheme and version, the
-regions it applies to, and its evidence. Several can coexist for one form.
+regions it applies to, and its evidence. Several can coexist for one form. A structure is the class
+of forms whose analyses canonicalize alike; the analysis is the evidence for the claim.
 
 **Crop.** The occurrence: a `Unit` and its image region. Its evidence versions are immutable records
 of the pixels a claim was made about (`crop_versions`): the crop's id, the checksum of the source
@@ -177,3 +186,6 @@ Each step is one pull request with a usable result of its own.
 9. Hands, then attribution to people, then production events.
 10. The read-path cutover everywhere, and removal of the superseded writable tables and of the
     journals' live use.
+
+Structures follow step 3: the canonical tree and its derivation, then the `has_structure` claim, then
+the correspondence link.

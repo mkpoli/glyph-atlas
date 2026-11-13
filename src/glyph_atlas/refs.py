@@ -440,6 +440,15 @@ def _descriptions() -> han_component_variants.Descriptions:
     return han_component_variants.Descriptions(dict(han_components._sequences()), han_components.unified())
 
 
+def descriptions() -> han_component_variants.Descriptions:
+    """The IDS trees of the character layer, read as this project reads them, built once.
+
+    `whole` reads a named part as the character it spells and flattens an associative chain; the
+    structure layer (`glyph_atlas.structures`) starts from the same trees.
+    """
+    return _descriptions()
+
+
 @cache
 def _substitution_table() -> dict[str, set[str]]:
     """Each component mapped to the ones the kept substitutions put in its place, both ways."""

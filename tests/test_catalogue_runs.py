@@ -253,7 +253,8 @@ def test_an_export_run_again_replaces_its_corpus_runs_and_leaves_the_others(tmp_
 def test_a_catalogue_holds_no_trigger_but_the_ledgers_and_refuses_one_made_with_the_site_migrations():
     db = export_db()
     assert {r[0] for r in db.execute("SELECT DISTINCT tbl_name FROM sqlite_master WHERE type='trigger'")} == {
-        "assertions", "assertion_evidence", "assertion_premises", "assertion_actions", "forms", "representations"}
+        "assertions", "assertion_evidence", "assertion_premises", "assertion_actions", "forms", "representations",
+        "structures"}
     catalogue_schema.schema(db)
     db.execute("CREATE TRIGGER t AFTER INSERT ON units BEGIN SELECT 1; END")
     with pytest.raises(ValueError, match="export it again"):

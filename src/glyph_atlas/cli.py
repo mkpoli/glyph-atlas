@@ -7,6 +7,7 @@ modules: this file parses arguments, calls one function, and prints what it retu
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Annotated
 
@@ -136,6 +137,29 @@ def _character_note(row: object) -> str:
     jibo = " ".join(row.jibo)
     readings = " ".join(row.readings)
     return " ".join(part for part in (f"字母 {jibo}" if jibo else "", f"読 {readings}" if readings else "") if part)
+
+
+@app.command()
+def structure(
+    char: Annotated[list[str] | None, typer.Argument(help="characters or code points, U+5CF0 or 峰")] = None,
+) -> None:
+    """Show a character's 構形: its components and their arrangement, with no stroke design.
+
+    峰 (⿰山夆) and 峯 (⿱山夆) have two; 說 and 説 have one, ⿰言兌, because the IRG unifies 兌 and 兑.
+    """
+    from . import refs, structures
+
+    if not char:
+        raise typer.BadParameter("Name a character or a code point.")
+    for value in char:
+        point = re.fullmatch(r"(?:[Uu]\+)?([0-9A-Fa-f]{4,6})", value)
+        row = refs.character(f"U+{point[1].upper()}" if point else refs.to_code_point(value))
+        if row is None:
+            typer.echo(f"{value} is not in the character layer")
+            continue
+        found = structures.for_character(row.char)
+        typer.echo(f"{row.code_point} {row.char}  {found.label}  {found.id}" if found
+                   else f"{row.code_point} {row.char}  no description")
 
 
 @app.command()
