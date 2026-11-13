@@ -27,7 +27,12 @@ PACKED = ("codh-full", "hilab")
 
 
 def write(root: Path, forms: Path, code: str, out: Path) -> dict:
-    """Write `out/<code>.npz` and return its counts; `left_out` are the crops of corpora outside `PACKED`."""
+    """Write `out/<code>.npz` and return its counts.
+
+    `left_out` are the crops of corpora outside `PACKED`, and `relabelled` those the corpus now reads as another
+    family; neither is packed. `changed` names the corpus tables that differ from the ones the clustering was
+    made from: a crop cut again since then no longer matches its embedding and cluster.
+    """
     import numpy as np
     import pyarrow.compute as pc
     import pyarrow.parquet as pq
@@ -47,9 +52,12 @@ def write(root: Path, forms: Path, code: str, out: Path) -> dict:
 
     pos = {g: i for i, g in enumerate(ids)}
     pixels, by_file = form_clusters.Pixels(root), defaultdict(list)
-    packed, found = np.zeros(len(ids), bool), np.zeros(len(ids), bool)
+    packed, found, relabelled = (np.zeros(len(ids), bool) for _ in range(3))
     for glyph in form_clusters.glyphs(root, set(ids)):
         found[pos[glyph["id"]]] = True
+        if glyph["family"] != code:
+            relabelled[pos[glyph["id"]]] = True
+            continue
         if glyph["corpus"] not in PACKED:
             continue
         packed[pos[glyph["id"]]] = True
@@ -67,16 +75,25 @@ def write(root: Path, forms: Path, code: str, out: Path) -> dict:
         except OSError:
             continue
         for identity, box in items:
-            crop = image if box is None else image.crop((box[0], box[1], box[0] + box[2], box[1] + box[3]))
+            crop = image
+            if box is not None:
+                # Clipped to the scan, as the clustering cut it.
+                right, bottom = min(image.width, box[0] + box[2]), min(image.height, box[1] + box[3])
+                if right <= box[0] or bottom <= box[1]:
+                    continue
+                crop = image.crop((box[0], box[1], right, bottom))
             crop = ImageOps.grayscale(crop)
             crop.thumbnail((EDGE, EDGE), Image.LANCZOS)
             i = pos[identity]
             grey[i, :crop.height, :crop.width] = np.asarray(crop)
             size[i] = (crop.height, crop.width)
-    revision = json.loads((forms / "manifest.json").read_text()).get("revision", forms.resolve().name)
+    manifest = json.loads((forms / "manifest.json").read_text())
+    revision = manifest.get("revision", forms.resolve().name)
+    changed = form_clusters.changed_inputs(root, manifest)
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{code}.npz"
     np.savez_compressed(path, code_point=code, revision=revision, ids=np.array(ids)[packed], grey=grey[packed],
                         size=size[packed], embedding=embedding[packed], classifier_cluster=cluster[packed])
     return {"pack": str(path), "crops": int(packed.sum()), "with_pixels": int((size[packed, 0] > 0).sum()),
-            "left_out": int((~packed).sum()), "revision": revision}
+            "left_out": int((~packed & ~relabelled).sum()), "relabelled": int(relabelled.sum()), "revision": revision,
+            "changed": changed}

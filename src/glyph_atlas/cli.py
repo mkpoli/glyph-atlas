@@ -1746,7 +1746,10 @@ def forms_pack(
     """Write one family's crops as a pack for allograph-clustering (https://github.com/mkpoli/allograph-clustering)."""
     from . import allograph_pack
 
-    typer.echo(json.dumps(allograph_pack.write(root, forms, code, out), ensure_ascii=False))
+    stats = allograph_pack.write(root, forms, code, out)
+    if stats["changed"]:
+        typer.echo(f"changed since clustering: {', '.join(stats['changed'])}; crops cut again no longer match their embedding", err=True)
+    typer.echo(json.dumps(stats, ensure_ascii=False))
 
 
 for name, module in (
