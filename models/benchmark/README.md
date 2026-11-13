@@ -126,11 +126,11 @@ collection's extraction has, a page image and each line's box and transcription,
 held-out books, and compares the box the cutter returns for each character with CODH's. A character
 is cut when the two boxes reach IoU 0.5; yield is the share of characters cut and accepted, precision
 the share of accepted boxes that are cut. The lines are put together from CODH's boxes in reading
-order, each widened by 12% of its width.
+order, each widened by 12% of its width; `--slack` also lengthens them.
 
 ```
 python models/benchmark/cuts.py build
-python models/benchmark/cuts.py run --cutter consensus --split test --pages 40
+python models/benchmark/cuts.py run --cutter lattice --split test --pages 40
 ```
 
 160 pages of the four `test` books, 44,194 characters (`results/cuts-*-test.json`):
@@ -138,9 +138,10 @@ python models/benchmark/cuts.py run --cutter consensus --split test --pages 40
 | cutter | boxed | cut | yield | precision | mean IoU | s/page |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `consensus` | 95.9% | 89.4% | 37.1% | 99.7% | 0.892 | 27.6 |
+| `lattice` | 95.1% | 91.4% | 61.2% | 99.8% | 0.887 | 2.2 |
 
 `consensus` is the extraction policy `single-character-consensus-v3`: whole detector boxes aligned by
 `glyph_atlas.align`, published when the classifier and NDLkotenOCR both read the character. It
 withheld 16,408 characters for a reading that disagreed and 9,708 at the alignment; 98.7% and 55.6%
-of those boxes were cut.
+of those boxes were cut. `lattice` is `glyph_atlas.cut` (`models/cutter/README.md`).
 

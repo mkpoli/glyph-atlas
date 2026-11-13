@@ -6,24 +6,18 @@ takes pending work coverage-first: a page holding characters the atlas still lac
 ahead of a page of characters it already has plenty of, as `Queue.prioritize` scores it; see
 `Queue`'s docstring for the full claim order.
 
-A unit is published through one of two gates, recorded as `meta.extraction.gate`. `consensus`: the
-alignment accepted it and both visual models read its character (`quality_reason`): the classifier at
-.80, and NDLkotenOCR at .10. NDLkotenOCR reads text lines, and on a lone character its reading is right
-far more often than its score says: on 21 sampled pages it read 264 crops as the transcribed character
-below .70, and of 40 drawn at random and the 40 lowest, all framed their character but one at .09.
-`unconfirmed`: its letter has no class in the classifier under any of its readings, so alignment scores it at the
-probability floor and leaves it rejected, and the classifier cannot vote for it; it is published on its
-shape, unless the classifier confidently reads a kana or a neighbour there, and on NDLkotenOCR's
-reading when that model's alphabet holds the character (`unconfirmed_reason`). Without
-this gate no character outside the classifier's classes could reach review, and those are the rare
-ones. Of the 30 units it published from 7 pages on 2026-09-27, 25 framed their character; the others
-held part of it (a detector trained on common classes splits tall compounds such as 飍) or a sliver,
-so reviewers and consumers should read the gate.
+A line is cut by `cut.Cutter`: its transcription is aligned to the detector's boxes, to parts of
+them and to the ink between them, and a placement is published when the cutter's acceptance model
+gives its box the probability the model was fitted to ask (`models/cutter`). The character is the
+transcriber's, so a form the classifier has never seen is published on how its box sits in its line.
+Such a unit carries `meta.extraction.gate` `lattice`, with how its box was made (`cut`) and the
+model's probability. Earlier policies published through `consensus` (two recognizers read the
+character in the crop) and `unconfirmed` (a character the classifier has no class for).
 
 A page completed under an earlier policy is not extracted again; a supplement adds what the current
 policy would publish there and the earlier one could not. `Queue.seed_supplements` lists the complete
 pages whose output predates `POLICY`; `supplement` extracts such a page under `POLICY` and keeps the
-units, of either gate, that overlap no crop the page's earlier output or an earlier supplement
+units that overlap no crop the page's earlier output or an earlier supplement
 published. `run` takes a supplement every `supplement_every` pages, so the backlog of new pages keeps
 moving.
 """
@@ -47,9 +41,8 @@ from uuid import uuid4
 from . import align, images, tables, withdrawn
 from .schema import PAGE_SCOPE, Classification, ReviewState, UnitKind
 
-POLICY = "single-character-consensus-v3"
-CONSENSUS = "consensus"
-UNCONFIRMED = "unconfirmed"
+POLICY = "single-character-lattice-v4"
+LATTICE = "lattice"
 
 
 def digest(value):
@@ -202,25 +195,7 @@ class Queue:
             self.db.execute("ALTER TABLE supplements ADD COLUMN worker TEXT")
         if "lease_until" not in supplement_columns:
             self.db.execute("ALTER TABLE supplements ADD COLUMN lease_until REAL")
-        # Settings every worker on the queue must share, such as where NDL's model runs (`pin`).
-        self.db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         self.db.commit()
-
-    def pin(self, key, value, *, replace=False):
-        """Record `value` as the queue's `key` on first use, and refuse a worker that brings another.
-
-        NDL's provider is pinned so: the CPU and CUDA differ in the last digits of a score, which moves a
-        few crops across a threshold, and a queue extracted by both would hold pages of either. `replace`
-        re-pins it, for a switch made once every worker has stopped.
-        """
-        with self.db:
-            if replace:
-                self.db.execute("INSERT OR REPLACE INTO settings (key,value) VALUES(?,?)", (key, value))
-            else:
-                self.db.execute("INSERT OR IGNORE INTO settings (key,value) VALUES(?,?)", (key, value))
-            pinned = self.db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()[0]
-        if pinned != value:
-            raise RuntimeError(f"this queue's {key} is {pinned}, not {value}")
 
     def seed(self, source: Path, *, include_ainu=False):
         """Queue the pages of `source` that hold a located transcription line.
@@ -534,91 +509,10 @@ def shape_reason(unit, size):
     if unit.kind != UnitKind.CHAR or unit.granularity != "char" or len(expected) != 1:
         return "not-one-character"
     b = unit.box
-    if b is None or min(b.w, b.h) < 8 or b.x < 0 or b.y < 0 or b.x+b.w > size[0] or b.y+b.h > size[1]:
+    if b is None:
+        return "no-ink"
+    if min(b.w, b.h) < 8 or b.x < 0 or b.y < 0 or b.x+b.w > size[0] or b.y+b.h > size[1]:
         return "invalid-geometry"
-    if not .25 <= b.w / b.h <= 2.2:
-        return "elongated-crop"
-    return None
-
-
-def vote_reason(votes, expected, name, threshold):
-    """Why the vote of engine `name` does not confirm `expected`, or None."""
-    vote = next((v for v in votes if v["engine"] == name), None)
-    if (not vote or vote.get("identity_scope", "character") != "character"
-            or unicodedata.normalize("NFC", vote.get("text") or "").strip() != expected):
-        return "visual-disagreement"
-    score = vote.get("score")
-    if (not isinstance(score, (float, int)) or isinstance(score, bool)
-            or not math.isfinite(score) or not 0 <= score <= 1 or score < threshold):
-        return "visual-uncertain"
-    return None
-
-
-def quality_reason(unit, votes, size):
-    """Conservative publication gate. Both independent visual models must agree."""
-    if unit.review != ReviewState.MACHINE:
-        return "alignment-uncertain"
-    reason = shape_reason(unit, size)
-    if reason:
-        return reason
-    expected = unicodedata.normalize("NFC", unit.text_source)
-    for name, threshold in (("Atlas classifier", .80), ("NDLkotenOCR", .10)):
-        reason = vote_reason(votes, expected, name, threshold)
-        if reason:
-            return reason
-    return None
-
-
-def letter_out_of_vocabulary(char, candidates, classes) -> bool:
-    """Whether `char` is a letter (category Lo) with no class under itself or any of `candidates`."""
-    char = unicodedata.normalize("NFC", char)
-    if len(char) != 1 or unicodedata.category(char) != "Lo":
-        return False
-    return {f"U+{ord(char):04X}", *candidates}.isdisjoint(classes)
-
-
-def out_of_vocabulary(unit, classes) -> bool:
-    """Whether the unit is a letter the classifier has no class for, under any of its readings.
-
-    Alignment scores a token through its candidate code points, so a katakana unit read through its
-    hiragana class is in vocabulary. Marks, punctuation and symbols (not category Lo) never are
-    out of vocabulary here: many are transcribers' notation with no ink of their own.
-    """
-    return letter_out_of_vocabulary(unit.text_source or "", (c.unicode for c in unit.candidates), classes)
-
-
-def kana(text) -> bool:
-    return len(text) == 1 and unicodedata.name(text, "").startswith(("HIRAGANA", "KATAKANA", "HENTAIGANA"))
-
-
-def unconfirmed_reason(unit, votes, size, *, alphabet, neighbours=()):
-    """Publication gate for a character the classifier has no class for.
-
-    Alignment gives such a token whichever detection is left between its neighbours, and when the
-    detector missed the character that can be a ruby kana or part of the next character. The
-    classifier vetoes the box when it reads, at .80 or more, a kana or the text of a neighbouring
-    unit; it cannot veto every confident reading, since it reads 髙 as 高. NDLkotenOCR vetoes it when
-    it reads two or more characters there at .90 or more (tall compounds such as 孼 read as two, but
-    less surely). The shape checks of any unit apply, and NDLkotenOCR must read the character when
-    its alphabet holds it, at .70 rather than the .10 the consensus gate asks: there the classifier
-    has already read the character, and NDLkotenOCR only has to agree; here its reading is the only
-    evidence of which character the box holds.
-    """
-    reason = shape_reason(unit, size)
-    if reason:
-        return reason
-    sequence = next((v for v in votes if v["engine"] == "NDLkotenOCR"), None)
-    if sequence and len(sequence.get("text") or "") > 1 and not vote_reason(
-            [sequence], sequence["text"], "NDLkotenOCR", .90):
-        return "not-one-character"
-    vote = next((v for v in votes if v["engine"] == "Atlas classifier"), None)
-    if vote and not vote_reason([vote], vote.get("text") or "", "Atlas classifier", .80):
-        read = unicodedata.normalize("NFC", vote.get("text") or "")
-        if kana(read) or read in neighbours:
-            return "visual-disagreement"
-    expected = unicodedata.normalize("NFC", unit.text_source)
-    if expected in alphabet:
-        return vote_reason(votes, expected, "NDLkotenOCR", .70)
     return None
 
 
@@ -667,13 +561,14 @@ def check_coordinate_space(original, cached):
         raise ValueError("cached image dimensions differ from source coordinates; extraction withheld")
 
 
-def engine_models(detector, reader):
-    """What names the models of an extraction: the detector's checksum, and each recognizer's model
-    with the provider it ran on, since providers differ in the last digits of a score."""
-    return {"detector": hashlib.sha256(Path(detector).read_bytes()).hexdigest(),
-            "recognizers": reader.engines,
-            "classifier_classes": digest(reader.classifier.classes),
-            "sequence_alphabet": digest(reader.alphabet)}
+def engine_models(detector, classifier, refiner, cutter):
+    """What names the models of an extraction: each model's checksum and the cutter's fitted version."""
+    def checksum(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    return {"detector": checksum(detector), "classifier": checksum(classifier.onnx_path),
+            "classifier_classes": digest(classifier.classes), "refiner": checksum(refiner.path),
+            "cutter": cutter.version, "cutter_models": digest([cutter.framing.weights.tolist(),
+                                                                cutter.gate.weights.tolist(), cutter.gate.accept])}
 
 
 def page_identity(models, run, page, document, lines):
@@ -684,35 +579,37 @@ def page_identity(models, run, page, document, lines):
 
 
 class Engine:
-    def __init__(self, *, ndl_cpu: bool = False, ndl_threads: int = 2):
+    def __init__(self):
         import onnxruntime as ort
 
+        from . import cut, refine
+        from .classify import Classifier
         from .detect import Detector
-        from .review.suggestions import Recognizer
+        from .review.suggestions import classifier_path
         self.run = align.load_run(Path("models/align/runs/collection-v2.yaml"))
-        options = ort.SessionOptions()
-        options.intra_op_num_threads = 2
-        options.inter_op_num_threads = 1
-        options.log_severity_level = 3
         if "CUDAExecutionProvider" not in ort.get_available_providers():
             raise RuntimeError("CUDA provider required for this bounded worker")
         ort.preload_dlls()
-        session = ort.InferenceSession(self.run.detector, sess_options=options, providers=[
-            ("CUDAExecutionProvider", {"gpu_mem_limit":1024*1024*1024,
-                                      "arena_extend_strategy":"kSameAsRequested"}), "CPUExecutionProvider"])
-        if session.get_providers()[0] != "CUDAExecutionProvider":
-            raise RuntimeError("detector CUDA initialization failed")
-        self.detector = Detector(self.run.detector, score=self.run.score, nms=self.run.nms, session=session)
-        # The classifier, shared with alignment, runs on CUDA; NDL's sequence model may run on the CPU.
-        self.reader = Recognizer(sequence_on_cpu=ndl_cpu, sequence_threads=ndl_threads)
-        if self.reader.sequence is None or self.reader.classifier is None:
-            raise RuntimeError("both sequence and single-character models are required")
-        wanted = {"NDLkotenOCR": "CPUExecutionProvider" if ndl_cpu else "CUDAExecutionProvider"}
-        if any(e["provider"] != wanted.get(e["name"], "CUDAExecutionProvider") for e in self.reader.engines):
-            raise RuntimeError("recognizer initialization did not reach the requested providers")
-        self.classifier = self.reader.classifier
-        self.ndl_provider = next(e["provider"] for e in self.reader.engines if e["name"] == "NDLkotenOCR")
-        self.models = engine_models(Path(self.run.detector), self.reader)
+
+        def session(path, megabytes):
+            options = ort.SessionOptions()
+            options.intra_op_num_threads = 2
+            options.inter_op_num_threads = 1
+            options.log_severity_level = 3
+            found = ort.InferenceSession(str(path), sess_options=options, providers=[
+                ("CUDAExecutionProvider", {"gpu_mem_limit": megabytes*1024*1024,
+                                          "arena_extend_strategy": "kSameAsRequested"}), "CPUExecutionProvider"])
+            if found.get_providers()[0] != "CUDAExecutionProvider":
+                raise RuntimeError(f"{path}: CUDA initialization failed")
+            return found
+        self.detector = Detector(self.run.detector, score=self.run.score, nms=self.run.nms,
+                                 session=session(self.run.detector, 1024))
+        self.classifier = Classifier(classifier_path(), session=session(classifier_path(), 1536))
+        self.refiner = refine.Refiner(session=session(refine.MODEL, 768))
+        self.cutter = cut.Cutter(refiner=self.refiner)
+        if self.cutter.framing is None or self.cutter.gate is None:
+            raise RuntimeError("models/cutter holds no fitted cutter")
+        self.models = engine_models(Path(self.run.detector), self.classifier, self.refiner, self.cutter)
 
     def inputs(self, job, *, max_lines=64):
         """What one page's extraction reads, with the `identity` that names its output; no model runs."""
@@ -760,58 +657,44 @@ class Engine:
 
     def extract_page(self, work):
         """Run the models over one page's `inputs`: its report and the records to commit."""
+        from . import cut
         page, document, lines, image = work["page"], work["document"], work["lines"], work["image"]
         identity, located_line_count = work["identity"], work["located_line_count"]
         original_dimensions = work["original_dimensions"]
-
-        def crop_of(page_id, box):
-            return image.crop((box.x,box.y,box.x+box.w,box.y+box.h))
         candidates = []
         reasons = Counter()
         examined = 0
         detections = [align.Detection(box=box, score=score) for box,score in self.detector.boxes(image)]
-        classes = set(self.classifier.classes)
-        aligned = align.align_page(lines, detections, run=self.run, classifier=self.classifier, crop_of=crop_of)
+        placed = self.cutter.cut(lines, detections, image, self.classifier, policy=self.run.policy)
         for line in lines:
-            found, _ = aligned[line.id]
-            for position, unit in enumerate(found):
+            placements = placed[line.id]
+            units = cut.units_of(line, placements, run=self.run.name, version=self.cutter.version)
+            for placement, unit in zip(placements, units, strict=True):
+                if placement.token.text.isspace():
+                    continue
                 examined += 1
-                gate = CONSENSUS
-                reason = quality_reason(unit, [], image.size)
-                if reason in (None, "visual-disagreement"):
-                    result = self.reader.read(crop_of(page.id, unit.box))
-                    reason = quality_reason(unit, result["votes"], image.size)
-                elif (reason == "alignment-uncertain" and out_of_vocabulary(unit, classes)
-                        and shape_reason(unit, image.size) is None):
-                    result = self.reader.read(crop_of(page.id, unit.box))
-                    neighbours = {other.text_source for other in found[max(0, position - 1):position + 2]
-                                  if other is not unit and other.text_source}
-                    reason = unconfirmed_reason(unit, result["votes"], image.size, alphabet=self.reader.alphabet,
-                                                neighbours=neighbours)
-                    gate = UNCONFIRMED
+                reason = shape_reason(unit, image.size) or (None if placement.accepted else "framing-uncertain")
                 if reason:
                     reasons[reason] += 1
                     continue
                 label = unicodedata.normalize("NFC", unit.text_source)
-                unit = unit.model_copy(update={
+                candidates.append(unit.model_copy(update={
                     "id":"ex:"+identity[:16]+":"+digest(unit.id)[:20],
                     "document_id":document.id,"unicode":f"U+{ord(label):04X}",
                     "classification":Classification.IDENTIFIED,"group_id":None,
                     "review":ReviewState.MACHINE,
-                    "meta":{"extraction":{"policy":POLICY,"gate":gate,"source_unit_id":unit.id,
+                    "meta":{"extraction":{"policy":POLICY,"gate":LATTICE,"cut":placement.kind,
+                        "probability":round(placement.probability, 4),"source_unit_id":unit.id,
                         "source_page_id":page.id,"source_line_id":line.id,"page_sha256":page.sha256,
-                        "generation":identity,"visual_votes":result["votes"],
-                        "verified":False,"quiz":True}},
+                        "generation":identity,"verified":False,"quiz":True}},
                     "upstream":{**unit.upstream,"source":line.meta.get("source", "honkoku-lines"),
-                                "extraction_policy":POLICY}})
-                candidates.append(unit)
-        align.clear_crop_cache()
+                                "extraction_policy":POLICY}}))
         accepted, duplicates = unique_units(candidates)
         reasons["overlapping-crops"] += duplicates
+        cuts = Counter(unit.meta["extraction"]["cut"] for unit in accepted)
         report = {"policy":POLICY,"generation":identity,"page_id":page.id,"document_id":document.id,
                   "title":document.title,"page_sha256":page.sha256,"models":self.models,
-                  "examined":examined,"accepted":len(accepted),"withheld":dict(reasons),
-                  "unconfirmed":sum(1 for u in accepted if u.meta["extraction"]["gate"] == UNCONFIRMED),
+                  "examined":examined,"accepted":len(accepted),"withheld":dict(reasons),"cuts":dict(cuts),
                   "source_dimensions":list(original_dimensions),"lines":len(lines),"detected":len(detections),"complete_page":len(lines)==located_line_count,
                   "withheld_lines":{"invalid_geometry":located_line_count-len(lines)},
                   "created_at":datetime.now(UTC).isoformat()}
@@ -821,7 +704,7 @@ class Engine:
 def supplement(engine, job, root, *, max_lines=64):
     """Extract a page completed under an earlier policy again and keep what that policy could not add.
 
-    The kept units, of either gate, are those that overlap no crop of the page's earlier output or of
+    The kept units are those that overlap no crop of the page's earlier output or of
     a supplement an earlier policy made for it (`overlaps`), since those are already published and a
     crop there may already be reviewed. They are committed with the page's document, page and line
     rows under `supplements/`; the page's full extraction under this policy is not kept. A supplement
