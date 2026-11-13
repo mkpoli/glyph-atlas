@@ -1,5 +1,5 @@
 import { request, character as readCrop, corpusCharacter } from './client.js'
-import { character as readCard, structure as readStructure } from './layers.js'
+import { character as readCard, ids as readIds } from './layers.js'
 import { drawFigure, figuresOf } from './mjFigures.js'
 
 /**
@@ -46,7 +46,7 @@ export function listForms(char) {
     let partial = false
     const registered = figuresOf(char).then(async figures => (figures.length && await drawFigure(figures[0].char), figures))
       .catch(() => { partial = true; return [] })
-    const described = HAN.test(char) ? readStructure(char).then(found => found.shapes ?? [], () => { partial = true; return [] }) : Promise.resolve([])
+    const described = HAN.test(char) ? readIds(char).then(found => found.shapes ?? [], () => { partial = true; return [] }) : Promise.resolve([])
     const loaded = Promise.all([card, registered, described]).then(([card, figures, regional]) => {
       const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
       const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) }))
