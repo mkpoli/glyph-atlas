@@ -16,8 +16,9 @@
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
   import { familyCodeSet } from '../lib/forms.js'
+  import { cardTiers } from '../lib/cardTiers.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
-  const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
+  const { members, variants, grapheme, writers, sharedWriters, writes, selfGrapheme, shared, written, related, described } = $derived(cardTiers(card))
   // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
   // widening to variants has no address of its own to cite.
   const entry = $derived(card?.code_point && expand !== 'variants' ? characterEntry(expand === 'grapheme' ? 'grapheme' : 'form', card) : null)
@@ -25,11 +26,6 @@
   let clustered = $state(null)
   $effect(() => { if (page.data.forms) familyCodeSet().then(codes => { clustered = codes }) })
   const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && clustered?.has(code)))
-  // The 異体字 graph: the variants a gallery widens to, characters related otherwise, and the
-  // derived tier — forms up to two component substitutions may write this character as, folded
-  // after the attested variants, each with a mark, no gallery widening to them.
-  // A card cached before the derived tier existed has no `derived`; it reads as none.
-  const variants = $derived({ items: [], related: [], sources: {}, ...card?.variants, derived: card?.variants?.derived ?? [] })
   // Every relation of kanji-variants.tsv in the reader's language; one the table gains later reads as its id.
   const RELATION_NAMES = {
     variant: () => t('chips.relation.variant'), equivalent: () => t('chips.relation.equivalent'),
@@ -62,29 +58,7 @@
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
   // What a chip's number counts: the crops filed under it here and the corpus glyphs recorded for it.
   const glyphCount = v => crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : undefined
-  // Three levels: the 字種 (the grapheme, and any other grapheme this form also writes, 后: 後), its 字体
-  // (the grapheme's own forms, then the 異体字 outside it, the ones a gallery widens to first), and the
-  // characters related otherwise (a loan, a homograph, a fallback reduction). A form that writes this
-  // grapheme and a character of its own (後: 后) is a 字体 tagged as shared. A card cached before rows
-  // carried `written` lists every unwidening pair as related; one cached before the writers has neither.
-  const grapheme = $derived(card?.grapheme ?? card)
-  const writers = $derived(new Set((variants.writers ?? []).map(v => v.code_point)))
-  // A form standing for this grapheme alone (聞: 𦔴) is one of its 字体, with no tag. A card cached
-  // before writers carried `shared` tags every writer, as they all were.
-  const sharedWriters = $derived(new Set((variants.writers ?? []).filter(v => v.shared !== false).map(v => v.code_point)))
-  const writes = $derived(variants.writes ?? [])
-  // A form with no character of its own (𠮮) has the graphemes it writes as its 字種, and not itself;
-  // the 兼用 tag marks each of several.
-  const selfGrapheme = $derived(variants.own !== false || !writes.length)
-  const shared = $derived(writes.length + (selfGrapheme ? 1 : 0) > 1)
   const shareLabel = v => writers.has(v.code_point) ? t('chips.alsoOther') : t('chips.alsoWritten', { char: card.char })
-  const own = $derived(new Set([...members, ...writes].map(member => member.code_point)))
-  const written = $derived([...variants.items, ...variants.related.filter(v => v.written || writers.has(v.code_point))]
-    .filter(v => !own.has(v.code_point)).sort((a, b) => writers.has(b.code_point) - writers.has(a.code_point)))
-  const related = $derived(variants.related.filter(v => !v.written && !writers.has(v.code_point) && !own.has(v.code_point)))
-  // The described forms a reviewer said are written for this grapheme (`written_for`): a shape Unicode
-  // lacks has no character page, so it joins the 字体 row as its own sequence with its crop count.
-  const described = $derived(variants.forms ?? [])
   // The 構形 of the grapheme's 字体, each with the characters and described forms that share it (峰 and
   // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫). A name with no structure, and a site that knows
   // none yet, shows no row.
