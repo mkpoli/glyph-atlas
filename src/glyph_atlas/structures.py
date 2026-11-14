@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from functools import cache
 
 from . import han_component_variants, han_components, refs
-from .representation import Representation, described
+from .representation import Representation, described, is_sequence
 
 #: The IDS source the derivation reads, its file date, and the canonicalization policy.
 SCHEME = "babelstone-ids"
@@ -314,6 +314,17 @@ def for_ids(sequence: str) -> Structure:
     written = from_tree(han_component_variants.parse(SELECTORS.sub("", sequence)))
     spelled = _spellings().get(written.label)
     return for_character(spelled) or written if spelled else written
+
+
+def for_name(name: str) -> Structure | None:
+    """The structure of what a text names: a description's, or a character's with any variation
+    selector dropped. A description that names none has none."""
+    if is_sequence(name):
+        try:
+            return for_ids(unicodedata.normalize("NFC", name))
+        except ValueError:
+            return None
+    return for_character(name[:1]) if name else None
 
 
 def for_representation(named: Representation) -> Structure | None:

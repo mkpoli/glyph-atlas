@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { anchoredForm, formProblem, isSequence, representationId, typed, type Representation } from './representation'
+import { anchoredForm, formProblem, isSequence, representationId, structureKey, typed, written, type Representation } from './representation'
 
 test('a character or a description is a form a reviewer may type', () => {
   for (const value of ['𮟃', '還', 'が', '葛\u{E0100}', '⿺辶𦊷', '⿰氵⿱冖月', '⿲木木木', '⿱⿰口口⿰口口', '〾⿰木？', '⿰木', '⿰⺡骨'])
@@ -37,4 +37,20 @@ test('ids are what the review service derives for the same names', async () => {
     expect([id, await anchoredForm(id)]).toEqual([rep, form])
   }
   expect(await representationId({ scheme: 'pua', value: '\uE000', namespace: 'example', version: '1' })).toBe('rp:24234b052e1ad13df2cca72c95de5246')
+})
+
+test('a text names its characters and descriptions one after another', () => {
+  expect(written('說⿰月兊説')).toEqual(['說', '⿰月兊', '説'])
+  expect(written('⿰氵⿵戊天⿱𥫗冊')).toEqual(['⿰氵⿵戊天', '⿱𥫗冊'])
+  expect(written('葛\u{E0100}峰')).toEqual(['葛\u{E0100}', '峰'])
+  // What follows a description cut short, or one with a part no description may name, is left out.
+  expect(written('峰⿰山')).toEqual(['峰'])
+  expect(written('⿰山a峰')).toEqual([])
+  expect(written('')).toEqual([])
+})
+
+test('a structure is kept under the description as written and the character without its selector', () => {
+  expect(structureKey('⿰月兊')).toBe('⿰月兊')
+  expect(structureKey('葛\u{E0100}')).toBe('葛')
+  expect(structureKey('\uf904')).toBe('滑')
 })

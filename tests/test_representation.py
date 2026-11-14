@@ -41,6 +41,16 @@ def test_the_registries_and_a_namespaced_private_use_form_are_held():
         assert representation.check(good) is good
 
 
+def test_a_text_names_its_characters_and_descriptions_one_after_another():
+    # apps/cloudflare/src/representation.test.ts holds the same values.
+    assert representation.written("說⿰月兊説") == ["說", "⿰月兊", "説"]
+    assert representation.written("⿰氵⿵戊天⿱𥫗冊") == ["⿰氵⿵戊天", "⿱𥫗冊"]
+    assert representation.written("葛\U000E0100峰") == ["葛\U000E0100", "峰"]
+    assert representation.written("峰⿰山") == ["峰"]
+    assert representation.written("⿰山a峰") == []
+    assert representation.written("") == []
+
+
 def test_ids_are_what_the_worker_derives_for_the_same_names():
     # The Worker's representation.test.ts holds the same values.
     vectors = {"𮟃": ("rp:b78a8585df2e755ac741ca9c16c933f4", "fm:9a7e168e47aef52e2958cff4ba7cf858"),
