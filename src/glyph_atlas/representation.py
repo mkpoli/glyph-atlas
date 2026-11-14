@@ -106,13 +106,16 @@ def described(value: str) -> bool:
 
 def written(text: str) -> list[str]:
     """The characters and descriptions `text` names one after another: a description ends where its
-    operators are satisfied, so 說⿰月兊説 names three. What follows a malformed description is left out."""
+    operators are satisfied, so 說⿰月兊説 names three. What follows a malformed description, or one
+    longer than a form may be, is left out."""
     found, at = [], 0
     while at < len(text):
         if _arity(text[at]):
             try:
                 end = _described(text, at)
-            except ValueError:
+            except (ValueError, RecursionError):
+                break
+            if end - at > LONGEST:
                 break
         else:
             end = at + 1
