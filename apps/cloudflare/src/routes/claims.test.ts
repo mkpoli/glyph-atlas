@@ -339,7 +339,9 @@ describe('a form that realizes a structure', () => {
     const found = setup();
     const beside = await structureId('⿰山夆', SOURCE.scheme, SOURCE.policy), above = await structureId('⿱山夆', SOURCE.scheme, SOURCE.policy);
     const rows: Record<string, unknown[]> = { '峰': [['⿰山夆'], null, [beside, '⿰山夆']], '峯': [['⿱山夆'], null, [above, '⿱山夆']],
-      '丑': [[], null, null], '岑': [['⿱山今'], null, ['st:' + '0'.repeat(32), '⿱山今']] };
+      '丑': [[], null, null], '岑': [['⿱山今'], null, ['st:' + '0'.repeat(32), '⿱山今']],
+      // A description the load read: the form's own, which spells 峰 with another drawing of 夆.
+      '⿰山夅': [['⿰山夅'], null, [beside, '⿰山夆']] };
     const shards = new Map<string, Record<string, unknown>>();
     for (const [char, row] of Object.entries(rows)) {
       const name = `v3/reference/ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`;
@@ -377,6 +379,13 @@ describe('a form that realizes a structure', () => {
     await expect(say('峰', true)).rejects.toThrow('409 You have not said this form has this structure.');
   });
 
+  it('names a structure by a description the load read, and by a character with its variation selector', async () => {
+    const { form, say, beside } = await forms();
+    expect(await say('⿰山夅')).toEqual({ id: form, structures: [{ structure: beside, label: '⿰山夆', by: ['reader'] }], replaced: null });
+    const both = (await say('峰\u{E0100}', false, 'other')).structures;
+    expect(both.map((v: any) => [v.structure, [...v.by].sort()])).toEqual([[beside, ['other', 'reader']]]);
+  });
+
   it('takes a claim back by the id of its structure, and refuses one id for two requests', async () => {
     const { env, tools, form, say, beside } = await forms();
     const id = crypto.randomUUID();
@@ -392,7 +401,9 @@ describe('a form that realizes a structure', () => {
     const { env, tools, say } = await forms();
     await expect(say('丑')).rejects.toThrow('422 No structure is known for 丑.');
     await expect(say('鑫')).rejects.toThrow('422 No structure is known for 鑫.');
-    await expect(say('峰峯')).rejects.toThrow('422 Name one character.');
+    await expect(say('峰峯')).rejects.toThrow('422 Name one character or description.');
+    await expect(say('⿰山')).rejects.toThrow('422 Name one character or description.');
+    await expect(say('⿰山今')).rejects.toThrow('422 No structure is known for ⿰山今.');
     await expect(say('岑')).rejects.toThrow('503 The structures are being loaded.');
     await expect(setStructure(env, { id: crypto.randomUUID(), char: '峰' }, 'fm:' + '0'.repeat(32), 'reader', tools))
       .rejects.toThrow('404 No such form.');

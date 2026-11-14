@@ -13,7 +13,7 @@ import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveC
   ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
 import { readRecords, recordKey } from '../records';
 import { refileRuns } from './runs';
-import { anchoredForm, representationId, typed, type FormProblem, type Representation } from '../representation';
+import { FORM_LONGEST, anchoredForm, representationId, structureKey, typed, written, type FormProblem, type Representation } from '../representation';
 
 type Json = Record<string, any>;
 export type ClaimTools = {
@@ -319,7 +319,8 @@ export async function setWrittenFor(env: Env, input: Json, form: string, actor: 
 }
 
 // A form's `has_structure` claims: the 構形 the form realizes (docs/decisions/0012-structure-layer.md).
-// A structure is named by a character that has it, since the Worker reads structures and derives none.
+// A structure is named by a character that has it, or by a description the reference load read (a
+// form's own, when a reviewer typed one), since the Worker reads structures and derives none.
 export const structuresQuery = () => `SELECT c.status,c.members,c.claims FROM current_claims c
   WHERE c.subject=? AND c.predicate='has_structure' AND c.scope=''`;
 export const structureLabelsQuery = () => 'SELECT id,label FROM structures WHERE id IN (SELECT value FROM json_each(?))';
@@ -346,7 +347,7 @@ export async function structureId(label: string, scheme: string, policy: string)
   return 'st:' + [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
 const STRUCTURE_ID = /^st:[0-9a-f]{32}$/;
-/** Say that a form realizes the structure of a character (`remove` false), or take back the reader's own
+/** Say that a form realizes the structure of a character or a description (`remove` false), or take back the reader's own
  *  claim (`remove` true), which may name the structure by its id: a claim made under an earlier policy
  *  is one no character names any more. A form can realize several structures; each is a claim of its
  *  own. The structure's row is written with its first claim, under the version the policy object
@@ -364,9 +365,9 @@ export async function setStructure(env: Env, input: Json, form: string, actor: s
     if (!STRUCTURE_ID.test(named)) tools.fail(422, 'Name a structure by its id.');
     structure = { id: named, label: '' };
   } else {
-    const char = tools.text(input.char, 8, 'char', true)!;
-    if ([...char].length !== 1) tools.fail(422, 'Name one character.');
-    const [described, read] = await Promise.all([characterIds(env, char, ctx), structureSource(env, ctx)]);
+    const char = tools.text(input.char, 4 * FORM_LONGEST, 'char', true)!;
+    if (written(char).length !== 1 || written(char)[0] !== char) tools.fail(422, 'Name one character or description.');
+    const [described, read] = await Promise.all([characterIds(env, structureKey(char), ctx), structureSource(env, ctx)]);
     // No policy object: no reference load has carried structures yet.
     source = read ?? tools.fail(503, 'The structures are being loaded.');
     structure = described?.structure ?? tools.fail(422, `No structure is known for ${char}.`);
