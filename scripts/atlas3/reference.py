@@ -72,8 +72,8 @@ names every object under `v3/reference/` this load may have written, so the obje
 decided from R2 itself. Before uploading, the load writes a manifest that adds the new paths with an
 empty hash and keeps the old hash of a changed one; after uploading and deleting, the new manifest.
 A load that stops between the two leaves every object it wrote listed, and its rerun sends them again.
-Figures go to `out/reference-report.txt`. `--send` also applies migration 0004 (stamp
-`migration:0004`) where the local copy lacks it.
+Figures go to `out/reference-report.txt`. `--send` also applies migrations 0004 and 0017 (stamps
+`migration:0004`, `migration:0017`) where the local copy lacks them.
 
 `build.py --replace` numbers graphemes afresh: run this again after it.
 """
@@ -758,17 +758,24 @@ def object_report(objects, gone, notes):
     return "\n".join(lines) + "\n"
 
 
+# The migrations this load applies, each with a table it makes: 0004 holds the reference rows, 0017 the
+# structures the IDS shards name, which a claim is filed against.
+MIGRATIONS = (("0004", SCHEMA.name, "words"), ("0017", "0017_structures.sql", "structures"))
+
+
 def migrate(atlas):
-    """Migration 0004 on D1 and the local copy, once; a layout built with it already has its tables."""
-    if has(atlas, "words"):
-        return
-    path = OUT / "reference-load" / "0004.sql"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(stamped(SCHEMA.read_text(), "migration:0004"))
-    if not applied("glyph-atlas-v3", "migration:0004") and not send("glyph-atlas-v3", path, "migration:0004"):
-        sys.exit("migration 0004 did not apply; rerun")
-    atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
-    print("migration 0004 applied", flush=True)
+    """Each of MIGRATIONS on D1 and the local copy, once; a layout built with one already has its tables."""
+    for number, name, made in MIGRATIONS:
+        if has(atlas, made):
+            continue
+        stamp = f"migration:{number}"
+        path = OUT / "reference-load" / f"{number}.sql"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(stamped((SCHEMA.parent / name).read_text(), stamp))
+        if not applied("glyph-atlas-v3", stamp) and not send("glyph-atlas-v3", path, stamp):
+            sys.exit(f"migration {number} did not apply; rerun")
+        atlas.executescript("BEGIN;\n" + path.read_text() + "COMMIT;\n")
+        print(f"migration {number} applied", flush=True)
 
 
 def send_lock_path():

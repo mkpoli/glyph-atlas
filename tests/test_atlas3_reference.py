@@ -369,6 +369,17 @@ def test_migration_0004_is_applied_once_where_the_layout_lacks_it(layout, monkey
     assert db.execute("SELECT count(*) FROM words").fetchone() == (1,)
 
 
+def test_migration_0017_is_applied_once_where_the_layout_lacks_it(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")])
+    both(root, remote, "DROP TABLE IF EXISTS structures")
+    load(remote, monkeypatch, "--send")
+    load(remote, monkeypatch, "--send")
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        assert db.execute("SELECT count(*) FROM imports WHERE stamp='migration:0017'").fetchone() == (1,)
+        assert db.execute("SELECT count(*) FROM structures").fetchone() == (0,)
+
+
 def test_the_citations_load_into_site_beside_the_values_books_writes(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     both(root, remote, """INSERT INTO site VALUES('collection', '{"books": 2}');""")
