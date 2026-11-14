@@ -97,9 +97,20 @@ def test_a_character_described_as_itself_is_its_own_structure():
     assert structures.for_character("一").label == "一"
 
 
-def test_a_character_without_a_usable_description_has_none():
+def test_a_character_whose_descriptions_name_no_composition_is_one_component():
+    # 七 is 〾⿻一乚 (approximate), 乌 is ㇯鸟丶 (subtracting), 𠇇 is ⿰亻？ (a part no character names).
+    for char in "七乌𠇇":
+        assert structures.for_character(char).label == char
+    assert structures.for_character("七").id != structures.for_character("乌").id
+
+
+def test_every_described_character_has_a_structure():
+    assert all(structures.for_character(char) for char in han_components._sequences())
+
+
+def test_a_character_the_source_does_not_describe_has_none():
     assert structures.for_character("あ") is None
-    assert structures.for_character("七") is None  # 〾⿻一乚: approximate
+    assert structures.for_character("々") is None
 
 
 def test_an_approximate_or_malformed_description_names_no_structure():

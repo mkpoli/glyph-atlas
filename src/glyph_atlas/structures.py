@@ -275,12 +275,14 @@ def _whole(char: str) -> str:
 def for_character(char: str) -> Structure | None:
     """The structure of a character: its first description's, or that of the character the IRG
     unifies it with. A compatibility ideograph has its unified ideograph's (說 U+F96F has 說's). A
-    character with no description that names a composition has none."""
+    character whose descriptions name no composition is one component, itself (七, 永, 乌); one the
+    source does not describe has none."""
     char = unicodedata.normalize("NFC", char)
-    for candidate in dict.fromkeys((_whole(char), char)):
+    candidates = tuple(dict.fromkeys((_whole(char), char)))
+    for candidate in candidates:
         if found := _descriptions(candidate):
             return from_tree(found[0])
-    return None
+    return next((from_tree(candidate) for candidate in candidates if candidate in han_components._sequences()), None)
 
 
 @cache
