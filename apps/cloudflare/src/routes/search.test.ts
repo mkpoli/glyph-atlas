@@ -95,6 +95,8 @@ const structures: [string, string[], { text: string; regions: string }[] | null,
   ['滑', ['⿰氵骨'], [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }], ['st:00000000000000000000000000000001', '⿰水骨']],
   ['骨', ['⿱⿵冂⿰丨𠃌月'], null],
   ['磆', ['⿰石骨'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
+  // A description the site names a form by, kept under its own text.
+  ['⿰氵⿵冖月', ['⿰氵⿵冖月'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
 ];
 const substitutions: [string, string, number][] = [['氵', '水', 40], ['月', '⺼', 12], ['骨', '𩨗', 3], ['冂', '月', 2]];
 
@@ -278,10 +280,10 @@ describe("the IDS editor's structure", () => {
     await expect(idsOf(newEnv, ctx, 'https://new.test', '滑骨')).rejects.toThrow('Name one character.');
   });
 
-  it('groups the characters named by the structure they share and leaves out one with none', async () => {
+  it('groups the characters and descriptions named by the structure they share and leaves out one with none', async () => {
     // 滑 U+F904 is a compatibility ideograph of 滑.
-    expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆骨滑\uf904')).toEqual({ items: [
-      { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '磆', '\uf904'] }] });
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆骨滑\uf904⿰氵⿵冖月⿰石月')).toEqual({ items: [
+      { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '磆', '\uf904', '⿰氵⿵冖月'] }] });
     expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/structures?c='))).toBe(true);
     await expect(structuresOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name a character.');
   });

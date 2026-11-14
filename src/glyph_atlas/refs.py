@@ -453,24 +453,25 @@ def descriptions() -> han_component_variants.Descriptions:
     return _descriptions()
 
 
-#: At most this many characters are grouped in one answer (the Worker's STRUCTURE_CHARS).
+#: At most this many characters and descriptions are grouped in one answer (the Worker's STRUCTURE_CHARS).
 STRUCTURE_CHARS = 48
 
 
 def structure_groups(chars: str) -> dict[str, Any]:
-    """The 構形 of each character named, as groups of the characters that share one, in the order
-    named, as the Worker's `/layers/structures` answers. A character with no structure is in no
+    """The 構形 of each character or description named, as groups of those that share one, in the
+    order named, as the Worker's `/layers/structures` answers. A name with no structure is in no
     group."""
     from . import structures
+    from .representation import written
 
     groups: dict[str, dict[str, Any]] = {}
-    for char in list(dict.fromkeys(chars))[:STRUCTURE_CHARS]:
+    for name in list(dict.fromkeys(written(chars)))[:STRUCTURE_CHARS]:
         try:
-            structure = structures.for_character(char)
+            structure = structures.for_name(name)
         except ValueError:
             continue
         if structure:
-            groups.setdefault(structure.id, {"id": structure.id, "label": structure.label, "chars": []})["chars"].append(char)
+            groups.setdefault(structure.id, {"id": structure.id, "label": structure.label, "chars": []})["chars"].append(name)
     return {"items": list(groups.values())}
 
 
