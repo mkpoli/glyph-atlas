@@ -126,7 +126,7 @@ def test_the_margin_is_small_where_another_placement_costs_as_little():
 def test_boxes_inside_a_box_become_its_parts():
     def found(y, h, w=40):
         return align.Detection(box=Box(x=10, y=y, w=w, h=h), score=.5)
-    holders = cut._nested([found(0, 90), found(2, 40, 38), found(48, 40, 38), found(200, 40)])
+    holders = cut.nested([found(0, 90), found(2, 40, 38), found(48, 40, 38), found(200, 40)])
     assert holders == {0: [1, 2]}
     line = Line(id="l", page_id="p", seq=0, text="字学", text_raw="字学", box=Box(x=0, y=0, w=60, h=100))
     cells, _ = cut.cells_of(line, [found(0, 90), found(2, 40, 38), found(48, 40, 38)], cut.Frame(True, BLANK),
