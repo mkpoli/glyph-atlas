@@ -28,3 +28,18 @@ export function cardTiers(card) {
   const described = variants.forms ?? []
   return { members, variants, grapheme, writers, sharedWriters, writes, selfGrapheme, shared, written, related, described }
 }
+
+// A CJK compatibility ideograph (說 U+F96F) is an encoding duplicate of a unified one, not a written form.
+const compatibility = char => { const p = char.codePointAt(0); return char.length <= 2 && ((p >= 0xf900 && p <= 0xfaff) || (p >= 0x2f800 && p <= 0x2fa1f)) }
+
+/** What a selection on a character's page can be marked as without a search: the 字種 and the 字体 the
+ *  card lists, each once, in its order. Related characters and the derived tier write other words or
+ *  are inferred, so they stay behind the search box. */
+export function cardTargets(card) {
+  if (!card?.char) return []
+  const { members, grapheme, writes, selfGrapheme, written, described } = cardTiers(card)
+  const seen = new Set()
+  return [...(selfGrapheme ? [grapheme] : []), ...writes, ...members, ...written, ...described]
+    .filter(v => v?.char && !compatibility(v.char) && !seen.has(v.char) && seen.add(v.char))
+    .map(v => ({ char: v.char, code_point: v.code_point, script: v.script }))
+}
