@@ -36,7 +36,7 @@ PROBES = {"女女": "如"}
 
 
 def sources(root, cards=(), variants=(), derived=(), writers=(), substitutions=(("氵", "水", 3, "[]"),), words=None,
-            readings=None, aliases=(), components=None, component_names=None,
+            readings=None, aliases=(), components=None, component_names=None, han_ids=(("好", '["⿰女子"]', None),),
             cited=(("variant_sources", '{"cjkvi-variants":"x"}'), ("word_sources", '{"honkoku-ruby":"y"}'))):
     """The reference input, every table written."""
     READINGS["path"] = root / "kanji-readings.json"
@@ -50,7 +50,7 @@ def sources(root, cards=(), variants=(), derived=(), writers=(), substitutions=(
                 ("words", [("ja/ばかり/副助詞", "ja", "ばかり", "副助詞")] if words is None else words),
                 ("word_spellings", [("ja/ばかり/副助詞", "許", "dictionary", "x", "attested", "source", "", "", "許（ばかり）",
                                      None, None)]),
-                ("han_ids", [("好", '["⿰女子"]', None)]),
+                ("han_ids", han_ids),
                 ("han_components", COMPONENTS if components is None else components),
                 ("han_component_names", [("女", "女", 3), ("⼥", "女", 3)] if component_names is None else component_names)):
             reference_input.replace(db, table, rows)
@@ -453,6 +453,46 @@ def test_only_components_sends_the_component_objects_alone_and_touches_no_d1(lay
     assert {k: v for k, v in manifest.items() if not k.startswith("components/")} == others
     assert sorted(k for k in manifest if k.startswith("components/")) == ["components/U+5B50.json.gz", "components/names.json.gz"]
     assert not (root / "out" / "reference-components-send").exists()
+
+
+def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")])
+    bucket = load(remote, monkeypatch, "--send")
+    others = {k: v for k, v in bucket.manifest().items() if not k.startswith(("ids/", "structure.json.gz"))}
+    held = sorted(k for k in bucket.manifest() if k.startswith("ids/"))
+    assert others and held
+    # The descriptions again with 峰 for 好: 好's shard leaves R2, 峰's comes, and nothing else changes.
+    sources(root, cards=[card("あ", occurrences=9)], han_ids=[("峰", '["⿰山夆"]', None)])
+
+    def no_d1(*_args, **_kwargs):
+        raise AssertionError("--only ids reached D1")
+
+    monkeypatch.setattr(remote, "send", no_d1)
+    monkeypatch.setattr(remote, "query", no_d1)
+    puts, char = bucket.puts, bucket.objects["v3/reference/char/U+3042.json.gz"]
+    load(remote, monkeypatch, "--only", "ids", bucket=bucket)
+    assert bucket.puts == puts  # a dry run sends nothing
+    report = (root / "out" / "reference-ids-report.txt").read_text()
+    assert "characters with a structure: 1" in report and "objects to delete: 1" in report and "char " not in report
+    load(remote, monkeypatch, "--only", "ids", "--send", bucket=bucket)
+    structure = structures.for_character("峰")
+    shards = sorted(k for k in bucket.manifest() if k.startswith("ids/"))
+    assert len(shards) == 1 and shards != held
+    assert bucket.objects[f"v3/reference/{shards[0]}"] == {"峰": [["⿰山夆"], None, [structure.id, structure.label]]}
+    assert bucket.objects["v3/reference/structure.json.gz"]["policy"] == structures.POLICY
+    assert bucket.objects["v3/reference/char/U+3042.json.gz"] == char
+    assert {k: v for k, v in bucket.manifest().items() if not k.startswith(("ids/", "structure.json.gz"))} == others
+    assert not (root / "out" / "reference-ids-send").exists()
+
+
+def test_an_empty_han_ids_stops_the_load(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, cards=[card("あ")])
+    bucket = load(remote, monkeypatch, "--send")
+    sources(root, cards=[card("あ")], han_ids=[])
+    with pytest.raises(SystemExit, match="han_ids in the reference input is empty"):
+        load(remote, monkeypatch, "--only", "ids", "--send", bucket=bucket)
 
 
 def test_only_components_sends_nothing_where_r2_has_no_manifest(layout, monkeypatch):  # noqa: F811

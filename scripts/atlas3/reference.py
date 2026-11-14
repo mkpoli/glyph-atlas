@@ -3,6 +3,7 @@
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/reference.py          # translate, report, send nothing
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/reference.py --send   # and load it
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/reference.py --only components [--send]
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/reference.py --only ids [--send]
     python3 scripts/atlas3/reference.py --check https://glyphatlas.org      # ask the site the PROBES
 
 Reads the reference input (`glyph_atlas.reference_input`, which `export_graphemes.py`,
@@ -43,9 +44,10 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
   as themselves, as one string, and `other`, `{typed: component}` for the rest.
 
 The component objects must answer each of PROBES (日月 finds 明) before anything is sent, and an empty
-`han_components` or `han_component_names` stops the load. `--only components` makes and sends those
-objects alone: it reads neither D1 nor the local copies, keeps every other path of the manifest as R2
-gives it, and reports to `out/reference-components-report.txt`. `--check URL` asks the site's
+`han_components`, `han_component_names` or `han_ids` stops the load. `--only components` makes and sends
+those objects alone, and `--only ids` the IDS shards with `structure.json.gz` (an input that holds
+`han_ids` is enough: `export_character_variants.py --ids`): each reads neither D1 nor the local copies,
+keeps every other path of the manifest as R2 gives it, and reports to `out/reference-<kind>-report.txt`. `--check URL` asks the site's
 `/layers/suggest` for each probe after a load. The probe here is looser than the Worker's search,
 which scans at most COMPONENT_SCAN characters of the rarest component, so `--check` is the authority.
 Every `--send` takes `work/atlas-v3/out/reference.lock` in the main checkout (SEND_LOCK) from reading
@@ -133,7 +135,9 @@ PLAIN_NAME = re.compile(r"^(.*IDEOGRAPH-)([0-9A-F]{4,6})$")
 # Component searches the index must answer: the typed components, and one character they find.
 PROBES = {"日月": "明", "匕矢": "彘"}
 COMPONENTS = "components/"
-# The lock every --send takes, full or --only components, from reading R2's manifest to writing it back:
+IDS = "ids/"
+STRUCTURE = "structure.json.gz"
+# The lock every --send takes, full or --only, from reading R2's manifest to writing it back:
 # two senders would each drop the other's paths. It lies in the main checkout's work/atlas-v3/out
 # whatever ATLAS3_DIR names, the worktree's checkout included; None finds it there.
 SEND_LOCK = None
@@ -275,7 +279,7 @@ class Objects:
                 path.write_bytes(data)
 
     def keep(self, made):
-        """Every path of R2's manifest outside `made` (a path prefix), kept as R2 gives it."""
+        """Every path of R2's manifest outside `made` (path prefixes), kept as R2 gives it."""
         self.manifest.update({rel: h for rel, h in self.held.items() if not rel.startswith(made)})
 
     def changed(self):
@@ -396,20 +400,7 @@ def translate(atlas, mirror, path, objects):
         objects.put(f"summary/{key}.json.gz", summary_text(families))
     for rel, text in reading_objects(scratch):
         objects.put(rel, text)
-    structures = defaultdict(dict)
-    for char, sequences, shapes in source("han_ids").execute("SELECT char, sequences, shapes FROM han_ids"):
-        try:
-            structure = structure_layer.for_character(char)
-        except ValueError:
-            # A reading that does not settle names no structure; the load goes on without it.
-            structure = None
-            notes["characters whose structure does not settle"] += 1
-        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None,
-                                                     [structure.id, structure.label] if structure else None]
-    for key, chars in structures.items():
-        objects.put(f"ids/{key}.json.gz", compact(dict(sorted(chars.items()))))
-    objects.put("structure.json.gz", compact({"scheme": structure_layer.SCHEME, "version": structure_layer.VERSION,
-                                              "policy": structure_layer.POLICY}))
+    put_ids(objects, notes)
     objects.put("names.json.gz", names_list(scratch.execute("SELECT code_point, name, occurrences FROM cards ORDER BY sort")))
     for list_name, column in (("graphemes", "several"), ("ligatures", "ligature")):
         total = scratch.execute(f"SELECT count(*) FROM cards WHERE {column}").fetchone()[0]
@@ -420,7 +411,7 @@ def translate(atlas, mirror, path, objects):
     scratch.close()
     scratch_path.unlink()
 
-    put_components(objects)
+    put_components(objects, notes)
 
     out.executemany("INSERT INTO component_variants VALUES(?,?,?)", [(a, b, v[0]) for (a, b), v in pairs.items()])
     # The names a search looks a term up by, each under its card's one code point as an integer
@@ -570,7 +561,29 @@ def probe_components(read):
     return problems
 
 
-def put_components(objects):
+def put_ids(objects, notes):
+    """Hand the IDS shards and `structure.json.gz` to `objects`: each character's descriptions, regional
+    shapes and structure, and what the structures were read under."""
+    if source("han_ids").execute("SELECT 1 FROM han_ids LIMIT 1").fetchone() is None:
+        sys.exit(f"han_ids in the reference input is empty; {GENERATORS['han_ids']} writes it")
+    structures = defaultdict(dict)
+    for char, sequences, shapes in source("han_ids").execute("SELECT char, sequences, shapes FROM han_ids"):
+        try:
+            structure = structure_layer.for_character(char)
+        except ValueError:
+            # A reading that does not settle names no structure; the load goes on without it.
+            structure = None
+            notes["characters whose structure does not settle"] += 1
+        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None,
+                                                     [structure.id, structure.label] if structure else None]
+        notes["characters with a structure"] += structure is not None
+    for key, chars in structures.items():
+        objects.put(f"{IDS}{key}.json.gz", compact(dict(sorted(chars.items()))))
+    objects.put(STRUCTURE, compact({"scheme": structure_layer.SCHEME, "version": structure_layer.VERSION,
+                                    "policy": structure_layer.POLICY}))
+
+
+def put_components(objects, notes):
     """Hand the component objects to `objects`, once they answer every probe."""
     made = dict(component_lists())
     problems = probe_components(lambda rel: json.loads(made[rel]) if rel in made else None)
@@ -578,6 +591,7 @@ def put_components(objects):
         sys.exit("the component index fails its probes; nothing sent:\n" + "\n".join(problems))
     for rel, text in made.items():
         objects.put(rel, text)
+    notes["probes answered"] = len(PROBES)
 
 
 def check_site(base):
@@ -802,8 +816,14 @@ def take_send_lock():
     return held
 
 
-def components_only(send):
-    """Make the component objects and, with `send`, upload the changed ones; no D1 read or write."""
+# What `--only` makes alone: the paths it owns in R2's manifest and the function that hands their
+# objects over with the report's notes.
+ALONE = {"components": ((COMPONENTS,), put_components), "ids": ((IDS, STRUCTURE), put_ids)}
+
+
+def only(kind, send):
+    """Make one kind's objects and, with `send`, upload the changed ones; no D1 read or write."""
+    made, put = ALONE[kind]
     OUT.mkdir(parents=True, exist_ok=True)
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
@@ -811,35 +831,36 @@ def components_only(send):
     held = fetch_manifest()
     if send and not held:
         sys.exit(f"R2 has no {PREFIX}{MANIFEST}; load the whole reference first")
-    stage = OUT / "reference-components-send"
+    stage = OUT / f"reference-{kind}-send"
     shutil.rmtree(stage, ignore_errors=True)
     objects = Objects(held, stage if send else None)
-    put_components(objects)
-    objects.keep(COMPONENTS)
+    notes = defaultdict(int)
+    put(objects, notes)
+    objects.keep(made)
     gone = objects.gone()
-    text = object_report(objects, gone, {"probes answered": len(PROBES)})
-    (OUT / "reference-components-report.txt").write_text(text)
+    text = object_report(objects, gone, notes)
+    (OUT / f"reference-{kind}-report.txt").write_text(text)
     print(text, flush=True)
     if not send:
         print("dry run: nothing sent", flush=True)
         return
     if objects.changed() or gone:
         ship(objects, stage, gone)
-    print("component index loaded", flush=True)
+    print(f"{kind} loaded", flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--send", action="store_true", help="load the rows into glyph-atlas-v3 and upload the objects")
-    parser.add_argument("--only", choices=("components",), help="make (and with --send, upload) these objects alone")
+    parser.add_argument("--only", choices=tuple(ALONE), help="make (and with --send, upload) these objects alone")
     parser.add_argument("--check", metavar="URL", help="ask the site at URL for each probe; exit 1 on a miss")
     args = parser.parse_args()
     if args.check:
         problems = check_site(args.check)
         print("\n".join(problems) or f"{len(PROBES)} probes answered", flush=True)
         sys.exit(1 if problems else 0)
-    if args.only == "components":
-        components_only(args.send)
+    if args.only:
+        only(args.only, args.send)
         return
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
