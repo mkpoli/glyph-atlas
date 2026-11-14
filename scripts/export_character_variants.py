@@ -4,13 +4,15 @@ input (`glyph_atlas.reference_input`), which `scripts/atlas3/reference.py` loads
     python scripts/export_character_variants.py            # every table below
     python scripts/export_character_variants.py --words    # words and word_spellings alone
     python scripts/export_character_variants.py --writers  # grapheme_writers alone
+    python scripts/export_character_variants.py --ids      # han_ids alone
 
 `character_variants` is the 異体字 graph itself. The derived tier is `component_variants` (each
 substitution with its count and pairs) and `character_derived`: one row per character, its derived
 list as `refs.derived_variants` ranks it, each form with its routes (`refs.derived_row`). Up to two
 substitutions per form make that about half an hour of work on one processor, spread over the
 processors and computed once per run. `han_ids` holds each character's descriptions, which the form
-picker's IDS editor starts from, and its regional shapes. `words` and `word_spellings` are the word
+picker's IDS editor starts from, and its regional shapes; `--ids` writes it alone, which is all
+`reference.py --only ids` reads. `words` and `word_spellings` are the word
 layer of decision 0004 (`refs.words`, `refs.word_spellings`, which joins 振り仮名 counts and observed
 crop claims); `--words` writes them alone, so a new word reaches the site without deriving the graph
 again. `grapheme_writers` holds the reduced forms that write several characters and the forms with no
@@ -106,15 +108,16 @@ def writer_rows() -> list[tuple[str, str, int]]:
                   for head, family in refs._grapheme_families().items() for point in family["writers"])
 
 
-def write(db: sqlite3.Connection, *, words: bool = True, writers: bool = True, graph: bool = True) -> dict[str, int]:
+def write(db: sqlite3.Connection, *, words: bool = True, writers: bool = True, graph: bool = True, ids: bool = True) -> dict[str, int]:
     """The chosen tables of the reference input replaced, in the caller's transaction; the rows each holds."""
     counts = {}
     if graph:
         counts["character_variants"] = reference_input.replace(db, "character_variants", edge_rows())
         counts["component_variants"] = reference_input.replace(db, "component_variants", substitution_rows())
         counts["character_derived"] = reference_input.replace(db, "character_derived", derived_rows())
-        counts["han_ids"] = reference_input.replace(db, "han_ids", ids_rows())
         reference_input.put_source(db, "variant_sources", citations())
+    if ids:
+        counts["han_ids"] = reference_input.replace(db, "han_ids", ids_rows())
     if writers:
         counts["grapheme_writers"] = reference_input.replace(db, "grapheme_writers", writer_rows())
     if words:
@@ -159,10 +162,12 @@ def main() -> None:
     alone = parser.add_mutually_exclusive_group()
     alone.add_argument("--words", action="store_true", help="write words and word_spellings alone")
     alone.add_argument("--writers", action="store_true", help="write grapheme_writers alone")
+    alone.add_argument("--ids", action="store_true", help="write han_ids alone")
     arguments = parser.parse_args()
-    every = not (arguments.words or arguments.writers)
+    every = not (arguments.words or arguments.writers or arguments.ids)
     with reference_input.writing(arguments.input) as db:
-        counts = write(db, words=every or arguments.words, writers=every or arguments.writers, graph=every)
+        counts = write(db, words=every or arguments.words, writers=every or arguments.writers, graph=every,
+                       ids=every or arguments.ids)
     print(json.dumps(counts))
 
 
