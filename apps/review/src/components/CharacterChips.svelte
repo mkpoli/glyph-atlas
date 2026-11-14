@@ -9,6 +9,7 @@
   import FormText from './FormText.svelte'
   import OriginText from './OriginText.svelte'
   import { countsLabel, structures as readStructures } from '../lib/layers.js'
+  import { isDescription } from '../lib/ids.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
   import { characterAddress, graphemeAddress } from '../lib/gallery.js'
@@ -81,22 +82,24 @@
   const written = $derived([...variants.items, ...variants.related.filter(v => v.written || writers.has(v.code_point))]
     .filter(v => !own.has(v.code_point)).sort((a, b) => writers.has(b.code_point) - writers.has(a.code_point)))
   const related = $derived(variants.related.filter(v => !v.written && !writers.has(v.code_point) && !own.has(v.code_point)))
-  // The 構形 of the grapheme's 字体, each with the characters that share it (峰 and 峯 are two, 說 and 説
-  // one). A character with no structure, and a site that knows none yet, shows no row.
+  // The described forms a reviewer said are written for this grapheme (`written_for`): a shape Unicode
+  // lacks has no character page, so it joins the 字体 row as its own sequence with its crop count.
+  const described = $derived(variants.forms ?? [])
+  // The 構形 of the grapheme's 字体, each with the characters and described forms that share it (峰 and
+  // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫). A name with no structure, and a site that knows
+  // none yet, shows no row.
   const HAN = /^\p{Script=Han}$/u
-  const composedOf = $derived([...new Set([...members, ...written].map(v => v.char).filter(char => HAN.test(char ?? '')))].slice(0, 48).join(''))
+  const composedOf = $derived([...new Set([...members, ...written, ...described].map(v => v.char)
+    .filter(char => HAN.test(char ?? '') || isDescription(char)))].slice(0, 48))
   // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
   let composed = $state([])
   $effect(() => {
-    const chars = composedOf
+    const chars = composedOf.join('')
     if (!chars) { composed = []; return }
     let live = true
     readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => { if (live) composed = [] })
     return () => { live = false }
   })
-  // The described forms a reviewer said are written for this grapheme (`written_for`): a shape Unicode
-  // lacks has no character page, so it joins the 字体 row as its own sequence with its crop count.
-  const described = $derived(variants.forms ?? [])
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
   // for it: characters that write the same word, kept out of the variant tiers and the widening. A card
   // cached before the word tables existed has no `words`; it reads as none.
@@ -126,7 +129,7 @@
         <span class="layer-label">{t('chips.structure')}</span>
         <div class="variant-chips">
           {#each composed as s (s.id)}
-            <span class="variant structure"><span lang="zh">{s.label}</span>{#if [...composedOf].length > 1}<span class="sharing"><ScriptText text={s.chars.join('')} lang="zh" titled={false} /></span>{/if}</span>
+            <span class="variant structure"><span lang="zh">{s.label}</span>{#if composedOf.length > 1}<span class="sharing">{#each s.chars as name (name)}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/each}</span>{/if}</span>
           {/each}
         </div>
       </div>
@@ -265,6 +268,7 @@
   .variant small{font-size:11px;color:var(--muted)}
   .variant.structure{font-size:15px}
   .variant.structure:hover{border-color:var(--line)}
+  .variant.structure .sharing :global(.ids-form){margin-inline:4px 0}
   .variant small.share{color:var(--accent)}
   .word-crops{font-size:12px;color:var(--muted);align-self:center}
   .word-reading{font-size:15px;align-self:center;margin-right:4px}
