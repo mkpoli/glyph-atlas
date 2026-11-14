@@ -211,7 +211,7 @@ def _ink_cells(frame: Frame, along: tuple[int, int], across: tuple[int, int], he
     return cells
 
 
-def _nested(detections: Sequence[Detection]) -> dict[int, list[int]]:
+def nested(detections: Sequence[Detection]) -> dict[int, list[int]]:
     """Each detection that holds others, with the ones it holds: a box inside a larger box.
 
     The detector reports a character and, now and then, one of its halves, or two characters and the
@@ -250,7 +250,7 @@ def cells_of(line: Line, detections: Sequence[Detection], frame: Frame,
         if across[1] - across[0] > 2.4 * sizes[1]:
             return [], sizes
         return _ink_cells(frame, along, across, sizes[0], sizes[1], 0), sizes
-    holders = _nested(detections)
+    holders = nested(detections)
     inside = {inner for held in holders.values() for inner in held}
     kept = [index for index in range(len(detections)) if index not in inside]
     extents = {index: frame.of(detections[index].box) for index in range(len(detections))}
@@ -283,14 +283,15 @@ def cells_of(line: Line, detections: Sequence[Detection], frame: Frame,
             if 2 <= len(parts) <= RUN and all(_stacked(a, b) for a, b in itertools.pairwise(parts)):
                 cells += parts
             else:
-                cells += _detection_cells(frame, along, across, detections[index].score, index, number, height)
+                cells += detection_cells(frame, along, across, detections[index].score, index, number, height)
             cursor = max(cursor or along[1], along[1])
         if limits is not None and len(columns) == 1 and cursor is not None and limits[0][1] - cursor >= GAP * height:
             cells += _ink_cells(frame, (cursor, limits[0][1]), strip, height, width, number)
     return cells, (height, width)
 
 
-def _detection_cells(frame: Frame, along, across, score: float, index: int, column: int, height: float) -> list[Cell]:
+def detection_cells(frame: Frame, along, across, score: float, index: int, column: int, height: float) -> list[Cell]:
+    """A detection as one cell, or as its parts when it is as long as two or three characters `height` long."""
     tall = (along[1] - along[0]) / max(1.0, height)
     parts = 3 if tall >= TALL[1] else 2 if tall >= TALL[0] else 1
     whole = [Cell(along=along, across=across, source="detection", score=score, detection=index, column=column)]
@@ -532,7 +533,7 @@ def _iou(a: Box, b: Box) -> float:
 
 def prepare_page(lines: Sequence[Line], detections: Sequence[Detection], image, classifier, *,
                  refiner: Any = None, policy: str = "align-v1") -> list[Work]:
-    """A page's lines as cells, candidate boxes and what the models read in each.
+    """A page's lines as cells, candidate boxes and what the models read in each (`read`).
 
     With a refiner every candidate box is moved onto its character before the classifier reads it,
     unless the move leaves less than half of the box where it was: such a box was a candidate for
@@ -550,6 +551,11 @@ def prepare_page(lines: Sequence[Line], detections: Sequence[Detection], image, 
             works.append(Work(line_id=line.id, tokens=list(container.tokens), cells=cells,
                               spans=spans_of(cells, line_sizes), costs=np.zeros((0, 0)), known=[], frame=frame,
                               sizes=line_sizes))
+    return read(works, image, classifier, refiner=refiner)
+
+
+def read(works: list[Work], image, classifier, *, refiner: Any = None) -> list[Work]:
+    """`works` with every candidate box moved onto its character, read by the classifier and described."""
     spans = [(work, span) for work in works for span in work.spans]
     boxes = [work.frame.box(span.along, span.across) for work, span in spans]
     quality: list[tuple[float, float, float]] = [(0.0, 0.0, 0.0)] * len(boxes)
