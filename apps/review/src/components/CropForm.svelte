@@ -46,19 +46,21 @@
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
-  // The 構形 of the bar's forms. The last answer stays until the next arrives, and a bar of ideographs
-  // or descriptions keeps the line's place while the first is read, so the controls below do not move.
+  // The 構形 of the form shown, the chosen one or the crop's own, and of the bar's forms: where the bar
+  // leaves the crop's own form off, it is asked for all the same. The last answer stays until the next
+  // arrives, and a bar of ideographs or descriptions keeps the line's place while the first is read, so
+  // the controls below do not move.
   const HAN = /^\p{Script=Han}/u
-  const composedOf = $derived([...new Set(bar.map(chip => chip.char))].filter(char => HAN.test(char ?? '') || isDescription(char)).slice(0, 48))
+  const shown = $derived(chosen ?? current)
+  const composedOf = $derived([...new Set([shown, ...bar.map(chip => chip.char)])].filter(char => HAN.test(char ?? '') || isDescription(char)).slice(0, 48).join(''))
   let composed = $state([])
   $effect(() => {
-    const chars = composedOf.join('')
+    const chars = composedOf
     if (!chars) { composed = []; return }
     let live = true
     readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => { if (live) composed = [] })
     return () => { live = false }
   })
-  const shown = $derived(chosen ?? current)
   const structure = $derived(composed.find(group => group.chars.includes(shown)) ?? null)
   // The bar wraps onto further rows; only the forms past the first ten, and not on it, wait in the picker.
   const rest = $derived(forms.slice(BAR).filter(form => !bar.some(chip => chip.char === form.char)))
@@ -143,7 +145,7 @@
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+⌕'}</button>
   </div>
-  {#if composedOf.length}
+  {#if composedOf}
     <div class="form-structure">
       {#if structure}
         <span class="form-structure-label">{t('chips.structure')}</span><span class="form-structure-text" lang="zh">{structure.label}</span>
