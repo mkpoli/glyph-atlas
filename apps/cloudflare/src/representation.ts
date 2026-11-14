@@ -18,6 +18,30 @@ const selector = (c: string | undefined) => c !== undefined && /^[︀-️\u{E010
 const single = (value: string) => /^\P{M}[\p{M}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]*$/u.test(value);
 /** Whether a value is written as a description, which starts with an operator. */
 export const isSequence = (value: string) => arity([...value][0] ?? '') > 0;
+/** The characters and descriptions a text names one after another: a description ends where its
+ *  operators are satisfied, so 說⿰月兊説 names three. What follows a description cut short, or one
+ *  longer than a form may be, is left out. */
+export function written(text: string): string[] {
+  const chars = [...text], found: string[] = [];
+  let at = 0;
+  const described = (): boolean => {
+    const c = chars[at++];
+    if (c === undefined) return false;
+    if (!arity(c)) { if (selector(chars[at])) at++; return component(c); }
+    for (let n = arity(c); n > 0; n--) if (!described()) return false;
+    return true;
+  };
+  while (at < chars.length) {
+    const from = at;
+    if (arity(chars[at])) { if (!described() || at - from > FORM_LONGEST) break; }
+    else for (at++; at < chars.length && /^[\p{M}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]$/u.test(chars[at]);) at++;
+    found.push(chars.slice(from, at).join(''));
+  }
+  return found;
+}
+/** The key a name's 構形 is kept under: a description as written, a character without its marks and
+ *  variation selector. A compatibility ideograph has its unified ideograph's (說 U+F96F has 說's). */
+export const structureKey = (name: string) => isSequence(name) ? name.normalize('NFC') : [...name.normalize('NFC')][0] ?? '';
 /** What is wrong with a written form: `character` (not one character nor a description), `component`
  *  (a part no description may name), `missing` (an operator short of descriptions) or `extra` (more
  *  than its operators take); null when it is one. */

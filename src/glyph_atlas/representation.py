@@ -104,6 +104,28 @@ def described(value: str) -> bool:
         return False
 
 
+def written(text: str) -> list[str]:
+    """The characters and descriptions `text` names one after another: a description ends where its
+    operators are satisfied, so 說⿰月兊説 names three. What follows a malformed description, or one
+    longer than a form may be, is left out."""
+    found, at = [], 0
+    while at < len(text):
+        if _arity(text[at]):
+            try:
+                end = _described(text, at)
+            except (ValueError, RecursionError):
+                break
+            if end - at > LONGEST:
+                break
+        else:
+            end = at + 1
+            while end < len(text) and (unicodedata.category(text[end]).startswith("M") or _selector(text[end])):
+                end += 1
+        found.append(text[at:end])
+        at = end
+    return found
+
+
 def _single(value: str) -> bool:
     """One character: one base, with any combining marks and variation selector after it."""
     if not value or unicodedata.category(value[0]).startswith("M"):

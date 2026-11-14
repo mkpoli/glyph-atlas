@@ -119,6 +119,15 @@ def test_a_form_structure_comes_from_its_anchor():
     assert structures.for_representation(representation.Representation("mj", "MJ012345")) is None
 
 
+def test_a_name_has_the_structure_of_its_description_or_its_character():
+    assert structures.for_name("⿰月兊").id == structures.for_character("脫").id
+    assert structures.for_name("⿰糸內").id == structures.for_character("納").id
+    assert structures.for_name("峰\U000E0100").id == structures.for_character("峰").id
+    assert structures.for_name("⿰山") is None
+    assert structures.for_name("〾⿰山夆") is None
+    assert structures.for_name("") is None
+
+
 def test_a_representation_that_names_no_structure_returns_none():
     assert structures.for_representation(representation.Representation("ids", "〾⿰木木")) is None
     assert structures.for_representation(representation.Representation("ivs", "")) is None

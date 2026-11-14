@@ -106,14 +106,15 @@ encoded apart share a structure when only a unified component separates them (�
 - The `structures` table is immutable. A canonicalization change makes new ids and leaves claims as
   they were written.
 - The site reads each character's structure from its IDS reference shards and derives none. A
-  reader names a form's structure by a character that has it (`POST /atlas/forms/<form>/structure`),
-  and the structure's row is written with its first claim. The site's database is the ledger, so
-  no publication carries structure rows to it.
-- A form described by an IDS no character has (`⿺辶𦊷`) has a structure in `glyph_atlas.structures`
-  and none on the site yet: the Worker holds no tables to read it with, and no character names it.
+  reader names a form's structure by a character that has it or by a description the shards hold
+  (`POST /atlas/forms/<form>/structure`), and the structure's row is written with its first claim.
+  The site's database is the ledger, so no publication carries structure rows to it.
+- A description the site names a character or a form by (a corpus character Unicode lacks, a form
+  a reviewer typed: `⿰月兊`) has its structure in the same shards, under its own text, so it joins
+  the characters built as it is (脫, 脱). The reference load reads the list of them
+  (`export_character_variants.py --described`); a description typed since the last load has no
+  structure on the site until the next one, as it has no drawing.
 - The correspondence link and the 構形 row in the picker follow.
-- `/layers/structure` still names the IDS descriptions; when the layer's routes arrive it becomes
-  `/layers/ids`, so "structure" names one thing.
 
 ## References
 

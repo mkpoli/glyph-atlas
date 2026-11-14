@@ -6,6 +6,7 @@
 // summary shards of the families the query names; the kanji of a kana reading come with their families
 // in the reading's shard, and the 異体字 of a one-character query with theirs in its card's object.
 import { characterObject, characterIds, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, type NameIndex } from '../atlas3Reference';
+import { structureKey, written } from '../representation';
 import { catalogueVersion } from '../atlas3Stamps';
 import { Problem } from '../busy';
 import { idsCharacter } from '../category';
@@ -197,20 +198,20 @@ export async function idsOf(env: Env, ctx: ExecutionContext, origin: string, cha
   return found;
 }
 
-// At most this many characters are grouped in one answer: a family's forms and its written variants.
+// At most this many characters and descriptions are grouped in one answer: a family's forms and its
+// written variants.
 export const STRUCTURE_CHARS = 48;
-/** The 構形 of each character named, as groups of the characters that share one (峰 and 峯 are two
- *  groups, 說 and 説 one), in the order the characters were named. A character with no structure is in
- *  no group. */
+/** The 構形 of each character or description named, as groups of those that share one (峰 and 峯 are two
+ *  groups, 說 and 説 one, and ⿰月兊 joins 脫), in the order named. A name with no structure is in no
+ *  group. */
 export async function structuresOf(env: Env, ctx: ExecutionContext, origin: string, chars: string) {
-  const named = [...new Set(chars)].slice(0, STRUCTURE_CHARS);
+  const named = [...new Set(written(chars))].slice(0, STRUCTURE_CHARS);
   if (!named.length) throw new Problem(422, 'Name a character.');
   const key = new Request(`${origin}/layers/structures?c=${encodeURIComponent(named.join(''))}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const groups = new Map<string, { id: string; label: string; chars: string[] }>();
-  // A compatibility ideograph has its unified ideograph's structure (說 U+F96F has 說's).
-  const described = await Promise.all(named.map(char => characterIds(env, char.normalize('NFC'), ctx)));
+  const described = await Promise.all(named.map(name => characterIds(env, structureKey(name), ctx)));
   named.forEach((char, i) => {
     const structure = described[i]?.structure;
     if (!structure) return;

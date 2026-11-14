@@ -52,6 +52,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .. import evidence, han_components, images, refs, visual_families
 from ..production import production_info
+from ..representation import written
 from ..schema import Box, Character, Document, Page, Unit
 from . import corpus_source, status
 from .atlas import (
@@ -1029,7 +1030,7 @@ def router(store: Store) -> APIRouter:
     @api.get("/layers/structures")
     def structures(c: str = "") -> dict[str, Any]:
         """The 構形 groups of the characters named, as the Worker answers it."""
-        if not c:
+        if not written(c):
             raise HTTPException(422, "Name a character.")
         return refs.structure_groups(c)
 

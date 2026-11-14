@@ -463,7 +463,8 @@ def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(
     held = sorted(k for k in bucket.manifest() if k.startswith("ids/"))
     assert others and held
     # The descriptions again with 峰 for 好: 好's shard leaves R2, 峰's comes, and nothing else changes.
-    sources(root, cards=[card("あ", occurrences=9)], han_ids=[("峰", '["⿰山夆"]', None)])
+    sources(root, cards=[card("あ", occurrences=9)], han_ids=[("峰", '["⿰山夆"]', None), ("⿰月兊", '["⿰月兊"]', None),
+                                                              ("〾⿰山夆", '["〾⿰山夆"]', None)])
 
     def no_d1(*_args, **_kwargs):
         raise AssertionError("--only ids reached D1")
@@ -474,12 +475,16 @@ def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(
     load(remote, monkeypatch, "--only", "ids", bucket=bucket)
     assert bucket.puts == puts  # a dry run sends nothing
     report = (root / "out" / "reference-ids-report.txt").read_text()
-    assert "characters with a structure: 1" in report and "objects to delete: 1" in report and "char " not in report
+    assert "characters with a structure: 1" in report and "descriptions with a structure: 1" in report
+    assert "objects to delete: 1" in report and "char " not in report
     load(remote, monkeypatch, "--only", "ids", "--send", bucket=bucket)
-    structure = structures.for_character("峰")
+    structure, described = structures.for_character("峰"), structures.for_character("脫")
     shards = sorted(k for k in bucket.manifest() if k.startswith("ids/"))
-    assert len(shards) == 1 and shards != held
-    assert bucket.objects[f"v3/reference/{shards[0]}"] == {"峰": [["⿰山夆"], None, [structure.id, structure.label]]}
+    assert shards != held
+    rows = {char: row for name in shards for char, row in bucket.objects[f"v3/reference/{name}"].items()}
+    # A description the site names something by is a key of its own; one that names no structure has none.
+    assert rows == {"峰": [["⿰山夆"], None, [structure.id, structure.label]],
+                    "⿰月兊": [["⿰月兊"], None, [described.id, described.label]], "〾⿰山夆": [["〾⿰山夆"], None, None]}
     assert bucket.objects["v3/reference/structure.json.gz"]["policy"] == structures.POLICY
     assert bucket.objects["v3/reference/char/U+3042.json.gz"] == char
     assert {k: v for k, v in bucket.manifest().items() if not k.startswith(("ids/", "structure.json.gz"))} == others

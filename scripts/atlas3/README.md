@@ -370,7 +370,7 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 
        .venv/bin/python scripts/export_graphemes.py --catalogue work/atlas-v3/source-characters.sqlite \
            --aliases work/atlas-v3/source-aliases.sqlite
-       .venv/bin/python scripts/export_character_variants.py     # about half an hour on every processor
+       .venv/bin/python scripts/export_character_variants.py --described <file>   # about half an hour on every processor
        .venv/bin/python scripts/export_components_cloudflare.py
 
    At the cutover the cards and their search aliases came from the copies of the live ones (`pull.py
@@ -413,10 +413,19 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
 
    The IDS shards and `structure.json.gz` (each character's descriptions, regional shapes and 構形)
    go alone the same way, from an input that holds `han_ids`; the report is
-   `out/reference-ids-report.txt`:
+   `out/reference-ids-report.txt`. `han_ids` also holds the descriptions the site names a character
+   or a form by, each with its 構形, so every run that writes it names their list, one per line. They
+   live in `glyph-atlas-v3` alone (3,386 on 15 November 2026, read by index: 6,800 rows):
 
-       .venv/bin/python scripts/export_character_variants.py --ids --input <dir>/reference-input.sqlite
+       cd apps/cloudflare && bunx wrangler d1 execute glyph-atlas-v3 --remote --json --command "SELECT text AS value \
+         FROM graphemes WHERE (text>='⿰' AND text<'　') OR (text>='〾' AND text<'〿') OR (text>='㇯' AND text<'ㇰ') \
+         UNION SELECT value FROM representations WHERE scheme='ids'" | jq -r '.[0].results[].value' > <dir>/described.txt
+       .venv/bin/python scripts/export_character_variants.py --ids --described <dir>/described.txt \
+           --input <dir>/reference-input.sqlite
        ATLAS3_DIR=<dir> .venv/bin/python scripts/atlas3/reference.py --only ids [--send]
+
+   A description typed on the site after a load has no 構形 there until the next: run these when the
+   described forms are drawn (`han-compose`), or when a reviewer asks for one.
 
    The Python probe is looser than the Worker's search (it has no COMPONENT_SCAN cap), so `--check`
    on the live site is the authority. Every `--send`, full or `--only`, holds
