@@ -79,22 +79,41 @@ size of its column's characters and then by its own shape. It is not wired into
 `atlas review propose-characters`, whose `--split` runs the geometric pass of
 `character_proposals.split_boxes`.
 
-Both were run on the Kyujanggak land registers of 1722 and 1904 (서울대학교 규장각한국학연구원). 47
-detector boxes at least 1.3 times longer than wide were drawn at random from 24 pages and read by
-eye, once, by the author of the pass and not by a reviewer: 22 hold one character, 23 hold two or
-three, 2 hold none.
+`models/benchmark/counts.py` scores both on 250 detector boxes of the Kyujanggak land registers of
+1722 and 1904 (서울대학교 규장각한국학연구원) whose characters were counted by eye, once, by the author
+of the pass and not by a reviewer. A box is right when the cutter makes as many boxes of it as it
+holds characters, and a box joined with another is part of a box for each. Of 100 detector boxes
+that hold whole characters on these pages:
 
-| | `split_boxes` | `segment` |
-| --- | ---: | ---: |
-| boxes of two or three characters cut | 4 of 23 | 17 of 23 |
-| of those, every cut between two characters | 4 | 16 |
-| boxes of one character cut | 0 of 22 | 0 of 22 |
-| box moved onto one of its characters, the other left unboxed | 0 | 2 |
+| | detector alone | `split_boxes` | `segment` |
+| --- | ---: | ---: | ---: |
+| right | 73.0 | 76.0 | 84.1 |
+| one character, cut | 0.0 | 2.1 | 1.1 |
+| one character, lost or joined | 0.0 | 0.8 | 0.6 |
+| several characters, wrong count | 27.0 | 21.1 | 14.3 |
 
-Boxes wider than long, the unboxed ink `segment` adds (93 boxes on one page of 654 detections) and
-blocks of four small characters in one box were not measured. The cover title, a box of two
-characters eight times the page's character size, is cut by `split_boxes` and moved onto one
-character by `segment`. A page takes about 45 s on a CPU.
+On the four pages drawn after `segment` was settled (113 boxes) it is right about 86.1 in 100,
+`split_boxes` about 75.9.
+
+What is left is boxes of several characters that stay whole. Three things were tried against the
+same boxes and are not in the code:
+
+- Cutting every box left whole into strips down and across it, each read without the size of the
+  writing around it. On the first sample it got 9 more of the 40 boxes of several characters right
+  than `segment` and cut 15 more of the 97 single characters: the halves of 宮, 畓 or 昌 are
+  characters to the classifier.
+- The same strips kept only for boxes the classifier cannot read whole. Tuned on the first sample
+  it was right about 3.1 more boxes in 100 than `segment`; on the second 0.9 more, three more
+  boxes of several characters and two more single ones cut.
+- The size of a box against its neighbours as a sign of how many characters it holds. The registers
+  mix sizes within a column: the single characters of the sample run from 0.5 to 2.7 times the
+  size of the characters around them, the uncut boxes of several from 0.8 to 4.9.
+
+The detector also draws 3 boxes in 100 inside a larger one, which `segment` leaves out. Of 16
+looked at, 12 were a fragment of the larger box's character.
+
+The cover title, a box of two characters eight times the page's character size, is cut by
+`split_boxes` and moved onto one character by `segment`. A page takes about 45 s on a CPU.
 
 ## Limits
 
