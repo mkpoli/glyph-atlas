@@ -118,3 +118,29 @@ percent; `results/reviewed-2026-09-29-atlas-reviewed.json` holds the breakdowns.
 
 Soramaru leads on hiragana at top-1 (79.2 against 68.8), the script where `atlas` also trails on
 `codh-test` and `hilab-test`.
+
+## Cuts (2026-11-14)
+
+`cuts.py` measures a cutter, where `bench.py` measures a recognizer. It gives the cutter what the
+collection's extraction has, a page image and each line's box and transcription, on pages of CODH's
+held-out books, and compares the box the cutter returns for each character with CODH's. A character
+is cut when the two boxes reach IoU 0.5; yield is the share of characters cut and accepted, precision
+the share of accepted boxes that are cut. The lines are put together from CODH's boxes in reading
+order, each widened by 12% of its width.
+
+```
+python models/benchmark/cuts.py build
+python models/benchmark/cuts.py run --cutter consensus --split test --pages 40
+```
+
+160 pages of the four `test` books, 44,194 characters (`results/cuts-*-test.json`):
+
+| cutter | boxed | cut | yield | precision | mean IoU | s/page |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `consensus` | 95.9% | 89.4% | 37.1% | 99.7% | 0.892 | 27.6 |
+
+`consensus` is the extraction policy `single-character-consensus-v3`: whole detector boxes aligned by
+`glyph_atlas.align`, published when the classifier and NDLkotenOCR both read the character. It
+withheld 16,408 characters for a reading that disagreed and 9,708 at the alignment; 98.7% and 55.6%
+of those boxes were cut.
+
