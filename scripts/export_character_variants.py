@@ -10,8 +10,8 @@ input (`glyph_atlas.reference_input`), which `scripts/atlas3/reference.py` loads
 substitution with its count and pairs) and `character_derived`: one row per character, its derived
 list as `refs.derived_variants` ranks it, each form with its routes (`refs.derived_row`). Up to two
 substitutions per form make that about half an hour of work on one processor, spread over the
-processors and computed once per run. `han_ids` holds each character's descriptions, which the form
-picker's IDS editor starts from, and its regional shapes; `--ids` writes it alone, which is all
+processors and computed once per run. `han_ids` holds every character the IDS source describes, with
+the descriptions the form picker's IDS editor starts from and its regional shapes; `--ids` writes it alone, which is all
 `reference.py --only ids` reads. `--described FILE` adds the descriptions the site names a character or
 a form by (a corpus character Unicode lacks, a form a reviewer typed), each as its own description, so
 the load gives each its 構形. A run that writes `han_ids` must name the file, since one without it
@@ -92,11 +92,13 @@ def word_citations() -> str:
 
 @cache
 def ids_rows() -> tuple[tuple[str, str, str | None], ...]:
-    """`han_ids`: each character's descriptions the IDS editor starts from (`refs.ids_sequences`), and
-    its regional shapes when it has several (`refs.regional_shapes`, else NULL)."""
+    """`han_ids`: every character the IDS source describes, with the descriptions the IDS editor starts
+    from (`refs.ids_sequences`; none for a character written as one component, 一, or described only
+    with an unencoded part) and its regional shapes when it has several (`refs.regional_shapes`, else
+    NULL). The load gives each row its 構形, so a character with no editable description has a row too."""
     dump = lambda value: json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    return tuple((char, dump(found), dump(shapes) if (shapes := refs.regional_shapes(char)) else None)
-                 for char in sorted(han_components._sequences()) if (found := refs.ids_sequences(char)))
+    return tuple((char, dump(refs.ids_sequences(char)), dump(shapes) if (shapes := refs.regional_shapes(char)) else None)
+                 for char in sorted(han_components._sequences()))
 
 
 def described_rows(lines: Iterable[str]) -> list[tuple[str, str, None]]:

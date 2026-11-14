@@ -108,7 +108,8 @@ encoded apart share a structure when only a unified component separates them (æ•
   structure stays unassigned.
 - The `structures` table is immutable. A canonicalization change makes new ids and leaves claims as
   they were written.
-- The site reads each character's structure from its IDS reference shards and derives none. A
+- The site reads each character's structure from its IDS reference shards, which hold every
+  described character, and derives none. A
   reader names a form's structure by a character that has it or by a description the shards hold
   (`POST /atlas/forms/<form>/structure`), and the structure's row is written with its first claim.
   The site's database is the ledger, so no publication carries structure rows to it.

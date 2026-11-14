@@ -97,6 +97,8 @@ const structures: [string, string[], { text: string; regions: string }[] | null,
   ['磆', ['⿰石骨'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
   // A description the site names a form by, kept under its own text.
   ['⿰氵⿵冖月', ['⿰氵⿵冖月'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
+  // A character written as one component: nothing for the editor to start from, and a structure.
+  ['一', [], null, ['st:00000000000000000000000000000002', '一']],
 ];
 const substitutions: [string, string, number][] = [['氵', '水', 40], ['月', '⺼', 12], ['骨', '𩨗', 3], ['冂', '月', 2]];
 
@@ -286,6 +288,12 @@ describe("the IDS editor's structure", () => {
       { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '磆', '\uf904', '⿰氵⿵冖月'] }] });
     expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/structures?c='))).toBe(true);
     await expect(structuresOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name a character.');
+  });
+
+  it('answers the structure of a character with no description to edit', async () => {
+    const one = { id: 'st:00000000000000000000000000000002', label: '一' };
+    expect(await idsOf(newEnv, ctx, 'https://new.test', '一')).toEqual({ char: '一', sequences: [], shapes: [], structure: one, substitutes: {} });
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '一')).toEqual({ items: [{ ...one, chars: ['一'] }] });
   });
 
   it('reads the substitutes by either end of the pair', () => {

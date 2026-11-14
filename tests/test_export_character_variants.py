@@ -7,7 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 import export_character_variants as variants
 
-from glyph_atlas import reference_input
+from glyph_atlas import han_components, reference_input
 
 NEVER = lambda: (_ for _ in ()).throw(AssertionError("derived forms computed"))
 
@@ -80,4 +80,7 @@ def test_the_descriptions_replace_han_ids_alone(monkeypatch, tmp_path):
     assert names == {"han_ids"}
     assert db.execute("SELECT count(*) FROM han_ids").fetchone()[0] == len(variants.ids_rows())
     assert db.execute("SELECT sequences FROM han_ids WHERE char='峰'").fetchone() == ('["⿰山夆"]',)
+    # A character written as one component has a row with nothing to edit.
+    assert db.execute("SELECT sequences FROM han_ids WHERE char='一'").fetchone() == ("[]",)
+    assert db.execute("SELECT count(*) FROM han_ids").fetchone()[0] == len(han_components._sequences())
     assert db.execute("SELECT count(*) FROM han_ids WHERE sequences LIKE '%乙丙%'").fetchone()[0] == 0
