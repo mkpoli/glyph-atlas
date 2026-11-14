@@ -2,19 +2,25 @@
   // The bar under a selection in the collection view: how many tiles are chosen, "Looks right" for all of
   // them, the character to give them all or a form written as an ideographic description sequence (not
   // while a pair or trigram is chosen, `runs`: its crops are different characters), the result of the
-  // last batch save with its undo, and the crops it could not save, by reason, each of which opens.
+  // last batch save with its undo, and the crops it could not save, by reason, each of which opens. On a
+  // character's page the forms its card lists (`choices`) are offered as the character to give, unsearched.
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsPick from './IdsPick.svelte'
   import ContributionTerms from './ContributionTerms.svelte'
   import ScriptText from './ScriptText.svelte'
   import Glyph from './Glyph.svelte'
+  import FormText from './FormText.svelte'
+  import { isDescription } from '../lib/ids.js'
   import { reportByReason } from '../lib/corrections.js'
   import { t } from '../lib/i18n.svelte.js'
-  let { selecting = false, count = 0, runs = 0, target = $bindable(''), busy = false, error = '', done = null, report = [],
+  let { selecting = false, count = 0, runs = 0, choices = [], target = $bindable(''), busy = false, error = '', done = null, report = [],
     onconfirm, onapply, onselectall, onclear, onleave, onundo, onopen, ondismiss } = $props()
   let query = $state('')
   const groups = $derived(reportByReason(report))
   const entries = $derived(new Map(report.map(entry => [entry.id, entry])))
+  // Outside the unified ideographs' main block a form may be missing from the reader's fonts or look
+  // like another, so its chip names its code point too.
+  const outside = char => { const p = char.codePointAt(0); return p > 0x3000 && !(p >= 0x4e00 && p <= 0x9fff) && !(p >= 0x3040 && p <= 0x30ff) }
 </script>
 
 <div class="bulk-bar" role="region" aria-label={t('bulk.label')}>
@@ -34,6 +40,15 @@
         <button class="bulk-leave" onclick={onleave} aria-keyshortcuts="Escape">{t('bulk.leave')}</button>
       </span>
     </div>
+    {#if choices.length}
+      <div class="bulk-choices" role="group" aria-label={t('chips.forms')}>
+        {#each choices as choice (choice.char)}
+          <button class="bulk-choice" class:active={target === choice.char} aria-pressed={target === choice.char} disabled={busy || runs > 0}
+            title={runs ? t('bulk.apply.runs') : choice.code_point ?? choice.char} onclick={() => { target = choice.char; query = choice.char }}>
+            {#if isDescription(choice.char)}<FormText text={choice.char} />{:else}<ScriptText text={choice.char} script={choice.script} lang="zh" titled={false} />{#if outside(choice.char)}<small class="choice-code">{choice.code_point}</small>{/if}{/if}</button>
+        {/each}
+      </div>
+    {/if}
   {/if}
   {#if done || groups.length}
     <div class="bulk-row bulk-result">
@@ -70,6 +85,10 @@
   .bulk-assign button{white-space:nowrap}
   .bulk-tools{display:flex;align-items:center;gap:6px;margin-left:auto}
   .bulk-leave{padding:8px 12px}
+  .bulk-choices{display:flex;flex-wrap:wrap;gap:6px}
+  .bulk-choice{min-width:38px;min-height:38px;padding:3px 8px;font-size:20px;line-height:1.2;justify-content:center;gap:4px;border-radius:6px}
+  .choice-code{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .bulk-choice.active{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
   .quiet{border:0;background:transparent;color:var(--muted);text-decoration:underline;text-underline-offset:3px;padding:6px 4px}
   .bulk-result{gap:8px 12px}
   .bulk-report{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:9.5em;overflow:auto}
