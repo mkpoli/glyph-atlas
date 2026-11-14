@@ -19,7 +19,9 @@ A structure is read from BabelStone's descriptions (`data/vocab/han-ids.tsv`):
 A character has one structure, that of its first description: Unicode unified its regional glyphs,
 so the other descriptions (納 is ⿰糹内 in one region and ⿰糹內 in another) are spellings of the
 same structure, and a written description that matches one names it (`for_ids`). A regional
-difference Unicode unified cannot be told apart here.
+difference Unicode unified cannot be told apart here. A character whose descriptions name no
+composition (七 is 〾⿻一乚, 𠇇 is ⿰亻？) is one component, itself; a written ⿰亻？ is 亻 beside a
+part no character names, and stays apart from 𠇇.
 
 The identity is the canonical text, the scheme and the policy, never the description as written. A
 policy change makes new ids, so an id issued today keeps its meaning. The decision is

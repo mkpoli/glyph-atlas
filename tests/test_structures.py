@@ -102,6 +102,8 @@ def test_a_character_whose_descriptions_name_no_composition_is_one_component():
     for char in "七乌𠇇":
         assert structures.for_character(char).label == char
     assert structures.for_character("七").id != structures.for_character("乌").id
+    # A written ⿰亻？ is 亻 beside any part no character names, so it is not 𠇇's structure.
+    assert structures.for_ids("⿰亻？").label == "⿰人？"
 
 
 def test_every_described_character_has_a_structure():

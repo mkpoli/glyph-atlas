@@ -85,6 +85,8 @@ encoded apart share a structure when only a unified component separates them (�
 - Of 97,680 described characters, 188 have only approximate, subtracting or unrepresentable
   descriptions (七 is `〾⿻一乚`, 乌 is `㇯鸟丶`, 𠇇 is `⿰亻？`). Each is one component, itself, as
   it is inside the characters built from it (切, 坞). Its ids are new ones under the same policy.
+  A written `⿰亻？` is 亻 beside a part no character names: it has a structure of its own and is
+  not 𠇇's, since `？` stands for any such part.
 - A character the source does not describe has no structure: 々, 〻, 〇, and every script but Han.
 
 ## Cases and sources
