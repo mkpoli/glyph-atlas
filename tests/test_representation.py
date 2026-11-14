@@ -49,6 +49,7 @@ def test_a_text_names_its_characters_and_descriptions_one_after_another():
     assert representation.written("峰⿰山") == ["峰"]
     assert representation.written("⿰山a峰") == []
     assert representation.written("") == []
+    assert representation.written("峰" + "〾" * 2000 + "山峯") == ["峰"]
 
 
 def test_ids_are_what_the_worker_derives_for_the_same_names():

@@ -47,6 +47,7 @@ test('a text names its characters and descriptions one after another', () => {
   expect(written('峰⿰山')).toEqual(['峰'])
   expect(written('⿰山a峰')).toEqual([])
   expect(written('')).toEqual([])
+  expect(written('峰' + '〾'.repeat(2000) + '山峯')).toEqual(['峰'])
 })
 
 test('a structure is kept under the description as written and the character without its selector', () => {

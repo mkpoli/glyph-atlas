@@ -19,7 +19,8 @@ const single = (value: string) => /^\P{M}[\p{M}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]
 /** Whether a value is written as a description, which starts with an operator. */
 export const isSequence = (value: string) => arity([...value][0] ?? '') > 0;
 /** The characters and descriptions a text names one after another: a description ends where its
- *  operators are satisfied, so 說⿰月兊説 names three. What follows a description cut short is left out. */
+ *  operators are satisfied, so 說⿰月兊説 names three. What follows a description cut short, or one
+ *  longer than a form may be, is left out. */
 export function written(text: string): string[] {
   const chars = [...text], found: string[] = [];
   let at = 0;
@@ -32,7 +33,7 @@ export function written(text: string): string[] {
   };
   while (at < chars.length) {
     const from = at;
-    if (arity(chars[at])) { if (!described()) break; }
+    if (arity(chars[at])) { if (!described() || at - from > FORM_LONGEST) break; }
     else for (at++; at < chars.length && /^[\p{M}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]$/u.test(chars[at]);) at++;
     found.push(chars.slice(from, at).join(''));
   }

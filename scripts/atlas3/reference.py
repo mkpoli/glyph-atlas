@@ -47,8 +47,9 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
 The component objects must answer each of PROBES (日月 finds 明) before anything is sent, and an empty
 `han_components`, `han_component_names` or `han_ids` stops the load. `--only components` makes and sends
 those objects alone, and `--only ids` the IDS shards with `structure.json.gz` (an input that holds
-`han_ids` is enough: `export_character_variants.py --ids`): each reads neither D1 nor the local copies,
-keeps every other path of the manifest as R2 gives it, and reports to `out/reference-<kind>-report.txt`. `--check URL` asks the site's
+`han_ids` is enough: `export_character_variants.py --ids --described FILE`): each reads neither D1
+nor the local copies, keeps every other path of the manifest as R2 gives it, and reports to
+`out/reference-<kind>-report.txt`. `--check URL` asks the site's
 `/layers/suggest` for each probe after a load. The probe here is looser than the Worker's search,
 which scans at most COMPONENT_SCAN characters of the rarest component, so `--check` is the authority.
 Every `--send` takes `work/atlas-v3/out/reference.lock` in the main checkout (SEND_LOCK) from reading
