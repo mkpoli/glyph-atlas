@@ -26,7 +26,8 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
   the shard of the reading (SUMMARY_DIGITS). A kana search reads the one shard for the kanji it lists.
 - `ids/<shard>.json.gz`: each character's ideographic descriptions, regional shapes and 構形
   (`glyph_atlas.structures`: its id and label, or null), by the character itself, in the shard of the
-  character (IDS_DIGITS).
+  character (IDS_DIGITS). A description the site names a character or a form by
+  (`export_character_variants.py --described`) is a key of its own, with its 構形.
 - `structure.json.gz`: the scheme, source version and policy the shards' structures were read under,
   which a `structures` row records.
 - `names.json.gz`: every card's name and how often it occurs, for a search by name or code point.
@@ -102,6 +103,7 @@ from publish import BUCKET, CF, R2_REMOTE, applied, lit, send, upload
 
 from glyph_atlas import reference_input
 from glyph_atlas import structures as structure_layer
+from glyph_atlas.representation import is_sequence
 
 SCHEMA = CF / "migrations-atlas" / "0004_reference.sql"
 PREFIX = "v3/reference/"
@@ -563,20 +565,21 @@ def probe_components(read):
 
 def put_ids(objects, notes):
     """Hand the IDS shards and `structure.json.gz` to `objects`: each character's descriptions, regional
-    shapes and structure, and what the structures were read under."""
+    shapes and structure, each description the site names something by with its structure, and what the
+    structures were read under."""
     if source("han_ids").execute("SELECT 1 FROM han_ids LIMIT 1").fetchone() is None:
         sys.exit(f"han_ids in the reference input is empty; {GENERATORS['han_ids']} writes it")
     structures = defaultdict(dict)
     for char, sequences, shapes in source("han_ids").execute("SELECT char, sequences, shapes FROM han_ids"):
         try:
-            structure = structure_layer.for_character(char)
+            structure = structure_layer.for_name(char)
         except ValueError:
             # A reading that does not settle names no structure; the load goes on without it.
             structure = None
             notes["characters whose structure does not settle"] += 1
         structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None,
                                                      [structure.id, structure.label] if structure else None]
-        notes["characters with a structure"] += structure is not None
+        notes["descriptions with a structure" if is_sequence(char) else "characters with a structure"] += structure is not None
     for key, chars in structures.items():
         objects.put(f"{IDS}{key}.json.gz", compact(dict(sorted(chars.items()))))
     objects.put(STRUCTURE, compact({"scheme": structure_layer.SCHEME, "version": structure_layer.VERSION,

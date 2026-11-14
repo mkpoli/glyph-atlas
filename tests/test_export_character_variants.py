@@ -2,6 +2,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 import export_character_variants as variants
 
@@ -68,6 +70,11 @@ def test_the_descriptions_replace_han_ids_alone(monkeypatch, tmp_path):
     with reference_input.writing(path) as db:
         db.execute("INSERT INTO han_ids(char,sequences,shapes) VALUES('甲','[\"⿰乙丙\"]',NULL)")
     monkeypatch.setattr(sys, "argv", ["export_character_variants.py", "--ids", "--input", str(path)])
+    with pytest.raises(SystemExit):
+        variants.main()  # a run that writes han_ids names the site's descriptions
+    listed = tmp_path / "described.txt"
+    listed.write_text("")
+    monkeypatch.setattr(sys, "argv", ["export_character_variants.py", "--ids", "--input", str(path), "--described", str(listed)])
     variants.main()
     names, db = written(path)
     assert names == {"han_ids"}

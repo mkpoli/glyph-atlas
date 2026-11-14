@@ -1,10 +1,10 @@
 """Write the 異体字 graph, its derived tier, the words' spellings and their citations into the reference
 input (`glyph_atlas.reference_input`), which `scripts/atlas3/reference.py` loads onto the site.
 
-    python scripts/export_character_variants.py            # every table below
+    python scripts/export_character_variants.py --described FILE          # every table below
     python scripts/export_character_variants.py --words    # words and word_spellings alone
     python scripts/export_character_variants.py --writers  # grapheme_writers alone
-    python scripts/export_character_variants.py --ids      # han_ids alone
+    python scripts/export_character_variants.py --ids --described FILE    # han_ids alone
 
 `character_variants` is the 異体字 graph itself. The derived tier is `component_variants` (each
 substitution with its count and pairs) and `character_derived`: one row per character, its derived
@@ -12,7 +12,10 @@ list as `refs.derived_variants` ranks it, each form with its routes (`refs.deriv
 substitutions per form make that about half an hour of work on one processor, spread over the
 processors and computed once per run. `han_ids` holds each character's descriptions, which the form
 picker's IDS editor starts from, and its regional shapes; `--ids` writes it alone, which is all
-`reference.py --only ids` reads. `words` and `word_spellings` are the word
+`reference.py --only ids` reads. `--described FILE` adds the descriptions the site names a character or
+a form by (a corpus character Unicode lacks, a form a reviewer typed), each as its own description, so
+the load gives each its 構形. A run that writes `han_ids` must name the file, since one without it
+would take those structures off the site. `words` and `word_spellings` are the word
 layer of decision 0004 (`refs.words`, `refs.word_spellings`, which joins 振り仮名 counts and observed
 crop claims); `--words` writes them alone, so a new word reaches the site without deriving the graph
 again. `grapheme_writers` holds the reduced forms that write several characters and the forms with no
@@ -30,10 +33,13 @@ import json
 import multiprocessing
 import os
 import sqlite3
+import unicodedata
+from collections.abc import Iterable
 from functools import cache
 from pathlib import Path
 
 from glyph_atlas import han_components, reference_input, refs
+from glyph_atlas.representation import described
 
 COLUMNS = ("a", "b", "relation", "source", "detail", "written", "widens")
 DERIVED_COLUMNS = ("a", "forms")
@@ -93,6 +99,13 @@ def ids_rows() -> tuple[tuple[str, str, str | None], ...]:
                  for char in sorted(han_components._sequences()) if (found := refs.ids_sequences(char)))
 
 
+def described_rows(lines: Iterable[str]) -> list[tuple[str, str, None]]:
+    """`han_ids` rows for the descriptions the site names a character or a form by, one per line:
+    each is its own description. A line that is no well-formed description is left out."""
+    values = sorted({unicodedata.normalize("NFC", line.strip()) for line in lines})
+    return [(value, json.dumps([value], ensure_ascii=False, separators=(",", ":")), None) for value in values if described(value)]
+
+
 def word_rows() -> list[tuple]:
     return [tuple(row[column] for column in WORD_COLUMNS) for row in refs.words().values()]
 
@@ -108,7 +121,8 @@ def writer_rows() -> list[tuple[str, str, int]]:
                   for head, family in refs._grapheme_families().items() for point in family["writers"])
 
 
-def write(db: sqlite3.Connection, *, words: bool = True, writers: bool = True, graph: bool = True, ids: bool = True) -> dict[str, int]:
+def write(db: sqlite3.Connection, *, words: bool = True, writers: bool = True, graph: bool = True, ids: bool = True,
+          descriptions: Iterable[str] = ()) -> dict[str, int]:
     """The chosen tables of the reference input replaced, in the caller's transaction; the rows each holds."""
     counts = {}
     if graph:
@@ -117,7 +131,7 @@ def write(db: sqlite3.Connection, *, words: bool = True, writers: bool = True, g
         counts["character_derived"] = reference_input.replace(db, "character_derived", derived_rows())
         reference_input.put_source(db, "variant_sources", citations())
     if ids:
-        counts["han_ids"] = reference_input.replace(db, "han_ids", ids_rows())
+        counts["han_ids"] = reference_input.replace(db, "han_ids", [*ids_rows(), *described_rows(descriptions)])
     if writers:
         counts["grapheme_writers"] = reference_input.replace(db, "grapheme_writers", writer_rows())
     if words:
@@ -163,11 +177,16 @@ def main() -> None:
     alone.add_argument("--words", action="store_true", help="write words and word_spellings alone")
     alone.add_argument("--writers", action="store_true", help="write grapheme_writers alone")
     alone.add_argument("--ids", action="store_true", help="write han_ids alone")
+    parser.add_argument("--described", type=Path, help="a file of the site's descriptions, one per line, that han_ids also holds")
     arguments = parser.parse_args()
     every = not (arguments.words or arguments.writers or arguments.ids)
+    if (every or arguments.ids) and arguments.described is None:
+        # A run without them would take every description's 構形 off the site at the next load.
+        parser.error("han_ids also holds the site's descriptions: name their file with --described")
     with reference_input.writing(arguments.input) as db:
         counts = write(db, words=every or arguments.words, writers=every or arguments.writers, graph=every,
-                       ids=every or arguments.ids)
+                       ids=every or arguments.ids,
+                       descriptions=arguments.described.read_text().splitlines() if arguments.described else ())
     print(json.dumps(counts))
 
 
