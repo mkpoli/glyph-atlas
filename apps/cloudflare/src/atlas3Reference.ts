@@ -59,7 +59,7 @@ export async function readingKanji(env: Env, reading: string, ctx?: ExecutionCon
 }
 
 // A character's ideographic descriptions and regional shapes, or null.
-export async function characterStructure(env: Env, char: string, ctx?: ExecutionContext): Promise<{ sequences: string[]; shapes: Json[] | null } | null> {
+export async function characterIds(env: Env, char: string, ctx?: ExecutionContext): Promise<{ sequences: string[]; shapes: Json[] | null } | null> {
   const shard = await readIds(env, `${PREFIX}ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`, ctx);
   const found = shard && Object.hasOwn(shard, char) ? shard[char] : null;
   return found ? { sequences: found[0], shapes: found[1] } : null;

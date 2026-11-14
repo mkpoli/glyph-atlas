@@ -5,7 +5,7 @@
 // A card's `data` is in the summary shard of its family head. A list reads the name list and the
 // summary shards of the families the query names; the kanji of a kana reading come with their families
 // in the reading's shard, and the 異体字 of a one-character query with theirs in its card's object.
-import { characterObject, characterStructure, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, type NameIndex } from '../atlas3Reference';
+import { characterObject, characterIds, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, type NameIndex } from '../atlas3Reference';
 import { catalogueVersion } from '../atlas3Stamps';
 import { Problem } from '../busy';
 import { idsCharacter } from '../category';
@@ -173,14 +173,14 @@ const IDS_OPERATOR = /[⿰-⿿㇯〾]/u;
 // Answers that change only with the catalogue are kept at the edge an hour.
 const KEPT = 3600;
 type Substitute = { char: string; count: number };
-export async function structureOf(env: Env, ctx: ExecutionContext, origin: string, char: string) {
+export async function idsOf(env: Env, ctx: ExecutionContext, origin: string, char: string) {
   if (!char || [...char].length !== 1) throw new Problem(422, 'Name one character.');
-  const key = new Request(`${origin}/layers/structure?c=${encodeURIComponent(char)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const key = new Request(`${origin}/layers/ids?c=${encodeURIComponent(char)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
-  const structure = await characterStructure(env, char, ctx);
-  const sequences: string[] = structure?.sequences ?? [];
-  const shapes: { text: string; regions: string }[] = structure?.shapes ?? [];
+  const described = await characterIds(env, char, ctx);
+  const sequences: string[] = described?.sequences ?? [];
+  const shapes: { text: string; regions: string }[] = described?.shapes ?? [];
   const parts = [...new Set(sequences.flatMap(text => [...text].filter(c => !IDS_OPERATOR.test(c))))].slice(0, STRUCTURE_PARTS);
   const rows = parts.length ? (await env.ATLAS.prepare(substitutesQuery(parts.length)).bind(...parts, ...parts)
     .all<{ a: string; b: string; count: number }>()).results : [];

@@ -424,9 +424,9 @@ def substitutes(component: str) -> list[dict[str, Any]]:
     return found[:SUBSTITUTES_SHOWN]
 
 
-def structure(char: str) -> dict[str, Any]:
+def ids_of(char: str) -> dict[str, Any]:
     """What the IDS editor starts from for `char`: its descriptions, its regional shapes, and the
-    substitutes of every component they name, as the Worker's `/layers/structure` answers."""
+    substitutes of every component they name, as the Worker's `/layers/ids` answers."""
     sequences = ids_sequences(char)
     parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
                     if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})

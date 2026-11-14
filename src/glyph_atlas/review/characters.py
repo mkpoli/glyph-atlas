@@ -1026,13 +1026,13 @@ def router(store: Store) -> APIRouter:
         """
         return suggest(q, layer(), limit=limit)
 
-    @api.get("/layers/structure")
-    def structure(c: str = "") -> dict[str, Any]:
+    @api.get("/layers/ids")
+    def ids(c: str = "") -> dict[str, Any]:
         """What the form picker's IDS editor starts from: the character's descriptions and the
         substitutes of every component they name, as the Worker answers it."""
         if len(c) != 1:
             raise HTTPException(422, "Name one character.")
-        return refs.structure(c)
+        return refs.ids_of(c)
 
     @api.get("/layers/characters/{code_point}")
     def character(

@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { IDS_DIGITS, SUMMARY_DIGITS, componentMatches, referenceShard } from '../atlas3Reference';
-import { choiceSpellingsQuery, headsQuery, namesQuery, structureOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
+import { choiceSpellingsQuery, headsQuery, namesQuery, idsOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
 
 // The edge cache.
 const edge = new Map<string, Response>();
@@ -268,12 +268,12 @@ describe('a component search', () => {
 
 describe("the IDS editor's structure", () => {
   it('answers with its sequences, shapes and substitutes, kept at the edge by the catalogue version', async () => {
-    expect(await structureOf(newEnv, ctx, 'https://new.test', '滑')).toEqual({ char: '滑', sequences: ['⿰氵骨'],
+    expect(await idsOf(newEnv, ctx, 'https://new.test', '滑')).toEqual({ char: '滑', sequences: ['⿰氵骨'],
       shapes: [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }],
       substitutes: { '氵': [{ char: '水', count: 40 }], '骨': [{ char: '𩨗', count: 3 }] } });
-    expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/structure?c=%E6%BB%91&v='))).toBe(true);
-    await expect(structureOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name one character.');
-    await expect(structureOf(newEnv, ctx, 'https://new.test', '滑骨')).rejects.toThrow('Name one character.');
+    expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/ids?c=%E6%BB%91&v='))).toBe(true);
+    await expect(idsOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name one character.');
+    await expect(idsOf(newEnv, ctx, 'https://new.test', '滑骨')).rejects.toThrow('Name one character.');
   });
 
   it('reads the substitutes by either end of the pair', () => {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { gzipSync } from 'node:zlib';
-import { IDS_DIGITS, LIST_PAGE, SUMMARY_DIGITS, cardList, characterObject, characterStructure, familySummaries, referenceShard } from './atlas3Reference';
+import { IDS_DIGITS, LIST_PAGE, SUMMARY_DIGITS, cardList, characterObject, characterIds, familySummaries, referenceShard } from './atlas3Reference';
 
 const edge = new Map<string, Response>();
 (globalThis as any).caches = { default: {
@@ -47,8 +47,8 @@ describe('reference objects', () => {
 
   it('find a structure and answer null for a character the shard lacks', async () => {
     const { env } = bucket({ [`v3/reference/ids/${await referenceShard('姥', IDS_DIGITS)}.json.gz`]: { '姥': [['⿰女老'], null] } });
-    expect(await characterStructure(env, '姥')).toEqual({ sequences: ['⿰女老'], shapes: null });
-    expect(await characterStructure(env, 'constructor')).toBeNull();
+    expect(await characterIds(env, '姥')).toEqual({ sequences: ['⿰女老'], shapes: null });
+    expect(await characterIds(env, 'constructor')).toBeNull();
   });
 
   it('page a list across two objects at most', async () => {
