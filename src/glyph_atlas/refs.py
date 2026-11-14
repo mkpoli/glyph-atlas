@@ -425,12 +425,16 @@ def substitutes(component: str) -> list[dict[str, Any]]:
 
 
 def ids_of(char: str) -> dict[str, Any]:
-    """What the IDS editor starts from for `char`: its descriptions, its regional shapes, and the
-    substitutes of every component they name, as the Worker's `/layers/ids` answers."""
+    """What the IDS editor starts from for `char`: its descriptions, its regional shapes, its 構形 and
+    the substitutes of every component they name, as the Worker's `/layers/ids` answers."""
+    from . import structures
+
     sequences = ids_sequences(char)
+    structure = structures.for_character(char)
     parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
                     if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})
     return {"char": char, "sequences": sequences, "shapes": regional_shapes(char),
+            "structure": {"id": structure.id, "label": structure.label} if structure else None,
             "substitutes": {part: found for part in parts if (found := substitutes(part))}}
 
 
@@ -447,6 +451,27 @@ def descriptions() -> han_component_variants.Descriptions:
     structure layer (`glyph_atlas.structures`) starts from the same trees.
     """
     return _descriptions()
+
+
+#: At most this many characters are grouped in one answer (the Worker's STRUCTURE_CHARS).
+STRUCTURE_CHARS = 48
+
+
+def structure_groups(chars: str) -> dict[str, Any]:
+    """The 構形 of each character named, as groups of the characters that share one, in the order
+    named, as the Worker's `/layers/structures` answers. A character with no structure is in no
+    group."""
+    from . import structures
+
+    groups: dict[str, dict[str, Any]] = {}
+    for char in list(dict.fromkeys(chars))[:STRUCTURE_CHARS]:
+        try:
+            structure = structures.for_character(char)
+        except ValueError:
+            continue
+        if structure:
+            groups.setdefault(structure.id, {"id": structure.id, "label": structure.label, "chars": []})["chars"].append(char)
+    return {"items": list(groups.values())}
 
 
 @cache

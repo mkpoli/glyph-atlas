@@ -106,6 +106,7 @@
   "chips.relation.substitute": "代用",
   "chips.relation.nonCognate": "別字",
   "chips.relation.spoofing": "混同字",
+  "chips.structure": "構成",
   "chips.variantSources": "出處",
   "chips.words": "單語",
   "chips.wordCrops.other": "用例 {count}件",

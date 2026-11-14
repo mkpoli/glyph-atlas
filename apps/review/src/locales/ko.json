@@ -123,6 +123,7 @@
   "chips.relation.substitute": "대용",
   "chips.relation.nonCognate": "별자",
   "chips.relation.spoofing": "혼동자",
+  "chips.structure": "구성",
   "chips.variantSources": "출처",
   "chips.words": "단어",
   "chips.wordCrops.other": "용례 {count}건",

@@ -111,6 +111,7 @@
   "chips.relation.substitute": "代用",
   "chips.relation.nonCognate": "別字",
   "chips.relation.spoofing": "形近字",
+  "chips.structure": "構形",
   "chips.variantSources": "來源",
   "chips.words": "詞",
   "chips.wordCrops.other": "{count}例",

@@ -9,8 +9,9 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
 import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
-  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, setWord, setWrittenFor, wordMethodsQuery, wordNamesQuery, wordOfCrop,
+  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, ownStructureQuery, setStructure, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
   writtenForOf, writtenForQuery } from './claims';
+import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
 import { familyClaims } from '../atlas3Gallery';
 
 // The Workers cache, as far as alias reads use it.
@@ -82,7 +83,7 @@ function setup() {
     { id: crypto.randomUUID(), crop_version: version(crop, crop === corpus ? 'rev1' : 'px'), subject: publicId(crop), predicate: 'writes_word', method, claims: members },
     { id: actor, admin: false }) as Promise<any>;
   const read = (path: string) => claimRead(env, new URL('https://x' + path), tools);
-  return { db, runs, env, tools, text, local, corpus, retired, gone, version, input, save, post, claim, read, reads, page };
+  return { db, runs, env, tools, text, local, corpus, retired, gone, version, input, save, post, claim, read, reads, page, objects };
 }
 
 describe('the crop word picker', () => {
@@ -330,6 +331,81 @@ describe('a form written for a grapheme', () => {
   });
 });
 
+describe('a form that realizes a structure', () => {
+  const SOURCE = { scheme: 'babelstone-ids', version: '2025-06-27', policy: 'structure-v1' };
+  // 峰 and 峯 are two structures of one character; 丑 has none. The reference objects are held per
+  // isolate, so every test writes the same ones.
+  async function forms() {
+    const found = setup();
+    const beside = await structureId('⿰山夆', SOURCE.scheme, SOURCE.policy), above = await structureId('⿱山夆', SOURCE.scheme, SOURCE.policy);
+    const rows: Record<string, unknown[]> = { '峰': [['⿰山夆'], null, [beside, '⿰山夆']], '峯': [['⿱山夆'], null, [above, '⿱山夆']],
+      '丑': [[], null, null], '岑': [['⿱山今'], null, ['st:' + '0'.repeat(32), '⿱山今']] };
+    const shards = new Map<string, Record<string, unknown>>();
+    for (const [char, row] of Object.entries(rows)) {
+      const name = `v3/reference/ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`;
+      shards.set(name, { ...shards.get(name), [char]: row });
+    }
+    for (const [name, shard] of shards) found.objects.set(name, gzipSync(JSON.stringify(shard)));
+    found.objects.set('v3/reference/structure.json.gz', gzipSync(JSON.stringify(SOURCE)));
+    const made = await setForm(found.env, { id: crypto.randomUUID(), crop_version: found.version(found.local), form: '⿰山夆' },
+      publicId(found.local), 'reader', found.tools);
+    const form = made.form!.values[0].form!;
+    const say = (char: string, remove = false, actor = 'reader', id = crypto.randomUUID()) =>
+      setStructure(found.env, { id, char, remove }, form, actor, found.tools);
+    return { ...found, form, say, beside, above };
+  }
+
+  it('derives the id glyph_atlas.structures gives a label', async () => {
+    // structures.for_character("峰").id
+    expect(await structureId('⿰山夆', SOURCE.scheme, SOURCE.policy)).toBe('st:7cbba6f444213f31ed4ff4c58fb0ccb5');
+  });
+
+  it('names a structure by a character that has it, writes its row once, and takes one claim back', async () => {
+    const { db, form, say, beside, above } = await forms();
+    const saved = await say('峰');
+    expect(saved).toEqual({ id: form, structures: [{ structure: beside, label: '⿰山夆', by: ['reader'] }], replaced: null });
+    expect(db.query('SELECT id,label,scheme,version,policy,created_by FROM structures').all())
+      .toEqual([{ id: beside, label: '⿰山夆', ...SOURCE, created_by: 'reader' }]);
+    expect(db.query("SELECT subject,crop,object,method FROM assertions WHERE predicate='has_structure'").get())
+      .toEqual({ subject: form, crop: null, object: beside, method: 'form-picker' });
+    expect(await say('峰')).toEqual(saved);
+    await say('峰', false, 'other');
+    expect(db.query('SELECT count(*) AS n FROM structures').get()).toEqual({ n: 1 });
+    expect((await say('峯')).structures.map((v: any) => v.label).sort()).toEqual(['⿰山夆', '⿱山夆']);
+    expect((await say('峰', true)).replaced).toBe(beside);
+    expect((await say('峰', true, 'other')).structures).toEqual([{ structure: above, label: '⿱山夆', by: ['reader'] }]);
+    await expect(say('峰', true)).rejects.toThrow('409 You have not said this form has this structure.');
+  });
+
+  it('takes a claim back by the id of its structure, and refuses one id for two requests', async () => {
+    const { env, tools, form, say, beside } = await forms();
+    const id = crypto.randomUUID();
+    await say('峰', false, 'reader', id);
+    await expect(say('峯', false, 'reader', id)).rejects.toThrow('409');
+    const taken = await setStructure(env, { id: crypto.randomUUID(), structure: beside, remove: true }, form, 'reader', tools);
+    expect(taken).toEqual({ id: form, structures: [], replaced: beside });
+    await expect(setStructure(env, { id: crypto.randomUUID(), structure: 'st:x', remove: true }, form, 'reader', tools))
+      .rejects.toThrow('422 Name a structure by its id.');
+  });
+
+  it('refuses a character with no structure, a mismatched id, and a form that is not there', async () => {
+    const { env, tools, say } = await forms();
+    await expect(say('丑')).rejects.toThrow('422 No structure is known for 丑.');
+    await expect(say('鑫')).rejects.toThrow('422 No structure is known for 鑫.');
+    await expect(say('峰峯')).rejects.toThrow('422 Name one character.');
+    await expect(say('岑')).rejects.toThrow('503 The structures are being loaded.');
+    await expect(setStructure(env, { id: crypto.randomUUID(), char: '峰' }, 'fm:' + '0'.repeat(32), 'reader', tools))
+      .rejects.toThrow('404 No such form.');
+  });
+
+  it('is written through the claim route', async () => {
+    const { env, form, post, beside } = await forms();
+    const answer = await post(`/atlas/forms/${form}/structure`, { id: crypto.randomUUID(), char: '峰' }) as any;
+    expect(answer.structures).toEqual([{ structure: beside, label: '⿰山夆', by: ['reader'] }]);
+    expect(await structuresOf(env, form)).toEqual(answer.structures);
+  });
+});
+
 describe('a batch of form picks', () => {
   it('claims one value on every crop at once, names its form once, and is undone by sending each replaced value back', async () => {
     const { db, env, tools, local, corpus, version, post } = setup();
@@ -515,10 +591,11 @@ describe('the ledger queries', () => {
       [ownClaimQuery('writes_word', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [currentCropClaimsQuery(), [1]], [currentClaimsQuery(), ['s']],
       [claimHistoryQuery('crop'), [1]], [claimHistoryQuery('subject'), ['s']], [ledgerClaimsQuery(), [0, 10]], [ledgerActionsQuery(), [0, 10]],
       [bookDatesQuery(), [1]], [bookKeyQuery(), ['k']], [bookDateClaimsQuery(), [1]], [resolveClearQuery(), ['[["s","p","",""]]']], [corpusRowQuery(), [1]],
+      [structuresQuery(), ['fm:1']], [structureLabelsQuery(), ['["st:1"]']], [ownStructureQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['fm:1', 'st:1', 'u']],
     ];
     for (const [sql, args] of plans) {
       const detail = (db.query('EXPLAIN QUERY PLAN ' + sql).all(...(args as any[])) as { detail: string }[]).map(r => r.detail);
-      expect([sql, detail.filter(d => /^SCAN (a|c|k|e|x|f|r|p|crops|assertions|assertion_actions|assertion_evidence|current_claims|forms|representations|words|book_dates|pages|reviews)\b/.test(d))])
+      expect([sql, detail.filter(d => /^SCAN (a|c|k|e|x|f|r|p|crops|assertions|assertion_actions|assertion_evidence|current_claims|forms|representations|structures|s|words|book_dates|pages|reviews)\b/.test(d))])
         .toEqual([sql, []]);
     }
   });

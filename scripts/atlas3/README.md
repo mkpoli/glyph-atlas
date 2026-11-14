@@ -411,8 +411,15 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
        ATLAS3_DIR=<dir> .venv/bin/python scripts/atlas3/reference.py --only components [--send]
        .venv/bin/python scripts/atlas3/reference.py --check https://glyphatlas.org
 
+   The IDS shards and `structure.json.gz` (each character's descriptions, regional shapes and 構形)
+   go alone the same way, from an input that holds `han_ids`; the report is
+   `out/reference-ids-report.txt`:
+
+       .venv/bin/python scripts/export_character_variants.py --ids --input <dir>/reference-input.sqlite
+       ATLAS3_DIR=<dir> .venv/bin/python scripts/atlas3/reference.py --only ids [--send]
+
    The Python probe is looser than the Worker's search (it has no COMPONENT_SCAN cap), so `--check`
-   on the live site is the authority. Every `--send`, full or `--only components`, holds
+   on the live site is the authority. Every `--send`, full or `--only`, holds
    `work/atlas-v3/out/reference.lock` in the main checkout from reading the R2 manifest to writing it
    back, whatever `ATLAS3_DIR` names; a second sender stops at once with the lock's path.
 
