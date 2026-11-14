@@ -71,6 +71,31 @@ the consensus gate had published 2,831 crops, this cutter accepts 4,961, and 2,4
 no published crop. Of 120 of those new crops drawn at random and looked at one by one, three were
 doubtful (a narrow box that may hold part of its character, a box that reaches into its neighbour).
 
+## Pages without a transcription
+
+`glyph_atlas.segment` cuts the columns of a page that has no transcription with `frame.json` alone:
+a box becomes its parts when the parts are likelier characters than the whole, read first by the
+size of its column's characters and then by its own shape. It is not wired into
+`atlas review propose-characters`, whose `--split` runs the geometric pass of
+`character_proposals.split_boxes`.
+
+Both were run on the Kyujanggak land registers of 1722 and 1904 (서울대학교 규장각한국학연구원). 47
+detector boxes at least 1.3 times longer than wide were drawn at random from 24 pages and read by
+eye, once, by the author of the pass and not by a reviewer: 22 hold one character, 23 hold two or
+three, 2 hold none.
+
+| | `split_boxes` | `segment` |
+| --- | ---: | ---: |
+| boxes of two or three characters cut | 4 of 23 | 17 of 23 |
+| of those, every cut between two characters | 4 | 16 |
+| boxes of one character cut | 0 of 22 | 0 of 22 |
+| box moved onto one of its characters, the other left unboxed | 0 | 2 |
+
+Boxes wider than long, the unboxed ink `segment` adds (93 boxes on one page of 654 detections) and
+blocks of four small characters in one box were not measured. The cover title, a box of two
+characters eight times the page's character size, is cut by `split_boxes` and moved onto one
+character by `segment`. A page takes about 45 s on a CPU.
+
 ## Limits
 
 - The models are fitted on two printed books. Manuscripts, Chinese prints and Korean books are
