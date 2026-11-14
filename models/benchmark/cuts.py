@@ -1,7 +1,7 @@
 """Measure a cutter on pages whose character boxes are known.
 
     python models/benchmark/cuts.py build                      # work/cut-bench from CODH's val and test books
-    python models/benchmark/cuts.py run --cutter consensus --split test --pages 40
+    python models/benchmark/cuts.py run --cutter lattice --split test --pages 40
 
 A cutter is given what the collection's extraction has: the page image, each line's box and its
 transcription. CODH gives every character its own box, in reading order, so its lines are put
@@ -76,12 +76,13 @@ def build(names=("val", "test"), listing="pages.jsonl"):
     print(f"{kept} pages -> {BENCH / listing}")
 
 
-def lines_of(page: dict, *, pad: float = 0.12):
+def lines_of(page: dict, *, pad: float = 0.12, slack: float = 0.0):
     """A page's lines, from its boxes in reading order: a new line starts where the column changes.
 
     Returns `(Line, [truth unit, ...])` pairs. The line box is the union of its characters' boxes,
     widened by `pad` of its width on each side, as a transcriber's line box is drawn around a column
-    and not around its ink.
+    and not around its ink, and lengthened at both ends by `slack` of the page's median character
+    height.
     """
     from glyph_atlas.schema import Box, Line
 
@@ -89,6 +90,7 @@ def lines_of(page: dict, *, pad: float = 0.12):
     if not units:
         return []
     width = statistics.median(u["box"]["w"] for u in units)
+    longer = round(slack * statistics.median(u["box"]["h"] for u in units))
     groups, current = [], [units[0]]
     for unit in units[1:]:
         last = current[-1]["box"]
@@ -110,6 +112,7 @@ def lines_of(page: dict, *, pad: float = 0.12):
         y1 = max(u["box"]["y"] + u["box"]["h"] for u in group)
         margin = round((x1 - x0) * pad)
         x0, x1 = max(0, x0 - margin), x1 + margin
+        y0, y1 = max(0, y0 - longer), y1 + longer
         text = "".join(u["text"] or "" for u in group)
         line = Line(id=f"{page['id']}:L{number:03d}", page_id=page["id"], seq=number,
                     box=Box(x=x0, y=y0, w=x1 - x0, h=y1 - y0), vertical=True, text_raw=text, text=text)
@@ -126,47 +129,10 @@ def iou(a, b) -> float:
     return inter / (a["w"] * a["h"] + b["w"] * b["h"] - inter)
 
 
-class Consensus:
-    """The collection's extraction as it runs: `collection-v2` alignment and the two-reader gate."""
-
-    name = "consensus"
-
-    def __init__(self):
-        from glyph_atlas import extraction_queue
-
-        self.queue = extraction_queue
-        self.engine = extraction_queue.Engine()
-
-    def cut(self, image, lines):
-        """Per line id, one `(box or None, accepted, reason)` per token."""
-        from glyph_atlas import align
-
-        engine, queue = self.engine, self.queue
-
-        def crop_of(_page, box):
-            return image.crop((box.x, box.y, box.x + box.w, box.y + box.h))
-
-        detections = [align.Detection(box=box, score=score) for box, score in engine.detector.boxes(image)]
-        aligned = align.align_page(lines, detections, run=engine.run, classifier=engine.classifier, crop_of=crop_of)
-        result = {}
-        for line in lines:
-            found, _ = aligned[line.id]
-            answers = []
-            for unit in found:
-                reason = queue.quality_reason(unit, [], image.size)
-                if reason in (None, "visual-disagreement"):
-                    votes = engine.reader.read(crop_of(None, unit.box))["votes"]
-                    reason = queue.quality_reason(unit, votes, image.size)
-                answers.append((unit.box.model_dump() if unit.box else None, reason is None, reason or "accepted"))
-            result[line.id] = answers
-        align.clear_crop_cache()
-        return result
-
-
 def cutter_of(name: str):
-    if name == "consensus":
-        return Consensus()
-    raise ValueError(f"no cutter named {name}")
+    from glyph_atlas import cut
+
+    return cut.bench_cutter(name)
 
 
 def run(args):
@@ -193,7 +159,7 @@ def run(args):
         with Image.open(BENCH / page["image"]) as handle:
             image = handle.convert("RGB")
         pairs = []
-        for line, truth in lines_of(page):
+        for line, truth in lines_of(page, slack=args.slack):
             if len(align.tokens_of(line)) == len(truth):
                 pairs.append((line, truth))
             else:
@@ -265,9 +231,11 @@ def main():
     builder.add_argument("--train", action="store_true",
                          help="list the training books instead, as train-pages.jsonl, for models/refiner")
     runner = commands.add_parser("run")
-    runner.add_argument("--cutter", default="consensus")
+    runner.add_argument("--cutter", default="lattice")
     runner.add_argument("--split", default="val", choices=("val", "test"))
     runner.add_argument("--pages", type=int, default=0, help="pages a book, drawn with a fixed seed; 0 for all")
+    runner.add_argument("--slack", type=float, default=0.0,
+                        help="lengthen every line box at both ends by this share of a character's height")
     runner.add_argument("--tag", default="")
     runner.add_argument("--records", action="store_true", help="also write one record a character")
     args = parser.parse_args()

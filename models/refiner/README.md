@@ -2,7 +2,8 @@
 
 A ResNet-18 that looks at a character box with its surroundings and answers how far each edge is
 from the character, and the IoU it expects the box to have with it. `glyph_atlas.refine.Refiner`
-serves the ONNX export.
+serves the ONNX export; the cutter runs it on every candidate box before the classifier reads the
+crop, and its expected IoU is a feature of both cutter models.
 
 ## Data
 
@@ -37,7 +38,8 @@ python models/refiner/train.py --steps 4000      # artifacts/refiner.pt, refiner
 | one round | 0.843 | 89.1% | 70.9% |
 | two rounds | 0.861 | 91.0% | 76.1% |
 
-The expected IoU is off by 0.069 on average.
+The expected IoU is off by 0.069 on average. Adding the refiner to the cutter raised the characters
+published at 0.97 precision (IoU 0.7) on the `test` books from 56.9% to 65.8% (`models/cutter`).
 
 ## Licence
 
