@@ -61,6 +61,14 @@
    ],
    "cardinality": "many"
   },
+  "has_structure": {
+   "label": "the structure a form realizes: its components and their arrangement, with no stroke design",
+   "subject": "form",
+   "objects": [
+    "structure"
+   ],
+   "cardinality": "many"
+  },
   "writes_word": {
    "label": "the word a crop writes at its place in the text; each crop of a spelling of several characters (而已) writes the whole word",
    "subject": "crop",

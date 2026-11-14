@@ -250,7 +250,8 @@ several where the kanji table has several, each with the version in its table's 
 `data/vocab/han-ids.tsv` gives each ideograph's Ideographic Description Sequences from BabelStone's
 IDS.TXT, and `data/vocab/han-component-forms.tsv` the component forms that stand for another character
 (⺡ for 氵, 氵 for 水); `scripts/build_han_components.py` writes both, and search reads them to find a
-character by its components. `data/vocab/graphemes.yaml` states the curated kana assignments, 字母
+character by its components. `data/vocab/han-component-ucv.tsv`, from the same script, lists the
+component variations the IRG gives as unifiable or not (戶 户 戸), which the structure layer reads. `data/vocab/graphemes.yaml` states the curated kana assignments, 字母
 overrides and cited orthographic families. A new value must state its source.
 `data/vocab/words.tsv` and `data/vocab/word-spellings.tsv` record the characters cited as writing a
 word (計, 許 and 斗 for the particle ばかり), one row per source statement; the spellings of a word are
