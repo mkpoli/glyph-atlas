@@ -6,12 +6,16 @@
   // own form too, which confirms that form, and a click on the chosen chip drops the choice.
   // A described form the crop already has can be recorded as written for its grapheme (written_for), so
   // the form joins the grapheme's 字体 on every card and in every picker of the family.
+  // Under the bar stands the 構形 of the chosen form, or of the crop's own, with the bar's other forms
+  // built as it is: 説 and 說 are one structure, 峰 and 峯 two.
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
   import CopyValue from './CopyValue.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
   import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
+  import { structures as readStructures } from '../lib/layers.js'
+  import { isDescription } from '../lib/ids.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
@@ -42,6 +46,22 @@
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
+  // The 構形 of the form shown, the chosen one or the crop's own, and of the bar's forms: where the bar
+  // leaves the crop's own form off, it is asked for all the same. The last answer stays until the next
+  // arrives, and a bar of ideographs or descriptions keeps the line's place while the first is read, so
+  // the controls below do not move.
+  const HAN = /^\p{Script=Han}/u
+  const shown = $derived(chosen ?? current)
+  const composedOf = $derived([...new Set([shown, ...bar.map(chip => chip.char)])].filter(char => HAN.test(char ?? '') || isDescription(char)).slice(0, 48).join(''))
+  let composed = $state([])
+  $effect(() => {
+    const chars = composedOf
+    if (!chars) { composed = []; return }
+    let live = true
+    readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => { if (live) composed = [] })
+    return () => { live = false }
+  })
+  const structure = $derived(composed.find(group => group.chars.includes(shown)) ?? null)
   // The bar wraps onto further rows; only the forms past the first ten, and not on it, wait in the picker.
   const rest = $derived(forms.slice(BAR).filter(form => !bar.some(chip => chip.char === form.char)))
   // The crop's own form as the site holds it: one value, and not disputed. Only a described form can be
@@ -125,6 +145,14 @@
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+⌕'}</button>
   </div>
+  {#if composedOf}
+    <div class="form-structure">
+      {#if structure}
+        <span class="form-structure-label">{t('chips.structure')}</span><span class="form-structure-text" lang="zh">{structure.label}</span>
+        {#each structure.chars.filter(char => char !== shown) as char (char)}<FormText text={char} />{/each}
+      {/if}
+    </div>
+  {/if}
   {#if linkedHere || canLink}
     <div class="form-link">
       {#if linkedHere}
@@ -181,6 +209,8 @@
   .form-option:not(:disabled):hover{border-color:var(--accent)}
   .form-compose{align-self:flex-start;font-size:13px;padding:4px 10px}
   .form-note{margin:0;font-size:11px;color:var(--muted)}
+  .form-structure{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-height:22px;font-size:14px;line-height:22px}
+  .form-structure-label{font-size:11px;color:var(--muted)}
   .form-link{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;line-height:1.4}
   .form-link-add{border:0;background:transparent;color:var(--accent);padding:0;font:inherit;font-size:12px;text-align:left;
     text-decoration:underline;text-underline-offset:3px}
