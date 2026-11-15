@@ -1212,8 +1212,8 @@ class Store:
         with self._lock, self._connection() as conn:
             return crop_forms.folds_of(conn, ids)
 
-    def claimed_structures(self, names: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """The 構形 a reader filed each written value under (`crop_forms.claimed_structures`)."""
+    def claimed_structures(self, names: Iterable[str]) -> dict[str, list[dict[str, Any]]]:
+        """The 構形 readers filed each written value under (`crop_forms.claimed_structures`)."""
         with self._lock, self._connection() as conn:
             return crop_forms.claimed_structures(conn, names)
 

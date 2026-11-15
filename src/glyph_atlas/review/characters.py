@@ -1033,7 +1033,7 @@ def router(store: Store) -> APIRouter:
         with `of` is derived here like any description."""
         if not written(c):
             raise HTTPException(422, "Name a character.")
-        return refs.structure_groups(c, store.claimed_structures(written(c)[:refs.STRUCTURE_CHARS]), store.folds_of)
+        return refs.structure_groups(c, store.claimed_structures(list(dict.fromkeys(written(c)))[:refs.STRUCTURE_CHARS]), store.folds_of)
 
     @api.get("/layers/ids")
     def ids(c: str = "") -> dict[str, Any]:

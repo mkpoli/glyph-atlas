@@ -214,26 +214,32 @@ type Group = { id: string; label: string; chars: string[]; claimed?: Record<stri
   folded?: { id: string; label: string; by: string[]; chars: string[] }[] };
 /** The 構形 of each character or description named, as groups of those that share one (峰 and 峯 are two
  *  groups, 說 and 説 one, and ⿰月兊 joins 脫), in the order named. A name stands under the structure
- *  a reader filed its form under, and `claimed` names who says so; with no claim it stands under the
- *  one its description gives, a regional shape of `of` under the one that character's descriptions
- *  give it. A structure a reader folded into another stands under that one: `folded` lists each such
- *  structure of the group with who folded it and the names built as it. A name with no structure is
- *  in no group. What the descriptions give is kept at the edge by the catalogue version; the claims
- *  and folds are read each time. */
+ *  readers filed its form under, the one most of them name, and `claimed` names who says so; with no
+ *  claim it stands under the one its description gives, a regional shape of `of` under the one that
+ *  character's descriptions give it. A structure a reader folded into another stands under that one:
+ *  `folded` lists each such structure of the group with who folded it and the names built as it. A
+ *  name with no structure is in no group. `filed` lists, for a name readers filed under several
+ *  structures, the others with who says so. What the descriptions give is kept at the edge by the
+ *  catalogue version; the claims and folds are read each time, and an answer that could not read
+ *  them gives the descriptions' alone. */
 export async function structuresOf(env: Env, ctx: ExecutionContext, origin: string, chars: string, of = '') {
   const named = [...new Set(written(chars))].slice(0, STRUCTURE_CHARS);
   if (!named.length) throw new Problem(422, 'Name a character.');
   const whole = written(of), shaped = whole.length === 1 && [...whole[0]].length === 1 ? whole[0] : '';
-  const [derived, claimed] = await Promise.all([derivedStructures(env, ctx, origin, named, shaped), claimedStructures(env, named)]);
-  const built = new Map(named.flatMap(char => { const structure = claimed.get(char) ?? derived[char]; return structure ? [[char, structure] as const] : [] }));
-  const folds = await foldsOf(env, [...built.values()].map(structure => structure.id));
+  const unread = <T>(empty: T) => (error: unknown) => { console.log(JSON.stringify({ event: 'structure_claims_unread', message: String(error) })); return empty };
+  const [derived, claimed] = await Promise.all([derivedStructures(env, ctx, origin, named, shaped),
+    claimedStructures(env, named).catch(unread(new Map() as Awaited<ReturnType<typeof claimedStructures>>))]);
+  const built = new Map(named.flatMap(char => { const structure = claimed.get(char)?.[0] ?? derived[char]; return structure ? [[char, structure] as const] : [] }));
+  const folds = await foldsOf(env, [...built.values()].map(structure => structure.id)).catch(unread(new Map() as Awaited<ReturnType<typeof foldsOf>>));
   const groups = new Map<string, Group>();
+  const filed: Record<string, { id: string; label: string; by: string[] }[]> = {};
   for (const [char, structure] of built) {
     const fold = folds.get(structure.id), head = fold?.head ?? structure;
     const group = groups.get(head.id) ?? { id: head.id, label: head.label, chars: [] };
     group.chars.push(char);
-    const claim = claimed.get(char);
+    const [claim, ...rest] = claimed.get(char) ?? [];
     if (claim) group.claimed = { ...group.claimed, [char]: claim.by };
+    if (rest.length) filed[char] = rest;
     if (fold) {
       group.folded ??= [];
       let part = group.folded.find(one => one.id === structure.id);
@@ -242,7 +248,7 @@ export async function structuresOf(env: Env, ctx: ExecutionContext, origin: stri
     }
     groups.set(head.id, group);
   }
-  return { items: [...groups.values()] };
+  return { items: [...groups.values()], ...(Object.keys(filed).length ? { filed } : {}) };
 }
 // The structure each name's description gives, by name; a name with none is left out. A name that is
 // a regional shape of `of` has the structure that character's shard gives the shape.

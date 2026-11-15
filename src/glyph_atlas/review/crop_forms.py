@@ -191,19 +191,18 @@ def structures_of(conn: sqlite3.Connection, form: str) -> list[dict]:
             for row in rows if row["status"] in FILED and row["object"]]
 
 
-def claimed_structures(conn: sqlite3.Connection, names: Iterable[str]) -> dict[str, dict]:
-    """The 構形 a reader filed each of these written values under, with who says so now: the structure
-    most readers name, the lowest id among equals. A value nobody filed is not in the answer."""
-    found: dict[str, dict] = {}
+def claimed_structures(conn: sqlite3.Connection, names: Iterable[str]) -> dict[str, list[dict]]:
+    """The 構形 readers filed each of these written values under, each with who says so now: first the
+    one most readers name, the lowest id among equals. A value nobody filed is not in the answer."""
+    found: dict[str, list[dict]] = {}
     for name in names:
         try:
             form = representation.anchored_form(representation.typed(name))
         except ValueError:
             continue
-        filed = structures_of(conn, form)
+        filed = sorted(structures_of(conn, form), key=lambda value: (-len(value["by"]), value["structure"]))
         if filed:
-            best = min(filed, key=lambda value: (-len(value["by"]), value["structure"]))
-            found[name] = {"id": best["structure"], "label": best["label"], "by": best["by"]}
+            found[name] = [{"id": value["structure"], "label": value["label"], "by": value["by"]} for value in filed]
     return found
 
 

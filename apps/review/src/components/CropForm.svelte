@@ -37,9 +37,10 @@
   const current = $derived(formOf(crop))
   const BAR = 10
   // The 構形 each form stands under, by the form's text, with who filed it there (`by`, none for one
-  // its description gives) and the 構形 it is built as when a reader folded that into this one
-  // (`part`): at most NAMES are asked for at once, and a form past them, or one the site knows no
-  // structure of, has none here. The crop's character is named too, for its regional shapes.
+  // its description gives), the other 構形 readers filed it under (`others`) and the 構形 it is built
+  // as when a reader folded that into this one (`part`): at most NAMES are asked for at once, and a
+  // form past them, or one the site knows no structure of, has none here. The crop's character is
+  // named too, for its regional shapes. What is asked again replaces what was known of those names.
   const HAN = /^\p{Script=Han}/u, NAMES = 48
   const composable = char => HAN.test(char ?? '') || isDescription(char)
   let structureOf = $state(new Map())
@@ -47,8 +48,8 @@
     const wanted = [...new Set(names)].filter(composable).slice(0, NAMES)
     if (!wanted.length) return known
     const found = await readStructures(wanted.join(''), HAN.test(written) && [...written].length === 1 ? written : '')
-    return new Map([...known, ...(found.items ?? []).flatMap(group => group.chars.map(char =>
-      [char, { id: group.id, label: group.label, by: group.claimed?.[char] ?? null,
+    return new Map([...[...known].filter(([char]) => !wanted.includes(char)), ...(found.items ?? []).flatMap(group => group.chars.map(char =>
+      [char, { id: group.id, label: group.label, by: group.claimed?.[char] ?? null, others: found.filed?.[char] ?? [],
         part: (group.folded ?? []).find(part => part.chars.includes(char)) ?? null }]))])
   }
   const composed = (names, known = new Map()) => asked(names, known).catch(() => known)
@@ -106,10 +107,13 @@
     .filter(held => held?.id === group.id && held.part).map(held => [held.part.id, held.part])).values()]
   const actionsOf = (group, all) => {
     if (!me || others || disabled || !group.id) return []
+    // The reader's own filing is theirs to take back wherever the form stands: another reader's may hold it elsewhere.
     const held = composable(selected) ? structureOf.get(selected) : null
+    const here = held?.id === group.id && held.by?.includes(me) ? held.part?.id ?? group.id
+      : (held?.others ?? []).some(other => other.id === group.id && other.by.includes(me)) ? group.id : null
     const placing = !composable(selected) ? []
-      : held?.id !== group.id ? [{ key: 'place', label: t('structure.place', { form: selected }), run: () => file(group) }]
-      : held.by?.includes(me) ? [{ key: 'take', label: t('structure.take', { form: selected }), run: () => file({ id: held.part?.id ?? group.id }, true) }] : []
+      : here ? [{ key: 'take', label: t('structure.take', { form: selected }), run: () => file({ id: here }, true) }]
+      : held?.id !== group.id ? [{ key: 'place', label: t('structure.place', { form: selected }), run: () => file(group) }] : []
     return [...placing,
       ...all.filter(other => other.id && other.id !== group.id).map(other =>
         ({ key: 'merge:' + other.id, label: t('structure.merge', { structure: other.label }), run: () => fold(targetOf(group), targetOf(other)) })),
@@ -155,13 +159,13 @@
     filing = true; fileError = ''
     try {
       await write(form)
-      const read = await asked([form, ...bar.map(chip => chip.char), ...rest.map(item => item.char)], new Map())
+      const read = await asked([form, ...bar.map(chip => chip.char), ...rest.map(item => item.char)], structureOf)
       if (id === crop?.id) structureOf = read
     } catch (error) { if (id === crop?.id) fileError = error.message }
     filing = false
     // The caption the menu opened from may be gone; the form it moved keeps the focus.
     await tick()
-    if (id === crop?.id) root?.querySelector('.form-chip.chosen, .form-chip.current')?.focus()
+    if (id === crop?.id) (root?.querySelector('.form-chip.chosen') ?? root?.querySelector('.form-chip.current'))?.focus()
   }
   const file = (group, remove = false) => settle(form => setStructure(form, remove ? { structure: group.id } : targetOf(group), { remove }))
   // One 構形 folded into another, or with no other the reader's fold of it taken back.

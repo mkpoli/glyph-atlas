@@ -467,17 +467,20 @@ describe('a form filed under a structure', () => {
     expect(db.query("SELECT count(*) AS n FROM representations WHERE value='⿱山夅'").get()).toEqual({ n: 0 });
   });
 
-  it('reads the structure each written value is filed under, the one most readers name', async () => {
+  it('reads the structures each written value is filed under, the one most readers name first', async () => {
     const { env, tools, say, beside, above } = await forms();
     expect(await claimedStructures(env, ['⿰山夆', '峰', '⿰山'])).toEqual(new Map());
     await say('峯');
-    expect(await claimedStructures(env, ['峰', '⿰山夆'])).toEqual(new Map([['⿰山夆', { id: above, label: '⿱山夆', by: ['reader'] }]]));
+    expect(await claimedStructures(env, ['峰', '⿰山夆'])).toEqual(new Map([['⿰山夆', [{ id: above, label: '⿱山夆', by: ['reader'] }]]]));
     await say('峰', false, 'other');
     await say('峰', false, 'third');
-    expect((await claimedStructures(env, ['⿰山夆'])).get('⿰山夆')).toEqual({ id: beside, label: '⿰山夆', by: expect.arrayContaining(['other', 'third']) });
+    expect((await claimedStructures(env, ['⿰山夆'])).get('⿰山夆')).toEqual([{ id: beside, label: '⿰山夆', by: expect.arrayContaining(['other', 'third']) },
+      { id: above, label: '⿱山夆', by: ['reader'] }]);
     await setStructure(env, { id: crypto.randomUUID(), char: '峰', remove: true }, '⿰山夆', 'other', tools);
+    // Among equals the lowest id stands first.
+    expect((await claimedStructures(env, ['⿰山夆'])).get('⿰山夆')!.map(value => value.id)).toEqual([beside, above].sort());
     await setStructure(env, { id: crypto.randomUUID(), char: '峰', remove: true }, '⿰山夆', 'third', tools);
-    expect((await claimedStructures(env, ['⿰山夆'])).get('⿰山夆')?.id).toBe(above);
+    expect((await claimedStructures(env, ['⿰山夆'])).get('⿰山夆')!.map(value => value.id)).toEqual([above]);
   });
 
   it('folds one structure into another, writes both rows, and takes the fold back', async () => {

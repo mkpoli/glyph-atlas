@@ -34,7 +34,7 @@ import csv
 import json
 import re
 import unicodedata
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -473,22 +473,26 @@ def descriptions() -> han_component_variants.Descriptions:
 STRUCTURE_CHARS = 48
 
 
-def structure_groups(chars: str, claimed: Mapping[str, Mapping[str, Any]] | None = None,
+def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
                      folds: Callable[[list[str]], Mapping[str, Mapping[str, Any]]] | None = None) -> dict[str, Any]:
     """The 構形 of each character or description named, as groups of those that share one, in the
-    order named, as the Worker's `/layers/structures` answers. A name stands under the structure a
-    reader filed its form under (`claimed`, by name: `{id, label, by}`), and the group names who says
-    so; with no claim it stands under the one its description gives. A structure a reader folded into
-    another (`folds`, by id: `{head, by}`) stands under that one, and the group lists it in `folded`
-    with the names built as it. A name with no structure is in no group."""
+    order named, as the Worker's `/layers/structures` answers. A name stands under the structure
+    readers filed its form under (`claimed`, by name: `{id, label, by}` each, the one that holds first),
+    and the group names who says so; with no claim it stands under the one its description gives. A
+    structure a reader folded into another (`folds`, by id: `{head, by}`) stands under that one, and
+    the group lists it in `folded` with the names built as it. A name with no structure is in no
+    group. `filed` lists the other structures a name was filed under."""
     from . import structures
     from .representation import written
 
     built: dict[str, dict[str, Any]] = {}
+    filed: dict[str, list[dict[str, Any]]] = {}
     for name in list(dict.fromkeys(written(chars)))[:STRUCTURE_CHARS]:
-        claim = (claimed or {}).get(name)
-        if claim:
-            built[name] = {"id": claim["id"], "label": claim["label"], "by": list(claim["by"])}
+        claims = list((claimed or {}).get(name, ()))
+        if claims:
+            built[name] = {"id": claims[0]["id"], "label": claims[0]["label"], "by": list(claims[0]["by"])}
+            if claims[1:]:
+                filed[name] = [dict(other) for other in claims[1:]]
             continue
         try:
             structure = structures.for_name(name)
@@ -512,7 +516,7 @@ def structure_groups(chars: str, claimed: Mapping[str, Mapping[str, Any]] | None
                 part = {"id": structure["id"], "label": structure["label"], "by": list(fold["by"]), "chars": []}
                 parts.append(part)
             part["chars"].append(name)
-    return {"items": list(groups.values())}
+    return {"items": list(groups.values()), **({"filed": filed} if filed else {})}
 
 
 @cache

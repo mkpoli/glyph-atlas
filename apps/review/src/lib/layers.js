@@ -24,9 +24,10 @@ export const suggest = (q, limit = 8, signal) => q ? get('/layers/suggest', { q,
 export const search = (q, expand = 'none') => get('/layers/search', { q, expand })
 /** What the IDS editor starts from: a character's descriptions and the substitutes of their components. */
 export const ids = char => get('/layers/ids', { c: char })
-/** The 構形 groups of these characters: `{ items: [{ id, label, chars, claimed, folded }] }`, `claimed`
- *  naming who filed a form there and `folded` the 構形 a reader folded into the group's. `of` is the
- *  character whose regional shapes are among the names. */
+/** The 構形 groups of these characters: `{ items: [{ id, label, chars, claimed, folded }], filed }`,
+ *  `claimed` naming who filed a form there, `folded` the 構形 a reader folded into the group's and
+ *  `filed` the other 構形 readers filed a form under. `of` is the character whose regional shapes are
+ *  among the names. */
 export const structures = (chars, of = '') => get('/layers/structures', { c: chars, of })
 export const character = (codePoint, expand = 'none', options) => get('/layers/characters/' + encodeURIComponent(codePoint), { expand }, options)
 export const occurrences = (codePoint, params = {}, options) => get('/layers/occurrences', { code_point: codePoint, ...params }, options)

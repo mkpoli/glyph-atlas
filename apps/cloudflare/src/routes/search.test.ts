@@ -316,6 +316,18 @@ describe("the IDS editor's structure", () => {
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆⿰石月')).toEqual({ items: [
       { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '⿰石月'], claimed: { '⿰石月': ['reader'] } },
       { id: other, label: '一', chars: ['磆'], claimed: { '磆': ['reader'] } }] });
+    // A form readers filed under two structures stands under the one more of them name; the other is listed.
+    atlasDb.query("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'has_structure','',?,'asserted',?,?,'[]',?,'ledger-r1',?)")
+      .run((await formNamed('⿰石月'))!, other, other, JSON.stringify([{ object: other }]),
+        JSON.stringify([{ asserted_by: 'ann', standing: true }, { asserted_by: 'bob', standing: true }, { asserted_by: 'gone', standing: false }]), at);
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑⿰石月')).toEqual({ items: [
+      { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑'] },
+      { id: other, label: '一', chars: ['⿰石月'], claimed: { '⿰石月': ['ann', 'bob'] } }],
+      filed: { '⿰石月': [{ id: 'st:00000000000000000000000000000001', label: '⿰水骨', by: ['reader'] }] } });
+    // Claims that cannot be read leave what the descriptions give.
+    const broken = { ...newEnv, ATLAS: { prepare: (sql: string) => /has_structure|folds_into/.test(sql) ? { bind: () => ({ all: async () => { throw new Error('D1 busy') } }) } : newEnv.ATLAS.prepare(sql) } } as unknown as Env;
+    expect(await structuresOf(broken, ctx, 'https://new.test', '滑⿰石月')).toEqual({ items: [{ id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑'] }] });
+    atlasDb.run("DELETE FROM current_claims WHERE predicate='has_structure' AND object=? AND subject=?", [other, (await formNamed('⿰石月'))!]);
     // A structure a reader folded stands under the other: its names join that group, listed in `folded`.
     atlasDb.query("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'folds_into','','','asserted',?,'[]','[]',?,'ledger-r1',?)")
       .run(other, 'st:00000000000000000000000000000001', JSON.stringify([{ asserted_by: 'reader', standing: true }]), at);
