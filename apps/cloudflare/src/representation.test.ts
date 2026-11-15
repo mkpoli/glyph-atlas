@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { anchoredForm, formProblem, isSequence, representationId, structureKey, typed, written, type Representation } from './representation'
+import { anchoredForm, compatibility, formProblem, isSequence, representationId, structureKey, typed, written, type Representation } from './representation'
 
 test('a character or a description is a form a reviewer may type', () => {
   for (const value of ['𮟃', '還', 'が', '葛\u{E0100}', '⿺辶𦊷', '⿰氵⿱冖月', '⿲木木木', '⿱⿰口口⿰口口', '〾⿰木？', '⿰木', '⿰⺡骨'])
@@ -54,4 +54,11 @@ test('a structure is kept under the description as written and the character wit
   expect(structureKey('⿰月兊')).toBe('⿰月兊')
   expect(structureKey('葛\u{E0100}')).toBe('葛')
   expect(structureKey('\uf904')).toBe('滑')
+})
+
+test('a compatibility ideograph stands for a unified one, and the unified ideographs of its block do not', () => {
+  // 說 U+F96F and U+F9A1 stand for 說 U+8AAA, 突 U+FA55 for 突 U+7A81, 杓 U+2F8DC for 杓 U+6753.
+  expect(['\uf96f', '\uf9a1', '\ufa55', '\u{2f8dc}'].map(compatibility)).toEqual([true, true, true, true])
+  // 﨑 U+FA11 and 﨟 U+FA1F are unified ideographs; 說 with a selector is a sequence, not a code point.
+  expect(['說', '説', '\ufa11', '\ufa1f', '說\ufe00', '⿰言兌', 'が', ''].map(compatibility)).toEqual(Array(8).fill(false))
 })

@@ -1,6 +1,7 @@
 import { request, character as readCrop, corpusCharacter } from './client.js'
 import { character as readCard, ids as readIds } from './layers.js'
 import { drawFigure, figuresOf } from './mjFigures.js'
+import { compatibility } from '../../../cloudflare/src/representation.ts'
 
 /**
  * What a crop is written as, read and set through the calls the interface uses and nothing else:
@@ -34,6 +35,8 @@ const cards = new Map()
  * characters related otherwise (a loan, a homograph, a grapheme this form also writes) follow as
  * `related`, the derived shapes last, and the described forms a reviewer said are written for the
  * grapheme (`written_for`) with the variants. A character the layer does not know offers itself alone.
+ * A compatibility ideograph (說 U+F96F) is offered nowhere but for a crop written as it: its figure
+ * is one of the registered sequences of the character it stands for.
  */
 export function listForms(char) {
   if (!char) return Promise.resolve({ members: [], variants: [], related: [], derived: [], linked: [], grapheme: null })
@@ -48,16 +51,17 @@ export function listForms(char) {
       .catch(() => { partial = true; return [] })
     const described = HAN.test(char) ? readIds(char).then(found => found.shapes ?? [], () => { partial = true; return [] }) : Promise.resolve([])
     const loaded = Promise.all([card, registered, described]).then(([card, figures, regional]) => {
-      const members = (card?.grapheme?.members ?? [{ char }]).map(entry)
+      const offered = v => !compatibility(v.char) || v.char === char
+      const members = (card?.grapheme?.members ?? [{ char }]).filter(offered).map(entry)
       const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) }))
       const found = card?.variants ?? {}
       const writers = new Set((found.writers ?? []).map(v => v.char)), writes = new Set((found.writes ?? []).map(v => v.char))
       // The card's order: a form that writes this grapheme first (後: 后), then the others.
-      const forms = [...found.items ?? [], ...(found.related ?? []).filter(v => v.written || writers.has(v.char))].filter(v => !writes.has(v.char))
+      const forms = [...found.items ?? [], ...(found.related ?? []).filter(v => v.written || writers.has(v.char))].filter(v => !writes.has(v.char) && offered(v))
         .sort((a, b) => writers.has(b.char) - writers.has(a.char))
       const linked = (found.forms ?? []).map(linkedEntry)
       const variants = [...figures.map(figure => ({ ...entry(figure), mj: figure.mj })), ...shapes, ...forms.map(entry), ...linked]
-      const related = [...found.items ?? [], ...found.related ?? []].filter(v => !forms.includes(v)).map(entry)
+      const related = [...found.items ?? [], ...found.related ?? []].filter(v => !forms.includes(v) && offered(v)).map(entry)
       const derived = (found.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))
       const fresh = list => list.filter(item => !seen.has(item.char) && seen.add(item.char))

@@ -42,6 +42,11 @@ export function written(text: string): string[] {
 /** The key a name's 構形 is kept under: a description as written, a character without its marks and
  *  variation selector. A compatibility ideograph has its unified ideograph's (說 U+F96F has 說's). */
 export const structureKey = (name: string) => isSequence(name) ? name.normalize('NFC') : [...name.normalize('NFC')][0] ?? '';
+/** Whether `char` is a CJK compatibility ideograph: a code point that stands for a unified ideograph
+ *  (說 U+F96F and U+F9A1 for 說 U+8AAA), which NFC writes in its place. The twelve unified ideographs
+ *  of the compatibility block (﨑 U+FA11) are characters of their own and stand for nothing. */
+export const compatibility = (char: string) => /^\p{Script=Han}$/u.test(char) && char.normalize('NFC') !== char;
+
 /** What is wrong with a written form: `character` (not one character nor a description), `component`
  *  (a part no description may name), `missing` (an operator short of descriptions) or `extra` (more
  *  than its operators take); null when it is one. */
