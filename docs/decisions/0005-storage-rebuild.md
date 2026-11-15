@@ -23,9 +23,8 @@ layout cannot hold them:
 ## The decision
 
 Everything is stored by how often it changes. A publication writes immutable objects to R2 and
-static rows to D1. Reviews write a small live layer in D1, and each publication absorbs that layer,
-so D1 never accumulates review history. Static answers are cached under publication numbers, never
-under review counters.
+static rows to D1. Reviews write a small live layer in D1, and each publication absorbs the crops
+that layer changed. Static answers are cached under publication numbers, never under review counters.
 
 ```mermaid
 flowchart LR
@@ -175,10 +174,8 @@ CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTE
   local copy and goes live with the pointer `(pub, through_gen = G)`. Counts are the publication's
   R2 answer plus the `tally` rows above `through_gen`. `reviews`, `tally` and `events` keep their
   rows: the Worker reads `reviews` for a crop's redrawn box and for the style its publication gave it.
-- **The review archive.** Each publication writes the events it absorbed to R2 under
-  `events/<actor>/<month>.jsonl.gz`, and a crop index under `events/crops/<page>.jsonl.gz`. D1 keeps
-  90 days of events for recent history, the per-actor totals and skips younger than 90 days. Every
-  D1 table can be rebuilt from R2 and the publisher's data.
+- **The review archive.** D1 keeps every event, with the per-actor totals and the skips. No
+  publication writes the events to R2.
 - **Kept, with integer ids:** the claim ledger (`assertions` with two indexes, `assertion_*`,
   `current_claims` with `cut`), forms tool decisions, submissions, accounts and favourites. A crop's
   current form is its `has_form` slot in `current_claims`, which listings and the inspector read;
