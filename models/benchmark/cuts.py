@@ -88,7 +88,9 @@ def judged(export: dict) -> dict[str, dict]:
     """The extracted crops whose latest review on the site judges the cut, each with `cut_right`.
 
     A crop a reviewer matched to its character is cut right; one reported as `BAD_CUTS` is cut wrong.
-    A review of the character alone says nothing of the cut and is left out.
+    A reviewer who drew the box again before matching it confirmed the box drawn, which is the crop's
+    `box` here, and the one it replaced is kept as `redrawn_from`. A review of the character alone
+    says nothing of the cut and is left out.
     """
     latest = {}
     for review in export["reviews"]:
@@ -102,47 +104,58 @@ def judged(export: dict) -> dict[str, dict]:
         right = evidence.get("verdict") == "match"
         if (crop.startswith("ex:") and (right or evidence.get("issue") in BAD_CUTS) and review.get("current")
                 and character.get("box") and character.get("line_id") and character.get("page_id")):
-            kept[crop] = {**character, "cut_right": right}
+            # A box drawn again counts only with a match: one reported all the same says nothing of the new box.
+            redrawn = (evidence.get("recrop") or {}) if right else {}
+            kept[crop] = {**character, "cut_right": right, "box": redrawn.get("to") or character["box"],
+                          "redrawn_from": redrawn.get("from")}
     return kept
 
 
-def build_reviewed(reviews: Path, queue: Path, listing="reviewed-pages.jsonl"):
+def build_reviewed(reviews: Path, queues: list[Path], listing="reviewed-pages.jsonl", *, fetch: bool = False):
     """List the collection's pages that hold a reviewed crop, with their lines and the reviewed boxes.
 
-    `reviews` is the site's export (`scripts/fetch_reviews.py`), `queue` the extraction queue the crops
-    came from. A page keeps the boxes reviewers confirmed (`units`) and the ones they reported as cut
-    wrong (`rejected`), and nothing about its other characters. One document in four is held out of
-    fitting (`split: held`), chosen by its id.
+    `reviews` is the site's export (`scripts/fetch_reviews.py`), `queues` the extraction queues the
+    crops came from. A page keeps the boxes reviewers confirmed (`units`) and the ones they reported
+    as cut wrong or drew again (`rejected`), and nothing about its other characters. One document in
+    four is held out of fitting (`split: held`), chosen by its id. A page whose image the cache lacks
+    is left out, or downloaded with `fetch`; so is one whose image is no longer the one that was cut.
     """
     import hashlib
     import sqlite3
 
     import pyarrow.parquet as pq
 
-    from glyph_atlas import align, images, tables
+    from glyph_atlas import align, images, net, tables
 
     crops = judged(json.loads(reviews.read_text(encoding="utf-8")))
     wanted = defaultdict(dict)
     for crop, character in crops.items():
         wanted[character["page_id"]][crop] = character
-    db = sqlite3.connect(f"file:{queue / 'queue.sqlite'}?mode=ro", uri=True)
     index = pq.ParquetFile(images.index_path()).read(columns=["url", "sha256", "superseded_by"])
     held = {row["url"]: row["sha256"] for row in index.to_pylist() if row["superseded_by"] is None}
     jobs = {}
-    for page_id in wanted:
-        row = db.execute("SELECT source, output, title, document_id FROM pages WHERE id=? AND status='complete'",
-                         (page_id,)).fetchone()
-        if row:
-            outputs = [row[1], *(r[0] for r in db.execute(
-                "SELECT output FROM supplements WHERE page_id=? AND status='complete'", (page_id,)))]
-            jobs[page_id] = {"source": row[0], "outputs": outputs, "title": row[2], "document": row[3]}
+    for queue in queues:
+        db = sqlite3.connect(f"file:{queue / 'queue.sqlite'}?mode=ro", uri=True)
+        # A queue that has never changed policy has no supplements.
+        supplemented = db.execute("SELECT 1 FROM sqlite_master WHERE name='supplements'").fetchone()
+        for page_id in wanted:
+            row = db.execute("SELECT source, output, title, document_id FROM pages WHERE id=? AND status='complete'",
+                             (page_id,)).fetchone()
+            if row:
+                later = db.execute("SELECT output FROM supplements WHERE page_id=? AND status='complete'",
+                                   (page_id,)) if supplemented else ()
+                source = Path(row[0])
+                # A page two queues cut keeps the crops of both.
+                job = jobs.setdefault(page_id, {
+                    "source": source if source.is_absolute() else queue.parent.parent / source,
+                    "outputs": [], "title": row[2], "document": row[3]})
+                job["outputs"] += [queue / row[1], *(queue / r[0] for r in later)]
     by_source = defaultdict(set)
     for page_id, job in jobs.items():
         by_source[job["source"]].add(page_id)
     pages, lines = {}, defaultdict(list)
     for source, ids in by_source.items():
-        source = Path(source)
-        dataset = tables.Dataset(source if source.is_absolute() else queue.parent.parent / source)
+        dataset = tables.Dataset(source)
         for batch in dataset.scan("pages", keep=tables.In("id", ids)):
             pages.update({page.id: page for page in batch})
         for batch in dataset.scan("lines", keep=tables.In("page_id", ids)):
@@ -150,20 +163,26 @@ def build_reviewed(reviews: Path, queue: Path, listing="reviewed-pages.jsonl"):
                 if line.box is not None and not line.page_scope:
                     lines[line.page_id].append(line)
     (BENCH / "images").mkdir(parents=True, exist_ok=True)
-    kept = boxes = wrong = 0
-    with (BENCH / listing).open("w", encoding="utf-8") as out:
+    kept = boxes = wrong = absent = 0
+    # The listing replaces the one before it only when it is whole.
+    with (BENCH / f"{listing}.part").open("w", encoding="utf-8") as out:
         for page_id, job in sorted(jobs.items()):
-            digest = held.get(pages[page_id].image) if page_id in pages else None
-            if not digest:
-                continue
-            target = BENCH / "images" / digest
-            if not target.exists():
+            page = pages.get(page_id)
+            digest = held.get(page.image) if page else None
+            if page and not digest and fetch:
+                try:
+                    digest = images.fetch(page.image).sha256
+                except (images.ImageError, net.DownloadError):
+                    digest = None
+            target = BENCH / "images" / digest if digest else None
+            if target is not None and not target.exists():
                 source = glob.glob(str(images.images_root() / digest[:2] / f"{digest}.*"))
-                if not source:
-                    continue
-                shutil.copyfile(source[0], target)
-            cut = {unit.id: unit for output in job["outputs"]
-                   for unit in tables.Dataset(queue / output).read("units")}
+                if source:
+                    shutil.copyfile(source[0], target)
+            if target is None or not target.exists() or (page.sha256 and page.sha256 != digest):
+                absent += 1
+                continue
+            cut = {unit.id: unit for output in job["outputs"] for unit in tables.Dataset(output).read("units")}
             own = {line.id: line for line in lines[page_id]}
             units, rejected = [], []
             for crop, character in sorted(wanted[page_id].items()):
@@ -174,9 +193,13 @@ def build_reviewed(reviews: Path, queue: Path, listing="reviewed-pages.jsonl"):
                 # A crop's `seq` counts its line's tokens from one; a line whose text changed since is left out.
                 if not 0 < unit.seq <= len(tokens) or tokens[unit.seq - 1].text != unit.text_source:
                     continue
-                (units if character["cut_right"] else rejected).append({
-                    "id": crop, "box": character["box"], "text": unit.text_source, "line": line.id,
-                    "token": unit.seq - 1})
+                entry = {"id": crop, "box": character["box"], "text": unit.text_source, "line": line.id,
+                         "token": unit.seq - 1}
+                (units if character["cut_right"] else rejected).append(entry)
+                # A box drawn again was wrong where the new one differs from it as two cuts of a character do.
+                old = character["redrawn_from"]
+                if character["cut_right"] and old and iou(old, character["box"]) < 0.7:
+                    rejected.append({**entry, "box": old})
             if not units and not rejected:
                 continue
             split = "held" if int(hashlib.sha256(job["document"].encode()).hexdigest()[:8], 16) % 4 == 0 else "fit"
@@ -188,7 +211,9 @@ def build_reviewed(reviews: Path, queue: Path, listing="reviewed-pages.jsonl"):
             kept += 1
             boxes += len(units)
             wrong += len(rejected)
-    print(f"{len(crops)} reviewed crops: {boxes} cut right and {wrong} cut wrong on {kept} pages -> {BENCH / listing}")
+    (BENCH / f"{listing}.part").replace(BENCH / listing)
+    print(f"{len(crops)} reviewed crops: {boxes} cut right and {wrong} cut wrong on {kept} pages, "
+          f"{absent} pages without their image -> {BENCH / listing}")
 
 
 def lines_of(page: dict, *, pad: float = 0.12, slack: float = 0.0):
@@ -236,23 +261,24 @@ def lines_of(page: dict, *, pad: float = 0.12, slack: float = 0.0):
 
 
 def reviewed_lines_of(page: dict, size: tuple[int, int]):
-    """A reviewed page's lines inside its image, each with one entry a token: its reviewed unit or None.
+    """A reviewed page's lines inside its image, each with one `(confirmed box, rejected box)` a token.
 
-    A unit of the page's `rejected` carries `wrong`: its box is known not to frame its character.
+    Either is None where no reviewer judged such a box for the token; a token may have both.
     """
     from glyph_atlas import align
     from glyph_atlas.schema import Line
 
     width, height = size
-    known = {(unit["line"], unit["token"]): unit for unit in page["units"]}
-    known |= {(unit["line"], unit["token"]): {**unit, "wrong": True} for unit in page.get("rejected", ())}
+    right = {(unit["line"], unit["token"]): unit["box"] for unit in page["units"]}
+    wrong = {(unit["line"], unit["token"]): unit["box"] for unit in page.get("rejected", ())}
     pairs = []
     for row in page["lines"]:
         line = Line.model_validate(row)
         box = line.box
         if box.x < 0 or box.y < 0 or box.x + box.w > width or box.y + box.h > height:
             continue
-        pairs.append((line, [known.get((line.id, token)) for token in range(len(align.tokens_of(line)))]))
+        pairs.append((line, [(right.get((line.id, token)), wrong.get((line.id, token)))
+                             for token in range(len(align.tokens_of(line)))]))
     return pairs
 
 
@@ -368,7 +394,9 @@ def main():
                          help="list the training books instead, as train-pages.jsonl, for models/refiner")
     reviewed = commands.add_parser("build-reviewed", help="pages holding crops confirmed on the site")
     reviewed.add_argument("reviews", type=Path, help="the site's review export (scripts/fetch_reviews.py)")
-    reviewed.add_argument("--queue", type=Path, default=ROOT / "work/character-extraction")
+    reviewed.add_argument("--queue", type=Path, nargs="+", default=[ROOT / "work/character-extraction"],
+                          help="the extraction queues the crops came from")
+    reviewed.add_argument("--fetch", action="store_true", help="download the page images the cache lacks")
     runner = commands.add_parser("run")
     runner.add_argument("--cutter", default="lattice")
     runner.add_argument("--split", default="val", choices=("val", "test"))
@@ -381,7 +409,7 @@ def main():
     if args.command == "build":
         build(("train",), "train-pages.jsonl") if args.train else build()
     elif args.command == "build-reviewed":
-        build_reviewed(args.reviews, args.queue)
+        build_reviewed(args.reviews, args.queue, fetch=args.fetch)
     else:
         run(args)
 
