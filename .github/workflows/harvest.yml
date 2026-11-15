@@ -41,8 +41,10 @@ env:
 jobs:
   harvest:
     runs-on: ubuntu-latest
-    # Two collectors, each allowed `seconds`, plus install, restore and upload.
-    timeout-minutes: 75
+    # Two collectors, each allowed `seconds`, plus install, restore and upload. The weekly
+    # Honkoku discovery walk runs before its deadline starts and takes about 40 minutes; a job
+    # killed by this timeout skips the save, so the walk would restart from scratch every run.
+    timeout-minutes: 150
     env:
       # Never interpolate this into shell source: a dispatch input is
       # attacker-controllable. It reaches the collectors only as an argument
