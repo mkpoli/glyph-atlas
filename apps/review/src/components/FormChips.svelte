@@ -22,8 +22,8 @@
 <div class="form-chips" class:grouped={Boolean(groups)} role="group" aria-label={label}>
   {#if groups}
     {#each groups as group (group.id)}
-      <div class="form-group" class:own={group.own} role="group" aria-label={group.label || undefined}>
-        {#if group.label}<span class="form-group-label" lang="zh">{group.label}</span>{/if}
+      <div class="form-group" class:own={group.own} role={group.label ? 'group' : undefined} aria-label={group.label || undefined}>
+        {#if group.label}<span class="form-group-label" lang="zh" aria-hidden="true">{group.label}</span>{/if}
         <div class="form-group-chips">{#each group.forms as form (charOf(form))}{@render chip(form)}{/each}</div>
       </div>
     {/each}
