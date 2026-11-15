@@ -45,6 +45,11 @@ export const structureKey = (name: string) => isSequence(name) ? name.normalize(
 /** What is wrong with a written form: `character` (not one character nor a description), `component`
  *  (a part no description may name), `missing` (an operator short of descriptions) or `extra` (more
  *  than its operators take); null when it is one. */
+/** Whether `char` is a CJK compatibility ideograph: a code point that stands for a unified ideograph
+ *  (說 U+F96F and U+F9A1 for 說 U+8AAA), which NFC writes in its place. The twelve unified ideographs
+ *  of the compatibility block (﨑 U+FA11) are characters of their own and stand for nothing. */
+export const compatibility = (char: string) => /^\p{Script=Han}$/u.test(char) && char.normalize('NFC') !== char;
+
 export type FormProblem = 'character' | 'component' | 'missing' | 'extra';
 export function formProblem(value: string): FormProblem | null {
   const chars = [...value];
