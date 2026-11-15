@@ -37,6 +37,8 @@ permissions:
 
 env:
   UV_LOCKED: "1"
+  # The collectors need only the base dependencies; `uv run` would otherwise sync the dev group.
+  UV_NO_DEV: "1"
 
 jobs:
   harvest:
@@ -82,7 +84,7 @@ jobs:
           echo "COLLECT_SECONDS=$value" >> "$GITHUB_ENV"
 
       - name: Install
-        run: uv sync --no-dev
+        run: uv sync
 
       - name: Restore the collection store
         env:
