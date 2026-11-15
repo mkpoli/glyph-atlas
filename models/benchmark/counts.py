@@ -5,6 +5,7 @@
     python models/benchmark/counts.py --cutter detector      # the detector's boxes as they are
     python models/benchmark/counts.py --cutter detector --scale 1.5   # any of them on the page enlarged
     python models/benchmark/counts.py --cutter detector --scale 1.5 --fill 2
+    python models/benchmark/counts.py --cutter detector --scale 1.5 --fill 2 --ink   # without boxes on no ink
 
 `counts/kyujanggak.json` lists 268 boxes the detector drew on eight pages of the Kyujanggak land
 registers of 1722 and 1904, each with the number of characters it holds. A cutter is right about a
@@ -102,16 +103,21 @@ class Cutters:
         self.refiner = refine.Refiner()
         self.framing = cut.Logistic(cut.MODELS / "frame.json")
 
-    def made(self, name: str, image, scale: float = 1.0,
-             fill: tuple[float, ...] = ()) -> tuple[list[tuple[int, int, int, int]], list[int]]:
+    def made(self, name: str, image, scale: float = 1.0, fill: tuple[float, ...] = (),
+             ink: bool = False) -> tuple[list[tuple[int, int, int, int]], list[int]]:
         """The detector's boxes on a page at its own size and how many boxes cutter `name` makes of each."""
         from glyph_atlas import align, segment
         from glyph_atlas.character_proposals import Proposal, split_boxes
 
         own = self.detector.boxes(image)
         boxes = [(box.x, box.y, box.w, box.h) for box, _ in own]
-        resized = scale != 1.0 or bool(fill)
-        found = self.detector.boxes_at(image, scale, fill) if resized else own
+        resized = scale != 1.0 or bool(fill) or ink
+        found = self.detector.boxes_at(image, scale, fill) if scale != 1.0 or fill else own
+        if ink:
+            from glyph_atlas import pigment
+
+            holds = pigment.inked(image, [box for box, _ in found])
+            found = [pair for pair, ink_there in zip(found, holds, strict=True) if ink_there]
         if name == "detector" and not resized:
             return boxes, [1] * len(boxes)
         if name == "detector":
@@ -175,6 +181,7 @@ def main():
     parser.add_argument("--scale", type=float, default=1.0, help="resize the page by this before detecting")
     parser.add_argument("--fill", type=float, nargs="*", default=[],
                         help="scales whose boxes are added where the others left none")
+    parser.add_argument("--ink", action="store_true", help="drop the detector's boxes that hold none of the page's ink")
     args = parser.parse_args()
     labels = json.loads(LABELS.read_text(encoding="utf-8"))
     cutters = Cutters()
@@ -185,20 +192,21 @@ def main():
             raise SystemExit(f"{name} is not in the image cache; collect it with scripts/collect_kyujanggak.py")
         with Image.open(held[0]) as handle:
             image = handle.convert("RGB")
-        boxes, made = cutters.made(args.cutter, image, args.scale, tuple(args.fill))
+        boxes, made = cutters.made(args.cutter, image, args.scale, tuple(args.fill), args.ink)
         for row in labels["boxes"]:
             if row["page"] != name:
                 continue
             best = max(range(len(boxes)), key=lambda index: iou(boxes[index], row["box"]), default=None)
             found = best is not None and iou(boxes[best], row["box"]) >= SAME
             rows.append({**row, "made": made[best] if found else None})
-    report = {"cutter": args.cutter, "scale": args.scale, "fill": args.fill}
+    report = {"cutter": args.cutter, "scale": args.scale, "fill": args.fill, "ink": args.ink}
     for sample in ("first", "second", "both"):
         chosen = {name: page for name, page in labels["pages"].items() if sample in ("both", page["sample"])}
         report[sample] = score([row for row in rows if row["page"] in chosen], chosen)
         print(sample, json.dumps(report[sample], ensure_ascii=False))
     RESULTS.mkdir(parents=True, exist_ok=True)
-    tag = ("" if args.scale == 1.0 else f"-x{args.scale:g}") + "".join(f"-fill{value:g}" for value in args.fill)
+    tag = (("" if args.scale == 1.0 else f"-x{args.scale:g}") + "".join(f"-fill{value:g}" for value in args.fill)
+           + ("-ink" if args.ink else ""))
     (RESULTS / f"counts-{args.cutter}{tag}.json").write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n",
                                                         encoding="utf-8")
 

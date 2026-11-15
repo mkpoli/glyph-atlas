@@ -40,7 +40,8 @@ as the smallest tenth of the boxes of the detector's test books, where its recal
 by decile of box area, below). `atlas review propose-characters --scale 1.5` detects on the page enlarged until the notes
 and the main entries are both between 50 and 120 px, which leaves 8 boxes in 100 holding more than
 one character where the page at its own size leaves 27 (`models/cutter/README.md`); `--fill 2` then
-adds the characters found only on the page enlarged twice. `--split` refines
+adds the characters found only on the page enlarged twice, and `--ink` drops the boxes on red
+rulings, seals, stains and bare paper (`glyph_atlas.pigment`). `--split` refines
 the boxes of a page at its own size and cuts large characters apart on an enlarged one.
 Boxes drawn by a reviewer in the review workspace are the ground truth a fine-tune needs.
 

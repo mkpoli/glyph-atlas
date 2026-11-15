@@ -188,3 +188,7 @@ score the same, 89.1, as they are boxes the detector drew at the page's own size
 drew no box for there is outside the count. On the eight pages the fill adds 45 boxes, about 36 of
 them on a character that had none, looked at once. `--fill 1.25 2` scores 89.8, all of the gain on
 the pages of `first`.
+
+`--ink` drops the boxes of `--scale 1.5 --fill 2` that hold none of the page's ink
+(`glyph_atlas.pigment`), 41 on the eight pages, none of them a counted box: 89.1
+(`results/counts-detector-x1.5-fill2-ink.json`).

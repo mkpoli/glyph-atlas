@@ -148,6 +148,30 @@ scratch run that left no result file: 78.2 right at 1.25 times, where the notes 
 80.9 at 1.75 and 83.3 at 2, where the main entries pass 120 px and come out in parts, and 80.7 with
 each page enlarged until its median box is the detector's median.
 
+`--ink` then drops the boxes that hold none of the page's ink (`glyph_atlas.pigment`). The 1722
+register is ruled and sealed in red and stained brown, and the detector boxes some of that. In
+optical density the page's ink and its red lie along different directions: the density of a pixel
+aside from the ink's direction, against its density along it, is about -0.02 for ink and about
+0.45 for the red, with almost nothing between 0.1 and 0.2, and the 1904 register has ink alone. A
+pixel's density is shared out between the two directions, so a stroke under a seal still counts
+as ink. On the eight pages 41 of 5,435 boxes hold none and go: red rulings, stains, parts of
+seals, bare paper and one character showing through from the back of the leaf. The counted boxes
+score the same, since none of them is such a box. Writing in another colour than the page's ink,
+vermilion or a browned second hand beside red, has no ink to show, so it is an option.
+
+Repairs of the boxes themselves were tried on the same pages and are not in the code. Growing a
+box to the strokes of which it holds most brings a cut last stroke back and, in other boxes, takes
+in the stroke of a neighbour that touches; looked at box by box the result is mixed. Dropping a
+box that lies inside a larger one as a part of its character removes fragments and, in about 7 of
+26, a whole character that stands in a box of two (四 in 四十). The box refiner, trained on Japanese
+books, shrinks 長 and 壹 to their upper half and moves a box of two characters onto one of them:
+86.9 right, or 88.4 with one box kept where two land together. Joining two boxes when most of the
+smaller one's ink lies in the larger joins a fragment with its character and, in about a quarter
+of 86 joins looked at, a character with the box of two it stands in. Joining pairs that overlap by
+a third of the smaller: of 83 such pairs about half are two parts of one character and half a
+character beside a box of two. So a box of two characters, a character in two boxes and a box that
+stops short of a stroke are left as the detector drew them.
+
 At the page's own size what is left is boxes of several characters that stay whole. Three things
 were tried against the same boxes and are not in the code:
 
@@ -189,3 +213,8 @@ The cover title, a box of two characters eight times the page's character size, 
   search summary only, the paper was not read.
 - Baena, Kalleli, Aubry, "General Detection-based Text Line Recognition", NeurIPS 2024,
   https://arxiv.org/abs/2409.17095. Detection fitted from line labels; read through an extraction.
+- 2SC1815J (@2SC1815J), post on X of 2026-10-31 about そあん (soan) プロフェッショナル版 v2.0,
+  https://x.com/2SC1815J/status/2116527795329495151. A figure of old-type images whose pixels are
+  plotted by an ink component and a redness component of optical density, with a line dividing ink
+  from stain; the caption says brown stains and 朱点 are removed well and show-through is not. The
+  post gives no procedure, so `glyph_atlas.pigment` takes the idea and not a method from it.
