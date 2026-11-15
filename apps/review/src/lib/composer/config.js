@@ -4,13 +4,16 @@
 // drawn from. VITE_COMPOSER_BASE points a local build at another copy laid out the same way
 // (`<base><version>/manifest.json`), such as `/atlas/composer/` for the copies this Worker holds.
 import { COMPOSER_VERSION } from '../../../../cloudflare/src/composerVersions.ts'
-import { createDrawer } from './client.js'
+import { createDrawer, createPainter } from './client.js'
 
 export { COMPOSER_VERSION }
 const BASE = import.meta.env?.VITE_COMPOSER_BASE || 'https://ids-input-composer.mkpoli.workers.dev/'
 
-let drawer = null
+const makeWorker = () => new Worker(new URL('./worker.js', import.meta.url), { type: 'module' })
+const exported = () => new URL(`${BASE}${COMPOSER_VERSION}/`, location.href).href
+
+let drawer = null, painter = null
 /** The page's one drawer, drawing in a worker from the current export. */
-export const composerDrawer = () => drawer ??= createDrawer(
-  () => new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }),
-  new URL(`${BASE}${COMPOSER_VERSION}/`, location.href).href)
+export const composerDrawer = () => drawer ??= createDrawer(makeWorker, exported())
+/** The page's one painter, drawing the sequences the site holds no drawing of (`paint.js`). */
+export const composerPainter = () => painter ??= createPainter(makeWorker, exported())

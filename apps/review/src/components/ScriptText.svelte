@@ -1,13 +1,15 @@
 <script>
   import { scriptParts } from '../lib/identity.js'
   import { drawn, isDescription, loadDrawing } from '../lib/ids.js'
+  import { paintDrawing, paintedDrawing } from '../lib/composer/paint.js'
   import { t } from '../lib/i18n.svelte.js'
   // `lang` sets the language of every part, for a glyph shape a language decides (a variant drawn the
   // Chinese way); without it Hangul and 구결 read as Korean and the rest as Japanese. Each character
   // names its script on hover; `titled={false}` leaves the hover to a title around it.
   // A part written as an ideographic description sequence is drawn from the composer's drawing of it,
-  // masked in its script's colour, and stays the sequence's text until the drawing loads or where none
-  // is made. The drawing keeps the sequence inside it, so a selection copies the text.
+  // masked in its script's colour; where the site holds none, the browser draws it. It stays the
+  // sequence's text until a drawing is ready or where none can be made. The drawing keeps the sequence
+  // inside it, so a selection copies the text.
   let { text = '', script = '', lang = '', titled = true } = $props()
   // `scriptParts` returns a fixed English `label` for use outside a Svelte context (it is also
   // called directly by a plain-Node check); the label shown here is looked up again from `key` so
@@ -16,9 +18,10 @@
   const description = $derived(parts.map(part => `${part.text} · ${part.label}`).join(', '))
   // Bumped as a drawing loads, so the parts read the cache again.
   let loaded = $state(0)
-  const drawings = $derived((void loaded, parts.map(part => part.described ? drawn(part.text) ?? null : null)))
+  const drawings = $derived((void loaded, parts.map(part => part.described ? drawn(part.text) || paintedDrawing(part.text) || null : null)))
+  const show = text => loadDrawing(text).then(url => url ?? paintDrawing(text)).then(url => { if (url) loaded++ })
   $effect(() => {
-    for (const part of parts) if (part.described && drawn(part.text) === undefined) loadDrawing(part.text).then(url => { if (url) loaded++ })
+    for (const part of parts) if (part.described && !drawn(part.text) && paintedDrawing(part.text) === undefined) show(part.text)
   })
   const language = key => lang || (key === 'hangul' || key === 'gugyeol' ? 'ko' : key === 'tangut' ? 'txg' : 'ja')
 </script>
