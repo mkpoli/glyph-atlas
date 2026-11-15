@@ -173,11 +173,11 @@ function derivedOf(object: CharacterObject) {
 }
 const sum = (cells: Cell[] | undefined, kind: number) => (cells ?? []).filter(c => c.kind === kind).reduce((n, c) => n + c.n, 0);
 /** The forms a family carries through a reviewer's `written_for` claim: shapes Unicode lacks, written as
- *  an IDS, which no character card holds. Each counts the family's crops a person marked with it, here
+ *  an IDS, and registered figures, written as a variation sequence (突󠄃), which no character card holds. Each counts the family's crops a person marked with it, here
  *  and in the corpus; a form already on the card as a member or a static variant is not listed twice. */
 export const writtenFormsQuery = () => `SELECT c.subject AS form,r.scheme,r.value FROM current_claims c
   JOIN forms f ON f.id=c.subject JOIN representations r ON r.id=f.anchor
-  WHERE c.predicate='written_for' AND c.object=? AND c.scope='' AND r.scheme='ids'
+  WHERE c.predicate='written_for' AND c.object=? AND c.scope='' AND r.scheme IN ('ids','ivs')
     AND c.status IN ('asserted','accepted','adjudicated') ORDER BY r.value`;
 export const writtenFormUseQuery = () => `SELECT c.object AS form,
   sum(CASE WHEN k.kind=0 THEN 1 ELSE 0 END) AS count,sum(CASE WHEN k.kind=1 THEN 1 ELSE 0 END) AS corpus_count

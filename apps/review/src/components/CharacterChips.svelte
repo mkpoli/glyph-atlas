@@ -10,6 +10,7 @@
   import OriginText from './OriginText.svelte'
   import { countsLabel, structures as readStructures } from '../lib/layers.js'
   import { isDescription } from '../lib/ids.js'
+  import { isFigure } from '../lib/mjFigures.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
   import { characterAddress, graphemeAddress } from '../lib/gallery.js'
@@ -64,7 +65,7 @@
   // none yet, shows no row.
   const HAN = /^\p{Script=Han}$/u
   const composedOf = $derived([...new Set([...members, ...written, ...described].map(v => v.char)
-    .filter(char => HAN.test(char ?? '') || isDescription(char)))].slice(0, 48))
+    .filter(char => HAN.test(char ?? '') || isDescription(char) || isFigure(char ?? '')))].slice(0, 48))
   // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
   let composed = $state([])
   $effect(() => {
