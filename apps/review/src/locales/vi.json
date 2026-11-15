@@ -909,6 +909,8 @@
   "form.link.remove": "Bỏ khỏi tự dạng của {char}",
   "structure.place": "Đặt {form} vào đây",
   "structure.take": "Bỏ {form} khỏi đây",
+  "structure.merge": "Nhập vào {structure}",
+  "structure.split": "Tách {structure} ra",
   "grapheme.disputed": "còn tranh luận",
   "grapheme.find": "Tìm tự vị khác",
   "grapheme.change": "Đổi tự vị",

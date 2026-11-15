@@ -13,14 +13,15 @@
   // the chips, and the number keys with them, keep their places.
   // A signed-in reader files the selected form, typed, derived or encoded, under a 構形 from that
   // 構形's caption, and takes their own filing back there (has_structure): the form then stands under
-  // it for every crop.
+  // it for every crop. The caption also folds its 構形 into another of the bar (folds_into), so the
+  // forms of both stand under that one, and splits off a 構形 the reader folded into it.
   import { tick, untrack } from 'svelte'
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
   import CopyValue from './CopyValue.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
-  import { listForms, formOf, setWrittenFor, setStructure } from '../lib/cropForms.js'
+  import { listForms, formOf, setWrittenFor, setStructure, setFold } from '../lib/cropForms.js'
   import { structures as readStructures } from '../lib/layers.js'
   import { isDescription } from '../lib/ids.js'
   import { signedInUser } from '../lib/session.svelte.js'
@@ -36,28 +37,28 @@
   const current = $derived(formOf(crop))
   const BAR = 10
   // The 構形 each form stands under, by the form's text, with who filed it there (`by`, none for one
-  // its description gives): at most NAMES are asked for at once, and a form past them, or one the
-  // site knows no structure of, has none here.
+  // its description gives) and the 構形 it is built as when a reader folded that into this one
+  // (`part`): at most NAMES are asked for at once, and a form past them, or one the site knows no
+  // structure of, has none here. The crop's character is named too, for its regional shapes.
   const HAN = /^\p{Script=Han}/u, NAMES = 48
   const composable = char => HAN.test(char ?? '') || isDescription(char)
   let structureOf = $state(new Map())
   async function asked(names, known) {
     const wanted = [...new Set(names)].filter(composable).slice(0, NAMES)
     if (!wanted.length) return known
-    const found = await readStructures(wanted.join(''))
+    const found = await readStructures(wanted.join(''), HAN.test(written) && [...written].length === 1 ? written : '')
     return new Map([...known, ...(found.items ?? []).flatMap(group => group.chars.map(char =>
-      [char, { id: group.id, label: group.label, by: group.claimed?.[char] ?? null }]))])
+      [char, { id: group.id, label: group.label, by: group.claimed?.[char] ?? null,
+        part: (group.folded ?? []).find(part => part.chars.includes(char)) ?? null }]))])
   }
   const composed = (names, known = new Map()) => asked(names, known).catch(() => known)
   const namesOf = found => [...found.members, ...found.variants].map(form => form.char)
-  // A regional shape carries the 構形 its description gives; a reader's filing of it is asked for.
-  const given = found => [...found.members, ...found.variants].filter(form => form.structure).map(form => [form.char, form.structure])
   $effect(() => {
     const id = crop?.id, char = written, own = untrack(() => current)
     added = []; picking = false; query = ''; failed = false; composing = false; linking = false; linkError = ''; linkedByMe = false; fileError = ''
     listForms(char).then(found => [found, false], () => [{ members: [{ char }], variants: [], related: [], derived: [], linked: [], grapheme: null }, true])
       .then(async ([found, unread]) => {
-        const read = await composed([own, ...namesOf(found)], new Map(given(found)))
+        const read = await composed([own, ...namesOf(found)])
         if (id === crop?.id && char === written) { structureOf = read; offered = { char, ...found }; failed = unread }
       })
   })
@@ -95,18 +96,27 @@
   // What a 構形 is named by in a save: an encoded character its description puts there, else a
   // described form, else a regional shape of the crop's character, else its id.
   const targetOf = group => {
-    const built = [...bar, ...rest].filter(form => { const held = structureOf.get(form.char); return held?.id === group.id && !held.by })
+    const built = [...bar, ...rest].filter(form => { const held = structureOf.get(form.char); return held?.id === group.id && !held.by && !held.part })
     const named = built.find(form => !form.regions && !isDescription(form.char)) ?? built.find(form => !form.regions)
     if (named) return { char: named.char }
     return built.length ? { char: built[0].char, of: written } : { structure: group.id }
   }
-  const actionsOf = group => {
-    if (!me || others || disabled || !group.id || !composable(selected)) return []
-    const held = structureOf.get(selected)
-    if (held?.id !== group.id) return [{ key: 'place', label: t('structure.place', { form: selected }), run: () => file(group) }]
-    return held.by?.includes(me) ? [{ key: 'take', label: t('structure.take', { form: selected }), run: () => file(group, true) }] : []
+  // The 構形 folded into a group's, among the forms the bar and the picker hold.
+  const partsOf = group => [...new Map([...bar, ...rest].map(form => structureOf.get(form.char))
+    .filter(held => held?.id === group.id && held.part).map(held => [held.part.id, held.part])).values()]
+  const actionsOf = (group, all) => {
+    if (!me || others || disabled || !group.id) return []
+    const held = composable(selected) ? structureOf.get(selected) : null
+    const placing = !composable(selected) ? []
+      : held?.id !== group.id ? [{ key: 'place', label: t('structure.place', { form: selected }), run: () => file(group) }]
+      : held.by?.includes(me) ? [{ key: 'take', label: t('structure.take', { form: selected }), run: () => file({ id: held.part?.id ?? group.id }, true) }] : []
+    return [...placing,
+      ...all.filter(other => other.id && other.id !== group.id).map(other =>
+        ({ key: 'merge:' + other.id, label: t('structure.merge', { structure: other.label }), run: () => fold(targetOf(group), targetOf(other)) })),
+      ...partsOf(group).filter(part => part.by.includes(me)).map(part =>
+        ({ key: 'split:' + part.id, label: t('structure.split', { structure: part.label }), run: () => fold({ structure: part.id }, null) }))]
   }
-  const barGroups = $derived(grouped(bar).map(group => ({ ...group, actions: actionsOf(group) })))
+  const barGroups = $derived.by(() => { const all = grouped(bar); return all.map(group => ({ ...group, actions: actionsOf(group, all) })) })
   const captioned = $derived(barGroups.some(group => group.label))
   // The bar's forms as they stand, which the number keys follow.
   const ordered = $derived(barGroups.flatMap(group => group.forms))
@@ -133,19 +143,19 @@
     const id = crop?.id, char = written
     try {
       const found = await listForms(char)
-      const read = found ? await composed(namesOf(found), new Map([...structureOf, ...given(found)])) : structureOf
+      const read = found ? await composed(namesOf(found), structureOf) : structureOf
       if (found && id === crop?.id && char === written) { structureOf = read; offered = { char, ...found } }
     } catch { /* the save stands; the card reads again next time */ }
   }
-  // The bar's forms are read again after a filing: the form stands under another 構形, or under the one
-  // its description gives once the reader's filing is taken back.
-  async function file(group, remove = false) {
+  // The bar's forms are read again after a filing or a fold: forms stand under another 構形, or under
+  // the one their descriptions give once the reader's word is taken back.
+  async function settle(write) {
     if (filing) return
     const id = crop?.id, form = selected
     filing = true; fileError = ''
     try {
-      await setStructure(form, remove ? { structure: group.id } : targetOf(group), { remove })
-      const read = await asked([form, ...bar.map(chip => chip.char), ...rest.map(item => item.char)], new Map(given(listed)))
+      await write(form)
+      const read = await asked([form, ...bar.map(chip => chip.char), ...rest.map(item => item.char)], new Map())
       if (id === crop?.id) structureOf = read
     } catch (error) { if (id === crop?.id) fileError = error.message }
     filing = false
@@ -153,6 +163,9 @@
     await tick()
     if (id === crop?.id) root?.querySelector('.form-chip.chosen, .form-chip.current')?.focus()
   }
+  const file = (group, remove = false) => settle(form => setStructure(form, remove ? { structure: group.id } : targetOf(group), { remove }))
+  // One 構形 folded into another, or with no other the reader's fold of it taken back.
+  const fold = (from, into) => settle(() => setFold(from, into))
   async function link() {
     if (!canLink || linking) return
     linking = true; linkError = ''

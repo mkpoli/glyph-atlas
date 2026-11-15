@@ -44,8 +44,8 @@
   .caption-menu-trigger{display:inline-flex;align-items:center;gap:4px;align-self:flex-start;border:0;border-radius:4px;background:transparent;padding:0;font:inherit;color:inherit;text-align:left}
   .caption-menu-trigger::after{content:"";width:5px;height:5px;margin-top:-3px;border:solid currentColor;border-width:0 1px 1px 0;transform:rotate(45deg);opacity:.7}
   .caption-menu-trigger:not(:disabled):hover,.caption-menu-trigger[aria-expanded="true"]{color:var(--accent)}
-  .caption-menu:popover-open{position:fixed;inset:auto;margin:0;display:flex;flex-direction:column;gap:2px;min-width:168px;max-width:calc(100vw - 16px);padding:4px;
+  .caption-menu:popover-open{position:fixed;inset:auto;margin:0;display:flex;flex-direction:column;gap:2px;min-width:168px;max-width:calc(100vw - 16px);max-height:min(320px,calc(100vh - 16px));overflow:auto;padding:4px;
     border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 6px 24px var(--shadow)}
-  .caption-menu [role="menuitem"]{border:0;border-radius:6px;background:transparent;padding:8px 10px;font-size:13px;line-height:1.3;text-align:left;color:var(--ink)}
+  .caption-menu [role="menuitem"]{flex:none;border:0;border-radius:6px;background:transparent;padding:8px 10px;font-size:13px;line-height:1.3;text-align:left;color:var(--ink)}
   .caption-menu [role="menuitem"]:hover,.caption-menu [role="menuitem"]:focus-visible{background:var(--accent-light)}
 </style>

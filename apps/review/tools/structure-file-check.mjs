@@ -5,7 +5,9 @@
  * The bar sets a crop's forms under their 構形. A signed-in reader opens a 構形's caption and files
  * the selected form there: the chip moves, and the claim is the form's (has_structure), so it holds
  * for every crop. The caption the form then stands under takes the reader's filing back. A form the
- * reader has not chosen for the crop is filed all the same once it is selected.
+ * reader has not chosen for the crop is filed all the same once it is selected. A caption also folds
+ * its 構形 into another of the bar (folds_into), so the forms of both stand under that one, and the
+ * merged caption splits off what the reader folded into it.
  *
  * Run through devrun:
  *   devrun bun apps/review/tools/structure-file-check.mjs
@@ -70,7 +72,14 @@ try {
     const items = await browser.evaluate(`[...document.querySelectorAll('.caption-menu:popover-open [role="menuitem"]')].map(b => b.textContent)`)
     assert(items.includes(item), `the caption ${caption} does not offer ${item}: ${JSON.stringify(items)}`)
   }
-  assert(!(await browser.evaluate(`${captions}.map(b => b.textContent.trim())`)).includes(from), 'the 構形 the form stands under by its description offers a menu')
+  // Under the 構形 its description gives, the form has nothing to file or take back.
+  await browser.evaluate(`${captions}.find(b => b.textContent.trim() === ${JSON.stringify(from)}).click()`)
+  await browser.waitFor(`!!document.querySelector('.caption-menu:popover-open')`)
+  const standingItems = await browser.evaluate(`[...document.querySelectorAll('.caption-menu:popover-open [role="menuitem"]')].map(b => b.textContent)`)
+  assert(!standingItems.some(item => item.includes(own + ' ')), `the 構形 the form stands under offers to file it: ${JSON.stringify(standingItems)}`)
+  // A menu a script opened shares its Escape with the dialog under it, so it is closed here by hand.
+  await browser.evaluate(`document.querySelector('.caption-menu:popover-open').hidePopover()`)
+  await browser.waitFor(`!document.querySelector('.caption-menu:popover-open')`)
 
   // The crop's own form is filed under another 構形 and taken back.
   await menu(to, `Place ${own} here`)
@@ -125,6 +134,42 @@ try {
   await browser.screenshot(join(screenshots, 'structure-menu-phone-light.png'))
   await browser.key('Escape')
   console.log(`PASS a description typed in the picker is filed under ${from} before it is saved`)
+
+  // A 構形 is folded into another from its caption: its forms join that group, and the merged caption
+  // splits it off again.
+  await browser.setViewport(1440, 1000)
+  await browser.goto(`${service.base}/en/crop/${encodeURIComponent(crop)}`, { waitFor: ready, timeout: 90000 })
+  await browser.waitFor(`${chips}.length >= 10 && ${captions}.length > 0`, 30000)
+  const apart = await standing()
+  const moving = apart.find(([caption]) => caption === to)[1]
+  const pick = async (caption, item) => {
+    await menu(caption, item)
+    await browser.evaluate(`[...document.querySelectorAll('.caption-menu:popover-open [role="menuitem"]')].find(b => b.textContent === ${JSON.stringify(item)}).click()`)
+  }
+  const folds = () => {
+    const db = new Database(join(config.directory, 'review.sqlite'), { readonly: true })
+    try {
+      return db.query(`SELECT a.label AS part,b.label AS head FROM current_claims c JOIN structures a ON a.id=c.subject JOIN structures b ON b.id=c.object
+        WHERE c.predicate='folds_into' AND c.status='asserted'`).all().map(row => [row.part, row.head])
+    } finally { db.close() }
+  }
+  await menu(to, `Merge into ${from}`)
+  await browser.screenshot(join(screenshots, 'structure-merge-menu-light.png'))
+  await browser.evaluate(`[...document.querySelectorAll('.caption-menu:popover-open [role="menuitem"]')].find(b => b.textContent === ${JSON.stringify(`Merge into ${from}`)}).click()`)
+  await browser.waitFor(`${under(from, moving[0])} && !${groups}.some(g => (g.querySelector('.caption-menu-trigger') ?? g.querySelector('.form-group-label'))?.textContent.trim() === ${JSON.stringify(to)})`, 20000)
+  assert(JSON.stringify(folds()) === JSON.stringify([[to, from]]), `${to} was not folded into ${from}: ${JSON.stringify(folds())}`)
+  await browser.screenshot(join(screenshots, 'structure-merged-light.png'))
+  await browser.setColorScheme('dark')
+  await Bun.sleep(400)
+  await browser.screenshot(join(screenshots, 'structure-merged-dark.png'))
+  await browser.setColorScheme('light')
+  console.log(`PASS ${to} is folded into ${from} and its forms join that group`)
+
+  await pick(from, `Split ${to} off`)
+  await browser.waitFor(under(to, moving[0]), 20000)
+  assert(folds().length === 0, `the fold was not taken back: ${JSON.stringify(folds())}`)
+  assert(JSON.stringify(await standing()) === JSON.stringify(apart), 'the bar does not return to its groups after the split')
+  console.log(`PASS ${to} is split off again from the merged caption`)
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS structure filing')
