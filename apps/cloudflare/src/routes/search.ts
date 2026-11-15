@@ -212,23 +212,30 @@ export async function idsOf(env: Env, ctx: ExecutionContext, origin: string, cha
 export const STRUCTURE_CHARS = 48;
 /** The 構形 of each character or description named, as groups of those that share one (峰 and 峯 are two
  *  groups, 說 and 説 one, and ⿰月兊 joins 脫), in the order named. A name stands under the structure
- *  a reader filed its form under, and `claimed` names who says so; with no claim it stands under the
- *  one its description gives. A name with neither is in no group. What the descriptions give is kept
- *  at the edge by the catalogue version; the claims are read each time. */
+ *  readers filed its form under, the one most of them name, and `claimed` names who says so; with no
+ *  claim it stands under the one its description gives. A name with neither is in no group. `filed`
+ *  lists, for a name readers filed under several structures, the others with who says so. What the
+ *  descriptions give is kept at the edge by the catalogue version; the claims are read each time,
+ *  and an answer that could not read them gives the descriptions' alone. */
 export async function structuresOf(env: Env, ctx: ExecutionContext, origin: string, chars: string) {
   const named = [...new Set(written(chars))].slice(0, STRUCTURE_CHARS);
   if (!named.length) throw new Problem(422, 'Name a character.');
-  const [derived, claimed] = await Promise.all([derivedStructures(env, ctx, origin, named), claimedStructures(env, named)]);
+  const [derived, claimed] = await Promise.all([derivedStructures(env, ctx, origin, named), claimedStructures(env, named).catch(error => {
+    console.log(JSON.stringify({ event: 'structure_claims_unread', message: String(error) }));
+    return new Map() as Awaited<ReturnType<typeof claimedStructures>>;
+  })]);
   const groups = new Map<string, { id: string; label: string; chars: string[]; claimed?: Record<string, string[]> }>();
+  const filed: Record<string, { id: string; label: string; by: string[] }[]> = {};
   for (const char of named) {
-    const claim = claimed.get(char), structure = claim ?? derived[char];
+    const [claim, ...rest] = claimed.get(char) ?? [], structure = claim ?? derived[char];
     if (!structure) continue;
     const group = groups.get(structure.id) ?? { id: structure.id, label: structure.label, chars: [] };
     group.chars.push(char);
     if (claim) group.claimed = { ...group.claimed, [char]: claim.by };
+    if (rest.length) filed[char] = rest;
     groups.set(structure.id, group);
   }
-  return { items: [...groups.values()] };
+  return { items: [...groups.values()], ...(Object.keys(filed).length ? { filed } : {}) };
 }
 // The structure each name's description gives, by name; a name with none is left out.
 async function derivedStructures(env: Env, ctx: ExecutionContext, origin: string, named: string[]): Promise<Record<string, { id: string; label: string }>> {

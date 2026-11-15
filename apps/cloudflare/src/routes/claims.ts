@@ -352,26 +352,24 @@ export async function formNamed(value: string): Promise<string | null> {
   const representation = typed(value);
   return typeof representation === 'string' ? null : anchoredForm(await representationId(representation));
 }
-/** The 構形 a reader filed each of these written values under, with who says so now: the structure
- *  most readers name, the lowest id among equals. A value nobody filed is not in the answer. */
-export async function claimedStructures(env: Env, names: string[]): Promise<Map<string, { id: string; label: string; by: string[] }>> {
+/** The 構形 readers filed each of these written values under, each with who says so now: first the
+ *  one most readers name, the lowest id among equals. A value nobody filed is not in the answer. */
+export async function claimedStructures(env: Env, names: string[]): Promise<Map<string, { id: string; label: string; by: string[] }[]>> {
   const forms = new Map<string, string[]>();
   for (const name of names) {
     const form = await formNamed(name);
     if (form) forms.set(form, [...forms.get(form) ?? [], name]);
   }
-  const found = new Map<string, { id: string; label: string; by: string[] }>();
+  const found = new Map<string, { id: string; label: string; by: string[] }[]>();
   if (!forms.size) return found;
   const rows = (await env.ATLAS.prepare(claimedStructuresQuery()).bind(JSON.stringify([...forms.keys()]))
     .all<{ form: string; structure: string | null; status: string; claims: string; label: string | null }>()).results;
   for (const row of rows) {
     if (!FILED.has(row.status) || !row.structure || row.label == null) continue;
     const by = [...new Set((JSON.parse(row.claims) as Json[]).filter(c => c.standing).map(c => c.asserted_by as string))];
-    for (const name of forms.get(row.form) ?? []) {
-      const held = found.get(name);
-      if (!held || by.length > held.by.length || (by.length === held.by.length && row.structure < held.id)) found.set(name, { id: row.structure, label: row.label, by });
-    }
+    for (const name of forms.get(row.form) ?? []) found.set(name, [...found.get(name) ?? [], { id: row.structure, label: row.label, by }]);
   }
+  for (const filed of found.values()) filed.sort((a, b) => b.by.length - a.by.length || (a.id < b.id ? -1 : 1));
   return found;
 }
 // The actor's own live claims of a form's structures, latest first: one range of `assertion_slot`.

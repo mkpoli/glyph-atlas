@@ -34,7 +34,7 @@ import csv
 import json
 import re
 import unicodedata
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -473,21 +473,26 @@ def descriptions() -> han_component_variants.Descriptions:
 STRUCTURE_CHARS = 48
 
 
-def structure_groups(chars: str, claimed: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, Any]:
+def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any]]] | None = None) -> dict[str, Any]:
     """The 構形 of each character or description named, as groups of those that share one, in the
-    order named, as the Worker's `/layers/structures` answers. A name stands under the structure a
-    reader filed its form under (`claimed`, by name: `{id, label, by}`), and the group names who says
-    so; with no claim it stands under the one its description gives. A name with neither is in no group."""
+    order named, as the Worker's `/layers/structures` answers. A name stands under the structure
+    readers filed its form under (`claimed`, by name: `{id, label, by}` each, the one that holds first),
+    and the group names who says so; with no claim it stands under the one its description gives. A
+    name with neither is in no group. `filed` lists the other structures a name was filed under."""
     from . import structures
     from .representation import written
 
     groups: dict[str, dict[str, Any]] = {}
+    filed: dict[str, list[dict[str, Any]]] = {}
     for name in list(dict.fromkeys(written(chars)))[:STRUCTURE_CHARS]:
-        claim = (claimed or {}).get(name)
-        if claim:
+        claims = list((claimed or {}).get(name, ()))
+        if claims:
+            claim = claims[0]
             group = groups.setdefault(claim["id"], {"id": claim["id"], "label": claim["label"], "chars": []})
             group["chars"].append(name)
             group.setdefault("claimed", {})[name] = list(claim["by"])
+            if claims[1:]:
+                filed[name] = [dict(other) for other in claims[1:]]
             continue
         try:
             structure = structures.for_name(name)
@@ -495,7 +500,7 @@ def structure_groups(chars: str, claimed: Mapping[str, Mapping[str, Any]] | None
             continue
         if structure:
             groups.setdefault(structure.id, {"id": structure.id, "label": structure.label, "chars": []})["chars"].append(name)
-    return {"items": list(groups.values())}
+    return {"items": list(groups.values()), **({"filed": filed} if filed else {})}
 
 
 @cache

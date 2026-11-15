@@ -1032,7 +1032,7 @@ def router(store: Store) -> APIRouter:
         """The 構形 groups of the characters named, as the Worker answers it."""
         if not written(c):
             raise HTTPException(422, "Name a character.")
-        return refs.structure_groups(c, store.claimed_structures(written(c)[:refs.STRUCTURE_CHARS]))
+        return refs.structure_groups(c, store.claimed_structures(list(dict.fromkeys(written(c)))[:refs.STRUCTURE_CHARS]))
 
     @api.get("/layers/ids")
     def ids(c: str = "") -> dict[str, Any]:

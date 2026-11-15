@@ -44,8 +44,13 @@ def test_a_written_value_is_filed_under_a_structure_and_moves(dataset):  # noqa:
     moved = file(client, FORM, char="峰", replace=True)
     assert moved["replaced"] == [ABOVE.id]
     assert [value["structure"] for value in moved["structures"]] == [BESIDE.id]
-    # A structure a claim has named is named by its id; one no claim has named is refused.
+    # A structure a claim has named is named by its id; one no claim has named is refused. A form two
+    # readers filed apart stands under one structure, and the other is listed.
     assert file(client, FORM, structure=ABOVE.id, reviewer="bob")["id"] == moved["id"]
+    first, second = sorted([(BESIDE, "ann"), (ABOVE, "bob")], key=lambda pair: pair[0].id)
+    answer = client.get("/layers/structures", params={"c": FORM}).json()
+    assert answer["items"] == [{"id": first[0].id, "label": first[0].label, "chars": [FORM], "claimed": {FORM: [first[1]]}}]
+    assert answer["filed"] == {FORM: [{"id": second[0].id, "label": second[0].label, "by": [second[1]]}]}
     file(client, FORM, structure="st:" + "0" * 32, status=422)
     # Only the reader's own claim is theirs to take back, and the form returns to what it is built as.
     file(client, "峯", structure=BESIDE.id, remove=True, reviewer="bob", status=409)
