@@ -80,9 +80,8 @@ for pair in "${pairs[@]}"; do
     save)
       echo "saving $local -> r2:$bucket/$remote"
       checkpoint "$local"
-      # A save that would delete this many objects means a broken local store, not a rebuild.
       rclone "$save" "$local" "r2:$bucket/$remote" \
-        --transfers 8 --checkers 16 --max-delete 500 "${exclude[@]}"
+        --transfers 8 --checkers 16 "${exclude[@]}"
       ;;
     *)
       echo "unknown action: $action" >&2
