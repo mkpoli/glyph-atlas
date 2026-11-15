@@ -40,7 +40,7 @@ case "$group" in
     # directory by directory one LIST per book; checksums come with a single recursive listing.
     compare=(--checksum --fast-list)
     # About 155k files of 18 KB on average: a transfer waits on its round trip far longer than on
-    # bandwidth, so many run at once (8 restored the store in over 35 minutes on a runner).
+    # bandwidth, so many run at once (at 8, a runner was still restoring the store after 35 minutes).
     parallel=(--transfers 64 --checkers 64)
     ;;
   images)
