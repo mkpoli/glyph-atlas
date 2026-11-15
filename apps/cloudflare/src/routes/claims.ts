@@ -384,6 +384,36 @@ export async function structureId(label: string, scheme: string, policy: string)
   return 'st:' + [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
 const STRUCTURE_ID = /^st:[0-9a-f]{32}$/;
+type StructureSource = NonNullable<Awaited<ReturnType<typeof structureSource>>>;
+/** The structure a write names: by `char`, a character that has it or a description the load read
+ *  (with `of`, a regional shape of that character), or by `structure`, the id of one a claim has
+ *  named before, which `known` requires to have its row. `source` is what a new row is written
+ *  under, null for a structure named by id. */
+async function namedStructure(env: Env, input: Json, tools: ClaimTools, ctx: ExecutionContext | undefined, known: boolean):
+  Promise<{ structure: { id: string; label: string }; source: StructureSource | null }> {
+  if (input.structure != null) {
+    const id = tools.text(input.structure, 64, 'structure', true)!;
+    if (!STRUCTURE_ID.test(id)) tools.fail(422, 'Name a structure by its id.');
+    const row = known ? await env.ATLAS.prepare('SELECT label FROM structures WHERE id=?').bind(id).first<{ label: string }>() : null;
+    if (known && !row) tools.fail(422, 'No claim has named this structure.');
+    return { structure: { id, label: row?.label ?? '' }, source: null };
+  }
+  const char = tools.text(input.char, 4 * FORM_LONGEST, 'char', true)!;
+  if (written(char).length !== 1 || written(char)[0] !== char) tools.fail(422, 'Name one character or description.');
+  // A character's regional shape is no key of the load: it is found among the shapes of `of`.
+  const of = input.of == null ? null : tools.text(input.of, 8, 'of', true)!;
+  const [described, read] = await Promise.all([characterIds(env, structureKey(of ?? char), ctx), structureSource(env, ctx)]);
+  // No policy object: no reference load has carried structures yet.
+  const source = read ?? tools.fail(503, 'The structures are being loaded.');
+  const shape = of === null ? null : (described?.shapes ?? []).find(one => one.text === char) ?? tools.fail(422, `${char} is no shape of ${of}.`);
+  const structure: { id: string; label: string } = (shape && 'structure' in shape ? shape.structure : described?.structure) ?? tools.fail(422, `No structure is known for ${char}.`);
+  // A shard and a policy from two loads would name a row its id does not describe.
+  if (await structureId(structure.label, source.scheme, source.policy) !== structure.id) tools.fail(503, 'The structures are being loaded.');
+  return { structure, source };
+}
+const structureRow = (env: Env, structure: { id: string; label: string }, source: StructureSource, actor: string, at: string) =>
+  env.ATLAS.prepare('INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,?,?,?,?,?)')
+    .bind(structure.id, structure.label, source.scheme, source.version, source.policy, actor, at);
 /** File a form under the structure of a character or a description, or take back the reader's own
  *  claim (`remove`). The form is named by its id or by its written value (a character, a character
  *  with a variation selector, a description); a value nobody has chosen yet gets its form here. The
@@ -409,26 +439,7 @@ export async function setStructure(env: Env, input: Json, named: string, actor: 
   const remove = input.remove === true, replace = input.replace === true && !remove;
   const exists = Boolean(await env.ATLAS.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first());
   if (!exists && !representation) tools.fail(404, 'No such form.');
-  let structure: { id: string; label: string }, source: Awaited<ReturnType<typeof structureSource>> = null;
-  if (input.structure != null) {
-    const id = tools.text(input.structure, 64, 'structure', true)!;
-    if (!STRUCTURE_ID.test(id)) tools.fail(422, 'Name a structure by its id.');
-    const row = remove ? null : await env.ATLAS.prepare('SELECT label FROM structures WHERE id=?').bind(id).first<{ label: string }>();
-    if (!remove && !row) tools.fail(422, 'No claim has named this structure.');
-    structure = { id, label: row?.label ?? '' };
-  } else {
-    const char = tools.text(input.char, 4 * FORM_LONGEST, 'char', true)!;
-    if (written(char).length !== 1 || written(char)[0] !== char) tools.fail(422, 'Name one character or description.');
-    // A character's regional shape is no key of the load: it is found among the shapes of `of`.
-    const of = input.of == null ? null : tools.text(input.of, 8, 'of', true)!;
-    const [described, read] = await Promise.all([characterIds(env, structureKey(of ?? char), ctx), structureSource(env, ctx)]);
-    // No policy object: no reference load has carried structures yet.
-    source = read ?? tools.fail(503, 'The structures are being loaded.');
-    const shape = of === null ? null : (described?.shapes ?? []).find(one => one.text === char) ?? tools.fail(422, `${char} is no shape of ${of}.`);
-    structure = (shape && 'structure' in shape ? shape.structure : described?.structure) ?? tools.fail(422, `No structure is known for ${char}.`);
-    // A shard and a policy from two loads would name a row its id does not describe.
-    if (await structureId(structure.label, source.scheme, source.policy) !== structure.id) tools.fail(503, 'The structures are being loaded.');
-  }
+  const { structure, source } = await namedStructure(env, input, tools, ctx, !remove);
   const mine = exists ? (await env.ATLAS.prepare(ownStructuresQuery(ownedActors(actor))).bind(form, actor).all<{ id: string; slot: string }>()).results : [];
   const own = mine.find(claim => claim.slot === structure.id);
   const others = replace ? mine.filter(claim => claim.slot !== structure.id) : [];
@@ -452,8 +463,7 @@ export async function setStructure(env: Env, input: Json, named: string, actor: 
     if (!exists) await planNaming(env, { key, actor, representation: representation!, at }, plan);
     const member: Member = { object: structure.id, value: null, confidence: null, confidence_scheme: null };
     checkClaims('has_structure', [member], { [structure.id]: 'structure' }, tools.fail);
-    if (source) plan.statements.push(env.ATLAS.prepare('INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,?,?,?,?,?)')
-      .bind(structure.id, structure.label, source.scheme, source.version, source.policy, actor, at));
+    if (source) plan.statements.push(structureRow(env, structure, source, actor, at));
     const claim = await planSubjectClaim(env, { key, actor, subject: form, predicate: 'has_structure', scope: '', members: [member],
       at, method: 'form-picker' }, ledger);
     plan.statements.push(...claim.statements); plan.keys.push(...claim.keys);
@@ -461,6 +471,82 @@ export async function setStructure(env: Env, input: Json, named: string, actor: 
   const replaced = remove ? [structure.id] : [...new Set(others.map(claim => claim.slot))];
   await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: form, replaced }, ledger);
   return { id: form, structures: await structuresOf(env, form), replaced };
+}
+
+// A structure's `folds_into` claim: a reader's word that it is one 構形 with another and stands under
+// it, so the forms of both are grouped under the other's label. A structure folds into one other,
+// and that one may fold further; a slot readers disagree on folds nowhere.
+const FOLD_DEPTH = 8;
+const FOLD = `c.predicate='folds_into' AND c.scope='' AND c.slot='' AND c.status IN ('asserted','accepted','adjudicated') AND c.object IS NOT NULL`;
+// The folds that lead on from these structures, each found by `current_claims`' key.
+export const foldsQuery = () => `WITH RECURSIVE reach(id,depth) AS (SELECT j.value,0 FROM json_each(?) j
+    UNION SELECT c.object,reach.depth+1 FROM reach JOIN current_claims c ON c.subject=reach.id AND ${FOLD} WHERE reach.depth<${FOLD_DEPTH})
+  SELECT DISTINCT c.subject AS id,c.object AS head,c.claims,s.label FROM reach JOIN current_claims c ON c.subject=reach.id AND ${FOLD}
+  LEFT JOIN structures s ON s.id=c.object`;
+export type Fold = { head: { id: string; label: string }; by: string[] };
+/** Where each of these structures stands now: the structure at the end of its folds, with who folded
+ *  it (its own fold, not the ones after it). A structure that folds nowhere is not in the answer;
+ *  folds that lead round stop at the lowest id among them. */
+export async function foldsOf(env: Env, ids: string[]): Promise<Map<string, Fold>> {
+  const found = new Map<string, Fold>();
+  if (!ids.length) return found;
+  const rows = (await env.ATLAS.prepare(foldsQuery()).bind(JSON.stringify([...new Set(ids)]))
+    .all<{ id: string; head: string; claims: string; label: string | null }>()).results;
+  const next = new Map(rows.map(row => [row.id, row.head])), labels = new Map(rows.map(row => [row.head, row.label ?? '']));
+  for (const id of new Set(ids)) {
+    if (!next.has(id)) continue;
+    const seen = [id];
+    while (next.has(seen.at(-1)!) && !seen.includes(next.get(seen.at(-1)!)!)) seen.push(next.get(seen.at(-1)!)!);
+    // Round a ring every structure of it answers alike.
+    const back = next.get(seen.at(-1)!), end = back === undefined ? seen.at(-1)! : seen.slice(seen.indexOf(back)).sort()[0];
+    const head = { id: end, label: labels.get(end) ?? '' }, first = rows.find(row => row.id === id)!;
+    if (head.id === id) continue;
+    found.set(id, { head, by: [...new Set((JSON.parse(first.claims) as Json[]).filter(c => c.standing).map(c => c.asserted_by as string))] });
+  }
+  return found;
+}
+// The actor's own live fold of a structure: one range of `assertion_slot`.
+export const ownFoldQuery = (owned: string) => `SELECT a.id,a.object FROM assertions a WHERE a.subject=? AND a.predicate='folds_into'
+  AND a.scope='' AND a.slot='' AND (a.asserted_by=? OR a.asserted_by IN ${owned})
+  AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid DESC LIMIT 1`;
+/** Fold one structure into another (`from`, `into`: each named as `setStructure` names one), or with
+ *  `remove` take back the reader's own fold of `from`. A fold that would lead back to `from` is
+ *  refused. A reader's new fold of a structure replaces their earlier one. Answers the structure,
+ *  where it stands now (`folds_into`, null for nowhere) and `replaced`, the structure the reader's
+ *  own earlier fold named. */
+export async function setFold(env: Env, input: Json, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
+  const ledger = ledgerTools(env, tools, ctx);
+  const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ fold: input });
+  const remove = input.remove === true;
+  const part = (value: unknown): Json => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Json : tools.fail(422, 'Name a structure.');
+  const from = await namedStructure(env, part(input.from), tools, ctx, false);
+  const standing = async () => (await foldsOf(env, [from.structure.id])).get(from.structure.id) ?? null;
+  const answer = async (replaced: string | null) => { const fold = await standing(); return { structure: from.structure.id, folds_into: fold ? { ...fold.head, by: fold.by } : null, replaced } };
+  const saved = await savedSubmission(env, key, signature, tools.fail);
+  if (saved) return answer(saved.replaced ?? null);
+  const own = await env.ATLAS.prepare(ownFoldQuery(ownedActors(actor))).bind(from.structure.id, actor).first<{ id: string; object: string }>();
+  const at = new Date().toISOString(), plan: Plan = { statements: [], keys: [] };
+  if (remove) {
+    if (!own) tools.fail(409, 'You have not folded this structure.');
+    const retract = await planAction(env, { key: key + '/retract', actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, ledger);
+    plan.statements.push(...retract.statements); plan.keys.push(...retract.keys);
+  } else {
+    const into = await namedStructure(env, part(input.into), tools, ctx, true);
+    if (into.structure.id === from.structure.id) tools.fail(422, 'A structure folds into another.');
+    const onward = (await foldsOf(env, [into.structure.id])).get(into.structure.id);
+    if (onward?.head.id === from.structure.id) tools.fail(409, 'That structure already stands under this one.');
+    const member: Member = { object: into.structure.id, value: null, confidence: null, confidence_scheme: null };
+    checkClaims('folds_into', [member], { [into.structure.id]: 'structure' }, tools.fail);
+    for (const one of [from, into]) if (one.source) plan.statements.push(structureRow(env, one.structure, one.source, actor, at));
+    if (!from.source && !await env.ATLAS.prepare('SELECT 1 FROM structures WHERE id=?').bind(from.structure.id).first()) tools.fail(422, 'No claim has named this structure.');
+    // A slot of one value: the claim takes back the reader's earlier fold of the structure itself.
+    const claim = await planSubjectClaim(env, { key, actor, subject: from.structure.id, predicate: 'folds_into', scope: '', members: [member],
+      at, method: 'form-picker' }, ledger);
+    plan.statements.push(...claim.statements); plan.keys.push(...claim.keys);
+  }
+  const replaced = own?.object ?? null;
+  await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: from.structure.id, replaced }, ledger);
+  return answer(replaced);
 }
 
 /** Set the reader's word for one crop (decision 0004), or retract their own latest claim with `word: null`. */
@@ -517,12 +603,12 @@ export async function bookDates(env: Env, book: number | null): Promise<Json> {
   return { dating, ...(dates.length ? { dates } : {}) };
 }
 
-/** A write to the ledger: a claim, an action on one, or a crop's form, word or grapheme. `null` for another path. */
+/** A write to the ledger: a claim, an action on one, a crop's form, word or grapheme, or a fold of a structure. `null` for another path. */
 export async function claimWrite(env: Env, request: Request, path: string, me: { id: string; admin: boolean }, tools: ClaimTools,
   limit: () => Promise<void>, ctx?: ExecutionContext): Promise<Json | Response | null> {
   const acted = path.match(/^\/atlas\/claims\/([^/]+)\/actions$/), picked = path.match(/^\/atlas\/characters\/([^/]+)\/(form|word|grapheme)$/),
     linked = path.match(/^\/atlas\/forms\/([^/]+)\/(written_for|structure)$/);
-  if (path !== '/atlas/claims' && path !== '/atlas/forms' && !acted && !picked && !linked) return null;
+  if (path !== '/atlas/claims' && path !== '/atlas/forms' && path !== '/atlas/structures/folds' && !acted && !picked && !linked) return null;
   // A claim, an action or a crop's form is a few small rows, and one address is held to a rate.
   await limit();
   const input = await tools.body(request);
@@ -530,6 +616,7 @@ export async function claimWrite(env: Env, request: Request, path: string, me: {
   try { target = decodeURIComponent((acted ?? picked ?? linked)?.[1] ?? '') } catch { tools.fail(404, acted ? 'No such claim.' : linked ? 'No such form.' : NOT_HERE) }
   try {
     if (path === '/atlas/forms') return await setForms(env, input, me.id, tools, ctx);
+    if (path === '/atlas/structures/folds') return await setFold(env, input, me.id, tools, ctx);
     if (linked) return linked[2] === 'structure' ? await setStructure(env, input, target, me.id, tools, ctx)
       : await setWrittenFor(env, input, target, me.id, tools, ctx);
     if (picked) return picked[2] === 'word' ? await setWord(env, input, target, me.id, tools, ctx)

@@ -316,7 +316,18 @@ describe("the IDS editor's structure", () => {
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆⿰石月')).toEqual({ items: [
       { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '⿰石月'], claimed: { '⿰石月': ['reader'] } },
       { id: other, label: '一', chars: ['磆'], claimed: { '磆': ['reader'] } }] });
-    atlasDb.run("DELETE FROM current_claims WHERE predicate='has_structure'");
+    // A structure a reader folded stands under the other: its names join that group, listed in `folded`.
+    atlasDb.query("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'folds_into','','','asserted',?,'[]','[]',?,'ledger-r1',?)")
+      .run(other, 'st:00000000000000000000000000000001', JSON.stringify([{ asserted_by: 'reader', standing: true }]), at);
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆⿰石月')).toEqual({ items: [
+      { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '磆', '⿰石月'], claimed: { '磆': ['reader'], '⿰石月': ['reader'] },
+        folded: [{ id: other, label: '一', by: ['reader'], chars: ['磆'] }] }] });
+    atlasDb.run("DELETE FROM current_claims WHERE predicate IN ('has_structure','folds_into')");
+    // A regional shape is no key of the shards: named with its character, it has the structure the character's shard gives it.
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '⿰氵⿵冖月⿰氵骨')).toEqual({ items: [
+      { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['⿰氵⿵冖月'] }] });
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '⿰氵⿵冖月⿰氵骨', '滑')).toEqual({ items: [
+      { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['⿰氵⿵冖月', '⿰氵骨'] }] });
     await expect(structuresOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name a character.');
   });
 
