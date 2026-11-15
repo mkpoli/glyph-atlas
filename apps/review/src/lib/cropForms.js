@@ -49,11 +49,14 @@ export function listForms(char) {
     let partial = false
     const registered = figuresOf(char).then(async figures => (figures.length && await drawFigure(figures[0].char), figures))
       .catch(() => { partial = true; return [] })
-    const described = HAN.test(char) ? readIds(char).then(found => found.shapes ?? [], () => { partial = true; return [] }) : Promise.resolve([])
+    // A regional shape is a spelling of its character's 構形 and carries it.
+    const described = HAN.test(char)
+      ? readIds(char).then(found => (found.shapes ?? []).map(shape => ({ ...shape, structure: found.structure ?? null })), () => { partial = true; return [] })
+      : Promise.resolve([])
     const loaded = Promise.all([card, registered, described]).then(([card, figures, regional]) => {
       const offered = v => !compatibility(v.char) || v.char === char
       const members = (card?.grapheme?.members ?? [{ char }]).filter(offered).map(entry)
-      const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) }))
+      const shapes = regional.map(({ text, regions, structure }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions), structure }))
       const found = card?.variants ?? {}
       const writers = new Set((found.writers ?? []).map(v => v.char)), writes = new Set((found.writes ?? []).map(v => v.char))
       // The card's order: a form that writes this grapheme first (後: 后), then the others.
