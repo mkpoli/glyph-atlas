@@ -21,5 +21,5 @@ format:
   sha256: 84787642cc34ac347dd1a361584a5239bc63e1f4f32077f2d45809f70feeea7b
 notes:
   - "The column 旧版同音 gives a head character's place as folio, side, column and position (02A51). It is the 甲種本 reproduced in 俄藏黑水城文獻 vol. 7: the opening columns of folio 2 and the cells of folio 6 were compared with the plates by eye, and 148 of 150 randomly drawn machine placements sit on the character the column names."
-  - The column holds 5,673 places in folios 2 to 56; data/tangut/tongyin/characters.tsv carries each with its box on the plate.
+  - The column holds 5,673 places in folios 2 to 56; data/tangut/tongyin/characters.tsv carries each with its box on the page scan.
 checked: "2026-11-16"

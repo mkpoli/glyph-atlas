@@ -139,6 +139,13 @@ def collect(
     ) for seq, row in enumerate(column_rows)]
     line_ids = {line.id for line in lines}
 
+    # A unit's place in its line is its rank among the column's head characters, which is where it
+    # stands in the line's text; the table's own position stays in `meta`.
+    ranks: dict[str, list[int]] = {}
+    for row in character_rows:
+        ranks.setdefault(place_id({**row, "position": ""}), []).append(int(row["position"]))
+    ranks = {column: sorted(found) for column, found in ranks.items()}
+
     units, left_out = [], {}
     for row in character_rows:
         if row["quality"] != "ok":
@@ -154,7 +161,7 @@ def collect(
             document_id=document.id,
             page_id=_known_page(page_ids, row),
             line_id=line_id,
-            seq=int(row["position"]) - 1,
+            seq=ranks[place_id({**row, "position": ""})].index(int(row["position"])),
             box=_box(row),
             text_source=row["char"],
             unicode=row["codepoint"],
@@ -219,11 +226,12 @@ def _checked(config: dict[str, Any]) -> date | None:
 
 
 def _document(config: dict[str, Any], volume: dict[str, Any], item: dict[str, Any]) -> Document:
-    # The document validator turns the publisher's terms into `holder_terms` and records the plates,
-    # flat reproductions of a Western Xia print, as public domain.
+    # The photographs are the publisher's, so the terms are the publisher's; the manuscript's holder
+    # is the document's. The document validator turns those terms into `holder_terms` and records
+    # the plates, flat reproductions of a Western Xia print, as public domain.
     rights = Rights(
         licence=Licence(config.get("image_licence") or config["licence"]),
-        holder=config.get("holder"),
+        holder=config.get("image_holder") or config.get("holder"),
         attribution=f"{config['attribution']}; {volume['title']}, {item['shelfmark']}",
         evidence=config.get("licence_evidence") or config["url"],
         checked=_checked(config),

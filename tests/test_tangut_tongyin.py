@@ -61,6 +61,9 @@ def test_collect_writes_a_unit_for_each_sound_place(fixture, tmp_path):
     assert (document.image_rights.licence, document.image_rights.holder_terms) == (
         Licence.PUBLIC_DOMAIN, Licence.RESTRICTED)
     assert "Maxim Persikov" in document.image_rights.attribution
+    # The terms are the publisher's; the manuscript is the institute's.
+    assert document.image_rights.holder == "上海古籍出版社"
+    assert document.holder == "Institute of Oriental Manuscripts, Russian Academy of Sciences"
     assert document.text_rights.licence == Licence.PUBLIC_DOMAIN
 
     page = next(iter(tables.read(out / "pages.parquet", Page)))
@@ -115,3 +118,23 @@ def test_the_placement_tables_agree_with_each_other():
         assert 0 <= int(row["y"]) and int(row["y"]) + int(row["h"]) <= int(page["height"])
         held.setdefault(tangut_tongyin.place_id({**row, "position": ""}), []).append((int(row["position"]), row["char"]))
     assert {column: "".join(char for _, char in sorted(found)) for column, found in held.items()} == text
+
+
+def test_a_unit_stands_where_its_character_does_in_the_line(fixture, tmp_path):
+    scans, data = fixture
+    table(data / "columns.tsv", ["folio", "side", "column", "page", "x", "y", "w", "h", "text"],
+          [[2, "A", 5, 1, 300, 20, 40, 260, "𗩤𗠪"]])
+    table(data / "characters.tsv",
+          ["folio", "side", "column", "position", "char", "codepoint", "page", "x", "y", "w", "h", "score", "ink",
+           "quality"],
+          [[2, "A", 5, 1, "𗩤", "U+17A64", 1, 302, 24, 30, 32, 0.41, 70.2, "ok"],
+           [2, "A", 5, 6, "𗠪", "U+1782A", 1, 301, 196, 30, 30, 0.33, 61.5, "ok"]])
+    out = tmp_path / "out"
+    tangut_tongyin.collect(scans, out, data=data, cache=tmp_path / "cache")
+
+    line = next(iter(tables.read(out / "lines.parquet", Line)))
+    units = sorted(tables.read(out / "units.parquet", Unit), key=lambda unit: unit.seq)
+    # The column skips positions 2 to 5: the second unit is the line's second character.
+    assert [(unit.seq, unit.text_source, unit.meta["tongyin"]) for unit in units] == [
+        (0, "𗩤", "02A51"), (1, "𗠪", "02A56")]
+    assert "".join(unit.text_source for unit in units) == line.text

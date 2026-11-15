@@ -98,7 +98,7 @@ def snap(profile: np.ndarray, lines: np.ndarray, reach: float) -> list[int]:
     near = smoothed(profile, 1.5)
     out = []
     for line in lines:
-        low = max(0, int(line - reach))
+        low = min(len(near) - 1, max(0, int(line - reach)))
         high = max(low + 1, min(len(near), int(line + reach)))
         out.append(low + int(np.argmax(near[low:high])))
     return out
@@ -122,7 +122,7 @@ def from_fold(profile: np.ndarray, width: int) -> dict[str, list[int]]:
                 if value > best[0]:
                     best = (value, lines)
         lines = best[1] if best[1] is not None else fold + direction * (width / 16.5) * np.arange(COLUMNS + 1)
-        fits[side] = snap(profile, np.sort(lines), abs(lines[1] - lines[0]) * 0.06)
+        fits[side] = snap(profile, np.sort(np.clip(lines, 0, width - 1)), abs(lines[1] - lines[0]) * 0.06)
     return fits
 
 
@@ -187,16 +187,18 @@ def place(strip: np.ndarray, glyphs: list[np.ndarray], rows: list[int], pitch: f
         response = cv2.matchTemplate(strip, template, cv2.TM_CCOEFF_NORMED)
         scores.append(response.max(axis=1))
         columns.append(response.argmax(axis=1))
-    best = np.full((count, height), -1e9, np.float32)
+    best = np.full((count, height), -1e6, np.float64)
     back = np.zeros((count, height), np.int32)
     for index in range(count):
-        if scores[index] is None:
-            continue
-        length = len(scores[index])
+        # A glyph too large for the strip takes any row at no score, so the others keep their order.
+        found = scores[index] if scores[index] is not None else np.zeros(height, np.float32)
+        length = len(found)
         expected = (rows[index] - 1 + 0.42) * height / ROWS - glyphs[index].shape[0] / 2
-        value = scores[index] - 2.5 * ((np.arange(length) - expected) / pitch) ** 2
+        value = found - 2.5 * ((np.arange(length) - expected) / pitch) ** 2
         if index == 0:
             best[0, :length] = value
+            continue
+        if length <= gap:
             continue
         running = np.maximum.accumulate(best[index - 1])
         source = np.zeros(height, np.int32)
