@@ -62,7 +62,7 @@ checkpoint() {
 db = sqlite3.connect(sys.argv[1])
 busy = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]
 db.close()
-sys.exit(f"{sys.argv[1]} is in use; stop its worker first" if busy else 0)' "$db"
+sys.exit(f"{sys.argv[1]} is in use" if busy else 0)' "$db"
   done
 }
 
@@ -70,6 +70,13 @@ for pair in "${pairs[@]}"; do
   local="${pair%%:*}"
   remote="${pair#*:}"
   mkdir -p "$local"
+  # A collector holds an flock on worker.lock while it runs; moving its store under it would
+  # mix two states. Hold the same lock for the transfer.
+  exec {lock}>"$local/worker.lock"
+  if ! flock -n "$lock"; then
+    echo "$local has a running worker; stop it first" >&2
+    exit 1
+  fi
   case "$action" in
     restore)
       echo "restoring r2:$bucket/$remote -> $local"
@@ -88,4 +95,5 @@ for pair in "${pairs[@]}"; do
       exit 2
       ;;
   esac
+  exec {lock}>&-
 done
