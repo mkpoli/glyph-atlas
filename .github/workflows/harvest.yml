@@ -17,7 +17,7 @@ name: harvest
 
 on:
   schedule:
-    - cron: "23 0 * * 1,4"   # 09:23 JST, Monday and Thursday
+    - cron: "23 0 * * *"   # 09:23 JST, daily
   workflow_dispatch:
     inputs:
       seconds:
