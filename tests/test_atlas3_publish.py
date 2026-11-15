@@ -322,6 +322,44 @@ def test_the_crops_a_stopped_publication_of_the_answers_copied_are_taken_before_
     assert local.execute("SELECT revision, at FROM review_revisions WHERE crop=?", (crop,)).fetchone()[:] == (1, 1)
 
 
+def test_a_crop_s_category_goes_only_with_the_character_it_belongs_to(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
+    # A reviewer reads the crop as 漢, which the Worker files under a category of its own, and a
+    # publication of the answers copies the crop; the publish below takes it into the local copy.
+    char = d1.execute("INSERT INTO graphemes(text) VALUES('漢')").lastrowid
+    kana = d1.execute("SELECT category FROM crops WHERE id=?", (crop,)).fetchone()[0]
+    kanji = d1.execute("SELECT max(code) + 1 FROM codes WHERE field='category'").fetchone()[0]
+    d1.execute("INSERT INTO codes(field,code,key) VALUES('category',?,'kanji')", (kanji,))
+    d1.execute("UPDATE crops SET char=?, category=?, state=1, revision=1 WHERE id=?", (char, kanji, crop))
+    d1.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,1,0,1,1,1,0,1)", (crop,))
+    d1.execute("INSERT INTO touched VALUES(?,1)", (crop,))
+    d1.commit()
+    sys.modules.pop("answers", None)
+    assert importlib.import_module("answers").bump("20260101T000000Z", 1)
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+
+    def sent():
+        return "".join(part.read_text() for part in (root / "out" / "publish").rglob("atlas-*.sql"))
+
+    def held():
+        local = sqlite3.connect(root / "out" / "atlas.sqlite")
+        local.row_factory = sqlite3.Row
+        found = dict(local.execute("SELECT * FROM crops WHERE id=?", (crop,)).fetchone())
+        assert found == crops(remote)[crop]
+        return found["char"], found["category"], found["priority"]
+
+    # A catalogue from before the review carries the crop as あ, a kana, with another priority.
+    run(publish, monkeypatch, catalogue(tmp_path / "stale.sqlite", [unit("ex:a1", "hl:p1", box, priority=2)]))
+    assert f"priority=2 WHERE id={crop}" in sent() and "category=" not in sent()
+    assert held() == (char, kanji, 2)
+    # One that has taken the review in and reads the crop as あ speaks for the character, and its category goes with it.
+    run(publish, monkeypatch, catalogue(tmp_path / "newer.sqlite", [unit("ex:a1", "hl:p1", box, state="checked", revision=2, priority=2)]))
+    a = d1.execute("SELECT id FROM graphemes WHERE text='あ'").fetchone()[0]
+    assert re.search(rf"UPDATE crops SET char={a},[^;]*category={kana},revision=revision\+1 WHERE id IN \([^;]*c\.revision=1\);", sent())
+    assert held() == (a, kana, 2)
+
+
 def test_a_local_copy_without_the_review_history_is_refused(layout, monkeypatch, tmp_path):
     root, publish, _remote = layout
     db = sqlite3.connect(root / "out" / "atlas.sqlite")

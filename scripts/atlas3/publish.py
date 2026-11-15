@@ -747,7 +747,16 @@ class Mirror:
                 # The style the publication gives the crop, which taking a reviewer's style back returns to: sent when
                 # it moved, or when the local copy holds a reviewer's style in its place.
                 self.base_styles.append((cid, row["style"]))
-            own = [c for c in changed if c not in REVIEW_OWNED and c != "cut"]
+            # A crop's script category belongs to its character: a review on the site sets the two together.
+            # The catalogue's category is taken only where the catalogue speaks for the character; a crop that
+            # keeps a review's character, or the form a decision moved it to, keeps the category beside it.
+            # Where the character changes too, the category goes to D1 in the statement that sets the
+            # character, under its guard.
+            if "category" in changed and not speaks:
+                changed.remove("category")
+                row["category"] = old["category"]
+            with_char = "category" in changed and "char" in changed
+            own = [c for c in changed if c not in REVIEW_OWNED and c != "cut" and not (c == "category" and with_char)]
             reviewed = [c for c in changed if c in REVIEW_OWNED]
             if own:
                 self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in own)} WHERE id={cid};")
@@ -766,8 +775,8 @@ class Mirror:
             if row["revision"] != old["revision"]:
                 changed.append("revision")
             if speaks and decided:
-                self.page_sql[pid] += visible_change({c: lit(row[c]) for c in decided},
-                                                     f"FROM crops c WHERE c.id={cid} AND c.revision={base}", catalogue_revision)
+                sets = {c: lit(row[c]) for c in decided} | ({"category": lit(row["category"])} if with_char else {})
+                self.page_sql[pid] += visible_change(sets, f"FROM crops c WHERE c.id={cid} AND c.revision={base}", catalogue_revision)
                 self.guarded.append(cid)
             elif speaks and (reviewed or catalogue_revision != logical):
                 page_changed = True
