@@ -87,6 +87,7 @@ jobs:
         run: uv sync
 
       - name: Restore the collection store
+        id: restore
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -118,9 +119,10 @@ jobs:
           [ "$status" -eq 0 ] || [ "$status" -eq 75 ] || exit "$status"
 
       # Save whatever was collected, even when a later step failed: a partial
-      # harvest is worth keeping and re-running is how it finishes.
+      # harvest is worth keeping and re-running is how it finishes. The save mirrors
+      # the local store, so it runs only over a complete restore.
       - name: Save the collection store
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
