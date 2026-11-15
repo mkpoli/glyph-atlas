@@ -77,6 +77,9 @@ encoded apart share a structure when only a unified component separates them (�
   A structure is compared among the forms of one character, where this does no harm.
 - A description two characters hold names one of them: the character whose own structure it is,
   else the lowest code point.
+- A character's regional shape, chosen as a form, is a description like any other: where it is
+  another character's own structure it names that one (臭 is `⿱自犬`; its J shape `⿱自大` is the
+  structure of 𦤀). 190 of the 11,694 regional shapes do, and 13 approximate ones name none.
 - A label can hold BabelStone's number for an unencoded component (即 is `⿰{18}卩`); such a
   structure has no written IDS.
 - The id does not carry the versions of the two component tables. `structures.TABLES` pins their

@@ -30,7 +30,8 @@ const cards = new Map()
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then its
  * other forms, as the character's card lists them: the figures the IVD registers for `char` when it
  * registers more than one (所󠄂 and 所󠄃), each named by its MJ figure; the shapes BabelStone gives
- * `char` by region when it gives more than one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J); and the
+ * `char` by region when it gives more than one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J), each with
+ * its 構形 as `structure`; and the
  * variants the sources attest that a gallery widens to or that one is written for the other. The
  * characters related otherwise (a loan, a homograph, a grapheme this form also writes) follow as
  * `related`, the derived shapes last, and the described forms a reviewer said are written for the
@@ -49,9 +50,10 @@ export function listForms(char) {
     let partial = false
     const registered = figuresOf(char).then(async figures => (figures.length && await drawFigure(figures[0].char), figures))
       .catch(() => { partial = true; return [] })
-    // A regional shape is a spelling of its character's 構形 and carries it.
+    // A regional shape takes its character's 構形 unless the answer gives it one of its own (臭 as
+    // ⿱自大 in J is the structure of 𦤀) or none.
     const described = HAN.test(char)
-      ? readIds(char).then(found => (found.shapes ?? []).map(shape => ({ ...shape, structure: found.structure ?? null })), () => { partial = true; return [] })
+      ? readIds(char).then(found => (found.shapes ?? []).map(shape => ({ ...shape, structure: 'structure' in shape ? shape.structure : found.structure ?? null })), () => { partial = true; return [] })
       : Promise.resolve([])
     const loaded = Promise.all([card, registered, described]).then(([card, figures, regional]) => {
       const offered = v => !compatibility(v.char) || v.char === char

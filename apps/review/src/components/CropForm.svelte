@@ -44,7 +44,7 @@
     } catch { return known }
   }
   const namesOf = found => [...found.members, ...found.variants].map(form => form.char)
-  // The forms that carry their 構形, a character's regional shapes, which are not asked for.
+  // Regional shapes carry their 構形 and are not asked for.
   const given = found => [...found.members, ...found.variants].filter(form => form.structure).map(form => [form.char, form.structure])
   $effect(() => {
     const id = crop?.id, char = written, own = untrack(() => current)

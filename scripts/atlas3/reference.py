@@ -26,7 +26,8 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
   the shard of the reading (SUMMARY_DIGITS). A kana search reads the one shard for the kanji it lists.
 - `ids/<shard>.json.gz`: each character's ideographic descriptions, regional shapes and 構形
   (`glyph_atlas.structures`: its id and label, or null), by the character itself, in the shard of the
-  character (IDS_DIGITS). A description the site names a character or a form by
+  character (IDS_DIGITS). A shape whose 構形 is not its character's carries its own
+  (`refs.shape_structures`). A description the site names a character or a form by
   (`export_character_variants.py --described`) is a key of its own, with its 構形.
 - `structure.json.gz`: the scheme, source version and policy the shards' structures were read under,
   which a `structures` row records.
@@ -102,7 +103,7 @@ from build import OUT, ROOT, char_text
 from load_history import built, deliver, row_statements, stamped
 from publish import BUCKET, CF, R2_REMOTE, applied, lit, send, upload
 
-from glyph_atlas import reference_input
+from glyph_atlas import reference_input, refs
 from glyph_atlas import structures as structure_layer
 from glyph_atlas.representation import is_sequence
 
@@ -578,7 +579,8 @@ def put_ids(objects, notes):
             # A reading that does not settle names no structure; the load goes on without it.
             structure = None
             notes["characters whose structure does not settle"] += 1
-        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None,
+        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences),
+                                                     refs.shape_structures(json.loads(shapes), structure) if shapes else None,
                                                      [structure.id, structure.label] if structure else None]
         notes["descriptions with a structure" if is_sequence(char) else "characters with a structure"] += structure is not None
     for key, chars in structures.items():

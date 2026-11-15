@@ -415,6 +415,22 @@ def regional_shapes(char: str) -> list[dict[str, str]]:
             for text, named in found.items()] if len(found) > 1 else []
 
 
+def shape_structures(shapes: list[dict[str, str]], own: Any) -> list[dict[str, Any]]:
+    """`shapes` (`regional_shapes`), each with its 構形 as `structure` where that is not `own`, its
+    character's: `{"id", "label"}`, or None for a shape that names none. 臭 is ⿱自犬 and its J shape
+    ⿱自大 is the structure of 𦤀; a shape that spells its character's structure carries nothing."""
+    from . import structures
+
+    found = []
+    for shape in shapes:
+        structure = structures.for_name(shape["text"])
+        if (structure and structure.id) == (own and own.id):
+            found.append(shape)
+        else:
+            found.append({**shape, "structure": {"id": structure.id, "label": structure.label} if structure else None})
+    return found
+
+
 def substitutes(component: str) -> list[dict[str, Any]]:
     """What may stand in `component`'s place: each substitution of han-component-variants.tsv naming
     it, as `{"char", "count"}`, most contexts first, at most `SUBSTITUTES_SHOWN`."""
@@ -433,7 +449,7 @@ def ids_of(char: str) -> dict[str, Any]:
     structure = structures.for_character(char)
     parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
                     if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})
-    return {"char": char, "sequences": sequences, "shapes": regional_shapes(char),
+    return {"char": char, "sequences": sequences, "shapes": shape_structures(regional_shapes(char), structure),
             "structure": {"id": structure.id, "label": structure.label} if structure else None,
             "substitutes": {part: found for part in parts if (found := substitutes(part))}}
 

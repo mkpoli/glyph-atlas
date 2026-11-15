@@ -464,7 +464,8 @@ def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(
     assert others and held
     # The descriptions again with 峰 for 好: 好's shard leaves R2, 峰's comes, and nothing else changes.
     sources(root, cards=[card("あ", occurrences=9)], han_ids=[("峰", '["⿰山夆"]', None), ("⿰月兊", '["⿰月兊"]', None),
-                                                              ("〾⿰山夆", '["〾⿰山夆"]', None), ("一", "[]", None)])
+                                                              ("〾⿰山夆", '["〾⿰山夆"]', None), ("一", "[]", None),
+                                                              ("臭", '["⿱自犬"]', '[{"text":"⿱自犬","regions":"GHTKPV"},{"text":"⿱自大","regions":"J"}]')])
 
     def no_d1(*_args, **_kwargs):
         raise AssertionError("--only ids reached D1")
@@ -475,16 +476,22 @@ def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(
     load(remote, monkeypatch, "--only", "ids", bucket=bucket)
     assert bucket.puts == puts  # a dry run sends nothing
     report = (root / "out" / "reference-ids-report.txt").read_text()
-    assert "characters with a structure: 2" in report and "descriptions with a structure: 1" in report
+    assert "characters with a structure: 3" in report and "descriptions with a structure: 1" in report
     assert "objects to delete: 1" in report and "char " not in report
     load(remote, monkeypatch, "--only", "ids", "--send", bucket=bucket)
     structure, described, one = structures.for_character("峰"), structures.for_character("脫"), structures.for_character("一")
+    smell, big = structures.for_character("臭"), structures.for_ids("⿱自大")
     shards = sorted(k for k in bucket.manifest() if k.startswith("ids/"))
     assert shards != held
     rows = {char: row for name in shards for char, row in bucket.objects[f"v3/reference/{name}"].items()}
     # A description the site names something by is a key of its own; one that names no structure has none.
-    # A character with no description to edit keeps its structure.
+    # A character with no description to edit keeps its structure. A regional shape that is another
+    # character's structure (臭 as ⿱自大 in J is 𦤀's) carries it; one that spells its character's does not.
+    assert smell.id != big.id
     assert rows == {"峰": [["⿰山夆"], None, [structure.id, structure.label]], "一": [[], None, [one.id, one.label]],
+                    "臭": [["⿱自犬"], [{"text": "⿱自犬", "regions": "GHTKPV"},
+                                      {"text": "⿱自大", "regions": "J", "structure": {"id": big.id, "label": big.label}}],
+                          [smell.id, smell.label]],
                     "⿰月兊": [["⿰月兊"], None, [described.id, described.label]], "〾⿰山夆": [["〾⿰山夆"], None, None]}
     assert bucket.objects["v3/reference/structure.json.gz"]["policy"] == structures.POLICY
     assert bucket.objects["v3/reference/char/U+3042.json.gz"] == char
