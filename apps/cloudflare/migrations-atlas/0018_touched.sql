@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS touched(crop INTEGER PRIMARY KEY, gen INTEGER NOT NUL
 
 -- A publication's snapshot of the listed crops, taken with its bump of the generation from `through`:
 -- `row` is the crop's row as a JSON object of its columns, with the revision the offline store counts for
--- it (`logical`, routes/review.ts `LOGICAL`) and whether it keeps a reviewer's style (`own_style`), or
--- NULL when the database no longer holds the crop. A row stays until the local copy has taken it, so a
+-- it (`logical`, routes/review.ts `LOGICAL`), whether it keeps a reviewer's style (`own_style`) and the
+-- character a forms decision moved it from (`based`, `base`), or NULL when the database no longer
+-- holds the crop. A row stays until the local copy has taken it, so a
 -- publication that stopped is finished by the next.
 CREATE TABLE IF NOT EXISTS absorbing(crop INTEGER PRIMARY KEY, through INTEGER NOT NULL, row TEXT) WITHOUT ROWID;

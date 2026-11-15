@@ -980,7 +980,9 @@ ABSORB_CHUNK = 1000
 def absorb(atlas, ids):
     """Take what `absorbing` holds into the local copy (`atlas`) and empty it; the number of crops it held.
     A publication of the answers copies there the row of every crop the site changed (answers.py
-    `snapshot`), each with the revision the store counts for it and whether it keeps a reviewer's style.
+    `bump`), each with the revision the store counts for it, whether it keeps a reviewer's style, and its
+    base where a forms decision moved it (`form_bases`): the local copy holds the base D1 holds or none,
+    since `Mirror.crop` stages a followed glyph's change from it.
     The graphemes the rows name and the codes D1 holds go in first, the codes also into the id allocator
     (`ids`, out/mirror.sqlite), which numbers the next code a publish needs. Everything is read and
     compared before anything is written: an id or code that stands for another text or key here stops
@@ -996,7 +998,7 @@ def absorb(atlas, ids):
     if not held:
         return 0
     rows = {r["crop"]: json.loads(r["row"]) if r["row"] else None for r in held}
-    named = sorted({row[c] for row in rows.values() if row for c in ("char", "family") if row[c] is not None})
+    named = sorted({row[c] for row in rows.values() if row for c in ("char", "family", "base") if row[c] is not None})
     graphemes = [g for i in range(0, len(named), ABSORB_CHUNK)
                  for g in query("glyph-atlas-v3", f"SELECT id, text, head FROM graphemes WHERE id IN ({','.join(map(str, named[i:i + ABSORB_CHUNK]))})")]
     codes = [(c["field"], c["code"], c["key"]) for c in query("glyph-atlas-v3", "SELECT field, code, key FROM codes")]
@@ -1033,6 +1035,11 @@ def absorb(atlas, ids):
             neither += 1
             continue
         take_row(atlas, crop, row, row and {"revision": row["logical"], "at": row["revision"], "own": row["own_style"]})
+        if row and row["based"]:
+            atlas.execute("INSERT INTO form_bases(crop,char) VALUES(?,?) ON CONFLICT(crop) DO UPDATE SET char=excluded.char",
+                          (crop, row["base"]))
+        elif row:
+            atlas.execute("DELETE FROM form_bases WHERE crop=?", (crop,))
         taken, removed = taken + (row is not None), removed + (row is None)
     # The allocator first: a code it holds and the local copy lacks is copied again by the next run, and
     # one the local copy alone held would leave the allocator to give its number to another key.

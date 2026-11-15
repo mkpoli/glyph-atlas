@@ -11,6 +11,7 @@ from test_atlas3_publish import (  # noqa: F401 -- layout is a fixture
     UNITS,
     FakeD1,
     catalogue,
+    corpus_catalogue,
     layout,
     run,
     unit,
@@ -338,7 +339,6 @@ def test_a_record_is_read_by_its_byte_range(http_server, monkeypatch, tmp_path):
 
 def test_crops_with_no_character_are_counted_under_the_family_they_are_filed_under(layout, monkeypatch, tmp_path):  # noqa: F811
     root, publish, _remote = layout
-    from test_atlas3_publish import corpus_catalogue, run
     run(publish, monkeypatch, corpus_catalogue(tmp_path / "corpus.sqlite", [("codh:m1", None, "U+3082", "も")]))
     answers(publish, monkeypatch, sample=0)
     atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
@@ -354,17 +354,24 @@ def grapheme(db, text):
     return db.execute("SELECT id FROM graphemes WHERE text=?", (text,)).fetchone()[0]
 
 
-def reviewed(remote, crop, **columns):
-    """A review as the Worker writes it: D1's row of the crop changed one revision on, an event of the
-    current generation, and the crop listed in `touched` at that generation."""
+def changed(remote, crop, event=True, **columns):
+    """A change of the site's to one crop, as the Worker writes it: D1's row one revision on, an event of
+    the current generation unless `event` is false (a forms follow records none), and the crop listed
+    in `touched` at that generation; the generation."""
     d1 = remote.dbs["glyph-atlas-v3"]
     gen = d1.execute("SELECT gen FROM generation").fetchone()[0]
     d1.execute(f"UPDATE crops SET {','.join(f'{c}=?' for c in columns)}, revision=revision+1 WHERE id=?", (*columns.values(), crop))
-    d1.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) SELECT id,revision,cut,?,1,1,0,1 FROM crops WHERE id=?",
-               (gen, crop))
+    if event:
+        d1.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) SELECT id,revision,cut,?,1,1,0,1 FROM crops WHERE id=?",
+                   (gen, crop))
     d1.execute("INSERT INTO touched(crop,gen) VALUES(?,?) ON CONFLICT(crop) DO UPDATE SET gen=excluded.gen", (crop, gen))
     d1.commit()
     return gen
+
+
+def reviewed(remote, crop, **columns):
+    """A review of one crop on the site."""
+    return changed(remote, crop, **columns)
 
 
 def row(db, crop):
@@ -606,6 +613,38 @@ def test_a_publish_ends_by_taking_the_crops_the_site_changed(layout, monkeypatch
     assert listed(remote) == ({}, [])
     assert row(sqlite3.connect(root / "out" / "atlas.sqlite"), crop) == row(d1, crop)
     assert counted(root, "い") == {2: 1} and counted(root, "え") == {0: 1}
+
+
+def test_a_followed_glyph_s_base_is_taken_and_a_republish_stages_nothing_for_it(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "c1.sqlite", [("codh:x1", "き", None, None)]))
+    answers(publish, monkeypatch, sample=0)
+    d1, glyph = remote.dbs["glyph-atlas-v3"], ids(root)["codh:x1"]
+    ki, ka = grapheme(d1, "き"), grapheme(d1, "か")
+    # A forms decision, which a crop facts load has brought to the local copy, moves the glyph to か in the
+    # Worker: its base is き, it moves on a revision with no event, and it is listed.
+    for db in (d1, sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("INSERT INTO form_glyphs(crop,family,form,decision) VALUES(?, 'U+304B', 'か', 'd')", (glyph,))
+        db.commit()
+    d1.execute("INSERT INTO form_bases(crop, char) VALUES(?, ?)", (glyph, ki))
+    changed(remote, glyph, event=False, char=ka, bumps=1)
+    time.sleep(1.1)  # a publication is named by its second
+    answers(publish, monkeypatch, sample=0)
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert row(local, glyph) == row(d1, glyph) and row(local, glyph)["char"] == ka
+    assert local.execute("SELECT char FROM form_bases WHERE crop=?", (glyph,)).fetchall() == [(ki,)]
+    # A republish of the corpus carries the glyph as き still: nothing is sent, and its page stays as published.
+    before, sent = dumps(root, remote)[:2], set((root / "out" / "publish").rglob("*.sql"))
+    run(publish, monkeypatch, corpus_catalogue(tmp_path / "c2.sqlite", [("codh:x1", "き", None, None)]))
+    assert dumps(root, remote)[:2] == before
+    assert not [part for part in set((root / "out" / "publish").rglob("*.sql")) - sent if part.name.startswith("atlas-")]
+    # The decision is withdrawn: the glyph is き again with no base, here as in D1.
+    d1.execute("DELETE FROM form_bases WHERE crop=?", (glyph,))
+    changed(remote, glyph, event=False, char=ki, bumps=2)
+    time.sleep(1.1)
+    answers(publish, monkeypatch, sample=0)
+    assert row(local, glyph) == row(d1, glyph) and row(local, glyph)["char"] == ki
+    assert local.execute("SELECT count(*) FROM form_bases WHERE crop=?", (glyph,)).fetchone()[0] == 0
 
 
 # --- The seed ---

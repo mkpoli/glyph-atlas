@@ -19,8 +19,9 @@ list; a crop changed after it carries G + 1, is listed again and waits for the n
 change counted from `tally` meanwhile. The local copy then
 takes each copied row whole (`publish.absorb`), with the revision the offline store counts for the
 crop and whether it keeps a reviewer's style, as a publish's read-back takes a guarded crop's, the
-graphemes those rows name and the codes D1 holds and the local copy lacks; a crop D1 no longer holds
-leaves the local copy. `absorbing` is emptied once the local copy has committed, so a publication that
+base a forms decision moved it from (`form_bases`), which the publisher reads before it stages a
+followed glyph, the graphemes those rows name and the codes D1 holds and the local copy lacks; a
+crop D1 no longer holds leaves the local copy. `absorbing` is emptied once the local copy has committed, so a publication that
 stopped after its bump is finished by the next run of this script or of publish.py, which applies what
 `absorbing` still holds before anything else. The answers are written after that, from the
 local copy as it then stands. A dry run reads how many crops are listed, writes the answers of the
@@ -142,9 +143,11 @@ DATABASE = "glyph-atlas-v3"
 SEED_STAMP = "migration:0019"
 SEED = CF / "migrations-atlas" / "0019_touched_seed.sql"
 # A listed crop's row as `absorbing` keeps it: its columns by name, the revision the offline store counts
-# for it (`logical`) and whether it keeps a reviewer's style (`own_style`), each read from the crop `c`.
+# for it (`logical`), whether it keeps a reviewer's style (`own_style`), and the character a forms
+# decision moved it from (`base`, which may be null) where it holds one (`based`), each read from the crop `c`.
 SNAPSHOT_ROW = ("json_object(" + ",".join(f"'{c}',c.{c}" for c in CROP_COLS)
-                + f",'logical',{LOGICAL},'own_style',{OWN_STYLE})")
+                + f",'logical',{LOGICAL},'own_style',{OWN_STYLE},'based',EXISTS(SELECT 1 FROM form_bases b WHERE b.crop=c.id),"
+                "'base',(SELECT b.char FROM form_bases b WHERE b.crop=c.id))")
 
 
 def cells(atlas, key, where):
