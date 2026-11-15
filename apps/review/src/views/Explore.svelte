@@ -89,11 +89,15 @@
   // deal, so no tile moves under the pointer: `onShow` holds every crop the gallery has let through since.
   let hideReviewed = $state(stored('atlas.hideReviewed', false))
   let onShow = new Set()
-  const reviewed = item => { const state = tileState(item); return state === 'checked' || waiting(state) }
-  const hidden = item => hideReviewed && !flagged && reviewed(item) && !onShow.has(item.id)
+  // A pair or trigram is reviewed when every crop of its place is; a slot deals another place, so it is
+  // known by its crops.
+  const reviewed = item => item.origin === 'run' ? Boolean(item.crops?.length) && item.crops.every(reviewed)
+    : (state => state === 'checked' || waiting(state))(tileState(item))
+  const shownKey = item => item.origin === 'run' ? item.id + '|' + (item.crops ?? []).map(crop => crop.id).join('|') : item.id
+  const hidden = item => hideReviewed && !flagged && reviewed(item) && !onShow.has(shownKey(item))
   function passes(item) {
     if (hidden(item)) return false
-    onShow.add(item.id); return true
+    onShow.add(shownKey(item)); return true
   }
   const unreviewed = list => list.filter(passes)
   function toggleReviewed() {
@@ -378,8 +382,9 @@
   const homeCorpus = $derived(sample.filter(other => !items.some(unit => sameInk(unit, other))))
   const listed = $derived(choosing ? [] : picked ? galleryTiles : [...items, ...homeCorpus])
   const baseDisplay = $derived(unreviewed(listed))
-  // How many of the crops loaded are reviewed: left out, or that could be.
-  const reviewedCount = $derived(flagged ? 0 : hideReviewed ? listed.length - baseDisplay.length : listed.filter(reviewed).length)
+  // How many of the crops and runs loaded are reviewed: left out, or that could be.
+  const reviewedCount = $derived(flagged ? 0 : hideReviewed ? listed.length - baseDisplay.length + dealtRuns.length - runTiles.length
+    : listed.filter(reviewed).length + dealtRuns.filter(reviewed).length)
   function groupOrder(item) {
     const group = visualGroup(item)
     const index = (analysis?.groups ?? []).findIndex(entry => entry.id === group.id)
@@ -650,7 +655,8 @@
   })
   // Each slot's run once read; `undefined` while it is on its way, `null` where no run could be chosen.
   let scattered = $state([]), scatteredFor = null
-  const runTiles = $derived(bare ? slots.flatMap((slot, k) => scattered[k] === null ? [] : [{ ...scattered[k], ...slot }]) : [])
+  const dealtRuns = $derived(bare ? slots.flatMap((slot, k) => scattered[k] === null ? [] : [{ ...scattered[k], ...slot }]) : [])
+  const runTiles = $derived(unreviewed(dealtRuns))
   async function scatter(key) {
     scatteredFor = key; scattered = []
     // The places are numbered by slot, so a new deal's runs must not inherit the old ones' selection.
