@@ -33,9 +33,14 @@ case "$group" in
   collections)
     pairs=("work/honkoku-collection:collections/honkoku"
            "work/wikisource-collection:collections/wikisource")
+    # A collector deletes a dataset it rebuilds (a Wikisource work that gained pages), so the
+    # archive mirrors the store: a copy would bring the stale dataset back on the next restore.
+    save=sync
     ;;
   images)
     pairs=("cache/images:images")
+    # A local image cache holds only what this machine fetched; it adds to the archive.
+    save=copy
     ;;
   *)
     echo "unknown group: $group" >&2
@@ -60,8 +65,9 @@ for pair in "${pairs[@]}"; do
       ;;
     save)
       echo "saving $local -> r2:$bucket/$remote"
-      rclone copy "$local" "r2:$bucket/$remote" \
-        --transfers 8 --checkers 16 "${exclude[@]}"
+      # A save that would delete this many objects means a broken local store, not a rebuild.
+      rclone "$save" "$local" "r2:$bucket/$remote" \
+        --transfers 8 --checkers 16 --max-delete 500 "${exclude[@]}"
       ;;
     *)
       echo "unknown action: $action" >&2
