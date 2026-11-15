@@ -2,6 +2,7 @@
   import { scriptParts } from '../lib/identity.js'
   import { drawn, isDescription, loadDrawing } from '../lib/ids.js'
   import { paintDrawing, paintedDrawing } from '../lib/composer/paint.js'
+  import { FAMILY, drawFigure, isFigure } from '../lib/mjFigures.js'
   import { t } from '../lib/i18n.svelte.js'
   // `lang` sets the language of every part, for a glyph shape a language decides (a variant drawn the
   // Chinese way); without it Hangul and 구결 read as Korean and the rest as Japanese. Each character
@@ -10,11 +11,13 @@
   // masked in its script's colour; where the site holds none, the browser draws it. It stays the
   // sequence's text until a drawing is ready or where none can be made. The drawing keeps the sequence
   // inside it, so a selection copies the text.
+  // A registered figure, a character with an ideographic variation selector (突󠄃), is drawn in MJ
+  // Figures, the font that maps its sequence; any other font draws the character without its selector.
   let { text = '', script = '', lang = '', titled = true } = $props()
   // `scriptParts` returns a fixed English `label` for use outside a Svelte context (it is also
   // called directly by a plain-Node check); the label shown here is looked up again from `key` so
   // it follows the interface language.
-  const parts = $derived(scriptParts(text, script).map(part => ({ ...part, label: t(`script.${part.key}`), described: isDescription(part.text) })))
+  const parts = $derived(scriptParts(text, script).map(part => ({ ...part, label: t(`script.${part.key}`), described: isDescription(part.text), figure: isFigure(part.text) })))
   const description = $derived(parts.map(part => `${part.text} · ${part.label}`).join(', '))
   // Bumped as a drawing loads, so the parts read the cache again.
   let loaded = $state(0)
@@ -23,10 +26,11 @@
   $effect(() => {
     for (const part of parts) if (part.described && !drawn(part.text) && paintedDrawing(part.text) === undefined) show(part.text)
   })
+  $effect(() => { for (const part of parts) if (part.figure) drawFigure(part.text).catch(() => {}) })
   const language = key => lang || (key === 'hangul' || key === 'gugyeol' ? 'ko' : key === 'tangut' ? 'txg' : 'ja')
 </script>
 
-<span class="script-text" role="img" aria-label={description}>{#each parts as part, index (index)}{#if drawings[index]}<span class="script-char ids-drawing" data-script={part.key} lang={language(part.key)} title={titled ? `${part.text} · ${part.label}` : undefined} aria-hidden="true" style:--drawing={`url("${drawings[index]}")`}><span class="ids-copy">{part.text}</span></span>{:else}<span class="script-char" class:ids-text={part.described} data-script={part.key} lang={language(part.key)} title={titled ? `${part.text} · ${part.label}` : undefined} aria-hidden="true">{part.text}</span>{/if}{/each}</span>
+<span class="script-text" role="img" aria-label={description}>{#each parts as part, index (index)}{#if drawings[index]}<span class="script-char ids-drawing" data-script={part.key} lang={language(part.key)} title={titled ? `${part.text} · ${part.label}` : undefined} aria-hidden="true" style:--drawing={`url("${drawings[index]}")`}><span class="ids-copy">{part.text}</span></span>{:else}<span class="script-char" class:ids-text={part.described} style:font-family={part.figure ? `"${FAMILY}", serif` : null} data-script={part.key} lang={language(part.key)} title={titled ? `${part.text} · ${part.label}` : undefined} aria-hidden="true">{part.text}</span>{/if}{/each}</span>
 
 <style>
   .ids-drawing{position:relative;display:inline-block;width:1em;height:1em;vertical-align:-0.12em;background:currentColor;

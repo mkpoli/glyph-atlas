@@ -199,11 +199,16 @@ describe('a character page', () => {
   it('lists a described form a reviewer said is written for the grapheme, counted by the family\'s crops', async () => {
     const form = 'fm:' + '1'.repeat(32), representation = 'rp:' + '2'.repeat(32);
     const derivedForm = 'fm:' + '3'.repeat(32), derivedRepresentation = 'rp:' + '4'.repeat(32);
+    // A registered figure, 時 with a variation selector, and a second code point, which is no such form.
+    const figure = 'fm:' + '5'.repeat(32), figureRepresentation = 'rp:' + '6'.repeat(32);
+    const encoded = 'fm:' + '7'.repeat(32), encodedRepresentation = 'rp:' + '8'.repeat(32);
     db.exec(`INSERT INTO forms(id,anchor,created_by,created_at) VALUES
-        ('${form}','${representation}','reader','now'),('${derivedForm}','${derivedRepresentation}','reader','now');
+        ('${form}','${representation}','reader','now'),('${derivedForm}','${derivedRepresentation}','reader','now'),
+        ('${figure}','${figureRepresentation}','reader','now'),('${encoded}','${encodedRepresentation}','reader','now');
       INSERT INTO representations(id,scheme,value,namespace,version) VALUES
-        ('${representation}','ids','⿰木木',NULL,NULL),('${derivedRepresentation}','ids','⿰日寺',NULL,NULL);`);
-    for (const [written, value] of [[form, '⿰木木'], [derivedForm, '⿰日寺']])
+        ('${representation}','ids','⿰木木',NULL,NULL),('${derivedRepresentation}','ids','⿰日寺',NULL,NULL),
+        ('${figureRepresentation}','ivs','時\u{E0101}',NULL,NULL),('${encodedRepresentation}','unicode','旹',NULL,NULL);`);
+    for (const [written, value] of [[form, '⿰木木'], [derivedForm, '⿰日寺'], [figure, '時\u{E0101}'], [encoded, '旹']])
       db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
         VALUES(?,'written_for','',?,NULL,NULL,'asserted',?,'[{"object":"U+6642","assertion":"a"}]','[]','[]','r','now')`)
         .run(written, 'U+6642', 'U+6642');
@@ -212,7 +217,8 @@ describe('a character page', () => {
       VALUES(?,'has_form','','',?,0,'asserted',?,'[]','[]','[]','r','now')`).run(publicId(target), target, form);
     const { body } = await get('/layers/characters/U+6642');
     // The derived form is already a row of the card, so the linked claim does not list it twice.
-    expect(body.variants.forms).toEqual([{ char: '⿰木木', code_point: null, form, scheme: 'ids', count: 1, corpus_count: 0 }]);
+    expect(body.variants.forms).toEqual([{ char: '⿰木木', code_point: null, form, scheme: 'ids', count: 1, corpus_count: 0 },
+      { char: '時\u{E0101}', code_point: null, form: figure, scheme: 'ivs', count: 0, corpus_count: 0 }]);
   });
 });
 
