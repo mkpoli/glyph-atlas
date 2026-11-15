@@ -24,6 +24,7 @@ earlier one.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
@@ -83,9 +84,10 @@ class Proposal:
     features: dict[str, Any] = field(default_factory=dict)
 
 
-def proposer(onnx: Path, *, score: float = SCORE, nms: float = NMS, split: bool = False, scale: float = 1.0) -> str:
+def proposer(onnx: Path, *, score: float = SCORE, nms: float = NMS, split: bool = False, scale: float = 1.0,
+             fill: Sequence[float] = ()) -> str:
     """The proposer version: the detector's checksum, the operating point and the page geometry and
-    ink gate `detect` applies, hashed together, the split when boxes were cut and the scale when the
+    ink gate `detect` applies, hashed together, the split when boxes were cut and the scales when the
     page was resized."""
     from . import detect
 
@@ -97,15 +99,19 @@ def proposer(onnx: Path, *, score: float = SCORE, nms: float = NMS, split: bool 
                       BAND_PART, BAND_EVEN, BAND_INK, BAND_ASPECT, BAND_ASPECT_TALL),)
     if scale != 1.0:
         settings += (("scale", scale, detect.PART, detect.MEETS, detect.BLOCK),)
+    if fill:
+        settings += (("fill", tuple(float(value) for value in fill), detect.CLEAR),)
     return f"{FAMILY}-{hashlib.sha256(repr(settings).encode()).hexdigest()[:12]}"
 
 
-def propose(image: Image.Image, detector: Any, *, split: bool = False, scale: float = 1.0) -> list[Proposal]:
+def propose(image: Image.Image, detector: Any, *, split: bool = False, scale: float = 1.0,
+            fill: Sequence[float] = ()) -> list[Proposal]:
     """Every box the detector keeps on `image`, highest score first; with `split`, a box that holds two
-    stacked characters of an orderly column becomes two boxes; with `scale`, the boxes are found on
-    the page resized by it (`Detector.boxes_at`)."""
+    stacked characters of an orderly column becomes two boxes; with `scale` or `fill`, the boxes are
+    found on the page resized (`Detector.boxes_at`)."""
     proposals = [Proposal(x=box.x, y=box.y, w=box.w, h=box.h, score=round(float(score), 4))
-                 for box, score in (detector.boxes(image) if scale == 1.0 else detector.boxes_at(image, scale))]
+                 for box, score in (detector.boxes(image) if scale == 1.0 and not fill
+                                    else detector.boxes_at(image, scale, fill))]
     return split_boxes(image, proposals) if split else proposals
 
 

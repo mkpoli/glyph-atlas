@@ -71,6 +71,8 @@ PART = 0.7
 # Two boxes that share less than this of either lie apart, and a box of the page at its own size
 # stands where the resized page's boxes cover less than this of it.
 MEETS = 0.3
+# A box of a filling scale is added where the boxes kept before that scale cover less than this of it.
+CLEAR = 0.1
 # A box of a resized page that holds this many separate boxes of the page at its own size is a run of
 # characters. Two are not enough: the page at its own size also finds a large character in two parts.
 BLOCK = 3
@@ -372,7 +374,8 @@ class Detector:
         found = tiles(page.width, page.height, self.tile, self.overlap)
         return self._collect(page, found)
 
-    def boxes_at(self, image: Image.Image | str | Path, scale: float) -> list[tuple[Box, float]]:
+    def boxes_at(self, image: Image.Image | str | Path, scale: float,
+                 fill: Sequence[float] = ()) -> list[tuple[Box, float]]:
         """The boxes found on the page resized by `scale`, in the page's own coordinates.
 
         The detector finds a character best at the size of the boxes of its books, about 50 to 120 px
@@ -382,19 +385,37 @@ class Detector:
         dropped. An enlarged character can come out in parts, so a box of which `PART` lies in a
         larger one is dropped. A box of the page at its own size stands where the resized page's boxes
         cover less than `MEETS` of it, and a part the resized page found of it is dropped.
+
+        A character can go unfound at `scale` and be found at another. Each scale of `fill`, in the
+        order given, adds its boxes where those kept before it cover less than `CLEAR` of them and
+        none of those lies in them.
         """
-        if scale <= 0:
-            raise ValueError(f"scale must be positive, got {scale}")
+        if scale <= 0 or any(other <= 0 for other in fill):
+            raise ValueError(f"a scale must be positive, got {scale} and {tuple(fill)}")
         page = _open(image)
         own = self.boxes(page)
-        if scale == 1.0:
-            return own
+        kept = list(own) if scale == 1.0 else self._joined(own, self._resized(page, scale))
+        for other in fill:
+            standing = [box for box, _ in kept]
+            kept += [(box, score) for box, score in (own if other == 1.0 else self._resized(page, other))
+                     if sum(_meet(box, held) for held in standing) < CLEAR * box.w * box.h
+                     and not any(_share(held, box) >= PART for held in standing)]
+        kept.sort(key=lambda pair: (-pair[1], pair[0].y, pair[0].x, pair[0].h, pair[0].w))
+        return kept
+
+    def _resized(self, page: Image.Image, scale: float) -> list[tuple[Box, float]]:
+        """The boxes of the page resized by `scale`, in the page's own coordinates."""
         resized = page.resize((round(page.width * scale), round(page.height * scale)), Image.Resampling.LANCZOS)
         found = []
         for box, score in self.boxes(resized):
             mapped = _to_box(np.asarray([box.x, box.y, box.x + box.w, box.y + box.h]) / scale, page.width, page.height)
             if mapped is not None:
                 found.append((mapped, score))
+        return found
+
+    @staticmethod
+    def _joined(own: list[tuple[Box, float]], found: list[tuple[Box, float]]) -> list[tuple[Box, float]]:
+        """The boxes of a resized page with those of the page at its own size that still stand."""
         found = [(box, score) for box, score in found
                  if _apart([other for other, _ in own if _share(other, box) >= PART]) < BLOCK]
         whole = [(box, score) for box, score in found
@@ -403,9 +424,7 @@ class Detector:
                   if sum(_meet(box, other) for other, _ in whole) < MEETS * box.w * box.h]
         whole = [(box, score) for box, score in whole
                  if not any(other.w * other.h > box.w * box.h and _share(box, other) >= PART for other, _ in stands)]
-        kept = whole + stands
-        kept.sort(key=lambda pair: (-pair[1], pair[0].y, pair[0].x, pair[0].h, pair[0].w))
-        return kept
+        return whole + stands
 
     def boxes_in(self, image: Image.Image | str | Path, region: Box) -> list[tuple[Box, float]]:
         """The boxes that meet `region`, in page coordinates, highest score first.

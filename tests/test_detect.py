@@ -435,3 +435,28 @@ def test_a_speck_of_the_resized_page_does_not_stand_for_the_character_it_is_in()
     character = (Box(x=100, y=100, w=80, h=80), 0.9)
     found = BySize({(400, 300): [character], (600, 450): [(Box(x=165, y=165, w=15, h=15), 0.5)]})
     assert found.boxes_at(blank, 1.5) == [character]
+
+
+def test_another_scale_fills_where_no_box_was_kept() -> None:
+    blank = Image.new("RGB", (400, 300), "white")
+    kept, missed = (Box(x=60, y=60, w=90, h=90), 0.9), (Box(x=400, y=200, w=100, h=120), 0.4)
+    again = (Box(x=84, y=84, w=116, h=116), 0.8)
+    found = BySize({(400, 300): [], (600, 450): [kept], (800, 600): [again, missed]})
+    assert found.boxes_at(blank, 1.5) == [(Box(x=40, y=40, w=60, h=60), 0.9)]
+    assert found.boxes_at(blank, 1.5, fill=(2.0,)) == [(Box(x=40, y=40, w=60, h=60), 0.9),
+                                                       (Box(x=200, y=100, w=50, h=60), 0.4)]
+    assert found.boxes_at(blank, 1.0, fill=(2.0,)) == [(Box(x=42, y=42, w=58, h=58), 0.8),
+                                                       (Box(x=200, y=100, w=50, h=60), 0.4)]
+    with pytest.raises(ValueError, match="scale"):
+        found.boxes_at(blank, 1.5, fill=(0.0,))
+
+
+def test_a_fill_keeps_the_neighbours_its_own_scale_found() -> None:
+    blank = Image.new("RGB", (400, 300), "white")
+    column = [(Box(x=100, y=100, w=100, h=100), 0.5), (Box(x=100, y=180, w=100, h=100), 0.4)]
+    own = [(Box(x=300, y=20, w=40, h=40), 0.9)]
+    found = BySize({(400, 300): own, (600, 450): [], (800, 600): column + [(Box(x=560, y=0, w=200, h=200), 0.3)]})
+    assert boxes_of(found.boxes_at(blank, 1.5, fill=(2.0,))) == [
+        Box(x=300, y=20, w=40, h=40), Box(x=50, y=50, w=50, h=50), Box(x=50, y=90, w=50, h=50)], \
+        "two boxes of one scale that touch are both added; one around a kept box is not"
+    assert found.boxes_at(blank, 1.0, fill=(2.0,)) and found.answers[(400, 300)] == own[:1] and len(own) == 1

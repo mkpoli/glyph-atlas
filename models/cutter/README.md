@@ -139,7 +139,11 @@ about 60 px and the main entries about 110:
 | several characters, wrong count | 8.2 | 9.8 | 8.9 |
 
 The detector alone is then right about 93.5 in 100 on the four later pages, and either cutter after
-it cuts the large characters apart. Other enlargements were scored for the detector alone in a
+it cuts the large characters apart. Some characters it finds at neither size and does find on the
+page enlarged twice: `--fill 2` adds those boxes where no other box is, 45 on the eight pages, of
+which about 36 are on a character and the rest on a stain, a ruled line or bare paper. A fill from
+the page enlarged 1.25 times adds 37, about 24 of them on a character, most of which the fill from
+twice the page also finds. Other enlargements were scored for the detector alone in a
 scratch run that left no result file: 78.2 right at 1.25 times, where the notes are still 50 px,
 80.9 at 1.75 and 83.3 at 2, where the main entries pass 120 px and come out in parts, and 80.7 with
 each page enlarged until its median box is the detector's median.

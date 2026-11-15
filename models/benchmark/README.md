@@ -182,3 +182,9 @@ from those boxes (`results/counts-*-x1.5.json`):
 | `segment` | 83.3 | 7.0 | 0.7 | 8.9 |
 
 On the four pages of `second` the enlarged detector alone is right about 93.5 in 100.
+
+`--fill 2` adds the boxes of the page enlarged twice where the others left none. The counted boxes
+score the same, 89.1, as they are boxes the detector drew at the page's own size; a character it
+drew no box for there is outside the count. On the eight pages the fill adds 45 boxes, about 36 of
+them on a character that had none, looked at once. `--fill 1.25 2` scores 89.8, all of the gain on
+the pages of `first`.
