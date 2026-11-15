@@ -2,13 +2,9 @@
   import Seo from '$components/Seo.svelte'
   import LinkMark from '$components/LinkMark.svelte'
   import { t, around, locale, formatDateTime } from '$lib/i18n.svelte.js'
-  import { CHATS, IRC_CHANNELS, IRC_WEB, OTHER_GROUPS, SPACE } from '$lib/community.js'
+  import { CHATS, IRC_CHANNELS, IRC_WEB, MATRIX_TO, OTHER_GROUPS, SPACE } from '$lib/community.js'
   const EMAIL = 'contact@glyphatlas.org'
   const REPO = 'https://github.com/mkpoli/glyph-atlas'
-  // Matrix apps someone can join the space with besides Element on the web.
-  const APPS = [
-    ['Element', 'https://element.io/download'], ['FluffyChat', 'https://fluffychat.im/'], ['Cinny', 'https://cinny.in/'],
-  ]
   const email = $derived(around('contact.email.body', 'email'))
   const failed = $derived(around('contact.form.failed', 'email'))
   // The message form posts to the Worker, which hands it to the maintainers' Matrix inbox; no session
@@ -45,11 +41,14 @@
   const spoken = $derived(locale() === 'lzh' ? 'zh' : locale().split('-')[0])
   let irc, picked = $state([])
   $effect.pre(() => { picked = IRC_CHANNELS.filter(item => item.language === spoken).map(item => item.channel) })
+  // The Matrix door opens a picker: the community's Element, or matrix.to for any other app.
+  let matrix
   // Only a press on the backdrop closes the dialog, not one in its padding.
   function outside(event) {
-    const box = irc.getBoundingClientRect()
-    if (event.target === irc && (event.clientX < box.left || event.clientX > box.right
-        || event.clientY < box.top || event.clientY > box.bottom)) irc.close()
+    const dialog = event.currentTarget
+    const box = dialog.getBoundingClientRect()
+    if (event.target === dialog && (event.clientX < box.left || event.clientX > box.right
+        || event.clientY < box.top || event.clientY > box.bottom)) dialog.close()
   }
   const joined = $derived(IRC_CHANNELS.map(item => item.channel).filter(channel => picked.includes(channel)).join(','))
 </script>
@@ -68,6 +67,8 @@
         <li>
           {#if chat.mark === 'irc'}
             <a href={chat.href} rel="noopener" target="_blank" aria-haspopup="dialog" onclick={event => { event.preventDefault(); irc.showModal() }}><LinkMark name={chat.mark} />{chat.name}</a>
+          {:else if chat.mark === 'matrix'}
+            <a href={chat.href} rel="noopener" target="_blank" aria-haspopup="dialog" onclick={event => { event.preventDefault(); matrix.showModal() }}><LinkMark name={chat.mark} />{chat.name}</a>
           {:else}
             <a href={chat.href} rel="noopener" target="_blank"><LinkMark name={chat.mark} />{chat.name}{#if chat.count !== false && typeof members[chat.mark] === 'number'}<small>{t('contact.chat.members', { count: members[chat.mark] })}</small>{/if}</a>
           {/if}
@@ -98,19 +99,6 @@
       <p class="preview-note">{t('contact.preview.note')}</p>
     </details>
   {/if}
-
-  <section>
-    <h2>{t('contact.matrix.title')}</h2>
-    <ol>
-      <li>{t('contact.matrix.open')}</li>
-      <li>{t('contact.matrix.account')}</li>
-    </ol>
-    <p>{apps[0]}<code>{SPACE}</code>{apps[1]}</p>
-    <ul class="apps">
-      {#each APPS as [name, href] (name)}<li><a {href} rel="noopener" target="_blank">{name} ↗</a></li>{/each}
-      <li><a href={`https://matrix.to/#/${SPACE}`} rel="noopener" target="_blank">{t('contact.matrix.choose')} ↗</a></li>
-    </ul>
-  </section>
 
   <section>
     <h2>{t('contact.others.title')}</h2>
@@ -152,6 +140,16 @@
     </form>
   </section>
 </article>
+
+<dialog class="irc matrix" bind:this={matrix} onclick={outside} aria-labelledby="matrix-title">
+  <header><h2 id="matrix-title">{t('contact.matrix.title')}</h2><button type="button" class="icon-button" aria-label={t('contact.irc.close')} onclick={() => matrix.close()}>×</button></header>
+  <p>{t('contact.matrix.account')}</p>
+  <div class="matrix-doors">
+    <a class="send" href={CHATS[0].href} rel="noopener" target="_blank">Element ↗</a>
+    <a href={MATRIX_TO} rel="noopener" target="_blank">{t('contact.matrix.choose')} ↗</a>
+  </div>
+  <p class="irc-note">{apps[0]}<code>{SPACE}</code>{apps[1]}</p>
+</dialog>
 
 <dialog class="irc" bind:this={irc} onclick={outside} aria-labelledby="irc-title">
   <header><h2 id="irc-title">{t('contact.irc.title')}</h2><button type="button" class="icon-button" aria-label={t('contact.irc.close')} onclick={() => irc.close()}>×</button></header>
@@ -219,7 +217,7 @@
   .send:hover:not(:disabled) { background: var(--accent-solid-hover); }
   .send:disabled { opacity: .5; cursor: default; }
   .form-status { margin: 0; color: var(--muted); }
-  .irc { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: var(--surface); box-shadow: 0 24px 80px var(--shadow); font-size: 13px; line-height: 1.6; }
+  .irc, .matrix { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: var(--surface); box-shadow: 0 24px 80px var(--shadow); font-size: 13px; line-height: 1.6; }
   .irc::backdrop { background: var(--backdrop); backdrop-filter: blur(3px); }
   .irc header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
   .irc h2 { font-size: 15px; font-weight: 600; margin: 0; }
@@ -233,5 +231,7 @@
   .irc-open a.send { text-decoration: none; display: inline-block; }
   .irc-open code { font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--surface-sunken); overflow-wrap: anywhere; }
   .irc-note { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+  .matrix-doors { display: flex; align-items: center; gap: 18px; margin: 12px 0 0; }
+  .matrix-doors a:not(.send) { text-decoration: underline; text-underline-offset: 2px; }
   .apps { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
 </style>

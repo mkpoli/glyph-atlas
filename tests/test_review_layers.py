@@ -263,6 +263,26 @@ def test_suggest_finds_a_character_by_its_components(dataset):
         assert first["char"] == "滑" and first["rank"] == 7 and first["reason"].startswith("built from"), term
 
 
+def test_the_ids_route_gives_a_characters_descriptions(dataset):
+    found = client(dataset).get("/layers/ids", params={"c": "滑"}).json()
+    assert found["char"] == "滑" and "⿰氵骨" in found["sequences"]
+    assert client(dataset).get("/layers/ids", params={"c": "滑骨"}).status_code == 422
+    assert client(dataset).get("/layers/structure", params={"c": "滑"}).status_code == 404
+
+
+def test_the_structures_route_groups_characters_by_the_structure_they_share(dataset):
+    found = client(dataset).get("/layers/structures", params={"c": "峰峯說説あ"}).json()["items"]
+    assert [(item["label"], item["chars"]) for item in found] == [("⿰山夆", ["峰"]), ("⿱山夆", ["峯"]), ("⿰言兌", ["說", "説"])]
+    assert client(dataset).get("/layers/structures").status_code == 422
+    assert client(dataset).get("/layers/structures", params={"c": "⿰山"}).status_code == 422
+    # Duplicates are dropped before the cap, as the Worker does.
+    many = "峰" * 60 + "峯"
+    assert [item["chars"] for item in client(dataset).get("/layers/structures", params={"c": many}).json()["items"]] == [["峰"], ["峯"]]
+    # A description is one name, and joins the characters built as it is.
+    found = client(dataset).get("/layers/structures", params={"c": "脫⿰月兊脱⿰山"}).json()["items"]
+    assert [(item["label"], item["chars"]) for item in found] == [("⿰月兌", ["脫", "⿰月兊", "脱"])]
+
+
 def test_suggest_reaches_historical_forms_from_the_modern_kana(dataset):
     """ネ leads to the alternate NE, ヨリ to both yori ligatures, 子 to the kana written as it."""
     api = client(dataset)
@@ -420,6 +440,9 @@ def test_historical_family_keeps_written_characters_transcriptions_and_ink_disti
     old = api.get("/layers/characters/假").json()
     assert modern["code_point"] == "U+4EEE" and old["code_point"] == "U+5047"
     assert modern["occurrence_count"] == 1 and old["occurrence_count"] == 2
+    # The card states each form's images in its 字体 row and the grapheme's in its 字種 row.
+    assert [(member["char"], member["count"]) for member in modern["grapheme"]["members"][:2]] == [("仮", 1), ("假", 2)]
+    assert modern["grapheme"]["count"] == 3
     assert {sample["label"] for sample in old["samples"]} == {"假"}
     assert {sample["written_character"] for sample in old["samples"]} == {"假"}
     family = api.get("/layers/graphemes/假").json()

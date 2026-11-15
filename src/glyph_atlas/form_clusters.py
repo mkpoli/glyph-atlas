@@ -455,6 +455,17 @@ def shape_order(centres: np.ndarray) -> list[int]:
     return runs[0] if runs else []
 
 
+def changed_inputs(root: Path, manifest: dict) -> list[str]:
+    """The corpus tables that differ from the ones `manifest` was clustered from, as `units codh-full`."""
+    corpora = _corpora(root)
+    changed = []
+    for name in ("units", "pages"):
+        was = manifest.get("inputs", {}).get(name, {})
+        now = {c.name: [_digest(p) for p in c.parquet_files(name)] for c in corpora}
+        changed += [f"{name} {corpus}" for corpus in sorted(set(was) | set(now)) if was.get(corpus) != now.get(corpus)]
+    return changed
+
+
 def clean(root: Path, source: Path, out: Path, *, reviews: Path | None = None) -> dict:
     """Remove unsafe members from an existing clustering, preserving its shape proposals.
 
@@ -466,10 +477,9 @@ def clean(root: Path, source: Path, out: Path, *, reviews: Path | None = None) -
 
     original = json.loads((source / "manifest.json").read_text())
     corpora = _corpora(root)
-    for name in ("units", "pages"):
-        actual = {c.name: [_digest(p) for p in c.parquet_files(name)] for c in corpora}
-        if actual != original["inputs"].get(name):
-            raise ValueError(f"The {name} changed since clustering; run `atlas forms cluster` with the new crops")
+    changed = changed_inputs(root, original)
+    if changed:
+        raise ValueError(f"The {changed[0].split()[0]} changed since clustering; run `atlas forms cluster` with the new crops")
     data = json.loads((source / "clusters.json").read_text())
     table = pq.read_table(source / "units.parquet")
     ids = table.column("id").to_pylist()

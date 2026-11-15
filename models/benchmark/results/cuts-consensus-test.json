@@ -1,0 +1,98 @@
+{
+ "cutter": "consensus",
+ "split": "test",
+ "pages": 160,
+ "seconds_per_page": 27.58,
+ "books": {
+  "うすゆき物語": {
+   "characters": 16525,
+   "lines_skipped": 0,
+   "boxed_share": 0.9726,
+   "cut_share": 0.9214,
+   "accepted": 5901,
+   "right": 5892,
+   "yield": 0.3566,
+   "precision": 0.9985,
+   "mean_iou": 0.8896,
+   "withheld": {
+    "alignment-uncertain": 3059,
+    "elongated-crop": 274,
+    "not-one-character": 154,
+    "visual-disagreement": 7069,
+    "visual-uncertain": 68
+   }
+  },
+  "料理物語": {
+   "characters": 7242,
+   "lines_skipped": 0,
+   "boxed_share": 0.9626,
+   "cut_share": 0.8626,
+   "accepted": 2430,
+   "right": 2418,
+   "yield": 0.3339,
+   "precision": 0.9951,
+   "mean_iou": 0.896,
+   "withheld": {
+    "alignment-uncertain": 2024,
+    "elongated-crop": 356,
+    "not-one-character": 43,
+    "visual-disagreement": 2378,
+    "visual-uncertain": 11
+   }
+  },
+  "源氏物語": {
+   "characters": 6446,
+   "lines_skipped": 0,
+   "boxed_share": 0.9764,
+   "cut_share": 0.8767,
+   "accepted": 2106,
+   "right": 2089,
+   "yield": 0.3241,
+   "precision": 0.9919,
+   "mean_iou": 0.9029,
+   "withheld": {
+    "alignment-uncertain": 1658,
+    "elongated-crop": 343,
+    "not-one-character": 42,
+    "visual-disagreement": 2279,
+    "visual-uncertain": 18
+   }
+  },
+  "物類称呼": {
+   "characters": 13981,
+   "lines_skipped": 0,
+   "boxed_share": 0.9325,
+   "cut_share": 0.8853,
+   "accepted": 5997,
+   "right": 5991,
+   "yield": 0.4285,
+   "precision": 0.999,
+   "mean_iou": 0.89,
+   "withheld": {
+    "alignment-uncertain": 2967,
+    "elongated-crop": 247,
+    "not-one-character": 51,
+    "visual-disagreement": 4682,
+    "visual-uncertain": 37
+   }
+  }
+ },
+ "all": {
+  "characters": 44194,
+  "lines_skipped": 0,
+  "boxed_share": 0.9588,
+  "cut_share": 0.8938,
+  "accepted": 16434,
+  "right": 16390,
+  "yield": 0.3709,
+  "precision": 0.9973,
+  "mean_iou": 0.8924,
+  "withheld": {
+   "alignment-uncertain": 9708,
+   "elongated-crop": 1220,
+   "not-one-character": 290,
+   "visual-disagreement": 16408,
+   "visual-uncertain": 134
+  }
+ }
+}

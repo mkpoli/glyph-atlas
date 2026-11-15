@@ -151,7 +151,7 @@ def corpus(per_route: int, images: int, seed: int, new_ids: str) -> list[Case]:
         both("/layers/candidates?code_point", f"/layers/candidates?code_point={q(point)}&limit=24")
         both("/layers/chronology?code_point", f"/layers/chronology?code_point={q(point)}")
         both("/layers/decades?code_point", f"/layers/decades?code_point={q(point)}")
-        both("/layers/structure?c", f"/layers/structure?c={q(text)}")
+        both("/layers/ids?c", f"/layers/ids?c={q(text)}")
         both("/layers/suggest?q", f"/layers/suggest?q={q(text)}")
         both("/layers/search?q", f"/layers/search?q={q(text)}")
         both("/atlas?grapheme", f"/atlas?grapheme={q(point)}&limit=24")

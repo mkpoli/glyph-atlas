@@ -381,3 +381,82 @@ def test_arguments_are_checked() -> None:
         detect.tile_origins(0)
     with pytest.raises(ValueError):
         detect.tiles(0, 100)
+
+
+class BySize(Detector):
+    """A detector that answers with the boxes listed for the size of the page it is shown."""
+
+    def __init__(self, answers: dict[tuple[int, int], list[tuple[Box, float]]]) -> None:
+        super().__init__("stub.onnx", session=ThresholdSession())
+        self.answers = answers
+
+    def boxes(self, image):  # type: ignore[no-untyped-def]
+        return self.answers[image.size]
+
+
+def test_boxes_of_a_resized_page_come_back_in_page_coordinates() -> None:
+    blank = Image.new("RGB", (400, 300), "white")
+    found = BySize({(400, 300): [], (600, 450): [(Box(x=150, y=60, w=90, h=120), 0.8)]})
+    assert found.boxes_at(blank, 1.5) == [(Box(x=100, y=40, w=60, h=80), 0.8)]
+    assert found.boxes_at(blank, 1.0) == []
+    with pytest.raises(ValueError, match="scale"):
+        found.boxes_at(blank, 0)
+
+
+def test_a_part_of_an_enlarged_character_is_dropped() -> None:
+    blank = Image.new("RGB", (400, 300), "white")
+    whole, part, beside = Box(x=100, y=100, w=160, h=200), Box(x=110, y=110, w=140, h=60), Box(x=300, y=100, w=80, h=90)
+    found = BySize({(400, 300): [], (800, 600): [(part, 0.9), (whole, 0.8), (beside, 0.7)]})
+    assert boxes_of(found.boxes_at(blank, 2.0)) == [Box(x=50, y=50, w=80, h=100), Box(x=150, y=50, w=40, h=45)]
+
+
+def test_a_box_of_the_page_at_its_own_size_fills_what_the_resized_page_left_empty() -> None:
+    blank = Image.new("RGB", (400, 300), "white")
+    block, lone = Box(x=40, y=40, w=80, h=80), Box(x=300, y=200, w=60, h=70)
+    halves = [(Box(x=60, y=60, w=54, h=114), 0.9), (Box(x=120, y=60, w=54, h=114), 0.85)]
+    found = BySize({(400, 300): [(block, 0.95), (lone, 0.6)], (600, 450): halves})
+    assert boxes_of(found.boxes_at(blank, 1.5)) == [
+        Box(x=40, y=40, w=36, h=76), Box(x=80, y=40, w=36, h=76), lone], \
+        "the block the resized page cut in two is left to it; the box it missed is kept"
+
+
+def test_a_box_around_a_run_of_characters_is_dropped_for_the_characters_in_it() -> None:
+    blank = Image.new("RGB", (400, 300), "white")
+    column = [(Box(x=40, y=20 + 80 * row, w=60, h=70), 0.9) for row in range(3)]
+    around = (Box(x=45, y=15, w=120, h=420), 0.95)
+    found = BySize({(400, 300): column, (600, 450): [around]})
+    assert boxes_of(found.boxes_at(blank, 1.5)) == boxes_of(column)
+    pair = BySize({(400, 300): column[:2], (600, 450): [around]})
+    assert boxes_of(pair.boxes_at(blank, 1.5)) == [Box(x=30, y=10, w=80, h=280)], "two boxes may be parts of one"
+
+
+def test_a_speck_of_the_resized_page_does_not_stand_for_the_character_it_is_in() -> None:
+    blank = Image.new("RGB", (400, 300), "white")
+    character = (Box(x=100, y=100, w=80, h=80), 0.9)
+    found = BySize({(400, 300): [character], (600, 450): [(Box(x=165, y=165, w=15, h=15), 0.5)]})
+    assert found.boxes_at(blank, 1.5) == [character]
+
+
+def test_another_scale_fills_where_no_box_was_kept() -> None:
+    blank = Image.new("RGB", (400, 300), "white")
+    kept, missed = (Box(x=60, y=60, w=90, h=90), 0.9), (Box(x=400, y=200, w=100, h=120), 0.4)
+    again = (Box(x=84, y=84, w=116, h=116), 0.8)
+    found = BySize({(400, 300): [], (600, 450): [kept], (800, 600): [again, missed]})
+    assert found.boxes_at(blank, 1.5) == [(Box(x=40, y=40, w=60, h=60), 0.9)]
+    assert found.boxes_at(blank, 1.5, fill=(2.0,)) == [(Box(x=40, y=40, w=60, h=60), 0.9),
+                                                       (Box(x=200, y=100, w=50, h=60), 0.4)]
+    assert found.boxes_at(blank, 1.0, fill=(2.0,)) == [(Box(x=42, y=42, w=58, h=58), 0.8),
+                                                       (Box(x=200, y=100, w=50, h=60), 0.4)]
+    with pytest.raises(ValueError, match="scale"):
+        found.boxes_at(blank, 1.5, fill=(0.0,))
+
+
+def test_a_fill_keeps_the_neighbours_its_own_scale_found() -> None:
+    blank = Image.new("RGB", (400, 300), "white")
+    column = [(Box(x=100, y=100, w=100, h=100), 0.5), (Box(x=100, y=180, w=100, h=100), 0.4)]
+    own = [(Box(x=300, y=20, w=40, h=40), 0.9)]
+    found = BySize({(400, 300): own, (600, 450): [], (800, 600): column + [(Box(x=560, y=0, w=200, h=200), 0.3)]})
+    assert boxes_of(found.boxes_at(blank, 1.5, fill=(2.0,))) == [
+        Box(x=300, y=20, w=40, h=40), Box(x=50, y=50, w=50, h=50), Box(x=50, y=90, w=50, h=50)], \
+        "two boxes of one scale that touch are both added; one around a kept box is not"
+    assert found.boxes_at(blank, 1.0, fill=(2.0,)) and found.answers[(400, 300)] == own[:1] and len(own) == 1

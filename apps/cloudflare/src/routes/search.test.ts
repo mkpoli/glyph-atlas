@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { IDS_DIGITS, SUMMARY_DIGITS, componentMatches, referenceShard } from '../atlas3Reference';
-import { choiceSpellingsQuery, headsQuery, namesQuery, structureOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
+import { choiceSpellingsQuery, headsQuery, namesQuery, idsOf, structuresOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
 
 // The edge cache.
 const edge = new Map<string, Response>();
@@ -55,6 +55,11 @@ const cards: Card[] = [
   { char: '时', occurrences: 4, family: ['時', '时', '旹'] },
   { char: '旹', occurrences: 2, family: ['時', '时', '旹'] },
   { char: '刻', occurrences: 80 },
+  // 說 U+F96F stands for 說 and holds no crop; 突 U+FA55 stands for 突 and holds forty.
+  { char: '説', occurrences: 482, family: ['説', '說', '\uf96f'] }, { char: '說', occurrences: 133, family: ['説', '說', '\uf96f'] },
+  { char: '\uf96f', occurrences: 0, name: 'CJK COMPATIBILITY IDEOGRAPH-F96F', family: ['説', '說', '\uf96f'] },
+  { char: '突', occurrences: 66, family: ['突', '\ufa55'] },
+  { char: '\ufa55', occurrences: 40, name: 'CJK COMPATIBILITY IDEOGRAPH-FA55', family: ['突', '\ufa55'] },
   { char: '鴇', occurrences: 1 },
   { char: '鯡', occurrences: 7 }, { char: '𩹉', occurrences: 2 },
   { char: '鮓', occurrences: 9 }, { char: '鮺', occurrences: 3 }, { char: '鮨', occurrences: 3 }, { char: '蚱', occurrences: 1 },
@@ -91,9 +96,14 @@ const edges: [string, string, string, string, number][] = [
   ['時', '鴇', 'variant', 'third', 1],
 ];
 const readings = { 'とき': ['時', '刻', '鴇', '朱鷺'], 'ね': ['子', '音', '値'], 'じ': ['時', '事'], 'こく': ['刻', '黒'], 'そうろう': ['候'] };
-const structures: [string, string[], { text: string; regions: string }[] | null][] = [
-  ['滑', ['⿰氵骨'], [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }]],
+const structures: [string, string[], { text: string; regions: string }[] | null, [string, string]?][] = [
+  ['滑', ['⿰氵骨'], [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }], ['st:00000000000000000000000000000001', '⿰水骨']],
   ['骨', ['⿱⿵冂⿰丨𠃌月'], null],
+  ['磆', ['⿰石骨'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
+  // A description the site names a form by, kept under its own text.
+  ['⿰氵⿵冖月', ['⿰氵⿵冖月'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
+  // A character written as one component: nothing for the editor to start from, and a structure.
+  ['一', [], null, ['st:00000000000000000000000000000002', '一']],
 ];
 const substitutions: [string, string, number][] = [['氵', '水', 40], ['月', '⺼', 12], ['骨', '𩨗', 3], ['冂', '月', 2]];
 
@@ -168,9 +178,9 @@ for (const [reading, kanji] of Object.entries(readings)) {
   const name = `v3/reference/readings/${await referenceShard(reading, SUMMARY_DIGITS)}.json.gz`;
   objects[name] = { ...(objects[name] as object ?? {}), [reading]: { kanji, families: familiesOf(kanji.slice(0, 49)) } };
 }
-for (const [char, sequences, shapes] of structures) {
+for (const [char, sequences, shapes, structure] of structures) {
   const name = `v3/reference/ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`;
-  objects[name] = { ...(objects[name] as object ?? {}), [char]: [sequences, shapes] };
+  objects[name] = { ...(objects[name] as object ?? {}), [char]: structure ? [sequences, shapes, structure] : [sequences, shapes] };
 }
 // Component lists as reference.component_list writes them.
 const byComponent = new Map<string, Row[]>();
@@ -235,6 +245,17 @@ describe('a character search', () => {
     expect(await chars('鯡')).toEqual(['鯡', '𩹉']);
   });
 
+  it('finds the unified ideograph a compatibility ideograph stands for, and lists one only with crops', async () => {
+    const answer = await suggest(newEnv, ask('\uf96f', 8), ctx);
+    expect(answer.query).toBe('\uf96f');
+    expect(answer.items.map((item: { char: string }) => item.char)).toEqual(['說', '説']);
+    const chars = async (q: string) => (await suggest(newEnv, ask(q, 8), ctx)).items.map((item: { char: string }) => item.char);
+    expect(await chars('説')).toEqual(['説', '說']);
+    expect(await chars('\ufa55')).toEqual(['突', '\ufa55']);
+    // 﨑 U+FA11 is a unified ideograph of the compatibility block.
+    expect(await chars('\ufa11')).toEqual(['\ufa11']);
+  });
+
   it('finds the kanji of a reading typed in historical kana by its modern spelling', async () => {
     const chars = async (q: string) => (await suggest(newEnv, ask(q, 8), ctx)).items.map((item: { char: string }) => item.char);
     expect(await chars('そうろう')).toEqual(['候']);
@@ -268,12 +289,27 @@ describe('a component search', () => {
 
 describe("the IDS editor's structure", () => {
   it('answers with its sequences, shapes and substitutes, kept at the edge by the catalogue version', async () => {
-    expect(await structureOf(newEnv, ctx, 'https://new.test', '滑')).toEqual({ char: '滑', sequences: ['⿰氵骨'],
+    expect(await idsOf(newEnv, ctx, 'https://new.test', '滑')).toEqual({ char: '滑', sequences: ['⿰氵骨'],
       shapes: [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }],
+      structure: { id: 'st:00000000000000000000000000000001', label: '⿰水骨' },
       substitutes: { '氵': [{ char: '水', count: 40 }], '骨': [{ char: '𩨗', count: 3 }] } });
-    expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/structure?c=%E6%BB%91&v='))).toBe(true);
-    await expect(structureOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name one character.');
-    await expect(structureOf(newEnv, ctx, 'https://new.test', '滑骨')).rejects.toThrow('Name one character.');
+    expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/ids?c=%E6%BB%91&v='))).toBe(true);
+    await expect(idsOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name one character.');
+    await expect(idsOf(newEnv, ctx, 'https://new.test', '滑骨')).rejects.toThrow('Name one character.');
+  });
+
+  it('groups the characters and descriptions named by the structure they share and leaves out one with none', async () => {
+    // 滑 U+F904 is a compatibility ideograph of 滑.
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆骨滑\uf904⿰氵⿵冖月⿰石月')).toEqual({ items: [
+      { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '磆', '\uf904', '⿰氵⿵冖月'] }] });
+    expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/structures?c='))).toBe(true);
+    await expect(structuresOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name a character.');
+  });
+
+  it('answers the structure of a character with no description to edit', async () => {
+    const one = { id: 'st:00000000000000000000000000000002', label: '一' };
+    expect(await idsOf(newEnv, ctx, 'https://new.test', '一')).toEqual({ char: '一', sequences: [], shapes: [], structure: one, substitutes: {} });
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '一')).toEqual({ items: [{ ...one, chars: ['一'] }] });
   });
 
   it('reads the substitutes by either end of the pair', () => {

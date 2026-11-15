@@ -57,7 +57,7 @@ def test_the_migration_keeps_a_jibo_the_layer_does_not_state_and_relabels_kanji(
     assert units["ni"].upstream["jibo"] == "尓"
     assert units["koku"].script is Script.HAN
     manifest = json.loads((path.parent / tables.MANIFEST_NAME).read_text())
-    assert manifest["schema_version"] == tables.SCHEMA_VERSION
+    assert manifest["schema_version"] == 2
     capsys.readouterr()
     migrate.main([str(tmp_path), "--apply"])
     assert "already version 2" in capsys.readouterr().out

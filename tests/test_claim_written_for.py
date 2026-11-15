@@ -14,12 +14,12 @@ GRAPHEME = "U+3042"
 FORM = "⿰木木"
 
 
-def form_of(client: TestClient) -> str:
-    """A described form on the unit's crop, and its form id."""
+def form_of(client: TestClient, value: str = FORM) -> str:
+    """A form on the unit's crop, described unless `value` names another, and its form id."""
     record = client.get("/atlas/characters/" + UNIT).json()
     made = client.post(
         "/atlas/characters/" + UNIT + "/form",
-        json={"id": str(uuid4()), "client_id": "ann", "crop_version": record["crop_version"], "form": FORM},
+        json={"id": str(uuid4()), "client_id": "ann", "crop_version": record["crop_version"], "form": value},
     )
     assert made.status_code == 200, made.text
     return made.json()["form"]["values"][0]["form"]
@@ -61,6 +61,16 @@ def test_a_form_joins_the_graphemes_card_and_is_taken_back(dataset):  # noqa: F8
     history = client.get("/atlas/claims", params={"subject": form}).json()
     assert [row for row in history["current"] if row["predicate"] == "written_for"] == []
     assert len([row for row in history["history"] if row["predicate"] == "written_for"]) == 2
+
+
+def test_a_registered_figure_joins_the_graphemes_card(dataset):  # noqa: F811
+    client = TestClient(create_app(dataset))
+    figure = "突\U000e0103"
+    form = form_of(client, figure)
+    link(client, form)
+    assert client.get("/layers/characters/" + GRAPHEME).json()["variants"]["forms"] == [
+        {"char": figure, "code_point": None, "form": form, "scheme": "ivs", "count": 0, "corpus_count": 0}
+    ]
 
 
 def test_a_claim_names_a_family_head_and_a_form_the_site_holds(dataset):  # noqa: F811

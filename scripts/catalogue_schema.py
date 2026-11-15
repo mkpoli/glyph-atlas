@@ -16,7 +16,7 @@ def schema(db: sqlite3.Connection) -> None:
     no longer has; it is refused.
     """
     if db.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' AND tbl_name NOT IN "
-                  "('assertions','assertion_evidence','assertion_premises','assertion_actions','forms','representations')").fetchone():
+                  "('assertions','assertion_evidence','assertion_premises','assertion_actions','forms','representations','structures')").fetchone():
         raise ValueError("this catalogue was made with the site database's migrations; export it again into a new folder")
     db.executescript(DDL.read_text(encoding="utf-8"))
     ledger.schema(db)

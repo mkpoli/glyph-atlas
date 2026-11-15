@@ -118,3 +118,73 @@ percent; `results/reviewed-2026-09-29-atlas-reviewed.json` holds the breakdowns.
 
 Soramaru leads on hiragana at top-1 (79.2 against 68.8), the script where `atlas` also trails on
 `codh-test` and `hilab-test`.
+
+## Cuts (2026-11-14)
+
+`cuts.py` measures a cutter, where `bench.py` measures a recognizer. It gives the cutter what the
+collection's extraction has, a page image and each line's box and transcription, on pages of CODH's
+held-out books, and compares the box the cutter returns for each character with CODH's. A character
+is cut when the two boxes reach IoU 0.5; yield is the share of characters cut and accepted, precision
+the share of accepted boxes that are cut. The lines are put together from CODH's boxes in reading
+order, each widened by 12% of its width; `--slack` also lengthens them.
+
+```
+python models/benchmark/cuts.py build
+python models/benchmark/cuts.py run --cutter lattice --split test --pages 40
+```
+
+160 pages of the four `test` books, 44,194 characters (`results/cuts-*-test.json`):
+
+| cutter | boxed | cut | yield | precision | mean IoU | s/page |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `consensus` | 95.9% | 89.4% | 37.1% | 99.7% | 0.892 | 27.6 |
+| `lattice` | 95.2% | 91.4% | 64.0% | 99.8% | 0.886 | 1.8 |
+
+`consensus` is the extraction policy `single-character-consensus-v3`: whole detector boxes aligned by
+`glyph_atlas.align`, published when the classifier and NDLkotenOCR both read the character. It
+withheld 16,408 characters for a reading that disagreed and 9,708 at the alignment; 98.7% and 55.6%
+of those boxes were cut. `lattice` is `glyph_atlas.cut` (`models/cutter/README.md`).
+
+
+## Counts (2026-11-15)
+
+`counts.py` measures a cutter of pages that have no transcription. `counts/kyujanggak.json` lists
+268 boxes the detector drew on eight pages of the Kyujanggak land registers of 1722 and 1904
+(서울대학교 규장각한국학연구원), each with the number of characters it holds, counted by eye once and
+not by a reviewer; 250 have a count, 18 hold part of a character, none, or a number that could not
+be told. A cutter is right about a box when it makes as many boxes of it as it holds characters; a
+box joined with another is part of a box for each. Where the cuts fall is not checked.
+
+```
+python models/benchmark/counts.py --cutter segment
+```
+
+The boxes of a page were drawn from the long or large ones and from the rest apart, so the report
+weighs them back to 100 boxes of a page that hold whole characters (`results/counts-*.json`):
+
+| cutter | right | one character, cut | one character, lost or joined | several characters, wrong count |
+| --- | ---: | ---: | ---: | ---: |
+| `detector` | 73.2 | 0.0 | 0.0 | 26.8 |
+| `split` | 76.1 | 1.7 | 1.2 | 21.1 |
+| `segment` | 84.2 | 1.1 | 0.6 | 14.2 |
+
+`detector` is the detector's boxes as they are, `split` the geometric pass of
+`character_proposals.split_boxes`, `segment` is `glyph_atlas.segment`. The pages of sample `first`
+were looked at while `segment` was being changed; those of `second` were drawn afterwards.
+
+With `--scale 1.5` the page is enlarged before detection (`Detector.boxes_at`) and each cutter works
+from those boxes (`results/counts-*-x1.5.json`):
+
+| cutter | right | one character, cut | one character, lost or joined | several characters, wrong count |
+| --- | ---: | ---: | ---: | ---: |
+| `detector` | 89.1 | 2.3 | 0.4 | 8.2 |
+| `split` | 83.0 | 6.8 | 0.4 | 9.8 |
+| `segment` | 83.3 | 7.0 | 0.7 | 8.9 |
+
+On the four pages of `second` the enlarged detector alone is right about 93.5 in 100.
+
+`--fill 2` adds the boxes of the page enlarged twice where the others left none. The counted boxes
+score the same, 89.1, as they are boxes the detector drew at the page's own size; a character it
+drew no box for there is outside the count. On the eight pages the fill adds 45 boxes, about 36 of
+them on a character that had none, looked at once. `--fill 1.25 2` scores 89.8, all of the gain on
+the pages of `first`.

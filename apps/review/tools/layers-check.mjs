@@ -72,6 +72,22 @@ try {
     return await browser.evaluate(`document.querySelector('.character-layers').innerText.split(String.fromCharCode(10)).join(' · ')`)
   })
 
+  await step('each 字種 and 字体 chip states the images behind it', async () => {
+    // A grapheme's number is its whole family's: the 字体 row's forms add up to it. A fixture form no
+    // crop and no corpus glyph stands behind has no number, which counts as none.
+    const [grapheme, forms] = await browser.evaluate(`(() => {
+      const rows = [...document.querySelectorAll('.character-layers .layer-row')]
+      const number = chip => { const shown = chip.querySelector('.use') ?? [...chip.querySelectorAll('small')].pop()
+        return shown ? Number(shown.textContent.replace(/[^0-9]/g, '')) : 0 }
+      return [[...rows[0].querySelectorAll(':scope > .variant-chips > .variant')].map(number),
+        [...rows[1].querySelectorAll(':scope > .character-members > .member-choice > .member')].map(number)]
+    })()`)
+    assert(grapheme.some(Boolean) || forms.some(Boolean), 'no chip states a count')
+    const sum = forms.reduce((n, value) => n + value, 0)
+    assert(grapheme[0] === sum, `the 字種 chip states ${grapheme[0]}, its 字体 row adds up to ${sum}`)
+    return `${grapheme.join(' ')} = ${forms.join(' + ') || '0'}`
+  })
+
   await step('widening to the grapheme renders the card and throws nothing', async () => {
     // A second query after the first renders a whole card, and widening it to the grapheme changes
     // the gallery without throwing. Escape and refocus repeat what a reader does between keystrokes.

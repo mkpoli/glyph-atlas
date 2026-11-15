@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { gzipSync } from 'node:zlib';
-import { IDS_DIGITS, LIST_PAGE, SUMMARY_DIGITS, cardList, characterObject, characterStructure, familySummaries, referenceShard } from './atlas3Reference';
+import { IDS_DIGITS, LIST_PAGE, SUMMARY_DIGITS, cardList, characterObject, characterIds, familySummaries, referenceShard, structureSource } from './atlas3Reference';
 
 const edge = new Map<string, Response>();
 (globalThis as any).caches = { default: {
@@ -46,9 +46,18 @@ describe('reference objects', () => {
   });
 
   it('find a structure and answer null for a character the shard lacks', async () => {
-    const { env } = bucket({ [`v3/reference/ids/${await referenceShard('姥', IDS_DIGITS)}.json.gz`]: { '姥': [['⿰女老'], null] } });
-    expect(await characterStructure(env, '姥')).toEqual({ sequences: ['⿰女老'], shapes: null });
-    expect(await characterStructure(env, 'constructor')).toBeNull();
+    const { env } = bucket({
+      [`v3/reference/ids/${await referenceShard('姥', IDS_DIGITS)}.json.gz`]: { '姥': [['⿰女老'], null, ['st:0123456789abcdef0123456789abcdef', '⿰女老']] },
+      [`v3/reference/ids/${await referenceShard('峰', IDS_DIGITS)}.json.gz`]: { '峰': [['⿰山夆'], null] } });
+    expect(await characterIds(env, '姥')).toEqual({ sequences: ['⿰女老'], shapes: null,
+      structure: { id: 'st:0123456789abcdef0123456789abcdef', label: '⿰女老' } });
+    expect(await characterIds(env, '峰')).toEqual({ sequences: ['⿰山夆'], shapes: null, structure: null });
+    expect(await characterIds(env, 'constructor')).toBeNull();
+  });
+
+  it('name the policy the structures were read under, or null before a load carries one', async () => {
+    const source = { scheme: 'babelstone-ids', version: '2025-06-27', policy: 'structure-v1' };
+    expect(await structureSource(bucket({ 'v3/reference/structure.json.gz': source }).env)).toEqual(source);
   });
 
   it('page a list across two objects at most', async () => {

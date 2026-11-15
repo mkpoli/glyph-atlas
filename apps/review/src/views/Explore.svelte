@@ -43,6 +43,7 @@
   import { roundAddress } from '../lib/reviewRounds.js'
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
+  import { cardTargets } from '../lib/cardTiers.js'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the progress line and, for a search, a grapheme or a work, the collection's rows; without
   // rows the view loads them and the corpus sample itself, with the same seed and filters.
@@ -844,6 +845,8 @@
   let selecting = $state(false), selected = $state(new Set()), anchor = null, bulkTarget = $state(''), bulkBusy = $state(false), bulkError = $state('')
   // The last batch save, with its undo, and the crops it could not save, by reason.
   let bulkDone = $state(null), bulkReport = $state([])
+  // A character's page offers the forms its card lists as the character to give a selection.
+  const bulkChoices = $derived(picked ? cardTargets(picked) : [])
   // Crops "Looks right" confirmed on this page: their tick says so, so they drop the empty select box until chosen again.
   let confirmedHere = $state(new Set())
   /** A corpus glyph whose image this site may not show cannot be judged from the grid. A pair or trigram
@@ -1366,7 +1369,7 @@
     {:else}{#each sections as section (section.key)}{#if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{/each}{/if}
   </div>
   {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: picked.char })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
-  {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
+  {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
     onconfirm={confirmSelected} onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onleave={stopSelecting} onundo={undoBulk} onopen={openReported}
     ondismiss={() => { bulkDone = null; bulkError = ''; bulkReport = [] }} />{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && display.length}…{/if}</div>

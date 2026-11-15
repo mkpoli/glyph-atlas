@@ -424,13 +424,17 @@ def substitutes(component: str) -> list[dict[str, Any]]:
     return found[:SUBSTITUTES_SHOWN]
 
 
-def structure(char: str) -> dict[str, Any]:
-    """What the IDS editor starts from for `char`: its descriptions, its regional shapes, and the
-    substitutes of every component they name, as the Worker's `/layers/structure` answers."""
+def ids_of(char: str) -> dict[str, Any]:
+    """What the IDS editor starts from for `char`: its descriptions, its regional shapes, its 構形 and
+    the substitutes of every component they name, as the Worker's `/layers/ids` answers."""
+    from . import structures
+
     sequences = ids_sequences(char)
+    structure = structures.for_character(char)
     parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
                     if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})
     return {"char": char, "sequences": sequences, "shapes": regional_shapes(char),
+            "structure": {"id": structure.id, "label": structure.label} if structure else None,
             "substitutes": {part: found for part in parts if (found := substitutes(part))}}
 
 
@@ -438,6 +442,37 @@ def structure(char: str) -> dict[str, Any]:
 def _descriptions() -> han_component_variants.Descriptions:
     """Every character's usable sequences, read so that equal shapes are equal trees (6 seconds)."""
     return han_component_variants.Descriptions(dict(han_components._sequences()), han_components.unified())
+
+
+def descriptions() -> han_component_variants.Descriptions:
+    """The IDS trees of the character layer, read as this project reads them, built once.
+
+    `whole` reads a named part as the character it spells and flattens an associative chain; the
+    structure layer (`glyph_atlas.structures`) starts from the same trees.
+    """
+    return _descriptions()
+
+
+#: At most this many characters and descriptions are grouped in one answer (the Worker's STRUCTURE_CHARS).
+STRUCTURE_CHARS = 48
+
+
+def structure_groups(chars: str) -> dict[str, Any]:
+    """The 構形 of each character or description named, as groups of those that share one, in the
+    order named, as the Worker's `/layers/structures` answers. A name with no structure is in no
+    group."""
+    from . import structures
+    from .representation import written
+
+    groups: dict[str, dict[str, Any]] = {}
+    for name in list(dict.fromkeys(written(chars)))[:STRUCTURE_CHARS]:
+        try:
+            structure = structures.for_name(name)
+        except ValueError:
+            continue
+        if structure:
+            groups.setdefault(structure.id, {"id": structure.id, "label": structure.label, "chars": []})["chars"].append(name)
+    return {"items": list(groups.values())}
 
 
 @cache

@@ -23,7 +23,9 @@ async function get(path, params = {}, { fetch: send = fetch, ...options } = {}) 
 export const suggest = (q, limit = 8, signal) => q ? get('/layers/suggest', { q, limit }, { signal, priority: 'high' }) : Promise.resolve(null)
 export const search = (q, expand = 'none') => get('/layers/search', { q, expand })
 /** What the IDS editor starts from: a character's descriptions and the substitutes of their components. */
-export const structure = char => get('/layers/structure', { c: char })
+export const ids = char => get('/layers/ids', { c: char })
+/** The 構形 groups of these characters: `{ items: [{ id, label, chars }] }`. */
+export const structures = chars => get('/layers/structures', { c: chars })
 export const character = (codePoint, expand = 'none', options) => get('/layers/characters/' + encodeURIComponent(codePoint), { expand }, options)
 export const occurrences = (codePoint, params = {}, options) => get('/layers/occurrences', { code_point: codePoint, ...params }, options)
 export const graphemes = (params = {}) => get('/layers/graphemes', params)

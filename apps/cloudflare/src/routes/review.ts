@@ -10,7 +10,7 @@ import { categoryOf } from '../category';
 import { formOfCrop } from './claims';
 import { inspected } from './crop';
 import { STYLE_KIND, STYLE_TARGET, foundCrop } from '../cropRecords';
-import { body, canonical, compose, graphemeKey, graphemeText, literal, text, writtenCharacter } from '../input';
+import { body, canonical, compose, graphemeKey, graphemeText, text, unified, writtenCharacter } from '../input';
 import { readRecords, recordKey } from '../records';
 import { addressKey } from '../reverse';
 import { ROUND_MAX } from '../rounds';
@@ -254,7 +254,7 @@ function validateAnswer(answer: Json, row: Current, round: boolean, corpus = fal
   if (answer.correction && answer.issue !== 'merged') throw new Problem(422, 'Typed characters belong to a joined-character issue.');
   text(answer.note, 2000, 'note');
   if (answer.character) writtenCharacter(answer.character);
-  if (answer.verdict === 'wrong' && answer.character && literal(answer.character) === current.written_character)
+  if (answer.verdict === 'wrong' && answer.character && unified(answer.character) === current.written_character)
     throw new Problem(422, 'Choose a different character or a different issue.');
   if (answer.box !== undefined) {
     // A redrawn box is the crop's fix: saved as a match on the pixels it names, or beside a wrong or
@@ -567,7 +567,7 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     if (glyph && (!current.proxyable || (current.identity_status === 'unassigned' && answer.verdict === 'match')))
       throw new Problem(422, 'Choose a written character or report an issue.');
     if (round && (!row.quiz || !members!.includes(current.label))) throw new Problem(409, 'This round changed. Reload it.');
-    const written = answer.character ? literal(answer.character) : null;
+    const written = answer.character ? unified(answer.character) : null;
     // A bad crop reported beside a wrong character leaves the crop reported for its box, even with the
     // character named. A batch names the character only: a crop reported for its box, a blank or a merge
     // stays reported.

@@ -1,6 +1,6 @@
 <script>
   // "Take parts from": the characters or the description typed or pasted here, each opened into its
-  // descriptions (BabelStone IDS, through `/layers/structure`, with the source regions of each) and
+  // descriptions (BabelStone IDS, through `/layers/ids`, with the source regions of each) and
   // those into their parts, level by level, each character's own opened when it is. Every part and
   // every node of a description can be taken whole into the editor's chosen slot, or its first empty
   // one, by a click or by Enter; the arrow keys step through the tree, and ArrowRight on a part steps

@@ -7,6 +7,7 @@ modules: this file parses arguments, calls one function, and prints what it retu
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Annotated
 
@@ -136,6 +137,29 @@ def _character_note(row: object) -> str:
     jibo = " ".join(row.jibo)
     readings = " ".join(row.readings)
     return " ".join(part for part in (f"字母 {jibo}" if jibo else "", f"読 {readings}" if readings else "") if part)
+
+
+@app.command()
+def structure(
+    char: Annotated[list[str] | None, typer.Argument(help="characters or code points, U+5CF0 or 峰")] = None,
+) -> None:
+    """Show a character's 構形: its components and their arrangement, with no stroke design.
+
+    峰 (⿰山夆) and 峯 (⿱山夆) have two; 說 and 説 have one, ⿰言兌, because the IRG unifies 兌 and 兑.
+    """
+    from . import refs, structures
+
+    if not char:
+        raise typer.BadParameter("Name a character or a code point.")
+    for value in char:
+        point = re.fullmatch(r"(?:[Uu]\+)?([0-9A-Fa-f]{4,6})", value)
+        row = refs.character(f"U+{point[1].upper()}" if point else refs.to_code_point(value))
+        if row is None:
+            typer.echo(f"{value} is not in the character layer")
+            continue
+        found = structures.for_character(row.char)
+        typer.echo(f"{row.code_point} {row.char}  {found.label}  {found.id}" if found
+                   else f"{row.code_point} {row.char}  no description")
 
 
 @app.command()
@@ -789,6 +813,10 @@ def review_propose_characters(
     score: Annotated[float, typer.Option(help="detector score cutoff")] = 0.02,
     nms: Annotated[float, typer.Option(help="IoU above which a lower-scoring box is suppressed")] = 0.2,
     split: Annotated[bool, typer.Option("--split", help="cut a box that holds two stacked characters")] = False,
+    scale: Annotated[float, typer.Option(min=0.25, max=4.0, help="resize the page by this before detecting, for "
+                                         "characters smaller than the detector's 50 to 120 px")] = 1.0,
+    fill: Annotated[list[float] | None, typer.Option(
+        "--fill", min=0.25, max=4.0, help="also detect at this scale and add what no box covers; repeat for several")] = None,
 ) -> None:
     """Propose the character boxes of page photos that have no transcription, for reviewers to read.
 
@@ -819,7 +847,7 @@ def review_propose_characters(
     unknown = set(document or ()) - {record.document_id for record in pages}
     if unknown:
         raise typer.BadParameter(f"no document {', '.join(sorted(unknown))}")
-    version = character_proposals.proposer(model, score=score, nms=nms, split=split)
+    version = character_proposals.proposer(model, score=score, nms=nms, split=split, scale=scale, fill=fill or ())
     detector = Detector(model, score=score, nms=nms)
     if page or document:
         pages = [record for record in pages
@@ -832,7 +860,8 @@ def review_propose_characters(
             typer.echo(f"{record.id:<40} no cached photo")
             continue
         with Image.open(path) as image:
-            proposals = character_proposals.propose(image.convert("RGB"), detector, split=split)
+            proposals = character_proposals.propose(image.convert("RGB"), detector, split=split, scale=scale,
+                                                    fill=fill or ())
             size = image.size
         result = store.propose_units(record.id, proposals, version, image_size=size, script=filed)
         if result["skipped"]:
@@ -1091,6 +1120,27 @@ def import_hng_kiridashi(
     counts = hng_kiridashi.import_all(out, clone=clone, basic=basic, limit=limit)
     for name, rows in counts.items():
         typer.echo(f"{name:<12} {rows:>10}")
+    typer.echo(f"-> {out}")
+
+
+@import_app.command("tangut-coins")
+def import_tangut_coins(
+    source: Annotated[Path | None, typer.Option(help="the source record")] = None,
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/tangut-coins"),
+    cache: Annotated[Path | None, typer.Option(help="image cache directory")] = None,
+) -> None:
+    """Import West's Tangut coin photographs and drawings, to crop and identify their characters."""
+    from .importers import tangut_coins
+
+    try:
+        summary = tangut_coins.collect(source or tangut_coins.DEFAULT_SOURCE, out, cache=cache)
+    except tangut_coins.CoinSourceError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1) from error
+    typer.echo(f"documents     {summary['documents']:>10}")
+    typer.echo(f"pages         {summary['pages']:>10}")
+    typer.echo(f"photographs   {summary['photographs']:>10}")
+    typer.echo(f"skipped       {len(summary['skipped']):>10}")
     typer.echo(f"-> {out}")
 
 
@@ -1715,70 +1765,20 @@ def forms_clean(
     typer.echo(json.dumps(clean(root, source, out, reviews=reviews), ensure_ascii=False))
 
 
-special_app = typer.Typer(help="Abbreviated forms of one character, regrouped crop by crop by stroke shape.", no_args_is_help=True)
-forms_app.add_typer(special_app, name="special")
-
-
-@special_app.command("run")
-def special_run(
+@forms_app.command("pack")
+def forms_pack(
     code: Annotated[str, typer.Argument(help="family code point, such as U+5019")],
     root: Annotated[Path, typer.Option(help="corpus root")] = Path("work"),
     forms: Annotated[Path, typer.Option(help="form clustering revision")] = Path("work/forms/current"),
-    out: Annotated[Path, typer.Option(help="directory of the runs, one per family")] = Path("work/special-forms"),
-    steps: Annotated[int, typer.Option(help="restoration training steps")] = 6000,
-    epochs: Annotated[int, typer.Option(help="encoder training epochs")] = 100,
+    out: Annotated[Path, typer.Option(help="directory the pack is written to")] = Path("work/allograph-packs"),
 ) -> None:
-    """Restore, encode and tree one family's crops (needs CUDA; 15 to 30 minutes for 12,000 crops).
+    """Write one family's crops as a pack for allograph-clustering (https://github.com/mkpoli/allograph-clustering)."""
+    from . import allograph_pack
 
-    Run it as a batch job: `systemd-run --user --slice=batch.slice -p MemorySwapMax=0 --same-dir -- atlas forms special run U+5019`.
-    """
-    from .special_forms import pipeline, run_dir
-
-    typer.echo(json.dumps(pipeline.run(code, run_dir(code, out), root=root, forms=forms, steps=steps, epochs=epochs,
-                                       log=lambda m: typer.echo(m, err=True)), ensure_ascii=False))
-
-
-@special_app.command("report")
-def special_report(
-    code: Annotated[str, typer.Argument(help="family code point, such as U+5019")],
-    decisions: Annotated[Path | None, typer.Option(help="decisions file (default data/forms/special/<code>.yaml)")] = None,
-    out: Annotated[Path, typer.Option(help="directory of the runs, one per family")] = Path("work/special-forms"),
-) -> None:
-    """Apply the decisions crop by crop and write `forms.tsv` and `report.html` into the run.
-
-    Without a decisions file, a proposal of six unnamed forms, the tree's top branches, is written as
-    `proposal.yaml` in the run and used, to be edited and moved to `data/forms/special/`.
-    """
-    import numpy as np
-    import yaml
-
-    from .special_forms import DECISIONS, LEAVES, decide, report, run_dir, tree
-
-    run = run_dir(code, out)
-    meta = json.loads((run / "run.json").read_text())
-    path = decisions or DECISIONS / f"{code}.yaml"
-    if not path.exists():
-        z = np.load(run / "tree.npz")["z"]
-        leaf, top = tree.cut(z, LEAVES), tree.cut(z, 6)
-        groups = [sorted({int(l) for l in np.unique(leaf[top == g])}) for g in range(1, 7)]
-        path = run / "proposal.yaml"
-        path.write_text(yaml.safe_dump(decide.proposal(code, meta["run"], groups), allow_unicode=True, sort_keys=False))
-        typer.echo(f"no decisions for {code}; proposal written to {path}", err=True)
-    chosen = decide.load(path, LEAVES)
-    data = np.load(run / "crops.npz")
-    idx = np.load(run / "idx.npy")
-    leaf = tree.cut(np.load(run / "tree.npz")["z"], LEAVES)
-    form, stats = decide.assign(chosen["forms"], leaf, data["site"][idx].astype(int), data["emb"][idx], np.load(run / "features.npy"))
-    titles = [f["title"] for f in chosen["forms"]]
-    with (run / "forms.tsv").open("w") as tsv:
-        tsv.write("id\tsite_cluster\tshape_cluster\tform\n")
-        for i, l, f in zip(idx, leaf, form, strict=True):
-            tsv.write(f"{data['ids'][i]}\t{int(data['site'][i])}\t{int(l)}\t{titles[f]}\n")
-    char = chr(int(code.removeprefix("U+"), 16))
-    page = report.render(run, chosen, path.parent / "drawings", report.page_data(run, chosen, form, stats), char)
-    (run / "report.html").write_text(page)
-    typer.echo(json.dumps({"forms": dict(zip(titles, np.bincount(form, minlength=len(titles)).tolist(), strict=True)),
-                           **stats, "report": str(run / "report.html")}, ensure_ascii=False))
+    stats = allograph_pack.write(root, forms, code, out)
+    if stats["changed"]:
+        typer.echo(f"changed since clustering: {', '.join(stats['changed'])}; crops cut again no longer match their embedding", err=True)
+    typer.echo(json.dumps(stats, ensure_ascii=False))
 
 
 for name, module in (

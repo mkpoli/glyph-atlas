@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from glyph_atlas import representation
@@ -41,6 +43,17 @@ def test_the_registries_and_a_namespaced_private_use_form_are_held():
         assert representation.check(good) is good
 
 
+def test_a_text_names_its_characters_and_descriptions_one_after_another():
+    # apps/cloudflare/src/representation.test.ts holds the same values.
+    assert representation.written("說⿰月兊説") == ["說", "⿰月兊", "説"]
+    assert representation.written("⿰氵⿵戊天⿱𥫗冊") == ["⿰氵⿵戊天", "⿱𥫗冊"]
+    assert representation.written("葛\U000E0100峰") == ["葛\U000E0100", "峰"]
+    assert representation.written("峰⿰山") == ["峰"]
+    assert representation.written("⿰山a峰") == []
+    assert representation.written("") == []
+    assert representation.written("峰" + "〾" * 2000 + "山峯") == ["峰"]
+
+
 def test_ids_are_what_the_worker_derives_for_the_same_names():
     # The Worker's representation.test.ts holds the same values.
     vectors = {"𮟃": ("rp:b78a8585df2e755ac741ca9c16c933f4", "fm:9a7e168e47aef52e2958cff4ba7cf858"),
@@ -50,3 +63,31 @@ def test_ids_are_what_the_worker_derives_for_the_same_names():
         typed = representation.typed(value)
         assert (typed.id, representation.anchored_form(typed)) == (rep, form)
     assert Representation("pua", "", "example", "1").id != Representation("pua", "", "example", "2").id
+
+
+def test_a_compatibility_ideograph_stands_for_a_unified_one_and_the_blocks_unified_ideographs_do_not():
+    # 說 U+F96F and U+F9A1 stand for 說 U+8AAA, 突 U+FA55 for 突 U+7A81, 杓 U+2F8DC for 杓 U+6753.
+    assert all(representation.compatibility(char) for char in "\uf96f\uf9a1\ufa55\U0002f8dc")
+    # 﨑 U+FA11 and 﨟 U+FA1F are unified ideographs; a sequence and a description are no code point.
+    assert not any(representation.compatibility(text) for text in ("說", "\ufa11", "\ufa1f", "說︀", "⿰言兌", "が", ""))
+
+
+def test_a_typed_compatibility_ideograph_is_its_registered_figure_or_its_unified_ideograph():
+    # 突 U+FA55 implements MJ030283, 突 U+7A81 U+E0103; 說 U+F96F has no registered figure.
+    assert representation.typed("\ufa55") == representation.Representation("ivs", "突\U000e0103")
+    assert representation.typed("\uf96f") == representation.Representation("unicode", "說")
+    assert representation.stands_for("\ufa11") == "\ufa11"
+    # As the base of a sequence or a part of a description it is its unified ideograph.
+    assert representation.typed("\ufa55\U000e0103") == representation.Representation("ivs", "\u7a81\U000e0103")
+    assert representation.typed("⿰\ufa55木") == representation.Representation("ids", "⿰\u7a81木")
+    assert len(representation.figures()) == 89
+    assert all(representation.compatibility(char) and len(sequence) == 2 for char, sequence in representation.figures().items())
+
+
+def test_the_workers_figures_are_those_of_the_mj_table():
+    import importlib.util
+    path = Path(__file__).resolve().parents[1] / "scripts" / "build_han_compatibility.py"
+    spec = importlib.util.spec_from_file_location("build_han_compatibility", path)
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    assert build.MODULE.read_text(encoding="utf-8") == build.module()

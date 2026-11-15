@@ -1,0 +1,1247 @@
+{
+ "clean": {
+  "中山伝信録 巻一": {
+   "characters": 9,
+   "cut_0.5": 1.0,
+   "cut_0.7": 0.8889,
+   "accepted": 7,
+   "yield_0.7": 0.7778,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "中山伝信録 巻六": {
+   "characters": 6,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 6,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "乍恐奉書上候": {
+   "characters": 1,
+   "cut_0.5": 0.0,
+   "cut_0.7": 0.0,
+   "accepted": 0,
+   "yield_0.7": 0.0,
+   "precision_0.7": 0.0,
+   "precision_0.5": 0.0
+  },
+  "勇魚取絵詞": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "南島紀事 下": {
+   "characters": 5,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 5,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "口宣案・宣旨・位記": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 2,
+   "yield_0.7": 1.0,
+   "precision_0.7": 0.5,
+   "precision_0.5": 0.5
+  },
+  "史籍集覽　朝鮮陣古文・細井廣澤記・颶風紀事・天明七年將軍宣下次第書　全": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "土佐古今ノ地震": {
+   "characters": 8,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 6,
+   "yield_0.7": 0.75,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "地形論　巻二": {
+   "characters": 7,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 7,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "増補頭書訓蒙図彙大成 10巻 9:巻之20": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "天學略名目羽翼　全": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "女重寳記": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "宗門改之事": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "広益秘事大全 3巻. [5]": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 0.5,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "従往古地震御届書記誌之一": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "改算記綱目 貞享四 筑波大図コ200‐18": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "明治小學塵劫記 卷1": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "昔話稲妻表紙": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "書状": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "東三河道中記 : 豊橋市及其附近案内": {
+   "characters": 4,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 4,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "校異源氏物語.": {
+   "characters": 10,
+   "cut_0.5": 1.0,
+   "cut_0.7": 0.9,
+   "accepted": 10,
+   "yield_0.7": 0.9,
+   "precision_0.7": 0.9,
+   "precision_0.5": 1.0
+  },
+  "根南志具佐／５巻": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "梅園草木花譜秋之部. 2": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "江戸名所図会 20巻 巻之3": {
+   "characters": 6,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 6,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "海翻考　全": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "温古集 四巻": {
+   "characters": 5,
+   "cut_0.5": 1.0,
+   "cut_0.7": 0.8,
+   "accepted": 2,
+   "yield_0.7": 0.4,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "測量方御先触控": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "物類品隲": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "琉球新誌 巻上": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "琉球新誌 巻下": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "琉球沿革志 下": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "琉球藩史 一之巻": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 0.6667,
+   "accepted": 2,
+   "yield_0.7": 0.6667,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "琉球解語": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 0,
+   "yield_0.7": 0.0,
+   "precision_0.7": 0.0,
+   "precision_0.5": 0.0
+  },
+  "琉球談": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 2,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "生間流式法秘書抜萃": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "百人一首絵抄　六　中納言家持": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "箱根七湯　温泉圖會　全": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "経済をしへ草": {
+   "characters": 4,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 4,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "絵本写宝袋 9巻 6之巻": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "若君様御色直御祝儀ノ節ノ留": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "虹及ハロノ説明": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 0.5,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "訓蒙　天然地理學　上": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "訓蒙　天然地理學　下": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "諸士系譜　巻之44　は之部12": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "諸士系譜　巻之52　に之部3": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "護法新論　二編　下": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "護法新論　二編　中": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋商工案内": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋商工案内. 昭和15年度版": {
+   "characters": 15,
+   "cut_0.5": 0.9333,
+   "cut_0.7": 0.9333,
+   "accepted": 12,
+   "yield_0.7": 0.8,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋市史談": {
+   "characters": 60,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 59,
+   "yield_0.7": 0.9833,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋市市制施行二十年誌": {
+   "characters": 14,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 13,
+   "yield_0.7": 0.9286,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋市水道誌": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋志要": {
+   "characters": 15,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 14,
+   "yield_0.7": 0.9333,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "賀茂社記録. 第12冊": {
+   "characters": 10,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 10,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "賀茂社記録. 第63冊": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 0.5,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "賀茂社記録. 第9冊": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "量地指南　巻之一（内題）": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 0.5,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "錦繍枕 5巻. [4]": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 0,
+   "yield_0.7": 0.0,
+   "precision_0.7": 0.0,
+   "precision_0.5": 0.0
+  },
+  "長生法": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "震災被害状況並救護施設概要": {
+   "characters": 8,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 8,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "願書控帳": {
+   "characters": 13,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 13,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "養生随筆 三冊(上・中・下)": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 2,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "養蚕秘録 3巻. [3]": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "骨董録": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "麗斎叢書. 20": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "all": {
+   "characters": 269,
+   "cut_0.5": 0.9926,
+   "cut_0.7": 0.9777,
+   "accepted": 249,
+   "yield_0.7": 0.9182,
+   "precision_0.7": 0.992,
+   "precision_0.5": 0.996
+  },
+  "curve": {
+   "0.95": {
+    "accept": 0.46524465481080046,
+    "yield": 0.9776951672862454,
+    "precision": 0.9887218045112782
+   },
+   "0.97": {
+    "accept": 0.46524465481080046,
+    "yield": 0.9776951672862454,
+    "precision": 0.9887218045112782
+   },
+   "0.98": {
+    "accept": 0.46524465481080046,
+    "yield": 0.9776951672862454,
+    "precision": 0.9887218045112782
+   },
+   "0.99": {
+    "accept": 0.9478491031735798,
+    "yield": 0.9182156133828996,
+    "precision": 0.9919678714859438
+   }
+  }
+ },
+ "faulted": {
+  "中山伝信録 巻一": {
+   "characters": 9,
+   "cut_0.5": 1.0,
+   "cut_0.7": 0.8889,
+   "accepted": 7,
+   "yield_0.7": 0.7778,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "中山伝信録 巻六": {
+   "characters": 6,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 6,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "乍恐奉書上候": {
+   "characters": 1,
+   "cut_0.5": 0.0,
+   "cut_0.7": 0.0,
+   "accepted": 0,
+   "yield_0.7": 0.0,
+   "precision_0.7": 0.0,
+   "precision_0.5": 0.0
+  },
+  "勇魚取絵詞": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "南島紀事 下": {
+   "characters": 5,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 5,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "口宣案・宣旨・位記": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 2,
+   "yield_0.7": 1.0,
+   "precision_0.7": 0.5,
+   "precision_0.5": 0.5
+  },
+  "史籍集覽　朝鮮陣古文・細井廣澤記・颶風紀事・天明七年將軍宣下次第書　全": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "土佐古今ノ地震": {
+   "characters": 8,
+   "cut_0.5": 0.875,
+   "cut_0.7": 0.875,
+   "accepted": 5,
+   "yield_0.7": 0.625,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "地形論　巻二": {
+   "characters": 7,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 7,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "増補頭書訓蒙図彙大成 10巻 9:巻之20": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "天學略名目羽翼　全": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "女重寳記": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "宗門改之事": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 0,
+   "yield_0.7": 0.0,
+   "precision_0.7": 0.0,
+   "precision_0.5": 0.0
+  },
+  "広益秘事大全 3巻. [5]": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 0.5,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "従往古地震御届書記誌之一": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "改算記綱目 貞享四 筑波大図コ200‐18": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "明治小學塵劫記 卷1": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "昔話稲妻表紙": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "書状": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "東三河道中記 : 豊橋市及其附近案内": {
+   "characters": 4,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 4,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "校異源氏物語.": {
+   "characters": 10,
+   "cut_0.5": 1.0,
+   "cut_0.7": 0.9,
+   "accepted": 10,
+   "yield_0.7": 0.9,
+   "precision_0.7": 0.9,
+   "precision_0.5": 1.0
+  },
+  "根南志具佐／５巻": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "梅園草木花譜秋之部. 2": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "江戸名所図会 20巻 巻之3": {
+   "characters": 6,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 6,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "海翻考　全": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "温古集 四巻": {
+   "characters": 5,
+   "cut_0.5": 1.0,
+   "cut_0.7": 0.8,
+   "accepted": 2,
+   "yield_0.7": 0.4,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "測量方御先触控": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "物類品隲": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "琉球新誌 巻上": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "琉球新誌 巻下": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "琉球沿革志 下": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "琉球藩史 一之巻": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 0.6667,
+   "accepted": 2,
+   "yield_0.7": 0.6667,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "琉球解語": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 0,
+   "yield_0.7": 0.0,
+   "precision_0.7": 0.0,
+   "precision_0.5": 0.0
+  },
+  "琉球談": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 2,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "生間流式法秘書抜萃": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "百人一首絵抄　六　中納言家持": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "箱根七湯　温泉圖會　全": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "経済をしへ草": {
+   "characters": 4,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 4,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "絵本写宝袋 9巻 6之巻": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "若君様御色直御祝儀ノ節ノ留": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "虹及ハロノ説明": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 0.5,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "訓蒙　天然地理學　上": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "訓蒙　天然地理學　下": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "諸士系譜　巻之44　は之部12": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "諸士系譜　巻之52　に之部3": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "護法新論　二編　下": {
+   "characters": 3,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 3,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "護法新論　二編　中": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋商工案内": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋商工案内. 昭和15年度版": {
+   "characters": 15,
+   "cut_0.5": 0.9333,
+   "cut_0.7": 0.9333,
+   "accepted": 12,
+   "yield_0.7": 0.8,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋市史談": {
+   "characters": 60,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 58,
+   "yield_0.7": 0.9667,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋市市制施行二十年誌": {
+   "characters": 14,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 13,
+   "yield_0.7": 0.9286,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋市水道誌": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "豊橋志要": {
+   "characters": 15,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 14,
+   "yield_0.7": 0.9333,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "賀茂社記録. 第12冊": {
+   "characters": 10,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 10,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "賀茂社記録. 第63冊": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 0.5,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "賀茂社記録. 第9冊": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "量地指南　巻之一（内題）": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 0.5,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "錦繍枕 5巻. [4]": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 0,
+   "yield_0.7": 0.0,
+   "precision_0.7": 0.0,
+   "precision_0.5": 0.0
+  },
+  "長生法": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "震災被害状況並救護施設概要": {
+   "characters": 8,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 8,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "願書控帳": {
+   "characters": 13,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 13,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "養生随筆 三冊(上・中・下)": {
+   "characters": 2,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 2,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "養蚕秘録 3巻. [3]": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "骨董録": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "麗斎叢書. 20": {
+   "characters": 1,
+   "cut_0.5": 1.0,
+   "cut_0.7": 1.0,
+   "accepted": 1,
+   "yield_0.7": 1.0,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "all": {
+   "characters": 269,
+   "cut_0.5": 0.9888,
+   "cut_0.7": 0.974,
+   "accepted": 246,
+   "yield_0.7": 0.9071,
+   "precision_0.7": 0.9919,
+   "precision_0.5": 0.9959
+  },
+  "unread": {
+   "characters": 9,
+   "cut_0.5": 0.8889,
+   "cut_0.7": 0.8889,
+   "accepted": 6,
+   "yield_0.7": 0.6667,
+   "precision_0.7": 1.0,
+   "precision_0.5": 1.0
+  },
+  "curve": {
+   "0.95": {
+    "accept": 0.46524465481080046,
+    "yield": 0.9739776951672863,
+    "precision": 0.9886792452830189
+   },
+   "0.97": {
+    "accept": 0.46524465481080046,
+    "yield": 0.9739776951672863,
+    "precision": 0.9886792452830189
+   },
+   "0.98": {
+    "accept": 0.46524465481080046,
+    "yield": 0.9739776951672863,
+    "precision": 0.9886792452830189
+   },
+   "0.99": {
+    "accept": 0.9332385246276192,
+    "yield": 0.929368029739777,
+    "precision": 0.9920634920634921
+   }
+  }
+ }
+}

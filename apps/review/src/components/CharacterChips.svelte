@@ -8,15 +8,18 @@
   import ScriptText from './ScriptText.svelte'
   import FormText from './FormText.svelte'
   import OriginText from './OriginText.svelte'
-  import { countsLabel } from '../lib/layers.js'
+  import { countsLabel, structures as readStructures } from '../lib/layers.js'
+  import { isDescription } from '../lib/ids.js'
+  import { isFigure } from '../lib/mjFigures.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
   import { characterAddress, graphemeAddress } from '../lib/gallery.js'
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
   import { familyCodeSet } from '../lib/forms.js'
+  import { cardTiers } from '../lib/cardTiers.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
-  const members = $derived(card?.grapheme?.members ?? [{code_point: card?.code_point, char: card?.char}])
+  const { members, variants, grapheme, writers, sharedWriters, writes, selfGrapheme, shared, written, related, described } = $derived(cardTiers(card))
   // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
   // widening to variants has no address of its own to cite.
   const entry = $derived(card?.code_point && expand !== 'variants' ? characterEntry(expand === 'grapheme' ? 'grapheme' : 'form', card) : null)
@@ -24,11 +27,6 @@
   let clustered = $state(null)
   $effect(() => { if (page.data.forms) familyCodeSet().then(codes => { clustered = codes }) })
   const formsFamily = $derived([card?.grapheme?.code_point, card?.code_point].find(code => code && clustered?.has(code)))
-  // The 異体字 graph: the variants a gallery widens to, characters related otherwise, and the
-  // derived tier — forms up to two component substitutions may write this character as, folded
-  // after the attested variants, each with a mark, no gallery widening to them.
-  // A card cached before the derived tier existed has no `derived`; it reads as none.
-  const variants = $derived({ items: [], related: [], sources: {}, ...card?.variants, derived: card?.variants?.derived ?? [] })
   // Every relation of kanji-variants.tsv in the reader's language; one the table gains later reads as its id.
   const RELATION_NAMES = {
     variant: () => t('chips.relation.variant'), equivalent: () => t('chips.relation.equivalent'),
@@ -59,29 +57,24 @@
   const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + (v.routes ?? []).map(route => route.map(s =>
     `${s.was} → ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n+ ')).join('\n\n')
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
-  // Three levels: the 字種 (the grapheme, and any other grapheme this form also writes, 后: 後), its 字体
-  // (the grapheme's own forms, then the 異体字 outside it, the ones a gallery widens to first), and the
-  // characters related otherwise (a loan, a homograph, a fallback reduction). A form that writes this
-  // grapheme and a character of its own (後: 后) is a 字体 tagged as shared. A card cached before rows
-  // carried `written` lists every unwidening pair as related; one cached before the writers has neither.
-  const grapheme = $derived(card?.grapheme ?? card)
-  const writers = $derived(new Set((variants.writers ?? []).map(v => v.code_point)))
-  // A form standing for this grapheme alone (聞: 𦔴) is one of its 字体, with no tag. A card cached
-  // before writers carried `shared` tags every writer, as they all were.
-  const sharedWriters = $derived(new Set((variants.writers ?? []).filter(v => v.shared !== false).map(v => v.code_point)))
-  const writes = $derived(variants.writes ?? [])
-  // A form with no character of its own (𠮮) has the graphemes it writes as its 字種, and not itself;
-  // the 兼用 tag marks each of several.
-  const selfGrapheme = $derived(variants.own !== false || !writes.length)
-  const shared = $derived(writes.length + (selfGrapheme ? 1 : 0) > 1)
+  // What a chip's number counts: the crops filed under it here and the corpus glyphs recorded for it.
+  const glyphCount = v => crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : undefined
   const shareLabel = v => writers.has(v.code_point) ? t('chips.alsoOther') : t('chips.alsoWritten', { char: card.char })
-  const own = $derived(new Set([...members, ...writes].map(member => member.code_point)))
-  const written = $derived([...variants.items, ...variants.related.filter(v => v.written || writers.has(v.code_point))]
-    .filter(v => !own.has(v.code_point)).sort((a, b) => writers.has(b.code_point) - writers.has(a.code_point)))
-  const related = $derived(variants.related.filter(v => !v.written && !writers.has(v.code_point) && !own.has(v.code_point)))
-  // The described forms a reviewer said are written for this grapheme (`written_for`): a shape Unicode
-  // lacks has no character page, so it joins the 字体 row as its own sequence with its crop count.
-  const described = $derived(variants.forms ?? [])
+  // The 構形 of the grapheme's 字体, each with the characters and described forms that share it (峰 and
+  // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫). A name with no structure, and a site that knows
+  // none yet, shows no row.
+  const HAN = /^\p{Script=Han}$/u
+  const composedOf = $derived([...new Set([...members, ...written, ...described].map(v => v.char)
+    .filter(char => HAN.test(char ?? '') || isDescription(char) || isFigure(char ?? '')))].slice(0, 48))
+  // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
+  let composed = $state([])
+  $effect(() => {
+    const chars = composedOf.join('')
+    if (!chars) { composed = []; return }
+    let live = true
+    readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => { if (live) composed = [] })
+    return () => { live = false }
+  })
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
   // for it: characters that write the same word, kept out of the variant tiers and the widening. A card
   // cached before the word tables existed has no `words`; it reads as none.
@@ -100,12 +93,22 @@
     <div class="layer-row">
       <span class="layer-label">{t('chips.grapheme')}</span>
       <div class="variant-chips">
-        {#if selfGrapheme}<a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char))}><ScriptText text={grapheme.char} lang="zh" titled={false} /></a>{/if}
+        {#if selfGrapheme}<a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char))} title={glyphCount(grapheme)}><ScriptText text={grapheme.char} lang="zh" titled={false} />{#if crops(grapheme)}<small>{formatNumber(crops(grapheme))}</small>{/if}</a>{/if}
         {#each writes as v (v.code_point)}
-          <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={shareLabel(v)}><ScriptText text={v.char} lang="zh" titled={false} />{#if shared}<small class="share">{t('chips.shared')}</small>{/if}</a>
+          <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={glyphCount(v) ? `${shareLabel(v)}\n${glyphCount(v)}` : shareLabel(v)}><ScriptText text={v.char} lang="zh" titled={false} />{#if shared}<small class="share">{t('chips.shared')}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
         {/each}
       </div>
     </div>
+    {#if composed.length}
+      <div class="layer-row">
+        <span class="layer-label">{t('chips.structure')}</span>
+        <div class="variant-chips">
+          {#each composed as s (s.id)}
+            <span class="variant structure"><span lang="zh">{s.label}</span>{#if composedOf.length > 1}<span class="sharing">{#each s.chars as name (name)}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/each}</span>{/if}</span>
+          {/each}
+        </div>
+      </div>
+    {/if}
     <div class="layer-row">
       <span class="layer-label">{t('chips.forms')}</span>
       <div class="character-members">
@@ -114,8 +117,10 @@
         {#each members as member (member.code_point)}
           <div class="member-choice"><button class="member" class:active={expand !== 'grapheme' && member.code_point === card.code_point}
             aria-pressed={expand !== 'grapheme' && member.code_point === card.code_point}
-            aria-label={t('chips.showCharacter', { char: member.char })} onclick={() => onselect(member.code_point)}>
+            aria-label={crops(member) ? `${t('chips.showCharacter', { char: member.char })} · ${formatNumber(crops(member))}`
+              : t('chips.showCharacter', { char: member.char })} title={glyphCount(member)} onclick={() => onselect(member.code_point)}>
             <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" />
+            {#if crops(member)}<small class="use">{formatNumber(crops(member))}</small>{/if}
           </button>{#if member.code_point === card.code_point}<ZiLink character={member.char} compact />{/if}</div>
         {/each}
         {#each written as v (v.code_point)}
@@ -219,6 +224,7 @@
   .variant-chips > .variant, .character-members > .variant{min-height:43px;box-sizing:border-box;align-items:center}
   .member-choice{display:flex;flex-direction:column;align-items:center;gap:4px}
   .member{display:flex;align-items:center;gap:10px;padding:8px 12px;background:transparent}
+  .member .use{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .active{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
   .forms-row{font-size:12px;color:var(--muted);align-items:center}
   .forms-row .layer-label{line-height:normal}
@@ -239,6 +245,9 @@
   .derived summary small{font-variant-numeric:tabular-nums}
   .derived[open] summary{margin-bottom:6px}
   .variant small{font-size:11px;color:var(--muted)}
+  .variant.structure{font-size:15px}
+  .variant.structure:hover{border-color:var(--line)}
+  .variant.structure .sharing :global(.ids-form){margin-inline:4px 0}
   .variant small.share{color:var(--accent)}
   .word-crops{font-size:12px;color:var(--muted);align-self:center}
   .word-reading{font-size:15px;align-self:center;margin-right:4px}

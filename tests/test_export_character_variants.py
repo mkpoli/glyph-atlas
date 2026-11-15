@@ -2,10 +2,12 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 import export_character_variants as variants
 
-from glyph_atlas import reference_input
+from glyph_atlas import han_components, reference_input
 
 NEVER = lambda: (_ for _ in ()).throw(AssertionError("derived forms computed"))
 
@@ -60,3 +62,25 @@ def test_the_writers_replace_grapheme_writers_alone(monkeypatch, tmp_path):
     assert db.execute("SELECT writer FROM grapheme_writers WHERE grapheme='後'").fetchall() == [("后",)]
     assert set(db.execute("SELECT grapheme,own FROM grapheme_writers WHERE writer='𠮮'")) == {("后", 0), ("𠯑", 0)}
     assert db.execute("SELECT own FROM grapheme_writers WHERE writer='后'").fetchall() == [(1,)]
+
+
+def test_the_descriptions_replace_han_ids_alone(monkeypatch, tmp_path):
+    monkeypatch.setattr(variants, "derived_rows", NEVER)
+    path = tmp_path / "reference-input.sqlite"
+    with reference_input.writing(path) as db:
+        db.execute("INSERT INTO han_ids(char,sequences,shapes) VALUES('甲','[\"⿰乙丙\"]',NULL)")
+    monkeypatch.setattr(sys, "argv", ["export_character_variants.py", "--ids", "--input", str(path)])
+    with pytest.raises(SystemExit):
+        variants.main()  # a run that writes han_ids names the site's descriptions
+    listed = tmp_path / "described.txt"
+    listed.write_text("")
+    monkeypatch.setattr(sys, "argv", ["export_character_variants.py", "--ids", "--input", str(path), "--described", str(listed)])
+    variants.main()
+    names, db = written(path)
+    assert names == {"han_ids"}
+    assert db.execute("SELECT count(*) FROM han_ids").fetchone()[0] == len(variants.ids_rows())
+    assert db.execute("SELECT sequences FROM han_ids WHERE char='峰'").fetchone() == ('["⿰山夆"]',)
+    # A character written as one component has a row with nothing to edit.
+    assert db.execute("SELECT sequences FROM han_ids WHERE char='一'").fetchone() == ("[]",)
+    assert db.execute("SELECT count(*) FROM han_ids").fetchone()[0] == len(han_components._sequences())
+    assert db.execute("SELECT count(*) FROM han_ids WHERE sequences LIKE '%乙丙%'").fetchone()[0] == 0

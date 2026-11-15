@@ -1,8 +1,9 @@
 import { categoryOf } from './category';
 import { describe, it, expect } from 'bun:test';
 import { canonical, literal, hira, single, jamoSyllable, wroteLately, markWriter } from './index';
+import { unified, writtenCharacter } from './input';
 import { describedCard, jamoCard, substitutionKey } from './routes/character';
-import { dealable, validRound } from './routes/review';
+import { dealable, validBatch, validRound } from './routes/review';
 import { ROUND_MAX } from './rounds';
 import { held } from './held';
 import { componentTerm, rankMatches } from './components';
@@ -38,6 +39,18 @@ it('a compatibility ideograph stays the character it is, and a voiced kana still
   expect(literal('U+FA30')).toBe('侮')
   expect(literal('侮')).toBe('侮')
   expect(literal('が')).toBe('が')
+})
+
+it('a compatibility ideograph named as a crop\'s character is the unified ideograph it stands for', () => {
+  // U+FA30 stands for 侮 U+4FAE; 﨑 U+FA11 is a unified ideograph of the compatibility block.
+  expect(unified('U+FA30')).toBe('\u4fae')
+  expect(writtenCharacter('\ufa30')).toBe('\u4fae')
+  expect(writtenCharacter('\ufa11')).toBe('\ufa11')
+  expect(writtenCharacter('か\u3099')).toBe('が')
+  // A batch correction names the unified ideograph too.
+  expect(validBatch({ character: '\ufa30', crops: [{ id: 'one' }] }).character).toBe('\u4fae')
+  // A key and a form's text are kept as written.
+  expect(literal('U+FA30')).toBe('\ufa30')
 })
 
 describe('a round names flagged answers, seen crops, or both', () => {

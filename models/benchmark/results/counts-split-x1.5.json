@@ -1,0 +1,56 @@
+{
+ "cutter": "split",
+ "scale": 1.5,
+ "fill": [],
+ "first": {
+  "boxes": 137,
+  "gone": 0,
+  "one_character": 97,
+  "one_character_cut": 12,
+  "one_character_lost": 0,
+  "several_characters": 40,
+  "several_right": 20,
+  "several_too_few": 19,
+  "several_too_many": 1,
+  "per_100_boxes": {
+   "right": 77.7,
+   "one_character_cut": 8.4,
+   "one_character_lost": 0.0,
+   "several_wrong": 14.0
+  }
+ },
+ "second": {
+  "boxes": 113,
+  "gone": 0,
+  "one_character": 79,
+  "one_character_cut": 5,
+  "one_character_lost": 1,
+  "several_characters": 34,
+  "several_right": 26,
+  "several_too_few": 8,
+  "several_too_many": 0,
+  "per_100_boxes": {
+   "right": 88.6,
+   "one_character_cut": 5.1,
+   "one_character_lost": 0.8,
+   "several_wrong": 5.4
+  }
+ },
+ "both": {
+  "boxes": 250,
+  "gone": 0,
+  "one_character": 176,
+  "one_character_cut": 17,
+  "one_character_lost": 1,
+  "several_characters": 74,
+  "several_right": 46,
+  "several_too_few": 27,
+  "several_too_many": 1,
+  "per_100_boxes": {
+   "right": 83.0,
+   "one_character_cut": 6.8,
+   "one_character_lost": 0.4,
+   "several_wrong": 9.8
+  }
+ }
+}

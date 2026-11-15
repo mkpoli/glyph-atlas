@@ -5,7 +5,8 @@
 // A card's `data` is in the summary shard of its family head. A list reads the name list and the
 // summary shards of the families the query names; the kanji of a kana reading come with their families
 // in the reading's shard, and the 異体字 of a one-character query with theirs in its card's object.
-import { characterObject, characterStructure, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, type NameIndex } from '../atlas3Reference';
+import { characterObject, characterIds, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, type NameIndex } from '../atlas3Reference';
+import { compatibility, structureKey, written } from '../representation';
 import { catalogueVersion } from '../atlas3Stamps';
 import { Problem } from '../busy';
 import { idsCharacter } from '../category';
@@ -128,8 +129,12 @@ function unlistedForms(found: Json[], cards: Map<string, Json>) {
   return new Map(wanted.filter(code => cards.has(code)).map(code => [code, cards.get(code)]));
 }
 
+// A compatibility ideograph in a query is the unified ideograph it stands for (說 U+F96F is 說 U+8AAA,
+// docs/decisions/0013-finer-forms.md), so a search finds that character; a list names a compatibility
+// ideograph only while crops are filed under it.
+const unified = (term: string) => [...term].map(c => compatibility(c) ? c.normalize('NFC') : c).join('');
 export async function suggest(env: Env, q: URLSearchParams, ctx?: ExecutionContext) {
-  const term = (q.get('q') || '').slice(0, 128).trim();
+  const asked = (q.get('q') || '').slice(0, 128).trim(), term = unified(asked);
   if (!term) return { items: [], total: 0, status: 'idle' };
   const limit = integer(q, 'limit', 8, 48);
   const index = await nameIndex(env, ctx) ?? { occurrences: new Map<string, number>(), named: () => [] };
@@ -138,7 +143,7 @@ export async function suggest(env: Env, q: URLSearchParams, ctx?: ExecutionConte
   // A description sequence no name gives is the character it describes, which has no card.
   if (!found.length && idsCharacter(literal(term))) {
     const item = { ...describedCard(literal(term)).data, rank: 0 };
-    return { query: term, items: [item], total: 1, more: 0, status: 'ok', corpus: { ready: true } };
+    return { query: asked, items: [item], total: 1, more: 0, status: 'ok', corpus: { ready: true } };
   }
   // A term no name gives that is two or more ideographs asks for the characters built from them.
   const wanted = found.length ? null : componentTerm(literal(term));
@@ -146,7 +151,7 @@ export async function suggest(env: Env, q: URLSearchParams, ctx?: ExecutionConte
     const { codes, more } = await componentMatches(env, wanted, limit, ctx);
     const held = codes.filter(code => index.occurrences.has(code)), cards = await cardsOf(env, held, new Map(), ctx);
     const items = held.filter(code => cards.has(code)).map(code => ({ ...cards.get(code), rank: 7 }));
-    return { query: term, match_kind: 'components', items, total: items.length, more: more ? 1 : 0, status: 'ok', corpus: { ready: true } };
+    return { query: asked, match_kind: 'components', items, total: items.length, more: more ? 1 : 0, status: 'ok', corpus: { ready: true } };
   }
   const kanji = await readingKanji(env, index, term, found, limit, ctx);
   found.push(...kanji.hits);
@@ -157,7 +162,9 @@ export async function suggest(env: Env, q: URLSearchParams, ctx?: ExecutionConte
   const shown = hitsShown.filter(hit => cards.has(hit.code)).map(hit => ({ ...cards.get(hit.code), rank: hit.rank,
     ...(hit.variant_of === undefined ? {} : { variant_of: hit.variant_of }) }));
   const total = found.length + kanji.unread;
-  return { query: term, items: byGrapheme(shown, unlistedForms(shown, cards)), total, more: Math.max(0, total - limit), status: 'ok', corpus: { ready: true } };
+  const items = byGrapheme(shown, unlistedForms(shown, cards))
+    .filter((item: Json) => !compatibility(item.char) || (index.occurrences.get(item.code_point) ?? 0) > 0);
+  return { query: asked, items, total, more: Math.max(0, total - limit), status: 'ok', corpus: { ready: true } };
 }
 
 // What the form picker's IDS editor starts from (0068, 0080): a character's descriptions and regional
@@ -173,14 +180,14 @@ const IDS_OPERATOR = /[⿰-⿿㇯〾]/u;
 // Answers that change only with the catalogue are kept at the edge an hour.
 const KEPT = 3600;
 type Substitute = { char: string; count: number };
-export async function structureOf(env: Env, ctx: ExecutionContext, origin: string, char: string) {
+export async function idsOf(env: Env, ctx: ExecutionContext, origin: string, char: string) {
   if (!char || [...char].length !== 1) throw new Problem(422, 'Name one character.');
-  const key = new Request(`${origin}/layers/structure?c=${encodeURIComponent(char)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const key = new Request(`${origin}/layers/ids?c=${encodeURIComponent(char)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
-  const structure = await characterStructure(env, char, ctx);
-  const sequences: string[] = structure?.sequences ?? [];
-  const shapes: { text: string; regions: string }[] = structure?.shapes ?? [];
+  const described = await characterIds(env, char, ctx);
+  const sequences: string[] = described?.sequences ?? [];
+  const shapes: { text: string; regions: string }[] = described?.shapes ?? [];
   const parts = [...new Set(sequences.flatMap(text => [...text].filter(c => !IDS_OPERATOR.test(c))))].slice(0, STRUCTURE_PARTS);
   const rows = parts.length ? (await env.ATLAS.prepare(substitutesQuery(parts.length)).bind(...parts, ...parts)
     .all<{ a: string; b: string; count: number }>()).results : [];
@@ -192,7 +199,33 @@ export async function structureOf(env: Env, ctx: ExecutionContext, origin: strin
       .slice(0, SUBSTITUTES_SHOWN);
     if (found.length) substitutes[part] = found;
   }
-  const found = { char, sequences, shapes, substitutes };
+  const found = { char, sequences, shapes, structure: described?.structure ?? null, substitutes };
+  ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${KEPT}` } })));
+  return found;
+}
+
+// At most this many characters and descriptions are grouped in one answer: a family's forms and its
+// written variants.
+export const STRUCTURE_CHARS = 48;
+/** The 構形 of each character or description named, as groups of those that share one (峰 and 峯 are two
+ *  groups, 說 and 説 one, and ⿰月兊 joins 脫), in the order named. A name with no structure is in no
+ *  group. */
+export async function structuresOf(env: Env, ctx: ExecutionContext, origin: string, chars: string) {
+  const named = [...new Set(written(chars))].slice(0, STRUCTURE_CHARS);
+  if (!named.length) throw new Problem(422, 'Name a character.');
+  const key = new Request(`${origin}/layers/structures?c=${encodeURIComponent(named.join(''))}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const cached = await caches.default.match(key);
+  if (cached) return await cached.json();
+  const groups = new Map<string, { id: string; label: string; chars: string[] }>();
+  const described = await Promise.all(named.map(name => characterIds(env, structureKey(name), ctx)));
+  named.forEach((char, i) => {
+    const structure = described[i]?.structure;
+    if (!structure) return;
+    const group = groups.get(structure.id) ?? { ...structure, chars: [] };
+    group.chars.push(char);
+    groups.set(structure.id, group);
+  });
+  const found = { items: [...groups.values()] };
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${KEPT}` } })));
   return found;
 }

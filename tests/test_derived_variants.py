@@ -2,7 +2,7 @@
 
 import json
 
-from glyph_atlas import refs
+from glyph_atlas import refs, structures
 
 
 def test_a_form_no_character_has_is_derived_as_its_sequence_with_its_evidence():
@@ -68,10 +68,12 @@ def test_a_whole_character_swap_is_no_sequence_of_its_own():
 
 
 def test_the_ids_editor_starts_from_the_characters_description_with_each_components_substitutes():
-    found = refs.structure("疑")
+    found = refs.ids_of("疑")
     assert found["sequences"] == ["⿰𠤕⿱龴疋"]
     assert {"char": "コ", "count": 1} in found["substitutes"]["龴"]
-    assert refs.structure("𠤕")["sequences"] == ["⿱匕矢"]
+    assert refs.ids_of("𠤕")["sequences"] == ["⿱匕矢"]
+    assert found["structure"] == {"id": structures.for_character("疑").id, "label": "⿰𠤕⿱龴疋"}
+    assert refs.ids_of("あ")["structure"] is None
     assert "失" in {row["char"] for row in refs.substitutes("矢")}
 
 
@@ -81,7 +83,7 @@ def test_a_part_names_no_description_of_its_own():
 
 
 def test_a_characters_regional_shapes_are_its_descriptions_that_name_different_regions():
-    assert refs.structure("所")["shapes"] == [{"text": "⿰戶斤", "regions": "GHTKPV"}, {"text": "⿰戸斤", "regions": "J"}]
+    assert refs.ids_of("所")["shapes"] == [{"text": "⿰戶斤", "regions": "GHTKPV"}, {"text": "⿰戸斤", "regions": "J"}]
     assert refs.regional_shapes("主") == [], "⿱亠土 (X) analyses the shape every region writes as ⿱丶王"
     assert refs.regional_shapes("亼") == [], "⿱人一 (Z) is a plausible form, no source's glyph"
     assert refs.regional_shapes("𠁍") == [], "⿱不⿻兰大 (UCS2003) is an old code-chart glyph"

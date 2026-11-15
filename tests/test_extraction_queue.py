@@ -1,30 +1,65 @@
 import pytest
 
 from glyph_atlas import tables
-from glyph_atlas.extraction_queue import Queue, quality_reason, run, scorable_chars, unique_units
-from glyph_atlas.schema import Box, Candidate, Document, Line, Page, ReviewState, Unit
+from glyph_atlas.extraction_queue import Queue, run, scorable_chars, shape_reason, unique_units
+from glyph_atlas.schema import Box, Document, Line, Page, ReviewState, Unit
 
 
 def unit(**kwargs):
     return Unit(id="test", text_source="字", box=Box(x=10,y=10,w=30,h=35), **kwargs)
 
 
-def votes(text="字"):
-    return [{"engine":"Atlas classifier","text":text,"score":.97},
-            {"engine":"NDLkotenOCR","text":text,"score":.98}]
+def test_a_crop_is_one_character_with_ink_inside_the_page():
+    assert shape_reason(unit(), (200, 200)) is None
+    assert shape_reason(unit(), (30, 30)) == "invalid-geometry"
+    assert shape_reason(unit().model_copy(update={"box": None}), (200, 200)) == "no-ink"
+    assert shape_reason(unit().model_copy(update={"text_source": "字字"}), (200, 200)) == "not-one-character"
+    # A long stroke is a character: し and 一 are many times longer than they are wide.
+    assert shape_reason(unit().model_copy(update={"box": Box(x=10, y=10, w=12, h=150)}), (200, 200)) is None
 
 
-def test_gate_rejects_joined_disagreement_and_unaligned():
-    assert quality_reason(unit(),votes(),(200,200)) is None
-    assert quality_reason(unit(),votes("字字"),(200,200)) == "visual-disagreement"
-    assert quality_reason(unit(review=ReviewState.REJECTED),votes(),(200,200)) == "alignment-uncertain"
-    faint=votes(); faint[1]["score"]=.12
-    assert quality_reason(unit(),faint,(200,200)) is None, "NDLkotenOCR's reading of the character counts at .10"
-    low=votes(); low[1]["score"]=.09
-    assert quality_reason(unit(),low,(200,200)) == "visual-uncertain"
-    unsure=votes(); unsure[0]["score"]=.79
-    assert quality_reason(unit(),unsure,(200,200)) == "visual-uncertain"
-    assert quality_reason(unit(),votes(),(30,30)) == "invalid-geometry"
+def test_extraction_publishes_what_the_cutter_accepts(tmp_path, monkeypatch):
+    from PIL import Image
+
+    from glyph_atlas import align, cut, extraction_queue
+    from glyph_atlas.extraction_queue import Engine
+
+    directory = tmp_path/"source"; directory.mkdir()
+    page = Page(id="d:0", document_id="d", seq=0, image="https://example.org/p.jpg", width=400, height=200)
+    line = Line(id="d:0:l", page_id="d:0", seq=0, text="字飍 字字", text_raw="字飍 字字", box=Box(x=0, y=0, w=400, h=200))
+    tables.write(directory/"documents.parquet", [Document(id="d", title="安政風聞集")], Document)
+    tables.write(directory/"pages.parquet", [page], Page)
+    tables.write(directory/"lines.parquet", [line], Line)
+    image = tmp_path/"p.png"; Image.new("RGB", (400, 200), "white").save(image)
+    monkeypatch.setattr(extraction_queue.images, "path_for", lambda _: image)
+
+    class Cutter:
+        version = "test"
+
+        def cut(self, lines, detections, image, classifier, *, policy):
+            first, rare, space, third, fourth = align.tokens_of(lines[0], policy)
+            return {lines[0].id: [
+                cut.Placement(token=first, box=Box(x=10, y=10, w=40, h=45), kind="box", probability=.99, accepted=True),
+                cut.Placement(token=rare, box=Box(x=100, y=10, w=50, h=45), kind="ink", probability=.97, accepted=True),
+                cut.Placement(token=space),
+                cut.Placement(token=third, box=Box(x=200, y=10, w=40, h=45), kind="part", probability=.4),
+                cut.Placement(token=fourth)]}
+
+    engine = object.__new__(Engine)
+    engine.run = type("Run", (), {"model_dump": lambda self: {}, "policy": "align-v1", "name": "test"})()
+    engine.models = {}
+    engine.detector = type("Detector", (), {"boxes": lambda self, _: []})()
+    engine.classifier = None
+    engine.cutter = Cutter()
+
+    report, output = engine.extract({"id": "d:0", "source": str(directory)}, tmp_path/"out")
+    units = {u.text_source: u for u in tables.Dataset(output).read("units")}
+    assert set(units) == {"字", "飍"}
+    assert units["飍"].unicode == "U+98CD" and units["飍"].review == ReviewState.MACHINE
+    assert units["飍"].meta["extraction"] | {"gate": "lattice", "cut": "ink", "probability": .97} == units["飍"].meta["extraction"]
+    assert report["examined"] == 4, "the space of the transcription is no character"
+    assert report["accepted"] == 2 and report["cuts"] == {"box": 1, "ink": 1}
+    assert report["withheld"] == {"framing-uncertain": 1, "no-ink": 1, "overlapping-crops": 0}
 
 
 def test_dedup_rejects_both_same_ink_even_if_labels_disagree():
@@ -34,19 +69,6 @@ def test_dedup_rejects_both_same_ink_even_if_labels_disagree():
     kept,count=unique_units([a,b,c])
     assert [u.id for u in kept] == ["third"]
     assert count == 2
-
-
-def test_nonfinite_or_invalid_model_scores_are_withheld():
-    for score in (float('nan'), float('inf'), -1, 1.01, None, '0.99', True):
-        result=votes()
-        result[0]['score']=score
-        assert quality_reason(unit(),result,(200,200)) == 'visual-uncertain'
-
-
-def test_family_score_is_not_an_exact_character_vote():
-    result = votes()
-    result[0]["identity_scope"] = "family"
-    assert quality_reason(unit(), result, (200, 200)) == "visual-disagreement"
 
 
 def source(tmp_path):
@@ -374,79 +396,6 @@ def test_priority_column_upgrades_an_old_queue_file_without_it(tmp_path):
     assert queue.claim("w")["id"] == "a"
 
 
-def test_gates_for_a_character_the_classifier_has_no_class_for():
-    from glyph_atlas.extraction_queue import out_of_vocabulary, unconfirmed_reason
-    rare = unit().model_copy(update={"text_source": "飍", "reading": "飍", "review": ReviewState.REJECTED})
-    assert out_of_vocabulary(rare, {"U+5B57"}) and not out_of_vocabulary(unit(), {"U+5B57"})
-    # Katakana is scored through its hiragana class; marks and punctuation have no ink of their own.
-    yu = unit().model_copy(update={"text_source": "ユ", "candidates": [Candidate(unicode="U+3086", p=1.0)]})
-    assert not out_of_vocabulary(yu, {"U+3086"})
-    for mark in ("ー", "〳", "：", "-", "（"):
-        assert not out_of_vocabulary(unit().model_copy(update={"text_source": mark}), set())
-    assert unconfirmed_reason(rare, [], (200,200), alphabet=set()) is None
-    assert unconfirmed_reason(rare, [], (30,30), alphabet=set()) == "invalid-geometry"
-    # Where NDLkotenOCR knows the character, it must read it.
-    assert unconfirmed_reason(rare, votes("尽"), (200,200), alphabet={"飍"}) == "visual-disagreement"
-    assert unconfirmed_reason(rare, votes("飍"), (200,200), alphabet={"飍"}) is None
-    # The classifier vetoes a box it confidently reads as a kana or as a neighbour.
-    assert unconfirmed_reason(rare, votes("お"), (200,200), alphabet=set()) == "visual-disagreement"
-    assert unconfirmed_reason(rare, votes("風"), (200,200), alphabet=set(), neighbours={"風"}) == "visual-disagreement"
-    assert unconfirmed_reason(rare, votes("高"), (200,200), alphabet=set(), neighbours={"風"}) is None
-    # NDLkotenOCR reading two characters surely means the box holds more than one.
-    two = votes("高"); two[1]["text"] = "吉園"
-    assert unconfirmed_reason(rare, two, (200,200), alphabet=set()) == "not-one-character"
-    two[1]["score"] = .78
-    assert unconfirmed_reason(rare, two, (200,200), alphabet=set()) is None
-    unsure = votes("お"); unsure[0]["score"] = .5
-    assert unconfirmed_reason(rare, unsure, (200,200), alphabet=set()) is None
-
-
-def test_extraction_publishes_out_of_vocabulary_units_tagged_unconfirmed(tmp_path, monkeypatch):
-    from PIL import Image
-
-    from glyph_atlas import align as align_module
-    from glyph_atlas import extraction_queue
-    from glyph_atlas.extraction_queue import Engine
-
-    directory = tmp_path/"source"; directory.mkdir()
-    page = Page(id="d:0", document_id="d", seq=0, image="https://example.org/p.jpg", width=400, height=200)
-    tables.write(directory/"documents.parquet", [Document(id="d", title="安政風聞集")], Document)
-    tables.write(directory/"pages.parquet", [page], Page)
-    tables.write(directory/"lines.parquet", [Line(id="d:0:l", page_id="d:0", seq=0, text="字飍字", text_raw="字飍字",
-                 box=Box(x=0, y=0, w=400, h=200))], Line)
-    image = tmp_path/"p.png"; Image.new("RGB", (400, 200), "white").save(image)
-    monkeypatch.setattr(extraction_queue.images, "path_for", lambda _: image)
-
-    def placed(text, x, review, box=True, w=40):
-        return Unit(id=f"u{x}", page_id="d:0", line_id="d:0:l", text_source=text, review=review,
-                    box=Box(x=x, y=10, w=w, h=45) if box else None)
-    # The classifier reads 字 on every 40-pixel crop, and 高 on the 50-pixel 飍 at x=100.
-    found = [placed("字", 10, ReviewState.MACHINE), placed("飍", 100, ReviewState.REJECTED, w=50),
-             placed("字", 200, ReviewState.REJECTED), placed("飍", 250, ReviewState.REJECTED),
-             placed("飍", 300, ReviewState.REJECTED, box=False)]
-    monkeypatch.setattr(align_module, "align_line", lambda *a, **k: (found, []))
-    monkeypatch.setattr(align_module, "clear_crop_cache", lambda: None)
-
-    engine = object.__new__(Engine)
-    engine.run = type("Run", (), {"model_dump": lambda self: {}})()
-    engine.models = {}
-    engine.detector = type("Detector", (), {"boxes": lambda self, _: []})()
-    engine.classifier = type("Classifier", (), {"classes": ["U+5B57", "other"]})()
-    engine.reader = type("Reader", (), {"alphabet": set("字"),
-                                        "read": lambda self, crop: {"votes": votes("高" if crop.width == 50 else "字")}})()
-
-    report, output = engine.extract({"id": "d:0", "source": str(directory)}, tmp_path/"out")
-    units = {u.meta["extraction"]["source_unit_id"]: u for u in tables.Dataset(output).read("units")}
-    assert units["u10"].meta["extraction"]["gate"] == "consensus"
-    assert units["u100"].meta["extraction"]["gate"] == "unconfirmed"
-    assert units["u100"].review == ReviewState.MACHINE and units["u100"].unicode == "U+98CD"
-    assert set(units) == {"u10", "u100"}
-    assert report["unconfirmed"] == 1
-    # The boxless 飍 and the in-vocabulary 字 stay withheld by the alignment; the 飍 at x=250 reads as
-    # its neighbour 字.
-    assert report["withheld"] == {"alignment-uncertain": 2, "visual-disagreement": 1, "overlapping-crops": 0}
-
-
 def test_a_page_s_inputs_are_read_from_its_own_rows_without_loading_the_catalogue(tmp_path, monkeypatch):
     from PIL import Image
 
@@ -686,23 +635,6 @@ def test_seeding_reads_a_page_s_report_once_and_a_page_finished_under_this_polic
     assert queue.seed_supplements() == 0
 
 
-@pytest.mark.parametrize("text,score,reason", [
-    ("字", .10, None), ("字", .0999, "visual-uncertain"), (" 字\n", .5, None),
-    ("子", .95, "visual-disagreement"), ("字字", .95, "visual-disagreement")])
-def test_ndl_s_reading_counts_from_ten_hundredths(text, score, reason):
-    ballot = votes(); ballot[1].update(text=text, score=score)
-    assert quality_reason(unit(), ballot, (200, 200)) == reason
-
-
-def test_a_small_kana_is_not_its_full_size_form_and_a_compatibility_ideograph_is_its_unified_one():
-    kana = unit(); kana.text_source = "ゃ"
-    ballot = [{"engine": "Atlas classifier", "text": "ゃ", "score": .97}, {"engine": "NDLkotenOCR", "text": "や", "score": .98}]
-    assert quality_reason(kana, ballot, (200, 200)) == "visual-disagreement"
-    han = unit(); han.text_source = "豈"  # U+8C48
-    ballot = [{"engine": "Atlas classifier", "text": "豈", "score": .97}, {"engine": "NDLkotenOCR", "text": "豈", "score": .5}]
-    assert quality_reason(han, ballot, (200, 200)) is None
-
-
 def test_focused_documents_are_claimed_first_until_the_focus_is_cleared(tmp_path, monkeypatch):
     monkeypatch.setattr("glyph_atlas.images.index_path", lambda: tmp_path/"missing")
     queue = Queue(tmp_path/"queue")
@@ -724,34 +656,30 @@ def test_a_focused_document_s_supplements_are_taken_first(tmp_path):
     assert queue.claim_supplement("w")["id"] == "b"
 
 
-def test_a_queue_keeps_the_ndl_provider_its_first_worker_brought(tmp_path):
-    queue = Queue(tmp_path / "queue")
-    queue.pin("ndl_provider", "CPUExecutionProvider")
-    queue.pin("ndl_provider", "CPUExecutionProvider")
-    with pytest.raises(RuntimeError, match="CPUExecutionProvider, not CUDAExecutionProvider"):
-        Queue(tmp_path / "queue").pin("ndl_provider", "CUDAExecutionProvider")
-    queue.pin("ndl_provider", "CUDAExecutionProvider", replace=True)
-    assert queue.db.execute("SELECT value FROM settings WHERE key='ndl_provider'").fetchone()[0] == "CUDAExecutionProvider"
-
-
-def test_where_ndl_runs_is_part_of_a_page_identity(tmp_path):
+def test_the_cutter_s_fitted_models_are_part_of_a_page_identity(tmp_path):
     from types import SimpleNamespace
+
+    import numpy as np
 
     from glyph_atlas.extraction_queue import engine_models, page_identity
 
-    detector = tmp_path / "detector.onnx"
-    detector.write_bytes(b"model")
+    for name in ("detector", "classifier", "refiner"):
+        (tmp_path / f"{name}.onnx").write_bytes(name.encode())
+    classifier = SimpleNamespace(onnx_path=tmp_path / "classifier.onnx", classes=["あ"])
+    refiner = SimpleNamespace(path=tmp_path / "refiner.onnx")
 
-    def reader(provider):
-        return SimpleNamespace(engines=[{"name": "NDLkotenOCR", "sha256": "s", "provider": provider}],
-                               classifier=SimpleNamespace(classes=["あ"]), alphabet="あい")
+    def cutter(accept):
+        return SimpleNamespace(version="lattice-1", framing=SimpleNamespace(weights=np.array([1.0])),
+                               gate=SimpleNamespace(weights=np.array([2.0]), accept=accept))
 
     run = SimpleNamespace(model_dump=lambda: {"detector": "d"})
     page = Page(id="a:0", document_id="a", seq=0, image="https://example.org/x.jpg", width=100, height=100)
     document = Document(id="a", title="暦")
-    on_gpu, on_cpu = (page_identity(engine_models(detector, reader(p)), run, page, document, [])
-                      for p in ("CUDAExecutionProvider", "CPUExecutionProvider"))
-    assert on_gpu != on_cpu
+    strict, loose = (page_identity(engine_models(tmp_path / "detector.onnx", classifier, refiner, cutter(accept)),
+                                   run, page, document, []) for accept in (.95, .9))
+    assert strict != loose
+
+
 def test_workers_sharing_a_queue_never_claim_the_same_page(tmp_path):
     """Claims from separate connections, as separate worker processes make them, take distinct pages."""
     import threading

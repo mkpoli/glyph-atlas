@@ -8,6 +8,7 @@
         "@better-auth/oauth-provider": "1.7.7",
         "@better-auth/passkey": "^1.7.7",
         "@fontsource/klee-one": "^5.3.0",
+        "@glyph-atlas/design-system": "file:../../packages/design-system",
         "better-auth": "^1.7.7",
         "onnxruntime-web": "1.30.0",
       },
@@ -118,6 +119,8 @@
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.28.2", "", { "os": "win32", "cpu": "x64" }, "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g=="],
 
     "@fontsource/klee-one": ["@fontsource/klee-one@5.3.0", "", {}, "sha512-1mnMRQO70AnTCHaWy5ovYKjbvszpOp7//bMDZ+PnjBMmar5YRcbskVzM4u+Syd8CMWw353R3BvsrsKQrwVRnEw=="],
+
+    "@glyph-atlas/design-system": ["@glyph-atlas/design-system@file:../../packages/design-system", {}],
 
     "@hexagon/base64": ["@hexagon/base64@1.1.28", "", {}, "sha512-lhqDEAvWixy3bZ+UOYbPwUbBkwBq5C1LAJ/xPC8Oi+lL54oyakv/npbA0aU2hgCsx/1NUd4IBvV03+aUBWxerw=="],
 

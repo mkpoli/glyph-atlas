@@ -1,70 +1,19 @@
-/* Each colour token pairs a light and a dark value, and the page follows the reader's colour scheme.
-   Filled controls have colours of their own, apart from text accents, so their light labels keep
-   their contrast in both schemes. Crop images and page scans are shown as they are in either. */
+@import '@glyph-atlas/design-system/tokens.css';
+
+/* The page defaults sit here as well as in the package's base.css, because the
+   review app imports only the tokens and keeps its own element rules. */
 :root {
-  color-scheme: light dark;
-  font-family: Inter,"Helvetica Neue",Arial,"Noto Sans","GenZui Sans","Noto Serif Tangut",sans-serif;
+  font-family: var(--ga-font-ui);
   color: var(--ink);
   background: var(--paper);
   font-synthesis: none;
   font-weight: 400;
-  --paper: light-dark(#fafafa, #121215);
-  --surface: light-dark(#fff, #1b1b1f);
-  --surface-sunken: light-dark(#f1f1f3, #232329);
-  --surface-subtle: light-dark(#f7f7f8, #202025);
-  --surface-tile: light-dark(#f4f4f5, #232329);
-  --surface-selected: light-dark(#eaeaec, #323239);
-  --surface-disabled: light-dark(#f5f5f7, #232329);
-  --surface-badge: light-dark(#f0f0f3, #292930);
-  --surface-skipped: light-dark(#eceaf0, #29272f);
-  --surface-quiet: light-dark(#f4efe6, #29262a);
-  --ink: light-dark(#19191c, #e6e6ea);
-  --muted: light-dark(#77777f, #9d9da6);
-  --ink-soft: light-dark(#6b625a, #aaa3a0);
-  --faint: light-dark(#a0a0a7, #93939e);
-  --line: light-dark(#e3e3e7, #2e2e35);
-  --line-strong: light-dark(#a6a6ae, #646470);
-  --line-hover: light-dark(#ceccd9, #666174);
-  --accent: light-dark(#6356e5, #9c92ff);
-  --accent-solid: light-dark(#6356e5, #6356e5);
-  --accent-solid-hover: light-dark(#5144ce, #5144ce);
-  --on-color: light-dark(#fff, #fff);
-  --accent-light: light-dark(#eeebff, rgb(156 146 255 / 12%));
-  --accent-hover: light-dark(#f6f4ff, rgb(156 146 255 / 8%));
-  --accent-tile: light-dark(#eae7fa, #302c43);
-  --accent-wash: light-dark(#6356e51f, rgb(156 146 255 / 12%));
-  --focus-ring: light-dark(#b1a7ff, #b1a7ff);
-  --wrong: light-dark(#be3d49, #ff929f);
-  --fault: light-dark(#8a3b2a, #ffab94);
-  --wrong-solid: light-dark(#be3d49, #be3d49);
-  --wrong-light: light-dark(#fff2f3, rgb(255 146 159 / 10%));
-  --uncertain: light-dark(#996c1f, #e3b967);
-  --uncertain-light: light-dark(#fff8e9, rgb(227 185 103 / 10%));
-  --uncertain-badge: light-dark(#f0e2c8, rgb(227 185 103 / 15%));
-  --uncertain-ink: light-dark(#6b4c12, #e3b967);
-  --good: light-dark(#458665, #82cda3);
-  --good-solid: light-dark(#458665, #356c4f);
-  --good-light: light-dark(#eef4f0, rgb(130 205 163 / 10%));
-  --proposed: light-dark(#0e8a7a, #70ccbd);
-  --action-surface: light-dark(#19191c, #38383f);
-  --toast-surface: light-dark(#24212f, #38343f);
-  --shadow: light-dark(#0002, rgb(0 0 0 / 45%));
-  --shadow-soft: light-dark(#0001, rgb(0 0 0 / 30%));
-  --shadow-menu: light-dark(#1111, rgb(0 0 0 / 35%));
-  --backdrop: light-dark(#17171b66, rgb(0 0 0 / 65%));
-  --backdrop-inspector: light-dark(#16151f59, rgb(0 0 0 / 60%));
-  --overlay: light-dark(#fffffff2, #1b1b1ff2);
-  --overlay-page: light-dark(#fafafaf2, #121215f2);
-  /* The paper a crop shows before its image arrives, when its record names no tone of its own. */
-  --crop-paper: light-dark(#d6cebf, #9c9484);
-  /* Source image backing stays identical in both schemes. */
-  --scan-paper: light-dark(#fff, #fff);
-  --scan-surface: light-dark(#f4f4f5, #f4f4f5);
 }
-/* A scheme the reader chose in the menu overrides the system's. */
+
+/* A scheme the reader chose in the menu overrides the system's. The tokens themselves live in
+   packages/design-system and are imported above. */
 :root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
 /* One thin scrollbar everywhere, in the page's own colours. */
-:root{--scrollbar:light-dark(#cbc9d2, #45434e);--scrollbar-hover:light-dark(#a8a6b1, #5f5c6a)}
 *{scrollbar-width:thin;scrollbar-color:var(--scrollbar) transparent}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--scrollbar);border-radius:8px;border:2px solid transparent;background-clip:content-box}

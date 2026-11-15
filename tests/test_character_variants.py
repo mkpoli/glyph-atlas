@@ -57,7 +57,9 @@ def test_the_graph_replaces_every_table_of_the_reference_input(tmp_path, monkeyp
     with reference_input.writing(path) as db:
         db.execute("INSERT INTO character_variants VALUES('a','b','variant','x','',1,1)")
         db.execute("INSERT INTO character_derived VALUES('㐀','[]')")
-    monkeypatch.setattr(sys, "argv", ["export_character_variants.py", "--input", str(path)])
+    listed = tmp_path / "described.txt"
+    listed.write_text("⿰月兊\n⿰山\n\n還\n⿰月兊\n")
+    monkeypatch.setattr(sys, "argv", ["export_character_variants.py", "--input", str(path), "--described", str(listed)])
     export.main()
     db = sqlite3.connect(path)
     edges = {(e["a"], e["b"], e["relation"], e["source"]): e for e in refs.variant_edges()}
@@ -66,7 +68,9 @@ def test_the_graph_replaces_every_table_of_the_reference_input(tmp_path, monkeyp
     assert db.execute("SELECT count(*) FROM character_variants WHERE a='a'").fetchone() == (0,), "an earlier row goes"
     assert db.execute("SELECT written, widens FROM character_variants WHERE a='克' AND b='刻'").fetchone() == (0, 0)
     assert db.execute("SELECT a, forms FROM character_derived ORDER BY a").fetchall() == list(rows)
-    assert db.execute("SELECT char, sequences, shapes FROM han_ids ORDER BY char").fetchall() == list(ids)
+    # The site's descriptions sit beside the characters, each as its own description; a malformed line is left out.
+    assert db.execute("SELECT char, sequences, shapes FROM han_ids ORDER BY char").fetchall() == [
+        ("⿰月兊", '["⿰月兊"]', None), *ids]
     assert db.execute("SELECT count(*) FROM words").fetchone() == (len(export.word_rows()),)
     assert db.execute("SELECT count(*) FROM word_spellings").fetchone() == (len(export.spelling_rows()),)
     assert db.execute("SELECT documents FROM word_spellings WHERE spelling='斗' AND source='honkoku-ruby'").fetchone()[0] >= 2
@@ -131,7 +135,8 @@ def test_a_spelling_counted_under_two_readings_names_each():
 
 def test_the_card_lists_the_graphemes_a_reduced_form_writes_and_the_forms_that_write_its_own(monkeypatch):
     monkeypatch.setattr(characters.corpus_source, "counts", lambda chars: {})
-    assert characters.variant_card("后", {})["writes"] == [{"code_point": "U+5F8C", "char": "後"}]
+    assert characters.variant_card("后", {})["writes"] == [
+        {"code_point": "U+5F8C", "char": "後", "count": 0, "corpus_count": 0}]
     assert characters.variant_card("後", {})["writers"] == [{"code_point": "U+540E", "char": "后", "shared": True}]
     stand_in = characters.variant_card("𠮮", {})
     assert [w["char"] for w in stand_in["writes"]] == ["后", "𠯑"] and stand_in["own"] is False

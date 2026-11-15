@@ -5,6 +5,8 @@
 // radical, a stroke, a katakana letter standing for a component of that shape (コ in ⿱コ疋, which no
 // ideograph writes), a private-use character, or ？ for a part no character names, and may carry a
 // variation selector. The review app checks what a reader types by the same rules (`lib/ids.js`).
+import { MOJI_JOHO } from './compatibilityData';
+
 export const FORM_LONGEST = 64;
 const BINARY = new Set([...'⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽㇯']), TERNARY = new Set([...'⿲⿳']), UNARY = new Set([...'⿾⿿〾']);
 const arity = (c: string) => BINARY.has(c) ? 2 : TERNARY.has(c) ? 3 : UNARY.has(c) ? 1 : 0;
@@ -18,6 +20,48 @@ const selector = (c: string | undefined) => c !== undefined && /^[︀-️\u{E010
 const single = (value: string) => /^\P{M}[\p{M}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]*$/u.test(value);
 /** Whether a value is written as a description, which starts with an operator. */
 export const isSequence = (value: string) => arity([...value][0] ?? '') > 0;
+/** The characters and descriptions a text names one after another: a description ends where its
+ *  operators are satisfied, so 說⿰月兊説 names three. What follows a description cut short, or one
+ *  longer than a form may be, is left out. */
+export function written(text: string): string[] {
+  const chars = [...text], found: string[] = [];
+  let at = 0;
+  const described = (): boolean => {
+    const c = chars[at++];
+    if (c === undefined) return false;
+    if (!arity(c)) { if (selector(chars[at])) at++; return component(c); }
+    for (let n = arity(c); n > 0; n--) if (!described()) return false;
+    return true;
+  };
+  while (at < chars.length) {
+    const from = at;
+    if (arity(chars[at])) { if (!described() || at - from > FORM_LONGEST) break; }
+    else for (at++; at < chars.length && /^[\p{M}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]$/u.test(chars[at]);) at++;
+    found.push(chars.slice(from, at).join(''));
+  }
+  return found;
+}
+/** The key a name's 構形 is kept under: a description as written, a character without its marks and
+ *  variation selector. A compatibility ideograph has its unified ideograph's (說 U+F96F has 說's). */
+export const structureKey = (name: string) => isSequence(name) ? name.normalize('NFC') : [...name.normalize('NFC')][0] ?? '';
+/** Whether `char` is a CJK compatibility ideograph: a code point that stands for a unified ideograph
+ *  (說 U+F96F and U+F9A1 for 說 U+8AAA), which NFC writes in its place. The twelve unified ideographs
+ *  of the compatibility block (﨑 U+FA11) are characters of their own and stand for nothing. */
+export const compatibility = (char: string) => /^\p{Script=Han}$/u.test(char) && char.normalize('NFC') !== char;
+let figures: Map<string, string> | null = null;
+/** What a compatibility ideograph is written as: the Moji_Joho sequence of the figure the
+ *  MJ文字情報一覧表 implements as it (突 U+FA55 is 突 U+7A81 U+E0103), or with none its unified ideograph
+ *  (說 U+F96F is 說 U+8AAA). Inside a longer text, the base of a sequence or a part of a description, it
+ *  is its unified ideograph. */
+export function standsFor(char: string): string {
+  if (!compatibility(char)) return [...char].map(c => compatibility(c) ? c.normalize('NFC') : c).join('');
+  figures ??= new Map(MOJI_JOHO.split(' ').map(pair => {
+    const [code, selector] = pair.split(':').map(hex => String.fromCodePoint(parseInt(hex, 16)));
+    return [code, code.normalize('NFC') + selector];
+  }));
+  return figures.get(char) ?? char.normalize('NFC');
+}
+
 /** What is wrong with a written form: `character` (not one character nor a description), `component`
  *  (a part no description may name), `missing` (an operator short of descriptions) or `extra` (more
  *  than its operators take); null when it is one. */
@@ -47,11 +91,12 @@ const PRIVATE: [number, number][] = [[0xE000, 0xF8FF], [0xF0000, 0xFFFFD], [0x10
 const isPrivate = (c: string) => { const n = c.codePointAt(0)!; return PRIVATE.some(([low, high]) => n >= low && n <= high) };
 export type Representation = { scheme: 'unicode' | 'ivs' | 'ids' | 'mj' | 'glyphwiki' | 'pua'; value: string; namespace: string | null; version: string | null };
 /** What a reviewer typed or picked, as a representation, or why it is none. A private-use character
- *  names nothing without its mapping, which a picker cannot give, so it is refused. */
-export function typed(value: string): Representation | FormProblem | 'private' {
-  const problem = formProblem(value);
+ *  names nothing without its mapping, which a picker cannot give, so it is refused. A compatibility
+ *  ideograph is what it stands for (`standsFor`). */
+export function typed(written: string): Representation | FormProblem | 'private' {
+  const problem = formProblem(written);
   if (problem) return problem;
-  const chars = [...value];
+  const value = standsFor(written), chars = [...value];
   if (isSequence(value)) return { scheme: 'ids', value, namespace: null, version: null };
   if (isPrivate(chars[0])) return 'private';
   if (selector(chars.at(-1))) return chars.length === 2 ? { scheme: 'ivs', value, namespace: null, version: null } : 'character';

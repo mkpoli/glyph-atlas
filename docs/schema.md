@@ -68,6 +68,7 @@ One physical exemplar (a copy, a manuscript, an archival document).
 | `text_register` | `wabun`, `kanbun`, `kanbun-kundoku`, `sorobun`, `mixed`, `unknown` |
 | `dating` | what the corpus's own source states, as its importer read it: each with `literal` as written (文政3), `start` and `end` years, `kind` (composition, copying, publication, impression), `evidence`. Every dated statement about a document, this one and those of other sources, becomes a claim in `dates` below |
 | `hands` | free-text notes on scribes where known |
+| `image_kind` | what the document's page images show: `flat-reproduction` (the default), `object-photograph`, `editorial-diagram` or `mixed`. Only a flat reproduction of a pre-modern work is taken as public domain; every other value keeps the stated terms. A reader older than version 7 drops the column and treats the images as flat, so it must not read a dataset whose manifest states a newer version (`docs/licensing.md`). Version 7 added the field; a table written before it reads as `flat-reproduction` |
 | `image_rights`, `text_rights` | licence, holder, attribution string, evidence URL, date checked; `holder_terms` keeps the holder's own statement where the images of a public-domain work are recorded as PD (`docs/licensing.md`) |
 
 ### pages
@@ -80,6 +81,7 @@ One physical exemplar (a copy, a manuscript, an archival document).
 | `width`, `height`, `sha256` | of the full-size image as fetched |
 | `transcription` | source id, entry id and revision of the text used |
 | `style` | style of the letterforms, a value of `data/vocab/style.yaml` such as `regular`, `cursive` or `ming`; `unassessed` takes the document's |
+| `image_kind` | what this page's image shows: `flat-reproduction` (the default), `object-photograph` or `editorial-diagram`. A mixed document states each page's kind here; a table written before the field reads as `flat-reproduction` |
 
 Coordinates of lines and units are pixels on this image. A page that is one half of a photographed
 spread is still one page; the spread relation is recorded through `canvas`.
@@ -248,7 +250,8 @@ several where the kanji table has several, each with the version in its table's 
 `data/vocab/han-ids.tsv` gives each ideograph's Ideographic Description Sequences from BabelStone's
 IDS.TXT, and `data/vocab/han-component-forms.tsv` the component forms that stand for another character
 (⺡ for 氵, 氵 for 水); `scripts/build_han_components.py` writes both, and search reads them to find a
-character by its components. `data/vocab/graphemes.yaml` states the curated kana assignments, 字母
+character by its components. `data/vocab/han-component-ucv.tsv`, from the same script, lists the
+component variations the IRG gives as unifiable or not (戶 户 戸), which the structure layer reads. `data/vocab/graphemes.yaml` states the curated kana assignments, 字母
 overrides and cited orthographic families. A new value must state its source.
 `data/vocab/words.tsv` and `data/vocab/word-spellings.tsv` record the characters cited as writing a
 word (計, 許 and 斗 for the particle ばかり), one row per source statement; the spellings of a word are

@@ -1,25 +1,17 @@
 <script>
   // A form as the picker and the form bar show it: a character in its script's colour, or a shape
   // Unicode lacks, named by its ideographic description sequence and marked as one, which `ScriptText`
-  // draws in the colour of Han. Hovering shows the sequence as written. A registered figure, a
-  // character with an ideographic variation selector, is drawn in MJ Figures, the font that maps its
-  // sequence. `stacked` sets the tag under the form, as a card's label; `lang` the language whose fonts
-  // draw it (a regional shape).
+  // draws in the colour of Han. Hovering shows the sequence as written. `stacked` sets the tag under
+  // the form, as a card's label; `lang` the language whose fonts draw it (a regional shape).
   import ScriptText from './ScriptText.svelte'
   import { isDescription } from '../lib/ids.js'
-  import { FAMILY, drawFigure, isFigure } from '../lib/mjFigures.js'
   import { t } from '../lib/i18n.svelte.js'
   let { text = '', script = '', lang = '', stacked = false } = $props()
   const described = $derived(isDescription(text))
-  const figure = $derived(isFigure(text))
-
-  $effect(() => { if (figure) drawFigure(text).catch(() => {}) })
 </script>
 
 {#if described}
   <span class="ids-form" class:stacked title={text}><ScriptText {text} script="han" {lang} titled={false} /><small class="ids-tag">{t('form.ids.tag')}</small></span>
-{:else if figure}
-  <span class="figure-form" style:font-family={`"${FAMILY}", serif`}><ScriptText {text} {script} /></span>
 {:else}
   <ScriptText {text} {script} {lang} />
 {/if}
