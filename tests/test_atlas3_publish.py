@@ -620,7 +620,94 @@ def test_a_change_of_page_facts_alone_moves_the_page_revision(layout, monkeypatc
     pid = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, id FROM pages"))["hl:p2"]
     assert remote.query("glyph-atlas-v3", f"SELECT rev FROM pages WHERE id={pid}") == [{"rev": 2}]
     body = json.loads(gzip.decompress((root / "out" / "pages" / f"{pid}-2.json.gz").read_bytes()))
-    assert body["page"] == {"iiif": "https://example.org/p2"} and [c["id"] for c in body["crops"]] == ["ex:b1"]
+    # The book's other page has no facts, so this one has no neighbour.
+    assert body["page"] == {"iiif": "https://example.org/p2", "previous": None, "next": None}
+    assert [c["id"] for c in body["crops"]] == ["ex:b1"]
+
+
+def page_catalogue(path, units, pages):
+    """A catalogue of `units` with the facts of `pages` of book:a, {key: facts}."""
+    db = sqlite3.connect(catalogue(path, units))
+    db.execute("CREATE TABLE pages(id, document, data)")
+    db.executemany("INSERT INTO pages VALUES(?, 'book:a', ?)", [(key, json.dumps(facts)) for key, facts in pages.items()])
+    db.commit()
+    return path
+
+
+def published_pages(root):
+    """Each page of the local copy by key: its revision and the facts of its bundle."""
+    found = {}
+    for pid, key, rev in sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT id, key, rev FROM pages"):
+        found[key] = (rev, json.loads(gzip.decompress((root / "out" / "pages" / f"{pid}-{rev}.json.gz").read_bytes()))["page"])
+    return found
+
+
+def links(root):
+    return {key: (page["previous"], page["next"]) for key, (_, page) in published_pages(root).items() if page}
+
+
+def test_a_page_links_to_its_neighbours_among_the_pages_of_its_book_the_site_holds(layout, monkeypatch, tmp_path, capsys):
+    root, publish, remote = layout
+    run(publish, monkeypatch, page_catalogue(tmp_path / "first.sqlite", [], {"hl:p1": {"page_number": 3}, "hl:p2": {"page_number": 9}}))
+    assert links(root) == {"hl:p1": (None, "hl:p2"), "hl:p2": ("hl:p1", None)}
+    # A later catalogue holds one page alone, which lies between the two.
+    batch = page_catalogue(tmp_path / "batch.sqlite", [unit("ex:new", "hl:p3", {"x": 0, "y": 0, "w": 10, "h": 10})],
+                           {"hl:p3": {"page_number": 5}})
+    remote.uploaded.clear()
+    run(publish, monkeypatch, batch)
+    assert links(root) == {"hl:p1": (None, "hl:p3"), "hl:p3": ("hl:p1", "hl:p2"), "hl:p2": ("hl:p3", None)}
+    pages = published_pages(root)
+    assert {key: pages[key][0] for key in ("hl:p1", "hl:p2", "hl:p3")} == {"hl:p1": 3, "hl:p2": 3, "hl:p3": 1}
+    assert pages["hl:p1"][1] == {"page_number": 3, "previous": None, "next": "hl:p3"}
+    assert len(remote.uploaded) == 3
+    assert "2 pages published before take other neighbours in their book" in capsys.readouterr().out
+    # The same catalogue again finds every page as it is.
+    remote.uploaded.clear()
+    stamps = remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports")
+    run(publish, monkeypatch, batch)
+    assert remote.uploaded == [] and remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports") == stamps
+    assert published_pages(root) == pages
+    assert "nothing changed" in capsys.readouterr().out
+
+
+def test_links_a_catalogue_carries_are_not_heard(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    numbers = {"hl:p1": {"page_number": 1}, "hl:p2": {"page_number": 2}}
+    run(publish, monkeypatch, page_catalogue(tmp_path / "first.sqlite", [], numbers))
+    before = published_pages(root)
+    remote.uploaded.clear()
+    # A catalogue with no links leaves the published ones; one of a few pages cannot break them.
+    run(publish, monkeypatch, page_catalogue(tmp_path / "plain.sqlite", [], {"hl:p2": numbers["hl:p2"]}))
+    run(publish, monkeypatch, page_catalogue(tmp_path / "linked.sqlite", [],
+                                             {"hl:p2": {**numbers["hl:p2"], "previous": None, "next": "hl:p9"}}))
+    assert published_pages(root) == before and remote.uploaded == []
+    assert links(root) == {"hl:p1": (None, "hl:p2"), "hl:p2": ("hl:p1", None)}
+
+
+def test_a_dry_run_writes_the_pages_that_take_other_neighbours(layout, monkeypatch, tmp_path, capsys):
+    root, publish, remote = layout
+    run(publish, monkeypatch, page_catalogue(tmp_path / "first.sqlite", [], {"hl:p1": {"page_number": 3}, "hl:p2": {"page_number": 9}}))
+    before = published_pages(root)
+    remote.uploaded.clear()
+    capsys.readouterr()
+    run(publish, monkeypatch, page_catalogue(tmp_path / "batch.sqlite", [unit("ex:new", "hl:p3", {"x": 0, "y": 0, "w": 10, "h": 10})],
+                                             {"hl:p3": {"page_number": 5}}), "--dry-run")
+    out = capsys.readouterr().out
+    assert "3 pages" in out and "2 pages published before take other neighbours in their book" in out
+    folder = next(p for p in (root / "out" / "publish").iterdir() if "batch" in p.name)
+    written = {body["key"]: body["page"] for body in (json.loads(gzip.decompress(f.read_bytes())) for f in (folder / "pages").iterdir())}
+    # The new page has its key and book in the dry run as in a publish, so the bundles are those a publish sends.
+    assert {key: (page["previous"], page["next"]) for key, page in written.items()} == {
+        "hl:p1": (None, "hl:p3"), "hl:p3": ("hl:p1", "hl:p2"), "hl:p2": ("hl:p3", None)}
+    assert published_pages(root) == before and remote.uploaded == []
+
+
+def test_a_books_pages_are_linked_by_number_then_key_with_unnumbered_pages_last(layout):
+    _root, publish, _remote = layout
+    assert publish.page_links([("d:10", 10), ("d:2", 2), ("d:b", 2), ("d:x", None), ("d:a", None)]) == {
+        "d:2": (None, "d:b"), "d:b": ("d:2", "d:10"), "d:10": ("d:b", "d:a"), "d:a": ("d:10", "d:x"), "d:x": ("d:a", None)}
+    assert publish.page_links([("d:1", 1)]) == {"d:1": (None, None)}
+    assert publish.page_links([]) == {}
 
 
 def test_a_publish_stopped_before_its_bundles_reached_r2_is_finished_by_the_next_run(layout, monkeypatch, tmp_path):
