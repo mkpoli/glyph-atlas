@@ -817,6 +817,8 @@ def review_propose_characters(
                                          "characters smaller than the detector's 50 to 120 px")] = 1.0,
     fill: Annotated[list[float] | None, typer.Option(
         "--fill", min=0.25, max=4.0, help="also detect at this scale and add what no box covers; repeat for several")] = None,
+    ink: Annotated[bool, typer.Option("--ink", help="drop a box that holds none of the page's ink: one on a red "
+                                                    "ruling, a seal, a stain or bare paper")] = False,
 ) -> None:
     """Propose the character boxes of page photos that have no transcription, for reviewers to read.
 
@@ -847,7 +849,8 @@ def review_propose_characters(
     unknown = set(document or ()) - {record.document_id for record in pages}
     if unknown:
         raise typer.BadParameter(f"no document {', '.join(sorted(unknown))}")
-    version = character_proposals.proposer(model, score=score, nms=nms, split=split, scale=scale, fill=fill or ())
+    version = character_proposals.proposer(model, score=score, nms=nms, split=split, scale=scale, fill=fill or (),
+                                           ink=ink)
     detector = Detector(model, score=score, nms=nms)
     if page or document:
         pages = [record for record in pages
@@ -861,7 +864,7 @@ def review_propose_characters(
             continue
         with Image.open(path) as image:
             proposals = character_proposals.propose(image.convert("RGB"), detector, split=split, scale=scale,
-                                                    fill=fill or ())
+                                                    fill=fill or (), ink=ink)
             size = image.size
         result = store.propose_units(record.id, proposals, version, image_size=size, script=filed)
         if result["skipped"]:
