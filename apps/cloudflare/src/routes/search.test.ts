@@ -334,6 +334,12 @@ describe("the IDS editor's structure", () => {
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆⿰石月')).toEqual({ items: [
       { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '磆', '⿰石月'], claimed: { '磆': ['reader'], '⿰石月': ['reader'] },
         folded: [{ id: other, label: '一', by: ['reader'], chars: ['磆'] }] }] });
+    // Another structure the form was filed under is listed with where it stands, when it is folded.
+    const third = 'st:00000000000000000000000000000003';
+    atlasDb.query("INSERT INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,'二','babelstone-ids','v','structure-v1','u',?)").run(third, at);
+    atlasDb.query("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'has_structure','',?,'asserted',?,?,'[]',?,'ledger-r1',?)")
+      .run((await formNamed('磆'))!, third, third, JSON.stringify([{ object: third }]), JSON.stringify([{ asserted_by: 'ann', standing: true }, { asserted_by: 'bob', standing: true }]), at);
+    expect((await structuresOf(newEnv, ctx, 'https://new.test', '滑磆') as any).filed).toEqual({ '磆': [{ id: other, label: '一', by: ['reader'], head: 'st:00000000000000000000000000000001' }] });
     atlasDb.run("DELETE FROM current_claims WHERE predicate IN ('has_structure','folds_into')");
     // A regional shape is no key of the shards: named with its character, it has the structure the character's shard gives it.
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '⿰氵⿵冖月⿰氵骨')).toEqual({ items: [

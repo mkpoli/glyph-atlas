@@ -219,7 +219,7 @@ type Group = { id: string; label: string; chars: string[]; claimed?: Record<stri
  *  character's descriptions give it. A structure a reader folded into another stands under that one:
  *  `folded` lists each such structure of the group with who folded it and the names built as it. A
  *  name with no structure is in no group. `filed` lists, for a name readers filed under several
- *  structures, the others with who says so. What the descriptions give is kept at the edge by the
+ *  structures, the others with who says so and, for one that is folded, where it stands (`head`). What the descriptions give is kept at the edge by the
  *  catalogue version; the claims and folds are read each time, and an answer that could not read
  *  them gives the descriptions' alone. */
 export async function structuresOf(env: Env, ctx: ExecutionContext, origin: string, chars: string, of = '') {
@@ -230,16 +230,17 @@ export async function structuresOf(env: Env, ctx: ExecutionContext, origin: stri
   const [derived, claimed] = await Promise.all([derivedStructures(env, ctx, origin, named, shaped),
     claimedStructures(env, named).catch(unread(new Map() as Awaited<ReturnType<typeof claimedStructures>>))]);
   const built = new Map(named.flatMap(char => { const structure = claimed.get(char)?.[0] ?? derived[char]; return structure ? [[char, structure] as const] : [] }));
-  const folds = await foldsOf(env, [...built.values()].map(structure => structure.id)).catch(unread(new Map() as Awaited<ReturnType<typeof foldsOf>>));
+  const others = named.flatMap(char => (claimed.get(char) ?? []).slice(1));
+  const folds = await foldsOf(env, [...built.values(), ...others].map(structure => structure.id)).catch(unread(new Map() as Awaited<ReturnType<typeof foldsOf>>));
   const groups = new Map<string, Group>();
-  const filed: Record<string, { id: string; label: string; by: string[] }[]> = {};
+  const filed: Record<string, { id: string; label: string; by: string[]; head?: string }[]> = {};
   for (const [char, structure] of built) {
     const fold = folds.get(structure.id), head = fold?.head ?? structure;
     const group = groups.get(head.id) ?? { id: head.id, label: head.label, chars: [] };
     group.chars.push(char);
     const [claim, ...rest] = claimed.get(char) ?? [];
     if (claim) group.claimed = { ...group.claimed, [char]: claim.by };
-    if (rest.length) filed[char] = rest;
+    if (rest.length) filed[char] = rest.map(other => folds.has(other.id) ? { ...other, head: folds.get(other.id)!.head.id } : other);
     if (fold) {
       group.folded ??= [];
       let part = group.folded.find(one => one.id === structure.id);
@@ -260,7 +261,8 @@ async function derivedStructures(env: Env, ctx: ExecutionContext, origin: string
     ...named.map(name => characterIds(env, structureKey(name), ctx))]);
   const shapes = new Map((whole?.shapes ?? []).map(shape => [shape.text as string, ('structure' in shape ? shape.structure : whole!.structure) as { id: string; label: string } | null]));
   const found = Object.fromEntries(named.flatMap((char, i) => {
-    const structure = described[i]?.structure ?? shapes.get(char);
+    // A shape's own structure, as a save that names the shape finds it.
+    const structure = shapes.has(char) ? shapes.get(char) : described[i]?.structure;
     return structure ? [[char, structure]] : [];
   }));
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${KEPT}` } })));

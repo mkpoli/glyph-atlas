@@ -490,7 +490,11 @@ describe('a form filed under a structure', () => {
     expect(db.query('SELECT id FROM structures ORDER BY id').all().map((row: any) => row.id)).toEqual([beside, above].sort());
     expect(db.query("SELECT subject,object,crop,method FROM assertions WHERE predicate='folds_into'").get())
       .toEqual({ subject: above, object: beside, crop: null, method: 'form-picker' });
-    expect(await foldsOf(env, [above, beside])).toEqual(new Map([[above, { head: { id: beside, label: '⿰山夆' }, by: ['reader'] }]]));
+    expect(await foldsOf(env, [above, beside])).toEqual(new Map([[above, { head: { id: beside, label: '⿰山夆' }, by: ['reader'], path: [beside] }]]));
+    // The same fold made again is no new claim: what others said of the first stands.
+    expect(await fold({ char: '峯' }, { structure: beside })).toEqual({ ...folded, replaced: null });
+    expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='folds_into'").get()).toEqual({ n: 1 });
+    expect(db.query("SELECT count(*) AS n FROM assertion_actions").get()).toEqual({ n: 0 });
     // Another reader joins; only one's own fold is theirs to take back.
     expect((await fold({ structure: above }, { structure: beside }, 'other')).folds_into?.by.sort()).toEqual(['other', 'reader']);
     expect(await fold({ structure: above }, null)).toEqual({ structure: above, folds_into: { id: beside, label: '⿰山夆', by: ['other'] }, replaced: beside });
@@ -503,7 +507,7 @@ describe('a form filed under a structure', () => {
     const { env, fold, beside, above, wind } = await forms();
     await fold({ char: '峯' }, { char: '峰' });
     await fold({ char: '峰' }, { char: '嵐' });
-    expect((await foldsOf(env, [above])).get(above)).toEqual({ head: { id: wind, label: '⿱山風' }, by: ['reader'] });
+    expect((await foldsOf(env, [above])).get(above)).toEqual({ head: { id: wind, label: '⿱山風' }, by: ['reader'], path: [beside, wind] });
     expect((await foldsOf(env, [beside])).get(beside)?.head.id).toBe(wind);
     const moved = await fold({ char: '峯' }, { char: '嵐' });
     expect(moved).toEqual({ structure: above, folds_into: { id: wind, label: '⿱山風', by: ['reader'] }, replaced: beside });
@@ -517,6 +521,8 @@ describe('a form filed under a structure', () => {
     await fold({ char: '峯' }, { char: '峰' });
     await fold({ char: '峰' }, { char: '嵐' });
     await expect(fold({ char: '嵐' }, { char: '峯' })).rejects.toThrow('409 That structure already stands under this one.');
+    // Midway along the folds counts too: the new fold would take back the one that leads on from 峰.
+    await expect(fold({ char: '峰' }, { char: '峯' })).rejects.toThrow('409 That structure already stands under this one.');
     await expect(fold({ structure: 'st:' + '1'.repeat(32) }, { structure: beside })).rejects.toThrow('422 No claim has named this structure.');
     await expect(fold({ structure: above }, { structure: 'st:' + '1'.repeat(32) })).rejects.toThrow('422 No claim has named this structure.');
     await expect(fold({ char: '丑' }, { structure: wind })).rejects.toThrow('422 No structure is known for 丑.');
@@ -536,6 +542,20 @@ describe('a form filed under a structure', () => {
       .run(beside, above, at);
     const ring = await foldsOf(env, [above, beside, wind]), low = [above, beside].sort()[0];
     expect([ring.get(above)?.head.id ?? above, ring.get(beside)?.head.id ?? beside]).toEqual([low, low]);
+  });
+
+  it('follows a chain longer than one read to the same end from every structure of it', async () => {
+    const { db, env } = await forms();
+    const chain = Array.from({ length: 21 }, (_, i) => 'st:' + i.toString(16).padStart(32, 'a'));
+    const at = '2026-11-16T00:00:00Z';
+    for (const id of chain) db.query("INSERT INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,'babelstone-ids','v','structure-v1','u',?)").run(id, 'L' + id.slice(-2), at);
+    for (let i = 0; i + 1 < chain.length; i++)
+      db.query("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'folds_into','','','asserted',?,'[]','[]','[]','ledger-r1',?)")
+        .run(chain[i], chain[i + 1], at);
+    const folds = await foldsOf(env, [chain[0], chain[5], chain[13], chain[20]]);
+    expect([chain[0], chain[5], chain[13]].map(id => folds.get(id)?.head)).toEqual(Array(3).fill({ id: chain[20], label: 'L' + chain[20].slice(-2) }));
+    expect(folds.get(chain[0])!.path).toEqual(chain.slice(1));
+    expect(folds.has(chain[20])).toBe(false);
   });
 
   it('a fold is written through the claim route and the same save sent again answers alike', async () => {

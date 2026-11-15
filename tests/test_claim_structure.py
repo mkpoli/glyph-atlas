@@ -86,7 +86,9 @@ def test_a_structure_folds_into_another_and_its_forms_join_that_group(dataset): 
     fold(client, {"structure": BESIDE.id}, {"char": "嵐"})
     assert [(group["id"], group["chars"]) for group in groups(client, "峰峯嵐")] == [(wind.id, ["峰", "峯", "嵐"])]
     fold(client, {"char": "嵐"}, {"char": "峯"}, status=409)
+    fold(client, {"char": "峰"}, {"char": "峯"}, status=409)
     fold(client, {"char": "峰"}, {"char": "峰"}, status=422)
+    assert fold(client, {"char": "峯"}, {"char": "峰"})["replaced"] is None
     # A reader's new fold replaces their earlier one; only their own fold is theirs to take back.
     assert fold(client, {"char": "峯"}, {"char": "嵐"})["replaced"] == BESIDE.id
     fold(client, {"structure": ABOVE.id}, None, reviewer="bob", status=409)

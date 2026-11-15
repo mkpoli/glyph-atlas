@@ -476,30 +476,40 @@ export async function setStructure(env: Env, input: Json, named: string, actor: 
 // and that one may fold further; a slot readers disagree on folds nowhere.
 const FOLD_DEPTH = 8;
 const FOLD = `c.predicate='folds_into' AND c.scope='' AND c.slot='' AND c.status IN ('asserted','accepted','adjudicated') AND c.object IS NOT NULL`;
-// The folds that lead on from these structures, each found by `current_claims`' key.
+// The folds that lead on from these structures, each found by `current_claims`' key, with how far
+// from a named structure each was met.
 export const foldsQuery = () => `WITH RECURSIVE reach(id,depth) AS (SELECT j.value,0 FROM json_each(?) j
     UNION SELECT c.object,reach.depth+1 FROM reach JOIN current_claims c ON c.subject=reach.id AND ${FOLD} WHERE reach.depth<${FOLD_DEPTH})
-  SELECT DISTINCT c.subject AS id,c.object AS head,c.claims,s.label FROM reach JOIN current_claims c ON c.subject=reach.id AND ${FOLD}
-  LEFT JOIN structures s ON s.id=c.object`;
-export type Fold = { head: { id: string; label: string }; by: string[] };
+  SELECT c.subject AS id,c.object AS head,c.claims,s.label,max(reach.depth) AS depth FROM reach JOIN current_claims c ON c.subject=reach.id AND ${FOLD}
+  LEFT JOIN structures s ON s.id=c.object GROUP BY c.subject`;
+// A chain longer than one read follows is read on from where the read stopped, this many times.
+const FOLD_READS = 4;
+export type Fold = { head: { id: string; label: string }; by: string[]; path: string[] };
 /** Where each of these structures stands now: the structure at the end of its folds, with who folded
- *  it (its own fold, not the ones after it). A structure that folds nowhere is not in the answer;
- *  folds that lead round stop at the lowest id among them. */
+ *  it (its own fold, not the ones after it) and the structures its folds pass through, the end
+ *  among them (`path`). A structure that folds nowhere is not in the answer; folds that lead round
+ *  stop at the lowest id among them. */
 export async function foldsOf(env: Env, ids: string[]): Promise<Map<string, Fold>> {
   const found = new Map<string, Fold>();
-  if (!ids.length) return found;
-  const rows = (await env.ATLAS.prepare(foldsQuery()).bind(JSON.stringify([...new Set(ids)]))
-    .all<{ id: string; head: string; claims: string; label: string | null }>()).results;
-  const next = new Map(rows.map(row => [row.id, row.head])), labels = new Map(rows.map(row => [row.head, row.label ?? '']));
+  type Row = { id: string; head: string; claims: string; label: string | null; depth: number };
+  const rows = new Map<string, Row>();
+  for (let from = [...new Set(ids)], read = 0; from.length && read < FOLD_READS; read++) {
+    const more = (await env.ATLAS.prepare(foldsQuery()).bind(JSON.stringify(from)).all<Row>()).results;
+    for (const row of more) rows.set(row.id, row);
+    // A fold met at the last step leads to a structure whose own fold this read did not look for.
+    from = [...new Set(more.filter(row => row.depth >= FOLD_DEPTH && !rows.has(row.head)).map(row => row.head))];
+  }
+  const labels = new Map([...rows.values()].map(row => [row.head, row.label ?? '']));
   for (const id of new Set(ids)) {
-    if (!next.has(id)) continue;
+    const first = rows.get(id);
+    if (!first) continue;
     const seen = [id];
-    while (next.has(seen.at(-1)!) && !seen.includes(next.get(seen.at(-1)!)!)) seen.push(next.get(seen.at(-1)!)!);
+    while (rows.has(seen.at(-1)!) && !seen.includes(rows.get(seen.at(-1)!)!.head)) seen.push(rows.get(seen.at(-1)!)!.head);
     // Round a ring every structure of it answers alike.
-    const back = next.get(seen.at(-1)!), end = back === undefined ? seen.at(-1)! : seen.slice(seen.indexOf(back)).sort()[0];
-    const head = { id: end, label: labels.get(end) ?? '' }, first = rows.find(row => row.id === id)!;
-    if (head.id === id) continue;
-    found.set(id, { head, by: [...new Set((JSON.parse(first.claims) as Json[]).filter(c => c.standing).map(c => c.asserted_by as string))] });
+    const back = rows.get(seen.at(-1)!)?.head, end = back === undefined ? seen.at(-1)! : seen.slice(seen.indexOf(back)).sort()[0];
+    if (end === id) continue;
+    found.set(id, { head: { id: end, label: labels.get(end) ?? '' }, path: seen.slice(1),
+      by: [...new Set((JSON.parse(first.claims) as Json[]).filter(c => c.standing).map(c => c.asserted_by as string))] });
   }
   return found;
 }
@@ -515,15 +525,19 @@ export const ownFoldQuery = (owned: string) => `SELECT a.id,a.object FROM assert
 export async function setFold(env: Env, input: Json, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
   const ledger = ledgerTools(env, tools, ctx);
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ fold: input });
+  const answer = async (structure: string, replaced: string | null) => {
+    const fold = (await foldsOf(env, [structure])).get(structure);
+    return { structure, folds_into: fold ? { ...fold.head, by: fold.by } : null, replaced };
+  };
+  // A save sent again answers for the structure it folded, whatever its name gives now.
+  const saved = await savedSubmission(env, key, signature, tools.fail);
+  if (saved) return answer(saved.subject, saved.replaced ?? null);
   const remove = input.remove === true;
   const part = (value: unknown): Json => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Json : tools.fail(422, 'Name a structure.');
   const from = await namedStructure(env, part(input.from), tools, ctx, false);
-  const standing = async () => (await foldsOf(env, [from.structure.id])).get(from.structure.id) ?? null;
-  const answer = async (replaced: string | null) => { const fold = await standing(); return { structure: from.structure.id, folds_into: fold ? { ...fold.head, by: fold.by } : null, replaced } };
-  const saved = await savedSubmission(env, key, signature, tools.fail);
-  if (saved) return answer(saved.replaced ?? null);
   const own = await env.ATLAS.prepare(ownFoldQuery(ownedActors(actor))).bind(from.structure.id, actor).first<{ id: string; object: string }>();
   const at = new Date().toISOString(), plan: Plan = { statements: [], keys: [] };
+  let replaced = own?.object ?? null;
   if (remove) {
     if (!own) tools.fail(409, 'You have not folded this structure.');
     const retract = await planAction(env, { key: key + '/retract', actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, ledger);
@@ -531,20 +545,23 @@ export async function setFold(env: Env, input: Json, actor: string, tools: Claim
   } else {
     const into = await namedStructure(env, part(input.into), tools, ctx, true);
     if (into.structure.id === from.structure.id) tools.fail(422, 'A structure folds into another.');
-    const onward = (await foldsOf(env, [into.structure.id])).get(into.structure.id);
-    if (onward?.head.id === from.structure.id) tools.fail(409, 'That structure already stands under this one.');
-    const member: Member = { object: into.structure.id, value: null, confidence: null, confidence_scheme: null };
-    checkClaims('folds_into', [member], { [into.structure.id]: 'structure' }, tools.fail);
-    for (const one of [from, into]) if (one.source) plan.statements.push(structureRow(env, one.structure, one.source, actor, at));
+    // Anywhere on the way from `into`, not only at its end: the reader's new fold takes back their
+    // earlier one, which may be what leads on from `from` today.
+    if ((await foldsOf(env, [into.structure.id])).get(into.structure.id)?.path.includes(from.structure.id)) tools.fail(409, 'That structure already stands under this one.');
     if (!from.source && !await env.ATLAS.prepare('SELECT 1 FROM structures WHERE id=?').bind(from.structure.id).first()) tools.fail(422, 'No claim has named this structure.');
-    // A slot of one value: the claim takes back the reader's earlier fold of the structure itself.
-    const claim = await planSubjectClaim(env, { key, actor, subject: from.structure.id, predicate: 'folds_into', scope: '', members: [member],
-      at, method: 'form-picker' }, ledger);
-    plan.statements.push(...claim.statements); plan.keys.push(...claim.keys);
+    // The reader's fold as it stands is not made again: a new claim would drop what others said of it.
+    if (own?.object !== into.structure.id) {
+      const member: Member = { object: into.structure.id, value: null, confidence: null, confidence_scheme: null };
+      checkClaims('folds_into', [member], { [into.structure.id]: 'structure' }, tools.fail);
+      for (const one of [from, into]) if (one.source) plan.statements.push(structureRow(env, one.structure, one.source, actor, at));
+      // A slot of one value: the claim takes back the reader's earlier fold of the structure itself.
+      const claim = await planSubjectClaim(env, { key, actor, subject: from.structure.id, predicate: 'folds_into', scope: '', members: [member],
+        at, method: 'form-picker' }, ledger);
+      plan.statements.push(...claim.statements); plan.keys.push(...claim.keys);
+    } else replaced = null;
   }
-  const replaced = own?.object ?? null;
   await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: from.structure.id, replaced }, ledger);
-  return answer(replaced);
+  return answer(from.structure.id, replaced);
 }
 
 /** Set the reader's word for one crop (decision 0004), or retract their own latest claim with `word: null`. */

@@ -281,14 +281,11 @@ def set_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Ma
     return response
 
 
-#: How many folds are followed from one structure.
-FOLD_DEPTH = 8
-
-
 def folds_of(conn: sqlite3.Connection, ids: Iterable[str]) -> dict[str, dict]:
     """Where each of these structures stands now: the structure at the end of its folds, with who
-    folded it (its own fold). A structure that folds nowhere is not in the answer; folds that lead
-    round stop at the lowest id among them. The Worker's `foldsOf` answers the same."""
+    folded it (its own fold) and the structures its folds pass through, the end among them (`path`).
+    A structure that folds nowhere is not in the answer; folds that lead round stop at the lowest id
+    among them. The Worker's `foldsOf` answers the same."""
     def step(structure: str) -> sqlite3.Row | None:
         row = conn.execute("SELECT c.object,c.status,c.claims,s.label FROM current_claims c LEFT JOIN structures s ON s.id=c.object "
                            "WHERE c.subject=? AND c.predicate='folds_into' AND c.scope='' AND c.slot=''", (structure,)).fetchone()
@@ -300,17 +297,17 @@ def folds_of(conn: sqlite3.Connection, ids: Iterable[str]) -> dict[str, dict]:
         if first is None:
             continue
         seen, labels, row = [structure], {}, first
-        while row is not None and row["object"] not in seen and len(seen) <= FOLD_DEPTH:
+        while row is not None and row["object"] not in seen:
             labels[row["object"]] = row["label"] or ""
             seen.append(row["object"])
             row = step(row["object"])
-        if row is not None and row["object"] in seen:
+        if row is not None:
             labels[row["object"]] = row["label"] or ""
             end = min(seen[seen.index(row["object"]):])
         else:
             end = seen[-1]
         if end != structure:
-            found[structure] = {"head": {"id": end, "label": labels.get(end, "")},
+            found[structure] = {"head": {"id": end, "label": labels.get(end, "")}, "path": seen[1:],
                                 "by": sorted({claim["asserted_by"] for claim in json.loads(first["claims"]) if claim["standing"]})}
     return found
 
@@ -341,15 +338,19 @@ def set_fold(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping
         head, built = _named_structure(conn, into or {}, known=True)
         if head == subject:
             raise LedgerError(422, "A structure folds into another.")
-        if folds_of(conn, [head]).get(head, {}).get("head", {}).get("id") == subject:
+        if subject in folds_of(conn, [head]).get(head, {}).get("path", ()):
             raise LedgerError(409, "That structure already stands under this one.")
         if derived is None and conn.execute("SELECT 1 FROM structures WHERE id=?", (subject,)).fetchone() is None:
             raise LedgerError(422, "No claim has named this structure.")
-        for one in (derived, built):
-            if one is not None:
-                ensure_structure(conn, one, actor=actor, at=at)
-        ledger.write_claims(conn, key=f"{key}/claim", actor=actor, request=request, subject=subject, predicate="folds_into",
-                            claims=[Claim(object=head)], objects={head: "structure"}, method=METHOD, prefix=prefix, at=at, mint=mint)
+        # The reader's fold as it stands is not made again.
+        if own is not None and own["object"] == head:
+            own = None
+        else:
+            for one in (derived, built):
+                if one is not None:
+                    ensure_structure(conn, one, actor=actor, at=at)
+            ledger.write_claims(conn, key=f"{key}/claim", actor=actor, request=request, subject=subject, predicate="folds_into",
+                                claims=[Claim(object=head)], objects={head: "structure"}, method=METHOD, prefix=prefix, at=at, mint=mint)
     response = {"submission": key, "subject": subject, "replaced": own["object"] if own is not None else None}
     conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
                  (key, actor, signature, ledger.canonical(response), at))

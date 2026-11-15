@@ -500,7 +500,12 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
             continue
         if structure:
             built[name] = {"id": structure.id, "label": structure.label}
-    folded = folds(list(dict.fromkeys(value["id"] for value in built.values()))) if folds and built else {}
+    others = [other["id"] for rest in filed.values() for other in rest]
+    folded = folds(list(dict.fromkeys([*(value["id"] for value in built.values()), *others]))) if folds and built else {}
+    for rest in filed.values():
+        for other in rest:
+            if other["id"] in folded:
+                other["head"] = folded[other["id"]]["head"]["id"]
     groups: dict[str, dict[str, Any]] = {}
     for name, structure in built.items():
         fold = folded.get(structure["id"])

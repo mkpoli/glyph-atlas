@@ -110,7 +110,7 @@
     // The reader's own filing is theirs to take back wherever the form stands: another reader's may hold it elsewhere.
     const held = composable(selected) ? structureOf.get(selected) : null
     const here = held?.id === group.id && held.by?.includes(me) ? held.part?.id ?? group.id
-      : (held?.others ?? []).some(other => other.id === group.id && other.by.includes(me)) ? group.id : null
+      : (held?.others ?? []).find(other => (other.head ?? other.id) === group.id && other.by.includes(me))?.id ?? null
     const placing = !composable(selected) ? []
       : here ? [{ key: 'take', label: t('structure.take', { form: selected }), run: () => file({ id: here }, true) }]
       : held?.id !== group.id ? [{ key: 'place', label: t('structure.place', { form: selected }), run: () => file(group) }] : []
