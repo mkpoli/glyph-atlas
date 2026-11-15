@@ -26,11 +26,13 @@ def module():
     return importlib.import_module("answers")
 
 
-def patched(publish, monkeypatch, packs=None, reads=None, sample=None, collection=True, failing=None, **constants):
+def patched(publish, monkeypatch, packs=None, reads=None, sample=None, collection=True, failing=None, seeded=True, **constants):
     """answers.py with the fake D1 and uploads, and what it uploaded; R2 holds `packs` ({object: bytes}), each read
-    counted in `reads`. An upload to a prefix holding `failing` stops the run, as a failed upload does. `constants`
-    replace the module's own (`PER_CHARACTER=1`)."""
+    counted in `reads`. An upload to a prefix holding `failing` stops the run, as a failed upload does. D1 holds the
+    seed's stamp unless `seeded` is false. `constants` replace the module's own (`PER_CHARACTER=1`)."""
     answers_module = module()
+    if seeded:
+        publish.query("glyph-atlas-v3", "INSERT OR IGNORE INTO imports(stamp, at) VALUES('migration:0019', 0)")
     for name, value in constants.items():
         monkeypatch.setattr(answers_module, name, value)
     uploaded = []
@@ -40,6 +42,7 @@ def patched(publish, monkeypatch, packs=None, reads=None, sample=None, collectio
             sys.exit(f"upload to {prefix} failed; rerun to finish")
         uploaded.append((prefix, [f.name for f in files]))
     monkeypatch.setattr(answers_module, "query", publish.query)
+    monkeypatch.setattr(answers_module, "send", publish.send)
     monkeypatch.setattr(answers_module, "upload", upload)
     if sample is not None:
         monkeypatch.setattr(answers_module, "SAMPLE_RANGE", sample)
@@ -555,6 +558,7 @@ def test_a_dry_run_changes_neither_database(layout, monkeypatch, capsys):  # noq
     d1, crop, copied = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"], ids(root)["ex:b1"]
     reviewed(remote, crop, state=1)
     d1.execute("INSERT INTO absorbing(crop, through, row) VALUES(?, 0, NULL)", (copied,))
+    d1.execute("INSERT INTO imports(stamp, at) VALUES('migration:0019', 0)")
     d1.commit()
     before = dumps(root, remote)
     assert answers(publish, monkeypatch, "--dry-run", sample=0) == []
@@ -575,3 +579,71 @@ def test_a_publish_ends_by_taking_the_crops_the_site_changed(layout, monkeypatch
     assert listed(remote) == ({}, [])
     assert row(sqlite3.connect(root / "out" / "atlas.sqlite"), crop) == row(d1, crop)
     assert counted(root, "い") == {2: 1} and counted(root, "え") == {0: 1}
+
+
+# --- The seed ---
+
+def stamps(remote):
+    return {r[0] for r in remote.dbs["glyph-atlas-v3"].execute("SELECT stamp FROM imports WHERE stamp LIKE 'migration:%'")}
+
+
+def test_a_publication_is_refused_until_the_seed_has_run(layout, monkeypatch, capsys):  # noqa: F811
+    root, publish, remote = layout
+    uploaded = []
+    with pytest.raises(SystemExit, match="answers.py --seed"):
+        uploaded = answers(publish, monkeypatch, sample=0, seeded=False)
+    assert uploaded == [] and not (root / "out" / "pub").exists()
+    assert remote.query("glyph-atlas-v3", "SELECT gen FROM generation")[0]["gen"] == 1
+    # A dry run says so and writes its answers.
+    assert answers(publish, monkeypatch, "--dry-run", sample=0, seeded=False) == []
+    assert "a publication is refused until then" in capsys.readouterr().out
+    assert counted(root, "あ") == {0: 1}
+    assert remote.query("glyph-atlas-v3", "SELECT gen FROM generation")[0]["gen"] == 1
+
+
+def changed_before_the_list(remote, root):
+    """Crops the site changed before the Worker listed any: one reviewed in generation 1, one whose only
+    event is the history load's (generation 0), one that followed a forms decision, and one the Worker
+    has listed since."""
+    d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)
+    d1.execute("INSERT INTO imports(stamp, at) VALUES('migration:0018', 0)")
+    d1.executemany("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,?,0,?,1,1,0,0)",
+                   [(crop["ex:a1"], 1, 1), (crop["ex:a1"], 2, 1), (crop["ex:a2"], 1, 0), (crop["ex:b1"], 1, 1)])
+    d1.execute("UPDATE crops SET bumps=1 WHERE id=?", (crop["codh:g1"],))
+    d1.execute("INSERT INTO touched VALUES(?,1)", (crop["ex:b1"],))
+    d1.commit()
+    return crop
+
+
+def test_the_seed_lists_the_crops_changed_before_the_list_once(layout, monkeypatch, capsys):  # noqa: F811
+    root, publish, remote = layout
+    crop = changed_before_the_list(remote, root)
+    before = dumps(root, remote)
+    assert answers(publish, monkeypatch, "--seed", "--dry-run", seeded=False) == []
+    assert "would list 2 crops named by events of a generation above 0 and 1 crops with bumps" in capsys.readouterr().out
+    assert dumps(root, remote) == before
+    answers(publish, monkeypatch, "--seed", seeded=False)
+    # The crop the Worker listed keeps its generation.
+    assert listed(remote) == ({crop["ex:a1"]: 0, crop["codh:g1"]: 0, crop["ex:b1"]: 1}, [])
+    assert stamps(remote) == {"migration:0018", "migration:0019"}
+    assert "`touched` lists 3 crops" in capsys.readouterr().out
+    # Run again, it finds its stamp: a crop changed since is the Worker's to list.
+    remote.dbs["glyph-atlas-v3"].execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,2,0,1,1,1,0,0)",
+                                         (crop["ex:a2"],))
+    remote.dbs["glyph-atlas-v3"].commit()
+    before = dumps(root, remote)
+    answers(publish, monkeypatch, "--seed", seeded=False)
+    assert dumps(root, remote) == before
+    assert "the seed is in place" in capsys.readouterr().out
+    # The publication then takes the listed crops.
+    assert answers(publish, monkeypatch, sample=0, seeded=False)[-1] == ("v3/", ["pointer.json"])
+    assert listed(remote) == ({}, [])
+
+
+def test_the_seed_is_refused_before_the_list_exists(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    before = dumps(root, remote)
+    for flags in (("--seed",), ("--seed", "--dry-run")):
+        with pytest.raises(SystemExit, match="publish.py --migrate"):
+            answers(publish, monkeypatch, *flags, seeded=False)
+    assert dumps(root, remote) == before

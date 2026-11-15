@@ -238,8 +238,21 @@ the crop off the list, puts those rows in the local copy with the graphemes and 
 publish's read-back takes a guarded crop's row, and empties `absorbing`. A crop D1 no longer holds
 leaves the local copy. A crop changed again at G + 1 before the copy stays listed for the next
 publication. A run that stopped after its bump is finished by the next, which first takes what
-`absorbing` holds and publishes through a newer generation. A grapheme id or a code that stands for
-another text or key in the local copy or in `out/mirror.sqlite` stops the run before either changes.
+`absorbing` holds and publishes through a newer generation; `publish.py` takes it too, before it plans
+anything, so a publish never plans on a local copy a stopped publication left behind. A grapheme id or
+a code that stands for another text or key in the local copy or in `out/mirror.sqlite` stops the run
+before either changes.
+
+The crops the Worker changed before it kept the list are listed once by `answers.py --seed`, which
+sends `migrations-atlas/0019_touched_seed.sql` under the stamp `migration:0019`: every crop an event
+of a generation above 0 names and every crop with `bumps`. `--seed --dry-run` prints how many crops
+each would list and writes nothing; a second `--seed` finds the stamp and writes nothing. A
+publication is refused until that stamp is there. The order of the rollout:
+
+1. `publish.py --migrate`, which applies migration 0018 (`touched`, `absorbing`);
+2. deploy the Worker that lists touched crops;
+3. `answers.py --seed`, after `answers.py --seed --dry-run` has shown its figures;
+4. publish.
 
 With no crop listed, the sample's records are read before the bump, so a failed read changes nothing,
 and answers equal to the last publication's publish nothing. `--dry-run` reports how many crops are

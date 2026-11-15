@@ -1,6 +1,7 @@
 """Write a publication's answers to R2: the counts the galleries, the browse page and the homepage show.
 
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/answers.py [--dry-run]
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/answers.py --seed [--dry-run]
 
 publish.py runs it after every publish that sent something, so the counts follow each publish.
 
@@ -23,6 +24,12 @@ stopped after its bump is finished by the next run of this script or of publish.
 `absorbing` still holds before anything else. The answers are written after that, from the
 local copy as it then stands. A dry run reads how many crops are listed, writes the answers of the
 local copy as it is, and changes neither database.
+
+`--seed` lists, once, the crops the Worker changed before it kept the list (migration 0019, stamp
+`migration:0019`): every crop an event of a generation above 0 names and every crop with `bumps`. It
+runs after the Worker that lists touched crops is deployed, and needs migration 0018's stamp; with
+`--dry-run` it prints how many crops each of the two would list and writes nothing. A publication is
+refused until the seed's stamp is there, since its answers would count none of those crops' reviews.
 
 - `counts/<shard>.json.gz`: per character (grapheme id, in shard id % SHARDS), one cell per kind,
   style, state, withheld, witness decade and visual group, with its number of crops. Codes are the
@@ -78,6 +85,7 @@ from pathlib import Path
 
 from publish import (
     BUCKET,
+    CF,
     CROP_COLS,
     LOGICAL,
     OUT,
@@ -85,7 +93,10 @@ from publish import (
     R2_REMOTE,
     absorb,
     applied,
+    lit,
+    missing_only,
     query,
+    send,
     upload,
 )
 
@@ -124,6 +135,10 @@ UNLISTED = ("text", "line", "context_image", "context_box", "crop_box", "image_p
 READS = 32
 READ_ATTEMPTS = 4
 DATABASE = "glyph-atlas-v3"
+# The migration that makes `touched` and `absorbing`, and the one that lists the crops changed before
+# the Worker kept the list, by the stamps D1's `imports` holds once each has applied.
+LIST_STAMP, SEED_STAMP = "migration:0018", "migration:0019"
+SEED = CF / "migrations-atlas" / "0019_touched_seed.sql"
 # A listed crop's row as `absorbing` keeps it: its columns by name, the revision the offline store counts
 # for it (`logical`) and whether it keeps a reviewer's style (`own_style`), each read from the crop `c`.
 SNAPSHOT_ROW = ("json_object(" + ",".join(f"'{c}',c.{c}" for c in CROP_COLS)
@@ -363,10 +378,44 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true",
                         help="write the answers of the local copy as it is; change neither database and upload nothing")
+    parser.add_argument("--seed", action="store_true",
+                        help="list the crops changed before the Worker listed them (migration 0019), once, and publish "
+                             "nothing; with --dry-run, print how many it would list")
     args = parser.parse_args()
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
-    publication(args.dry_run)
+    if args.seed:
+        seed(args.dry_run)
+    else:
+        publication(args.dry_run)
+
+
+def seed(dry_run):
+    """List in `touched` the crops the Worker changed before it kept the list (migration 0019), once: the
+    file goes to D1 whole with its stamp, and a database that holds the stamp is left as it is. It runs
+    once the Worker that lists touched crops is deployed, so a crop changed before the deploy is found
+    here and one changed after it is listed by the Worker. A dry run prints how many crops each of the
+    file's two statements would list and writes nothing."""
+    if not applied(DATABASE, LIST_STAMP):
+        sys.exit(f"{DATABASE} has no stamp {LIST_STAMP}, so no `touched` to list crops in; run publish.py --migrate first")
+    listed = "SELECT count(*) AS n FROM touched"
+    if applied(DATABASE, SEED_STAMP):
+        print(f"the seed is in place (stamp {SEED_STAMP}); `touched` lists {query(DATABASE, listed)[0]['n']} crops", flush=True)
+        return
+    if dry_run:
+        found = query(DATABASE, "SELECT (SELECT count(DISTINCT crop) FROM events WHERE gen > 0) AS reviewed, "
+                                "(SELECT count(*) FROM crops WHERE bumps > 0) AS followed")[0]
+        print(f"dry run: the seed would list {found['reviewed']} crops named by events of a generation above 0 and "
+              f"{found['followed']} crops with bumps, a crop of both once; `touched` lists {query(DATABASE, listed)[0]['n']} "
+              f"now, and nothing was written", flush=True)
+        return
+    path = OUT / "publish" / "0019.sql"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(missing_only(SEED.read_text(), lambda table: set())
+                    + f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES({lit(SEED_STAMP)}, unixepoch());\n")
+    if not send(DATABASE, path, SEED_STAMP):
+        sys.exit("the seed did not apply; rerun")
+    print(f"the seed applied (stamp {SEED_STAMP}); `touched` lists {query(DATABASE, listed)[0]['n']} crops", flush=True)
 
 
 def written(atlas, folder, pub, read):
@@ -411,6 +460,14 @@ def publication(dry_run, read=None):
     if mirror.execute("SELECT 1 FROM sqlite_master WHERE name = 'pending'").fetchone() and \
             mirror.execute("SELECT count(*) FROM pending").fetchone()[0]:
         sys.exit("a publish is unfinished; run publish.py to finish it first")
+    # Until the seed has run, `touched` lacks the crops reviewed before the Worker listed them, and the
+    # answers would count none of those reviews while the pointer moved past their `tally` rows.
+    if not applied(DATABASE, SEED_STAMP):
+        unseeded = (f"{DATABASE} has no stamp {SEED_STAMP}: the crops changed before the Worker listed them are not in "
+                    "`touched`. Deploy the Worker that lists touched crops, then run answers.py --seed")
+        if not dry_run:
+            sys.exit(f"{unseeded}; nothing published")
+        print(f"{unseeded}; a publication is refused until then", flush=True)
     pub = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     atlas = sqlite3.connect(OUT / "atlas.sqlite")
     folder = OUT / "pub" / pub
