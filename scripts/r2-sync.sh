@@ -50,8 +50,21 @@ esac
 
 # Publication state stays on the machine that publishes: its generations, the `current` link and
 # its receipt. Cloud runs never publish, so their copies would only overwrite the publisher's.
-exclude=(--exclude '*.lock' --exclude '*.tmp' --exclude 'generations/**' --exclude current
-         --exclude .current-next --exclude published.json --exclude published.json.tmp)
+# SQLite sidecars never travel: a stale `-wal` beside a newer database is replayed onto it.
+exclude=(--exclude '*.lock' --exclude '*.tmp' --exclude '*.sqlite-wal' --exclude '*.sqlite-shm'
+         --exclude '/generations/**' --exclude /current --exclude /.current-next
+         --exclude /published.json --exclude /published.json.tmp)
+
+# Fold each queue's write-ahead log into its database, so the database file alone is complete.
+checkpoint() {
+  find "$1" -maxdepth 1 -name '*.sqlite' -print0 | while IFS= read -r -d '' db; do
+    python3 -c 'import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+busy = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]
+db.close()
+sys.exit(f"{sys.argv[1]} is in use; stop its worker first" if busy else 0)' "$db"
+  done
+}
 
 for pair in "${pairs[@]}"; do
   local="${pair%%:*}"
@@ -60,11 +73,13 @@ for pair in "${pairs[@]}"; do
   case "$action" in
     restore)
       echo "restoring r2:$bucket/$remote -> $local"
+      checkpoint "$local"
       rclone copy "r2:$bucket/$remote" "$local" \
         --transfers 8 --checkers 16 "${exclude[@]}"
       ;;
     save)
       echo "saving $local -> r2:$bucket/$remote"
+      checkpoint "$local"
       # A save that would delete this many objects means a broken local store, not a rebuild.
       rclone "$save" "$local" "r2:$bucket/$remote" \
         --transfers 8 --checkers 16 --max-delete 500 "${exclude[@]}"
