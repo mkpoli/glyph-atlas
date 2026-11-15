@@ -606,7 +606,6 @@ def changed_before_the_list(remote, root):
     event is the history load's (generation 0), one that followed a forms decision, and one the Worker
     has listed since."""
     d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)
-    d1.execute("INSERT INTO imports(stamp, at) VALUES('migration:0018', 0)")
     d1.executemany("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,?,0,?,1,1,0,0)",
                    [(crop["ex:a1"], 1, 1), (crop["ex:a1"], 2, 1), (crop["ex:a2"], 1, 0), (crop["ex:b1"], 1, 1)])
     d1.execute("UPDATE crops SET bumps=1 WHERE id=?", (crop["codh:g1"],))
@@ -625,7 +624,7 @@ def test_the_seed_lists_the_crops_changed_before_the_list_once(layout, monkeypat
     answers(publish, monkeypatch, "--seed", seeded=False)
     # The crop the Worker listed keeps its generation.
     assert listed(remote) == ({crop["ex:a1"]: 0, crop["codh:g1"]: 0, crop["ex:b1"]: 1}, [])
-    assert stamps(remote) == {"migration:0018", "migration:0019"}
+    assert stamps(remote) == {"migration:0019"}
     assert "`touched` lists 3 crops" in capsys.readouterr().out
     # Run again, it finds its stamp: a crop changed since is the Worker's to list.
     remote.dbs["glyph-atlas-v3"].execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,2,0,1,1,1,0,0)",
@@ -642,6 +641,8 @@ def test_the_seed_lists_the_crops_changed_before_the_list_once(layout, monkeypat
 
 def test_the_seed_is_refused_before_the_list_exists(layout, monkeypatch):  # noqa: F811
     root, publish, remote = layout
+    remote.dbs["glyph-atlas-v3"].execute("DROP TABLE touched")
+    remote.dbs["glyph-atlas-v3"].commit()
     before = dumps(root, remote)
     for flags in (("--seed",), ("--seed", "--dry-run")):
         with pytest.raises(SystemExit, match="publish.py --migrate"):

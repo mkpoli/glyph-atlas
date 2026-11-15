@@ -27,7 +27,7 @@ local copy as it is, and changes neither database.
 
 `--seed` lists, once, the crops the Worker changed before it kept the list (migration 0019, stamp
 `migration:0019`): every crop an event of a generation above 0 names and every crop with `bumps`. It
-runs after the Worker that lists touched crops is deployed, and needs migration 0018's stamp; with
+runs after the Worker that lists touched crops is deployed, and needs migration 0018's tables; with
 `--dry-run` it prints how many crops each of the two would list and writes nothing. A publication is
 refused until the seed's stamp is there, since its answers would count none of those crops' reviews.
 
@@ -137,7 +137,7 @@ READ_ATTEMPTS = 4
 DATABASE = "glyph-atlas-v3"
 # The migration that makes `touched` and `absorbing`, and the one that lists the crops changed before
 # the Worker kept the list, by the stamps D1's `imports` holds once each has applied.
-LIST_STAMP, SEED_STAMP = "migration:0018", "migration:0019"
+SEED_STAMP = "migration:0019"
 SEED = CF / "migrations-atlas" / "0019_touched_seed.sql"
 # A listed crop's row as `absorbing` keeps it: its columns by name, the revision the offline store counts
 # for it (`logical`) and whether it keeps a reviewer's style (`own_style`), each read from the crop `c`.
@@ -396,8 +396,8 @@ def seed(dry_run):
     once the Worker that lists touched crops is deployed, so a crop changed before the deploy is found
     here and one changed after it is listed by the Worker. A dry run prints how many crops each of the
     file's two statements would list and writes nothing."""
-    if not applied(DATABASE, LIST_STAMP):
-        sys.exit(f"{DATABASE} has no stamp {LIST_STAMP}, so no `touched` to list crops in; run publish.py --migrate first")
+    if not query(DATABASE, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'touched'"):
+        sys.exit(f"{DATABASE} has no `touched` to list crops in (migration 0018); run publish.py --migrate first")
     listed = "SELECT count(*) AS n FROM touched"
     if applied(DATABASE, SEED_STAMP):
         print(f"the seed is in place (stamp {SEED_STAMP}); `touched` lists {query(DATABASE, listed)[0]['n']} crops", flush=True)
