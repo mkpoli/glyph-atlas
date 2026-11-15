@@ -579,9 +579,10 @@ def put_ids(objects, notes):
             # A reading that does not settle names no structure; the load goes on without it.
             structure = None
             notes["characters whose structure does not settle"] += 1
-        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences),
-                                                     refs.shape_structures(json.loads(shapes), structure) if shapes else None,
+        shaped = refs.shape_structures(json.loads(shapes), structure) if shapes else None
+        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), shaped,
                                                      [structure.id, structure.label] if structure else None]
+        notes["regional shapes with a structure of their own"] += sum(bool(shape.get("structure")) for shape in shaped or ())
         notes["descriptions with a structure" if is_sequence(char) else "characters with a structure"] += structure is not None
     for key, chars in structures.items():
         objects.put(f"{IDS}{key}.json.gz", compact(dict(sorted(chars.items()))))
