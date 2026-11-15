@@ -34,7 +34,8 @@ are doubtful; in 30B and 38B some columns are right and others are not.
 
 In a random draw of 150 from the `ok` and `sparse` places together, 148 sat on the character the
 table names; six of those cut off part of it or fell on ink too dark to read. `atlas import tangut-tongyin <scans>` makes a unit of
-each `ok` place and leaves the others in this table.
+each `ok` place and leaves the others in this table; a half-folio with no `ok` place gives no
+lines either, since its column boxes are not on its columns.
 
 ## Limits
 

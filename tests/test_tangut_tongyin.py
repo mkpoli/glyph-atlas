@@ -80,6 +80,20 @@ def test_collect_writes_a_unit_for_each_sound_place(fixture, tmp_path):
     assert unit.upstream == {"nkay0-tangut-rhyme": "旧版同音 02A51"}
 
 
+def test_a_half_folio_with_no_sound_place_makes_no_line(fixture, tmp_path):
+    scans, data = fixture
+    with (data / "columns.tsv").open("a", encoding="utf-8") as handle:
+        handle.write("2\tB\t1\t1\t150\t20\t40\t260\t𗀀𗀁\n")
+    with (data / "characters.tsv").open("a", encoding="utf-8") as handle:
+        handle.write("2\tB\t1\t1\t𗀀\tU+17000\t1\t152\t24\t30\t32\t0.31\t66.0\tsparse\n")
+        handle.write("2\tB\t1\t2\t𗀁\tU+17001\t1\t152\t60\t30\t32\t0.12\t61.0\tlow-score\n")
+    out = tmp_path / "out"
+    summary = tangut_tongyin.collect(scans, out, data=data, cache=tmp_path / "cache")
+
+    assert [line.id for line in tables.read(out / "lines.parquet", Line)] == ["ecang-heishuicheng:inv-207:02A5"]
+    assert summary["left_out"] == {"low-score": 2, "size": 1, "sparse": 1}
+
+
 def test_collect_refuses_a_scan_that_is_not_the_pinned_one(fixture, tmp_path):
     scans, data = fixture
     Image.new("L", (400, 600), 90).save(scans / "00000040.jpg")
