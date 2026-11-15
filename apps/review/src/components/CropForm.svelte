@@ -7,8 +7,9 @@
   // A described form or a registered figure the crop already has can be recorded as written for its
   // grapheme (written_for), so the form joins the grapheme's 字体 on every card and in every picker of
   // the family.
-  // Under the bar stands the 構形 of the chosen form, or of the crop's own, with the bar's other forms
-  // built as it is: 説 and 說 are one structure, 峰 and 峯 two.
+  // The forms stand under their 構形, on the bar and among the picker's 字体: 説 and 說 under one, 峰
+  // and 峯 under two, a figure of the IVD with its character. A form with no structure, and a grapheme
+  // of another script, stand without a caption.
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
   import CopyValue from './CopyValue.svelte'
@@ -47,13 +48,13 @@
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
-  // The 構形 of the form shown, the chosen one or the crop's own, and of the bar's forms: where the bar
-  // leaves the crop's own form off, it is asked for all the same. The last answer stays until the next
-  // arrives, and a bar of ideographs or descriptions keeps the line's place while the first is read, so
-  // the controls below do not move.
+  // The bar wraps onto further rows; only the forms past the first ten, and not on it, wait in the picker.
+  const rest = $derived(forms.slice(BAR).filter(form => !bar.some(chip => chip.char === form.char)))
+  // The 構形 of the bar's forms, of the picker's and of the crop's own, which is asked for where the
+  // bar leaves it off. The last answer stays until the next arrives.
   const HAN = /^\p{Script=Han}/u
-  const shown = $derived(chosen ?? current)
-  const composedOf = $derived([...new Set([shown, ...bar.map(chip => chip.char)])].filter(char => HAN.test(char ?? '') || isDescription(char)).slice(0, 48).join(''))
+  const composedOf = $derived([...new Set([current, ...bar.map(chip => chip.char), ...rest.map(form => form.char)])]
+    .filter(char => HAN.test(char ?? '') || isDescription(char)).slice(0, 48).join(''))
   let composed = $state([])
   $effect(() => {
     const chars = composedOf
@@ -62,9 +63,21 @@
     readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => { if (live) composed = [] })
     return () => { live = false }
   })
-  const structure = $derived(composed.find(group => group.chars.includes(shown)) ?? null)
-  // The bar wraps onto further rows; only the forms past the first ten, and not on it, wait in the picker.
-  const rest = $derived(forms.slice(BAR).filter(form => !bar.some(chip => chip.char === form.char)))
+  const structureOf = $derived(new Map(composed.flatMap(group => group.chars.map(char => [char, group]))))
+  // A list's forms under the 構形 each is built as, a structure where its first form stands; the forms
+  // with none stand together, uncaptioned.
+  const grouped = list => {
+    const own = structureOf.get(current)?.id, groups = new Map()
+    for (const form of list) {
+      const structure = structureOf.get(form.char), id = structure?.id ?? ''
+      if (!groups.has(id)) groups.set(id, { id, label: structure?.label ?? '', own: Boolean(id) && id === own, forms: [] })
+      groups.get(id).forms.push(form)
+    }
+    return [...groups.values()]
+  }
+  const barGroups = $derived(grouped(bar))
+  // The bar's forms as they stand, which the number keys follow.
+  const ordered = $derived(barGroups.flatMap(group => group.forms))
   // The crop's own form as the site holds it: one value, and not disputed. A described form or a
   // registered figure (a variation sequence) can be added to the grapheme's 字体 here; encoded
   // characters already have a card row of their own. A figure the bar offers from the IVD is not on
@@ -135,7 +148,7 @@
     if (event.key === 'Escape' && picking) { event.preventDefault(); picking = false; query = ''; composing = false; addButton?.focus(); return }
     if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search, .ids-composer')) return
     const index = '1234567890'.indexOf(event.key)
-    if (index >= 0 && bar[index]) { event.preventDefault(); choose(bar[index].char) }
+    if (index >= 0 && ordered[index]) { event.preventDefault(); choose(ordered[index].char) }
   }
 </script>
 
@@ -143,19 +156,11 @@
 
 <div class="crop-form" bind:this={root}>
   <div class="form-row copyable">
-    <FormChips forms={bar} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
+    <FormChips groups={barGroups} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
       {#if !others}<CopyValue value={chosen ?? current} />{/if}
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+⌕'}</button>
   </div>
-  {#if composedOf}
-    <div class="form-structure">
-      {#if structure}
-        <span class="form-structure-label">{t('chips.structure')}</span><span class="form-structure-text" lang="zh">{structure.label}</span>
-        {#each structure.chars.filter(char => char !== shown) as char (char)}<FormText text={char} />{/each}
-      {/if}
-    </div>
-  {/if}
   {#if linkedHere || canLink}
     <div class="form-link">
       {#if linkedHere}
@@ -176,10 +181,17 @@
         <div class="form-section">
           <span class="form-section-title">{title}</span>
           <div class="form-options">
-            {#each items as item (item.char)}
-              <button type="button" class="form-option" {disabled} title={optionTitle(item)} onclick={() => add(item)}>
-                <FormText text={item.char} script={item.script} lang={item.lang} />{#if item.mj}<small>{item.mj}</small>{:else if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{:else if item.regions}<small>{item.regions}</small>{/if}
-              </button>
+            {#each key === 'forms' ? grouped(items) : [{ id: '', label: '', forms: items }] as group (group.id)}
+              <div class="form-option-group" class:own={group.own} role="group" aria-label={group.label || undefined}>
+                {#if group.label}<span class="form-option-label" lang="zh">{group.label}</span>{/if}
+                <div class="form-option-row">
+                  {#each group.forms as item (item.char)}
+                    <button type="button" class="form-option" {disabled} title={optionTitle(item)} onclick={() => add(item)}>
+                      <FormText text={item.char} script={item.script} lang={item.lang} />{#if item.mj}<small>{item.mj}</small>{:else if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{:else if item.regions}<small>{item.regions}</small>{/if}
+                    </button>
+                  {/each}
+                </div>
+              </div>
             {/each}
           </div>
         </div>
@@ -205,15 +217,17 @@
   .form-picker :global(.character-search){width:100%;min-width:0}
   .form-section{display:flex;flex-direction:column;gap:6px}
   .form-section-title{font-size:11px;color:var(--muted)}
-  .form-options{display:flex;flex-wrap:wrap;gap:6px}
+  .form-options{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:flex-end}
+  .form-option-group{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .form-option-label{font-size:11px;line-height:1.3;color:var(--muted)}
+  .form-option-group.own .form-option-label{color:var(--ink)}
+  .form-option-row{display:flex;flex-wrap:wrap;gap:6px}
   .form-option{display:inline-flex;flex-direction:column;align-items:center;gap:2px;min-width:44px;padding:5px 9px;font-size:21px;line-height:1.2;
     font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
   .form-option small{font-family:ui-monospace,monospace;font-size:9px;color:var(--muted)}
   .form-option:not(:disabled):hover{border-color:var(--accent)}
   .form-compose{align-self:flex-start;font-size:13px;padding:4px 10px}
   .form-note{margin:0;font-size:11px;color:var(--muted)}
-  .form-structure{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-height:22px;font-size:14px;line-height:22px}
-  .form-structure-label{font-size:11px;color:var(--muted)}
   .form-link{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;line-height:1.4}
   .form-link-add{border:0;background:transparent;color:var(--accent);padding:0;font:inherit;font-size:12px;text-align:left;
     text-decoration:underline;text-underline-offset:3px}
