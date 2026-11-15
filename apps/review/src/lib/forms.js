@@ -15,6 +15,8 @@ export const familyCodeSet = () => known ??= familyCodes().then(codes => new Set
 export const families = options => request('/atlas/forms/families', undefined, options)
 export const family = (codePoint, order = 'shape', options) =>
   request('/atlas/forms/families/' + encodeURIComponent(codePoint) + '?' + new URLSearchParams({ order }), undefined, options)
+export const formGlyphs = (id, options) =>
+  request('/atlas/forms/form/' + encodeURIComponent(id), undefined, options)
 export const members = (cluster, offset = 0, limit = 120, order = 'typical') =>
   request('/atlas/forms/clusters/' + cluster.split('/').map(encodeURIComponent).join('/') + '?' + new URLSearchParams({ offset, limit, order }))
 export const decide = decision => request('/atlas/forms/decisions', decision)

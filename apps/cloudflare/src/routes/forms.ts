@@ -6,6 +6,7 @@
 // carries (`carried`). A decision writes its rows and the family's recount in one batch; the unnamed
 // corpus glyphs it covers move `crops.char` to their form shortly after (`followCorpus`).
 import { publicId } from '../atlas3';
+import { listingItems } from '../atlas3Listing';
 import { LOGICAL } from './review';
 import { StaleCrop, staleResponse, writtenCropField } from '../atlas3Crops';
 import { axisOf } from '../dating';
@@ -445,6 +446,23 @@ async function cached(url: URL, state: FormsState, key: string, read: () => Prom
   return value;
 }
 
+// The crops a form is written in: its `has_form` claims on the current cut, as listing items. A
+// described form has no character page, so its 字体 chip opens this list.
+export const formCropsQuery = () => `SELECT c.crop FROM current_claims c JOIN crops k ON k.id=c.crop
+  LEFT JOIN reviews r ON r.crop=k.id
+  WHERE c.predicate='has_form' AND c.object=? AND c.scope='' AND c.slot=''
+    AND c.status IN ('asserted','accepted','adjudicated') AND c.cut=k.cut+(r.x IS NOT NULL)
+  GROUP BY c.crop ORDER BY c.crop LIMIT 500`;
+
+async function formGlyphs(env: Env, id: string, tools: FormTools) {
+  const found = await env.ATLAS.prepare('SELECT f.id,r.scheme,r.value FROM forms f JOIN representations r ON r.id=f.anchor WHERE f.id=?')
+    .bind(id).first<{ id: string; scheme: string; value: string }>();
+  if (!found) tools.fail(404, 'No such form.');
+  const rows = await env.ATLAS.prepare(formCropsQuery()).bind(id).all<{ crop: number }>();
+  const items = await listingItems(env, rows.results.map(row => row.crop));
+  return { id: found.id, scheme: found.scheme, form: found.value, count: items.length, items };
+}
+
 export async function formsRoute(env: Env, request: Request, path: string, q: URLSearchParams, tools: FormTools, ctx: ExecutionContext, actor: string | null = null): Promise<Response | Json | null> {
   const state = (await env.ATLAS.prepare(stateQuery()).first<FormsState>())!;
   // A load is sending the clustering; the migration's trigger refuses a decision meanwhile.
@@ -470,6 +488,8 @@ export async function formsRoute(env: Env, request: Request, path: string, q: UR
     return Response.json(value, { headers: { 'cache-control': 'public, max-age=300', 'x-content-type-options': 'nosniff' } });
   }
   if (path === '/atlas/forms/decisions.jsonl') return decisionLog(env);
+  const formPath = path.match(/^\/atlas\/forms\/form\/([^/]+)$/);
+  if (formPath) return formGlyphs(env, decoded(formPath[1], tools), tools);
   const familyPath = path.match(/^\/atlas\/forms\/families\/([^/]+)$/);
   if (familyPath) {
     const code = decoded(familyPath[1], tools), order = q.get('order') === 'size' ? 'size' : 'shape';

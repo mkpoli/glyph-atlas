@@ -6,7 +6,7 @@ import { gzipSync } from 'node:zlib';
 import { d1 } from '../forms.test';
 import { cropId, publicId } from '../atlas3';
 import { LOGICAL } from './review';
-import { FOLLOW_BATCH, describedClaimsQuery, clusterGlyphsQuery, clusterQuery, familyClustersQuery, familyGlyphsQuery, followCorpus, followStatements,
+import { FOLLOW_BATCH, describedClaimsQuery, clusterGlyphsQuery, clusterQuery, familyClustersQuery, familyGlyphsQuery, followCorpus, followStatements, formCropsQuery,
   formsRoute, glyphFamiliesQuery, listFollowQuery, memberDatesQuery, memberRowsQuery, recountQuery, stateQuery } from './forms';
 
 const databases: Database[] = [];
@@ -196,7 +196,7 @@ describe('the forms routes on glyph-atlas-v3', () => {
       db.exec(`INSERT INTO representations(id,scheme,value) VALUES('r:ids','ids','⿱日𤴓');
         INSERT INTO forms VALUES('f:ids','r:ids','u','t');
         INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
-          VALUES('claim-crop','has_form','','',${crop},0,'single','f:ids','[]','[]','[]','r','t');
+          VALUES('claim-crop','has_form','','',${crop},0,'asserted','f:ids','[]','[]','[]','r','t');
         INSERT INTO ledger_submissions VALUES('claim','u','{}','{}','t');`);
       expect(await get()).toEqual([{ char: '⿱日𤴓', count: 1 }]);
       db.exec(`INSERT INTO reviews(crop,gen,at,state,x,y,w,h) VALUES(${crop},5,0,0,1,2,3,4);
@@ -209,6 +209,19 @@ describe('the forms routes on glyph-atlas-v3', () => {
     } finally {
       (globalThis as any).caches = { default: { match: async () => undefined, put: async () => {} } };
     }
+  });
+
+  it('names a form and the crops it is written in', async () => {
+    const { db, env } = newDatabase(), crop = glyphs[0].crop;
+    db.exec(`INSERT INTO representations(id,scheme,value) VALUES('r:ids','ids','⿱日𤴓'); INSERT INTO forms VALUES('f:ids','r:ids','u','t');`);
+    const call = (path: string) => formsRoute(env, new Request('https://atlas.test' + path), path, new URLSearchParams(), tools, ctx());
+    expect(await call('/atlas/forms/form/f%3Aids')).toMatchObject({ id: 'f:ids', scheme: 'ids', form: '⿱日𤴓', count: 0, items: [] });
+    await expect(call('/atlas/forms/form/f%3Anope')).rejects.toThrow('404 No such form.');
+    expect(db.prepare(formCropsQuery()).all('f:ids')).toEqual([]);
+    db.exec(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+      VALUES('claim-crop','has_form','','',${crop},0,'asserted','f:ids','[]','[]','[]','r','t');
+      INSERT INTO ledger_submissions VALUES('claim','u','{}','{}','t');`);
+    expect(db.prepare(formCropsQuery()).all('f:ids')).toEqual([{ crop }]);
   });
 
   it('move a large decision in batches', async () => {
