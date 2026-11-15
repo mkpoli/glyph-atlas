@@ -124,8 +124,28 @@ that hold whole characters on these pages:
 On the four pages drawn after `segment` was settled (113 boxes) it is right about 86.1 in 100,
 `split_boxes` about 75.9.
 
-What is left is boxes of several characters that stay whole. Three things were tried against the
-same boxes and are not in the code:
+Most of what the cutters repair comes from the size of the writing. The registers set their main
+entries in characters about 75 px a side and their notes in two half-size columns, as 割注 is set,
+about 40 px a side; eight tenths of the boxes of the detector's test books are between 50 and 120 px
+and it finds the smallest tenth least often (`models/detector/README.md`). On the page enlarged one
+and a half times (`atlas review propose-characters --scale 1.5`, `Detector.boxes_at`) the notes are
+about 60 px and the main entries about 110:
+
+| page enlarged 1.5 times | detector alone | `split_boxes` | `segment` |
+| --- | ---: | ---: | ---: |
+| right | 89.1 | 83.0 | 83.3 |
+| one character, cut | 2.3 | 6.8 | 7.0 |
+| one character, lost or joined | 0.4 | 0.4 | 0.7 |
+| several characters, wrong count | 8.2 | 9.8 | 8.9 |
+
+The detector alone is then right about 93.5 in 100 on the four later pages, and either cutter after
+it cuts the large characters apart. Other enlargements were scored for the detector alone in a
+scratch run that left no result file: 78.2 right at 1.25 times, where the notes are still 50 px,
+80.9 at 1.75 and 83.3 at 2, where the main entries pass 120 px and come out in parts, and 80.7 with
+each page enlarged until its median box is the detector's median.
+
+At the page's own size what is left is boxes of several characters that stay whole. Three things
+were tried against the same boxes and are not in the code:
 
 - Cutting every box left whole into strips down and across it, each read without the size of the
   writing around it. On the first sample it got 9 more of the 40 boxes of several characters right
