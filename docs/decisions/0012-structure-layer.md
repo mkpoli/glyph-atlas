@@ -54,7 +54,8 @@ rules until the text is stable:
    entry are one component only when the 異体字 graph also gives them as variants. Level 2 is not
    read: it pairs shapes that are different characters elsewhere (土 and 士, 壬 and 王).
 
-A character has one structure, that of its first description. Unicode unified its regional glyphs,
+A character has one structure, that of its first description; a character written as one component
+(一, 人) is that component. Unicode unified its regional glyphs,
 so its other descriptions are spellings of the same structure (納 is `⿰糹内` in one region and
 `⿰糹內` in another; 胃 is `⿱田⺝` and `⿱田⺼`), and a written IDS that matches one names that
 structure. A character the IRG unifies with another has that character's structure (内 has 內's),
@@ -82,7 +83,11 @@ encoded apart share a structure when only a unified component separates them (�
   digests to the policy, so a table that changes is met with a decision about a new policy.
 - 忄 has no position in CJKVI's table and stays 忄; every description writes it so.
 - Of 97,680 described characters, 188 have only approximate, subtracting or unrepresentable
-  descriptions and no structure.
+  descriptions (七 is `〾⿻一乚`, 乌 is `㇯鸟丶`, 𠇇 is `⿰亻？`). Each is one component, itself, as
+  it is inside the characters built from it (切, 坞). Its ids are new ones under the same policy.
+  A written `⿰亻？` is 亻 beside a part no character names: it has a structure of its own and is
+  not 𠇇's, since `？` stands for any such part.
+- A character the source does not describe has no structure: 々, 〻, 〇, and every script but Han.
 
 ## Cases and sources
 
@@ -105,7 +110,8 @@ encoded apart share a structure when only a unified component separates them (�
   structure stays unassigned.
 - The `structures` table is immutable. A canonicalization change makes new ids and leaves claims as
   they were written.
-- The site reads each character's structure from its IDS reference shards and derives none. A
+- The site reads each character's structure from its IDS reference shards, which hold every
+  described character, and derives none. A
   reader names a form's structure by a character that has it or by a description the shards hold
   (`POST /atlas/forms/<form>/structure`), and the structure's row is written with its first claim.
   The site's database is the ledger, so no publication carries structure rows to it.
