@@ -36,11 +36,17 @@ case "$group" in
     # A collector deletes a dataset it rebuilds (a Wikisource work that gained pages), so the
     # archive mirrors the store: a copy would bring the stale dataset back on the next restore.
     save=sync
+    # R2 bills each request. Comparing modification times costs one HEAD per object, and listing
+    # directory by directory one LIST per book; checksums come with a single recursive listing.
+    compare=(--checksum --fast-list)
     ;;
   images)
     pairs=("cache/images:images")
     # A local image cache holds only what this machine fetched; it adds to the archive.
     save=copy
+    # The image cache is 166 GiB on a network drive: a checksum compare would read all of it on
+    # every sync, where a modification-time compare reads only metadata.
+    compare=(--fast-list)
     ;;
   *)
     echo "unknown group: $group" >&2
@@ -54,11 +60,6 @@ esac
 exclude=(--exclude '*.lock' --exclude '*.tmp' --exclude '*.sqlite-wal' --exclude '*.sqlite-shm'
          --exclude '/generations/**' --exclude /current --exclude /.current-next
          --exclude /published.json --exclude /published.json.tmp)
-
-# R2 bills each request. Comparing modification times costs one HEAD per object, and listing
-# directory by directory one LIST per directory (one per book); checksums come with a single
-# recursive listing.
-compare=(--checksum --fast-list)
 
 # Fold each queue's write-ahead log into its database, so the database file alone is complete.
 checkpoint() {
