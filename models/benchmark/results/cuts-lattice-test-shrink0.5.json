@@ -1,0 +1,85 @@
+{
+ "cutter": "lattice",
+ "split": "test",
+ "pages": 160,
+ "seconds_per_page": 2.48,
+ "books": {
+  "うすゆき物語": {
+   "characters": 16525,
+   "lines_skipped": 0,
+   "boxed_share": 0.939,
+   "cut_share": 0.9096,
+   "accepted": 9016,
+   "right": 9001,
+   "yield": 0.5447,
+   "precision": 0.9983,
+   "mean_iou": 0.8794,
+   "withheld": {
+    "gate": 6501,
+    "no-box": 1008
+   }
+  },
+  "料理物語": {
+   "characters": 7242,
+   "lines_skipped": 0,
+   "boxed_share": 0.9573,
+   "cut_share": 0.8926,
+   "accepted": 4247,
+   "right": 4227,
+   "yield": 0.5837,
+   "precision": 0.9953,
+   "mean_iou": 0.8894,
+   "withheld": {
+    "gate": 2686,
+    "no-box": 309
+   }
+  },
+  "源氏物語": {
+   "characters": 6446,
+   "lines_skipped": 0,
+   "boxed_share": 0.9594,
+   "cut_share": 0.8895,
+   "accepted": 3335,
+   "right": 3321,
+   "yield": 0.5152,
+   "precision": 0.9958,
+   "mean_iou": 0.8875,
+   "withheld": {
+    "gate": 2849,
+    "no-box": 262
+   }
+  },
+  "物類称呼": {
+   "characters": 13981,
+   "lines_skipped": 0,
+   "boxed_share": 0.9516,
+   "cut_share": 0.9295,
+   "accepted": 10281,
+   "right": 10271,
+   "yield": 0.7346,
+   "precision": 0.999,
+   "mean_iou": 0.8774,
+   "withheld": {
+    "gate": 3023,
+    "no-box": 677
+   }
+  }
+ },
+ "all": {
+  "characters": 44194,
+  "lines_skipped": 0,
+  "boxed_share": 0.949,
+  "cut_share": 0.9102,
+  "accepted": 26879,
+  "right": 26820,
+  "yield": 0.6069,
+  "precision": 0.9978,
+  "mean_iou": 0.8812,
+  "withheld": {
+   "gate": 15059,
+   "no-box": 2256
+  }
+ },
+ "slack": 0.0,
+ "shrink": 0.5
+}

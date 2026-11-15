@@ -2,7 +2,7 @@
  "cutter": "lattice",
  "split": "test",
  "pages": 160,
- "seconds_per_page": 2.7,
+ "seconds_per_page": 3.62,
  "books": {
   "うすゆき物語": {
    "characters": 16525,
@@ -79,5 +79,7 @@
    "gate": 14006,
    "no-box": 2147
   }
- }
+ },
+ "slack": 0.0,
+ "shrink": 1.0
 }
