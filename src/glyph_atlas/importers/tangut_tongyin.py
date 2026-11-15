@@ -7,7 +7,9 @@ that nkay0's rhyme-dictionary table gives it, so a box comes with the character 
 
 One document is the dictionary. A page is a printed page of the volume, which carries two plates and
 so two folios. A line is one column of a half-folio; its text is the column's head characters, since
-the notes are not transcribed. A unit is one head character. Only the places graded `ok` become
+the notes are not transcribed. A unit is one head character, with no position in its line: the notes
+stand between the head characters, so two of them are not neighbours in the text and form no run of
+crops (`glyph_atlas.ngrams`). Only the places graded `ok` become
 units: one that matched its glyph poorly, whose box is far from the folio's usual size, or that holds
 little ink may sit on the wrong ink, and a wrong box under a character's name is worse than a missing
 one. Those places stay in the table with their scores.
@@ -139,13 +141,6 @@ def collect(
     ) for seq, row in enumerate(column_rows)]
     line_ids = {line.id for line in lines}
 
-    # A unit's place in its line is its rank among the column's head characters, which is where it
-    # stands in the line's text; the table's own position stays in `meta`.
-    ranks: dict[str, list[int]] = {}
-    for row in character_rows:
-        ranks.setdefault(place_id({**row, "position": ""}), []).append(int(row["position"]))
-    ranks = {column: sorted(found) for column, found in ranks.items()}
-
     units, left_out = [], {}
     for row in character_rows:
         if row["quality"] != "ok":
@@ -161,7 +156,7 @@ def collect(
             document_id=document.id,
             page_id=_known_page(page_ids, row),
             line_id=line_id,
-            seq=ranks[place_id({**row, "position": ""})].index(int(row["position"])),
+            seq=None,
             box=_box(row),
             text_source=row["char"],
             unicode=row["codepoint"],

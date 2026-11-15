@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 from typer.testing import CliRunner
 
-from glyph_atlas import tables
+from glyph_atlas import ngrams, tables
 from glyph_atlas.cli import app
 from glyph_atlas.importers import tangut_tongyin
 from glyph_atlas.schema import Document, Licence, Line, Page, Unit
@@ -74,7 +74,7 @@ def test_collect_writes_a_unit_for_each_sound_place(fixture, tmp_path):
     assert (line.id, line.text, line.page_id) == ("ecang-heishuicheng:inv-207:02A5", "𗩤𗠜𗠪", page.id)
     unit = next(iter(tables.read(out / "units.parquet", Unit)))
     assert unit.id == "ecang-heishuicheng:inv-207:02A51"
-    assert (unit.text_source, unit.unicode, unit.line_id, unit.seq) == ("𗩤", "U+17A64", line.id, 0)
+    assert (unit.text_source, unit.unicode, unit.line_id, unit.seq) == ("𗩤", "U+17A64", line.id, None)
     assert (unit.box.x, unit.box.y, unit.box.w, unit.box.h) == (302, 24, 30, 32)
     assert unit.confidence.text == pytest.approx(0.41)
     assert unit.upstream == {"nkay0-tangut-rhyme": "旧版同音 02A51"}
@@ -120,21 +120,18 @@ def test_the_placement_tables_agree_with_each_other():
     assert {column: "".join(char for _, char in sorted(found)) for column, found in held.items()} == text
 
 
-def test_a_unit_stands_where_its_character_does_in_the_line(fixture, tmp_path):
+def test_head_characters_of_a_column_form_no_run(fixture, tmp_path):
     scans, data = fixture
-    table(data / "columns.tsv", ["folio", "side", "column", "page", "x", "y", "w", "h", "text"],
-          [[2, "A", 5, 1, 300, 20, 40, 260, "𗩤𗠪"]])
     table(data / "characters.tsv",
           ["folio", "side", "column", "position", "char", "codepoint", "page", "x", "y", "w", "h", "score", "ink",
            "quality"],
           [[2, "A", 5, 1, "𗩤", "U+17A64", 1, 302, 24, 30, 32, 0.41, 70.2, "ok"],
-           [2, "A", 5, 6, "𗠪", "U+1782A", 1, 301, 196, 30, 30, 0.33, 61.5, "ok"]])
+           [2, "A", 5, 2, "𗠜", "U+1781C", 1, 303, 60, 30, 31, 0.39, 64.0, "ok"],
+           [2, "A", 5, 3, "𗠪", "U+1782A", 1, 301, 96, 30, 30, 0.33, 61.5, "ok"]])
     out = tmp_path / "out"
     tangut_tongyin.collect(scans, out, data=data, cache=tmp_path / "cache")
 
-    line = next(iter(tables.read(out / "lines.parquet", Line)))
-    units = sorted(tables.read(out / "units.parquet", Unit), key=lambda unit: unit.seq)
-    # The column skips positions 2 to 5: the second unit is the line's second character.
-    assert [(unit.seq, unit.text_source, unit.meta["tongyin"]) for unit in units] == [
-        (0, "𗩤", "02A51"), (1, "𗠪", "02A56")]
-    assert "".join(unit.text_source for unit in units) == line.text
+    units = sorted(tables.read(out / "units.parquet", Unit), key=lambda unit: unit.id)
+    # Notes stand between the head characters, so the three are no sequence of the text.
+    assert [(unit.meta["tongyin"], unit.seq) for unit in units] == [("02A51", None), ("02A52", None), ("02A53", None)]
+    assert ngrams.adjacent_ngrams(units) == []
