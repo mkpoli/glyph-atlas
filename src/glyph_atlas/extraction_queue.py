@@ -41,7 +41,7 @@ from uuid import uuid4
 from . import align, images, tables, withdrawn
 from .schema import PAGE_SCOPE, Classification, ReviewState, UnitKind
 
-POLICY = "single-character-lattice-v4"
+POLICY = "single-character-lattice-v5"
 LATTICE = "lattice"
 
 

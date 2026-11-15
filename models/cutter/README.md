@@ -14,17 +14,46 @@ accepted on how its box sits in its line.
 
 ```sh
 python models/benchmark/cuts.py build                 # work/cut-bench: CODH's val and test books
+python scripts/fetch_reviews.py work/reviews/reviews.json
+python models/benchmark/cuts.py build-reviewed work/reviews/reviews.json   # the collection's reviewed pages
 python models/cutter/fit.py collect --split val --pages 60
+python models/cutter/fit.py collect --split fit
 python models/cutter/fit.py fit                       # frame.json, gate.json
 python models/cutter/fit.py collect --split test --pages 40
 python models/cutter/fit.py measure --split test      # measured-test.json
+python models/cutter/fit.py collect --split held
+python models/cutter/fit.py measure --split held      # measured-held.json
 python models/benchmark/cuts.py run --cutter lattice --split test --pages 40
 ```
 
-The models are fitted on CODH's two `val` books (115 pages, 16,754 characters) and measured on its
-four `test` books, none of which the detector, the classifier or the refiner was trained on. A
+The models are fitted on CODH's two `val` books (115 pages, 16,754 characters) and on the crops of
+the collection that a reviewer matched to their character on the site, and measured on CODH's four
+`test` books, none of which the detector, the classifier or the refiner was trained on. A
 placement is right when its box reaches IoU 0.7 with the box of its own character. `gate.json`
 accepts at the probability that gave 0.985 precision on `val`.
+
+## Reviewed crops
+
+A crop a reviewer matched to its character was cut right, and one reported as two characters, part
+of one or none was cut wrong. The site's export of 2026-11-15 judges 819 crops of the extraction
+this way, 816 right and 3 wrong, on 664 pages of 232 books. Such a page knows the boxes of those
+characters and nothing of the others on it, so a candidate box is labelled only where a reviewed
+box decides it, and a placement only for a reviewed character.
+
+One book in four is held out by its id: 547 crops of 167 books are fitted on, 269 crops of 65
+books measure the result (`measured-held.json`). The rows of the reviewed pages together weigh a
+tenth of CODH's (`fit --reviewed 0.1`); at three tenths 97.4% of the boxes published on CODH's test
+books reached IoU 0.7.
+
+| | CODH alone | with reviewed crops |
+| --- | ---: | ---: |
+| CODH test, characters published at IoU ≥ 0.7 | 60.7% | 63.2% |
+| CODH test, published boxes at IoU ≥ 0.7 | 97.7% | 97.5% |
+| CODH test, characters published where 98% of boxes reach IoU 0.7 | 55.7% | 57.1% |
+| held-out reviewed crops published | 246 of 269 | 249 of 269 |
+
+Every reviewed crop is one an earlier gate had published, so the held-out crops are easier than
+the collection's pages, and three reported cuts are too few to teach what a wrong one looks like.
 
 ## Held-out books
 
@@ -35,39 +64,39 @@ character in the crop.
 
 | | consensus | lattice |
 | --- | ---: | ---: |
-| characters published, box at IoU ≥ 0.5 | 37.1% | 61.2% |
+| characters published, box at IoU ≥ 0.5 | 37.1% | 64.0% |
 | published boxes at IoU ≥ 0.5 | 99.7% | 99.8% |
-| published boxes at IoU ≥ 0.7 | 97.3% | 97.7% |
-| seconds a page | 27.6 | 2.2 |
+| published boxes at IoU ≥ 0.7 | 97.3% | 97.5% |
+| seconds a page | 27.6 | 1.8 |
 
 By book, share of characters published at IoU ≥ 0.5:
 
 | book | production | consensus | lattice |
 | --- | --- | ---: | ---: |
-| うすゆき物語 | printed | 35.7% | 54.1% |
-| 料理物語 | printed | 33.4% | 58.5% |
-| 源氏物語 | handwritten | 32.4% | 52.4% |
-| 物類称呼 | printed | 42.8% | 75.0% |
+| うすゆき物語 | printed | 35.7% | 59.6% |
+| 料理物語 | printed | 33.4% | 60.0% |
+| 源氏物語 | handwritten | 32.4% | 53.6% |
+| 物類称呼 | printed | 42.8% | 76.1% |
 
 Other operating points on the same pages (`measured-test.json`), share of characters published
 against the share of published boxes at IoU ≥ 0.7:
 
 | precision at IoU 0.7 | 0.95 | 0.97 | 0.98 | 0.99 |
 | --- | ---: | ---: | ---: | ---: |
-| characters published | 76.4% | 66.3% | 55.7% | 35.2% |
+| characters published | 76.4% | 66.7% | 57.1% | 36.6% |
 
 With one line in four given a fault (a character or two dropped from the transcription, added to
-it or exchanged) and one character in twenty unreadable to the classifier, 57.6% of the characters
-on the page are published with a box at IoU ≥ 0.7, 97.6% of the published boxes. Of the 2,247
-unreadable characters 649 are published, 97.8% of them at IoU ≥ 0.7.
+it or exchanged) and one character in twenty unreadable to the classifier, 60.0% of the characters
+on the page are published with a box at IoU ≥ 0.7, 97.5% of the published boxes. Of the 2,247
+unreadable characters 627 are published, 98.1% of them at IoU ≥ 0.7.
 
 A transcriber's line box is longer than its ink. With every line box lengthened at both ends by
-three quarters of a character (`cuts.py run --slack 0.75`), 60.1% are published at 99.8% (IoU 0.5).
+three quarters of a character (`cuts.py run --slack 0.75`), 62.9% are published at 99.8% (IoU 0.5).
 
 ## Collection pages
 
 40 pages drawn at random from the pages the collection had extracted, 9,515 transcribed characters:
-the consensus gate had published 2,831 crops, this cutter accepts 4,961, and 2,429 of them overlap
+the consensus gate had published 2,831 crops, the gate fitted on CODH alone accepts 4,961, and 2,429 of them overlap
 no published crop. Of 120 of those new crops drawn at random and looked at one by one, three were
 doubtful (a narrow box that may hold part of its character, a box that reaches into its neighbour).
 
@@ -98,8 +127,9 @@ character by `segment`. A page takes about 45 s on a CPU.
 
 ## Limits
 
-- The models are fitted on two printed books. Manuscripts, Chinese prints and Korean books are
-  measured only through the 源氏物語 pages and the collection sample above.
+- The full boxes of a page come from two printed books. Manuscripts, Chinese prints and Korean
+  books enter the fit only through reviewed crops, and are measured through the 源氏物語 pages, the
+  held-out reviewed crops and the collection sample above.
 - CODH draws a box loosely around some characters and tightly around others, so part of the
   shortfall at IoU 0.7 is a difference of convention. Of 48 accepted boxes under 0.7 looked at,
   about half framed their character as well as CODH's box.
