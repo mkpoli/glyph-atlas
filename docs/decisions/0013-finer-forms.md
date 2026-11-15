@@ -21,17 +21,19 @@ A 字体 is named at one of three levels, the broadest that tells it apart:
 | Level | Name | Example |
 | --- | --- | --- |
 | Unified ideograph | its code point | 說 `U+8AAA`, 説 `U+8AAC`, 说 `U+8BF4` |
-| Registered figure | a variation sequence | 突 `U+7A81 U+E0103` (Moji_Joho, MJ030283) |
+| Registered figure | a variation sequence of the IVD | 突 `U+7A81 U+E0103` (Moji_Joho, MJ030283) |
 | Described form | an ideographic description sequence | `⿰月兊` |
 
 A CJK compatibility ideograph is a code point that stands for a unified ideograph, and normalisation
-writes the unified ideograph in its place. It is no form. The figure it was encoded for is named by
-a variation sequence of the unified ideograph:
+writes the unified ideograph in its place. It is no form, and is written as what it stands for:
 
 1. the Moji_Joho sequence of the IVD, where the MJ文字情報一覧表 gives the compatibility code point
-   as the figure's implementation (89 rows of `data/vocab/mj-kanji.tsv`: U+FA55 is `7A81_E0103`);
-2. else Unicode's standardized variation sequence, which every one of the 1,002 has (U+F96F is
-   `8AAA FE00`, U+F9A1 is `8AAA FE01`).
+   as a figure's implementation (89 rows of `data/vocab/mj-kanji.tsv`: U+FA55 is `7A81_E0103`);
+2. else its unified ideograph (U+F96F and U+F9A1 are 說 U+8AAA).
+
+Unicode also gives each of the 1,002 a standardized variation sequence (U+F96F is `8AAA FE00`). It
+is not used: the IVD registers none of them, and for the 913 with no registered figure a shape that
+differs is better told by a description.
 
 Twelve code points of the compatibility block are unified ideographs (U+FA0E, U+FA0F, U+FA11,
 U+FA13, U+FA14, U+FA1F, U+FA21, U+FA23, U+FA24, U+FA27, U+FA28, U+FA29) and stay characters. The
@@ -43,23 +45,27 @@ The 構形 is unchanged: a compatibility ideograph has had its unified ideograph
 
 1. **Cards and the form bar.** A card lists a compatibility ideograph among its 字体 only while crops
    are filed under it, and the form bar and bulk targets never offer one. 說 lists 説, 說, 说 and 𧧘.
-2. **What a reviewer types.** A compatibility ideograph given as a crop's form or character is
-   filed as its sequence under the unified ideograph.
+2. **What a reviewer types.** A compatibility ideograph given as a crop's form is filed as what it
+   stands for (`representation.typed`, in Python and in the Worker).
 3. **The crops already filed.** In the copy of 2 November 2026, 85 crops sit under 18 compatibility
    code points (突 U+FA55 has 40); 14 of the 18 have a Moji_Joho sequence, and 練 U+F996, 蓮 U+F999,
-   滛 U+FA98 and 杓 U+2F8DC have the standardized one alone. Each moves to its unified ideograph
-   with the sequence as its form. After it the condition of step 1 holds for no card.
-4. **The families.** A compatibility ideograph leaves `members` in the character layer and stays a
+   滛 U+FA98 and 杓 U+2F8DC have none. Each moves to its unified ideograph, with the sequence as its
+   form where there is one. After it the condition of step 1 holds for no card.
+4. **Search and addresses.** A compatibility ideograph typed into a search, a correction or a
+   character's address is its unified ideograph.
+5. **The families.** A compatibility ideograph leaves `members` in the character layer and stays a
    name its unified ideograph is found by.
 
 ## Limits
 
-- A standardized sequence is drawn by a font that implements it, and many draw the base character.
-  The Moji_Joho sequences have the site's own font (`/fonts/mj/`).
+- A sequence is drawn by a font that maps it. The Moji_Joho sequences have the site's own font
+  (`/fonts/mj/`), cut to the characters with more than one registered figure.
 - A compatibility ideograph KS X 1001 encodes for a second reading (U+F96F, U+F9A1) has the unified
-  ideograph's glyph, so its sequence names no visible difference.
-- The local review store keeps a compatibility ideograph as the reviewer wrote it
-  (`review/corpus_reviews.py`); step 2 changes that.
+  ideograph's glyph and names no visible difference.
+- A compatibility ideograph of another standard whose glyph differs (杓 U+2F8DC, from CNS 11643) has
+  no registered figure here; its shape is kept by a description, or lost.
+- The local review store keeps a compatibility ideograph a reviewer gives as a character
+  (`review/corpus_reviews.py`); step 4 changes that.
 
 ## Sources
 
