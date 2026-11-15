@@ -13,9 +13,10 @@ less its `pub` and of the site values) publish nothing: no bump, no object, no r
 
 The counts come from the local copy of glyph-atlas-v3, which every publish replays and which takes
 the site's own changes here. The Worker lists every crop whose row it changes in `touched`, with the
-generation of the change (migration 0018). Once the bump to G + 1 has applied, the publication copies
-each crop listed through G, as its row then stands, into `absorbing` and takes it off the list; a crop
-changed again at G + 1 before that copy stays listed for the next publication. The local copy then
+generation of the change (migration 0018). The bump to G + 1 is a file D1 applies whole, which also
+copies each crop listed through G into `absorbing`, as generation G left its row, and takes it off the
+list; a crop changed after it carries G + 1, is listed again and waits for the next publication, its
+change counted from `tally` meanwhile. The local copy then
 takes each copied row whole (`publish.absorb`), with the revision the offline store counts for the
 crop and whether it keeps a reviewer's style, as a publish's read-back takes a guarded crop's, the
 graphemes those rows name and the codes D1 holds and the local copy lacks; a crop D1 no longer holds
@@ -344,17 +345,27 @@ def gallery(atlas, folder, pub, read):
     return files, pools_index
 
 
-def snapshot(through):
-    """Copy the row of every crop listed through generation `through` into `absorbing`, and take those
-    crops off the list. It runs once the bump from `through` has applied, so no write of that generation
-    or an earlier one is still to come. A crop changed again in the next generation before this copy
-    carries that generation in `touched`: it stays listed, and the next publication takes it. Each
-    statement is whole on its own, and both can run again: the copy replaces a row it made before, and
-    the removal names the same generations."""
-    query(DATABASE, f"INSERT OR REPLACE INTO absorbing(crop, through, row) SELECT t.crop, {through}, "
-                    f"CASE WHEN c.id IS NULL THEN NULL ELSE {SNAPSHOT_ROW} END "
-                    f"FROM touched t LEFT JOIN crops c ON c.id = t.crop WHERE t.gen <= {through}; "
-                    f"DELETE FROM touched WHERE gen <= {through}")
+def bump(pub, through):
+    """Bump the generation from `through` to the next and copy the listed crops, in one file D1 applies
+    whole; whether this publication's stamp is there, which only the run that bumped holds. The file
+    stamps the publication while the generation is `through`, and every other statement waits on that
+    stamp: the bump, the copy of the row of every crop listed through `through` into `absorbing`, and
+    those crops' removal from the list. The copy is taken with the bump, so it holds each crop as
+    generation `through` left it: a write that lands after the file carries the next generation, lists
+    its crop again, and is counted from the `tally` rows above `through` until the next publication takes
+    it. No statement reads `changes()`, and each finds nothing left to do where it has run before."""
+    stamp = f"pub:{pub}"
+    stamped = f"EXISTS (SELECT 1 FROM imports WHERE stamp = {lit(stamp)})"
+    path = OUT / "pub" / f"pointer-{pub}" / "bump.sql"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join([
+        f"INSERT OR IGNORE INTO imports(stamp, at) SELECT {lit(stamp)}, unixepoch() FROM generation WHERE id = 0 AND gen = {through};",
+        f"UPDATE generation SET gen = {through + 1} WHERE id = 0 AND gen = {through} AND {stamped};",
+        (f"INSERT OR REPLACE INTO absorbing(crop, through, row) SELECT t.crop, {through}, "
+         f"CASE WHEN c.id IS NULL THEN NULL ELSE {SNAPSHOT_ROW} END "
+         f"FROM touched t LEFT JOIN crops c ON c.id = t.crop WHERE t.gen <= {through} AND {stamped};"),
+        f"DELETE FROM touched WHERE gen <= {through} AND {stamped};"]) + "\n")
+    return send(DATABASE, path, stamp)
 
 
 def answers_digest(folder, site):
@@ -500,17 +511,13 @@ def publication(dry_run, read=None):
             return
     through = query(DATABASE, "SELECT gen FROM generation WHERE id = 0")[0]["gen"]
     # Reviews written after the bump carry the next generation, so the answers stand through G. The
-    # bump names G and stamps this publication in the same statement, so a resent statement cannot
-    # bump twice and only the run whose stamp is there made it.
-    query(DATABASE, f"UPDATE generation SET gen = {through + 1} WHERE id = 0 AND gen = {through}; "
-                    f"INSERT INTO imports(stamp, at) SELECT 'pub:{pub}', unixepoch() WHERE changes() = 1")
-    if not applied(DATABASE, f"pub:{pub}"):
+    # bump's file stamps this publication and copies every crop the site changed through G, a crop listed
+    # while the answers above were being written among them; only the run whose stamp is there made it.
+    if not bump(pub, through):
         sys.exit(f"another publication bumped generation {through}; nothing published")
-    # Every crop the site changed through G goes into the local copy, a crop listed while the answers
-    # above were being written among them; the answers are then written from the local copy as it stands
-    # with them. A read of the sample that fails here leaves the bump in place, and the next run
-    # publishes through the generation after it.
-    snapshot(through)
+    # The local copy takes the copied crops, and the answers are then written from it as it stands with
+    # them. A read of the sample that fails here leaves the bump in place, and the next run publishes
+    # through the generation after it.
     if absorb(atlas, mirror) or built is None:
         if built:
             shutil.rmtree(folder)

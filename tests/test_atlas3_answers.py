@@ -155,17 +155,26 @@ def test_a_dry_run_bumps_nothing_and_uploads_nothing(layout, monkeypatch):  # no
 
 
 def test_a_bump_another_run_made_stops_this_one(layout, monkeypatch):  # noqa: F811
-    _root, publish, _remote = layout
-    real = publish.query
+    root, publish, remote = layout
+    d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
+    reviewed(remote, crop, state=1)
+    real = publish.send
 
-    def racing(database, sql):
-        if sql.startswith("UPDATE generation"):
-            real(database, "UPDATE generation SET gen = gen + 1")
-        return real(database, sql)
+    def racing(database, file, stamp):
+        if stamp.startswith("pub:"):
+            d1.execute("UPDATE generation SET gen = gen + 1")
+            d1.commit()
+        real(database, file, stamp)
+        # As `send` answers: whether the file's stamp is there.
+        return bool(d1.execute("SELECT 1 FROM imports WHERE stamp=?", (stamp,)).fetchone())
 
-    monkeypatch.setattr(publish, "query", racing)
-    with pytest.raises(SystemExit):
-        answers(publish, monkeypatch, sample=0)
+    monkeypatch.setattr(publish, "send", racing)
+    uploaded = []
+    with pytest.raises(SystemExit, match="another publication bumped generation 1"):
+        uploaded = answers(publish, monkeypatch, sample=0)
+    # Nothing of this run's file applied: the crop stays listed for the publication that bumped.
+    assert uploaded == [] and listed(remote) == ({crop: 1}, [])
+    assert d1.execute("SELECT gen FROM generation").fetchone()[0] == 2
 
 
 # Corpus glyphs: two of か (one printed, one of no material), one of 한 and one no one has read, each
@@ -416,36 +425,58 @@ def test_a_crop_that_keeps_a_reviewer_s_style_is_marked_in_the_local_copy(layout
     assert local.execute("SELECT revision, at FROM review_revisions WHERE crop=?", (crop,)).fetchone() == (0, 1)
 
 
-def test_a_crop_changed_between_the_bump_and_the_snapshot_waits_for_the_next_publication(layout, monkeypatch):  # noqa: F811
+def test_a_crop_changed_after_the_bump_is_taken_as_its_generation_left_it(layout, monkeypatch):  # noqa: F811
     root, publish, remote = layout
     answers(publish, monkeypatch, sample=0)
     d1, crop, other, late = remote.dbs["glyph-atlas-v3"], *(ids(root)[k] for k in ("ex:a1", "ex:b1", "ex:a2"))
     reviewed(remote, crop, state=1)
     reviewed(remote, other, state=1)
-    real = publish.query
+    real = publish.send
 
-    def racing(database, sql):
-        out = real(database, sql)
-        if sql.startswith("UPDATE generation"):
-            # Once the bump has applied: one listed crop is flagged, and another crop is reviewed.
+    def racing(database, file, stamp):
+        out = real(database, file, stamp)
+        if stamp.startswith("pub:"):
+            # Once the bump's file has applied: one listed crop is flagged, and another crop is reviewed.
             assert reviewed(remote, crop, state=2) == 3
             reviewed(remote, late, state=0)
         return out
 
-    monkeypatch.setattr(publish, "query", racing)
+    monkeypatch.setattr(publish, "send", racing)
     time.sleep(1.1)  # a publication is named by its second
     answers(publish, monkeypatch, sample=0)
-    monkeypatch.setattr(publish, "query", real)
+    monkeypatch.setattr(publish, "send", real)
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
-    # The crop changed in generation 3 stays listed with the one first listed then; the other is taken.
+    # Both crops listed through generation 2 are taken as it left them; the two changed in generation 3 are listed again.
     assert listed(remote) == ({crop: 3, late: 3}, [])
-    assert row(local, other) == row(d1, other) and row(local, crop)["revision"] == 0 and row(local, late)["state"] == 1
+    assert row(local, other) == row(d1, other) and (row(local, crop)["state"], row(local, crop)["revision"]) == (1, 1)
+    assert row(local, late)["state"] == 1
+    assert counted(root, "あ") == {1: 1}
     assert pointer(root)["through_gen"] == 2
     time.sleep(1.1)
     answers(publish, monkeypatch, sample=0)
     assert listed(remote) == ({}, [])
     assert row(local, crop) == row(d1, crop) and row(local, crop)["state"] == 2 and row(local, late) == row(d1, late)
+    assert counted(root, "あ") == {2: 1}
     assert pointer(root)["through_gen"] == 3
+
+
+def test_the_bump_s_file_sent_again_changes_nothing_more(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
+    reviewed(remote, crop, state=1)
+    answers_module, _uploaded = patched(publish, monkeypatch)
+    assert answers_module.bump("20260101T000000Z", 1)
+    assert d1.execute("SELECT gen FROM generation").fetchone()[0] == 2 and listed(remote) == ({}, [crop])
+    assert d1.execute("SELECT count(*) FROM imports WHERE stamp='pub:20260101T000000Z'").fetchone()[0] == 1
+    # The site changes the crop again, in the next generation.
+    reviewed(remote, crop, state=2)
+    before = dumps(root, remote)[0]
+    d1.executescript((root / "out" / "pub" / "pointer-20260101T000000Z" / "bump.sql").read_text())
+    assert dumps(root, remote)[0] == before
+    # The file of another publication that read the same generation stamps nothing and changes nothing.
+    answers_module.bump("20260101T000001Z", 1)
+    assert dumps(root, remote)[0] == before
+    assert json.loads(d1.execute("SELECT row FROM absorbing WHERE crop=?", (crop,)).fetchone()[0])["state"] == 1
 
 
 def test_a_crop_d1_no_longer_holds_leaves_the_local_copy(layout, monkeypatch, capsys):  # noqa: F811
@@ -506,7 +537,7 @@ def test_an_id_that_stands_for_something_else_here_stops_the_run_before_the_loca
     with pytest.raises(SystemExit, match="number 1 graphemes or codes differently"):
         uploaded = answers(publish, monkeypatch, sample=0)
     assert uploaded == [] and dumps(root, remote)[1:] == before
-    # The snapshot waits in D1 for a run that can take it.
+    # The copied crop waits in D1 for a run that can take it.
     assert listed(remote) == ({}, [crop])
 
 
@@ -515,13 +546,9 @@ def test_what_a_stopped_run_left_in_absorbing_is_taken_by_the_next(layout, monke
     answers(publish, monkeypatch, sample=0)
     d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
     reviewed(remote, crop, state=1)
-    snapshot = module().snapshot
     # A run that bumped the generation and copied the listed crops, and stopped there.
-    d1.execute("UPDATE generation SET gen=3")
-    d1.commit()
-    monkeypatch.setattr(sys.modules["answers"], "query", publish.query)
-    snapshot(2)
-    assert listed(remote) == ({}, [crop])
+    assert patched(publish, monkeypatch)[0].bump("20260101T000000Z", 2)
+    assert listed(remote) == ({}, [crop]) and d1.execute("SELECT gen FROM generation").fetchone()[0] == 3
     assert row(sqlite3.connect(root / "out" / "atlas.sqlite"), crop)["state"] == 0
     time.sleep(1.1)  # a publication is named by its second
     assert answers(publish, monkeypatch, sample=0)[-1] == ("v3/", ["pointer.json"])

@@ -232,12 +232,14 @@ its pack through R2's S3 endpoint (the rclone remote's keys) and kept in `out/re
 publish. It refuses while a publish is unfinished.
 
 The local copy takes the site's changes before the answers are written. The Worker lists every crop
-whose row it changes in `touched`, with the generation of the change (migration 0018). Once the bump
-has applied, the publication copies the row of each crop listed through G into `absorbing` and takes
-the crop off the list, puts those rows in the local copy with the graphemes and codes they name, as a
-publish's read-back takes a guarded crop's row, and empties `absorbing`. A crop D1 no longer holds
-leaves the local copy. A crop changed again at G + 1 before the copy stays listed for the next
-publication. A run that stopped after its bump is finished by the next, which first takes what
+whose row it changes in `touched`, with the generation of the change (migration 0018). The bump is
+one file D1 applies whole (`out/pub/pointer-<pub>/bump.sql`): it stamps the publication, bumps the
+generation, copies the row of each crop listed through G into `absorbing` as generation G left it and
+takes the crop off the list. The publication then puts those rows in the local copy with the graphemes
+and codes they name, as a publish's read-back takes a guarded crop's row, and empties `absorbing`. A
+crop D1 no longer holds leaves the local copy. A crop changed after the bump carries G + 1: it is
+listed again, counted from `tally`, and taken by the next publication. A run that stopped after its
+bump is finished by the next, which first takes what
 `absorbing` holds and publishes through a newer generation; `publish.py` takes it too, before it plans
 anything, so a publish never plans on a local copy a stopped publication left behind. A grapheme id or
 a code that stands for another text or key in the local copy or in `out/mirror.sqlite` stops the run

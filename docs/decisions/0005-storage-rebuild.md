@@ -163,11 +163,12 @@ CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTE
   show until the next publication cuts it.
 - **Absorbing a publication.** Every batch that changes a crop's row, a review, a mark, an undo, a
   style or a forms decision's follow, lists the crop in `touched` with the current generation. The
-  publication bumps `generation` from G to G + 1 in one statement. Batches run in order on the
-  primary, so no review writes generation G after the bump. The publication then copies the row of
+  publication bumps `generation` from G to G + 1 in one file D1 applies whole. Batches run in order
+  on the primary, so no review writes generation G after the bump. The same file copies the row of
   every crop listed through G into `absorbing`, with the revision the offline store counts for the
-  crop and whether it keeps a reviewer's style, and takes those crops off the list. A crop changed
-  again at G + 1 before that copy stays listed, and the next publication takes it. The publisher's
+  crop and whether it keeps a reviewer's style, and takes those crops off the list, so the copy holds
+  each crop as generation G left it. A crop changed after the bump carries G + 1, is listed again,
+  and the next publication takes it. The publisher's
   local copy takes each copied row whole, with the graphemes and codes it names; a crop D1 no longer
   holds leaves it. `absorbing` is emptied once the local copy has committed, so a publication that
   stopped after its bump is finished by the next run. The publication builds its answers from the

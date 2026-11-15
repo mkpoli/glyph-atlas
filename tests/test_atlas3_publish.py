@@ -303,10 +303,9 @@ def test_the_crops_a_stopped_publication_of_the_answers_copied_are_taken_before_
     d1.execute("UPDATE crops SET state=1, revision=1 WHERE id=?", (crop,))
     d1.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,1,0,1,1,1,0,0)", (crop,))
     d1.execute("INSERT INTO touched VALUES(?,1)", (crop,))
-    d1.execute("UPDATE generation SET gen=2")
     d1.commit()
     sys.modules.pop("answers", None)
-    importlib.import_module("answers").snapshot(1)
+    assert importlib.import_module("answers").bump("20260101T000000Z", 1)
     assert d1.execute("SELECT crop FROM absorbing").fetchall() == [(crop,)]
     # The publish gives the crop another priority.
     path = catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, priority=2)])

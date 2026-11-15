@@ -5,7 +5,7 @@
 -- which its counts are built from, and takes the crop off the list.
 CREATE TABLE IF NOT EXISTS touched(crop INTEGER PRIMARY KEY, gen INTEGER NOT NULL) WITHOUT ROWID;
 
--- A publication's snapshot of the listed crops, taken once it has bumped the generation from `through`:
+-- A publication's snapshot of the listed crops, taken with its bump of the generation from `through`:
 -- `row` is the crop's row as a JSON object of its columns, with the revision the offline store counts for
 -- it (`logical`, routes/review.ts `LOGICAL`) and whether it keeps a reviewer's style (`own_style`), or
 -- NULL when the database no longer holds the crop. A row stays until the local copy has taken it, so a
