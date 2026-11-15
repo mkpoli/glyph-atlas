@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { COLUMNS, collage, tileAspect } from '../src/lib/collage.js'
+import { BARE, COLUMNS, ZOOM, ZOOMS, collage, collageStyle, tileAspect } from '../src/lib/collage.js'
 
 const place = (style, count) => Object.fromEntries(style.split(';').map(part => part.split(':')).filter(([key]) => [`--cell-c${count}`, `--cell-y${count}`, `--cell-n${count}`].includes(key)).map(([key, value]) => [key.slice(7, 8), Number(value)]))
 
@@ -28,5 +28,34 @@ describe('the collage', () => {
     const { block } = collage([1, 1])
     for (const count of COLUMNS) expect(block).toContain(`--collage-h${count}:`)
     expect(collage([]).block).toContain('--collage-h2:0px')
+  })
+  it('names one height for the columns that hold as many tiles', () => {
+    const { block } = collage([1, 1.5, 1, 1])
+    expect(block).toContain('--collage-h2:max(calc(2.5 * var(--collage-iw) + 2 * var(--collage-step)))')
+  })
+})
+
+// The most columns a size takes: the widest gallery its rules name.
+const most = (style, size) => Math.max(...[...style.matchAll(new RegExp(`\\{:root\\[data-tile-size="${size}"\\] \\.collage-block\\{--collage-cols:(\\d+)`, 'g'))].map(match => Number(match[1])))
+
+describe('the tile sizes', () => {
+  const style = collageStyle()
+  it('offer sizes below the old smallest, the default among them', () => {
+    expect(ZOOMS[0]).toBeLessThan(70)
+    expect(ZOOMS).toContain(ZOOM)
+    expect(ZOOMS).toEqual([...ZOOMS].sort((a, b) => a - b))
+  })
+  it('stop at ten columns from the default up and go on below it', () => {
+    for (const size of ZOOMS.filter(size => size > ZOOM)) expect(most(style, size)).toBe(10)
+    expect(style).toContain('.collage-block{--collage-cols:10;')
+    for (const size of ZOOMS.filter(size => size < ZOOM)) expect(most(style, size)).toBe(COLUMNS.at(-1))
+  })
+  it('never take fewer columns at a smaller size', () => {
+    const fit = (size, width) => Math.max(2, ...[...style.matchAll(new RegExp(`min-width:(\\d+)px\\)\\{:root\\[data-tile-size="${size}"\\] \\.collage-block\\{--collage-cols:(\\d+)`, 'g'))].filter(match => Number(match[1]) <= width).map(match => Number(match[2])))
+    const sizes = ZOOMS.filter(size => size !== ZOOM)
+    for (const width of [356, 912, 1313, 1751, 2189, 3502]) sizes.slice(1).forEach((size, i) => expect(fit(sizes[i], width)).toBeGreaterThanOrEqual(fit(size, width)))
+  })
+  it('leave a tile too narrow for a caption bare', () => {
+    for (const size of ZOOMS) expect(style.includes(`:root[data-tile-size="${size}"] .glyph-grid.collage :is(.tile-caption,.tile-details){display:none}`)).toBe(size < BARE)
   })
 })
