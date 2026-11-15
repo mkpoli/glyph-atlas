@@ -26,10 +26,10 @@ def table(path: Path, fields: list[str], rows: list[list]) -> None:
 
 @pytest.fixture
 def fixture(tmp_path):
-    """One scanned page with one plate, one column and three placed characters."""
-    scans, data = tmp_path / "scans", tmp_path / "data"
+    """One scanned page of the 甲種本 with one plate, one column and three placed characters."""
+    scans, data = tmp_path / "scans", tmp_path / "data" / "inv-207"
     scans.mkdir()
-    data.mkdir()
+    data.mkdir(parents=True)
     scan = scans / "00000040.jpg"
     Image.new("L", (400, 600), 200).save(scan)
     digest = hashlib.sha256(scan.read_bytes()).hexdigest()
@@ -43,16 +43,17 @@ def fixture(tmp_path):
           [[2, "A", 5, 1, "𗩤", "U+17A64", 1, 302, 24, 30, 32, 0.41, 70.2, "ok"],
            [2, "A", 5, 2, "𗠜", "U+1781C", 1, 303, 60, 30, 31, 0.19, 64.0, "low-score"],
            [2, "A", 5, 3, "𗠪", "U+1782A", 1, 301, 96, 12, 30, 0.33, 61.5, "size"]])
-    return scans, data
+    return scans, data.parent
 
 
 def test_collect_writes_a_unit_for_each_sound_place(fixture, tmp_path):
     scans, data = fixture
     out = tmp_path / "out"
-    summary = tangut_tongyin.collect(scans, out, data=data, cache=tmp_path / "cache")
+    summary = tangut_tongyin.collect(scans, out, items=["inv-207"], data=data, cache=tmp_path / "cache")
 
     assert (summary["pages"], summary["lines"], summary["units"], summary["characters"]) == (1, 1, 1, 3)
     assert summary["left_out"] == {"low-score": 1, "size": 1}
+    assert summary["documents"] == ["ecang-heishuicheng:inv-207"]
     document = next(iter(tables.read(out / "documents.parquet", Document)))
     assert document.id == "ecang-heishuicheng:inv-207"
     assert (document.title, document.shelfmark) == ("音同（甲種本）", "Инв. No. 207")
@@ -84,8 +85,14 @@ def test_collect_refuses_a_scan_that_is_not_the_pinned_one(fixture, tmp_path):
     scans, data = fixture
     Image.new("L", (400, 600), 90).save(scans / "00000040.jpg")
     with pytest.raises(tangut_tongyin.TongyinSourceError, match="not the scan"):
-        tangut_tongyin.collect(scans, tmp_path / "out", data=data, cache=tmp_path / "cache")
+        tangut_tongyin.collect(scans, tmp_path / "out", items=["inv-207"], data=data, cache=tmp_path / "cache")
     assert not (tmp_path / "out" / "units.parquet").exists()
+
+
+def test_collect_refuses_an_exemplar_the_record_does_not_list(fixture, tmp_path):
+    scans, data = fixture
+    with pytest.raises(tangut_tongyin.TongyinSourceError, match="no item inv-999"):
+        tangut_tongyin.collect(scans, tmp_path / "out", items=["inv-999"], data=data, cache=tmp_path / "cache")
 
 
 def test_command_reports_a_missing_scan(tmp_path):
@@ -94,16 +101,18 @@ def test_command_reports_a_missing_scan(tmp_path):
     assert "is not there" in result.output
 
 
-def test_the_placement_tables_agree_with_each_other():
-    pages = {row["page"]: row for row in tangut_tongyin.read_tsv(DATA / "pages.tsv")}
-    columns = tangut_tongyin.read_tsv(DATA / "columns.tsv")
-    characters = tangut_tongyin.read_tsv(DATA / "characters.tsv")
+@pytest.mark.parametrize(("item", "page_count", "place_count"), [("inv-207", 28, 5673), ("inv-208", 26, 5287)])
+def test_the_placement_tables_agree_with_each_other(item, page_count, place_count):
+    pages = {row["page"]: row for row in tangut_tongyin.read_tsv(DATA / item / "pages.tsv")}
+    columns = tangut_tongyin.read_tsv(DATA / item / "columns.tsv")
+    characters = tangut_tongyin.read_tsv(DATA / item / "characters.tsv")
 
-    assert len(pages) == 28
+    assert len(pages) == page_count
     places = [tangut_tongyin.place_id(row) for row in characters]
-    assert len(set(places)) == len(places) == 5673
-    # 同音 enters each character once.
-    assert len({row["char"] for row in characters}) == len(characters)
+    assert len(set(places)) == len(places) == place_count
+    # 同音 enters each character once; the table gives 𗸈 two places in the 乙種本, 17B55 and 20B64.
+    twice = Counter(row["char"] for row in characters) - Counter({row["char"] for row in characters})
+    assert twice == ({"𗸈": 1} if item == "inv-208" else {})
     assert Counter(row["quality"] for row in characters).keys() == {"ok", "low-score", "size", "faint", "sparse"}
     # A half-folio whose columns were not found keeps none of its chance matches.
     accepted: dict[tuple[str, str], list[bool]] = {}
@@ -128,16 +137,25 @@ def test_the_placement_tables_agree_with_each_other():
     assert {column: "".join(char for _, char in sorted(found)) for column, found in held.items()} == text
 
 
+def test_a_folio_printed_on_two_plates_keeps_one_side_from_each():
+    characters = tangut_tongyin.read_tsv(DATA / "inv-208" / "characters.tsv")
+    # Plates 53-5 and 53-6 (page 31) show the halves of folio 7, plates 53-50 and 53-51 those of folio 51.
+    assert {(row["side"], row["page"]) for row in characters if row["folio"] == "7"} == {("A", "31"), ("B", "31")}
+    assert {(row["side"], row["page"]) for row in characters if row["folio"] == "51"} == {("A", "53"), ("B", "54")}
+    # Folios 5 and 6 are lost, and folios 1 and 2 hold the preface.
+    assert not {"1", "2", "5", "6"} & {row["folio"] for row in characters}
+
+
 def test_head_characters_of_a_column_form_no_run(fixture, tmp_path):
     scans, data = fixture
-    table(data / "characters.tsv",
+    table(data / "inv-207" / "characters.tsv",
           ["folio", "side", "column", "position", "char", "codepoint", "page", "x", "y", "w", "h", "score", "ink",
            "quality"],
           [[2, "A", 5, 1, "𗩤", "U+17A64", 1, 302, 24, 30, 32, 0.41, 70.2, "ok"],
            [2, "A", 5, 2, "𗠜", "U+1781C", 1, 303, 60, 30, 31, 0.39, 64.0, "ok"],
            [2, "A", 5, 3, "𗠪", "U+1782A", 1, 301, 96, 30, 30, 0.33, 61.5, "ok"]])
     out = tmp_path / "out"
-    tangut_tongyin.collect(scans, out, data=data, cache=tmp_path / "cache")
+    tangut_tongyin.collect(scans, out, items=["inv-207"], data=data, cache=tmp_path / "cache")
 
     units = sorted(tables.read(out / "units.parquet", Unit), key=lambda unit: unit.id)
     # Notes stand between the head characters, so the three are no sequence of the text.
