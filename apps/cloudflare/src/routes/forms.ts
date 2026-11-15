@@ -390,6 +390,10 @@ export const followStatements = () => [
   `INSERT OR IGNORE INTO graphemes(text) SELECT DISTINCT text FROM (${writtenAs}) WHERE decided AND text IS NOT NULL`,
   `INSERT OR IGNORE INTO form_bases(crop,char) SELECT c.id,c.char ${movable}`,
   tallied('-'),
+  // Each glyph about to take another character is listed for the next publication (`touched`, migration
+  // 0018), which copies its row into the publisher's local copy; one already listed takes the current generation.
+  `INSERT INTO touched(crop,gen) SELECT t.id,${GEN} FROM (${moved}) AS t JOIN crops c ON c.id=t.id WHERE c.char IS NOT t.char
+    ON CONFLICT(crop) DO UPDATE SET gen=excluded.gen WHERE touched.gen<>excluded.gen`,
   // A new character moves the glyph on a revision, so no view from before it stands; it has no review to
   // protect, so no event records it, and `bumps` keeps the store's count where it was.
   `UPDATE crops SET char=t.char,revision=revision+1,bumps=bumps+1 FROM (${moved}) AS t WHERE crops.id=t.id AND crops.char IS NOT t.char`,

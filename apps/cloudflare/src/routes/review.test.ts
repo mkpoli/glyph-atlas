@@ -968,6 +968,65 @@ describe('a crop\'s style', () => {
   });
 });
 
+describe('the list of touched crops', () => {
+  const touched = (db: Database) => Object.fromEntries((db.query('SELECT crop,gen FROM touched').all() as any[]).map(r => [r.crop, r.gen]));
+
+  it('names the crops a round reviewed and marked in the current generation, and an undo in a later one moves them to it', async () => {
+    const { db, env, ids } = setup();
+    const round = await send(env, '/atlas/rounds', { id: uuid(1), grapheme: 'U+306F',
+      answers: [local(ids[0], { verdict: 'wrong', issue: 'character', character: 'あ' })], seen: [local(ids[1])], skipped: [local(ids[2])] });
+    expect(round.status).toBe(200);
+    // The reviewed crop and the one marked seen; a single skip changes no row.
+    expect(touched(db)).toEqual({ [ids[0]]: 3, [ids[1]]: 3 });
+    db.exec('UPDATE generation SET gen=4');
+    expect((await send(env, `/atlas/characters/${publicId(ids[3])}`, { ...local(ids[3]), id: uuid(2), verdict: 'match' })).status).toBe(200);
+    expect(touched(db)).toEqual({ [ids[0]]: 3, [ids[1]]: 3, [ids[3]]: 4 });
+    expect((await send(env, `/atlas/rounds/${uuid(1)}/undo`, {})).status).toBe(200);
+    expect(touched(db)).toEqual({ [ids[0]]: 4, [ids[1]]: 4, [ids[3]]: 4 });
+  });
+
+  it('names a crop whose style a reviewer changed, and keeps one row for a crop changed twice', async () => {
+    const { db, env, ids } = setup();
+    db.exec(`INSERT INTO codes(field,code,key) VALUES('style',1,'regular')`);
+    expect((await send(env, `/atlas/characters/${publicId(ids[4])}/style`, { id: uuid(3), revision: 0, style: 'regular' })).status).toBe(200);
+    expect(touched(db)).toEqual({ [ids[4]]: 3 });
+    expect((await send(env, `/atlas/characters/${publicId(ids[4])}/style`, { id: uuid(4), revision: 1, style: 'unassessed' })).status).toBe(200);
+    expect(touched(db)).toEqual({ [ids[4]]: 3 });
+    db.exec('UPDATE generation SET gen=5');
+    expect((await send(env, `/atlas/characters/${publicId(ids[4])}/style`, { id: uuid(5), revision: 2, style: 'regular' })).status).toBe(200);
+    expect(touched(db)).toEqual({ [ids[4]]: 5 });
+  });
+
+  it('names a corpus glyph that took its cluster\'s form, and not one already written so', async () => {
+    const { db, env, ids } = setup();
+    db.exec(`INSERT INTO form_clusters(id,key,family,label,count,coherence,shape_position,size_position,list,form) VALUES(1,'test','U+306F','は',2,1,1,1,'test','𛂞');
+      UPDATE crops SET cluster=1 WHERE id IN (${ids[6]},${ids[7]}); UPDATE crops SET char=3 WHERE id=${ids[7]};
+      INSERT INTO corpus_follow VALUES(${ids[6]}),(${ids[7]})`);
+    await followCorpus({ ...env, ATLAS: d1(db) } as Env);
+    expect(db.query('SELECT id,char,bumps FROM crops WHERE id IN (?,?) ORDER BY id').all(ids[6], ids[7]))
+      .toEqual([{ id: ids[6], char: 3, bumps: 1 }, { id: ids[7], char: 3, bumps: 0 }]);
+    expect(touched(db)).toEqual({ [ids[6]]: 3 });
+  });
+
+  it('names the crops of a change list written outside a round, as an admin\'s flag is', async () => {
+    const { db, env, ids } = setup();
+    db.exec(`INSERT INTO actors(id,key,user,via) VALUES(1,'admin','admin','account');
+      INSERT INTO submissions(key,actor,request,response,at) VALUES('admin:f',1,'{}','{}',5)`);
+    // The flag's event kind (FLAG_KIND in routes/admin.ts).
+    await env.ATLAS.batch(cropChanges(env, 1, 'admin:f', 5, [6, 7].map(slot => ({ crop: ids[slot], expected: 0, cut: 0, kind: 6, label: 'は', state: 2, issue: 0, named: null }))));
+    expect(crop(db, ids[6])).toMatchObject({ state: 2, revision: 1 });
+    expect(touched(db)).toEqual({ [ids[6]]: 3, [ids[7]]: 3 });
+  });
+
+  it('names no crop of a write that was refused', async () => {
+    const { db, env, ids } = setup();
+    db.exec(`INSERT INTO codes(field,code,key) VALUES('style',1,'regular')`);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}`, { ...local(ids[0], { revision: 7 }), id: uuid(6), verdict: 'match' })).status).toBe(409);
+    expect((await send(env, `/atlas/characters/${publicId(ids[0])}/style`, { id: uuid(7), revision: 7, style: 'regular' })).status).toBe(409);
+    expect(touched(db)).toEqual({});
+  });
+});
+
 describe('the statements', () => {
   it('the routes ran read every table through an index', () => {
     expect(scans.size).toBeGreaterThan(20);
