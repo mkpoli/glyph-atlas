@@ -95,7 +95,7 @@ def collect(args):
             pairs = [(line, [(unit["box"], None) for unit in truth]) for line, truth in cuts.lines_of(page)
                      if len(align.tokens_of(line)) == len(truth)]
         truths = {line.id: truth for line, truth in pairs}
-        detections = [align.Detection(box=box, score=score) for box, score in bench.detector.boxes(image)]
+        detections = [align.Detection(box=box, score=score) for box, score in bench.detector.boxes_sized(image)]
         works = cut.prepare_page([line for line, _ in pairs], detections, image, classifier,
                                  refiner=bench.cutter.refiner)
         first = 0

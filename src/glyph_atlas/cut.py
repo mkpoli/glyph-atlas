@@ -716,7 +716,7 @@ def units_of(line: Line, placements: Sequence[Placement], *, run: str, version: 
 class BenchCutter:
     """The cutter as `models/benchmark/cuts.py` drives it."""
 
-    def __init__(self, directory: Path = MODELS):
+    def __init__(self, directory: Path = MODELS, *, sized: bool = True):
         from .classify import Classifier
         from .detect import Detector
         from .review.suggestions import classifier_path
@@ -727,10 +727,13 @@ class BenchCutter:
         from . import refine
 
         self.cutter = Cutter(directory, refiner=refine.Refiner() if refine.MODEL.exists() else None)
+        #: Whether a page of small writing is detected enlarged, as the extraction detects it.
+        self.sized = sized
         self.placements: dict[str, list[Placement]] = {}
 
     def cut(self, image, lines):
-        detections = [Detection(box=box, score=score) for box, score in self.detector.boxes(image)]
+        found = self.detector.boxes_sized(image) if self.sized else self.detector.boxes(image)
+        detections = [Detection(box=box, score=score) for box, score in found]
         self.placements = self.cutter.cut(lines, detections, image, self.classifier)
         return {line_id: [(p.box.model_dump() if p.box else None, p.accepted,
                            "accepted" if p.accepted else "no-box" if p.box is None else "gate")
@@ -741,6 +744,8 @@ class BenchCutter:
 def bench_cutter(name: str) -> BenchCutter:
     if name == "lattice":
         return BenchCutter()
+    if name == "lattice-own":
+        return BenchCutter(sized=False)
     if name == "lattice-raw":
         return BenchCutter(ROOT / "models/cutter/none")
     raise ValueError(f"no cutter named {name}")
