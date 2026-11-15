@@ -6,7 +6,7 @@
 // summary shards of the families the query names; the kanji of a kana reading come with their families
 // in the reading's shard, and the 異体字 of a one-character query with theirs in its card's object.
 import { characterObject, characterIds, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, type NameIndex } from '../atlas3Reference';
-import { structureKey, written } from '../representation';
+import { compatibility, structureKey, written } from '../representation';
 import { catalogueVersion } from '../atlas3Stamps';
 import { Problem } from '../busy';
 import { idsCharacter } from '../category';
@@ -129,8 +129,12 @@ function unlistedForms(found: Json[], cards: Map<string, Json>) {
   return new Map(wanted.filter(code => cards.has(code)).map(code => [code, cards.get(code)]));
 }
 
+// A compatibility ideograph in a query is the unified ideograph it stands for (說 U+F96F is 說 U+8AAA,
+// docs/decisions/0013-finer-forms.md), so a search finds that character; a list names a compatibility
+// ideograph only while crops are filed under it.
+const unified = (term: string) => [...term].map(c => compatibility(c) ? c.normalize('NFC') : c).join('');
 export async function suggest(env: Env, q: URLSearchParams, ctx?: ExecutionContext) {
-  const term = (q.get('q') || '').slice(0, 128).trim();
+  const asked = (q.get('q') || '').slice(0, 128).trim(), term = unified(asked);
   if (!term) return { items: [], total: 0, status: 'idle' };
   const limit = integer(q, 'limit', 8, 48);
   const index = await nameIndex(env, ctx) ?? { occurrences: new Map<string, number>(), named: () => [] };
@@ -139,7 +143,7 @@ export async function suggest(env: Env, q: URLSearchParams, ctx?: ExecutionConte
   // A description sequence no name gives is the character it describes, which has no card.
   if (!found.length && idsCharacter(literal(term))) {
     const item = { ...describedCard(literal(term)).data, rank: 0 };
-    return { query: term, items: [item], total: 1, more: 0, status: 'ok', corpus: { ready: true } };
+    return { query: asked, items: [item], total: 1, more: 0, status: 'ok', corpus: { ready: true } };
   }
   // A term no name gives that is two or more ideographs asks for the characters built from them.
   const wanted = found.length ? null : componentTerm(literal(term));
@@ -147,7 +151,7 @@ export async function suggest(env: Env, q: URLSearchParams, ctx?: ExecutionConte
     const { codes, more } = await componentMatches(env, wanted, limit, ctx);
     const held = codes.filter(code => index.occurrences.has(code)), cards = await cardsOf(env, held, new Map(), ctx);
     const items = held.filter(code => cards.has(code)).map(code => ({ ...cards.get(code), rank: 7 }));
-    return { query: term, match_kind: 'components', items, total: items.length, more: more ? 1 : 0, status: 'ok', corpus: { ready: true } };
+    return { query: asked, match_kind: 'components', items, total: items.length, more: more ? 1 : 0, status: 'ok', corpus: { ready: true } };
   }
   const kanji = await readingKanji(env, index, term, found, limit, ctx);
   found.push(...kanji.hits);
@@ -158,7 +162,9 @@ export async function suggest(env: Env, q: URLSearchParams, ctx?: ExecutionConte
   const shown = hitsShown.filter(hit => cards.has(hit.code)).map(hit => ({ ...cards.get(hit.code), rank: hit.rank,
     ...(hit.variant_of === undefined ? {} : { variant_of: hit.variant_of }) }));
   const total = found.length + kanji.unread;
-  return { query: term, items: byGrapheme(shown, unlistedForms(shown, cards)), total, more: Math.max(0, total - limit), status: 'ok', corpus: { ready: true } };
+  const items = byGrapheme(shown, unlistedForms(shown, cards))
+    .filter((item: Json) => !compatibility(item.char) || (index.occurrences.get(item.code_point) ?? 0) > 0);
+  return { query: asked, items, total, more: Math.max(0, total - limit), status: 'ok', corpus: { ready: true } };
 }
 
 // What the form picker's IDS editor starts from (0068, 0080): a character's descriptions and regional
