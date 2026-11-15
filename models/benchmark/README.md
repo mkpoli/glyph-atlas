@@ -145,3 +145,29 @@ python models/benchmark/cuts.py run --cutter lattice --split test --pages 40
 withheld 16,408 characters for a reading that disagreed and 9,708 at the alignment; 98.7% and 55.6%
 of those boxes were cut. `lattice` is `glyph_atlas.cut` (`models/cutter/README.md`).
 
+
+## Counts (2026-11-15)
+
+`counts.py` measures a cutter of pages that have no transcription. `counts/kyujanggak.json` lists
+268 boxes the detector drew on eight pages of the Kyujanggak land registers of 1722 and 1904
+(서울대학교 규장각한국학연구원), each with the number of characters it holds, counted by eye once and
+not by a reviewer; 250 have a count, 18 hold part of a character, none, or a number that could not
+be told. A cutter is right about a box when it makes as many boxes of it as it holds characters; a
+box joined with another is part of a box for each. Where the cuts fall is not checked.
+
+```
+python models/benchmark/counts.py --cutter segment
+```
+
+The boxes of a page were drawn from the long or large ones and from the rest apart, so the report
+weighs them back to 100 boxes of a page that hold whole characters (`results/counts-*.json`):
+
+| cutter | right | one character, cut | one character, lost or joined | several characters, wrong count |
+| --- | ---: | ---: | ---: | ---: |
+| `detector` | 73.2 | 0.0 | 0.0 | 26.8 |
+| `split` | 76.1 | 1.7 | 1.2 | 21.1 |
+| `segment` | 84.2 | 1.1 | 0.6 | 14.2 |
+
+`detector` is the detector's boxes as they are, `split` the geometric pass of
+`character_proposals.split_boxes`, `segment` is `glyph_atlas.segment`. The pages of sample `first`
+were looked at while `segment` was being changed; those of `second` were drawn afterwards.
