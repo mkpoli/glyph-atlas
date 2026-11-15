@@ -83,9 +83,10 @@ class Proposal:
     features: dict[str, Any] = field(default_factory=dict)
 
 
-def proposer(onnx: Path, *, score: float = SCORE, nms: float = NMS, split: bool = False) -> str:
+def proposer(onnx: Path, *, score: float = SCORE, nms: float = NMS, split: bool = False, scale: float = 1.0) -> str:
     """The proposer version: the detector's checksum, the operating point and the page geometry and
-    ink gate `detect` applies, hashed together, and the split when boxes were cut."""
+    ink gate `detect` applies, hashed together, the split when boxes were cut and the scale when the
+    page was resized."""
     from . import detect
 
     model = hashlib.sha256(Path(onnx).read_bytes()).hexdigest()
@@ -94,14 +95,17 @@ def proposer(onnx: Path, *, score: float = SCORE, nms: float = NMS, split: bool 
     if split:
         settings += (("split", 5, SPLIT_PITCHES, MIN_PART, NESTED, MERGED, GAP, BAND_TALL, BAND_SHORT,
                       BAND_PART, BAND_EVEN, BAND_INK, BAND_ASPECT, BAND_ASPECT_TALL),)
+    if scale != 1.0:
+        settings += (("scale", scale, detect.PART, detect.MEETS, detect.BLOCK),)
     return f"{FAMILY}-{hashlib.sha256(repr(settings).encode()).hexdigest()[:12]}"
 
 
-def propose(image: Image.Image, detector: Any, *, split: bool = False) -> list[Proposal]:
+def propose(image: Image.Image, detector: Any, *, split: bool = False, scale: float = 1.0) -> list[Proposal]:
     """Every box the detector keeps on `image`, highest score first; with `split`, a box that holds two
-    stacked characters of an orderly column becomes two boxes."""
+    stacked characters of an orderly column becomes two boxes; with `scale`, the boxes are found on
+    the page resized by it (`Detector.boxes_at`)."""
     proposals = [Proposal(x=box.x, y=box.y, w=box.w, h=box.h, score=round(float(score), 4))
-                 for box, score in detector.boxes(image)]
+                 for box, score in (detector.boxes(image) if scale == 1.0 else detector.boxes_at(image, scale))]
     return split_boxes(image, proposals) if split else proposals
 
 
