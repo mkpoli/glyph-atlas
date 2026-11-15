@@ -1,7 +1,7 @@
 import { request, character as readCrop, corpusCharacter } from './client.js'
 import { character as readCard, ids as readIds } from './layers.js'
 import { drawFigure, figuresOf } from './mjFigures.js'
-import { compatibility } from '$worker/representation.ts'
+import { compatibility } from '../../../cloudflare/src/representation.ts'
 
 /**
  * What a crop is written as, read and set through the calls the interface uses and nothing else:

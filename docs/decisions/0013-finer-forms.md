@@ -67,9 +67,10 @@ The 構形 is unchanged: a compatibility ideograph has had its unified ideograph
   https://www.unicode.org/Public/UCD/latest/ucd/StandardizedVariants.txt, read 2026-11-15: 1,002
   rows named `CJK COMPATIBILITY IDEOGRAPH-`. `data/sources/unicode-ucd.yaml`.
 - The twelve unified ideographs: the code points of U+F900–U+FAFF named as compatibility ideographs
-  with no decomposition in the Unicode Character Database 15.0.0, as Python's `unicodedata` reads it.
-- 文字情報基盤, MJ文字情報一覧表 Ver.006.02, `data/vocab/mj-kanji.tsv`: the columns 実装したUCS and
-  IVS.
+  with no decomposition in the Unicode Character Database, the same twelve in versions 15.0.0 and
+  16.0.0 as Python's `unicodedata` reads them.
+- 文字情報基盤, MJ文字情報一覧表 Ver.006.02, `data/vocab/mj-kanji.tsv`: the columns `implemented_code_point`
+  (実装したUCS) and `ivs`.
 - The IDS composer the site's described forms are drawn with, and the author's other IDS tools, key
   a part as one character with at most one variation selector, and read a compatibility mapping as
   one code point standing for another; this decision follows them.

@@ -1,4 +1,4 @@
-import { compatibility } from '$worker/representation.ts'
+import { compatibility } from '../../../cloudflare/src/representation.ts'
 
 // A compatibility ideograph is no 字体 of its own: its figure is named by a variation sequence
 // (docs/decisions/0013-finer-forms.md). A card lists one only while crops are filed under it.
