@@ -254,8 +254,8 @@ def test_propose_characters_records_the_detector_boxes(dataset: Path, monkeypatc
         def boxes(self, image):
             return [(Box(x=10, y=20, w=30, h=40), 0.05), (Box(x=60, y=20, w=30, h=40), 0.03)]
 
-        def boxes_at(self, image, scale):
-            return [(Box(x=10, y=20, w=30, h=int(40 * scale)), 0.05)]
+        def boxes_at(self, image, scale, fill=()):
+            return [(Box(x=10, y=20, w=30, h=int(40 * scale)), 0.05)] * (1 + len(fill))
 
     monkeypatch.setattr(detect, "Detector", Stub)
     model = tmp_path / "detector.onnx"
@@ -277,6 +277,12 @@ def test_propose_characters_records_the_detector_boxes(dataset: Path, monkeypatc
     assert enlarged.exit_code == 0 and "already proposed" not in enlarged.output, enlarged.output
     assert enlarged.output.splitlines()[0].split()[1:3] == ["1", "boxes"], "the boxes of the enlarged page"
     assert character_proposals.proposer(model, scale=1.5) != character_proposals.proposer(model)
+    filled = runner.invoke(app, ["review", "propose-characters", str(dataset), "--onnx", str(model),
+                                 "--scale", "1.5", "--fill", "2", "--fill", "1.25"])
+    assert filled.exit_code == 0 and "already proposed" not in filled.output, filled.output
+    assert filled.output.splitlines()[0].split()[1:3] == ["3", "boxes"], "the boxes of every scale asked for"
+    versions = {character_proposals.proposer(model, scale=1.5, fill=fill) for fill in ((), (2.0,), (2.0, 1.25))}
+    assert len(versions) == 3
     for arguments, message in ((["--script", "klingon"], "no script"), (["--document", "nope"], "no document"),
                                (["--onnx", str(tmp_path / "missing.onnx")], "no detector export")):
         refused = runner.invoke(app, ["review", "propose-characters", str(dataset), "--onnx", str(model), *arguments])
