@@ -229,26 +229,96 @@ def page_rows(db, published, units, pages, documents):
     db.commit()
 
 
-def freeze(dataset: Path, frozen: Path) -> None:
-    """Copy what the export reads of `dataset` to `frozen`, so the dataset can change while it runs."""
+#: The store's tables whose rows belong to a page, a line or a unit; the others are copied whole.
+PAGED = ("units", "lines", "events", "revisions", "revision_bases", "imported_records")
+
+
+def freeze_pages(source: Path, target: Path, pages: set[str]) -> None:
+    """Copy the store at `source` to `target` with the units, lines and reviews of `pages` alone.
+
+    The copy is a store of its own: the same tables, the rows of the chosen pages with their revisions
+    and review events, their imported page records and every imported document record (a book's link
+    to its holder's catalogue depends on which other books share it). It is read in one transaction,
+    so a store that is being written gives one consistent state, and it takes its name only when it is
+    whole. A page the store has nothing of stops the export.
+    """
+    part = target.with_name(target.name + ".part")
+    part.unlink(missing_ok=True)
+    dst = sqlite3.connect(part.resolve().as_uri(), uri=True, isolation_level=None)
+    try:
+        dst.execute("ATTACH ? AS src", (source.resolve().as_uri() + "?mode=ro",))
+        dst.execute("BEGIN")
+        for name, sql in dst.execute("SELECT name, sql FROM src.sqlite_master WHERE type='table' "
+                                     "AND name NOT LIKE 'sqlite_%'").fetchall():
+            dst.execute(sql)
+            if name not in PAGED:
+                dst.execute(f"INSERT INTO main.{name} SELECT * FROM src.{name}")
+        dst.execute("CREATE TEMP TABLE chosen(id TEXT PRIMARY KEY)")
+        dst.executemany("INSERT OR IGNORE INTO chosen VALUES(?)", ((page,) for page in pages))
+        for name in ("lines", "units"):
+            dst.execute(f"INSERT INTO main.{name} SELECT * FROM src.{name} WHERE page_id IN (SELECT id FROM chosen)")
+        dst.execute("INSERT INTO main.imported_records SELECT * FROM src.imported_records "
+                    "WHERE table_name='pages' AND id IN (SELECT id FROM chosen)")
+        documents = {json.loads(data)["document_id"] for data, in dst.execute(
+            "SELECT data FROM main.imported_records WHERE table_name='pages'")}
+        documents |= {d for d, in dst.execute("SELECT DISTINCT document_id FROM main.units WHERE document_id IS NOT NULL")}
+        dst.execute("CREATE TEMP TABLE targets(id TEXT PRIMARY KEY)")
+        dst.execute("INSERT INTO targets SELECT id FROM chosen")
+        dst.executemany("INSERT OR IGNORE INTO targets VALUES(?)", ((document,) for document in documents))
+        for name in ("lines", "units"):
+            dst.execute(f"INSERT OR IGNORE INTO targets SELECT id FROM main.{name}")
+            dst.execute("INSERT INTO main.imported_records SELECT * FROM src.imported_records "
+                        f"WHERE table_name='{name}' AND id IN (SELECT id FROM main.{name})")
+        dst.execute("INSERT INTO main.imported_records SELECT * FROM src.imported_records WHERE table_name='documents'")
+        found = {page for page, in dst.execute("SELECT page_id FROM main.units UNION SELECT page_id FROM main.lines "
+                                               "UNION SELECT id FROM main.imported_records WHERE table_name='pages'")}
+        if pages - found:
+            raise SystemExit(f"{len(pages - found)} of the {len(pages)} pages are not in {source}, "
+                             f"for example {min(pages - found)}; nothing exported")
+        for name in ("events", "revisions", "revision_bases"):
+            dst.execute(f"INSERT INTO main.{name} SELECT * FROM src.{name} WHERE target_id IN (SELECT id FROM targets)")
+        for sql, in dst.execute("SELECT sql FROM src.sqlite_master WHERE type='index' AND sql IS NOT NULL").fetchall():
+            dst.execute(sql)
+        dst.execute("COMMIT")
+    finally:
+        dst.close()
+    part.replace(target)
+
+
+def freeze(dataset: Path, frozen: Path, pages: set[str] | None = None) -> None:
+    """Copy what the export reads of `dataset` to `frozen`, so the dataset can change while it runs.
+
+    With `pages`, the review store is copied for those pages alone (`freeze_pages`), and the export
+    publishes their crops and nothing else of the dataset.
+    """
     # SQLite backup includes the WAL atomically; readers never copy a live WAL piecemeal.
+    if pages is not None and not (dataset / "review.sqlite").exists():
+        raise SystemExit(f"{dataset} has no review store to take pages from; nothing exported")
     for name in ("review.sqlite", "feedback-receipts.sqlite"):
-        if (dataset / name).exists():
-            with sqlite3.connect(dataset / name) as src, sqlite3.connect(frozen / name) as dst:
-                src.backup(dst)
+        if not (dataset / name).exists():
+            continue
+        if pages is not None and name == "review.sqlite":
+            freeze_pages(dataset / name, frozen / name, pages)
+            continue
+        with sqlite3.connect(dataset / name) as src, sqlite3.connect(frozen / name) as dst:
+            src.backup(dst)
     # The crop geometry flags (`glyph_atlas.ainu_geometry`) are read beside the tables they describe.
     for path in [*dataset.glob("*.parquet"), *dataset.glob(ainu_geometry.FILE)]:
         shutil.copy2(path, frozen / path.name)
 
 
-def export(dataset: Path, output: Path, *, resume=False):
+def export(dataset: Path, output: Path, *, resume=False, pages: set[str] | None = None):
     output.mkdir(parents=True, exist_ok=resume)
     lock = export_lock.hold(output)  # noqa: F841 -- held while the export writes
     frozen = output / "source"
     fresh = not frozen.exists()
     frozen.mkdir(exist_ok=resume)
     if fresh:
-        freeze(dataset, frozen)
+        freeze(dataset, frozen, pages)
+    elif pages is not None:
+        raise SystemExit(f"{frozen} is already copied; --pages chooses what a new export copies")
+    if (dataset / "review.sqlite").exists() and not (frozen / "review.sqlite").exists():
+        raise SystemExit(f"the copy in {frozen} was never finished; delete {output} and start again")
     store = Store(frozen)
     media = MediaCache(corpus_root=Path("work"))
     corpus = CorpusAPI("work", "work/corpus-index", autobuild=False)
@@ -262,6 +332,9 @@ def export(dataset: Path, output: Path, *, resume=False):
         existing = {r[0] for r in db.execute("SELECT id FROM units")}
         listing = endpoints["/atlas"](limit=10**7)
         units = {unit.id: unit for unit, revision in store.unit_snapshot()}
+        if pages is not None and (stray := {unit.page_id for unit in units.values()} - pages):
+            raise SystemExit(f"the copy holds units of {len(stray)} pages that were not chosen, for example "
+                             f"{min(map(str, stray))}; nothing exported")
         neighbors = defaultdict(list)
         for unit in units.values():
             if unit.line_id:
@@ -437,5 +510,9 @@ if __name__ == "__main__":
     parser.add_argument("dataset", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--pages", type=Path, help="a file of page ids, one a line: export the crops of these pages alone")
     args = parser.parse_args()
-    export(args.dataset, args.output, resume=args.resume)
+    pages = {line.strip() for line in args.pages.read_text(encoding="utf-8-sig").splitlines() if line.strip()} if args.pages else None
+    if args.pages and not pages:
+        parser.error(f"{args.pages} names no page")
+    export(args.dataset, args.output, resume=args.resume, pages=pages)
