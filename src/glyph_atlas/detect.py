@@ -66,6 +66,14 @@ INK_PERCENTILE = 0.5
 PAPER_PERCENTILE = 90
 # The percentile of a page's box inks taken as its typical box.
 INK_REFERENCE = 75
+# On a resized page, the share of a box that lies in a larger one for it to be a part of that character.
+PART = 0.7
+# Two boxes that share less than this of either lie apart, and a box of the page at its own size
+# stands where the resized page's boxes cover less than this of it.
+MEETS = 0.3
+# A box of a resized page that holds this many separate boxes of the page at its own size is a run of
+# characters. Two are not enough: the page at its own size also finds a large character in two parts.
+BLOCK = 3
 
 
 def tile_origins(length: int, tile: int = TILE, overlap: int = OVERLAP) -> list[int]:
@@ -364,6 +372,41 @@ class Detector:
         found = tiles(page.width, page.height, self.tile, self.overlap)
         return self._collect(page, found)
 
+    def boxes_at(self, image: Image.Image | str | Path, scale: float) -> list[tuple[Box, float]]:
+        """The boxes found on the page resized by `scale`, in the page's own coordinates.
+
+        The detector finds a character best at the size of the boxes of its books, about 50 to 120 px
+        a side (`models/detector/README.md`). A page whose characters are smaller, or of two sizes of
+        which one is smaller, is enlarged until they are that size. A box of the resized page that
+        holds `BLOCK` or more separate boxes of the page at its own size is a run of characters and is
+        dropped. An enlarged character can come out in parts, so a box of which `PART` lies in a
+        larger one is dropped. A box of the page at its own size stands where the resized page's boxes
+        cover less than `MEETS` of it, and a part the resized page found of it is dropped.
+        """
+        if scale <= 0:
+            raise ValueError(f"scale must be positive, got {scale}")
+        page = _open(image)
+        own = self.boxes(page)
+        if scale == 1.0:
+            return own
+        resized = page.resize((round(page.width * scale), round(page.height * scale)), Image.Resampling.LANCZOS)
+        found = []
+        for box, score in self.boxes(resized):
+            mapped = _to_box(np.asarray([box.x, box.y, box.x + box.w, box.y + box.h]) / scale, page.width, page.height)
+            if mapped is not None:
+                found.append((mapped, score))
+        found = [(box, score) for box, score in found
+                 if _apart([other for other, _ in own if _share(other, box) >= PART]) < BLOCK]
+        whole = [(box, score) for box, score in found
+                 if not any(other.w * other.h > box.w * box.h and _share(box, other) >= PART for other, _ in found)]
+        stands = [(box, score) for box, score in own
+                  if sum(_meet(box, other) for other, _ in whole) < MEETS * box.w * box.h]
+        whole = [(box, score) for box, score in whole
+                 if not any(other.w * other.h > box.w * box.h and _share(box, other) >= PART for other, _ in stands)]
+        kept = whole + stands
+        kept.sort(key=lambda pair: (-pair[1], pair[0].y, pair[0].x, pair[0].h, pair[0].w))
+        return kept
+
     def boxes_in(self, image: Image.Image | str | Path, region: Box) -> list[tuple[Box, float]]:
         """The boxes that meet `region`, in page coordinates, highest score first.
 
@@ -465,6 +508,27 @@ class Detector:
             dets = np.asarray(tensors[dets_name] if dets_name else outputs[0], dtype=np.float32)[0]
             boxes, scores = dets[:, :4], dets[:, 4]
         return boxes, np.asarray(scores, dtype=np.float32)
+
+
+def _meet(box: Box, other: Box) -> int:
+    """The area two boxes share, px²."""
+    across = min(box.x + box.w, other.x + other.w) - max(box.x, other.x)
+    down = min(box.y + box.h, other.y + other.h) - max(box.y, other.y)
+    return max(0, across) * max(0, down)
+
+
+def _share(box: Box, other: Box) -> float:
+    """The share of `box` that lies in `other`."""
+    return _meet(box, other) / (box.w * box.h)
+
+
+def _apart(boxes: Sequence[Box]) -> int:
+    """How many of `boxes` lie apart from one another, the largest taken first."""
+    kept: list[Box] = []
+    for box in sorted(boxes, key=lambda box: -box.w * box.h):
+        if all(max(_share(box, other), _share(other, box)) < MEETS for other in kept):
+            kept.append(box)
+    return len(kept)
 
 
 def _to_box(box: np.ndarray, width: int, height: int) -> Box | None:
