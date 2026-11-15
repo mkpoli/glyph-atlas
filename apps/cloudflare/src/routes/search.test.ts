@@ -55,6 +55,11 @@ const cards: Card[] = [
   { char: '时', occurrences: 4, family: ['時', '时', '旹'] },
   { char: '旹', occurrences: 2, family: ['時', '时', '旹'] },
   { char: '刻', occurrences: 80 },
+  // 說 U+F96F stands for 說 and holds no crop; 突 U+FA55 stands for 突 and holds forty.
+  { char: '説', occurrences: 482, family: ['説', '說', '\uf96f'] }, { char: '說', occurrences: 133, family: ['説', '說', '\uf96f'] },
+  { char: '\uf96f', occurrences: 0, name: 'CJK COMPATIBILITY IDEOGRAPH-F96F', family: ['説', '說', '\uf96f'] },
+  { char: '突', occurrences: 66, family: ['突', '\ufa55'] },
+  { char: '\ufa55', occurrences: 40, name: 'CJK COMPATIBILITY IDEOGRAPH-FA55', family: ['突', '\ufa55'] },
   { char: '鴇', occurrences: 1 },
   { char: '鯡', occurrences: 7 }, { char: '𩹉', occurrences: 2 },
   { char: '鮓', occurrences: 9 }, { char: '鮺', occurrences: 3 }, { char: '鮨', occurrences: 3 }, { char: '蚱', occurrences: 1 },
@@ -238,6 +243,17 @@ describe('a character search', () => {
     expect(await chars('ね')).toEqual(['ね', 'ネ', '𛂒', '𛄧', 'ぬ']);
     expect(await chars('とき')).toEqual(['𛄤', '時', '时', '旹', '刻', '鴇']);
     expect(await chars('鯡')).toEqual(['鯡', '𩹉']);
+  });
+
+  it('finds the unified ideograph a compatibility ideograph stands for, and lists one only with crops', async () => {
+    const answer = await suggest(newEnv, ask('\uf96f', 8), ctx);
+    expect(answer.query).toBe('\uf96f');
+    expect(answer.items.map((item: { char: string }) => item.char)).toEqual(['說', '説']);
+    const chars = async (q: string) => (await suggest(newEnv, ask(q, 8), ctx)).items.map((item: { char: string }) => item.char);
+    expect(await chars('説')).toEqual(['説', '說']);
+    expect(await chars('\ufa55')).toEqual(['突', '\ufa55']);
+    // 﨑 U+FA11 is a unified ideograph of the compatibility block.
+    expect(await chars('\ufa11')).toEqual(['\ufa11']);
   });
 
   it('finds the kanji of a reading typed in historical kana by its modern spelling', async () => {
