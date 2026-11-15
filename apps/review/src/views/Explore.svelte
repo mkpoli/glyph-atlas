@@ -496,7 +496,8 @@
     catalogueRequest?.abort()
     // A further page goes before the corpus glyphs shown after the collection's own crops, so the tiles
     // from the end of those crops on are drawn again, a slice at a time.
-    if (!append) { showInAddress(); clearSelection(); onShow = new Set() }
+    // The runs on show belong to the deal, which a reload with the same seed keeps.
+    if (!append) { showInAddress(); clearSelection(); onShow = new Set(runTiles.map(shownKey)) }
     const id = ++requestId; loading = true; error = ''; growing = append
     try {
       if (picked) {
