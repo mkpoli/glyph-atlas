@@ -55,6 +55,11 @@ exclude=(--exclude '*.lock' --exclude '*.tmp' --exclude '*.sqlite-wal' --exclude
          --exclude '/generations/**' --exclude /current --exclude /.current-next
          --exclude /published.json --exclude /published.json.tmp)
 
+# R2 bills each request. Comparing modification times costs one HEAD per object, and listing
+# directory by directory one LIST per directory (one per book); checksums come with a single
+# recursive listing.
+compare=(--checksum --fast-list)
+
 # Fold each queue's write-ahead log into its database, so the database file alone is complete.
 checkpoint() {
   find "$1" -maxdepth 1 -name '*.sqlite' -print0 | while IFS= read -r -d '' db; do
@@ -82,13 +87,13 @@ for pair in "${pairs[@]}"; do
       echo "restoring r2:$bucket/$remote -> $local"
       checkpoint "$local"
       rclone copy "r2:$bucket/$remote" "$local" \
-        --transfers 8 --checkers 16 "${exclude[@]}"
+        --transfers 8 --checkers 16 "${compare[@]}" "${exclude[@]}"
       ;;
     save)
       echo "saving $local -> r2:$bucket/$remote"
       checkpoint "$local"
       rclone "$save" "$local" "r2:$bucket/$remote" \
-        --transfers 8 --checkers 16 "${exclude[@]}"
+        --transfers 8 --checkers 16 "${compare[@]}" "${exclude[@]}"
       ;;
     *)
       echo "unknown action: $action" >&2
