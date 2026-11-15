@@ -1169,9 +1169,11 @@
   // The gallery as one image: every crop it holds so far, in the columns it shows them in, over a
   // credit of the page and the holders (`lib/collageImage.js`). Runs and crops with no image the site
   // may show are left out. `sheeting` counts the images in while it is painted.
-  let sheeting = $state(null), sheetFailed = $state(false), sheetJob = null
+  let sheeting = $state(null), sheetFailed = $state(false), sheetJob = null, sheetFault = null
   const pictured = item => item.origin !== 'run' && Boolean(item.image) && (item.origin !== 'corpus' || item.proxyable)
   const sheetable = $derived(display.some(pictured))
+  // Whose image a crop is and on what terms: its holder, or its work where the record names no holder.
+  const creditOf = item => [holderName(item.attribution || (typeof item.source === 'string' ? item.holder : item.source?.holder ?? item.holder)) || workTitle(item), licenceName(item.licence)].filter(Boolean).join(', ')
   async function saveSheet() {
     const blocks = sections.map(section => ({ heading: section.heading, items: section.tiles.map(([item]) => item).filter(pictured) })).filter(block => block.items.length)
     const crops = blocks.flatMap(block => block.items)
@@ -1179,23 +1181,29 @@
     const square = document.documentElement.dataset.gallery === 'grid'
     const count = square ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length
       : Number(getComputedStyle(grid.querySelector('.collage-block')).getPropertyValue('--collage-cols'))
-    const holders = [...new Set(crops.map(item => [holderName(item.attribution || (typeof item.source === 'string' ? item.holder : item.source?.holder ?? item.holder)), licenceName(item.licence)].filter(Boolean).join(', ')).filter(Boolean))]
+    const holders = [...new Set(crops.map(creditOf).filter(Boolean))]
+    // The page as the reader has it now: the gallery may show another character before the image is done.
+    const char = picked?.char, site = t('app.name'), day = new Date().toLocaleDateString('sv')
+    let address = location.href
+    try { address = decodeURI(address) } catch { /* An address that does not decode is written as it stands. */ }
     // The page's own paper, ink and quiet text, read as the colours the theme resolves them to.
     const probe = Object.assign(document.createElement('i'), { hidden: true }), tones = {}
     grid.append(probe)
     for (const [name, value] of [['paper', '--paper'], ['ink', '--ink'], ['quiet', '--muted']]) { probe.style.color = `var(${value})`; tones[name] = getComputedStyle(probe).color }
     probe.remove()
-    sheetJob = new AbortController(); sheeting = { done: 0, total: crops.length }; sheetFailed = false
+    sheetJob = new AbortController(); sheeting = { done: 0, total: crops.length }; sheetFailed = false; clearTimeout(sheetFault)
     try {
-      const { blob } = await paint(blocks, { count: Math.max(1, count || 1), square, ...tones, font: getComputedStyle(document.body).fontFamily,
+      const { blob, total, missing } = await paint(blocks, { count: Math.max(1, count || 1), square, ...tones, font: getComputedStyle(document.body).fontFamily,
         filter: ink === 'bw' ? 'grayscale(1) contrast(1.05)' : '', signal: sheetJob.signal,
-        credit: [[t('app.name'), picked?.char, t('explore.meta.glyphs', { count: crops.length }), decodeURI(location.href), new Date().toLocaleDateString('sv')].filter(Boolean), holders],
+        credit: drawn => [[site, char, t('explore.meta.glyphs', { count: drawn }), address, day].filter(Boolean), holders],
         onprogress: (done, total) => { sheeting = { done, total } } })
-      saveFile(blob, `glyph-atlas-${picked?.char ?? 'collection'}-${crops.length}.jpg`)
-    } catch (fault) { if (!sheetJob.signal.aborted) sheetFailed = true }
-    finally { sheeting = null }
+      saveFile(blob, `glyph-atlas-${char ?? 'collection'}-${total - missing}.jpg`)
+    } catch (fault) {
+      // The button says so for a while, then offers the image again.
+      if (!sheetJob.signal.aborted) { sheetFailed = true; sheetFault = setTimeout(() => { sheetFailed = false }, 6000) }
+    } finally { sheeting = null }
   }
-  onDestroy(() => sheetJob?.abort())
+  onDestroy(() => { sheetJob?.abort(); clearTimeout(sheetFault) })
   /**
    * Back or Forward to an address this view rewrote loads the page as it was first loaded, while the
    * address bar keeps what the view had moved on to. The view follows the address bar.
@@ -1365,7 +1373,7 @@
         {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
         {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
       </div>
-      <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable || Boolean(sheeting)} aria-busy={Boolean(sheeting)} aria-label={t('explore.sheet.save')} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count" role="status">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
+      <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
       <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
     </div>
   </div>
@@ -1427,6 +1435,8 @@
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
   .zoom-control{display:flex;align-items:center;gap:6px;color:var(--muted)}
   .sheet-count{font-variant-numeric:tabular-nums}
+  /* While the image is painted the button keeps the focus and takes no second press. */
+  .sheet-save[aria-disabled="true"]{cursor:default;opacity:.45}
   /* What the collection is shown as, and how, stays together as one group wherever the toolbar puts it. */
   .collection-tools{display:contents}
   /* Wide screens keep the toolbar's controls on one row: the find box takes the room it needs, the

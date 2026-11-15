@@ -20,7 +20,7 @@ describe('the collage image', () => {
   })
   it('breaks the credit between its parts', () => {
     expect(wrap(['aaaa', 'bbbb', 'cccc'], 12, text => text.length)).toEqual(['aaaa · bbbb', 'cccc'])
-    expect(wrap(['a part longer than the line', 'b'], 5, text => text.length)).toEqual(['a part longer than the line', 'b'])
+    expect(wrap(['abcdefghijkl', 'b'], 5, text => text.length)).toEqual(['abcde', 'fghij', 'kl', 'b'])
   })
   it('draws a few crops at their widest and many within what a canvas holds', () => {
     const few = sheet([{ aspects: Array(60).fill(1.2) }], 10, [['Glyph Atlas', '60 glyphs']], measure)
@@ -31,5 +31,12 @@ describe('the collage image', () => {
     expect(many.blocks[0].cells[0].w).toBeLessThan(160)
     expect(many.width * many.height).toBeLessThanOrEqual(16_000_000)
     expect(many.height).toBeLessThanOrEqual(16000)
+  })
+  it('keeps every credit line inside the sheet, however narrow', () => {
+    const narrow = sheet([{ aspects: Array(400).fill(1.2) }], 2, [['Glyph Atlas', 'https://glyphatlas.org/en/character/U+5019', 'a holder with a long name, CC BY-SA 4.0']], measure)
+    for (const line of narrow.lines) expect(measure(line, narrow.type)).toBeLessThanOrEqual(narrow.width - 48)
+  })
+  it('makes no sheet of more crops than its limits hold', () => {
+    expect(sheet([{ aspects: Array(3000).fill(1.2) }], 3, [], measure)).toBe(null)
   })
 })

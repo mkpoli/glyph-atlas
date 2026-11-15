@@ -41,52 +41,66 @@ export function place(blocks, count, cell) {
   return { width, height: top, type, blocks: placed }
 }
 
-/** `parts` in lines no wider than `width`, joined by ` · `; `measure` gives a text's width. A part wider than a line keeps one to itself. */
+/** `text` in pieces no wider than `width`, broken wherever it must be; a piece holds at least one character. */
+function pieces(text, width, measure) {
+  const out = []
+  let piece = ''
+  for (const char of text) {
+    if (piece && measure(piece + char) > width) { out.push(piece); piece = char } else piece += char
+  }
+  return piece ? [...out, piece] : out
+}
+
+/** `parts` in lines no wider than `width`, joined by ` · `; `measure` gives a text's width. A part wider than a line is broken over lines of its own. */
 export function wrap(parts, width, measure) {
   const lines = []
   for (const part of parts) {
     const joined = lines.length ? `${lines.at(-1)} · ${part}` : part
     if (lines.length && measure(joined) <= width) lines[lines.length - 1] = joined
-    else lines.push(part)
+    else if (measure(part) <= width) lines.push(part)
+    else lines.push(...pieces(part, width, measure))
   }
   return lines
 }
 
 /**
  * The sheet for `blocks` in `count` columns under the `credit` lines (arrays of parts), with the widest
- * crops its limits allow. `measure(text, size)` gives a text's width at a type size.
+ * crops its limits allow, or null when no crop size keeps it within them. `measure(text, size)` gives a
+ * text's width at a type size.
  */
 export function sheet(blocks, count, credit, measure) {
   for (let cell = CELL; ; cell = Math.max(NARROWEST, Math.floor(cell * 0.92))) {
     const placed = place(blocks, count, cell), leading = Math.round(placed.type * 1.6)
     const lines = credit.flatMap(parts => wrap(parts, placed.width - 2 * MARGIN, text => measure(text, placed.type)))
     const height = placed.height + lines.length * leading + MARGIN
-    if (cell === NARROWEST || placed.width <= SIDE && height <= SIDE && placed.width * height <= AREA) {
-      return { ...placed, height, lines, leading, credit: placed.height + placed.type }
-    }
+    if (placed.width <= SIDE && height <= SIDE && placed.width * height <= AREA) return { ...placed, height, lines, leading, credit: placed.height + placed.type }
+    if (cell === NARROWEST) return null
   }
 }
 
 /**
  * Paint the crops of `blocks`, each `{ heading, items }`, into one image and answer it as a JPEG blob
- * with how many crop images could not be read (their places stay empty).
+ * with how many crop images could not be read (their places stay empty). It fails when the crops are
+ * too many for one sheet or none of their images could be read.
  *
  * `count` is the gallery's columns; `square` draws every crop in a square, as the grid of squares
- * does; `credit` is the lines under the crops, drawn in `quiet`; `paper`, `ink` and `font` are the page's
- * own; `filter` is the canvas filter the crops are shown through. `onprogress(done, total)` follows the images in,
- * and `signal` gives the work up.
+ * does; `credit(drawn)` gives the lines under the crops for that many crops drawn, as arrays of parts,
+ * written in `quiet`; `paper`, `ink` and `font` are the page's own; `filter` is the canvas filter the
+ * crops are shown through. `onprogress(done, total)` follows the images in, and `signal` gives the
+ * work up.
  */
-export async function paint(blocks, { count, square = false, credit = [], paper = '#fff', ink = '#000', quiet = ink, font = 'sans-serif', filter = '', onprogress = () => {}, signal } = {}) {
+export async function paint(blocks, { count, square = false, credit = () => [], paper = '#fff', ink = '#000', quiet = ink, font = 'sans-serif', filter = '', onprogress = () => {}, signal } = {}) {
   const canvas = document.createElement('canvas'), context = canvas.getContext('2d')
   const type = size => `${size}px ${font}`
-  const plan = sheet(blocks.map(block => ({ heading: block.heading, aspects: block.items.map(item => square ? 1 : tileAspect(item)) })), count, credit,
-    (text, size) => { context.font = type(size); return context.measureText(text).width })
+  const measure = (text, size) => { context.font = type(size); return context.measureText(text).width }
+  const total = blocks.reduce((sum, block) => sum + block.items.length, 0)
+  const plan = sheet(blocks.map(block => ({ heading: block.heading, aspects: block.items.map(item => square ? 1 : tileAspect(item)) })), count, credit(total), measure)
+  if (!plan) throw new Error('The crops are too many for one sheet.')
+  const inner = plan.width - 2 * MARGIN
   canvas.width = plan.width; canvas.height = plan.height
   context.fillStyle = paper; context.fillRect(0, 0, plan.width, plan.height)
   context.fillStyle = ink; context.font = type(plan.type); context.textBaseline = 'alphabetic'
-  plan.blocks.forEach((block, i) => { if (block.heading != null) context.fillText(blocks[i].heading, MARGIN, block.heading) })
-  context.fillStyle = quiet
-  plan.lines.forEach((line, i) => context.fillText(line, MARGIN, plan.credit + i * plan.leading))
+  plan.blocks.forEach((block, i) => { if (block.heading != null) context.fillText(blocks[i].heading, MARGIN, block.heading, inner) })
 
   const jobs = plan.blocks.flatMap((block, i) => block.cells.map((box, at) => ({ box, item: blocks[i].items[at] })))
   let next = 0, done = 0, missing = 0
@@ -111,8 +125,13 @@ export async function paint(blocks, { count, square = false, credit = [], paper 
     }
   }
   await Promise.all(Array.from({ length: Math.min(TOGETHER, jobs.length) }, draw))
+  if (missing === total) throw new Error('No crop image could be read.')
+  // The credit counts the crops that are drawn. A smaller count never takes more lines than the one the sheet was sized for.
+  context.fillStyle = quiet; context.font = type(plan.type)
+  credit(total - missing).flatMap(parts => wrap(parts, inner, text => measure(text, plan.type))).slice(0, plan.lines.length)
+    .forEach((line, i) => context.fillText(line, MARGIN, plan.credit + i * plan.leading))
   const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92))
   canvas.width = canvas.height = 0
   if (!blob) throw new Error('The sheet could not be encoded.')
-  return { blob, missing, total: jobs.length, width: plan.width, height: plan.height }
+  return { blob, missing, total, width: plan.width, height: plan.height }
 }
