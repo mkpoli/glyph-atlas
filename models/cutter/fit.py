@@ -92,7 +92,8 @@ def collect(args):
         if page.get("partial"):
             pairs = cuts.reviewed_lines_of(page, image.size)
         else:
-            pairs = [(line, truth) for line, truth in cuts.lines_of(page) if len(align.tokens_of(line)) == len(truth)]
+            pairs = [(line, [(unit["box"], None) for unit in truth]) for line, truth in cuts.lines_of(page)
+                     if len(align.tokens_of(line)) == len(truth)]
         truths = {line.id: truth for line, truth in pairs}
         detections = [align.Detection(box=box, score=score) for box, score in bench.detector.boxes(image)]
         works = cut.prepare_page([line for line, _ in pairs], detections, image, classifier,
@@ -105,8 +106,8 @@ def collect(args):
                 "page": page["id"], "book": page["title"], "line": work.line_id, "vertical": work.frame.vertical,
                 "tokens": work.tokens, "cells": work.cells, "spans": work.spans, "sizes": work.sizes,
                 "rows": rows.astype(np.float16),
-                "truth": [unit and not unit.get("wrong") and unit["box"] or None for unit in truths[work.line_id]],
-                "rejected": [unit and unit.get("wrong") and unit["box"] or None for unit in truths[work.line_id]],
+                "truth": [right for right, _ in truths[work.line_id]],
+                "rejected": [wrong for _, wrong in truths[work.line_id]],
                 "page_truth": [unit["box"] for unit in page["units"]],
                 "page_rejected": [unit["box"] for unit in page.get("rejected", ())],
                 "whole": len(work.tokens) == len(truths[work.line_id]),
@@ -278,7 +279,8 @@ def shares(counts, reviewed: float):
 
 def fit(args):
     data = load("val")
-    sources = [data, load("fit")] if args.reviewed else [data]
+    reviewed = load("fit") if args.reviewed else {"lines": []}
+    sources = [data, reviewed]
     spans, labels, counts = [], [], []
     for source in sources:
         for record in source["lines"]:
@@ -367,7 +369,7 @@ def main():
     collector.add_argument("--split", default="val", choices=("val", "test", *REVIEWED))
     collector.add_argument("--pages", type=int, default=0, help="pages a book; 0 for all")
     fitter = commands.add_parser("fit")
-    fitter.add_argument("--version", default="lattice-1")
+    fitter.add_argument("--version", default="lattice-3")
     fitter.add_argument("--fault", type=float, default=0.25)
     fitter.add_argument("--unknown", type=float, default=0.05)
     fitter.add_argument("--precision", type=float, default=0.985)
