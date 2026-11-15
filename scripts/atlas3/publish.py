@@ -46,6 +46,10 @@ images to the image key map (`media_map.py`).
   their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
   crop's entry.
+- A page's facts are the catalogue's (`pages`), with the pages before and after it in its book (`previous`,
+  `next`) set here: for every book the catalogue carries a page of, the pages the site holds with facts once
+  the publish lands, by page number. A page whose neighbours change is published again like any other
+  change of its facts.
 - A statement over STATEMENT_BYTES stops the publish before anything is allocated.
 - A publish that sent something ends by publishing the answers (`answers.py`), so the counts follow it.
 
@@ -115,6 +119,17 @@ MARK_STATES, PENDING, RECUT_KIND = (3, 4), 0, 7
 # What a bundle entry keeps of each earlier cut: enough to show and cite its pixels.
 CUT_FIELDS = ("box", "crop_box", "context_box", "image", "image_sha256", "image_size", "image_place",
               "context_image", "context_image_place")
+# The facts of a page that name the pages before and after it in its book, which the page view links to.
+LINKS = ("previous", "next")
+
+
+def page_links(pages):
+    """Each page's neighbours in its book, {key: (previous, next)}, from the book's pages as (key, page
+    number) pairs: the pages by number, then by key, one with no number after every numbered one. The
+    first page has no previous, the last no next."""
+    ordered = sorted(pages, key=lambda page: (not isinstance(page[1], int), page[1] if isinstance(page[1], int) else 0, page[0]))
+    keys = [None, *(key for key, _ in ordered), None]
+    return {key: (keys[i], keys[i + 2]) for i, key in enumerate(keys[1:-1])}
 
 
 def merged_cuts(*lists):
@@ -1224,18 +1239,25 @@ def main():
 
     bundles = {}
 
+    def stored(pid):
+        p = m.atlas.execute("SELECT rev FROM pages WHERE id=?", (pid,)).fetchone()
+        if not p or p["rev"] == 0:
+            return {"crops": []}
+        path = OUT / "pages" / f"{pid}-{p['rev']}.json.gz"
+        if not path.exists():
+            sys.exit(f"page {pid} has revision {p['rev']} but no bundle {path.name}; refusing to rebuild it from nothing")
+        return json.loads(gzip.decompress(path.read_bytes()))
+
     def bundle_of(pid):
         if pid not in bundles:
-            p = m.atlas.execute("SELECT rev FROM pages WHERE id=?", (pid,)).fetchone()
-            if not p or p["rev"] == 0:
-                bundles[pid] = {"crops": []}
-            else:
-                path = OUT / "pages" / f"{pid}-{p['rev']}.json.gz"
-                if not path.exists():
-                    sys.exit(f"page {pid} has revision {p['rev']} but no bundle {path.name}; refusing to rebuild it from nothing")
-                bundles[pid] = json.loads(gzip.decompress(path.read_bytes()))
+            bundles[pid] = stored(pid)
             bundles[pid]["by_slot"] = {e["slot"]: e for e in bundles[pid]["crops"]}
         return bundles[pid]
+
+    def published_facts(pid):
+        """The facts a page is published with, or None. A bundle read for them alone is not kept: a book's
+        other pages are many, and most are read for nothing else."""
+        return (bundles[pid] if pid in bundles else stored(pid)).get("page")
 
     def entry(cid):
         return bundle_of(cid // PAGE)["by_slot"].get(cid % PAGE, {})
@@ -1850,17 +1872,44 @@ def main():
         runs_note += f"; {len(set(behind))} runs keep an old text until their first crop is published"
 
     # Pages: those whose crops or facts changed get the next revision, the bundle merged onto the last.
-    facts = {r["id"]: json.loads(r["data"]) for r in src.execute("SELECT id, data FROM pages")} if "pages" in tables else {}
-    for key, page_facts in facts.items():
-        row = m.ids.execute("SELECT id FROM pages WHERE key=?", (key,)).fetchone()
-        if row and bundle_of(row[0]).get("page") != page_facts:
-            m.touched_pages.setdefault(row[0], {})
+    # A catalogue knows the pages of its own crops alone, so a page's links to its neighbours are set here, over
+    # every page of its book the site holds once this publish lands; links a catalogue carries are dropped.
+    facts = {r["id"]: {k: v for k, v in json.loads(r["data"]).items() if k not in LINKS}
+             for r in src.execute("SELECT id, data FROM pages")} if "pages" in tables else {}
+    # The books whose pages may change: those the catalogue carries a page of, a page new to the site among them,
+    # and those a page of which gained or lost a crop in this run, since a page that lost its last one leaves the chain.
+    books = {row["book"] for key in facts if (row := m.atlas.execute("SELECT book FROM pages WHERE key=?", (key,)).fetchone())}
+    books |= {row["book"] for pid in m.touched_pages if (row := m.atlas.execute("SELECT book FROM pages WHERE id=?", (pid,)).fetchone())}
+    books = sorted(books)
+    # The facts each changed page is published with, its links among them, and how many pages published
+    # before take other neighbours.
+    page_facts, relinked = {}, 0
+    for i in range(0, len(books), 500):
+        chunk, members = books[i:i + 500], defaultdict(list)
+        for p in m.atlas.execute(f"SELECT id, key, book FROM pages WHERE book IN ({','.join('?' * len(chunk))})", chunk).fetchall():
+            held = published_facts(p["id"])
+            base = None if held is None else {k: v for k, v in held.items() if k not in LINKS}
+            record = facts.get(p["key"], base)
+            # A page with no facts (crops with no page, corpus glyphs) has no page view, and one whose crops are all
+            # retired shows none, so nothing links to either; such a page keeps the links it has.
+            if record is not None and m.atlas.execute("SELECT 1 FROM crops WHERE id >= ? AND id < ? LIMIT 1",
+                                                      (p["id"] * PAGE, (p["id"] + 1) * PAGE)).fetchone():
+                members[p["book"]].append((p["id"], p["key"], record, held, record != base))
+        for pages in members.values():
+            links = page_links([(key, record.get("page_number")) for _, key, record, _, _ in pages])
+            for pid, key, record, held, changed in pages:
+                # Facts published without a link name no neighbour, as a null does.
+                moved = links[key] != tuple((held or {}).get(k) for k in LINKS)
+                if changed or moved:
+                    page_facts[pid] = {**record, **dict(zip(LINKS, links[key], strict=True))}
+                    m.touched_pages.setdefault(pid, {})
+                    relinked += bool(moved and held is not None)
     files, unmapped = [], set()
     for pid, entries in m.touched_pages.items():
         p = m.atlas.execute("SELECT * FROM pages WHERE id=?", (pid,)).fetchone()
         previous = bundle_of(pid)
         merged = dict(previous["by_slot"])
-        touched = p["key"] in facts and previous.get("page") != facts[p["key"]]
+        touched = pid in page_facts
         for slot, (new_entry, row_changed) in entries.items():
             old = merged.get(slot, {})
             # A crop's new record replaces its old one, so a field the record no longer has goes. A
@@ -1884,7 +1933,7 @@ def main():
         if not touched:
             continue
         rev = p["rev"] + 1
-        body = {"key": p["key"], "book": p["book"], "rev": rev, "page": facts.get(p["key"], previous.get("page")),
+        body = {"key": p["key"], "book": p["book"], "rev": rev, "page": page_facts.get(pid, previous.get("page")),
                 "crops": sorted(merged.values(), key=lambda e: e["slot"])}
         path = run / "pages" / f"{pid}-{rev}.json.gz"
         path.write_bytes(gzip.compress(json.dumps(body, ensure_ascii=False).encode()))
@@ -1916,6 +1965,8 @@ def main():
                                               if (OUT / "votes" / f"{pid}.json.gz").exists() else None)]
     print(f"{n} crops read, {statements} statements in {atlas_parts} parts{runs_note} in {runs_parts} parts, "
           f"{len(files)} pages, {len(voted)} vote objects -> {run}", flush=True)
+    if relinked:
+        print(f"{relinked} pages published before take other neighbours in their book", flush=True)
     if unmapped:
         (run / "unmapped.json").write_text(json.dumps(sorted(unmapped)))
         print(f"{len(unmapped)} images of withdrawn crops leave the image key map", flush=True)

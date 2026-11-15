@@ -52,6 +52,14 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   their revision. A field the catalogue does not carry (form, cluster, cut, other flag bits, a corpus
   label, model votes) keeps its published value. Witness years come from the catalogue's dating, else from the
   dating already published.
+- A page's facts (the `page` of its bundle) are its row in the catalogue's `pages`, except `previous` and
+  `next`, the keys of the pages before and after it in its book, which the page view links to. A catalogue
+  may hold a few pages of a book, so the publish sets them: for every book the catalogue carries a page
+  of, the pages the site holds with facts once the publish lands are ordered by `page_number`, then by key,
+  a page with no number after the numbered ones, and each takes its neighbours. A page with no facts
+  (crops with no page, corpus glyphs) has no page view and is left out. A page whose neighbours change gets
+  a new revision, so a page added between two published ones rewrites both of their bundles; the publish
+  prints how many published pages it rewrites for their neighbours. Links a catalogue carries are dropped.
 - Review-owned columns (`char`, `state`, `style`, `quiz`, `kind`, `flags`) change only when the
   catalogue's revision is at least the published one, and in D1 only while the crop's revision is
   unchanged; the result is read back. A corpus glyph's come only from its review overlay
