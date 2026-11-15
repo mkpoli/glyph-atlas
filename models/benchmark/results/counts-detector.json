@@ -1,5 +1,6 @@
 {
  "cutter": "detector",
+ "scale": 1.0,
  "first": {
   "boxes": 137,
   "gone": 0,

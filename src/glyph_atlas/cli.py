@@ -813,6 +813,8 @@ def review_propose_characters(
     score: Annotated[float, typer.Option(help="detector score cutoff")] = 0.02,
     nms: Annotated[float, typer.Option(help="IoU above which a lower-scoring box is suppressed")] = 0.2,
     split: Annotated[bool, typer.Option("--split", help="cut a box that holds two stacked characters")] = False,
+    scale: Annotated[float, typer.Option(min=0.25, max=4.0, help="resize the page by this before detecting, for "
+                                         "characters smaller than the detector's 50 to 120 px")] = 1.0,
 ) -> None:
     """Propose the character boxes of page photos that have no transcription, for reviewers to read.
 
@@ -843,7 +845,7 @@ def review_propose_characters(
     unknown = set(document or ()) - {record.document_id for record in pages}
     if unknown:
         raise typer.BadParameter(f"no document {', '.join(sorted(unknown))}")
-    version = character_proposals.proposer(model, score=score, nms=nms, split=split)
+    version = character_proposals.proposer(model, score=score, nms=nms, split=split, scale=scale)
     detector = Detector(model, score=score, nms=nms)
     if page or document:
         pages = [record for record in pages
@@ -856,7 +858,7 @@ def review_propose_characters(
             typer.echo(f"{record.id:<40} no cached photo")
             continue
         with Image.open(path) as image:
-            proposals = character_proposals.propose(image.convert("RGB"), detector, split=split)
+            proposals = character_proposals.propose(image.convert("RGB"), detector, split=split, scale=scale)
             size = image.size
         result = store.propose_units(record.id, proposals, version, image_size=size, script=filed)
         if result["skipped"]:

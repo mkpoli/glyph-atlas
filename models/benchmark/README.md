@@ -171,3 +171,14 @@ weighs them back to 100 boxes of a page that hold whole characters (`results/cou
 `detector` is the detector's boxes as they are, `split` the geometric pass of
 `character_proposals.split_boxes`, `segment` is `glyph_atlas.segment`. The pages of sample `first`
 were looked at while `segment` was being changed; those of `second` were drawn afterwards.
+
+With `--scale 1.5` the page is enlarged before detection (`Detector.boxes_at`) and each cutter works
+from those boxes (`results/counts-*-x1.5.json`):
+
+| cutter | right | one character, cut | one character, lost or joined | several characters, wrong count |
+| --- | ---: | ---: | ---: | ---: |
+| `detector` | 89.1 | 2.3 | 0.4 | 8.2 |
+| `split` | 83.0 | 6.8 | 0.4 | 9.8 |
+| `segment` | 83.3 | 7.0 | 0.7 | 8.9 |
+
+On the four pages of `second` the enlarged detector alone is right about 93.5 in 100.

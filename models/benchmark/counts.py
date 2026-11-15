@@ -3,6 +3,7 @@
     python models/benchmark/counts.py --cutter segment       # glyph_atlas.segment
     python models/benchmark/counts.py --cutter split         # character_proposals.split_boxes
     python models/benchmark/counts.py --cutter detector      # the detector's boxes as they are
+    python models/benchmark/counts.py --cutter detector --scale 1.5   # any of them on the page enlarged
 
 `counts/kyujanggak.json` lists 268 boxes the detector drew on eight pages of the Kyujanggak land
 registers of 1722 and 1904, each with the number of characters it holds. A cutter is right about a
@@ -16,7 +17,10 @@ characters. The four pages of sample `first` were looked at while `glyph_atlas.s
 changed; those of `second` were drawn and counted afterwards and decide whether a change is one.
 
 A listed box is found again among the detector's as the one that overlaps it most, so a retrained
-detector is scored on the boxes it still draws (IoU 0.7); the rest are reported as gone.
+detector is scored on the boxes it still draws (IoU 0.7); the rest are reported as gone. The listed
+boxes are the detector's on the page at its own size. With `--scale` the cutter works from the boxes
+of the resized page (`Detector.boxes_at`), and every box it makes, one made of unboxed ink included,
+is laid over the listed boxes.
 """
 from __future__ import annotations
 
@@ -97,23 +101,29 @@ class Cutters:
         self.refiner = refine.Refiner()
         self.framing = cut.Logistic(cut.MODELS / "frame.json")
 
-    def made(self, name: str, image) -> tuple[list[tuple[int, int, int, int]], list[int]]:
-        """The detector's boxes on a page and how many boxes cutter `name` makes of each."""
+    def made(self, name: str, image, scale: float = 1.0) -> tuple[list[tuple[int, int, int, int]], list[int]]:
+        """The detector's boxes on a page at its own size and how many boxes cutter `name` makes of each."""
         from glyph_atlas import align, segment
         from glyph_atlas.character_proposals import Proposal, split_boxes
 
-        found = self.detector.boxes(image)
-        boxes = [(box.x, box.y, box.w, box.h) for box, _ in found]
-        if name == "detector":
+        own = self.detector.boxes(image)
+        boxes = [(box.x, box.y, box.w, box.h) for box, _ in own]
+        found = own if scale == 1.0 else self.detector.boxes_at(image, scale)
+        if name == "detector" and scale == 1.0:
             return boxes, [1] * len(boxes)
-        if name == "split":
-            cut_boxes = split_boxes(image, [Proposal(x=box.x, y=box.y, w=box.w, h=box.h, score=round(float(score), 4))
-                                            for box, score in found])
-            counts = shares(stood_for([(p.x, p.y, p.w, p.h) for p in cut_boxes], boxes), boxes)
+        if name == "detector":
+            made = [(box.x, box.y, box.w, box.h) for box, _ in found]
+        elif name == "split":
+            made = [(p.x, p.y, p.w, p.h) for p in split_boxes(image, [
+                Proposal(x=box.x, y=box.y, w=box.w, h=box.h, score=round(float(score), 4)) for box, score in found])]
         else:
             detections = [align.Detection(box=box, score=float(score)) for box, score in found]
             pieces = segment.cut_page(detections, image, self.classifier, self.framing, refiner=self.refiner)
-            counts = shares([piece.detections for piece in pieces], boxes)
+            if scale == 1.0:
+                counts = shares([piece.detections for piece in pieces], boxes)
+                return boxes, [counts[index] for index in range(len(boxes))]
+            made = [(piece.box.x, piece.box.y, piece.box.w, piece.box.h) for piece in pieces]
+        counts = shares(stood_for(made, boxes), boxes)
         return boxes, [counts[index] for index in range(len(boxes))]
 
 
@@ -159,6 +169,7 @@ def main():
 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cutter", default="segment", choices=("segment", "split", "detector"))
+    parser.add_argument("--scale", type=float, default=1.0, help="resize the page by this before detecting")
     args = parser.parse_args()
     labels = json.loads(LABELS.read_text(encoding="utf-8"))
     cutters = Cutters()
@@ -169,20 +180,21 @@ def main():
             raise SystemExit(f"{name} is not in the image cache; collect it with scripts/collect_kyujanggak.py")
         with Image.open(held[0]) as handle:
             image = handle.convert("RGB")
-        boxes, made = cutters.made(args.cutter, image)
+        boxes, made = cutters.made(args.cutter, image, args.scale)
         for row in labels["boxes"]:
             if row["page"] != name:
                 continue
             best = max(range(len(boxes)), key=lambda index: iou(boxes[index], row["box"]), default=None)
             found = best is not None and iou(boxes[best], row["box"]) >= SAME
             rows.append({**row, "made": made[best] if found else None})
-    report = {"cutter": args.cutter}
+    report = {"cutter": args.cutter, "scale": args.scale}
     for sample in ("first", "second", "both"):
         chosen = {name: page for name, page in labels["pages"].items() if sample in ("both", page["sample"])}
         report[sample] = score([row for row in rows if row["page"] in chosen], chosen)
         print(sample, json.dumps(report[sample], ensure_ascii=False))
     RESULTS.mkdir(parents=True, exist_ok=True)
-    (RESULTS / f"counts-{args.cutter}.json").write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n",
+    tag = "" if args.scale == 1.0 else f"-x{args.scale:g}"
+    (RESULTS / f"counts-{args.cutter}{tag}.json").write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n",
                                                         encoding="utf-8")
 
 

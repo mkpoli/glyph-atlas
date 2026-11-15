@@ -35,7 +35,12 @@ under `work/detector/tiles/`) is read from those instead.
 
 The Kyujanggak land registers are written in dense vertical columns whose characters vary in size
 from one table to the next. On them the detector puts one box over two characters and here and there
-a box over part of one, so `atlas review propose-characters --split` refines the boxes before review.
+a box over part of one. Much of that is size: the registers' notes are about 40 px a side, as small
+as the smallest tenth of the boxes of the detector's test books, where its recall is lowest (recall
+by decile of box area, below). `atlas review propose-characters --scale 1.5` detects on the page enlarged until the notes
+and the main entries are both between 50 and 120 px, which leaves 8 boxes in 100 holding more than
+one character where the page at its own size leaves 27 (`models/cutter/README.md`). `--split` refines
+the boxes of a page at its own size and cuts large characters apart on an enlarged one.
 Boxes drawn by a reviewer in the review workspace are the ground truth a fine-tune needs.
 
 `data/splits/kyujanggak.tsv` splits the two collected volumes by book: the 1722 Changwon register
