@@ -82,7 +82,7 @@ jobs:
           echo "COLLECT_SECONDS=$value" >> "$GITHUB_ENV"
 
       - name: Install
-        run: uv sync --all-extras --group dev
+        run: uv sync --no-dev
 
       - name: Restore the collection store
         env:
