@@ -35,6 +35,10 @@ NLC_TEXT = """=={{int:filedesc}}==
 }}
 
 [[Category:新釋地理備考全書]]"""
+EXPIRED = "Images with watermarks|PD-old-100-expired|PD-scan (PD-old-100-expired)|PD-old missing SDC copyright status"
+CHINA = "PD China|PD-scan (PD-China)|PD-old missing SDC copyright status"
+#: What the mocked Commons states about the file; a test changes it for the length of the test.
+STATED = {"text": NLC_TEXT, "categories": EXPIRED}
 
 
 def jpeg(shade: int, size=(96, 68)) -> bytes:
@@ -50,13 +54,14 @@ def answer(params: dict[str, str]) -> dict:
     assert params["titles"] == f"File:{FILE}"
     return {"query": {"pages": [{
         "title": f"File:{FILE}",
-        "revisions": [{"revid": 7, "slots": {"main": {"content": NLC_TEXT}}}],
+        "revisions": [{"revid": 7, "slots": {"main": {"content": STATED["text"]}}}],
         "imageinfo": [{
             "url": "https://upload.wikimedia.org/wikipedia/commons/b/be/x.pdf?utm_source=a",
             "descriptionurl": "https://commons.wikimedia.org/wiki/File:x.pdf",
             "width": 1506, "height": 1112, "pagecount": 3, "size": 6332075, "sha1": "ab",
             "mime": "application/pdf",
             "extmetadata": {"LicenseShortName": {"value": "Public domain"},
+                            "Categories": {"value": STATED["categories"]},
                             "Credit": {"value": '<bdi><a href="u"><span>National Library of China</span></a>\n</bdi>'}}}]}]}}
 
 
@@ -76,6 +81,7 @@ def served():
 
     yield seen, httpx.Client(transport=httpx.MockTransport(handler)), shades
     net.reset_pauses()
+    STATED.update(text=NLC_TEXT, categories=EXPIRED)
 
 
 class Clock:
@@ -138,8 +144,51 @@ def test_the_file_page_states_the_bibliography_rights_and_dating(tmp_path, serve
     commons = document.meta["commons"]
     assert (commons["author"], commons["edition"], commons["publisher"]) == ("玛吉士", "刻本", None)
     assert commons["nlc"]["volumeid"] == "19028" and commons["licence_tags"] == []
+    assert commons["licence_rationale"] == ["PD-old-100-expired", "PD-scan (PD-old-100-expired)"]
+    assert "Categories" not in commons["extmetadata"]
     assert document.meta["language"] == "zh" and document.origin == "unknown"
     assert {corpus.name for corpus in discover(tmp_path / "work")} == {"dili"}
+
+
+def test_public_domain_without_an_expired_term_stays_unknown(tmp_path, served):
+    STATED.update(text=NLC_TEXT.replace("清道光27年[1847]", "民國25年[1936]"), categories=CHINA)
+    out, _ = run(tmp_path, served)
+    [document] = tables.read(out / "documents.parquet", Document)
+    assert document.image_rights.licence == "unknown"
+    assert document.meta["commons"]["licence_rationale"] == ["PD China", "PD-scan (PD-China)"]
+    assert [(d.start, d.end) for d in document.dating] == [(1936, 1936)]
+
+
+def test_a_file_named_twice_is_collected_once(tmp_path, served):
+    seen, client, _ = served
+    result = scans.collect(tmp_path / "work" / "dili", [FILE, f"File:{FILE.replace(' ', '_')}", f"file:{FILE}"],
+                           http=http_for(client), image_root=tmp_path / "images")
+    assert result["tables"]["documents"] == 1 and result["tables"]["pages"] == 3
+    assert sum(request.url.host == "upload.wikimedia.org" for request in seen) == 3
+
+
+def test_the_title_commons_states_names_the_document(tmp_path):
+    class Renamed:
+        def query(self, host, params):
+            assert params["titles"] == "File:a b.pdf"
+            return {"pages": [{"title": "File:A b.pdf", "revisions": [], "imageinfo": [{
+                "url": "u", "descriptionurl": "d", "width": 10, "height": 10, "size": 1, "pagecount": 1}]}]}
+
+    asked: list[str] = []
+
+    def fetch(http, url, *, root, known):
+        asked.append(url)
+        return type("Record", (), {"width": 10, "height": 10, "sha256": "0" * 64})()
+
+    original = scans.fetch_image
+    scans.fetch_image = fetch
+    try:
+        collected = scans.collect_file(Renamed(), "Image:a_b.pdf", image_root=tmp_path)
+    finally:
+        scans.fetch_image = original
+    assert asked == [wikisource_scans.thumbnail_url("A b.pdf", 1, wikisource_scans.thumbnail_width(10))]
+    assert collected.document.id == "commons:scan:" + hashlib.sha256(
+        b"commons.wikimedia.org:File:A b.pdf").hexdigest()[:24]
 
 
 def test_a_category_is_filtered_by_the_regular_expression(served):
@@ -161,3 +210,12 @@ def test_dates_without_a_bracketed_year():
     assert scans.published_year("清道光27年[1847]") == 1847
     assert scans.published_year("1901") == 1901
     assert scans.published_year("清道光27年") is None
+    assert scans.published_year("民國25年") == 1936
+
+
+def test_a_republican_date_without_a_year_spans_the_era(tmp_path, served):
+    STATED.update(text=NLC_TEXT.replace("清道光27年[1847]", "民國間"), categories=CHINA)
+    out, _ = run(tmp_path, served)
+    [document] = tables.read(out / "documents.parquet", Document)
+    assert [(d.start, d.end, d.literal) for d in document.dating] == [(1912, 1949, "民國間")]
+    assert document.image_rights.licence == "unknown"

@@ -3,12 +3,14 @@
 # index by scripts/collect_commons_scans.py. The first book is
 # 新釋地理備考全書 (道光27年刻本, 地900/993), ten volumes in Category:新釋地理備考全書.
 #
-# The licence is read from each file page. The template emits `{{PD-scan|PD-old-100-expired}}` for a
-# title without 民國 (a 民國 title gets `{{PD-scan|PD-China}}`), and the file page's extmetadata states
-# LicenseShortName "Public domain", License "pd", Copyrighted "False".
+# The licence is read from each file page. The template emits `{{PD-scan|PD-old-100-expired}}` unless
+# the title or 出版时间 contains 民國, where it emits `{{PD-scan|PD-China}}`; both state LicenseShortName
+# "Public domain", License "pd", Copyrighted "False". The collector takes only the expired-term files
+# as public domain and leaves a PD-China file's licence unknown.
 id: nlc-local-records
 name: Digitized Local Records in the National Library of China (Wikimedia Commons)
 publisher: National Library of China, via Wikimedia Commons
+holder: National Library of China
 kind: image-collection
 url: https://commons.wikimedia.org/wiki/Category:Digitized_Local_Records_in_the_National_Library_of_China
 licence: PD
