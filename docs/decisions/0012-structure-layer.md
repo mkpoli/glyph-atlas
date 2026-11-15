@@ -114,10 +114,16 @@ encoded apart share a structure when only a unified component separates them (�
 - The `structures` table is immutable. A canonicalization change makes new ids and leaves claims as
   they were written.
 - The site reads each character's structure from its IDS reference shards, which hold every
-  described character, and derives none. A
-  reader names a form's structure by a character that has it or by a description the shards hold
-  (`POST /atlas/forms/<form>/structure`), and the structure's row is written with its first claim.
-  The site's database is the ledger, so no publication carries structure rows to it.
+  described character, and derives none. A reader files a form under a structure
+  (`POST /atlas/forms/<form>/structure`): the form is named by its id or by its written value, so a
+  description nobody has chosen for a crop is filed like any other, and the structure by a character
+  that has it, a description the shards hold, a regional shape of a character, or its id once a
+  claim has named it. The structure's row is written with its first claim. The site's database is
+  the ledger, so no publication carries structure rows to it.
+- Where forms are grouped (`/layers/structures`, the inspector's form bar), a form stands under the
+  structure readers filed it under, the one most of them name, and under its derived one with no
+  claim. The inspector files the selected form from a structure's caption and moves it: the reader's
+  claims of the form's other structures are taken back in the same save.
 - A description the site names a character or a form by (a corpus character Unicode lacks, a form
   a reviewer typed: `⿰月兊`) has its structure in the same shards, under its own text, so it joins
   the characters built as it is (脫, 脱). The reference load reads the list of them
