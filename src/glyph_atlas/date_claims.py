@@ -45,7 +45,8 @@ CORPORA = {
     "hangeul-museum": "hangeul-museum", "nlk-sayeogwon": "nlk", "glossary-headwords": "nlk",
     "nogeoldae-eonhae": "nlk",
     "wikisource-zh-scans": "wikisource", "wikisource-ko-scans": "wikisource", "wikisource-ko-glyphs": "wikisource", "hunminjeongeum": "wikisource",
-    "hunminjeongeum-hanja": "wikisource", "hunminjeongeum-cells": "wikisource", "ndl-1014828": "ndl-1014828",
+    "hunminjeongeum-hanja": "wikisource", "hunminjeongeum-cells": "wikisource", "ndl-1014828": "ndl-1014828", "ndl-2538234": "ndl-2538234",
+    "ndl-2938260": "ndl-2938260",
     "ndl-minhon": "ndl-minhon-ocr",
 }
 #: Corpora whose importer dates each document from a source that studies it (the HDIC editions, HNG,

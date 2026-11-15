@@ -1,0 +1,20 @@
+# 山田武太郎's 新式節用辞典 (春陽堂, 1892), a Meiji printed dictionary, digitised by the National Diet
+# Library. Read on 2026-11-15 from https://dl.ndl.go.jp/api/iiif/2938260/manifest.json: 364 images,
+# published 1892-12-27, PDM.
+id: ndl-2938260
+name: 新式 節用辞典
+publisher: 春陽堂
+holder: 国立国会図書館
+kind: image-collection
+url: https://dl.ndl.go.jp/pid/2938260
+licence: PDM-1.0
+licence_evidence: https://dl.ndl.go.jp/ja/iiif_license.html
+attribution: 国立国会図書館デジタルコレクション（https://dl.ndl.go.jp/pid/2938260）
+books:
+  - id: ndl:2938260
+    title: 新式 節用辞典
+    manifest: https://dl.ndl.go.jp/api/iiif/2938260/manifest.json
+    source_url: https://dl.ndl.go.jp/pid/2938260
+notes:
+  - 山田武太郎著、春陽堂、1892年12月27日刊、364画像。
+  - 文字の位置と読みは NDL の fulltext-json による未検証の OCR。

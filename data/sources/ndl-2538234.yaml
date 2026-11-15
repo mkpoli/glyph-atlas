@@ -1,0 +1,20 @@
+# 田中尚房's 病名集, a manuscript dictionary of disease names, digitised by the National Diet Library.
+# Read on 2026-11-15 from https://dl.ndl.go.jp/api/iiif/2538234/manifest.json: 128 images, publisher
+# 写 (a manuscript), series 田中叢書 第7冊, call number 831-5, PDM.
+id: ndl-2538234
+name: 病名集
+publisher: 国立国会図書館
+holder: 国立国会図書館
+kind: image-collection
+url: https://dl.ndl.go.jp/pid/2538234
+licence: PDM-1.0
+licence_evidence: https://dl.ndl.go.jp/ja/iiif_license.html
+attribution: 国立国会図書館デジタルコレクション（https://dl.ndl.go.jp/pid/2538234）
+books:
+  - id: ndl:2538234
+    title: 病名集
+    manifest: https://dl.ndl.go.jp/api/iiif/2538234/manifest.json
+    source_url: https://dl.ndl.go.jp/pid/2538234
+notes:
+  - 田中尚房の写本、田中叢書 第7冊、請求記号 831-5、128画像。
+  - 文字の位置と読みは NDL の fulltext-json による未検証の OCR で、手稿には誤読が多い。
