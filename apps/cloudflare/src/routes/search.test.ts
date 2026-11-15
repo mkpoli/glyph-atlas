@@ -312,6 +312,12 @@ describe("the IDS editor's structure", () => {
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '一')).toEqual({ items: [{ ...one, chars: ['一'] }] });
   });
 
+  it('lists a substitute once where the description names both ends of its pair', async () => {
+    // 骨 names 冂 and 月, which stand for each other.
+    expect((await idsOf(newEnv, ctx, 'https://new.test', '骨') as { substitutes: unknown }).substitutes).toEqual({
+      '冂': [{ char: '月', count: 2 }], '月': [{ char: '⺼', count: 12 }, { char: '冂', count: 2 }] });
+  });
+
   it('reads the substitutes by either end of the pair', () => {
     const plan = (atlasDb.query('EXPLAIN QUERY PLAN ' + substitutesQuery(2)).all('氵', '骨', '氵', '骨') as { detail: string }[]).map(r => r.detail);
     expect(plan.filter(d => d.startsWith('SCAN'))).toEqual([]);
