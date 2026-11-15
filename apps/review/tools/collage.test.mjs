@@ -35,8 +35,15 @@ describe('the collage', () => {
   })
 })
 
-// The most columns a size takes: the widest gallery its rules name.
-const most = (style, size) => Math.max(...[...style.matchAll(new RegExp(`\\{:root\\[data-tile-size="${size}"\\] \\.collage-block\\{--collage-cols:(\\d+)`, 'g'))].map(match => Number(match[1])))
+// The rules of a size: each `[gallery width it starts at, columns]`. The default size is the root that names no other.
+const rulesOf = (style, size) => {
+  const root = size === ZOOM ? ':root:not\\([^)]*\\)' : `:root\\[data-tile-size="${size}"\\]`
+  const rules = [...style.matchAll(new RegExp(`min-width:(\\d+)px\\)\\{${root} \\.collage-block\\{--collage-cols:(\\d+)`, 'g'))].map(match => [Number(match[1]), Number(match[2])])
+  expect(rules.length).toBeGreaterThan(0)
+  return rules
+}
+const most = (style, size) => Math.max(...rulesOf(style, size).map(([, columns]) => columns))
+const fit = (style, size, width) => Math.max(2, ...rulesOf(style, size).filter(([from]) => from <= width).map(([, columns]) => columns))
 
 describe('the tile sizes', () => {
   const style = collageStyle()
@@ -46,16 +53,16 @@ describe('the tile sizes', () => {
     expect(ZOOMS).toEqual([...ZOOMS].sort((a, b) => a - b))
   })
   it('stop at ten columns from the default up and go on below it', () => {
-    for (const size of ZOOMS.filter(size => size > ZOOM)) expect(most(style, size)).toBe(10)
-    expect(style).toContain('.collage-block{--collage-cols:10;')
+    for (const size of ZOOMS.filter(size => size >= ZOOM)) expect(most(style, size)).toBe(10)
     for (const size of ZOOMS.filter(size => size < ZOOM)) expect(most(style, size)).toBe(COLUMNS.at(-1))
   })
   it('never take fewer columns at a smaller size', () => {
-    const fit = (size, width) => Math.max(2, ...[...style.matchAll(new RegExp(`min-width:(\\d+)px\\)\\{:root\\[data-tile-size="${size}"\\] \\.collage-block\\{--collage-cols:(\\d+)`, 'g'))].filter(match => Number(match[1]) <= width).map(match => Number(match[2])))
-    const sizes = ZOOMS.filter(size => size !== ZOOM)
-    for (const width of [356, 912, 1313, 1751, 2189, 3502]) sizes.slice(1).forEach((size, i) => expect(fit(sizes[i], width)).toBeGreaterThanOrEqual(fit(size, width)))
+    for (const width of [356, 912, 1313, 1751, 2189, 3502]) {
+      expect(fit(style, ZOOMS[0], width)).toBeGreaterThan(2)
+      ZOOMS.slice(1).forEach((size, i) => expect(fit(style, ZOOMS[i], width)).toBeGreaterThanOrEqual(fit(style, size, width)))
+    }
   })
-  it('leave a tile too narrow for a caption bare', () => {
-    for (const size of ZOOMS) expect(style.includes(`:root[data-tile-size="${size}"] .glyph-grid.collage :is(.tile-caption,.tile-details){display:none}`)).toBe(size < BARE)
+  it('leave a tile too narrow for a caption bare, by rules that outweigh the stylesheet\'s own', () => {
+    for (const size of ZOOMS) expect(style.includes(`:root[data-tile-size="${size}"] .glyph-grid.collage .collage-cell :is(.tile-caption,.tile-details,.tile-select){display:none}`)).toBe(size < BARE)
   })
 })

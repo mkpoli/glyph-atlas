@@ -71,8 +71,10 @@ export function collage(aspects) {
  * `data-tile-size`, a width of `ZOOMS`; a document without one, or with another value, takes `ZOOM`.
  * The rules query the gallery by its container name (`app.css`), being inside the block they style.
  * From the default size up a gallery stops at `WIDEST` columns and its tiles grow to fill the width;
- * a smaller size goes on through `FINER`. A size below `BARE` also drops the captions and the hover
- * details, closes the gaps, and in the grid of squares leaves the square to the image.
+ * a smaller size goes on through `FINER`. A size below `BARE` also drops the captions, the hover
+ * details and the select box (a selected tile keeps its ring), closes the gaps, and in the grid of
+ * squares leaves the square to the image. Those rules name the tile as well as the gallery, to outweigh
+ * every rule of `app.css` and the gallery's own for the same parts whichever stylesheet comes last.
  */
 export function collageStyle() {
   const rules = COLUMNS.flatMap(n => [
@@ -83,7 +85,7 @@ export function collageStyle() {
     const root = width === ZOOM ? `:root:not(${others})` : `:root[data-tile-size="${width}"]`
     const bare = width < BARE, gap = bare ? TIGHT : GAP, gallery = `${root} .glyph-grid.collage`
     if (width !== ZOOM) rules.push(`${root}{--tile-w:${width}px}`)
-    if (bare) rules.push(`${gallery} .collage-block{--collage-gap:${TIGHT}px;--collage-caption:0px}${gallery} :is(.tile-caption,.tile-details){display:none}`,
+    if (bare) rules.push(`${gallery} .collage-block{--collage-gap:${TIGHT}px;--collage-caption:0px}${gallery} .collage-cell :is(.tile-caption,.tile-details,.tile-select){display:none}`,
       `${root}[data-gallery="grid"] .glyph-grid.collage .collage-cell{aspect-ratio:1;padding:3px}`)
     for (const n of COLUMNS.slice(1)) {
       if (n > WIDEST && width >= ZOOM) break
