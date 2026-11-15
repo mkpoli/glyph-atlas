@@ -982,12 +982,12 @@ def absorb(atlas, ids):
     A publication of the answers copies there the row of every crop the site changed (answers.py
     `bump`), each with the revision the store counts for it, whether it keeps a reviewer's style, and its
     base where a forms decision moved it (`form_bases`): the local copy holds the base D1 holds or none,
-    since `Mirror.crop` stages a followed glyph's change from it.
-    The graphemes the rows name and the codes D1 holds go in first, the codes also into the id allocator
-    (`ids`, out/mirror.sqlite), which numbers the next code a publish needs. Everything is read and
-    compared before anything is written: an id or code that stands for another text or key here stops
-    the run with `absorbing` as it was. `absorbing` is emptied once both local databases have committed,
-    so a run that stops anywhere is finished by the next."""
+    since `Mirror.crop` stages a followed glyph's change from it. The graphemes the rows name and the
+    codes D1 holds go in first, the codes also into the id allocator (`ids`, out/mirror.sqlite), which
+    numbers the next code a publish needs; no other grapheme is copied. Everything is read and compared
+    before anything is written: an id or code that stands for another text or key here stops the run
+    with `absorbing` as it was. `absorbing` is emptied once both local databases have committed, so a
+    run that stops anywhere is finished by the next."""
     held, last = [], -1
     while True:
         chunk = query("glyph-atlas-v3", f"SELECT crop, through, row FROM absorbing WHERE crop > {last} ORDER BY crop LIMIT {ABSORB_CHUNK}")

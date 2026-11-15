@@ -235,15 +235,16 @@ The local copy takes the site's changes before the answers are written. The Work
 whose row it changes in `touched`, with the generation of the change (migration 0018). The bump is
 one file D1 applies whole (`out/pub/pointer-<pub>/bump.sql`): it stamps the publication, bumps the
 generation, copies the row of each crop listed through G into `absorbing` as generation G left it and
-takes the crop off the list. The publication then puts those rows in the local copy with the graphemes
-and codes they name, as a publish's read-back takes a guarded crop's row, and empties `absorbing`. A
-crop D1 no longer holds leaves the local copy. A crop changed after the bump carries G + 1: it is
-listed again, counted from `tally`, and taken by the next publication. A run that stopped after its
-bump is finished by the next, which first takes what
-`absorbing` holds and publishes through a newer generation; `publish.py` takes it too, before it plans
-anything, so a publish never plans on a local copy a stopped publication left behind. A grapheme id or
-a code that stands for another text or key in the local copy or in `out/mirror.sqlite` stops the run
-before either changes.
+takes the crop off the list. The publication then puts those rows in the local copy, as a publish's
+read-back takes a guarded crop's row, and empties `absorbing`. With a row go the base a forms decision
+moved the crop from (`form_bases`), the graphemes the row names as its character, family or base, and
+the codes D1 holds that the local copy lacks; it copies no other grapheme. A crop D1 no longer holds
+leaves the local copy. A crop changed after the bump carries G + 1: it is listed again, counted from
+`tally`, and taken by the next publication. A run that stopped after its bump is finished by the
+next, which first takes what `absorbing` holds and publishes through a newer generation; `publish.py`,
+`fill.py` and `crop_facts.py` take it too, before they plan anything, so none plans on a local copy a
+stopped publication left behind. A copied grapheme id or code that stands for another text or key in
+the local copy or in `out/mirror.sqlite` stops the run before either changes.
 
 The crops the Worker changed before it kept the list are listed once by `answers.py --seed`, which
 sends `migrations-atlas/0019_touched_seed.sql` under the stamp `migration:0019`: every crop an event

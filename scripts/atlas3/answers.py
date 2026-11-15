@@ -138,8 +138,8 @@ UNLISTED = ("text", "line", "context_image", "context_box", "crop_box", "image_p
 READS = 32
 READ_ATTEMPTS = 4
 DATABASE = "glyph-atlas-v3"
-# The migration that makes `touched` and `absorbing`, and the one that lists the crops changed before
-# the Worker kept the list, by the stamps D1's `imports` holds once each has applied.
+# The migration that lists the crops changed before the Worker kept the list, and the stamp D1's
+# `imports` holds once it has applied.
 SEED_STAMP = "migration:0019"
 SEED = CF / "migrations-atlas" / "0019_touched_seed.sql"
 # A listed crop's row as `absorbing` keeps it: its columns by name, the revision the offline store counts
