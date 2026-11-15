@@ -1,12 +1,13 @@
-"""Import the head characters of 同音 (甲種本, Инв. No. 207) from the plates of 俄藏黑水城文獻 vol. 7.
+"""Import the head characters of 同音 from the plates of 俄藏黑水城文獻 vol. 7.
 
 同音 lists the Tangut characters by initial, homophones together: a head character in large writing
-with its note in small writing beside it. `data/tangut/tongyin/` places each head character on the
-plate that shows it (`scripts/build_tangut_tongyin.py`), under the folio, side, column and position
-that nkay0's rhyme-dictionary table gives it, so a box comes with the character it holds.
+with its note in small writing beside it. The volume reproduces two exemplars, the 甲種本 (Инв. No.
+207) and the 乙種本 (Инв. No. 208, 209, 4775). `data/tangut/tongyin/<item>/` places each head
+character of an exemplar on the plate that shows it (`scripts/build_tangut_tongyin.py`), under the
+folio, side, column and position that nkay0's rhyme-dictionary table gives it in that edition, so a
+box comes with the character it holds.
 
-One document is the dictionary. A page is a printed page of the volume, which carries two plates and
-so two folios. A line is one column of a half-folio; its text is the column's head characters, since
+One document is one exemplar. A page is a printed page of the volume, which carries two plates. A line is one column of a half-folio; its text is the column's head characters, since
 the notes are not transcribed. A unit is one head character, with no position in its line: the notes
 stand between the head characters, so two of them are not neighbours in the text and form no run of
 crops (`glyph_atlas.ngrams`). Only the places graded `ok` become
@@ -50,8 +51,6 @@ from ..schema import (
 
 SOURCE_ID = "ecang-heishuicheng"
 TABLE_ID = "nkay0-tangut-rhyme"
-ITEM = "inv-207"
-DOCUMENT_ID = f"{SOURCE_ID}:{ITEM}"
 DEFAULT_SOURCE = registry.SOURCES / f"{SOURCE_ID}.yaml"
 DEFAULT_DATA = registry.ROOT / "data" / "tangut" / "tongyin"
 COMMAND = "atlas import tangut-tongyin"
@@ -84,31 +83,77 @@ def collect(
     scans: Path,
     out: Path = Path("work/tangut-tongyin"),
     *,
+    items: list[str] | None = None,
     data: Path = DEFAULT_DATA,
     source: Path = DEFAULT_SOURCE,
     cache: Path | None = None,
     command: str | None = None,
 ) -> dict[str, Any]:
-    """Check the page images against their pins and write the dataset's four tables."""
+    """Check the page images against their pins and write the dataset's four tables: one document
+    for each exemplar among `items`, or for every exemplar of the source record when none is named."""
     config = yaml.safe_load(Path(source).read_text(encoding="utf-8"))
     if not isinstance(config, dict) or config.get("id") != SOURCE_ID:
         raise TongyinSourceError(f"{source}: not the {SOURCE_ID} source record")
-    item = next((item for volume in config.get("volumes") or [] for item in volume.get("items") or []
-                 if item.get("id") == ITEM), None)
-    if item is None:
-        raise TongyinSourceError(f"{source}: no item {ITEM}")
-    volume = next(volume for volume in config["volumes"] if item in volume["items"])
-    page_rows, column_rows, character_rows = (read_tsv(Path(data) / f"{name}.tsv")
+    held = {item["id"]: (volume, item) for volume in config.get("volumes") or [] for item in volume.get("items") or []}
+    for name in items or []:
+        if name not in held:
+            raise TongyinSourceError(f"{source}: no item {name}")
+    documents, pages, lines, units, characters, left_out = [], [], [], [], 0, {}
+    for name in items or list(held):
+        volume, item = held[name]
+        found = _exemplar(config, volume, item, Path(scans), Path(data) / name, cache)
+        documents.append(found[0])
+        pages += found[1]
+        lines += found[2]
+        units += found[3]
+        characters += found[4]
+        for quality, count in found[5].items():
+            left_out[quality] = left_out.get(quality, 0) + count
+
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    written = (("documents", documents, Document), ("pages", pages, Page),
+               ("lines", lines, Line), ("units", units, Unit))
+    for name, records, model in written:
+        staging = out / f".{name}.parquet"
+        tables.write(staging, records, model)
+        os.replace(staging, out / f"{name}.parquet")
+    summary = {
+        "source": SOURCE_ID,
+        "documents": [document.id for document in documents],
+        "pages": len(pages),
+        "lines": len(lines),
+        "units": len(units),
+        "characters": characters,
+        "left_out": dict(sorted(left_out.items())),
+    }
+    manifest = {
+        "schema_version": tables.SCHEMA_VERSION,
+        "tables": {name: len(records) for name, records, _ in written},
+        "command": command or COMMAND,
+        "collection": summary,
+    }
+    staging = out / ".MANIFEST.json"
+    staging.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(staging, out / "MANIFEST.json")
+    return summary
+
+
+def _exemplar(config: dict[str, Any], volume: dict[str, Any], item: dict[str, Any], scans: Path, data: Path,
+              cache: Path | None) -> tuple[Document, list[Page], list[Line], list[Unit], int, dict[str, int]]:
+    """One exemplar's document, pages, lines and units, with the number of its placed characters and
+    of those left out by quality."""
+    page_rows, column_rows, character_rows = (read_tsv(data / f"{name}.tsv")
                                               for name in ("pages", "columns", "characters"))
 
     document = _document(config, volume, item)
     pages: list[Page] = []
     for seq, row in enumerate(page_rows):
-        file = Path(scans) / row["file"]
+        file = scans / row["file"]
         if not file.is_file():
             raise TongyinSourceError(f"{file}: the scan of printed page {row['page']} is not there")
         if hashlib.sha256(file.read_bytes()).hexdigest() != row["sha256"]:
-            raise TongyinSourceError(f"{file}: not the scan that {Path(data) / 'pages.tsv'} pins")
+            raise TongyinSourceError(f"{file}: not the scan that {data / 'pages.tsv'} pins")
         held = images.register(file, f"file:{file.resolve().as_posix()}", root=cache)
         if (held.width, held.height) != (int(row["width"]), int(row["height"])):
             raise TongyinSourceError(f"{file}: {held.width} x {held.height}, pinned {row['width']} x {row['height']}")
@@ -165,37 +210,10 @@ def collect(
             method="detect-align",
             confidence=Confidence(text=float(row["score"]), model=MODEL),
             review=ReviewState.MACHINE,
-            upstream={TABLE_ID: f"旧版同音 {place_id(row)}"},
+            upstream={TABLE_ID: f"{item['places']} {place_id(row)}"},
             meta={"tongyin": place_id(row)},
         ))
-
-    out = Path(out)
-    out.mkdir(parents=True, exist_ok=True)
-    written = (("documents", [document], Document), ("pages", pages, Page),
-               ("lines", lines, Line), ("units", units, Unit))
-    for name, records, model in written:
-        staging = out / f".{name}.parquet"
-        tables.write(staging, records, model)
-        os.replace(staging, out / f"{name}.parquet")
-    summary = {
-        "source": SOURCE_ID,
-        "document": document.id,
-        "pages": len(pages),
-        "lines": len(lines),
-        "units": len(units),
-        "characters": len(character_rows),
-        "left_out": dict(sorted(left_out.items())),
-    }
-    manifest = {
-        "schema_version": tables.SCHEMA_VERSION,
-        "tables": {name: len(records) for name, records, _ in written},
-        "command": command or COMMAND,
-        "collection": summary,
-    }
-    staging = out / ".MANIFEST.json"
-    staging.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(staging, out / "MANIFEST.json")
-    return summary
+    return document, pages, lines, units, len(character_rows), left_out
 
 
 def _page_id(volume: dict[str, Any], printed_page: str) -> str:
@@ -236,9 +254,9 @@ def _document(config: dict[str, Any], volume: dict[str, Any], item: dict[str, An
         raise TongyinSourceError(f"{TABLE_ID}: no such source record")
     text_rights = Rights(licence=table.licence, attribution=table.attribution, evidence=table.url)
     return Document(
-        id=DOCUMENT_ID,
+        id=f"{SOURCE_ID}:{item['id']}",
         title=item["title"],
-        source_refs={SOURCE_ID: f"{volume['id']}:{item['id']}", TABLE_ID: "旧版同音"},
+        source_refs={SOURCE_ID: f"{volume['id']}:{item['id']}", TABLE_ID: item["places"]},
         holder=config.get("holder"),
         shelfmark=item["shelfmark"],
         production="printed/woodblock",

@@ -1,20 +1,22 @@
-"""Place the head characters of 同音 (甲種本, Инв. No. 207) on the plates of 俄藏黑水城文獻 vol. 7.
+"""Place the head characters of 同音 on the plates of 俄藏黑水城文獻 vol. 7.
 
-The volume prints one folio to a plate and two plates to a page: folio `n` is plate `(n - 1) % 2` of
-printed page `(n + 1) // 2`. A folio is two half-folios of seven columns, side A on the right, and a
-column holds up to eight head characters with their notes in small writing beside them.
+The volume reproduces two exemplars, two plates to a page: the 甲種本 (Инв. No. 207, printed pages
+1-28) and the 乙種本 (Инв. No. 208, 209, 4775, printed pages 29-55). A plate shows one folio, or one
+half of a folio whose other half is lost or printed on the next plate (`EDITIONS`). A folio is two
+half-folios of seven columns, side A on the right, and a column holds up to eight head characters
+with their notes in small writing beside them.
 
-nkay0's rhyme-dictionary table gives every head character's folio, side, column and position in this
-edition (its `旧版同音` column), so the cutter knows which character stands in each cell and only has
-to find it. It fits the printed rule lines to get the columns, slides the expected character's glyph
+nkay0's rhyme-dictionary table gives every head character's folio, side, column and position in each
+edition (its `旧版同音` and `新版同音` columns), so the cutter knows which character stands in each cell
+and only has to find it. It fits the printed rule lines to get the columns, slides the expected character's glyph
 down each column, and chooses the eight places together, in order and near their rows. The match
 score of each place is kept; the importer takes the places that score well and are of ordinary size.
 
-    uv run --extra marks scripts/build_tangut_tongyin.py \
+    uv run --extra marks scripts/build_tangut_tongyin.py inv-208 \
         --images <the volume's page images, 00000040.jpg onwards> \
         --table "<tangut rhyme dictionaries data.csv>"
 
-It writes `pages.tsv`, `columns.tsv` and `characters.tsv` under `data/tangut/tongyin/`.
+It writes `pages.tsv`, `columns.tsv` and `characters.tsv` under `data/tangut/tongyin/<item>/`.
 """
 from __future__ import annotations
 
@@ -33,11 +35,33 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "tangut" / "tongyin"
 FONT = Path("/usr/share/fonts/truetype/noto/NotoSerifTangut-Regular.ttf")
 FIRST_IMAGE = 40          # the scan of printed page 1
-FOLIOS = range(1, 57)     # the plates are numbered 56-1 to 56-56
 COLUMNS, ROWS = 7, 8
 ACCEPT = 0.28             # match score from which a place is taken as found
 FAINT = 0.6               # share of a folio's usual ink under which a box is taken to sit on paper
 SIZES = (0.60, 0.68, 0.76)  # glyph width tried, as a share of the column
+
+
+@dataclass(frozen=True)
+class Edition:
+    """An exemplar as the volume prints it: plate `n` is plate `(n - 1) % 2` of printed page
+    `first_page + (n - 1) // 2` and shows the sides `plates[n]` names of one folio."""
+    name: str
+    shelfmark: str
+    column: str                          # the table's column of places in this edition
+    first_page: int
+    plates: dict[int, tuple[int, str]]   # plate number to folio and the sides the plate shows
+
+
+EDITIONS = {
+    # Plates 56-1 to 56-56, a folio each. Folio 1 is the preface.
+    "inv-207": Edition("甲種本", "Инв. No. 207", "旧版同音", 1, {plate: (plate, "AB") for plate in range(1, 57)}),
+    # Plates 53-1 to 53-53. Plates 1 and 2 are the preface; folios 5 and 6 are lost; plates 5 and 6
+    # show the two halves of folio 7 and plates 50 and 51 those of folio 51.
+    "inv-208": Edition("乙種本", "Инв. No. 208, 209, 4775", "新版同音", 29, {
+        3: (3, "AB"), 4: (4, "AB"), 5: (7, "A"), 6: (7, "B"),
+        **{plate: (plate + 1, "AB") for plate in range(7, 50)},
+        50: (51, "A"), 51: (51, "B"), 52: (52, "AB"), 53: (53, "AB")}),
+}
 
 
 @dataclass(frozen=True)
@@ -49,12 +73,13 @@ class Place:
     score: float
 
 
-def positions(table: Path) -> dict[tuple[int, str, int], dict[int, str]]:
-    """Head characters by (folio, side, column), each a map from position to character."""
+def positions(table: Path, column: str) -> dict[tuple[int, str, int], dict[int, str]]:
+    """Head characters by (folio, side, column) in the edition whose places the table's `column` gives,
+    each a map from position to character."""
     cells: dict[tuple[int, str, int], dict[int, str]] = defaultdict(dict)
     with table.open(encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
-            place = row["旧版同音"].strip()
+            place = row[column].strip()
             if len(place) == 5 and place[:2].isdigit() and place[2] in "AB" and place[3:].isdigit():
                 cells[(int(place[:2]), place[2], int(place[3]))][int(place[4])] = row["文字"]
     return cells
@@ -245,8 +270,8 @@ def tighten(strip: np.ndarray, found: Place, grow: float = 0.18) -> Place:
                  int(columns.max() - columns.min() + 1), int(rows.max() - rows.min() + 1), found.score)
 
 
-def cut_folio(plate: np.ndarray, folio: int, cells: dict, font: Path) -> tuple[list[dict], list[dict]]:
-    """The columns and characters of one folio, in the plate's own pixels."""
+def cut_folio(plate: np.ndarray, folio: int, cells: dict, font: Path, sides: str = "AB") -> tuple[list[dict], list[dict]]:
+    """The columns and characters of the `sides` of one folio that a plate shows, in the plate's own pixels."""
     ink = ink_of(plate)
     width = ink.shape[1]
     top, bottom = frame_rows(ink)
@@ -254,7 +279,7 @@ def cut_folio(plate: np.ndarray, folio: int, cells: dict, font: Path) -> tuple[l
     profile = long_strokes(ink[top:bottom], vertical=True, length=max(3, (bottom - top) // 3)).mean(axis=0)
     fits = [from_fold(profile, width), from_combs(profile, width)]
     columns, characters = [], []
-    for side in ("A", "B"):
+    for side in sides:
         chosen: tuple[float, list] = (-1e9, [])
         for fit in fits:
             lines, total, held = fit[side], 0.0, []
@@ -320,34 +345,42 @@ def write(path: Path, header: list[str], fields: list[str], rows: list[dict]) ->
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("item", choices=sorted(EDITIONS), help="the exemplar, by its item id in the source record")
     parser.add_argument("--images", type=Path, required=True, help="the volume's page images, named 00000040.jpg onwards")
     parser.add_argument("--table", type=Path, required=True, help="nkay0's tangut rhyme dictionaries data.csv")
     parser.add_argument("--font", type=Path, default=FONT, help="Noto Serif Tangut")
-    parser.add_argument("--out", type=Path, default=OUT)
+    parser.add_argument("--out", type=Path, help="directory for the tables (default: data/tangut/tongyin/<item>)")
     parser.add_argument("--overlays", type=Path, help="directory for one checking image per folio")
     args = parser.parse_args()
 
-    cells = positions(args.table)
+    edition = EDITIONS[args.item]
+    out = args.out or OUT / args.item
+    cells = positions(args.table, edition.column)
+    last = max(edition.plates)
     pages, columns, characters = [], [], []
-    for number in sorted({(folio + 1) // 2 for folio in FOLIOS}):
+    for number in range(edition.first_page, edition.first_page + (last + 1) // 2):
+        first = 2 * (number - edition.first_page) + 1    # the page's upper plate
+        if first not in edition.plates and first + 1 not in edition.plates:
+            continue
         file = args.images / f"{FIRST_IMAGE + number - 1:08d}.jpg"
         data = file.read_bytes()
         gray = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
         rects = plates(gray)
         pages.append({"page": number, "file": file.name, "sha256": hashlib.sha256(data).hexdigest(),
                       "bytes": len(data), "width": gray.shape[1], "height": gray.shape[0],
-                      "folios": " ".join(str(2 * number - 1 + index) for index in range(len(rects))),
+                      "folios": " ".join(str(edition.plates[first + index][0]) for index in range(len(rects))
+                                         if first + index in edition.plates),
                       "plates": " ".join(",".join(map(str, (x0, y0, x1 - x0, y1 - y0))) for x0, y0, x1, y1 in rects)})
         for index, (x0, y0, x1, y1) in enumerate(rects[:2]):
-            folio = 2 * number - 1 + index
-            if not any(key[0] == folio for key in cells):
+            folio, sides = edition.plates.get(first + index, (0, ""))
+            if not any(key[0] == folio and key[1] in sides for key in cells):
                 continue
-            folio_columns, folio_characters = cut_folio(gray[y0:y1, x0:x1], folio, cells, args.font)
+            folio_columns, folio_characters = cut_folio(gray[y0:y1, x0:x1], folio, cells, args.font, sides)
             for row in folio_columns + folio_characters:
                 row.update(page=number, x=row["x"] + x0, y=row["y"] + y0)
             columns += folio_columns
             characters += folio_characters
-            print(f"folio {folio:2d}: {len(folio_characters):3d} characters, "
+            print(f"plate {first + index:2d}, folio {folio:2d}{sides if sides != 'AB' else ''}: {len(folio_characters):3d} characters, "
                   f"{sum(row['score'] >= ACCEPT for row in folio_characters):3d} at {ACCEPT} or more")
     grade(characters)
     for row in characters:
@@ -366,17 +399,18 @@ def main() -> None:
                     cv2.rectangle(image, (row["x"], row["y"]), (row["x"] + row["w"], row["y"] + row["h"]), colours[row["quality"]], 2)
             cv2.imwrite(str(args.overlays / f"page-{page['page']:03d}.jpg"), image)
 
-    args.out.mkdir(parents=True, exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
     table_sha = hashlib.sha256(args.table.read_bytes()).hexdigest()
     source = [
-        "同音 甲種本 (Инв. No. 207) on the plates of 俄藏黑水城文獻 vol. 7 (上海古籍出版社, 1997), printed pages 1-28.",
+        (f"同音 {edition.name} ({edition.shelfmark}) on the plates of 俄藏黑水城文獻 vol. 7 (上海古籍出版社, 1997), "
+         f"printed pages {pages[0]['page']}-{pages[-1]['page']}."),
         "Boxes are pixels of the page image, origin top left. Written by scripts/build_tangut_tongyin.py.",
     ]
-    write(args.out / "pages.tsv", source, ["page", "file", "sha256", "bytes", "width", "height", "folios", "plates"], pages)
-    write(args.out / "columns.tsv", source + ["A column's text is its head characters in order; the notes beside them are not transcribed."],
+    write(out / "pages.tsv", source, ["page", "file", "sha256", "bytes", "width", "height", "folios", "plates"], pages)
+    write(out / "columns.tsv", source + ["A column's text is its head characters in order; the notes beside them are not transcribed."],
           ["folio", "side", "column", "page", "x", "y", "w", "h", "text"], columns)
-    write(args.out / "characters.tsv", source + [
-        ("Character and position: nkay0, Tangut-rhyme-dictionaries-data, column 旧版同音 "
+    write(out / "characters.tsv", source + [
+        (f"Character and position: nkay0, Tangut-rhyme-dictionaries-data, column {edition.column} "
          f"(https://github.com/nkay0/Tangut-rhyme-dictionaries-data; file sha256 {table_sha})."),
         f"score is the match of the expected glyph (Noto Serif Tangut) at the box; quality is ok, low-score (under {ACCEPT}), size or faint; ink is the stroke darkness in the box over the share of its box the glyph inks.",
     ], ["folio", "side", "column", "position", "char", "codepoint", "page", "x", "y", "w", "h", "score", "ink", "quality"], characters)
