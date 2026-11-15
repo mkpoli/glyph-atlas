@@ -1,0 +1,37 @@
+# 俄藏黑水城文獻: the photographic edition of the Khara-Khoto finds kept at the Institute of Oriental
+# Manuscripts, Russian Academy of Sciences. Volumes 7 to 13 are the secular Tangut texts. Volume 7
+# opens with 音同（甲種本）, Инв. No. 207, one folio to a plate and two plates to a page, on printed
+# pages 1 to 28; each plate is captioned 俄 Инв.No.207 音同(甲種本) (56-n).
+#
+# The volumes are not online. The page images used here are scans of the printed volume supplied by
+# Maxim Persikov on 2026-11-15; `data/tangut/tongyin/pages.tsv` pins each one by checksum.
+
+id: ecang-heishuicheng
+name: 俄藏黑水城文獻
+publisher: 俄羅斯科學院東方研究所聖彼得堡分所, 中國社會科學院民族研究所, 上海古籍出版社 (eds.); 上海古籍出版社
+holder: Institute of Oriental Manuscripts, Russian Academy of Sciences
+kind: image-collection
+url: https://ndlsearch.ndl.go.jp/books/R100000002-Ia0000020350
+released: 1996-12-01
+licence: PD
+licence_evidence: https://ndlsearch.ndl.go.jp/books/R100000002-Ia0000020350
+image_licence: restricted
+image_holder: 上海古籍出版社
+attribution: 俄藏黑水城文獻 (上海古籍出版社, 1996–), Institute of Oriental Manuscripts, Russian Academy of Sciences; scans supplied by Maxim Persikov
+checked: "2026-11-16"
+notes:
+  - The plates are photographs of flat originals printed or written under the Western Xia (1038–1227), so under docs/licensing.md (Copyright in crops) they are recorded as public domain. The volumes state no reuse terms that were read here; the publisher's rights are kept as the holder's terms, `restricted`.
+  - The library record gives the editors, the publisher, the first volume's date (1996.12) and volumes 7–13 as 西夏文世俗部分. The year of volume 7 (1997) is taken from the supplied scans' folder name and was not checked against the colophon.
+  - Only the plate pages are used. The volumes' prefaces, catalogue entries and other editorial pages are the editors' work and are not imported.
+volumes:
+  - id: "7"
+    title: 俄藏黑水城文獻 第7冊 西夏文世俗部分
+    year: 1997
+    items:
+      - id: inv-207
+        shelfmark: Инв. No. 207
+        title: 音同（甲種本）
+        work: 同音
+        printed_pages: 1-28
+        plates: 56
+        data: data/tangut/tongyin

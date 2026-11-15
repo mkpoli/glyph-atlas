@@ -1147,6 +1147,28 @@ def import_tangut_coins(
     typer.echo(f"-> {out}")
 
 
+@import_app.command("tangut-tongyin")
+def import_tangut_tongyin(
+    scans: Annotated[Path, typer.Argument(help="directory of the volume's page scans, 00000040.jpg onwards")],
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/tangut-tongyin"),
+    cache: Annotated[Path | None, typer.Option(help="image cache directory")] = None,
+) -> None:
+    """Import the head characters of 同音 (甲種本) from the plates of 俄藏黑水城文獻 vol. 7."""
+    from .importers import tangut_tongyin
+
+    try:
+        summary = tangut_tongyin.collect(scans, out, cache=cache)
+    except tangut_tongyin.TongyinSourceError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1) from error
+    typer.echo(f"pages         {summary['pages']:>10}")
+    typer.echo(f"lines         {summary['lines']:>10}")
+    typer.echo(f"units         {summary['units']:>10}")
+    for quality, count in summary["left_out"].items():
+        typer.echo(f"{quality:<13} {count:>10}")
+    typer.echo(f"-> {out}")
+
+
 @audit_app.command("sample")
 def audit_sample(
     directory: Annotated[Path, typer.Argument(help="dataset directory holding the run's units")],

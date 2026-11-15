@@ -1,0 +1,25 @@
+# The Tangut rhyme-dictionary table: for each character its 四角号碼, the 李範文 2008 and Kychanov 2006
+# numbers, its place in the two editions of 同音 and in 文海, and the 文海 fanqie. The repository
+# states no licence. A character's place in a named dictionary is a fact that the dictionary's own
+# leaves show; the atlas records the table as public domain, as it does the cjkvi-variants tables,
+# and cites the dictionaries the compiler names.
+
+id: nkay0-tangut-rhyme
+name: 西夏語韻書データ (Tangut rhyme-dictionary data)
+publisher: nkay0 (GitHub)
+kind: reference-table
+url: https://github.com/nkay0/Tangut-rhyme-dictionaries-data
+licence: PD
+licence_evidence: https://github.com/nkay0/Tangut-rhyme-dictionaries-data
+attribution: nkay0, 西夏語韻書データ, after 韓小忙 2021, 李範文 2008, Kychanov 2006, Sofronov 1968, 西田 1966 and others
+version: main, read 2026-11-16
+counts:
+  rows: 6112
+  columns: 38
+format:
+  file: tangut rhyme dictionaries data.csv, UTF-8 with a BOM
+  sha256: 84787642cc34ac347dd1a361584a5239bc63e1f4f32077f2d45809f70feeea7b
+notes:
+  - "The column 旧版同音 gives a head character's place as folio, side, column and position (02A51). It is the 甲種本 reproduced in 俄藏黑水城文獻 vol. 7: the opening columns of folio 2 and the cells of folio 6 were compared with the plates by eye, and 148 of 150 randomly drawn machine placements sit on the character the column names."
+  - The column holds 5,673 places in folios 2 to 56; data/tangut/tongyin/characters.tsv carries each with its box on the page scan.
+checked: "2026-11-16"
