@@ -138,12 +138,17 @@ python models/benchmark/cuts.py run --cutter lattice --split test --pages 40
 | cutter | boxed | cut | yield | precision | mean IoU | s/page |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `consensus` | 95.9% | 89.4% | 37.1% | 99.7% | 0.892 | 27.6 |
-| `lattice` | 95.1% | 91.4% | 63.3% | 99.8% | 0.886 | 2.7 |
+| `lattice` | 95.1% | 91.4% | 63.3% | 99.8% | 0.886 | 3.6 |
 
 `consensus` is the extraction policy `single-character-consensus-v3`: whole detector boxes aligned by
 `glyph_atlas.align`, published when the classifier and NDLkotenOCR both read the character. It
 withheld 16,408 characters for a reading that disagreed and 9,708 at the alignment; 98.7% and 55.6%
 of those boxes were cut. `lattice` is `glyph_atlas.cut` (`models/cutter/README.md`).
+
+`run --shrink 0.5` resizes every page and its boxes to half, as a scan of small writing would be.
+There `lattice` publishes 60.7% at 99.8%, and `lattice-own`, the same cutter with the detector kept
+at the page's own size, 42.2% at 99.8% (`results/cuts-lattice-test-shrink0.5.json`,
+`cuts-lattice-own-test-shrink0.5.json`).
 
 
 ## Counts (2026-11-15)

@@ -41,7 +41,7 @@ from uuid import uuid4
 from . import align, images, tables, withdrawn
 from .schema import PAGE_SCOPE, Classification, ReviewState, UnitKind
 
-POLICY = "single-character-lattice-v5"
+POLICY = "single-character-lattice-v6"
 LATTICE = "lattice"
 
 
@@ -664,7 +664,11 @@ class Engine:
         candidates = []
         reasons = Counter()
         examined = 0
-        detections = [align.Detection(box=box, score=score) for box,score in self.detector.boxes(image)]
+        from . import detect
+        own = self.detector.boxes(image)
+        enlarged = detect.enlargement([box for box,_ in own])
+        found = own if enlarged == 1.0 else self.detector.boxes_at(image, enlarged, own=own)
+        detections = [align.Detection(box=box, score=score) for box,score in found]
         placed = self.cutter.cut(lines, detections, image, self.classifier, policy=self.run.policy)
         for line in lines:
             placements = placed[line.id]
@@ -695,7 +699,7 @@ class Engine:
         report = {"policy":POLICY,"generation":identity,"page_id":page.id,"document_id":document.id,
                   "title":document.title,"page_sha256":page.sha256,"models":self.models,
                   "examined":examined,"accepted":len(accepted),"withheld":dict(reasons),"cuts":dict(cuts),
-                  "source_dimensions":list(original_dimensions),"lines":len(lines),"detected":len(detections),"complete_page":len(lines)==located_line_count,
+                  "source_dimensions":list(original_dimensions),"lines":len(lines),"detected":len(detections),"enlarged":round(enlarged, 3),"complete_page":len(lines)==located_line_count,
                   "withheld_lines":{"invalid_geometry":located_line_count-len(lines)},
                   "created_at":datetime.now(UTC).isoformat()}
         return report, {"documents":[document],"pages":[page],"lines":lines,"units":accepted}

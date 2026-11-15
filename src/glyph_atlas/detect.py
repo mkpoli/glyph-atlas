@@ -71,6 +71,16 @@ PART = 0.7
 # Two boxes that share less than this of either lie apart, and a box of the page at its own size
 # stands where the resized page's boxes cover less than this of it.
 MEETS = 0.3
+# The side of the box the detector finds best, px: the median box of its test books is 6,552 px²
+# (`models/detector/README.md`).
+KNOWN = 81.0
+# A page whose median box is under this side is detected again enlarged: the smallest tenth of the
+# detector's test boxes, where its recall is lowest.
+SMALL = 50.0
+# A page is enlarged at most this many times.
+MOST = 2.0
+# The side of a large box the detector still finds whole, px: the ninth decile of its test boxes is 13,932 px².
+LARGE = 118.0
 # A box of a filling scale is added where the boxes kept before that scale cover less than this of it.
 CLEAR = 0.1
 # A box of a resized page that holds this many separate boxes of the page at its own size is a run of
@@ -374,8 +384,19 @@ class Detector:
         found = tiles(page.width, page.height, self.tile, self.overlap)
         return self._collect(page, found)
 
-    def boxes_at(self, image: Image.Image | str | Path, scale: float,
-                 fill: Sequence[float] = ()) -> list[tuple[Box, float]]:
+    def boxes_sized(self, image: Image.Image | str | Path) -> list[tuple[Box, float]]:
+        """The page's boxes, found on the page enlarged when its writing is smaller than the detector knows.
+
+        The page is detected at its own size, then again enlarged by `enlargement` where that is
+        more than one, and the two are joined as `boxes_at` joins them.
+        """
+        page = _open(image)
+        own = self.boxes(page)
+        scale = enlargement([box for box, _ in own])
+        return own if scale == 1.0 else self.boxes_at(page, scale, own=own)
+
+    def boxes_at(self, image: Image.Image | str | Path, scale: float, fill: Sequence[float] = (), *,
+                 own: list[tuple[Box, float]] | None = None) -> list[tuple[Box, float]]:
         """The boxes found on the page resized by `scale`, in the page's own coordinates.
 
         The detector finds a character best at the size of the boxes of its books, about 50 to 120 px
@@ -388,12 +409,12 @@ class Detector:
 
         A character can go unfound at `scale` and be found at another. Each scale of `fill`, in the
         order given, adds its boxes where those kept before it cover less than `CLEAR` of them and
-        none of those lies in them.
+        none of those lies in them. `own` is the page's boxes at its own size where the caller has them.
         """
         if scale <= 0 or any(other <= 0 for other in fill):
             raise ValueError(f"a scale must be positive, got {scale} and {tuple(fill)}")
         page = _open(image)
-        own = self.boxes(page)
+        own = self.boxes(page) if own is None else own
         kept = list(own) if scale == 1.0 else self._joined(own, self._resized(page, scale))
         for other in fill:
             standing = [box for box, _ in kept]
@@ -534,6 +555,22 @@ def _meet(box: Box, other: Box) -> int:
     across = min(box.x + box.w, other.x + other.w) - max(box.x, other.x)
     down = min(box.y + box.h, other.y + other.h) - max(box.y, other.y)
     return max(0, across) * max(0, down)
+
+
+def enlargement(boxes: Sequence[Box]) -> float:
+    """How many times a page with these boxes is enlarged for the detector; one where it is not.
+
+    A page whose median box is under `SMALL` a side is enlarged until that box is `KNOWN` a side,
+    at most `MOST` times, and never so far that its ninth-decile box passes `LARGE`: a character
+    larger than the detector knows comes out in parts.
+    """
+    if not boxes:
+        return 1.0
+    sides = np.sqrt([box.w * box.h for box in boxes])
+    median = float(np.median(sides))
+    if median >= SMALL:
+        return 1.0
+    return max(1.0, min(MOST, KNOWN / median, LARGE / float(np.percentile(sides, 90))))
 
 
 def _share(box: Box, other: Box) -> float:

@@ -80,7 +80,7 @@ character in the crop.
 | characters published, box at IoU ≥ 0.5 | 37.1% | 63.3% |
 | published boxes at IoU ≥ 0.5 | 99.7% | 99.8% |
 | published boxes at IoU ≥ 0.7 | 97.3% | 97.5% |
-| seconds a page | 27.6 | 2.7 |
+| seconds a page | 27.6 | 3.6 |
 
 By book, share of characters published at IoU ≥ 0.5:
 
@@ -105,6 +105,34 @@ unreadable characters 623 are published, 98.2% of them at IoU ≥ 0.7.
 
 A transcriber's line box is longer than its ink. With every line box lengthened at both ends by
 three quarters of a character (`cuts.py run --slack 0.75`), 62.2% are published at 99.8% (IoU 0.5).
+
+## Small writing
+
+The detector finds a character best between 50 and 120 px a side, and the smallest tenth of its
+test boxes least often (`models/detector/README.md`). Of 489 pages drawn at random from those the
+collection had cut, 197 have a median box under 50 px and hold 47% of the characters. The cutter
+had published 28.6% of the characters on the pages between 30 and 40 px and 43.4% on those between
+40 and 50, against about 50% on pages of larger writing.
+
+The extraction therefore detects such a page a second time, enlarged until its median box is 81 px,
+at most twice and never so far that its ninth-decile box passes 118 px, and joins the boxes of
+both (`Detector.boxes_sized`). CODH's `test` pages shrunk to half their size stand in for small
+writing whose boxes are known (`cuts.py run --shrink 0.5`, with `--cutter lattice-own` for the
+detector at the page's own size; `results/cuts-lattice*-test-shrink0.5.json`):
+
+| half-size pages | detector at the page's own size | detector on the enlarged page |
+| --- | ---: | ---: |
+| characters with a box | 87.6% | 94.9% |
+| characters published, box at IoU ≥ 0.5 | 42.2% | 60.7% |
+| published boxes at IoU ≥ 0.5 | 99.8% | 99.8% |
+
+At their full size the same pages give 63.3% and none of them is enlarged, 料理物語 not even at half
+size. On 24 pages of small writing from 19 books of the collection the cutter accepts 7,355
+placements from the page at its own size and 8,588 from the enlarged one, more on every page; of
+160 of the new ones looked at, nearly all frame their character, and the few placements it no
+longer accepts are mostly good ones too. `frame.json` and `gate.json` were fitted before this, on
+the detector's boxes at each page's own size; `fit.py collect` now takes the boxes the extraction
+takes, so the next fit sees them.
 
 ## Collection pages
 

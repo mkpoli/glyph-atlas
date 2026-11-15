@@ -216,6 +216,17 @@ def build_reviewed(reviews: Path, queues: list[Path], listing="reviewed-pages.js
           f"{absent} pages without their image -> {BENCH / listing}")
 
 
+def shrunk(image, page: dict, by: float):
+    """The page and its boxes resized by `by`, as a scan of smaller writing would be."""
+    from PIL import Image
+
+    small = image.resize((max(1, round(image.width * by)), max(1, round(image.height * by))), Image.Resampling.LANCZOS)
+    units = [{**unit, "box": {"x": round(unit["box"]["x"] * by), "y": round(unit["box"]["y"] * by),
+                              "w": max(1, round(unit["box"]["w"] * by)), "h": max(1, round(unit["box"]["h"] * by))}}
+             for unit in page["units"]]
+    return small, {**page, "units": units}
+
+
 def lines_of(page: dict, *, pad: float = 0.12, slack: float = 0.0):
     """A page's lines, from its boxes in reading order: a new line starts where the column changes.
 
@@ -312,6 +323,8 @@ def run(args):
         book = by_book[title]
         random.Random(0).shuffle(book)
         chosen += book[:args.pages] if args.pages else book
+    if args.shrink <= 0:
+        raise SystemExit("--shrink must be positive")
     cutter = cutter_of(args.cutter)
     totals = defaultdict(Counter)
     ious = defaultdict(list)
@@ -320,6 +333,8 @@ def run(args):
     for number, page in enumerate(chosen):
         with Image.open(BENCH / page["image"]) as handle:
             image = handle.convert("RGB")
+        if args.shrink != 1.0:
+            image, page = shrunk(image, page, args.shrink)
         pairs = []
         for line, truth in lines_of(page, slack=args.slack):
             if len(align.tokens_of(line)) == len(truth):
@@ -362,7 +377,9 @@ def run(args):
     report["all"] = summary(overall, [value for values in ious.values() for value in values])
     out = BENCH / "results"
     out.mkdir(exist_ok=True)
-    stem = f"{args.cutter}-{args.split}" + (f"-{args.tag}" if args.tag else "")
+    report["slack"], report["shrink"] = args.slack, args.shrink
+    stem = (f"{args.cutter}-{args.split}" + ("" if args.shrink == 1.0 else f"-shrink{args.shrink:g}")
+            + (f"-{args.tag}" if args.tag else ""))
     (out / f"{stem}.json").write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     if args.records:
         with (out / f"{stem}.records.jsonl").open("w", encoding="utf-8") as handle:
@@ -403,6 +420,8 @@ def main():
     runner.add_argument("--pages", type=int, default=0, help="pages a book, drawn with a fixed seed; 0 for all")
     runner.add_argument("--slack", type=float, default=0.0,
                         help="lengthen every line box at both ends by this share of a character's height")
+    runner.add_argument("--shrink", type=float, default=1.0,
+                        help="resize every page and its boxes by this first, to measure small writing")
     runner.add_argument("--tag", default="")
     runner.add_argument("--records", action="store_true", help="also write one record a character")
     args = parser.parse_args()

@@ -460,3 +460,26 @@ def test_a_fill_keeps_the_neighbours_its_own_scale_found() -> None:
         Box(x=300, y=20, w=40, h=40), Box(x=50, y=50, w=50, h=50), Box(x=50, y=90, w=50, h=50)], \
         "two boxes of one scale that touch are both added; one around a kept box is not"
     assert found.boxes_at(blank, 1.0, fill=(2.0,)) and found.answers[(400, 300)] == own[:1] and len(own) == 1
+
+
+def test_a_page_of_small_writing_is_detected_enlarged() -> None:
+    blank = Image.new("RGB", (400, 300), "white")
+    small = [(Box(x=20 + 50 * column, y=20, w=40, h=40), 0.9 - 0.1 * column) for column in range(3)]
+    # At twice the size the detector finds the three and one more it missed.
+    twice = [(Box(x=2 * box.x, y=2 * box.y, w=80, h=80), score) for box, score in small] + [(Box(x=40, y=200, w=80, h=80), 0.5)]
+    found = BySize({(400, 300): small, (800, 600): twice})
+    assert boxes_of(found.boxes_sized(blank)) == [*boxes_of(small), Box(x=20, y=100, w=40, h=40)], \
+        "boxes of 40 px are enlarged to the 81 px the detector knows, at most twice"
+    large = [(Box(x=20, y=20, w=60, h=60), 0.9), (Box(x=120, y=20, w=64, h=64), 0.8)]
+    assert BySize({(400, 300): large}).boxes_sized(blank) == large, "writing of the size it knows is left as it is"
+    assert BySize({(400, 300): []}).boxes_sized(blank) == []
+
+
+def test_a_page_is_enlarged_only_as_far_as_its_large_characters_allow() -> None:
+    notes = [Box(x=0, y=0, w=30, h=30)] * 9
+    assert detect.enlargement(notes) == 2.0, "30 px boxes would need 2.7 times; twice is the most"
+    assert detect.enlargement([Box(x=0, y=0, w=45, h=45)] * 9) == pytest.approx(81 / 45)
+    assert detect.enlargement([*notes, Box(x=0, y=0, w=80, h=80), Box(x=0, y=0, w=80, h=80)]) == pytest.approx(118 / 80), \
+        "the ninth-decile box of 80 px may grow to 118"
+    assert detect.enlargement([*notes[:5], *[Box(x=0, y=0, w=130, h=130)] * 4]) == 1.0, "never reduced"
+    assert detect.enlargement([Box(x=0, y=0, w=60, h=60)] * 3) == 1.0 and detect.enlargement([]) == 1.0
