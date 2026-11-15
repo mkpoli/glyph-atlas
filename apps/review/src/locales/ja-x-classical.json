@@ -203,6 +203,8 @@
   "explore.runs.more": "更ニ示ス",
   "explore.reviewGrapheme": "{grapheme}ヲ校閱ス ↗",
   "explore.samplesUnavailable": "此上ノ見本ヲ開クコト能ハズ",
+  "explore.sheet.failed": "畫像ヲ作ル能ハズ",
+  "explore.sheet.save": "畫像トシテ保存ス",
   "explore.shuffle": "攪ス",
   "explore.shuffle.aria": "字順ヲ攪ス",
   "explore.similarForms": "似タル字體",

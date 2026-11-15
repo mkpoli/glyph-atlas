@@ -241,6 +241,8 @@
   "explore.runs.more": "더 보기",
   "explore.reviewGrapheme": "{grapheme} 검토 ↗",
   "explore.samplesUnavailable": "추가 예시를 불러올 수 없음",
+  "explore.sheet.failed": "이미지를 만들지 못했습니다",
+  "explore.sheet.save": "이미지로 저장",
   "explore.shuffle": "섞기",
   "explore.shuffle.aria": "글자 섞기",
   "explore.similarForms": "비슷한 자형",

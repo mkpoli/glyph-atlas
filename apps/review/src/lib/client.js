@@ -173,10 +173,14 @@ export function remember(key, value) {
 export function forget(key) {
   try { localStorage.removeItem(key) } catch { /* Nothing was stored. */ }
 }
-export function download(value, name) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2) + '\n'], { type: 'application/json' }))
+/** Hand the reader `blob` as a file called `name`. */
+export function saveFile(blob, name) {
+  const url = URL.createObjectURL(blob)
   const link = document.createElement('a'); link.href = url; link.download = name; link.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+export function download(value, name) {
+  saveFile(new Blob([JSON.stringify(value, null, 2) + '\n'], { type: 'application/json' }), name)
 }
 
 const suggestionCache = new Map()

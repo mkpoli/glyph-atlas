@@ -1,5 +1,5 @@
 <script>
-  import { onMount, tick, untrack } from 'svelte'
+  import { onDestroy, onMount, tick, untrack } from 'svelte'
   import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation'
   import { entry, keepView, keptView } from '../lib/keptViews.js'
   import { page } from '$app/state'
@@ -29,7 +29,9 @@
   import RunTile from '../components/RunTile.svelte'
   import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
-  import { catalogue, character, request, shuffleSeed, number, stored, remember } from '../lib/client.js'
+  import { catalogue, character, request, shuffleSeed, number, stored, remember, saveFile } from '../lib/client.js'
+  import { paint } from '../lib/collageImage.js'
+  import { holderName, licenceName } from '../lib/licence.js'
   import { markForms, unmarkForms } from '../lib/cropForms.js'
   import { isDescription } from '../lib/ids.js'
   import { confirmationBatches, confirmationBody, confirmationOutcome, chosenCrops, confirmationPlan, correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
@@ -1164,6 +1166,36 @@
     openGrapheme(key)
   }
   function shuffle() { let next; do next = shuffleSeed(); while (next === seed); seed = next; load() }
+  // The gallery as one image: every crop it holds so far, in the columns it shows them in, over a
+  // credit of the page and the holders (`lib/collageImage.js`). Runs and crops with no image the site
+  // may show are left out. `sheeting` counts the images in while it is painted.
+  let sheeting = $state(null), sheetFailed = $state(false), sheetJob = null
+  const pictured = item => item.origin !== 'run' && Boolean(item.image) && (item.origin !== 'corpus' || item.proxyable)
+  const sheetable = $derived(display.some(pictured))
+  async function saveSheet() {
+    const blocks = sections.map(section => ({ heading: section.heading, items: section.tiles.map(([item]) => item).filter(pictured) })).filter(block => block.items.length)
+    const crops = blocks.flatMap(block => block.items)
+    if (!crops.length || sheeting) return
+    const square = document.documentElement.dataset.gallery === 'grid'
+    const count = square ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length
+      : Number(getComputedStyle(grid.querySelector('.collage-block')).getPropertyValue('--collage-cols'))
+    const holders = [...new Set(crops.map(item => [holderName(item.attribution || (typeof item.source === 'string' ? item.holder : item.source?.holder ?? item.holder)), licenceName(item.licence)].filter(Boolean).join(', ')).filter(Boolean))]
+    // The page's own paper, ink and quiet text, read as the colours the theme resolves them to.
+    const probe = Object.assign(document.createElement('i'), { hidden: true }), tones = {}
+    grid.append(probe)
+    for (const [name, value] of [['paper', '--paper'], ['ink', '--ink'], ['quiet', '--muted']]) { probe.style.color = `var(${value})`; tones[name] = getComputedStyle(probe).color }
+    probe.remove()
+    sheetJob = new AbortController(); sheeting = { done: 0, total: crops.length }; sheetFailed = false
+    try {
+      const { blob } = await paint(blocks, { count: Math.max(1, count || 1), square, ...tones, font: getComputedStyle(document.body).fontFamily,
+        filter: ink === 'bw' ? 'grayscale(1) contrast(1.05)' : '', signal: sheetJob.signal,
+        credit: [[t('app.name'), picked?.char, t('explore.meta.glyphs', { count: crops.length }), decodeURI(location.href), new Date().toLocaleDateString('sv')].filter(Boolean), holders],
+        onprogress: (done, total) => { sheeting = { done, total } } })
+      saveFile(blob, `glyph-atlas-${picked?.char ?? 'collection'}-${crops.length}.jpg`)
+    } catch (fault) { if (!sheetJob.signal.aborted) sheetFailed = true }
+    finally { sheeting = null }
+  }
+  onDestroy(() => sheetJob?.abort())
   /**
    * Back or Forward to an address this view rewrote loads the page as it was first loaded, while the
    * address bar keeps what the view had moved on to. The view follows the address bar.
@@ -1333,6 +1365,7 @@
         {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
         {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
       </div>
+      <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable || Boolean(sheeting)} aria-busy={Boolean(sheeting)} aria-label={t('explore.sheet.save')} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count" role="status">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
       <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
     </div>
   </div>
@@ -1393,6 +1426,7 @@
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
   .zoom-control{display:flex;align-items:center;gap:6px;color:var(--muted)}
+  .sheet-count{font-variant-numeric:tabular-nums}
   /* What the collection is shown as, and how, stays together as one group wherever the toolbar puts it. */
   .collection-tools{display:contents}
   /* Wide screens keep the toolbar's controls on one row: the find box takes the room it needs, the
@@ -1408,6 +1442,9 @@
   :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
   .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
   .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
+  /* A phone shows the tools as icons; how far the image has come, or that it failed, still shows beside
+     its icon, and the slider gives up the room the icon takes so the tools stay on one row. */
+  @media(max-width:700px){.sheet-save span{margin-left:6px;font-size:11px}.zoom-control input{width:60px}}
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
   .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
   .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 10px/1 system-ui,sans-serif;color:transparent}
