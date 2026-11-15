@@ -6,7 +6,13 @@ import sys
 from pathlib import Path
 
 import pytest
-from test_atlas3_publish import ids, layout, run, write_source  # noqa: F401 -- the fixture
+from test_atlas3_publish import (  # noqa: F401 -- the fixture
+    copied_by_a_stopped_publication,
+    ids,
+    layout,
+    run,
+    write_source,
+)
 
 INDEXES = Path(__file__).resolve().parents[1] / "apps/cloudflare/migrations-atlas/indexes-cutover.sql"
 CUTOVER = re.findall(r"^CREATE INDEX (\w+)", INDEXES.read_text(), re.MULTILINE)
@@ -74,6 +80,19 @@ def deferred(root, remote, monkeypatch):
     units.commit()
     facts(root, remote, monkeypatch, "--send", "--defer-crops")
     return sqlite3.connect(root / "out" / "mirror.sqlite")
+
+
+def test_a_fill_takes_what_a_stopped_publication_of_the_answers_copied_first(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
+    copied_by_a_stopped_publication(remote, crop, state=1)
+    # A dry run takes nothing.
+    fill(publish, remote, monkeypatch)
+    assert d1.execute("SELECT count(*) FROM absorbing").fetchone()[0] == 1
+    fill(publish, remote, monkeypatch, "--send")
+    assert d1.execute("SELECT count(*) FROM absorbing").fetchone()[0] == 0
+    held = "SELECT state, revision FROM crops WHERE id=?"
+    assert sqlite3.connect(root / "out" / "atlas.sqlite").execute(held, (crop,)).fetchone() == tuple(d1.execute(held, (crop,)).fetchone()) == (1, 1)
 
 
 def test_deferred_facts_fill_all_columns_once_and_unlock_only_at_completion(layout, monkeypatch):  # noqa: F811

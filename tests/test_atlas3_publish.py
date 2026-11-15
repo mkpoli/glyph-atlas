@@ -123,6 +123,22 @@ def ids(root):
     return dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))
 
 
+def copied_by_a_stopped_publication(remote, crop, **columns):
+    """A review of the site's on one crop (`columns`, one revision on, listed in `touched`), then a
+    publication of the answers that bumped the generation, copied the listed crop into `absorbing` and
+    stopped there."""
+    d1 = remote.dbs["glyph-atlas-v3"]
+    gen = d1.execute("SELECT gen FROM generation").fetchone()[0]
+    d1.execute(f"UPDATE crops SET {','.join(f'{c}=?' for c in columns)}, revision=revision+1 WHERE id=?", (*columns.values(), crop))
+    d1.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) SELECT id,revision,cut,?,1,1,0,1 FROM crops WHERE id=?",
+               (gen, crop))
+    d1.execute("INSERT INTO touched VALUES(?,?)", (crop, gen))
+    d1.commit()
+    sys.modules.pop("answers", None)
+    assert importlib.import_module("answers").bump("20260101T000000Z", gen)
+    assert d1.execute("SELECT crop FROM absorbing").fetchall() == [(crop,)]
+
+
 def crops(remote):
     db = remote.dbs["glyph-atlas-v3"]
     db.row_factory = sqlite3.Row
@@ -298,15 +314,8 @@ def test_a_database_that_took_an_earlier_0016_gains_its_new_columns_under_a_stam
 def test_the_crops_a_stopped_publication_of_the_answers_copied_are_taken_before_a_publish_plans(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
-    # A reviewer checks the crop, and a publication of the answers bumps the generation, copies the
-    # listed crop and stops there.
-    d1.execute("UPDATE crops SET state=1, revision=1 WHERE id=?", (crop,))
-    d1.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,1,0,1,1,1,0,0)", (crop,))
-    d1.execute("INSERT INTO touched VALUES(?,1)", (crop,))
-    d1.commit()
-    sys.modules.pop("answers", None)
-    assert importlib.import_module("answers").bump("20260101T000000Z", 1)
-    assert d1.execute("SELECT crop FROM absorbing").fetchall() == [(crop,)]
+    # A reviewer checks the crop, and a publication of the answers copies it and stops.
+    copied_by_a_stopped_publication(remote, crop, state=1)
     # The publish gives the crop another priority.
     path = catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, priority=2)])
     with pytest.raises(SystemExit, match="take them first"):
@@ -331,12 +340,7 @@ def test_a_crop_s_category_goes_only_with_the_character_it_belongs_to(layout, mo
     kana = d1.execute("SELECT category FROM crops WHERE id=?", (crop,)).fetchone()[0]
     kanji = d1.execute("SELECT max(code) + 1 FROM codes WHERE field='category'").fetchone()[0]
     d1.execute("INSERT INTO codes(field,code,key) VALUES('category',?,'kanji')", (kanji,))
-    d1.execute("UPDATE crops SET char=?, category=?, state=1, revision=1 WHERE id=?", (char, kanji, crop))
-    d1.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,1,0,1,1,1,0,1)", (crop,))
-    d1.execute("INSERT INTO touched VALUES(?,1)", (crop,))
-    d1.commit()
-    sys.modules.pop("answers", None)
-    assert importlib.import_module("answers").bump("20260101T000000Z", 1)
+    copied_by_a_stopped_publication(remote, crop, char=char, category=kanji, state=1)
     box = {"x": 0, "y": 0, "w": 10, "h": 10}
 
     def sent():

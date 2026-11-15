@@ -8,6 +8,7 @@ import pytest
 from test_atlas3_publish import (  # noqa: F401 -- `layout` is the fixture
     PAGE,
     UNITS,
+    copied_by_a_stopped_publication,
     crops,
     ids,
     layout,
@@ -372,6 +373,21 @@ def test_shape_positions_follow_the_neighbour_chain(layout, monkeypatch):  # noq
     facts(root, remote, monkeypatch, "--send")
     assert remote.dbs["glyph-atlas-v3"].execute("SELECT key, shape_position, size_position FROM form_clusters ORDER BY key").fetchall() == [
         ("U+304B:c1", 1, 0), ("U+304B:c2", 0, 1)]
+
+
+def test_a_load_takes_what_a_stopped_publication_of_the_answers_copied_first(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a2"]
+    clustering(root, monkeypatch)
+    mapped_tile(root)
+    copied_by_a_stopped_publication(remote, crop, state=2)
+    # A dry run takes nothing.
+    facts(root, remote, monkeypatch)
+    assert d1.execute("SELECT count(*) FROM absorbing").fetchone()[0] == 1
+    facts(root, remote, monkeypatch, "--send")
+    assert d1.execute("SELECT count(*) FROM absorbing").fetchone()[0] == 0
+    held = "SELECT state, revision FROM crops WHERE id=?"
+    assert sqlite3.connect(root / "out" / "atlas.sqlite").execute(held, (crop,)).fetchone() == tuple(d1.execute(held, (crop,)).fetchone()) == (2, 4)
 
 
 def test_a_load_without_the_history_is_refused(layout, monkeypatch):  # noqa: F811

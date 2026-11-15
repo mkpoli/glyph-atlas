@@ -45,7 +45,7 @@ import sys
 
 from build import HERE, OUT, char_text
 from load_history import GROUP, SCHEMA, built, deliver, stamped
-from publish import applied, lit, send
+from publish import absorb, applied, leftover, lit, send
 
 COLUMNS = {"priority": "0011_browse.sql", "family": "0012_family.sql"}
 INDEXES = SCHEMA / "indexes-cutover.sql"
@@ -209,6 +209,10 @@ def main():
         build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
+        # What a stopped publication of the answers left in `absorbing` goes into the local copy before the
+        # fill is planned against it.
+        if leftover(False):
+            absorb(atlas, mirror)
     if pending and pending[0].startswith("fill/plan/"):
         run = OUT / "fill-load" / pending[0].removeprefix("fill/plan/")
         if not run.is_dir():

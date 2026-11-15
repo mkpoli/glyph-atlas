@@ -81,8 +81,10 @@ from publish import (
     FACTS_RUN,
     LOGICAL,
     R2_REMOTE,
+    absorb,
     applied,
     fits,
+    leftover,
     lit,
     logical_sql,
     query,
@@ -844,6 +846,10 @@ def main():
     if not dry:
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
+        # What a stopped publication of the answers left in `absorbing` goes into the local copy before the
+        # load is planned against it.
+        if leftover(False):
+            absorb(atlas, mirror)
         # A load stopped part way is finished first; one stopped before its folder was written starts again.
         for name in pending:
             run = OUT / "crop-facts" / name.removeprefix(FACTS_RUN)

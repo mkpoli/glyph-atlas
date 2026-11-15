@@ -1051,6 +1051,15 @@ def absorb(atlas, ids):
     return len(held)
 
 
+def leftover(migrated=True):
+    """Whether `absorbing` holds crops: a publication of the answers copied them and stopped before the
+    local copy took them. Every writer that plans against the local copy takes them first (`absorb`), so
+    its plan stands on the site's rows and no row it writes is replaced by an older one of theirs. A
+    caller that applies no migration asks first whether D1 has the table (`migrated` false)."""
+    return bool((migrated or query("glyph-atlas-v3", "SELECT name FROM sqlite_master WHERE name='absorbing'"))
+                and query("glyph-atlas-v3", "SELECT crop FROM absorbing LIMIT 1"))
+
+
 def deliver(m, run):
     """Finish a publish whose ids are allocated. Every step can run again: bundles to R2, then each
     part to D1, then the same part to the local copy, in order; then the guarded rows are read back."""
@@ -1297,15 +1306,12 @@ def main():
             sys.exit("--migrate applies the migrations; it has no dry run")
         print("review migrations in place on glyph-atlas-v3 and the local copy", flush=True)
         return
-    # A publication of the answers that stopped after its bump left the crops it copied in `absorbing`. The
-    # local copy takes them before anything is planned against it, so the plan stands on the site's rows and
-    # no row this publish writes is replaced by an older one of theirs. A dry run reads `absorbing` only
-    # where D1 has it, since it applies no migration.
+    # What a stopped publication of the answers left in `absorbing` goes into the local copy before anything
+    # is planned against it (`leftover`). A dry run changes nothing, so it stops there.
     if not dry:
-        if query("glyph-atlas-v3", "SELECT crop FROM absorbing LIMIT 1"):
+        if leftover():
             absorb(m.atlas, m.ids)
-    elif query("glyph-atlas-v3", "SELECT 1 AS n FROM sqlite_master WHERE name='absorbing'") and \
-            query("glyph-atlas-v3", "SELECT crop FROM absorbing LIMIT 1"):
+    elif leftover(False):
         sys.exit("glyph-atlas-v3 holds crops a stopped publication of the answers copied; run a publish (not a dry run) "
                  "or answers.py to take them first")
     if not dry:
