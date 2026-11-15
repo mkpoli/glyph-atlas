@@ -26,10 +26,11 @@ local copy as it then stands. A dry run reads how many crops are listed, writes 
 local copy as it is, and changes neither database.
 
 `--seed` lists, once, the crops the Worker changed before it kept the list (migration 0019, stamp
-`migration:0019`): every crop an event of a generation above 0 names and every crop with `bumps`. It
-runs after the Worker that lists touched crops is deployed, and needs migration 0018's tables; with
-`--dry-run` it prints how many crops each of the two would list and writes nothing. A publication is
-refused until the seed's stamp is there, since its answers would count none of those crops' reviews.
+`migration:0019`): every crop an event of a generation above 0 names and every corpus glyph with a
+`form_bases` row, which a forms decision moved to its form. It runs after the Worker that lists
+touched crops is deployed, and needs migration 0018's tables; with `--dry-run` it prints how many
+crops each of the two would list and writes nothing. A publication is refused until the seed's stamp
+is there, since its answers would count none of those crops' changes.
 
 - `counts/<shard>.json.gz`: per character (grapheme id, in shard id % SHARDS), one cell per kind,
   style, state, withheld, witness decade and visual group, with its number of crops. Codes are the
@@ -404,10 +405,10 @@ def seed(dry_run):
         return
     if dry_run:
         found = query(DATABASE, "SELECT (SELECT count(DISTINCT crop) FROM events WHERE gen > 0) AS reviewed, "
-                                "(SELECT count(*) FROM crops WHERE bumps > 0) AS followed")[0]
+                                "(SELECT count(*) FROM form_bases) AS followed")[0]
         print(f"dry run: the seed would list {found['reviewed']} crops named by events of a generation above 0 and "
-              f"{found['followed']} crops with bumps, a crop of both once; `touched` lists {query(DATABASE, listed)[0]['n']} "
-              f"now, and nothing was written", flush=True)
+              f"{found['followed']} glyphs with a `form_bases` row, a crop of both once; `touched` lists "
+              f"{query(DATABASE, listed)[0]['n']} now, and nothing was written", flush=True)
         return
     path = OUT / "publish" / "0019.sql"
     path.parent.mkdir(parents=True, exist_ok=True)

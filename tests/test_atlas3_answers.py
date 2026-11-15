@@ -608,7 +608,7 @@ def changed_before_the_list(remote, root):
     d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)
     d1.executemany("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,?,0,?,1,1,0,0)",
                    [(crop["ex:a1"], 1, 1), (crop["ex:a1"], 2, 1), (crop["ex:a2"], 1, 0), (crop["ex:b1"], 1, 1)])
-    d1.execute("UPDATE crops SET bumps=1 WHERE id=?", (crop["codh:g1"],))
+    d1.execute("INSERT INTO form_bases(crop, char) VALUES(?, NULL)", (crop["codh:g1"],))
     d1.execute("INSERT INTO touched VALUES(?,1)", (crop["ex:b1"],))
     d1.commit()
     return crop
@@ -619,7 +619,7 @@ def test_the_seed_lists_the_crops_changed_before_the_list_once(layout, monkeypat
     crop = changed_before_the_list(remote, root)
     before = dumps(root, remote)
     assert answers(publish, monkeypatch, "--seed", "--dry-run", seeded=False) == []
-    assert "would list 2 crops named by events of a generation above 0 and 1 crops with bumps" in capsys.readouterr().out
+    assert "would list 2 crops named by events of a generation above 0 and 1 glyphs with a `form_bases` row" in capsys.readouterr().out
     assert dumps(root, remote) == before
     answers(publish, monkeypatch, "--seed", seeded=False)
     # The crop the Worker listed keeps its generation.

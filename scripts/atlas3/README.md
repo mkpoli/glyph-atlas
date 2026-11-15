@@ -245,9 +245,10 @@ before either changes.
 
 The crops the Worker changed before it kept the list are listed once by `answers.py --seed`, which
 sends `migrations-atlas/0019_touched_seed.sql` under the stamp `migration:0019`: every crop an event
-of a generation above 0 names and every crop with `bumps`. `--seed --dry-run` prints how many crops
-each would list and writes nothing; a second `--seed` finds the stamp and writes nothing. A
-publication is refused until that stamp is there. The order of the rollout:
+of a generation above 0 names and every corpus glyph with a `form_bases` row, which a forms decision
+moved to its form. `--seed --dry-run` prints how many crops each would list and writes nothing; a
+second `--seed` finds the stamp and writes nothing. A publication is refused until that stamp is
+there. The order of the rollout:
 
 1. `publish.py --migrate`, which applies migration 0018 (`touched`, `absorbing`);
 2. deploy the Worker that lists touched crops;
