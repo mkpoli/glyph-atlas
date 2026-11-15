@@ -211,6 +211,8 @@ export async function setWrittenFor(form, grapheme, remove = false) {
 }
 
 // One submission id per form, target and direction, so a retry after a lost answer is the same write.
+// A save the site answered drops every id kept for its form: the same filing made again later is a
+// new write, whatever became of an earlier one whose answer was lost.
 const filed = new Map()
 /**
  * File the form written as `form` (a character, a figure or a description, whether or not anyone has
@@ -226,7 +228,7 @@ export async function setStructure(form, target, { remove = false } = {}) {
   try {
     const result = await request(`/atlas/forms/${encodeURIComponent(form)}/structure`, { id: filed.get(key), ...target,
       ...(remove ? { remove: true } : { replace: true }) })
-    filed.delete(key)
+    for (const kept of [...filed.keys()]) if (kept.startsWith(form + '\u0000')) filed.delete(kept)
     return result
   } catch (error) { if (error.status) filed.delete(key); throw error }
 }

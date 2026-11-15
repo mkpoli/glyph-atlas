@@ -36,8 +36,9 @@
   const current = $derived(formOf(crop))
   const BAR = 10
   // The 構形 each form stands under, by the form's text, with who filed it there (`by`, none for one
-  // its description gives): at most NAMES are asked for at once, and a form past them, or one the
-  // site knows no structure of, has none here.
+  // its description gives) and the other 構形 readers filed it under (`others`): at most NAMES are
+  // asked for at once, and a form past them, or one the site knows no structure of, has none here.
+  // What is asked again replaces what was known of those names.
   const HAN = /^\p{Script=Han}/u, NAMES = 48
   const composable = char => HAN.test(char ?? '') || isDescription(char)
   let structureOf = $state(new Map())
@@ -45,8 +46,8 @@
     const wanted = [...new Set(names)].filter(composable).slice(0, NAMES)
     if (!wanted.length) return known
     const found = await readStructures(wanted.join(''))
-    return new Map([...known, ...(found.items ?? []).flatMap(group => group.chars.map(char =>
-      [char, { id: group.id, label: group.label, by: group.claimed?.[char] ?? null }]))])
+    return new Map([...[...known].filter(([char]) => !wanted.includes(char)), ...(found.items ?? []).flatMap(group => group.chars.map(char =>
+      [char, { id: group.id, label: group.label, by: group.claimed?.[char] ?? null, others: found.filed?.[char] ?? [] }]))])
   }
   const composed = (names, known = new Map()) => asked(names, known).catch(() => known)
   const namesOf = found => [...found.members, ...found.variants].map(form => form.char)
@@ -102,9 +103,11 @@
   }
   const actionsOf = group => {
     if (!me || others || disabled || !group.id || !composable(selected)) return []
+    // The reader's own filing is theirs to take back wherever the form stands: another reader's may hold it elsewhere.
     const held = structureOf.get(selected)
-    if (held?.id !== group.id) return [{ key: 'place', label: t('structure.place', { form: selected }), run: () => file(group) }]
-    return held.by?.includes(me) ? [{ key: 'take', label: t('structure.take', { form: selected }), run: () => file(group, true) }] : []
+    const mine = held?.by?.includes(me) && held.id === group.id || (held?.others ?? []).some(other => other.id === group.id && other.by.includes(me))
+    if (mine) return [{ key: 'take', label: t('structure.take', { form: selected }), run: () => file(group, true) }]
+    return held?.id !== group.id ? [{ key: 'place', label: t('structure.place', { form: selected }), run: () => file(group) }] : []
   }
   const barGroups = $derived(grouped(bar).map(group => ({ ...group, actions: actionsOf(group) })))
   const captioned = $derived(barGroups.some(group => group.label))
@@ -145,13 +148,13 @@
     filing = true; fileError = ''
     try {
       await setStructure(form, remove ? { structure: group.id } : targetOf(group), { remove })
-      const read = await asked([form, ...bar.map(chip => chip.char), ...rest.map(item => item.char)], new Map(given(listed)))
+      const read = await asked([form, ...bar.map(chip => chip.char), ...rest.map(item => item.char)], new Map([...given(listed), ...structureOf]))
       if (id === crop?.id) structureOf = read
     } catch (error) { if (id === crop?.id) fileError = error.message }
     filing = false
     // The caption the menu opened from may be gone; the form it moved keeps the focus.
     await tick()
-    if (id === crop?.id) root?.querySelector('.form-chip.chosen, .form-chip.current')?.focus()
+    if (id === crop?.id) (root?.querySelector('.form-chip.chosen') ?? root?.querySelector('.form-chip.current'))?.focus()
   }
   async function link() {
     if (!canLink || linking) return

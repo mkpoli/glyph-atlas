@@ -91,6 +91,35 @@ try {
   await browser.setColorScheme('light')
   console.log(`PASS the crop's form is filed under ${to} from that 構形's caption`)
 
+  // Two other readers file the form elsewhere: it stands there, and the reader's own filing is still
+  // theirs to take back from the caption they filed it under. Left and right in a menu keep the crop.
+  const [elsewhere, [holder]] = before.find(([caption, forms]) => caption && caption !== to && !forms.includes(own))
+  const say = async (reviewer, body) => {
+    const response = await fetch(`${service.base}/atlas/forms/${encodeURIComponent(own)}/structure`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: crypto.randomUUID(), client_id: reviewer, ...body }) })
+    const answer = await response.text()
+    assert(response.ok, `${reviewer} could not file ${own}: ${response.status} ${answer}`)
+    return JSON.parse(answer)
+  }
+  let held
+  for (const reviewer of ['bob', 'cat']) held = (await say(reviewer, { char: holder })).structures.find(value => value.label === elsewhere).structure
+  const address = await browser.evaluate('location.href')
+  await browser.goto(address, { waitFor: ready, timeout: 90000 })
+  await browser.waitFor(under(elsewhere, own), 30000)
+  await menu(to, `Take ${own} out`)
+  await browser.key('ArrowRight')
+  assert(await browser.evaluate('location.href') === address && await browser.evaluate(`!!document.querySelector('.caption-menu:popover-open')`), 'an arrow key in the menu steps to another crop')
+  await browser.key('Enter')
+  await browser.waitFor(`!document.querySelector('.caption-menu:popover-open') && !document.querySelector('dialog[open] .form-chip:disabled')`, 20000)
+  assert(JSON.stringify(filed(own)) === JSON.stringify([elsewhere, elsewhere]), `the reader's own filing was not taken back alone: ${filed(own)}`)
+  for (const reviewer of ['bob', 'cat']) await say(reviewer, { structure: held, remove: true })
+  await browser.goto(address, { waitFor: ready, timeout: 90000 })
+  await browser.waitFor(under(from, own), 30000)
+  await menu(to, `Place ${own} here`)
+  await browser.key('Enter')
+  await browser.waitFor(under(to, own), 20000)
+  console.log(`PASS a filing another reader's outweighs is still taken back from ${to}`)
+
   // Escape closes the menu and leaves the inspector open.
   await menu(to, `Take ${own} out`)
   await browser.key('Escape')
