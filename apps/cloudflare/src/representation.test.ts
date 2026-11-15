@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { anchoredForm, compatibility, formProblem, isSequence, representationId, structureKey, typed, written, type Representation } from './representation'
+import { anchoredForm, compatibility, formProblem, standsFor, isSequence, representationId, structureKey, typed, written, type Representation } from './representation'
 
 test('a character or a description is a form a reviewer may type', () => {
   for (const value of ['𮟃', '還', 'が', '葛\u{E0100}', '⿺辶𦊷', '⿰氵⿱冖月', '⿲木木木', '⿱⿰口口⿰口口', '〾⿰木？', '⿰木', '⿰⺡骨'])
@@ -61,4 +61,13 @@ test('a compatibility ideograph stands for a unified one, and the unified ideogr
   expect(['\uf96f', '\uf9a1', '\ufa55', '\u{2f8dc}'].map(compatibility)).toEqual([true, true, true, true])
   // 﨑 U+FA11 and 﨟 U+FA1F are unified ideographs; 說 with a selector is a sequence, not a code point.
   expect(['說', '説', '\ufa11', '\ufa1f', '說\ufe00', '⿰言兌', 'が', ''].map(compatibility)).toEqual(Array(8).fill(false))
+})
+
+test('a typed compatibility ideograph is the figure it was encoded for, or its unified ideograph', () => {
+  // 突 U+FA55 implements MJ030283, 突 U+7A81 U+E0103; 說 U+F96F has no registered figure.
+  expect(standsFor('\ufa55')).toBe('\u7a81\u{e0103}')
+  expect(standsFor('\uf96f')).toBe('\u8aaa')
+  expect(['說', '\ufa11', '⿰言兌', '說\u{e0101}'].map(standsFor)).toEqual(['說', '\ufa11', '⿰言兌', '說\u{e0101}'])
+  expect(typed('\ufa55')).toEqual({ scheme: 'ivs', value: '\u7a81\u{e0103}', namespace: null, version: null })
+  expect(typed('\uf96f')).toEqual({ scheme: 'unicode', value: '\u8aaa', namespace: null, version: null })
 })

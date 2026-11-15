@@ -5,6 +5,9 @@ naming it, and never its identity. A scheme says how the value is read:
 
 - `unicode`: one character, a base with the combining marks it carries (𮟃, が).
 - `ivs`: one base and one variation selector, an Ideographic Variation Sequence (葛󠄀).
+  A CJK compatibility ideograph is no form of its own (docs/decisions/0013-finer-forms.md): typed, it
+  is the sequence of the figure the MJ文字情報一覧表 implements as it (突 U+FA55 is 突 U+7A81 U+E0103),
+  or with none its unified ideograph (說 U+F96F is 說 U+8AAA).
 - `ids`: an Ideographic Description Sequence for a shape Unicode does not encode, kept exactly as
   written (⿺辶𦊷 is 辶 wrapped round 𦊷). Its operators are BabelStone's as `han_components` reads
   them, each with its own number of operands; its components are ideographs, radicals, strokes,
@@ -29,8 +32,12 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
+from functools import cache
+from pathlib import Path
 
 from .han_components import BINARY, TERNARY, UNARY
+
+MJ_TSV = Path(__file__).resolve().parents[2] / "data" / "vocab" / "mj-kanji.tsv"
 
 SCHEMES = ("unicode", "ivs", "ids", "mj", "glyphwiki", "pua")
 #: The longest value, in code points: a description nested several levels deep stays well inside it.
@@ -148,6 +155,38 @@ def check_text(value: str) -> str:
     return value
 
 
+def compatibility(char: str) -> bool:
+    """Whether `char` is a CJK compatibility ideograph: a code point that stands for a unified
+    ideograph (說 U+F96F and U+F9A1 for 說 U+8AAA), which NFC writes in its place. The twelve unified
+    ideographs of the compatibility block (﨑 U+FA11) stand for nothing."""
+    return (len(char) == 1 and unicodedata.name(char, "").startswith("CJK COMPATIBILITY IDEOGRAPH")
+            and unicodedata.normalize("NFC", char) != char)
+
+
+@cache
+def figures() -> dict[str, str]:
+    """Each compatibility ideograph the MJ文字情報一覧表 gives as a figure's implementation, with that
+    figure's Moji_Joho sequence: 突 U+FA55 with 突 U+7A81 U+E0103 (MJ030283)."""
+    rows = [line.split("\t") for line in MJ_TSV.read_text(encoding="utf-8").splitlines() if not line.startswith("#")]
+    at = {name: index for index, name in enumerate(rows[0])}
+    found: dict[str, str] = {}
+    for row in rows[1:]:
+        code, sequence = row[at["implemented_code_point"]].removeprefix("U+"), row[at["ivs"]]
+        if not code or not sequence or not compatibility(char := chr(int(code, 16))):
+            continue
+        base, selector = (chr(int(part, 16)) for part in sequence.split("_"))
+        if char in found or unicodedata.normalize("NFC", char) != base:
+            raise ValueError(f"the MJ table's figure for U+{code} is not one sequence of its unified ideograph")
+        found[char] = base + selector
+    return found
+
+
+def stands_for(char: str) -> str:
+    """What a compatibility ideograph is written as: its registered figure's sequence, or with none
+    its unified ideograph. Any other text is itself."""
+    return figures().get(char) or unicodedata.normalize("NFC", char) if compatibility(char) else char
+
+
 @dataclass(frozen=True)
 class Representation:
     """One name of a form: a scheme, its value as written, and the namespace and version it holds in."""
@@ -198,8 +237,9 @@ def typed(value: str) -> Representation:
     """What a reviewer typed or picked as a form: a description, a variation sequence or a character.
 
     A private-use character is refused here, since a picker cannot say which mapping it belongs to.
+    A compatibility ideograph is what it stands for (`stands_for`).
     """
-    text = check_text(value)
+    text = stands_for(check_text(value))
     if is_sequence(text):
         return check(Representation("ids", text))
     if _selector(text[-1]):
