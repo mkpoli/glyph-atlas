@@ -39,6 +39,9 @@ case "$group" in
     # R2 bills each request. Comparing modification times costs one HEAD per object, and listing
     # directory by directory one LIST per book; checksums come with a single recursive listing.
     compare=(--checksum --fast-list)
+    # About 155k files of 18 KB on average: a transfer waits on its round trip far longer than on
+    # bandwidth, so many run at once (at 8, a runner was still restoring the store after 35 minutes).
+    parallel=(--transfers 64 --checkers 64)
     ;;
   images)
     pairs=("cache/images:images")
@@ -47,6 +50,7 @@ case "$group" in
     # The image cache is 166 GiB on a network drive: a checksum compare would read all of it on
     # every sync, where a modification-time compare reads only metadata.
     compare=(--fast-list)
+    parallel=(--transfers 8 --checkers 16)
     ;;
   *)
     echo "unknown group: $group" >&2
@@ -88,13 +92,13 @@ for pair in "${pairs[@]}"; do
       echo "restoring r2:$bucket/$remote -> $local"
       checkpoint "$local"
       rclone copy "r2:$bucket/$remote" "$local" \
-        --transfers 8 --checkers 16 "${compare[@]}" "${exclude[@]}"
+        "${parallel[@]}" "${compare[@]}" "${exclude[@]}"
       ;;
     save)
       echo "saving $local -> r2:$bucket/$remote"
       checkpoint "$local"
       rclone "$save" "$local" "r2:$bucket/$remote" \
-        --transfers 8 --checkers 16 "${compare[@]}" "${exclude[@]}"
+        "${parallel[@]}" "${compare[@]}" "${exclude[@]}"
       ;;
     *)
       echo "unknown action: $action" >&2
