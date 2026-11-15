@@ -263,6 +263,19 @@ def test_migrate_applies_the_review_migrations_alone_and_stamps_them(layout, mon
     assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports WHERE stamp LIKE 'migration:001_'") == [{"n": 1}]
 
 
+def test_migrate_gives_a_database_the_list_of_touched_crops_and_its_snapshot(layout, monkeypatch):
+    root, publish, remote = layout
+    made = "SELECT name FROM sqlite_master WHERE name IN ('touched','absorbing') ORDER BY name"
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executescript("DROP TABLE touched; DROP TABLE absorbing;")
+        db.commit()
+    monkeypatch.setattr(sys, "argv", ["publish.py", "--migrate"])
+    publish.main()
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        assert [r[0] for r in db.execute(made)] == ["absorbing", "touched"]
+    assert remote.query("glyph-atlas-v3", "SELECT stamp FROM imports WHERE stamp LIKE 'migration:001_'") == [{"stamp": "migration:0018"}]
+
+
 def test_a_database_that_took_an_earlier_0016_gains_its_new_columns_under_a_stamp_of_their_own(layout, monkeypatch):
     root, publish, remote = layout
     for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):

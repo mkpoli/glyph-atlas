@@ -273,6 +273,8 @@ REVIEW_MIGRATIONS = (
      ("SELECT 1 AS n FROM (SELECT (SELECT count(*) FROM sqlite_master WHERE name IN ('review_revisions','event_reviews'))"
       "+(SELECT count(*) FROM pragma_table_info('crops') WHERE name='bumps')"
       "+(SELECT count(*) FROM pragma_table_info('events') WHERE name='published') AS k) WHERE k=4")),
+    ("0018", "0018_touched.sql",
+     "SELECT 1 AS n FROM (SELECT count(*) AS k FROM sqlite_master WHERE name IN ('touched','absorbing')) WHERE k=2"),
 )
 
 
@@ -288,7 +290,7 @@ def missing_only(sql, columns):
 
 
 def migrate_reviews(atlas, dry):
-    """Migrations 0015 and 0016 on D1 and on the local copy, where each lacks what it makes: a copy that
+    """Migrations 0015, 0016 and 0018 on D1 and on the local copy, where each lacks what it makes: a copy that
     took part of one takes the rest. They reach D1 before the Worker that reads them deploys; the local copy
     takes them here. A dry run changes neither."""
     if dry:
@@ -1160,7 +1162,7 @@ def main():
     parser.add_argument("--replacements", action="store_true",
                         help="name the replacement of every retired crop from source-unit_redirects.sqlite")
     parser.add_argument("--migrate", action="store_true",
-                        help="only apply migrations 0015 and 0016 where they are missing, on D1 and the local copy, stamped")
+                        help="only apply migrations 0015, 0016 and 0018 where they are missing, on D1 and the local copy, stamped")
     args = parser.parse_args()
     if args.catalogue is None and not args.replacements and not args.migrate:
         parser.error("a catalogue, --replacements, or both")

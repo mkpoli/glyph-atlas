@@ -195,7 +195,7 @@ crop back writes a publication event (kind 8) one revision on, naming what it se
 That event is the boundary: no view from before it stands. A book's style moves nothing. An undo never
 writes a column a later publication set; a reviewer's own undo is refused, crop by crop, where one set what
 the review set, and the submission counts as undone only once every review in it is. An admin's rejection
-is never refused. Migrations 0015 and 0016 are applied to glyph-atlas-v3 before the Worker that reads them
+is never refused. Migrations 0015, 0016 and 0018 are applied to glyph-atlas-v3 before the Worker that reads them
 deploys (`publish.py --migrate`); `publish.py` applies each part where it is missing, on D1 and on the
 local copy.
 
