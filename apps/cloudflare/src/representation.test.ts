@@ -70,4 +70,7 @@ test('a typed compatibility ideograph is the figure it was encoded for, or its u
   expect(['說', '\ufa11', '⿰言兌', '說\u{e0101}'].map(standsFor)).toEqual(['說', '\ufa11', '⿰言兌', '說\u{e0101}'])
   expect(typed('\ufa55')).toEqual({ scheme: 'ivs', value: '\u7a81\u{e0103}', namespace: null, version: null })
   expect(typed('\uf96f')).toEqual({ scheme: 'unicode', value: '\u8aaa', namespace: null, version: null })
+  // As the base of a sequence or a part of a description it is its unified ideograph.
+  expect(typed('\ufa55\u{e0103}')).toEqual({ scheme: 'ivs', value: '\u7a81\u{e0103}', namespace: null, version: null })
+  expect(typed('⿰\ufa55木')).toEqual({ scheme: 'ids', value: '⿰\u7a81木', namespace: null, version: null })
 })

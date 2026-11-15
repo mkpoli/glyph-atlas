@@ -183,8 +183,11 @@ def figures() -> dict[str, str]:
 
 def stands_for(char: str) -> str:
     """What a compatibility ideograph is written as: its registered figure's sequence, or with none
-    its unified ideograph. Any other text is itself."""
-    return figures().get(char) or unicodedata.normalize("NFC", char) if compatibility(char) else char
+    its unified ideograph. Inside a longer text, the base of a sequence or a part of a description,
+    it is its unified ideograph."""
+    if compatibility(char):
+        return figures().get(char) or unicodedata.normalize("NFC", char)
+    return "".join(unicodedata.normalize("NFC", c) if compatibility(c) else c for c in char)
 
 
 @dataclass(frozen=True)

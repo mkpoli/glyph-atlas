@@ -64,8 +64,10 @@ The 構形 is unchanged: a compatibility ideograph has had its unified ideograph
   ideograph's glyph and names no visible difference.
 - A compatibility ideograph of another standard whose glyph differs (杓 U+2F8DC, from CNS 11643) has
   no registered figure here; its shape is kept by a description, or lost.
-- The local review store keeps a compatibility ideograph a reviewer gives as a character
-  (`review/corpus_reviews.py`); step 4 changes that.
+- A compatibility ideograph a reviewer gives as a crop's character, types into a search or names in
+  an address is kept as written, by the Worker (`input.ts`) and by the local review store
+  (`review/corpus_reviews.py`); step 4 changes that. The Forms tool takes a family member as a form
+  without this reading, so it changes with step 5.
 
 ## Sources
 

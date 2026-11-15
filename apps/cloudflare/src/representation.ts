@@ -51,9 +51,10 @@ export const compatibility = (char: string) => /^\p{Script=Han}$/u.test(char) &&
 let figures: Map<string, string> | null = null;
 /** What a compatibility ideograph is written as: the Moji_Joho sequence of the figure the
  *  MJ文字情報一覧表 implements as it (突 U+FA55 is 突 U+7A81 U+E0103), or with none its unified ideograph
- *  (說 U+F96F is 說 U+8AAA). Any other text is itself. */
+ *  (說 U+F96F is 說 U+8AAA). Inside a longer text, the base of a sequence or a part of a description, it
+ *  is its unified ideograph. */
 export function standsFor(char: string): string {
-  if (!compatibility(char)) return char;
+  if (!compatibility(char)) return [...char].map(c => compatibility(c) ? c.normalize('NFC') : c).join('');
   figures ??= new Map(MOJI_JOHO.split(' ').map(pair => {
     const [code, selector] = pair.split(':').map(hex => String.fromCodePoint(parseInt(hex, 16)));
     return [code, code.normalize('NFC') + selector];

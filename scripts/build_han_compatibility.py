@@ -3,7 +3,7 @@
 A compatibility ideograph stands for a unified ideograph and is no form of its own
 (docs/decisions/0013-finer-forms.md). Where the MJ文字情報一覧表 gives the compatibility code point
 as a figure's implementation (data/vocab/mj-kanji.tsv: U+FA55 implements MJ030283, 7A81_E0103), that
-figure's Moji_Joho sequence names it; `glyph_atlas.representation.figure_of` reads the same rows.
+figure's Moji_Joho sequence names it; `glyph_atlas.representation.figures` reads the same rows.
 
     uv run scripts/build_han_compatibility.py
 
