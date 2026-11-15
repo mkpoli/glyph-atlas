@@ -6,13 +6,23 @@ publish.py runs it after every publish that sent something, so the counts follow
 
 A publication bumps `generation` in glyph-atlas-v3 from G to G + 1, writes its answers under
 `v3/pub/<pub>/`, and then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A count is the
-answer plus the `tally` rows above `through_gen` (decision record 0005). Answers equal to the last
-publication's (out/answers-published.json, a digest of every file less its `pub` and of the site values)
-publish nothing: no bump, no object, no row.
+answer plus the `tally` rows above `through_gen` (decision record 0005). With no crop listed in
+`touched`, answers equal to the last publication's (out/answers-published.json, a digest of every file
+less its `pub` and of the site values) publish nothing: no bump, no object, no row.
 
-The counts come from the local copy of glyph-atlas-v3, which every publish replays. Reviews on the
-new layout are absorbed by reading their events; until that exists, a database holding events is
-refused.
+The counts come from the local copy of glyph-atlas-v3, which every publish replays and which takes
+the site's own changes here. The Worker lists every crop whose row it changes in `touched`, with the
+generation of the change (migration 0018). Once the bump to G + 1 has applied, the publication copies
+each crop listed through G, as its row then stands, into `absorbing` and takes it off the list; a crop
+changed again at G + 1 before that copy stays listed for the next publication. The local copy then
+takes each copied row whole, with the revision the offline store counts for the crop and whether it
+keeps a reviewer's style, as a publish's read-back takes a guarded crop's (`publish.take_row`), the
+graphemes those rows name and the codes D1 holds and the local copy lacks; a crop D1 no longer holds
+leaves the local copy. `absorbing` is emptied once the local copy has committed, so a publication that
+stopped after its bump is finished by the next run, which applies what `absorbing` still holds before
+anything else and publishes through a newer generation. The answers are written after that, from the
+local copy as it then stands. A dry run reads how many crops are listed, writes the answers of the
+local copy as it is, and changes neither database.
 
 - `counts/<shard>.json.gz`: per character (grapheme id, in shard id % SHARDS), one cell per kind,
   style, state, withheld, witness decade and visual group, with its number of crops. Codes are the
@@ -66,7 +76,19 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
-from publish import BUCKET, OUT, R2_REMOTE, applied, query, upload
+from publish import (
+    BUCKET,
+    CROP_COLS,
+    LOGICAL,
+    OUT,
+    OWN_STYLE,
+    R2_REMOTE,
+    REVIEWER_STYLES,
+    applied,
+    query,
+    take_row,
+    upload,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cloudflare_schema import category_of
@@ -102,6 +124,13 @@ UNLISTED = ("text", "line", "context_image", "context_box", "crop_box", "image_p
 # Records read from R2 at once, and how often one read is tried.
 READS = 32
 READ_ATTEMPTS = 4
+DATABASE = "glyph-atlas-v3"
+# Rows of `absorbing`, and graphemes, one query reads.
+ABSORB_CHUNK = 1000
+# A listed crop's row as `absorbing` keeps it: its columns by name, the revision the offline store counts
+# for it (`logical`) and whether it keeps a reviewer's style (`own_style`), each read from the crop `c`.
+SNAPSHOT_ROW = ("json_object(" + ",".join(f"'{c}',c.{c}" for c in CROP_COLS)
+                + f",'logical',{LOGICAL},'own_style',{OWN_STYLE})")
 
 
 def cells(atlas, key, where):
@@ -302,9 +331,82 @@ def gallery(atlas, folder, pub, read):
     return files, pools_index
 
 
-def unabsorbed(through):
-    """Whether glyph-atlas-v3 holds a review event of a generation from 1 to `through`."""
-    return query("glyph-atlas-v3", f"SELECT count(*) AS n FROM events WHERE gen > 0 AND gen <= {through}")[0]["n"] > 0
+def snapshot(through):
+    """Copy the row of every crop listed through generation `through` into `absorbing`, and take those
+    crops off the list. It runs once the bump from `through` has applied, so no write of that generation
+    or an earlier one is still to come. A crop changed again in the next generation before this copy
+    carries that generation in `touched`: it stays listed, and the next publication takes it. Each
+    statement is whole on its own, and both can run again: the copy replaces a row it made before, and
+    the removal names the same generations."""
+    query(DATABASE, f"INSERT OR REPLACE INTO absorbing(crop, through, row) SELECT t.crop, {through}, "
+                    f"CASE WHEN c.id IS NULL THEN NULL ELSE {SNAPSHOT_ROW} END "
+                    f"FROM touched t LEFT JOIN crops c ON c.id = t.crop WHERE t.gen <= {through}; "
+                    f"DELETE FROM touched WHERE gen <= {through}")
+
+
+def absorb(atlas, ids):
+    """Take what `absorbing` holds into the local copy (`atlas`) and empty it; the number of crops it held.
+    The graphemes the rows name and the codes D1 holds go in first, the codes also into the id allocator
+    (`ids`, out/mirror.sqlite), which numbers the next code a publish needs. Everything is read and
+    compared before anything is written: an id or code that stands for another text or key here stops
+    the run with `absorbing` as it was. `absorbing` is emptied once both local databases have committed,
+    so a run that stops anywhere is finished by the next."""
+    held, last = [], -1
+    while True:
+        chunk = query(DATABASE, f"SELECT crop, through, row FROM absorbing WHERE crop > {last} ORDER BY crop LIMIT {ABSORB_CHUNK}")
+        held += chunk
+        if len(chunk) < ABSORB_CHUNK:
+            break
+        last = chunk[-1]["crop"]
+    if not held:
+        return 0
+    rows = {r["crop"]: json.loads(r["row"]) if r["row"] else None for r in held}
+    named = sorted({row[c] for row in rows.values() if row for c in ("char", "family") if row[c] is not None})
+    graphemes = [g for i in range(0, len(named), ABSORB_CHUNK)
+                 for g in query(DATABASE, f"SELECT id, text, head FROM graphemes WHERE id IN ({','.join(map(str, named[i:i + ABSORB_CHUNK]))})")]
+    codes = [(c["field"], c["code"], c["key"]) for c in query(DATABASE, "SELECT field, code, key FROM codes")]
+    clashes, new_graphemes, new_codes, new_ids = [], [], [], []
+    for g in graphemes:
+        here = atlas.execute("SELECT id, text FROM graphemes WHERE id=? OR text=?", (g["id"], g["text"])).fetchall()
+        if any(row != (g["id"], g["text"]) for row in here):
+            clashes.append(f"grapheme {g['id']} is {g['text']!r} in D1 and the local copy holds {here}")
+        elif not here:
+            new_graphemes.append((g["id"], g["text"], g["head"]))
+    for code in codes:
+        field = code[0]
+        here = atlas.execute("SELECT field, code, key FROM codes WHERE field=? AND (code=? OR key=?)", code).fetchall()
+        if any(row != code for row in here):
+            clashes.append(f"code {code} of D1 is {here} in the local copy")
+        elif not here:
+            new_codes.append(code)
+            # The allocator takes it too, so the next code of its field is numbered after it.
+            allocated = ids.execute("SELECT field, code, key FROM codes WHERE field=? AND (code=? OR key=?)", code).fetchall()
+            if any(row != code for row in allocated):
+                clashes.append(f"code {code} of D1 is {allocated} in out/mirror.sqlite")
+            elif not allocated:
+                new_ids.append((field, code[2], code[1]))
+    if clashes:
+        sys.exit(f"glyph-atlas-v3 and the local copy number {len(clashes)} graphemes or codes differently, for example: "
+                 f"{clashes[0]}; nothing absorbed, and `absorbing` keeps its {len(held)} crops")
+    atlas.execute(REVIEWER_STYLES)
+    atlas.executemany("INSERT INTO graphemes(id,text,head) VALUES(?,?,?)", new_graphemes)
+    atlas.executemany("INSERT INTO codes(field,code,key) VALUES(?,?,?)", new_codes)
+    ids.executemany("INSERT INTO codes(field,key,code) VALUES(?,?,?)", new_ids)
+    taken = removed = neither = 0
+    for crop, row in rows.items():
+        if row is None and not atlas.execute("SELECT 1 FROM crops WHERE id=?", (crop,)).fetchone():
+            neither += 1
+            continue
+        take_row(atlas, crop, row, row and {"revision": row["logical"], "at": row["revision"], "own": row["own_style"]})
+        taken, removed = taken + (row is not None), removed + (row is None)
+    # The allocator first: a code it holds and the local copy lacks is copied again by the next run, and
+    # one the local copy alone held would leave the allocator to give its number to another key.
+    ids.commit()
+    atlas.commit()
+    query(DATABASE, f"DELETE FROM absorbing WHERE through <= {max(r['through'] for r in held)}")
+    print(f"absorbed {len(held)} crops from glyph-atlas-v3: {taken} rows taken, {removed} removed, {neither} in neither "
+          f"database, with {len(new_graphemes)} graphemes and {len(new_codes)} codes", flush=True)
+    return len(held)
 
 
 def answers_digest(folder, site):
@@ -327,33 +429,28 @@ def write(path, body):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--dry-run", action="store_true", help="write the answers locally and change nothing remote")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="write the answers of the local copy as it is; change neither database and upload nothing")
     args = parser.parse_args()
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
     publication(args.dry_run)
 
 
-def publication(dry_run, read=None):
-    """Write and publish the answers; the caller holds out/mirror.lock (publish.py runs this last)."""
-    mirror = sqlite3.connect(OUT / "mirror.sqlite")
-    if mirror.execute("SELECT 1 FROM sqlite_master WHERE name = 'pending'").fetchone() and \
-            mirror.execute("SELECT count(*) FROM pending").fetchone()[0]:
-        sys.exit("a publish is unfinished; run publish.py to finish it first")
-    pub = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    atlas = sqlite3.connect(OUT / "atlas.sqlite")
-    folder = OUT / "pub" / pub
-    # The sample's records are read before the bump, so a failed read leaves the generation where it was.
-    sampled, pool_sizes = gallery(atlas, folder, pub, read or r2_reader())
+def written(atlas, folder, pub, read):
+    """Write a publication's answers under `folder` from the local copy as it stands: its files by where
+    they go (`counts`, `top`, `sampled`), the sample's pools, the site values, the digest of it all and a
+    line of what was counted."""
+    sampled, pool_sizes = gallery(atlas, folder, pub, read)
     shards = defaultdict(dict)
     for char, rows in cells(atlas, "char", "char IS NOT NULL").items():
         shards[char % SHARDS][char] = rows
     families = defaultdict(dict)
     for family, rows in cells(atlas, "family", "char IS NULL AND family IS NOT NULL").items():
         families[family % SHARDS][family] = rows
-    files = [write(folder / "counts" / f"{shard}.json.gz", {"pub": pub, "cell": CELL, "chars": shards.get(shard, {}),
-                                                            "families": families.get(shard, {})})
-             for shard in range(SHARDS)]
+    counts = [write(folder / "counts" / f"{shard}.json.gz", {"pub": pub, "cell": CELL, "chars": shards.get(shard, {}),
+                                                             "families": families.get(shard, {})})
+              for shard in range(SHARDS)]
     unread = cells(atlas, "category", "char IS NULL")
     # A crop with no category is filed under -1, as `tally` writes unknown.
     top = [write(folder / "unread.json.gz", {"pub": pub, "cell": CELL,
@@ -368,49 +465,79 @@ def publication(dry_run, read=None):
     # the published collection status rather than one read from no folders.
     site = {**({"collection": status()} if COLLECTION.is_dir() else {}),
             **({"corpus_index": json.loads(CORPUS_INDEX.read_text())} if CORPUS_INDEX.exists() else {})}
-    digest = answers_digest(folder, site)
+    counted = (f"{sum(len(s) for s in shards.values())} characters in {SHARDS} shards, "
+               f"{sum(len(s) for s in families.values())} families of crops with no character, "
+               f"{sum(len(v) for v in unread.values())} unread cells, {len(browse)} browse cells, {len(glyphs)} corpus cells, "
+               f"gallery {', '.join(f'{k} {v['glyphs']}' for k, v in pool_sizes.items())} -> {folder}")
+    return {"counts": counts, "top": top, "sampled": sampled, "pools": pool_sizes, "site": site,
+            "digest": answers_digest(folder, site), "counted": counted}
+
+
+def publication(dry_run, read=None):
+    """Write and publish the answers; the caller holds out/mirror.lock (publish.py runs this last)."""
+    mirror = sqlite3.connect(OUT / "mirror.sqlite")
+    if mirror.execute("SELECT 1 FROM sqlite_master WHERE name = 'pending'").fetchone() and \
+            mirror.execute("SELECT count(*) FROM pending").fetchone()[0]:
+        sys.exit("a publish is unfinished; run publish.py to finish it first")
+    pub = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    atlas = sqlite3.connect(OUT / "atlas.sqlite")
+    folder = OUT / "pub" / pub
+    read = read or r2_reader()
     last = OUT / "answers-published.json"
     published = json.loads(last.read_text()) if last.exists() else {}
-    if published.get("digest") == digest:
-        shutil.rmtree(folder)
-        print(f"the answers equal publication {published['pub']}'s; nothing published", flush=True)
+    if dry_run:
+        # The answers of the local copy as it is: the listed crops are counted, and nothing is taken.
+        waiting = query(DATABASE, "SELECT (SELECT count(*) FROM touched) AS listed, (SELECT count(*) FROM absorbing) AS copied, "
+                                  "(SELECT gen FROM generation WHERE id = 0) AS gen")[0]
+        built = written(atlas, folder, pub, read)
+        print(f"pub {pub} at generation {waiting['gen']}: {built['counted']}", flush=True)
+        print(f"dry run: {waiting['listed']} crops are listed for the next publication and {waiting['copied']} wait in "
+              f"`absorbing`; none was taken, nothing was uploaded and the generation was not bumped", flush=True)
+        if not waiting["listed"] and not waiting["copied"] and published.get("digest") == built["digest"]:
+            shutil.rmtree(folder)
+            print(f"the answers equal publication {published['pub']}'s; a publication would publish nothing", flush=True)
         return
-    through = query("glyph-atlas-v3", "SELECT gen FROM generation WHERE id = 0")[0]["gen"]
-    # Every review up to G is in the answers. None is absorbed yet, so a database holding one is refused,
-    # before the bump and again after it, since a review can land at G until the bump. The history load
-    # writes its events at generation 0, and the local copy holds them: they count as absorbed.
-    if unabsorbed(through):
-        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; nothing published")
-    if not dry_run:
-        # Reviews written after the bump carry the next generation, so the answers stand through G. The
-        # bump names G and stamps this publication in the same statement, so a resent statement cannot
-        # bump twice and only the run whose stamp is there made it.
-        query("glyph-atlas-v3", f"UPDATE generation SET gen = {through + 1} WHERE id = 0 AND gen = {through}; "
-                                f"INSERT INTO imports(stamp, at) SELECT 'pub:{pub}', unixepoch() WHERE changes() = 1")
-        if not applied("glyph-atlas-v3", f"pub:{pub}"):
-            sys.exit(f"another publication bumped generation {through}; nothing published")
-    if unabsorbed(through):
-        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; the pointer stays")
+    # What a publication that stopped after its bump left in `absorbing` goes into the local copy first.
+    absorb(atlas, mirror)
+    built = None
+    if not query(DATABASE, "SELECT crop FROM touched LIMIT 1"):
+        # No crop is listed: the sample's records are read before the bump, so a failed read leaves the
+        # generation where it was, and answers equal to the last publication's publish nothing.
+        built = written(atlas, folder, pub, read)
+        if published.get("digest") == built["digest"]:
+            shutil.rmtree(folder)
+            print(f"the answers equal publication {published['pub']}'s; nothing published", flush=True)
+            return
+    through = query(DATABASE, "SELECT gen FROM generation WHERE id = 0")[0]["gen"]
+    # Reviews written after the bump carry the next generation, so the answers stand through G. The
+    # bump names G and stamps this publication in the same statement, so a resent statement cannot
+    # bump twice and only the run whose stamp is there made it.
+    query(DATABASE, f"UPDATE generation SET gen = {through + 1} WHERE id = 0 AND gen = {through}; "
+                    f"INSERT INTO imports(stamp, at) SELECT 'pub:{pub}', unixepoch() WHERE changes() = 1")
+    if not applied(DATABASE, f"pub:{pub}"):
+        sys.exit(f"another publication bumped generation {through}; nothing published")
+    # Every crop the site changed through G goes into the local copy, a crop listed while the answers
+    # above were being written among them; the answers are then written from the local copy as it stands
+    # with them. A read of the sample that fails here leaves the bump in place, and the next run
+    # publishes through the generation after it.
+    snapshot(through)
+    if absorb(atlas, mirror) or built is None:
+        if built:
+            shutil.rmtree(folder)
+        built = written(atlas, folder, pub, read)
 
     pointer = write(OUT / "pub" / f"pointer-{pub}" / "pointer.json", {"pub": pub, "through_gen": through})
-    characters_counted = sum(len(s) for s in shards.values())
-    print(f"pub {pub} through generation {through}: {characters_counted} characters in {SHARDS} shards, "
-          f"{sum(len(s) for s in families.values())} families of crops with no character, "
-          f"{sum(len(v) for v in unread.values())} unread cells, {len(browse)} browse cells, {len(glyphs)} corpus cells, "
-          f"gallery {', '.join(f'{k} {v['glyphs']}' for k, v in pool_sizes.items())} -> {folder}", flush=True)
-    if dry_run:
-        print("dry run: nothing uploaded; the generation was not bumped", flush=True)
-        return
-    upload([f for f in files if f.parent.name == "counts"], f"{PUB_PREFIX}{pub}/counts/")
-    upload(top, f"{PUB_PREFIX}{pub}/")
-    for name in pool_sizes:
-        upload([f for f in sampled if f.parent.name == name], f"{PUB_PREFIX}{pub}/gallery/{name}/")
-    upload([f for f in sampled if f.name == "index.json.gz"], f"{PUB_PREFIX}{pub}/gallery/")
-    if site:
-        query("glyph-atlas-v3", "; ".join(site_row(k, v) for k, v in site.items()))
+    print(f"pub {pub} through generation {through}: {built['counted']}", flush=True)
+    upload(built["counts"], f"{PUB_PREFIX}{pub}/counts/")
+    upload(built["top"], f"{PUB_PREFIX}{pub}/")
+    for name in built["pools"]:
+        upload([f for f in built["sampled"] if f.parent.name == name], f"{PUB_PREFIX}{pub}/gallery/{name}/")
+    upload([f for f in built["sampled"] if f.name == "index.json.gz"], f"{PUB_PREFIX}{pub}/gallery/")
+    if built["site"]:
+        query(DATABASE, "; ".join(site_row(k, v) for k, v in built["site"].items()))
     # The pointer moves last, once everything it names is in place.
     upload([pointer], POINTER_PREFIX)
-    last.write_text(json.dumps({"pub": pub, "digest": digest}) + "\n")
+    last.write_text(json.dumps({"pub": pub, "digest": built["digest"]}) + "\n")
     print(f"v3/pointer.json names {pub}", flush=True)
 
 
