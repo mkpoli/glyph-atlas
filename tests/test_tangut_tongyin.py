@@ -104,7 +104,15 @@ def test_the_placement_tables_agree_with_each_other():
     assert len(set(places)) == len(places) == 5673
     # 同音 enters each character once.
     assert len({row["char"] for row in characters}) == len(characters)
-    assert Counter(row["quality"] for row in characters).keys() == {"ok", "low-score", "size", "faint"}
+    assert Counter(row["quality"] for row in characters).keys() == {"ok", "low-score", "size", "faint", "sparse"}
+    # A half-folio whose columns were not found keeps none of its chance matches.
+    accepted: dict[tuple[str, str], list[bool]] = {}
+    for row in characters:
+        accepted.setdefault((row["folio"], row["side"]), []).append(float(row["score"]) >= 0.28)
+    for row in characters:
+        found = accepted[(row["folio"], row["side"])]
+        assert (row["quality"] == "sparse") <= (2 * sum(found) < len(found))
+        assert not (row["quality"] == "ok" and 2 * sum(found) < len(found))
     text = {tangut_tongyin.place_id(row): row["text"] for row in columns}
     held: dict[str, list[tuple[int, str]]] = {}
     for row in characters:
