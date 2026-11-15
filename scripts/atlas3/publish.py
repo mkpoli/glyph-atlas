@@ -220,6 +220,11 @@ UNCOUNTED = f"(e.kind IN (7,{PUBLISHED},{STYLE_KIND}) OR " + MARKED.format(e="e"
 BASE_CHUNK = 3000
 OWN_STYLE = (f"coalesce((SELECT e.style IS NOT NULL FROM events e WHERE e.crop=c.id AND e.kind={STYLE_KIND} "
              "ORDER BY e.revision DESC LIMIT 1),0)")
+# Crops D1 last answered as keeping a reviewer's style (OWN_STYLE), as the local copy last took their rows
+# (`take_row`): it holds D1's row for them, so their style is not the publication's.
+REVIEWER_STYLES = "CREATE TABLE IF NOT EXISTS reviewer_styles(crop INTEGER PRIMARY KEY)"
+
+
 def _logical(anchors=True, bumps=True):
     """`LOGICAL`, for a database with or without the anchors (`review_revisions`) and the `bumps` column."""
     anchored = ("(SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at "
@@ -597,9 +602,7 @@ class Mirror:
         # The runs' answers are written again for the books and crops a publish changes (run_answers.py).
         for name, cols in (("run_book_all", "book, size, graphemes"), ("run_second_all", "second"), ("run_third_all", "third")):
             self.runs.execute(f"CREATE INDEX IF NOT EXISTS {name} ON runs({cols})")
-        # Crops D1 last answered as keeping a reviewer's style (OWN_STYLE), as the read-back found them: the local
-        # copy holds D1's row for them, so their style is not the publication's.
-        self.atlas.execute("CREATE TABLE IF NOT EXISTS reviewer_styles(crop INTEGER PRIMARY KEY)")
+        self.atlas.execute(REVIEWER_STYLES)
         self.atlas.commit()
         self.runs.commit()
         self.head, self.runs_sql = [], []
@@ -941,6 +944,26 @@ def style_index_entries(atlas, crops):
     return out
 
 
+def take_row(atlas, cid, row, counted):
+    """Put D1's row of one crop in the local copy (`row`, its columns by name), or take the crop out of it
+    where D1 holds none (`row` None). `counted` is what D1 counts for the crop, None with no row: the
+    revision the store counts (`revision`, LOGICAL), which the next publication speaks against, the crop's
+    own revision then (`at`), and whether it keeps a reviewer's style (`own`, OWN_STYLE), which a
+    publication leaves as it is."""
+    if counted and counted["own"]:
+        atlas.execute("INSERT OR IGNORE INTO reviewer_styles VALUES(?)", (cid,))
+    else:
+        atlas.execute("DELETE FROM reviewer_styles WHERE crop=?", (cid,))
+    if counted:
+        atlas.execute("INSERT INTO review_revisions(crop,revision,at) VALUES(?,?,?) ON CONFLICT(crop) DO UPDATE "
+                      "SET revision=excluded.revision,at=excluded.at", (cid, counted["revision"], counted["at"]))
+    if row is None:
+        atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
+    else:
+        atlas.execute(f"INSERT OR REPLACE INTO crops({','.join(CROP_COLS)}) VALUES({','.join('?' * len(CROP_COLS))})",
+                      [row[c] for c in CROP_COLS])
+
+
 def deliver(m, run):
     """Finish a publish whose ids are allocated. Every step can run again: bundles to R2, then each
     part to D1, then the same part to the local copy, in order; then the guarded rows are read back."""
@@ -984,14 +1007,7 @@ def deliver(m, run):
                 # and whether it keeps a reviewer's style. One query, so the read-back adds no round trip.
                 logical = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision,{OWN_STYLE} AS own "
                                                               f"FROM crops c WHERE c.id IN ({','.join(map(str, chunk))})")}
-                owned = {cid for cid, r in logical.items() if r["own"]}
-                m.atlas.executemany("DELETE FROM reviewer_styles WHERE crop=?", [(cid,) for cid in chunk if cid not in owned])
-                m.atlas.executemany("INSERT OR IGNORE INTO reviewer_styles VALUES(?)", [(cid,) for cid in owned])
                 for cid in chunk:
-                    if cid in logical:
-                        r = logical[cid]
-                        m.atlas.execute("INSERT INTO review_revisions(crop,revision,at) VALUES(?,?,?) ON CONFLICT(crop) DO UPDATE "
-                                        "SET revision=excluded.revision,at=excluded.at", (cid, r["revision"], r["at"]))
                     local = m.atlas.execute("SELECT * FROM crops WHERE id=?", (cid,)).fetchone()
                     # The local copy holds what the publication meant D1 to have; any column D1 holds otherwise was
                     # kept by a write since (a revision alone can coincide with one).
@@ -1004,12 +1020,7 @@ def deliver(m, run):
                                 m.atlas.execute("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) "
                                                 "SELECT gen,?,?,?,?,?,?,?,?,?,? FROM generation WHERE id=0 "
                                                 "ON CONFLICT DO UPDATE SET n=n+excluded.n", [*cell, step])
-                    if cid in found:
-                        r = found[cid]
-                        m.atlas.execute(f"INSERT OR REPLACE INTO crops({','.join(CROP_COLS)}) VALUES({','.join('?' * len(CROP_COLS))})",
-                                        [r[c] for c in CROP_COLS])
-                    else:
-                        m.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
+                    take_row(m.atlas, cid, found.get(cid), logical.get(cid))
             # A flagged glyph's corpus row, finding, overlay and events as D1 holds them: a flag D1 refused
             # (a round or a review wrote about the glyph first) leaves D1's rows.
             for i in range(0, len(flagged), 200):
