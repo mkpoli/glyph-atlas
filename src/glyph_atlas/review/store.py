@@ -1190,6 +1190,19 @@ class Store:
         with self._lock, self._connection() as conn:
             return crop_forms.written_for(conn, form)
 
+    def set_structure(self, **filed: Any) -> dict[str, Any]:
+        """File a form under a structure, or take the claim back (`crop_forms.set_structure`), and return
+        the structures the form stands under now with those of the claims taken back."""
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            response = crop_forms.set_structure(conn, **filed)
+            return {"id": response["subject"], "structures": crop_forms.structures_of(conn, response["subject"]),
+                    "replaced": response.get("replaced", [])}
+
+    def claimed_structures(self, names: Iterable[str]) -> dict[str, dict[str, Any]]:
+        """The 構形 a reader filed each written value under (`crop_forms.claimed_structures`)."""
+        with self._lock, self._connection() as conn:
+            return crop_forms.claimed_structures(conn, names)
+
     def written_forms(self, grapheme: str) -> list[dict[str, Any]]:
         """The described forms a grapheme's card carries (`crop_forms.written_forms`)."""
         with self._lock, self._connection() as conn:
