@@ -138,7 +138,7 @@ python models/benchmark/cuts.py run --cutter lattice --split test --pages 40
 | cutter | boxed | cut | yield | precision | mean IoU | s/page |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `consensus` | 95.9% | 89.4% | 37.1% | 99.7% | 0.892 | 27.6 |
-| `lattice` | 95.2% | 91.4% | 64.0% | 99.8% | 0.886 | 1.8 |
+| `lattice` | 95.1% | 91.4% | 63.3% | 99.8% | 0.886 | 2.7 |
 
 `consensus` is the extraction policy `single-character-consensus-v3`: whole detector boxes aligned by
 `glyph_atlas.align`, published when the classifier and NDLkotenOCR both read the character. It

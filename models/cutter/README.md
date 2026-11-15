@@ -35,25 +35,38 @@ accepts at the probability that gave 0.985 precision on `val`.
 ## Reviewed crops
 
 A crop a reviewer matched to its character was cut right, and one reported as two characters, part
-of one or none was cut wrong. The site's export of 2026-11-15 judges 819 crops of the extraction
-this way, 816 right and 3 wrong, on 664 pages of 232 books. Such a page knows the boxes of those
-characters and nothing of the others on it, so a candidate box is labelled only where a reviewed
-box decides it, and a placement only for a reviewed character.
+of one or none was cut wrong. A reviewer who drew a box again before matching it confirmed the
+box drawn, and where that differs from the first as two cuts of a character do, the first was cut
+wrong. The site's export of 2026-11-15 judges 970 extracted crops this way; 819 are on 664 pages
+of 232 books of the Honkoku extraction, 816 cut right and 3 cut wrong, and two boxes drawn again
+add the box they replaced to the wrong ones. The others are on Wikisource and NDL pages.
+Such a page knows the boxes of those characters and nothing of the others on it, so a candidate
+box is labelled only where a reviewed box decides it, and a placement only for a reviewed
+character.
 
 One book in four is held out by its id: 547 crops of 167 books are fitted on, 269 crops of 65
 books measure the result (`measured-held.json`). The rows of the reviewed pages together weigh a
 tenth of CODH's (`fit --reviewed 0.1`); at three tenths 97.4% of the boxes published on CODH's test
-books reached IoU 0.7.
+books reached IoU 0.7 in an earlier fit.
 
 | | CODH alone | with reviewed crops |
 | --- | ---: | ---: |
-| CODH test, characters published at IoU ≥ 0.7 | 60.7% | 63.2% |
+| CODH test, characters published at IoU ≥ 0.7 | 60.7% | 62.6% |
 | CODH test, published boxes at IoU ≥ 0.7 | 97.7% | 97.5% |
-| CODH test, characters published where 98% of boxes reach IoU 0.7 | 55.7% | 57.1% |
+| CODH test, characters published where 98% of boxes reach IoU 0.7 | 55.7% | 57.4% |
 | held-out reviewed crops published | 246 of 269 | 249 of 269 |
 
 Every reviewed crop is one an earlier gate had published, so the held-out crops are easier than
-the collection's pages, and three reported cuts are too few to teach what a wrong one looks like.
+the collection's pages, and five cuts known to be wrong are too few to teach what one looks like.
+On the 213 held-out pages, whose other characters no one has judged, the gate fitted on CODH alone
+accepts 91,222 placements and this one 94,591.
+
+The reviewed crops of Wikisource (`build-reviewed --queue ... --fetch`, 104 crops of Chinese prints
+on 89 pages, and two of one NDL page) were added in one fit and are left out: on the held-out Honkoku crops that fit
+published 242 of 269, on CODH's test books 62.0% at IoU ≥ 0.7, and of 45 held-out Wikisource crops
+40, where the gate fitted on CODH alone publishes 41. Two fits from the same crops, the pages
+detected again, differ by about 0.7 of a point on CODH's test books, so smaller differences than
+that say nothing.
 
 ## Held-out books
 
@@ -64,34 +77,34 @@ character in the crop.
 
 | | consensus | lattice |
 | --- | ---: | ---: |
-| characters published, box at IoU ≥ 0.5 | 37.1% | 64.0% |
+| characters published, box at IoU ≥ 0.5 | 37.1% | 63.3% |
 | published boxes at IoU ≥ 0.5 | 99.7% | 99.8% |
 | published boxes at IoU ≥ 0.7 | 97.3% | 97.5% |
-| seconds a page | 27.6 | 1.8 |
+| seconds a page | 27.6 | 2.7 |
 
 By book, share of characters published at IoU ≥ 0.5:
 
 | book | production | consensus | lattice |
 | --- | --- | ---: | ---: |
-| うすゆき物語 | printed | 35.7% | 59.6% |
-| 料理物語 | printed | 33.4% | 60.0% |
-| 源氏物語 | handwritten | 32.4% | 53.6% |
-| 物類称呼 | printed | 42.8% | 76.1% |
+| うすゆき物語 | printed | 35.7% | 58.3% |
+| 料理物語 | printed | 33.4% | 59.6% |
+| 源氏物語 | handwritten | 32.4% | 53.4% |
+| 物類称呼 | printed | 42.8% | 75.8% |
 
 Other operating points on the same pages (`measured-test.json`), share of characters published
 against the share of published boxes at IoU ≥ 0.7:
 
 | precision at IoU 0.7 | 0.95 | 0.97 | 0.98 | 0.99 |
 | --- | ---: | ---: | ---: | ---: |
-| characters published | 76.4% | 66.7% | 57.1% | 36.6% |
+| characters published | 76.3% | 67.0% | 57.4% | 37.1% |
 
 With one line in four given a fault (a character or two dropped from the transcription, added to
-it or exchanged) and one character in twenty unreadable to the classifier, 60.0% of the characters
+it or exchanged) and one character in twenty unreadable to the classifier, 59.5% of the characters
 on the page are published with a box at IoU ≥ 0.7, 97.5% of the published boxes. Of the 2,247
-unreadable characters 627 are published, 98.1% of them at IoU ≥ 0.7.
+unreadable characters 623 are published, 98.2% of them at IoU ≥ 0.7.
 
 A transcriber's line box is longer than its ink. With every line box lengthened at both ends by
-three quarters of a character (`cuts.py run --slack 0.75`), 62.9% are published at 99.8% (IoU 0.5).
+three quarters of a character (`cuts.py run --slack 0.75`), 62.2% are published at 99.8% (IoU 0.5).
 
 ## Collection pages
 

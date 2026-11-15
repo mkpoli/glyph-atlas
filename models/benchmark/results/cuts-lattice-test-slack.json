@@ -2,82 +2,82 @@
  "cutter": "lattice",
  "split": "test",
  "pages": 160,
- "seconds_per_page": 1.66,
+ "seconds_per_page": 2.75,
  "books": {
   "うすゆき物語": {
    "characters": 16525,
    "lines_skipped": 0,
-   "boxed_share": 0.9411,
-   "cut_share": 0.9109,
-   "accepted": 9640,
-   "right": 9627,
-   "yield": 0.5826,
+   "boxed_share": 0.9409,
+   "cut_share": 0.9112,
+   "accepted": 9427,
+   "right": 9415,
+   "yield": 0.5697,
    "precision": 0.9987,
-   "mean_iou": 0.8857,
+   "mean_iou": 0.8865,
    "withheld": {
-    "gate": 5911,
-    "no-box": 974
+    "gate": 6122,
+    "no-box": 976
    }
   },
   "料理物語": {
    "characters": 7242,
    "lines_skipped": 0,
-   "boxed_share": 0.9644,
+   "boxed_share": 0.9642,
    "cut_share": 0.8982,
-   "accepted": 4258,
-   "right": 4238,
-   "yield": 0.5852,
-   "precision": 0.9953,
-   "mean_iou": 0.8921,
+   "accepted": 4223,
+   "right": 4205,
+   "yield": 0.5806,
+   "precision": 0.9957,
+   "mean_iou": 0.8925,
    "withheld": {
-    "gate": 2726,
-    "no-box": 258
+    "gate": 2760,
+    "no-box": 259
    }
   },
   "源氏物語": {
    "characters": 6446,
    "lines_skipped": 0,
-   "boxed_share": 0.969,
-   "cut_share": 0.9023,
-   "accepted": 3460,
-   "right": 3449,
-   "yield": 0.5351,
+   "boxed_share": 0.9693,
+   "cut_share": 0.9027,
+   "accepted": 3445,
+   "right": 3434,
+   "yield": 0.5327,
    "precision": 0.9968,
-   "mean_iou": 0.8949,
+   "mean_iou": 0.8952,
    "withheld": {
-    "gate": 2786,
-    "no-box": 200
+    "gate": 2803,
+    "no-box": 198
    }
   },
   "物類称呼": {
    "characters": 13981,
    "lines_skipped": 0,
-   "boxed_share": 0.9478,
-   "cut_share": 0.9273,
-   "accepted": 10477,
-   "right": 10467,
-   "yield": 0.7487,
+   "boxed_share": 0.9476,
+   "cut_share": 0.9272,
+   "accepted": 10439,
+   "right": 10429,
+   "yield": 0.7459,
    "precision": 0.999,
-   "mean_iou": 0.88,
+   "mean_iou": 0.8801,
    "withheld": {
-    "gate": 2774,
-    "no-box": 730
+    "gate": 2809,
+    "no-box": 733
    }
   }
  },
  "all": {
   "characters": 44194,
   "lines_skipped": 0,
-  "boxed_share": 0.9511,
-  "cut_share": 0.9127,
-  "accepted": 27835,
-  "right": 27781,
-  "yield": 0.6286,
+  "boxed_share": 0.951,
+  "cut_share": 0.9129,
+  "accepted": 27534,
+  "right": 27483,
+  "yield": 0.6219,
   "precision": 0.9981,
-  "mean_iou": 0.8857,
+  "mean_iou": 0.8861,
   "withheld": {
-   "gate": 14197,
-   "no-box": 2162
+   "gate": 14494,
+   "no-box": 2166
   }
  }
 }

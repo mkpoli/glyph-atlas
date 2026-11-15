@@ -15,8 +15,9 @@ def box(x, y, w, h):
     return {"x": x, "y": y, "w": w, "h": h}
 
 
-def review(crop, verdict, issue=None, *, current=True, at="2026-11-01T00:00:00Z", evidence_as_text=False):
-    evidence = {"kind": "character-review", "verdict": verdict, "issue": issue}
+def review(crop, verdict, issue=None, *, current=True, at="2026-11-01T00:00:00Z", evidence_as_text=False,
+           recrop=None):
+    evidence = {"kind": "character-review", "verdict": verdict, "issue": issue, "recrop": recrop}
     return {"event": {"target_id": crop, "at": at, "evidence": json.dumps(evidence) if evidence_as_text else evidence},
             "current": current,
             "reviewed": {"character": {"box": box(10, 10, 40, 40), "line_id": "hl:D_1_000", "page_id": "hl:D:1"}}}
@@ -39,17 +40,28 @@ def test_a_review_judges_the_cut_when_it_matches_the_crop_or_reports_it():
         "the latest review counts; a wrong character, an outdated crop and another source's crop say nothing"
 
 
-def test_a_reviewed_page_gives_each_token_its_reviewed_unit():
+def test_a_box_drawn_again_is_the_one_confirmed():
+    redrawn = {"from": box(10, 10, 40, 40), "to": box(10, 10, 40, 80)}
+    judged = cuts.judged({"reviews": [review("ex:a:1", "match", recrop=redrawn), review("ex:a:2", "match")]})
+    assert (judged["ex:a:1"]["box"], judged["ex:a:1"]["redrawn_from"]) == (redrawn["to"], redrawn["from"])
+    assert (judged["ex:a:2"]["box"], judged["ex:a:2"]["redrawn_from"]) == (box(10, 10, 40, 40), None)
+    reported = cuts.judged({"reviews": [review("ex:a:3", "wrong", "merged", recrop=redrawn)]})["ex:a:3"]
+    assert (reported["box"], reported["redrawn_from"]) == (box(10, 10, 40, 40), None), \
+        "a crop reported after its box was drawn again is reported for the box it had"
+
+
+def test_a_reviewed_page_gives_each_token_its_reviewed_boxes():
     line = {"id": "hl:D_1_000", "page_id": "hl:D:1", "seq": 0, "box": box(0, 0, 60, 300), "vertical": True,
             "text_raw": "いろは", "text": "いろは"}
     outside = {**line, "id": "hl:D_1_001", "seq": 1, "box": box(380, 0, 60, 300)}
     page = {"lines": [line, outside],
             "units": [{"id": "ex:a:1", "box": box(5, 5, 50, 60), "line": "hl:D_1_000", "token": 0}],
-            "rejected": [{"id": "ex:a:2", "box": box(5, 140, 50, 150), "line": "hl:D_1_000", "token": 2}]}
-    (found, units), = cuts.reviewed_lines_of(page, (400, 400))
+            "rejected": [{"id": "ex:a:2", "box": box(5, 140, 50, 150), "line": "hl:D_1_000", "token": 2},
+                         {"id": "ex:a:1", "box": box(5, 5, 50, 20), "line": "hl:D_1_000", "token": 0}]}
+    (found, boxes), = cuts.reviewed_lines_of(page, (400, 400))
     assert found.id == "hl:D_1_000", "a line that leaves the image is not cut"
-    assert [unit and unit["id"] for unit in units] == ["ex:a:1", None, "ex:a:2"]
-    assert not units[0].get("wrong") and units[2]["wrong"]
+    assert boxes == [(box(5, 5, 50, 60), box(5, 5, 50, 20)), (None, None), (None, box(5, 140, 50, 150))], \
+        "a token whose box was drawn again has the box confirmed and the one it replaced"
 
 
 def test_a_page_that_knows_some_boxes_judges_only_the_candidates_on_them():
@@ -64,6 +76,6 @@ def test_a_page_that_knows_some_boxes_judges_only_the_candidates_on_them():
 
 
 def test_reviewed_rows_weigh_a_share_of_the_boxed_pages_rows():
-    assert fit.shares((4, 0), 0.5) == [1.0] * 4
+    assert fit.shares((4, 0), 0.5) == fit.shares((4, 0), 0.0) == [1.0] * 4
     weights = fit.shares((4, 2), 0.5)
     assert weights[:4] == [1.0] * 4 and sum(weights[4:]) == pytest.approx(2.0)
