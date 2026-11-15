@@ -133,6 +133,19 @@ def test_normalization_applies_across_curated_families(modern, old):
     assert literal["identity_basis"] == "source_transcription"
 
 
+def test_a_compatibility_ideograph_a_source_labels_a_glyph_with_is_written_as_its_unified_ideograph():
+    # CODH labels the dotted 突 with U+FA55, which stands for 突 U+7A81; the source's code point stays.
+    fields = identity_fields({"unicode": "U+FA55", "text_source": "\ufa55"}, "codh-full")
+    assert (fields["written_character"], fields["source_code_point"], fields["source_label"]) == ("\u7a81", "U+FA55", "\ufa55")
+    assert (fields["identity_status"], fields["requires_family_scope"], fields["grapheme"]) == ("assigned", False, "U+7A81")
+    # The plain label of a normalised corpus still names the family and no member of it.
+    plain = identity_fields({"unicode": "U+7A81", "text_source": "\u7a81"}, "codh-full")
+    assert (plain["written_character"], plain["requires_family_scope"]) == (None, True)
+    # 﨑 U+FA11 is a unified ideograph of the compatibility block and stays itself.
+    assert identity_fields({"unicode": "U+FA11", "text_source": "\ufa11"}, "hilab")["written_character"] == "\ufa11"
+    assert identity_fields({"unicode": "U+FA55", "text_source": "\ufa55"}, "hilab")["written_character"] == "\u7a81"
+
+
 def test_inspected_conflicting_source_remains_unassigned_until_human_review(monkeypatch):
     monkeypatch.setattr(visual_families, "assignment_for", lambda *args, **kwargs: {
         "written_character": None, "visual_group": {"id": "unanchored"}})

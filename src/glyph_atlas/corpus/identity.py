@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import unicodedata
 from functools import lru_cache
 from typing import Any
 
-from .. import refs
+from .. import refs, representation
 from ..clusters import is_conjoining_jamo_syllable
 
 NORMALIZED_CORPORA = frozenset({"codh", "codh-full"})
@@ -35,15 +36,23 @@ def identity_fields(
     row: dict[str, Any], corpus: str | None, *, human_character: str | None = None,
     source_revision: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve identity without rewriting the source's own class or transcription."""
+    """Resolve identity without rewriting the source's own class or transcription.
+
+    A source that labels a glyph with a CJK compatibility ideograph names one figure of the unified
+    ideograph it stands for (docs/decisions/0013-finer-forms.md): the glyph is written as that
+    ideograph, a normalised corpus included, and `source_code_point` keeps the source's own.
+    """
     cp = row.get("source_code_point") or row.get("unicode") or row.get("codepoint") or row.get("code_point")
-    family = family_of(cp)
     encoded = refs.from_code_points(cp.split()) if cp and cp.startswith("U+") else None
+    figure = encoded is not None and representation.compatibility(encoded)
+    if figure:
+        encoded = unicodedata.normalize("NFC", encoded)
+    family = family_of(" ".join(refs.to_code_points(encoded)) if figure else cp)
     source_label = row.get("source_label")
     if source_label is None:
         source_label = row.get("text_source") or encoded or row.get("char") or row.get("label")
     normalized = corpus in NORMALIZED_CORPORA
-    ambiguous = normalized and family is not None and family["character_count"] > 1
+    ambiguous = normalized and not figure and family is not None and family["character_count"] > 1
     basis = "normalized_transcription" if normalized else "source_transcription"
     written = None if ambiguous else encoded or source_label
     assignment = None
