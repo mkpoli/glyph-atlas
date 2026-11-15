@@ -908,6 +908,8 @@
   "form.link.add": "添𠓨字樣𧵑{char}",
   "form.link.linked": "字樣𧵑{char}",
   "form.link.remove": "𠬃塊字樣𧵑{char}",
+  "structure.place": "撻{form}𠓨低",
+  "structure.take": "𠬃{form}塊低",
   "grapheme.disputed": "羣爭論",
   "grapheme.find": "尋字位恪",
   "grapheme.change": "對字位",

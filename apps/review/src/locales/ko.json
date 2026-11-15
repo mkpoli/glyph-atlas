@@ -905,6 +905,8 @@
   "form.link.add": "{char}의 자형에 추가",
   "form.link.linked": "{char}의 자형",
   "form.link.remove": "{char}의 자형에서 제거",
+  "structure.place": "{form} 여기로 옮기기",
+  "structure.take": "{form} 여기서 빼기",
   "grapheme.disputed": "이견 있음",
   "grapheme.find": "다른 자소 찾기",
   "grapheme.change": "자소 변경",
