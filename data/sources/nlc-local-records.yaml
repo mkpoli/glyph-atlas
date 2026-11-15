@@ -1,0 +1,23 @@
+# Scans held by the National Library of China, uploaded to Wikimedia Commons as PDFs under
+# `{{Digitized Local Records in the National Library of China}}` and collected without a Wikisource
+# index by scripts/collect_commons_scans.py. The first book is
+# 新釋地理備考全書 (道光27年刻本, 地900/993), ten volumes in Category:新釋地理備考全書.
+#
+# The licence is read from each file page. The template emits `{{PD-scan|PD-old-100-expired}}` for a
+# title without 民國 (a 民國 title gets `{{PD-scan|PD-China}}`), and the file page's extmetadata states
+# LicenseShortName "Public domain", License "pd", Copyrighted "False".
+id: nlc-local-records
+name: Digitized Local Records in the National Library of China (Wikimedia Commons)
+publisher: National Library of China, via Wikimedia Commons
+kind: image-collection
+url: https://commons.wikimedia.org/wiki/Category:Digitized_Local_Records_in_the_National_Library_of_China
+licence: PD
+licence_evidence: https://commons.wikimedia.org/wiki/File:NLC403-312001067176-19028_新釋地理備考全書_卷三.pdf
+attribution: National Library of China, via Wikimedia Commons
+access:
+  file_page: https://commons.wikimedia.org/wiki/File:{name}
+  api: https://commons.wikimedia.org/w/api.php
+  thumbnail: https://upload.wikimedia.org/wikipedia/commons/thumb/{h}/{hh}/{name}/page{n}-{width}px-{name}.jpg
+notes:
+  - Other editions in Category:新釋地理備考全書 (SSID-…, GZDD…, 叢書集成新編…) come from other holders and are not covered by this registration.
+  - Collected with scripts/collect_commons_scans.py.
