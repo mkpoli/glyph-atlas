@@ -144,6 +144,9 @@ def test_a_compatibility_ideograph_a_source_labels_a_glyph_with_is_written_as_it
     # 﨑 U+FA11 is a unified ideograph of the compatibility block and stays itself.
     assert identity_fields({"unicode": "U+FA11", "text_source": "\ufa11"}, "hilab")["written_character"] == "\ufa11"
     assert identity_fields({"unicode": "U+FA55", "text_source": "\ufa55"}, "hilab")["written_character"] == "\u7a81"
+    # A unit with no code point is read by its text.
+    text_only = identity_fields({"text_source": "\ufa55"}, "hilab")
+    assert (text_only["written_character"], text_only["source_label"], text_only["grapheme"]) == ("\u7a81", "\ufa55", "U+7A81")
 
 
 def test_inspected_conflicting_source_remains_unassigned_until_human_review(monkeypatch):

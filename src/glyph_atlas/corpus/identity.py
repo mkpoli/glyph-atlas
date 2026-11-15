@@ -44,13 +44,14 @@ def identity_fields(
     """
     cp = row.get("source_code_point") or row.get("unicode") or row.get("codepoint") or row.get("code_point")
     encoded = refs.from_code_points(cp.split()) if cp and cp.startswith("U+") else None
-    figure = encoded is not None and representation.compatibility(encoded)
-    if figure:
-        encoded = unicodedata.normalize("NFC", encoded)
-    family = family_of(" ".join(refs.to_code_points(encoded)) if figure else cp)
     source_label = row.get("source_label")
     if source_label is None:
         source_label = row.get("text_source") or encoded or row.get("char") or row.get("label")
+    # The label is the code point, or with none the source's text.
+    figure = representation.compatibility(encoded or source_label or "")
+    if figure:
+        encoded = unicodedata.normalize("NFC", encoded or source_label)
+    family = family_of(" ".join(refs.to_code_points(encoded)) if figure else cp)
     normalized = corpus in NORMALIZED_CORPORA
     ambiguous = normalized and not figure and family is not None and family["character_count"] > 1
     basis = "normalized_transcription" if normalized else "source_transcription"
