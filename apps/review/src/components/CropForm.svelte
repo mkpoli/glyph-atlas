@@ -44,12 +44,14 @@
     } catch { return known }
   }
   const namesOf = found => [...found.members, ...found.variants].map(form => form.char)
+  // A regional shape that names a 構形 carries it and is not asked for.
+  const given = found => [...found.members, ...found.variants].filter(form => form.structure).map(form => [form.char, form.structure])
   $effect(() => {
     const id = crop?.id, char = written, own = untrack(() => current)
     added = []; picking = false; query = ''; failed = false; composing = false; linking = false; linkError = ''; linkedByMe = false
     listForms(char).then(found => [found, false], () => [{ members: [{ char }], variants: [], related: [], derived: [], linked: [], grapheme: null }, true])
       .then(async ([found, unread]) => {
-        const read = await composed([own, ...namesOf(found)])
+        const read = await composed([own, ...namesOf(found)], new Map(given(found)))
         if (id === crop?.id && char === written) { structureOf = read; offered = { char, ...found }; failed = unread }
       })
   })
@@ -109,7 +111,7 @@
     const id = crop?.id, char = written
     try {
       const found = await listForms(char)
-      const read = found ? await composed(namesOf(found), structureOf) : structureOf
+      const read = found ? await composed(namesOf(found), new Map([...structureOf, ...given(found)])) : structureOf
       if (found && id === crop?.id && char === written) { structureOf = read; offered = { char, ...found } }
     } catch { /* the save stands; the card reads again next time */ }
   }

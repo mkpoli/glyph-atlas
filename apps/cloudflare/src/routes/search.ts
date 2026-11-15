@@ -187,7 +187,8 @@ export async function idsOf(env: Env, ctx: ExecutionContext, origin: string, cha
   if (cached) return await cached.json();
   const described = await characterIds(env, char, ctx);
   const sequences: string[] = described?.sequences ?? [];
-  const shapes: { text: string; regions: string }[] = described?.shapes ?? [];
+  // A shape whose 構形 is not the character's carries its own, or null for none.
+  const shapes: { text: string; regions: string; structure?: { id: string; label: string } | null }[] = described?.shapes ?? [];
   const parts = [...new Set(sequences.flatMap(text => [...text].filter(c => !IDS_OPERATOR.test(c))))].slice(0, STRUCTURE_PARTS);
   const rows = parts.length ? (await env.ATLAS.prepare(substitutesQuery(parts.length)).bind(...parts, ...parts)
     .all<{ a: string; b: string; count: number }>()).results : [];
