@@ -315,10 +315,12 @@ def cut_folio(plate: np.ndarray, folio: int, cells: dict, font: Path, sides: str
 
 
 def grade(characters: list[dict]) -> None:
-    """Mark each place `ok`, `low-score`, `size` or `faint`.
+    """Mark each place `ok`, `low-score`, `size`, `faint` or `sparse`.
 
     A box far from its folio's usual size sits on a part of a character or on two; one holding far
-    less ink than the folio's others sits on paper beside a character.
+    less ink than the folio's others sits on paper beside a character. Where fewer than half the
+    places of a half-folio match, its columns were not found, and the few that match do so by
+    chance: they are `sparse`.
     """
     by_folio: dict[int, list[dict]] = defaultdict(list)
     for row in characters:
@@ -332,6 +334,14 @@ def grade(characters: list[dict]) -> None:
             odd = not (0.66 * width <= row["w"] <= 1.45 * width and 0.66 * height <= row["h"] <= 1.45 * height)
             row["quality"] = ("low-score" if row["score"] < ACCEPT else "size" if odd
                               else "faint" if row["ink"] < FAINT * ink else "ok")
+    by_half: dict[tuple[int, str], list[dict]] = defaultdict(list)
+    for row in characters:
+        by_half[(row["folio"], row["side"])].append(row)
+    for rows in by_half.values():
+        if 2 * sum(row["score"] >= ACCEPT for row in rows) < len(rows):
+            for row in rows:
+                if row["quality"] == "ok":
+                    row["quality"] = "sparse"
 
 
 def write(path: Path, header: list[str], fields: list[str], rows: list[dict]) -> None:
@@ -388,7 +398,8 @@ def main() -> None:
 
     if args.overlays:
         args.overlays.mkdir(parents=True, exist_ok=True)
-        colours = {"ok": (0, 170, 0), "size": (0, 140, 255), "faint": (200, 0, 200), "low-score": (0, 0, 255)}
+        colours = {"ok": (0, 170, 0), "size": (0, 140, 255), "faint": (200, 0, 200), "sparse": (200, 200, 0),
+                   "low-score": (0, 0, 255)}
         for page in pages:
             image = cv2.imread(str(args.images / page["file"]))
             for row in columns:
@@ -412,7 +423,7 @@ def main() -> None:
     write(out / "characters.tsv", source + [
         (f"Character and position: nkay0, Tangut-rhyme-dictionaries-data, column {edition.column} "
          f"(https://github.com/nkay0/Tangut-rhyme-dictionaries-data; file sha256 {table_sha})."),
-        f"score is the match of the expected glyph (Noto Serif Tangut) at the box; quality is ok, low-score (under {ACCEPT}), size or faint; ink is the stroke darkness in the box over the share of its box the glyph inks.",
+        f"score is the match of the expected glyph (Noto Serif Tangut) at the box; quality is ok, low-score (under {ACCEPT}), size, faint or sparse; ink is the stroke darkness in the box over the share of its box the glyph inks.",
     ], ["folio", "side", "column", "position", "char", "codepoint", "page", "x", "y", "w", "h", "score", "ink", "quality"], characters)
     counts = defaultdict(int)
     for row in characters:

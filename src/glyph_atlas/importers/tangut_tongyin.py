@@ -11,9 +11,10 @@ One document is one exemplar. A page is a printed page of the volume, which carr
 the notes are not transcribed. A unit is one head character, with no position in its line: the notes
 stand between the head characters, so two of them are not neighbours in the text and form no run of
 crops (`glyph_atlas.ngrams`). Only the places graded `ok` become
-units: one that matched its glyph poorly, whose box is far from the folio's usual size, or that holds
-little ink may sit on the wrong ink, and a wrong box under a character's name is worse than a missing
-one. Those places stay in the table with their scores.
+units: one that matched its glyph poorly, whose box is far from the folio's usual size, that holds
+little ink, or that stands in a half-folio where most places failed to match may sit on the wrong
+ink, and a wrong box under a character's name is worse than a missing one. Those places stay in the
+table with their scores.
 
 The volume is not online. The page images are read from a directory of scans and must be the files
 `pages.tsv` pins by checksum; they are registered in the image cache under `file:` keys, as the

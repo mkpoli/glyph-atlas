@@ -23,12 +23,17 @@ The character and its place come from nkay0's rhyme-dictionary table, column `æ—
 (`data/sources/nkay0-tangut-rhyme.yaml`). The box is a machine placement by
 [`scripts/build_tangut_tongyin.py`](../../../scripts/build_tangut_tongyin.py): `score` is how well the
 character's glyph in Noto Serif Tangut matches the ink at the box, and `ink` is the stroke darkness
-in the box over the share of its box the glyph inks. `quality` is `ok` (4,263), `low-score` (1,253,
-under 0.28), `size` (95, a box far from its folio's usual size) or `faint` (62, far less ink than the
-folio's other boxes: bare paper, or a stain that swallows the strokes).
+in the box over the share of its box the glyph inks. `quality` is `ok` (4,189), `low-score` (1,253,
+under 0.28), `size` (95, a box far from its folio's usual size), `faint` (62, far less ink than the
+folio's other boxes: bare paper, or a stain that swallows the strokes) or `sparse` (74, a match in
+a half-folio where fewer than half the places match).
 
-In a random draw of 150 `ok` places, 148 sat on the character the table names; six of those cut off
-part of it or fell on ink too dark to read. `atlas import tangut-tongyin <scans>` makes a unit of
+The `sparse` places are in the half-folios 30B, 38A, 38B, 51A, 53A and 55B, whose columns the
+cutter did not find. By eye, 22 of the 24 matches in 51A and 53A sit on another character and two
+are doubtful; in 30B and 38B some columns are right and others are not.
+
+In a random draw of 150 from the `ok` and `sparse` places together, 148 sat on the character the
+table names; six of those cut off part of it or fell on ink too dark to read. `atlas import tangut-tongyin <scans>` makes a unit of
 each `ok` place and leaves the others in this table.
 
 ## Limits
