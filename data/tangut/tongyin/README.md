@@ -33,7 +33,8 @@ each `ok` place and leaves the others in this table.
 
 ## Limits
 
-- The notes in small writing are not transcribed, so a column's `text` is its head characters only.
+- The notes in small writing are not transcribed, so a column's `text` is its head characters only,
+  and the units carry no position in the line: neighbours in a column are no sequence of the text.
 - Folios 2, 18, 27, 30, 37, 38, 44, 51 and 53–55 place fewer than three characters in four: a
   section heading changes the grid, or the plate is too dark to show the rule lines.
 - Folio 1 is the preface and has no head characters. The table gives column 19B6 nine.
