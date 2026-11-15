@@ -4,6 +4,7 @@ import json
 import sqlite3
 import sys
 import time
+from collections import Counter
 from datetime import UTC, datetime
 
 import pytest
@@ -355,12 +356,17 @@ def grapheme(db, text):
 
 
 def changed(remote, crop, event=True, **columns):
-    """A change of the site's to one crop, as the Worker writes it: D1's row one revision on, an event of
-    the current generation unless `event` is false (a forms follow records none), and the crop listed
-    in `touched` at that generation; the generation."""
+    """A change of the site's to one crop, as the Worker writes it in one batch: one count out of the
+    crop's `tally` cell and one into its new cell in the current generation, D1's row one revision on,
+    an event of that generation unless `event` is false (a forms follow records none), and the crop
+    listed in `touched` at that generation; the generation."""
     d1 = remote.dbs["glyph-atlas-v3"]
     gen = d1.execute("SELECT gen FROM generation").fetchone()[0]
+    tally = ("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) "
+             f"SELECT ?,{sys.modules['publish'].TALLY_CELL},? FROM crops c WHERE c.id=? ON CONFLICT DO UPDATE SET n=n+excluded.n")
+    d1.execute(tally, (gen, -1, crop))
     d1.execute(f"UPDATE crops SET {','.join(f'{c}=?' for c in columns)}, revision=revision+1 WHERE id=?", (*columns.values(), crop))
+    d1.execute(tally, (gen, 1, crop))
     if event:
         d1.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) SELECT id,revision,cut,?,1,1,0,1 FROM crops WHERE id=?",
                    (gen, crop))
@@ -391,6 +397,32 @@ def counted(root, text):
     return {cell[2]: cell[-1] for cell in shard_of(root, char)["chars"].get(str(char), [])}
 
 
+def counts_hold(root, remote):
+    """Whether the site's counts are right: for every cell, the answer of the publication the pointer
+    names plus D1's `tally` rows above the pointer's generation is the number of D1's crops. A cell is a
+    character (-1 for none), kind, style, state, withheld flag and witness decade, which the answers
+    and `tally` both hold."""
+    d1, named = remote.dbs["glyph-atlas-v3"], pointer(root)
+    folder, shown = root / "out" / "pub" / named["pub"], Counter()
+
+    def add(char, cells):
+        for kind, style, state, quiz, decade, _group, n in cells:
+            shown[(char, kind, -1 if style is None else style, state, quiz, -1 if decade is None else decade)] += n
+    for shard in range(SHARDS):
+        for char, cells in json.loads(gzip.decompress((folder / "counts" / f"{shard}.json.gz").read_bytes()))["chars"].items():
+            add(int(char), cells)
+    for cells in json.loads(gzip.decompress((folder / "unread.json.gz").read_bytes()))["categories"].values():
+        add(-1, cells)
+    for *cell, n in d1.execute("SELECT char, kind, style, state, quiz, decade, sum(n) FROM tally WHERE gen > ? GROUP BY 1, 2, 3, 4, 5, 6",
+                               (named["through_gen"],)):
+        shown[tuple(cell)] += n
+    held = {tuple(cell): n for *cell, n in d1.execute(
+        f"SELECT coalesce(char, -1), kind, coalesce(style, -1), state, quiz, coalesce({sys.modules['answers'].DECADE}, -1), count(*) "
+        "FROM crops WHERE kind < 2 GROUP BY 1, 2, 3, 4, 5, 6")}
+    assert {cell: n for cell, n in shown.items() if n} == held
+    return True
+
+
 def dumps(root, remote):
     return ["\n".join(db.iterdump()) for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite"),
                                                 sqlite3.connect(root / "out" / "mirror.sqlite"))]
@@ -401,11 +433,13 @@ def test_a_reviewed_crop_is_counted_under_its_new_character(layout, monkeypatch)
     answers(publish, monkeypatch, sample=0)
     assert counted(root, "あ") == {0: 1} and counted(root, "う") == {0: 1}
     d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
-    # A reviewer reads あ as う and checks it, in generation 2.
+    # A reviewer reads あ as う and checks it, in generation 2: the site counts it from `tally` at once.
     assert reviewed(remote, crop, char=grapheme(d1, "う"), state=1) == 2
+    assert counts_hold(root, remote)
     time.sleep(1.1)  # a publication is named by its second
     assert answers(publish, monkeypatch, sample=0)[-1] == ("v3/", ["pointer.json"])
     assert counted(root, "あ") == {} and counted(root, "う") == {0: 1, 1: 1}
+    assert counts_hold(root, remote)
     assert pointer(root)["through_gen"] == 2
     assert d1.execute("SELECT gen FROM generation").fetchone()[0] == 3
     assert listed(remote) == ({}, [])
@@ -459,12 +493,15 @@ def test_a_crop_changed_after_the_bump_is_taken_as_its_generation_left_it(layout
     assert row(local, late)["state"] == 1
     assert counted(root, "あ") == {1: 1}
     assert pointer(root)["through_gen"] == 2
+    # The answers hold generation 2 and `tally` the two changes of generation 3.
+    assert counts_hold(root, remote)
     time.sleep(1.1)
     answers(publish, monkeypatch, sample=0)
     assert listed(remote) == ({}, [])
     assert row(local, crop) == row(d1, crop) and row(local, crop)["state"] == 2 and row(local, late) == row(d1, late)
     assert counted(root, "あ") == {2: 1}
     assert pointer(root)["through_gen"] == 3
+    assert counts_hold(root, remote)
 
 
 def test_the_bump_s_file_sent_again_changes_nothing_more(layout, monkeypatch):  # noqa: F811
@@ -557,6 +594,8 @@ def test_what_a_stopped_run_left_in_absorbing_is_taken_by_the_next(layout, monke
     assert patched(publish, monkeypatch)[0].bump("20260101T000000Z", 2)
     assert listed(remote) == ({}, [crop]) and d1.execute("SELECT gen FROM generation").fetchone()[0] == 3
     assert row(sqlite3.connect(root / "out" / "atlas.sqlite"), crop)["state"] == 0
+    # The pointer names the publication before, whose answers and the `tally` rows since still count right.
+    assert counts_hold(root, remote)
     time.sleep(1.1)  # a publication is named by its second
     assert answers(publish, monkeypatch, sample=0)[-1] == ("v3/", ["pointer.json"])
     assert listed(remote) == ({}, [])
@@ -564,6 +603,7 @@ def test_what_a_stopped_run_left_in_absorbing_is_taken_by_the_next(layout, monke
     assert counted(root, "あ") == {1: 1}
     # It publishes through the generation it found.
     assert pointer(root)["through_gen"] == 3
+    assert counts_hold(root, remote)
 
 
 def test_a_run_that_stops_between_the_bump_and_the_pointer_is_finished_by_the_next(layout, monkeypatch):  # noqa: F811
@@ -580,11 +620,45 @@ def test_a_run_that_stops_between_the_bump_and_the_pointer_is_finished_by_the_ne
     assert listed(remote) == ({}, [])
     assert row(sqlite3.connect(root / "out" / "atlas.sqlite"), crop) == row(d1, crop)
     assert json.loads((root / "out" / "answers-published.json").read_text()) == first
+    assert counts_hold(root, remote)
     time.sleep(1.1)
     assert answers(publish, monkeypatch, sample=0)[-1] == ("v3/", ["pointer.json"])
     assert counted(root, "あ") == {1: 1}
     assert pointer(root)["through_gen"] == 3
     assert d1.execute("SELECT gen FROM generation").fetchone()[0] == 4
+    assert counts_hold(root, remote)
+
+
+def test_a_run_that_stops_once_the_local_copy_has_the_crops_is_finished_by_the_next(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    answers(publish, monkeypatch, sample=0)
+    d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
+    reviewed(remote, crop, state=1)
+    real = publish.query
+
+    def stopping(database, sql):
+        # D1 cannot be reached once both local databases have committed, before `absorbing` is emptied.
+        if sql.startswith("DELETE FROM absorbing"):
+            sys.exit("could not read glyph-atlas-v3; rerun to finish")
+        return real(database, sql)
+
+    monkeypatch.setattr(publish, "query", stopping)
+    time.sleep(1.1)  # a publication is named by its second
+    with pytest.raises(SystemExit, match="rerun to finish"):
+        answers(publish, monkeypatch, sample=0)
+    monkeypatch.setattr(publish, "query", real)
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert listed(remote) == ({}, [crop]) and row(local, crop) == row(d1, crop)
+    assert pointer(root)["through_gen"] == 1 and counts_hold(root, remote)
+    # The site flags the crop before the next run, which takes the copied row again and then the newer one.
+    reviewed(remote, crop, state=2)
+    assert counts_hold(root, remote)
+    time.sleep(1.1)
+    assert answers(publish, monkeypatch, sample=0)[-1] == ("v3/", ["pointer.json"])
+    assert listed(remote) == ({}, [])
+    assert row(local, crop) == row(d1, crop) and row(local, crop)["state"] == 2
+    assert counted(root, "あ") == {2: 1}
+    assert pointer(root)["through_gen"] == 3 and counts_hold(root, remote)
 
 
 def test_a_dry_run_changes_neither_database(layout, monkeypatch, capsys):  # noqa: F811
