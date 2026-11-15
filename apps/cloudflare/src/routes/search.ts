@@ -170,8 +170,9 @@ export async function suggest(env: Env, q: URLSearchParams, ctx?: ExecutionConte
 // What the form picker's IDS editor starts from (0068, 0080): a character's descriptions and regional
 // shapes from its IDS shard, and the substitutes of each component they name, the `component_variants`
 // rows naming it as `a` (by key) or as `b` (by `component_variant_b`), at most STRUCTURE_PARTS components a request.
+// A pair whose two ends are both named is one row.
 export const substitutesQuery = (n: number) => `SELECT a,b,count FROM component_variants WHERE a IN (${Array(n).fill('?').join(',')})
-  UNION ALL SELECT a,b,count FROM component_variants WHERE b IN (${Array(n).fill('?').join(',')})`;
+  UNION SELECT a,b,count FROM component_variants WHERE b IN (${Array(n).fill('?').join(',')})`;
 // A description holds at most 64 code points; the components of every sequence of one character fit here.
 const STRUCTURE_PARTS = 48;
 // How many substitutes a component lists, most contexts first (refs.SUBSTITUTES_SHOWN).
