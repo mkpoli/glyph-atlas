@@ -42,7 +42,7 @@ it('a compatibility ideograph stays the character it is, and a voiced kana still
 })
 
 it('a compatibility ideograph named as a crop\'s character is the unified ideograph it stands for', () => {
-  // 侮 U+FA30 stands for 侮 U+4FAE; 﨑 U+FA11 is a unified ideograph of the compatibility block.
+  // U+FA30 stands for 侮 U+4FAE; 﨑 U+FA11 is a unified ideograph of the compatibility block.
   expect(unified('U+FA30')).toBe('\u4fae')
   expect(writtenCharacter('\ufa30')).toBe('\u4fae')
   expect(writtenCharacter('\ufa11')).toBe('\ufa11')
