@@ -191,10 +191,11 @@ def page_fields(page) -> dict:
     return {"page_number": page.seq + 1 if page else None, "page_index": page.seq if page else None}
 
 
-def page_record(page, doc, crops, previous, following, catalogue=None) -> dict:
+def page_record(page, doc, crops, catalogue=None) -> dict:
     """A page as the page view shows it (0078): its book, number and size in the page pixels boxes are
     given in, its IIIF image service, where it can be opened at its source (`page_sources`), its
-    credit, the pages before and after it that hold crops, and the ids of its crops in reading order."""
+    credit and the ids of its crops in reading order. The pages before and after it are the publisher's
+    to name, which knows every page of the book the site holds (`atlas3/publish.py`)."""
     rights = doc.image_rights if doc else None
     service = images.service_of(page.image or "")
     return {"id": page.id, "document": page.document_id, "title": doc.title if doc else None,
@@ -202,30 +203,23 @@ def page_record(page, doc, crops, previous, following, catalogue=None) -> dict:
             **page_sources.page_sources(doc.source_refs if doc else None, page.canvas, service, catalogue),
             "holder": doc.holder if doc else None, "licence": str(rights.licence) if rights else None,
             "attribution": rights.attribution if rights else None, "rights_url": rights.evidence if rights else None,
-            "previous": previous, "next": following, "crops": crops}
+            "crops": crops}
 
 
 def page_rows(db, published, units, pages, documents):
-    """Rewrite `pages` from the ids of the crops `published`: a page appears once one of its crops does,
-    and its neighbours are the pages of its book that do too."""
+    """Rewrite `pages` from the ids of the crops `published`: a page appears once one of its crops does."""
     held = defaultdict(list)
     for identity in published:
         unit = units.get(identity)
         if unit is not None and unit.page_id in pages:
             held[unit.page_id].append(unit)
-    books = defaultdict(list)
-    for page_id in held:
-        books[pages[page_id].document_id].append(pages[page_id])
     db.execute("DELETE FROM pages")
     catalogue = page_sources.catalogue_urls((d, doc.source_refs, doc.meta) for d, doc in documents.items())
-    for document_id, own in books.items():
-        own.sort(key=lambda page: (page.seq, page.id))
-        for i, page in enumerate(own):
-            crops = [u.id for u in sorted(held[page.id], key=lambda u: (u.line_id or "", u.seq if u.seq is not None else -1, u.id))]
-            record = page_record(page, documents.get(document_id), crops,
-                                 own[i - 1].id if i else None, own[i + 1].id if i + 1 < len(own) else None,
-                                 catalogue.get(document_id))
-            db.execute("INSERT INTO pages VALUES (?,?,?)", (page.id, document_id, encoded(record)))
+    for page_id, own in held.items():
+        page = pages[page_id]
+        crops = [u.id for u in sorted(own, key=lambda u: (u.line_id or "", u.seq if u.seq is not None else -1, u.id))]
+        record = page_record(page, documents.get(page.document_id), crops, catalogue.get(page.document_id))
+        db.execute("INSERT INTO pages VALUES (?,?,?)", (page.id, page.document_id, encoded(record)))
     db.commit()
 
 

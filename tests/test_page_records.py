@@ -41,7 +41,7 @@ def unit(identity, page, line="l", seq=0):
     return SimpleNamespace(id=identity, page_id=page, line_id=line, seq=seq)
 
 
-def test_each_page_holding_a_crop_lists_its_crops_in_reading_order_and_its_neighbours(scripts):
+def test_each_page_holding_a_crop_lists_its_crops_in_reading_order(scripts):
     export, _ = scripts
     db = sqlite3.connect(":memory:")
     db.executescript(SCHEMA)
@@ -55,24 +55,20 @@ def test_each_page_holding_a_crop_lists_its_crops_in_reading_order_and_its_neigh
     rows = {i: json.loads(d) for i, d in db.execute("SELECT id,data FROM pages")}
     assert set(rows) == {"doc:0", "doc:3"}
     assert rows["doc:0"]["crops"] == ["c", "b", "a"]
-    assert (rows["doc:0"]["previous"], rows["doc:0"]["next"]) == (None, "doc:3")
-    assert (rows["doc:3"]["previous"], rows["doc:3"]["next"]) == ("doc:0", None)
     assert rows["doc:3"] | {"crops": None} == {
         "id": "doc:3", "document": "doc", "title": "Book", "page_number": 4, "width": 100, "height": 200,
         "service": "https://x.org/iiif/2/p", "manifest": None, "canvas": None, "canvas_index": None, "catalogue_url": None, "holder": "Holder", "licence": "pd",
-        "attribution": "Holder", "rights_url": "https://x.org/rights", "previous": "doc:0", "next": None, "crops": None}
+        "attribution": "Holder", "rights_url": "https://x.org/rights", "crops": None}
 
 
-def test_a_republished_page_keeps_the_crops_and_neighbours_another_dataset_put_on_it(scripts):
+def test_a_republished_page_keeps_the_crops_another_dataset_put_on_it(scripts):
     _, schema = scripts
     db = sqlite3.connect(":memory:")
     db.executescript(SCHEMA)
-    page = lambda title, crops, previous, following: json.dumps(
-        {"title": title, "previous": previous, "next": following, "crops": crops})
-    db.execute(schema.page_upsert("hk:p", "hk:d", page("it's", ["a", "b"], "hk:o", "hk:q")))
-    db.execute(schema.page_upsert("hk:p", "hk:d", page("new", ["c", "a"], None, "hk:r")))
-    assert json.loads(db.execute("SELECT data FROM pages").fetchone()[0]) == {
-        "title": "new", "previous": "hk:o", "next": "hk:r", "crops": ["c", "a", "b"]}
+    page = lambda title, crops: json.dumps({"title": title, "crops": crops})
+    db.execute(schema.page_upsert("hk:p", "hk:d", page("it's", ["a", "b"])))
+    db.execute(schema.page_upsert("hk:p", "hk:d", page("new", ["c", "a"])))
+    assert json.loads(db.execute("SELECT data FROM pages").fetchone()[0]) == {"title": "new", "crops": ["c", "a", "b"]}
     before = db.total_changes
-    db.execute(schema.page_upsert("hk:p", "hk:d", page("new", ["c", "a", "b"], "hk:o", "hk:r")))
+    db.execute(schema.page_upsert("hk:p", "hk:d", page("new", ["c", "a", "b"])))
     assert db.total_changes == before
