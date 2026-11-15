@@ -36,6 +36,25 @@ def test_a_group_with_no_judged_box_is_left_out_of_the_hundred():
     assert counts.score([], {})["per_100_boxes"]["right"] == 0.0
 
 
+def test_a_box_that_holds_no_character_takes_its_share_of_the_group_out_of_the_hundred():
+    pages = {"a": {"sample": "first", "boxes": {"long-or-large": 20, "other": 80}}}
+    rows = [{"page": "a", "group": "long-or-large", "characters": 2, "made": 2},
+            {"page": "a", "group": "long-or-large", "characters": 0, "made": 1},
+            {"page": "a", "group": "other", "characters": 1, "made": 2}]
+    # Ten of the twenty long boxes hold characters and are right; the eighty others are cut.
+    assert counts.score(rows, pages)["per_100_boxes"] == {
+        "right": 11.1, "one_character_cut": 88.9, "one_character_lost": 0.0, "several_wrong": 0.0}
+
+
+def test_a_box_without_a_named_detection_stands_for_those_in_it_or_the_one_it_is_part_of():
+    boxes = [(0, 0, 40, 80), (0, 100, 40, 40), (0, 142, 40, 40), (5, 5, 10, 10)]
+    made = [(0, 0, 40, 40), (0, 40, 40, 40), (0, 100, 40, 82), (300, 300, 40, 40)]
+    pieces = counts.stood_for(made, boxes)
+    assert pieces == [(0, 3), (0,), (1, 2)], "two halves of a box, two boxes joined, and a box on no detection"
+    shared = counts.shares(pieces, boxes)
+    assert (shared[0], shared[1], shared[2], shared[3]) == (2, 0.5, 0.5, 0)
+
+
 def test_a_joined_box_is_part_of_a_box_for_each_detection_it_joins():
     boxes = [(0, 0, 40, 40), (0, 50, 40, 40), (5, 5, 20, 20), (100, 0, 40, 80)]
     made = counts.shares([(0, 1), (0, 2), (3,), (3,)], boxes)

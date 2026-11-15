@@ -65,6 +65,24 @@ def shares(pieces: list[tuple[int, ...]], boxes: list[tuple[int, int, int, int]]
     return made
 
 
+def stood_for(made: list[tuple[int, int, int, int]], boxes: list[tuple[int, int, int, int]]) -> list[tuple[int, ...]]:
+    """The detections each box of a cutter that names none stands for.
+
+    A box stands for the detections that lie in it, which is how one kept whole or joined from two is
+    read, and a part of a detection for that detection: the one it lies in that it overlaps most.
+    """
+    pieces = []
+    for box in made:
+        within = [index for index, detection in enumerate(boxes) if inside(detection, box) >= 0.6]
+        around = [index for index, detection in enumerate(boxes) if inside(box, detection) >= 0.6]
+        whole = max(around, key=lambda index: iou(box, boxes[index]), default=None)
+        if whole is not None and whole not in within:
+            within.append(whole)
+        if within:
+            pieces.append(tuple(sorted(within)))
+    return pieces
+
+
 class Cutters:
     """The models, loaded once, and the boxes each cutter makes of every detection of a page."""
 
@@ -91,26 +109,30 @@ class Cutters:
         if name == "split":
             cut_boxes = split_boxes(image, [Proposal(x=box.x, y=box.y, w=box.w, h=box.h, score=round(float(score), 4))
                                             for box, score in found])
-            return boxes, [sum(inside((p.x, p.y, p.w, p.h), box) >= 0.6 for p in cut_boxes) for box in boxes]
-        detections = [align.Detection(box=box, score=float(score)) for box, score in found]
-        pieces = segment.cut_page(detections, image, self.classifier, self.framing, refiner=self.refiner)
-        counts = shares([piece.detections for piece in pieces], boxes)
+            counts = shares(stood_for([(p.x, p.y, p.w, p.h) for p in cut_boxes], boxes), boxes)
+        else:
+            detections = [align.Detection(box=box, score=float(score)) for box, score in found]
+            pieces = segment.cut_page(detections, image, self.classifier, self.framing, refiner=self.refiner)
+            counts = shares([piece.detections for piece in pieces], boxes)
         return boxes, [counts[index] for index in range(len(boxes))]
 
 
 def score(rows: list[dict], pages: dict) -> dict:
     """Counts over the listed boxes, and the same for 100 boxes of a page as the detector draws them."""
-    judged = [row for row in rows if row["characters"] and row["made"] is not None]
+    drawn = [row for row in rows if row["characters"] is not None and row["made"] is not None]
+    judged = [row for row in drawn if row["characters"]]
     singles = [row for row in judged if row["characters"] == 1]
     several = [row for row in judged if row["characters"] > 1]
     total = right = halved = lost = missed = 0.0
     for name, page in pages.items():
         for group, size in page["boxes"].items():
-            own = [row for row in judged if row["page"] == name and row["group"] == group]
+            listed = [row for row in drawn if row["page"] == name and row["group"] == group]
+            own = [row for row in listed if row["characters"]]
             if own:
                 # A group none of whose listed boxes can be judged says nothing, and is left out of the hundred.
-                total += size
-                weight = size / len(own)
+                # A listed box that holds no character stands for the group's others that hold none.
+                weight = size / len(listed)
+                total += weight * len(own)
                 right += weight * sum(row["made"] == row["characters"] for row in own)
                 halved += weight * sum(row["characters"] == 1 and row["made"] > 1 for row in own)
                 lost += weight * sum(row["characters"] == 1 and row["made"] < 1 for row in own)

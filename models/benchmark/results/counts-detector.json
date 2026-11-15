@@ -11,10 +11,10 @@
   "several_too_few": 40,
   "several_too_many": 0,
   "per_100_boxes": {
-   "right": 72.6,
+   "right": 72.9,
    "one_character_cut": 0.0,
    "one_character_lost": 0.0,
-   "several_wrong": 27.4
+   "several_wrong": 27.1
   }
  },
  "second": {
@@ -45,10 +45,10 @@
   "several_too_few": 74,
   "several_too_many": 0,
   "per_100_boxes": {
-   "right": 73.0,
+   "right": 73.2,
    "one_character_cut": 0.0,
    "one_character_lost": 0.0,
-   "several_wrong": 27.0
+   "several_wrong": 26.8
   }
  }
 }

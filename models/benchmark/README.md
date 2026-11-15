@@ -164,9 +164,9 @@ weighs them back to 100 boxes of a page that hold whole characters (`results/cou
 
 | cutter | right | one character, cut | one character, lost or joined | several characters, wrong count |
 | --- | ---: | ---: | ---: | ---: |
-| `detector` | 73.0 | 0.0 | 0.0 | 27.0 |
-| `split` | 76.0 | 2.1 | 0.8 | 21.1 |
-| `segment` | 84.1 | 1.1 | 0.6 | 14.3 |
+| `detector` | 73.2 | 0.0 | 0.0 | 26.8 |
+| `split` | 76.1 | 1.7 | 1.2 | 21.1 |
+| `segment` | 84.2 | 1.1 | 0.6 | 14.2 |
 
 `detector` is the detector's boxes as they are, `split` the geometric pass of
 `character_proposals.split_boxes`, `segment` is `glyph_atlas.segment`. The pages of sample `first`

@@ -87,10 +87,10 @@ that hold whole characters on these pages:
 
 | | detector alone | `split_boxes` | `segment` |
 | --- | ---: | ---: | ---: |
-| right | 73.0 | 76.0 | 84.1 |
-| one character, cut | 0.0 | 2.1 | 1.1 |
-| one character, lost or joined | 0.0 | 0.8 | 0.6 |
-| several characters, wrong count | 27.0 | 21.1 | 14.3 |
+| right | 73.2 | 76.1 | 84.2 |
+| one character, cut | 0.0 | 1.7 | 1.1 |
+| one character, lost or joined | 0.0 | 1.2 | 0.6 |
+| several characters, wrong count | 26.8 | 21.1 | 14.2 |
 
 On the four pages drawn after `segment` was settled (113 boxes) it is right about 86.1 in 100,
 `split_boxes` about 75.9.
