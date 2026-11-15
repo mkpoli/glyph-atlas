@@ -721,6 +721,26 @@ class StructureEdit(BaseModel):
     replace: bool = False
 
 
+class StructureName(BaseModel):
+    """A structure as a write names it: by a character or description, or by its id."""
+
+    model_config = ConfigDict(extra="forbid")
+    char: str | None = Field(default=None, min_length=1, max_length=256)
+    of: str | None = Field(default=None, min_length=1, max_length=8)
+    structure: str | None = Field(default=None, pattern=r"^st:[0-9a-f]{32}$")
+
+
+class FoldEdit(BaseModel):
+    """A reviewer folding one structure into another, or taking their own fold back."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    source: StructureName = Field(alias="from")
+    into: StructureName | None = None
+    remove: bool = False
+
+
 def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
     from .server import cached_image
 
@@ -1581,6 +1601,14 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         key, request = f"{edit.client_id}:{edit.id}", {"form": form, "structure": edit.model_dump(mode="json")}
         return ledger_call(store.set_structure, key=key, actor=edit.client_id, request=request, form=form,
                            char=edit.char, structure=edit.structure, remove=edit.remove, replace=edit.replace)
+
+    @api.post("/atlas/structures/folds")
+    def set_fold(edit: FoldEdit) -> dict:
+        """Fold one 構形 into another, or take back the reader's own fold, as the Worker does. The
+        answer names where the structure stands now."""
+        key, request = f"{edit.client_id}:{edit.id}", {"fold": edit.model_dump(mode="json", by_alias=True)}
+        return ledger_call(store.set_fold, key=key, actor=edit.client_id, request=request,
+                           source=edit.source.model_dump(), into=edit.into.model_dump() if edit.into else None, remove=edit.remove)
 
     def schedule_refinement(background: BackgroundTasks, unit_ids: set[str]) -> None:
         from .refine import background_refine

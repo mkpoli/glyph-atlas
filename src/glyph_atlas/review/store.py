@@ -1198,6 +1198,20 @@ class Store:
             return {"id": response["subject"], "structures": crop_forms.structures_of(conn, response["subject"]),
                     "replaced": response.get("replaced", [])}
 
+    def set_fold(self, **fold: Any) -> dict[str, Any]:
+        """Fold one structure into another, or take the fold back (`crop_forms.set_fold`), and return
+        where the structure stands now."""
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            response = crop_forms.set_fold(conn, **fold)
+            standing = crop_forms.folds_of(conn, [response["subject"]]).get(response["subject"])
+            return {"structure": response["subject"], "replaced": response.get("replaced"),
+                    "folds_into": {**standing["head"], "by": standing["by"]} if standing else None}
+
+    def folds_of(self, ids: Iterable[str]) -> dict[str, dict[str, Any]]:
+        """Where each structure stands after its folds (`crop_forms.folds_of`)."""
+        with self._lock, self._connection() as conn:
+            return crop_forms.folds_of(conn, ids)
+
     def claimed_structures(self, names: Iterable[str]) -> dict[str, dict[str, Any]]:
         """The 構形 a reader filed each written value under (`crop_forms.claimed_structures`)."""
         with self._lock, self._connection() as conn:

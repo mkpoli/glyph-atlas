@@ -207,6 +207,25 @@ def claimed_structures(conn: sqlite3.Connection, names: Iterable[str]) -> dict[s
     return found
 
 
+def _named_structure(conn: sqlite3.Connection, named: Mapping[str, Any], *, known: bool) -> tuple[str, Structure | None]:
+    """The structure a write names, by `char` (a character or description, derived here) or by
+    `structure`, the id of one a claim has named before, which `known` requires to have its row.
+    Answers its id, and the structure itself when it was derived."""
+    from .. import structures
+
+    if named.get("structure") is not None:
+        if known and conn.execute("SELECT 1 FROM structures WHERE id=?", (named["structure"],)).fetchone() is None:
+            raise LedgerError(422, "No claim has named this structure.")
+        return named["structure"], None
+    char = named.get("char")
+    if not char or representation.written(char) != [char]:
+        raise LedgerError(422, "Name one character or description.")
+    derived = structures.for_name(char)
+    if derived is None:
+        raise LedgerError(422, f"No structure is known for {char}.")
+    return derived.id, derived
+
+
 def set_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], form: str,
                   char: str | None = None, structure: str | None = None, remove: bool = False, replace: bool = False,
                   at: str | None = None, prefix: str = "lc", mint: Callable[[], str] | None = None) -> dict:
@@ -218,8 +237,6 @@ def set_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Ma
     so the form moves. The response lists in `replaced` the structures of the claims taken back. The
     Worker's `setStructure` does the same, reading a structure where this derives it.
     """
-    from .. import structures
-
     signature = ledger.canonical(request)
     saved = ledger.previous(conn, key, signature)
     if saved is not None:
@@ -235,17 +252,7 @@ def set_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Ma
     exists = conn.execute("SELECT 1 FROM forms WHERE id=?", (form,)).fetchone() is not None
     if not exists and named is None:
         raise LedgerError(404, "No such form.")
-    derived = None
-    if structure is not None:
-        if not remove and conn.execute("SELECT 1 FROM structures WHERE id=?", (structure,)).fetchone() is None:
-            raise LedgerError(422, "No claim has named this structure.")
-    else:
-        if not char or representation.written(char) != [char]:
-            raise LedgerError(422, "Name one character or description.")
-        derived = structures.for_name(char)
-        if derived is None:
-            raise LedgerError(422, f"No structure is known for {char}.")
-        structure = derived.id
+    structure, derived = _named_structure(conn, {"char": char, "structure": structure}, known=not remove)
     mine = conn.execute(
         "SELECT a.id,a.slot FROM assertions a WHERE a.subject=? AND a.predicate='has_structure' AND a.scope='' AND a.asserted_by=? "
         "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
@@ -270,6 +277,81 @@ def set_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Ma
                             prefix=prefix, at=at, mint=mint)
     response = {"submission": key, "subject": form,
                 "replaced": [structure] if remove else sorted({row["slot"] for row in others})}
+    conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
+                 (key, actor, signature, ledger.canonical(response), at))
+    return response
+
+
+#: How many folds are followed from one structure.
+FOLD_DEPTH = 8
+
+
+def folds_of(conn: sqlite3.Connection, ids: Iterable[str]) -> dict[str, dict]:
+    """Where each of these structures stands now: the structure at the end of its folds, with who
+    folded it (its own fold). A structure that folds nowhere is not in the answer; folds that lead
+    round stop at the lowest id among them. The Worker's `foldsOf` answers the same."""
+    def step(structure: str) -> sqlite3.Row | None:
+        row = conn.execute("SELECT c.object,c.status,c.claims,s.label FROM current_claims c LEFT JOIN structures s ON s.id=c.object "
+                           "WHERE c.subject=? AND c.predicate='folds_into' AND c.scope='' AND c.slot=''", (structure,)).fetchone()
+        return row if row is not None and row["status"] in FILED and row["object"] else None
+
+    found: dict[str, dict] = {}
+    for structure in dict.fromkeys(ids):
+        first = step(structure)
+        if first is None:
+            continue
+        seen, labels, row = [structure], {}, first
+        while row is not None and row["object"] not in seen and len(seen) <= FOLD_DEPTH:
+            labels[row["object"]] = row["label"] or ""
+            seen.append(row["object"])
+            row = step(row["object"])
+        if row is not None and row["object"] in seen:
+            labels[row["object"]] = row["label"] or ""
+            end = min(seen[seen.index(row["object"]):])
+        else:
+            end = seen[-1]
+        if end != structure:
+            found[structure] = {"head": {"id": end, "label": labels.get(end, "")},
+                                "by": sorted({claim["asserted_by"] for claim in json.loads(first["claims"]) if claim["standing"]})}
+    return found
+
+
+def set_fold(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], source: Mapping[str, Any],
+             into: Mapping[str, Any] | None = None, remove: bool = False, at: str | None = None, prefix: str = "lc",
+             mint: Callable[[], str] | None = None) -> dict:
+    """Fold one structure into another (`source`, `into`: each named as `set_structure` names one), or
+    take back the reader's own fold of `source`. A fold that would lead back is refused, and a reader's
+    new fold of a structure replaces their earlier one. The response names in `replaced` the structure
+    the reader's own earlier fold named. The Worker's `setFold` does the same."""
+    signature = ledger.canonical(request)
+    saved = ledger.previous(conn, key, signature)
+    if saved is not None:
+        return saved
+    at = at or ledger.now()
+    subject, derived = _named_structure(conn, source, known=False)
+    own = conn.execute(
+        "SELECT a.id,a.object FROM assertions a WHERE a.subject=? AND a.predicate='folds_into' AND a.scope='' AND a.slot='' "
+        "AND a.asserted_by=? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
+        "ORDER BY a.rowid DESC LIMIT 1", (subject, actor)).fetchone()
+    if remove:
+        if own is None:
+            raise LedgerError(409, "You have not folded this structure.")
+        ledger.act(conn, key=f"{key}/retract", actor=actor, request={"target": own["id"], "action": "retract"}, target=own["id"],
+                   action="retract", reason="cleared", version_of=lambda _unit: None, prefix=prefix, at=at, mint=mint)
+    else:
+        head, built = _named_structure(conn, into or {}, known=True)
+        if head == subject:
+            raise LedgerError(422, "A structure folds into another.")
+        if folds_of(conn, [head]).get(head, {}).get("head", {}).get("id") == subject:
+            raise LedgerError(409, "That structure already stands under this one.")
+        if derived is None and conn.execute("SELECT 1 FROM structures WHERE id=?", (subject,)).fetchone() is None:
+            raise LedgerError(422, "No claim has named this structure.")
+        for one in (derived, built):
+            if one is not None:
+                ensure_structure(conn, one, actor=actor, at=at)
+        ledger.write_claims(conn, key=f"{key}/claim", actor=actor, request=request, subject=subject, predicate="folds_into",
+                            claims=[Claim(object=head)], objects={head: "structure"}, method=METHOD, prefix=prefix, at=at, mint=mint)
+    response = {"submission": key, "subject": subject, "replaced": own["object"] if own is not None else None}
     conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
                  (key, actor, signature, ledger.canonical(response), at))
     return response

@@ -58,3 +58,37 @@ def test_a_filing_refuses_what_names_nothing(dataset):  # noqa: F811
     file(client, "⿰山", char="峰", status=422)
     file(client, "峯", char="峰峯", status=422)
     file(client, "fm:" + "0" * 32, char="峰", status=404)
+
+
+def fold(client: TestClient, source: dict, into: dict | None, *, reviewer: str = "ann", status: int = 200) -> dict:
+    body = {"id": str(uuid4()), "client_id": reviewer, "from": source, **({"into": into} if into else {"remove": True})}
+    response = client.post("/atlas/structures/folds", json=body)
+    assert response.status_code == status, response.text
+    return response.json()
+
+
+def test_a_structure_folds_into_another_and_its_forms_join_that_group(dataset):  # noqa: F811
+    client = TestClient(create_app(dataset))
+    wind = structures.for_character("嵐")
+    folded = fold(client, {"char": "峯"}, {"char": "峰"})
+    assert folded == {"structure": ABOVE.id, "replaced": None,
+                      "folds_into": {"id": BESIDE.id, "label": BESIDE.label, "by": ["ann"]}}
+    assert groups(client, "峰峯") == [{
+        "id": BESIDE.id, "label": BESIDE.label, "chars": ["峰", "峯"],
+        "folded": [{"id": ABOVE.id, "label": ABOVE.label, "by": ["ann"], "chars": ["峯"]}],
+    }]
+    # Folds are followed to their end, and one that would lead back is refused.
+    fold(client, {"structure": BESIDE.id}, {"char": "嵐"})
+    assert [(group["id"], group["chars"]) for group in groups(client, "峰峯嵐")] == [(wind.id, ["峰", "峯", "嵐"])]
+    fold(client, {"char": "嵐"}, {"char": "峯"}, status=409)
+    fold(client, {"char": "峰"}, {"char": "峰"}, status=422)
+    # A reader's new fold replaces their earlier one; only their own fold is theirs to take back.
+    assert fold(client, {"char": "峯"}, {"char": "嵐"})["replaced"] == BESIDE.id
+    fold(client, {"structure": ABOVE.id}, None, reviewer="bob", status=409)
+    assert fold(client, {"structure": ABOVE.id}, None)["folds_into"] is None
+    assert fold(client, {"structure": BESIDE.id}, None)["folds_into"] is None
+    assert [group["chars"] for group in groups(client, "峰峯嵐")] == [["峰"], ["峯"], ["嵐"]]
+    # Readers who disagree fold the structure nowhere.
+    fold(client, {"char": "峯"}, {"char": "峰"})
+    fold(client, {"char": "峯"}, {"char": "嵐"}, reviewer="bob")
+    assert [group["chars"] for group in groups(client, "峰峯嵐")] == [["峰"], ["峯"], ["嵐"]]
