@@ -964,6 +964,77 @@ def take_row(atlas, cid, row, counted):
                       [row[c] for c in CROP_COLS])
 
 
+# Rows of `absorbing`, and graphemes, one query reads.
+ABSORB_CHUNK = 1000
+
+
+def absorb(atlas, ids):
+    """Take what `absorbing` holds into the local copy (`atlas`) and empty it; the number of crops it held.
+    A publication of the answers copies there the row of every crop the site changed (answers.py
+    `snapshot`), each with the revision the store counts for it and whether it keeps a reviewer's style.
+    The graphemes the rows name and the codes D1 holds go in first, the codes also into the id allocator
+    (`ids`, out/mirror.sqlite), which numbers the next code a publish needs. Everything is read and
+    compared before anything is written: an id or code that stands for another text or key here stops
+    the run with `absorbing` as it was. `absorbing` is emptied once both local databases have committed,
+    so a run that stops anywhere is finished by the next."""
+    held, last = [], -1
+    while True:
+        chunk = query("glyph-atlas-v3", f"SELECT crop, through, row FROM absorbing WHERE crop > {last} ORDER BY crop LIMIT {ABSORB_CHUNK}")
+        held += chunk
+        if len(chunk) < ABSORB_CHUNK:
+            break
+        last = chunk[-1]["crop"]
+    if not held:
+        return 0
+    rows = {r["crop"]: json.loads(r["row"]) if r["row"] else None for r in held}
+    named = sorted({row[c] for row in rows.values() if row for c in ("char", "family") if row[c] is not None})
+    graphemes = [g for i in range(0, len(named), ABSORB_CHUNK)
+                 for g in query("glyph-atlas-v3", f"SELECT id, text, head FROM graphemes WHERE id IN ({','.join(map(str, named[i:i + ABSORB_CHUNK]))})")]
+    codes = [(c["field"], c["code"], c["key"]) for c in query("glyph-atlas-v3", "SELECT field, code, key FROM codes")]
+    clashes, new_graphemes, new_codes, new_ids = [], [], [], []
+    for g in graphemes:
+        here = [tuple(r) for r in atlas.execute("SELECT id, text FROM graphemes WHERE id=? OR text=?", (g["id"], g["text"]))]
+        if any(row != (g["id"], g["text"]) for row in here):
+            clashes.append(f"grapheme {g['id']} is {g['text']!r} in D1 and the local copy holds {here}")
+        elif not here:
+            new_graphemes.append((g["id"], g["text"], g["head"]))
+    for code in codes:
+        field = code[0]
+        here = [tuple(r) for r in atlas.execute("SELECT field, code, key FROM codes WHERE field=? AND (code=? OR key=?)", code)]
+        if any(row != code for row in here):
+            clashes.append(f"code {code} of D1 is {here} in the local copy")
+        elif not here:
+            new_codes.append(code)
+            # The allocator takes it too, so the next code of its field is numbered after it.
+            allocated = [tuple(r) for r in ids.execute("SELECT field, code, key FROM codes WHERE field=? AND (code=? OR key=?)", code)]
+            if any(row != code for row in allocated):
+                clashes.append(f"code {code} of D1 is {allocated} in out/mirror.sqlite")
+            elif not allocated:
+                new_ids.append((field, code[2], code[1]))
+    if clashes:
+        sys.exit(f"glyph-atlas-v3 and the local copy number {len(clashes)} graphemes or codes differently, for example: "
+                 f"{clashes[0]}; nothing absorbed, and `absorbing` keeps its {len(held)} crops")
+    atlas.execute(REVIEWER_STYLES)
+    atlas.executemany("INSERT INTO graphemes(id,text,head) VALUES(?,?,?)", new_graphemes)
+    atlas.executemany("INSERT INTO codes(field,code,key) VALUES(?,?,?)", new_codes)
+    ids.executemany("INSERT INTO codes(field,key,code) VALUES(?,?,?)", new_ids)
+    taken = removed = neither = 0
+    for crop, row in rows.items():
+        if row is None and not atlas.execute("SELECT 1 FROM crops WHERE id=?", (crop,)).fetchone():
+            neither += 1
+            continue
+        take_row(atlas, crop, row, row and {"revision": row["logical"], "at": row["revision"], "own": row["own_style"]})
+        taken, removed = taken + (row is not None), removed + (row is None)
+    # The allocator first: a code it holds and the local copy lacks is copied again by the next run, and
+    # one the local copy alone held would leave the allocator to give its number to another key.
+    ids.commit()
+    atlas.commit()
+    query("glyph-atlas-v3", f"DELETE FROM absorbing WHERE through <= {max(r['through'] for r in held)}")
+    print(f"absorbed {len(held)} crops from glyph-atlas-v3: {taken} rows taken, {removed} removed, {neither} in neither "
+          f"database, with {len(new_graphemes)} graphemes and {len(new_codes)} codes", flush=True)
+    return len(held)
+
+
 def deliver(m, run):
     """Finish a publish whose ids are allocated. Every step can run again: bundles to R2, then each
     part to D1, then the same part to the local copy, in order; then the guarded rows are read back."""
@@ -1210,6 +1281,17 @@ def main():
             sys.exit("--migrate applies the migrations; it has no dry run")
         print("review migrations in place on glyph-atlas-v3 and the local copy", flush=True)
         return
+    # A publication of the answers that stopped after its bump left the crops it copied in `absorbing`. The
+    # local copy takes them before anything is planned against it, so the plan stands on the site's rows and
+    # no row this publish writes is replaced by an older one of theirs. A dry run reads `absorbing` only
+    # where D1 has it, since it applies no migration.
+    if not dry:
+        if query("glyph-atlas-v3", "SELECT crop FROM absorbing LIMIT 1"):
+            absorb(m.atlas, m.ids)
+    elif query("glyph-atlas-v3", "SELECT 1 AS n FROM sqlite_master WHERE name='absorbing'") and \
+            query("glyph-atlas-v3", "SELECT crop FROM absorbing LIMIT 1"):
+        sys.exit("glyph-atlas-v3 holds crops a stopped publication of the answers copied; run a publish (not a dry run) "
+                 "or answers.py to take them first")
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():

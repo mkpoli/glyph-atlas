@@ -295,6 +295,34 @@ def test_a_database_that_took_an_earlier_0016_gains_its_new_columns_under_a_stam
     assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports WHERE stamp LIKE 'migration:0016+%'") == [{"n": 1}]
 
 
+def test_the_crops_a_stopped_publication_of_the_answers_copied_are_taken_before_a_publish_plans(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
+    # A reviewer checks the crop, and a publication of the answers bumps the generation, copies the
+    # listed crop and stops there.
+    d1.execute("UPDATE crops SET state=1, revision=1 WHERE id=?", (crop,))
+    d1.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,1,0,1,1,1,0,0)", (crop,))
+    d1.execute("INSERT INTO touched VALUES(?,1)", (crop,))
+    d1.execute("UPDATE generation SET gen=2")
+    d1.commit()
+    sys.modules.pop("answers", None)
+    importlib.import_module("answers").snapshot(1)
+    assert d1.execute("SELECT crop FROM absorbing").fetchall() == [(crop,)]
+    # The publish gives the crop another priority.
+    path = catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, priority=2)])
+    with pytest.raises(SystemExit, match="take them first"):
+        run(publish, monkeypatch, path, "--dry-run")
+    run(publish, monkeypatch, path)
+    # The publish took the copied crop itself, before its plan: the answers were not run here.
+    assert remote.answered == 1 and d1.execute("SELECT count(*) FROM absorbing").fetchone()[0] == 0
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    local.row_factory = sqlite3.Row
+    held = dict(local.execute("SELECT * FROM crops WHERE id=?", (crop,)).fetchone())
+    # The crop keeps the review and the publish's own row.
+    assert held == crops(remote)[crop] and (held["state"], held["priority"], held["revision"]) == (1, 2, 1)
+    assert local.execute("SELECT revision, at FROM review_revisions WHERE crop=?", (crop,)).fetchone()[:] == (1, 1)
+
+
 def test_a_local_copy_without_the_review_history_is_refused(layout, monkeypatch, tmp_path):
     root, publish, _remote = layout
     db = sqlite3.connect(root / "out" / "atlas.sqlite")

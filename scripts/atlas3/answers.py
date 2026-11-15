@@ -15,12 +15,12 @@ the site's own changes here. The Worker lists every crop whose row it changes in
 generation of the change (migration 0018). Once the bump to G + 1 has applied, the publication copies
 each crop listed through G, as its row then stands, into `absorbing` and takes it off the list; a crop
 changed again at G + 1 before that copy stays listed for the next publication. The local copy then
-takes each copied row whole, with the revision the offline store counts for the crop and whether it
-keeps a reviewer's style, as a publish's read-back takes a guarded crop's (`publish.take_row`), the
+takes each copied row whole (`publish.absorb`), with the revision the offline store counts for the
+crop and whether it keeps a reviewer's style, as a publish's read-back takes a guarded crop's, the
 graphemes those rows name and the codes D1 holds and the local copy lacks; a crop D1 no longer holds
 leaves the local copy. `absorbing` is emptied once the local copy has committed, so a publication that
-stopped after its bump is finished by the next run, which applies what `absorbing` still holds before
-anything else and publishes through a newer generation. The answers are written after that, from the
+stopped after its bump is finished by the next run of this script or of publish.py, which applies what
+`absorbing` still holds before anything else. The answers are written after that, from the
 local copy as it then stands. A dry run reads how many crops are listed, writes the answers of the
 local copy as it is, and changes neither database.
 
@@ -83,10 +83,9 @@ from publish import (
     OUT,
     OWN_STYLE,
     R2_REMOTE,
-    REVIEWER_STYLES,
+    absorb,
     applied,
     query,
-    take_row,
     upload,
 )
 
@@ -125,8 +124,6 @@ UNLISTED = ("text", "line", "context_image", "context_box", "crop_box", "image_p
 READS = 32
 READ_ATTEMPTS = 4
 DATABASE = "glyph-atlas-v3"
-# Rows of `absorbing`, and graphemes, one query reads.
-ABSORB_CHUNK = 1000
 # A listed crop's row as `absorbing` keeps it: its columns by name, the revision the offline store counts
 # for it (`logical`) and whether it keeps a reviewer's style (`own_style`), each read from the crop `c`.
 SNAPSHOT_ROW = ("json_object(" + ",".join(f"'{c}',c.{c}" for c in CROP_COLS)
@@ -342,71 +339,6 @@ def snapshot(through):
                     f"CASE WHEN c.id IS NULL THEN NULL ELSE {SNAPSHOT_ROW} END "
                     f"FROM touched t LEFT JOIN crops c ON c.id = t.crop WHERE t.gen <= {through}; "
                     f"DELETE FROM touched WHERE gen <= {through}")
-
-
-def absorb(atlas, ids):
-    """Take what `absorbing` holds into the local copy (`atlas`) and empty it; the number of crops it held.
-    The graphemes the rows name and the codes D1 holds go in first, the codes also into the id allocator
-    (`ids`, out/mirror.sqlite), which numbers the next code a publish needs. Everything is read and
-    compared before anything is written: an id or code that stands for another text or key here stops
-    the run with `absorbing` as it was. `absorbing` is emptied once both local databases have committed,
-    so a run that stops anywhere is finished by the next."""
-    held, last = [], -1
-    while True:
-        chunk = query(DATABASE, f"SELECT crop, through, row FROM absorbing WHERE crop > {last} ORDER BY crop LIMIT {ABSORB_CHUNK}")
-        held += chunk
-        if len(chunk) < ABSORB_CHUNK:
-            break
-        last = chunk[-1]["crop"]
-    if not held:
-        return 0
-    rows = {r["crop"]: json.loads(r["row"]) if r["row"] else None for r in held}
-    named = sorted({row[c] for row in rows.values() if row for c in ("char", "family") if row[c] is not None})
-    graphemes = [g for i in range(0, len(named), ABSORB_CHUNK)
-                 for g in query(DATABASE, f"SELECT id, text, head FROM graphemes WHERE id IN ({','.join(map(str, named[i:i + ABSORB_CHUNK]))})")]
-    codes = [(c["field"], c["code"], c["key"]) for c in query(DATABASE, "SELECT field, code, key FROM codes")]
-    clashes, new_graphemes, new_codes, new_ids = [], [], [], []
-    for g in graphemes:
-        here = atlas.execute("SELECT id, text FROM graphemes WHERE id=? OR text=?", (g["id"], g["text"])).fetchall()
-        if any(row != (g["id"], g["text"]) for row in here):
-            clashes.append(f"grapheme {g['id']} is {g['text']!r} in D1 and the local copy holds {here}")
-        elif not here:
-            new_graphemes.append((g["id"], g["text"], g["head"]))
-    for code in codes:
-        field = code[0]
-        here = atlas.execute("SELECT field, code, key FROM codes WHERE field=? AND (code=? OR key=?)", code).fetchall()
-        if any(row != code for row in here):
-            clashes.append(f"code {code} of D1 is {here} in the local copy")
-        elif not here:
-            new_codes.append(code)
-            # The allocator takes it too, so the next code of its field is numbered after it.
-            allocated = ids.execute("SELECT field, code, key FROM codes WHERE field=? AND (code=? OR key=?)", code).fetchall()
-            if any(row != code for row in allocated):
-                clashes.append(f"code {code} of D1 is {allocated} in out/mirror.sqlite")
-            elif not allocated:
-                new_ids.append((field, code[2], code[1]))
-    if clashes:
-        sys.exit(f"glyph-atlas-v3 and the local copy number {len(clashes)} graphemes or codes differently, for example: "
-                 f"{clashes[0]}; nothing absorbed, and `absorbing` keeps its {len(held)} crops")
-    atlas.execute(REVIEWER_STYLES)
-    atlas.executemany("INSERT INTO graphemes(id,text,head) VALUES(?,?,?)", new_graphemes)
-    atlas.executemany("INSERT INTO codes(field,code,key) VALUES(?,?,?)", new_codes)
-    ids.executemany("INSERT INTO codes(field,key,code) VALUES(?,?,?)", new_ids)
-    taken = removed = neither = 0
-    for crop, row in rows.items():
-        if row is None and not atlas.execute("SELECT 1 FROM crops WHERE id=?", (crop,)).fetchone():
-            neither += 1
-            continue
-        take_row(atlas, crop, row, row and {"revision": row["logical"], "at": row["revision"], "own": row["own_style"]})
-        taken, removed = taken + (row is not None), removed + (row is None)
-    # The allocator first: a code it holds and the local copy lacks is copied again by the next run, and
-    # one the local copy alone held would leave the allocator to give its number to another key.
-    ids.commit()
-    atlas.commit()
-    query(DATABASE, f"DELETE FROM absorbing WHERE through <= {max(r['through'] for r in held)}")
-    print(f"absorbed {len(held)} crops from glyph-atlas-v3: {taken} rows taken, {removed} removed, {neither} in neither "
-          f"database, with {len(new_graphemes)} graphemes and {len(new_codes)} codes", flush=True)
-    return len(held)
 
 
 def answers_digest(folder, site):
