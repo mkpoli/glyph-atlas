@@ -12,7 +12,8 @@
   // sequence's text until a drawing is ready or where none can be made. The drawing keeps the sequence
   // inside it, so a selection copies the text.
   // A registered figure, a character with an ideographic variation selector (突󠄃), is drawn in MJ
-  // Figures, the font that maps its sequence; any other font draws the character without its selector.
+  // Figures, the font that maps its sequence, once the file that holds it has loaded; any other font
+  // draws the character without its selector, and a sequence the font lacks keeps the fonts around it.
   let { text = '', script = '', lang = '', titled = true } = $props()
   // `scriptParts` returns a fixed English `label` for use outside a Svelte context (it is also
   // called directly by a plain-Node check); the label shown here is looked up again from `key` so
@@ -26,11 +27,12 @@
   $effect(() => {
     for (const part of parts) if (part.described && !drawn(part.text) && paintedDrawing(part.text) === undefined) show(part.text)
   })
-  $effect(() => { for (const part of parts) if (part.figure) drawFigure(part.text).catch(() => {}) })
+  let figured = $state({})
+  $effect(() => { for (const part of parts) if (part.figure && !figured[part.text]) drawFigure(part.text).then(() => { figured[part.text] = true }, () => {}) })
   const language = key => lang || (key === 'hangul' || key === 'gugyeol' ? 'ko' : key === 'tangut' ? 'txg' : 'ja')
 </script>
 
-<span class="script-text" role="img" aria-label={description}>{#each parts as part, index (index)}{#if drawings[index]}<span class="script-char ids-drawing" data-script={part.key} lang={language(part.key)} title={titled ? `${part.text} · ${part.label}` : undefined} aria-hidden="true" style:--drawing={`url("${drawings[index]}")`}><span class="ids-copy">{part.text}</span></span>{:else}<span class="script-char" class:ids-text={part.described} style:font-family={part.figure ? `"${FAMILY}", serif` : null} data-script={part.key} lang={language(part.key)} title={titled ? `${part.text} · ${part.label}` : undefined} aria-hidden="true">{part.text}</span>{/if}{/each}</span>
+<span class="script-text" role="img" aria-label={description}>{#each parts as part, index (index)}{#if drawings[index]}<span class="script-char ids-drawing" data-script={part.key} lang={language(part.key)} title={titled ? `${part.text} · ${part.label}` : undefined} aria-hidden="true" style:--drawing={`url("${drawings[index]}")`}><span class="ids-copy">{part.text}</span></span>{:else}<span class="script-char" class:ids-text={part.described} style:font-family={figured[part.text] ? `"${FAMILY}", serif` : null} data-script={part.key} lang={language(part.key)} title={titled ? `${part.text} · ${part.label}` : undefined} aria-hidden="true">{part.text}</span>{/if}{/each}</span>
 
 <style>
   .ids-drawing{position:relative;display:inline-block;width:1em;height:1em;vertical-align:-0.12em;background:currentColor;

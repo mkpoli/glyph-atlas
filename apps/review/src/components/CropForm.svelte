@@ -4,8 +4,9 @@
   // or derived character, a character found by search, or a shape written as an ideographic description
   // sequence. A choice is held until the dialog saves. Every chip toggles: a click chooses it, the crop's
   // own form too, which confirms that form, and a click on the chosen chip drops the choice.
-  // A described form the crop already has can be recorded as written for its grapheme (written_for), so
-  // the form joins the grapheme's 字体 on every card and in every picker of the family.
+  // A described form or a registered figure the crop already has can be recorded as written for its
+  // grapheme (written_for), so the form joins the grapheme's 字体 on every card and in every picker of
+  // the family.
   // Under the bar stands the 構形 of the chosen form, or of the crop's own, with the bar's other forms
   // built as it is: 説 and 說 are one structure, 峰 and 峯 two.
   import FormChips from './FormChips.svelte'
@@ -64,14 +65,16 @@
   const structure = $derived(composed.find(group => group.chars.includes(shown)) ?? null)
   // The bar wraps onto further rows; only the forms past the first ten, and not on it, wait in the picker.
   const rest = $derived(forms.slice(BAR).filter(form => !bar.some(chip => chip.char === form.char)))
-  // The crop's own form as the site holds it: one value, and not disputed. Only a described form can be
-  // added to the grapheme's 字体 here; encoded characters already have a card row of their own.
+  // The crop's own form as the site holds it: one value, and not disputed. A described form or a
+  // registered figure (a variation sequence) can be added to the grapheme's 字体 here; encoded
+  // characters already have a card row of their own. A figure the bar offers from the IVD is not on
+  // the card until someone adds it.
   const saved = $derived(crop?.form?.status === 'disputed' ? null : (crop?.form?.values ?? []).find(value => value.form) ?? null)
   const linkedChars = $derived(new Set((listed.linked ?? []).map(item => item.char)))
   const linkedHere = $derived(Boolean(saved && linkedChars.has(saved.text)))
-  const knownForm = $derived(Boolean(saved && [...listed.members, ...listed.variants].some(item => item.char === saved.text && !linkedChars.has(item.char))))
+  const knownForm = $derived(Boolean(saved && [...listed.members, ...listed.variants].some(item => item.char === saved.text && !item.mj && !linkedChars.has(item.char))))
   const grapheme = $derived(listed.grapheme?.code_point ?? crop?.grapheme ?? null)
-  const canLink = $derived(Boolean(saved && saved.scheme === 'ids' && !linkedHere && !knownForm && !chosen && grapheme && !disabled && !failed))
+  const canLink = $derived(Boolean(saved && (saved.scheme === 'ids' || saved.scheme === 'ivs') && !linkedHere && !knownForm && !chosen && grapheme && !disabled && !failed))
   const me = $derived(signedInUser()?.id ?? null)
   const q = $derived(query.trim().toUpperCase())
   const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
