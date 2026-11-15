@@ -702,6 +702,19 @@ def test_a_dry_run_writes_the_pages_that_take_other_neighbours(layout, monkeypat
     assert published_pages(root) == before and remote.uploaded == []
 
 
+def test_a_page_that_loses_its_last_crop_leaves_the_chain(layout, monkeypatch, tmp_path):
+    root, publish, _ = layout
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+    numbers = {"hl:p1": {"page_number": 1}, "hl:p2": {"page_number": 2}, "hl:p3": {"page_number": 3}}
+    run(publish, monkeypatch, page_catalogue(tmp_path / "first.sqlite", [unit("ex:c1", "hl:p3", box)], numbers))
+    assert links(root) == {"hl:p1": (None, "hl:p2"), "hl:p2": ("hl:p1", "hl:p3"), "hl:p3": ("hl:p2", None)}
+    # The only crop of hl:p2 is retired by a catalogue that carries no page of the book.
+    retired = list(unit("ex:b1", "hl:p2", box))
+    retired[UNITS.index("origin")] = "retired"
+    run(publish, monkeypatch, catalogue(tmp_path / "second.sqlite", [tuple(retired)]))
+    assert links(root)["hl:p1"] == (None, "hl:p3") and links(root)["hl:p3"] == ("hl:p1", None)
+
+
 def test_a_books_pages_are_linked_by_number_then_key_with_unnumbered_pages_last(layout):
     _root, publish, _remote = layout
     assert publish.page_links([("d:10", 10), ("d:2", 2), ("d:b", 2), ("d:x", None), ("d:a", None)]) == {

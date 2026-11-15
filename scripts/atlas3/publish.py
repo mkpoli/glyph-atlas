@@ -1876,9 +1876,11 @@ def main():
     # every page of its book the site holds once this publish lands; links a catalogue carries are dropped.
     facts = {r["id"]: {k: v for k, v in json.loads(r["data"]).items() if k not in LINKS}
              for r in src.execute("SELECT id, data FROM pages")} if "pages" in tables else {}
-    # The books whose pages may change: those the catalogue carries a page of, a page new to the site among them.
-    books = sorted({row["book"] for key in facts
-                    if (row := m.atlas.execute("SELECT book FROM pages WHERE key=?", (key,)).fetchone())})
+    # The books whose pages may change: those the catalogue carries a page of, a page new to the site among them,
+    # and those a page of which gained or lost a crop in this run, since a page that lost its last one leaves the chain.
+    books = {row["book"] for key in facts if (row := m.atlas.execute("SELECT book FROM pages WHERE key=?", (key,)).fetchone())}
+    books |= {row["book"] for pid in m.touched_pages if (row := m.atlas.execute("SELECT book FROM pages WHERE id=?", (pid,)).fetchone())}
+    books = sorted(books)
     # The facts each changed page is published with, its links among them, and how many pages published
     # before take other neighbours.
     page_facts, relinked = {}, 0
@@ -1888,8 +1890,10 @@ def main():
             held = published_facts(p["id"])
             base = None if held is None else {k: v for k, v in held.items() if k not in LINKS}
             record = facts.get(p["key"], base)
-            # A page with no facts (crops with no page, corpus glyphs) has no page view, so nothing links to it.
-            if record is not None:
+            # A page with no facts (crops with no page, corpus glyphs) has no page view, and one whose crops are all
+            # retired shows none, so nothing links to either; such a page keeps the links it has.
+            if record is not None and m.atlas.execute("SELECT 1 FROM crops WHERE id >= ? AND id < ? LIMIT 1",
+                                                      (p["id"] * PAGE, (p["id"] + 1) * PAGE)).fetchone():
                 members[p["book"]].append((p["id"], p["key"], record, held, record != base))
         for pages in members.values():
             links = page_links([(key, record.get("page_number")) for _, key, record, _, _ in pages])
