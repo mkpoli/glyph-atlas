@@ -376,7 +376,10 @@ def read_reading_pages(http: Http, site: Site, titles: Iterable[str]) -> list[di
     return sorted(works, key=lambda work: work["title"])
 
 
-def read_commons_file(http: Http, file_name: str) -> dict[str, Any]:
+EXTMETADATA = ("LicenseShortName", "License", "UsageTerms", "DateTimeOriginal", "ObjectName")
+
+
+def read_commons_file(http: Http, file_name: str, *, extmetadata: tuple[str, ...] = EXTMETADATA) -> dict[str, Any]:
     title = "File:" + file_name.removeprefix("File:")
     answer = http.query(COMMONS, {"titles": title, "prop": "imageinfo|revisions",
                                   "iiprop": "url|size|sha1|mime|extmetadata",
@@ -389,7 +392,7 @@ def read_commons_file(http: Http, file_name: str) -> dict[str, Any]:
     revision = (page.get("revisions") or [{}])[0]
     wikitext = ((revision.get("slots") or {}).get("main") or {}).get("content") or ""
     extmetadata = {key: value.get("value") for key, value in (info.get("extmetadata") or {}).items()
-                   if key in ("LicenseShortName", "License", "UsageTerms", "DateTimeOriginal", "ObjectName")}
+                   if key in extmetadata}
     return {"title": page["title"], "revision": revision.get("revid"), "wikitext": wikitext,
             "url": clean_url(info["url"]), "description_url": info["descriptionurl"],
             "width": info["width"], "height": info["height"], "pagecount": info.get("pagecount"),
@@ -611,23 +614,9 @@ def write_lines(directory: Path) -> int:
     return len(lines)
 
 
-def collect(
-    out: Path,
-    wiki: str,
-    names: Iterable[str],
-    *,
-    http: Http | None = None,
-    image_root: Path | None = None,
-    command: str = "collect Wikisource scans",
-    **options: Any,
-) -> dict[str, Any]:
-    """Collect every index into one dataset directory and return a summary per document."""
-    http = http or Http()
+def write_dataset(out: Path, results: list[Collected], *, http: Http, root: Path, command: str) -> dict[str, Any]:
+    """Write the tables and MANIFEST of collected documents into `out`; return the summary."""
     out = Path(out)
-    site = read_site(http, wiki)
-    root = images.images_root(image_root)
-    known = {row.url: row for row in images.index(root) if row.superseded_by is None}
-    results = [collect_index(http, site, wiki, name, image_root=root, known=known, **options) for name in names]
     documents = [result.document for result in results]
     pages = [page for result in results for page in result.pages]
     texts = [text for result in results for text in result.texts]
@@ -650,4 +639,24 @@ def collect(
     staging.write_text(json.dumps(manifest, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     os.replace(staging, out / "MANIFEST.json")
     return {"tables": counts, "documents": [result.summary for result in results]}
+
+
+def collect(
+    out: Path,
+    wiki: str,
+    names: Iterable[str],
+    *,
+    http: Http | None = None,
+    image_root: Path | None = None,
+    command: str = "collect Wikisource scans",
+    **options: Any,
+) -> dict[str, Any]:
+    """Collect every index into one dataset directory and return a summary per document."""
+    http = http or Http()
+    out = Path(out)
+    site = read_site(http, wiki)
+    root = images.images_root(image_root)
+    known = {row.url: row for row in images.index(root) if row.superseded_by is None}
+    results = [collect_index(http, site, wiki, name, image_root=root, known=known, **options) for name in names]
+    return write_dataset(out, results, http=http, root=root, command=command)
 
