@@ -3,8 +3,10 @@ import { Problem } from './busy';
 
 type Json = Record<string, any>;
 
-// NFC composes a voiced kana, but it also maps each CJK compatibility ideograph to its unified twin,
-// and those are characters of their own here; they are kept as written.
+// NFC composes a voiced kana, but it also maps each CJK compatibility ideograph to its unified twin.
+// A text is kept as written here: a form's text names the figure a compatibility ideograph was encoded
+// for (`representation.typed`), and a key names the code point crops are filed under. What a reader
+// names as a crop's character is read by `unified`.
 const COMPATIBILITY = /[豈-﫿\u{2F800}-\u{2FA1F}]/u;
 export function compose(value: string): string {
   let out = '', run = '';
@@ -20,6 +22,9 @@ export function literal(value: string): string {
   }
   return compose(trimmed);
 }
+/** `value` as `literal` reads it, with each compatibility ideograph as the unified ideograph it stands
+ *  for (說 U+F96F is 說 U+8AAA, docs/decisions/0013-finer-forms.md). */
+export const unified = (value: string) => literal(value).normalize('NFC');
 export const single = (value: string) => [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(value)].length === 1;
 export async function body(request: Request): Promise<Json> {
   const origin=request.headers.get('origin');
@@ -45,9 +50,10 @@ export function canonical(value: unknown): string {
 }
 // A written character a reviewer names: one character, which may carry combining marks or a variation
 // selector, and may be a private-use code point (구결자 are encoded there). Control, format, surrogate
-// and separator code points are refused, as is a combining mark with no base.
+// and separator code points are refused, as is a combining mark with no base. A compatibility ideograph
+// is the unified ideograph it stands for.
 export function writtenCharacter(value: string): string {
-  const written = literal(value);
+  const written = unified(value);
   if (!written || /[\p{Cc}\p{Cf}\p{Cs}\p{Z}]/u.test(written) || /^\p{M}/u.test(written) || !single(written))
     throw new Problem(422, 'Choose one written character.');
   return written;
