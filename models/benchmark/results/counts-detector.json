@@ -2,6 +2,7 @@
  "cutter": "detector",
  "scale": 1.0,
  "fill": [],
+ "ink": false,
  "first": {
   "boxes": 137,
   "gone": 0,

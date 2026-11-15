@@ -85,10 +85,10 @@ class Proposal:
 
 
 def proposer(onnx: Path, *, score: float = SCORE, nms: float = NMS, split: bool = False, scale: float = 1.0,
-             fill: Sequence[float] = ()) -> str:
+             fill: Sequence[float] = (), ink: bool = False) -> str:
     """The proposer version: the detector's checksum, the operating point and the page geometry and
-    ink gate `detect` applies, hashed together, the split when boxes were cut and the scales when the
-    page was resized."""
+    ink gate `detect` applies, hashed together, the split when boxes were cut, the scales when the
+    page was resized and the ink gate when boxes on no ink were dropped."""
     from . import detect
 
     model = hashlib.sha256(Path(onnx).read_bytes()).hexdigest()
@@ -101,17 +101,28 @@ def proposer(onnx: Path, *, score: float = SCORE, nms: float = NMS, split: bool 
         settings += (("scale", scale, detect.PART, detect.MEETS, detect.BLOCK),)
     if fill:
         settings += (("fill", tuple(float(value) for value in fill), detect.CLEAR),)
+    if ink:
+        from . import pigment
+
+        settings += (("ink", 3, pigment.INKED, pigment.SLOPE, pigment.FLOOR, pigment.GREY, pigment.SEEN, pigment.APART,
+                      pigment.REDUCE, pigment.PAPER, pigment.BRIGHT, pigment.INK, pigment.STRONGEST, pigment.TYPICAL),)
     return f"{FAMILY}-{hashlib.sha256(repr(settings).encode()).hexdigest()[:12]}"
 
 
 def propose(image: Image.Image, detector: Any, *, split: bool = False, scale: float = 1.0,
-            fill: Sequence[float] = ()) -> list[Proposal]:
+            fill: Sequence[float] = (), ink: bool = False) -> list[Proposal]:
     """Every box the detector keeps on `image`, highest score first; with `split`, a box that holds two
     stacked characters of an orderly column becomes two boxes; with `scale` or `fill`, the boxes are
-    found on the page resized (`Detector.boxes_at`)."""
+    found on the page resized (`Detector.boxes_at`); with `ink`, a box that holds no ink is dropped
+    (`pigment.inked`)."""
     proposals = [Proposal(x=box.x, y=box.y, w=box.w, h=box.h, score=round(float(score), 4))
                  for box, score in (detector.boxes(image) if scale == 1.0 and not fill
                                     else detector.boxes_at(image, scale, fill))]
+    if ink:
+        from . import pigment
+
+        holds = pigment.inked(image, [Box(x=p.x, y=p.y, w=p.w, h=p.h) for p in proposals])
+        proposals = [proposal for proposal, ink_there in zip(proposals, holds, strict=True) if ink_there]
     return split_boxes(image, proposals) if split else proposals
 
 

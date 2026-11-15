@@ -2,6 +2,7 @@
  "cutter": "split",
  "scale": 1.5,
  "fill": [],
+ "ink": false,
  "first": {
   "boxes": 137,
   "gone": 0,
