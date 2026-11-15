@@ -68,7 +68,7 @@ def test_collect_writes_a_unit_for_each_sound_place(fixture, tmp_path):
     assert document.text_rights.licence == Licence.PUBLIC_DOMAIN
 
     page = next(iter(tables.read(out / "pages.parquet", Page)))
-    assert page.id == "ecang-heishuicheng:7:p001"
+    assert (page.id, page.seq) == ("ecang-heishuicheng:7:p001", 0)
     assert (page.width, page.height, page.meta["folios"], page.meta["plates"]) == (400, 600, [2], [[10, 10, 380, 280]])
     assert page.image.startswith("file:") and page.sha256
     line = next(iter(tables.read(out / "lines.parquet", Line)))
@@ -81,6 +81,20 @@ def test_collect_writes_a_unit_for_each_sound_place(fixture, tmp_path):
     assert unit.upstream == {"nkay0-tangut-rhyme": "旧版同音 02A51"}
 
 
+def test_a_half_folio_with_no_sound_place_makes_no_line(fixture, tmp_path):
+    scans, data = fixture
+    with (data / "inv-207" / "columns.tsv").open("a", encoding="utf-8") as handle:
+        handle.write("2\tB\t1\t1\t150\t20\t40\t260\t𗀀𗀁\n")
+    with (data / "inv-207" / "characters.tsv").open("a", encoding="utf-8") as handle:
+        handle.write("2\tB\t1\t1\t𗀀\tU+17000\t1\t152\t24\t30\t32\t0.31\t66.0\tsparse\n")
+        handle.write("2\tB\t1\t2\t𗀁\tU+17001\t1\t152\t60\t30\t32\t0.12\t61.0\tlow-score\n")
+    out = tmp_path / "out"
+    summary = tangut_tongyin.collect(scans, out, items=["inv-207"], data=data, cache=tmp_path / "cache")
+
+    assert [line.id for line in tables.read(out / "lines.parquet", Line)] == ["ecang-heishuicheng:inv-207:02A5"]
+    assert summary["left_out"] == {"low-score": 2, "size": 1, "sparse": 1}
+
+
 def test_collect_refuses_a_scan_that_is_not_the_pinned_one(fixture, tmp_path):
     scans, data = fixture
     Image.new("L", (400, 600), 90).save(scans / "00000040.jpg")
@@ -91,7 +105,7 @@ def test_collect_refuses_a_scan_that_is_not_the_pinned_one(fixture, tmp_path):
 
 def test_collect_refuses_an_exemplar_the_record_does_not_list(fixture, tmp_path):
     scans, data = fixture
-    with pytest.raises(tangut_tongyin.TongyinSourceError, match="no item inv-999"):
+    with pytest.raises(tangut_tongyin.TongyinSourceError, match="no item inv-999 with `places`"):
         tangut_tongyin.collect(scans, tmp_path / "out", items=["inv-999"], data=data, cache=tmp_path / "cache")
 
 

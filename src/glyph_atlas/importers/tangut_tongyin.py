@@ -1,14 +1,16 @@
 """Import the head characters of 同音 from the plates of 俄藏黑水城文獻 vol. 7.
 
 同音 lists the Tangut characters by initial, homophones together: a head character in large writing
-with its note in small writing beside it. The volume reproduces two exemplars, the 甲種本 (Инв. No.
-207) and the 乙種本 (Инв. No. 208, 209, 4775). `data/tangut/tongyin/<item>/` places each head
+with its note in small writing beside it. Two of the exemplars the volume reproduces are imported,
+the 甲種本 (Инв. No. 207) and the 乙種本 (Инв. No. 208, 209, 4775). `data/tangut/tongyin/<item>/` places each head
 character of an exemplar on the plate that shows it (`scripts/build_tangut_tongyin.py`), under the
 folio, side, column and position that nkay0's rhyme-dictionary table gives it in that edition, so a
 box comes with the character it holds.
 
-One document is one exemplar. A page is a printed page of the volume, which carries two plates. A line is one column of a half-folio; its text is the column's head characters, since
-the notes are not transcribed. A unit is one head character, with no position in its line: the notes
+One document is one exemplar. A page is a printed page of the volume, which carries two plates. A
+line is one column of a half-folio whose columns were found; its text is the column's head
+characters, since the notes are not transcribed. A unit is one head character, with no position in
+its line: the notes
 stand between the head characters, so two of them are not neighbours in the text and form no run of
 crops (`glyph_atlas.ngrams`). Only the places graded `ok` become
 units: one that matched its glyph poorly, whose box is far from the folio's usual size, that holds
@@ -95,10 +97,12 @@ def collect(
     config = yaml.safe_load(Path(source).read_text(encoding="utf-8"))
     if not isinstance(config, dict) or config.get("id") != SOURCE_ID:
         raise TongyinSourceError(f"{source}: not the {SOURCE_ID} source record")
-    held = {item["id"]: (volume, item) for volume in config.get("volumes") or [] for item in volume.get("items") or []}
+    # An exemplar is an item whose `places` names its column of the rhyme-dictionary table.
+    held = {item["id"]: (volume, item) for volume in config.get("volumes") or [] for item in volume.get("items") or []
+            if item.get("places")}
     for name in items or []:
         if name not in held:
-            raise TongyinSourceError(f"{source}: no item {name}")
+            raise TongyinSourceError(f"{source}: no item {name} with `places`")
     documents, pages, lines, units, characters, left_out = [], [], [], [], 0, {}
     for name in items or list(held):
         volume, item = held[name]
@@ -149,7 +153,7 @@ def _exemplar(config: dict[str, Any], volume: dict[str, Any], item: dict[str, An
 
     document = _document(config, volume, item)
     pages: list[Page] = []
-    for seq, row in enumerate(page_rows):
+    for row in page_rows:
         file = scans / row["file"]
         if not file.is_file():
             raise TongyinSourceError(f"{file}: the scan of printed page {row['page']} is not there")
@@ -161,7 +165,7 @@ def _exemplar(config: dict[str, Any], volume: dict[str, Any], item: dict[str, An
         pages.append(Page(
             id=_page_id(volume, row["page"]),
             document_id=document.id,
-            seq=seq,
+            seq=int(row["page"]) - 1,    # the page number shown is the volume's printed page
             image=held.url,
             width=held.width,
             height=held.height,
@@ -172,6 +176,9 @@ def _exemplar(config: dict[str, Any], volume: dict[str, Any], item: dict[str, An
         ))
     page_ids = {page.meta["printed_page"]: page.id for page in pages}
 
+    # A half-folio with no sound place is one whose columns were not found: its column boxes lie on
+    # other columns or on bare paper, so they make no lines.
+    found = {(row["folio"], row["side"]) for row in character_rows if row["quality"] == "ok"}
     lines = [Line(
         id=f"{document.id}:{place_id(row)}",
         page_id=_known_page(page_ids, row),
@@ -184,7 +191,7 @@ def _exemplar(config: dict[str, Any], volume: dict[str, Any], item: dict[str, An
         match_method="rule-lines",
         meta={"folio": int(row["folio"]), "side": row["side"], "column": int(row["column"]),
               "text_scope": "head characters; the notes beside them are not transcribed"},
-    ) for seq, row in enumerate(column_rows)]
+    ) for seq, row in enumerate(row for row in column_rows if (row["folio"], row["side"]) in found)]
     line_ids = {line.id for line in lines}
 
     units, left_out = [], {}

@@ -2,7 +2,8 @@
 
 同音 lists the Tangut characters by initial, homophones together. Each entry is a head character in
 large writing with a note in small writing beside it. These tables place the head characters of two
-exemplars (IOM RAS) on the plates of 俄藏黑水城文獻 vol. 7, each in its own folder.
+of the exemplars reproduced in 俄藏黑水城文獻 vol. 7 (IOM RAS) on its plates, each in its own folder.
+The 丙種本 (Инв. No. 2619), which follows on printed page 55, is not placed.
 
 | Folder | Exemplar | Printed pages | `pages.tsv` | `columns.tsv` | `characters.tsv` | `ok` |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
@@ -51,17 +52,20 @@ the 乙種本; in 30B and 38B some columns are right and others are not.
 In a random draw of 150 from the `ok` and `sparse` places of the 甲種本 together, 148 sat on the
 character the table names; six of those cut off part of it or fell on ink too dark to read. In a
 random draw of 150 `ok` places of the 乙種本, none was seen on another character and six fell on ink
-too dark to read. `atlas import tangut-tongyin <scans>` makes a unit of each `ok` place
-and leaves the others in these tables.
+too dark to read. `atlas import tangut-tongyin <scans>` makes a unit of each `ok` place and
+leaves the others in these tables; a half-folio with no `ok` place gives no lines either, since its
+column boxes are not on its columns.
 
 ## Limits
 
 - The notes in small writing are not transcribed, so a column's `text` is its head characters only,
   and the units carry no position in the line: neighbours in a column are no sequence of the text.
-- 甲種本: folios 2, 18, 27, 30, 37, 38, 44, 51 and 53–55 place fewer than three characters in four:
-  a section heading changes the grid, or the plate is too dark to show the rule lines. Folio 1 is
-  the preface. The table gives column 19B6 nine head characters.
-- 乙種本: side B of folios 4 and 53 placed nothing, and folio 7 side A is a torn fragment. The table
+- 甲種本: folios 2, 7, 10, 18, 27, 30, 37, 38, 44, 51 and 53–56 have fewer than three `ok` places
+  in four: a section heading changes the grid, or the plate is too dark to show the rule lines.
+  Folio 1 is the preface. The table gives column 19B6 nine head characters.
+- 乙種本: folios 3, 4, 7, 9, 14, 25, 26, 27, 35, 38, 42, 46 and 53 have fewer than three `ok` places
+  in four. The plates of folios 4 and 53 show side A only, and folio 7 side A is a torn fragment.
+  The table's column holds 5,627 places; the 340 in folios 5, 6, 54 and 56 have no plate. The table
   gives 𗸈 two places, 17B55 and 20B64.
 
 ## Sources and rights

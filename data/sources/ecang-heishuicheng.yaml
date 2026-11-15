@@ -1,8 +1,9 @@
 # 俄藏黑水城文獻: the photographic edition of the Khara-Khoto finds kept at the Institute of Oriental
 # Manuscripts, Russian Academy of Sciences. Volumes 7 to 13 are the secular Tangut texts. Volume 7
-# opens with two exemplars of 音同, two plates to a page: the 甲種本, Инв. No. 207, on printed pages
-# 1 to 28, each plate captioned 俄 Инв.No.207 音同(甲種本) (56-n), and the 乙種本 on printed pages 29
-# to 55, each plate captioned 俄 Инв.No.208 209 4775 音同(乙種本) (53-n).
+# opens with the exemplars of 音同, two plates to a page: the 甲種本, Инв. No. 207, on printed pages
+# 1 to 28, each plate captioned 俄 Инв.No.207 音同(甲種本) (56-n); the 乙種本 on printed pages 29 to
+# 55, each plate captioned 俄 Инв.No.208 209 4775 音同(乙種本) (53-n); and the 丙種本, Инв. No. 2619,
+# from the lower plate of printed page 55, which is not listed below.
 #
 # The volumes are not online. The page images used here are scans of the printed volume supplied by
 # Maxim Persikov on 2026-11-15; `data/tangut/tongyin/<item>/pages.tsv` pins each one by checksum.

@@ -1,7 +1,7 @@
 """Place the head characters of 同音 on the plates of 俄藏黑水城文獻 vol. 7.
 
-The volume reproduces two exemplars, two plates to a page: the 甲種本 (Инв. No. 207, printed pages
-1-28) and the 乙種本 (Инв. No. 208, 209, 4775, printed pages 29-55). A plate shows one folio, or one
+The volume opens with the exemplars of 同音, two plates to a page. Two are placed: the 甲種本 (Инв.
+No. 207, printed pages 1-28) and the 乙種本 (Инв. No. 208, 209, 4775, printed pages 29-55). A plate shows one folio, or one
 half of a folio whose other half is lost or printed on the next plate (`EDITIONS`). A folio is two
 half-folios of seven columns, side A on the right, and a column holds up to eight head characters
 with their notes in small writing beside them.
@@ -376,13 +376,14 @@ def main() -> None:
         data = file.read_bytes()
         gray = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
         rects = plates(gray)
+        # The exemplar's plates on this page; the last page's lower plate may belong to the next exemplar.
+        shown = [(first + index, rect) for index, rect in enumerate(rects[:2]) if first + index in edition.plates]
         pages.append({"page": number, "file": file.name, "sha256": hashlib.sha256(data).hexdigest(),
                       "bytes": len(data), "width": gray.shape[1], "height": gray.shape[0],
-                      "folios": " ".join(str(edition.plates[first + index][0]) for index in range(len(rects))
-                                         if first + index in edition.plates),
-                      "plates": " ".join(",".join(map(str, (x0, y0, x1 - x0, y1 - y0))) for x0, y0, x1, y1 in rects)})
-        for index, (x0, y0, x1, y1) in enumerate(rects[:2]):
-            folio, sides = edition.plates.get(first + index, (0, ""))
+                      "folios": " ".join(str(edition.plates[plate][0]) for plate, _ in shown),
+                      "plates": " ".join(",".join(map(str, (x0, y0, x1 - x0, y1 - y0))) for _, (x0, y0, x1, y1) in shown)})
+        for plate, (x0, y0, x1, y1) in shown:
+            folio, sides = edition.plates[plate]
             if not any(key[0] == folio and key[1] in sides for key in cells):
                 continue
             folio_columns, folio_characters = cut_folio(gray[y0:y1, x0:x1], folio, cells, args.font, sides)
@@ -390,7 +391,7 @@ def main() -> None:
                 row.update(page=number, x=row["x"] + x0, y=row["y"] + y0)
             columns += folio_columns
             characters += folio_characters
-            print(f"plate {first + index:2d}, folio {folio:2d}{sides if sides != 'AB' else ''}: {len(folio_characters):3d} characters, "
+            print(f"plate {plate:2d}, folio {folio:2d}{sides if sides != 'AB' else ''}: {len(folio_characters):3d} characters, "
                   f"{sum(row['score'] >= ACCEPT for row in folio_characters):3d} at {ACCEPT} or more")
     grade(characters)
     for row in characters:
