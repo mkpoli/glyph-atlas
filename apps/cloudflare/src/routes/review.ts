@@ -6,6 +6,7 @@ import { Problem } from '../busy';
 import { captureReviews, priorBaselines, type ReviewedInput } from '../reviewCapture';
 import { cropEntries, cropItems, publicId } from '../atlas3';
 import { STALE_CODE, StaleCrop, cropParam, writtenCropField } from '../atlas3Crops';
+import { undoCountQuery } from '../atlas3Stamps';
 import { categoryOf } from '../category';
 import { formOfCrop } from './claims';
 import { inspected } from './crop';
@@ -770,8 +771,10 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     UNION SELECT crop FROM skips WHERE submission=?1`).bind(submission.id).all<{ crop: number }>()).results
     .map(row => row.crop).filter(crop => !reviewed.some(r => r.crop === crop)) : [];
   // Undone in full, the NOT NULL guard claims it atomically, and a second claimant rolls back its batch; in
-  // part, each crop's own revision guard does.
-  const statements = [...(complete ? [env.ATLAS.prepare('UPDATE submissions SET undone=CASE WHEN undone=0 THEN 1 END WHERE id=?').bind(submission.id)] : []),
+  // part, each crop's own revision guard does. The undo is counted beside the claim, which moves the
+  // catalogue stamps when it changes no crop.
+  const statements = [...(complete ? [env.ATLAS.prepare('UPDATE submissions SET undone=CASE WHEN undone=0 THEN 1 END WHERE id=?').bind(submission.id),
+    env.ATLAS.prepare(undoCountQuery())] : []),
     ...eventStatements(env, actor, submission.key, at, changes),
     ...(shownOrSkipped.length ? [markStatement(env, actor, submission.key, at, shownOrSkipped, true)] : []),
     ...applyStatements(env, submission.key, at, [KIND.undo], changes),
