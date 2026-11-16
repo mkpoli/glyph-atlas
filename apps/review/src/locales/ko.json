@@ -905,6 +905,8 @@
   "form.link.add": "{char}의 자형에 추가",
   "form.link.linked": "{char}의 자형",
   "form.link.remove": "{char}의 자형에서 제거",
+  "structure.arrange": "구성 정리",
+  "structure.close": "닫기",
   "structure.place": "{form} 여기로 옮기기",
   "structure.take": "{form} 여기서 빼기",
   "structure.merge": "{structure}에 합치기",

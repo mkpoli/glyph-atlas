@@ -122,16 +122,19 @@ encoded apart share a structure when only a unified component separates them (�
   the ledger, so no publication carries structure rows to it.
 - Where forms are grouped (`/layers/structures`, the inspector's form bar), a form stands under the
   structure readers filed it under, the one most of them name, and under its derived one with no
-  claim. The inspector files the selected form from a structure's caption and moves it: the reader's
-  claims of the form's other structures are taken back in the same save.
+  claim. The inspector and the character page open the structures as a board of trays, where a
+  reader moves a form to another structure by dragging it, with two clicks, or from the keyboard.
+  A move is the reader's one filing of the form: their claims of its other structures are taken
+  back in the same save, and putting it back where its description puts it takes the filing back.
 - A reader folds one structure into another (`folds_into`, `POST /atlas/structures/folds`): the two
   are one 構形, and the forms of the first stand under the second wherever forms are grouped. The
   derivation keeps apart what differs in a component the fold tables do not unify (⿰糸𰌼 and ⿰糸㝛
   beside ⿰糸宿), and a fold is a reader's word that such a difference is below 構形. It is a claim
   about the structure, so it holds for every form built so, typed later or not; rows and ids stay as
   they are. A structure folds into one other, folds are followed to their end, one that would lead
-  back is refused, and a structure readers fold two ways folds nowhere until they agree. The
-  inspector folds a 構形 into another of the bar from its caption and splits off the reader's own.
+  back is refused, and a structure readers fold two ways folds nowhere until they agree. On the
+  board a tray is folded by moving it into another, where it stands as a tray within, and the
+  reader's own fold is split off again.
 - A description the site names a character or a form by (a corpus character Unicode lacks, a form
   a reviewer typed: `⿰月兊`) has its structure in the same shards, under its own text, so it joins
   the characters built as it is (脫, 脱). The reference load reads the list of them
