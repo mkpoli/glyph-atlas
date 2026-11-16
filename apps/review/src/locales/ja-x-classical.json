@@ -899,6 +899,8 @@
   "form.link.add": "{char}ノ字體ニ加フ",
   "form.link.linked": "{char}ノ字體",
   "form.link.remove": "{char}ノ字體ヨリ外ス",
+  "structure.arrange": "構形ヲ整フ",
+  "structure.close": "閉ヅ",
   "structure.place": "{form}ヲ此ニ置ク",
   "structure.take": "{form}ヲ此ヨリ外ス",
   "grapheme.disputed": "異論アリ",

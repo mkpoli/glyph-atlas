@@ -11,18 +11,17 @@
   // and 峯 under two, a figure of the IVD with its character. A form with no structure, and a grapheme
   // of another script, stand last without a caption. A form's 構形 is read before the form is shown, so
   // the chips, and the number keys with them, keep their places.
-  // A signed-in reader files the selected form, typed, derived or encoded, under a 構形 from that
-  // 構形's caption, and takes their own filing back there (has_structure): the form then stands under
-  // it for every crop.
-  import { tick, untrack } from 'svelte'
+  // A signed-in reader opens the 構形 of the bar's forms to arrange them, where a form, typed, derived
+  // or encoded, is filed under another 構形.
+  import { untrack } from 'svelte'
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
   import CopyValue from './CopyValue.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
-  import { listForms, formOf, setWrittenFor, setStructure } from '../lib/cropForms.js'
-  import { structures as readStructures } from '../lib/layers.js'
-  import { isDescription } from '../lib/ids.js'
+  import StructureDialog from './StructureDialog.svelte'
+  import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
+  import { standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
@@ -31,31 +30,19 @@
   let offered = $state({ char: null, members: [], variants: [], related: [], derived: [], linked: [], grapheme: null }), added = $state([])
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   let composing = $state(false), linking = $state(false), linkError = $state(''), linkedByMe = $state(false)
-  let filing = $state(false), fileError = $state('')
+  let arranging = $state(false)
   const written = $derived(crop?.written_character ?? crop?.label ?? '')
   const current = $derived(formOf(crop))
   const BAR = 10
-  // The 構形 each form stands under, by the form's text, with who filed it there (`by`, none for one
-  // its description gives) and the other 構形 readers filed it under (`others`): at most NAMES are
-  // asked for at once, and a form past them, or one the site knows no structure of, has none here.
-  // What is asked again replaces what was known of those names.
-  const HAN = /^\p{Script=Han}/u, NAMES = 48
-  const composable = char => HAN.test(char ?? '') || isDescription(char)
+  // The 構形 each form stands under, by the form's text; a form the site knows no structure of has none.
   let structureOf = $state(new Map())
-  async function asked(names, known) {
-    const wanted = [...new Set(names)].filter(composable).slice(0, NAMES)
-    if (!wanted.length) return known
-    const found = await readStructures(wanted.join(''))
-    return new Map([...[...known].filter(([char]) => !wanted.includes(char)), ...(found.items ?? []).flatMap(group => group.chars.map(char =>
-      [char, { id: group.id, label: group.label, by: group.claimed?.[char] ?? null, others: found.filed?.[char] ?? [] }]))])
-  }
-  const composed = (names, known = new Map()) => asked(names, known).catch(() => known)
+  const composed = (names, known = new Map()) => standing(names, known).catch(() => known)
   const namesOf = found => [...found.members, ...found.variants].map(form => form.char)
   // A regional shape carries the 構形 its description gives; a reader's filing of it is asked for.
   const given = found => [...found.members, ...found.variants].filter(form => form.structure).map(form => [form.char, form.structure])
   $effect(() => {
     const id = crop?.id, char = written, own = untrack(() => current)
-    added = []; picking = false; query = ''; failed = false; composing = false; linking = false; linkError = ''; linkedByMe = false; fileError = ''
+    added = []; picking = false; query = ''; failed = false; composing = false; linking = false; linkError = ''; linkedByMe = false; arranging = false
     listForms(char).then(found => [found, false], () => [{ members: [{ char }], variants: [], related: [], derived: [], linked: [], grapheme: null }, true])
       .then(async ([found, unread]) => {
         const read = await composed([own, ...namesOf(found)], new Map(given(found)))
@@ -91,25 +78,7 @@
     return [...groups.values(), ...(loose.length ? [{ id: '', label: '', own: false, forms: loose }] : [])]
   }
   const me = $derived(signedInUser()?.id ?? null)
-  // The form a 構形's caption files: the one chosen, else the crop's own.
-  const selected = $derived(chosen ?? current)
-  // What a 構形 is named by in a save: an encoded character its description puts there, else a
-  // described form, else a regional shape of the crop's character, else its id.
-  const targetOf = group => {
-    const built = [...bar, ...rest].filter(form => { const held = structureOf.get(form.char); return held?.id === group.id && !held.by })
-    const named = built.find(form => !form.regions && !isDescription(form.char)) ?? built.find(form => !form.regions)
-    if (named) return { char: named.char }
-    return built.length ? { char: built[0].char, of: written } : { structure: group.id }
-  }
-  const actionsOf = group => {
-    if (!me || others || disabled || !group.id || !composable(selected)) return []
-    // The reader's own filing is theirs to take back wherever the form stands: another reader's may hold it elsewhere.
-    const held = structureOf.get(selected)
-    const mine = held?.by?.includes(me) && held.id === group.id || (held?.others ?? []).some(other => other.id === group.id && other.by.includes(me))
-    if (mine) return [{ key: 'take', label: t('structure.take', { form: selected }), run: () => file(group, true) }]
-    return held?.id !== group.id ? [{ key: 'place', label: t('structure.place', { form: selected }), run: () => file(group) }] : []
-  }
-  const barGroups = $derived(grouped(bar).map(group => ({ ...group, actions: actionsOf(group) })))
+  const barGroups = $derived(grouped(bar))
   const captioned = $derived(barGroups.some(group => group.label))
   // The bar's forms as they stand, which the number keys follow.
   const ordered = $derived(barGroups.flatMap(group => group.forms))
@@ -140,21 +109,14 @@
       if (found && id === crop?.id && char === written) { structureOf = read; offered = { char, ...found } }
     } catch { /* the save stands; the card reads again next time */ }
   }
-  // The bar's forms are read again after a filing: the form stands under another 構形, or under the one
-  // its description gives once the reader's filing is taken back.
-  async function file(group, remove = false) {
-    if (filing) return
-    const id = crop?.id, form = selected
-    filing = true; fileError = ''
-    try {
-      await setStructure(form, remove ? { structure: group.id } : targetOf(group), { remove })
-      const read = await asked([form, ...bar.map(chip => chip.char), ...rest.map(item => item.char)], new Map([...given(listed), ...structureOf]))
-      if (id === crop?.id) structureOf = read
-    } catch (error) { if (id === crop?.id) fileError = error.message }
-    filing = false
-    // The caption the menu opened from may be gone; the form it moved keeps the focus.
-    await tick()
-    if (id === crop?.id) (root?.querySelector('.form-chip.chosen') ?? root?.querySelector('.form-chip.current'))?.focus()
+  // What the 構形 dialog reads, and the bar after it closes on a change: the regional shapes keep the
+  // 構形 their descriptions give.
+  const arranged = $derived([...bar, ...rest])
+  const readArranged = (names, known) => standing(names, new Map([...given(listed), ...known]))
+  async function rearranged() {
+    const id = crop?.id
+    const read = await composed(arranged.map(form => form.char), new Map([...given(listed), ...structureOf]))
+    if (id === crop?.id) structureOf = read
   }
   async function link() {
     if (!canLink || linking) return
@@ -205,7 +167,7 @@
     if (dialog ? !dialog.contains(root) : root.closest('dialog')) return
     // Escape closes the picker, from its search too, before it can close the dialog.
     if (event.key === 'Escape' && picking) { event.preventDefault(); picking = false; query = ''; composing = false; addButton?.focus(); return }
-    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search, .ids-composer, [role="menu"]')) return
+    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search, .ids-composer')) return
     const index = '1234567890'.indexOf(event.key)
     if (index >= 0 && ordered[index]) { event.preventDefault(); choose(ordered[index].char) }
   }
@@ -215,7 +177,7 @@
 
 <div class="crop-form" bind:this={root}>
   <div class="form-row copyable" class:captioned>
-    <FormChips groups={barGroups} {chosen} {current} disabled={disabled || filing} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
+    <FormChips groups={barGroups} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
       {#if !others}<CopyValue value={chosen ?? current} />{/if}
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+⌕'}</button>
@@ -223,7 +185,12 @@
   {#if others && ownStructure}
     <div class="form-own"><span class="form-own-label">{t('chips.structure')}</span><span lang="zh">{ownStructure.label}</span></div>
   {/if}
-  {#if fileError}<p class="form-file-error" role="alert">{fileError}</p>{/if}
+  {#if me && !others && captioned}
+    <button type="button" class="form-arrange" {disabled} aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>
+  {/if}
+  {#if arranging}
+    <StructureDialog of={written} forms={arranged} known={structureOf} read={readArranged} current={chosen ?? current} close={() => arranging = false} changed={rearranged} />
+  {/if}
   {#if linkedHere || canLink}
     <div class="form-link">
       {#if linkedHere}
@@ -297,12 +264,12 @@
   .form-compose{align-self:flex-start;font-size:13px;padding:4px 10px}
   .form-note{margin:0;font-size:11px;color:var(--muted)}
   .form-link{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;line-height:1.4}
-  .form-link-add{border:0;background:transparent;color:var(--accent);padding:0;font:inherit;font-size:12px;text-align:left;
+  .form-link-add,.form-arrange{border:0;background:transparent;color:var(--accent);padding:0;font:inherit;font-size:12px;text-align:left;
     text-decoration:underline;text-underline-offset:3px}
-  .form-link-add:not(:disabled):hover{color:var(--ink)}
+  .form-link-add:not(:disabled):hover,.form-arrange:not(:disabled):hover{color:var(--ink)}
+  .form-arrange{align-self:flex-start;line-height:1.4}
   .form-linked{color:var(--muted)}
   .form-unlink{border:0;background:transparent;color:var(--muted);padding:0 2px;font-size:15px;line-height:1}
   .form-unlink:not(:disabled):hover{color:var(--wrong)}
-  .form-link-error,.form-file-error{color:var(--wrong)}
-  .form-file-error{margin:0;font-size:12px;line-height:1.4}
+  .form-link-error{color:var(--wrong)}
 </style>

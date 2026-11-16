@@ -2,11 +2,9 @@
   // A grapheme's forms as a row of chips, each in its script's colour (a description marked as one),
   // the first ten with their number key. Quick Review's form bar marks a selection with them, and the
   // inspector marks its crop. `groups` sets the chips under a caption each, the 構形 its forms share
-  // (`{ id, label, forms, own, actions }`, `own` where the crop's own form is built so); the number keys
-  // follow the chips as they stand. A group with `actions` (`{ key, label, run }`) opens them as a menu
-  // from its caption.
+  // (`{ id, label, forms, own }`, `own` where the crop's own form is built so); the number keys follow
+  // the chips as they stand.
   import FormText from './FormText.svelte'
-  import CaptionMenu from './CaptionMenu.svelte'
   let { forms = [], groups = null, chosen = null, current = null, disabled = false, label = '', title = form => form, onchoose, children = null } = $props()
   const KEYS = '1234567890'
   const charOf = form => typeof form === 'string' ? form : form.char
@@ -25,8 +23,7 @@
   {#if groups}
     {#each groups as group (group.id)}
       <div class="form-group" class:own={group.own} role={group.label ? 'group' : undefined} aria-label={group.label || undefined}>
-        {#if group.label && group.actions?.length}<span class="form-group-label"><CaptionMenu label={group.label} items={group.actions} {disabled} /></span>
-        {:else if group.label}<span class="form-group-label" lang="zh" aria-hidden="true">{group.label}</span>{/if}
+        {#if group.label}<span class="form-group-label" lang="zh" aria-hidden="true">{group.label}</span>{/if}
         <div class="form-group-chips">{#each group.forms as form (charOf(form))}{@render chip(form)}{/each}</div>
       </div>
     {/each}

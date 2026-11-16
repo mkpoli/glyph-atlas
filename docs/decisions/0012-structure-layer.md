@@ -122,8 +122,10 @@ encoded apart share a structure when only a unified component separates them (�
   the ledger, so no publication carries structure rows to it.
 - Where forms are grouped (`/layers/structures`, the inspector's form bar), a form stands under the
   structure readers filed it under, the one most of them name, and under its derived one with no
-  claim. The inspector files the selected form from a structure's caption and moves it: the reader's
-  claims of the form's other structures are taken back in the same save.
+  claim. The inspector and the character page open the structures as a board of trays, where a
+  reader moves a form to another structure by dragging it, with two clicks, or from the keyboard.
+  A move is the reader's one filing of the form: their claims of its other structures are taken
+  back in the same save, and putting it back where its description puts it takes the filing back.
 - A description the site names a character or a form by (a corpus character Unicode lacks, a form
   a reviewer typed: `⿰月兊`) has its structure in the same shards, under its own text, so it joins
   the characters built as it is (脫, 脱). The reference load reads the list of them

@@ -921,6 +921,8 @@
   "form.link.add": "{char}の字体に加える",
   "form.link.linked": "{char}の字体",
   "form.link.remove": "{char}の字体から外す",
+  "structure.arrange": "構形を整理",
+  "structure.close": "閉じる",
   "structure.place": "{form}をここに置く",
   "structure.take": "{form}をここから外す",
   "grapheme.disputed": "異論あり",

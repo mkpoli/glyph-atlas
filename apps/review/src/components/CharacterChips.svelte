@@ -8,9 +8,12 @@
   import ScriptText from './ScriptText.svelte'
   import FormText from './FormText.svelte'
   import OriginText from './OriginText.svelte'
+  import StructureDialog from './StructureDialog.svelte'
   import { countsLabel, structures as readStructures } from '../lib/layers.js'
   import { isDescription } from '../lib/ids.js'
   import { isFigure } from '../lib/mjFigures.js'
+  import { standing } from '../lib/structures.js'
+  import { signedInUser } from '../lib/session.svelte.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
   import { characterAddress, graphemeAddress } from '../lib/gallery.js'
@@ -67,9 +70,11 @@
   const composedOf = $derived([...new Set([...members, ...written, ...described].map(v => v.char)
     .filter(char => HAN.test(char ?? '') || isDescription(char) || isFigure(char ?? '')))].slice(0, 48))
   // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
-  let composed = $state([])
+  // A signed-in reader opens the 構形 to arrange them, and the row is read again once they have.
+  let composed = $state([]), arranging = $state(false), arrangedTimes = $state(0)
   $effect(() => {
     const chars = composedOf.join('')
+    void arrangedTimes
     if (!chars) { composed = []; return }
     let live = true
     readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => { if (live) composed = [] })
@@ -106,8 +111,12 @@
           {#each composed as s (s.id)}
             <span class="variant structure"><span lang="zh">{s.label}</span>{#if composedOf.length > 1}<span class="sharing">{#each s.chars as name (name)}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/each}</span>{/if}</span>
           {/each}
+          {#if signedInUser()}<button type="button" class="arrange" aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>{/if}
         </div>
       </div>
+      {#if arranging}
+        <StructureDialog of={card.char} forms={composedOf.map(char => ({ char }))} read={standing} current={card.char} close={() => arranging = false} changed={() => arrangedTimes++} />
+      {/if}
     {/if}
     <div class="layer-row">
       <span class="layer-label">{t('chips.forms')}</span>
@@ -247,6 +256,8 @@
   .variant small{font-size:11px;color:var(--muted)}
   .variant.structure{font-size:15px}
   .variant.structure:hover{border-color:var(--line)}
+  .arrange{align-self:center;border:0;background:transparent;color:var(--accent);padding:0 4px;font-size:12px;text-decoration:underline;text-underline-offset:3px}
+  .arrange:hover{color:var(--ink)}
   .variant.structure .sharing :global(.ids-form){margin-inline:4px 0}
   .variant small.share{color:var(--accent)}
   .word-crops{font-size:12px;color:var(--muted);align-self:center}

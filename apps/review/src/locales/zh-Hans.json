@@ -924,6 +924,8 @@
   "form.link.add": "作为{char}的字样加入",
   "form.link.linked": "{char}的字样",
   "form.link.remove": "从{char}的字样中移除",
+  "structure.arrange": "整理构形",
+  "structure.close": "关闭",
   "structure.place": "将{form}移到这里",
   "structure.take": "将{form}从这里移出",
   "grapheme.disputed": "有争议",

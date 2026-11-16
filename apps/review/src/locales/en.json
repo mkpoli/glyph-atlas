@@ -952,6 +952,8 @@
   "form.link.add": "Add as a form of {char}",
   "form.link.linked": "Form of {char}",
   "form.link.remove": "Remove as a form of {char}",
+  "structure.arrange": "Arrange structures",
+  "structure.close": "Close",
   "structure.place": "Place {form} here",
   "structure.take": "Take {form} out",
   "grapheme.disputed": "disputed",
