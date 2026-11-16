@@ -255,6 +255,14 @@ try {
   await shoot('structure-merged')
   console.log(`PASS ${to} is dragged into ${from} and stands within it`)
 
+  // A click inside the folded tray a held form stands in lets go: it is not filed under the tray around it.
+  const [inside] = before.find(([label]) => label === to)[1]
+  await browser.evaluate(`${chip(inside)}.click()`)
+  await browser.waitFor(`${chip(inside)}.getAttribute('aria-pressed') === 'true'`)
+  await browser.evaluate(`${tray(to)}.querySelector('.tray-forms').click()`)
+  await Bun.sleep(300)
+  assert(filed(inside).length === 0 && await browser.evaluate(`!${board}.querySelector('[aria-pressed="true"]') && !${board}.querySelector('[aria-busy="true"]')`), `a click inside its own folded tray filed ${inside}: ${filed(inside)}`)
+
   // A form is filed under the folded 構形 itself, and taken back from it.
   await browser.evaluate(`${chip(own)}.click()`)
   await browser.evaluate(`${tray(to)}.click()`)

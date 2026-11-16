@@ -44,19 +44,26 @@
   // described form, else a regional shape of `of`, else its id.
   const naming = form => form.regions ? [1, { char: form.char, of }] : isDescription(form.char) ? [2, { char: form.char }] : [3, { char: form.char }]
   function absorb(found) {
-    const next = [...trays], links = new Map(folds)
+    const next = [...trays], links = new Map(), filled = new Set()
     const trayOf = (id, label) => next.find(tray => tray.id === id) ?? next[next.push({ id, label, rank: 0, target: { structure: id } }) - 1]
     for (const form of listed) {
       const stands = found.get(form.char)
       if (!stands) continue
       trayOf(stands.id, stands.label)
       const tray = stands.part ? trayOf(stands.part.id, stands.part.label) : trayOf(stands.id, stands.label)
+      filled.add(tray.id)
       if (stands.part) links.set(stands.part.id, { head: stands.id, by: stands.part.by ?? [] })
-      else links.delete(stands.id)
       if (stands.by) continue
       home.set(form.char, tray.id)
       const [rank, target] = naming(form)
       if (rank > tray.rank) Object.assign(tray, { rank, target })
+    }
+    // A tray with no form left on the board keeps the fold it was last seen in, led on to where that ends now.
+    for (const [part, link] of folds) {
+      if (filled.has(part) || links.has(part)) continue
+      let head = link.head
+      for (let step = 0; step < 8 && links.has(head); step += 1) head = links.get(head).head
+      if (head !== part && !links.has(head)) links.set(part, { ...link, head })
     }
     known = found; trays = next; folds = links
   }
@@ -398,6 +405,8 @@
   .tray h3 .take{margin-left:6px;border:0;border-radius:4px;background:transparent;padding:0 4px}
   /* A tray folded into another stands within it. */
   .tray.part{min-width:0;padding:8px 10px 10px;background:var(--surface)}
+  /* A tray on its way out leaves the trays within it to their new places. */
+  .tray[inert] .tray.part{visibility:hidden}
   .tray.lifted{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
   .tray.dragging{position:relative;z-index:3;scale:1.02;box-shadow:0 10px 24px var(--shadow)}
   .tray.saving{opacity:.7}
