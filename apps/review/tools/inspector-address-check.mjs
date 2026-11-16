@@ -119,15 +119,15 @@ try {
   assert(await browser.evaluate('document.querySelector("dialog[open]") === null'), `the crop opened again at ${await path()}`)
   console.log('PASS a reloaded crop closes and stays closed')
 
-  // A crop's character leads to the character's page.
+  // A crop's character leads to its grapheme family on the character's page.
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(some)}`, { waitFor: `${open} === ${JSON.stringify(some)}`, timeout: 90000 })
   await browser.waitFor('document.documentElement.dataset.hydrated !== undefined', 60000)
   const target = await browser.evaluate('document.querySelector("dialog[open] .character-link")?.getAttribute("href")')
-  assert(/^\/en\/character\/U\+[0-9A-F]{4,6}(-U\+[0-9A-F]{4,6})*$/.test(target ?? ''), `the crop's character should link to its page, not ${target}`)
+  assert(/^\/en\/character\/U\+[0-9A-F]{4,6}(-U\+[0-9A-F]{4,6})*\?scope=family$/.test(target ?? ''), `the crop's character should link to its grapheme family, not ${target}`)
   await browser.evaluate('document.querySelector("dialog[open] .character-link").click()')
-  await browser.waitFor(`location.pathname === ${JSON.stringify(target)}`, 90000)
+  await browser.waitFor(`location.pathname + location.search === ${JSON.stringify(target)}`, 90000)
   await browser.waitFor(closed)
-  console.log('PASS a crop\'s character opens the character\'s page')
+  console.log('PASS a crop\'s character opens its grapheme family')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS inspector address')

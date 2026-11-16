@@ -10,7 +10,7 @@
   import { t } from '../lib/i18n.svelte.js'
   import { signedInUser } from '../lib/session.svelte.js'
 
-  let { item, char, href = null, disabled = false, working = null, saved = null, close } = $props()
+  let { item, disabled = false, working = null, saved = null, close } = $props()
   let offered = $state({ char: null, own: null, writes: [] }), found = $state([])
   let query = $state(''), error = $state(''), pending = $state(false), root = $state(null)
   const written = $derived(item.written_character ?? item.label ?? '')
@@ -83,7 +83,6 @@
   </div>
   <CharacterSearch compact codePoints bind:value={query} label={t('grapheme.find')} placeholder={t('grapheme.find')} onselect={pick} />
   {#if error}<span class="grapheme-error" role="alert">{error}</span>{/if}
-  {#if href}<a class="grapheme-page" {href}>{t('chips.showCharacter', { char })} →</a>{/if}
 </div>
 
 <style>
@@ -99,6 +98,4 @@
   .grapheme-note{font-size:12px;color:var(--muted)}
   .grapheme-picker :global(.character-search){width:100%;min-width:0}
   .grapheme-error{font-size:12px;color:var(--wrong)}
-  .grapheme-page{align-self:flex-start;font-size:12px;color:var(--muted)}
-  .grapheme-page:hover,.grapheme-page:focus-visible{color:var(--ink)}
 </style>
