@@ -50,7 +50,9 @@ installed fonts rarely draw.
 `drawn/` draws the drawn forms (docs/decisions/0014-drawn-forms.md).
 
 - Family: `Glyph Atlas Drawn Forms`, built by `scripts/build_drawn_forms.py` from the drawings in
-  `data/vocab/drawn-forms/`, which are this project's own.
+  `data/vocab/drawn-forms/`. Each follows one crop named in `data/vocab/drawn-forms.yaml` and keeps
+  its licence: U+F0000 a crop of the CODH 日本古典籍くずし字データセット (CC BY-SA 4.0), U+F0001 one of
+  the 東京大学史料編纂所 くずし字データセット (CC BY 4.0).
 - Coverage: the private-use code points of `data/vocab/drawn-forms.yaml`, from U+F0000, and nothing
   else. The file is named by its content hash, and `src/drawn-forms.css` gives its `unicode-range`.
 

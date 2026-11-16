@@ -3,7 +3,8 @@
 # one stroke. Each is named by a private-use code point of this table (docs/decisions/0014-drawn-forms.md)
 # and drawn in `drawn-forms/<code point>.svg`, one filled path in a 1000-unit em with y running down.
 #
-# A drawing is an editorial normalisation made from the crops its `basis` names. It is a label for a
+# A drawing is an editorial normalisation made from the crops its `basis` names: the centre lines and
+# stroke widths of one crop, drawn again as even brush strokes. It keeps that crop's licence. It is a label for a
 # group of crops and is never shown as an occurrence. A drawn form is a member of the family of the
 # grapheme it writes: `refs` reads this table beside `characters.tsv`.
 #
@@ -24,18 +25,23 @@ forms:
   U+F0000:
     written_for: U+4E8B
     script: han
-    name: 事 in one cursive stroke, a zigzag head over a wide loop with a tail to the lower left; like る with a larger loop
+    name: 事 in one cursive stroke, a hooked head over a loop that the stroke crosses on its way down to the left; like る
     basis: >-
-      Forms clustering 582865e3b2b68c53 of 事, read on https://glyphatlas.org/ja/forms/U+4E8B on 2026-11-16:
-      clusters U+4E8B:6a8ba32233, U+4E8A:b5bd305407, U+4E8B:f98b4cc741, U+4E8B:24bd4fd4ab, U+4E8B:22c6786e58,
-      U+4E8B:636e546e17, U+4E8B:47a2751d96, U+4E8B:cdf099257a, U+4E8B:da53b74cd2, U+4E8B:7a92b1e8a7 and
-      U+4E8B:465095366d (4,203 glyphs), grouped as one form by mkpoli on 2026-11-16; drawn from the twelve
-      most typical glyphs of U+4E8B:6a8ba32233 and U+4E8B:f98b4cc741
+      The form: forms clustering 582865e3b2b68c53 of 事, read on https://glyphatlas.org/ja/forms/U+4E8B on
+      2026-11-16, clusters U+4E8B:6a8ba32233, U+4E8A:b5bd305407, U+4E8B:f98b4cc741, U+4E8B:24bd4fd4ab,
+      U+4E8B:22c6786e58, U+4E8B:636e546e17, U+4E8B:47a2751d96, U+4E8B:cdf099257a, U+4E8B:da53b74cd2,
+      U+4E8B:7a92b1e8a7 and U+4E8B:465095366d (4,203 glyphs), grouped as one form by mkpoli on 2026-11-16.
+      The drawing: the centre lines and stroke widths of crop 3480005g (https://glyphatlas.org/ja/crop/3480005g;
+      傾城買四十八手, codh:200005598:200005598_00043_2:B0001:C0129, CODH 日本古典籍くずし字データセット,
+      CC BY-SA 4.0), whose shape mkpoli chose on 2026-11-17, drawn again as even strokes
   U+F0001:
     written_for: U+4E8B
     script: han
-    name: 事 as a bar crossed by two downstrokes, the right one hooking back into the left, which runs on as a tail; like 方 or 阝
+    name: 事 as a short bar on a long downstroke, a bowl on its right from under the bar, the tail hooking left; like 方 or 卞
     basis: >-
-      Forms clustering 582865e3b2b68c53 of 事, read on https://glyphatlas.org/ja/forms/U+4E8B on 2026-11-16:
-      cluster U+4E8B:76452db58f (42 glyphs), named as one form by mkpoli on 2026-11-16; drawn from its
-      twelve most typical glyphs
+      The form: forms clustering 582865e3b2b68c53 of 事, read on https://glyphatlas.org/ja/forms/U+4E8B on
+      2026-11-16, cluster U+4E8B:76452db58f (42 glyphs), named as one form by mkpoli on the same day, who
+      chose the shape with the bowl on the stem on 2026-11-17. The drawing: the centre lines and stroke
+      widths of crop 5400000t (https://glyphatlas.org/ja/crop/5400000t; hi:34135401, 東京大学史料編纂所
+      くずし字データセット, CC BY 4.0), the cleanest of that shape among the cluster's twelve most typical
+      glyphs, drawn again as even strokes

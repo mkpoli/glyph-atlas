@@ -2,7 +2,7 @@
    their private-use code points. A page that shows none never downloads the file. */
 @font-face {
   font-family: "Glyph Atlas Drawn Forms";
-  src: url("/fonts/drawn/drawn-91fbcda6c720.woff2") format("woff2");
+  src: url("/fonts/drawn/drawn-397f9b66f88f.woff2") format("woff2");
   font-display: block;
   unicode-range: U+F0000-F0001;
 }

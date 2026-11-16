@@ -8,7 +8,7 @@ Status: proposed
 A 字体 is named by a code point, a variation sequence of the IVD or an ideographic description
 sequence (decision 0013). A cursive form written in one stroke has none of the three. 事 is written
 in the corpus as a zigzag over a wide loop with a tail, close to る, in 4,203 of the 8,347 glyphs of
-its forms clustering (revision 582865e3b2b68c53), and as a bar crossed by two downstrokes in 42 more.
+its forms clustering (revision 582865e3b2b68c53), and in a shape close to 方 in 42 more.
 Neither has a code point or a registered figure, and neither is built from components a description
 could list. The Forms tool and the form bar could name neither.
 
@@ -47,8 +47,9 @@ A form of this kind is a **drawn form**: one code point of Supplementary Private
   its card and its palette, answers a drawn form's card from its grapheme's, and files the `graphemes`
   row first made for one under that grapheme.
 
-A drawing is an editorial normalisation made from the crops the table names. It labels a group of
-crops and is never shown as an occurrence.
+A drawing is an editorial normalisation: the centre lines and stroke widths of one crop the table
+names, drawn again as even brush strokes, under that crop's licence. It labels a group of crops and is
+never shown as an occurrence.
 
 ## Limits
 
