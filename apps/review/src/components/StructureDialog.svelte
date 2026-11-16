@@ -1,19 +1,21 @@
 <script>
   // The 構形 of a character's forms, laid out to arrange: each 構形 is a tray holding the forms built
   // so, and a signed-in reader moves a form to another tray (has_structure), so the form stands under
-  // that 構形 for every crop. A form is moved by dragging it, by picking it up with a click and
-  // clicking a tray, or from the keyboard: Enter picks it up, the arrows aim at a tray, Enter puts it
-  // down and Escape lets go. A form the reader filed carries a × that takes the filing back; putting
-  // it back on the tray its description gives does the same, and so does the strip that shows at the
-  // end of the board while the form is held. A tray stays on the board once shown, emptied or not,
-  // and a search adds the 構形 of any other character to it.
+  // that 構形 for every crop, or moves a whole tray into another (folds_into), so the two are one 構形
+  // and the first stands as a tray within the second. A form or a tray is moved by dragging it, by
+  // picking it up with a click and clicking a tray, or from the keyboard: Enter picks it up, the
+  // arrows aim at a tray, Enter puts it down and Escape lets go. A form the reader filed, and a tray
+  // the reader folded, carries a × that takes the reader's word back; so does the strip that shows at
+  // the end of the board while it is held, and putting a form back on the tray its description gives.
+  // A tray stays on the board once shown, emptied or not, and a search adds the 構形 of any other
+  // character to it.
   import { onMount, tick, untrack } from 'svelte'
   import { flip } from 'svelte/animate'
   import { crossfade } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import FormText from './FormText.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
-  import { setStructure } from '../lib/cropForms.js'
+  import { setStructure, setFold } from '../lib/cropForms.js'
   import { composable, NAMES } from '../lib/structures.js'
   import { isDescription } from '../lib/ids.js'
   import { signedInUser } from '../lib/session.svelte.js'
@@ -25,7 +27,10 @@
   const id = $props.id()
   let dialog, board = $state(null)
   let known = $state(untrack(() => opened)), added = $state([]), query = $state('')
-  let trays = $state([]), held = $state(null), over = $state(null), dragging = $state(false)
+  // The trays the board has shown, and which of them a reader folded into which (`folds`, by the
+  // folded tray's id: `{ head, by }`). What is held is a form (`held`, its text) or a tray (`lifted`,
+  // its id), and `over` is the tray aimed at.
+  let trays = $state([]), folds = $state(new Map()), held = $state(null), lifted = $state(null), over = $state(null), dragging = $state(false)
   let busy = $state(null), landed = $state(null), error = $state(''), notice = $state(''), said = $state('')
   const me = $derived(signedInUser()?.id ?? null)
   const listed = $derived.by(() => {
@@ -39,38 +44,66 @@
   // described form, else a regional shape of `of`, else its id.
   const naming = form => form.regions ? [1, { char: form.char, of }] : isDescription(form.char) ? [2, { char: form.char }] : [3, { char: form.char }]
   function absorb(found) {
-    const next = [...trays]
+    const next = [...trays], links = new Map(), filled = new Set()
+    const trayOf = (id, label) => next.find(tray => tray.id === id) ?? next[next.push({ id, label, rank: 0, target: { structure: id } }) - 1]
     for (const form of listed) {
       const stands = found.get(form.char)
       if (!stands) continue
-      let tray = next.find(tray => tray.id === stands.id)
-      if (!tray) next.push(tray = { id: stands.id, label: stands.label, rank: 0, target: { structure: stands.id } })
+      trayOf(stands.id, stands.label)
+      const tray = stands.part ? trayOf(stands.part.id, stands.part.label) : trayOf(stands.id, stands.label)
+      filled.add(tray.id)
+      if (stands.part) links.set(stands.part.id, { head: stands.id, by: stands.part.by ?? [] })
       if (stands.by) continue
-      home.set(form.char, stands.id)
+      home.set(form.char, tray.id)
       const [rank, target] = naming(form)
       if (rank > tray.rank) Object.assign(tray, { rank, target })
     }
-    known = found; trays = next
+    // A tray with no form left on the board keeps the fold it was last seen in, led on to where that ends now.
+    for (const [part, link] of folds) {
+      if (filled.has(part) || links.has(part)) continue
+      let head = link.head
+      for (let step = 0; step < 8 && links.has(head); step += 1) head = links.get(head).head
+      if (head !== part && !links.has(head)) links.set(part, { ...link, head })
+    }
+    known = found; trays = next; folds = links
   }
-  const placed = $derived(trays.map(tray => ({ ...tray, forms: listed.filter(form => known.get(form.char)?.id === tray.id) })))
+  // The tray a form stands in: the 構形 it is built as, folded or not.
+  const innerOf = char => { const stands = known.get(char); return stands ? stands.part?.id ?? stands.id : null }
+  // The tray a folded tray ends in, however many folds lead there.
+  const headOf = id => { let at = id; for (let step = 0; step < 8 && folds.has(at); step += 1) at = folds.get(at).head; return at }
+  const labelOf = id => trays.find(tray => tray.id === id)?.label ?? ''
+  const filled = $derived(trays.map(tray => ({ ...tray, forms: listed.filter(form => innerOf(form.char) === tray.id) })))
+  const heads = $derived(filled.filter(tray => !folds.has(tray.id)).map(tray => ({ ...tray, parts: filled.filter(part => folds.has(part.id) && headOf(part.id) === tray.id) })))
   const loose = $derived(listed.filter(form => !known.get(form.char)))
+  // How a form stands in a tray, folded or not, for a move shown before the site answers.
+  const standsIn = (id, by) => {
+    const link = folds.get(id), head = link ? headOf(id) : id
+    return { id: head, label: labelOf(head), by, others: [], part: link ? { id, label: labelOf(id), by: link.by } : null }
+  }
   // The 構形 the reader's own filing of a form names: another reader's may hold the form elsewhere.
   const mineOf = char => {
     const stands = known.get(char)
     if (!me || !stands) return null
-    return stands.by?.includes(me) ? stands.id : (stands.others ?? []).find(other => other.by.includes(me))?.id ?? null
+    return stands.by?.includes(me) ? stands.part?.id ?? stands.id : (stands.others ?? []).find(other => other.by.includes(me))?.id ?? null
   }
-  // Where the held form can be put: every tray but the one it stands in, and out of the reader's own
-  // filing when it has one.
+  const foldedByMe = id => Boolean(me && folds.get(id)?.by.includes(me))
+  // Where what is held can be put. A form goes to every tray but the one it stands in; a tray into
+  // every tray that is not itself folded, but its own. Either goes out of the reader's own word for it.
   const OUT = 'out'
-  const out = $derived(held && mineOf(held) ? t('structure.take', { form: held }) : '')
-  const targets = $derived(held ? [...trays.filter(tray => tray.id !== known.get(held)?.id).map(tray => tray.id), ...(out ? [OUT] : [])] : [])
-  // A form on its way out of a tray is inert while it leaves; the one that stands is the other.
+  const out = $derived(held && mineOf(held) ? t('structure.take', { form: held }) : lifted && foldedByMe(lifted) ? t('structure.split', { structure: labelOf(lifted) }) : '')
+  const targets = $derived.by(() => {
+    const open = held ? trays.filter(tray => tray.id !== innerOf(held))
+      : lifted ? trays.filter(tray => tray.id !== lifted && !folds.has(tray.id) && tray.id !== headOf(lifted)) : []
+    return [...open.map(tray => tray.id), ...(out ? [OUT] : [])]
+  })
+  // What a tray says of what is held, to a reader who cannot see where it would go.
+  const offer = tray => held ? `${tray.label} · ${t('structure.place', { form: held })}` : t('structure.merge', { structure: tray.label })
+  // A form or a tray on its way out is inert while it leaves; the one that stands is the other.
   const chipOf = char => board?.querySelector(`.token:not([inert]) > [data-form="${CSS.escape(char)}"]`)
+  const handleOf = tray => board?.querySelector(`.tray:not([inert]) > h3 > [data-handle="${CSS.escape(tray)}"]`)
   const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches
   const [send, receive] = crossfade({ duration: () => calm() ? 0 : 280, easing: cubicOut })
   const slide = { duration: () => calm() ? 0 : 220, easing: cubicOut }
-
   // What the site holds of `names`, NAMES to a request, put over what the board knows. A reading
   // asked before a later one, or before a move, is dropped when it answers.
   let reads = 0
@@ -81,58 +114,93 @@
     if (turn === reads) absorb(new Map([...[...known].filter(([char]) => !asked.includes(char)), ...found.flatMap(part => [...part])]))
   }
   let wrote = false
-  // A move shows at once and is read again once saved: a save the site refuses puts the form back,
-  // and one other readers outweigh says so. `to` is the tray the reader meant.
-  async function write(char, to, stands, save) {
-    const before = known
+  // A move shows at once and is read again once saved: a save the site refuses puts things back, and
+  // one other readers outweigh says so. `mark` is what moved, a form's text or `{ tray }`, which keeps
+  // the focus, and `to` the tray the reader meant it to stand in.
+  async function commit(mark, to, change, save) {
+    const before = [known, folds], item = () => mark.tray ? labelOf(mark.tray) : mark
+    const focus = () => (mark.tray ? handleOf(mark.tray) : chipOf(mark))?.focus({ preventScroll: true })
     // The opener reads again once the board closes, also when it closes before the site has answered.
-    busy = char; error = ''; notice = ''; wrote = true; reads += 1
-    if (stands !== undefined) { known = new Map([...known, [char, stands]]); landed = stands.id }
+    busy = mark.tray ?? mark; error = ''; notice = ''; wrote = true; reads += 1
+    change()
     await tick()
-    chipOf(char)?.focus({ preventScroll: true })
+    focus()
     let saved = true
-    try { await save() } catch (failure) { saved = false; known = before; error = failure.message }
+    try { await save() } catch (failure) { saved = false; [known, folds] = before; error = failure.message }
     // Read again either way: the site may hold a save whose answer was lost.
     try { await refresh(listed.map(form => form.char)) } catch (failure) { if (saved) error = failure.message }
     busy = null
-    const stood = known.get(char)
-    if (saved && to && stood?.id !== to) notice = t('structure.disputed', { item: char })
-    said = [char, stood?.label].filter(Boolean).join(' · ')
+    const stood = mark.tray ? headOf(mark.tray) : innerOf(mark)
+    if (saved && to && stood !== to) notice = t('structure.disputed', { item: item() })
+    said = [...new Set([item(), labelOf(stood)])].filter(Boolean).join(' · ')
     await tick()
-    chipOf(char)?.focus({ preventScroll: true })
+    focus()
   }
   function place(char, tray) {
-    if (known.get(char)?.id === tray.id) return
+    if (innerOf(char) === tray.id) return
     if (mineOf(char) && home.get(char) === tray.id) return takeOut(char)
-    return write(char, tray.id, { id: tray.id, label: tray.label, by: [me], others: [] }, () => setStructure(char, tray.target))
+    return commit(char, tray.id, () => { known = new Map([...known, [char, standsIn(tray.id, [me])]]); landed = tray.id }, () => setStructure(char, tray.target))
   }
   function takeOut(char) {
-    const mine = mineOf(char), back = trays.find(tray => tray.id === home.get(char))
+    const mine = mineOf(char), back = home.get(char)
     if (!mine || busy) return
     release()
-    return write(char, back?.id, back ? { id: back.id, label: back.label, by: null, others: [] } : undefined, () => setStructure(char, { structure: mine }, { remove: true }))
+    return commit(char, back, () => { if (back) { known = new Map([...known, [char, standsIn(back, null)]]); landed = back } }, () => setStructure(char, { structure: mine }, { remove: true }))
   }
-  function release() { held = null; over = null; dragging = false }
-  function pick(char) {
+  // One tray folded into another: its forms, and the trays folded into it, stand under that one.
+  function fold(from, into) {
+    const tray = trays.find(tray => tray.id === from), head = trays.find(tray => tray.id === into)
+    if (!tray || !head || busy) return
+    return commit({ tray: from }, into, () => {
+      const part = { id: from, label: tray.label, by: [me] }
+      known = new Map([...known].map(([char, stands]) => innerOf(char) === from ? [char, { ...stands, id: into, label: head.label, part }]
+        : stands.id === from ? [char, { ...stands, id: into, label: head.label }] : [char, stands]))
+      folds = new Map([...[...folds].map(([part, link]) => [part, link.head === from ? { ...link, head: into } : link]), [from, { head: into, by: [me] }]])
+      landed = into
+    }, () => setFold(tray.target, head.target))
+  }
+  // The reader's fold of a tray taken back: it stands on its own again, unless another reader folds it too.
+  function split(from) {
+    const tray = trays.find(tray => tray.id === from)
+    if (!tray || !foldedByMe(from) || busy) return
+    release()
+    return commit({ tray: from }, from, () => {
+      known = new Map([...known].map(([char, stands]) => stands.part?.id === from ? [char, { ...stands, id: from, label: tray.label, part: null }] : [char, stands]))
+      folds = new Map([...folds].filter(([part]) => part !== from))
+      landed = from
+    }, () => setFold({ structure: from }, null))
+  }
+  function release() { held = null; lifted = null; over = null; dragging = false }
+  const holding = (kind, key) => (kind === 'form' ? held : lifted) === key
+  function pick(kind, key) {
     if (busy || !me) return
-    if (held === char) return release()
-    held = char; over = null; dragging = false
+    if (holding(kind, key)) return release()
+    release()
+    if (kind === 'form') held = key
+    else lifted = key
   }
   function drop(to) {
-    const char = held, tray = trays.find(tray => tray.id === to)
-    if (char && to === OUT) return takeOut(char)
+    const char = held, from = lifted, tray = trays.find(tray => tray.id === to)
+    if (to === OUT) return char ? takeOut(char) : split(from)
     release()
-    if (char && tray) place(char, tray)
+    if (tray && char) place(char, tray)
+    else if (tray && from) fold(from, tray.id)
   }
 
-  // A drag with a mouse or a pen; a touch picks the form up with a tap, so the board still scrolls.
+  // A drag with a mouse or a pen; a touch picks up with a tap, so the board still scrolls.
   let grip = null, skipClick = false
-  // The tray a point or a click aims at: the one it is in, when the held form can go there.
-  const aim = element => { const to = element?.closest?.('[data-tray]')?.dataset.tray; return targets.includes(to) ? to : null }
+  // The tray a point or a click aims at. A form goes to the tray it is put in; a tray into the
+  // nearest tray around the point that can take it.
+  function aim(element) {
+    const inner = element?.closest?.('[data-tray]')
+    if (held) return inner && targets.includes(inner.dataset.tray) ? inner.dataset.tray : null
+    for (let tray = inner; tray; tray = tray.parentElement?.closest('[data-tray]')) if (targets.includes(tray.dataset.tray)) return tray.dataset.tray
+    return null
+  }
   const trayAt = (x, y) => aim(document.elementsFromPoint(x, y).find(element => !grip.node.contains(element)))
-  function down(event, char) {
+  function down(event, kind, key) {
     if (busy || !me || event.button !== 0 || !event.isPrimary || event.pointerType === 'touch') return
-    grip = { pointer: event.pointerId, x: event.clientX, y: event.clientY, node: event.currentTarget.closest('.token'), char, moved: false }
+    grip = { pointer: event.pointerId, x: event.clientX, y: event.clientY, node: event.currentTarget.closest(kind === 'form' ? '.token' : '.tray'), kind, key, moved: false }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
   function move(event) {
@@ -140,7 +208,10 @@
     const dx = event.clientX - grip.x, dy = event.clientY - grip.y
     if (!grip.moved) {
       if (Math.hypot(dx, dy) < 6) return
-      grip.moved = true; held = grip.char; dragging = true
+      release()
+      grip.moved = true; dragging = true
+      if (grip.kind === 'form') held = grip.key
+      else lifted = grip.key
     }
     grip.node.style.translate = `${dx}px ${dy}px`
     over = trayAt(event.clientX, event.clientY)
@@ -157,10 +228,10 @@
     if (!moved) return
     // The click that ends a drag is the drag's, not a pick.
     skipClick = true; setTimeout(() => { skipClick = false })
-    // A form put down leaves from where it was let go; one let go elsewhere goes back.
+    // What is put down leaves from where it was let go; what is let go elsewhere goes back.
     if (!over) { settle(node); release(); return }
     drop(over)
-    // A form that moved has left this node behind; one that stays where it was goes back to its place.
+    // What moved has left this node behind; what stays where it was goes back to its place.
     tick().then(() => { if (node.isConnected && !node.inert) settle(node) })
   }
   function lost(event) {
@@ -169,16 +240,16 @@
     grip = null
     if (moved) { settle(node); release() }
   }
-  function tap(event, char) {
+  function tap(event, kind, key) {
     if (skipClick) { skipClick = false; event.stopPropagation(); return }
-    // With another form held, the click is the board's: the held form is put down or let go.
-    if (held && held !== char) return
+    // With something else held, the click is the board's: what is held is put down or let go.
+    if ((held || lifted) && !holding(kind, key)) return
     event.stopPropagation()
-    pick(char)
+    pick(kind, key)
   }
   let spaced = false
-  function keys(event, char) {
-    if (held !== char) return
+  function keys(event, kind, key) {
+    if (!holding(kind, key)) return
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
     if (step) {
       event.preventDefault()
@@ -186,19 +257,19 @@
       const order = [...board.querySelectorAll('[data-tray]')].map(element => element.dataset.tray).filter(to => targets.includes(to)), at = order.indexOf(over)
       over = order[at < 0 ? (step > 0 ? 0 : order.length - 1) : (at + step + order.length) % order.length] ?? null
       const tray = trays.find(tray => tray.id === over)
-      if (over === OUT) said = out
-      if (tray) { said = `${tray.label} · ${t('structure.place', { form: char })}`; board.querySelector(`[data-tray="${CSS.escape(over)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }
+      said = over === OUT ? out : tray ? offer(tray) : ''
+      if (over) board.querySelector(`[data-tray="${CSS.escape(over)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     } else if ((event.key === 'Enter' || event.key === ' ') && over) {
       event.preventDefault()
       spaced = event.key === ' '
       drop(over)
     } else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); release() }
   }
-  // Space activates a button as the key comes up, which would pick the form up again where it landed.
+  // Space activates a button as the key comes up, which would pick up again what has just landed.
   function keyup(event) { if (event.key === ' ' && spaced) { spaced = false; event.preventDefault() } }
-  // A click with a form held puts it down on the tray clicked, or lets it go.
+  // A click with something held puts it down on the tray clicked, or lets it go.
   function clicked(event) {
-    if (!held) return
+    if (!held && !lifted) return
     const to = aim(event.target)
     if (to) drop(to)
     else release()
@@ -224,7 +295,7 @@
     chip?.focus({ preventScroll: true })
   }
   const titleOf = form => form.regions ? `${form.char} ${form.regions}` : form.char
-  function cancel(event) { if (held) { event.preventDefault(); release() } }
+  function cancel(event) { if (held || lifted) { event.preventDefault(); release() } }
   function closed() { if (wrote) changed(); close() }
   onMount(() => {
     absorb(opened)
@@ -239,11 +310,36 @@
   {@const mine = Boolean(mineOf(form.char))}
   <button type="button" class="piece" class:current={form.char === current} data-form={form.char} aria-pressed={held === form.char} aria-busy={busy === form.char}
     aria-disabled={!me || Boolean(busy)} title={titleOf(form)} aria-label={titleOf(form)}
-    onpointerdown={event => down(event, form.char)} onpointermove={move} onpointerup={up} onpointercancel={lost} onlostpointercapture={lost}
-    onclick={event => tap(event, form.char)} onkeydown={event => keys(event, form.char)}>
+    onpointerdown={event => down(event, 'form', form.char)} onpointermove={move} onpointerup={up} onpointercancel={lost} onlostpointercapture={lost}
+    onclick={event => tap(event, 'form', form.char)} onkeydown={event => keys(event, 'form', form.char)}>
     <FormText text={form.char} script={form.script} lang={form.lang} />
   </button>{#if mine}<button type="button" class="take" disabled={Boolean(busy)} aria-label={t('structure.take', { form: form.char })} title={t('structure.take', { form: form.char })}
     onclick={event => { event.stopPropagation(); takeOut(form.char) }}>×</button>{/if}
+{/snippet}
+
+{#snippet tokens(list)}
+  {#each list as form (form.char)}
+    <span class="token" class:mine={Boolean(mineOf(form.char))} class:held={held === form.char} class:dragging={dragging && held === form.char} class:saving={busy === form.char}
+      in:receive={{ key: form.char }} out:send={{ key: form.char }} animate:flip={slide}>{@render token(form)}</span>
+  {/each}
+{/snippet}
+
+<!-- A tray's caption is its handle: the tray is picked up, dragged and put down by it. -->
+{#snippet caption(tray)}
+  <h3 lang="zh">
+    <button type="button" class="handle" data-handle={tray.id} aria-pressed={lifted === tray.id} aria-busy={busy === tray.id} aria-disabled={!me || Boolean(busy)}
+      onpointerdown={event => down(event, 'tray', tray.id)} onpointermove={move} onpointerup={up} onpointercancel={lost} onlostpointercapture={lost}
+      onclick={event => tap(event, 'tray', tray.id)} onkeydown={event => keys(event, 'tray', tray.id)}>{tray.label}</button>{#if foldedByMe(tray.id)}<button type="button" class="take" disabled={Boolean(busy)}
+      aria-label={t('structure.split', { structure: tray.label })} title={t('structure.split', { structure: tray.label })} onclick={event => { event.stopPropagation(); split(tray.id) }}>×</button>{/if}
+  </h3>
+{/snippet}
+
+{#snippet body(tray)}
+  {@render caption(tray)}
+  <div class="tray-forms">
+    {@render tokens(tray.forms)}
+    {#if over === tray.id && held}<span class="ghost" aria-hidden="true"><FormText text={held} /></span>{/if}
+  </div>
 {/snippet}
 
 <svelte:window onkeyup={keyup} />
@@ -255,29 +351,26 @@
     <button type="button" class="icon-button" aria-label={t('structure.close')} onclick={() => dialog.close()}>×</button>
   </header>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="board" class:holding={held} class:dragging bind:this={board} onclick={clicked}>
-    {#each placed as tray (tray.id)}
-      <section class="tray" class:target={targets.includes(tray.id)} class:over={over === tray.id} class:landed={landed === tray.id} onanimationend={() => { if (landed === tray.id) landed = null }} data-tray={tray.id} animate:flip={slide}
-        aria-label={held && targets.includes(tray.id) ? `${tray.label} · ${t('structure.place', { form: held })}` : tray.label}>
-        <h3 lang="zh">{tray.label}</h3>
-        <div class="tray-forms">
-          {#each tray.forms as form (form.char)}
-            <span class="token" class:mine={Boolean(mineOf(form.char))} class:held={held === form.char} class:dragging={dragging && held === form.char} class:saving={busy === form.char}
-              in:receive={{ key: form.char }} out:send={{ key: form.char }} animate:flip={slide}>{@render token(form)}</span>
-          {/each}
-          {#if over === tray.id && held}<span class="ghost" aria-hidden="true"><FormText text={held} /></span>{/if}
-        </div>
+  <div class="board" class:holding={held || lifted} class:dragging bind:this={board} onclick={clicked}>
+    {#each heads as tray (tray.id)}
+      <section class="tray" class:target={targets.includes(tray.id)} class:over={over === tray.id} class:lifted={lifted === tray.id} class:dragging={dragging && lifted === tray.id}
+        class:saving={busy === tray.id} class:landed={landed === tray.id} onanimationend={() => { if (landed === tray.id) landed = null }} data-tray={tray.id}
+        in:receive={{ key: 'tray ' + tray.id }} out:send={{ key: 'tray ' + tray.id }} animate:flip={slide}
+        aria-label={targets.includes(tray.id) ? offer(tray) : tray.label}>
+        {@render body(tray)}
+        {#each tray.parts as part (part.id)}
+          <section class="tray part" class:target={targets.includes(part.id)} class:over={over === part.id} class:lifted={lifted === part.id} class:dragging={dragging && lifted === part.id}
+            class:saving={busy === part.id} class:landed={landed === part.id} onanimationend={event => { event.stopPropagation(); if (landed === part.id) landed = null }} data-tray={part.id}
+            in:receive={{ key: 'tray ' + part.id }} out:send={{ key: 'tray ' + part.id }} animate:flip={slide}
+            aria-label={targets.includes(part.id) ? offer(part) : part.label}>
+            {@render body(part)}
+          </section>
+        {/each}
+        {#if over === tray.id && lifted}<div class="ghost within" lang="zh" aria-hidden="true">{labelOf(lifted)}</div>{/if}
       </section>
     {/each}
     {#if loose.length}
-      <section class="tray loose">
-        <div class="tray-forms">
-          {#each loose as form (form.char)}
-            <span class="token" class:held={held === form.char} class:dragging={dragging && held === form.char} class:saving={busy === form.char}
-              in:receive={{ key: form.char }} out:send={{ key: form.char }} animate:flip={slide}>{@render token(form)}</span>
-          {/each}
-        </div>
-      </section>
+      <section class="tray loose"><div class="tray-forms">{@render tokens(loose)}</div></section>
     {/if}
     {#if out}
       <button type="button" class="tray out target" class:over={over === OUT} data-tray={OUT}>{out}</button>
@@ -302,7 +395,22 @@
   .board.dragging,.board.dragging :global(*){cursor:grabbing}
   .tray{display:flex;flex-direction:column;gap:8px;min-width:120px;padding:10px 12px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper);
     transition:border-color .15s,background-color .15s,box-shadow .15s}
-  .tray h3{margin:0;font-size:15px;font-weight:400;line-height:1.3}
+  .tray h3{display:flex;align-items:stretch;margin:0;font-size:15px;font-weight:400;line-height:1.3}
+  /* A caption is the tray's handle, marked by a grip. */
+  .handle{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:4px;background:transparent;padding:0;font:inherit;color:inherit;text-align:left;cursor:grab;user-select:none;-webkit-user-select:none}
+  .handle::before{content:"";flex:none;width:6px;height:10px;opacity:.45;background:radial-gradient(circle,currentColor 1px,transparent 1.2px) 0 0/3px 3.34px}
+  .handle[aria-disabled="true"]{cursor:default}
+  .handle[aria-disabled="true"]::before{display:none}
+  .handle:not([aria-disabled="true"]):hover{color:var(--accent)}
+  .tray h3 .take{margin-left:6px;border:0;border-radius:4px;background:transparent;padding:0 4px}
+  /* A tray folded into another stands within it. */
+  .tray.part{min-width:0;padding:8px 10px 10px;background:var(--surface)}
+  /* A tray on its way out leaves the trays within it to their new places. */
+  .tray[inert] .tray.part{visibility:hidden}
+  .tray.lifted{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+  .tray.dragging{position:relative;z-index:3;scale:1.02;box-shadow:0 10px 24px var(--shadow)}
+  .tray.saving{opacity:.7}
+  .ghost.within{align-self:flex-start;font-size:15px;padding:8px 10px}
   .tray.loose{border-style:dotted;background:transparent}
   .tray-forms{position:relative;display:flex;flex-wrap:wrap;gap:6px;min-height:36px}
   /* A tray the held form can go to shows it; the one aimed at is filled. */

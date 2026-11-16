@@ -32,7 +32,8 @@ is realized by many forms. A character has at most one derived structure, whatev
 and a grapheme has several through its characters (峰 ⿰山夆, 峯 ⿱山夆); 說 and 説 share one. An
 IDS is a representation of a structure, never its identity: the id is derived from the canonical
 text and the policy (`glyph_atlas.structures`). A reviewer's `has_structure` claim is the
-authority; the derivation from the IDS is a proposal.
+authority; the derivation from the IDS is a proposal. A reviewer's `folds_into` claim says two
+structures are one 構形: the forms of the first are grouped under the second.
 
 **Representation.** A way of naming a form: a Unicode sequence, an Ideographic Variation Sequence, an
 MJ id, a GlyphWiki name, an IDS (kept exactly as written; a normalised IDS is only a versioned search

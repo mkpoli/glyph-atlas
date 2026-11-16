@@ -959,6 +959,8 @@
   "structure.disputed": "Readers disagree about {item}",
   "structure.place": "Place {form} here",
   "structure.take": "Take {form} out",
+  "structure.merge": "Merge into {structure}",
+  "structure.split": "Split {structure} off",
   "grapheme.disputed": "disputed",
   "grapheme.find": "Find another grapheme",
   "grapheme.change": "Change grapheme",

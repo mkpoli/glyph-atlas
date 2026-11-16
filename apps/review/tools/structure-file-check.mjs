@@ -6,7 +6,9 @@
  * board of trays. A form is filed under another 構形 by dragging it to that tray, by picking it up
  * with a click and clicking the tray, or from the keyboard; the claim is the form's (has_structure),
  * so it holds for every crop. A form the reader filed is taken back with its × or by putting it back
- * where its description puts it. The character page opens the same board.
+ * where its description puts it. A whole tray is moved into another the same ways (folds_into): the
+ * two are one 構形, the first stands as a tray within the second, and the reader's fold is split off
+ * again. The character page opens the same board.
  *
  * Run through devrun:
  *   devrun bun apps/review/tools/structure-file-check.mjs
@@ -61,11 +63,13 @@ try {
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(crop)}`, { waitFor: ready, timeout: 90000 })
   await browser.waitFor(`${chips}.length >= 10 && !!document.querySelector('dialog[open] .form-arrange')`, 30000)
   const barStanding = () => browser.evaluate(`${groups}.map(g => [g.querySelector('.form-group-label')?.textContent.trim() ?? '', [...g.querySelectorAll('.script-text')].map(s => s.textContent)])`)
-  const standing = () => browser.evaluate(`${trays}.map(tray => [tray.querySelector('h3')?.textContent.trim() ?? '', [...tray.querySelectorAll('.token:not([inert]) > [data-form]')].map(chip => chip.dataset.form)])`)
-  const under = (label, form) => `${trays}.some(tray => (tray.querySelector('h3')?.textContent.trim() ?? '') === ${JSON.stringify(label)} && !!tray.querySelector('.token:not([inert]) > [data-form="' + CSS.escape(${JSON.stringify(form)}) + '"]')) && !${board}.querySelector('[aria-busy="true"]') && !${board}.querySelector('.token[inert]')`
+  // Each tray with the forms that stand in it, a tray folded into another after that one.
+  const standing = () => browser.evaluate(`${trays}.filter(tray => !tray.inert).map(tray => [tray.querySelector('h3 .handle')?.textContent.trim() ?? '', [...tray.querySelectorAll(':scope > .tray-forms > .token:not([inert]) > [data-form]')].map(chip => chip.dataset.form)])`)
+  const under = (label, form) => `${trays}.some(tray => !tray.inert && (tray.querySelector('h3 .handle')?.textContent.trim() ?? '') === ${JSON.stringify(label)} && !!tray.querySelector(':scope > .tray-forms > .token:not([inert]) > [data-form="' + CSS.escape(${JSON.stringify(form)}) + '"]')) && !${board}.querySelector('[aria-busy="true"]') && !${board}.querySelector('.token[inert]')`
   const barUnder = (caption, form) => `${groups}.some(g => g.querySelector('.form-group-label')?.textContent.trim() === ${JSON.stringify(caption)} && [...g.querySelectorAll('.script-text')].some(s => s.textContent === ${JSON.stringify(form)}))`
   const chip = form => `${board}.querySelector('.token:not([inert]) > [data-form="' + CSS.escape(${JSON.stringify(form)}) + '"]')`
-  const tray = label => `${trays}.find(tray => (tray.querySelector('h3')?.textContent.trim() ?? '') === ${JSON.stringify(label)})`
+  const tray = label => `${trays}.find(tray => !tray.inert && (tray.querySelector('h3 .handle')?.textContent.trim() ?? '') === ${JSON.stringify(label)})`
+  const handle = label => `${tray(label)}.querySelector('h3 .handle')`
   const centre = expression => browser.evaluate(`(() => { const r = ${expression}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
   const mouse = (type, at, held = true) => browser.send('Input.dispatchMouseEvent', { type, x: Math.round(at.x), y: Math.round(at.y), button: type === 'mouseMoved' && !held ? 'none' : 'left', buttons: held && type !== 'mouseReleased' ? 1 : 0, clickCount: 1 })
   const open = async () => {
@@ -224,6 +228,78 @@ try {
   await shut()
   await browser.waitFor(barUnder(from, typed), 20000)
   console.log(`PASS a description typed in the picker is filed under ${from} before it is saved`)
+
+  // A whole 構形 is dragged by its caption into another: the tray under the pointer shows it will
+  // stand within, and once let go the two are one 構形 on the board and on the bar.
+  const folds = () => {
+    const db = new Database(join(config.directory, 'review.sqlite'), { readonly: true })
+    try {
+      return db.query(`SELECT a.label AS part,b.label AS head FROM current_claims c JOIN structures a ON a.id=c.subject JOIN structures b ON b.id=c.object
+        WHERE c.predicate='folds_into' AND c.status='asserted'`).all().map(row => [row.part, row.head])
+    } finally { db.close() }
+  }
+  const within = (part, head) => `!!${tray(part)}?.classList.contains('part') && ${tray(part)}.parentElement === ${tray(head)} && !${board}.querySelector('[aria-busy="true"]') && !${board}.querySelector('.tray[inert]')`
+  const apart = part => `!!${tray(part)} && !${tray(part)}.classList.contains('part') && !${board}.querySelector('[aria-busy="true"]') && !${board}.querySelector('.tray[inert]')`
+  await open()
+  const apartBoard = await standing()
+  const grab = await centre(handle(to)), into = await centre(tray(from))
+  await mouse('mouseMoved', grab, false)
+  await mouse('mousePressed', grab)
+  for (let step = 1; step <= 10; step += 1) { await mouse('mouseMoved', { x: grab.x + (into.x - grab.x) * step / 10, y: grab.y + (into.y - grab.y) * step / 10 }); await Bun.sleep(20) }
+  assert(await browser.evaluate(`${tray(from)}.classList.contains('over') && ${tray(from)}.querySelector('.ghost.within')?.textContent.trim() === ${JSON.stringify(to)}`), 'the tray under a dragged tray does not show it will stand within')
+  await shoot('structure-merge-drag')
+  await mouse('mouseReleased', into)
+  await browser.waitFor(within(to, from), 20000)
+  assert(JSON.stringify(folds()) === JSON.stringify([[to, from]]), `${to} was not folded into ${from}: ${JSON.stringify(folds())}`)
+  assert(await browser.evaluate(`document.activeElement === ${handle(to)} && !!${tray(to)}.querySelector('h3 .take')`), 'a folded tray carries no way back, or loses the focus')
+  await shoot('structure-merged')
+  console.log(`PASS ${to} is dragged into ${from} and stands within it`)
+
+  // A click inside the folded tray a held form stands in lets go: it is not filed under the tray around it.
+  const [inside] = before.find(([label]) => label === to)[1]
+  await browser.evaluate(`${chip(inside)}.click()`)
+  await browser.waitFor(`${chip(inside)}.getAttribute('aria-pressed') === 'true'`)
+  await browser.evaluate(`${tray(to)}.querySelector('.tray-forms').click()`)
+  await Bun.sleep(300)
+  assert(filed(inside).length === 0 && await browser.evaluate(`!${board}.querySelector('[aria-pressed="true"]') && !${board}.querySelector('[aria-busy="true"]')`), `a click inside its own folded tray filed ${inside}: ${filed(inside)}`)
+
+  // A form is filed under the folded 構形 itself, and taken back from it.
+  await browser.evaluate(`${chip(own)}.click()`)
+  await browser.evaluate(`${tray(to)}.click()`)
+  await browser.waitFor(under(to, own), 20000)
+  assert(JSON.stringify(filed(own)) === JSON.stringify([to]), `${own} was not filed under the folded ${to}: ${filed(own)}`)
+  await browser.evaluate(`${chip(own)}.parentElement.querySelector('.take').click()`)
+  await browser.waitFor(under(from, own), 20000)
+  assert(filed(own).length === 0, `the filing under a folded 構形 was not taken back: ${filed(own)}`)
+  await shut()
+  const merged = await barStanding()
+  assert(!merged.some(([caption]) => caption === to) && merged.find(([caption]) => caption === from)[1].length > bar.find(([caption]) => caption === from)[1].length, `the bar does not show ${to} under ${from}: ${JSON.stringify(merged)}`)
+  console.log(`PASS a form is filed under the folded ${to}, and the bar shows one 構形`)
+
+  // The reader's fold is split off with its ×, made again from the keyboard, and split off on the
+  // strip that shows while the folded tray is held.
+  await open()
+  await browser.waitFor(within(to, from), 20000)
+  await browser.evaluate(`${tray(to)}.querySelector('h3 .take').click()`)
+  await browser.waitFor(apart(to), 20000)
+  assert(folds().length === 0, `the fold was not taken back: ${JSON.stringify(folds())}`)
+  await browser.evaluate(`${handle(to)}.focus()`)
+  await browser.key('Enter')
+  await browser.waitFor(`${handle(to)}.getAttribute('aria-pressed') === 'true'`)
+  assert(await browser.evaluate(`!${tray(to)}.classList.contains('target') && !${board}.querySelector('.tray.out')`), 'a held tray offers itself, or a way out it does not have')
+  for (let presses = 0; presses < apartBoard.length && !(await browser.evaluate(`${tray(from)}.classList.contains('over')`)); presses += 1) await browser.key('ArrowRight')
+  assert((await browser.evaluate(`${board}.querySelector('[aria-live]').textContent`)) === `Merge into ${from}`, 'the 構形 a tray is aimed at is not announced')
+  await browser.key('Enter')
+  await browser.waitFor(within(to, from), 20000)
+  assert(JSON.stringify(folds()) === JSON.stringify([[to, from]]) && await browser.evaluate(`document.activeElement === ${handle(to)}`), `${to} was not folded into ${from} from the keyboard: ${JSON.stringify(folds())}`)
+  await browser.evaluate(`${handle(to)}.click()`)
+  await browser.waitFor(`${board}.querySelector('.tray.out')?.textContent.trim() === ${JSON.stringify(`Split ${to} off`)}`)
+  await browser.evaluate(`${board}.querySelector('.tray.out').click()`)
+  await browser.waitFor(apart(to), 20000)
+  assert(folds().length === 0, `the strip did not take the fold back: ${JSON.stringify(folds())}`)
+  assert(JSON.stringify(await standing()) === JSON.stringify(apartBoard), 'the board does not return to its trays after the split')
+  await shut()
+  console.log(`PASS the fold is split off with its × and on the strip, and made from the keyboard`)
 
   // The character's page opens the same board from its 構形 row.
   await browser.goto(`${service.base}/en/character/U+6240`, { waitFor: `!!document.querySelector('.character-layers .arrange')`, timeout: 90000 })

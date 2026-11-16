@@ -890,6 +890,8 @@
   "structure.disputed": "{item}에 對해 意見이 갈립니다",
   "structure.place": "{form} 여기로 옮기기",
   "structure.take": "{form} 여기서 빼기",
+  "structure.merge": "{structure}에 合치기",
+  "structure.split": "{structure} 分離",
   "grapheme.disputed": "異見 있음",
   "grapheme.find": "다른 字素 찾기",
   "grapheme.change": "字素 바꾸기",

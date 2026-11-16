@@ -908,6 +908,8 @@
   "structure.disputed": "{item}有異議",
   "structure.place": "置{form}於此",
   "structure.take": "去{form}於此",
+  "structure.merge": "併入{structure}",
+  "structure.split": "分出{structure}",
   "grapheme.disputed": "有異議",
   "grapheme.find": "尋字種",
   "grapheme.change": "易字種",

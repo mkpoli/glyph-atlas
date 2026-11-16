@@ -1028,11 +1028,12 @@ def router(store: Store) -> APIRouter:
         return suggest(q, layer(), limit=limit)
 
     @api.get("/layers/structures")
-    def structures(c: str = "") -> dict[str, Any]:
-        """The 構形 groups of the characters named, as the Worker answers it."""
+    def structures(c: str = "", of: str = "") -> dict[str, Any]:
+        """The 構形 groups of the characters named, as the Worker answers it. A regional shape named
+        with `of` is derived here like any description."""
         if not written(c):
             raise HTTPException(422, "Name a character.")
-        return refs.structure_groups(c, store.claimed_structures(list(dict.fromkeys(written(c)))[:refs.STRUCTURE_CHARS]))
+        return refs.structure_groups(c, store.claimed_structures(list(dict.fromkeys(written(c)))[:refs.STRUCTURE_CHARS]), store.folds_of)
 
     @api.get("/layers/ids")
     def ids(c: str = "") -> dict[str, Any]:

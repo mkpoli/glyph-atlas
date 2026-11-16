@@ -34,18 +34,19 @@
   const written = $derived(crop?.written_character ?? crop?.label ?? '')
   const current = $derived(formOf(crop))
   const BAR = 10
-  // The 構形 each form stands under, by the form's text; a form the site knows no structure of has none.
+  // The 構形 each form stands under, by the form's text; a form the site knows no structure of has
+  // none. The crop's character is named too, for its regional shapes.
   let structureOf = $state(new Map())
-  const composed = (names, known = new Map()) => standing(names, known).catch(() => known)
+  const HAN = /^\p{Script=Han}$/u
+  const stands = (names, known) => standing(names, known, HAN.test(written) ? written : '')
+  const composed = (names, known = new Map()) => stands(names, known).catch(() => known)
   const namesOf = found => [...found.members, ...found.variants].map(form => form.char)
-  // A regional shape carries the 構形 its description gives; a reader's filing of it is asked for.
-  const given = found => [...found.members, ...found.variants].filter(form => form.structure).map(form => [form.char, form.structure])
   $effect(() => {
     const id = crop?.id, char = written, own = untrack(() => current)
     added = []; picking = false; query = ''; failed = false; composing = false; linking = false; linkError = ''; linkedByMe = false; arranging = false
     listForms(char).then(found => [found, false], () => [{ members: [{ char }], variants: [], related: [], derived: [], linked: [], grapheme: null }, true])
       .then(async ([found, unread]) => {
-        const read = await composed([own, ...namesOf(found)], new Map(given(found)))
+        const read = await composed([own, ...namesOf(found)])
         if (id === crop?.id && char === written) { structureOf = read; offered = { char, ...found }; failed = unread }
       })
   })
@@ -105,18 +106,16 @@
     const id = crop?.id, char = written
     try {
       const found = await listForms(char)
-      const read = found ? await composed(namesOf(found), new Map([...structureOf, ...given(found)])) : structureOf
+      const read = found ? await composed(namesOf(found), structureOf) : structureOf
       if (found && id === crop?.id && char === written) { structureOf = read; offered = { char, ...found } }
     } catch { /* the save stands; the card reads again next time */ }
   }
-  // What the 構形 dialog reads, and the bar after it closes on a change: the regional shapes keep the
-  // 構形 their descriptions give.
+  // What the 構形 dialog lays out, and the bar reads again after it closes on a change.
   const arranged = $derived([...bar, ...rest])
-  const readArranged = (names, known) => standing(names, new Map([...given(listed), ...known]))
   async function rearranged() {
     const id = crop?.id
-    const read = await composed(arranged.map(form => form.char), new Map([...given(listed), ...structureOf]))
-    if (id === crop?.id) structureOf = read
+    const found = await composed(arranged.map(form => form.char), structureOf)
+    if (id === crop?.id) structureOf = found
   }
   async function link() {
     if (!canLink || linking) return
@@ -189,7 +188,7 @@
     <button type="button" class="form-arrange" {disabled} aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>
   {/if}
   {#if arranging}
-    <StructureDialog of={written} forms={arranged} known={structureOf} read={readArranged} current={chosen ?? current} close={() => arranging = false} changed={rearranged} />
+    <StructureDialog of={written} forms={arranged} known={structureOf} read={stands} current={chosen ?? current} close={() => arranging = false} changed={rearranged} />
   {/if}
   {#if linkedHere || canLink}
     <div class="form-link">

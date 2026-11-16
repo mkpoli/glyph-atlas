@@ -928,6 +928,8 @@
   "structure.disputed": "{item}は読者の意見が分かれています",
   "structure.place": "{form}をここに置く",
   "structure.take": "{form}をここから外す",
+  "structure.merge": "{structure}に併せる",
+  "structure.split": "{structure}を分ける",
   "grapheme.disputed": "異論あり",
   "grapheme.find": "別の字種を探す",
   "grapheme.change": "字種を変更",

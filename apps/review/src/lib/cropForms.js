@@ -30,8 +30,7 @@ const cards = new Map()
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then its
  * other forms, as the character's card lists them: the figures the IVD registers for `char` when it
  * registers more than one (所󠄂 and 所󠄃), each named by its MJ figure; the shapes BabelStone gives
- * `char` by region when it gives more than one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J), each with
- * its 構形 as `structure`; and the
+ * `char` by region when it gives more than one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J); and the
  * variants the sources attest that a gallery widens to or that one is written for the other. The
  * characters related otherwise (a loan, a homograph, a grapheme this form also writes) follow as
  * `related`, the derived shapes last, and the described forms a reviewer said are written for the
@@ -50,15 +49,11 @@ export function listForms(char) {
     let partial = false
     const registered = figuresOf(char).then(async figures => (figures.length && await drawFigure(figures[0].char), figures))
       .catch(() => { partial = true; return [] })
-    // A regional shape takes its character's 構形 unless the answer gives it one of its own (臭 as
-    // ⿱自大 in J is the structure of 𦤀) or none.
-    const described = HAN.test(char)
-      ? readIds(char).then(found => (found.shapes ?? []).map(shape => ({ ...shape, structure: 'structure' in shape ? shape.structure : found.structure ?? null })), () => { partial = true; return [] })
-      : Promise.resolve([])
+    const described = HAN.test(char) ? readIds(char).then(found => found.shapes ?? [], () => { partial = true; return [] }) : Promise.resolve([])
     const loaded = Promise.all([card, registered, described]).then(([card, figures, regional]) => {
       const offered = v => !compatibility(v.char) || v.char === char
       const members = (card?.grapheme?.members ?? [{ char }]).filter(offered).map(entry)
-      const shapes = regional.map(({ text, regions, structure }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions), structure }))
+      const shapes = regional.map(({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) }))
       const found = card?.variants ?? {}
       const writers = new Set((found.writers ?? []).map(v => v.char)), writes = new Set((found.writes ?? []).map(v => v.char))
       // The card's order: a form that writes this grapheme first (後: 后), then the others.
@@ -231,4 +226,22 @@ export async function setStructure(form, target, { remove = false } = {}) {
     for (const kept of [...filed.keys()]) if (kept.startsWith(form + '\u0000')) filed.delete(kept)
     return result
   } catch (error) { if (error.status) filed.delete(key); throw error }
+}
+
+// One submission id per fold, so a retry after a lost answer is the same write.
+const folds = new Map()
+/**
+ * Fold the 構形 `from` into the 構形 `into`, so the forms of both stand under `into`, or with `into`
+ * null take back the reader's own fold of `from`. Each is named as `setStructure` names one. A
+ * reader's new fold of a 構形 replaces their earlier one. Answers `{ structure, folds_into }`: where
+ * `from` stands now, null for nowhere.
+ */
+export async function setFold(from, into) {
+  const key = JSON.stringify([from, into])
+  if (!folds.has(key)) folds.set(key, crypto.randomUUID())
+  try {
+    const result = await request('/atlas/structures/folds', { id: folds.get(key), from, ...(into ? { into } : { remove: true }) })
+    folds.delete(key)
+    return result
+  } catch (error) { if (error.status) folds.delete(key); throw error }
 }

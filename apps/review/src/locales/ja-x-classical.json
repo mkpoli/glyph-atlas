@@ -906,6 +906,8 @@
   "structure.disputed": "{item}ニ異論アリ",
   "structure.place": "{form}ヲ此ニ置ク",
   "structure.take": "{form}ヲ此ヨリ外ス",
+  "structure.merge": "{structure}ニ併ス",
+  "structure.split": "{structure}ヲ分ツ",
   "grapheme.disputed": "異論アリ",
   "grapheme.find": "他ノ字種ヲ尋ヌ",
   "grapheme.change": "字種ヲ改ム",

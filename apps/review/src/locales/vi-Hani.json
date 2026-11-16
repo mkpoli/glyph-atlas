@@ -915,6 +915,8 @@
   "structure.disputed": "𠊛讀羣意恪𡗅{item}",
   "structure.place": "撻{form}𠓨低",
   "structure.take": "𠬃{form}塊低",
+  "structure.merge": "入𠓨{structure}",
+  "structure.split": "索{structure}𠚢",
   "grapheme.disputed": "羣爭論",
   "grapheme.find": "尋字位恪",
   "grapheme.change": "對字位",

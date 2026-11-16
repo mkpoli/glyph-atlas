@@ -69,6 +69,16 @@
    ],
    "cardinality": "many"
   },
+  "folds_into": {
+   "label": "a structure that is one 構形 with another and stands under it (⿰糸𰌼 under ⿰糸宿): its forms are grouped with that one's",
+   "subject": "structure",
+   "objects": [
+    "structure"
+   ],
+   "values": [],
+   "cardinality": "one",
+   "alternatives": false
+  },
   "writes_word": {
    "label": "the word a crop writes at its place in the text; each crop of a spelling of several characters (而已) writes the whole word",
    "subject": "crop",

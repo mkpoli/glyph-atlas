@@ -9,7 +9,7 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
 import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
-  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
+  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
   writtenForOf, writtenForQuery } from './claims';
 import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
 import { familyClaims } from '../atlas3Gallery';
@@ -338,8 +338,9 @@ describe('a form filed under a structure', () => {
   async function forms() {
     const found = setup();
     const beside = await structureId('⿰山夆', SOURCE.scheme, SOURCE.policy), above = await structureId('⿱山夆', SOURCE.scheme, SOURCE.policy);
+    const wind = await structureId('⿱山風', SOURCE.scheme, SOURCE.policy);
     const rows: Record<string, unknown[]> = { '峰': [['⿰山夆'], null, [beside, '⿰山夆']], '峯': [['⿱山夆'], null, [above, '⿱山夆']],
-      '丑': [[], null, null], '岑': [['⿱山今'], null, ['st:' + '0'.repeat(32), '⿱山今']],
+      '丑': [[], null, null], '岑': [['⿱山今'], null, ['st:' + '0'.repeat(32), '⿱山今']], '嵐': [['⿱山風'], null, [wind, '⿱山風']],
       // 嶺 has one regional shape with the character's structure and one with 峯's.
       '嶺': [['⿱山領'], [{ text: '⿱山領', regions: 'GT' }, { text: '⿱山夆', regions: 'J', structure: { id: above, label: '⿱山夆' } }], [beside, '⿰山夆']],
       // A description the load read: the form's own, which spells 峰 with another drawing of 夆.
@@ -356,7 +357,9 @@ describe('a form filed under a structure', () => {
     const form = made.form!.values[0].form!;
     const say = (char: string, remove = false, actor = 'reader', id = crypto.randomUUID()) =>
       setStructure(found.env, { id, char, ...(remove ? { remove } : {}) }, form, actor, found.tools);
-    return { ...found, form, say, beside, above };
+    const fold = (from: Record<string, unknown>, into: Record<string, unknown> | null, actor = 'reader', id = crypto.randomUUID()) =>
+      setFold(found.env, { id, from, ...(into ? { into } : { remove: true }) }, actor, found.tools);
+    return { ...found, form, say, fold, beside, above, wind };
   }
 
   it('derives the id glyph_atlas.structures gives a label', async () => {
@@ -478,6 +481,90 @@ describe('a form filed under a structure', () => {
     expect((await claimedStructures(env, ['⿰山夆'])).get('⿰山夆')!.map(value => value.id)).toEqual([beside, above].sort());
     await setStructure(env, { id: crypto.randomUUID(), char: '峰', remove: true }, '⿰山夆', 'third', tools);
     expect((await claimedStructures(env, ['⿰山夆'])).get('⿰山夆')!.map(value => value.id)).toEqual([above]);
+  });
+
+  it('folds one structure into another, writes both rows, and takes the fold back', async () => {
+    const { db, env, fold, beside, above } = await forms();
+    const folded = await fold({ char: '峯' }, { char: '峰' });
+    expect(folded).toEqual({ structure: above, folds_into: { id: beside, label: '⿰山夆', by: ['reader'] }, replaced: null });
+    expect(db.query('SELECT id FROM structures ORDER BY id').all().map((row: any) => row.id)).toEqual([beside, above].sort());
+    expect(db.query("SELECT subject,object,crop,method FROM assertions WHERE predicate='folds_into'").get())
+      .toEqual({ subject: above, object: beside, crop: null, method: 'form-picker' });
+    expect(await foldsOf(env, [above, beside])).toEqual(new Map([[above, { head: { id: beside, label: '⿰山夆' }, by: ['reader'], path: [beside] }]]));
+    // The same fold made again is no new claim: what others said of the first stands.
+    expect(await fold({ char: '峯' }, { structure: beside })).toEqual({ ...folded, replaced: null });
+    expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='folds_into'").get()).toEqual({ n: 1 });
+    expect(db.query("SELECT count(*) AS n FROM assertion_actions").get()).toEqual({ n: 0 });
+    // Another reader joins; only one's own fold is theirs to take back.
+    expect((await fold({ structure: above }, { structure: beside }, 'other')).folds_into?.by.sort()).toEqual(['other', 'reader']);
+    expect(await fold({ structure: above }, null)).toEqual({ structure: above, folds_into: { id: beside, label: '⿰山夆', by: ['other'] }, replaced: beside });
+    await expect(fold({ structure: above }, null)).rejects.toThrow('409 You have not folded this structure.');
+    expect((await fold({ structure: above }, null, 'other')).folds_into).toBeNull();
+    expect(await foldsOf(env, [above])).toEqual(new Map());
+  });
+
+  it('follows folds to their end, and a reader\'s new fold of a structure replaces their earlier one', async () => {
+    const { env, fold, beside, above, wind } = await forms();
+    await fold({ char: '峯' }, { char: '峰' });
+    await fold({ char: '峰' }, { char: '嵐' });
+    expect((await foldsOf(env, [above])).get(above)).toEqual({ head: { id: wind, label: '⿱山風' }, by: ['reader'], path: [beside, wind] });
+    expect((await foldsOf(env, [beside])).get(beside)?.head.id).toBe(wind);
+    const moved = await fold({ char: '峯' }, { char: '嵐' });
+    expect(moved).toEqual({ structure: above, folds_into: { id: wind, label: '⿱山風', by: ['reader'] }, replaced: beside });
+    // A regional shape names its structure, here 峯's.
+    expect((await fold({ char: '⿱山夆', of: '嶺' }, { char: '峰' })).structure).toBe(above);
+  });
+
+  it('refuses a fold into itself, one that leads back, and a structure no claim has named', async () => {
+    const { fold, beside, above, wind } = await forms();
+    await expect(fold({ char: '峰' }, { char: '⿰山夅' })).rejects.toThrow('422 A structure folds into another.');
+    await fold({ char: '峯' }, { char: '峰' });
+    await fold({ char: '峰' }, { char: '嵐' });
+    await expect(fold({ char: '嵐' }, { char: '峯' })).rejects.toThrow('409 That structure already stands under this one.');
+    // Midway along the folds counts too: the new fold would take back the one that leads on from 峰.
+    await expect(fold({ char: '峰' }, { char: '峯' })).rejects.toThrow('409 That structure already stands under this one.');
+    await expect(fold({ structure: 'st:' + '1'.repeat(32) }, { structure: beside })).rejects.toThrow('422 No claim has named this structure.');
+    await expect(fold({ structure: above }, { structure: 'st:' + '1'.repeat(32) })).rejects.toThrow('422 No claim has named this structure.');
+    await expect(fold({ char: '丑' }, { structure: wind })).rejects.toThrow('422 No structure is known for 丑.');
+    await expect(setFold((await forms()).env, { id: crypto.randomUUID(), from: 'x', into: { char: '峰' } }, 'reader', (await forms()).tools)).rejects.toThrow('422 Name a structure.');
+  });
+
+  it('folds nowhere while readers disagree, and stops a ring at its lowest id', async () => {
+    const { db, env, fold, beside, above, wind } = await forms();
+    await fold({ char: '峯' }, { char: '峰' });
+    await fold({ char: '峯' }, { char: '嵐' }, 'other');
+    expect(await foldsOf(env, [above])).toEqual(new Map());
+    await fold({ structure: above }, null, 'other');
+    expect((await foldsOf(env, [above])).get(above)?.head.id).toBe(beside);
+    // A ring cannot be written through the route; rows that make one still answer.
+    const at = '2026-11-16T00:00:00Z';
+    db.query("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'folds_into','','','asserted',?,'[]','[]','[]','ledger-r1',?)")
+      .run(beside, above, at);
+    const ring = await foldsOf(env, [above, beside, wind]), low = [above, beside].sort()[0];
+    expect([ring.get(above)?.head.id ?? above, ring.get(beside)?.head.id ?? beside]).toEqual([low, low]);
+  });
+
+  it('follows a chain longer than one read to the same end from every structure of it', async () => {
+    const { db, env } = await forms();
+    const chain = Array.from({ length: 21 }, (_, i) => 'st:' + i.toString(16).padStart(32, 'a'));
+    const at = '2026-11-16T00:00:00Z';
+    for (const id of chain) db.query("INSERT INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,'babelstone-ids','v','structure-v1','u',?)").run(id, 'L' + id.slice(-2), at);
+    for (let i = 0; i + 1 < chain.length; i++)
+      db.query("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'folds_into','','','asserted',?,'[]','[]','[]','ledger-r1',?)")
+        .run(chain[i], chain[i + 1], at);
+    const folds = await foldsOf(env, [chain[0], chain[5], chain[13], chain[20]]);
+    expect([chain[0], chain[5], chain[13]].map(id => folds.get(id)?.head)).toEqual(Array(3).fill({ id: chain[20], label: 'L' + chain[20].slice(-2) }));
+    expect(folds.get(chain[0])!.path).toEqual(chain.slice(1));
+    expect(folds.has(chain[20])).toBe(false);
+  });
+
+  it('a fold is written through the claim route and the same save sent again answers alike', async () => {
+    const { db, post, beside, above } = await forms();
+    const body = { id: crypto.randomUUID(), from: { char: '峯' }, into: { char: '峰' } };
+    const answer = await post('/atlas/structures/folds', body);
+    expect(answer).toEqual({ structure: above, folds_into: { id: beside, label: '⿰山夆', by: ['reader'] }, replaced: null });
+    expect(await post('/atlas/structures/folds', body)).toEqual(answer);
+    expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='folds_into'").get()).toEqual({ n: 1 });
   });
 
   it('is written through the claim route', async () => {
@@ -674,7 +761,7 @@ describe('the ledger queries', () => {
       [claimHistoryQuery('crop'), [1]], [claimHistoryQuery('subject'), ['s']], [ledgerClaimsQuery(), [0, 10]], [ledgerActionsQuery(), [0, 10]],
       [bookDatesQuery(), [1]], [bookKeyQuery(), ['k']], [bookDateClaimsQuery(), [1]], [resolveClearQuery(), ['[["s","p","",""]]']], [corpusRowQuery(), [1]],
       [structuresQuery(), ['fm:1']], [structureLabelsQuery(), ['["st:1"]']], [ownStructuresQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['fm:1', 'u']],
-      [claimedStructuresQuery(), ['["fm:1"]']],
+      [claimedStructuresQuery(), ['["fm:1"]']], [foldsQuery(), ['["st:1"]']], [ownFoldQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['st:1', 'u']],
     ];
     for (const [sql, args] of plans) {
       const detail = (db.query('EXPLAIN QUERY PLAN ' + sql).all(...(args as any[])) as { detail: string }[]).map(r => r.detail);
