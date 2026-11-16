@@ -38,13 +38,15 @@ const claimed = id => {
 // The script each of the table's characters is coloured as inside `scope`, null where one is missing.
 const coloured = scope => browser.evaluate(`JSON.stringify(${JSON.stringify(lent)}.map(char =>
   [...document.querySelectorAll(${JSON.stringify(scope)} + ' .script-char')].find(e => e.textContent === char)?.dataset.script ?? null))`).then(JSON.parse)
+// A part of the page at the device's pixel ratio, in both colour schemes. The part is measured again
+// for each: a row that loads late moves what is under it.
 async function shoot(name, selector) {
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 2, mobile: false })
-  const box = await browser.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); el.scrollIntoView({ block: 'center' })
-    const r = el.getBoundingClientRect(); return { x: Math.max(0, r.x - 12), y: Math.max(0, r.y - 12), width: r.width + 24, height: r.height + 24 } })()`)
   for (const scheme of ['light', 'dark']) {
     await browser.setColorScheme(scheme)
-    await Bun.sleep(250)
+    await Bun.sleep(600)
+    const box = await browser.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); el.scrollIntoView({ block: 'center' })
+      const r = el.getBoundingClientRect(); return { x: Math.max(0, r.x - 12), y: Math.max(0, r.y - 12), width: r.width + 24, height: r.height + 24 } })()`)
     const shot = await browser.send('Page.captureScreenshot', { format: 'png', clip: { ...box, scale: 1 }, captureBeyondViewport: true })
     await Bun.write(join(screenshots, `${name}-${scheme}.png`), Buffer.from(shot.data, 'base64'))
   }
