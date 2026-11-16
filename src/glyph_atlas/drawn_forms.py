@@ -1,10 +1,10 @@
 """Drawn forms: private-use code points for ways of writing that nothing else names.
 
 `data/vocab/drawn-forms.yaml` gives each form a code point of Supplementary Private Use Area-A, the
-grapheme it writes and a drawing (docs/decisions/0014-drawn-forms.md). A form picked by that code point
+grapheme it writes and a drawing in each of two styles (docs/decisions/0014-drawn-forms.md). A form picked by that code point
 is a `pua` representation in the table's namespace and version; any other private-use character names
 nothing. `refs` holds each form as a character of its grapheme's family. The Worker reads the same
-table as `drawnFormsData.ts`, which `scripts/build_drawn_forms.py` writes with the font that draws
+table as `drawnFormsData.ts`, which `scripts/build_drawn_forms.py` writes with the fonts that draw
 the forms.
 """
 
@@ -19,6 +19,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 TABLE = ROOT / "data" / "vocab" / "drawn-forms.yaml"
 DRAWINGS = ROOT / "data" / "vocab" / "drawn-forms"
+#: The styles a form is drawn in: sans for text set in a sans-serif face, serif for the rest.
+STYLES = ("sans", "serif")
 #: Supplementary Private Use Area-A, where no font of the site and no 구결자 convention has a glyph.
 AREA = (0xF0000, 0xFFFFD)
 
@@ -37,9 +39,9 @@ class DrawnForm:
     def code_point(self) -> str:
         return f"U+{ord(self.char):X}"
 
-    @property
-    def drawing(self) -> Path:
-        return DRAWINGS / f"{ord(self.char):X}.svg"
+    def drawing(self, style: str) -> Path:
+        """The form's drawing in one of `STYLES`."""
+        return DRAWINGS / f"{ord(self.char):X}.{style}.svg"
 
 
 @dataclass(frozen=True)
@@ -58,7 +60,7 @@ def _char(code_point: str) -> str:
 
 @cache
 def table() -> Table:
-    """The table as written, checked: every form in the private-use area, with a drawing, a grapheme
+    """The table as written, checked: every form in the private-use area, with its drawings, a grapheme
     that is a character, and the fields a reader needs."""
     data = yaml.safe_load(TABLE.read_text(encoding="utf-8"))
     namespace, version = data["namespace"], data["version"]
@@ -72,8 +74,9 @@ def table() -> Table:
         form = DrawnForm(char, _char(row["written_for"]), row["script"], " ".join(row["name"].split()), " ".join(row["basis"].split()))
         if not form.name or not form.basis or not form.script:
             raise ValueError(f"{code_point} lacks a name, a basis or a script")
-        if not form.drawing.exists():
-            raise ValueError(f"{code_point} has no drawing at {form.drawing.relative_to(ROOT)}")
+        for style in STYLES:
+            if not form.drawing(style).exists():
+                raise ValueError(f"{code_point} has no drawing at {form.drawing(style).relative_to(ROOT)}")
         forms[char] = form
     return Table(namespace, version, forms)
 

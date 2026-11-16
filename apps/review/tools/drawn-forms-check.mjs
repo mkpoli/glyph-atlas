@@ -45,13 +45,15 @@ const set = (scope, char) => browser.evaluate(`(async () => {
   const box = el.getBoundingClientRect()
   return { family: getComputedStyle(el).fontFamily, drawn: document.fonts.check('20px "${DRAWN_FAMILY}"', ${JSON.stringify(char)}), script: el.dataset.script, width: box.width }
 })()`)
+// A part of the page at the device's pixel ratio, in both colour schemes. The part is measured again
+// for each: a row that loads late moves what is under it.
 async function shoot(name, selector) {
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 2, mobile: false })
-  const box = await browser.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); el.scrollIntoView({ block: 'center' })
-    const r = el.getBoundingClientRect(); return { x: Math.max(0, r.x - 12), y: Math.max(0, r.y - 12), width: r.width + 24, height: r.height + 24 } })()`)
   for (const scheme of ['light', 'dark']) {
     await browser.setColorScheme(scheme)
-    await Bun.sleep(250)
+    await Bun.sleep(600)
+    const box = await browser.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); el.scrollIntoView({ block: 'center' })
+      const r = el.getBoundingClientRect(); return { x: Math.max(0, r.x - 12), y: Math.max(0, r.y - 12), width: r.width + 24, height: r.height + 24 } })()`)
     const shot = await browser.send('Page.captureScreenshot', { format: 'png', clip: { ...box, scale: 1 }, captureBeyondViewport: true })
     await Bun.write(join(screenshots, `${name}-${scheme}.png`), Buffer.from(shot.data, 'base64'))
   }
@@ -111,7 +113,7 @@ try {
     const how = await set('.character-members', char)
     assert(how?.family.includes(DRAWN_FAMILY) && how.drawn && how.script === 'kanji', `U+${char.codePointAt(0).toString(16).toUpperCase()} is not drawn on 事's page: ${JSON.stringify(how)}`)
   }
-  await shoot('character-forms', '.character-members')
+  await shoot('character-forms', '.character-members:has(.member)')
   console.log('PASS 事\'s page lists its drawn forms among its 字体')
 
   // The form's own page: under 事, with the crop, and no link to a dictionary of encoded characters.
@@ -123,7 +125,7 @@ try {
   await browser.waitFor(`[...document.querySelectorAll('.glyph-tile')].some(tile => tile.dataset.unit === ${JSON.stringify(id)})`, 30000)
     .catch(async () => { throw new Error('the drawn form\'s page does not list the crop named as it: '
       + await browser.evaluate(`JSON.stringify([...document.querySelectorAll('.glyph-tile')].map(tile => tile.dataset.unit ?? tile.dataset.corpus))`)) })
-  await shoot('form-page', '.character-members')
+  await shoot('form-page', '.character-members:has(.member)')
   console.log('PASS the drawn form has a page under 事 with its crop')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))

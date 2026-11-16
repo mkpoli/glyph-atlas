@@ -19,10 +19,10 @@ A form of this kind is a **drawn form**: one code point of Supplementary Private
 
 | What | Where |
 | --- | --- |
-| The table: code point, the grapheme the form writes, its script, a description in words, the crops it was drawn from | `data/vocab/drawn-forms.yaml` |
-| The drawing: one filled path in a 1000-unit em | `data/vocab/drawn-forms/<code point>.svg` |
-| The brush strokes the drawing is made from | `data/vocab/drawn-forms/<code point>.strokes.json`, `scripts/draw_form.py` |
-| The font, the stylesheet and the Worker's table | `scripts/build_drawn_forms.py` |
+| The table: code point, the grapheme the form writes, its script, a description in words, the crops the form was found in and who drew it | `data/vocab/drawn-forms.yaml` |
+| The drawings, a sans and a serif one: each one filled path in a 1000-unit em | `data/vocab/drawn-forms/<code point>.sans.svg`, `.serif.svg` |
+| The picture the drawings were traced from | `data/vocab/drawn-forms/<code point>.source.png`, `scripts/trace_form.py` |
+| The fonts, the stylesheet and the Worker's table | `scripts/build_drawn_forms.py` |
 
 - **Name.** A drawn form is a `pua` representation (docs/design/form-model.md): its value is the code
   point, its namespace `glyph-atlas` and its version the table's. `representation.typed` gives that
@@ -37,8 +37,9 @@ A form of this kind is a **drawn form**: one code point of Supplementary Private
 - **Where it shows.** The grapheme's card lists its drawn forms among its 字体 with their crops
   counted, each has a character page under that grapheme, the form bar offers them with the family's
   characters, and the Forms tool's palette offers them after the family's characters.
-- **How it is set.** A font built from the drawings maps each code point to its glyph, and
-  `ScriptText` sets a drawn form in it, in the colour of the script the table gives. The font's
+- **How it is set.** Two fonts built from the drawings map each code point to its glyph, a sans cut and
+  a serif one. `ScriptText` sets a drawn form in the sans cut, and in the serif cut inside text set in
+  a serif face, such as the form chips, in the colour of the script the table gives. A font's
   `unicode-range` is the table's code points, so only a page that shows one downloads it.
 - **Where the membership is held.** The character layer (`refs`) reads the table and holds each
   drawn form as a character of its family, so the local review service, a clustering and a reference
@@ -47,9 +48,10 @@ A form of this kind is a **drawn form**: one code point of Supplementary Private
   its card and its palette, answers a drawn form's card from its grapheme's, and files the `graphemes`
   row first made for one under that grapheme.
 
-A drawing is an editorial normalisation: the centre lines and stroke widths of one crop the table
-names, drawn again as even brush strokes, under that crop's licence. It labels a group of crops and is
-never shown as an occurrence.
+A drawing is an editorial normalisation of the form, made by hand: it labels a group of crops and is
+never shown as an occurrence. The two forms of 事 were drawn by mkpoli and traced from the pictures
+kept beside them. Strokes built from knots, plain traces of a crop and a crop's centre lines drawn
+again were each tried first and set aside.
 
 ## Limits
 

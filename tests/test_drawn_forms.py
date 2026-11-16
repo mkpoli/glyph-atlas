@@ -30,9 +30,10 @@ def test_the_table_names_each_form_its_grapheme_and_its_drawing():
     assert drawn_forms.drawn(RU).written_for == "事" and drawn_forms.drawn("\U000f0100") is None
     for form in table.forms.values():
         assert drawn_forms.AREA[0] <= ord(form.char) <= drawn_forms.AREA[1]
-        # One filled path in the em the font is built on.
-        assert re.fullmatch(r'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">\n  <path d="[MCZ0-9, -]+"/>\n</svg>\n',
-                            form.drawing.read_text(encoding="utf-8"))
+        # One filled path in the em the fonts are built on, in each style.
+        for style in drawn_forms.STYLES:
+            assert re.fullmatch(r'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">\n  <path d="[MCZ0-9, -]+"/>\n</svg>\n',
+                                form.drawing(style).read_text(encoding="utf-8"))
 
 
 def test_a_drawn_form_is_a_private_use_representation_in_the_tables_namespace():
@@ -87,15 +88,21 @@ def _outlines(data: bytes) -> dict[int, list]:
     return drawn
 
 
-def test_the_font_the_stylesheet_and_the_workers_table_are_those_of_the_table():
+def test_the_fonts_the_stylesheet_and_the_workers_table_are_those_of_the_table():
     build = _build()
     assert build.MODULE.read_text(encoding="utf-8") == build.module()
-    fonts = sorted(build.OUT.glob("*.woff2"))
-    assert len(fonts) == 1
-    assert build.CSS.read_text(encoding="utf-8") == build.css(fonts[0].name)
-    # The font maps each form's code point and nothing else, to the drawing as it stands. The
-    # outlines are compared, since the compressed bytes depend on the libraries that wrote them.
-    stored = _outlines(fonts[0].read_bytes())
-    assert sorted(stored) == sorted(ord(char) for char in drawn_forms.table().forms)
-    assert stored == _outlines(build.font())
-    assert all(len(outline) > 20 for outline in stored.values())
+    names = {}
+    for style in drawn_forms.STYLES:
+        fonts = sorted(build.OUT.glob(f"drawn-{style}-*.woff2"))
+        assert len(fonts) == 1
+        names[style] = fonts[0].name
+        # The font maps each form's code point and nothing else, to the drawing as it stands. The
+        # outlines are compared, since the compressed bytes depend on the libraries that wrote them.
+        stored = _outlines(fonts[0].read_bytes())
+        assert sorted(stored) == sorted(ord(char) for char in drawn_forms.table().forms)
+        assert stored == _outlines(build.font(style))
+        assert all(len(outline) > 20 for outline in stored.values())
+    assert len(list(build.OUT.glob("*.woff2"))) == len(drawn_forms.STYLES)
+    assert build.CSS.read_text(encoding="utf-8") == build.css(names)
+    # The two cuts differ.
+    assert _outlines(build.font("sans")) != _outlines(build.font("serif"))

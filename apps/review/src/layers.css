@@ -23,6 +23,9 @@
   unicode-range: U+3000-303F, U+3099-309C, U+30A1-30FE, U+31F0-31FF, U+1B127-1B128, U+2A708;
 }
 
+/* Where a form is set in a serif face, a drawn form takes its serif cut (drawn-forms.css). */
+.form-chip, .form-option, .form-choice.described, .grapheme-chip, .read-as, .piece, .ghost { --drawn-font: var(--drawn-serif); }
+
 .reference-glyph { display: inline-block; line-height: 1.1; white-space: nowrap; }
 .reference-glyph.sm { font-size: 1.05rem; }
 .reference-glyph.md { font-size: 1.4rem; }
