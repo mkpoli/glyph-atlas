@@ -885,6 +885,7 @@
   "form.link.remove": "{char}의 字形에서 除外",
   "structure.arrange": "構成 整理",
   "structure.close": "닫기",
+  "structure.disputed": "{item}에 對해 意見이 갈립니다",
   "structure.place": "{form} 여기로 옮기기",
   "structure.take": "{form} 여기서 빼기",
   "structure.merge": "{structure}에 合치기",

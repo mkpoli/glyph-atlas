@@ -16,7 +16,7 @@
   import FormText from './FormText.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import { setStructure, setFold } from '../lib/cropForms.js'
-  import { composable } from '../lib/structures.js'
+  import { composable, NAMES } from '../lib/structures.js'
   import { isDescription } from '../lib/ids.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -31,7 +31,7 @@
   // folded tray's id: `{ head, by }`). What is held is a form (`held`, its text) or a tray (`lifted`,
   // its id), and `over` is the tray aimed at.
   let trays = $state([]), folds = $state(new Map()), held = $state(null), lifted = $state(null), over = $state(null), dragging = $state(false)
-  let busy = $state(null), landed = $state(null), error = $state(''), said = $state('')
+  let busy = $state(null), landed = $state(null), error = $state(''), notice = $state(''), said = $state('')
   const me = $derived(signedInUser()?.id ?? null)
   const listed = $derived.by(() => {
     const seen = new Set()
@@ -97,47 +97,54 @@
   const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches
   const [send, receive] = crossfade({ duration: () => calm() ? 0 : 280, easing: cubicOut })
   const slide = { duration: () => calm() ? 0 : 220, easing: cubicOut }
-  // A tray that moves carries its forms: they do not fly on their own beside it.
-  let carried = false
-  const still = { duration: 0 }
-  const leave = (node, params) => carried ? still : send(node, params)
-  const arrive = (node, params) => carried ? still : receive(node, params)
-
+  // What the site holds of `names`, NAMES to a request, put over what the board knows. A reading
+  // asked before a later one, or before a move, is dropped when it answers.
+  let reads = 0
+  async function refresh(names) {
+    const turn = ++reads, asked = [...new Set(names)].filter(composable), chunks = []
+    for (let from = 0; from < asked.length; from += NAMES) chunks.push(asked.slice(from, from + NAMES))
+    const found = await Promise.all(chunks.map(chunk => read(chunk, new Map())))
+    if (turn === reads) absorb(new Map([...[...known].filter(([char]) => !asked.includes(char)), ...found.flatMap(part => [...part])]))
+  }
   let wrote = false
-  // A move shows at once and is read again once saved; a save the site refuses puts things back.
-  // `mark` is what moved, a form's text or `{ tray }`, which keeps the focus.
-  async function commit(mark, change, save) {
-    const before = [known, folds]
-    busy = mark.tray ?? mark; error = ''
-    carried = Boolean(mark.tray)
+  // A move shows at once and is read again once saved: a save the site refuses puts things back, and
+  // one other readers outweigh says so. `mark` is what moved, a form's text or `{ tray }`, which keeps
+  // the focus, and `to` the tray the reader meant it to stand in.
+  async function commit(mark, to, change, save) {
+    const before = [known, folds], item = () => mark.tray ? labelOf(mark.tray) : mark
+    const focus = () => (mark.tray ? handleOf(mark.tray) : chipOf(mark))?.focus({ preventScroll: true })
+    // The opener reads again once the board closes, also when it closes before the site has answered.
+    busy = mark.tray ?? mark; error = ''; notice = ''; wrote = true; reads += 1
     change()
     await tick()
-    carried = false
-    try {
-      await save()
-      wrote = true
-      try { absorb(await read([...(mark.tray ? [] : [mark]), ...listed.map(form => form.char)], known)) } catch (failure) { error = failure.message }
-    } catch (failure) { [known, folds] = before; error = failure.message }
+    focus()
+    let saved = true
+    try { await save() } catch (failure) { saved = false; [known, folds] = before; error = failure.message }
+    // Read again either way: the site may hold a save whose answer was lost.
+    try { await refresh(listed.map(form => form.char)) } catch (failure) { if (saved) error = failure.message }
     busy = null
+    const stood = mark.tray ? headOf(mark.tray) : innerOf(mark)
+    if (saved && to && stood !== to) notice = t('structure.disputed', { item: item() })
+    said = [...new Set([item(), labelOf(stood)])].filter(Boolean).join(' · ')
     await tick()
-    ;(mark.tray ? handleOf(mark.tray) : chipOf(mark))?.focus({ preventScroll: true })
+    focus()
   }
   function place(char, tray) {
     if (innerOf(char) === tray.id) return
     if (mineOf(char) && home.get(char) === tray.id) return takeOut(char)
-    return commit(char, () => { known = new Map([...known, [char, standsIn(tray.id, [me])]]); landed = tray.id }, () => setStructure(char, tray.target))
+    return commit(char, tray.id, () => { known = new Map([...known, [char, standsIn(tray.id, [me])]]); landed = tray.id }, () => setStructure(char, tray.target))
   }
   function takeOut(char) {
     const mine = mineOf(char), back = home.get(char)
     if (!mine || busy) return
     release()
-    return commit(char, () => { if (back) { known = new Map([...known, [char, standsIn(back, null)]]); landed = back } }, () => setStructure(char, { structure: mine }, { remove: true }))
+    return commit(char, back, () => { if (back) { known = new Map([...known, [char, standsIn(back, null)]]); landed = back } }, () => setStructure(char, { structure: mine }, { remove: true }))
   }
   // One tray folded into another: its forms, and the trays folded into it, stand under that one.
   function fold(from, into) {
     const tray = trays.find(tray => tray.id === from), head = trays.find(tray => tray.id === into)
     if (!tray || !head || busy) return
-    return commit({ tray: from }, () => {
+    return commit({ tray: from }, into, () => {
       const part = { id: from, label: tray.label, by: [me] }
       known = new Map([...known].map(([char, stands]) => innerOf(char) === from ? [char, { ...stands, id: into, label: head.label, part }]
         : stands.id === from ? [char, { ...stands, id: into, label: head.label }] : [char, stands]))
@@ -150,7 +157,7 @@
     const tray = trays.find(tray => tray.id === from)
     if (!tray || !foldedByMe(from) || busy) return
     release()
-    return commit({ tray: from }, () => {
+    return commit({ tray: from }, from, () => {
       known = new Map([...known].map(([char, stands]) => stands.part?.id === from ? [char, { ...stands, id: from, label: tray.label, part: null }] : [char, stands]))
       folds = new Map([...folds].filter(([part]) => part !== from))
       landed = from
@@ -175,11 +182,15 @@
 
   // A drag with a mouse or a pen; a touch picks up with a tap, so the board still scrolls.
   let grip = null, skipClick = false
-  function trayAt(x, y) {
-    const under = document.elementsFromPoint(x, y).find(element => !grip.node.contains(element))
-    for (let tray = under?.closest('[data-tray]'); tray; tray = tray.parentElement?.closest('[data-tray]')) if (targets.includes(tray.dataset.tray)) return tray.dataset.tray
+  // The tray a point or a click aims at. A form goes to the tray it is put in; a tray into the
+  // nearest tray around the point that can take it.
+  function aim(element) {
+    const inner = element?.closest?.('[data-tray]')
+    if (held) return inner && targets.includes(inner.dataset.tray) ? inner.dataset.tray : null
+    for (let tray = inner; tray; tray = tray.parentElement?.closest('[data-tray]')) if (targets.includes(tray.dataset.tray)) return tray.dataset.tray
     return null
   }
+  const trayAt = (x, y) => aim(document.elementsFromPoint(x, y).find(element => !grip.node.contains(element)))
   function down(event, kind, key) {
     if (busy || !me || event.button !== 0 || !event.isPrimary || event.pointerType === 'touch') return
     grip = { pointer: event.pointerId, x: event.clientX, y: event.clientY, node: event.currentTarget.closest(kind === 'form' ? '.token' : '.tray'), kind, key, moved: false }
@@ -211,8 +222,10 @@
     // The click that ends a drag is the drag's, not a pick.
     skipClick = true; setTimeout(() => { skipClick = false })
     // What is put down leaves from where it was let go; what is let go elsewhere goes back.
-    if (over) drop(over)
-    else { settle(node); release() }
+    if (!over) { settle(node); release(); return }
+    drop(over)
+    // What moved has left this node behind; what stays where it was goes back to its place.
+    tick().then(() => { if (node.isConnected && !node.inert) settle(node) })
   }
   function lost(event) {
     if (!grip || event.pointerId !== grip.pointer) return
@@ -222,7 +235,7 @@
   }
   function tap(event, kind, key) {
     if (skipClick) { skipClick = false; event.stopPropagation(); return }
-    // With something else held, the click is the tray's: what is held is put down there.
+    // With something else held, the click is the board's: what is held is put down or let go.
     if ((held || lifted) && !holding(kind, key)) return
     event.stopPropagation()
     pick(kind, key)
@@ -233,8 +246,9 @@
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
     if (step) {
       event.preventDefault()
-      const at = targets.indexOf(over)
-      over = targets[at < 0 ? (step > 0 ? 0 : targets.length - 1) : (at + step + targets.length) % targets.length] ?? null
+      // The arrows follow the trays as they stand on the board.
+      const order = [...board.querySelectorAll('[data-tray]')].map(element => element.dataset.tray).filter(to => targets.includes(to)), at = order.indexOf(over)
+      over = order[at < 0 ? (step > 0 ? 0 : order.length - 1) : (at + step + order.length) % order.length] ?? null
       const tray = trays.find(tray => tray.id === over)
       said = over === OUT ? out : tray ? offer(tray) : ''
       if (over) board.querySelector(`[data-tray="${CSS.escape(over)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -246,13 +260,27 @@
   }
   // Space activates a button as the key comes up, which would pick up again what has just landed.
   function keyup(event) { if (event.key === ' ' && spaced) { spaced = false; event.preventDefault() } }
+  // A click with something held puts it down on the tray clicked, or lets it go.
+  function clicked(event) {
+    if (!held && !lifted) return
+    const to = aim(event.target)
+    if (to) drop(to)
+    else release()
+  }
+  // A click on the backdrop closes the board; one on the board's own margins only lets go.
+  function margin(event) {
+    if (event.target !== dialog) return
+    const box = dialog.getBoundingClientRect()
+    if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) dialog.close()
+    else release()
+  }
 
   async function add(item) {
     query = ''
     if (!composable(item.char)) return
     if (!listed.some(form => form.char === item.char)) {
       added = [...added, { char: item.char, script: item.script ?? '', lang: item.lang ?? '' }]
-      try { absorb(await read([item.char], known)) } catch (failure) { error = failure.message }
+      try { await refresh([item.char]) } catch (failure) { error = failure.message }
     }
     await tick()
     const chip = chipOf(item.char)
@@ -267,7 +295,7 @@
     dialog.showModal()
     // `showModal` focuses the close button; the work starts at the form the reader came from.
     if (current) tick().then(() => chipOf(current)?.focus({ preventScroll: true }))
-    read(listed.map(form => form.char), opened).then(absorb, failure => { error = failure.message })
+    refresh(listed.map(form => form.char)).catch(failure => { error = failure.message })
   })
 </script>
 
@@ -276,7 +304,7 @@
   <button type="button" class="piece" class:current={form.char === current} data-form={form.char} aria-pressed={held === form.char} aria-busy={busy === form.char}
     aria-disabled={!me || Boolean(busy)} title={titleOf(form)} aria-label={titleOf(form)}
     onpointerdown={event => down(event, 'form', form.char)} onpointermove={move} onpointerup={up} onpointercancel={lost} onlostpointercapture={lost}
-    onclick={event => tap(event, 'form', form.char)} onkeydown={event => keys(event, 'form', form.char)} onkeyup={keyup}>
+    onclick={event => tap(event, 'form', form.char)} onkeydown={event => keys(event, 'form', form.char)}>
     <FormText text={form.char} script={form.script} lang={form.lang} />
   </button>{#if mine}<button type="button" class="take" disabled={Boolean(busy)} aria-label={t('structure.take', { form: form.char })} title={t('structure.take', { form: form.char })}
     onclick={event => { event.stopPropagation(); takeOut(form.char) }}>×</button>{/if}
@@ -285,7 +313,7 @@
 {#snippet tokens(list)}
   {#each list as form (form.char)}
     <span class="token" class:mine={Boolean(mineOf(form.char))} class:held={held === form.char} class:dragging={dragging && held === form.char} class:saving={busy === form.char}
-      in:arrive={{ key: form.char }} out:leave={{ key: form.char }} animate:flip={slide}>{@render token(form)}</span>
+      in:receive={{ key: form.char }} out:send={{ key: form.char }} animate:flip={slide}>{@render token(form)}</span>
   {/each}
 {/snippet}
 
@@ -294,7 +322,7 @@
   <h3 lang="zh">
     <button type="button" class="handle" data-handle={tray.id} aria-pressed={lifted === tray.id} aria-busy={busy === tray.id} aria-disabled={!me || Boolean(busy)}
       onpointerdown={event => down(event, 'tray', tray.id)} onpointermove={move} onpointerup={up} onpointercancel={lost} onlostpointercapture={lost}
-      onclick={event => tap(event, 'tray', tray.id)} onkeydown={event => keys(event, 'tray', tray.id)} onkeyup={keyup}>{tray.label}</button>{#if foldedByMe(tray.id)}<button type="button" class="take" disabled={Boolean(busy)}
+      onclick={event => tap(event, 'tray', tray.id)} onkeydown={event => keys(event, 'tray', tray.id)}>{tray.label}</button>{#if foldedByMe(tray.id)}<button type="button" class="take" disabled={Boolean(busy)}
       aria-label={t('structure.split', { structure: tray.label })} title={t('structure.split', { structure: tray.label })} onclick={event => { event.stopPropagation(); split(tray.id) }}>×</button>{/if}
   </h3>
 {/snippet}
@@ -307,27 +335,27 @@
   </div>
 {/snippet}
 
+<svelte:window onkeyup={keyup} />
+
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<dialog class="structure-dialog" bind:this={dialog} aria-labelledby="{id}-title" oncancel={cancel} onclose={closed} onclick={event => { if (event.target === dialog) dialog.close() }}>
+<dialog class="structure-dialog" bind:this={dialog} aria-labelledby="{id}-title" oncancel={cancel} onclose={closed} onclick={margin}>
   <header>
     <h2 class="overline" id="{id}-title">{t('structure.arrange')}</h2>
     <button type="button" class="icon-button" aria-label={t('structure.close')} onclick={() => dialog.close()}>×</button>
   </header>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="board" class:holding={held || lifted} class:dragging bind:this={board} onclick={() => { if (held || lifted) release() }}>
+  <div class="board" class:holding={held || lifted} class:dragging bind:this={board} onclick={clicked}>
     {#each heads as tray (tray.id)}
       <section class="tray" class:target={targets.includes(tray.id)} class:over={over === tray.id} class:lifted={lifted === tray.id} class:dragging={dragging && lifted === tray.id}
         class:saving={busy === tray.id} class:landed={landed === tray.id} onanimationend={() => { if (landed === tray.id) landed = null }} data-tray={tray.id}
         in:receive={{ key: 'tray ' + tray.id }} out:send={{ key: 'tray ' + tray.id }} animate:flip={slide}
-        aria-label={targets.includes(tray.id) ? offer(tray) : tray.label}
-        onclick={event => { if (targets.includes(tray.id)) { event.stopPropagation(); drop(tray.id) } }}>
+        aria-label={targets.includes(tray.id) ? offer(tray) : tray.label}>
         {@render body(tray)}
         {#each tray.parts as part (part.id)}
           <section class="tray part" class:target={targets.includes(part.id)} class:over={over === part.id} class:lifted={lifted === part.id} class:dragging={dragging && lifted === part.id}
             class:saving={busy === part.id} class:landed={landed === part.id} onanimationend={event => { event.stopPropagation(); if (landed === part.id) landed = null }} data-tray={part.id}
             in:receive={{ key: 'tray ' + part.id }} out:send={{ key: 'tray ' + part.id }} animate:flip={slide}
-            aria-label={targets.includes(part.id) ? offer(part) : part.label}
-            onclick={event => { if (targets.includes(part.id)) { event.stopPropagation(); drop(part.id) } }}>
+            aria-label={targets.includes(part.id) ? offer(part) : part.label}>
             {@render body(part)}
           </section>
         {/each}
@@ -338,12 +366,13 @@
       <section class="tray loose"><div class="tray-forms">{@render tokens(loose)}</div></section>
     {/if}
     {#if out}
-      <button type="button" class="tray out target" class:over={over === OUT} data-tray={OUT} onclick={event => { event.stopPropagation(); drop(OUT) }}>{out}</button>
+      <button type="button" class="tray out target" class:over={over === OUT} data-tray={OUT}>{out}</button>
     {/if}
   </div>
   <footer>
     <CharacterSearch compact codePoints bind:value={query} label={t('form.add')} placeholder={t('search.placeholder')} onselect={add} />
     {#if error}<p class="structure-error" role="alert">{error}</p>{/if}
+    {#if notice}<p class="structure-notice" role="status">{notice}</p>{/if}
   </footer>
   <p class="said" aria-live="polite">{said}</p>
 </dialog>
@@ -399,7 +428,8 @@
     font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
   footer{display:flex;flex-direction:column;gap:8px}
   footer :global(.character-search){width:100%;max-width:320px;min-width:0}
-  .structure-error{margin:0;font-size:12px;line-height:1.4;color:var(--wrong)}
+  .structure-error,.structure-notice{margin:0;font-size:12px;line-height:1.4;color:var(--wrong)}
+  .structure-notice{color:var(--muted)}
   .said{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   @media(max-width:700px){.structure-dialog{padding:16px}.piece,.ghost{font-size:19px;padding:3px 8px}}
   @media(prefers-reduced-motion:reduce){.tray{transition:none}.tray.landed{animation-duration:1ms}}

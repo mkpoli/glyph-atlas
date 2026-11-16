@@ -954,6 +954,7 @@
   "form.link.remove": "Remove as a form of {char}",
   "structure.arrange": "Arrange structures",
   "structure.close": "Close",
+  "structure.disputed": "Readers disagree about {item}",
   "structure.place": "Place {form} here",
   "structure.take": "Take {form} out",
   "structure.merge": "Merge into {structure}",

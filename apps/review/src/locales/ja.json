@@ -923,6 +923,7 @@
   "form.link.remove": "{char}の字体から外す",
   "structure.arrange": "構形を整理",
   "structure.close": "閉じる",
+  "structure.disputed": "{item}は読者の意見が分かれています",
   "structure.place": "{form}をここに置く",
   "structure.take": "{form}をここから外す",
   "structure.merge": "{structure}に併せる",
