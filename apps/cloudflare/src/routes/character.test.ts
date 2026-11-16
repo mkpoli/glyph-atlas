@@ -24,7 +24,7 @@ beforeEach(() => edge.clear());
 // One small collection for every test, since reference objects, bundles and count shards are held per
 // isolate: 時 (with 时 and 旹 in its family, 峕 a variant), and ね with a hentaigana and corpus glyphs
 // filed under it with no character. Grapheme ids stay off the shards other test files read (7, 9).
-const G = { 時: 300, 时: 301, 旹: 302, 峕: 303, ね: 400, '𛂒': 401 } as Record<string, number>;
+const G = { 時: 300, 时: 301, 旹: 302, 峕: 303, ね: 400, '𛂒': 401, 事: 500, 亊: 501, 'ヿ': 510 } as Record<string, number>;
 // Each character's family head, which its crops' records name as their family.
 const HEAD = { 時: '時', 时: '時', 旹: '時', 峕: '峕', ね: 'ね', '𛂒': 'ね' } as Record<string, string>;
 const BOOK = { a: 1, b: 2, c: 3 };
@@ -95,7 +95,7 @@ beforeAll(() => {
     INSERT INTO words VALUES('w:toki','ja','とき','noun');
     INSERT INTO word_spellings VALUES('w:toki','時','dict','p1','attested','dict','b','',' ',3,9),('w:toki','刻','dict','p2','attested','dict','b','','',1,2);`);
   for (const [text, gid] of Object.entries(G)) db.query('INSERT INTO graphemes(id,text,head) VALUES(?,?,?)')
-    .run(gid, text, ['時', '时', '旹'].includes(text) ? G.時 : ['ね', '𛂒'].includes(text) ? G.ね : gid);
+    .run(gid, text, ['時', '时', '旹'].includes(text) ? G.時 : ['ね', '𛂒'].includes(text) ? G.ね : text === '亊' ? G.事 : gid);
   const pack: Uint8Array[] = [];
   let offset = 0;
   const entries = new Map<number, object[]>();
@@ -146,6 +146,12 @@ beforeAll(() => {
     ids: { ね: G.ね, '𛂒': G['𛂒'] } }));
   objects.set('v3/reference/char/U+5CD5.json.gz', json({ grapheme: G.峕, data: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }),
     detail: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 峕: G.峕 } }));
+  // 事 and its member 亊, and ヿ, a katakana of its own grapheme: the reference relates none of them to ヿ.
+  for (const [char, head] of [['事', '事'], ['亊', '事'], ['ヿ', 'ヿ']])
+    objects.set(`v3/reference/char/U+${char.codePointAt(0)!.toString(16).toUpperCase()}.json.gz`, json({ grapheme: G[head],
+      data: card(char, { grapheme: { code_point: 'U+' + head.codePointAt(0)!.toString(16).toUpperCase(), char: head } }),
+      detail: card(char, { grapheme: { code_point: 'U+' + head.codePointAt(0)!.toString(16).toUpperCase(), char: head } }),
+      variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: head === '事' ? { 事: G.事, 亊: G.亊 } : { ヿ: G.ヿ } }));
   objects.set('v3/reference/list/ligatures/0.json.gz', json({ total: 2, offset: 0, items: [{ char: 'ね' }, { char: '時' }] }));
   env = { ATLAS: d1(db), MEDIA: bucket(), CATALOGUE_LAG: '0' } as unknown as Env;
 });
@@ -220,6 +226,29 @@ describe('a character page', () => {
     // The derived form is already a row of the card, so the linked claim does not list it twice.
     expect(body.variants.forms).toEqual([{ char: '⿰木木', code_point: null, form, scheme: 'ids', count: 1, corpus_count: 0 },
       { char: '時\u{E0101}', code_point: null, form: figure, scheme: 'ivs', count: 0, corpus_count: 0 }]);
+  });
+
+  it('lists a character of another script the table gives as writing the grapheme, as a shared form', async () => {
+    const hiragana = '\u{1B123}';
+    const { status, body } = await get('/layers/characters/U+4E8B');
+    expect(status).toBe(200);
+    // ヿ and the hiragana digraph are related and written for 事, and no gallery widens to them.
+    expect(body.variants.items).toEqual([]);
+    expect(body.variants.related.map((v: any) => [v.char, v.code_point, v.widens, v.written, v.sources, v.relations[0].relation])).toEqual([
+      ['ヿ', 'U+30FF', false, true, ['en-wiktionary-koto', 'ja-wikipedia-koto'], 'semantic'],
+      [hiragana, 'U+1B123', false, true, ['l2-24-150'], 'semantic']]);
+    expect(body.variants.writers).toEqual([{ char: 'ヿ', code_point: 'U+30FF', shared: true }, { char: hiragana, code_point: 'U+1B123', shared: true }]);
+    expect(body.variants.total).toBe(2);
+    expect(body.variants.sources['l2-24-150']).toStartWith('Gen Kojitani');
+    // A member of the family lists them too.
+    expect((await get('/layers/characters/U+4E8A')).body.variants.writers.map((w: any) => w.char)).toEqual(['ヿ', hiragana]);
+    // ヿ's own card names 事 as a grapheme it also writes, with what states it, and stays its own.
+    const own = (await get('/layers/characters/U+30FF')).body;
+    expect(own.variants.writes.map((w: any) => [w.char, w.code_point])).toEqual([['事', 'U+4E8B']]);
+    expect(Object.keys(own.variants.sources)).toEqual(['en-wiktionary-koto', 'ja-wikipedia-koto']);
+    expect([own.variants.own, own.variants.related, own.variants.writers]).toEqual([true, [], []]);
+    // A grapheme the table does not name is as it was.
+    expect((await get('/layers/characters/U+5CD5')).body.variants.writers).toEqual([]);
   });
 });
 

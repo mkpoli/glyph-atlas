@@ -15,6 +15,7 @@ import { Problem } from '../busy';
 import { idsCharacter } from '../category';
 import { CITE_TTL, CITE_TYPES, FORMATS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from '../citation';
 import { yearOptions, type YearOptions } from '../dating';
+import { WRITERS, WRITER_SOURCES } from '../writtenWithData';
 
 type Json = any;
 export type CharacterTools = { literal: (value: string) => string; jamoSyllable: (value: string) => boolean };
@@ -227,8 +228,19 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     const derived = object ? derivedOf(object) : [];
     const chars = [...shown.map(entry => entry.char), ...derived.filter(entry => entry.encoded).map(entry => entry.char)];
     const ids = new Map(chars.flatMap(c => { const id = card.object && Object.hasOwn(card.object.ids, c) ? card.object.ids[c] : null; return id === null ? [] : [[c, id] as const] }));
+    // Characters of another script the site's table gives as writing this grapheme (事: ヿ), and for
+    // such a character the grapheme it also writes (data/vocab/written-with.yaml). The reference object
+    // names neither, so their rows of `graphemes` are looked up.
+    const head = card.detail.grapheme?.char ?? char;
+    const lent = WRITERS.filter(w => w.grapheme === head && w.char !== char && !byChar.has(w.char));
+    const lends = WRITERS.filter(w => w.char === char && !(object?.writes ?? []).some(([c]) => c === w.grapheme));
+    const named = new Map<string, number>(lent.length || lends.length ? (await env.ATLAS.prepare(graphemeIdsQuery())
+      .bind(JSON.stringify([...lent.map(w => w.char), ...lends.map(w => w.grapheme)])).all<{ id: number; text: string }>()).results.map(r => [r.text, r.id]) : []);
+    for (const w of lent) if (named.has(w.char)) ids.set(w.char, named.get(w.char)!);
+    const idOf = (c: string) => gid(card, c) ?? named.get(c) ?? null;
     // The 字種 row's numbers: a grapheme a form writes is a family of its own, counted as one.
-    const writeIds = (object?.writes ?? []).flatMap(([c]) => { const id = gid(card, c); return id === null ? [] : [id] });
+    const written = [...(object?.writes ?? []).map(([c]) => c), ...lends.map(w => w.grapheme)];
+    const writeIds = written.flatMap(c => { const id = idOf(c); return id === null ? [] : [id] });
     // A head may name itself as its family (`familyOf` takes the same care): count each row once.
     const writeFamilies = new Map<number, number[]>(writeIds.map(id => [id, [id]]));
     if (writeIds.length) for (const row of (await env.ATLAS.prepare(writeFamiliesQuery()).bind(JSON.stringify(writeIds)).all<{ id: number; head: number }>()).results) {
@@ -239,19 +251,25 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     const count = (c: string, kind: number) => ids.has(c) ? sum(counts.get(ids.get(c)!), kind) : 0;
     const familyCount = (id: number, kind: number) => (writeFamilies.get(id) ?? [id]).reduce((n, member) => n + sum(counts.get(member), kind), 0);
     const cited: Record<string, string> = (await siteValue(env, 'variant_sources')) || {};
-    const rows = shown.map(entry => ({ ...entry, sources: [...new Set(entry.relations.map(r => r.source))].sort(),
-      count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
+    const rows = [...shown, ...lent.map(w => ({ char: w.char, code_point: cp(w.char), widens: false, written: true, relations: w.relations }))]
+      .map(entry => ({ ...entry, sources: [...new Set(entry.relations.map(r => r.source))].sort(),
+        count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
     const predicted = derived.map(entry => ({ ...entry, count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
     const forms = await writtenForms(env, card, rows, predicted);
     const used = new Set(rows.flatMap(row => row.sources));
+    // The grapheme a character of another script also writes is cited on its own card too.
+    for (const w of lends) for (const relation of w.relations) used.add(relation.source);
     for (const entry of predicted) for (const source of entry.sources) used.add(source);
     if (predicted.length) used.add(DERIVED_IDS);
-    const writes = (object?.writes ?? []).map(([c]) => { const id = gid(card, c);
+    const writes = written.map(c => { const id = idOf(c);
       return { char: c, code_point: cp(c), count: id === null ? 0 : familyCount(id, 0), corpus_count: id === null ? 0 : familyCount(id, 1) } });
-    const writers = (object?.writers ?? []).map(([c, shared]) => ({ char: c, code_point: cp(c), shared: !!shared }));
+    // A character of another script has its own grapheme too, so it is a shared form.
+    const writers = [...(object?.writers ?? []).map(([c, shared]) => ({ char: c, code_point: cp(c), shared: !!shared })),
+      ...lent.map(w => ({ char: w.char, code_point: cp(w.char), shared: true }))];
     const own = !(object?.writes ?? []).some(([, mine]) => mine === 0);
     return { items: rows.filter(row => row.widens), related: rows.filter(row => !row.widens), derived: predicted, forms,
-      total: byChar.size, writes, writers, own, sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? source])) };
+      total: byChar.size + lent.length, writes, writers, own,
+      sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? WRITER_SOURCES[source] ?? source])) };
   });
 }
 
