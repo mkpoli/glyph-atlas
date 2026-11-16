@@ -15,6 +15,7 @@ from pathlib import Path
 import httpx
 
 from glyph_atlas.review.cloudflare_import import merge_review_pages
+from glyph_atlas.site import pass_headers
 
 USER_AGENT = "glyph-atlas (+https://github.com/mkpoli/glyph-atlas)"
 
@@ -36,8 +37,9 @@ def main():
     parser.add_argument("out", type=Path)
     parser.add_argument("--site", default="https://glyphatlas.org")
     args = parser.parse_args()
-    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=120) as client:
-        export = merge_review_pages(list(pages(client, args.site.rstrip("/"))))
+    site = args.site.rstrip("/")
+    with httpx.Client(headers={"User-Agent": USER_AGENT, **pass_headers(site)}, timeout=120) as client:
+        export = merge_review_pages(list(pages(client, site)))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(export, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"{len(export['reviews'])} reviews -> {args.out}")
