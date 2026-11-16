@@ -123,6 +123,22 @@ def ids(root):
     return dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))
 
 
+def copied_by_a_stopped_publication(remote, crop, **columns):
+    """A review of the site's on one crop (`columns`, one revision on, listed in `touched`), then a
+    publication of the answers that bumped the generation, copied the listed crop into `absorbing` and
+    stopped there."""
+    d1 = remote.dbs["glyph-atlas-v3"]
+    gen = d1.execute("SELECT gen FROM generation").fetchone()[0]
+    d1.execute(f"UPDATE crops SET {','.join(f'{c}=?' for c in columns)}, revision=revision+1 WHERE id=?", (*columns.values(), crop))
+    d1.execute("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) SELECT id,revision,cut,?,1,1,0,1 FROM crops WHERE id=?",
+               (gen, crop))
+    d1.execute("INSERT INTO touched VALUES(?,?)", (crop, gen))
+    d1.commit()
+    sys.modules.pop("answers", None)
+    assert importlib.import_module("answers").bump("20260101T000000Z", gen)
+    assert d1.execute("SELECT crop FROM absorbing").fetchall() == [(crop,)]
+
+
 def crops(remote):
     db = remote.dbs["glyph-atlas-v3"]
     db.row_factory = sqlite3.Row
@@ -263,6 +279,19 @@ def test_migrate_applies_the_review_migrations_alone_and_stamps_them(layout, mon
     assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports WHERE stamp LIKE 'migration:001_'") == [{"n": 1}]
 
 
+def test_migrate_gives_a_database_the_list_of_touched_crops_and_its_snapshot(layout, monkeypatch):
+    root, publish, remote = layout
+    made = "SELECT name FROM sqlite_master WHERE name IN ('touched','absorbing') ORDER BY name"
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.executescript("DROP TABLE touched; DROP TABLE absorbing;")
+        db.commit()
+    monkeypatch.setattr(sys, "argv", ["publish.py", "--migrate"])
+    publish.main()
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        assert [r[0] for r in db.execute(made)] == ["absorbing", "touched"]
+    assert remote.query("glyph-atlas-v3", "SELECT stamp FROM imports WHERE stamp LIKE 'migration:001_'") == [{"stamp": "migration:0018"}]
+
+
 def test_a_database_that_took_an_earlier_0016_gains_its_new_columns_under_a_stamp_of_their_own(layout, monkeypatch):
     root, publish, remote = layout
     for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
@@ -280,6 +309,59 @@ def test_a_database_that_took_an_earlier_0016_gains_its_new_columns_under_a_stam
         assert "bumps" in {r[1] for r in db.execute("PRAGMA table_info(crops)")}
         assert "published" in {r[1] for r in db.execute("PRAGMA table_info(events)")}
     assert remote.query("glyph-atlas-v3", "SELECT count(*) AS n FROM imports WHERE stamp LIKE 'migration:0016+%'") == [{"n": 1}]
+
+
+def test_the_crops_a_stopped_publication_of_the_answers_copied_are_taken_before_a_publish_plans(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
+    # A reviewer checks the crop, and a publication of the answers copies it and stops.
+    copied_by_a_stopped_publication(remote, crop, state=1)
+    # The publish gives the crop another priority.
+    path = catalogue(tmp_path / "c.sqlite", [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, priority=2)])
+    with pytest.raises(SystemExit, match="take them first"):
+        run(publish, monkeypatch, path, "--dry-run")
+    run(publish, monkeypatch, path)
+    # The publish took the copied crop itself, before its plan: the answers were not run here.
+    assert remote.answered == 1 and d1.execute("SELECT count(*) FROM absorbing").fetchone()[0] == 0
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    local.row_factory = sqlite3.Row
+    held = dict(local.execute("SELECT * FROM crops WHERE id=?", (crop,)).fetchone())
+    # The crop keeps the review and the publish's own row.
+    assert held == crops(remote)[crop] and (held["state"], held["priority"], held["revision"]) == (1, 2, 1)
+    assert local.execute("SELECT revision, at FROM review_revisions WHERE crop=?", (crop,)).fetchone()[:] == (1, 1)
+
+
+def test_a_crop_s_category_goes_only_with_the_character_it_belongs_to(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)["ex:a1"]
+    # A reviewer reads the crop as 漢, which the Worker files under a category of its own, and a
+    # publication of the answers copies the crop; the publish below takes it into the local copy.
+    char = d1.execute("INSERT INTO graphemes(text) VALUES('漢')").lastrowid
+    kana = d1.execute("SELECT category FROM crops WHERE id=?", (crop,)).fetchone()[0]
+    kanji = d1.execute("SELECT max(code) + 1 FROM codes WHERE field='category'").fetchone()[0]
+    d1.execute("INSERT INTO codes(field,code,key) VALUES('category',?,'kanji')", (kanji,))
+    copied_by_a_stopped_publication(remote, crop, char=char, category=kanji, state=1)
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+
+    def sent():
+        return "".join(part.read_text() for part in (root / "out" / "publish").rglob("atlas-*.sql"))
+
+    def held():
+        local = sqlite3.connect(root / "out" / "atlas.sqlite")
+        local.row_factory = sqlite3.Row
+        found = dict(local.execute("SELECT * FROM crops WHERE id=?", (crop,)).fetchone())
+        assert found == crops(remote)[crop]
+        return found["char"], found["category"], found["priority"]
+
+    # A catalogue from before the review carries the crop as あ, a kana, with another priority.
+    run(publish, monkeypatch, catalogue(tmp_path / "stale.sqlite", [unit("ex:a1", "hl:p1", box, priority=2)]))
+    assert f"priority=2 WHERE id={crop}" in sent() and "category=" not in sent()
+    assert held() == (char, kanji, 2)
+    # One that has taken the review in and reads the crop as あ speaks for the character, and its category goes with it.
+    run(publish, monkeypatch, catalogue(tmp_path / "newer.sqlite", [unit("ex:a1", "hl:p1", box, state="checked", revision=2, priority=2)]))
+    a = d1.execute("SELECT id FROM graphemes WHERE text='あ'").fetchone()[0]
+    assert re.search(rf"UPDATE crops SET char={a},[^;]*category={kana},revision=revision\+1 WHERE id IN \([^;]*c\.revision=1\);", sent())
+    assert held() == (a, kana, 2)
 
 
 def test_a_local_copy_without_the_review_history_is_refused(layout, monkeypatch, tmp_path):

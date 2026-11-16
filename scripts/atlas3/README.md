@@ -195,7 +195,7 @@ crop back writes a publication event (kind 8) one revision on, naming what it se
 That event is the boundary: no view from before it stands. A book's style moves nothing. An undo never
 writes a column a later publication set; a reviewer's own undo is refused, crop by crop, where one set what
 the review set, and the submission counts as undone only once every review in it is. An admin's rejection
-is never refused. Migrations 0015 and 0016 are applied to glyph-atlas-v3 before the Worker that reads them
+is never refused. Migrations 0015, 0016 and 0018 are applied to glyph-atlas-v3 before the Worker that reads them
 deploys (`publish.py --migrate`); `publish.py` applies each part where it is missing, on D1 and on the
 local copy.
 
@@ -227,12 +227,42 @@ count. It bumps `generation` in `glyph-atlas-v3` from G to G + 1, writes from th
   writes between publications) and `corpus_index` (work/corpus-index/index.json).
 
 then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A sample glyph's record is read once from
-its pack through R2's S3 endpoint (the rclone remote's keys) and kept in `out/records.sqlite`; the
-reads come before the bump, so a failed read changes nothing. `publish.py` runs it under its lock
-after every publish that sent something, so the counts follow each publish. It refuses while a publish
-is unfinished or while the database holds review events of a generation above 0 (the history load's are
-absorbed), which it cannot absorb yet, and checks before the bump and again after it. On the local copy of 20 October a run costs one D1 row and 399 R2 objects, and
-the sample holds 24,868 glyphs and the Hangul pool 1,750.
+its pack through R2's S3 endpoint (the rclone remote's keys) and kept in `out/records.sqlite`.
+`publish.py` runs it under its lock after every publish that sent something, so the counts follow each
+publish. It refuses while a publish is unfinished.
+
+The local copy takes the site's changes before the answers are written. The Worker lists every crop
+whose row it changes in `touched`, with the generation of the change (migration 0018). The bump is
+one file D1 applies whole (`out/pub/pointer-<pub>/bump.sql`): it stamps the publication, bumps the
+generation, copies the row of each crop listed through G into `absorbing` as generation G left it and
+takes the crop off the list. The publication then puts those rows in the local copy, as a publish's
+read-back takes a guarded crop's row, and empties `absorbing`. With a row go the base a forms decision
+moved the crop from (`form_bases`), the graphemes the row names as its character, family or base, and
+the codes D1 holds that the local copy lacks; it copies no other grapheme. A crop D1 no longer holds
+leaves the local copy. A crop changed after the bump carries G + 1: it is listed again, counted from
+`tally`, and taken by the next publication. A run that stopped after its bump is finished by the
+next, which first takes what `absorbing` holds and publishes through a newer generation; `publish.py`,
+`fill.py` and `crop_facts.py` take it too, before they plan anything, so none plans on a local copy a
+stopped publication left behind. A copied grapheme id or code that stands for another text or key in
+the local copy or in `out/mirror.sqlite` stops the run before either changes.
+
+The crops the Worker changed before it kept the list are listed once by `answers.py --seed`, which
+sends `migrations-atlas/0019_touched_seed.sql` under the stamp `migration:0019`: every crop an event
+of a generation above 0 names and every corpus glyph with a `form_bases` row, which a forms decision
+moved to its form. `--seed --dry-run` prints how many crops each would list and writes nothing; a
+second `--seed` finds the stamp and writes nothing. A publication is refused until that stamp is
+there. The order of the rollout:
+
+1. `publish.py --migrate`, which applies migration 0018 (`touched`, `absorbing`);
+2. deploy the Worker that lists touched crops;
+3. `answers.py --seed`, after `answers.py --seed --dry-run` has shown its figures;
+4. publish.
+
+With no crop listed, the sample's records are read before the bump, so a failed read changes nothing,
+and answers equal to the last publication's publish nothing. `--dry-run` reports how many crops are
+listed, writes the answers of the local copy as it is and changes neither database. On the local copy
+of 20 October a run costs one D1 row and 399 R2 objects, and the sample holds 24,868 glyphs and the
+Hangul pool 1,750; each crop taken from the list costs three more D1 rows.
 
 ## Image key map
 

@@ -23,9 +23,8 @@ layout cannot hold them:
 ## The decision
 
 Everything is stored by how often it changes. A publication writes immutable objects to R2 and
-static rows to D1. Reviews write a small live layer in D1, and each publication absorbs that layer,
-so D1 never accumulates review history. Static answers are cached under publication numbers, never
-under review counters.
+static rows to D1. Reviews write a small live layer in D1, and each publication absorbs the crops
+that layer changed. Static answers are cached under publication numbers, never under review counters.
 
 ```mermaid
 flowchart LR
@@ -151,6 +150,7 @@ CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTE
     revision = ? AND cut = ?)`, so a stale revision or cut writes NULL into a NOT NULL column and
     aborts the batch; `gen` comes from `generation` in the same statement;
   - update `crops` with the effective values and the new revision;
+  - list the crop in `touched` with the current generation;
   - upsert `reviews`, keeping the published values in `base_*`;
   - move one count in `tally` from the old cell to the new, in the current generation, with
     `ON CONFLICT DO UPDATE SET n = n + excluded.n`;
@@ -161,17 +161,22 @@ CREATE TABLE actor_stats(actor INTEGER PRIMARY KEY, reviews INTEGER, rounds INTE
   so an undo that puts them back brings the mark back too. A redrawn box is fetched once from the
   page's IIIF image service and stored in R2 under `overrides/<id>-<revision>.jpg`, which galleries
   show until the next publication cuts it.
-- **Absorbing a publication.** The publication bumps `generation` from G to G + 1 in one statement,
-  then reads every event with `gen ≤ G`. Batches run in order on the primary, so no review writes
-  generation G after the bump. The publication builds its answers and bundles from those events,
-  goes live with the pointer `(pub, through_gen = G)`, and after the previous prefix expires
-  deletes the `reviews` and `tally` rows with `gen ≤ G`. Counts are the publication's R2 answer plus
-  the `tally` rows above `through_gen`, so `reviews` and `tally` only ever hold the reviews since the
-  last publication.
-- **The review archive.** Each publication writes the events it absorbed to R2 under
-  `events/<actor>/<month>.jsonl.gz`, and a crop index under `events/crops/<page>.jsonl.gz`. D1 keeps
-  90 days of events for recent history, the per-actor totals and skips younger than 90 days. Every
-  D1 table can be rebuilt from R2 and the publisher's data.
+- **Absorbing a publication.** Every batch that changes a crop's row, a review, a mark, an undo, a
+  style or a forms decision's follow, lists the crop in `touched` with the current generation. The
+  publication bumps `generation` from G to G + 1 in one file D1 applies whole. Batches run in order
+  on the primary, so no review writes generation G after the bump. The same file copies the row of
+  every crop listed through G into `absorbing`, with the revision the offline store counts for the
+  crop and whether it keeps a reviewer's style, and takes those crops off the list, so the copy holds
+  each crop as generation G left it. A crop changed after the bump carries G + 1, is listed again,
+  and the next publication takes it. The publisher's
+  local copy takes each copied row whole, with the graphemes and codes it names; a crop D1 no longer
+  holds leaves it. `absorbing` is emptied once the local copy has committed, so a publication that
+  stopped after its bump is finished by the next run. The publication builds its answers from the
+  local copy and goes live with the pointer `(pub, through_gen = G)`. Counts are the publication's
+  R2 answer plus the `tally` rows above `through_gen`. `reviews`, `tally` and `events` keep their
+  rows: the Worker reads `reviews` for a crop's redrawn box and for the style its publication gave it.
+- **The review archive.** D1 keeps every event, with the per-actor totals and the skips. No
+  publication writes the events to R2.
 - **Kept, with integer ids:** the claim ledger (`assertions` with two indexes, `assertion_*`,
   `current_claims` with `cut`), forms tool decisions, submissions, accounts and favourites. A crop's
   current form is its `has_form` slot in `current_claims`, which listings and the inspector read;

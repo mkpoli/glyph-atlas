@@ -1,18 +1,38 @@
 """Write a publication's answers to R2: the counts the galleries, the browse page and the homepage show.
 
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/answers.py [--dry-run]
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/answers.py --seed [--dry-run]
 
 publish.py runs it after every publish that sent something, so the counts follow each publish.
 
 A publication bumps `generation` in glyph-atlas-v3 from G to G + 1, writes its answers under
 `v3/pub/<pub>/`, and then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A count is the
-answer plus the `tally` rows above `through_gen` (decision record 0005). Answers equal to the last
-publication's (out/answers-published.json, a digest of every file less its `pub` and of the site values)
-publish nothing: no bump, no object, no row.
+answer plus the `tally` rows above `through_gen` (decision record 0005). With no crop listed in
+`touched`, answers equal to the last publication's (out/answers-published.json, a digest of every file
+less its `pub` and of the site values) publish nothing: no bump, no object, no row.
 
-The counts come from the local copy of glyph-atlas-v3, which every publish replays. Reviews on the
-new layout are absorbed by reading their events; until that exists, a database holding events is
-refused.
+The counts come from the local copy of glyph-atlas-v3, which every publish replays and which takes
+the site's own changes here. The Worker lists every crop whose row it changes in `touched`, with the
+generation of the change (migration 0018). The bump to G + 1 is a file D1 applies whole, which also
+copies each crop listed through G into `absorbing`, as generation G left its row, and takes it off the
+list; a crop changed after it carries G + 1, is listed again and waits for the next publication, its
+change counted from `tally` meanwhile. The local copy then
+takes each copied row whole (`publish.absorb`), with the revision the offline store counts for the
+crop and whether it keeps a reviewer's style, as a publish's read-back takes a guarded crop's, the
+base a forms decision moved it from (`form_bases`), which the publisher reads before it stages a
+followed glyph, the graphemes those rows name and the codes D1 holds and the local copy lacks; a
+crop D1 no longer holds leaves the local copy. `absorbing` is emptied once the local copy has committed, so a publication that
+stopped after its bump is finished by the next run of this script or of publish.py, which applies what
+`absorbing` still holds before anything else. The answers are written after that, from the
+local copy as it then stands. A dry run reads how many crops are listed, writes the answers of the
+local copy as it is, and changes neither database.
+
+`--seed` lists, once, the crops the Worker changed before it kept the list (migration 0019, stamp
+`migration:0019`): every crop an event of a generation above 0 names and every corpus glyph with a
+`form_bases` row, which a forms decision moved to its form. It runs after the Worker that lists
+touched crops is deployed, and needs migration 0018's tables; with `--dry-run` it prints how many
+crops each of the two would list and writes nothing. A publication is refused until the seed's stamp
+is there, since its answers would count none of those crops' changes.
 
 - `counts/<shard>.json.gz`: per character (grapheme id, in shard id % SHARDS), one cell per kind,
   style, state, withheld, witness decade and visual group, with its number of crops. Codes are the
@@ -66,7 +86,22 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
-from publish import BUCKET, OUT, R2_REMOTE, applied, query, upload
+from publish import (
+    BUCKET,
+    CF,
+    CROP_COLS,
+    LOGICAL,
+    OUT,
+    OWN_STYLE,
+    R2_REMOTE,
+    absorb,
+    applied,
+    lit,
+    missing_only,
+    query,
+    send,
+    upload,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cloudflare_schema import category_of
@@ -102,6 +137,17 @@ UNLISTED = ("text", "line", "context_image", "context_box", "crop_box", "image_p
 # Records read from R2 at once, and how often one read is tried.
 READS = 32
 READ_ATTEMPTS = 4
+DATABASE = "glyph-atlas-v3"
+# The migration that lists the crops changed before the Worker kept the list, and the stamp D1's
+# `imports` holds once it has applied.
+SEED_STAMP = "migration:0019"
+SEED = CF / "migrations-atlas" / "0019_touched_seed.sql"
+# A listed crop's row as `absorbing` keeps it: its columns by name, the revision the offline store counts
+# for it (`logical`), whether it keeps a reviewer's style (`own_style`), and the character a forms
+# decision moved it from (`base`, which may be null) where it holds one (`based`), each read from the crop `c`.
+SNAPSHOT_ROW = ("json_object(" + ",".join(f"'{c}',c.{c}" for c in CROP_COLS)
+                + f",'logical',{LOGICAL},'own_style',{OWN_STYLE},'based',EXISTS(SELECT 1 FROM form_bases b WHERE b.crop=c.id),"
+                "'base',(SELECT b.char FROM form_bases b WHERE b.crop=c.id))")
 
 
 def cells(atlas, key, where):
@@ -302,9 +348,27 @@ def gallery(atlas, folder, pub, read):
     return files, pools_index
 
 
-def unabsorbed(through):
-    """Whether glyph-atlas-v3 holds a review event of a generation from 1 to `through`."""
-    return query("glyph-atlas-v3", f"SELECT count(*) AS n FROM events WHERE gen > 0 AND gen <= {through}")[0]["n"] > 0
+def bump(pub, through):
+    """Bump the generation from `through` to the next and copy the listed crops, in one file D1 applies
+    whole; whether this publication's stamp is there, which only the run that bumped holds. The file
+    stamps the publication while the generation is `through`, and every other statement waits on that
+    stamp: the bump, the copy of the row of every crop listed through `through` into `absorbing`, and
+    those crops' removal from the list. The copy is taken with the bump, so it holds each crop as
+    generation `through` left it: a write that lands after the file carries the next generation, lists
+    its crop again, and is counted from the `tally` rows above `through` until the next publication takes
+    it. No statement reads `changes()`, and each finds nothing left to do where it has run before."""
+    stamp = f"pub:{pub}"
+    stamped = f"EXISTS (SELECT 1 FROM imports WHERE stamp = {lit(stamp)})"
+    path = OUT / "pub" / f"pointer-{pub}" / "bump.sql"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join([
+        f"INSERT OR IGNORE INTO imports(stamp, at) SELECT {lit(stamp)}, unixepoch() FROM generation WHERE id = 0 AND gen = {through};",
+        f"UPDATE generation SET gen = {through + 1} WHERE id = 0 AND gen = {through} AND {stamped};",
+        (f"INSERT OR REPLACE INTO absorbing(crop, through, row) SELECT t.crop, {through}, "
+         f"CASE WHEN c.id IS NULL THEN NULL ELSE {SNAPSHOT_ROW} END "
+         f"FROM touched t LEFT JOIN crops c ON c.id = t.crop WHERE t.gen <= {through} AND {stamped};"),
+        f"DELETE FROM touched WHERE gen <= {through} AND {stamped};"]) + "\n")
+    return send(DATABASE, path, stamp)
 
 
 def answers_digest(folder, site):
@@ -327,33 +391,62 @@ def write(path, body):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--dry-run", action="store_true", help="write the answers locally and change nothing remote")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="write the answers of the local copy as it is; change neither database and upload nothing")
+    parser.add_argument("--seed", action="store_true",
+                        help="list the crops changed before the Worker listed them (migration 0019), once, and publish "
+                             "nothing; with --dry-run, print how many it would list")
     args = parser.parse_args()
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
-    publication(args.dry_run)
+    if args.seed:
+        seed(args.dry_run)
+    else:
+        publication(args.dry_run)
 
 
-def publication(dry_run, read=None):
-    """Write and publish the answers; the caller holds out/mirror.lock (publish.py runs this last)."""
-    mirror = sqlite3.connect(OUT / "mirror.sqlite")
-    if mirror.execute("SELECT 1 FROM sqlite_master WHERE name = 'pending'").fetchone() and \
-            mirror.execute("SELECT count(*) FROM pending").fetchone()[0]:
-        sys.exit("a publish is unfinished; run publish.py to finish it first")
-    pub = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    atlas = sqlite3.connect(OUT / "atlas.sqlite")
-    folder = OUT / "pub" / pub
-    # The sample's records are read before the bump, so a failed read leaves the generation where it was.
-    sampled, pool_sizes = gallery(atlas, folder, pub, read or r2_reader())
+def seed(dry_run):
+    """List in `touched` the crops the Worker changed before it kept the list (migration 0019), once: the
+    file goes to D1 whole with its stamp, and a database that holds the stamp is left as it is. It runs
+    once the Worker that lists touched crops is deployed, so a crop changed before the deploy is found
+    here and one changed after it is listed by the Worker. A dry run prints how many crops each of the
+    file's two statements would list and writes nothing."""
+    if not query(DATABASE, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'touched'"):
+        sys.exit(f"{DATABASE} has no `touched` to list crops in (migration 0018); run publish.py --migrate first")
+    listed = "SELECT count(*) AS n FROM touched"
+    if applied(DATABASE, SEED_STAMP):
+        print(f"the seed is in place (stamp {SEED_STAMP}); `touched` lists {query(DATABASE, listed)[0]['n']} crops", flush=True)
+        return
+    if dry_run:
+        found = query(DATABASE, "SELECT (SELECT count(DISTINCT crop) FROM events WHERE gen > 0) AS reviewed, "
+                                "(SELECT count(*) FROM form_bases) AS followed")[0]
+        print(f"dry run: the seed would list {found['reviewed']} crops named by events of a generation above 0 and "
+              f"{found['followed']} glyphs with a `form_bases` row, a crop of both once; `touched` lists "
+              f"{query(DATABASE, listed)[0]['n']} now, and nothing was written", flush=True)
+        return
+    path = OUT / "publish" / "0019.sql"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(missing_only(SEED.read_text(), lambda table: set())
+                    + f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES({lit(SEED_STAMP)}, unixepoch());\n")
+    if not send(DATABASE, path, SEED_STAMP):
+        sys.exit("the seed did not apply; rerun")
+    print(f"the seed applied (stamp {SEED_STAMP}); `touched` lists {query(DATABASE, listed)[0]['n']} crops", flush=True)
+
+
+def written(atlas, folder, pub, read):
+    """Write a publication's answers under `folder` from the local copy as it stands: its files by where
+    they go (`counts`, `top`, `sampled`), the sample's pools, the site values, the digest of it all and a
+    line of what was counted."""
+    sampled, pool_sizes = gallery(atlas, folder, pub, read)
     shards = defaultdict(dict)
     for char, rows in cells(atlas, "char", "char IS NOT NULL").items():
         shards[char % SHARDS][char] = rows
     families = defaultdict(dict)
     for family, rows in cells(atlas, "family", "char IS NULL AND family IS NOT NULL").items():
         families[family % SHARDS][family] = rows
-    files = [write(folder / "counts" / f"{shard}.json.gz", {"pub": pub, "cell": CELL, "chars": shards.get(shard, {}),
-                                                            "families": families.get(shard, {})})
-             for shard in range(SHARDS)]
+    counts = [write(folder / "counts" / f"{shard}.json.gz", {"pub": pub, "cell": CELL, "chars": shards.get(shard, {}),
+                                                             "families": families.get(shard, {})})
+              for shard in range(SHARDS)]
     unread = cells(atlas, "category", "char IS NULL")
     # A crop with no category is filed under -1, as `tally` writes unknown.
     top = [write(folder / "unread.json.gz", {"pub": pub, "cell": CELL,
@@ -368,49 +461,83 @@ def publication(dry_run, read=None):
     # the published collection status rather than one read from no folders.
     site = {**({"collection": status()} if COLLECTION.is_dir() else {}),
             **({"corpus_index": json.loads(CORPUS_INDEX.read_text())} if CORPUS_INDEX.exists() else {})}
-    digest = answers_digest(folder, site)
+    counted = (f"{sum(len(s) for s in shards.values())} characters in {SHARDS} shards, "
+               f"{sum(len(s) for s in families.values())} families of crops with no character, "
+               f"{sum(len(v) for v in unread.values())} unread cells, {len(browse)} browse cells, {len(glyphs)} corpus cells, "
+               f"gallery {', '.join(f'{k} {v['glyphs']}' for k, v in pool_sizes.items())} -> {folder}")
+    return {"counts": counts, "top": top, "sampled": sampled, "pools": pool_sizes, "site": site,
+            "digest": answers_digest(folder, site), "counted": counted}
+
+
+def publication(dry_run, read=None):
+    """Write and publish the answers; the caller holds out/mirror.lock (publish.py runs this last)."""
+    mirror = sqlite3.connect(OUT / "mirror.sqlite")
+    if mirror.execute("SELECT 1 FROM sqlite_master WHERE name = 'pending'").fetchone() and \
+            mirror.execute("SELECT count(*) FROM pending").fetchone()[0]:
+        sys.exit("a publish is unfinished; run publish.py to finish it first")
+    # Until the seed has run, `touched` lacks the crops reviewed before the Worker listed them, and the
+    # answers would count none of those reviews while the pointer moved past their `tally` rows.
+    if not applied(DATABASE, SEED_STAMP):
+        unseeded = (f"{DATABASE} has no stamp {SEED_STAMP}: the crops changed before the Worker listed them are not in "
+                    "`touched`. Deploy the Worker that lists touched crops, then run answers.py --seed")
+        if not dry_run:
+            sys.exit(f"{unseeded}; nothing published")
+        print(f"{unseeded}; a publication is refused until then", flush=True)
+    pub = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    atlas = sqlite3.connect(OUT / "atlas.sqlite")
+    folder = OUT / "pub" / pub
+    read = read or r2_reader()
     last = OUT / "answers-published.json"
     published = json.loads(last.read_text()) if last.exists() else {}
-    if published.get("digest") == digest:
-        shutil.rmtree(folder)
-        print(f"the answers equal publication {published['pub']}'s; nothing published", flush=True)
+    if dry_run:
+        # The answers of the local copy as it is: the listed crops are counted, and nothing is taken.
+        waiting = query(DATABASE, "SELECT (SELECT count(*) FROM touched) AS listed, (SELECT count(*) FROM absorbing) AS copied, "
+                                  "(SELECT gen FROM generation WHERE id = 0) AS gen")[0]
+        built = written(atlas, folder, pub, read)
+        print(f"pub {pub} at generation {waiting['gen']}: {built['counted']}", flush=True)
+        print(f"dry run: {waiting['listed']} crops are listed for the next publication and {waiting['copied']} wait in "
+              f"`absorbing`; none was taken, nothing was uploaded and the generation was not bumped", flush=True)
+        if not waiting["listed"] and not waiting["copied"] and published.get("digest") == built["digest"]:
+            shutil.rmtree(folder)
+            print(f"the answers equal publication {published['pub']}'s; a publication would publish nothing", flush=True)
         return
-    through = query("glyph-atlas-v3", "SELECT gen FROM generation WHERE id = 0")[0]["gen"]
-    # Every review up to G is in the answers. None is absorbed yet, so a database holding one is refused,
-    # before the bump and again after it, since a review can land at G until the bump. The history load
-    # writes its events at generation 0, and the local copy holds them: they count as absorbed.
-    if unabsorbed(through):
-        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; nothing published")
-    if not dry_run:
-        # Reviews written after the bump carry the next generation, so the answers stand through G. The
-        # bump names G and stamps this publication in the same statement, so a resent statement cannot
-        # bump twice and only the run whose stamp is there made it.
-        query("glyph-atlas-v3", f"UPDATE generation SET gen = {through + 1} WHERE id = 0 AND gen = {through}; "
-                                f"INSERT INTO imports(stamp, at) SELECT 'pub:{pub}', unixepoch() WHERE changes() = 1")
-        if not applied("glyph-atlas-v3", f"pub:{pub}"):
-            sys.exit(f"another publication bumped generation {through}; nothing published")
-    if unabsorbed(through):
-        sys.exit("glyph-atlas-v3 holds review events, and absorbing them is not built yet; the pointer stays")
+    # What a publication that stopped after its bump left in `absorbing` goes into the local copy first.
+    absorb(atlas, mirror)
+    built = None
+    if not query(DATABASE, "SELECT crop FROM touched LIMIT 1"):
+        # No crop is listed: the sample's records are read before the bump, so a failed read leaves the
+        # generation where it was, and answers equal to the last publication's publish nothing.
+        built = written(atlas, folder, pub, read)
+        if published.get("digest") == built["digest"]:
+            shutil.rmtree(folder)
+            print(f"the answers equal publication {published['pub']}'s; nothing published", flush=True)
+            return
+    through = query(DATABASE, "SELECT gen FROM generation WHERE id = 0")[0]["gen"]
+    # Reviews written after the bump carry the next generation, so the answers stand through G. The
+    # bump's file stamps this publication and copies every crop the site changed through G, a crop listed
+    # while the answers above were being written among them; only the run whose stamp is there made it.
+    if not bump(pub, through):
+        sys.exit(f"another publication bumped generation {through}; nothing published")
+    # The local copy takes the copied crops, and the answers are then written from it as it stands with
+    # them. A read of the sample that fails here leaves the bump in place, and the next run publishes
+    # through the generation after it.
+    if absorb(atlas, mirror) or built is None:
+        if built:
+            shutil.rmtree(folder)
+        built = written(atlas, folder, pub, read)
 
     pointer = write(OUT / "pub" / f"pointer-{pub}" / "pointer.json", {"pub": pub, "through_gen": through})
-    characters_counted = sum(len(s) for s in shards.values())
-    print(f"pub {pub} through generation {through}: {characters_counted} characters in {SHARDS} shards, "
-          f"{sum(len(s) for s in families.values())} families of crops with no character, "
-          f"{sum(len(v) for v in unread.values())} unread cells, {len(browse)} browse cells, {len(glyphs)} corpus cells, "
-          f"gallery {', '.join(f'{k} {v['glyphs']}' for k, v in pool_sizes.items())} -> {folder}", flush=True)
-    if dry_run:
-        print("dry run: nothing uploaded; the generation was not bumped", flush=True)
-        return
-    upload([f for f in files if f.parent.name == "counts"], f"{PUB_PREFIX}{pub}/counts/")
-    upload(top, f"{PUB_PREFIX}{pub}/")
-    for name in pool_sizes:
-        upload([f for f in sampled if f.parent.name == name], f"{PUB_PREFIX}{pub}/gallery/{name}/")
-    upload([f for f in sampled if f.name == "index.json.gz"], f"{PUB_PREFIX}{pub}/gallery/")
-    if site:
-        query("glyph-atlas-v3", "; ".join(site_row(k, v) for k, v in site.items()))
+    print(f"pub {pub} through generation {through}: {built['counted']}", flush=True)
+    upload(built["counts"], f"{PUB_PREFIX}{pub}/counts/")
+    upload(built["top"], f"{PUB_PREFIX}{pub}/")
+    for name in built["pools"]:
+        upload([f for f in built["sampled"] if f.parent.name == name], f"{PUB_PREFIX}{pub}/gallery/{name}/")
+    upload([f for f in built["sampled"] if f.name == "index.json.gz"], f"{PUB_PREFIX}{pub}/gallery/")
+    if built["site"]:
+        query(DATABASE, "; ".join(site_row(k, v) for k, v in built["site"].items()))
     # The pointer moves last, once everything it names is in place.
     upload([pointer], POINTER_PREFIX)
-    last.write_text(json.dumps({"pub": pub, "digest": digest}) + "\n")
+    last.write_text(json.dumps({"pub": pub, "digest": built["digest"]}) + "\n")
     print(f"v3/pointer.json names {pub}", flush=True)
 
 

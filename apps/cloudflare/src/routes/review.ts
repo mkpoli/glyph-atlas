@@ -301,6 +301,10 @@ const MARK = (c: string) => `CASE WHEN (SELECT count(DISTINCT k.actor) FROM skip
   WHEN EXISTS(SELECT 1 FROM seen s JOIN submissions b ON b.id=s.submission AND b.undone=0 WHERE s.crop=${c}.id AND s.cut=${c}.cut) THEN ${STATE.seen}
   ELSE ${STATE.pending} END`;
 const GEN = '(SELECT gen FROM generation WHERE id=0)';
+// The list of crops a write changed (`touched`, migration 0018), which the answers publication copies
+// into the publisher's local copy: a crop joins it in the batch that changes its row, and one already
+// listed takes the current generation.
+const LISTED = 'ON CONFLICT(crop) DO UPDATE SET gen=excluded.gen WHERE touched.gen<>excluded.gen';
 const SUBMISSION = '(SELECT id FROM submissions WHERE key=?)';
 // What the crop held before an event: its state, its last event's issue and its redrawn box.
 const WAS = `c.state,(SELECT coalesce(p.kept_issue,p.issue) FROM events p WHERE p.crop=c.id ORDER BY p.revision DESC LIMIT 1),r.x,r.y,r.w,r.h`;
@@ -348,8 +352,10 @@ function applyStatements(env: Env, key: string, at: number, kinds: number[], cha
   const cell = 'c.kind,coalesce(c.char,-1),coalesce(c.family,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),c.state,c.quiz,coalesce((c.year-CASE WHEN c.year<0 THEN 9 ELSE 0 END)/10*10,-1)';
   const named = (field: string) => `(SELECT j.value->>'${field}' FROM json_each(?1) j WHERE j.value->>'crop'=c.id)`;
   const box = (k: string) => `iif(coalesce(${named('box')},0)=1,e.${k},r.${k})`;
+  // ?1 the submission's key, ?2 the time.
+  const written = mine.replaceAll('?2', '?1').replaceAll('?3', '?2');
   const tally = (sign: string, step: string) => env.ATLAS.prepare(`INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n)
-    SELECT ${GEN},${cell},${sign}count(*) FROM events e JOIN crops c ON c.id=e.crop AND c.revision${step}=e.revision WHERE ${mine.replaceAll('?2', '?1').replaceAll('?3', '?2')}
+    SELECT ${GEN},${cell},${sign}count(*) FROM events e JOIN crops c ON c.id=e.crop AND c.revision${step}=e.revision WHERE ${written}
     GROUP BY ${cell} ON CONFLICT DO UPDATE SET n=n+excluded.n`).bind(key, at);
   return [
     tally('-', '+1'),
@@ -362,13 +368,15 @@ function applyStatements(env: Env, key: string, at: number, kinds: number[], cha
       coalesce((SELECT code FROM codes WHERE field='category' AND key=${named('category')}),c.category),e.revision
       FROM events e WHERE e.crop=c.id AND e.revision=c.revision+1)
       WHERE c.id IN (SELECT e.crop FROM events e WHERE ${mine}) AND EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.revision=c.revision+1)`).bind(list, key, at),
+    // Every crop the write's events moved on is listed for the next publication.
+    env.ATLAS.prepare(`INSERT INTO touched(crop,gen) SELECT e.crop,${GEN} FROM events e WHERE ${written} ${LISTED}`).bind(key, at),
     tally('', ''),
   ];
 }
 
 /** The statements of a list of crop changes made in the submission `key` (inserted earlier in the
  *  batch), in order: missing characters, the events, the counts out of the old cells, the overlay, the
- *  crops' rows, the counts into the new cells. */
+ *  crops' rows, their place on the list of touched crops, the counts into the new cells. */
 export function cropChanges(env: Env, actor: number, key: string, at: number, changes: CropChange[]): D1PreparedStatement[] {
   if (!changes.length) return [];
   return [...eventStatements(env, actor, key, at, changes), ...applyStatements(env, key, at, [...new Set(changes.map(c => c.kind))], changes)];
@@ -431,6 +439,9 @@ export async function setStyle(env: Env, sent: Json, user: string, raw: string):
       .bind(crop, key, at, style),
     env.ATLAS.prepare(`UPDATE crops AS c SET style=(SELECT r.style FROM reviews r WHERE r.crop=c.id),revision=c.revision+1 WHERE c.id=?1 AND ${moved}`)
       .bind(crop, key),
+    // The crop, once it has moved on, is listed for the next publication.
+    env.ATLAS.prepare(`INSERT INTO touched(crop,gen) SELECT c.id,${GEN} FROM crops c WHERE c.id=?1 AND c.revision=?2 ${LISTED}`)
+      .bind(crop, found.row.revision + 1),
     env.ATLAS.prepare(tally('', 'c.revision=?2')).bind(crop, found.row.revision + 1),
   ];
   try { await env.ATLAS.batch(statements) }

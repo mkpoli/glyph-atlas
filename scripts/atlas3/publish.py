@@ -220,6 +220,11 @@ UNCOUNTED = f"(e.kind IN (7,{PUBLISHED},{STYLE_KIND}) OR " + MARKED.format(e="e"
 BASE_CHUNK = 3000
 OWN_STYLE = (f"coalesce((SELECT e.style IS NOT NULL FROM events e WHERE e.crop=c.id AND e.kind={STYLE_KIND} "
              "ORDER BY e.revision DESC LIMIT 1),0)")
+# Crops D1 last answered as keeping a reviewer's style (OWN_STYLE), as the local copy last took their rows
+# (`take_row`): it holds D1's row for them, so their style is not the publication's.
+REVIEWER_STYLES = "CREATE TABLE IF NOT EXISTS reviewer_styles(crop INTEGER PRIMARY KEY)"
+
+
 def _logical(anchors=True, bumps=True):
     """`LOGICAL`, for a database with or without the anchors (`review_revisions`) and the `bumps` column."""
     anchored = ("(SELECT a.revision+(SELECT count(*) FROM events e WHERE e.crop=a.crop AND e.revision>a.at "
@@ -273,6 +278,8 @@ REVIEW_MIGRATIONS = (
      ("SELECT 1 AS n FROM (SELECT (SELECT count(*) FROM sqlite_master WHERE name IN ('review_revisions','event_reviews'))"
       "+(SELECT count(*) FROM pragma_table_info('crops') WHERE name='bumps')"
       "+(SELECT count(*) FROM pragma_table_info('events') WHERE name='published') AS k) WHERE k=4")),
+    ("0018", "0018_touched.sql",
+     "SELECT 1 AS n FROM (SELECT count(*) AS k FROM sqlite_master WHERE name IN ('touched','absorbing')) WHERE k=2"),
 )
 
 
@@ -288,7 +295,7 @@ def missing_only(sql, columns):
 
 
 def migrate_reviews(atlas, dry):
-    """Migrations 0015 and 0016 on D1 and on the local copy, where each lacks what it makes: a copy that
+    """Migrations 0015, 0016 and 0018 on D1 and on the local copy, where each lacks what it makes: a copy that
     took part of one takes the rest. They reach D1 before the Worker that reads them deploys; the local copy
     takes them here. A dry run changes neither."""
     if dry:
@@ -595,9 +602,7 @@ class Mirror:
         # The runs' answers are written again for the books and crops a publish changes (run_answers.py).
         for name, cols in (("run_book_all", "book, size, graphemes"), ("run_second_all", "second"), ("run_third_all", "third")):
             self.runs.execute(f"CREATE INDEX IF NOT EXISTS {name} ON runs({cols})")
-        # Crops D1 last answered as keeping a reviewer's style (OWN_STYLE), as the read-back found them: the local
-        # copy holds D1's row for them, so their style is not the publication's.
-        self.atlas.execute("CREATE TABLE IF NOT EXISTS reviewer_styles(crop INTEGER PRIMARY KEY)")
+        self.atlas.execute(REVIEWER_STYLES)
         self.atlas.commit()
         self.runs.commit()
         self.head, self.runs_sql = [], []
@@ -742,7 +747,16 @@ class Mirror:
                 # The style the publication gives the crop, which taking a reviewer's style back returns to: sent when
                 # it moved, or when the local copy holds a reviewer's style in its place.
                 self.base_styles.append((cid, row["style"]))
-            own = [c for c in changed if c not in REVIEW_OWNED and c != "cut"]
+            # A crop's script category belongs to its character: a review on the site sets the two together.
+            # The catalogue's category is taken only where the catalogue speaks for the character; a crop that
+            # keeps a review's character, or the form a decision moved it to, keeps the category beside it.
+            # Where the character changes too, the category goes to D1 in the statement that sets the
+            # character, under its guard.
+            if "category" in changed and not speaks:
+                changed.remove("category")
+                row["category"] = old["category"]
+            with_char = "category" in changed and "char" in changed
+            own = [c for c in changed if c not in REVIEW_OWNED and c != "cut" and not (c == "category" and with_char)]
             reviewed = [c for c in changed if c in REVIEW_OWNED]
             if own:
                 self.page_sql[pid].append(f"UPDATE crops SET {','.join(f'{c}={lit(row[c])}' for c in own)} WHERE id={cid};")
@@ -761,8 +775,8 @@ class Mirror:
             if row["revision"] != old["revision"]:
                 changed.append("revision")
             if speaks and decided:
-                self.page_sql[pid] += visible_change({c: lit(row[c]) for c in decided},
-                                                     f"FROM crops c WHERE c.id={cid} AND c.revision={base}", catalogue_revision)
+                sets = {c: lit(row[c]) for c in decided} | ({"category": lit(row["category"])} if with_char else {})
+                self.page_sql[pid] += visible_change(sets, f"FROM crops c WHERE c.id={cid} AND c.revision={base}", catalogue_revision)
                 self.guarded.append(cid)
             elif speaks and (reviewed or catalogue_revision != logical):
                 page_changed = True
@@ -939,6 +953,113 @@ def style_index_entries(atlas, crops):
     return out
 
 
+def take_row(atlas, cid, row, counted):
+    """Put D1's row of one crop in the local copy (`row`, its columns by name), or take the crop out of it
+    where D1 holds none (`row` None). `counted` is what D1 counts for the crop, None with no row: the
+    revision the store counts (`revision`, LOGICAL), which the next publication speaks against, the crop's
+    own revision then (`at`), and whether it keeps a reviewer's style (`own`, OWN_STYLE), which a
+    publication leaves as it is."""
+    if counted and counted["own"]:
+        atlas.execute("INSERT OR IGNORE INTO reviewer_styles VALUES(?)", (cid,))
+    else:
+        atlas.execute("DELETE FROM reviewer_styles WHERE crop=?", (cid,))
+    if counted:
+        atlas.execute("INSERT INTO review_revisions(crop,revision,at) VALUES(?,?,?) ON CONFLICT(crop) DO UPDATE "
+                      "SET revision=excluded.revision,at=excluded.at", (cid, counted["revision"], counted["at"]))
+    if row is None:
+        atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
+    else:
+        atlas.execute(f"INSERT OR REPLACE INTO crops({','.join(CROP_COLS)}) VALUES({','.join('?' * len(CROP_COLS))})",
+                      [row[c] for c in CROP_COLS])
+
+
+# Rows of `absorbing`, and graphemes, one query reads.
+ABSORB_CHUNK = 1000
+
+
+def absorb(atlas, ids):
+    """Take what `absorbing` holds into the local copy (`atlas`) and empty it; the number of crops it held.
+    A publication of the answers copies there the row of every crop the site changed (answers.py
+    `bump`), each with the revision the store counts for it, whether it keeps a reviewer's style, and its
+    base where a forms decision moved it (`form_bases`): the local copy holds the base D1 holds or none,
+    since `Mirror.crop` stages a followed glyph's change from it. The graphemes the rows name and the
+    codes D1 holds go in first, the codes also into the id allocator (`ids`, out/mirror.sqlite), which
+    numbers the next code a publish needs; no other grapheme is copied. Everything is read and compared
+    before anything is written: an id or code that stands for another text or key here stops the run
+    with `absorbing` as it was. `absorbing` is emptied once both local databases have committed, so a
+    run that stops anywhere is finished by the next."""
+    held, last = [], -1
+    while True:
+        chunk = query("glyph-atlas-v3", f"SELECT crop, through, row FROM absorbing WHERE crop > {last} ORDER BY crop LIMIT {ABSORB_CHUNK}")
+        held += chunk
+        if len(chunk) < ABSORB_CHUNK:
+            break
+        last = chunk[-1]["crop"]
+    if not held:
+        return 0
+    rows = {r["crop"]: json.loads(r["row"]) if r["row"] else None for r in held}
+    named = sorted({row[c] for row in rows.values() if row for c in ("char", "family", "base") if row[c] is not None})
+    graphemes = [g for i in range(0, len(named), ABSORB_CHUNK)
+                 for g in query("glyph-atlas-v3", f"SELECT id, text, head FROM graphemes WHERE id IN ({','.join(map(str, named[i:i + ABSORB_CHUNK]))})")]
+    codes = [(c["field"], c["code"], c["key"]) for c in query("glyph-atlas-v3", "SELECT field, code, key FROM codes")]
+    clashes, new_graphemes, new_codes, new_ids = [], [], [], []
+    for g in graphemes:
+        here = [tuple(r) for r in atlas.execute("SELECT id, text FROM graphemes WHERE id=? OR text=?", (g["id"], g["text"]))]
+        if any(row != (g["id"], g["text"]) for row in here):
+            clashes.append(f"grapheme {g['id']} is {g['text']!r} in D1 and the local copy holds {here}")
+        elif not here:
+            new_graphemes.append((g["id"], g["text"], g["head"]))
+    for code in codes:
+        field = code[0]
+        here = [tuple(r) for r in atlas.execute("SELECT field, code, key FROM codes WHERE field=? AND (code=? OR key=?)", code)]
+        if any(row != code for row in here):
+            clashes.append(f"code {code} of D1 is {here} in the local copy")
+        elif not here:
+            new_codes.append(code)
+            # The allocator takes it too, so the next code of its field is numbered after it.
+            allocated = [tuple(r) for r in ids.execute("SELECT field, code, key FROM codes WHERE field=? AND (code=? OR key=?)", code)]
+            if any(row != code for row in allocated):
+                clashes.append(f"code {code} of D1 is {allocated} in out/mirror.sqlite")
+            elif not allocated:
+                new_ids.append((field, code[2], code[1]))
+    if clashes:
+        sys.exit(f"glyph-atlas-v3 and the local copy number {len(clashes)} graphemes or codes differently, for example: "
+                 f"{clashes[0]}; nothing absorbed, and `absorbing` keeps its {len(held)} crops")
+    atlas.execute(REVIEWER_STYLES)
+    atlas.executemany("INSERT INTO graphemes(id,text,head) VALUES(?,?,?)", new_graphemes)
+    atlas.executemany("INSERT INTO codes(field,code,key) VALUES(?,?,?)", new_codes)
+    ids.executemany("INSERT INTO codes(field,key,code) VALUES(?,?,?)", new_ids)
+    taken = removed = neither = 0
+    for crop, row in rows.items():
+        if row is None and not atlas.execute("SELECT 1 FROM crops WHERE id=?", (crop,)).fetchone():
+            neither += 1
+            continue
+        take_row(atlas, crop, row, row and {"revision": row["logical"], "at": row["revision"], "own": row["own_style"]})
+        if row and row["based"]:
+            atlas.execute("INSERT INTO form_bases(crop,char) VALUES(?,?) ON CONFLICT(crop) DO UPDATE SET char=excluded.char",
+                          (crop, row["base"]))
+        elif row:
+            atlas.execute("DELETE FROM form_bases WHERE crop=?", (crop,))
+        taken, removed = taken + (row is not None), removed + (row is None)
+    # The allocator first: a code it holds and the local copy lacks is copied again by the next run, and
+    # one the local copy alone held would leave the allocator to give its number to another key.
+    ids.commit()
+    atlas.commit()
+    query("glyph-atlas-v3", f"DELETE FROM absorbing WHERE through <= {max(r['through'] for r in held)}")
+    print(f"absorbed {len(held)} crops from glyph-atlas-v3: {taken} rows taken, {removed} removed, {neither} in neither "
+          f"database, with {len(new_graphemes)} graphemes and {len(new_codes)} codes", flush=True)
+    return len(held)
+
+
+def leftover(migrated=True):
+    """Whether `absorbing` holds crops: a publication of the answers copied them and stopped before the
+    local copy took them. Every writer that plans against the local copy takes them first (`absorb`), so
+    its plan stands on the site's rows and no row it writes is replaced by an older one of theirs. A
+    caller that applies no migration asks first whether D1 has the table (`migrated` false)."""
+    return bool((migrated or query("glyph-atlas-v3", "SELECT name FROM sqlite_master WHERE name='absorbing'"))
+                and query("glyph-atlas-v3", "SELECT crop FROM absorbing LIMIT 1"))
+
+
 def deliver(m, run):
     """Finish a publish whose ids are allocated. Every step can run again: bundles to R2, then each
     part to D1, then the same part to the local copy, in order; then the guarded rows are read back."""
@@ -982,14 +1103,7 @@ def deliver(m, run):
                 # and whether it keeps a reviewer's style. One query, so the read-back adds no round trip.
                 logical = {r["id"]: r for r in query(database, f"SELECT c.id,c.revision AS at,{LOGICAL} AS revision,{OWN_STYLE} AS own "
                                                               f"FROM crops c WHERE c.id IN ({','.join(map(str, chunk))})")}
-                owned = {cid for cid, r in logical.items() if r["own"]}
-                m.atlas.executemany("DELETE FROM reviewer_styles WHERE crop=?", [(cid,) for cid in chunk if cid not in owned])
-                m.atlas.executemany("INSERT OR IGNORE INTO reviewer_styles VALUES(?)", [(cid,) for cid in owned])
                 for cid in chunk:
-                    if cid in logical:
-                        r = logical[cid]
-                        m.atlas.execute("INSERT INTO review_revisions(crop,revision,at) VALUES(?,?,?) ON CONFLICT(crop) DO UPDATE "
-                                        "SET revision=excluded.revision,at=excluded.at", (cid, r["revision"], r["at"]))
                     local = m.atlas.execute("SELECT * FROM crops WHERE id=?", (cid,)).fetchone()
                     # The local copy holds what the publication meant D1 to have; any column D1 holds otherwise was
                     # kept by a write since (a revision alone can coincide with one).
@@ -1002,12 +1116,7 @@ def deliver(m, run):
                                 m.atlas.execute("INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n) "
                                                 "SELECT gen,?,?,?,?,?,?,?,?,?,? FROM generation WHERE id=0 "
                                                 "ON CONFLICT DO UPDATE SET n=n+excluded.n", [*cell, step])
-                    if cid in found:
-                        r = found[cid]
-                        m.atlas.execute(f"INSERT OR REPLACE INTO crops({','.join(CROP_COLS)}) VALUES({','.join('?' * len(CROP_COLS))})",
-                                        [r[c] for c in CROP_COLS])
-                    else:
-                        m.atlas.execute("DELETE FROM crops WHERE id=?", (cid,))
+                    take_row(m.atlas, cid, found.get(cid), logical.get(cid))
             # A flagged glyph's corpus row, finding, overlay and events as D1 holds them: a flag D1 refused
             # (a round or a review wrote about the glyph first) leaves D1's rows.
             for i in range(0, len(flagged), 200):
@@ -1160,7 +1269,7 @@ def main():
     parser.add_argument("--replacements", action="store_true",
                         help="name the replacement of every retired crop from source-unit_redirects.sqlite")
     parser.add_argument("--migrate", action="store_true",
-                        help="only apply migrations 0015 and 0016 where they are missing, on D1 and the local copy, stamped")
+                        help="only apply migrations 0015, 0016 and 0018 where they are missing, on D1 and the local copy, stamped")
     args = parser.parse_args()
     if args.catalogue is None and not args.replacements and not args.migrate:
         parser.error("a catalogue, --replacements, or both")
@@ -1197,6 +1306,14 @@ def main():
             sys.exit("--migrate applies the migrations; it has no dry run")
         print("review migrations in place on glyph-atlas-v3 and the local copy", flush=True)
         return
+    # What a stopped publication of the answers left in `absorbing` goes into the local copy before anything
+    # is planned against it (`leftover`). A dry run changes nothing, so it stops there.
+    if not dry:
+        if leftover():
+            absorb(m.atlas, m.ids)
+    elif leftover(False):
+        sys.exit("glyph-atlas-v3 holds crops a stopped publication of the answers copied; run a publish (not a dry run) "
+                 "or answers.py to take them first")
     if not dry:
         finish_unfinished(m)
     elif m.ids.execute("SELECT 1 FROM pending").fetchone():
