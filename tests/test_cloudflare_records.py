@@ -9,6 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from glyph_atlas import drawn_forms
+
 # Every migration, as a deployment applies them.
 SCHEMA = "\n".join(p.read_text() for p in sorted(Path("apps/cloudflare/migrations").glob("*.sql")))
 
@@ -179,8 +181,11 @@ def test_the_migration_and_the_publication_scripts_agree_on_a_label_category(scr
     db = sqlite3.connect(":memory:")
     rows = db.execute(f"WITH RECURSIVE n(c) AS (SELECT 0 UNION ALL SELECT c+1 FROM n WHERE c<1114111) "
                       f"SELECT c,{case} FROM n WHERE {case}!='other'").fetchall()
+    # A drawn form takes its grapheme's category from the site's table, which the migration's ranges
+    # predate (tests/test_drawn_forms.py holds that case).
     expected = [(c, cloudflare_schema.category_of(chr(c))) for c in range(0x110000)
-                if not 0xD800 <= c <= 0xDFFF and cloudflare_schema.category_of(chr(c)) in ("kana", "kanji")]
+                if not 0xD800 <= c <= 0xDFFF and not drawn_forms.drawn(chr(c))
+                and cloudflare_schema.category_of(chr(c)) in ("kana", "kanji")]
     assert rows == expected
     assert [cloudflare_schema.category_of(v) for v in ("ア", "𛀁", "仮", "々", "〆", "𗀀", "\U00018B00", "A", "")] == \
         ["kana", "kana", "kanji", "kanji", "other", "tangut", "other", "other", "other"]
