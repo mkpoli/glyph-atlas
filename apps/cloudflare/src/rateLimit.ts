@@ -9,6 +9,7 @@
 // and send the pass. A counted request costs about 35 ms of CPU, its D1 rows and three to five R2 reads.
 // In front of this, an edge rule refuses an address over 300 requests in 10 seconds for 10 seconds.
 import { addressKey } from './reverse';
+import { OPEN, opened } from './open';
 
 /** Counted requests one address may make in PERIOD seconds. The `REQUESTS` binding in `wrangler.jsonc` repeats both. */
 export const LIMIT = 900;
@@ -137,5 +138,5 @@ export async function limited(request: Request, env: Env, store: Store = edge): 
   }
   if (seconds === null) return null;
   return Response.json({ detail: 'Too many requests from this address. Try again later.', code: 'rate_limited' },
-    { status: 429, headers: { 'retry-after': String(seconds), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
+    { status: 429, headers: { ...(opened(path) ? OPEN : {}), 'retry-after': String(seconds), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
 }

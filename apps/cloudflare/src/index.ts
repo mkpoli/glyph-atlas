@@ -28,6 +28,7 @@ import { MediaIncomplete, mediaResponse } from './atlas3Media';
 import { cropRoute } from './routes/crop';
 import { runsRoute } from './routes/runs';
 import { Timing } from './timing';
+import { OPEN, opened } from './open';
 import { sendContact } from './contact';
 import { communityCounts } from './community';
 import { communityPreview } from './preview';
@@ -68,9 +69,6 @@ export const jamoSyllable = (value: string) => {
 export const hira = (value: string) => [...literal(value)].map(c => {
   const n = c.codePointAt(0)!; return n >= 0x30a1 && n <= 0x30f6 ? String.fromCodePoint(n - 0x60) : c;
 }).join('');
-const OPEN = { 'access-control-allow-origin': '*' };
-// Reads any site may make: a document's characters, a citation and the composer's export.
-const opened = (path: string) => path.startsWith('/atlas/documents/') || path.startsWith('/atlas/cite/') || path.startsWith('/atlas/composer/');
 // A character's grapheme family, as a reviewed correction takes it; one the catalogue lacks is its own.
 const characterTools: CharacterTools = { literal, jamoSyllable };
 const formTools: FormTools = {fail:(status,message,extra)=>{throw new Problem(status,message,extra)},body,text,codePoints:cp};

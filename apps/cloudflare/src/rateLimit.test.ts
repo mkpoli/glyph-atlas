@@ -154,6 +154,15 @@ describe('the Worker refuses before it reads anything', () => {
     expect(logged).toEqual([{ event: 'rate_limit_strike', address: '2001:db8:0::/48', strikes: 1, seconds: 60, path: '/en/gallery' }]);
   }));
 
+  it('lets another site read the refusal of a route it may read', () => quietly(async () => {
+    const { limiter, store } = world(0);
+    const site = env(limiter);
+    for (const path of ['/atlas/documents/hk:1/characters', '/atlas/cite/crop/3dh00000', '/atlas/composer/v1/manifest.json'])
+      expect([path, (await limited(ask(path), site, store))!.headers.get('access-control-allow-origin')]).toEqual([path, '*']);
+    for (const path of ['/atlas', '/en', '/api/account'])
+      expect([path, (await limited(ask(path), site, store))!.headers.get('access-control-allow-origin')]).toEqual([path, null]);
+  }));
+
   it('lets an uncounted path and a request with the pass through without asking the limiter', () => quietly(async () => {
     const { state, limiter, store } = world(0);
     const site = env(limiter, 's3cret-pass');
