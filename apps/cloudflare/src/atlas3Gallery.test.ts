@@ -167,6 +167,29 @@ describe('new-layout counts', () => {
     expect((await filedCounts(env, [9])).get(9)!.map(c => [c.kind, c.n, c.fresh])).toEqual([[1, 2, true]]);
   });
 
+  it('read a counts shard from the edge where it is kept, and keep one read from R2 there', async () => {
+    const before = (globalThis as any).caches, edge = new Map<string, Response>();
+    (globalThis as any).caches = { default: {
+      match: async (request: Request) => edge.get(request.url)?.clone(),
+      put: async (request: Request, response: Response) => { edge.set(request.url, response.clone()); },
+    } };
+    try {
+      const { env, objects } = setup(), reads: string[] = [], bucket = env.MEDIA;
+      (env as any).MEDIA = { get: (key: string) => { reads.push(key); return bucket.get(key); } };
+      const cells = (n: number) => gzipSync(JSON.stringify({ chars: { [n]: [[0, 0, 0, 1, 1700, null, n]] } }));
+      const kept = (n: number) => `https://glyphatlas.org/_answers/v3/pub/P1/counts/${n % SHARDS}.json.gz`;
+      // Characters whose shards no other test reads, so the isolate holds neither.
+      edge.set(kept(300), new Response(cells(300)));
+      expect((await characterCounts(env, [300])).get(300)!.map(c => c.n)).toEqual([300]);
+      expect(reads.filter(key => key.includes('/counts/'))).toEqual([]);
+      objects.set(`v3/pub/P1/counts/${301 % SHARDS}.json.gz`, cells(301));
+      expect((await characterCounts(env, [301])).get(301)!.map(c => c.n)).toEqual([301]);
+      expect((await characterCounts(env, [301])).get(301)!.map(c => c.n)).toEqual([301]);
+      expect(reads.filter(key => key.includes('/counts/'))).toEqual([`v3/pub/P1/counts/${301 % SHARDS}.json.gz`]);
+      expect(edge.has(kept(301))).toBe(true);
+    } finally { (globalThis as any).caches = before; }
+  });
+
   it('read the pointer again after a minute', async () => {
     const { env, objects } = setup();
     expect((await currentPointer(env, 4e12)).pub).toBe('P1');
