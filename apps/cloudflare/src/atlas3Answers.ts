@@ -3,11 +3,27 @@
 // glyphs, and the homepage sample. A count is the answer plus the `tally` rows above the pointer's
 // generation, so a review shows at once.
 import { codeNames } from './atlas3';
-import { currentPointer } from './atlas3Gallery';
 import { categoryOf } from './category';
 import type { Timing } from './timing';
 
 type Json = any;
+
+// The publication the answers come from, `v3/pointer.json` (scripts/atlas3/answers.py). An isolate
+// reads it again after POINTER_HELD milliseconds, so a new publication shows within a minute.
+export type Pointer = { pub: string; through_gen: number };
+const POINTER_HELD = 60_000;
+let pointer: { at: number; read: Promise<Pointer> } | null = null;
+export function currentPointer(env: Env, now = Date.now()): Promise<Pointer> {
+  if (pointer && now - pointer.at < POINTER_HELD) return pointer.read;
+  const read = env.MEDIA.get('v3/pointer.json').then(async object => {
+    if (!object) throw new Error('v3/pointer.json is missing');
+    return await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json() as Pointer;
+  });
+  const held = { at: now, read };
+  read.catch(() => { if (pointer === held) pointer = null; });
+  pointer = held;
+  return read;
+}
 
 /** A text's code points as the site keys a grapheme: `U+306F U+3099`. */
 export const codePoints = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');

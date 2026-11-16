@@ -7,7 +7,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from '../forms.test';
 import { bundleKey, cropId } from '../atlas3';
-import { currentPointer } from '../atlas3Gallery';
+import { currentPointer } from '../atlas3Answers';
 import { catalogue } from './browse';
 
 export const databases: Database[] = [];

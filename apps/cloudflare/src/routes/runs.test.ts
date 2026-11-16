@@ -3,7 +3,7 @@ import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { bundleKey, cropId, publicId } from '../atlas3';
-import { currentPointer } from '../atlas3Gallery';
+import { currentPointer } from '../atlas3Answers';
 import { listingItems } from '../atlas3Listing';
 import { d1 } from '../forms.test';
 import { redrawLimits } from '../cropRecords';
