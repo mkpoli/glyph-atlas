@@ -743,9 +743,13 @@ def test_a_publication_is_refused_until_the_seed_has_run(layout, monkeypatch, ca
 
 def changed_before_the_list(remote, root):
     """Crops the site changed before the Worker listed any: one reviewed in generation 1, one whose only
-    event is the history load's (generation 0), one that followed a forms decision, and one the Worker
-    has listed since."""
+    event is the history load's (generation 0) and whose base both copies hold alike, one that followed
+    a forms decision the local copy has not seen, and one the Worker has listed since."""
     d1, crop = remote.dbs["glyph-atlas-v3"], ids(root)
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    for db in (d1, local):
+        db.execute("INSERT INTO form_bases(crop, char) VALUES(?, NULL)", (crop["ex:a2"],))
+    local.commit()
     d1.executemany("INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(?,?,0,?,1,1,0,0)",
                    [(crop["ex:a1"], 1, 1), (crop["ex:a1"], 2, 1), (crop["ex:a2"], 1, 0), (crop["ex:b1"], 1, 1)])
     d1.execute("INSERT INTO form_bases(crop, char) VALUES(?, NULL)", (crop["codh:g1"],))
@@ -759,7 +763,8 @@ def test_the_seed_lists_the_crops_changed_before_the_list_once(layout, monkeypat
     crop = changed_before_the_list(remote, root)
     before = dumps(root, remote)
     assert answers(publish, monkeypatch, "--seed", "--dry-run", seeded=False) == []
-    assert "would list 2 crops named by events of a generation above 0 and 1 glyphs with a `form_bases` row" in capsys.readouterr().out
+    assert ("would list 2 crops named by events of a generation above 0 and 1 followed glyphs the local copy holds "
+            "differently (2 hold a `form_bases` row in glyph-atlas-v3)") in capsys.readouterr().out
     assert dumps(root, remote) == before
     answers(publish, monkeypatch, "--seed", seeded=False)
     # The crop the Worker listed keeps its generation.
@@ -777,6 +782,23 @@ def test_the_seed_lists_the_crops_changed_before_the_list_once(layout, monkeypat
     # The publication then takes the listed crops.
     assert answers(publish, monkeypatch, sample=0, seeded=False)[-1] == ("v3/", ["pointer.json"])
     assert listed(remote) == ({}, [])
+
+
+def test_the_seed_lists_a_followed_glyph_only_where_the_copies_differ(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    d1, crop, local = remote.dbs["glyph-atlas-v3"], ids(root), sqlite3.connect(root / "out" / "atlas.sqlite")
+    char = local.execute("SELECT id FROM graphemes LIMIT 1").fetchone()[0]
+    # Three glyphs both copies hold with a base, and one whose base D1 has dropped.
+    for db in (d1, local):
+        db.executemany("INSERT INTO form_bases(crop, char) VALUES(?, NULL)", [(crop[name],) for name in ("ex:a1", "ex:a2", "ex:b1")])
+    local.execute("INSERT INTO form_bases(crop, char) VALUES(?, NULL)", (crop["codh:g1"],))
+    # Since the local copy took them, D1 moved one on a revision and holds another base for the next.
+    d1.execute("UPDATE crops SET revision = revision + 1 WHERE id = ?", (crop["ex:a2"],))
+    d1.execute("UPDATE form_bases SET char = ? WHERE crop = ?", (char, crop["ex:b1"]))
+    d1.commit()
+    local.commit()
+    answers(publish, monkeypatch, "--seed", seeded=False)
+    assert listed(remote) == ({crop["ex:a2"]: 0, crop["ex:b1"]: 0, crop["codh:g1"]: 0}, [])
 
 
 def test_the_seed_is_refused_before_the_list_exists(layout, monkeypatch):  # noqa: F811
