@@ -907,6 +907,7 @@
   "form.link.remove": "{char}의 자형에서 제거",
   "structure.arrange": "구성 정리",
   "structure.close": "닫기",
+  "structure.disputed": "{item}에 대해 의견이 갈립니다",
   "structure.place": "{form} 여기로 옮기기",
   "structure.take": "{form} 여기서 빼기",
   "grapheme.disputed": "이견 있음",

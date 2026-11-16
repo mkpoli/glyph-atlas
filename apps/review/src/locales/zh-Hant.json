@@ -926,6 +926,7 @@
   "form.link.remove": "從{char}的字樣中移除",
   "structure.arrange": "整理構形",
   "structure.close": "關閉",
+  "structure.disputed": "讀者對{item}意見不一",
   "structure.place": "將{form}移到這裡",
   "structure.take": "將{form}從這裡移出",
   "grapheme.disputed": "有爭議",

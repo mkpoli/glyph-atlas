@@ -134,6 +134,14 @@ try {
   await browser.waitFor(barUnder(elsewhere, own), 30000)
   await open()
   await browser.waitFor(under(elsewhere, own), 20000)
+  // A move the two outweigh comes back, and the board says readers disagree.
+  await browser.evaluate(`${chip(own)}.parentElement.querySelector('.take').click()`)
+  await browser.waitFor(`!${chip(own)}.parentElement.querySelector('.take') && !${board}.querySelector('[aria-busy="true"]')`, 20000)
+  await browser.evaluate(`${chip(own)}.click()`)
+  await browser.evaluate(`${tray(to)}.click()`)
+  await browser.waitFor(`${board}.querySelector('.structure-notice')?.textContent === ${JSON.stringify(`Readers disagree about ${own}`)}`, 20000)
+  await browser.waitFor(under(elsewhere, own), 20000)
+  assert(JSON.stringify(filed(own).sort()) === JSON.stringify([elsewhere, elsewhere, to].sort()), `the outweighed filing was not saved: ${filed(own)}`)
   await browser.evaluate(`${chip(own)}.parentElement.querySelector('.take').click()`)
   await browser.waitFor(`!${chip(own)}.parentElement.querySelector('.take') && !${board}.querySelector('[aria-busy="true"]')`, 20000)
   assert(JSON.stringify(filed(own)) === JSON.stringify([elsewhere, elsewhere]), `the reader's own filing was not taken back alone: ${filed(own)}`)
@@ -141,6 +149,14 @@ try {
   await browser.goto(address, { waitFor: ready, timeout: 90000 })
   await browser.waitFor(barUnder(from, own), 30000)
   console.log(`PASS a filing another reader's outweighs is still taken back with its ×`)
+
+  // A click on the board's own margin lets a held form go and leaves the board open.
+  await open()
+  await browser.evaluate(`${chip(own)}.click()`)
+  const edge = await browser.evaluate(`(() => { const r = ${board}.getBoundingClientRect(); return { x: r.left + 6, y: r.top + 6 } })()`)
+  await browser.click(edge.x, edge.y)
+  assert(await browser.evaluate(`!!${board} && !${board}.querySelector('[aria-pressed="true"]')`), 'a click on the board\'s margin closes it, or keeps the form held')
+  await shut()
 
   // The keyboard: Enter picks the form up, the arrows aim at a 構形 without stepping to another crop,
   // Escape lets go without closing the board, and Enter puts the form down.

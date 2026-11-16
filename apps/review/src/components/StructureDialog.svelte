@@ -14,7 +14,7 @@
   import FormText from './FormText.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import { setStructure } from '../lib/cropForms.js'
-  import { composable } from '../lib/structures.js'
+  import { composable, NAMES } from '../lib/structures.js'
   import { isDescription } from '../lib/ids.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -26,7 +26,7 @@
   let dialog, board = $state(null)
   let known = $state(untrack(() => opened)), added = $state([]), query = $state('')
   let trays = $state([]), held = $state(null), over = $state(null), dragging = $state(false)
-  let busy = $state(null), landed = $state(null), error = $state(''), said = $state('')
+  let busy = $state(null), landed = $state(null), error = $state(''), notice = $state(''), said = $state('')
   const me = $derived(signedInUser()?.id ?? null)
   const listed = $derived.by(() => {
     const seen = new Set()
@@ -71,31 +71,46 @@
   const [send, receive] = crossfade({ duration: () => calm() ? 0 : 280, easing: cubicOut })
   const slide = { duration: () => calm() ? 0 : 220, easing: cubicOut }
 
+  // What the site holds of `names`, NAMES to a request, put over what the board knows. A reading
+  // asked before a later one, or before a move, is dropped when it answers.
+  let reads = 0
+  async function refresh(names) {
+    const turn = ++reads, asked = [...new Set(names)].filter(composable), chunks = []
+    for (let from = 0; from < asked.length; from += NAMES) chunks.push(asked.slice(from, from + NAMES))
+    const found = await Promise.all(chunks.map(chunk => read(chunk, new Map())))
+    if (turn === reads) absorb(new Map([...[...known].filter(([char]) => !asked.includes(char)), ...found.flatMap(part => [...part])]))
+  }
   let wrote = false
-  // A move shows at once and is read again once saved; a save the site refuses puts the form back.
-  async function write(char, stands, save) {
+  // A move shows at once and is read again once saved: a save the site refuses puts the form back,
+  // and one other readers outweigh says so. `to` is the tray the reader meant.
+  async function write(char, to, stands, save) {
     const before = known
-    busy = char; error = ''
+    // The opener reads again once the board closes, also when it closes before the site has answered.
+    busy = char; error = ''; notice = ''; wrote = true; reads += 1
     if (stands !== undefined) { known = new Map([...known, [char, stands]]); landed = stands.id }
-    try {
-      await save()
-      wrote = true
-      try { absorb(await read([char, ...listed.map(form => form.char)], known)) } catch (failure) { error = failure.message }
-    } catch (failure) { known = before; error = failure.message }
+    await tick()
+    chipOf(char)?.focus({ preventScroll: true })
+    let saved = true
+    try { await save() } catch (failure) { saved = false; known = before; error = failure.message }
+    // Read again either way: the site may hold a save whose answer was lost.
+    try { await refresh(listed.map(form => form.char)) } catch (failure) { if (saved) error = failure.message }
     busy = null
+    const stood = known.get(char)
+    if (saved && to && stood?.id !== to) notice = t('structure.disputed', { item: char })
+    said = [char, stood?.label].filter(Boolean).join(' · ')
     await tick()
     chipOf(char)?.focus({ preventScroll: true })
   }
   function place(char, tray) {
     if (known.get(char)?.id === tray.id) return
     if (mineOf(char) && home.get(char) === tray.id) return takeOut(char)
-    return write(char, { id: tray.id, label: tray.label, by: [me], others: [] }, () => setStructure(char, tray.target))
+    return write(char, tray.id, { id: tray.id, label: tray.label, by: [me], others: [] }, () => setStructure(char, tray.target))
   }
   function takeOut(char) {
     const mine = mineOf(char), back = trays.find(tray => tray.id === home.get(char))
     if (!mine || busy) return
     release()
-    return write(char, back ? { id: back.id, label: back.label, by: null, others: [] } : undefined, () => setStructure(char, { structure: mine }, { remove: true }))
+    return write(char, back?.id, back ? { id: back.id, label: back.label, by: null, others: [] } : undefined, () => setStructure(char, { structure: mine }, { remove: true }))
   }
   function release() { held = null; over = null; dragging = false }
   function pick(char) {
@@ -112,11 +127,9 @@
 
   // A drag with a mouse or a pen; a touch picks the form up with a tap, so the board still scrolls.
   let grip = null, skipClick = false
-  function trayAt(x, y) {
-    const under = document.elementsFromPoint(x, y).find(element => !grip.node.contains(element))
-    const to = under?.closest('[data-tray]')?.dataset.tray
-    return targets.includes(to) ? to : null
-  }
+  // The tray a point or a click aims at: the one it is in, when the held form can go there.
+  const aim = element => { const to = element?.closest?.('[data-tray]')?.dataset.tray; return targets.includes(to) ? to : null }
+  const trayAt = (x, y) => aim(document.elementsFromPoint(x, y).find(element => !grip.node.contains(element)))
   function down(event, char) {
     if (busy || !me || event.button !== 0 || !event.isPrimary || event.pointerType === 'touch') return
     grip = { pointer: event.pointerId, x: event.clientX, y: event.clientY, node: event.currentTarget.closest('.token'), char, moved: false }
@@ -145,8 +158,10 @@
     // The click that ends a drag is the drag's, not a pick.
     skipClick = true; setTimeout(() => { skipClick = false })
     // A form put down leaves from where it was let go; one let go elsewhere goes back.
-    if (over) drop(over)
-    else { settle(node); release() }
+    if (!over) { settle(node); release(); return }
+    drop(over)
+    // A form that moved has left this node behind; one that stays where it was goes back to its place.
+    tick().then(() => { if (node.isConnected && !node.inert) settle(node) })
   }
   function lost(event) {
     if (!grip || event.pointerId !== grip.pointer) return
@@ -156,7 +171,7 @@
   }
   function tap(event, char) {
     if (skipClick) { skipClick = false; event.stopPropagation(); return }
-    // With another form held, the click is the tray's: the held form is put down there.
+    // With another form held, the click is the board's: the held form is put down or let go.
     if (held && held !== char) return
     event.stopPropagation()
     pick(char)
@@ -167,8 +182,9 @@
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
     if (step) {
       event.preventDefault()
-      const at = targets.indexOf(over)
-      over = targets[at < 0 ? (step > 0 ? 0 : targets.length - 1) : (at + step + targets.length) % targets.length] ?? null
+      // The arrows follow the trays as they stand on the board.
+      const order = [...board.querySelectorAll('[data-tray]')].map(element => element.dataset.tray).filter(to => targets.includes(to)), at = order.indexOf(over)
+      over = order[at < 0 ? (step > 0 ? 0 : order.length - 1) : (at + step + order.length) % order.length] ?? null
       const tray = trays.find(tray => tray.id === over)
       if (over === OUT) said = out
       if (tray) { said = `${tray.label} · ${t('structure.place', { form: char })}`; board.querySelector(`[data-tray="${CSS.escape(over)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }
@@ -180,13 +196,27 @@
   }
   // Space activates a button as the key comes up, which would pick the form up again where it landed.
   function keyup(event) { if (event.key === ' ' && spaced) { spaced = false; event.preventDefault() } }
+  // A click with a form held puts it down on the tray clicked, or lets it go.
+  function clicked(event) {
+    if (!held) return
+    const to = aim(event.target)
+    if (to) drop(to)
+    else release()
+  }
+  // A click on the backdrop closes the board; one on the board's own margins only lets go.
+  function margin(event) {
+    if (event.target !== dialog) return
+    const box = dialog.getBoundingClientRect()
+    if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) dialog.close()
+    else release()
+  }
 
   async function add(item) {
     query = ''
     if (!composable(item.char)) return
     if (!listed.some(form => form.char === item.char)) {
       added = [...added, { char: item.char, script: item.script ?? '', lang: item.lang ?? '' }]
-      try { absorb(await read([item.char], known)) } catch (failure) { error = failure.message }
+      try { await refresh([item.char]) } catch (failure) { error = failure.message }
     }
     await tick()
     const chip = chipOf(item.char)
@@ -201,7 +231,7 @@
     dialog.showModal()
     // `showModal` focuses the close button; the work starts at the form the reader came from.
     if (current) tick().then(() => chipOf(current)?.focus({ preventScroll: true }))
-    read(listed.map(form => form.char), opened).then(absorb, failure => { error = failure.message })
+    refresh(listed.map(form => form.char)).catch(failure => { error = failure.message })
   })
 </script>
 
@@ -210,24 +240,25 @@
   <button type="button" class="piece" class:current={form.char === current} data-form={form.char} aria-pressed={held === form.char} aria-busy={busy === form.char}
     aria-disabled={!me || Boolean(busy)} title={titleOf(form)} aria-label={titleOf(form)}
     onpointerdown={event => down(event, form.char)} onpointermove={move} onpointerup={up} onpointercancel={lost} onlostpointercapture={lost}
-    onclick={event => tap(event, form.char)} onkeydown={event => keys(event, form.char)} onkeyup={keyup}>
+    onclick={event => tap(event, form.char)} onkeydown={event => keys(event, form.char)}>
     <FormText text={form.char} script={form.script} lang={form.lang} />
   </button>{#if mine}<button type="button" class="take" disabled={Boolean(busy)} aria-label={t('structure.take', { form: form.char })} title={t('structure.take', { form: form.char })}
     onclick={event => { event.stopPropagation(); takeOut(form.char) }}>×</button>{/if}
 {/snippet}
 
+<svelte:window onkeyup={keyup} />
+
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<dialog class="structure-dialog" bind:this={dialog} aria-labelledby="{id}-title" oncancel={cancel} onclose={closed} onclick={event => { if (event.target === dialog) dialog.close() }}>
+<dialog class="structure-dialog" bind:this={dialog} aria-labelledby="{id}-title" oncancel={cancel} onclose={closed} onclick={margin}>
   <header>
     <h2 class="overline" id="{id}-title">{t('structure.arrange')}</h2>
     <button type="button" class="icon-button" aria-label={t('structure.close')} onclick={() => dialog.close()}>×</button>
   </header>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="board" class:holding={held} class:dragging bind:this={board} onclick={() => { if (held) release() }}>
+  <div class="board" class:holding={held} class:dragging bind:this={board} onclick={clicked}>
     {#each placed as tray (tray.id)}
       <section class="tray" class:target={targets.includes(tray.id)} class:over={over === tray.id} class:landed={landed === tray.id} onanimationend={() => { if (landed === tray.id) landed = null }} data-tray={tray.id} animate:flip={slide}
-        aria-label={held && targets.includes(tray.id) ? `${tray.label} · ${t('structure.place', { form: held })}` : tray.label}
-        onclick={event => { if (held && targets.includes(tray.id)) { event.stopPropagation(); drop(tray.id) } }}>
+        aria-label={held && targets.includes(tray.id) ? `${tray.label} · ${t('structure.place', { form: held })}` : tray.label}>
         <h3 lang="zh">{tray.label}</h3>
         <div class="tray-forms">
           {#each tray.forms as form (form.char)}
@@ -249,12 +280,13 @@
       </section>
     {/if}
     {#if out}
-      <button type="button" class="tray out target" class:over={over === OUT} data-tray={OUT} onclick={event => { event.stopPropagation(); drop(OUT) }}>{out}</button>
+      <button type="button" class="tray out target" class:over={over === OUT} data-tray={OUT}>{out}</button>
     {/if}
   </div>
   <footer>
     <CharacterSearch compact codePoints bind:value={query} label={t('form.add')} placeholder={t('search.placeholder')} onselect={add} />
     {#if error}<p class="structure-error" role="alert">{error}</p>{/if}
+    {#if notice}<p class="structure-notice" role="status">{notice}</p>{/if}
   </footer>
   <p class="said" aria-live="polite">{said}</p>
 </dialog>
@@ -297,7 +329,8 @@
     font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
   footer{display:flex;flex-direction:column;gap:8px}
   footer :global(.character-search){width:100%;max-width:320px;min-width:0}
-  .structure-error{margin:0;font-size:12px;line-height:1.4;color:var(--wrong)}
+  .structure-error,.structure-notice{margin:0;font-size:12px;line-height:1.4;color:var(--wrong)}
+  .structure-notice{color:var(--muted)}
   .said{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   @media(max-width:700px){.structure-dialog{padding:16px}.piece,.ghost{font-size:19px;padding:3px 8px}}
   @media(prefers-reduced-motion:reduce){.tray{transition:none}.tray.landed{animation-duration:1ms}}
