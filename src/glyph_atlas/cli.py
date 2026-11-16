@@ -1153,7 +1153,7 @@ def import_tangut_tongyin(
     out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/tangut-tongyin"),
     cache: Annotated[Path | None, typer.Option(help="image cache directory")] = None,
 ) -> None:
-    """Import the head characters of 同音 (甲種本) from the plates of 俄藏黑水城文獻 vol. 7."""
+    """Import the head characters of 同音 (甲種本 and 乙種本) from the plates of 俄藏黑水城文獻 vol. 7."""
     from .importers import tangut_tongyin
 
     try:
