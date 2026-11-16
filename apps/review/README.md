@@ -29,7 +29,7 @@ ATLAS_REVIEW_API=http://127.0.0.1:8770 devrun bun run --cwd apps/review preview
 Open <http://127.0.0.1:4173/>. For frontend development, run `vite dev` with the same variable.
 Run development servers through `devrun`.
 
-The deployed site lets one address make 300 requests for pages and data a minute and locks out an
+The deployed site lets one address make 900 requests for pages and data a minute and locks out an
 address that goes over (`apps/cloudflare/src/rateLimit.ts`). A page server pointed at it with
 `ATLAS_REVIEW_API=https://glyphatlas.org` goes uncounted when `RATE_LIMIT_PASS` holds the Worker
 secret of that name; any other tool sends the secret in the `x-rate-limit-pass` header.

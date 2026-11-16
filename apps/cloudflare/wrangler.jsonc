@@ -65,7 +65,7 @@
                  // (`src/rateLimit.ts`, whose LIMIT and PERIOD these figures repeat). An address that goes over
                  // is locked out, for longer each time. A request carrying the secret RATE_LIMIT_PASS in
                  // `x-rate-limit-pass` is not counted: `wrangler secret put RATE_LIMIT_PASS`.
-                 {"name": "REQUESTS", "namespace_id": "4408", "simple": {"limit": 300, "period": 60}}],
+                 {"name": "REQUESTS", "namespace_id": "4408", "simple": {"limit": 900, "period": 60}}],
   // The image search's vectors, one index per classifier encoder (`glyph-atlas-similar-<encoder[:8]>`).
   // `scripts/publish_reverse.sh create` makes it and `publish` fills it; it has to exist before a deploy,
   // and SIMILAR_INDEX_NAME above names it too.

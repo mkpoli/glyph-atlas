@@ -3,15 +3,15 @@
 // locks the address out for longer (LOCKOUTS). A locked address is answered 429 from what the isolate
 // and the edge cache hold, without a database or bucket read.
 //
-// Measured on 16 November 2026 in Cloudflare's analytics: a reviewer on a tablet reached about 630
-// requests in a minute, most of them crop images, which are not counted; the project's own tools
-// (publish checks, screenshots, the review export) reach about 1,280 a minute from one address and send
-// the pass; a counted request costs about 35 ms of CPU, its D1 rows and three to five R2 reads. In front
-// of this, an edge rule refuses an address over 300 requests in 10 seconds for 10 seconds.
+// Counted requests from one address in a minute, 13 to 16 November 2026, in Cloudflare's analytics:
+// browsers peaked at 632 (a tablet), 507, 470, 305, 292 and 280, and several addresses a day passed 300.
+// The project's own tools (`node`, headless Chrome, `Bun`, `glyph-atlas-check`) peaked at 1,100 to 1,280
+// and send the pass. A counted request costs about 35 ms of CPU, its D1 rows and three to five R2 reads.
+// In front of this, an edge rule refuses an address over 300 requests in 10 seconds for 10 seconds.
 import { addressKey } from './reverse';
 
 /** Counted requests one address may make in PERIOD seconds. The `REQUESTS` binding in `wrangler.jsonc` repeats both. */
-export const LIMIT = 300;
+export const LIMIT = 900;
 export const PERIOD = 60;
 /** The seconds an address is locked out on its first, second and third strike, and on every later one. */
 export const LOCKOUTS = [60, 600, 3600, 86400];
