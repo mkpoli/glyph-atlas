@@ -10,6 +10,7 @@ import { Problem } from '../busy';
 import { body, canonical, literal, text } from '../input';
 import { setForm, type ClaimTools } from './claims';
 import { STALE_CODE } from '../atlas3Crops';
+import { catalogueKey, catalogueStamps } from '../atlas3Stamps';
 import { reviewsPage } from './reviews';
 import { reject } from './admin';
 import { followCorpus } from './forms';
@@ -614,6 +615,22 @@ describe('an undo', () => {
     expect(await send(env, path, {})).toEqual({ status: 200, body: { id: uuid(1), results: [], duplicate: true } });
     expect(db.query('SELECT reviews,rounds FROM actor_stats').all()).toEqual([{ reviews: 0, rounds: 0 }]);
     expect(db.query('SELECT count(*) AS n FROM events WHERE kind=5').get()).toEqual({ n: mode === 'marks' ? 1 : 0 });
+    expect(db.query(`SELECT value FROM site WHERE key='undos'`).get()).toEqual({ value: '1' });
+  });
+
+  it('moves the catalogue stamps when it changes no crop, once', async () => {
+    const { db, env, ids } = setup();
+    db.query('UPDATE crops SET state=1 WHERE id=?').run(ids[0]);
+    await send(env, '/atlas/corrections', { id: uuid(1), character: 'は', crops: [local(ids[0])] });
+    const fresh = { ...env, CATALOGUE_LAG: '0' } as Env, path = `/atlas/rounds/${uuid(1)}/undo`;
+    const before = await catalogueStamps(fresh);
+    expect((await send(env, path, {})).status).toBe(200);
+    const after = await catalogueStamps(fresh);
+    expect(after).toEqual({ ...before!, undos: 1 });
+    expect(catalogueKey(after)).not.toBe(catalogueKey(before));
+    // Asked again, the submission is undone already and is not counted twice.
+    expect((await send(env, path, {})).body.duplicate).toBe(true);
+    expect(await catalogueStamps(fresh)).toEqual(after);
   });
 
   it('puts back what the round changed, and its marks', async () => {

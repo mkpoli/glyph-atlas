@@ -72,7 +72,7 @@ describe('a kept listing', () => {
   });
   it('keeps answers for a minute of a publication, whatever is reviewed in it', () => {
     const env = { CATALOGUE_LAG: '60' } as unknown as Env, minute = 60_000;
-    const stamps = { gen: 3, import: 7, event: 10, submission: 4, undone: 0, ledger: null, decision: null };
+    const stamps = { gen: 3, import: 7, event: 10, submission: 4, undos: 0, ledger: null, decision: null };
     const at = (now: number, s = stamps, pub = 'p1') => keptFor(env, s, pub, now);
     expect(at(5 * minute + 1)).toBe(at(6 * minute - 1));
     expect(at(5 * minute + 1, { ...stamps, event: 11 })).toBe(at(5 * minute + 1));
