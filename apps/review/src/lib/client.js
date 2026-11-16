@@ -104,8 +104,8 @@ useSender({ send: resend, settle, mine: entry => mine(entry, currentUser()), kno
 let currentUser = () => null, readerKnown = () => false
 if (typeof window !== 'undefined') import('./session.svelte.js').then(session => { currentUser = session.signedInUser; readerKnown = session.readerKnown }).catch(() => {})
 
-// A save the site cannot take yet (the database is busy, the browser is offline, writes are paused)
-// is kept on this device and sent in order when it can be; a save made while others wait joins the
+// A save the site cannot take yet (the database is busy, the browser is offline, writes are paused,
+// the address has asked too often) is kept on this device and sent in order when it can be; a save made while others wait joins the
 // end of the line, so none overtakes one made before it. A save that names no submission is never
 // kept: sending it twice could record it twice. One kept while writes are paused throws `kept()` at
 // once, since the pause may outlast the page.
@@ -116,11 +116,14 @@ async function save(path, body, send, options) {
   try { answered = await write(path, body, { send, options }) }
   catch (error) {
     if (canKeep && offline(error)) return deliver(path, body, await reader(), 0)
+    // Nobody was signed in, and the site refused to start a session for an address that asks too often.
+    if (canKeep && error?.status === 429) return deliver(path, body, null, error.retryAfter ?? 0)
     // Nobody was signed in, and starting a session is a write too.
     if (canKeep && error?.code === 'paused') { await keep(path, body, null, error.retryAfter); throw kept() }
     throw error
   }
-  if (canKeep && isBusy(answered.response, answered.value)) return deliver(path, body, answered.user, retryAfter(answered.response))
+  // A busy database, or an address that asks too often (429): the save is kept and sent after the wait the site names.
+  if (canKeep && (isBusy(answered.response, answered.value) || answered.response.status === 429)) return deliver(path, body, answered.user, retryAfter(answered.response))
   if (canKeep && isPaused(answered.response, answered.value)) { await keep(path, body, answered.user, retryAfter(answered.response)); throw kept() }
   return settle(answered)
 }

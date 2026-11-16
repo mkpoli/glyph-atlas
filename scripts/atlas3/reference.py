@@ -106,6 +106,7 @@ from publish import BUCKET, CF, R2_REMOTE, applied, lit, send, upload
 from glyph_atlas import reference_input, refs
 from glyph_atlas import structures as structure_layer
 from glyph_atlas.representation import is_sequence
+from glyph_atlas.site import pass_headers
 
 SCHEMA = CF / "migrations-atlas" / "0004_reference.sql"
 PREFIX = "v3/reference/"
@@ -606,7 +607,7 @@ def check_site(base):
     problems = []
     for term, char in PROBES.items():
         url = f"{base.rstrip('/')}/layers/suggest?q={urllib.parse.quote(term)}&limit=48"
-        request = urllib.request.Request(url, headers={"user-agent": "glyph-atlas-check"})
+        request = urllib.request.Request(url, headers={"user-agent": "glyph-atlas-check", **pass_headers(url)})
         with urllib.request.urlopen(request, timeout=60) as answer:
             chars = [item.get("char") for item in json.load(answer).get("items", [])]
         if char not in chars:

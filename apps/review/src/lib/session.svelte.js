@@ -14,7 +14,7 @@ let current = null
  * known once the page runs in a browser, the image style, whether a save in the inspector goes on to
  * the next crop, and the collection-progress dialog.
  */
-export function createSession(account = { user: null, providers: [] }) {
+export function createSession(account = { user: null, known: false, providers: [] }) {
   const state = $state({ ready: false, user: account.user, providers: account.providers, signingIn: false, ink: 'original', advance: false, progress: false })
   let starting = null, begun
   const session = {
@@ -29,9 +29,9 @@ export function createSession(account = { user: null, providers: [] }) {
       // Most crops in the collection are right, so a save closes the inspector unless the reader has
       // chosen to go through them in a row.
       state.advance = stored('atlas.advance', false) === true
-      // The page arrives knowing who is signed in. If it could not tell, the browser asks, waiting out a
-      // busy database, so a reader who is signed in is never taken for a new one.
-      if (!state.user) try { state.user = (await request('/api/account')).user ?? null } catch { /* Signed out. */ }
+      // The page arrives knowing who is signed in, or that nobody is. If its server could not tell, the
+      // browser asks, waiting out a busy database, so a reader who is signed in is never taken for a new one.
+      if (!account.known) try { state.user = (await request('/api/account')).user ?? null } catch { /* Signed out. */ }
       // A browser that reviewed before accounts brings that work into its session.
       try { if (stored(LEGACY, null)) await session.ensure() } catch { /* The first write tries again. */ }
       state.ready = true

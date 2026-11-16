@@ -4,8 +4,8 @@
 // `/health`. Counts come from the publication's answers plus the reviews since (`atlas3Answers.ts`);
 // listings deal crops in shuffle order from the indexes of migration 0011.
 import { codeNames, cropOf, publicId, type Entry } from '../atlas3';
-import { bookCounts, codePoints, collectedCounts, corpusCounts, galleryIndex, galleryShard, productionKeys, type SampleEntry } from '../atlas3Answers';
-import { currentPointer, filedClaims } from '../atlas3Gallery';
+import { bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, galleryIndex, galleryShard, productionKeys, type SampleEntry } from '../atlas3Answers';
+import { filedClaims } from '../atlas3Gallery';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
 import { catalogueKey, catalogueStamps, publicationKey, type CatalogueStamps } from '../atlas3Stamps';
 import { Problem } from '../busy';

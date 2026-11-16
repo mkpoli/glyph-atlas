@@ -1,29 +1,10 @@
 // Character galleries on the new storage layout: counts from the publication's answers plus the
 // reviews since, and pages of crops read from index ranges in the order they show.
 import { cropOf, publicId } from './atlas3';
+import { answer, currentPointer } from './atlas3Answers';
 import { keyHeads } from './ledger';
 
 type Json = any;
-
-// The publication the answers come from, `v3/pointer.json` (scripts/atlas3/answers.py). An isolate
-// reads it again after POINTER_HELD milliseconds, so a new publication shows within a minute.
-export type Pointer = { pub: string; through_gen: number };
-const POINTER_HELD = 60_000;
-let pointer: { at: number; read: Promise<Pointer> } | null = null;
-async function gzipped(object: R2ObjectBody): Promise<Json> {
-  return await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json();
-}
-export function currentPointer(env: Env, now = Date.now()): Promise<Pointer> {
-  if (pointer && now - pointer.at < POINTER_HELD) return pointer.read;
-  const read = env.MEDIA.get('v3/pointer.json').then(async object => {
-    if (!object) throw new Error('v3/pointer.json is missing');
-    return await gzipped(object) as Pointer;
-  });
-  const held = { at: now, read };
-  read.catch(() => { if (pointer === held) pointer = null; });
-  pointer = held;
-  return read;
-}
 
 // A count cell: crops of one kind, style, state and withheld flag (`quiz` 0), witness decade and
 // visual group, in the codes of `codes`; null is unknown. Cells from the reviews since the publication
@@ -31,22 +12,12 @@ export function currentPointer(env: Env, now = Date.now()): Promise<Pointer> {
 export type Cell = { kind: number; style: number | null; state: number | null; quiz: number | null; decade: number | null;
   visual_group: number | null; n: number; fresh?: true };
 export const SHARDS = 256;
+// A shard of the publication's counts is one of its answers: an isolate keeps the last SHARDS_HELD it
+// read, apart from the other answers, and the edge keeps each one a day (`answer`).
 const SHARDS_HELD = 64;
-type Shard = { chars: Record<string, Json[]>; families: Record<string, Json[]> };
+type Shard = { chars?: Record<string, Json[]>; families?: Record<string, Json[]> };
 const shards = new Map<string, Promise<Shard>>();
-function shard(env: Env, pub: string, index: number): Promise<Shard> {
-  const key = `v3/pub/${pub}/counts/${index}.json.gz`, hit = shards.get(key);
-  if (hit) { shards.delete(key); shards.set(key, hit); return hit; }
-  const read = env.MEDIA.get(key).then(async object => {
-    if (!object) throw new Error(`${key} is missing`);
-    const body = await gzipped(object);
-    return { chars: body.chars ?? {}, families: body.families ?? {} } as Shard;
-  });
-  read.catch(() => { if (shards.get(key) === read) shards.delete(key); });
-  shards.set(key, read);
-  while (shards.size > SHARDS_HELD) shards.delete(shards.keys().next().value!);
-  return read;
-}
+const shard = (env: Env, pub: string, index: number): Promise<Shard> => answer(env, pub, `counts/${index}.json.gz`, shards, SHARDS_HELD);
 const cellOf = ([kind, style, state, quiz, decade, visual_group, n]: Json[]): Cell => ({ kind, style, state, quiz, decade, visual_group, n });
 // The tally's key columns write -1 for unknown, since a WITHOUT ROWID key cannot hold NULL.
 const known = (value: number) => value === -1 ? null : value;

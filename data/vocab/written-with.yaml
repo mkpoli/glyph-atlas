@@ -1,0 +1,49 @@
+# Characters of another script that a grapheme is also written with.
+#
+# The 異体字 graph (kanji-variants.tsv) relates ideographs to ideographs. A kana ligature that stands for
+# a word a kanji writes is outside it: ヿ is the katakana コト and is also written where 事 would be. A
+# row here says so, and the card of the grapheme lists the character among its 字体 as one it shares
+# (兼用), in the colour of its own script; the character keeps its own card, grapheme and crops.
+#
+# Fields of a row, keyed by the character's code point:
+#   grapheme   the head of the grapheme it also writes
+#   relation   the relation, by a name of the variant graph (`semantic`: the two have the same meaning)
+#   tier       `attested` where a source states that the character stands for the grapheme's character,
+#              `editorial` where the sources state less and the link is this table's
+#   evidence   what the sources state, each with a source of `sources` and the statement itself
+#
+# A row with no evidence is a guess and does not belong here.
+sources:
+  l2-24-150: >-
+    Gen Kojitani, "Proposal for missing three Kana-Ligatures", L2/24-150, 2024-06-21
+    (https://www.unicode.org/L2/L2024/24150-three-kana-ligatures.pdf), read 2026-11-16
+  ja-wikipedia-koto: >-
+    ja.wikipedia 「ヿ」, revision 111081382 of 2026-09-20
+    (https://ja.wikipedia.org/w/index.php?oldid=111081382), read 2026-11-16; a wiki article, which cites
+    『普通日本文典』 and 『仮字本末』 for the two origins it gives
+  en-wiktionary-koto: >-
+    en.wiktionary "ヿ", revision 89844048 of 2026-03-14
+    (https://en.wiktionary.org/w/index.php?oldid=89844048), read 2026-11-16; a wiki entry with no
+    citation of its own
+writers:
+  # ヿ KATAKANA DIGRAPH KOTO. Two origins are given, the top of cursive 事 and a ligature of コ and ト;
+  # both sources name 事.
+  U+30FF:
+    grapheme: U+4E8B
+    relation: semantic
+    tier: attested
+    evidence:
+      - source: ja-wikipedia-koto
+        detail: 字源「「ヿ」は「事」の草書の上部、または「コト」の合字である」
+      - source: en-wiktionary-koto
+        detail: 'Etymology "Derived from 事."; noun "abbreviation of 事 (koto, “thing, matter”)"'
+  # 𛄣 HIRAGANA DIGRAPH KOTO, Unicode 18.0: こ and と set as one. The proposal that encoded it says
+  # it writes the word こと "thing" and nothing else, and does not name 事. That 事 is the kanji of that
+  # word is this table's link, made at the request of the site's owner (mkpoli, 2026-11-16).
+  U+1B123:
+    grapheme: U+4E8B
+    relation: semantic
+    tier: editorial
+    evidence:
+      - source: l2-24-150
+        detail: 'Editorial link; the proposal does not name 事. Table 1: "representing a Japanese word “koto”. This word means “thing”." and "Even in vertically written documents, it is not used for any other purpose than “thing”."'

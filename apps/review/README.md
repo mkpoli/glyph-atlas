@@ -29,6 +29,13 @@ ATLAS_REVIEW_API=http://127.0.0.1:8770 devrun bun run --cwd apps/review preview
 Open <http://127.0.0.1:4173/>. For frontend development, run `vite dev` with the same variable.
 Run development servers through `devrun`.
 
+The deployed site lets one address make 900 requests for pages and data a minute and locks out an
+address that goes over (`apps/cloudflare/src/rateLimit.ts`). A page server pointed at it with
+`ATLAS_REVIEW_API=https://glyphatlas.org` goes uncounted when `RATE_LIMIT_PASS` holds the Worker
+secret of that name. The Python tools that ask the site (`scripts/fetch_reviews.py`,
+`scripts/atlas3/reference.py --check`) read the same variable through `glyph_atlas.site.pass_headers`;
+any other tool sends the secret in the `x-rate-limit-pass` header.
+
 Accounts are always served by the Worker over D1, also beside the local service. Put a
 `BETTER_AUTH_SECRET` (`openssl rand -hex 32`) in `apps/cloudflare/.dev.vars` and apply the migrations
 to the local database once: `bunx wrangler d1 migrations apply glyph-atlas --local` in `apps/cloudflare`.

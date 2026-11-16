@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { d1 } from './forms.test';
-import { catalogueKey, catalogueStamps, catalogueVersion, publicationKey, stampsQuery } from './atlas3Stamps';
+import { catalogueKey, catalogueStamps, catalogueVersion, publicationKey, stampsQuery, undoCountQuery } from './atlas3Stamps';
 
 const databases: Database[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); });
@@ -27,9 +27,9 @@ describe('the catalogue version', () => {
       `UPDATE generation SET gen=2 WHERE id=0`,
       `INSERT INTO submissions(id,key,actor,request,response,at) VALUES(1,'a:1',1,'{}','{}',1)`,
       `INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,16777216,1,0,2,1,1,1,0)`,
-      `UPDATE submissions SET undone=1 WHERE id=1`,
-      // An undo that takes its event back still moves the version, by the undone count.
-      `DELETE FROM events WHERE id=1; INSERT INTO submissions(id,key,actor,request,response,at,undone) VALUES(2,'a:2',1,'{}','{}',2,1)`,
+      // An undo that adds no event still moves the version, by its count.
+      undoCountQuery(),
+      undoCountQuery(),
       `INSERT INTO ledger_submissions VALUES('l1','a','{}','{}','t')`,
       `INSERT INTO form_decisions(seq,id,at,actor,kind,family,revision,units,crops,note) VALUES(1,'d1','t','a','k','f','r','[]','[]','')`,
     ]) {
@@ -62,9 +62,10 @@ describe('the catalogue version', () => {
     expect(await catalogueVersion(env(60), at + 100_000)).not.toBe(first);
   });
 
-  it('reads each stamp by an index seek, the undone count from undone rows only', () => {
+  it('reads each stamp by a key seek, however many submissions are undone', () => {
     const { db } = setup();
     const plan = (db.query(`EXPLAIN QUERY PLAN ${stampsQuery()}`).all() as { detail: string }[]).map(row => row.detail);
-    expect(plan.filter(detail => detail.startsWith('SCAN')).sort()).toEqual(['SCAN CONSTANT ROW', 'SCAN submissions USING COVERING INDEX submission_undone']);
+    expect(plan.filter(detail => detail.startsWith('SCAN'))).toEqual(['SCAN CONSTANT ROW']);
+    expect(plan.filter(detail => detail.startsWith('SEARCH'))).toHaveLength(7);
   });
 });

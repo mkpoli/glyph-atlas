@@ -31,6 +31,10 @@ A word is a row of its own, and a spelling is linked to the word, not to another
 - Two spellings are related only through a word they both write: `refs.spellings_of(word)` and
   `refs.words_of(spelling)`. No pair is stored, no row enters the 異体字 graph, a grapheme family or a
   gallery, and the lists do not chain through a second word.
+- Amended 17 November 2026: a kana ligature that stands for one word alone is listed on the card of
+  the kanji that writes that word, by `data/vocab/written-with.yaml`. ヿ is given by its sources as
+  derived from 事 (`attested`); 𛄣 is given only as the word こと "thing", so its link to 事 is the
+  table's (`editorial`). Neither joins 事's family or a gallery.
 
 The tiers are the ledger's (`docs/design/form-model.md`). A dictionary, a reading table and a forum
 answer state something and are `attested`, each with its weakness in the citation. A transcriber's

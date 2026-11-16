@@ -3,11 +3,27 @@
 // glyphs, and the homepage sample. A count is the answer plus the `tally` rows above the pointer's
 // generation, so a review shows at once.
 import { codeNames } from './atlas3';
-import { currentPointer } from './atlas3Gallery';
 import { categoryOf } from './category';
 import type { Timing } from './timing';
 
 type Json = any;
+
+// The publication the answers come from, `v3/pointer.json` (scripts/atlas3/answers.py). An isolate
+// reads it again after POINTER_HELD milliseconds, so a new publication shows within a minute.
+export type Pointer = { pub: string; through_gen: number };
+const POINTER_HELD = 60_000;
+let pointer: { at: number; read: Promise<Pointer> } | null = null;
+export function currentPointer(env: Env, now = Date.now()): Promise<Pointer> {
+  if (pointer && now - pointer.at < POINTER_HELD) return pointer.read;
+  const read = env.MEDIA.get('v3/pointer.json').then(async object => {
+    if (!object) throw new Error('v3/pointer.json is missing');
+    return await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json() as Pointer;
+  });
+  const held = { at: now, read };
+  read.catch(() => { if (pointer === held) pointer = null; });
+  pointer = held;
+  return read;
+}
 
 /** A text's code points as the site keys a grapheme: `U+306F U+3099`. */
 export const codePoints = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
@@ -65,12 +81,24 @@ export const tallyDeltasQuery = () => `SELECT kind,char,book,production,state,qu
   WHERE gen>? GROUP BY kind,char,book,production,state,quiz`;
 type Delta = { kind: number; char: number; book: number; production: number; state: number; quiz: number; n: number };
 // The deltas move only with a review, an undo or a publication, each of which moves the catalogue
-// stamps, so an isolate keeps the last read under the publication, its generation and the stamps' key.
+// stamps, so an isolate keeps the last read under the publication, its generation and the stamps' key,
+// and the edge keeps each read under the same key for DELTAS_EDGE_SECONDS: an isolate new to a key
+// another has read takes its copy, and D1 reads every row above the generation once per location.
+// A key is read before its deltas, so a copy is never older than the stamps that name it, and a
+// reviewer's own save, which moves the stamps, is read afresh.
+const DELTAS_EDGE_SECONDS = 300;
 let deltasHeld: { key: string; read: Promise<Delta[]> } | null = null;
 export function tallyDeltas(env: Env, pub: string, through: number, stamps: string): Promise<Delta[]> {
   const key = `${pub}|${through}|${stamps}`;
   if (deltasHeld?.key === key) return deltasHeld.read;
-  const read = env.ATLAS.prepare(tallyDeltasQuery()).bind(through).all<Delta>().then(r => r.results);
+  const read = (async () => {
+    const edge = new Request(`https://glyphatlas.org/_deltas/${encodeURIComponent(key)}`);
+    const kept = await caches.default.match(edge).then(hit => hit ? hit.json() as Promise<Delta[]> : null).catch(() => null);
+    if (kept) return kept;
+    const rows = (await env.ATLAS.prepare(tallyDeltasQuery()).bind(through).all<Delta>()).results;
+    await caches.default.put(edge, Response.json(rows, { headers: { 'cache-control': `public, max-age=${DELTAS_EDGE_SECONDS}` } })).catch(() => {});
+    return rows;
+  })();
   const held = { key, read };
   read.catch(() => { if (deltasHeld === held) deltasHeld = null; });
   deltasHeld = held;
