@@ -248,8 +248,9 @@ the local copy or in `out/mirror.sqlite` stops the run before either changes.
 
 The crops the Worker changed before it kept the list are listed once by `answers.py --seed`, which
 sends `migrations-atlas/0019_touched_seed.sql` under the stamp `migration:0019`: every crop an event
-of a generation above 0 names and every corpus glyph with a `form_bases` row, which a forms decision
-moved to its form. `--seed --dry-run` prints how many crops each would list and writes nothing; a
+of a generation above 0 names, and, listed by id in the same file, every corpus glyph a forms decision
+moved (one with a `form_bases` row) whose base, character or revision D1 and the local copy hold
+differently. `--seed --dry-run` prints how many crops each would list and writes nothing; a
 second `--seed` finds the stamp and writes nothing. A publication is refused until that stamp is
 there. The order of the rollout:
 

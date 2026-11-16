@@ -28,11 +28,12 @@ local copy as it then stands. A dry run reads how many crops are listed, writes 
 local copy as it is, and changes neither database.
 
 `--seed` lists, once, the crops the Worker changed before it kept the list (migration 0019, stamp
-`migration:0019`): every crop an event of a generation above 0 names and every corpus glyph with a
-`form_bases` row, which a forms decision moved to its form. It runs after the Worker that lists
-touched crops is deployed, and needs migration 0018's tables; with `--dry-run` it prints how many
-crops each of the two would list and writes nothing. A publication is refused until the seed's stamp
-is there, since its answers would count none of those crops' changes.
+`migration:0019`): every crop an event of a generation above 0 names, and every corpus glyph a forms
+decision moved (one with a `form_bases` row) whose base, character or revision D1 and the local copy
+hold differently. It runs after the Worker that lists touched crops is deployed, and needs migration
+0018's tables; with `--dry-run` it prints how many crops each of the two would list and writes
+nothing. A publication is refused until the seed's stamp is there, since its answers would count
+none of those crops' changes.
 
 - `counts/<shard>.json.gz`: per character (grapheme id, in shard id % SHARDS), one cell per kind,
   style, state, withheld, witness decade and visual group, with its number of crops. Codes are the
@@ -405,28 +406,56 @@ def main():
         publication(args.dry_run)
 
 
+# A followed glyph as the seed compares it: its base, its character and its revision, which every write
+# of a crop raises. Glyphs one query reads from D1, and crops one statement of the seed lists (D1
+# refuses a statement over 100 KB).
+FOLLOWED = "SELECT b.crop, b.char AS base, c.char, c.revision FROM form_bases b LEFT JOIN crops c ON c.id = b.crop"
+FOLLOWED_CHUNK = 25000
+SEED_ROWS = 4000
+
+
+def moved(atlas):
+    """The corpus glyphs a forms decision moved that D1 and the local copy (`atlas`) hold differently,
+    in order, and how many D1 holds: a glyph with a `form_bases` row in either whose base, character or
+    revision differs, or which only one of the two holds. A follow recorded no event, and before
+    `bumps` (migration 0016) no revision of the store's either, so the comparison is what finds it; a
+    glyph both hold alike has not changed since the local copy took it."""
+    local = {crop: tuple(rest) for crop, *rest in atlas.execute(FOLLOWED)}
+    differing, held, last = set(), 0, -1
+    while rows := query(DATABASE, f"{FOLLOWED} WHERE b.crop > {last} ORDER BY b.crop LIMIT {FOLLOWED_CHUNK}"):
+        for r in rows:
+            if local.pop(r["crop"], None) != (r["base"], r["char"], r["revision"]):
+                differing.add(r["crop"])
+        held, last = held + len(rows), rows[-1]["crop"]
+    return sorted(differing | set(local)), held
+
+
 def seed(dry_run):
     """List in `touched` the crops the Worker changed before it kept the list (migration 0019), once: the
     file goes to D1 whole with its stamp, and a database that holds the stamp is left as it is. It runs
     once the Worker that lists touched crops is deployed, so a crop changed before the deploy is found
-    here and one changed after it is listed by the Worker. A dry run prints how many crops each of the
-    file's two statements would list and writes nothing."""
+    here and one changed after it is listed by the Worker. The reviewed crops are the migration's own
+    statement; the followed glyphs are those `moved` finds, listed by id. A dry run prints how many
+    crops each would list and writes nothing."""
     if not query(DATABASE, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'touched'"):
         sys.exit(f"{DATABASE} has no `touched` to list crops in (migration 0018); run publish.py --migrate first")
     listed = "SELECT count(*) AS n FROM touched"
     if applied(DATABASE, SEED_STAMP):
         print(f"the seed is in place (stamp {SEED_STAMP}); `touched` lists {query(DATABASE, listed)[0]['n']} crops", flush=True)
         return
+    followed, held = moved(sqlite3.connect(f"file:{OUT / 'atlas.sqlite'}?mode=ro", uri=True))
     if dry_run:
-        found = query(DATABASE, "SELECT (SELECT count(DISTINCT crop) FROM events WHERE gen > 0) AS reviewed, "
-                                "(SELECT count(*) FROM form_bases) AS followed")[0]
-        print(f"dry run: the seed would list {found['reviewed']} crops named by events of a generation above 0 and "
-              f"{found['followed']} glyphs with a `form_bases` row, a crop of both once; `touched` lists "
-              f"{query(DATABASE, listed)[0]['n']} now, and nothing was written", flush=True)
+        reviewed = query(DATABASE, "SELECT count(DISTINCT crop) AS n FROM events WHERE gen > 0")[0]["n"]
+        print(f"dry run: the seed would list {reviewed} crops named by events of a generation above 0 and {len(followed)} "
+              f"of the {held} glyphs with a `form_bases` row, those the local copy holds differently, a crop of both "
+              f"once; `touched` lists {query(DATABASE, listed)[0]['n']} now, and nothing was written", flush=True)
         return
     path = OUT / "publish" / "0019.sql"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(missing_only(SEED.read_text(), lambda table: set())
+                    + "".join("INSERT OR IGNORE INTO touched(crop, gen) VALUES "
+                              + ",".join(f"({crop},0)" for crop in followed[at:at + SEED_ROWS]) + ";\n"
+                              for at in range(0, len(followed), SEED_ROWS))
                     + f"\nINSERT OR IGNORE INTO imports(stamp, at) VALUES({lit(SEED_STAMP)}, unixepoch());\n")
     if not send(DATABASE, path, SEED_STAMP):
         sys.exit("the seed did not apply; rerun")
