@@ -7,8 +7,10 @@
 #
 # Fields of a row, keyed by the character's code point:
 #   grapheme   the head of the grapheme it also writes
-#   relation   the relation, by a name of the variant graph (`semantic`: the two write the same word)
-#   evidence   what states it, each with a source of `sources` and the statement itself
+#   relation   the relation, by a name of the variant graph (`semantic`: the two have the same meaning)
+#   tier       `attested` where a source states that the character stands for the grapheme's character,
+#              `editorial` where the sources state less and the link is this table's
+#   evidence   what the sources state, each with a source of `sources` and the statement itself
 #
 # A row with no evidence is a guess and does not belong here.
 sources:
@@ -25,22 +27,23 @@ sources:
     citation of its own
 writers:
   # ヿ KATAKANA DIGRAPH KOTO. Two origins are given, the top of cursive 事 and a ligature of コ and ト;
-  # both read it as the word こと that 事 writes.
+  # both sources name 事.
   U+30FF:
     grapheme: U+4E8B
     relation: semantic
+    tier: attested
     evidence:
       - source: ja-wikipedia-koto
         detail: 字源「「ヿ」は「事」の草書の上部、または「コト」の合字である」
       - source: en-wiktionary-koto
         detail: 'Etymology "Derived from 事."; noun "abbreviation of 事 (koto, “thing, matter”)"'
-      - source: l2-24-150
-        detail: 'Table 1, on U+1B123: "The katakana-form is 30FF ヿ KATAKANA DIGRAPH KOTO."'
-  # 𛄣 HIRAGANA DIGRAPH KOTO, Unicode 18.0. No source derives its shape from 事: it is こ and と set as
-  # one. The proposal that encoded it says it is used for the word こと "thing" and for nothing else.
+  # 𛄣 HIRAGANA DIGRAPH KOTO, Unicode 18.0: こ and と set as one. The proposal that encoded it says
+  # it writes the word こと "thing" and nothing else, and does not name 事. That 事 is the kanji of that
+  # word is this table's link, made at the request of the site's owner (mkpoli, 2026-11-16).
   U+1B123:
     grapheme: U+4E8B
     relation: semantic
+    tier: editorial
     evidence:
       - source: l2-24-150
-        detail: 'Table 1: "representing a Japanese word “koto”. This word means “thing”." and "Even in vertically written documents, it is not used for any other purpose than “thing”."'
+        detail: 'Editorial link; the proposal does not name 事. Table 1: "representing a Japanese word “koto”. This word means “thing”." and "Even in vertically written documents, it is not used for any other purpose than “thing”."'

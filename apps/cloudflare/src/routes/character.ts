@@ -257,6 +257,8 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     const predicted = derived.map(entry => ({ ...entry, count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
     const forms = await writtenForms(env, card, rows, predicted);
     const used = new Set(rows.flatMap(row => row.sources));
+    // The grapheme a character of another script also writes is cited on its own card too.
+    for (const w of lends) for (const relation of w.relations) used.add(relation.source);
     for (const entry of predicted) for (const source of entry.sources) used.add(source);
     if (predicted.length) used.add(DERIVED_IDS);
     const writes = written.map(c => { const id = idOf(c);

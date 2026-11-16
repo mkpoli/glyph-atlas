@@ -1,10 +1,12 @@
 // Written by scripts/build_written_with.py from data/vocab/written-with.yaml; edit neither here.
 /** The characters of another script a grapheme is also written with: each with the head of that
- *  grapheme and the statements of the relation, as rows of the variant graph. */
-export const WRITERS: { char: string; grapheme: string; relations: { relation: string; source: string; detail: string }[] }[] = [
+ *  grapheme, whether a source states the link or the table makes it, and the statements, as rows
+ *  of the variant graph. */
+export const WRITERS: { char: string; grapheme: string; tier: string; relations: { relation: string; source: string; detail: string }[] }[] = [
   {
     "char": "\u30ff",
     "grapheme": "\u4e8b",
+    "tier": "attested",
     "relations": [
       {
         "relation": "semantic",
@@ -15,22 +17,18 @@ export const WRITERS: { char: string; grapheme: string; relations: { relation: s
         "relation": "semantic",
         "source": "en-wiktionary-koto",
         "detail": "Etymology \"Derived from \u4e8b.\"; noun \"abbreviation of \u4e8b (koto, \u201cthing, matter\u201d)\""
-      },
-      {
-        "relation": "semantic",
-        "source": "l2-24-150",
-        "detail": "Table 1, on U+1B123: \"The katakana-form is 30FF \u30ff KATAKANA DIGRAPH KOTO.\""
       }
     ]
   },
   {
     "char": "\ud82c\udd23",
     "grapheme": "\u4e8b",
+    "tier": "editorial",
     "relations": [
       {
         "relation": "semantic",
         "source": "l2-24-150",
-        "detail": "Table 1: \"representing a Japanese word \u201ckoto\u201d. This word means \u201cthing\u201d.\" and \"Even in vertically written documents, it is not used for any other purpose than \u201cthing\u201d.\""
+        "detail": "Editorial link; the proposal does not name \u4e8b. Table 1: \"representing a Japanese word \u201ckoto\u201d. This word means \u201cthing\u201d.\" and \"Even in vertically written documents, it is not used for any other purpose than \u201cthing\u201d.\""
       }
     ]
   }

@@ -14,16 +14,19 @@ from pathlib import Path
 import yaml
 
 TABLE = Path(__file__).resolve().parents[2] / "data" / "vocab" / "written-with.yaml"
+TIERS = ("attested", "editorial")
 
 
 @dataclass(frozen=True)
 class Writer:
-    """One character and the grapheme it also writes: both as characters, the relation's name, and
-    each statement of it as (source, detail)."""
+    """One character and the grapheme it also writes: both as characters, the relation's name, whether
+    a source states the link (`attested`) or the table makes it (`editorial`), and each statement as
+    (source, detail)."""
 
     char: str
     grapheme: str
     relation: str
+    tier: str
     evidence: tuple[tuple[str, str], ...]
 
     @property
@@ -53,8 +56,12 @@ def _table() -> tuple[dict[str, str], dict[str, Writer]]:
             raise ValueError(f"{code_point} writes {row['grapheme']} on no evidence")
         if unknown := [source for source, _ in evidence if source not in sources]:
             raise ValueError(f"{code_point} cites {unknown[0]}, which written-with.yaml does not describe")
+        if not all(detail and detail.strip() for _, detail in evidence):
+            raise ValueError(f"{code_point} cites a source without its statement")
+        if row.get("tier") not in TIERS:
+            raise ValueError(f"{code_point} is neither attested nor editorial")
         char = _char(code_point)
-        writers[char] = Writer(char, _char(row["grapheme"]), row["relation"], evidence)
+        writers[char] = Writer(char, _char(row["grapheme"]), row["relation"], row["tier"], evidence)
     return sources, writers
 
 

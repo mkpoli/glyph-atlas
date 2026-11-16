@@ -656,6 +656,9 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
                     "corpus_count": int(((corpus_counts or {}).get(e["char"]) or {}).get("n_glyphs") or 0)}
                    for e in derived]
     used = {source for row in rows for source in row["sources"]}
+    # The grapheme a character of another script also writes is cited on its own card too.
+    if lends:
+        used |= {source for source, _ in lends.evidence}
     if predictions:
         used |= {source for row in predictions for source in row["sources"]} | {refs.DERIVED_IDS}
     return {"items": [r for r in rows if r["widens"]], "related": [r for r in rows if not r["widens"]],

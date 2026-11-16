@@ -234,16 +234,17 @@ describe('a character page', () => {
     // ヿ and the hiragana digraph are related and written for 事, and no gallery widens to them.
     expect(body.variants.items).toEqual([]);
     expect(body.variants.related.map((v: any) => [v.char, v.code_point, v.widens, v.written, v.sources, v.relations[0].relation])).toEqual([
-      ['ヿ', 'U+30FF', false, true, ['en-wiktionary-koto', 'ja-wikipedia-koto', 'l2-24-150'], 'semantic'],
+      ['ヿ', 'U+30FF', false, true, ['en-wiktionary-koto', 'ja-wikipedia-koto'], 'semantic'],
       [hiragana, 'U+1B123', false, true, ['l2-24-150'], 'semantic']]);
     expect(body.variants.writers).toEqual([{ char: 'ヿ', code_point: 'U+30FF', shared: true }, { char: hiragana, code_point: 'U+1B123', shared: true }]);
     expect(body.variants.total).toBe(2);
     expect(body.variants.sources['l2-24-150']).toStartWith('Gen Kojitani');
     // A member of the family lists them too.
     expect((await get('/layers/characters/U+4E8A')).body.variants.writers.map((w: any) => w.char)).toEqual(['ヿ', hiragana]);
-    // ヿ's own card names 事 as a grapheme it also writes, with 事's family counted, and stays its own.
+    // ヿ's own card names 事 as a grapheme it also writes, with what states it, and stays its own.
     const own = (await get('/layers/characters/U+30FF')).body;
     expect(own.variants.writes.map((w: any) => [w.char, w.code_point])).toEqual([['事', 'U+4E8B']]);
+    expect(Object.keys(own.variants.sources)).toEqual(['en-wiktionary-koto', 'ja-wikipedia-koto']);
     expect([own.variants.own, own.variants.related, own.variants.writers]).toEqual([true, [], []]);
     // A grapheme the table does not name is as it was.
     expect((await get('/layers/characters/U+5CD5')).body.variants.writers).toEqual([]);
