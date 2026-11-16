@@ -93,9 +93,9 @@ export function formProblem(value: string): FormProblem | null {
 const PRIVATE: [number, number][] = [[0xE000, 0xF8FF], [0xF0000, 0xFFFFD], [0x100000, 0x10FFFD]];
 const isPrivate = (c: string) => { const n = c.codePointAt(0)!; return PRIVATE.some(([low, high]) => n >= low && n <= high) };
 export type Representation = { scheme: 'unicode' | 'ivs' | 'ids' | 'mj' | 'glyphwiki' | 'pua'; value: string; namespace: string | null; version: string | null };
-/** The drawn form a character names: the head of the grapheme it writes and its script; undefined for
- *  any other character. */
-export const drawnForm = (char: string): { for: string; script: string } | undefined => Object.hasOwn(DRAWN, char) ? DRAWN[char] : undefined;
+/** The drawn form a character names: the head of the grapheme it writes, its script and what it looks
+ *  like; undefined for any other character. */
+export const drawnForm = (char: string): { for: string; script: string; name: string } | undefined => Object.hasOwn(DRAWN, char) ? DRAWN[char] : undefined;
 /** Every drawn form, in code point order. */
 export const drawnForms = () => Object.keys(DRAWN).sort((a, b) => a.codePointAt(0)! - b.codePointAt(0)!);
 /** The drawn forms of a grapheme, named by its head, in code point order. */

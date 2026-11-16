@@ -943,6 +943,9 @@ def _characters() -> dict[str, Character]:
     # The site's drawn forms (docs/decisions/0014-drawn-forms.md): each a character of its grapheme
     # with no row in the generated table, since no source but the site's own table names it.
     for form in drawn_forms.table().forms.values():
+        head = characters.get(to_code_point(form.written_for))
+        if head is None or (head.grapheme or head.code_point) != head.code_point:
+            raise ValueError(f"{form.code_point} is written for {form.written_for}, which heads no grapheme of the character table")
         characters[form.code_point] = Character(
             code_point=form.code_point, char=form.char, script=form.script, jibo=[], readings=[], confusables=[],
             ligature=None, variants=[], name=None, alias=None, category="Co", age=None, block=None,

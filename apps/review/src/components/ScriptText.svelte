@@ -20,8 +20,10 @@
   // `scriptParts` returns a fixed English `label` for use outside a Svelte context (it is also
   // called directly by a plain-Node check); the label shown here is looked up again from `key` so
   // it follows the interface language.
-  const parts = $derived(scriptParts(text, script).map(part => ({ ...part, label: t(`script.${part.key}`), described: isDescription(part.text), figure: isFigure(part.text), drawn: Boolean(drawnForm(part.text)) })))
-  const description = $derived(parts.map(part => `${part.text} · ${part.label}`).join(', '))
+  const parts = $derived(scriptParts(text, script).map(part => ({ ...part, label: t(`script.${part.key}`), described: isDescription(part.text), figure: isFigure(part.text), drawn: Boolean(drawnForm(part.text)),
+    // A drawn form is read out and titled by what it looks like: its code point says nothing.
+    said: drawnForm(part.text)?.name ?? part.text })))
+  const description = $derived(parts.map(part => `${part.said} · ${part.label}`).join(', '))
   // Bumped as a drawing loads, so the parts read the cache again.
   let loaded = $state(0)
   const drawings = $derived((void loaded, parts.map(part => part.described ? drawn(part.text) || paintedDrawing(part.text) || null : null)))
@@ -34,7 +36,7 @@
   const language = key => lang || (key === 'hangul' || key === 'gugyeol' ? 'ko' : key === 'tangut' ? 'txg' : 'ja')
 </script>
 
-<span class="script-text" role="img" aria-label={description}>{#each parts as part, index (index)}{#if drawings[index]}<span class="script-char ids-drawing" data-script={part.key} lang={language(part.key)} title={titled ? `${part.text} · ${part.label}` : undefined} aria-hidden="true" style:--drawing={`url("${drawings[index]}")`}><span class="ids-copy">{part.text}</span></span>{:else}<span class="script-char" class:ids-text={part.described} style:font-family={figured[part.text] ? `"${FAMILY}", serif` : part.drawn ? DRAWN_FONT : null} data-script={part.key} lang={language(part.key)} title={titled ? `${part.text} · ${part.label}` : undefined} aria-hidden="true">{part.text}</span>{/if}{/each}</span>
+<span class="script-text" role="img" aria-label={description}>{#each parts as part, index (index)}{#if drawings[index]}<span class="script-char ids-drawing" data-script={part.key} lang={language(part.key)} title={titled ? `${part.said} · ${part.label}` : undefined} aria-hidden="true" style:--drawing={`url("${drawings[index]}")`}><span class="ids-copy">{part.text}</span></span>{:else}<span class="script-char" class:ids-text={part.described} style:font-family={figured[part.text] ? `"${FAMILY}", serif` : part.drawn ? DRAWN_FONT : null} data-script={part.key} lang={language(part.key)} title={titled ? `${part.said} · ${part.label}` : undefined} aria-hidden="true">{part.text}</span>{/if}{/each}</span>
 
 <style>
   .ids-drawing{position:relative;display:inline-block;width:1em;height:1em;vertical-align:-0.12em;background:currentColor;

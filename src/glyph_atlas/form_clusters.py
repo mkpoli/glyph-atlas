@@ -44,7 +44,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from . import refs
+from . import drawn_forms, refs
 
 #: Glyphs whose family has fewer members than this are left to per-glyph review.
 MIN_FAMILY_UNITS = 12
@@ -84,16 +84,20 @@ def family_of(code_point: str | None) -> dict | None:
     info = refs.grapheme_info(code_point) if code_point else None
     if not info:
         return None
-    if len(info.get("members") or []) > 1:
+    # A drawn form is a member that makes no family: a kanji alone but for its drawn forms keeps the
+    # family of its variants, with them.
+    drawn = [member for member in info.get("members") or [] if drawn_forms.drawn(member["char"])]
+    if len(info.get("members") or []) - len(drawn) > 1:
         return info
     if info.get("script") != "han" or len(code_point.split()) != 1:
         return None
     found = refs.variants(info["char"])[: MAX_VARIANT_FORMS - 1]
-    if not found:
+    if not found and not drawn:
         return None
     members = [{"code_point": code_point, "char": info["char"]}]
     members += [{"code_point": refs.to_code_point(char), "char": char, "sources": list(sources)}
                 for char, sources in found]
+    members += drawn
     return {**info, "label": " ~ ".join(member["char"] for member in members), "members": members,
             "character_count": len(members), "relation": "kanji-variants"}
 

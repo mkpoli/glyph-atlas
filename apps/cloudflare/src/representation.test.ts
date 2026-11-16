@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { categoryOf } from './category'
 import { anchoredForm, compatibility, drawnForm, drawnFormsOf, formProblem, standsFor, isSequence, representationId, structureKey, typed, written, type Representation } from './representation'
 
 test('a character or a description is a form a reviewer may type', () => {
@@ -45,7 +46,10 @@ test('a drawn form is a private-use character of the site\'s own table', async (
   expect(form).toEqual({ scheme: 'pua', value: '\u{F0000}', namespace: 'glyph-atlas', version: '1' })
   const id = await representationId(form)
   expect([id, await anchoredForm(id)]).toEqual(['rp:2f0d058ce9a2c8ddbfd1a3d61533d290', 'fm:9b7ed9e8487cec8865fe33b08841f13b'])
-  expect(drawnForm('\u{F0000}')).toEqual({ for: '事', script: 'han' })
+  expect(drawnForm('\u{F0000}')).toMatchObject({ for: '事', script: 'han' })
+  expect(drawnForm('\u{F0000}')!.name).toContain('事')
+  // It is filed and counted as the grapheme it writes is.
+  expect([categoryOf('\u{F0000}'), categoryOf('事'), categoryOf('\u{F0100}')]).toEqual(['kanji', 'kanji', 'other'])
   expect(drawnFormsOf('事')).toEqual(['\u{F0000}', '\u{F0001}'])
   expect(drawnFormsOf('也')).toEqual([])
   // A code point the table does not give names nothing, in the same area or another.

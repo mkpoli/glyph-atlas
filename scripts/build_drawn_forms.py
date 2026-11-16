@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import re
 from pathlib import Path
 
@@ -91,14 +92,14 @@ def module() -> str:
     """The table as the Worker reads it, its characters as escapes: a private-use character typed into
     a source file is invisible to whoever reads it."""
     table = drawn_forms.table()
-    rows = "".join(f"  '\\u{{{ord(form.char):X}}}': {{ for: '{form.written_for}', script: '{form.script}' }},\n"
+    rows = "".join(f"  '\\u{{{ord(form.char):X}}}': {{ for: '{form.written_for}', script: '{form.script}', name: {json.dumps(form.name, ensure_ascii=False)} }},\n"
                    for form in sorted(table.forms.values(), key=lambda form: form.char))
     return (
         "// Written by scripts/build_drawn_forms.py from data/vocab/drawn-forms.yaml; edit neither here.\n"
         "/** The namespace and version of the site's private-use mapping, and the font that draws it. */\n"
         f"export const DRAWN_NAMESPACE = '{table.namespace}', DRAWN_VERSION = '{table.version}', DRAWN_FAMILY = '{FAMILY}';\n"
-        "/** Each drawn form's character, with the head of the grapheme it writes and its script. */\n"
-        f"export const DRAWN: Record<string, {{ for: string; script: string }}> = {{\n{rows}}};\n"
+        "/** Each drawn form's character, with the head of the grapheme it writes, its script and what it looks like. */\n"
+        f"export const DRAWN: Record<string, {{ for: string; script: string; name: string }}> = {{\n{rows}}};\n"
     )
 
 

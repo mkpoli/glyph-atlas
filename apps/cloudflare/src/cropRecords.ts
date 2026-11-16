@@ -6,6 +6,7 @@ import { bundle, publicId, pageOf, slotOf, type Entry } from './atlas3';
 import { readRecords, recordKey } from './records';
 import { formed, type UnitForm } from './forms';
 import { categoryOf, isGugyeol } from './category';
+import { drawnForm } from './representation';
 
 type Json = Record<string, any>;
 export const codePoints = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
@@ -98,7 +99,7 @@ function formRow(row: RecordRow): UnitForm | null {
     written_family: row.written_family };
 }
 
-const scriptOf = (written: string) => /\p{Script=Katakana}/u.test(written) ? 'katakana' : /\p{Script=Hiragana}/u.test(written) ? 'hiragana'
+const scriptOf = (written: string): string => drawnForm(written) ? drawnForm(written)!.script : /\p{Script=Katakana}/u.test(written) ? 'katakana' : /\p{Script=Hiragana}/u.test(written) ? 'hiragana'
   : /\p{Script=Han}/u.test(written) ? 'han' : /\p{Script=Hangul}/u.test(written) ? 'hangul' : /\p{Script=Tangut}/u.test(written) ? 'tangut'
   : isGugyeol(written) ? 'gugyeol' : 'symbol';
 

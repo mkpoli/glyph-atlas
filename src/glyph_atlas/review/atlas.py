@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse, Response
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import ainu_geometry, evidence, images, recorded_terms, refs
+from .. import ainu_geometry, drawn_forms, evidence, images, recorded_terms, refs
 from .. import production as production_metadata
 from .. import style as style_module
 from ..clusters import is_one_character
@@ -196,7 +196,8 @@ def character_group(unit: Unit) -> str:
     shown = written_identity(unit) or transcription(unit)
     if not shown:
         return SCRIPT_GROUPS.get(unit.script, "other")
-    char = shown[0]
+    # A drawn form is of the category of the grapheme it writes.
+    char = drawn.written_for if (drawn := drawn_forms.drawn(shown)) else shown[0]
     name = unicodedata.name(char, "") if char else ""
     if name.startswith(("HIRAGANA", "KATAKANA", "HENTAIGANA")):
         return "kana"

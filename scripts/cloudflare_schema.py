@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from glyph_atlas import drawn_forms
 from glyph_atlas.representation import described
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "apps/cloudflare/migrations"
@@ -132,6 +133,9 @@ def category_of(label: str | None) -> str:
     # A well-formed ideographic description sequence describes a Han character Unicode lacks.
     if label and described(label):
         return "kanji"
+    # A drawn form is of the category of the grapheme it writes.
+    if label and (drawn := drawn_forms.drawn(label)):
+        return category_of(drawn.written_for)
     if any(a <= point <= b for a, b in KANA):
         return "kana"
     if any(a <= point <= b for a, b in HAN):

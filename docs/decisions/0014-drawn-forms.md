@@ -58,6 +58,10 @@ crops and is never shown as an occurrence.
 - Text the browser sets outside `ScriptText`, such as a native tooltip or the window title, shows the
   reader's own font, which has no glyph there.
 - A drawn form has no 構形 (decision 0012): nothing states its components.
+- It is filed and counted in the category of the grapheme it writes, and a kanji whose only other
+  members are drawn forms keeps the forms family of its variants.
+- A family's stored visual analysis is reused only while its members are those it was made on, so a
+  family given a drawn form is analysed again at the next reference export.
 - A family's counts are kept at the edge an hour, so a card can show a drawn form without its count
   for that long after the Worker first lists it.
 

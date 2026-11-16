@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from glyph_atlas import drawn_forms, forms, refs, representation
+from glyph_atlas import drawn_forms, form_clusters, forms, refs, representation
 
 ROOT = Path(__file__).resolve().parents[1]
 RU, FANG = "\U000f0000", "\U000f0001"
@@ -52,6 +52,16 @@ def test_a_drawn_form_is_a_character_of_the_family_it_writes():
     assert refs.grapheme_info("U+F0000")["code_point"] == "U+4E8B"
     # No other family holds one.
     assert all(ord(member["char"]) < 0xF0000 for member in refs.grapheme_info("U+4E5F")["members"])
+
+
+def test_a_drawn_form_is_filed_as_the_grapheme_it_writes_is():
+    spec = importlib.util.spec_from_file_location("cloudflare_schema", ROOT / "scripts" / "cloudflare_schema.py")
+    schema = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(schema)
+    assert [schema.category_of(label) for label in (RU, "事", "\U000f0100")] == ["kanji", "kanji", "other"]
+    # A kanji with other characters keeps its family in a clustering, its drawn forms among them.
+    family = form_clusters.family_of("U+4E8B")
+    assert [member["code_point"] for member in family["members"]][-2:] == ["U+F0000", "U+F0001"] and family["relation"] != "kanji-variants"
 
 
 def test_a_clustering_made_before_the_table_still_offers_the_familys_drawn_forms(monkeypatch):

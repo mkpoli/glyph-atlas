@@ -7,6 +7,7 @@ import { d1 } from '../forms.test';
 import { cropId, publicId } from '../atlas3';
 import { LOGICAL } from './review';
 import { DRAWN } from '../drawnFormsData';
+import { drawnHeads } from '../forms';
 import { FOLLOW_BATCH, describedClaimsQuery, clusterGlyphsQuery, clusterQuery, familyClustersQuery, familyGlyphsQuery, followCorpus, followStatements, formCropsQuery,
   formsRoute, glyphFamiliesQuery, listFollowQuery, memberDatesQuery, memberRowsQuery, recountQuery, stateQuery } from './forms';
 
@@ -228,7 +229,7 @@ describe('the forms routes on glyph-atlas-v3', () => {
   it('offer a family its drawn forms, and file their glyphs under the family', async () => {
     // The table gives 事 its drawn forms; the fixture's family is は, so one is lent to it here.
     const mine = '\u{F0000}', other = '\u{F0001}', was = DRAWN[mine];
-    DRAWN[mine] = { for: 'は', script: 'hiragana' };
+    DRAWN[mine] = { for: 'は', script: 'hiragana', name: 'a test form of は' };
     try {
       const { fresh, get } = both();
       const family = await get(`/atlas/forms/families/${encodeURIComponent(FAMILY)}`, 'order=shape');
@@ -419,4 +420,25 @@ describe('the forms routes on glyph-atlas-v3', () => {
       expect({ sql, scans }).toEqual({ sql, scans: [] });
     }
   });
+});
+
+it('a drawn form\'s row of graphemes is filed under the grapheme it writes, once', () => {
+  const db = new Database(':memory:');
+  db.exec('CREATE TABLE graphemes(id INTEGER PRIMARY KEY, text TEXT NOT NULL UNIQUE, head INTEGER)');
+  const run = () => drawnHeads().map(sql => db.prepare(sql).run().changes);
+  const insert = db.prepare('INSERT INTO graphemes(id,text,head) VALUES(?,?,?)');
+  // No row of the form, or none of its grapheme: nothing is written.
+  expect(run()).toEqual([0, 0]);
+  insert.run(1, '\u{F0000}', null);
+  expect(run()).toEqual([0, 0]);
+  // 事 heads its own family here; a member's head is followed to it.
+  insert.run(7, '事', 7);
+  insert.run(2, '\u{F0001}', null);
+  expect(run()).toEqual([1, 1]);
+  expect(db.query('SELECT text,head FROM graphemes WHERE id IN (1,2) ORDER BY id').all()).toEqual([{ text: '\u{F0000}', head: 7 }, { text: '\u{F0001}', head: 7 }]);
+  expect(run()).toEqual([0, 0]);
+  // A head whose own row names none is its own head.
+  db.exec('UPDATE graphemes SET head=NULL WHERE id IN (1,7)');
+  expect(run()).toEqual([1, 0]);
+  expect(db.query('SELECT head FROM graphemes WHERE id=1').get()).toEqual({ head: 7 });
 });
