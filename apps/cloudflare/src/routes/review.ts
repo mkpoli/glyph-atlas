@@ -7,6 +7,8 @@ import { captureReviews, priorBaselines, type ReviewedInput } from '../reviewCap
 import { cropEntries, cropItems, publicId } from '../atlas3';
 import { STALE_CODE, StaleCrop, cropParam, writtenCropField } from '../atlas3Crops';
 import { categoryOf } from '../category';
+import { drawnHeads } from '../forms';
+import { drawnForm } from '../representation';
 import { formOfCrop } from './claims';
 import { inspected } from './crop';
 import { STYLE_KIND, STYLE_TARGET, foundCrop } from '../cropRecords';
@@ -329,6 +331,8 @@ function eventStatements(env: Env, actor: number, key: string, at: number, chang
   const v = (field: string) => `j.value->>'${field}'`;
   return [
     ...(characters.length ? [env.ATLAS.prepare('INSERT OR IGNORE INTO graphemes(text) SELECT value FROM json_each(?)').bind(JSON.stringify(characters))] : []),
+    // A drawn form named for the first time is filed under its grapheme.
+    ...(characters.some(drawnForm) ? drawnHeads().map(sql => env.ATLAS.prepare(sql)) : []),
     // A category a label is the first of gets its code.
     ...categories.map(category => env.ATLAS.prepare(`INSERT OR IGNORE INTO codes(field,code,key) SELECT 'category',coalesce(max(code),0)+1,?
       FROM codes WHERE field='category'`).bind(category)),

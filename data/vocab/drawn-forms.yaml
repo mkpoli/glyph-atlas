@@ -1,0 +1,41 @@
+# Drawn forms: ways of writing a character that have no code point, no registered figure and no
+# composition an ideographic description sequence could state, such as a cursive form written in
+# one stroke. Each is named by a private-use code point of this table (docs/decisions/0014-drawn-forms.md)
+# and drawn in `drawn-forms/<code point>.svg`, one filled path in a 1000-unit em with y running down.
+#
+# A drawing is an editorial normalisation made from the crops its `basis` names. It is a label for a
+# group of crops and is never shown as an occurrence. A drawn form is a member of the family of the
+# grapheme it writes: `refs` reads this table beside `characters.tsv`.
+#
+# The code points are in Supplementary Private Use Area-A. One is never given to another form, and a
+# form keeps its code point when its drawing is redrawn. `version` changes only if that rule is broken.
+#
+# Fields of a row:
+#   written_for  the grapheme the form writes, by the code point of its head
+#   script       the script the form is coloured and counted as
+#   name         what the form looks like, for a reader who cannot see the drawing
+#   basis        the crops the drawing was made from
+#
+# `scripts/draw_form.py` turns `drawn-forms/<code point>.strokes.json` (brush strokes as knots of x, y
+# and width) into the drawing; `scripts/build_drawn_forms.py` writes the font and the Worker's table.
+namespace: glyph-atlas
+version: "1"
+forms:
+  U+F0000:
+    written_for: U+4E8B
+    script: han
+    name: 事 in one cursive stroke, a zigzag head over a wide loop with a tail to the lower left; like る with a larger loop
+    basis: >-
+      Forms clustering 582865e3b2b68c53 of 事, read on https://glyphatlas.org/ja/forms/U+4E8B on 2026-11-16:
+      clusters U+4E8B:6a8ba32233, U+4E8A:b5bd305407, U+4E8B:f98b4cc741, U+4E8B:24bd4fd4ab, U+4E8B:22c6786e58,
+      U+4E8B:636e546e17, U+4E8B:47a2751d96, U+4E8B:cdf099257a, U+4E8B:da53b74cd2, U+4E8B:7a92b1e8a7 and
+      U+4E8B:465095366d (4,203 glyphs), grouped as one form by mkpoli on 2026-11-16; drawn from the twelve
+      most typical glyphs of U+4E8B:6a8ba32233 and U+4E8B:f98b4cc741
+  U+F0001:
+    written_for: U+4E8B
+    script: han
+    name: 事 as a bar crossed by two downstrokes, the right one hooking back into the left, which runs on as a tail; like 方 or 阝
+    basis: >-
+      Forms clustering 582865e3b2b68c53 of 事, read on https://glyphatlas.org/ja/forms/U+4E8B on 2026-11-16:
+      cluster U+4E8B:76452db58f (42 glyphs), named as one form by mkpoli on 2026-11-16; drawn from its
+      twelve most typical glyphs

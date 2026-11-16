@@ -1,6 +1,6 @@
 // What the forms tool shares with the rest of the Worker: the tools its routes take (routes/forms.ts),
 // what a decision may name, and a corpus record shown with the form a person named for it.
-import { formProblem, isSequence } from './representation';
+import { drawnForm, drawnForms, formProblem, isSequence } from './representation';
 type Json = Record<string, any>;
 export type FormTools = {
   fail: (status: number, message: string, extra?: Record<string, unknown>) => never;
@@ -19,6 +19,14 @@ const basis = (row: { glyph_set: number; form: string | null; issue?: string | n
 
 /** Whether a form is written as a well-formed ideographic description sequence. */
 export const isDescription = (value: string) => isSequence(value) && formProblem(value) === null;
+
+const chars = (text: string) => `char(${[...text].map(c => c.codePointAt(0)).join(',')})`;
+/** A drawn form's row of `graphemes` is filed under the grapheme it writes
+ *  (docs/decisions/0014-drawn-forms.md). The statements that say so, run wherever such a row may have
+ *  been added: one per form, each changing its row once. */
+export const drawnHeads = () => drawnForms().map(char => `UPDATE graphemes
+  SET head=(SELECT coalesce(h.head,h.id) FROM graphemes h WHERE h.text=${chars(drawnForm(char)!.for)})
+  WHERE text=${chars(char)} AND head IS NULL AND EXISTS(SELECT 1 FROM graphemes h WHERE h.text=${chars(drawnForm(char)!.for)})`);
 
 export type { UnitForm };
 export function formed(record: Json, row: UnitForm | null, tools: Pick<FormTools, 'codePoints'>): Json {

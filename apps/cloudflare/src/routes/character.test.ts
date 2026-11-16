@@ -23,7 +23,7 @@ beforeEach(() => edge.clear());
 // One small collection for every test, since reference objects, bundles and count shards are held per
 // isolate: 時 (with 时 and 旹 in its family, 峕 a variant), and ね with a hentaigana and corpus glyphs
 // filed under it with no character. Grapheme ids stay off the shards other test files read (7, 9).
-const G = { 時: 300, 时: 301, 旹: 302, 峕: 303, ね: 400, '𛂒': 401 } as Record<string, number>;
+const G = { 時: 300, 时: 301, 旹: 302, 峕: 303, ね: 400, '𛂒': 401, 事: 500 } as Record<string, number>;
 // Each character's family head, which its crops' records name as their family.
 const HEAD = { 時: '時', 时: '時', 旹: '時', 峕: '峕', ね: 'ね', '𛂒': 'ね' } as Record<string, string>;
 const BOOK = { a: 1, b: 2, c: 3 };
@@ -145,6 +145,10 @@ beforeAll(() => {
     ids: { ね: G.ね, '𛂒': G['𛂒'] } }));
   objects.set('v3/reference/char/U+5CD5.json.gz', json({ grapheme: G.峕, data: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }),
     detail: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 峕: G.峕 } }));
+  // 事 as the reference holds it: one character, and no drawn form.
+  objects.set('v3/reference/char/U+4E8B.json.gz', json({ grapheme: G.事, data: card('事', { grapheme: { code_point: 'U+4E8B', char: '事' } }),
+    detail: card('事', { grapheme: { code_point: 'U+4E8B', char: '事', members: [{ code_point: 'U+4E8B', char: '事' }] } }),
+    variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 事: G.事 } }));
   objects.set('v3/reference/list/ligatures/0.json.gz', json({ total: 2, offset: 0, items: [{ char: 'ね' }, { char: '時' }] }));
   env = { ATLAS: d1(db), MEDIA: bucket(), CATALOGUE_LAG: '0' } as unknown as Env;
 });
@@ -219,6 +223,36 @@ describe('a character page', () => {
     // The derived form is already a row of the card, so the linked claim does not list it twice.
     expect(body.variants.forms).toEqual([{ char: '⿰木木', code_point: null, form, scheme: 'ids', count: 1, corpus_count: 0 },
       { char: '時\u{E0101}', code_point: null, form: figure, scheme: 'ivs', count: 0, corpus_count: 0 }]);
+  });
+
+  it('lists the drawn forms of a grapheme among its members, and gives each a page under that grapheme', async () => {
+    const ru = '\u{F0000}', fang = '\u{F0001}';
+    const { status, body } = await get('/layers/characters/U+4E8B');
+    expect(status).toBe(200);
+    expect(body.grapheme.members.map((m: any) => [m.char, m.drawn ?? false, m.count, m.corpus_count])).toEqual([['事', false, 0, 0], [ru, true, 0, 0], [fang, true, 0, 0]]);
+    expect(body.grapheme.character_count).toBe(3);
+    expect(body.variants.forms).toEqual([]);
+    // No other family carries them.
+    expect((await get('/layers/characters/U+5CD5')).body.grapheme.members).toBeUndefined();
+    // A crop filed under a drawn form is counted for it and listed on its page and its family's.
+    const target = cropId(PAGE_A, 0), was = db.query('SELECT char FROM crops WHERE id=?').get(target) as { char: number };
+    db.prepare('INSERT INTO graphemes(id,text,head) VALUES(501,?,?)').run(ru, G.事);
+    db.prepare('UPDATE crops SET char=501 WHERE id=?').run(target);
+    try {
+      const own = await get('/layers/characters/U+F0000');
+      expect(own.status).toBe(200);
+      expect([own.body.code_point, own.body.char, own.body.script, own.body.drawn, own.body.grapheme.code_point, own.body.grapheme.is_self])
+        .toEqual(['U+F0000', ru, 'han', true, 'U+4E8B', false]);
+      expect(own.body.grapheme.members.map((m: any) => m.char)).toEqual(['事', ru, fang]);
+      expect(own.body.variants).toMatchObject({ items: [], related: [], forms: [] });
+      expect(ids((await get('/layers/occurrences?code_point=U%2BF0000')).body.items)).toEqual([publicId(target)]);
+      expect(ids((await get('/layers/occurrences?code_point=U%2B4E8B&scope=grapheme')).body.items)).toContain(publicId(target));
+    } finally {
+      db.prepare('UPDATE crops SET char=? WHERE id=?').run(was.char, target);
+      db.exec('DELETE FROM graphemes WHERE id=501');
+    }
+    // A private-use character the table does not give has no card.
+    expect((await get('/layers/characters/U+F0100')).status).toBe(404);
   });
 });
 

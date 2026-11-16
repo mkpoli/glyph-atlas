@@ -5,7 +5,10 @@
 // radical, a stroke, a katakana letter standing for a component of that shape (コ in ⿱コ疋, which no
 // ideograph writes), a private-use character, or ？ for a part no character names, and may carry a
 // variation selector. The review app checks what a reader types by the same rules (`lib/ids.js`).
+// A private-use character names a form only where the site's own mapping gives it: the drawn forms
+// (data/vocab/drawn-forms.yaml, docs/decisions/0014-drawn-forms.md).
 import { MOJI_JOHO } from './compatibilityData';
+import { DRAWN, DRAWN_NAMESPACE, DRAWN_VERSION } from './drawnFormsData';
 
 export const FORM_LONGEST = 64;
 const BINARY = new Set([...'⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽㇯']), TERNARY = new Set([...'⿲⿳']), UNARY = new Set([...'⿾⿿〾']);
@@ -90,14 +93,23 @@ export function formProblem(value: string): FormProblem | null {
 const PRIVATE: [number, number][] = [[0xE000, 0xF8FF], [0xF0000, 0xFFFFD], [0x100000, 0x10FFFD]];
 const isPrivate = (c: string) => { const n = c.codePointAt(0)!; return PRIVATE.some(([low, high]) => n >= low && n <= high) };
 export type Representation = { scheme: 'unicode' | 'ivs' | 'ids' | 'mj' | 'glyphwiki' | 'pua'; value: string; namespace: string | null; version: string | null };
+/** The drawn form a character names: the head of the grapheme it writes and its script; undefined for
+ *  any other character. */
+export const drawnForm = (char: string): { for: string; script: string } | undefined => Object.hasOwn(DRAWN, char) ? DRAWN[char] : undefined;
+/** Every drawn form, in code point order. */
+export const drawnForms = () => Object.keys(DRAWN).sort((a, b) => a.codePointAt(0)! - b.codePointAt(0)!);
+/** The drawn forms of a grapheme, named by its head, in code point order. */
+export const drawnFormsOf = (head: string) => drawnForms().filter(char => DRAWN[char].for === head);
 /** What a reviewer typed or picked, as a representation, or why it is none. A private-use character
- *  names nothing without its mapping, which a picker cannot give, so it is refused. A compatibility
- *  ideograph is what it stands for (`standsFor`). */
+ *  is a drawn form where the site's mapping gives it; any other names nothing without its mapping,
+ *  which a picker cannot give, so it is refused. A compatibility ideograph is what it stands for
+ *  (`standsFor`). */
 export function typed(written: string): Representation | FormProblem | 'private' {
   const problem = formProblem(written);
   if (problem) return problem;
   const value = standsFor(written), chars = [...value];
   if (isSequence(value)) return { scheme: 'ids', value, namespace: null, version: null };
+  if (drawnForm(value)) return { scheme: 'pua', value, namespace: DRAWN_NAMESPACE, version: DRAWN_VERSION };
   if (isPrivate(chars[0])) return 'private';
   if (selector(chars.at(-1))) return chars.length === 2 ? { scheme: 'ivs', value, namespace: null, version: null } : 'character';
   return { scheme: 'unicode', value, namespace: null, version: null };

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { anchoredForm, compatibility, formProblem, standsFor, isSequence, representationId, structureKey, typed, written, type Representation } from './representation'
+import { anchoredForm, compatibility, drawnForm, drawnFormsOf, formProblem, standsFor, isSequence, representationId, structureKey, typed, written, type Representation } from './representation'
 
 test('a character or a description is a form a reviewer may type', () => {
   for (const value of ['𮟃', '還', 'が', '葛\u{E0100}', '⿺辶𦊷', '⿰氵⿱冖月', '⿲木木木', '⿱⿰口口⿰口口', '〾⿰木？', '⿰木', '⿰⺡骨'])
@@ -37,6 +37,21 @@ test('ids are what the review service derives for the same names', async () => {
     expect([id, await anchoredForm(id)]).toEqual([rep, form])
   }
   expect(await representationId({ scheme: 'pua', value: '\uE000', namespace: 'example', version: '1' })).toBe('rp:24234b052e1ad13df2cca72c95de5246')
+})
+
+test('a drawn form is a private-use character of the site\'s own table', async () => {
+  // tests/test_drawn_forms.py holds the same values.
+  const form = typed('\u{F0000}') as Representation
+  expect(form).toEqual({ scheme: 'pua', value: '\u{F0000}', namespace: 'glyph-atlas', version: '1' })
+  const id = await representationId(form)
+  expect([id, await anchoredForm(id)]).toEqual(['rp:2f0d058ce9a2c8ddbfd1a3d61533d290', 'fm:9b7ed9e8487cec8865fe33b08841f13b'])
+  expect(drawnForm('\u{F0000}')).toEqual({ for: '事', script: 'han' })
+  expect(drawnFormsOf('事')).toEqual(['\u{F0000}', '\u{F0001}'])
+  expect(drawnFormsOf('也')).toEqual([])
+  // A code point the table does not give names nothing, in the same area or another.
+  expect(typed('\u{F0100}')).toBe('private')
+  expect(drawnForm('\u{F0100}')).toBeUndefined()
+  expect(drawnForm('toString')).toBeUndefined()
 })
 
 test('a text names its characters and descriptions one after another', () => {

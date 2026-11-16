@@ -17,7 +17,8 @@ naming it, and never its identity. A scheme says how the value is read:
 - `mj`: an MJ 文字図形名 (`MJ012345`), with the MJ文字情報一覧表 version it was read from when known.
 - `glyphwiki`: a GlyphWiki glyph name (`u2e7c3-j`), with its version when known.
 - `pua`: one private-use character, with the namespace of the mapping it belongs to and that
-  mapping's version, both required: the code point alone names nothing.
+  mapping's version, both required: the code point alone names nothing. The site's own mapping is the
+  table of drawn forms (`drawn_forms`), whose code points a picker may give.
 
 A representation's id hashes its scheme, namespace, version and value, so every service names it
 alike. A code point anchors at most one broad form, the encoded form of that character; its id is
@@ -35,6 +36,7 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
+from . import drawn_forms
 from .han_components import BINARY, TERNARY, UNARY
 
 MJ_TSV = Path(__file__).resolve().parents[2] / "data" / "vocab" / "mj-kanji.tsv"
@@ -239,12 +241,16 @@ def check(representation: Representation) -> Representation:
 def typed(value: str) -> Representation:
     """What a reviewer typed or picked as a form: a description, a variation sequence or a character.
 
-    A private-use character is refused here, since a picker cannot say which mapping it belongs to.
-    A compatibility ideograph is what it stands for (`stands_for`).
+    A private-use character is a drawn form where the site's table gives it (`drawn_forms`); any other
+    is refused, since a picker cannot say which mapping it belongs to. A compatibility ideograph is
+    what it stands for (`stands_for`).
     """
     text = stands_for(check_text(value))
     if is_sequence(text):
         return check(Representation("ids", text))
+    if drawn_forms.drawn(text):
+        table = drawn_forms.table()
+        return check(Representation("pua", text, table.namespace, table.version))
     if _selector(text[-1]):
         return check(Representation("ivs", text))
     return check(Representation("unicode", text))

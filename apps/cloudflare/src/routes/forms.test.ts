@@ -6,6 +6,7 @@ import { gzipSync } from 'node:zlib';
 import { d1 } from '../forms.test';
 import { cropId, publicId } from '../atlas3';
 import { LOGICAL } from './review';
+import { DRAWN } from '../drawnFormsData';
 import { FOLLOW_BATCH, describedClaimsQuery, clusterGlyphsQuery, clusterQuery, familyClustersQuery, familyGlyphsQuery, followCorpus, followStatements, formCropsQuery,
   formsRoute, glyphFamiliesQuery, listFollowQuery, memberDatesQuery, memberRowsQuery, recountQuery, stateQuery } from './forms';
 
@@ -222,6 +223,32 @@ describe('the forms routes on glyph-atlas-v3', () => {
       VALUES('claim-crop','has_form','','',${crop},0,'asserted','f:ids','[]','[]','[]','r','t');
       INSERT INTO ledger_submissions VALUES('claim','u','{}','{}','t');`);
     expect(db.prepare(formCropsQuery()).all('f:ids')).toEqual([{ crop }]);
+  });
+
+  it('offer a family its drawn forms, and file their glyphs under the family', async () => {
+    // The table gives 事 its drawn forms; the fixture's family is は, so one is lent to it here.
+    const mine = '\u{F0000}', other = '\u{F0001}', was = DRAWN[mine];
+    DRAWN[mine] = { for: 'は', script: 'hiragana' };
+    try {
+      const { fresh, get } = both();
+      const family = await get(`/atlas/forms/families/${encodeURIComponent(FAMILY)}`, 'order=shape');
+      expect(family.forms.at(-1)).toEqual({ char: mine, code_point: 'U+F0000', script: 'hiragana', drawn: true });
+      expect(family.forms.some((f: any) => f.char === other)).toBe(false);
+      const send = (body: object) => formsRoute(fresh.env, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify(body) }),
+        '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(), 'u1');
+      await expect(send({ kind: 'glyph', units: [publicId(glyphs[0].crop)], form: other })).rejects.toThrow('is not a form of this family.');
+      await expect(send({ kind: 'glyph', units: [publicId(glyphs[0].crop)], form: mine })).resolves.toMatchObject({ form: mine, count: 1 });
+      expect(fresh.db.query('SELECT form,written_family FROM form_glyphs').get()).toEqual({ form: mine, written_family: FAMILY });
+      // A cluster decided as the form files its unnamed corpus glyphs under it, in the family.
+      const pending: Promise<unknown>[] = [];
+      await formsRoute(fresh.env, new Request('https://atlas.test/atlas/forms/decisions', { method: 'POST', body: JSON.stringify({ kind: 'cluster', cluster: 'U+306F/0', form: mine }) }),
+        '/atlas/forms/decisions', new URLSearchParams(), tools, ctx(pending), 'u1');
+      await Promise.all(pending);
+      expect(fresh.db.query('SELECT h.text AS head FROM graphemes g JOIN graphemes h ON h.id=g.head WHERE g.text=?').get(mine)).toEqual({ head: 'は' });
+      expect((fresh.db.query('SELECT count(*) AS n FROM crops c JOIN graphemes g ON g.id=c.char WHERE g.text=?').get(mine) as any).n).toBeGreaterThan(0);
+    } finally {
+      DRAWN[mine] = was;
+    }
   });
 
   it('move a large decision in batches', async () => {
