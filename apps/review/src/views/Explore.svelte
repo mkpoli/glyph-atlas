@@ -87,23 +87,15 @@
   const withheldParam = () => !flagged && showWithheld ? 'show' : null
   // Crops already reviewed (confirmed, flagged or hard to read) can be left out of the gallery, so what
   // still needs work is all there is to see and select; the choice is remembered. The Flagged view lists
-  // only such crops, so it shows them all. A crop reviewed while on show stays where it is until the next
-  // deal, so no tile moves under the pointer: `onShow` holds every crop the gallery has let through since.
+  // only such crops, so it shows them all. A crop leaves as soon as it is reviewed.
   let hideReviewed = $state(stored('atlas.hideReviewed', false))
-  let onShow = new Set()
-  // A pair or trigram is reviewed when every crop of its place is; a slot deals another place, so it is
-  // known by its crops.
+  // A pair or trigram is reviewed when every crop of its place is.
   const reviewed = item => item.origin === 'run' ? Boolean(item.crops?.length) && item.crops.every(reviewed)
     : (state => state === 'checked' || waiting(state))(tileState(item))
-  const shownKey = item => item.origin === 'run' ? item.id + '|' + (item.crops ?? []).map(crop => crop.id).join('|') : item.id
-  const hidden = item => hideReviewed && !flagged && reviewed(item) && !onShow.has(shownKey(item))
-  function passes(item) {
-    if (hidden(item)) return false
-    onShow.add(shownKey(item)); return true
-  }
-  const unreviewed = list => list.filter(passes)
+  const hidden = item => hideReviewed && !flagged && reviewed(item)
+  const unreviewed = list => list.filter(item => !hidden(item))
   function toggleReviewed() {
-    hideReviewed = !hideReviewed; onShow = new Set()
+    hideReviewed = !hideReviewed
     remember('atlas.hideReviewed', hideReviewed)
     // A crop or run no longer shown is no longer chosen, and a range starts again.
     const shown = new Set([...display, ...runTiles.filter(run => run.at < display.length)].map(item => item.id))
@@ -397,8 +389,8 @@
   const byId = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
   const display = $derived(picked && expand === 'grapheme'
     ? [...baseDisplay].sort((a, b) => groupOrder(a) - groupOrder(b) || byId(visualGroup(a).id, visualGroup(b).id)) : baseDisplay)
-  // The counts above the gallery are of the crops it shows, by its own rule, read after it has let them through.
-  const shownIn = list => { void baseDisplay; return list.filter(item => !hidden(item)).length }
+  // The counts above the gallery are of the crops it shows.
+  const shownIn = list => list.filter(item => !hidden(item)).length
   const shownEditable = $derived(shownIn(editable)), shownCorpusOnly = $derived(shownIn(corpusOnly))
   const shownItems = $derived(shownIn(items)), shownHomeCorpus = $derived(shownIn(homeCorpus))
   // The grapheme view puts a heading over each shape group; crops in no group have none.
@@ -501,8 +493,7 @@
     catalogueRequest?.abort()
     // A further page goes before the corpus glyphs shown after the collection's own crops, so the tiles
     // from the end of those crops on are drawn again, a slice at a time.
-    // The runs on show belong to the deal, which a reload with the same seed keeps.
-    if (!append) { showInAddress(); clearSelection(); onShow = new Set(runTiles.map(shownKey)) }
+    if (!append) { showInAddress(); clearSelection() }
     const id = ++requestId; loading = true; error = ''; growing = append
     try {
       if (picked) {
@@ -1240,7 +1231,7 @@
     yearRange, decadeCounts, decadesFor: decadeCounts ? decadesFor : '', localStyles, corpusStyles, corpusAnswered, split, sample, sampleFault,
     collection, localWithheld, corpusCounts, corpusCountsAsked: Boolean(corpusCounts), runs, runsFailed, runsFor: runs || runsFailed ? runsFor : null,
     runKind, homeRuns, scattered, scatteredFor: scattered.length ? scatteredFor : null, charRuns,
-    charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, onShow: new Set(onShow), hideReviewed, showWithheld, scrollY })
+    charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, showWithheld, scrollY })
   beforeNavigate(navigation => {
     if (!addressed) return
     const state = display.length && (!loading || growing) ? capture() : picked ? null : { seed, showWithheld, partial: true }
@@ -1260,8 +1251,6 @@
     corpusCountsAsked = back.corpusCountsAsked; runs = back.runs; runsFailed = back.runsFailed; runsFor = back.runsFor;
     runKind = back.runKind; homeRuns = back.homeRuns; scattered = back.scattered; scatteredFor = back.scatteredFor;
     charRuns = back.charRuns; charRunsFor = back.charRunsFor; confirmedHere = back.confirmedHere;
-    // Reviewed crops hidden since the view was left are hidden in it too.
-    onShow = back.hideReviewed === hideReviewed ? new Set(back.onShow) : new Set();
     loading = false; reach = untrack(() => display.length)
   }
   const kept = untrack(() => addressed) ? keptView() : null
