@@ -31,7 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import representation
+from . import drawn_forms, representation
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -282,6 +282,15 @@ def cluster_of(identity: str) -> dict | None:
             "revision": data["revision"]}
 
 
+def drawn_members(family: str) -> list[str]:
+    """The drawn forms of a family, named by its code point, that its clustering did not publish: one
+    made before the table gave the family a form lists only its characters
+    (docs/decisions/0014-drawn-forms.md)."""
+    published = set(family_members(family))
+    return [form.char for form in sorted(drawn_forms.table().forms.values(), key=lambda form: form.char)
+            if f"U+{ord(form.written_for):04X}" == family and form.char not in published]
+
+
 def family_members(family: str) -> list[str]:
     """The forms of a family as the current clustering published them."""
     found = clusters()["families"].get(family) or {}
@@ -327,8 +336,9 @@ def record(kind: str, *, form: str | None = None, cluster: str | None = None,
     if len(families) != 1:
         raise DecisionError("A decision covers glyphs of one family.")
     family = families.pop()
-    # A form is one of the family's characters, or a shape Unicode lacks written as a description.
-    if form is not None and form not in family_members(family) and not representation.described(form):
+    # A form is one of the family's characters or drawn forms, or a shape Unicode lacks written as a description.
+    if (form is not None and form not in family_members(family) and not representation.described(form)
+            and form not in drawn_members(family)):
         raise DecisionError(f"{form} is not a form of this family.")
     event = {"id": str(uuid.uuid4()), "at": datetime.now(UTC).isoformat(timespec="seconds"),
              "kind": kind, "family": family, "form": form, "cluster": cluster,

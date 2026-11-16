@@ -42,7 +42,7 @@ from typing import Any
 
 import yaml
 
-from . import han_component_variants, han_components
+from . import drawn_forms, han_component_variants, han_components
 from .clusters import is_conjoining_jamo_syllable, is_one_character
 from .schema import Character, Ligature, Script, VariantRef
 
@@ -940,6 +940,19 @@ def _characters() -> dict[str, Character]:
             variants=mj_variants.get(row["code_point"], []),
             **values,
         )
+    # The site's drawn forms (docs/decisions/0014-drawn-forms.md): each a character of its grapheme
+    # with no row in the generated table, since no source but the site's own table names it.
+    # A table that lacks a form's grapheme, as a cut-down one does, has none of its drawn forms.
+    for form in drawn_forms.table().forms.values():
+        head = characters.get(to_code_point(form.written_for))
+        if head is None:
+            continue
+        if (head.grapheme or head.code_point) != head.code_point:
+            raise ValueError(f"{form.code_point} is written for {form.written_for}, which is filed under {head.grapheme}")
+        characters[form.code_point] = Character(
+            code_point=form.code_point, char=form.char, script=form.script, jibo=[], readings=[], confusables=[],
+            ligature=None, variants=[], name=None, alias=None, category="Co", age=None, block=None,
+            grapheme=to_code_point(form.written_for))
     return characters
 
 
@@ -1057,6 +1070,8 @@ def _grapheme_families() -> dict[str, dict]:
                                   key=lambda point: (-len(attested[point]), _point_order(point)))
         if not attested and not family:
             members = [head]
+        # A drawn form is a member of the family it is written for, after its characters.
+        members += [form.code_point for form in drawn_forms.written_for(to_char(head))]
         writing: dict[str, set[str]] = {}
         for row in edges.get(head, ()):
             if row["role"] in (WRITES, STANDS_FOR):

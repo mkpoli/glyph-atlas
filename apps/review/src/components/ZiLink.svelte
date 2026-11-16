@@ -1,7 +1,9 @@
 <script>
+  import { drawnForm } from '../lib/drawnForms.js'
   import { t } from '../lib/i18n.svelte.js'
   let { character = '', compact = false } = $props()
-  const target = $derived(typeof character === 'string' && [...character].length === 1 ? character : '')
+  // A drawn form's private-use code point names nothing outside the site.
+  const target = $derived(typeof character === 'string' && [...character].length === 1 && !drawnForm(character) ? character : '')
 </script>
 
 {#if target}

@@ -770,7 +770,7 @@
   .member-flag{position:absolute;top:3px;right:5px;font-size:12px;color:var(--wrong)}
   .correct-char{display:flex;gap:4px}.correct-char input{width:64px;padding:6px 8px;font-size:14px}.correct-char button{font-size:11px;padding:6px 9px}
   .member-year{position:absolute;bottom:3px;left:5px;font-size:9px;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none}
-  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:"Kureedo Kata","GenZui Sans","Noto Serif Tangut",system-ui,sans-serif}
+  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:var(--drawn-sans),"Kureedo Kata","GenZui Sans","Noto Serif Tangut",system-ui,sans-serif}
   @media(max-width:900px){.forms-layout{grid-template-columns:1fr}.family-list{position:static;max-height:260px}.cluster-grid{grid-template-columns:1fr}}
   @media(max-width:700px){.forms{padding:16px 16px 40px}.form-choice{min-width:54px}.palette-other{flex-direction:row;margin-left:0;width:100%}}
 </style>

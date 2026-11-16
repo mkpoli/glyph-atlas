@@ -15,6 +15,7 @@ import { Problem } from '../busy';
 import { idsCharacter } from '../category';
 import { CITE_TTL, CITE_TYPES, FORMATS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from '../citation';
 import { yearOptions, type YearOptions } from '../dating';
+import { drawnForm, drawnFormsOf } from '../representation';
 import { WRITERS, WRITER_SOURCES } from '../writtenWithData';
 
 type Json = any;
@@ -76,6 +77,37 @@ export function describedCard(value: string) {
   return { data, detail };
 }
 
+/** A grapheme with its drawn forms (docs/decisions/0014-drawn-forms.md) after its characters: each is a
+ *  member the reference object does not hold, since only the site's table names it. */
+function withDrawn(grapheme: Json): Json {
+  if (!grapheme?.members) return grapheme;
+  const listed = new Set(grapheme.members.map((m: Json) => m.char));
+  const drawn = drawnFormsOf(grapheme.char).filter(char => !listed.has(char));
+  if (!drawn.length) return grapheme;
+  const members = [...grapheme.members, ...drawn.map(char => ({ code_point: cp(char), char, script: drawnForm(char)!.script, drawn: true }))];
+  return { ...grapheme, members, character_count: members.length };
+}
+const drawnIn = (card: Json) => card?.grapheme ? { ...card, grapheme: withDrawn(card.grapheme) } : card;
+/** The card of a drawn form, from the card of the grapheme it writes: it has no entry in the character
+ *  table, and is filed under that grapheme. `id` is its row of `graphemes`, null before a crop is filed
+ *  under it. */
+export function drawnCard(value: string, head: CharacterObject, id: number | null): Card {
+  const code_point = cp(value), url = '/layers/characters/' + code_point, script = drawnForm(value)!.script;
+  const self = { code_point, char: value, name: null, script };
+  const grapheme = { ...withDrawn(head.detail.grapheme ?? head.data.grapheme), is_self: false };
+  const data = { ...self, age: null, block: null, readings: [], reading: null, jibo: [], ligature: null, occurrence_count: 0,
+    url, grapheme, default_scope: 'character', kind: head.data.kind, drawn: true,
+    candidates: { status: 'ok', known: false, glyphs: 0, lines: 0, pages: 0, total: 0, sources: [],
+      counts_kind: 'source_transcription_classes', requires_family_scope: false, source_glyphs: 0, family_glyphs: 0, imported: 0 } };
+  const detail = { ...data, alias: null, category: 'Co', confusables: [], characters: [data], derived: [], expansions: [],
+    visual_analysis: { status: 'not_analyzed', family: grapheme.code_point, model_revision: null, sample_count: 0, assigned_count: 0,
+      unassigned_count: 0, groups: [] } };
+  // Its own edges are none; the ids are its family's, with its own.
+  const object: CharacterObject = { ...head, data, detail, variants: [], variant_families: {}, derived: [], substitutions: [], writes: [], writers: [],
+    ids: { ...head.ids, ...(id === null ? {} : { [value]: id }) } };
+  return { data, detail, object };
+}
+
 export type Card = { data: Json; detail: Json; object: CharacterObject | null };
 // A visual group's code and each sample's crop, as the reference object holds them, by the names a page
 // reads: the group's key, and each sample's public id with the address of its image.
@@ -100,8 +132,10 @@ async function namedGroups(env: Env, detail: Json): Promise<Json> {
 export async function characterCard(env: Env, value: string, tools: CharacterTools, ctx?: ExecutionContext): Promise<Card> {
   const text = tools.literal(value);
   const object = text ? await characterObject(env, cp(text), ctx) : null;
-  if (object) return { data: object.data, detail: await namedGroups(env, object.detail), object };
+  if (object) return { data: drawnIn(object.data), detail: drawnIn(await namedGroups(env, object.detail)), object };
   if (idsCharacter(text)) return { ...describedCard(text), object: null };
+  const drawn = drawnForm(text), head = drawn ? await characterObject(env, cp(drawn.for), ctx) : null;
+  if (head) return drawnCard(text, head, (await env.ATLAS.prepare('SELECT id FROM graphemes WHERE text=?').bind(text).first<{ id: number }>())?.id ?? null);
   if (tools.jamoSyllable(text)) return { ...jamoCard(text), object: null };
   throw new Problem(404, 'Character not found.');
 }

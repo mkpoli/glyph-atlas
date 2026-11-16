@@ -4,6 +4,7 @@
   import '@fontsource/klee-one/400.css'
   import '../fallback-fonts.css'
   import '../tangut-font.css'
+  import '../drawn-forms.css'
   import '../script-colors.css'
   import ChatLinks from '../components/ChatLinks.svelte'
   import LinkMark from '../components/LinkMark.svelte'

@@ -11,7 +11,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import form_clusters, forms, refs, representation
+from .. import drawn_forms, form_clusters, forms, refs, representation
 
 
 class Decision(BaseModel):
@@ -195,7 +195,9 @@ def router(media, corpus_root: Path) -> APIRouter:
                         if (form := (decided.get(identity) or {}).get("form")))
         described = Counter({form: n for form, n in usage.items() if representation.described(form)})
         return {"revision": data["revision"], **summary(found, decided), "order": order,
-                "forms": [_form_entry(char) for char in forms.family_members(code_point)],
+                "forms": [*(_form_entry(char) for char in forms.family_members(code_point)),
+                          *({"char": char, "code_point": refs.to_code_points(char)[0],
+                             "script": drawn_forms.drawn(char).script, "drawn": True} for char in forms.drawn_members(code_point))],
                 "described": _most_used(described),
                 "usage": _most_used(usage),
                 "items": clusters}

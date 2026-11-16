@@ -146,11 +146,13 @@ beforeAll(() => {
     ids: { ね: G.ね, '𛂒': G['𛂒'] } }));
   objects.set('v3/reference/char/U+5CD5.json.gz', json({ grapheme: G.峕, data: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }),
     detail: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 峕: G.峕 } }));
-  // 事 and its member 亊, and ヿ, a katakana of its own grapheme: the reference relates none of them to ヿ.
+  // 事 and its member 亊, and ヿ, a katakana of its own grapheme: the reference relates none of them to ヿ,
+  // and holds no drawn form.
+  const shi = [{ code_point: 'U+4E8B', char: '事' }, { code_point: 'U+4E8A', char: '亊' }];
   for (const [char, head] of [['事', '事'], ['亊', '事'], ['ヿ', 'ヿ']])
     objects.set(`v3/reference/char/U+${char.codePointAt(0)!.toString(16).toUpperCase()}.json.gz`, json({ grapheme: G[head],
       data: card(char, { grapheme: { code_point: 'U+' + head.codePointAt(0)!.toString(16).toUpperCase(), char: head } }),
-      detail: card(char, { grapheme: { code_point: 'U+' + head.codePointAt(0)!.toString(16).toUpperCase(), char: head } }),
+      detail: card(char, { grapheme: { code_point: 'U+' + head.codePointAt(0)!.toString(16).toUpperCase(), char: head, ...(head === '事' ? { members: shi } : {}) } }),
       variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: head === '事' ? { 事: G.事, 亊: G.亊 } : { ヿ: G.ヿ } }));
   objects.set('v3/reference/list/ligatures/0.json.gz', json({ total: 2, offset: 0, items: [{ char: 'ね' }, { char: '時' }] }));
   env = { ATLAS: d1(db), MEDIA: bucket(), CATALOGUE_LAG: '0' } as unknown as Env;
@@ -226,6 +228,39 @@ describe('a character page', () => {
     // The derived form is already a row of the card, so the linked claim does not list it twice.
     expect(body.variants.forms).toEqual([{ char: '⿰木木', code_point: null, form, scheme: 'ids', count: 1, corpus_count: 0 },
       { char: '時\u{E0101}', code_point: null, form: figure, scheme: 'ivs', count: 0, corpus_count: 0 }]);
+  });
+
+  it('lists the drawn forms of a grapheme among its members, and gives each a page under that grapheme', async () => {
+    const ru = '\u{F0000}', fang = '\u{F0001}';
+    const { status, body } = await get('/layers/characters/U+4E8B');
+    expect(status).toBe(200);
+    expect(body.grapheme.members.map((m: any) => [m.char, m.drawn ?? false, m.count, m.corpus_count]))
+      .toEqual([['事', false, 0, 0], ['亊', false, 0, 0], [ru, true, 0, 0], [fang, true, 0, 0]]);
+    expect(body.grapheme.character_count).toBe(4);
+    expect(body.variants.forms).toEqual([]);
+    // No other family carries them.
+    expect((await get('/layers/characters/U+5CD5')).body.grapheme.members).toBeUndefined();
+    // A crop filed under a drawn form is counted for it and listed on its page and its family's.
+    const target = cropId(PAGE_A, 0), was = db.query('SELECT char FROM crops WHERE id=?').get(target) as { char: number };
+    db.prepare('INSERT INTO graphemes(id,text,head) VALUES(520,?,?)').run(ru, G.事);
+    db.prepare('UPDATE crops SET char=520 WHERE id=?').run(target);
+    try {
+      const own = await get('/layers/characters/U+F0000');
+      expect(own.status).toBe(200);
+      expect([own.body.code_point, own.body.char, own.body.script, own.body.drawn, own.body.grapheme.code_point, own.body.grapheme.is_self])
+        .toEqual(['U+F0000', ru, 'han', true, 'U+4E8B', false]);
+      expect(own.body.grapheme.members.map((m: any) => m.char)).toEqual(['事', '亊', ru, fang]);
+      // Its own edges are none; the characters its grapheme is also written with are listed, as on any member's card.
+      expect(own.body.variants).toMatchObject({ items: [], forms: [] });
+      expect(own.body.variants.related.map((v: any) => v.char)).toEqual(['ヿ', '\u{1B123}']);
+      expect(ids((await get('/layers/occurrences?code_point=U%2BF0000')).body.items)).toEqual([publicId(target)]);
+      expect(ids((await get('/layers/occurrences?code_point=U%2B4E8B&scope=grapheme')).body.items)).toContain(publicId(target));
+    } finally {
+      db.prepare('UPDATE crops SET char=? WHERE id=?').run(was.char, target);
+      db.exec('DELETE FROM graphemes WHERE id=520');
+    }
+    // A private-use character the table does not give has no card.
+    expect((await get('/layers/characters/U+F0100')).status).toBe(404);
   });
 
   it('lists a character of another script the table gives as writing the grapheme, as a shared form', async () => {

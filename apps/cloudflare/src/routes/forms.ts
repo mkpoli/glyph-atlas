@@ -10,7 +10,8 @@ import { listingItems } from '../atlas3Listing';
 import { LOGICAL } from './review';
 import { StaleCrop, staleResponse, writtenCropField } from '../atlas3Crops';
 import { axisOf } from '../dating';
-import { type FormTools, GLYPHS_PER_DECISION, isDescription } from '../forms';
+import { type FormTools, GLYPHS_PER_DECISION, drawnHeads, isDescription } from '../forms';
+import { drawnForm, drawnFormsOf } from '../representation';
 import { writesPaused } from '../freeze';
 
 type Json = Record<string, any>;
@@ -100,6 +101,14 @@ export const describedClaimsQuery = () => `SELECT r.value AS form,count(*) AS n 
   LEFT JOIN reviews v ON v.crop=k.id
   WHERE g.family=? AND c.status<>'rejected' AND c.cut=k.cut+(v.x IS NOT NULL) GROUP BY r.value`;
 
+// A family's palette: the forms its clustering published, then its drawn forms
+// (docs/decisions/0014-drawn-forms.md) where the clustering was made before the table named them.
+function palette(found: Json, tools: FormTools): Json[] {
+  const published: Json[] = JSON.parse(found.forms), listed = new Set(published.map(form => form.char));
+  return [...published, ...drawnFormsOf(found.char).filter(char => !listed.has(char))
+    .map(char => ({ char, code_point: tools.codePoints(char), script: drawnForm(char)!.script, drawn: true }))];
+}
+
 const mostUsed = (counts: Map<string, number>) =>
   [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([char, count]) => ({ char, count }));
 
@@ -169,7 +178,7 @@ async function family(env: Env, codePoint: string, q: URLSearchParams, tools: Fo
   }));
   return { revision: found!.revision, code_point: found!.code_point, char: found!.char, label: found!.label,
     count: found!.count, clusters: found!.cluster_count, assigned: found!.assigned, rejected: found!.rejected, order,
-    forms: JSON.parse(found!.forms), described: mostUsed(described), usage: mostUsed(usage), items };
+    forms: palette(found!, tools), described: mostUsed(described), usage: mostUsed(usage), items };
 }
 
 export const clusterQuery = () => 'SELECT id,key,family,label,count,coherence,list,form,issue,character,written_family FROM form_clusters WHERE key=?';
@@ -252,7 +261,7 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
   const note = tools.text(input.note ?? '', 2000, 'note') ?? '';
   const kind = input.kind;
   if (!['cluster', 'glyph', 'inherit'].includes(kind)) tools.fail(422, 'Unknown decision kind.');
-  // A form is one of the family's characters, or a shape Unicode lacks written as a description.
+  // A form is one of the family's characters or drawn forms, or a shape Unicode lacks written as a description.
   const form = input.form == null ? null : tools.text(input.form, 256, 'form', true);
   if (kind === 'inherit' && form != null) tools.fail(422, 'Following the cluster takes no form.');
   // A report: the glyphs are not this family's character, or their crop is bad. They keep no form.
@@ -264,7 +273,7 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
   if (character != null && issue !== 'character') tools.fail(422, 'Only a wrong character names what the glyph is.');
   // A glyph takes the grapheme of what it is written as: the form named for it, or the character it
   // is reported as. A kana form keeps its family (𛂞 is は's); a kanji variant has its own (仿 is not 倣's).
-  // A description is a form of the family it is named in.
+  // A description or a drawn form is a form of the family it is named in.
   const written = form ?? character, described = form != null && isDescription(form);
   let family: string, cluster: ClusterRow | null = null, crops: number[] = [], validated: Json | null = null;
   if (kind === 'cluster') {
@@ -289,11 +298,12 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
     family = found!.family;
     validated = found;
   }
-  const allowed = await env.ATLAS.prepare('SELECT forms,revision,(SELECT lists FROM form_state WHERE id=0) AS lists FROM form_families WHERE code_point=?').bind(family!).first<Json>();
+  const allowed = await env.ATLAS.prepare('SELECT char,forms,revision,(SELECT lists FROM form_state WHERE id=0) AS lists FROM form_families WHERE code_point=?').bind(family!).first<Json>();
   if (!allowed || (validated && (validated.lists !== allowed.lists || validated.revision !== allowed.revision)))
     tools.fail(409, 'The cluster has changed; reload the forms.');
-  if (form != null && !described && !JSON.parse(allowed!.forms).some((f: Json) => f.char === form)) tools.fail(422, `${form} is not a form of this family.`);
-  const writtenFamily = described ? family! : written ? await familyOf(env, written, tools) : null;
+  if (form != null && !described && !palette(allowed!, tools).some(f => f.char === form)) tools.fail(422, `${form} is not a form of this family.`);
+  // A drawn form's own row may not exist yet, so its family is read from the table.
+  const writtenFamily = described || (form != null && drawnForm(form)) ? family! : written ? await familyOf(env, written, tools) : null;
   const id = crypto.randomUUID(), at = new Date().toISOString().replace(/\.\d+Z$/, '+00:00');
   const target = JSON.stringify(crops);
   // What the touched rows held before, read in the same transaction: the decisions that restore it
@@ -388,6 +398,7 @@ const tallied = (sign: string) => `INSERT INTO tally(gen,kind,char,family,book,p
   SELECT ${GEN},${cell},${sign}count(*) ${movable} GROUP BY ${cell} ON CONFLICT DO UPDATE SET n=n+excluded.n`;
 export const followStatements = () => [
   `INSERT OR IGNORE INTO graphemes(text) SELECT DISTINCT text FROM (${writtenAs}) WHERE decided AND text IS NOT NULL`,
+  ...drawnHeads(),
   `INSERT OR IGNORE INTO form_bases(crop,char) SELECT c.id,c.char ${movable}`,
   tallied('-'),
   // Each glyph about to take another character is listed for the next publication (`touched`, migration
@@ -435,7 +446,7 @@ function decoded(segment: string, tools: FormTools) {
 // bounds a copy's life.
 const FORMS_TTL = 3600;
 // The shape of what `family` and `families` answer; a change to it leaves the older copies behind.
-const FORMS_SHAPE = 4;
+const FORMS_SHAPE = 5;
 type FormsState = { loading: number; lists: string; revision: string | null; decision: number | null; following: number; ledger: number | null; event: number | null; publication: number | null };
 export const stateQuery = () => `SELECT s.loading,s.lists,(SELECT revision FROM form_families LIMIT 1) AS revision,
   (SELECT max(seq) FROM form_decisions) AS decision,EXISTS(SELECT 1 FROM corpus_follow) AS following,

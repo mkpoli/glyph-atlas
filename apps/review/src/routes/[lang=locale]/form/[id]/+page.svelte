@@ -2,6 +2,7 @@
   import Seo from '$components/Seo.svelte'
   import SiteLinks from '$components/SiteLinks.svelte'
   import FormText from '$components/FormText.svelte'
+  import ScriptText from '$components/ScriptText.svelte'
   import Glyph from '$components/Glyph.svelte'
   import { cropAddress } from '$lib/inspector.svelte.js'
   import { t } from '$lib/i18n.svelte.js'
@@ -26,7 +27,7 @@
         <li>
           <a href={cropAddress(item.id, item.origin)} aria-label={t('chips.showCharacter', { char: item.label })}>
             <Glyph {item} alt="" />
-            <span class="crop-label">{item.label}</span>
+            <span class="crop-label"><ScriptText text={item.label} titled={false} /></span>
           </a>
         </li>
       {/each}

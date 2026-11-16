@@ -1,3 +1,4 @@
+import { drawnForm } from './drawnForms.js'
 import { arity, descriptionEnd, isDescription } from './ids.js'
 import { graphemeText } from './reviewRounds.js'
 
@@ -39,6 +40,8 @@ const KATAKANA_MARKS = new Set(['ー'])
 export function scriptInfo(text, stated = '') {
   if (text && [...text].every(char => KATAKANA_MARKS.has(char))) return { key: 'katakana', label: SCRIPT_NAMES.katakana }
   if (isDescription(text)) return { key: 'kanji', label: SCRIPT_NAMES.kanji }
+  // A drawn form is of the script its table gives it; its private-use code point says nothing.
+  if (drawnForm(text)) stated = drawnForm(text).script
   if (stated && stated !== 'unknown' && SCRIPT_NAMES[stated]) {
     const key = stated === 'han' ? 'kanji' : stated === 'hentaigana' ? 'hiragana' : stated
     return { key, label: SCRIPT_NAMES[stated] }

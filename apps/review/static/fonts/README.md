@@ -47,6 +47,14 @@ installed fonts rarely draw.
   added (U+187F8–U+187FF, U+18D09–U+18D20) fall back to the reader's own fonts. The component blocks
   are left out: no label is a component.
 
+`drawn/` draws the drawn forms (docs/decisions/0014-drawn-forms.md).
+
+- Families: `Glyph Atlas Drawn Forms` (sans) and `Glyph Atlas Drawn Forms Serif`, built by
+  `scripts/build_drawn_forms.py` from the drawings in `data/vocab/drawn-forms/`, which are this
+  project's own: mkpoli drew them, and `scripts/trace_form.py` traced the pictures.
+- Coverage: the private-use code points of `data/vocab/drawn-forms.yaml`, from U+F0000, and nothing
+  else. Each file is named by its content hash, and `src/drawn-forms.css` gives its `unicode-range`.
+
 ## Handwriting fallbacks for the review target
 
 The review round's target character is drawn in one hand: Kureedo Kata, then Klee One, then
