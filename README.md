@@ -19,6 +19,7 @@ Implementation is in progress. The [character workspace](apps/review/README.md) 
 glyph collection, category-based visual review rounds and a character inspector. Saved decisions
 retain their reviewed crop and source identity. Machine output still requires review.
 
+`docs/principles.md` sets what is collected and how it is credited;
 `docs/plan.md` has the survey of existing datasets, the goals and the pipeline;
 `docs/schema.md` the data model; `docs/licensing.md` how upstream licences compose;
 `data/sources/` one file per upstream with its licence evidence and format;
