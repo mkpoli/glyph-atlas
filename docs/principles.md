@@ -1,5 +1,13 @@
 # Principles
 
+## 字形大圖譜之思想
+
+> 夫文字之盛，自生民以來，倉頡造字，四海異俗，各有其書。或圓或方，或繁或簡，非一人所生，亦非一邦之物也。其形萬變，其用殊異，因時易制，古今遞襲，更替不斷，正俗互引，紛然莫可殫紀，何其宏富焉！
+>
+> 欲格其實，窮其義，究其源，明其道者，必先遍覽其跡，博攷其體，參稽古今，互證異同，然後庶幾得察其幽微，尋其脈絡矣。今盍盡集天下萬世之所書，旁搜衆證，網羅古今，比勘校讎，以爲廣觀乎？
+>
+> — mkpoli
+
 The principles that decide what the project collects and how it presents it. They hold for this
 dataset and for the tools and databases built around it.
 
