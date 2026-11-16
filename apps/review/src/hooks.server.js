@@ -1,6 +1,7 @@
 import { env } from '$env/dynamic/private'
 import worker from '../../cloudflare/src/index.ts'
 import { viewer } from '../../cloudflare/src/auth.ts'
+import { PASS_HEADER } from '../../cloudflare/src/rateLimit.ts'
 import { LOCALES, LOCALE_COOKIE, isLocale, localize, negotiate } from '$lib/i18n.svelte.js'
 import { THEME_COOKIE, colorScheme, isTheme, themeColorMedia } from '$lib/theme.js'
 
@@ -23,6 +24,8 @@ async function api(event) {
   // The page server's fetch asks for an encoding it can decode; passing the browser's own list on can
   // bring back one it cannot (zstd), whose bytes would then reach the browser labelled as plain.
   for (const name of ['host', 'accept-encoding', ...HOP]) headers.delete(name)
+  // The deployed site counts requests by address; a page server that holds its pass goes uncounted.
+  if (env.RATE_LIMIT_PASS) headers.set(PASS_HEADER, env.RATE_LIMIT_PASS)
   let body = ['GET', 'HEAD'].includes(event.request.method) ? undefined : event.request.body
   // The local service names a write's reviewer in its body; here that is the signed-in user.
   if (body && headers.get('content-type')?.startsWith('application/json')) {
