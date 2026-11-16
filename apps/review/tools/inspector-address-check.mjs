@@ -125,7 +125,8 @@ try {
   const target = await browser.evaluate('document.querySelector("dialog[open] .character-link")?.getAttribute("href")')
   assert(/^\/en\/character\/U\+[0-9A-F]{4,6}(-U\+[0-9A-F]{4,6})*\?scope=family$/.test(target ?? ''), `the crop's character should link to its grapheme family, not ${target}`)
   await browser.evaluate('document.querySelector("dialog[open] .character-link").click()')
-  await browser.waitFor(`location.pathname + location.search === ${JSON.stringify(target)}`, 90000)
+  // The page drops `scope=family` from its address where the family is already its default view.
+  await browser.waitFor(`location.pathname === ${JSON.stringify(target.split('?')[0])}`, 90000)
   await browser.waitFor(closed)
   console.log('PASS a crop\'s character opens its grapheme family')
 

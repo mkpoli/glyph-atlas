@@ -1,9 +1,8 @@
 <script>
   import { tick } from 'svelte'
   // The character a crop is written as, in its script's colour, and the script named beside it; the
-  // character leads to its own page. Given `reading` ({ item, disabled, working, saved }), the page opens on
-  // the character's whole grapheme family, and a button beside the character names the grapheme (字種) the
-  // crop is read as: a holding claim for another grapheme shows that one, and a press opens the grapheme
+  // character leads to its whole grapheme family on its page. Given `reading` ({ item, disabled, working,
+  // saved }), a button beside the character names the grapheme (字種) the crop is read as: a holding claim for another grapheme shows that one, and a press opens the grapheme
   // picker. The button's space is held from the first render, so the record's claim fills it without
   // moving anything.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
@@ -24,7 +23,7 @@
   const KNOWN = ['hiragana', 'katakana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'symbol', 'mixed', 'unknown']
   const key = $derived(own !== 'unknown' ? own : KNOWN.includes(scriptInfo(char, script).key) ? scriptInfo(char, script).key : 'unknown')
   const name = $derived(hentaigana ? t('script.hentaigana') : t(`script.${key}`))
-  const href = $derived(hasCharacterPage(char) ? localize(characterAddress(pointOf(char), { scope: reading ? 'family' : null })) : null)
+  const href = $derived(hasCharacterPage(char) ? localize(characterAddress(pointOf(char), { scope: 'family' })) : null)
 
   const claim = $derived(reading?.item?.grapheme_claim ?? null)
   const disputed = $derived(claim?.status === 'disputed')
