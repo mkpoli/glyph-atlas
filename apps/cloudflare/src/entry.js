@@ -4,13 +4,16 @@ import site from '../../review/.svelte-kit/cloudflare/_worker.js';
 import worker from './index.ts';
 import { hourly } from './accounts.ts';
 import { receiveMail } from './contact.ts';
+import { limited } from './rateLimit.ts';
 
 // The OAuth calls another server makes (the Matrix homeserver exchanging a sign-in code) post forms
 // with no Origin, which the site's cross-site form check refuses; they go to the API directly.
 const SERVER_TO_SERVER = /^\/api\/auth\/oauth2\/(token|revoke|introspect)$/;
 
 export default {
-  fetch: (request, env, ctx) => SERVER_TO_SERVER.test(new URL(request.url).pathname) ? worker.fetch(request, env, ctx) : site.fetch(request, env, ctx),
+  // An address that asks too much is refused before the site or the API reads anything (`rateLimit.ts`).
+  fetch: async (request, env, ctx) => await limited(request, env)
+    ?? (SERVER_TO_SERVER.test(new URL(request.url).pathname) ? worker.fetch(request, env, ctx) : site.fetch(request, env, ctx)),
   scheduled: (_controller, env) => hourly(env),
   email: (message, env) => receiveMail(message, env),
 };

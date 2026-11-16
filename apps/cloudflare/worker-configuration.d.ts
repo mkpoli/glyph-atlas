@@ -15,6 +15,7 @@ interface __BaseEnv_Env {
 	SIGN_IN_MAIL: RateLimit;
 	CONTACT: RateLimit;
 	OLD_IDS: RateLimit;
+	REQUESTS: RateLimit;
 	ASSETS: Fetcher;
 	MAIL_FROM: "sign-in@glyphatlas.org";
 	SIMILAR_INDEX_NAME: "glyph-atlas-similar-5dc40a3e";
