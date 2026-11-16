@@ -4,7 +4,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from './forms.test';
 import { bundleKey, cropId, publicId } from './atlas3';
-import { SHARDS, characterCounts, currentPointer, cursorOf, familyClaims, filedCell, filedClaimsQuery, filedCounts, galleryPage, rangeQuery, tallyQuery,
+import { currentPointer } from './atlas3Answers';
+import { SHARDS, characterCounts, cursorOf, familyClaims, filedCell, filedClaimsQuery, filedCounts, galleryPage, rangeQuery, tallyQuery,
   type GalleryQuery } from './atlas3Gallery';
 
 const databases: Database[] = [];

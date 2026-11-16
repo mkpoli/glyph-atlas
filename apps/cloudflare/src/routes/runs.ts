@@ -8,7 +8,8 @@
 // runs a crop is in moves at a publication; how its crops are written follows reviews (`run_written`).
 import { bundle, cropItems, cropRowsQuery, pageOf, publicId, slotOf, type CropRow, type Entry } from '../atlas3';
 import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
-import { currentPointer, FILING } from '../atlas3Gallery';
+import { currentPointer } from '../atlas3Answers';
+import { FILING } from '../atlas3Gallery';
 import { Problem } from '../busy';
 import { bookDating } from '../dating';
 import { formed, type UnitForm } from '../forms';

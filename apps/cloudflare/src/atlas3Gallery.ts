@@ -1,28 +1,13 @@
 // Character galleries on the new storage layout: counts from the publication's answers plus the
 // reviews since, and pages of crops read from index ranges in the order they show.
 import { cropOf, publicId } from './atlas3';
+import { currentPointer } from './atlas3Answers';
 import { keyHeads } from './ledger';
 
 type Json = any;
 
-// The publication the answers come from, `v3/pointer.json` (scripts/atlas3/answers.py). An isolate
-// reads it again after POINTER_HELD milliseconds, so a new publication shows within a minute.
-export type Pointer = { pub: string; through_gen: number };
-const POINTER_HELD = 60_000;
-let pointer: { at: number; read: Promise<Pointer> } | null = null;
 async function gzipped(object: R2ObjectBody): Promise<Json> {
   return await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json();
-}
-export function currentPointer(env: Env, now = Date.now()): Promise<Pointer> {
-  if (pointer && now - pointer.at < POINTER_HELD) return pointer.read;
-  const read = env.MEDIA.get('v3/pointer.json').then(async object => {
-    if (!object) throw new Error('v3/pointer.json is missing');
-    return await gzipped(object) as Pointer;
-  });
-  const held = { at: now, read };
-  read.catch(() => { if (pointer === held) pointer = null; });
-  pointer = held;
-  return read;
 }
 
 // A count cell: crops of one kind, style, state and withheld flag (`quiz` 0), witness decade and
