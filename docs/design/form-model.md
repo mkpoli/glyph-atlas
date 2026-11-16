@@ -9,7 +9,8 @@ claims stay recoverable with their original meaning.
 ## Entities
 
 **Reference data.** Characters (`data/vocab/characters.tsv`), their Ideographic Description Sequences
-(`han-ids.tsv`), source variant edges (`kanji-variants.tsv`, served from D1 `character_variants`) and
+(`han-ids.tsv`), source variant edges (`kanji-variants.tsv`, served from D1 `character_variants`),
+characters of another script a grapheme is also written with (`written-with.yaml`: ヿ for 事) and
 derived component variants (`character_derived`, tier `derived`: forms up to two component
 substitutions make of a character). They come from sources and are read only. Crops never attach to them directly.
 

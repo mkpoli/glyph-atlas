@@ -50,7 +50,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import evidence, han_components, images, refs, visual_families
+from .. import evidence, han_components, images, refs, visual_families, written_with
 from ..production import production_info
 from ..representation import written
 from ..schema import Box, Character, Document, Page, Unit
@@ -602,13 +602,14 @@ def _widened_corpus(chars: list[str], limit: int, offset: int, visual_group: str
     return {"items": items[offset:offset + limit], "total": min(total, WIDENED_CAP)}, fault
 
 
-def _write_families(point: str, counts: dict[str, int]) -> list[dict[str, Any]]:
-    """The graphemes besides its own that a reduced form writes, each with its family's images.
+def _write_families(point: str, counts: dict[str, int], extra: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+    """The graphemes besides its own that a reduced form writes, each with its family's images;
+    `extra` are those the table of `written_with` adds for a character of another script.
 
     A grapheme is a family of characters: the 字種 row states what the whole family holds here and in
     the corpus, as the Worker's does.
     """
-    heads = refs.also_writes(point)
+    heads = [*refs.also_writes(point), *(head for head in extra if head not in refs.also_writes(point))]
     families = {head: (refs.grapheme_info(head) or {}).get("members")
                 or [{"code_point": head, "char": refs.to_char(head)}] for head in heads}
     corpus, _ = corpus_source.safe(corpus_source.counts,
@@ -634,11 +635,20 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     widening, other = variant_pairs(char)
     shown = [*widening[:VARIANTS_SHOWN], *other[:VARIANTS_SHOWN]]
     derived = refs.derived_variants(char)
+    point = refs.to_code_point(char)
+    # Characters of another script the table gives as writing this grapheme (事: ヿ), and for such a
+    # character the grapheme it also writes: rows of the graph the variant tables do not hold.
+    head = refs.to_char((refs.grapheme_info(point) or {}).get("code_point") or point)
+    listed = {e["char"] for e in shown}
+    lent = [writer for writer in written_with.writers(head) if writer.char != char and writer.char not in listed]
+    lends = written_with.writes(char)
+    shown += [{"char": writer.char, "code_point": writer.code_point, "widens": False, "written": True,
+               "relations": writer.relations} for writer in lent]
     corpus_counts, _ = corpus_source.safe(
         corpus_source.counts,
         [e["char"] for e in shown] + [e["char"] for e in derived if e["encoded"]],
     )
-    cited = {**refs.variant_sources(), **refs.component_variant_sources()}
+    cited = {**refs.variant_sources(), **refs.component_variant_sources(), **written_with.sources()}
     rows = [{**e, "sources": sorted({r["source"] for r in e["relations"]}),
              "count": counts.get(e["code_point"], 0),
              "corpus_count": int(((corpus_counts or {}).get(e["char"]) or {}).get("n_glyphs") or 0)} for e in shown]
@@ -648,13 +658,14 @@ def variant_card(char: str, counts: dict[str, int]) -> dict[str, Any]:
     used = {source for row in rows for source in row["sources"]}
     if predictions:
         used |= {source for row in predictions for source in row["sources"]} | {refs.DERIVED_IDS}
-    point = refs.to_code_point(char)
     return {"items": [r for r in rows if r["widens"]], "related": [r for r in rows if not r["widens"]],
-            "derived": predictions, "total": len(widening) + len(other),
-            "writes": _write_families(point, counts),
-            "writers": [{**writer, "shared": refs.own_grapheme(writer["code_point"])
-                         or len(refs.also_writes(writer["code_point"])) > 1}
-                        for writer in (refs.grapheme_info(point) or {}).get("writers", [])],
+            "derived": predictions, "total": len(widening) + len(other) + len(lent),
+            "writes": _write_families(point, counts, (refs.to_code_point(lends.grapheme),) if lends else ()),
+            "writers": [*({**writer, "shared": refs.own_grapheme(writer["code_point"])
+                           or len(refs.also_writes(writer["code_point"])) > 1}
+                          for writer in (refs.grapheme_info(point) or {}).get("writers", [])),
+                        # A character of another script has its own grapheme too, so it is a shared form.
+                        *({"code_point": writer.code_point, "char": writer.char, "shared": True} for writer in lent)],
             "own": refs.own_grapheme(point),
             "sources": {source: cited.get(source, source) for source in sorted(used)}}
 
