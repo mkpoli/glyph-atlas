@@ -65,12 +65,24 @@ export const tallyDeltasQuery = () => `SELECT kind,char,book,production,state,qu
   WHERE gen>? GROUP BY kind,char,book,production,state,quiz`;
 type Delta = { kind: number; char: number; book: number; production: number; state: number; quiz: number; n: number };
 // The deltas move only with a review, an undo or a publication, each of which moves the catalogue
-// stamps, so an isolate keeps the last read under the publication, its generation and the stamps' key.
+// stamps, so an isolate keeps the last read under the publication, its generation and the stamps' key,
+// and the edge keeps each read under the same key for DELTAS_EDGE_SECONDS: an isolate new to a key
+// another has read takes its copy, and D1 reads every row above the generation once per location.
+// A key is read before its deltas, so a copy is never older than the stamps that name it, and a
+// reviewer's own save, which moves the stamps, is read afresh.
+const DELTAS_EDGE_SECONDS = 300;
 let deltasHeld: { key: string; read: Promise<Delta[]> } | null = null;
 export function tallyDeltas(env: Env, pub: string, through: number, stamps: string): Promise<Delta[]> {
   const key = `${pub}|${through}|${stamps}`;
   if (deltasHeld?.key === key) return deltasHeld.read;
-  const read = env.ATLAS.prepare(tallyDeltasQuery()).bind(through).all<Delta>().then(r => r.results);
+  const read = (async () => {
+    const edge = new Request(`https://glyphatlas.org/_deltas/${encodeURIComponent(key)}`);
+    const kept = await caches.default.match(edge).then(hit => hit ? hit.json() as Promise<Delta[]> : null).catch(() => null);
+    if (kept) return kept;
+    const rows = (await env.ATLAS.prepare(tallyDeltasQuery()).bind(through).all<Delta>()).results;
+    await caches.default.put(edge, Response.json(rows, { headers: { 'cache-control': `public, max-age=${DELTAS_EDGE_SECONDS}` } })).catch(() => {});
+    return rows;
+  })();
   const held = { key, read };
   read.catch(() => { if (deltasHeld === held) deltasHeld = null; });
   deltasHeld = held;

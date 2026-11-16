@@ -1,7 +1,7 @@
 import { cropSlotsQuery } from '../cropPanels';
 import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:test';
 import { bundle, bundleKey, cropId, publicId } from '../atlas3';
-import { charsQuery, tallyDeltasQuery } from '../atlas3Answers';
+import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
 import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, cursorOf, cursorText, dateStats, flaggedQuery, gallery, page, type Stage,
   catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter } from './browse';
@@ -333,6 +333,27 @@ describe('the browse page', () => {
     expect(body.categories.find((c: any) => c.label === 'は')).toMatchObject({ total: 5, pending: 3, checked: 2 });
     expect(body.categories.find((c: any) => c.label === '処').total).toBe(2);
     expect((await get(env, '/atlas?character=処&limit=10')).total).toBe(2);
+  });
+});
+
+describe('the reviews since the publication', () => {
+  it('are read from D1 once for a key, and from the edge by an isolate that does not hold it', async () => {
+    const { env, db, pub } = await setup();
+    let reads = 0;
+    const counted = { ...env, ATLAS: { ...env.ATLAS, prepare: (sql: string) => { if (sql === tallyDeltasQuery()) reads++; return env.ATLAS.prepare(sql); } } } as Env;
+    db.exec('INSERT INTO tally VALUES(1,0,1,-1,1,2,0,1,1,-1,1)');
+    const first = await tallyDeltas(counted, pub, 0, 'k1');
+    expect(first.map(d => [d.char, d.state, d.n])).toEqual([[1, 1, 1]]);
+    expect(await tallyDeltas(counted, pub, 0, 'k1')).toBe(first);
+    expect(reads).toBe(1);
+    // A save moves the stamps, and its key is read afresh.
+    db.exec('INSERT INTO tally VALUES(1,0,6,-1,1,2,0,0,1,-1,1)');
+    expect((await tallyDeltas(counted, pub, 0, 'k2')).map(d => d.char)).toEqual([1, 6]);
+    expect(reads).toBe(2);
+    // The isolate holds the last key alone; the first comes back from the edge as it was read.
+    expect(await tallyDeltas(counted, pub, 0, 'k1')).toEqual(first);
+    expect(reads).toBe(2);
+    expect([...edge.keys()].filter(url => url.includes('/_deltas/'))).toEqual(['k1', 'k2'].map(k => `https://glyphatlas.org/_deltas/${encodeURIComponent(`${pub}|0|${k}`)}`));
   });
 });
 
