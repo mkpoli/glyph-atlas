@@ -209,3 +209,26 @@ export async function setWrittenFor(form, grapheme, remove = false) {
     return result
   } catch (error) { if (error.status) writtenFor.delete(key); throw error }
 }
+
+// One submission id per form, target and direction, so a retry after a lost answer is the same write.
+// A save the site answered drops every id kept for its form: the same filing made again later is a
+// new write, whatever became of an earlier one whose answer was lost.
+const filed = new Map()
+/**
+ * File the form written as `form` (a character, a figure or a description, whether or not anyone has
+ * chosen it yet) under a 構形, or with `remove` take back the reader's own claim. `target` names the
+ * 構形: `{ char }` by a character or description that has it, `{ char, of }` by a regional shape of the
+ * character `of`, or `{ structure }` by its id. Filing moves the form: the reader's claims of its
+ * other 構形 are taken back in the same save. Answers `{ structures, replaced }`: the 構形 the form
+ * stands under now with who says so, and those of the claims taken back.
+ */
+export async function setStructure(form, target, { remove = false } = {}) {
+  const key = [form, JSON.stringify(target), remove].join('\u0000')
+  if (!filed.has(key)) filed.set(key, crypto.randomUUID())
+  try {
+    const result = await request(`/atlas/forms/${encodeURIComponent(form)}/structure`, { id: filed.get(key), ...target,
+      ...(remove ? { remove: true } : { replace: true }) })
+    for (const kept of [...filed.keys()]) if (kept.startsWith(form + '\u0000')) filed.delete(kept)
+    return result
+  } catch (error) { if (error.status) filed.delete(key); throw error }
+}

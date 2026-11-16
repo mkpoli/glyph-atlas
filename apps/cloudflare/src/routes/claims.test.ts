@@ -9,7 +9,7 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
 import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
-  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, ownStructureQuery, setStructure, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
+  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
   writtenForOf, writtenForQuery } from './claims';
 import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
 import { familyClaims } from '../atlas3Gallery';
@@ -331,7 +331,7 @@ describe('a form written for a grapheme', () => {
   });
 });
 
-describe('a form that realizes a structure', () => {
+describe('a form filed under a structure', () => {
   const SOURCE = { scheme: 'babelstone-ids', version: '2025-06-27', policy: 'structure-v1' };
   // 峰 and 峯 are two structures of one character; 丑 has none. The reference objects are held per
   // isolate, so every test writes the same ones.
@@ -340,6 +340,8 @@ describe('a form that realizes a structure', () => {
     const beside = await structureId('⿰山夆', SOURCE.scheme, SOURCE.policy), above = await structureId('⿱山夆', SOURCE.scheme, SOURCE.policy);
     const rows: Record<string, unknown[]> = { '峰': [['⿰山夆'], null, [beside, '⿰山夆']], '峯': [['⿱山夆'], null, [above, '⿱山夆']],
       '丑': [[], null, null], '岑': [['⿱山今'], null, ['st:' + '0'.repeat(32), '⿱山今']],
+      // 嶺 has one regional shape with the character's structure and one with 峯's.
+      '嶺': [['⿱山領'], [{ text: '⿱山領', regions: 'GT' }, { text: '⿱山夆', regions: 'J', structure: { id: above, label: '⿱山夆' } }], [beside, '⿰山夆']],
       // A description the load read: the form's own, which spells 峰 with another drawing of 夆.
       '⿰山夅': [['⿰山夅'], null, [beside, '⿰山夆']] };
     const shards = new Map<string, Record<string, unknown>>();
@@ -353,7 +355,7 @@ describe('a form that realizes a structure', () => {
       publicId(found.local), 'reader', found.tools);
     const form = made.form!.values[0].form!;
     const say = (char: string, remove = false, actor = 'reader', id = crypto.randomUUID()) =>
-      setStructure(found.env, { id, char, remove }, form, actor, found.tools);
+      setStructure(found.env, { id, char, ...(remove ? { remove } : {}) }, form, actor, found.tools);
     return { ...found, form, say, beside, above };
   }
 
@@ -365,7 +367,7 @@ describe('a form that realizes a structure', () => {
   it('names a structure by a character that has it, writes its row once, and takes one claim back', async () => {
     const { db, form, say, beside, above } = await forms();
     const saved = await say('峰');
-    expect(saved).toEqual({ id: form, structures: [{ structure: beside, label: '⿰山夆', by: ['reader'] }], replaced: null });
+    expect(saved).toEqual({ id: form, structures: [{ structure: beside, label: '⿰山夆', by: ['reader'] }], replaced: [] });
     expect(db.query('SELECT id,label,scheme,version,policy,created_by FROM structures').all())
       .toEqual([{ id: beside, label: '⿰山夆', ...SOURCE, created_by: 'reader' }]);
     expect(db.query("SELECT subject,crop,object,method FROM assertions WHERE predicate='has_structure'").get())
@@ -374,14 +376,14 @@ describe('a form that realizes a structure', () => {
     await say('峰', false, 'other');
     expect(db.query('SELECT count(*) AS n FROM structures').get()).toEqual({ n: 1 });
     expect((await say('峯')).structures.map((v: any) => v.label).sort()).toEqual(['⿰山夆', '⿱山夆']);
-    expect((await say('峰', true)).replaced).toBe(beside);
+    expect((await say('峰', true)).replaced).toEqual([beside]);
     expect((await say('峰', true, 'other')).structures).toEqual([{ structure: above, label: '⿱山夆', by: ['reader'] }]);
     await expect(say('峰', true)).rejects.toThrow('409 You have not said this form has this structure.');
   });
 
   it('names a structure by a description the load read, and by a character with its variation selector', async () => {
     const { form, say, beside } = await forms();
-    expect(await say('⿰山夅')).toEqual({ id: form, structures: [{ structure: beside, label: '⿰山夆', by: ['reader'] }], replaced: null });
+    expect(await say('⿰山夅')).toEqual({ id: form, structures: [{ structure: beside, label: '⿰山夆', by: ['reader'] }], replaced: [] });
     const both = (await say('峰\u{E0100}', false, 'other')).structures;
     expect(both.map((v: any) => [v.structure, [...v.by].sort()])).toEqual([[beside, ['other', 'reader']]]);
   });
@@ -392,7 +394,7 @@ describe('a form that realizes a structure', () => {
     await say('峰', false, 'reader', id);
     await expect(say('峯', false, 'reader', id)).rejects.toThrow('409');
     const taken = await setStructure(env, { id: crypto.randomUUID(), structure: beside, remove: true }, form, 'reader', tools);
-    expect(taken).toEqual({ id: form, structures: [], replaced: beside });
+    expect(taken).toEqual({ id: form, structures: [], replaced: [beside] });
     await expect(setStructure(env, { id: crypto.randomUUID(), structure: 'st:x', remove: true }, form, 'reader', tools))
       .rejects.toThrow('422 Name a structure by its id.');
   });
@@ -407,6 +409,75 @@ describe('a form that realizes a structure', () => {
     await expect(say('岑')).rejects.toThrow('503 The structures are being loaded.');
     await expect(setStructure(env, { id: crypto.randomUUID(), char: '峰' }, 'fm:' + '0'.repeat(32), 'reader', tools))
       .rejects.toThrow('404 No such form.');
+  });
+
+  it('names a structure a claim has named by its id', async () => {
+    const { env, tools, form, say, beside, above } = await forms();
+    await expect(setStructure(env, { id: crypto.randomUUID(), structure: above }, form, 'reader', tools)).rejects.toThrow('422 No claim has named this structure.');
+    await say('峯', false, 'other');
+    const filed = await setStructure(env, { id: crypto.randomUUID(), structure: above }, form, 'reader', tools);
+    expect(filed.structures.map((v: any) => [v.structure, [...v.by].sort()])).toEqual([[above, ['other', 'reader']]]);
+    expect(beside).not.toBe(above);
+  });
+
+  it('names a structure by a regional shape of a character', async () => {
+    const { env, tools, form, beside, above } = await forms();
+    const by = (char: string, of: string) => setStructure(env, { id: crypto.randomUUID(), char, of }, form, 'reader', tools);
+    expect((await by('⿱山夆', '嶺')).structures.map((v: any) => v.structure)).toEqual([above]);
+    expect((await by('⿱山領', '嶺')).structures.map((v: any) => v.structure).sort()).toEqual([beside, above].sort());
+    await expect(by('⿱山今', '嶺')).rejects.toThrow('422 ⿱山今 is no shape of 嶺.');
+  });
+
+  it('moves a form: the reader\'s claims of its other structures are taken back in the same save', async () => {
+    const { db, env, tools, form, say, beside, above } = await forms();
+    await say('峰');
+    await say('峰', false, 'other');
+    const id = crypto.randomUUID();
+    const moved = await setStructure(env, { id, char: '峯', replace: true }, form, 'reader', tools);
+    expect(moved.replaced).toEqual([beside]);
+    expect(moved.structures.map((v: any) => [v.label, v.by])).toEqual([['⿰山夆', ['other']], ['⿱山夆', ['reader']]].sort((a, b) => a[0] < b[0] ? -1 : 1)
+      .sort((a, b) => (a[0] === '⿰山夆' ? beside : above) < (b[0] === '⿰山夆' ? beside : above) ? -1 : 1));
+    // The same save sent again answers alike and writes nothing.
+    const actions = () => (db.query("SELECT count(*) AS n FROM assertion_actions WHERE action='retract'").get() as { n: number }).n;
+    const before = actions();
+    expect(await setStructure(env, { id, char: '峯', replace: true }, form, 'reader', tools)).toEqual(moved);
+    expect(actions()).toBe(before);
+    // Moving to where the form already stands takes back the rest alone.
+    await say('峰');
+    expect((await setStructure(env, { id: crypto.randomUUID(), char: '峯', replace: true }, form, 'reader', tools)).replaced).toEqual([beside]);
+    expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='has_structure' AND asserted_by='reader' AND slot=?").get(above)).toEqual({ n: 1 });
+  });
+
+  it('files a written value nobody has chosen yet, naming its form with the claim', async () => {
+    const { db, env, tools, beside, post } = await forms();
+    const answer = await post(`/atlas/forms/${encodeURIComponent('⿰山夅')}/structure`, { id: crypto.randomUUID(), char: '峰' }) as any;
+    expect(answer.structures).toEqual([{ structure: beside, label: '⿰山夆', by: ['reader'] }]);
+    expect(db.query("SELECT r.scheme,r.value FROM forms f JOIN representations r ON r.id=f.anchor WHERE f.id=?").get(answer.id)).toEqual({ scheme: 'ids', value: '⿰山夅' });
+    expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='represented_by' AND subject=?").get(answer.id)).toEqual({ n: 1 });
+    // A character is a value too, and a second claim names the form no second time.
+    const char = await setStructure(env, { id: crypto.randomUUID(), char: '峯' }, '峰', 'reader', tools);
+    await setStructure(env, { id: crypto.randomUUID(), char: '峯' }, '峰', 'other', tools);
+    expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='represented_by' AND subject=?").get(char.id)).toEqual({ n: 1 });
+    await expect(setStructure(env, { id: crypto.randomUUID(), char: '峰' }, '⿰山', 'reader', tools)).rejects.toThrow('422 This description is missing a component.');
+    await expect(setStructure(env, { id: crypto.randomUUID(), char: '峰', remove: true }, '⿱山夅', 'reader', tools))
+      .rejects.toThrow('409 You have not said this form has this structure.');
+    expect(db.query("SELECT count(*) AS n FROM representations WHERE value='⿱山夅'").get()).toEqual({ n: 0 });
+  });
+
+  it('reads the structures each written value is filed under, the one most readers name first', async () => {
+    const { env, tools, say, beside, above } = await forms();
+    expect(await claimedStructures(env, ['⿰山夆', '峰', '⿰山'])).toEqual(new Map());
+    await say('峯');
+    expect(await claimedStructures(env, ['峰', '⿰山夆'])).toEqual(new Map([['⿰山夆', [{ id: above, label: '⿱山夆', by: ['reader'] }]]]));
+    await say('峰', false, 'other');
+    await say('峰', false, 'third');
+    expect((await claimedStructures(env, ['⿰山夆'])).get('⿰山夆')).toEqual([{ id: beside, label: '⿰山夆', by: expect.arrayContaining(['other', 'third']) },
+      { id: above, label: '⿱山夆', by: ['reader'] }]);
+    await setStructure(env, { id: crypto.randomUUID(), char: '峰', remove: true }, '⿰山夆', 'other', tools);
+    // Among equals the lowest id stands first.
+    expect((await claimedStructures(env, ['⿰山夆'])).get('⿰山夆')!.map(value => value.id)).toEqual([beside, above].sort());
+    await setStructure(env, { id: crypto.randomUUID(), char: '峰', remove: true }, '⿰山夆', 'third', tools);
+    expect((await claimedStructures(env, ['⿰山夆'])).get('⿰山夆')!.map(value => value.id)).toEqual([above]);
   });
 
   it('is written through the claim route', async () => {
@@ -602,7 +673,8 @@ describe('the ledger queries', () => {
       [ownClaimQuery('writes_word', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [currentCropClaimsQuery(), [1]], [currentClaimsQuery(), ['s']],
       [claimHistoryQuery('crop'), [1]], [claimHistoryQuery('subject'), ['s']], [ledgerClaimsQuery(), [0, 10]], [ledgerActionsQuery(), [0, 10]],
       [bookDatesQuery(), [1]], [bookKeyQuery(), ['k']], [bookDateClaimsQuery(), [1]], [resolveClearQuery(), ['[["s","p","",""]]']], [corpusRowQuery(), [1]],
-      [structuresQuery(), ['fm:1']], [structureLabelsQuery(), ['["st:1"]']], [ownStructureQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['fm:1', 'st:1', 'u']],
+      [structuresQuery(), ['fm:1']], [structureLabelsQuery(), ['["st:1"]']], [ownStructuresQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['fm:1', 'u']],
+      [claimedStructuresQuery(), ['["fm:1"]']],
     ];
     for (const [sql, args] of plans) {
       const detail = (db.query('EXPLAIN QUERY PLAN ' + sql).all(...(args as any[])) as { detail: string }[]).map(r => r.detail);

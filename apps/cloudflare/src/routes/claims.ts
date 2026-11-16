@@ -145,6 +145,23 @@ export async function setForm(env: Env, input: Json, named: string, actor: strin
   return { id: publicId(crop.id), form: await formOfCrop(env, crop.id), replaced };
 }
 
+// The rows that name a value's broad form: its representation, and with the first choice of the value
+// the form and the claim that the value names it, under an id derived from the form, so two first
+// choices made at once name it once. Answers the form's id.
+async function planNaming(env: Env, naming: { key: string; actor: string; representation: Representation; at: string }, plan: Plan) {
+  const { key, actor, representation, at } = naming;
+  const rep = await representationId(representation), form = await anchoredForm(rep);
+  plan.statements.push(env.ATLAS.prepare('INSERT OR IGNORE INTO representations(id,scheme,value,namespace,version) VALUES(?,?,?,?,?)')
+    .bind(rep, representation.scheme, representation.value, representation.namespace, representation.version));
+  if (!await env.ATLAS.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first()) {
+    plan.statements.push(env.ATLAS.prepare('INSERT OR IGNORE INTO forms(id,anchor,created_by,created_at) VALUES(?,?,?,?)').bind(form, rep, actor, at),
+      env.ATLAS.prepare(`INSERT OR IGNORE INTO assertions(id,submission,subject,predicate,scope,slot,object,tier,asserted_by,asserted_at,method)
+        VALUES(?,?,?,'represented_by','',?,?,'observed',?,?,'form-picker')`).bind(await namingId(form), key, form, rep, rep, actor, at));
+    plan.keys.push([form, 'represented_by', '', rep]);
+  }
+  return form;
+}
+
 // The rows of one form pick: the reader's claim of `representation` on `crop`, or with none, the
 // retraction of their own claim `own`. A value the reviewer picks or types names a representation and
 // that value's broad form, which the first such choice creates together with the claim that the
@@ -155,20 +172,8 @@ async function planForm(env: Env, pick: { key: string; actor: string; crop: Crop
   const add = (part: { statements: D1PreparedStatement[]; keys: Plan['keys'] }) => { plan.statements.push(...part.statements); plan.keys.push(...part.keys) };
   plan.crops = [...plan.crops ?? [], crop.id];
   if (!representation) return add(await planAction(env, { key, actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, ledger));
-  const rep = await representationId(representation), form = await anchoredForm(rep);
-  if (!named.has(form)) {
-    named.add(form);
-    plan.statements.push(env.ATLAS.prepare('INSERT OR IGNORE INTO representations(id,scheme,value,namespace,version) VALUES(?,?,?,?,?)')
-      .bind(rep, representation.scheme, representation.value, representation.namespace, representation.version));
-    // The first choice of a value names its form: the form and the claim that the value names it,
-    // under an id derived from the form, so two first choices made at once name it once.
-    if (!await env.ATLAS.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first()) {
-      plan.statements.push(env.ATLAS.prepare('INSERT OR IGNORE INTO forms(id,anchor,created_by,created_at) VALUES(?,?,?,?)').bind(form, rep, actor, at),
-        env.ATLAS.prepare(`INSERT OR IGNORE INTO assertions(id,submission,subject,predicate,scope,slot,object,tier,asserted_by,asserted_at,method)
-          VALUES(?,?,?,'represented_by','',?,?,'observed',?,?,'form-picker')`).bind(await namingId(form), key, form, rep, rep, actor, at));
-      plan.keys.push([form, 'represented_by', '', rep]);
-    }
-  }
+  const form = await anchoredForm(await representationId(representation));
+  if (!named.has(form)) { named.add(form); await planNaming(env, { key, actor, representation, at }, plan); }
   add(await planClaim(env, { key, actor, crop, predicate: 'has_form', scope: '', at, method: 'form-picker',
     members: [{ object: form, value: null, confidence: null, confidence_scheme: null }] }, ledger));
 }
@@ -318,13 +323,14 @@ export async function setWrittenFor(env: Env, input: Json, form: string, actor: 
   return { id: form, written_for: await writtenForOf(env, form), replaced: remove ? grapheme : null };
 }
 
-// A form's `has_structure` claims: the 構形 the form realizes (docs/decisions/0012-structure-layer.md).
+// A form's `has_structure` claims: the 構形 the form is filed under (docs/decisions/0012-structure-layer.md).
 // A structure is named by a character that has it, or by a description the reference load read (a
-// form's own, when a reviewer typed one), since the Worker reads structures and derives none.
+// form's own, when a reviewer typed one), since the Worker reads structures and derives none; one a
+// claim has already named is also named by its id.
 export const structuresQuery = () => `SELECT c.status,c.members,c.claims FROM current_claims c
   WHERE c.subject=? AND c.predicate='has_structure' AND c.scope=''`;
 export const structureLabelsQuery = () => 'SELECT id,label FROM structures WHERE id IN (SELECT value FROM json_each(?))';
-/** The structures a form realizes, each with its label and who says so now. */
+/** The structures a form is filed under, each with its label and who says so now. */
 export async function structuresOf(env: Env, form: string): Promise<{ structure: string; label: string; by: string[] }[]> {
   const rows = (await env.ATLAS.prepare(structuresQuery()).bind(form).all<{ status: string; members: string; claims: string }>()).results;
   const found = rows.filter(row => FILED.has(row.status)).flatMap(row => {
@@ -337,69 +343,122 @@ export async function structuresOf(env: Env, form: string): Promise<{ structure:
   return found.map(value => ({ ...value, label: labels.get(value.structure) ?? '' }))
     .sort((a, b) => a.structure < b.structure ? -1 : a.structure > b.structure ? 1 : 0);
 }
-// The actor's own live claim that this form realizes this structure: one range of `assertion_object`.
-export const ownStructureQuery = (owned: string) => `SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='has_structure'
-  AND a.scope='' AND a.slot=? AND (a.asserted_by=? OR a.asserted_by IN ${owned})
-  AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid DESC LIMIT 1`;
+// The structures claimed for each of these forms: one range of `current_claims`' key a form.
+export const claimedStructuresQuery = () => `SELECT c.subject AS form,c.object AS structure,c.status,c.claims,s.label
+  FROM json_each(?) j JOIN current_claims c ON c.subject=j.value AND c.predicate='has_structure' AND c.scope=''
+  LEFT JOIN structures s ON s.id=c.object`;
+/** The form a written value names, or null for one that names none. */
+export async function formNamed(value: string): Promise<string | null> {
+  const representation = typed(value);
+  return typeof representation === 'string' ? null : anchoredForm(await representationId(representation));
+}
+/** The 構形 readers filed each of these written values under, each with who says so now: first the
+ *  one most readers name, the lowest id among equals. A value nobody filed is not in the answer. */
+export async function claimedStructures(env: Env, names: string[]): Promise<Map<string, { id: string; label: string; by: string[] }[]>> {
+  const forms = new Map<string, string[]>();
+  for (const name of names) {
+    const form = await formNamed(name);
+    if (form) forms.set(form, [...forms.get(form) ?? [], name]);
+  }
+  const found = new Map<string, { id: string; label: string; by: string[] }[]>();
+  if (!forms.size) return found;
+  const rows = (await env.ATLAS.prepare(claimedStructuresQuery()).bind(JSON.stringify([...forms.keys()]))
+    .all<{ form: string; structure: string | null; status: string; claims: string; label: string | null }>()).results;
+  for (const row of rows) {
+    if (!FILED.has(row.status) || !row.structure || row.label == null) continue;
+    const by = [...new Set((JSON.parse(row.claims) as Json[]).filter(c => c.standing).map(c => c.asserted_by as string))];
+    for (const name of forms.get(row.form) ?? []) found.set(name, [...found.get(name) ?? [], { id: row.structure, label: row.label, by }]);
+  }
+  for (const filed of found.values()) filed.sort((a, b) => b.by.length - a.by.length || (a.id < b.id ? -1 : 1));
+  return found;
+}
+// The actor's own live claims of a form's structures, latest first: one range of `assertion_slot`.
+export const ownStructuresQuery = (owned: string) => `SELECT a.id,a.slot FROM assertions a WHERE a.subject=? AND a.predicate='has_structure'
+  AND a.scope='' AND (a.asserted_by=? OR a.asserted_by IN ${owned})
+  AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid DESC`;
 /** The id `glyph_atlas.structures` gives a label under a scheme and a policy. */
 export async function structureId(label: string, scheme: string, policy: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`structure\n${label}\n${scheme}\n${policy}`));
   return 'st:' + [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
 const STRUCTURE_ID = /^st:[0-9a-f]{32}$/;
-/** Say that a form realizes the structure of a character or a description (`remove` false), or take back the reader's own
- *  claim (`remove` true), which may name the structure by its id: a claim made under an earlier policy
- *  is one no character names any more. A form can realize several structures; each is a claim of its
- *  own. The structure's row is written with its first claim, under the version the policy object
+/** File a form under the structure of a character or a description, or take back the reader's own
+ *  claim (`remove`). The form is named by its id or by its written value (a character, a character
+ *  with a variation selector, a description); a value nobody has chosen yet gets its form here. The
+ *  structure is named by `char` (with `of`, a regional shape of that character), or by `structure`,
+ *  the id of one a claim has named before: a claim made under an earlier policy is one no character
+ *  names any more. A form can be filed under several
+ *  structures, each a claim of its own; with `replace` the reader's claims of its other structures
+ *  are taken back in the same save, so the form moves. `replaced` lists the structures of the claims
+ *  taken back. A structure's row is written with its first claim, under the version the policy object
  *  names at that moment. */
-export async function setStructure(env: Env, input: Json, form: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
+export async function setStructure(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
   const ledger = ledgerTools(env, tools, ctx);
-  const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ form, structure: input });
+  const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ form: named, structure: input });
+  let representation: Representation | null = null;
+  if (!FORM_ID.test(named)) {
+    const value = typed(tools.literal(tools.text(named, 4 * FORM_LONGEST, 'form', true)!));
+    if (typeof value === 'string') tools.fail(422, PROBLEMS[value]);
+    representation = value as Representation;
+  }
+  const form = representation ? await anchoredForm(await representationId(representation)) : named;
   const saved = await savedSubmission(env, key, signature, tools.fail);
-  if (saved) return { id: form, structures: await structuresOf(env, form), replaced: saved.replaced ?? null };
-  if (!FORM_ID.test(form) || !await env.ATLAS.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first()) tools.fail(404, 'No such form.');
-  const remove = input.remove === true;
+  if (saved) return { id: form, structures: await structuresOf(env, form), replaced: saved.replaced ?? [] };
+  const remove = input.remove === true, replace = input.replace === true && !remove;
+  const exists = Boolean(await env.ATLAS.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first());
+  if (!exists && !representation) tools.fail(404, 'No such form.');
   let structure: { id: string; label: string }, source: Awaited<ReturnType<typeof structureSource>> = null;
-  if (remove && input.structure != null) {
-    const named = tools.text(input.structure, 64, 'structure', true)!;
-    if (!STRUCTURE_ID.test(named)) tools.fail(422, 'Name a structure by its id.');
-    structure = { id: named, label: '' };
+  if (input.structure != null) {
+    const id = tools.text(input.structure, 64, 'structure', true)!;
+    if (!STRUCTURE_ID.test(id)) tools.fail(422, 'Name a structure by its id.');
+    const row = remove ? null : await env.ATLAS.prepare('SELECT label FROM structures WHERE id=?').bind(id).first<{ label: string }>();
+    if (!remove && !row) tools.fail(422, 'No claim has named this structure.');
+    structure = { id, label: row?.label ?? '' };
   } else {
     const char = tools.text(input.char, 4 * FORM_LONGEST, 'char', true)!;
     if (written(char).length !== 1 || written(char)[0] !== char) tools.fail(422, 'Name one character or description.');
-    const [described, read] = await Promise.all([characterIds(env, structureKey(char), ctx), structureSource(env, ctx)]);
+    // A character's regional shape is no key of the load: it is found among the shapes of `of`.
+    const of = input.of == null ? null : tools.text(input.of, 8, 'of', true)!;
+    const [described, read] = await Promise.all([characterIds(env, structureKey(of ?? char), ctx), structureSource(env, ctx)]);
     // No policy object: no reference load has carried structures yet.
     source = read ?? tools.fail(503, 'The structures are being loaded.');
-    structure = described?.structure ?? tools.fail(422, `No structure is known for ${char}.`);
+    const shape = of === null ? null : (described?.shapes ?? []).find(one => one.text === char) ?? tools.fail(422, `${char} is no shape of ${of}.`);
+    structure = (shape && 'structure' in shape ? shape.structure : described?.structure) ?? tools.fail(422, `No structure is known for ${char}.`);
     // A shard and a policy from two loads would name a row its id does not describe.
     if (await structureId(structure.label, source.scheme, source.policy) !== structure.id) tools.fail(503, 'The structures are being loaded.');
   }
-  const own = await env.ATLAS.prepare(ownStructureQuery(ownedActors(actor))).bind(form, structure.id, actor).first<{ id: string }>();
-  const held = (await structuresOf(env, form)).some(value => value.structure === structure.id);
+  const mine = exists ? (await env.ATLAS.prepare(ownStructuresQuery(ownedActors(actor))).bind(form, actor).all<{ id: string; slot: string }>()).results : [];
+  const own = mine.find(claim => claim.slot === structure.id);
+  const others = replace ? mine.filter(claim => claim.slot !== structure.id) : [];
+  const held = exists && (await structuresOf(env, form)).some(value => value.structure === structure.id);
   if (remove && !own) tools.fail(409, 'You have not said this form has this structure.');
   const at = new Date().toISOString();
-  if (!remove && own && held) {
+  if (!remove && own && held && !others.length) {
     await env.ATLAS.prepare('INSERT OR IGNORE INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
-      .bind(key, actor, signature, JSON.stringify({ submission: key, subject: form, replaced: null }), at).run();
-    return { id: form, structures: await structuresOf(env, form), replaced: null };
+      .bind(key, actor, signature, JSON.stringify({ submission: key, subject: form, replaced: [] }), at).run();
+    return { id: form, structures: await structuresOf(env, form), replaced: [] };
   }
   const plan: Plan = { statements: [], keys: [] };
-  if (own) {
-    const retract = await planAction(env, { key: key + '/retract', actor, target: own.id, action: 'retract',
+  const again = Boolean(own) && !(held && !remove);
+  const taken = [...(again ? [own!] : []), ...others];
+  for (const claim of taken) {
+    const retract = await planAction(env, { key: key + '/retract', actor, target: claim.id, action: 'retract',
       reason: remove ? 'cleared' : 'replaced', admin: false, at }, ledger);
     plan.statements.push(...retract.statements); plan.keys.push(...retract.keys);
   }
-  if (!remove) {
+  if (!remove && (!own || again)) {
+    if (!exists) await planNaming(env, { key, actor, representation: representation!, at }, plan);
     const member: Member = { object: structure.id, value: null, confidence: null, confidence_scheme: null };
     checkClaims('has_structure', [member], { [structure.id]: 'structure' }, tools.fail);
-    plan.statements.push(env.ATLAS.prepare('INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,?,?,?,?,?)')
-      .bind(structure.id, structure.label, source!.scheme, source!.version, source!.policy, actor, at));
+    if (source) plan.statements.push(env.ATLAS.prepare('INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,?,?,?,?,?)')
+      .bind(structure.id, structure.label, source.scheme, source.version, source.policy, actor, at));
     const claim = await planSubjectClaim(env, { key, actor, subject: form, predicate: 'has_structure', scope: '', members: [member],
       at, method: 'form-picker' }, ledger);
     plan.statements.push(...claim.statements); plan.keys.push(...claim.keys);
   }
-  await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: form, replaced: remove ? structure.id : null }, ledger);
-  return { id: form, structures: await structuresOf(env, form), replaced: remove ? structure.id : null };
+  const replaced = remove ? [structure.id] : [...new Set(others.map(claim => claim.slot))];
+  await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: form, replaced }, ledger);
+  return { id: form, structures: await structuresOf(env, form), replaced };
 }
 
 /** Set the reader's word for one crop (decision 0004), or retract their own latest claim with `word: null`. */

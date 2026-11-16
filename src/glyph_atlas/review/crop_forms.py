@@ -182,6 +182,98 @@ def set_written_for(conn: sqlite3.Connection, *, key: str, actor: str, request: 
     return response
 
 
+def structures_of(conn: sqlite3.Connection, form: str) -> list[dict]:
+    """The structures a form is filed under, each with its label and who says so now."""
+    rows = conn.execute("SELECT c.object,c.status,c.claims,s.label FROM current_claims c LEFT JOIN structures s ON s.id=c.object "
+                        "WHERE c.subject=? AND c.predicate='has_structure' AND c.scope='' ORDER BY c.object", (form,)).fetchall()
+    return [{"structure": row["object"], "label": row["label"] or "",
+             "by": sorted({claim["asserted_by"] for claim in json.loads(row["claims"]) if claim["standing"]})}
+            for row in rows if row["status"] in FILED and row["object"]]
+
+
+def claimed_structures(conn: sqlite3.Connection, names: Iterable[str]) -> dict[str, list[dict]]:
+    """The 構形 readers filed each of these written values under, each with who says so now: first the
+    one most readers name, the lowest id among equals. A value nobody filed is not in the answer."""
+    found: dict[str, list[dict]] = {}
+    for name in names:
+        try:
+            form = representation.anchored_form(representation.typed(name))
+        except ValueError:
+            continue
+        filed = sorted(structures_of(conn, form), key=lambda value: (-len(value["by"]), value["structure"]))
+        if filed:
+            found[name] = [{"id": value["structure"], "label": value["label"], "by": value["by"]} for value in filed]
+    return found
+
+
+def set_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], form: str,
+                  char: str | None = None, structure: str | None = None, remove: bool = False, replace: bool = False,
+                  at: str | None = None, prefix: str = "lc", mint: Callable[[], str] | None = None) -> dict:
+    """File a form under the structure of a character or a description, or take back the reader's own claim.
+
+    The form is named by its id or by its written value; a value nobody has chosen yet gets its form
+    here. The structure is named by `char`, or by `structure`, the id of one a claim has named before.
+    With `replace` the reader's claims of the form's other structures are taken back in the same save,
+    so the form moves. The response lists in `replaced` the structures of the claims taken back. The
+    Worker's `setStructure` does the same, reading a structure where this derives it.
+    """
+    from .. import structures
+
+    signature = ledger.canonical(request)
+    saved = ledger.previous(conn, key, signature)
+    if saved is not None:
+        return saved
+    at = at or ledger.now()
+    named = None
+    if not form.startswith("fm:"):
+        try:
+            named = representation.typed(form)
+        except ValueError as error:
+            raise LedgerError(422, str(error)) from error
+        form = representation.anchored_form(named)
+    exists = conn.execute("SELECT 1 FROM forms WHERE id=?", (form,)).fetchone() is not None
+    if not exists and named is None:
+        raise LedgerError(404, "No such form.")
+    derived = None
+    if structure is not None:
+        if not remove and conn.execute("SELECT 1 FROM structures WHERE id=?", (structure,)).fetchone() is None:
+            raise LedgerError(422, "No claim has named this structure.")
+    else:
+        if not char or representation.written(char) != [char]:
+            raise LedgerError(422, "Name one character or description.")
+        derived = structures.for_name(char)
+        if derived is None:
+            raise LedgerError(422, f"No structure is known for {char}.")
+        structure = derived.id
+    mine = conn.execute(
+        "SELECT a.id,a.slot FROM assertions a WHERE a.subject=? AND a.predicate='has_structure' AND a.scope='' AND a.asserted_by=? "
+        "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
+        "ORDER BY a.rowid DESC", (form, actor)).fetchall()
+    own = next((row for row in mine if row["slot"] == structure), None)
+    others = [row for row in mine if row["slot"] != structure] if replace and not remove else []
+    held = any(value["structure"] == structure for value in structures_of(conn, form))
+    if remove and own is None:
+        raise LedgerError(409, "You have not said this form has this structure.")
+    again = own is not None and not (held and not remove)
+    for i, claim in enumerate(([own] if again else []) + others):
+        ledger.act(conn, key=f"{key}/retract/{i}", actor=actor, request={"target": claim["id"], "action": "retract"},
+                   target=claim["id"], action="retract", reason="cleared" if remove else "replaced",
+                   version_of=lambda _unit: None, prefix=prefix, at=at, mint=mint)
+    if not remove and (own is None or again):
+        if named is not None:
+            ensure_form(conn, named, key=key, actor=actor, at=at, prefix=prefix, mint=mint)
+        if derived is not None:
+            ensure_structure(conn, derived, actor=actor, at=at)
+        ledger.write_claims(conn, key=f"{key}/claim", actor=actor, request=request, subject=form, predicate="has_structure",
+                            claims=[Claim(object=structure)], objects={structure: "structure"}, method=METHOD,
+                            prefix=prefix, at=at, mint=mint)
+    response = {"submission": key, "subject": form,
+                "replaced": [structure] if remove else sorted({row["slot"] for row in others})}
+    conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
+                 (key, actor, signature, ledger.canonical(response), at))
+    return response
+
+
 def _values(row: dict) -> list[dict]:
     """The values a slot holds: its current members, or, disputed, each standing claim's."""
     if row["members"]:

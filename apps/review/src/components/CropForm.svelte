@@ -11,15 +11,17 @@
   // and 峯 under two, a figure of the IVD with its character. A form with no structure, and a grapheme
   // of another script, stand last without a caption. A form's 構形 is read before the form is shown, so
   // the chips, and the number keys with them, keep their places.
+  // A signed-in reader opens the 構形 of the bar's forms to arrange them, where a form, typed, derived
+  // or encoded, is filed under another 構形.
   import { untrack } from 'svelte'
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
   import CopyValue from './CopyValue.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
+  import StructureDialog from './StructureDialog.svelte'
   import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
-  import { structures as readStructures } from '../lib/layers.js'
-  import { isDescription } from '../lib/ids.js'
+  import { standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
@@ -28,27 +30,19 @@
   let offered = $state({ char: null, members: [], variants: [], related: [], derived: [], linked: [], grapheme: null }), added = $state([])
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   let composing = $state(false), linking = $state(false), linkError = $state(''), linkedByMe = $state(false)
+  let arranging = $state(false)
   const written = $derived(crop?.written_character ?? crop?.label ?? '')
   const current = $derived(formOf(crop))
   const BAR = 10
-  // The 構形 each form is built as, by the form's text: at most NAMES are asked for at once, and a
-  // form past them, or one the site knows no structure of, has none here.
-  const HAN = /^\p{Script=Han}/u, NAMES = 48
+  // The 構形 each form stands under, by the form's text; a form the site knows no structure of has none.
   let structureOf = $state(new Map())
-  async function composed(names, known = new Map()) {
-    const asked = [...new Set(names)].filter(char => (HAN.test(char ?? '') || isDescription(char)) && !known.has(char)).slice(0, NAMES)
-    if (!asked.length) return known
-    try {
-      const found = await readStructures(asked.join(''))
-      return new Map([...known, ...(found.items ?? []).flatMap(group => group.chars.map(char => [char, group]))])
-    } catch { return known }
-  }
+  const composed = (names, known = new Map()) => standing(names, known).catch(() => known)
   const namesOf = found => [...found.members, ...found.variants].map(form => form.char)
-  // A regional shape that names a 構形 carries it and is not asked for.
+  // A regional shape carries the 構形 its description gives; a reader's filing of it is asked for.
   const given = found => [...found.members, ...found.variants].filter(form => form.structure).map(form => [form.char, form.structure])
   $effect(() => {
     const id = crop?.id, char = written, own = untrack(() => current)
-    added = []; picking = false; query = ''; failed = false; composing = false; linking = false; linkError = ''; linkedByMe = false
+    added = []; picking = false; query = ''; failed = false; composing = false; linking = false; linkError = ''; linkedByMe = false; arranging = false
     listForms(char).then(found => [found, false], () => [{ members: [{ char }], variants: [], related: [], derived: [], linked: [], grapheme: null }, true])
       .then(async ([found, unread]) => {
         const read = await composed([own, ...namesOf(found)], new Map(given(found)))
@@ -83,6 +77,7 @@
     }
     return [...groups.values(), ...(loose.length ? [{ id: '', label: '', own: false, forms: loose }] : [])]
   }
+  const me = $derived(signedInUser()?.id ?? null)
   const barGroups = $derived(grouped(bar))
   const captioned = $derived(barGroups.some(group => group.label))
   // The bar's forms as they stand, which the number keys follow.
@@ -97,7 +92,6 @@
   const knownForm = $derived(Boolean(saved && [...listed.members, ...listed.variants].some(item => item.char === saved.text && !item.mj && !linkedChars.has(item.char))))
   const grapheme = $derived(listed.grapheme?.code_point ?? crop?.grapheme ?? null)
   const canLink = $derived(Boolean(saved && (saved.scheme === 'ids' || saved.scheme === 'ivs') && !linkedHere && !knownForm && !chosen && grapheme && !disabled && !failed))
-  const me = $derived(signedInUser()?.id ?? null)
   const q = $derived(query.trim().toUpperCase())
   const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
   const sections = $derived([
@@ -114,6 +108,15 @@
       const read = found ? await composed(namesOf(found), new Map([...structureOf, ...given(found)])) : structureOf
       if (found && id === crop?.id && char === written) { structureOf = read; offered = { char, ...found } }
     } catch { /* the save stands; the card reads again next time */ }
+  }
+  // What the 構形 dialog reads, and the bar after it closes on a change: the regional shapes keep the
+  // 構形 their descriptions give.
+  const arranged = $derived([...bar, ...rest])
+  const readArranged = (names, known) => standing(names, new Map([...given(listed), ...known]))
+  async function rearranged() {
+    const id = crop?.id
+    const read = await composed(arranged.map(form => form.char), new Map([...given(listed), ...structureOf]))
+    if (id === crop?.id) structureOf = read
   }
   async function link() {
     if (!canLink || linking) return
@@ -181,6 +184,12 @@
   </div>
   {#if others && ownStructure}
     <div class="form-own"><span class="form-own-label">{t('chips.structure')}</span><span lang="zh">{ownStructure.label}</span></div>
+  {/if}
+  {#if me && !others && captioned}
+    <button type="button" class="form-arrange" {disabled} aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>
+  {/if}
+  {#if arranging}
+    <StructureDialog of={written} forms={arranged} known={structureOf} read={readArranged} current={chosen ?? current} close={() => arranging = false} changed={rearranged} />
   {/if}
   {#if linkedHere || canLink}
     <div class="form-link">
@@ -255,9 +264,10 @@
   .form-compose{align-self:flex-start;font-size:13px;padding:4px 10px}
   .form-note{margin:0;font-size:11px;color:var(--muted)}
   .form-link{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;line-height:1.4}
-  .form-link-add{border:0;background:transparent;color:var(--accent);padding:0;font:inherit;font-size:12px;text-align:left;
+  .form-link-add,.form-arrange{border:0;background:transparent;color:var(--accent);padding:0;font:inherit;font-size:12px;text-align:left;
     text-decoration:underline;text-underline-offset:3px}
-  .form-link-add:not(:disabled):hover{color:var(--ink)}
+  .form-link-add:not(:disabled):hover,.form-arrange:not(:disabled):hover{color:var(--ink)}
+  .form-arrange{align-self:flex-start;line-height:1.4}
   .form-linked{color:var(--muted)}
   .form-unlink{border:0;background:transparent;color:var(--muted);padding:0 2px;font-size:15px;line-height:1}
   .form-unlink:not(:disabled):hover{color:var(--wrong)}

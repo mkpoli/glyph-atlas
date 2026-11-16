@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { IDS_DIGITS, SUMMARY_DIGITS, componentMatches, referenceShard } from '../atlas3Reference';
+import { formNamed } from './claims';
 import { choiceSpellingsQuery, headsQuery, namesQuery, idsOf, structuresOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
 
 // The edge cache.
@@ -302,7 +303,31 @@ describe("the IDS editor's structure", () => {
     // 滑 U+F904 is a compatibility ideograph of 滑.
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆骨滑\uf904⿰氵⿵冖月⿰石月')).toEqual({ items: [
       { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '磆', '\uf904', '⿰氵⿵冖月'] }] });
-    expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/structures?c='))).toBe(true);
+    expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/structures/derived?c='))).toBe(true);
+    // A form a reader filed stands under that structure, whatever its description gives, and one with
+    // no description stands where it was filed.
+    const at = '2026-11-16T00:00:00Z', other = 'st:00000000000000000000000000000002';
+    for (const [id, label] of [['st:00000000000000000000000000000001', '⿰水骨'], [other, '一']])
+      atlasDb.query("INSERT INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,'babelstone-ids','v','structure-v1','u',?)").run(id, label, at);
+    for (const [name, structure] of [['磆', other], ['⿰石月', 'st:00000000000000000000000000000001']] as const) {
+      atlasDb.query("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'has_structure','',?,'asserted',?,?,'[]',?,'ledger-r1',?)")
+        .run((await formNamed(name))!, structure, structure, JSON.stringify([{ object: structure }]), JSON.stringify([{ asserted_by: 'reader', standing: true }]), at);
+    }
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆⿰石月')).toEqual({ items: [
+      { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑', '⿰石月'], claimed: { '⿰石月': ['reader'] } },
+      { id: other, label: '一', chars: ['磆'], claimed: { '磆': ['reader'] } }] });
+    // A form readers filed under two structures stands under the one more of them name; the other is listed.
+    atlasDb.query("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'has_structure','',?,'asserted',?,?,'[]',?,'ledger-r1',?)")
+      .run((await formNamed('⿰石月'))!, other, other, JSON.stringify([{ object: other }]),
+        JSON.stringify([{ asserted_by: 'ann', standing: true }, { asserted_by: 'bob', standing: true }, { asserted_by: 'gone', standing: false }]), at);
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑⿰石月')).toEqual({ items: [
+      { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑'] },
+      { id: other, label: '一', chars: ['⿰石月'], claimed: { '⿰石月': ['ann', 'bob'] } }],
+      filed: { '⿰石月': [{ id: 'st:00000000000000000000000000000001', label: '⿰水骨', by: ['reader'] }] } });
+    // Claims that cannot be read leave what the descriptions give.
+    const broken = { ...newEnv, ATLAS: { prepare: (sql: string) => sql.includes('has_structure') ? { bind: () => ({ all: async () => { throw new Error('D1 busy') } }) } : newEnv.ATLAS.prepare(sql) } } as unknown as Env;
+    expect(await structuresOf(broken, ctx, 'https://new.test', '滑⿰石月')).toEqual({ items: [{ id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['滑'] }] });
+    atlasDb.run("DELETE FROM current_claims WHERE predicate='has_structure'");
     await expect(structuresOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name a character.');
   });
 
