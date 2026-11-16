@@ -239,6 +239,8 @@
   "explore.runs.more": "Show more",
   "explore.reviewGrapheme": "Review {grapheme} ↗",
   "explore.samplesUnavailable": "More samples unavailable",
+  "explore.sheet.failed": "Could not make the image",
+  "explore.sheet.save": "Save as image",
   "explore.shuffle": "Shuffle",
   "explore.shuffle.aria": "Shuffle characters",
   "explore.similarForms": "Similar forms",

@@ -225,6 +225,8 @@
   "explore.runs.more": "さらに表示",
   "explore.reviewGrapheme": "{grapheme}をレビュー↗",
   "explore.samplesUnavailable": "追加のサンプルを読み込めませんでした",
+  "explore.sheet.failed": "画像を作成できませんでした",
+  "explore.sheet.save": "画像として保存",
   "explore.shuffle": "シャッフル",
   "explore.shuffle.aria": "文字をシャッフル",
   "explore.similarForms": "似た字体",

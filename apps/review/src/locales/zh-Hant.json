@@ -229,6 +229,8 @@
   "explore.runs.more": "顯示更多",
   "explore.reviewGrapheme": "審閱{grapheme} ↗",
   "explore.samplesUnavailable": "無法載入更多範例",
+  "explore.sheet.failed": "無法製作圖片",
+  "explore.sheet.save": "儲存為圖片",
   "explore.shuffle": "隨機排序",
   "explore.shuffle.aria": "打亂字的順序",
   "explore.similarForms": "相似字樣",

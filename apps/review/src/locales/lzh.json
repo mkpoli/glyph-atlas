@@ -205,6 +205,8 @@
   "explore.runs.more": "更示",
   "explore.reviewGrapheme": "校{grapheme} ↗",
   "explore.samplesUnavailable": "餘樣不可得",
+  "explore.sheet.failed": "不能成圖",
+  "explore.sheet.save": "存為圖",
   "explore.shuffle": "亂序",
   "explore.shuffle.aria": "亂字序",
   "explore.similarForms": "形近",

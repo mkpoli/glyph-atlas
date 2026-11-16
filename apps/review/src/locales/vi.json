@@ -223,6 +223,8 @@
   "explore.runs.more": "Xem thêm",
   "explore.reviewGrapheme": "Duyệt {grapheme} ↗",
   "explore.samplesUnavailable": "Không có thêm mẫu",
+  "explore.sheet.failed": "Không tạo được ảnh",
+  "explore.sheet.save": "Lưu thành ảnh",
   "explore.shuffle": "Xáo trộn",
   "explore.shuffle.aria": "Xáo trộn các chữ",
   "explore.similarForms": "Tự dạng tương tự",
