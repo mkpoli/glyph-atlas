@@ -263,7 +263,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
 /* The character keeps one line above the image, bounded by the tile; form and grapheme share its width. */
 :root[data-gallery="grid"] .collage-cell .tile-label{right:12px;overflow:hidden;white-space:nowrap}
 :root[data-gallery="grid"] .collage-cell .tile-glyph{min-width:0;overflow:hidden;text-overflow:ellipsis}
-/* The top margin holds the character and the select box above the image at every size. */
+/* The top margin holds the character and the select box above the image at every size that has a caption. */
 :root[data-gallery="grid"] .glyph-grid.collage .glyph-tile{padding:max(15%, 27px) 12% 18%}
 /* A tile out of view is not laid out or painted until it nears the viewport; its box is set either way. */
 .collage-cell{content-visibility:auto;contain-intrinsic-size:auto 160px}

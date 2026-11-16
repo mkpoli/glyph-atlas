@@ -10,21 +10,23 @@
 // gallery leave every tile before them where it was.
 import { cropShape } from './cropPaint.js'
 
-/** The most columns a gallery uses: a few large tiles read better than many small ones they scroll past. */
+/** The most columns a gallery uses at the default tile size or a larger one: a few large tiles read
+ *  better than many small ones they scroll past, so past it the tiles grow with the gallery instead. */
 const WIDEST = 10
+/** The column counts past it, which only a tile size below the default takes. Each is about a seventh
+ *  more than the last, so a column is never much wider than the size asked for. */
+const FINER = [12, 14, 16, 18, 20, 23, 26, 30, 34, 39, 44, 50]
 /** The column counts the stylesheet chooses between by the gallery's width and the tile size. */
-export const COLUMNS = Array.from({ length: WIDEST - 1 }, (_, i) => i + 2)
-/** The tile sizes the reader chooses between, smallest first: the narrowest a column may be, in CSS pixels.
- *  A size past the widest column count is reached by screen width alone, at the same tile width. */
-export const ZOOMS = [70, 80, 90, 100, 130, 170, 220]
-/** The tile size a reader who has not chosen one sees, in the middle of the choice. */
+export const COLUMNS = [...Array.from({ length: WIDEST - 1 }, (_, i) => i + 2), ...FINER]
+/** The tile sizes the reader chooses between, smallest first: the narrowest a column may be, in CSS pixels. */
+export const ZOOMS = [40, 55, 70, 80, 90, 100, 130, 170, 220]
+/** The tile size a reader who has not chosen one sees. */
 export const ZOOM = 100
-/** The size of a tile on a wide screen that has not been scaled: the size the sixth column in a full-width
- *  gallery takes at the default tile size (columns the reader can ask for grew wider at the widths beyond
- *  the tenth column, and a wide screen should not pay for that). Images are shown up to this multiple. */
-const WIDE = 'clamp(166px, 12.6vw, 440px)'
-/** The gap between columns once the gallery is wide enough for three. */
-const GAP = 12
+/** A tile narrower than this is bare: it has no room for a caption, so it is its image alone, close to
+ *  the next, and names itself to a pointer that rests on it. */
+export const BARE = 70
+/** The gap between columns once the gallery is wide enough for three, and between bare tiles. */
+const GAP = 12, TIGHT = 4
 /** How far a crop's height may run from its width: a very flat or very tall crop is shown in a tile at this limit. */
 const FLATTEST = 0.55, TALLEST = 1.9
 /** The caption and gap as a share of a typical column's width, for choosing the shortest column. */
@@ -54,9 +56,11 @@ export function collage(aspects) {
       places[i].push(`--cell-c${count}:${at}`, `--cell-y${count}:${round(column.y)}`, `--cell-n${count}:${column.n}`)
       column.y += a; column.n += 1
     })
-    // The block is as tall as its tallest column, whichever that is at the width it is shown at.
-    const used = columns.filter(column => column.n)
-    heights.push(`--collage-h${count}:${used.length ? `max(${used.map(column => `calc(${round(column.y)} * var(--collage-iw) + ${column.n} * var(--collage-step))`).join(',')})` : '0px'}`)
+    // The block is as tall as its tallest column, whichever that is at the width it is shown at. Of the
+    // columns that hold as many tiles, only the one with the tallest crops can be it.
+    const tallest = new Map()
+    for (const column of columns) if (column.n) tallest.set(column.n, Math.max(tallest.get(column.n) ?? 0, column.y))
+    heights.push(`--collage-h${count}:${tallest.size ? `max(${[...tallest].map(([n, y]) => `calc(${round(y)} * var(--collage-iw) + ${n} * var(--collage-step))`).join(',')})` : '0px'}`)
   }
   return { tiles: places.map(place => place.join(';')), block: heights.join(';') }
 }
@@ -66,22 +70,27 @@ export function collage(aspects) {
  * width or wider (`--tile-w`, which the grid of squares uses too). The size is the document's
  * `data-tile-size`, a width of `ZOOMS`; a document without one, or with another value, takes `ZOOM`.
  * The rules query the gallery by its container name (`app.css`), being inside the block they style.
- * Past `WIDEST` columns a gallery stops adding them and the tiles grow to fill the width instead: the
- * default, in `WIDE`; another size, to the width the smallest size already gives that column count, so
- * a larger size is still the wider tile. The grid of squares takes its width from the same rules.
+ * From the default size up a gallery stops at `WIDEST` columns and its tiles grow to fill the width;
+ * a smaller size goes on through `FINER`. A size below `BARE` also drops the captions, the hover
+ * details and the select box (a selected tile keeps its ring), closes the gaps, and in the grid of
+ * squares leaves the square to the image. Those rules name the tile as well as the gallery, to outweigh
+ * every rule of `app.css` and the gallery's own for the same parts whichever stylesheet comes last.
  */
 export function collageStyle() {
   const rules = COLUMNS.flatMap(n => [
     `@property --cell-c${n}{syntax:"<number>";inherits:false;initial-value:0}@property --cell-y${n}{syntax:"<number>";inherits:false;initial-value:0}@property --cell-n${n}{syntax:"<number>";inherits:false;initial-value:0}@property --collage-h${n}{syntax:"*";inherits:false}`])
   const others = ZOOMS.filter(width => width !== ZOOM).map(width => `[data-tile-size="${width}"]`).join(',')
-  // The gallery's own width inside the page's padding, which is 4.4vw of the screen either side.
-  const beyond = `calc(100vw * .912 / ${WIDEST} + ${GAP}px)`
-  rules.push(`:root{--tile-w:${ZOOM}px;--tile-fill:${ZOOMS[0]}px}`)
+  rules.push(`:root{--tile-w:${ZOOM}px}`)
   ZOOMS.forEach(width => {
     const root = width === ZOOM ? `:root:not(${others})` : `:root[data-tile-size="${width}"]`
-    const fill = width === ZOOM ? `min(${ZOOMS[0]}px + 4vw - 4px, ${WIDE})` : `clamp(${ZOOMS[0]}px + 4vw - 4px, ${beyond}, ${width}px + 2vw)`
-    rules.push(`${root}{--tile-w:${width}px;--tile-fill:${fill}}`)
-    for (const n of COLUMNS.slice(1)) rules.push(`@container gallery (min-width:${n * width + (n - 1) * GAP}px){${root} .collage-block{--collage-cols:${n};--collage-h:var(--collage-h${n})}${root} .collage-cell{--cell-c:var(--cell-c${n});--cell-y:var(--cell-y${n});--cell-n:var(--cell-n${n})}}`)
+    const bare = width < BARE, gap = bare ? TIGHT : GAP, gallery = `${root} .glyph-grid.collage`
+    if (width !== ZOOM) rules.push(`${root}{--tile-w:${width}px}`)
+    if (bare) rules.push(`${gallery} .collage-block{--collage-gap:${TIGHT}px;--collage-caption:0px}${gallery} .collage-cell :is(.tile-caption,.tile-details,.tile-select){display:none}`,
+      `${root}[data-gallery="grid"] .glyph-grid.collage .collage-cell{aspect-ratio:1;padding:3px}`)
+    for (const n of COLUMNS.slice(1)) {
+      if (n > WIDEST && width >= ZOOM) break
+      rules.push(`@container gallery (min-width:${n * width + (n - 1) * gap}px){${root} .collage-block{--collage-cols:${n};--collage-h:var(--collage-h${n})}${root} .collage-cell{--cell-c:var(--cell-c${n});--cell-y:var(--cell-y${n});--cell-n:var(--cell-n${n})}}`)
+    }
   })
   return rules.join('\n')
 }
