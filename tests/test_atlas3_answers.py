@@ -763,8 +763,8 @@ def test_the_seed_lists_the_crops_changed_before_the_list_once(layout, monkeypat
     crop = changed_before_the_list(remote, root)
     before = dumps(root, remote)
     assert answers(publish, monkeypatch, "--seed", "--dry-run", seeded=False) == []
-    assert ("would list 2 crops named by events of a generation above 0 and 1 of the 2 glyphs with a `form_bases` row"
-            in capsys.readouterr().out)
+    assert ("would list 2 crops named by events of a generation above 0 and 1 followed glyphs the local copy holds "
+            "differently (2 hold a `form_bases` row in glyph-atlas-v3)") in capsys.readouterr().out
     assert dumps(root, remote) == before
     answers(publish, monkeypatch, "--seed", seeded=False)
     # The crop the Worker listed keeps its generation.

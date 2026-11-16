@@ -1,9 +1,8 @@
 -- The crops the Worker changed before it kept the list (`touched`, migration 0018): every crop a review
 -- event of a generation above 0 names. They are listed at generation 0, so the next publication takes
--- them. A corpus glyph a forms decision moved to its form recorded no event, and before `bumps`
--- (migration 0016) no revision of the store's either: `answers.py --seed` finds those by comparing the
--- glyphs that hold a `form_bases` row with the publisher's local copy, and lists the ones that differ
--- in the same file.
+-- them. A corpus glyph a forms decision moved to its form recorded no event and no revision of the
+-- store's: `answers.py --seed` finds those by comparing the glyphs that hold a `form_bases` row with
+-- the publisher's local copy, and lists the ones that differ in the same file.
 --
 -- `answers.py --seed` applies it, once, under the stamp `migration:0019`; `publish.py --migrate` leaves
 -- it alone. The order of a rollout:
