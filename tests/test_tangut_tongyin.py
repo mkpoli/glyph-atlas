@@ -80,6 +80,20 @@ def test_collect_writes_a_unit_for_each_sound_place(fixture, tmp_path):
     assert unit.upstream == {"nkay0-tangut-rhyme": "旧版同音 02A51"}
 
 
+def test_a_half_folio_with_no_sound_place_makes_no_line(fixture, tmp_path):
+    scans, data = fixture
+    with (data / "columns.tsv").open("a", encoding="utf-8") as handle:
+        handle.write("2\tB\t1\t1\t150\t20\t40\t260\t𗀀𗀁\n")
+    with (data / "characters.tsv").open("a", encoding="utf-8") as handle:
+        handle.write("2\tB\t1\t1\t𗀀\tU+17000\t1\t152\t24\t30\t32\t0.31\t66.0\tsparse\n")
+        handle.write("2\tB\t1\t2\t𗀁\tU+17001\t1\t152\t60\t30\t32\t0.12\t61.0\tlow-score\n")
+    out = tmp_path / "out"
+    summary = tangut_tongyin.collect(scans, out, data=data, cache=tmp_path / "cache")
+
+    assert [line.id for line in tables.read(out / "lines.parquet", Line)] == ["ecang-heishuicheng:inv-207:02A5"]
+    assert summary["left_out"] == {"low-score": 2, "size": 1, "sparse": 1}
+
+
 def test_collect_refuses_a_scan_that_is_not_the_pinned_one(fixture, tmp_path):
     scans, data = fixture
     Image.new("L", (400, 600), 90).save(scans / "00000040.jpg")
@@ -104,7 +118,15 @@ def test_the_placement_tables_agree_with_each_other():
     assert len(set(places)) == len(places) == 5673
     # 同音 enters each character once.
     assert len({row["char"] for row in characters}) == len(characters)
-    assert Counter(row["quality"] for row in characters).keys() == {"ok", "low-score", "size", "faint"}
+    assert Counter(row["quality"] for row in characters).keys() == {"ok", "low-score", "size", "faint", "sparse"}
+    # A half-folio whose columns were not found keeps none of its chance matches.
+    accepted: dict[tuple[str, str], list[bool]] = {}
+    for row in characters:
+        accepted.setdefault((row["folio"], row["side"]), []).append(float(row["score"]) >= 0.28)
+    for row in characters:
+        found = accepted[(row["folio"], row["side"])]
+        assert (row["quality"] == "sparse") <= (2 * sum(found) < len(found))
+        assert not (row["quality"] == "ok" and 2 * sum(found) < len(found))
     text = {tangut_tongyin.place_id(row): row["text"] for row in columns}
     held: dict[str, list[tuple[int, str]]] = {}
     for row in characters:
