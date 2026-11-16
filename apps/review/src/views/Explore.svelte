@@ -866,8 +866,10 @@
     if (!selecting) startSelecting()
     // A run stands outside the tiles' order, so it is taken alone and leaves the range's start where it was.
     if (item.origin === 'run') { selected = toggled(selected, item.id); bulkError = ''; return }
-    selected = range && anchor != null ? withRange(selected, tiles, anchor, index, selectable) : toggled(selected, item.id)
-    anchor = index; bulkError = ''
+    // The range's start is kept by id: a reviewed crop leaving the gallery moves the tiles after it.
+    const from = range && anchor != null ? tiles.findIndex(tile => tile.id === anchor) : -1
+    selected = from >= 0 ? withRange(selected, tiles, from, index, selectable) : toggled(selected, item.id)
+    anchor = item.id; bulkError = ''
   }
   // A long press, or a key the selection handled, can be followed by a click the tile must not act on
   // again: any click after a long press, a click with no pointer (`detail` 0) after a key.
