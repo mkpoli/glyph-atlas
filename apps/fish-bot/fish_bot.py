@@ -1181,6 +1181,9 @@ class Bot:
     def redact(self, event: dict[str, Any]) -> None:
         """Drop the text of a redacted message instead of keeping it for the retention window."""
         redacts = event.get("redacts")
+        content = event.get("content")
+        if not isinstance(redacts, str) and isinstance(content, dict):
+            redacts = content.get("redacts")
         if isinstance(redacts, str):
             self.store.delete_event(redacts)
 
@@ -1357,13 +1360,14 @@ class Bot:
                 self._tell(room_id, event_id, f"That is already open as #{duplicate.number}: {duplicate.url}")
                 self.store.mark_handled(event_id, "duplicate")
                 return
-        day = day or local_day(now_ms())
-        if self.store.issues_today(day) >= self.config.max_issues_per_day:
+        today = local_day(now_ms())
+        if self.store.issues_today(today) >= self.config.max_issues_per_day:
             self._tell(room_id, event_id, "I've reached today's issue limit. Try again tomorrow.")
             self.store.mark_handled(event_id, "daily-limit")
             return
         room_name, _ = self._room(room_id)
-        body = issue_body(decision, room_id, room_name, events, names, day, bot_user_id=self.user_id)
+        body = issue_body(decision, room_id, room_name, events, names, day or today,
+                          bot_user_id=self.user_id)
         if self.config.dry_run:
             self.store.clear_pending(room_id)
             self._tell(room_id, event_id,
@@ -1488,10 +1492,13 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
-    config = Config.load(args.config, dry_run=args.dry_run)
-    matrix = Matrix(config.homeserver, _secret(config.token_file))
-    deepseek = DeepSeek(_secret(config.deepseek_key_file), config.deepseek_model, config.deepseek_url,
-                        config.github_repo)
+    try:
+        config = Config.load(args.config, dry_run=args.dry_run)
+        matrix = Matrix(config.homeserver, _secret(config.token_file))
+        deepseek = DeepSeek(_secret(config.deepseek_key_file), config.deepseek_model, config.deepseek_url,
+                            config.github_repo)
+    except (OSError, ValueError) as error:
+        raise SystemExit(str(error)) from None
     if args.check:
         try:
             whoami = matrix.whoami()
