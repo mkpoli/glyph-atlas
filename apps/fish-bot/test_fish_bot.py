@@ -266,6 +266,8 @@ def test_store_keeps_events_in_order_and_decisions_once(tmp_path):
     store = fish_bot.Store(tmp_path / "chat.sqlite3")
     assert store.add_event("$1", ROOM, "@a:example", 1000, "first", "m.text", backfilled=True)
     assert not store.add_event("$1", ROOM, "@a:example", 1000, "first", "m.text", backfilled=True)
+    store.add_event("$1", ROOM, "@a:example", 1000, "first", "m.text", backfilled=False)
+    assert store.db.execute("SELECT backfilled FROM events WHERE event_id='$1'").fetchone()["backfilled"] == 0
     store.add_event("$2", ROOM, "@b:example", 2000, "second", "m.text", backfilled=False)
     rows = store.context(ROOM, 2000, 10)
     assert [row["body"] for row in rows] == ["first", "second"]

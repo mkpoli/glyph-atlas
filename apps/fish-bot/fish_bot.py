@@ -481,6 +481,10 @@ class Store:
             "VALUES(?,?,?,?,?,?,?)",
             (event_id, room_id, sender, ts, body, msgtype, 1 if backfilled else 0),
         )
+        if cursor.rowcount == 0 and not backfilled:
+            # A live sync after a backfill is the same event with a better provenance: it may be a
+            # call that arrived while the bot was reading older history.
+            self.db.execute("UPDATE events SET backfilled=0 WHERE event_id=?", (event_id,))
         self.db.commit()
         return cursor.rowcount == 1
 
@@ -1275,6 +1279,7 @@ class Bot:
             return
         assert self.github is not None
         issue = self.github.create_issue(decision.title, body, decision.labels)
+        self.github._issues = []
         self.store.add_issue(self.github.repo, issue.number, issue.title, issue.url, room_id, event_id)
         self.store.clear_pending(room_id)
         self._tell(room_id, event_id, reply_for(decision, issue, dry_run=False))
