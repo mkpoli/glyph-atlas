@@ -1268,6 +1268,7 @@ class Bot:
         room_name, _ = self._room(room_id)
         body = issue_body(decision, room_id, room_name, events, names, day, bot_user_id=self.user_id)
         if self.config.dry_run:
+            self.store.clear_pending(room_id)
             self._tell(room_id, event_id,
                        f"[dry run] Would file: {decision.title}\n\n{decision.reason}")
             self.store.mark_handled(event_id, "dry-run")

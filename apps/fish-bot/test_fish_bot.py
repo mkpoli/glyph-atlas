@@ -402,11 +402,13 @@ def test_dry_run_never_calls_github_and_needs_no_token(tmp_path):
     config = fish_bot.Config(user_id=USER, display_name="Big Fat Fish", room_cooldown_seconds=0,
                              context_messages=20, dry_run=True)
     bot, matrix, store = make_bot(tmp_path, decision_value=decision(), config=config)
+    store.set_pending(ROOM, decision(), "$old")
     trigger = event("@bigfatfish this should be fixed", event_id="$call")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
     assert matrix.sent[0][1]["body"].startswith("[dry run]")
     assert store.outcome("$call")[0] == "dry-run"
+    assert store.pending(ROOM) is None
 
 
 def test_daily_limit_stops_a_file(tmp_path):
