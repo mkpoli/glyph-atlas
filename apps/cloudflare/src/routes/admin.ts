@@ -149,8 +149,8 @@ export async function reviewerActors(env: Env, input: Json, tools: AdminTools): 
 // label each was shown under.
 export const submissionsQuery = () => `SELECT s.id,s.key,s.at,s.undone,s.request,r.by,r.reason,r.at AS rejected_at,
     (SELECT count(*) FROM events e WHERE e.submission=s.id AND e.kind IN ${REVIEW_KINDS}) AS crops,
-    (SELECT json_group_array(json_object('id',crop,'label',label)) FROM (SELECT e.crop,g.text AS label
-      FROM events e LEFT JOIN graphemes g ON g.id=e.shown WHERE e.submission=s.id AND e.kind IN ${REVIEW_KINDS} ORDER BY e.id LIMIT ${SHOWN})) AS targets
+    (SELECT json_group_array(json_object('id',crop,'label',label,'kind',kind)) FROM (SELECT e.crop,g.text AS label,c.kind
+      FROM events e LEFT JOIN graphemes g ON g.id=e.shown LEFT JOIN crops c ON c.id=e.crop WHERE e.submission=s.id AND e.kind IN ${REVIEW_KINDS} ORDER BY e.id LIMIT ${SHOWN})) AS targets
   FROM submissions s LEFT JOIN rejections r ON r.submission=s.id
   WHERE s.actor IN (SELECT value FROM json_each(?1)) ORDER BY s.at DESC,s.id DESC LIMIT ?2 OFFSET ?3`;
 
@@ -160,7 +160,8 @@ export async function submissions(env: Env, q: URLSearchParams, actors: number[]
   const rows = actors.length ? (await env.ATLAS.prepare(submissionsQuery()).bind(JSON.stringify(actors), PAGE + 1, offset).all<Json>()).results : [];
   const named = await people(env, rows.map(row => row.by));
   return page(rows.map(row => ({ id: row.key, at: iso(row.at), crops: row.crops, ...summary(row.request),
-    targets: (JSON.parse(row.targets ?? '[]') as { id: number; label: string | null }[]).map(t => ({ id: publicId(t.id), label: t.label })),
+    targets: (JSON.parse(row.targets ?? '[]') as { id: number; label: string | null; kind: number | null }[])
+      .map(t => ({ id: publicId(t.id), label: t.label, ...(t.kind === 1 ? { origin: 'corpus' } : {}) })),
     state: row.by ? 'rejected' : row.undone ? 'undone' : 'standing',
     rejection: row.by ? { by: named.get(row.by)?.name ?? row.by, reason: row.reason, at: iso(row.rejected_at) } : null })), offset);
 }

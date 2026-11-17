@@ -3,6 +3,7 @@ import { pushState, replaceState } from '$app/navigation'
 import { page } from '$app/state'
 import { localize } from './i18n.svelte.js'
 import { showing } from './inspectQueue.js'
+import { cropOrigin } from './movedCrop.js'
 
 const KEY = Symbol('inspector')
 
@@ -57,7 +58,7 @@ export function createInspector() {
     },
     step(direction) {
       const item = state.queue[this.index + direction]
-      if (item) show(item.id, item.origin ?? 'collection', false)
+      if (item) show(item.id, cropOrigin(item), false)
     },
     /** Back to the list's entry; the layout returns the focus once the dialog has gone. */
     close() {
@@ -68,10 +69,12 @@ export function createInspector() {
     },
     /** The crop on show opened as another id (an old one, or a retired crop's replacement); the entry names
      *  the one on screen, `source` its source id, and keeps the id the list asked for. */
-    replaced(id, source = null, origin = 'collection') {
+    replaced(id, source = null, origin = null) {
       const inspect = page.state.inspect
-      if (inspect) replaceState(cropAddress(id, inspect.origin), { ...page.state, inspect: { ...inspect, id, was: inspect.was ?? inspect.id, source } })
-      else replaceState(cropAddress(id, origin), page.state)
+      if (inspect) {
+        const nextOrigin = origin ?? inspect.origin
+        replaceState(cropAddress(id, nextOrigin), { ...page.state, inspect: { ...inspect, id, origin: nextOrigin, was: inspect.was ?? inspect.id, source } })
+      } else replaceState(cropAddress(id, origin ?? 'collection'), page.state)
     },
     /** A new page has nothing of the last one's to step through. */
     forget() { Object.assign(state, { queue: [], key: state.key + 1, opening: null, opened: null }); updateItem = null; lastFocus = null },
