@@ -1162,19 +1162,21 @@ class Bot:
         if isinstance(ts, int) and now_ms() - ts > self.config.call_window_seconds * 1000:
             self.store.mark_handled(event_id, "stale")
             return
+        pending = None
         if call.mode == "issue" and not call.prompt:
             pending = self.store.pending(room_id)
-            if pending is not None:
-                self._file_pending(room_id, event_id, pending[0])
+        if pending is None:
+            last = self._last_answer.get(room_id, 0.0)
+            if time.monotonic() - last < self.config.room_cooldown_seconds:
+                self.store.mark_handled(event_id, "cooldown")
                 return
-        last = self._last_answer.get(room_id, 0.0)
-        if time.monotonic() - last < self.config.room_cooldown_seconds:
-            self.store.mark_handled(event_id, "cooldown")
-            return
         self._last_answer[room_id] = time.monotonic()
         self.store.mark_handled(event_id, "started")
         try:
-            self._answer(room_id, event_id, call)
+            if pending is not None:
+                self._file_pending(room_id, event_id, pending[0])
+            else:
+                self._answer(room_id, event_id, call)
         except Exception as error:
             log.exception("deciding for %s", event_id)
             self.store.mark_handled(event_id, f"failed: {type(error).__name__}")
