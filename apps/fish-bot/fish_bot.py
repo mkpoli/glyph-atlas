@@ -1266,6 +1266,17 @@ class Bot:
 
     def _file(self, room_id: str, event_id: str, decision: Decision,
               events: list[sqlite3.Row], names: dict[str, str]) -> None:
+        if self.github is not None:
+            open_issues = self.github.open_issues()
+            duplicate = None
+            if decision.duplicate_of is not None:
+                duplicate = next((item for item in open_issues if item.number == decision.duplicate_of), None)
+            if duplicate is None:
+                duplicate = find_duplicate(decision.title, open_issues)
+            if duplicate is not None:
+                self._tell(room_id, event_id, f"That is already open as #{duplicate.number}: {duplicate.url}")
+                self.store.mark_handled(event_id, "duplicate")
+                return
         day = local_day(now_ms())
         if self.store.issues_today(day) >= self.config.max_issues_per_day:
             self._tell(room_id, event_id, "I've reached today's issue limit. Try again tomorrow.")

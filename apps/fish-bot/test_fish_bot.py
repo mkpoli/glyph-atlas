@@ -400,6 +400,18 @@ def test_files_an_issue_and_replies_with_its_number(tmp_path):
     assert store.outcome("$call")[0] == "opened"
 
 
+def test_file_rechecks_duplicates_before_filing(tmp_path):
+    github = FakeGitHub(issues=[fish_bot.IssueRef(7, "Add a test", (), "u7")])
+    bot, matrix, store = make_bot(tmp_path, decision_value=decision(), github=github)
+    trigger = event("@bigfatfish !fish issue", event_id="$call")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    store.set_pending(ROOM, decision(), "$old")
+    bot.answer(ROOM, trigger)
+    assert github.created == []
+    assert store.outcome("$call")[0] == "duplicate"
+    assert "already open as #7" in matrix.sent[0][1]["body"]
+
+
 def test_dry_run_never_calls_github_and_needs_no_token(tmp_path):
     config = fish_bot.Config(user_id=USER, display_name="Big Fat Fish", room_cooldown_seconds=0,
                              context_messages=20, dry_run=True)
