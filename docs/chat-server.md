@@ -43,15 +43,16 @@ The server's Tailscale key is set never to expire (Tailscale admin console → M
 | `heisenbridge` | IRC bridge to Libera.Chat | `/var/lib/heisenbridge` (Python venv, registration); its state lives in Matrix account data |
 | `qq-bridge` | QQ bridge: the official QQ bot, one group | `/var/lib/qq-bridge` (config, registration, state); program in `/opt/qq-bridge` (source, venv) |
 | `ids-bot` | Answers a description with its IDS Workshop page | `/opt/ids-bot/ids_bot.py`; token in `/etc/ids-bot/token`, sync position in `/var/lib/ids-bot/state.json` |
+| `fish-bot` | Reads the public rooms and files an issue when a discussion calls for one | `/opt/fish-bot/fish_bot.py`; config and secrets in `/etc/fish-bot`, database in `/var/lib/fish-bot` |
 | `cloudflared` | The tunnel `glyphatlas-matrix` | `/etc/cloudflared/config.yml` and the tunnel's credential file beside it |
 | `tailscaled` | Tailscale | — |
 | `chat-backup.timer` | Nightly backup | `/usr/local/sbin/chat-backup` |
 
-The bridges and the IDS bot declare `Requires=continuwuity.service`: stopping the homeserver stops
-them, and starting it does not start them. Start all six together:
+The bridges and the two bots declare `Requires=continuwuity.service`: stopping the homeserver stops
+them, and starting it does not start them. Start all seven together:
 
 ```sh
-systemctl restart continuwuity mautrix-discord mautrix-telegram heisenbridge qq-bridge ids-bot
+systemctl restart continuwuity mautrix-discord mautrix-telegram heisenbridge qq-bridge ids-bot fish-bot
 ```
 
 **The tunnel.** `matrix.glyphatlas.org` is a proxied CNAME to the tunnel. `config.yml` sends
@@ -258,3 +259,75 @@ WantedBy=multi-user.target
 
 `systemctl daemon-reload` then `systemctl enable --now ids-bot`. The bot reads the directory again
 every hour, so a new public room needs no restart; a room is covered once it is published there.
+
+## Issue bot
+
+`@bigfatfish:glyphatlas.org` joins every room in the server's public directory and follows the sync
+stream. It keeps the readable text of those rooms in a local SQLite log and answers a mention or
+`!fish` with one decision: file an issue in `mkpoli/glyph-atlas`, or say why not. It reads the latest
+messages, checks the open issues for duplicates, and files only when the log names a concrete request
+and someone asks for action. The bot only sees rooms it has joined; the public directory decides
+which rooms those are.
+
+`!fish review` proposes a title and keeps it for a day. `!fish issue` files that proposal, or reads
+the room again when none is pending. Automatic filing is capped at five issues a day and one every
+ten minutes. Starting the program with `--dry-run` answers `[dry run] Would file: …` and writes
+nothing to GitHub.
+
+The program is `apps/fish-bot/fish_bot.py`, standard library only. On the server, make its account
+and directories:
+
+```sh
+useradd --system --user-group --home /var/lib/fish-bot --shell /usr/sbin/nologin fish-bot
+install -d -o fish-bot -g fish-bot /var/lib/fish-bot
+install -d -o root -g fish-bot /opt/fish-bot
+install -d -m 750 -o root -g fish-bot /etc/fish-bot
+```
+
+Copy the program, the example configuration and the unit in, then give them to the service's group:
+
+```sh
+scp apps/fish-bot/fish_bot.py apps/fish-bot/config.example.toml apps/fish-bot/fish-bot.service \
+  root@glyphatlas-matrix:/tmp/
+ssh root@glyphatlas-matrix '
+  install -o root -g fish-bot -m 640 /tmp/fish_bot.py /opt/fish-bot/fish_bot.py
+  install -o root -g fish-bot -m 640 /tmp/config.example.toml /etc/fish-bot/config.toml
+  install -o root -g root -m 644 /tmp/fish-bot.service /etc/systemd/system/fish-bot.service
+  rm /tmp/fish_bot.py /tmp/config.example.toml /tmp/fish-bot.service'
+```
+
+Create the three secret files, owned by `root:fish-bot` and readable only by that group:
+
+```sh
+install -m 640 -o root -g fish-bot /dev/null /etc/fish-bot/matrix-token
+install -m 640 -o root -g fish-bot /dev/null /etc/fish-bot/deepseek-key
+install -m 640 -o root -g fish-bot /dev/null /etc/fish-bot/github-token
+```
+
+Fill them:
+
+- `matrix-token` — the account's access token. In `#admins`, `!admin users create bigfatfish` makes
+  the account and prints a password; `!admin users issue-token bigfatfish <password>` prints a token.
+  Set the account's display name to `Big Fat Fish`.
+- `deepseek-key` — the API key for the model, starting `sk-`.
+- `github-token` — a fine-grained token for `mkpoli/glyph-atlas` with **Issues: read and write** and
+  **Metadata: read-only**. No other repository or permission is needed. Without this file the bot
+  still reads and decides, but it does not file.
+
+Check the homeserver, the model and GitHub before enabling the unit:
+
+```sh
+runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --config /etc/fish-bot/config.toml --check
+```
+
+Then enable it:
+
+```sh
+systemctl daemon-reload
+systemctl enable --now fish-bot
+journalctl -u fish-bot -f
+```
+
+The database is `/var/lib/fish-bot/chat.sqlite3`; text older than 180 days is deleted. The bot reads
+the public directory again every hour, so a new room needs no restart. A room that is not in the
+public directory is left alone.
