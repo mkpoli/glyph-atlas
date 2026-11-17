@@ -50,7 +50,7 @@ test('a drawn form is a private-use character of the site\'s own table', async (
   expect(drawnForm('\u{F0000}')!.name).toContain('事')
   // It is filed and counted as the grapheme it writes is.
   expect([categoryOf('\u{F0000}'), categoryOf('事'), categoryOf('\u{F0100}')]).toEqual(['kanji', 'kanji', 'other'])
-  expect(drawnFormsOf('事')).toEqual(['\u{F0000}', '\u{F0001}'])
+  expect(drawnFormsOf('事')).toEqual(['\u{F0000}', '\u{F0001}', '\u{F0002}'])
   expect(drawnFormsOf('也')).toEqual([])
   // A code point the table does not give names nothing, in the same area or another.
   expect(typed('\u{F0100}')).toBe('private')
