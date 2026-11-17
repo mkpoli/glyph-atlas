@@ -2,11 +2,13 @@
 Description=Big Fat Fish (community chat issue bot)
 After=network-online.target continuwuity.service
 Requires=continuwuity.service
+PartOf=continuwuity.service
 
 [Service]
 User=fish-bot
 Group=fish-bot
 WorkingDirectory=/var/lib/fish-bot
+UMask=0077
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /opt/fish-bot/fish_bot.py \
   --config /etc/fish-bot/config.toml \

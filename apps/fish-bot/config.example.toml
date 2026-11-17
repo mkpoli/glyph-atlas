@@ -19,6 +19,14 @@ user_id = "@bigfatfish:glyphatlas.org"
 display_name = "Big Fat Fish"
 # Empty means every room in the server's public directory. A list limits the bot to those rooms.
 rooms = []
+# The homeserver's bridge and bot accounts, which never call the bot.
+ignored_senders = [
+  "@idsbot:glyphatlas.org",
+  "@discordbot:glyphatlas.org",
+  "@telegrambot:glyphatlas.org",
+  "@heisenbridge:glyphatlas.org",
+  "@qqbot:glyphatlas.org",
+]
 
 [limits]
 context_messages = 120
@@ -27,4 +35,7 @@ min_confidence = 0.7
 max_issues_per_day = 5
 room_cooldown_seconds = 60
 call_window_seconds = 86400
+max_rooms = 200
+max_calls_per_hour = 60
+max_calls_per_user_per_hour = 5
 retention_days = 180

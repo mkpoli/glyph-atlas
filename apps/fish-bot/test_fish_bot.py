@@ -142,9 +142,9 @@ def test_reads_explicit_command_modes():
 
 def test_leaves_own_messages_bots_and_edits_alone():
     assert fish_bot.call_of(event("@bigfatfish", sender=USER), USER, "Big Fat Fish") is None
-    assert fish_bot.call_of(event("@bigfatfish", sender="@discordbot:example"), USER, "Big Fat Fish") is None
-    assert fish_bot.call_of(event("@bigfatfish", sender="@bridge:example"), USER, "Big Fat Fish") is None
-    assert fish_bot.call_of(event("@bigfatfish", sender="@discord_123:example"), USER, "Big Fat Fish") is not None
+    ignored = ("@discordbot:example",)
+    assert fish_bot.call_of(event("@bigfatfish", sender="@discordbot:example"), USER, "Big Fat Fish", ignored) is None
+    assert fish_bot.call_of(event("@bigfatfish", sender="@discord_123:example"), USER, "Big Fat Fish", ignored) is not None
     edit = event("@bigfatfish", **{"m.new_content": {"msgtype": "m.text", "body": "@bigfatfish"}})
     assert fish_bot.call_of(edit, USER, "Big Fat Fish") is None
 
@@ -166,11 +166,13 @@ def test_context_names_the_room_the_issues_and_the_call():
     text = fish_bot.format_context("Dev", "Code talk", rows, {"@reader:example": "Alice"},
                                    fish_bot.Call("auto", "should this be filed?"),
                                    [fish_bot.IssueRef(7, "Existing issue", (), "u")])
-    assert "Room: Dev" in text
-    assert "#7 Existing issue" in text
-    assert "[1970-01-01 09:00] Alice: first" in text
-    assert "Call: should this be filed?" in text
-    assert "Mode: decide whether to file" in text
+    payload = json.loads(text)
+    assert payload["room"] == {"name": "Dev", "topic": "Code talk"}
+    assert payload["open_issues"] == [{"number": 7, "title": "Existing issue"}]
+    assert payload["messages"][0]["time"] == "1970-01-01 09:00"
+    assert payload["messages"][0]["sender"] == "Alice (@reader:example)"
+    assert payload["messages"][0]["body"] == "first"
+    assert payload["call"] == {"mode": "auto", "request": "should this be filed?"}
 
 
 def test_model_prompt_carries_the_repository_without_formatting_its_json():
@@ -196,9 +198,9 @@ def test_context_keeps_the_newest_messages_when_the_log_is_long():
             message_row("newest " + "z" * 20_000, ts=3)]
     text = fish_bot.format_context("Dev", "", rows, {"@reader:example": "Alice"},
                                    fish_bot.Call("auto", "look"), [])
-    assert len(text) < fish_bot.MAX_CONTEXT_CHARS + 2_000
-    assert "newest" in text
-    assert "[older messages omitted]" in text
+    payload = json.loads(text)
+    assert len(text) < fish_bot.MAX_CONTEXT_CHARS + 3_000
+    assert payload["messages"][-1]["body"].startswith("newest")
 
 
 def test_parses_a_complete_decision():
@@ -249,7 +251,7 @@ def test_issue_body_adds_a_room_and_participant_footer():
                                {"@a:example": "Alice", "@b:example": "Bob"}, "2026-11-17",
                                bot_user_id=USER)
     assert "From the Matrix discussion in [#Dev](https://matrix.to/#/!room:example)" in body
-    assert "Participants: Alice, Bob" in body
+    assert "Participants: Alice (@a:example), Bob (@b:example)" in body
     assert "Big Fat Fish" not in body
     assert len(body) <= fish_bot.MAX_BODY
 
@@ -259,7 +261,7 @@ def test_issue_body_leaves_the_bot_out_of_the_participants():
     body = fish_bot.issue_body(decision(), ROOM, "Dev", rows,
                                {"@a:example": "Alice", USER: "Big Fat Fish"}, "2026-11-17",
                                bot_user_id=USER)
-    assert "Participants: Alice." in body
+    assert "Participants: Alice (@a:example)." in body
 
 
 def test_store_keeps_events_in_order_and_decisions_once(tmp_path):
@@ -343,6 +345,23 @@ def test_github_creates_an_issue_with_known_labels_only():
     assert seen["body"]["labels"] == ["enhancement"]
 
 
+def test_process_ignores_a_room_outside_the_active_set(tmp_path):
+    bot, matrix, store = make_bot(tmp_path)
+    bot.active_rooms = set()
+    response = {"rooms": {"join": {ROOM: {"timeline": {"events": [event("@bigfatfish")]}}}}}
+    bot.process(response)
+    assert store.event_count(ROOM) == 0
+    assert matrix.sent == []
+
+
+def test_redaction_removes_the_stored_text(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.ingest(ROOM, event("remove me", event_id="$gone"), backfilled=False)
+    assert store.event_count(ROOM) == 1
+    bot.redact({"type": "m.room.redaction", "redacts": "$gone"})
+    assert store.event_count(ROOM) == 0
+
+
 def test_initial_sync_does_not_answer_old_mentions(tmp_path):
     matrix = FakeMatrix()
     response = {"next_batch": "s1", "rooms": {"join": {ROOM: {"timeline": {"events": [
@@ -350,6 +369,7 @@ def test_initial_sync_does_not_answer_old_mentions(tmp_path):
     ]}}}}}
     matrix.sync = lambda since, timeout_ms=0: response
     bot, _, store = make_bot(tmp_path, matrix=matrix)
+    bot.active_rooms = {ROOM}
     assert bot.initial_sync() == "s1"
     assert matrix.sent == []
     assert store.event_count(ROOM) == 1
@@ -400,6 +420,17 @@ def test_files_an_issue_and_replies_with_its_number(tmp_path):
     assert store.outcome("$call")[0] == "opened"
 
 
+def test_issue_command_does_not_bypass_the_confidence_floor(tmp_path):
+    github = FakeGitHub()
+    bot, _matrix, store = make_bot(tmp_path, decision_value=decision(confidence=0.2), github=github)
+    trigger = event("@bigfatfish !fish issue", event_id="$call")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert github.created == []
+    assert store.pending(ROOM) is not None
+    assert store.outcome("$call")[0] == "low-confidence"
+
+
 def test_file_rechecks_duplicates_before_filing(tmp_path):
     github = FakeGitHub(issues=[fish_bot.IssueRef(7, "Add a test", (), "u7")])
     bot, matrix, store = make_bot(tmp_path, decision_value=decision(), github=github)
@@ -410,6 +441,22 @@ def test_file_rechecks_duplicates_before_filing(tmp_path):
     assert github.created == []
     assert store.outcome("$call")[0] == "duplicate"
     assert "already open as #7" in matrix.sent[0][1]["body"]
+
+
+def test_reply_keeps_the_issue_link_when_the_text_is_long():
+    long = "x" * 10_000
+    reply = fish_bot.reply_for(decision(reply=long), fish_bot.IssueRef(7, "T", (), "https://example/7"),
+                               dry_run=False)
+    assert "https://example/7" in reply
+    assert len(reply) <= fish_bot.MAX_REPLY
+
+
+def test_ingest_skips_an_edit(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    edit = event("new", **{"m.new_content": {"msgtype": "m.text", "body": "new"},
+                          "m.relates_to": {"rel_type": "m.replace", "event_id": "$old"}})
+    bot.ingest(ROOM, edit, backfilled=False)
+    assert store.event_count(ROOM) == 0
 
 
 def test_dry_run_never_calls_github_and_needs_no_token(tmp_path):
@@ -436,6 +483,20 @@ def test_daily_limit_stops_a_file(tmp_path):
     assert github.created == []
     assert store.outcome("$call")[0] == "daily-limit"
     assert "issue limit" in matrix.sent[0][1]["body"]
+
+
+def test_call_budget_stops_a_second_call(tmp_path):
+    config = fish_bot.Config(user_id=USER, display_name="Big Fat Fish", room_cooldown_seconds=0,
+                             context_messages=20, max_calls_per_hour=1)
+    bot, matrix, store = make_bot(tmp_path, decision_value=decision(), config=config)
+    first = event("@bigfatfish one", event_id="$one")
+    second = event("@bigfatfish two", event_id="$two")
+    bot.ingest(ROOM, first, backfilled=False)
+    bot.ingest(ROOM, second, backfilled=False)
+    bot.answer(ROOM, first)
+    bot.answer(ROOM, second)
+    assert len(matrix.sent) == 1
+    assert store.outcome("$two")[0] == "call-limit"
 
 
 def test_cooldown_marks_without_answering(tmp_path):

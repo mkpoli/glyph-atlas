@@ -262,8 +262,8 @@ every hour, so a new public room needs no restart; a room is covered once it is 
 
 ## Issue bot
 
-`@bigfatfish:glyphatlas.org` joins every room in the server's public directory and follows the sync
-stream. It keeps the readable text of those rooms in a local SQLite log and answers a mention or
+`@bigfatfish:glyphatlas.org` joins up to 200 rooms in the server's public directory and follows the
+sync stream. It keeps the readable text of those rooms in a local SQLite log and answers a mention or
 `!fish` with one decision: file an issue in `mkpoli/glyph-atlas`, or say why not. It reads the latest
 messages, checks the open issues for duplicates, and files only when the log names a concrete request
 and someone asks for action. The bot only sees rooms it has joined; the public directory decides
@@ -271,7 +271,7 @@ which rooms those are.
 
 `!fish review` proposes a title and keeps it for a day. `!fish issue` files that proposal, or reads
 the room again when none is pending. Automatic filing is capped at five issues a day and one every
-ten minutes. Starting the program with `--dry-run` answers `[dry run] Would file: …` and writes
+ten minutes; model calls are capped per user and across the bot. Starting the program with `--dry-run` answers `[dry run] Would file: …` and writes
 nothing to GitHub.
 
 The program is `apps/fish-bot/fish_bot.py`, standard library only. On the server, make its account
@@ -314,7 +314,7 @@ Fill them:
   **Metadata: read-only**. No other repository or permission is needed. Without this file the bot
   still reads and decides, but it does not file.
 
-Check the homeserver, the model and GitHub before enabling the unit:
+Check the homeserver, the model key and GitHub read access before enabling the unit:
 
 ```sh
 runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --config /etc/fish-bot/config.toml --check
@@ -329,5 +329,7 @@ journalctl -u fish-bot -f
 ```
 
 The database is `/var/lib/fish-bot/chat.sqlite3`; text older than 180 days is deleted. The bot reads
-the public directory again every hour, so a new room needs no restart. A room that is not in the
-public directory is left alone.
+the public directory again every hour, so a new room needs no restart. A room that leaves the public
+directory is no longer read, though the account remains joined. The database uses WAL: copy it with
+`sqlite3 chat.sqlite3 ".backup /var/lib/fish-bot/chat-backup.sqlite3"` rather than copying the live
+file.
