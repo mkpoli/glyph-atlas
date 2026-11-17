@@ -136,6 +136,20 @@ export function formatNumber(value) {
   return hanzi() && Number.isFinite(n) && Math.abs(n) < 1e16 ? hanziNumber(n) : n.toLocaleString(base())
 }
 
+const compactFormats = {}
+/** A compact number for tight spaces (tab badges): exact below 10,000, compact above. */
+export function formatCompactNumber(value) {
+  const n = Number(value ?? 0)
+  if (!Number.isFinite(n) || Math.abs(n) < 10000) return formatNumber(n)
+  if (hanzi() && Math.abs(n) < 1e16) {
+    const sign = n < 0 ? '負' : '', abs = Math.abs(n)
+    return sign + (abs >= 1e8 ? hanziNumber(Math.round(abs / 1e8)) + '億' : hanziNumber(Math.round(abs / 1e4)) + '萬')
+  }
+  const key = base()
+  compactFormats[key] ??= new Intl.NumberFormat(key, { notation: 'compact', maximumFractionDigits: 1 })
+  return compactFormats[key].format(n)
+}
+
 
 /**
  * A time of day by the twelve double hours, each split into 初 and 正, then 刻 of fifteen minutes and

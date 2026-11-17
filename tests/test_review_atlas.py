@@ -2116,3 +2116,22 @@ def test_a_voiced_sequence_is_filed_under_its_grapheme():
     assert len(members) == len(set(members)) == 13
     with pytest.raises(BadRequest):
         grapheme_members("U+1B09E U+3099")
+
+
+def test_group_stats_count_each_script_group_and_review_state(dataset):
+    client = TestClient(create_app(dataset))
+    body = client.get('/atlas/groups/stats').json()
+    by_group = {entry['group']: entry for entry in body['groups']}
+    assert list(by_group) == ['all', 'kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other']
+    total = sum(by_group[g]['total'] for g in ('kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'))
+    assert by_group['all']['total'] == total > 0
+    assert by_group['all']['reviewed'] == by_group['all']['checked'] + by_group['all']['need_fixing']
+    item = client.get('/atlas?limit=1').json()['items'][0]
+    saved = client.post(f"/atlas/characters/{item['id']}", json={
+        "id": str(uuid4()), "client_id": "stats-test", "revision": item['revision'],
+        "image_sha256": item['image_sha256'], "verdict": "wrong", "issue": "crop",
+    })
+    assert saved.status_code == 200
+    after = {entry['group']: entry for entry in client.get('/atlas/groups/stats').json()['groups']}
+    assert after['all']['need_fixing'] == by_group['all']['need_fixing'] + 1
+    assert after['all']['reviewed'] == by_group['all']['reviewed'] + 1

@@ -93,7 +93,7 @@ try {
   // The character filter is cleared by the search, so the box no longer narrows the answer.
   const token = await browser.evaluate(`document.querySelector('.find-token')?.textContent ?? null`)
   assert(token === null, `the character filter still says ${JSON.stringify(token)}`)
-  const group = await browser.evaluate(`document.querySelector('.filter-tabs button.active').textContent.trim()`)
+  const group = await browser.evaluate(`document.querySelector('.filter-tabs button.active .filter-label').textContent.trim()`)
   assert(group === 'All', `the type filter still says ${JSON.stringify(group)}`)
 
   const found = await browser.evaluate(rows)

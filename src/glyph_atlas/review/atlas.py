@@ -1084,6 +1084,41 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "reported_count": reported_count,
                 "items": with_forms([item(u, rev, states[u.id]) for u, rev in selected[offset:offset + limit]])}
 
+    @api.get("/atlas/groups/stats")
+    def group_stats() -> dict:
+        """Crop counts per script group (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `other`)."""
+        generation = (file_stamp(store.path), file_stamp(Path(str(store.path) + "-wal")),
+                      file_stamp(production_metadata.OVERRIDES))
+        units, all_states, *_ = catalogue_snapshot(generation)
+        order = ("all", "kana", "kanji", "hangul", "gugyeol", "tangut", "other")
+        empty_scope = lambda: {"total": 0, "pending": 0, "seen": 0, "checked": 0, "flagged": 0, "hard": 0, "withheld": 0}
+        buckets = {name: empty_scope() for name in order}
+        for u, _ in units:
+            if not eligible(u):
+                continue
+            grp = character_group(u)
+            if grp not in buckets:
+                grp = "other"
+            state = all_states.get(u.id, "pending")
+            if state not in ("pending", "seen", "checked", "flagged", "hard"):
+                state = "pending"
+            withheld = repair_withheld(u)
+            for target in ("all", grp):
+                b = buckets[target]
+                b["total"] += 1
+                b[state] += 1
+                if withheld:
+                    b["withheld"] += 1
+        zero = {"total": 0, "reviewed": 0, "checked": 0, "need_fixing": 0,
+                "flagged": 0, "hard": 0, "seen": 0, "pending": 0, "withheld": 0}
+        groups = []
+        for name in order:
+            b = buckets[name]
+            need_fixing = b["flagged"] + b["hard"]
+            collected = {**b, "need_fixing": need_fixing, "reviewed": b["checked"] + need_fixing}
+            groups.append({"group": name, **collected, "collected": collected, "corpus": dict(zero)})
+        return {"groups": groups}
+
     @api.get("/atlas/characters/{unit_id}")
     def character(unit_id: str) -> dict:
         unit, revision = one(unit_id)

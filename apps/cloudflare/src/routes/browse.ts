@@ -1,10 +1,10 @@
 // The catalogue, the homepage and the site's status on the new storage layout (decision record 0005):
 // `/atlas` (the browse page, the review rounds and the Flagged view), `/atlas/corpus/characters`,
-// `/layers/gallery`, `/atlas/dates/stats`, `/atlas/collection/status`, `/layers/summary` and
+// `/layers/gallery`, `/atlas/dates/stats`, `/atlas/groups/stats`, `/atlas/collection/status`, `/layers/summary` and
 // `/health`. Counts come from the publication's answers plus the reviews since (`atlas3Answers.ts`);
 // listings deal crops in shuffle order from the indexes of migration 0011.
 import { codeNames, cropOf, publicId, type Entry } from '../atlas3';
-import { bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, galleryIndex, galleryShard, productionKeys, type SampleEntry } from '../atlas3Answers';
+import { answer, bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, galleryIndex, galleryShard, productionKeys, tallyDeltas, type SampleEntry } from '../atlas3Answers';
 import { filedClaims } from '../atlas3Gallery';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
 import { catalogueKey, catalogueStamps, publicationKey, type CatalogueStamps } from '../atlas3Stamps';
@@ -100,6 +100,92 @@ export async function dateStats(env: Env, ctx: ExecutionContext, url: URL): Prom
     .map(([book, n]) => ({ ...facts.get(book)!, n: n[which] })).sort((a, b) => byCodePoint(a.document, b.document));
   const body = tallyDates([...list(0), ...list(1)]);
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
+  return body;
+}
+
+// ---- Crop counts by script group.
+
+const SCRIPT_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'] as const;
+type ScriptGroup = typeof SCRIPT_GROUPS[number];
+const GROUP_ORDER = ['all', ...SCRIPT_GROUPS] as const;
+type GroupKey = typeof GROUP_ORDER[number];
+type GroupState = 'pending' | 'seen' | 'checked' | 'flagged' | 'hard';
+type ScopeCounts = Record<'total' | GroupState | 'withheld', number>;
+const emptyScope = (): ScopeCounts => ({ total: 0, pending: 0, seen: 0, checked: 0, flagged: 0, hard: 0, withheld: 0 });
+const isScriptGroup = (value: string): value is ScriptGroup => (SCRIPT_GROUPS as readonly string[]).includes(value);
+const toScriptGroup = (value: string | undefined): ScriptGroup => value && isScriptGroup(value) ? value : 'other';
+const toGroupState = (state: string | undefined): GroupState =>
+  state === 'seen' || state === 'checked' || state === 'flagged' || state === 'hard' ? state : 'pending';
+
+function summarizeScope(s: ScopeCounts) {
+  const pending = Math.max(0, s.pending), seen = Math.max(0, s.seen);
+  const checked = Math.max(0, s.checked), flagged = Math.max(0, s.flagged), hard = Math.max(0, s.hard);
+  const need_fixing = flagged + hard;
+  return { total: Math.max(0, s.total), reviewed: checked + need_fixing, checked, need_fixing, flagged, hard, seen, pending, withheld: Math.max(0, s.withheld) };
+}
+
+// Collected crops (`facets.json.gz` + `tally`) and corpus glyphs (`corpus.json.gz` + `unread.json.gz` + `tally`)
+// grouped by script (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `other`) with review state counts.
+export async function groupStats(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
+  const [{ pub, through_gen }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]);
+  const version = catalogueKey(stamps);
+  const key = new Request(`${url.origin}/atlas/groups/stats?v=${encodeURIComponent(`${pub}:${version}`)}`);
+  const cached = await caches.default.match(key);
+  if (cached) return cached.json();
+  const [collected, corpus, unread, deltas, names] = await Promise.all([
+    collectedCounts(env, version),
+    corpusCounts(env, version),
+    answer(env, pub, 'unread.json.gz').catch(() => null),
+    tallyDeltas(env, pub, through_gen, version),
+    codeNames(env),
+  ]);
+  const stateOf = new Map([...names].filter(([k]) => k.startsWith('state:')).map(([k, v]) => [Number(k.slice(6)), v]));
+  const categoryByCode = new Map([...names].filter(([k]) => k.startsWith('category:')).map(([k, v]) => [Number(k.slice(9)), v]));
+  const buckets = Object.fromEntries(GROUP_ORDER.map(g => [g, { collected: emptyScope(), corpus: emptyScope() }])) as Record<GroupKey, { collected: ScopeCounts; corpus: ScopeCounts }>;
+  const add = (scope: 'collected' | 'corpus', group: ScriptGroup, stateCode: number, quiz: number, n: number) => {
+    const state = toGroupState(stateOf.get(stateCode));
+    for (const target of ['all', group] as const) {
+      const s = buckets[target][scope];
+      s.total += n; s[state] += n;
+      if (quiz === 0) s.withheld += n;
+    }
+  };
+  for (const c of collected.cells) {
+    const text = c.char !== -1 ? collected.chars.get(c.char)?.text : undefined;
+    const catName = c.category !== null && c.category !== -1 ? categoryByCode.get(c.category) : undefined;
+    add('collected', toScriptGroup(text ? categoryOf(text) : catName), c.state, c.quiz, c.n);
+  }
+  for (const c of corpus.cells) {
+    const text = corpus.chars.get(c.char)?.text;
+    add('corpus', toScriptGroup(text ? categoryOf(text) : undefined), c.state, c.quiz, c.n);
+  }
+  if (unread?.categories) {
+    for (const [catKey, rows] of Object.entries(unread.categories as Record<string, number[][]>)) {
+      const catCode = Number(catKey), group = toScriptGroup(catCode === -1 ? undefined : categoryByCode.get(catCode));
+      for (const row of rows) if (row[0] === 1) add('corpus', group, row[2], row[3], row[6]);
+    }
+  }
+  for (const d of deltas) if (d.kind === 1 && d.char === -1) add('corpus', 'other', d.state, d.quiz, d.n);
+  const groups = GROUP_ORDER.map(group => {
+    const collectedSummary = summarizeScope(buckets[group].collected);
+    const corpusSummary = summarizeScope(buckets[group].corpus);
+    return {
+      group,
+      total: collectedSummary.total + corpusSummary.total,
+      reviewed: collectedSummary.reviewed + corpusSummary.reviewed,
+      checked: collectedSummary.checked + corpusSummary.checked,
+      need_fixing: collectedSummary.need_fixing + corpusSummary.need_fixing,
+      flagged: collectedSummary.flagged + corpusSummary.flagged,
+      hard: collectedSummary.hard + corpusSummary.hard,
+      seen: collectedSummary.seen + corpusSummary.seen,
+      pending: collectedSummary.pending + corpusSummary.pending,
+      withheld: collectedSummary.withheld + corpusSummary.withheld,
+      collected: collectedSummary,
+      corpus: corpusSummary,
+    };
+  });
+  const body = { groups };
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;
 }
 

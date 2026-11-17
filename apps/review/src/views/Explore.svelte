@@ -38,7 +38,7 @@
   import { arrowTarget, toggled, withRange } from '../lib/selection.js'
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades } from '../lib/layers.js'
-  import { t, around, withText, localName, locale, localize, delocalize } from '../lib/i18n.svelte.js'
+  import { t, around, withText, localName, locale, localize, delocalize, formatNumber, formatCompactNumber } from '../lib/i18n.svelte.js'
   import { characterAddress, collectionAddress, corpusScope, expandFor, graphemeAddress, scopeFor, styleCounts, unslug } from '../lib/gallery.js'
   import { keyText } from '../lib/codePoints.js'
   import { useSession } from '../lib/session.svelte.js'
@@ -151,9 +151,17 @@
   // view reads it with the rows, once it shows.
   let sample = $state([]), sampleFault = $state(null)
   let collection = $state(asked?.collection ?? null)
+  let groupStats = $state(asked?.groupStats ?? null)
   async function readCollection() {
     try { collection = await request('/atlas/collection/status') } catch { /* retry on the next interval */ }
   }
+  async function readGroupStats() {
+    try { groupStats = await request('/atlas/groups/stats') } catch { /* retry on the next interval */ }
+  }
+  const groupMap = $derived(new Map((groupStats?.groups ?? []).map(entry => [entry.group, entry])))
+  const activeGroup = $derived(groupMap.get(filter) ?? null)
+  const bottomChecked = $derived(!picked && activeGroup ? activeGroup.checked : data?.counts?.checked)
+  const bottomFlagged = $derived(!picked && activeGroup ? activeGroup.need_fixing : data?.counts?.flagged)
   // Unfiltered, the catalogue's own list: a further page keeps it, and so leaves everything gathered from it alone.
   const categories = $derived(flagged ? (data?.categories ?? []).filter(c => c.flagged || c.hard) : data?.categories ?? [])
   /** A grapheme key (`U+4EEE`, or a label's own code points) as the text it names. */
@@ -823,6 +831,7 @@
       }
       keepPlace(id, () => { corpus = corpus.flatMap(replace); sample = sample.flatMap(replace) })
       runCrops({ [id]: result })
+      readGroupStats()
       return
     }
     try {
@@ -833,6 +842,7 @@
       keepPlace(id, () => { if (picked) local = local.flatMap(replace); else items = items.flatMap(replace) })
       runCrops({ [id]: updated })
       runsChanged()
+      readGroupStats()
       const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 })
       if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
@@ -1003,6 +1013,7 @@
       patch(after)
       bulkDone = { kind: 'correct', batches: saved, count: Object.keys(after).length, char: target, before, kept }
       runsChanged()
+      readGroupStats()
     }
     // What was saved, kept or refused leaves the selection; what a later batch never reached stays selected.
     selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
@@ -1050,6 +1061,7 @@
       confirmedHere = new Set([...confirmedHere, ...outcome.saved.keys()])
       bulkDone = { kind: 'confirm', batches: answered.map(({ item }) => item.id), count: outcome.saved.size, before }
       runsChanged()
+      readGroupStats()
     }
     // What was sent, kept or reported leaves the selection.
     const handled = new Set([...answered.map(({ item }) => item), ...kept].flatMap(batch => batch.crops).map(item => item.id)
@@ -1108,6 +1120,7 @@
       if (restored && Object.keys(restored).every(id => shown.has(id))) patch(restored)
       else await load()
       runsChanged()
+      readGroupStats()
     } catch (e) { bulkError = e.message }
     finally { bulkBusy = false }
   }
@@ -1231,7 +1244,7 @@
   const capture = () => ({ data, items, error, grapheme, work, seed, query, filter, picked, expand, local, corpus, visual, analysis,
     familyTotal, unassignedCount, corpusTotal, corpusOffset, corpusFault, localAfter, corpusAfter, localAnswered, style, styled, dateOrder,
     yearRange, decadeCounts, decadesFor: decadeCounts ? decadesFor : '', localStyles, corpusStyles, corpusAnswered, split, sample, sampleFault,
-    collection, localWithheld, corpusCounts, corpusCountsAsked: Boolean(corpusCounts), runs, runsFailed, runsFor: runs || runsFailed ? runsFor : null,
+    collection, groupStats, localWithheld, corpusCounts, corpusCountsAsked: Boolean(corpusCounts), runs, runsFailed, runsFor: runs || runsFailed ? runsFor : null,
     runKind, homeRuns, scattered, scatteredFor: scattered.length ? scatteredFor : null, charRuns,
     charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, showWithheld, scrollY })
   beforeNavigate(navigation => {
@@ -1249,7 +1262,7 @@
     dateOrder = back.dateOrder; yearRange = back.yearRange; decadeCounts = back.decadeCounts;
     decadesFor = back.decadesFor; localStyles = back.localStyles; corpusStyles = back.corpusStyles;
     corpusAnswered = back.corpusAnswered; split = back.split; sample = back.sample; sampleFault = back.sampleFault;
-    collection = back.collection; localWithheld = back.localWithheld; corpusCounts = back.corpusCounts;
+    collection = back.collection; groupStats = back.groupStats ?? groupStats; localWithheld = back.localWithheld; corpusCounts = back.corpusCounts;
     corpusCountsAsked = back.corpusCountsAsked; runs = back.runs; runsFailed = back.runsFailed; runsFor = back.runsFor;
     runKind = back.runKind; homeRuns = back.homeRuns; scattered = back.scattered; scatteredFor = back.scatteredFor;
     charRuns = back.charRuns; charRunsFor = back.charRunsFor; confirmedHere = back.confirmedHere;
@@ -1289,7 +1302,7 @@
   }
   onMount(() => { if (restored ? restored.data?.categories?.length : !opened && !(first && !first.result.categories?.length)) return; readSummary(); return () => summaryRequest?.abort() })
   // The crop count is read again every half minute while the tab is in view; a hidden tab waits.
-  onMount(() => { const redirected = !back && first ? openEmptyGrapheme(first.result) || openSplit(first.result) : false; if (!collection) readCollection(); if (back?.partial || !restored && (!first && !opened || showWithheld && !flagged)) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(() => document.hidden || readCollection(), 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
+  onMount(() => { const redirected = !back && first ? openEmptyGrapheme(first.result) || openSplit(first.result) : false; if (!collection) readCollection(); if (!groupStats) readGroupStats(); if (back?.partial || !restored && (!first && !opened || showWithheld && !flagged)) load(); if (addressed && !redirected) followAddress(); const timer = setInterval(() => { if (!document.hidden) { readCollection(); readGroupStats() } }, 30000); return () => { closed = true; clearInterval(timer); clearTimeout(searchTimer); catalogueRequest?.abort() } })
   // Widening is the reader's choice and only it reloads the gallery; picking a character resets the
   // widening itself and loads once through `pick`.
   // The first run is the widening the page opened with, already loaded.
@@ -1325,7 +1338,21 @@
   <div class="page-status">
     <h1 class="visually-hidden">{flagged ? t('explore.heading.flagged') : t('explore.heading.atlas')}</h1>
     <SiteLinks />
-    <div class="collection-meta"><span class="live-dot"></span>{#if picked}<span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span>{:else if !flagged && collection?.archive}<span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span>{#if data?.counts?.checked != null}<span class="meta-divider">/</span><span>{t('explore.meta.reviewedCrops', { count: (data.counts.checked ?? 0) + (data.counts.flagged ?? 0) })}</span>{/if}{:else}<span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span>{#if wholeCategories.length}<span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.filter(group => group.local > 0).length })}</span>{/if}{/if}</div>
+    {#if picked}
+      <div class="collection-meta"><span class="live-dot"></span><span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span></div>
+    {:else}
+      <button type="button" class="collection-meta meta-button" onclick={event => session.showProgress(event.currentTarget)} title={t('explore.collectionProgress')}>
+        <span class="live-dot"></span>
+        {#if !flagged && activeGroup}
+          <span>{t('explore.meta.crops', { count: activeGroup.total })}</span><span class="meta-divider">/</span><span>{t('explore.meta.reviewedCrops', { count: activeGroup.reviewed })}</span>
+        {:else if !flagged && collection?.archive}
+          <span>{t('explore.meta.indexedCrops', { count: collection.archive.character_crops })}</span>{#if data?.counts?.checked != null}<span class="meta-divider">/</span><span>{t('explore.meta.reviewedCrops', { count: (data.counts.checked ?? 0) + (data.counts.flagged ?? 0) })}</span>{/if}
+        {:else}
+          <span>{t('explore.meta.glyphsTotal', { count: flagged ? (data?.total ?? 0) + sample.length : data?.available })}</span>{#if wholeCategories.length}<span class="meta-divider">/</span><span>{t('explore.meta.graphemes', { count: graphemes.filter(group => group.local > 0).length })}</span>{/if}
+        {/if}
+        <span class="visually-hidden"> — {t('explore.collectionProgress')}</span>
+      </button>
+    {/if}
   </div>
   <div class="collection-toolbar" onfocusin={e => { if (e.target.closest('.character-search') && e.target.matches('input')) loadCorpusCounts() }}>
     <!-- The box, empty and focused, lists the collection's graphemes; one chosen narrows the grid, and a
@@ -1349,7 +1376,16 @@
                      token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
                      onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
                      onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
-    <div class="filter-tabs" aria-label={t('explore.filter.label')}>{#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')], ['tangut', () => t('explore.filter.tangut')]] as [value, text]}<button class:active={filter === value} onclick={() => { filter = value; load() }}>{text()}</button>{/each}</div>
+    <div class="filter-tabs" aria-label={t('explore.filter.label')}>
+      {#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')], ['tangut', () => t('explore.filter.tangut')]] as [value, text]}
+        {@const entry = groupMap.get(value)}
+        {@const tabCount = entry ? (flagged ? entry.need_fixing : entry.total) : null}
+        <button type="button" class:active={filter === value} aria-pressed={filter === value} data-group={value}
+                aria-label={tabCount != null ? `${text()}, ${formatNumber(tabCount)}` : undefined}
+                title={entry ? t('explore.filter.summary', { label: text(), crops: t('explore.meta.crops', { count: entry.total }), reviewed: t('explore.meta.reviewedCrops', { count: entry.reviewed }), fixing: t('explore.bottom.flagged', { count: entry.need_fixing }) }) : undefined}
+                onclick={() => { filter = value; load() }}><span class="filter-label">{text()}</span>{#if tabCount != null}<small class="filter-count" aria-hidden="true">{formatCompactNumber(tabCount)}</small>{/if}</button>
+      {/each}
+    </div>
     <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
     <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else load() }} />
     <span class="toolbar-space"></span>
@@ -1415,7 +1451,7 @@
     onconfirm={confirmSelected} onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onleave={stopSelecting} onundo={undoBulk} onopen={openReported}
     ondismiss={() => { bulkDone = null; bulkError = ''; bulkReport = [] }} />{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && display.length}…{/if}</div>
-  <div class="collection-bottom">{#if localName()}<span lang={locale()}>{localName()}</span>{:else}<span lang="en">GLYPH ATLAS</span>{/if}{#if data?.counts?.checked != null}<span>{t('explore.bottom.checked', { count: data.counts.checked })} <span class="separator">·</span> {t('explore.bottom.flagged', { count: data.counts.flagged })}</span>{/if}</div>
+  <div class="collection-bottom">{#if localName()}<span lang={locale()}>{localName()}</span>{:else}<span lang="en">GLYPH ATLAS</span>{/if}{#if bottomChecked != null}<span>{t('explore.bottom.checked', { count: bottomChecked })} <span class="separator">·</span> {t('explore.bottom.flagged', { count: bottomFlagged })}</span>{/if}</div>
 </section>
 
 <style>
@@ -1492,4 +1528,17 @@
   /* Drawn above the hover panel, so the outline stays whole while the details show. */
   .decided-checked::after,.decided-flagged::after{content:'';position:absolute;inset:0;z-index:3;border:2px solid var(--good);pointer-events:none}
   .decided-flagged::after{border-color:var(--wrong)}
+  /* Clickable summary pill in .page-status that opens the collection progress dialog. */
+  .page-status .meta-button{border:1px solid transparent;border-radius:999px;background:transparent;padding:4px 10px;margin:-4px 0 -4px auto;transition:background .15s,border-color .15s,color .15s}
+  .page-status .meta-button:not(:disabled):hover{background:var(--surface);border-color:var(--line);color:var(--ink)}
+  .collection-toolbar .filter-tabs{flex-wrap:wrap}
+  .collection-toolbar .filter-tabs button{display:inline-flex;align-items:baseline;gap:6px}
+  .collection-toolbar .filter-tabs button:not(:disabled):hover{color:var(--ink)}
+  .filter-count{font-size:10px;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums;font-weight:500}
+  .filter-tabs button.active .filter-count{color:var(--ink);opacity:.72}
+  @media(max-width:700px){
+    .page-status .meta-button{padding:3px 8px;margin:-3px 0 -3px auto}
+    .collection-toolbar .filter-tabs button{gap:4px;padding:6px 10px}
+    .filter-count{font-size:9px}
+  }
 </style>
