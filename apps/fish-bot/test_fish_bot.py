@@ -499,7 +499,8 @@ def test_call_budget_stops_a_second_call(tmp_path):
     assert store.outcome("$two")[0] == "call-limit"
 
 
-def test_cooldown_marks_without_answering(tmp_path):
+def test_cooldown_marks_without_answering(tmp_path, monkeypatch):
+    monkeypatch.setattr(fish_bot.time, "monotonic", lambda: 10.0)
     bot, matrix, store = make_bot(tmp_path, decision_value=decision())
     bot.config = fish_bot.dataclasses.replace(bot.config, room_cooldown_seconds=3600)
     first = event("@bigfatfish one", event_id="$one")

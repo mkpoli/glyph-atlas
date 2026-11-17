@@ -1230,8 +1230,8 @@ class Bot:
         sender = event.get("sender")
         sender = sender if isinstance(sender, str) else ""
         if pending is None:
-            last = self._last_answer.get(room_id, 0.0)
-            if time.monotonic() - last < self.config.room_cooldown_seconds:
+            last = self._last_answer.get(room_id)
+            if last is not None and time.monotonic() - last < self.config.room_cooldown_seconds:
                 self.store.mark_handled(event_id, "cooldown")
                 return
             if not self._within_budget(sender):
