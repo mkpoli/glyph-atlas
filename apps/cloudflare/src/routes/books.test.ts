@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { cropId } from '../atlas3';
 import { currentPointer } from '../atlas3Answers';
-import { booksRoute } from './books';
+import { booksRoute, bookSays } from './books';
 
 // The answer's pointer is held for a minute, and each setup publishes a pointer of its own.
 (globalThis as any).caches = { default: { match: async () => undefined, put: async () => {} } };
@@ -70,6 +70,12 @@ describe('the public books', () => {
     expect(body.books[0]).toMatchObject({ title: 'Book A', page_count: 2, box_count: 4, cover_url: null });
     expect(body.books[0].dating.witness).toMatchObject({ kind: 'printed', start: 1712, label: '1712' });
     expect(body.books[0].dating.composed).toMatchObject({ kind: 'composed', start: 1600, end: 1650 });
+  });
+
+  it('matches an accented Latin word only at its start', () => {
+    const book = { id: 'cafe', title: 'Café', dating: {} };
+    expect(bookSays(book, 'caf')).toBe(true);
+    expect(bookSays(book, 'fé')).toBe(false);
   });
 
   it('finds a book by a Latin word start, a Han word inside it, or a date', async () => {

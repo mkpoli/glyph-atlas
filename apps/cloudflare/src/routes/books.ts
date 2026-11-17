@@ -27,17 +27,29 @@ export function pageSeq(key: string): number | null {
   return /^\d+$/.test(tail) ? Number(tail) : null;
 }
 
-/** Whether a book answers to a word: a Latin word opens one of its words, and Han, kana and Hangul
- *  are found anywhere inside, as the local review service matches them. */
+// A script written without spaces: a word in it is found anywhere inside a field.
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Tangut}]/u;
+const LETTER = /[\p{L}\p{N}\p{M}]/u;
+
+/** Whether `word` opens one of `text`'s words, with accented Latin letters counting as letters. */
+function startsWord(text: string, word: string): boolean {
+  for (let at = text.indexOf(word); at >= 0; at = text.indexOf(word, at + 1)) {
+    if (at === 0) return true;
+    const before = [...text.slice(0, at)].at(-1);
+    if (before === undefined || !LETTER.test(before)) return true;
+  }
+  return false;
+}
+
+/** Whether a book answers to a word: a spaced-script word opens one of its words, and Han, kana,
+ *  Hangul and Tangut are found anywhere inside, as the local review service matches them. */
 export function bookSays(book: Json, word: string): boolean {
   const fields = [book.title, book.id,
     ...Object.values(book.dating).flatMap((date: any) => [date?.text, date?.label])];
   for (const field of fields) {
     const text = String(field ?? '').toLowerCase();
     if (!text) continue;
-    if (/^[\x00-\x7f]+$/.test(word)) {
-      if (new RegExp('(?<!\\w)' + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(text)) return true;
-    } else if (text.includes(word)) return true;
+    if (UNSPACED.test(word) ? text.includes(word) : startsWord(text, word)) return true;
   }
   return false;
 }
