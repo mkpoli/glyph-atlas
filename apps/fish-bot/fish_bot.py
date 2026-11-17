@@ -724,7 +724,7 @@ Open an issue only when all of these hold:
 - A maintainer or the participants state or clearly imply that someone should act on it. Prefer explicit requests ("we should...", "can you add...", "this is broken", "make a tracking issue").
 - The issue can be described from the log without inventing facts.
 
-Do not open an issue for questions already answered in the log, casual chat, links without a request, something described as already done or planned elsewhere, personal disputes, moderation matters, or a duplicate of an open issue (give its number in duplicate_of). Do not put access tokens, passwords, private contact details or unverified claims in the issue.
+Do not open an issue for questions already answered in the log, casual chat, links without a request, something described as already done or planned elsewhere, personal disputes, moderation matters, or a duplicate of an open issue (give its number in duplicate_of). Do not put access tokens, passwords, private contact details, @mentions, HTML or images in the issue; quote only short lines from the log.
 
 Reply in the language of the call, or the room's dominant language, in at most 3 short sentences. If opening, say what you filed. If not, say why in one sentence.
 
