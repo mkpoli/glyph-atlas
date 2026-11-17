@@ -5,6 +5,7 @@
   import BoxEditor, { nudged } from './BoxEditor.svelte'
   import { t } from '../lib/i18n.svelte.js'
   import { toSource } from '../lib/cropBox.js'
+  import { cropCut, isPaddedCrop } from '../lib/cropPaint.js'
   // `cropBox` is a box drawn over the crop (a redraw), in source pixels; the view stays framed on the
   // crop as it was cut. `editing` turns the box into one the reader moves and resizes here, and
   // `onedit` hears each new box, in source pixels, `onexit` an Escape. `page` is the link to the whole
@@ -93,12 +94,27 @@
   // Until the page arrives, the crop itself stands where the page will put it: the same rule, written
   // for the stylesheet so it holds from the first paint, before any script measures the view. The box is
   // the record's, else a listing row's page box in source pixels; with neither, the image's own
-  // proportions fill the rule's square.
-  const known = $derived(data?.crop_box ?? item.crop_box ?? (item.box ? toSource(item, item.box) : null))
+  // proportions fill the rule's square. Display crops cut with a margin (`atlas.crop_bounds`) are
+  // scaled to their cut bounds and clipped to the box, so loading the page around it keeps the crop's
+  // exact range and scale.
+  const rawKnown = $derived(data?.crop_box ?? item.crop_box ?? (item.box ? toSource(item, item.box) : null))
+  const known = $derived(rawKnown?.w > 0 && rawKnown?.h > 0 ? rawKnown : null)
+  const cut = $derived(known ? cropCut(known, {
+    padded: isPaddedCrop(item, { corpus, data }),
+    contextBox: !corpus || data?.context_basis === 'derived_viewport' ? data?.context_box : null,
+  }) : null)
   const early = $derived.by(() => {
     if (!known) return ''
     const side = `min(34cqw, 34cqh, ${8 * Math.max(known.w, known.h)}px)`, longer = Math.max(known.w, known.h)
-    return `width:calc(${side} * ${known.w / longer});height:calc(${side} * ${known.h / longer})`
+    const rect = cut ?? known
+    return [
+      `width:calc(${side} * ${known.w / longer})`,
+      `height:calc(${side} * ${known.h / longer})`,
+      `--crop-left:${100 * (rect.x - known.x) / known.w}%`,
+      `--crop-top:${100 * (rect.y - known.y) / known.h}%`,
+      `--crop-width:${100 * rect.w / known.w}%`,
+      `--crop-height:${100 * rect.h / known.h}%`,
+    ].join(';')
   })
   const transform = $derived(`translate(${origin.x}px, ${origin.y}px) scale(${scale})`)
   const mask = $derived(crop ? `left:${origin.x + crop.x * scale}px;top:${origin.y + crop.y * scale}px;width:${crop.w * scale}px;height:${crop.h * scale}px` : '')
@@ -236,9 +252,9 @@
   .crop-mask{position:absolute;pointer-events:none;box-shadow:0 0 12px 3px light-dark(rgb(24 20 17 / 24%), rgb(24 20 17 / 24%))}
   /* The framing rule: centred, its longer side 34% of the view's shorter one. */
   .crop-viewport :global(.crop-early){position:absolute;left:50%;top:50%;width:min(34cqw,34cqh);height:min(34cqw,34cqh);translate:-50% -50%;max-width:none;max-height:none;filter:none;pointer-events:none}
-  /* Placed, the crop's box is its rectangle on the page, which the image is drawn to fill. */
-  .crop-viewport :global(.crop-early.placed){-webkit-mask:none;mask:none}
-  .crop-viewport :global(.crop-early.placed img){object-fit:fill}
+  /* Placed, the crop's box is its rectangle on the page, and the image sits inside at its cut bounds. */
+  .crop-viewport :global(.crop-early.placed){-webkit-mask:none;mask:none;overflow:hidden}
+  .crop-viewport :global(.crop-early.placed img){position:absolute;left:var(--crop-left,0);top:var(--crop-top,0);width:var(--crop-width,100%);height:var(--crop-height,100%);max-width:none;max-height:none;object-fit:fill}
   .crop-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:2px;background:light-dark(rgb(255 255 255 / 94%), rgb(27 27 31 / 94%));padding:3px;border-radius:8px;box-shadow:0 2px 12px light-dark(rgb(0 0 0 / 12%), rgb(0 0 0 / 40%));cursor:default}
   .crop-page{right:auto;left:12px}
   .crop-tools :is(button,a){display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:5px;background:transparent;font-size:22px;color:var(--ink);cursor:pointer}
