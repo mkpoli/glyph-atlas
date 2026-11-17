@@ -197,12 +197,24 @@ describe('the history', () => {
       [[1], { text: 'い', shown: 2 }, { at: 5, src: 1, id: 3 }]] as const) {
       const { sql, values } = historyQuery(actors as number[] | null, label, cursor);
       const details = plan(atlas, sql, [...values, 41]);
-      expect(scans(details, ['events', 'submissions', 'seen', 'graphemes', 'pages'])).toEqual([]);
+      expect(scans(details, ['events', 'submissions', 'seen', 'graphemes', 'pages', 'crops'])).toEqual([]);
       if (actors) expect(details.some(d => /SEARCH events USING INDEX event_actor_history/.test(d) || /SEARCH events USING INDEX event_shown/.test(d))).toBe(true);
       if (label && !actors) expect(details.some(d => /event_shown/.test(d))).toBe(true);
       if (label && !actors) expect(details.some(d => /submission_label/.test(d))).toBe(true);
     }
     expect(scans(plan(atlas, bookDatingQuery(), ['[1]']), ['book_dates'])).toEqual([]);
+  });
+
+  it('marks corpus targets with origin so history opens the corpus dialog', async () => {
+    const { atlas, env } = setup();
+    const corpusCrop = cropId(Q, 1);
+    atlas.exec(`INSERT INTO crops(id,kind,book,char,state,quiz,shuffle) VALUES(${corpusCrop},1,2,1,2,1,0);
+      INSERT INTO submissions(id,key,actor,request,response,at,undone) VALUES(99,'u1:corpus-flag',1,'{"target":"codh:x","input":{"id":"c1","verdict":"wrong"}}','{}',${ms(9)},0);
+      INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state,issue,shown)
+        VALUES(99,${corpusCrop},1,0,0,1,99,${ms(9)},1,1,2,2,1);`);
+    const { items } = await history(env, new URLSearchParams({ limit: '5' }), 'u1', tools);
+    expect(items[0]).toMatchObject({ id: '99', target: publicId(corpusCrop), origin: 'corpus', verdict: 'wrong', issue: 'crop' });
+    expect(items[1].origin).toBeUndefined();
   });
 
   it('reads a user holding more ids than one statement takes in groups, merged into one order, ties by id', async () => {
@@ -388,6 +400,17 @@ describe('the admin lists', () => {
   for (const who of [{ user: 'u1' }, { user: 'u2' }, { actor: 'reviewer-0000000f' }, { user: 'u3' }]) it(`list ${JSON.stringify(who)}'s submissions as before`, async () => {
     const { env } = setup();
     expect(await submissions(env, new URLSearchParams(), await reviewerActors(env, who, tools))).toMatchSnapshot();
+  });
+  it('marks corpus targets in submission summaries with origin', async () => {
+    const { atlas, env } = setup();
+    const corpusCrop = cropId(Q, 2);
+    atlas.exec(`INSERT INTO crops(id,kind,book,char,state,quiz,shuffle) VALUES(${corpusCrop},1,2,1,2,1,0);
+      INSERT INTO submissions(id,key,actor,request,response,at,undone) VALUES(101,'u1:corpus-sub',1,'{"target":"codh:y","input":{"id":"c2","verdict":"wrong","issue":"crop"}}','{}',${ms(10)},0);
+      INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind,label,state,issue,shown)
+        VALUES(101,${corpusCrop},1,0,0,1,101,${ms(10)},1,1,2,2,1);`);
+    const { items } = await submissions(env, new URLSearchParams(), await reviewerActors(env, { user: 'u1' }, tools));
+    expect(items[0].targets).toEqual([{ id: publicId(corpusCrop), label: 'あ', origin: 'corpus' }]);
+    expect(items[1].targets[0]).not.toHaveProperty('origin');
   });
   it('say what each kind of submission asked for', () => {
     expect(summary(canonical({ target: null, input: { label: 'あ', answers: [{ verdict: 'match' }, { verdict: 'wrong' }, { verdict: 'match' }], skipped: [{}] } })))

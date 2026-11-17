@@ -105,6 +105,11 @@
     try {
       const result = preloaded ?? await readCrop(target)
       if (closed || current !== generation) return
+      // A corpus glyph uses its own inspector (`CorpusDialog`) and `/corpus/...` address.
+      if (result.origin === 'corpus' && inspector.shown) {
+        inspector.replaced(result.id, result.source_id, 'corpus')
+        return
+      }
       // A link by an old id, or to a retired crop, opens the crop it names now, and the address follows; a
       // retired crop's link says it was replaced.
       if (result.id !== target) {

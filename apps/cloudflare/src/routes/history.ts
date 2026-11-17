@@ -73,14 +73,14 @@ export function historyQuery(actors: number[] | null, label: { text: string; sho
   const arms = actors === null ? [event(events), round(rounds)]
     : actors.flatMap(actor => { const a = bind(actor); return [event([...events, `actor=${a}`]), round([...rounds, `actor=${a}`])]; });
   // Each row's request is read for its kind (round, batch or one crop) and id, its kind, issue and
-  // labels by key, and its crop's book by the page the crop id names.
+  // labels by key, and its crop's book and kind by the ids they carry.
   const sql = `SELECT h.*,s.key,json_type(s.request,'$.target') AS target_type,json_extract(s.request,'$.target') AS target,
     json_extract(s.request,'$.input.id') AS request_id,kc.key AS kind_key,ic.key AS issue_key,kept.key AS kept_key,gs.text AS shown_text,
-    gn.text AS named_text,pg.book
+    gn.text AS named_text,pg.book,c.kind AS crop_kind
     FROM (${arms.join(' UNION ALL ')} ORDER BY at DESC,src DESC,id DESC LIMIT ?${values.length + 1}) h
     LEFT JOIN submissions s ON s.id=h.submission LEFT JOIN codes kc ON kc.field='kind' AND kc.code=h.kind
     LEFT JOIN codes ic ON ic.field='issue' AND ic.code=h.issue LEFT JOIN codes kept ON kept.field='issue' AND kept.code=h.kept_issue LEFT JOIN graphemes gs ON gs.id=h.shown
-    LEFT JOIN graphemes gn ON gn.id=h.named LEFT JOIN pages pg ON pg.id=h.crop>>24 ORDER BY h.at DESC,h.src DESC,h.id DESC`;
+    LEFT JOIN graphemes gn ON gn.id=h.named LEFT JOIN pages pg ON pg.id=h.crop>>24 LEFT JOIN crops c ON c.id=h.crop ORDER BY h.at DESC,h.src DESC,h.id DESC`;
   return { sql, values };
 }
 
@@ -91,7 +91,8 @@ export const recordedIssue = (issue: unknown) => issue === 'reading' ? 'characte
 export type HistoryRow = { src: 0 | 1; id: number; at: number; actor: number; crop: number | null; kind: number | null;
   issue: number | null; text: string | null; reverses: number | null; passed: number | null; label: string | null;
   key: string | null; target_type: string | null; target: string | null; request_id: string | null;
-  kind_key: string | null; issue_key: string | null; kept_key: string | null; shown_text: string | null; named_text: string | null; book: number | null };
+  kind_key: string | null; issue_key: string | null; kept_key: string | null; shown_text: string | null; named_text: string | null; book: number | null;
+  crop_kind: number | null };
 export type Reviewer = { user: string | null; name: string | null; image: string | null };
 
 /** A history row as the page shows it. A round's or batch's id is the request's own, as its undo
@@ -106,7 +107,8 @@ export function historyItem(row: HistoryRow, reviewer: Reviewer, me: string | nu
   // A round's request has no target, a batch's names '@batch', a single review's names its crop.
   const round = !undo && row.target_type === 'null', batch = !undo && row.target === '@batch';
   return {
-    id: String(row.id), at, target: publicId(row.crop!), label: row.shown_text, kind: undo ? 'undo' : 'review',
+    id: String(row.id), at, target: publicId(row.crop!), ...(row.crop_kind === 1 ? { origin: 'corpus' } : {}),
+    label: row.shown_text, kind: undo ? 'undo' : 'review',
     reviewer: who, actor: row.actor,
     verdict: undo ? null : kind ?? null,
     issue: undo ? null : recordedIssue(row.issue_key),

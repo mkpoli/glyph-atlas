@@ -217,6 +217,19 @@ describe('a crop\'s record', () => {
     expect(record.honkoku_url).toBeUndefined();
     const corpus = await get(`/atlas/corpus/character?id=${publicId(ids.glyph)}`);
     expect(await corpus.json()).toEqual(record);
+    expect(record.origin).toBe('corpus');
+  });
+
+  it('always marks corpus glyphs with origin even when a pack omits it', async () => {
+    const bareId = cropId(880001, 0);
+    const bare = { id: 'codh:bare:0', unit_id: 'codh:bare:0', char: '翁', label: '翁', code_point: 'U+7FC1', box: { x: 1, y: 2, w: 3, h: 4 },
+      image: '/atlas/media/glyph.webp', source: { corpus: 'codh-full', title: 'Test' }, source_revision: 'rev1', licence: 'CC-BY-SA-4.0' };
+    const { cropRecord } = await import('../cropRecords');
+    expect(cropRecord({ id: bareId, kind: 1, state: 2, settled: 0, style: 0, own_style: 0, production: null, category: null, issue: 2,
+      reviewed: 0, written: 0, char: null, head: null, form: null, written_form: null, form_issue: null, form_char: null,
+      cluster_id: null, cluster_key: null, cluster_label: null, cluster_coherence: null, cluster_shape: null, cluster_size: null,
+      cluster_form: null, cluster_issue: null, cluster_char: null, cluster_decision: null, carried_form: null, carried_issue: null,
+      carried_char: null, x: null, y: null, w: null, h: null, page_key: 'corpus:bare:0' } as any, bare, 'codh:bare:0').origin).toBe('corpus');
   });
 
   it('reads a corpus glyph outside the clustering under the cluster decision it carries from an earlier one', async () => {

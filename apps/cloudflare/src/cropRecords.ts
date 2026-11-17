@@ -117,7 +117,7 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   const corpus = row.kind === 1;
   let record: Json = Object.fromEntries(Object.entries(base).filter(([key]) => !INTERNAL.includes(key)));
   if (corpus) record = formed(record, formRow(row), { codePoints });
-  Object.assign(record, { id: publicId(row.id), source_id: source });
+  Object.assign(record, { id: publicId(row.id), source_id: source, ...(corpus ? { origin: 'corpus' } : {}) });
   if (!corpus) Object.assign(record, { label: row.char ?? record.label, production: row.production ?? 'unknown', page_id: row.page_key });
   Object.assign(record, { state: recordState(row.state), revision: row.settled });
   // The style the crop is listed under: its publication's, or one a reviewer gave it (`unit`), which they may change.
