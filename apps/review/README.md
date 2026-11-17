@@ -5,9 +5,9 @@ A character atlas over the local Atlas review journal.
 - **Explore** shows shuffled character crops, with character filters and kana/kanji groups.
 - **Quick review** deals crops by grapheme, 48 to a round and 24 more on request. Select mismatches, choose an illustrated error type, then save. **Select all** handles rounds with widespread errors.
 - **Flagged** collects unresolved human decisions. The character reviewer advances through the visible collection after each save, preserving its order and scroll position.
-- **Books** finds a book by a word of its title, holder, shelfmark, genre or date, and opens it: the book's
-  pages, each with its box count, lead to the page photo with its boxes. Both views appear only on the
-  local review service.
+- **Books** finds a book by a word of its title or date, and opens it: the book's pages, each with its
+  box count, lead to the page photo with its boxes. The Worker serves the books whose pages it holds;
+  the local review service adds the fuller record with covers, shelfmarks, credits and page thumbnails.
 
 The inspector shows the character and a small surrounding region.
 

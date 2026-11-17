@@ -1,7 +1,7 @@
 import { request } from './client.js'
 
-// The books and the page photos of a dataset. Only the local review service serves these routes; the
-// hosted Worker answers 404, so the Books view and the drawing tools stay hidden there.
+// The books and the page photos of a dataset. The Worker serves the books whose pages it holds; the
+// local review service adds the fuller book record, the page list and drawing.
 export async function booksAvailable(send = fetch) {
   try {
     const response = await send('/atlas/books?limit=1', { method: 'GET' })
