@@ -105,7 +105,7 @@
   function chooseTheme(value) { setTheme(value); theme = value }
   function chooseLocale(tag) { setLocale(tag); menu = false; goto(localize(delocalize(location.pathname).path, tag) + location.search, { noScroll: true, keepFocus: true }) }
   function exportReviews() { menu = false; exporting = true }
-  function showProgress() { menu = false; session.showProgress() }
+  function showProgress() { menu = false; session.showProgress(menuButton) }
   // A new page closes whatever the last one left open.
   beforeNavigate(navigation => noteNavigation(navigation.type))
   afterNavigate(navigation => { menu = false; inspector.forget(); noteArrival(navigation.type) })
@@ -150,4 +150,4 @@
 <DatabaseStatus />
 {#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}
 {#if session.state.signingIn}<SignInDialog close={() => session.state.signingIn = false} />{/if}
-{#if session.state.progress}<CollectionProgress close={() => { session.state.progress = false; menuButton?.focus() }} />{/if}
+{#if session.state.progress}<CollectionProgress close={() => session.closeProgress(menuButton)} />{/if}

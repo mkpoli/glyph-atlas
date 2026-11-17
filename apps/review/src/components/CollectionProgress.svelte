@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { t, formatNumber as number, formatDateTime, around } from '../lib/i18n.svelte.js'
   import DateStats from './DateStats.svelte'
+  import ScriptStats from './ScriptStats.svelte'
   let { close } = $props()
   /** A click on the backdrop closes the dialog. The backdrop has no element of its own, so a click on
    * it lands on the dialog; its position outside the dialog's box is what tells it apart. */
@@ -47,6 +48,7 @@
   </div>
   {#if error}<p class="progress-error" role="alert">{error} <button onclick={read}>{t('common.tryAgain')}</button></p>{/if}
   {#if loading && !data}<p class="progress-note" role="status">{t('progress.loading')}</p>{/if}
+  {#if !data && !loading}<ScriptStats />{/if}
   {#if data}
     {#if data.archive}
       <div class="archive-counts">
@@ -55,6 +57,7 @@
       </div>
       <p class="progress-note">{t('progress.archive.textWorks', { count: data.archive.text_works })}</p>
     {/if}
+    <ScriptStats />
     <DateStats />
     <div class="sources">
       {#if data.extraction}
@@ -116,7 +119,7 @@
 </dialog>
 
 <style>
-  .progress-dialog{width:min(500px,calc(100vw - 32px));max-height:calc(100dvh - 32px);margin:auto;padding:26px 28px;border:1px solid var(--line);border-radius:16px;color:var(--ink);background:var(--surface);box-shadow:0 24px 80px var(--shadow);overflow:auto}
+  .progress-dialog{width:min(620px,calc(100vw - 32px));max-height:calc(100dvh - 32px);margin:auto;padding:26px 28px;border:1px solid var(--line);border-radius:16px;color:var(--ink);background:var(--surface);box-shadow:0 24px 80px var(--shadow);overflow:auto}
   .progress-dialog::backdrop{background:var(--backdrop);backdrop-filter:blur(3px)}
   .progress-heading,.source-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
   h2{font-size:22px;font-weight:500;letter-spacing:-.4px;margin:0}h3{font-size:15px;font-weight:500;margin:0}

@@ -173,6 +173,7 @@ const routes = {
       if(books)return books;
       if(path==='/atlas/collection/status')return json(await browse.siteValue(env,'collection'));
       if(path==='/atlas/dates/stats')return json(await browse.dateStats(env,ctx,url));
+      if(path==='/atlas/groups/stats')return json(await browse.groupStats(env,ctx,url));
       const read=await claimRead(env,url,claimTools,ctx);
       if(read)return read instanceof Response?read:json(read);
       if(path==='/atlas/reviews'||path==='/atlas/reviews.json')return json(await reviewsPage(env,q),200,

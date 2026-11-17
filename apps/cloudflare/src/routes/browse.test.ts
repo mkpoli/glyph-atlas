@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:
 import { bundle, bundleKey, cropId, publicId } from '../atlas3';
 import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
-import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, cursorOf, cursorText, dateStats, flaggedQuery, gallery, page, type Stage,
+import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, cursorOf, cursorText, dateStats, flaggedQuery, gallery, groupStats, page, type Stage,
   catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter } from './browse';
 import { Timing } from '../timing';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
@@ -94,6 +94,42 @@ describe('the statistics of the dates', () => {
     expect(stats.hundreds).toEqual([[1700, 12, 1], [1800, 10, 1]]);
     expect(stats.decades).toEqual([[1710, 12, 1], [1850, 10, 1]]);
     expect(stats.kinds).toEqual([['printed', 12, 1], ['copied', 10, 1]]);
+  });
+});
+
+describe('the statistics by script group', () => {
+  it('count collected crops and corpus glyphs together by script and review state, updating with tally deltas', async () => {
+    const { env, db, objects, a, c, crop, pub } = await setup();
+    objects.set(`v3/pub/${pub}/unread.json.gz`, gz({ pub, categories: { '-1': [[1, 0, 0, 1, null, null, 1]] } }));
+    const initial = await groupStats(env, ctx, new URL('https://glyphatlas.org/atlas/groups/stats'));
+    const byGroup = (res: any) => Object.fromEntries(res.groups.map((g: any) => [g.group, g]));
+    const first = byGroup(initial);
+    // Collected (18): 10 kana (1 checked, 1 flagged, 1 hard, 1 seen, 6 pending; 2 withheld), 7 kanji (1 checked, 1 flagged, 5 pending; 1 withheld), 1 other (pending).
+    // Corpus (10): 7 kana (1 checked, 6 pending), 1 kanji (pending), 1 hangul (pending), 1 unread (other, pending).
+    expect(first.all).toMatchObject({ total: 28, reviewed: 6, checked: 3, need_fixing: 3, flagged: 2, hard: 1, seen: 1, pending: 21, withheld: 3 });
+    expect(first.all.collected).toMatchObject({ total: 18, reviewed: 5, checked: 2, need_fixing: 3, flagged: 2, hard: 1, seen: 1, pending: 12, withheld: 3 });
+    expect(first.all.corpus).toMatchObject({ total: 10, reviewed: 1, checked: 1, need_fixing: 0, pending: 9, withheld: 0 });
+    expect(first.kana).toMatchObject({ total: 17, reviewed: 4, checked: 2, need_fixing: 2, flagged: 1, hard: 1, seen: 1, pending: 12, withheld: 2 });
+    expect(first.kanji).toMatchObject({ total: 8, reviewed: 2, checked: 1, need_fixing: 1, flagged: 1, hard: 0, pending: 6, withheld: 1 });
+    expect(first.hangul).toMatchObject({ total: 1, reviewed: 0, checked: 0, need_fixing: 0, pending: 1 });
+    expect(first.gugyeol).toMatchObject({ total: 0, reviewed: 0, checked: 0, need_fixing: 0, pending: 0 });
+    expect(first.tangut).toMatchObject({ total: 0, reviewed: 0, checked: 0, need_fixing: 0, pending: 0 });
+    expect(first.other).toMatchObject({ total: 2, reviewed: 0, checked: 0, need_fixing: 0, pending: 2 });
+
+    // A review that relabels a kanji crop to Gugyeol (not in codes) and names the unread corpus glyph as Tangut updates counts at once.
+    db.exec(`INSERT INTO graphemes(id,text,head) VALUES(7,'',NULL),(8,'𗀀',NULL);
+      INSERT INTO tally VALUES(1,0,4,-1,1,2,0,0,1,-1,-1),(1,0,7,-1,1,2,0,1,1,-1,1);
+      INSERT INTO tally VALUES(1,1,-1,-1,3,2,0,0,1,-1,-1),(1,1,8,-1,3,2,0,1,1,-1,1);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(${crop(a, 5)},1,0,1,1,1,1,0);`);
+    const updated = byGroup(await groupStats(env, ctx, new URL('https://glyphatlas.org/atlas/groups/stats')));
+    expect(updated.gugyeol).toMatchObject({ total: 1, reviewed: 1, checked: 1, need_fixing: 0, pending: 0 });
+    expect(updated.tangut).toMatchObject({ total: 1, reviewed: 1, checked: 1, need_fixing: 0, pending: 0 });
+    expect(updated.kanji).toMatchObject({ total: 7, reviewed: 2, checked: 1, need_fixing: 1, pending: 5 });
+    expect(updated.other).toMatchObject({ total: 1, reviewed: 0, pending: 1 });
+    expect(updated.all).toMatchObject({ total: 28, reviewed: 8, checked: 5, need_fixing: 3, pending: 19 });
+    // Cached under the catalogue version; an identical read returns the same result from the Workers cache.
+    expect((await groupStats(env, ctx, new URL('https://glyphatlas.org/atlas/groups/stats'))).groups).toEqual(Object.values(updated));
+    void c;
   });
 });
 

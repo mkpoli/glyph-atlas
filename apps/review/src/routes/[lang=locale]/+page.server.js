@@ -27,13 +27,14 @@ export async function load({ fetch, params, url }) {
   if (point) redirect(307, localize(characterAddress(point), params.lang))
   const seed = shuffleSeed()
   const sampled = !q && !grapheme && !work, bare = sampled && group === 'all'
-  const [result, collection, runs] = await Promise.all([
+  const [result, collection, runs, groupStats] = await Promise.all([
     // The rows are on the path to the first byte, so a collection that stalls must not hold the page
     // open: the view loads and reports them itself, with the same filters.
     sampled ? null : catalogue({ q, grapheme, document: work, group, state: 'all', seed, limit: 60 }, { fetch, signal: AbortSignal.timeout(READ_TIMEOUT) }).catch(() => null),
     request('/atlas/collection/status', undefined, { fetch, signal: AbortSignal.timeout(READ_TIMEOUT) }).catch(() => null),
     // The most frequent pairs, shown above the collection; the view reads them itself if they do not come.
     bare ? frequent('pair', { fetch, signal: AbortSignal.timeout(READ_TIMEOUT) }).then(items => items.slice(0, KEPT)).catch(() => null) : null,
+    request('/atlas/groups/stats', undefined, { fetch, signal: AbortSignal.timeout(READ_TIMEOUT) }).catch(() => null),
   ])
-  return { explore: { seed, q, grapheme, work, group, collection, result, runs } }
+  return { explore: { seed, q, grapheme, work, group, collection, result, runs, groupStats } }
 }

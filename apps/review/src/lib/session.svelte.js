@@ -1,4 +1,4 @@
-import { getContext, setContext } from 'svelte'
+import { getContext, setContext, tick } from 'svelte'
 import { authClient } from './auth.js'
 import { stored, remember, forget, request } from './client.js'
 import { t } from './i18n.svelte.js'
@@ -16,7 +16,7 @@ let current = null
  */
 export function createSession(account = { user: null, known: false, providers: [] }) {
   const state = $state({ ready: false, user: account.user, providers: account.providers, signingIn: false, ink: 'original', advance: false, progress: false })
-  let starting = null, begun
+  let starting = null, begun, progressReturn = null
   const session = {
     state,
     // Settles once `start` has read who is signed in; a save kept from an earlier page waits for it,
@@ -70,7 +70,14 @@ export function createSession(account = { user: null, known: false, providers: [
     signIn() { state.signingIn = true },
     setInk(value) { state.ink = value; remember('atlas.ink', value) },
     setAdvance(value) { state.advance = value; remember('atlas.advance', value) },
-    showProgress() { state.progress = true },
+    showProgress(returnTo = null) { progressReturn = returnTo; state.progress = true },
+    closeProgress(fallback = null) {
+      state.progress = false
+      const target = progressReturn?.isConnected ? progressReturn : fallback
+      progressReturn = null
+      // Restore focus after `{#if session.state.progress}` unmounts the inert `showModal()` dialog.
+      tick().then(() => target?.focus())
+    },
   }
   current = session
   return session
