@@ -26,6 +26,7 @@ import { claimRead, claimWrite, type ClaimTools } from './routes/claims';
 import { FavouriteError, favouriteCrops, favouriteIds, setFavourite } from './routes/favourites';
 import { MediaIncomplete, mediaResponse } from './atlas3Media';
 import { cropRoute } from './routes/crop';
+import { booksRoute } from './routes/books';
 import { runsRoute } from './routes/runs';
 import { Timing } from './timing';
 import { OPEN, opened } from './open';
@@ -168,6 +169,8 @@ const routes = {
       if(path==='/atlas/corpus/characters')return json(await browse.corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
       const cropped=await cropRoute(env,ctx,url);
       if(cropped)return cropped;
+      const books=await booksRoute(env,url);
+      if(books)return books;
       if(path==='/atlas/collection/status')return json(await browse.siteValue(env,'collection'));
       if(path==='/atlas/dates/stats')return json(await browse.dateStats(env,ctx,url));
       const read=await claimRead(env,url,claimTools,ctx);

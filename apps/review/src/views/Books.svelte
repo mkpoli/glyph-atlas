@@ -67,15 +67,15 @@
   {:else}
     <ul class="book-list">
       {#each books as book (book.id)}
-        <li class="book-card">
+        <li class="book-card" class:no-cover={!book.cover_url}>
           <!-- The cover is hidden from a screen reader and out of the tab order: the title below opens
-               the same book, and the photo says nothing it does not. -->
-          <span class="book-cover" role="presentation">
-            {#if book.cover_url}<img src={book.cover_url} alt="" loading="lazy" decoding="async" />{:else}<span class="cover-none">∅</span>{/if}
-          </span>
+               the same book, and the photo says nothing it does not. A book without one takes the row. -->
+          {#if book.cover_url}<span class="book-cover" role="presentation">
+            <img src={book.cover_url} alt="" loading="lazy" decoding="async" />
+          </span>{/if}
           <div class="book-text">
             <a class="book-title" href={localize('/books/' + encodeURIComponent(book.id))} lang="ja">{book.title || book.id}</a>
-            <span class="book-meta">{#if book.shelfmark}<span class="book-shelfmark">{book.shelfmark}</span>{/if}<ProductionBadge item={book} />{#if Object.keys(book.dating).length}<DateMark item={book} />{/if}
+            <span class="book-meta">{#if book.shelfmark}<span class="book-shelfmark">{book.shelfmark}</span>{/if}{#if book.production}<ProductionBadge item={book} />{/if}{#if Object.keys(book.dating).length}<DateMark item={book} />{/if}
               <span class="book-counts">{t('books.pages', { count: book.page_count })} · {t('pages.boxes.count', { count: book.box_count })}</span></span>
             {#if book.holder || book.licence}<SourceCredit item={book} />{/if}
           </div>
@@ -95,11 +95,11 @@
   .books-find{width:100%;font-size:14px;padding:10px 12px;border-color:var(--line-strong)}
   .book-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
   .book-card{display:grid;grid-template-columns:63px minmax(0,1fr);gap:16px;align-items:center;padding:12px 10px;border-bottom:1px solid var(--line);font-size:13px}
+  .book-card.no-cover{grid-template-columns:minmax(0,1fr)}
   /* The cover is the book's first page, small: it stands where the first letter of the title is, and
      keeps that height on every row. */
   .book-cover{display:block;height:84px;width:63px;border:1px solid var(--line);border-radius:4px;background:var(--surface-sunken);overflow:hidden}
   .book-cover img{width:100%;height:100%;object-fit:cover;object-position:top center}
-  .cover-none{display:grid;place-items:center;height:100%;font-size:15px;color:var(--faint)}
   .book-text{display:grid;gap:4px;min-width:0}
   .book-title{font-size:15px;font-weight:500;justify-self:start}
   .book-shelfmark{font-size:11px;color:var(--ink-soft)}

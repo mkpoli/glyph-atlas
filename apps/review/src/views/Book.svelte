@@ -29,7 +29,7 @@
       <h1 lang="ja">{book.title || book.id}</h1>
       <p class="book-facts">
         {#if book.shelfmark}<span>{book.shelfmark}</span>{/if}
-        <ProductionBadge item={book} />
+        {#if book.production}<ProductionBadge item={book} />{/if}
         {#if Object.keys(book.dating).length}<DateMark item={book} />{/if}
         <span>{t('books.pages', { count: book.page_count })} · {t('pages.boxes.count', { count: book.box_count })}</span>
         <span class="copyable"><code>{book.id}</code><CopyValue value={book.id} /></span>
@@ -42,7 +42,9 @@
       <ol class="book-pages">
         {#each book.pages as page (page.id)}
           <li><a class:shapeless={!page.width || !page.height} href={localize('/pages/' + encodeURIComponent(page.id))}>
-            <span class="page-photo" style={page.width && page.height ? `aspect-ratio:${page.width}/${page.height}` : ''}>{#if page.thumb_url}<img src={page.thumb_url} alt="" loading="lazy" decoding="async" />{:else}<span class="photo-none">∅</span>{/if}</span>
+            {#if page.thumb_url}<span class="page-photo" style={page.width && page.height ? `aspect-ratio:${page.width}/${page.height}` : ''}>
+              <img src={page.thumb_url} alt="" loading="lazy" decoding="async" />
+            </span>{/if}
             <span class="page-label"><span>{t('pages.pageNumber', { number: page.seq + 1 })}</span>
               <small class:zero={!page.units}>{page.units ? number(page.units) : 0}</small></span>
           </a></li>
@@ -69,7 +71,6 @@
   .page-photo{display:block;aspect-ratio:3/4;border-radius:3px;background:var(--surface-sunken);overflow:hidden}
   .shapeless .page-photo{aspect-ratio:3/4}
   .page-photo img{width:100%;height:100%;object-fit:cover;object-position:top center}
-  .photo-none{display:grid;place-items:center;height:100%;font-size:15px;color:var(--faint)}
   .page-label{display:flex;align-items:baseline;justify-content:space-between;gap:6px;white-space:nowrap;padding:0 2px}
   .book-pages a:hover{border-color:var(--line-strong)}
   .book-pages small.zero{background:var(--surface-selected);color:var(--muted)}
