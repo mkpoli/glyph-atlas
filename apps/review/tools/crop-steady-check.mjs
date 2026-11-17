@@ -23,21 +23,27 @@ const HOLD = 2500
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
 let browser, failures = 0
 
-// The crop as the reader sees it: the outline once the view is ready, before then the crop image,
-// whose visible part is its content box when the image is contained in a square.
+// The crop as the reader sees it: the outline once the view is ready, before then the crop box
+// (clipped to its placed box when known, else the contained image inside a square).
 const probe = `(() => {
   const v = document.querySelector('dialog[open] .crop-viewport') ?? document.querySelector('.crop-viewport')
   if (!v) return null
   const vr = v.getBoundingClientRect()
-  const el = v.querySelector('.crop-mask, .box-editor') ?? v.querySelector('.crop-early img') ?? v.querySelector('img:not(.context-photo):not(.page-photo)')
-  if (!el || (el.tagName === 'IMG' && !el.naturalWidth)) return { view: [vr.width, vr.height], ready: v.dataset.ready === 'true', crop: null }
+  const readyEl = v.querySelector('.crop-mask, .box-editor')
+  const earlyBox = v.querySelector('.crop-early')
+  const earlyImg = earlyBox?.querySelector('img') ?? v.querySelector('img:not(.context-photo):not(.page-photo)')
+  if (!readyEl && (!earlyImg || !earlyImg.naturalWidth)) return { view: [vr.width, vr.height], ready: v.dataset.ready === 'true', crop: null }
+  const placed = !readyEl && earlyBox?.classList.contains('placed')
+  const el = readyEl ?? (placed ? earlyBox : earlyImg)
   let r = el.getBoundingClientRect(), x = r.x, y = r.y, w = r.width, h = r.height
   if (el.tagName === 'IMG' && getComputedStyle(el).objectFit === 'contain') {
     const k = Math.min(w / el.naturalWidth, h / el.naturalHeight)
     x += (w - el.naturalWidth * k) / 2; y += (h - el.naturalHeight * k) / 2; w = el.naturalWidth * k; h = el.naturalHeight * k
   }
+  const ir = placed ? earlyImg.getBoundingClientRect() : null
   return { view: [vr.width, vr.height], ready: v.dataset.ready === 'true', hydrated: document.documentElement.dataset.hydrated !== undefined,
-    crop: { x: x - vr.x, y: y - vr.y, w, h } }
+    crop: { x: x - vr.x, y: y - vr.y, w, h },
+    image: ir ? { x: ir.x - vr.x, y: ir.y - vr.y, w: ir.width, h: ir.height } : null }
 })()`
 
 /** Hold back the requests `held(url)` names for HOLD ms each; let every other request through. */
@@ -80,10 +86,14 @@ function steady(name, samples, { shape = true } = {}) {
   const early = same.filter(s => !s.ready)
   const measures = c => shape ? c : { cx: c.x + c.w / 2, cy: c.y + c.h / 2, side: Math.max(c.w, c.h) }
   const off = same.find(s => Object.entries(measures(s.crop)).some(([k, v]) => Math.abs(v - measures(last.crop)[k]) > 1.5))
+  const squeezed = early.find(s => s.image && (s.image.w <= s.crop.w + 1 || s.image.h <= s.crop.h + 1))
   const round = c => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, Math.round(v * 10) / 10]))
   if (off) {
     failures++
     console.error(`FAIL ${name}: the crop moved from ${JSON.stringify(round(off.crop))} (ready ${off.ready}, hydrated ${off.hydrated}) to ${JSON.stringify(round(last.crop))}`)
+  } else if (squeezed) {
+    failures++
+    console.error(`FAIL ${name}: the early crop image (${JSON.stringify(round(squeezed.image))}) was squeezed into ${JSON.stringify(round(squeezed.crop))} instead of clipped to its cut margin`)
   } else {
     console.log(`ok   ${name}: ${early.length} samples before the view was ready, all at ${JSON.stringify(round(last.crop))}`)
   }
