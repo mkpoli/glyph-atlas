@@ -8,6 +8,7 @@ import { similarCrops } from './similar';
 import { cropParam, movedPathResponse } from './atlas3Crops';
 import { drawingFile } from './drawings';
 import { composerFile, composerPreflight } from './composer';
+import { typefaceFile } from './typefaces';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { idsOf, structuresOf, suggest, wordChoices } from './routes/search';
 import { auth, claim, providers, viewer } from './auth';
@@ -189,6 +190,11 @@ const routes = {
       if(path.startsWith('/atlas/composer/')){
         const file=await composerFile(env,path.slice('/atlas/composer/'.length),request,ctx);
         if(!file)throw new Problem(404,'No such composer file.');
+        return file;
+      }
+      if(path.startsWith('/atlas/fonts/')){
+        const file=await typefaceFile(env,path.slice('/atlas/fonts/'.length),request,ctx);
+        if(!file)throw new Problem(404,'No such font file.');
         return file;
       }
       if(path.startsWith('/atlas/similar/files/')){
