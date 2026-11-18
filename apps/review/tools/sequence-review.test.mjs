@@ -90,7 +90,7 @@ describe('sequence review helpers', () => {
     const corpus = corpusCrop('cor:1')
     expect(approveCropRequest(corpus, 'sub-2')).toEqual({
       route: '/atlas/characters/cor%3A1',
-      body: { id: 'sub-2', revision: 4, source_revision: 'b'.repeat(64), verdict: 'match', issue: null },
+      body: { id: 'sub-2', revision: 4, source_revision: 'b'.repeat(64), verdict: 'match', shown: 'て', issue: null },
     })
     expect(approvedCropPatch(corpus, { id: 'sub-2', results: [{ target_id: 'cor:1', revision: 5, state: 'checked' }] })).toEqual({
       state: 'checked',
