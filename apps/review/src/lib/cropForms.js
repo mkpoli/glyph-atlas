@@ -93,7 +93,7 @@ export const isFormState = value => value === UNRESOLVED || value === 'unreadabl
 
 /** The form a crop is shown as now: the form the site holds for it, or the character it is written
  *  as; none while people disagree or while the form is a state, so that any form chosen is a claim. */
-export const formOf = crop => crop?.form?.status === 'disputed' || formState(crop?.form) ? ''
+export const formOf = crop => crop?.form?.status === 'disputed' || formStates(crop?.form).length ? ''
   : formNames(crop?.form)[0] ?? crop?.written_character ?? crop?.label ?? ''
 
 const corpusOf = crop => crop.origin === 'corpus'

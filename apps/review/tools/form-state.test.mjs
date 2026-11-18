@@ -32,6 +32,7 @@ describe('the form slot as the reader sees it', () => {
     const slot = form([named('取'), { state: 'unresolved' }])
     expect(formStates(slot)).toEqual(['unresolved'])
     expect(formState(slot)).toBeNull()
+    expect(formOf({ label: '取', form: slot })).toBe('')
   })
   test('a named form remains the form shown, including the crop\'s own label', () => {
     const slot = form([named('取')])
