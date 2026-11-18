@@ -223,7 +223,7 @@
   .run-meta{display:flex;flex-direction:column;gap:2px;padding:0 12px 10px;min-width:0}
   .run-forms{display:flex;align-items:baseline;gap:6px;font-size:15px;line-height:1.2;min-width:0;overflow:hidden;white-space:nowrap}
   .run-forms .transcribed{opacity:.5}
-  .run-verdict{margin-left:auto;font:700 12px/1 system-ui,sans-serif;color:var(--good)}
+  .run-verdict{margin-left:auto;font:700 12px/1 var(--ga-font-ui);color:var(--good)}
   .decided-flagged .run-verdict{color:var(--wrong)}
   .run-where{display:block;margin:0;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .run-empty{color:var(--muted);padding:30px 0}
