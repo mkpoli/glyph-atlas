@@ -52,7 +52,8 @@ A form of this kind is a **drawn form**: one code point of Supplementary Private
 A drawing is an editorial normalisation of the form, made by hand: it labels a group of crops and is
 never shown as an occurrence. A form supplied before its crops are grouped stays a name without a
 count until a clustering gives it one. The three forms of 事 were drawn by mkpoli and traced from the
-pictures kept beside them. Strokes built from knots, plain traces of a crop and a crop's centre lines
+pictures kept beside them. For text sizes, the trace adds five units of ink around each stroke
+and widens the figure by 30%. Both cuts share a scale, with the taller cut filling 880 units of the em. Strokes built from knots, plain traces of a crop and a crop's centre lines
 drawn again were each tried first and set aside.
 
 ## Limits

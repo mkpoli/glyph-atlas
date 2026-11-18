@@ -2,13 +2,13 @@
    their private-use code points, in a sans and a serif cut. A page that shows none downloads neither. */
 @font-face {
   font-family: "Glyph Atlas Drawn Forms";
-  src: url("/fonts/drawn/drawn-sans-ec833ecf70a6.woff2") format("woff2");
+  src: url("/fonts/drawn/drawn-sans-63a77595e74e.woff2") format("woff2");
   font-display: block;
   unicode-range: U+F0000-F0002;
 }
 @font-face {
   font-family: "Glyph Atlas Drawn Forms Serif";
-  src: url("/fonts/drawn/drawn-serif-136123e973c1.woff2") format("woff2");
+  src: url("/fonts/drawn/drawn-serif-5e92fe29113d.woff2") format("woff2");
   font-display: block;
   unicode-range: U+F0000-F0002;
 }
