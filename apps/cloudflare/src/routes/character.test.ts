@@ -231,12 +231,12 @@ describe('a character page', () => {
   });
 
   it('lists the drawn forms of a grapheme among its members, and gives each a page under that grapheme', async () => {
-    const ru = '\u{F0000}', fang = '\u{F0001}';
+    const ru = '\u{F0000}', fang = '\u{F0001}', hook = '\u{F0002}';
     const { status, body } = await get('/layers/characters/U+4E8B');
     expect(status).toBe(200);
     expect(body.grapheme.members.map((m: any) => [m.char, m.drawn ?? false, m.count, m.corpus_count]))
-      .toEqual([['事', false, 0, 0], ['亊', false, 0, 0], [ru, true, 0, 0], [fang, true, 0, 0]]);
-    expect(body.grapheme.character_count).toBe(4);
+      .toEqual([['事', false, 0, 0], ['亊', false, 0, 0], [ru, true, 0, 0], [fang, true, 0, 0], [hook, true, 0, 0]]);
+    expect(body.grapheme.character_count).toBe(5);
     expect(body.variants.forms).toEqual([]);
     // No other family carries them.
     expect((await get('/layers/characters/U+5CD5')).body.grapheme.members).toBeUndefined();
@@ -249,7 +249,7 @@ describe('a character page', () => {
       expect(own.status).toBe(200);
       expect([own.body.code_point, own.body.char, own.body.script, own.body.drawn, own.body.grapheme.code_point, own.body.grapheme.is_self])
         .toEqual(['U+F0000', ru, 'han', true, 'U+4E8B', false]);
-      expect(own.body.grapheme.members.map((m: any) => m.char)).toEqual(['事', '亊', ru, fang]);
+      expect(own.body.grapheme.members.map((m: any) => m.char)).toEqual(['事', '亊', ru, fang, hook]);
       // Its own edges are none; the characters its grapheme is also written with are listed, as on any member's card.
       expect(own.body.variants).toMatchObject({ items: [], forms: [] });
       expect(own.body.variants.related.map((v: any) => v.char)).toEqual(['ヿ', '\u{1B123}']);

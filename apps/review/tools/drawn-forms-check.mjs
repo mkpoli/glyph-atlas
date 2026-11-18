@@ -3,11 +3,11 @@
  * The drawn forms of a character (docs/decisions/0014-drawn-forms.md), in a real browser, against a
  * disposable dataset and the repository's own table.
  *
- * A crop named 事 offers 事's two drawn forms on its form bar, each set in the site's font, the only
+ * A crop named 事 offers 事's three drawn forms on its form bar, each set in the site's font, the only
  * one with a glyph at its code point, and in the colour of Han. One is chosen and saved: a drawn form
  * is a member of 事's family, so the crop is now written as it and its form claim names the
- * private-use code point in the table's namespace. 事's page lists both among its 字体, the saved one
- * with its crop, and the form's own page shows that crop under 事.
+ * private-use code point in the table's namespace. 事's page lists all three among its 字体, the saved
+ * one with its crop, and the form's own page shows that crop under 事.
  *
  * Run through devrun, after `bun run build` in apps/review:
  *   devrun bun apps/review/tools/drawn-forms-check.mjs [--shots DIR]
@@ -66,7 +66,7 @@ try {
   await browser.writeAs('drawn-forms-check')
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
-  assert(forms.length === 2, `the table gives 事 ${forms.length} drawn forms, not 2`)
+  assert(forms.length === 3, `the table gives 事 ${forms.length} drawn forms, not 3`)
   const id = Object.entries(units(config.directory)).find(([, unit]) => unit.active && unit.unicode === 'U+3042')[0]
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
   // The crop is named 事 first, as a review of it.
@@ -79,15 +79,15 @@ try {
   assert(renamed === 200, `the crop could not be named 事: ${renamed}`)
   // The local service derives a character's forms on its first card read; the check pays that here.
   const card = await (await fetch(`${service.base}/layers/characters/U%2B4E8B?expand=none`)).json()
-  assert(JSON.stringify(card.grapheme.members.slice(-2).map(member => member.char)) === JSON.stringify(forms),
+  assert(JSON.stringify(card.grapheme.members.slice(-3).map(member => member.char)) === JSON.stringify(forms),
     `事's card does not list its drawn forms as members: ${JSON.stringify(card.grapheme.members.map(member => member.code_point))}`)
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
 
-  // The bar holds both: a drawn form has no 構形, so the two stand together after the forms that have one.
+  // The bar holds all three: a drawn form has no 構形, so they stand together after the forms that have one.
   const chips = '[...document.querySelectorAll("dialog[open] .crop-form .form-chip")]'
   await browser.waitFor(`${chips}.some(c => c.textContent.includes(${JSON.stringify(forms[0])}))`, 30000)
   const bar = await browser.evaluate(`${chips}.map(c => c.querySelector('.script-char')?.textContent ?? '')`)
-  assert(bar[0] === '事' && JSON.stringify(bar.slice(-2)) === JSON.stringify(forms),
+  assert(bar[0] === '事' && JSON.stringify(bar.slice(-3)) === JSON.stringify(forms),
     `the bar does not offer 事's drawn forms: ${JSON.stringify(bar.map(c => c.codePointAt(0).toString(16)))}`)
   for (const char of forms) {
     const how = await set('dialog[open] .crop-form', char)
@@ -106,7 +106,7 @@ try {
   assert(units(config.directory)[id].unicode === 'U+F0000', `the crop is not written as the drawn form: ${units(config.directory)[id].unicode}`)
   console.log('PASS a drawn form chosen on the bar is the crop\'s character and its form, in the table\'s namespace')
 
-  // 事's page lists both among its 字体, and the family's crops hold the one just named.
+  // 事's page lists all three among its 字体, and the family's crops hold the one just named.
   await browser.goto(`${service.base}/en/character/U+4E8B`, { waitFor: '!!document.querySelector(".character-members")', timeout: 90000 })
   await browser.waitFor(`document.querySelectorAll('.character-members .member .script-char').length >= 3`, 30000)
   for (const char of forms) {
