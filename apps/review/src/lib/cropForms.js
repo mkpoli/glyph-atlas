@@ -81,9 +81,12 @@ export function formNames(form) {
   return (form?.values ?? []).filter(value => value.text).map(value => value.text)
 }
 
-/** The state a crop's form holds when no shape is named: `unresolved` (the form is unknown) or
- *  `unreadable` (the ink is). Null when the slot names a form, or holds none. */
-export const formState = form => form?.status === 'disputed' ? null : (form?.values ?? []).find(value => value.state)?.state ?? null
+/** The states a crop's form holds: `unresolved` (the form is unknown) or `unreadable` (the ink is),
+ *  each once, in the slot's order. Empty when it names only forms, or holds none. */
+export const formStates = form => (form?.values ?? []).filter(value => value.state).map(value => value.state)
+/** The state the slot holds as its one value: none while people disagree, and none for an
+ *  alternative set such as "取 or unresolved", where the reader can choose instead. */
+export const formState = form => form?.status === 'disputed' || (form?.values ?? []).length !== 1 ? null : formStates(form)[0] ?? null
 /** The value the unknown-variant choice claims: a reader looked and cannot name the shape. */
 export const UNRESOLVED = 'unresolved'
 export const isFormState = value => value === UNRESOLVED || value === 'unreadable'
