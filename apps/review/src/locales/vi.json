@@ -911,7 +911,7 @@
   "suggestions.pick.next": "Chữ tiếp theo…",
   "form.add": "Thêm dạng chữ",
   "form.unknown": "Dị thể chưa rõ",
-  "form.unknown.hint": "Không chỉ định tự hình, ghi là dị thể chưa rõ.",
+  "form.unknown.hint": "Không ghi tự hình; ghi là dị thể chưa rõ.",
   "form.link.add": "Thêm vào tự dạng của {char}",
   "form.link.linked": "Tự dạng của {char}",
   "form.link.remove": "Bỏ khỏi tự dạng của {char}",
