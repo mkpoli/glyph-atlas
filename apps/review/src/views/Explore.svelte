@@ -1513,7 +1513,7 @@
   .collection-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}
   .page-actions{display:flex;align-items:center;gap:24px;margin-left:auto}
   /* The works filter sits at the end of the filters, so its menu opens leftward from its right edge. */
-  @media(min-width:701px){.toolbar-filters :global(.work-menu){left:auto;right:0}}
+  @media(width > 700px){.toolbar-filters :global(.work-menu){left:auto;right:0}}
   @media(min-width:2250px){
     .explore > .collection-toolbar{flex-direction:row;align-items:center;gap:32px}
     .page-tools{flex:none;flex-wrap:nowrap;margin-left:auto;gap:32px}
@@ -1544,7 +1544,7 @@
     .explore > .collection-toolbar{gap:10px;padding:12px 0}
     .collection-toolbar .toolbar-filters :global(.character-search){flex-basis:100%;min-width:0}
     .toolbar-filters{gap:10px 12px}
-    .collection-toolbar .toolbar-filters .filter-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-inline:-20px;padding-inline:20px;mask-image:linear-gradient(to right,transparent,#000 20px,#000 calc(100% - 32px),transparent)}
+    .collection-toolbar .toolbar-filters .filter-tabs{flex-wrap:nowrap;flex-basis:calc(100% + 40px);overflow-x:auto;scrollbar-width:none;margin:-6px -20px;padding:6px 20px;scroll-padding-inline:32px;mask-image:linear-gradient(to right,transparent,#000 20px,#000 calc(100% - 32px),transparent)}
     .toolbar-filters .filter-tabs::-webkit-scrollbar{display:none}
     .toolbar-filters :global(.work-control){order:2;border-left:0;padding-left:0}
     .page-tools{gap:8px 12px}
