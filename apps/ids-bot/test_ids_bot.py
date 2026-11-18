@@ -82,16 +82,99 @@ def test_leaves_descriptions_whose_components_would_cut_their_url_alone():
     assert ids_bot.sequences("⿰木%木") == []
 
 
+def test_reads_hangul_jamo_clusters_and_korean_tone_marks():
+    assert ids_bot.sequences("⿰\u1100\u1161木") == ["⿰\u1100\u1161木"]
+    assert ids_bot.sequences("⿰\ua960\ud7b0\ud7cb木") == ["⿰\ua960\ud7b0\ud7cb木"]
+    assert ids_bot.sequences("⿰가\u302e木") == ["⿰가\u302e木"]
+    assert ids_bot.sequences("⿰\u1100\u1161\u302f木") == ["⿰\u1100\u1161\u302f木"]
+    assert ids_bot.sequences("⿰木{1}\u302e") == ["⿰木{1}\u302e"]
+
+
+def test_reads_trailing_loose_marks():
+    assert ids_bot.sequences("⿰亻木ˊ") == ["⿰亻木ˊ"]
+    assert ids_bot.sequences("（⿰ㄅㄚˇ）") == ["⿰ㄅㄚˇ"]
+    assert ids_bot.sequences("⿻[1:]丨日ˊ") == ["⿻[1:]丨日ˊ"]
+    assert ids_bot.sequences("⿰木木゛") == ["⿰木木゛"]
+    assert ids_bot.sequences("⿰木木\u3099") == ["⿰木木\u3099"]
+    assert ids_bot.sequences("⿰木木\u0897") == ["⿰木木\u0897"]
+    assert ids_bot.sequences("⿰木木²") == ["⿰木木²"]
+    assert ids_bot.sequences("⿰木木ˊ是林") == []
+
+
+def test_reads_multi_codepoint_emoji_components():
+    assert ids_bot.sequences("⿰👩🏽木") == ["⿰👩🏽木"]
+    assert ids_bot.sequences("⿰👩\u200d👧木") == ["⿰👩\u200d👧木"]
+    assert ids_bot.sequences("⿰😀\u0301木") == ["⿰😀\u0301木"]
+    assert ids_bot.sequences("⿰🇯🇵🇺🇸") == ["⿰🇯🇵🇺🇸"]
+    assert ids_bot.sequences("⿰1️⃣木") == ["⿰1️⃣木"]
+    assert ids_bot.sequences("⿰1\u20e3\u0301木") == ["⿰1\u20e3\u0301木"]
+    assert ids_bot.sequences("⿰☺\ufe0f\u3099木") == ["⿰☺\ufe0f\u3099木"]
+    assert ids_bot.sequences("⿰👩\u200d👧\u0301木") == ["⿰👩\u200d👧\u0301木"]
+    assert ids_bot.sequences("⿰🇯\u200d木") == ["⿰🇯\u200d木"]
+    assert ids_bot.sequences("⿰😀\u200c木") == ["⿰😀\u200c木"]
+    assert ids_bot.sequences("⿰😀\u0e33木") == ["⿰😀\u0e33木"]
+    assert ids_bot.sequences("⿰❤\uff9e木") == ["⿰❤\uff9e木"]
+
+
+def test_reads_an_emoji_newer_than_python_as_a_break():
+    assert ids_bot.sequences("⿰木木\U0001fae9") == ["⿰木木"]
+    assert ids_bot.sequences("\U0001fae9⿰木木") == ["⿰木木"]
+
+
+def test_reads_no_hangul_filler_or_ignorable_as_a_component():
+    for filler in "\u115f\u1160\u3164\uffa0\u034f":
+        assert ids_bot.sequences("⿰木" + filler) == []
+
+
+def test_reads_a_long_run_after_many_operators_quickly():
+    import time
+
+    for run in ("😀" + "\u0301" * 32000, "1" + "\u20e3" * 32000, "木" + "\u302e" * 32000):
+        started = time.monotonic()
+        ids_bot.sequences("⿰" * 150 + run)
+        assert time.monotonic() - started < 0.2
+    assert ids_bot.sequences("⿰🏴󠁧󠁢󠁥󠁮󠁧󠁿木") == ["⿰🏴󠁧󠁢󠁥󠁮󠁧󠁿木"]
+
+
+def test_reads_custom_components_and_literal_braces_fallback():
+    max_entity = "⿾&" + "a" * 47 + ";"
+    assert ids_bot.sequences("⿰木{53}") == ["⿰木{53}"]
+    assert ids_bot.sequences("⿾{1}") == ["⿾{1}"]
+    assert ids_bot.sequences("⿰木&CDP-8BD0;") == ["⿰木&CDP-8BD0;"]
+    assert ids_bot.sequences(max_entity) == [max_entity]
+    assert ids_bot.sequences("⿾&1;") == []
+    assert ids_bot.sequences("how about ⿳{1}?") == ["⿳{1}"]
+    assert ids_bot.sequences("⿳{1}abc") == []
+    assert ids_bot.sequences("⿰#(-𠃌㇉)木") == []
+
+
+def test_leaves_unassigned_ideographs_joined_to_prose_and_incomplete_slots_alone():
+    assert ids_bot.sequences("用⿰𽀀木") == []
+    assert ids_bot.sequences("⿰木𽀀𽀁") == []
+    assert ids_bot.sequences("⿰木木\U0002ebf0") == []
+    assert ids_bot.sequences("\U00018e00⿰木木") == []
+    assert ids_bot.sequences("⿰㇀🏽") == ["⿰㇀🏽"]
+    assert ids_bot.sequences("⿱艹⬚") == []
+    assert ids_bot.sequences("⿰木⬚\ufe0f") == []
+    assert ids_bot.sequences("⿰❤\u20e3") == []
+    assert ids_bot.sequences("⿰木⿱\ufe0f木") == []
+    assert ids_bot.sequences("⿱左右") == ["⿱左右"]
+    assert ids_bot.sequences("小隹") == []
+
+
 def test_reads_no_description_longer_than_the_workshop_does():
-    longest = "⿾" * 63 + "木"
+    longest = "⿾" * (ids_bot.LONGEST - 1) + "木"
     assert len(longest) == ids_bot.LONGEST
     assert ids_bot.sequences(longest) == [longest]
-    assert ids_bot.sequences("⿾" * 64) == []
+    assert ids_bot.sequences("⿾" * ids_bot.LONGEST) == []
+    assert ids_bot.sequences("⿾" * (ids_bot.LONGEST - 1) + "木゛") == []
+    assert ids_bot.sequences("⿾" * (ids_bot.LONGEST - 3) + "{53}") == []
+    assert ids_bot.sequences("⿾" * (ids_bot.LONGEST - 3) + "⿰{1}木") == []
 
 
 def test_skips_a_long_description_whole_and_links_no_fragment_of_it():
     chain = "木"
-    for _ in range(40):
+    for _ in range(100):
         chain = "⿰木" + chain
     assert len(chain) > ids_bot.LONGEST
     assert ids_bot.sequences(chain) == []
