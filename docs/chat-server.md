@@ -99,6 +99,11 @@ Each archive is about 16 MB. It is encrypted with `age` to the public key in
 machine (keep a second copy in a password manager). Neither the server nor R2 can read a backup.
 The server's R2 key (`/etc/chat-backup.env`, copy in `chat-backup.env`) can reach this bucket only.
 
+Stopping the homeserver also stops every service that requires it (the bridges and the bots), and
+the script starts them again by name, in its `trap` and after the copy. A new service of that kind
+goes into both `systemctl start` lines of `/usr/local/sbin/chat-backup`, or it stays down after the
+first night.
+
 A failed run posts a notice to the private room 收件 · Inbox. To run one by hand:
 `systemctl start chat-backup`.
 
