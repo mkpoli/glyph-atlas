@@ -40,6 +40,23 @@ ambient_min_messages = 2
 ambient_room_cooldown_seconds = 900
 ambient_per_hour = 12
 
+[digest]
+# From this hour (JST) each day, one digest per room below, in its language: what the repositories
+# merged and released in the last day, and what the other rooms talked about. A quiet day gets none.
+hour = 21
+repos = [
+  "mkpoli/glyph-atlas", "mkpoli/han-compose", "mkpoli/ids-input", "mkpoli/unencoded-db",
+  "mkpoli/han-input", "mkpoli/tangut-input", "mkpoli/khitan-input", "mkpoli/jurchen-input",
+  "mkpoli/glyph-cutter", "mkpoli/han-decompose", "mkpoli/han2ids", "mkpoli/moji",
+]
+
+[digest.rooms]
+"#en:glyphatlas.org" = "English"
+"#zh:glyphatlas.org" = "Chinese"
+"#ja:glyphatlas.org" = "Japanese"
+"#ko:glyphatlas.org" = "Korean"
+"#vi:glyphatlas.org" = "Vietnamese"
+
 [limits]
 context_messages = 120
 backfill_messages = 200

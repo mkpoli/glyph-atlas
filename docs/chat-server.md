@@ -277,6 +277,10 @@ She also reads along. When a room goes quiet after a few messages, she takes a l
 (the `[chat]` table sets how often) and may add a line, an emoji or a sticker, or stay silent. She
 never files from these turns.
 
+Every evening from 21:00 JST she posts a digest in each language room listed in `[digest.rooms]`, in
+that room's language: what the repositories in `[digest] repos` merged and released in the last day,
+and a line for each other room's discussion, with no one named. A quiet day gets no digest.
+
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
 2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
 checks each against the hash in `STICKERS` and uploads it to the homeserver once; a sticker whose

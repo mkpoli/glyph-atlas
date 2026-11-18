@@ -70,6 +70,9 @@ class FakeMatrix:
     def typing(self, room_id, user_id, *, timeout_ms=15_000):
         self.typed.append(room_id)
 
+    def resolve(self, alias):
+        return {"#ja:example": "!ja:example"}[alias]
+
     def upload(self, data, content_type, filename):
         self.uploads.append((len(data), content_type, filename))
         return f"mxc://example/{filename}"
@@ -91,6 +94,11 @@ class FakeDeepSeek:
         self.act_value = act or fish_bot.Act(say=("嗨～本鯨在這裡！",), react_to=None, react="", issue=False)
         self.calls = []
         self.turns = []
+        self.digests = []
+
+    def digest(self, language, room_name, room_lines, changes, other_rooms):
+        self.digests.append((language, room_name, changes, other_rooms))
+        return f"digest in {language}"
 
     def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=()):
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
@@ -108,6 +116,10 @@ class FakeDeepSeek:
 
 class FakeGitHub:
     repo = "mkpoli/glyph-atlas"
+    merged = ()
+
+    def changes(self, repo, since):
+        return {"repo": repo, "merged": list(self.merged), "released": []}
 
     def __init__(self, issues=None, error=None):
         self.issues = issues or []
@@ -837,3 +849,77 @@ def test_config_reads_the_chat_table(tmp_path):
     path.write_text("[chat]\nambient_chance = 0.05\nambient_per_hour = 3\n", encoding="utf-8")
     config = fish_bot.Config.load(path)
     assert (config.ambient_chance, config.ambient_per_hour) == (0.05, 3)
+
+
+def digest_bot(tmp_path, *, hour=21, merged=()):
+    github = FakeGitHub()
+    github.merged = merged
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20, digest_hour=hour,
+                             digest_rooms=(("#ja:example", "Japanese"),), digest_repos=("mkpoli/glyph-atlas",))
+    bot, matrix, store = make_bot(tmp_path, config=config, github=github)
+    bot.active_rooms = {ROOM, "!ja:example"}
+    return bot, matrix, store
+
+
+def at(hour):
+    return lambda: fish_bot.datetime.datetime(2026, 11, 19, hour, 0, tzinfo=fish_bot.JST)
+
+
+def test_posts_the_digest_once_a_day_from_its_hour(tmp_path):
+    bot, matrix, store = digest_bot(tmp_path, merged=[{"number": 1, "title": "Add X", "url": "u"}])
+    bot.ingest(ROOM, event("we talked about 𠀀", event_id="$talk"), backfilled=False)
+    bot._clock = at(20)
+    bot.digest()
+    assert matrix.sent == []
+    bot._clock = at(21)
+    bot.digest()
+    bot.digest()
+    assert [(room, content["body"]) for room, content, _ in matrix.sent] == [("!ja:example", "digest in Japanese")]
+    _, _, changes, others = bot.deepseek.digests[0]
+    assert changes[0]["merged"][0]["title"] == "Add X"
+    assert [row["body"] for row in others["Test room"]] == ["we talked about 𠀀"]
+    assert store.digested("2026-11-19", "!ja:example")
+
+
+def test_skips_a_quiet_day_without_posting(tmp_path):
+    bot, matrix, store = digest_bot(tmp_path)
+    bot._clock = at(22)
+    bot.digest()
+    assert matrix.sent == [] and bot.deepseek.digests == []
+    assert store.digested("2026-11-19", "!ja:example")
+
+
+def test_digest_message_names_no_one(tmp_path):
+    bot, _, store = digest_bot(tmp_path)
+    bot.ingest(ROOM, event("secret plan", sender="@alice:example", event_id="$a"), backfilled=False)
+    rows = store.since(0)
+    payload = json.loads(fish_bot.format_digest("日本語", [], [{"repo": "r", "merged": [], "released": []}],
+                                                {"Test room": rows[ROOM]}))
+    assert payload["changes"] == []
+    assert payload["other_rooms"] == [{"room": "Test room", "messages": ["secret plan"]}]
+    assert "@alice" not in json.dumps(payload)
+
+
+def test_config_reads_the_digest_table(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[digest]\nhour = 20\nrepos = ["mkpoli/han-compose"]\n'
+                    '[digest.rooms]\n"#ja:glyphatlas.org" = "Japanese"\n', encoding="utf-8")
+    config = fish_bot.Config.load(path)
+    assert config.digest_hour == 20
+    assert config.digest_rooms == (("#ja:glyphatlas.org", "Japanese"),)
+    assert config.digest_repos == ("mkpoli/han-compose",)
+
+
+def test_an_unknown_room_alias_is_looked_up_once_an_hour(tmp_path):
+    bot, matrix, _ = digest_bot(tmp_path)
+    lookups = []
+
+    def resolve(alias):
+        lookups.append(alias)
+        raise fish_bot.MatrixError(404, "no such room")
+
+    matrix.resolve = resolve
+    bot._clock = at(22)
+    bot.digest()
+    bot.digest()
+    assert lookups == ["#ja:example"]

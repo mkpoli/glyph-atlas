@@ -88,6 +88,10 @@ AFTER_ADDRESS = "你妳您呀啊哦喔欸誒诶唷呢嗎吗吧來来在醬酱好
 # batches), https://github.com/MaiM-with-u/MaiBot src/maisaka/turn_trigger/README.md (read at
 # b7f3682, 2026-11-19); the model may still stay silent. Lively messages (a question, laughter, a
 # fish) raise the chance.
+# The daily digest summarizes, so it follows DeepSeek's setting for data analysis, 1.0 (same source
+# as CHAT_TEMPERATURE).
+DIGEST_TEMPERATURE = 1.0
+DIGEST_MESSAGES_PER_ROOM = 60
 LIVELY = re.compile(r"[?？!！]|哈哈|笑死|www|ｗｗ|草|lol|lmao|ㅋㅋ|ㅎㅎ|[魚鱼鯨鲸🐳🐋🐟🐠]|whale|fish",
                     re.IGNORECASE)
 
@@ -193,6 +197,9 @@ class Config:
     ambient_min_messages: int = 2
     ambient_room_cooldown_seconds: int = 900
     ambient_per_hour: int = 12
+    digest_hour: int = 21
+    digest_rooms: tuple[tuple[str, str], ...] = ()
+    digest_repos: tuple[str, ...] = ()
     retention_days: int = 180
     dry_run: bool = False
 
@@ -205,8 +212,19 @@ class Config:
         bot = raw.get("bot") or {}
         limits = raw.get("limits") or {}
         chat = raw.get("chat") or {}
-        if not isinstance(chat, dict):
-            raise TypeError("chat must be a table")
+        digest = raw.get("digest") or {}
+        if not isinstance(chat, dict) or not isinstance(digest, dict):
+            raise TypeError("chat and digest must be tables")
+        digest_rooms = digest.get("rooms", {})
+        if not isinstance(digest_rooms, dict) or any(
+                not isinstance(key, str) or not key.startswith(("#", "!")) or not isinstance(value, str)
+                for key, value in digest_rooms.items()):
+            raise ValueError("digest.rooms must map room aliases or IDs to languages")
+        digest_repos = digest.get("repos", [])
+        if not isinstance(digest_repos, list) or any(
+                not isinstance(item, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", item)
+                for item in digest_repos):
+            raise ValueError("digest.repos must be a list of owner/name")
         if not isinstance(matrix, dict) or not isinstance(deepseek, dict) or not isinstance(github, dict):
             raise TypeError("matrix, deepseek and github must be tables")
         if not isinstance(bot, dict) or not isinstance(limits, dict):
@@ -282,6 +300,9 @@ class Config:
             ambient_min_messages=max(1, min(100, int(field(chat, "ambient_min_messages", cls.ambient_min_messages)))),
             ambient_room_cooldown_seconds=max(0, int(field(chat, "ambient_room_cooldown_seconds", cls.ambient_room_cooldown_seconds))),
             ambient_per_hour=max(0, min(1000, int(field(chat, "ambient_per_hour", cls.ambient_per_hour)))),
+            digest_hour=max(0, min(23, int(field(digest, "hour", cls.digest_hour)))),
+            digest_rooms=tuple(digest_rooms.items()),
+            digest_repos=tuple(digest_repos),
             retention_days=max(1, min(3650, int(field(limits, "retention_days", cls.retention_days)))),
             dry_run=dry_run,
         )
@@ -482,6 +503,13 @@ class Matrix:
             if not since:
                 return
 
+    def resolve(self, alias: str) -> str:
+        answer = self.call("GET", f"/_matrix/client/v3/directory/room/{urllib.parse.quote(alias, safe='')}")
+        room_id = answer.get("room_id")
+        if not isinstance(room_id, str):
+            raise MatrixError(None, f"{alias} names no room")
+        return room_id
+
     def join(self, room_id: str) -> None:
         self.call("POST", f"/_matrix/client/v3/join/{urllib.parse.quote(room_id, safe='')}", body={})
 
@@ -624,6 +652,12 @@ class Store:
             CREATE TABLE IF NOT EXISTS intros (
                 room_id TEXT PRIMARY KEY,
                 introduced_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS digests (
+                day TEXT NOT NULL,
+                room_id TEXT NOT NULL,
+                posted_at INTEGER NOT NULL,
+                PRIMARY KEY (day, room_id)
             );
             CREATE TABLE IF NOT EXISTS stickers (
                 name TEXT PRIMARY KEY,
@@ -790,6 +824,26 @@ class Store:
             (name, sha256, mxc, size),
         )
         self.db.commit()
+
+    def digested(self, day: str, room_id: str) -> bool:
+        return self.db.execute("SELECT 1 FROM digests WHERE day=? AND room_id=?", (day, room_id)).fetchone() is not None
+
+    def mark_digested(self, day: str, room_id: str) -> None:
+        self.db.execute("INSERT OR IGNORE INTO digests(day, room_id, posted_at) VALUES(?,?,?)",
+                        (day, room_id, now_ms()))
+        self.db.commit()
+
+    def since(self, since_ts: int, exclude: Iterable[str] = ()) -> dict[str, list[sqlite3.Row]]:
+        """Each room's text since a moment, newest last, without the senders named."""
+        left_out = set(exclude)
+        rooms: dict[str, list[sqlite3.Row]] = {}
+        for row in self.db.execute(
+                "SELECT event_id, room_id, sender, ts, body FROM events WHERE ts>=? AND body<>'' ORDER BY ts",
+                (since_ts,)):
+            if row["sender"] in left_out:
+                continue
+            rooms.setdefault(str(row["room_id"]), []).append(row)
+        return rooms
 
     def mark_introduced(self, room_id: str) -> None:
         self.db.execute("INSERT OR IGNORE INTO intros(room_id, introduced_at) VALUES(?,?)", (room_id, now_ms()))
@@ -964,6 +1018,35 @@ CHAT_TASKS = {
 }
 
 
+DIGEST_TASK = """Write today's community digest for the room in the user message, in {language}, as 大肥魚.
+- First, what changed in our projects since yesterday: the merged pull requests and releases in "changes", grouped by project, each in plain words a non-programmer follows. Name the significant ones; fold small fixes into a few words. Keep a PR number where it helps; no URLs except at most one per project.
+- Then, briefly, what the other rooms talked about ("other_rooms"), one short line per lively room, in {language}. Mention no one by name and quote nothing private.
+- Leave out a part with nothing in it. Use only facts in the message; never guess what a change does beyond its title.
+- 4 to 12 short lines, plain text, one item per line; open with a cute one-line greeting and end with a short cheerful line. Match the script this room writes in ("room_lines").
+Return only json: {{"text": "the digest"}}"""
+
+
+def format_digest(room_name: str, room_lines: list[sqlite3.Row], changes: list[dict[str, Any]],
+                  other_rooms: dict[str, list[sqlite3.Row]]) -> str:
+    """The digest's user message: the day's changes and the other rooms' text, with no sender names."""
+    others = []
+    budget = MAX_CONTEXT_CHARS
+    for name, rows in other_rooms.items():
+        lines = [str(row["body"])[:300] for row in rows[-DIGEST_MESSAGES_PER_ROOM:]]
+        budget -= sum(len(line) for line in lines)
+        if budget < 0:
+            break
+        others.append({"room": name[:200], "messages": lines})
+    payload = {
+        "room": room_name[:200],
+        "date": local_day(now_ms()),
+        "room_lines": [str(row["body"])[:200] for row in room_lines[-5:]],
+        "changes": [change for change in changes if change["merged"] or change["released"]],
+        "other_rooms": others,
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def format_chat(room_name: str, room_topic: str, events: list[sqlite3.Row], names: dict[str, str],
                 *, task: str, trigger: int | None, bot_user_id: str,
                 stickers: Iterable[str] = (), recent: Iterable[str] = ()) -> str:
@@ -1118,6 +1201,34 @@ class DeepSeek:
                 log.warning("chat answer unusable: %s", error)
         raise DeepSeekError(str(last or "no answer"))
 
+    def digest(self, language: str, room_name: str, room_lines: list[sqlite3.Row],
+               changes: list[dict[str, Any]], other_rooms: dict[str, list[sqlite3.Row]]) -> str:
+        """The day's digest for one room, in its language."""
+        body = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": PERSONA_PROMPT},
+                         {"role": "system", "content": DIGEST_TASK.format(language=language)},
+                         {"role": "user", "content": format_digest(room_name, room_lines, changes, other_rooms)}],
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "disabled"},
+            "temperature": DIGEST_TEMPERATURE,
+            "max_tokens": 2000,
+        }
+        last: Exception | None = None
+        for _ in range(2):
+            try:
+                answer = self._post(body)
+                choices = answer.get("choices") or []
+                content = choices[0].get("message", {}).get("content") if choices else None
+                text = _json_object(content).get("text") if isinstance(content, str) else None
+                if not isinstance(text, str) or not text.strip():
+                    raise TypeError("the digest has no text")
+                return text.strip()[:MAX_REPLY]
+            except (TypeError, ValueError, DeepSeekError) as error:
+                last = error
+                log.warning("digest answer unusable: %s", error)
+        raise DeepSeekError(str(last or "no digest"))
+
     def check(self) -> None:
         url = self.url.replace("/chat/completions", "/models")
         request = urllib.request.Request(
@@ -1223,6 +1334,24 @@ class GitHub:
         if not isinstance(number, int) or not isinstance(url, str):
             raise GitHubError("GitHub returned an issue without a number or URL")
         return IssueRef(number=number, title=str(answer.get("title") or title), labels=tuple(wanted), url=url)
+
+    def changes(self, repo: str, since: datetime.datetime) -> dict[str, Any]:
+        """A repository's pull requests merged and releases published since a moment."""
+        merged = []
+        pulls = self._call("GET", f"/repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=50")
+        for pull in pulls if isinstance(pulls, list) else []:
+            at = pull.get("merged_at") if isinstance(pull, dict) else None
+            if isinstance(at, str) and datetime.datetime.fromisoformat(at) >= since:
+                merged.append({"number": pull.get("number"), "title": str(pull.get("title") or "")[:200],
+                               "url": pull.get("html_url")})
+        released = []
+        releases = self._call("GET", f"/repos/{repo}/releases?per_page=10")
+        for release in releases if isinstance(releases, list) else []:
+            at = release.get("published_at") if isinstance(release, dict) else None
+            if isinstance(at, str) and datetime.datetime.fromisoformat(at) >= since:
+                released.append({"name": str(release.get("name") or release.get("tag_name") or "")[:200],
+                                 "url": release.get("html_url")})
+        return {"repo": repo, "merged": merged, "released": released}
 
     def check(self) -> None:
         self._call("GET", f"/repos/{self.repo}")
@@ -1428,6 +1557,9 @@ class Bot:
         self._spoke_at: dict[str, float] = {}
         self._ambient_turns: list[float] = []
         self._random = random.random
+        self._digest_rooms: dict[str, str] = {}
+        self._digest_tried: dict[str, float] = {}
+        self._clock = lambda: datetime.datetime.now(JST)
         self._joined_at = 0.0
         self._pruned_at = 0.0
         self._rooms_known: set[str] = set()
@@ -1657,7 +1789,11 @@ class Bot:
         return int(max(0.0, min(SYNC_TIMEOUT_MS / 1000, soonest - time.monotonic())) * 1000)
 
     def tick(self) -> None:
-        """Look at each room that has gone quiet, and join in now and then."""
+        """Post the day's digest when it is due, then look at each room that has gone quiet."""
+        try:
+            self.digest()
+        except Exception:
+            log.exception("posting the digest")
         now = time.monotonic()
         for room_id in [room for room, batch in self._ambient.items() if batch["due"] <= now]:
             batch = self._ambient.pop(room_id)
@@ -1677,6 +1813,60 @@ class Bot:
                 self.turn(room_id, str(batch["event_id"]), task="ambient")
             except Exception:
                 log.exception("joining in %s", room_id)
+
+    def digest(self) -> None:
+        """Once a day, from the configured hour, post the digest to one room that has not had it yet."""
+        moment = self._clock()
+        if moment.hour < self.config.digest_hour or not self.config.digest_rooms:
+            return
+        day = moment.strftime("%Y-%m-%d")
+        for target, language in self.config.digest_rooms:
+            room_id = self._digest_room(target)
+            if room_id is None or self.store.digested(day, room_id):
+                continue
+            tried = self._digest_tried.get(room_id)
+            if tried is not None and time.monotonic() - tried < 1800:
+                continue
+            self._digest_tried[room_id] = time.monotonic()
+            self.post_digest(day, room_id, language)
+            return
+
+    def post_digest(self, day: str, room_id: str, language: str) -> None:
+        since = now_ms() - 86_400_000
+        start = datetime.datetime.fromtimestamp(since / 1000, datetime.UTC)
+        changes = []
+        if self.github is not None:
+            for repo in self.config.digest_repos:
+                try:
+                    changes.append(self.github.changes(repo, start))
+                except GitHubError as error:
+                    log.warning("reading %s: %s", repo, error)
+        text = self.store.since(since, exclude=(self.user_id, *self.config.ignored_senders))
+        room_lines = text.pop(room_id, [])
+        others = {self._room(other)[0] or other: rows for other, rows in text.items() if other in self.active_rooms}
+        if not any(change["merged"] or change["released"] for change in changes) and not others:
+            self.store.mark_digested(day, room_id)
+            return
+        room_name, _ = self._room(room_id)
+        digest = self.deepseek.digest(language, room_name, room_lines, changes, others)
+        self.matrix.send(room_id, {"msgtype": "m.text", "body": digest},
+                         "fish-d-" + hashlib.sha256(f"{day}{room_id}".encode()).hexdigest()[:40])
+        self.store.mark_digested(day, room_id)
+
+    def _digest_room(self, target: str) -> str | None:
+        if target.startswith("!"):
+            return target
+        if target not in self._digest_rooms:
+            failed = self._digest_tried.get(target)
+            if failed is not None and time.monotonic() - failed < 3600:
+                return None
+            try:
+                self._digest_rooms[target] = self.matrix.resolve(target)
+            except MatrixError as error:
+                self._digest_tried[target] = time.monotonic()
+                log.warning("resolving %s: %s", target, error)
+                return None
+        return self._digest_rooms[target]
 
     def chat(self, room_id: str, event_id: str, call: Call, sender: str = "") -> None:
         """Answer a call as 大肥魚, and hand the discussion to the issue desk when that was the ask,
