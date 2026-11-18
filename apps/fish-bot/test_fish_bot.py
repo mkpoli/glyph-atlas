@@ -38,6 +38,7 @@ class FakeMatrix:
         self.sent = sent if sent is not None else []
         self.events = []
         self.uploads = []
+        self.typed = []
         self.transactions = []
 
     def whoami(self):
@@ -67,7 +68,10 @@ class FakeMatrix:
         return "$sent"
 
     def typing(self, room_id, user_id, *, timeout_ms=15_000):
-        return None
+        self.typed.append(room_id)
+
+    def resolve(self, alias):
+        return {"#ja:example": "!ja:example"}[alias]
 
     def upload(self, data, content_type, filename):
         self.uploads.append((len(data), content_type, filename))
@@ -90,6 +94,11 @@ class FakeDeepSeek:
         self.act_value = act or fish_bot.Act(say=("嗨～本鯨在這裡！",), react_to=None, react="", issue=False)
         self.calls = []
         self.turns = []
+        self.digests = []
+
+    def digest(self, language, room_name, room_lines, changes, other_rooms):
+        self.digests.append((language, room_name, changes, other_rooms))
+        return f"digest in {language}"
 
     def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=()):
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
@@ -107,6 +116,10 @@ class FakeDeepSeek:
 
 class FakeGitHub:
     repo = "mkpoli/glyph-atlas"
+    merged = ()
+
+    def changes(self, repo, since):
+        return {"repo": repo, "merged": list(self.merged), "released": []}
 
     def __init__(self, issues=None, error=None):
         self.issues = issues or []
@@ -753,3 +766,160 @@ def test_a_cut_download_leaves_the_sticker_out_instead_of_stopping(tmp_path, mon
     bot, matrix, store = make_bot(tmp_path)
     bot.ensure_stickers()
     assert matrix.uploads == [] and store.stickers() == {}
+
+
+def ambient_bot(tmp_path, monkeypatch, *, chance=1.0, act_value=None, **overrides):
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(fish_bot.time, "monotonic", lambda: clock["now"])
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20,
+                             ambient_chance=0.5, ambient_quiet_seconds=20, ambient_min_messages=2,
+                             ambient_room_cooldown_seconds=900, ambient_per_hour=10, **overrides)
+    bot, matrix, store = make_bot(tmp_path, config=config, act=act_value or act("哈哈哈好可愛"))
+    bot._random = lambda: chance - 0.01 if chance > 0 else 1.0
+    store.mark_introduced(ROOM)
+    return bot, matrix, store, clock
+
+
+def say_in_room(bot, body, event_id):
+    message = event(body, event_id=event_id)
+    bot.ingest(ROOM, message, backfilled=False)
+    bot.notice(ROOM, message)
+
+
+def test_joins_in_only_after_the_room_goes_quiet(tmp_path, monkeypatch):
+    bot, matrix, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
+    say_in_room(bot, "this glyph is wild", "$a")
+    say_in_room(bot, "right", "$b")
+    bot.tick()
+    assert matrix.sent == []
+    clock["now"] += 21
+    bot.tick()
+    assert [turn[0] for turn in bot.deepseek.turns] == ["ambient"]
+    assert matrix.sent[0][1]["body"] == "哈哈哈好可愛"
+    assert matrix.typed == []
+    assert "m.relates_to" not in matrix.sent[0][1]
+
+
+def test_one_plain_message_or_an_unlucky_draw_stays_quiet(tmp_path, monkeypatch):
+    bot, _matrix, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
+    say_in_room(bot, "ok", "$a")
+    clock["now"] += 21
+    bot.tick()
+    assert bot.deepseek.turns == []
+    bot._random = lambda: 0.99
+    say_in_room(bot, "ok", "$b")
+    say_in_room(bot, "sure", "$c")
+    clock["now"] += 21
+    bot.tick()
+    assert bot.deepseek.turns == []
+
+
+def test_a_lively_message_counts_alone(tmp_path, monkeypatch):
+    bot, _, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
+    say_in_room(bot, "哈哈哈哈", "$a")
+    clock["now"] += 21
+    bot._random = lambda: 0.9  # under the doubled chance of 1.0
+    bot.tick()
+    assert [turn[0] for turn in bot.deepseek.turns] == ["ambient"]
+
+
+def test_waits_out_the_room_cooldown_after_speaking(tmp_path, monkeypatch):
+    bot, _matrix, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
+    for round_number in range(2):
+        say_in_room(bot, "one", f"$a{round_number}")
+        say_in_room(bot, "two", f"$b{round_number}")
+        clock["now"] += 21
+        bot.tick()
+    assert len(bot.deepseek.turns) == 1
+
+
+def test_never_files_from_an_ambient_turn(tmp_path, monkeypatch):
+    github = FakeGitHub()
+    bot, _, _, clock = ambient_bot(tmp_path, monkeypatch, act_value=act("x", issue=True))
+    bot.github = github
+    say_in_room(bot, "one", "$a")
+    say_in_room(bot, "two", "$b")
+    clock["now"] += 21
+    bot.tick()
+    assert github.created == []
+
+
+def test_config_reads_the_chat_table(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[chat]\nambient_chance = 0.05\nambient_per_hour = 3\n", encoding="utf-8")
+    config = fish_bot.Config.load(path)
+    assert (config.ambient_chance, config.ambient_per_hour) == (0.05, 3)
+
+
+def digest_bot(tmp_path, *, hour=21, merged=()):
+    github = FakeGitHub()
+    github.merged = merged
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20, digest_hour=hour,
+                             digest_rooms=(("#ja:example", "Japanese"),), digest_repos=("mkpoli/glyph-atlas",))
+    bot, matrix, store = make_bot(tmp_path, config=config, github=github)
+    bot.active_rooms = {ROOM, "!ja:example"}
+    return bot, matrix, store
+
+
+def at(hour):
+    return lambda: fish_bot.datetime.datetime(2026, 11, 19, hour, 0, tzinfo=fish_bot.JST)
+
+
+def test_posts_the_digest_once_a_day_from_its_hour(tmp_path):
+    bot, matrix, store = digest_bot(tmp_path, merged=[{"number": 1, "title": "Add X", "url": "u"}])
+    bot.ingest(ROOM, event("we talked about 𠀀", event_id="$talk"), backfilled=False)
+    bot._clock = at(20)
+    bot.digest()
+    assert matrix.sent == []
+    bot._clock = at(21)
+    bot.digest()
+    bot.digest()
+    assert [(room, content["body"]) for room, content, _ in matrix.sent] == [("!ja:example", "digest in Japanese")]
+    _, _, changes, others = bot.deepseek.digests[0]
+    assert changes[0]["merged"][0]["title"] == "Add X"
+    assert [row["body"] for row in others["Test room"]] == ["we talked about 𠀀"]
+    assert store.digested("2026-11-19", "!ja:example")
+
+
+def test_skips_a_quiet_day_without_posting(tmp_path):
+    bot, matrix, store = digest_bot(tmp_path)
+    bot._clock = at(22)
+    bot.digest()
+    assert matrix.sent == [] and bot.deepseek.digests == []
+    assert store.digested("2026-11-19", "!ja:example")
+
+
+def test_digest_message_names_no_one(tmp_path):
+    bot, _, store = digest_bot(tmp_path)
+    bot.ingest(ROOM, event("secret plan", sender="@alice:example", event_id="$a"), backfilled=False)
+    rows = store.since(0)
+    payload = json.loads(fish_bot.format_digest("日本語", [], [{"repo": "r", "merged": [], "released": []}],
+                                                {"Test room": rows[ROOM]}))
+    assert payload["changes"] == []
+    assert payload["other_rooms"] == [{"room": "Test room", "messages": ["secret plan"]}]
+    assert "@alice" not in json.dumps(payload)
+
+
+def test_config_reads_the_digest_table(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[digest]\nhour = 20\nrepos = ["mkpoli/han-compose"]\n'
+                    '[digest.rooms]\n"#ja:glyphatlas.org" = "Japanese"\n', encoding="utf-8")
+    config = fish_bot.Config.load(path)
+    assert config.digest_hour == 20
+    assert config.digest_rooms == (("#ja:glyphatlas.org", "Japanese"),)
+    assert config.digest_repos == ("mkpoli/han-compose",)
+
+
+def test_an_unknown_room_alias_is_looked_up_once_an_hour(tmp_path):
+    bot, matrix, _ = digest_bot(tmp_path)
+    lookups = []
+
+    def resolve(alias):
+        lookups.append(alias)
+        raise fish_bot.MatrixError(404, "no such room")
+
+    matrix.resolve = resolve
+    bot._clock = at(22)
+    bot.digest()
+    bot.digest()
+    assert lookups == ["#ja:example"]
