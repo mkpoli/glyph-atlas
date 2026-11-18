@@ -257,7 +257,7 @@
   .form-option-group.own .form-option-label{color:var(--ink)}
   .form-option-row{display:flex;flex-wrap:wrap;gap:6px}
   .form-option{display:inline-flex;flex-direction:column;align-items:center;gap:2px;min-width:44px;padding:5px 9px;font-size:21px;line-height:1.2;
-    font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
+    font-family:var(--char-font)}
   .form-option small{font-family:ui-monospace,monospace;font-size:9px;color:var(--muted)}
   .form-option:not(:disabled):hover{border-color:var(--accent)}
   .form-compose{align-self:flex-start;font-size:13px;padding:4px 10px}

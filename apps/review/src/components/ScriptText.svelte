@@ -16,7 +16,7 @@
   // Figures, the font that maps its sequence, once the file that holds it has loaded; any other font
   // draws the character without its selector, and a sequence the font lacks keeps the fonts around it.
   // A drawn form is set in the site's own font, the only one with a glyph at its code point: its sans
-  // cut, or its serif one inside text set in a serif face.
+  // cut or its serif one, with the face the reader chose.
   let { text = '', script = '', lang = '', titled = true } = $props()
   // `scriptParts` returns a fixed English `label` for use outside a Svelte context (it is also
   // called directly by a plain-Node check); the label shown here is looked up again from `key` so

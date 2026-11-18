@@ -17,3 +17,4 @@
   --drawn-serif: "Glyph Atlas Drawn Forms Serif", serif;
   --drawn-font: var(--drawn-sans);
 }
+:root[data-typeface=serif] { --drawn-font: var(--drawn-serif); }

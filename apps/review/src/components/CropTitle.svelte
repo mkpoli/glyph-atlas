@@ -66,7 +66,7 @@
   .glyph-button:not(:disabled):hover,.glyph-button[aria-expanded="true"]{background:color-mix(in srgb, var(--accent) 12%, transparent)}
   .glyph-button:disabled{opacity:1;cursor:default}
   .read-as{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;font-size:24px;line-height:1;font-weight:400;color:var(--muted);
-    font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
+    font-family:var(--char-font)}
   .read-as svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
   .read-as.claimed{color:var(--accent);border-bottom:2px solid var(--accent)}
   .read-as.disputed{color:var(--wrong)}

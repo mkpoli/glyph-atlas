@@ -7,26 +7,14 @@
   src: url("/fonts/GenZuiSans-Kana.woff2") format("woff2");
   font-display: swap;
   /* The subset's cmap, printed by `scripts/build_genzui_subset.py`: the supplementary kana blocks,
-     four kana ligatures, and the combining voicing marks a hentaigana is voiced with. A stack that
-     names a font with the marks earlier (Kureedo Kata) still draws 𛂞 + U+3099 here: that font
-     lacks 𛂞, so the whole cluster comes from this one. */
+     four kana ligatures, and the combining voicing marks a hentaigana is voiced with. The faces
+     before it in a stack have the marks and still leave 𛂞 + U+3099 to it: they lack 𛂞, so the
+     whole cluster comes from this one. */
   unicode-range: U+3099-309A, U+1AFF0-1AFF3, U+1AFF5-1AFFB, U+1AFFD-1AFFE, U+1B000-1B128, U+1B132,
     U+1B150-1B152, U+1B155, U+1B164-1B168, U+2A708, U+2CEFF-2CF00, U+2CF02;
 }
 
-@font-face {
-  font-family: "Kureedo Kata";
-  src: url("/fonts/KureedoKata-Regular.woff2") format("woff2");
-  font-display: swap;
-  /* Only the ranges this font has: a character outside them uses the reader's own fonts, and the
-     component checks coverage before showing a glyph at all. */
-  unicode-range: U+3000-303F, U+3099-309C, U+30A1-30FE, U+31F0-31FF, U+1B127-1B128, U+2A708;
-}
-
-/* Where a form is set in a serif face, a drawn form takes its serif cut (drawn-forms.css). */
-.form-chip, .form-option, .form-choice.described, .grapheme-chip, .read-as, .piece, .ghost { --drawn-font: var(--drawn-serif); }
-
-.reference-glyph { display: inline-block; line-height: 1.1; white-space: nowrap; }
+.reference-glyph { display: inline-block; font-family: var(--char-font); line-height: 1.1; white-space: nowrap; }
 .reference-glyph.sm { font-size: 1.05rem; }
 .reference-glyph.md { font-size: 1.4rem; }
 .reference-glyph.lg { font-size: 1.9rem; }
@@ -67,7 +55,7 @@
 .layer-name { margin: 0 0 8px; font-size: .82rem; color: var(--ink-soft); }
 .layer-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; font-size: .9rem; }
 .fact.confusable { color: var(--ink-soft); }
-.inline-glyph { font-family: "Kureedo Kata", "GenZui Sans", "Noto Serif Tangut", system-ui, sans-serif; font-size: 1.2rem;
+.inline-glyph { font-family:var(--char-font); font-size: 1.2rem;
   background: none; border: 0; border-bottom: 1px dotted currentColor; cursor: pointer; padding: 0 2px; }
 .inline-glyph.big { font-size: 1.7rem; }
 .layer-close { margin-inline-start: auto; }
@@ -144,7 +132,7 @@
 .corpus-holder small { color: var(--ink-soft); }
 .corpus-open { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px;
   min-height: 96px; padding: 10px; font-size: .78rem; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
-.corpus-open b { font-family: "Kureedo Kata", "GenZui Sans", "Noto Serif Tangut", system-ui, sans-serif; font-size: 1.6rem; }
+.corpus-open b { font-family:var(--char-font); font-size: 1.6rem; }
 .corpus-open small { color: var(--ink-soft); }
 .candidate-more { display: block; width: 100%; padding: 8px 10px; margin-top: 2px; background: none; border: 0;
   border-top: 1px solid var(--line); font-size: .82rem; cursor: pointer; color: var(--ink-soft); }
