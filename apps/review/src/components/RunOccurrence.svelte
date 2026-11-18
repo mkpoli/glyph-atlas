@@ -1,3 +1,7 @@
+<script module>
+  const submissions = new Map()
+</script>
+
 <script>
   // One occurrence of a run, opened from Explore or a sequence page: the run on its page with the
   // page around it (the whole context render it was cut from), a link to the sequence with the same
@@ -27,6 +31,7 @@
     text,
     count = null,
     more = null,
+    onmore = null,
     previous = null,
     next = null,
     position = '',
@@ -38,7 +43,6 @@
   const inspector = useInspector()
   let dialog
   let activeCrop = $state(null), busyId = $state(null), error = $state(''), closed = false
-  const submissions = new Map()
 
   const writtenInfo = $derived(occurrenceWritten(occurrence.crops, text))
   const forms = $derived(writtenInfo?.forms ?? null)
@@ -83,6 +87,7 @@
   async function approve(crop, index) {
     if (busyId !== null || !canApproveCrop(crop) || crop.state === 'checked') return
     const isCorpus = crop.origin === 'corpus'
+    const rowHadFocus = dialog?.contains(document.activeElement) && document.activeElement?.closest('[data-crop-index]')?.dataset.cropIndex === String(index)
     busyId = crop.id; error = ''
     let sub = null, focusNext = false
     try {
@@ -95,17 +100,19 @@
           focusNext = loaded.state === 'checked'
           return
         }
-        target = { ...target, ...loaded }
+        target = { ...target, image_sha256: loaded.image_sha256 }
       }
       sub = submissionFor(target)
       const { route, body } = approveCropRequest(target, sub.id)
       const result = await request(route, body)
       submissions.delete(sub.sig)
       const patch = approvedCropPatch(target, result)
-      inspector?.remember(target.id, {
-        choices: { issues: [], correction: null, noneSelected: false, written: null },
-        revision: patch.revision,
-      })
+      if (!isCorpus) {
+        inspector?.remember(target.id, {
+          choices: { issues: [], correction: null, noneSelected: false, written: null },
+          revision: patch.revision,
+        })
+      }
       forgetCrop(target.id)
       onupdated?.(target.id, patch)
       focusNext = true
@@ -122,15 +129,17 @@
     } finally {
       if (!closed) busyId = null
     }
-    if (focusNext && !closed) {
+    const focusUnchanged = !dialog?.contains(document.activeElement) || document.activeElement?.closest('[data-crop-index]')?.dataset.cropIndex === String(index)
+    if (focusNext && rowHadFocus && focusUnchanged && !closed) {
       await tick()
       const nextIndex = occurrence.crops.findIndex((c, idx) => idx > index && c.state !== 'checked')
       const targetIndex = nextIndex >= 0 ? nextIndex : occurrence.crops.findIndex((c, idx) => idx !== index && c.state !== 'checked')
-      if (targetIndex >= 0) {
-        const selector = canApproveCrop(occurrence.crops[targetIndex]) ? '.crop-approve' : '.crop-fix'
-        dialog?.querySelector(`[data-crop-index="${targetIndex}"] ${selector}`)?.focus({ preventScroll: true })
-      } else {
-        dialog?.querySelector(`[data-crop-index="${index}"] .crop-fix`)?.focus({ preventScroll: true })
+      const button = targetIndex >= 0
+        ? dialog?.querySelector(`[data-crop-index="${targetIndex}"] ${canApproveCrop(occurrence.crops[targetIndex]) ? '.crop-approve' : '.crop-fix'}`)
+        : dialog?.querySelector(`[data-crop-index="${index}"] .crop-fix`)
+      if (button) {
+        button.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+        button.focus({ preventScroll: true })
       }
     }
   }
@@ -149,9 +158,17 @@
   $effect(() => {
     const key = occurrence.crops[0]?.id ?? ''
     if (key === shownKey) return
+    const stepped = shownKey !== null
     shownKey = key
     activeCrop = null; error = ''
     dialog?.scrollTo({ top: 0 })
+    if (stepped && dialog && !dialog.contains(document.activeElement)) {
+      tick().then(() => {
+        if (!closed && !dialog.contains(document.activeElement)) {
+          dialog.querySelector('.occurrence-crop-row .crop-approve, .occurrence-crop-row .crop-fix')?.focus({ preventScroll: true })
+        }
+      })
+    }
   })
 
   onMount(() => {
@@ -174,7 +191,7 @@
         {/if}
       </h2>
       {#if more}
-        <a class="run-sequence-link" href={more} onclick={e => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) close() }}>
+        <a class="run-sequence-link" href={more} onclick={e => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) { if (onmore) { e.preventDefault(); onmore() } close() } }}>
           <span>{around('run.showSequence', 'sequence')[0]}<ScriptText {text} titled={false} />{around('run.showSequence', 'sequence')[1]}</span>
           {#if count != null}<small>{t('run.occurrences', { count })}</small>{/if}
           <span aria-hidden="true">→</span>

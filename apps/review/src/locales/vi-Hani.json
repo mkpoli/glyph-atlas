@@ -460,7 +460,7 @@
   "run.detail.next": "吝接",
   "run.showSequence": "現圮𡨸{sequence}",
   "run.chars.label": "各𡨸",
-  "run.chars.progress": "㐌閱{checked}/{total}",
+  "run.chars.progress": "{checked} / {total}㐌閱",
   "run.char.approve": "中",
   "run.char.fix": "𢯢",
   "run.char.edit": "䀡",
