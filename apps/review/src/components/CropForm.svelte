@@ -20,7 +20,7 @@
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
   import StructureDialog from './StructureDialog.svelte'
-  import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
+  import { listForms, formOf, formState, isFormState, UNRESOLVED, setWrittenFor } from '../lib/cropForms.js'
   import { standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -33,6 +33,9 @@
   let arranging = $state(false)
   const written = $derived(crop?.written_character ?? crop?.label ?? '')
   const current = $derived(formOf(crop))
+  // The crop's form slot holds no shape: the reader looked, and the variant is unknown.
+  const state = $derived(formState(crop?.form))
+  const unknown = $derived(chosen ? chosen === UNRESOLVED : state === UNRESOLVED)
   const BAR = 10
   // The 構形 each form stands under, by the form's text; a form the site knows no structure of has
   // none. The crop's character is named too, for its regional shapes.
@@ -101,6 +104,12 @@
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   function choose(char) { onchoose(char === chosen ? null : char) }
+  // A state another reader holds can be chosen too: the claim records that this reader looked and
+  // agrees. Clicking it again drops the unsaved choice.
+  function chooseUnknown() {
+    if (disabled) return
+    onchoose(chosen === UNRESOLVED ? null : UNRESOLVED)
+  }
   // The grapheme's forms changed for every crop of its family, so the card is read again after a save.
   async function reload() {
     const id = crop?.id, char = written
@@ -177,7 +186,9 @@
 <div class="crop-form" bind:this={root}>
   <div class="form-row copyable" class:captioned>
     <FormChips groups={barGroups} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
-      {#if !others}<CopyValue value={chosen ?? current} />{/if}
+      {#if !others}<CopyValue value={isFormState(chosen) ? written : (chosen ?? current) || written} />{/if}
+      <button type="button" class="form-unknown" class:chosen={unknown} aria-pressed={unknown} {disabled}
+        title={t('form.unknown.hint')} onclick={chooseUnknown}>{t('form.unknown')}</button>
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+⌕'}</button>
   </div>
@@ -247,6 +258,9 @@
   .crop-form :global(.form-chips){flex:1 1 0}
   .form-add{flex:none;min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
   .form-add[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
+  .form-unknown{display:inline-flex;flex:none;align-items:center;padding:4px 10px;font:inherit;font-size:12px;line-height:1.2;color:var(--muted);border-style:dashed}
+  .form-unknown.chosen{border:2px solid var(--accent);padding:3px 9px;background:var(--accent-light);color:var(--accent)}
+  .form-unknown:not(:disabled):hover{color:var(--ink);border-color:var(--accent)}
   .form-picker{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
   .form-picker :global(.character-search){width:100%;min-width:0}
   .form-section{display:flex;flex-direction:column;gap:6px}
