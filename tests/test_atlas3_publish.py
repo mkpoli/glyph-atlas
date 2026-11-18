@@ -624,6 +624,24 @@ def test_a_known_crop_with_another_box_is_re_cut_under_its_own_id(layout, monkey
     assert entry["box"] == {"x": 2, "y": 22, "w": 12, "h": 9}
 
 
+def test_a_re_cut_to_a_redrawn_box_leaves_it_pending_no_longer(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a1, a2 = ids(root)["ex:a1"], ids(root)["ex:a2"]
+    redrawn = {"x": 2, "y": 22, "w": 12, "h": 9}
+    # A reviewer redrew a2 to the box the catalogue now cuts; a1 was redrawn again since its import.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("INSERT INTO reviews(crop, gen, at, char, state, x, y, w, h) SELECT id, 0, 0, char, 1, 2, 22, 12, 9 "
+                   "FROM crops WHERE id=?", (a2,))
+        db.execute("INSERT INTO reviews(crop, gen, at, char, state, x, y, w, h) SELECT id, 0, 0, char, 1, 3, 3, 5, 5 "
+                   "FROM crops WHERE id=?", (a1,))
+        db.commit()
+    run(publish, monkeypatch, catalogue(tmp_path / "c.sqlite", [unit("ex:a2", "hl:p1", redrawn, "い", state="checked", revision=3),
+                                                                 unit("ex:a1", "hl:p1", {"x": 1, "y": 1, "w": 9, "h": 9})]))
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        boxes = {crop: box for crop, *box in db.execute("SELECT crop, x, y, w, h FROM reviews")}
+        assert boxes == {a2: [None] * 4, a1: [3, 3, 5, 5]}
+
+
 def test_a_publication_that_does_not_speak_for_a_crop_leaves_the_stores_revision_alone(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     a2 = ids(root)["ex:a2"]

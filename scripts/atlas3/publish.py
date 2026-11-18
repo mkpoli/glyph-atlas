@@ -854,6 +854,14 @@ class Mirror:
             f"UPDATE crops SET state = {PENDING}, revision = revision + 1 WHERE id = {cid} AND {held};"]
         self.guarded.append(cid)
 
+    def settle_redraw(self, cid, box):
+        """A crop re-cut to the box a reviewer redrew on the site: the redraw is published, so the review
+        stops holding it as pending (`box_pending`, and the cut claims name). A box redrawn again since
+        differs from the one cut, and stays pending for the next publication."""
+        x, y, w, h = (int(box[k]) for k in "xywh")
+        self.page_sql[cid // PAGE].append(
+            f"UPDATE reviews SET x=NULL,y=NULL,w=NULL,h=NULL WHERE crop={cid} AND x={x} AND y={y} AND w={w} AND h={h};")
+
     def vote_slots(self, pid):
         if pid not in self.votes:
             self.votes[pid] = votes.read(OUT / "votes", pid)
@@ -1632,6 +1640,8 @@ def main():
                restored=row is None and bool(previous.get("retired")), retired_at=previous.get("revision"))
         if r["id"] in recut and row is not None and row["state"] in MARK_STATES:
             m.unmark(cid)
+        if r["id"] in recut and data.get("box"):
+            m.settle_redraw(cid, data["box"])
         if with_votes:
             m.vote(cid, given.get("cut", row["cut"] if row else 0), r["visual"], r["context"])
         n += 1
