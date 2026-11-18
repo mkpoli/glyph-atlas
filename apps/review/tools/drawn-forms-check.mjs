@@ -106,7 +106,10 @@ try {
   await browser.waitFor('document.querySelector("dialog[open]") === null', 30000)
   assert(JSON.stringify(claimed(id)) === JSON.stringify([{ scheme: 'pua', value: forms[0], namespace: DRAWN_NAMESPACE }]), `the form was not claimed: ${JSON.stringify(claimed(id))}`)
   assert(units(config.directory)[id].unicode === 'U+F0000', `the crop is not written as the drawn form: ${units(config.directory)[id].unicode}`)
-  console.log('PASS a drawn form chosen on the bar is the crop\'s character and its form, in the table\'s namespace')
+  await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
+  await browser.waitFor(`${chips}.some(c => c.getAttribute('aria-pressed') === 'true' && c.querySelector('.script-char')?.textContent === ${JSON.stringify(forms[0])})`, 30000)
+  await shoot('saved-form', 'dialog[open]')
+  console.log('PASS the saved drawn form is selected when the crop is reopened')
 
   // 事's page lists all three among its 字体, and the family's crops hold the one just named.
   await browser.goto(`${service.base}/en/character/U+4E8B`, { waitFor: '!!document.querySelector(".character-members")', timeout: 90000 })

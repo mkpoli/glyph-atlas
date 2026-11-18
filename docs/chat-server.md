@@ -43,7 +43,7 @@ The server's Tailscale key is set never to expire (Tailscale admin console → M
 | `heisenbridge` | IRC bridge to Libera.Chat | `/var/lib/heisenbridge` (Python venv, registration); its state lives in Matrix account data |
 | `qq-bridge` | QQ bridge: the official QQ bot, one group | `/var/lib/qq-bridge` (config, registration, state); program in `/opt/qq-bridge` (source, venv) |
 | `ids-bot` | Answers a description with its IDS Workshop page | `/opt/ids-bot/ids_bot.py`; token in `/etc/ids-bot/token`, sync position in `/var/lib/ids-bot/state.json` |
-| `fish-bot` | Reads the public rooms and files an issue when a discussion calls for one | `/opt/fish-bot/fish_bot.py`; config and secrets in `/etc/fish-bot`, database in `/var/lib/fish-bot` |
+| `fish-bot` | 大肥魚, the community's chat character; files an issue when asked | `/opt/fish-bot/fish_bot.py`; config and secrets in `/etc/fish-bot`, database in `/var/lib/fish-bot` |
 | `cloudflared` | The tunnel `glyphatlas-matrix` | `/etc/cloudflared/config.yml` and the tunnel's credential file beside it |
 | `tailscaled` | Tailscale | — |
 | `chat-backup.timer` | Nightly backup | `/usr/local/sbin/chat-backup` |
@@ -265,19 +265,34 @@ WantedBy=multi-user.target
 `systemctl daemon-reload` then `systemctl enable --now ids-bot`. The bot reads the directory again
 every hour, so a new public room needs no restart; a room is covered once it is published there.
 
-## Issue bot
+## 大肥魚
 
-`@bigfatfish:glyphatlas.org` joins up to 200 rooms in the server's public directory and follows the
-sync stream. It keeps the readable text of those rooms in a local SQLite log and answers a mention or
-`!fish` with one decision: file an issue in `mkpoli/glyph-atlas`, or say why not. It reads the latest
-messages, checks the open issues for duplicates, and files only when the log names a concrete request
-and someone asks for action. The bot only sees rooms it has joined; the public directory decides
-which rooms those are.
+`@bigfatfish:glyphatlas.org`, shown as 大肥魚, is the community's chat character: a whale girl in a
+maid dress, after the fan nickname 大肥鱼 for DeepSeek's whale. She joins up to 200 rooms in the
+server's public directory, keeps their readable text in a local SQLite log, and answers anyone who
+calls her by name (大肥魚, 大肥鱼, Big Fat Fish), by mention, or with `!fish`. The first time
+someone writes in a room after she arrives, she introduces herself there once.
 
-`!fish review` proposes a title and keeps it for a day. `!fish issue` files that proposal, or reads
-the room again when none is pending. Automatic filing is capped at five issues a day and one every
-ten minutes; model calls are capped per user and across the bot. Starting the program with `--dry-run` answers `[dry run] Would file: …` and writes
-nothing to GitHub.
+She also reads along. When a room goes quiet after a few messages, she takes a look now and then
+(the `[chat]` table sets how often) and may add a line, an emoji or a sticker, or stay silent. She
+never files from these turns.
+
+Every evening from 21:00 JST she posts a digest in each language room listed in `[digest.rooms]`, in
+that room's language: what the repositories in `[digest] repos` merged and released in the last day,
+and a line for each other room's discussion, with no one named. A quiet day gets no digest.
+
+She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
+2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
+checks each against the hash in `STICKERS` and uploads it to the homeserver once; a sticker whose
+image no longer matches is left out. Discord and Telegram show them; the QQ bridge relays only
+messages, so QQ does not.
+
+When a person asks her to file something, she hands the discussion to the issue desk: it reads the
+latest messages, checks the open issues for duplicates, and files in `mkpoli/glyph-atlas` only when
+the log names a concrete request. `!fish review` proposes a title and keeps it for a day; `!fish
+issue` files that proposal, or reads the room again when none is pending. Filing is capped at five
+issues a day and one every ten minutes; model calls are capped per user and across the bot.
+Starting the program with `--dry-run` answers `[dry run] Would file: …` and writes nothing to GitHub.
 
 The program is `apps/fish-bot/fish_bot.py`, standard library only. On the server, make its account
 and directories:
@@ -313,7 +328,7 @@ Fill them:
 
 - `matrix-token` — the account's access token. In `#admins`, `!admin users create bigfatfish` makes
   the account and prints a password; `!admin users issue-token bigfatfish <password>` prints a token.
-  Set the account's display name to `Big Fat Fish`.
+  Set the account's display name to `大肥魚`.
 - `deepseek-key` — the API key for the model, starting `sk-`.
 - `github-token` — a fine-grained token for `mkpoli/glyph-atlas` with **Issues: read and write** and
   **Metadata: read-only**. No other repository or permission is needed. Without this file the bot

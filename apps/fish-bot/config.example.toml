@@ -16,7 +16,9 @@ repo = "mkpoli/glyph-atlas"
 
 [bot]
 user_id = "@bigfatfish:glyphatlas.org"
-display_name = "Big Fat Fish"
+display_name = "大肥魚"
+# Names that call the bot besides its mention and `!fish`.
+aliases = ["大肥魚", "大肥鱼", "Big Fat Fish"]
 # Empty means every room in the server's public directory. A list limits the bot to those rooms.
 rooms = []
 # The homeserver's bridge and bot accounts, which never call the bot.
@@ -28,6 +30,33 @@ ignored_senders = [
   "@qqbot:glyphatlas.org",
 ]
 
+[chat]
+# Joining in unasked. After a room has been quiet for ambient_quiet_seconds, a batch of at least
+# ambient_min_messages (or one lively message) gets a look with this chance, doubled when lively.
+ambient_chance = 0.2
+ambient_quiet_seconds = 25
+ambient_min_messages = 2
+# No unasked turn in a room this soon after the bot last spoke there, and at most this many an hour.
+ambient_room_cooldown_seconds = 900
+ambient_per_hour = 12
+
+[digest]
+# From this hour (JST) each day, one digest per room below, in its language: what the repositories
+# merged and released in the last day, and what the other rooms talked about. A quiet day gets none.
+hour = 21
+repos = [
+  "mkpoli/glyph-atlas", "mkpoli/han-compose", "mkpoli/ids-input", "mkpoli/unencoded-db",
+  "mkpoli/han-input", "mkpoli/tangut-input", "mkpoli/khitan-input", "mkpoli/jurchen-input",
+  "mkpoli/glyph-cutter", "mkpoli/han-decompose", "mkpoli/han2ids", "mkpoli/moji",
+]
+
+[digest.rooms]
+"#en:glyphatlas.org" = "English"
+"#zh:glyphatlas.org" = "Chinese"
+"#ja:glyphatlas.org" = "Japanese"
+"#ko:glyphatlas.org" = "Korean"
+"#vi:glyphatlas.org" = "Vietnamese"
+
 [limits]
 context_messages = 120
 backfill_messages = 200
@@ -38,4 +67,6 @@ call_window_seconds = 86400
 max_rooms = 200
 max_calls_per_hour = 60
 max_calls_per_user_per_hour = 5
+max_chats_per_hour = 120
+max_chats_per_user_per_hour = 20
 retention_days = 180

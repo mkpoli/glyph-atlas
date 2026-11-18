@@ -3,8 +3,9 @@
 /* The page defaults sit here as well as in the package's base.css, because the
    review app imports only the tokens and keeps its own element rules. */
 /* Characters are set in one face, Atlas Sans or Atlas Serif as the reader chose (docs/typefaces.md),
-   then in the faces of the kana and scripts it leaves out. Interface text keeps the reader's own
-   fonts and ends in the same face, which draws what they lack. */
+   then in the faces of the kana and scripts it leaves out. Under Atlas Sans, interface text keeps
+   the reader's own fonts and ends in the face, which draws what they lack. Under Atlas Serif the
+   whole interface is set in it, behind a serif for the Latin it leaves out. */
 :root {
   --char-face: "Atlas Sans";
   --char-generic: sans-serif;
@@ -19,7 +20,8 @@
 
 /* A scheme the reader chose in the menu overrides the system's. The tokens themselves live in
    packages/design-system and are imported above. */
-:root[data-typeface=serif]{--char-face:"Atlas Serif";--char-generic:serif}
+:root[data-typeface=serif]{--char-face:"Atlas Serif";--char-generic:serif;
+  --ga-font-ui:"Source Serif 4","Source Serif Pro","Noto Serif",Georgia,"Times New Roman","Atlas Serif","GenZui Sans","Noto Serif Tangut",serif}
 /* Each option of the menu's face choice is set in its own face. */
 .typeface-option[data-face=sans]{font-family:"Atlas Sans",sans-serif}.typeface-option[data-face=serif]{font-family:"Atlas Serif",serif}
 :root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
@@ -200,6 +202,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
    the Nôm characters it holds; every other character falls through to the fonts after it. */
 @font-face{font-family:"Plangothic vi-Hani";src:url("/fonts/Plangothic-vi-Hani.woff2") format("woff2");font-display:swap;unicode-range:U+20000-3FFFF;ascent-override:88%;descent-override:12%;line-gap-override:0%}
 :root:lang(vi-Hani),.language-options [lang=vi-Hani]{font-family:Inter,"Helvetica Neue",Arial,"Noto Sans","Plangothic vi-Hani","GenZui Sans","Noto Serif Tangut",sans-serif}
+:root[data-typeface=serif]:lang(vi-Hani),:root[data-typeface=serif] .language-options [lang=vi-Hani]{font-family:var(--ga-font-ui)}
 :root:lang(vi-Hani) :is(.overline,.tile-footer,.collection-bottom,.tile-id,.quiz-tile-tools kbd,.review-actions kbd,.review-form kbd,.form-choice small,.form-choice kbd,.chip-identity,.layer-code,.candidate-code,.candidate-name,.glyph-codepoint){font-family:ui-monospace,SFMono-Regular,Consolas,monospace,"Plangothic vi-Hani"}
 /* The wide tracking suits a wordmark of three to five Han characters; a Latin-script name keeps its own. */
 .wordmark .local-name[lang=vi]{letter-spacing:.01em}
@@ -241,7 +244,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
    No hover zoom: the edges of a written stroke must stay in view. */
 .tile-caption{display:contents}
 /* A confirmed or flagged tile's mark follows its character in the caption, off the image. */
-.tile-verdict{flex:none;align-self:center;font:700 12px/1 system-ui,sans-serif;color:var(--good)}
+.tile-verdict{flex:none;align-self:center;font:700 12px/1 var(--ga-font-ui);color:var(--good)}
 .decided-flagged .tile-verdict{color:var(--wrong)}
 :root:not([data-gallery="grid"]) .collage-cell .glyph-image{transform:none}
 :root:not([data-gallery="grid"]) .collage-cell .tile-details{bottom:var(--collage-caption);padding-bottom:10px}:root:not([data-gallery="grid"]) .collage-cell .tile-caption{position:absolute;bottom:0;left:0;right:0;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,max-content);grid-template-rows:auto auto;column-gap:6px;row-gap:1px;align-items:baseline;align-content:start;height:var(--collage-caption);padding:5px 1px 0;text-align:start;background:var(--paper);z-index:3}

@@ -1402,40 +1402,44 @@
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/key}{/if}
     {/snippet}
     {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
-    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
-                     onform={form => pick({ code_point: codesOf(form), char: form }, true)}
-                     token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
-                     onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
-                     onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
-    <div class="filter-tabs" aria-label={t('explore.filter.label')}>
-      {#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')], ['tangut', () => t('explore.filter.tangut')]] as [value, text]}
-        {@const entry = groupMap.get(value)}
-        {@const tabCount = entry ? (flagged ? entry.need_fixing : entry.total) : null}
-        <button type="button" class:active={filter === value} aria-pressed={filter === value} data-group={value}
-                aria-label={tabCount != null ? `${text()}, ${formatNumber(tabCount)}` : undefined}
-                title={entry ? t('explore.filter.summary', { label: text(), crops: t('explore.meta.crops', { count: entry.total }), reviewed: t('explore.meta.reviewedCrops', { count: entry.reviewed }), fixing: t('explore.bottom.flagged', { count: entry.need_fixing }) }) : undefined}
-                onclick={() => { filter = value; load() }}><span class="filter-label">{text()}</span>{#if tabCount != null}<small class="filter-count" aria-hidden="true">{formatCompactNumber(tabCount)}</small>{/if}</button>
-      {/each}
+    <!-- What to look through: a character, a work, a fresh deal, and the script. A row too narrow for
+         them all puts the scripts on a line of their own. -->
+    <div class="toolbar-query">
+      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
+                       onform={form => pick({ code_point: codesOf(form), char: form }, true)}
+                       token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
+                       onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
+                       onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
+      <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
+      <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else load() }} />
+      <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
+      <div class="filter-tabs" aria-label={t('explore.filter.label')}>
+        {#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')], ['tangut', () => t('explore.filter.tangut')]] as [value, text]}
+          {@const entry = groupMap.get(value)}
+          {@const tabCount = entry ? (flagged ? entry.need_fixing : entry.total) : null}
+          <button type="button" class:active={filter === value} aria-pressed={filter === value} data-group={value}
+                  aria-label={tabCount != null ? `${text()}, ${formatNumber(tabCount)}` : undefined}
+                  title={entry ? t('explore.filter.summary', { label: text(), crops: t('explore.meta.crops', { count: entry.total }), reviewed: t('explore.meta.reviewedCrops', { count: entry.reviewed }), fixing: t('explore.bottom.flagged', { count: entry.need_fixing }) }) : undefined}
+                  onclick={() => { filter = value; load() }}><span class="filter-label">{text()}</span>{#if tabCount != null}<small class="filter-count" aria-hidden="true">{formatCompactNumber(tabCount)}</small>{/if}</button>
+        {/each}
+      </div>
     </div>
-    <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
-    <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else load() }} />
-    <span class="toolbar-space"></span>
-    <!-- The collection and the page: set aside on a wide screen, where they stand apart from what
-         narrows the collection. -->
-    <div class="page-tools">
-      <div class="collection-tools">
+    <!-- How the gallery below is shown, and what to do with it. -->
+    <div class="toolbar-view">
+      <div class="view-settings">
         <ImageStyleToggle {ink} onchange={onink} />
-        {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
-        <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
         <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
           {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
         </div>
+        <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
+      </div>
+      <div class="view-actions">
         <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
         {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
         {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
+        {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
+        <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
       </div>
-      <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
-      <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
     </div>
   </div>
   {#if imaging}<ImageSearch given={imaging} onclose={() => imaging = null} {inspect} />{/if}
@@ -1500,34 +1504,61 @@
   .sheet-count{font-variant-numeric:tabular-nums}
   /* While the image is painted the button keeps the focus and takes no second press. */
   .sheet-save[aria-disabled="true"]{cursor:default;opacity:.45}
-  /* What the collection is shown as, and how, stays together as one group wherever the toolbar puts it. */
-  .collection-tools{display:contents}
-  /* Wide screens keep the toolbar's controls on one row: the find box takes the room it needs, the
-     categories follow it, and the tools of the page take the rest, starting where the toolbar meets the
-     budget the find box may take on any width. Below that, the tools begin a row of their own. */
-  .page-tools{display:contents}
-  @media(min-width:1700px){
-    .page-tools{display:flex;flex:1;align-items:center;justify-content:flex-end;gap:28px}
-    .collection-tools{display:flex;align-items:center;gap:14px}
-    .collection-toolbar :global(.character-search){flex:0 0 420px}
-  }
+  /* A short search, the works and the deal start the first row and the scripts end it; under a hairline the
+     second row holds how the gallery is shown at its start and what to do with it at its end. */
+  .explore > .collection-toolbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:0;padding:16px 0 0}
+  .toolbar-query{display:flex;align-items:center;flex-wrap:wrap;gap:12px 16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+  .collection-toolbar .toolbar-query :global(.character-search){flex:0 0 240px;min-width:0;max-width:none}
+  /* A chosen character sits in the box as a chip, so the box widens to keep room for typing beside it. */
+  .collection-toolbar .toolbar-query :global(.character-search:has(.find-token)){flex-basis:320px}
+  .toolbar-query :global(.work-control){flex:0 1 auto;min-width:96px;max-width:260px;border-left:0;padding-left:0}
+  .toolbar-query :global(.work-toggle){max-width:100%}
+  .toolbar-view .quiet-link{white-space:nowrap}
+  .collection-toolbar .toolbar-query .filter-tabs{flex-wrap:nowrap;gap:4px;margin-left:auto}
+  .toolbar-view{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:12px 0}
+  .view-settings,.view-actions{display:flex;align-items:center;gap:12px}
+  .view-actions{margin-left:auto}
   /* The server cannot know the reader's size, so the slider waits for the page to wake rather than show the wrong one. */
   :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
   .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
   .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
-  /* A phone shows the tools as icons; how far the image has come, or that it failed, still shows beside
-     its icon, and the slider gives up the room the icon takes so the tools stay on one row. */
-  @media(max-width:700px){.sheet-save span{margin-left:6px;font-size:11px}.zoom-control input{width:60px}}
+  /* A narrower screen stacks each script's count under its name and shows the deal as an icon, so the
+     scripts keep the first row. */
+  @media(max-width:1240px){
+    .toolbar-query{gap:10px}
+    .collection-toolbar .toolbar-query :global(.character-search){flex-basis:200px}
+    .toolbar-query > .shuffle{font-size:0;gap:0;padding:8px}
+    .toolbar-query > .shuffle svg{width:18px;height:18px}
+    .collection-toolbar .toolbar-query .filter-tabs button{flex-direction:column;align-items:center;gap:2px;padding:4px 9px}
+  }
+  @media(max-width:900px){.collection-toolbar .toolbar-query :global(.character-search){flex-basis:170px}}
+  /* A phone puts the scripts under the search as a grid of three, each count beside its name; the two
+     toggles share a row, the size and the actions take the next, and the deal and the save show as icons;
+     how far the image has come, or that it failed, still shows beside its icon. */
+  @media(max-width:700px){
+    .explore > .collection-toolbar{padding-top:12px}
+    .toolbar-query{flex-wrap:wrap;gap:8px}
+    .collection-toolbar .toolbar-query :global(.character-search){flex:1 1 0}
+    .toolbar-query > .shuffle{margin-left:auto}
+    .collection-toolbar .toolbar-query .filter-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px 4px;flex-basis:100%;margin-left:0}
+    .collection-toolbar .toolbar-query .filter-tabs button{flex-direction:row;justify-content:space-between;align-items:baseline;padding:6px 10px}
+    .toolbar-view{gap:10px 8px}
+    .view-settings{display:contents}
+    .toolbar-view :global(.ink-toggle),.toolbar-view .layout-toggle{flex:1 1 calc(50% - 4px)}
+    .toolbar-view :global(.ink-toggle button),.toolbar-view .layout-toggle button{flex:1}
+    .sheet-save span{margin-left:6px;font-size:11px}
+    .zoom-control input{width:48px}
+  }
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
   .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
-  .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 10px/1 system-ui,sans-serif;color:transparent}
+  .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 10px/1 var(--ga-font-ui);color:transparent}
   .select-toggle[aria-pressed="true"] .select-mark{color:inherit}
   /* The box that selects a tile shows on hover or focus, and on every tile in select mode or on a touch screen.
      A class on the gallery says the mode is on: a `:has()` there restyled every tile each time tiles were added.
      It sits off the image, so it never hides a stroke or a 濁点: in the collage at the end of the caption's
      second line, with the source keeping clear of it, and
      in the square grid in the margin above the image. A bare tile has neither place and no box (`lib/collage.js`). */
-  .tile-select{position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:2px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:700 11px/1 system-ui,sans-serif;opacity:0;transition:opacity .12s}
+  .tile-select{position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:2px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:700 11px/1 var(--ga-font-ui);opacity:0;transition:opacity .12s}
   :global(:root:not([data-gallery="grid"])) .tile-select{right:1px;bottom:1px;width:16px;height:16px;font-size:10px}
   :global(:root[data-gallery="grid"]) .tile-select{top:5px;right:6px}
   /* Wherever the box shows, the source keeps clear of it, and a long label gives way before the tick after it. */

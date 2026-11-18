@@ -8,10 +8,10 @@ import { cropEntries, publicId } from '../atlas3';
 import { STALE_CODE, StaleCrop, cropParam, writtenCropField } from '../atlas3Crops';
 import { undoCountQuery } from '../atlas3Stamps';
 import { categoryOf } from '../category';
-import { drawnHeads } from '../forms';
+import { drawnHeads, formed } from '../forms';
 import { drawnForm } from '../representation';
 import { inspected } from './crop';
-import { STYLE_KIND, STYLE_TARGET, foundCrop, redrawLimits } from '../cropRecords';
+import { FORM_COLUMNS, FORM_JOINS, STYLE_KIND, STYLE_TARGET, codePoints, foundCrop, formRow, redrawLimits, type FormColumns } from '../cropRecords';
 import { body, canonical, compose, graphemeKey, graphemeText, text, unified, writtenCharacter } from '../input';
 import { readRecords, recordKey } from '../records';
 import { addressKey } from '../reverse';
@@ -78,12 +78,12 @@ export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label
   (SELECT count(*) FROM events e WHERE e.crop=c.id AND ${MARKED('e')} AND e.revision>coalesce((SELECT max(f.revision) FROM events f
     WHERE f.crop=c.id AND NOT ${MARKED('f')} AND f.revision>coalesce(${BOUNDARY('c')},-1)),${BOUNDARY('c')},-1)) AS marks,
   ${BOUNDARY('c')} AS boundary,
-  ${LOGICAL('c')} AS logical,(SELECT revision FROM review_revisions WHERE crop=c.id) AS anchored
+  ${LOGICAL('c')} AS logical,(SELECT revision FROM review_revisions WHERE crop=c.id) AS anchored,${FORM_COLUMNS}
   FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN pages pg ON pg.id=c.id>>24
-  LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN reviews r ON r.crop=c.id`;
+  LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN reviews r ON r.crop=c.id ${FORM_JOINS}`;
 type CropRow = { id: number; kind: number; char: number | null; label: string | null; state: number; revision: number; cut: number; quiz: number;
   rev: number; x: number | null; y: number | null; w: number | null; h: number | null; issue: number | null; named: string | null;
-  reviewed: number | null; marks: number; logical: number; anchored: number | null; boundary: number | null; page_key: string };
+  reviewed: number | null; marks: number; logical: number; anchored: number | null; boundary: number | null; page_key: string } & FormColumns;
 
 // A crop's page id as its record names it; a crop with none sits on its book's page (`book:<document>`).
 export const pageId = (key: string): { page_id?: string } => key.startsWith('book:') ? {} : { page_id: key };
@@ -107,7 +107,9 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
     const entry = entries.get(row.id);
     const record = entry?.record_place ? records.get(recordKey(pointer(entry))) : entry;
     if (!record || entry?.retired || row.kind === 2) continue;
-    const { slot: _slot, record_place: _place, ...stored } = record;
+    const { slot: _slot, record_place: _place, ...published } = record;
+    // A corpus glyph is judged as its inspector shows it: with the character the forms tool gave it.
+    const stored = row.kind === 1 ? formed(published, formRow(row), { codePoints }) : published;
     const label = row.label ?? '';
     const box = row.x == null ? null : { x: row.x, y: row.y, w: row.w, h: row.h };
     const data: Json = { ...stored, id: publicId(row.id), ...pageId(row.page_key), label, state: stateName(row.state), revision: row.revision,
@@ -122,7 +124,7 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
     const settled = base + row.marks === row.revision ? base : row.revision;
     found.set(row.id, { id: row.id, kind: row.kind, char: row.char, label, state: row.state, revision: row.revision, cut: row.cut, quiz: row.quiz, data,
       cutBox: stored.box ?? null, settled, logicalRevision: row.logical, anchored: row.anchored, boundary: row.boundary, sourceId: entry!.id,
-      pageRevision: row.rev, record: stored });
+      pageRevision: row.rev, record: published });
   }
   const gone = ids.filter(id => !found.has(id)), told = new Set(explained);
   const answers = await Promise.all(gone.map(id => told.has(id) ? missing(env, id) : new Problem(404, 'This character is not in the published collection.')));
