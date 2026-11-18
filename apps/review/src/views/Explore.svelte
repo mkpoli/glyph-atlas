@@ -1521,8 +1521,8 @@
   @media(max-width:700px){.sheet-save span{margin-left:6px;font-size:11px}.zoom-control input{width:60px}}
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
   .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
-  .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 10px/1 system-ui,sans-serif;color:transparent}
-  .select-toggle[aria-pressed="true"] .select-mark{color:inherit}
+  .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 0/1 system-ui,sans-serif}
+  .select-toggle[aria-pressed="true"] .select-mark{font-size:10px}
   /* The box that selects a tile shows on hover or focus, and on every tile in select mode or on a touch screen.
      A class on the gallery says the mode is on: a `:has()` there restyled every tile each time tiles were added.
      It sits off the image, so it never hides a stroke or a 濁点: in the collage at the end of the caption's
