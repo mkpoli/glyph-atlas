@@ -72,7 +72,7 @@ uv run scripts/build_atlas_fonts.py                 # cache/atlas-fonts/<version
 rclone copy cache/atlas-fonts/<version> r2:glyph-atlas/fonts/<version> --exclude '*.part'
 ```
 
-An upload writes one R2 object per file: 1516 for a whole build.
+An upload writes one R2 object per file: 1,516 for a whole build.
 
 ## Licences
 
