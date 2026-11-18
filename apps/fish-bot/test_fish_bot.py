@@ -38,6 +38,7 @@ class FakeMatrix:
         self.sent = sent if sent is not None else []
         self.events = []
         self.uploads = []
+        self.typed = []
         self.transactions = []
 
     def whoami(self):
@@ -67,7 +68,7 @@ class FakeMatrix:
         return "$sent"
 
     def typing(self, room_id, user_id, *, timeout_ms=15_000):
-        return None
+        self.typed.append(room_id)
 
     def upload(self, data, content_type, filename):
         self.uploads.append((len(data), content_type, filename))
@@ -753,3 +754,86 @@ def test_a_cut_download_leaves_the_sticker_out_instead_of_stopping(tmp_path, mon
     bot, matrix, store = make_bot(tmp_path)
     bot.ensure_stickers()
     assert matrix.uploads == [] and store.stickers() == {}
+
+
+def ambient_bot(tmp_path, monkeypatch, *, chance=1.0, act_value=None, **overrides):
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(fish_bot.time, "monotonic", lambda: clock["now"])
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20,
+                             ambient_chance=0.5, ambient_quiet_seconds=20, ambient_min_messages=2,
+                             ambient_room_cooldown_seconds=900, ambient_per_hour=10, **overrides)
+    bot, matrix, store = make_bot(tmp_path, config=config, act=act_value or act("哈哈哈好可愛"))
+    bot._random = lambda: chance - 0.01 if chance > 0 else 1.0
+    store.mark_introduced(ROOM)
+    return bot, matrix, store, clock
+
+
+def say_in_room(bot, body, event_id):
+    message = event(body, event_id=event_id)
+    bot.ingest(ROOM, message, backfilled=False)
+    bot.notice(ROOM, message)
+
+
+def test_joins_in_only_after_the_room_goes_quiet(tmp_path, monkeypatch):
+    bot, matrix, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
+    say_in_room(bot, "this glyph is wild", "$a")
+    say_in_room(bot, "right", "$b")
+    bot.tick()
+    assert matrix.sent == []
+    clock["now"] += 21
+    bot.tick()
+    assert [turn[0] for turn in bot.deepseek.turns] == ["ambient"]
+    assert matrix.sent[0][1]["body"] == "哈哈哈好可愛"
+    assert matrix.typed == []
+    assert "m.relates_to" not in matrix.sent[0][1]
+
+
+def test_one_plain_message_or_an_unlucky_draw_stays_quiet(tmp_path, monkeypatch):
+    bot, _matrix, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
+    say_in_room(bot, "ok", "$a")
+    clock["now"] += 21
+    bot.tick()
+    assert bot.deepseek.turns == []
+    bot._random = lambda: 0.99
+    say_in_room(bot, "ok", "$b")
+    say_in_room(bot, "sure", "$c")
+    clock["now"] += 21
+    bot.tick()
+    assert bot.deepseek.turns == []
+
+
+def test_a_lively_message_counts_alone(tmp_path, monkeypatch):
+    bot, _, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
+    say_in_room(bot, "哈哈哈哈", "$a")
+    clock["now"] += 21
+    bot._random = lambda: 0.9  # under the doubled chance of 1.0
+    bot.tick()
+    assert [turn[0] for turn in bot.deepseek.turns] == ["ambient"]
+
+
+def test_waits_out_the_room_cooldown_after_speaking(tmp_path, monkeypatch):
+    bot, _matrix, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
+    for round_number in range(2):
+        say_in_room(bot, "one", f"$a{round_number}")
+        say_in_room(bot, "two", f"$b{round_number}")
+        clock["now"] += 21
+        bot.tick()
+    assert len(bot.deepseek.turns) == 1
+
+
+def test_never_files_from_an_ambient_turn(tmp_path, monkeypatch):
+    github = FakeGitHub()
+    bot, _, _, clock = ambient_bot(tmp_path, monkeypatch, act_value=act("x", issue=True))
+    bot.github = github
+    say_in_room(bot, "one", "$a")
+    say_in_room(bot, "two", "$b")
+    clock["now"] += 21
+    bot.tick()
+    assert github.created == []
+
+
+def test_config_reads_the_chat_table(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[chat]\nambient_chance = 0.05\nambient_per_hour = 3\n", encoding="utf-8")
+    config = fish_bot.Config.load(path)
+    assert (config.ambient_chance, config.ambient_per_hour) == (0.05, 3)

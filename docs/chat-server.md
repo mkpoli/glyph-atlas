@@ -273,6 +273,10 @@ server's public directory, keeps their readable text in a local SQLite log, and 
 calls her by name (大肥魚, 大肥鱼, Big Fat Fish), by mention, or with `!fish`. The first time
 someone writes in a room after she arrives, she introduces herself there once.
 
+She also reads along. When a room goes quiet after a few messages, she takes a look now and then
+(the `[chat]` table sets how often) and may add a line, an emoji or a sticker, or stay silent. She
+never files from these turns.
+
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
 2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
 checks each against the hash in `STICKERS` and uploads it to the homeserver once; a sticker whose

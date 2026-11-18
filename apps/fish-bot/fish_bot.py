@@ -24,6 +24,7 @@ import json
 import logging
 import math
 import os
+import random
 import re
 import sqlite3
 import time
@@ -81,6 +82,14 @@ COMMAND = r"(?:(?:^|(?<=\s))!|^/)fish"
 # (a fish head), 大肥鱼V4 (DeepSeek news) and 减肥鱼油 call no one.
 HAN = "\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0003134f"
 AFTER_ADDRESS = "你妳您呀啊哦喔欸誒诶唷呢嗎吗吧來来在醬酱好幫帮"
+# Joining in unasked: research on group-chat agents finds a model alone decides poorly when to
+# speak (Bhagtani et al., arXiv 2603.11409; Nama et al., arXiv 2605.05626), so a cheap gate outside
+# the model picks the moments, after MaiBot's turn trigger (talk_value as a probability, debounced
+# batches), https://github.com/MaiM-with-u/MaiBot src/maisaka/turn_trigger/README.md (read at
+# b7f3682, 2026-11-19); the model may still stay silent. Lively messages (a question, laughter, a
+# fish) raise the chance.
+LIVELY = re.compile(r"[?？!！]|哈哈|笑死|www|ｗｗ|草|lol|lmao|ㅋㅋ|ㅎㅎ|[魚鱼鯨鲸🐳🐋🐟🐠]|whale|fish",
+                    re.IGNORECASE)
 
 log = logging.getLogger("fish-bot")
 
@@ -179,6 +188,11 @@ class Config:
     max_calls_per_user_per_hour: int = 5
     max_chats_per_hour: int = 120
     max_chats_per_user_per_hour: int = 20
+    ambient_chance: float = 0.2
+    ambient_quiet_seconds: int = 25
+    ambient_min_messages: int = 2
+    ambient_room_cooldown_seconds: int = 900
+    ambient_per_hour: int = 12
     retention_days: int = 180
     dry_run: bool = False
 
@@ -190,6 +204,9 @@ class Config:
         github = raw.get("github") or {}
         bot = raw.get("bot") or {}
         limits = raw.get("limits") or {}
+        chat = raw.get("chat") or {}
+        if not isinstance(chat, dict):
+            raise TypeError("chat must be a table")
         if not isinstance(matrix, dict) or not isinstance(deepseek, dict) or not isinstance(github, dict):
             raise TypeError("matrix, deepseek and github must be tables")
         if not isinstance(bot, dict) or not isinstance(limits, dict):
@@ -260,6 +277,11 @@ class Config:
             max_calls_per_user_per_hour=max(1, min(100, int(field(limits, "max_calls_per_user_per_hour", cls.max_calls_per_user_per_hour)))),
             max_chats_per_hour=max(1, min(2000, int(field(limits, "max_chats_per_hour", cls.max_chats_per_hour)))),
             max_chats_per_user_per_hour=max(1, min(500, int(field(limits, "max_chats_per_user_per_hour", cls.max_chats_per_user_per_hour)))),
+            ambient_chance=_clamp(_finite(field(chat, "ambient_chance", cls.ambient_chance), cls.ambient_chance), 0.0, 1.0),
+            ambient_quiet_seconds=max(0, min(600, int(field(chat, "ambient_quiet_seconds", cls.ambient_quiet_seconds)))),
+            ambient_min_messages=max(1, min(100, int(field(chat, "ambient_min_messages", cls.ambient_min_messages)))),
+            ambient_room_cooldown_seconds=max(0, int(field(chat, "ambient_room_cooldown_seconds", cls.ambient_room_cooldown_seconds))),
+            ambient_per_hour=max(0, min(1000, int(field(chat, "ambient_per_hour", cls.ambient_per_hour)))),
             retention_days=max(1, min(3650, int(field(limits, "retention_days", cls.retention_days)))),
             dry_run=dry_run,
         )
@@ -932,6 +954,10 @@ CHAT_TASKS = {
     "intro": ("You are speaking in this room for the first time. Say hi and introduce yourself in two or "
               "three short lines in the room's language: who you are, that anyone can talk to you by "
               "calling you 大肥魚, and that you can file an issue for the maintainers when asked."),
+    "ambient": ("Nobody called you; you are reading along. Most of the time stay quiet: empty `say`, no "
+                "react, no sticker. Join only when you have something fun, kind or helpful to add to the "
+                "last few messages: a short playful remark, a cute sticker, or an emoji on a message you "
+                "like. A reaction or a sticker usually beats words. Never bring up issues here."),
     "called-intro": ("Message {trigger} talks to you, and it is your first time speaking in this room. "
                      "Answer that person, and introduce yourself in a line or two: who you are, and that "
                      "anyone can talk to you by calling you 大肥魚. `say` must not be empty."),
@@ -1398,6 +1424,10 @@ class Bot:
         self._room_chats: dict[str, list[float]] = {}
         self._intro_tried: dict[str, float] = {}
         self._recent_stickers: dict[str, list[str]] = {}
+        self._ambient: dict[str, dict[str, Any]] = {}
+        self._spoke_at: dict[str, float] = {}
+        self._ambient_turns: list[float] = []
+        self._random = random.random
         self._joined_at = 0.0
         self._pruned_at = 0.0
         self._rooms_known: set[str] = set()
@@ -1422,7 +1452,8 @@ class Bot:
         wait = 1
         while True:
             try:
-                since = self.cycle(since)
+                since = self.cycle(since, timeout_ms=self._sync_wait_ms())
+                self.tick()
                 wait = 1
             except MatrixError as error:
                 if error.status in (401, 403):
@@ -1451,9 +1482,9 @@ class Bot:
         self.state.save(since)
         return since
 
-    def cycle(self, since: str) -> str:
+    def cycle(self, since: str, timeout_ms: int = SYNC_TIMEOUT_MS) -> str:
         """Wait for the next events, answer them, and keep the token the next cycle resumes from."""
-        response = self.matrix.sync(since, timeout_ms=SYNC_TIMEOUT_MS)
+        response = self.matrix.sync(since, timeout_ms=timeout_ms)
         self.process(response)
         token = self._token(response)
         self.state.save(token)
@@ -1588,17 +1619,25 @@ class Bot:
 
     def notice(self, room_id: str, event: dict[str, Any]) -> None:
         """A person's message that does not call the bot: the first one in a room since the bot came
-        is its moment to say hello."""
+        is its moment to say hello; after that, a quiet moment may be one to join in."""
         event_id = event.get("event_id")
-        if not isinstance(event_id, str) or self.store.introduced(room_id):
+        if not isinstance(event_id, str):
             return
-        if human_message(event, self.user_id, self.config.ignored_senders) is None:
+        body = human_message(event, self.user_id, self.config.ignored_senders)
+        if body is None:
             return
         if call_of(event, self.user_id, self.config.display_name, self.config.ignored_senders,
                    self.config.aliases) is not None:
             return
         ts = event.get("origin_server_ts")
         if isinstance(ts, int) and now_ms() - ts > CHAT_WINDOW_SECONDS * 1000:
+            return
+        if self.store.introduced(room_id):
+            batch = self._ambient.setdefault(room_id, {"count": 0, "lively": False})
+            batch["count"] += 1
+            batch["lively"] = batch["lively"] or bool(LIVELY.search(body))
+            batch["event_id"] = event_id
+            batch["due"] = time.monotonic() + self.config.ambient_quiet_seconds
             return
         tried = self._intro_tried.get(room_id)
         if tried is not None and time.monotonic() - tried < CHAT_WINDOW_SECONDS:
@@ -1610,6 +1649,34 @@ class Bot:
             self.turn(room_id, event_id, task="intro")
         except Exception:
             log.exception("introducing myself in %s", room_id)
+
+    def _sync_wait_ms(self) -> int:
+        if not self._ambient:
+            return SYNC_TIMEOUT_MS
+        soonest = min(batch["due"] for batch in self._ambient.values())
+        return int(max(0.0, min(SYNC_TIMEOUT_MS / 1000, soonest - time.monotonic())) * 1000)
+
+    def tick(self) -> None:
+        """Look at each room that has gone quiet, and join in now and then."""
+        now = time.monotonic()
+        for room_id in [room for room, batch in self._ambient.items() if batch["due"] <= now]:
+            batch = self._ambient.pop(room_id)
+            if batch["count"] < self.config.ambient_min_messages and not batch["lively"]:
+                continue
+            spoke = self._spoke_at.get(room_id)
+            if spoke is not None and now - spoke < self.config.ambient_room_cooldown_seconds:
+                continue
+            chance = self.config.ambient_chance * (2 if batch["lively"] else 1)
+            if self._random() >= chance:
+                continue
+            self._ambient_turns = [at for at in self._ambient_turns if now - at < 3600]
+            if len(self._ambient_turns) >= self.config.ambient_per_hour or not self._chat_budget("", room_id):
+                continue
+            self._ambient_turns.append(now)
+            try:
+                self.turn(room_id, str(batch["event_id"]), task="ambient")
+            except Exception:
+                log.exception("joining in %s", room_id)
 
     def chat(self, room_id: str, event_id: str, call: Call, sender: str = "") -> None:
         """Answer a call as 大肥魚, and hand the discussion to the issue desk when that was the ask,
@@ -1630,8 +1697,10 @@ class Bot:
         self._answer(room_id, event_id, Call(mode="auto", prompt=call.prompt))
 
     def turn(self, room_id: str, event_id: str, *, task: str, reply_to: str | None = None) -> Act | None:
-        """Read the room, ask the model for one turn, and post what it says."""
-        self.matrix.typing(room_id, self.user_id)
+        """Read the room, ask the model for one turn, and post what it says. Only a turn that owes
+        an answer shows typing; an unasked one is mostly silent."""
+        if task != "ambient":
+            self.matrix.typing(room_id, self.user_id)
         room_name, room_topic = self._room(room_id)
         try:
             self.refresh(room_id, limit=CHAT_CONTEXT)
@@ -1643,8 +1712,13 @@ class Bot:
         act = self.deepseek.act(room_name, room_topic, events, names, task=task, trigger=trigger,
                                 bot_user_id=self.user_id, stickers=self.store.stickers(),
                                 recent=self._recent_stickers.get(room_id, []))
+        if task == "ambient":
+            act = dataclasses.replace(act, issue=False)
         self.perform(room_id, event_id, act, events, reply_to=reply_to)
-        if task != "called" and (act.say or task != "intro"):
+        if act.say or act.react or act.sticker:
+            self._spoke_at[room_id] = time.monotonic()
+            self._ambient.pop(room_id, None)
+        if task in ("intro", "called-intro") and (act.say or task != "intro"):
             self.store.mark_introduced(room_id)
         return act
 
