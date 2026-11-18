@@ -1403,12 +1403,22 @@
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/key}{/if}
     {/snippet}
     {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
-    <div class="toolbar-filters">
+    <!-- What to find: the search, the work it comes from, and a fresh deal. -->
+    <div class="toolbar-query">
       <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form }, true)}
                        token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
                        onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
                        onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
+      <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
+      <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else load() }} />
+      <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
+      {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
+      {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
+      <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
+    </div>
+    <!-- Which script, and how the gallery below is shown. -->
+    <div class="toolbar-view">
       <div class="filter-tabs" aria-label={t('explore.filter.label')}>
         {#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')], ['tangut', () => t('explore.filter.tangut')]] as [value, text]}
           {@const entry = groupMap.get(value)}
@@ -1419,25 +1429,18 @@
                   onclick={() => { filter = value; load() }}><span class="filter-label">{text()}</span>{#if tabCount != null}<small class="filter-count" aria-hidden="true">{formatCompactNumber(tabCount)}</small>{/if}</button>
         {/each}
       </div>
-      <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
-      <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else load() }} />
-    </div>
-    <!-- How the collection is shown, and what to do with the page. -->
-    <div class="page-tools">
-      <div class="collection-tools">
-        <ImageStyleToggle {ink} onchange={onink} />
-        {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
-        <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
-        <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
-          {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
+      <div class="view-tools">
+        <div class="view-settings">
+          <ImageStyleToggle {ink} onchange={onink} />
+          <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
+            {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
+          </div>
+          <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
         </div>
-        <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
-        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
-        {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
-      </div>
-      <div class="page-actions">
-        <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
-        <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
+        <div class="view-actions">
+          {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
+          <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1503,52 +1506,46 @@
   .sheet-count{font-variant-numeric:tabular-nums}
   /* While the image is painted the button keeps the focus and takes no second press. */
   .sheet-save[aria-disabled="true"]{cursor:default;opacity:.45}
-  /* What narrows the collection on one row, how it is shown and what to do with the page on the next;
-     a screen wide enough for both puts them on one. */
+  /* The first row finds: the search takes the room the work filter and the deal leave it. The second
+     sits on the gallery: its scripts at the start, how it is shown and what to do with it at the end. */
   .explore > .collection-toolbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:12px;padding:16px 0}
-  .toolbar-filters{display:flex;align-items:center;gap:12px 24px;min-width:0}
-  .collection-toolbar .toolbar-filters .filter-tabs{flex-shrink:0}
-  .collection-toolbar .toolbar-filters :global(.character-search){flex:0 1 380px;min-width:240px}
-  .page-tools{display:flex;align-items:center;flex-wrap:wrap;gap:12px 24px}
-  .collection-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}
-  .page-actions{display:flex;align-items:center;gap:24px;margin-left:auto}
-  /* The works filter sits at the end of the filters, so its menu opens leftward from its right edge. */
-  @media(width > 700px){.toolbar-filters :global(.work-menu){left:auto;right:0}}
-  @media(min-width:2250px){
-    .explore > .collection-toolbar{flex-direction:row;align-items:center;gap:32px}
-    .page-tools{flex:none;flex-wrap:nowrap;margin-left:auto;gap:32px}
-  }
-  /* Where the scripts no longer fit beside the search, the search keeps the row with the works and the
-     scripts take the next. */
-  @media(max-width:1340px){
-    .toolbar-filters{flex-wrap:wrap}
-    .collection-toolbar .toolbar-filters :global(.character-search){flex:1 1 0}
-    .toolbar-filters .filter-tabs{order:1;flex-basis:100%}
-  }
+  .toolbar-query{display:flex;align-items:center;gap:24px;min-width:0}
+  .collection-toolbar .toolbar-query :global(.character-search){flex:1 1 auto;min-width:0;max-width:none}
+  .toolbar-view{display:flex;align-items:center;flex-wrap:wrap;gap:12px 24px}
+  .collection-toolbar .toolbar-view .filter-tabs{flex-shrink:0}
+  .view-tools{display:flex;align-items:center;gap:24px;margin-left:auto}
+  .view-settings{display:flex;align-items:center;gap:12px}
+  .view-actions{display:flex;align-items:center;gap:16px;padding-left:24px;border-left:1px solid var(--line)}
+  /* The works filter stands near the end of the row, so its menu opens leftward from its right edge. */
+  @media(width > 700px){.toolbar-query :global(.work-menu){left:auto;right:0}}
   /* The server cannot know the reader's size, so the slider waits for the page to wake rather than show the wrong one. */
   :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
   .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
   .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
-  /* Where the tools no longer fit one row, they flow as one line of controls and the page's actions at
-     its end show as icons; how far the image has come, or that it failed, still shows beside its icon. */
+  /* Where the scripts and the tools no longer share a row, the tools take the next one edge to edge. */
+  @media(max-width:1400px){.view-tools{flex-basis:100%;justify-content:space-between}.view-actions{padding-left:0;border-left:0}}
+  /* A narrower screen shows the page's save as an icon; how far the image has come, or that it failed,
+     still shows beside it. */
   @media(max-width:900px){
-    .collection-tools{display:contents}
-    .page-tools{gap:8px 16px}
-    .page-actions{gap:4px}
-    .page-actions .shuffle{font-size:0;gap:0;padding:8px}
-    .page-actions .shuffle svg{width:18px;height:18px}
+    .sheet-save{font-size:0;gap:0;padding:8px}
+    .sheet-save svg{width:18px;height:18px}
     .sheet-save span{margin-left:6px;font-size:11px}
   }
-  /* A phone puts the search on a row of its own, runs the scripts as one strip to scroll, and narrows the slider. */
+  /* A phone stacks the search, then the works with the actions, then the scripts as one strip to scroll,
+     then the settings. */
   @media(max-width:700px){
-    .explore > .collection-toolbar{gap:10px;padding:12px 0}
-    .collection-toolbar .toolbar-filters :global(.character-search){flex-basis:100%;min-width:0}
-    .toolbar-filters{gap:10px 12px}
-    .collection-toolbar .toolbar-filters .filter-tabs{flex-wrap:nowrap;flex-basis:calc(100% + 40px);overflow-x:auto;scrollbar-width:none;margin:-6px -20px;padding:6px 20px;scroll-padding-inline:32px;mask-image:linear-gradient(to right,transparent,#000 20px,#000 calc(100% - 32px),transparent)}
-    .toolbar-filters .filter-tabs::-webkit-scrollbar{display:none}
-    .toolbar-filters :global(.work-control){order:2;border-left:0;padding-left:0}
-    .page-tools{gap:8px 12px}
-    .zoom-control input{width:60px}
+    .explore > .collection-toolbar{flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px 12px;padding:12px 0}
+    .toolbar-query,.toolbar-view,.view-tools,.view-actions{display:contents}
+    .collection-toolbar .toolbar-query :global(.character-search){flex-basis:100%}
+    .toolbar-query :global(.work-control){order:1;margin-right:auto;border-left:0;padding-left:0}
+    .toolbar-query .quiet-link{order:1}
+    .select-toggle{order:2}
+    .sheet-save{order:3}
+    .toolbar-query > .shuffle{order:4}
+    .collection-toolbar .toolbar-view .filter-tabs{order:5;flex-wrap:nowrap;flex-basis:calc(100% + 40px);overflow-x:auto;scrollbar-width:none;margin:-6px -20px;padding:6px 20px;scroll-padding-inline:32px;mask-image:linear-gradient(to right,transparent,#000 20px,#000 calc(100% - 32px),transparent)}
+    .toolbar-view .filter-tabs::-webkit-scrollbar{display:none}
+    .view-settings{order:6;flex-basis:100%;gap:8px}
+    .zoom-control input{width:48px}
   }
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
   .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
