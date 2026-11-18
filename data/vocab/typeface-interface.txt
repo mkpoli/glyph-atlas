@@ -1,0 +1,8 @@
+# The Han characters the interface's own text is written with, beyond the core list
+# (typeface-core.txt): the catalogues of apps/review/src/locales and the markup of its routes on
+# 2026-11-19, in code point order. scripts/build_atlas_fonts.py cuts each line into one font file,
+# so a page of interface text downloads a few files. A character added to the interface later is
+# drawn from the file of its 256 code points until this list is written again.
+㐌㗂㤇㨂㭲䀡䋥丐丕业丢两个为丿么义乖书争什仅从仓们份企优传伮伶伸佈佔侖侧俟倘值偵储儂儘償儲兢內关册冲决减几击函刊则创删刪别刷剩劃劄劍劔务动効勾匣匯匹区匿區单単卡卷历參发变叠另吀吝吧启吳呈员呢咍哈响哏員哪哿唉唒售啟喃單営噪囲围囷图圖團圮址均块坭垃型埃域塊填塳壓处备复头套奧它宋实审寠对导專尝局层展層岌带帮帶幫库应开异弃弋张弼归录彩循态总恢恪悶惠戟截戶户戾扒托扫找技択护报拆拉拖拠拡择拪括拼挅捁捗换捲掉排控掲描插揭援搁搜携摘撇撮撻擇擊據擱擴擷擾攄攑攪收效整旋无旧昂显晚暂曆曠曳机杂权构析枠查査标校样核桁桅框械检椊楛楷
+榜樣橫檊檔檢欄權欠欢欣欺款歇歓步歷殘毀毋汉汚污沛沿派测浏涉淺渍渚準滚瀏瀝熙營爭版牌牒牟狀独獵獻现电甸画畫畳疊疏盒矯码确碁碎確碼磊礎票离种秒稿穹窗竖站竝竪笔筛签简篆篩籤类粘系紐級絕絞絡綏縈繋繪繫繰繼纀纂约级纪纯纸纹线组细终经结绘给络统继续维缓编缘缩缺网罕署翻联聯肢脑腦臉舉舊航范茹获营蒐薦裊裝裡複襄覈覽见视览觉訂訊託訛訣註詢該誌諺諾謄謬譜譯讓计认让议记许设访诀证识词试话询该详语误说请读调谚谢谱豎販貼賛賦賬賴贊败账质贴费资赋赏赞跃跋跟跳踪蹎蹤蹺軸較輕輯輸转轮轴轻载较辑输辦辨边达迅过运还这进连迹迻适选逾遵選邮邻郵鄰
+酩采釈释釯鈕鉛銷錄錠鍵鎖鏈鐵鑰钟钥钮铁铅铜铭银链销锁错键长閩閱閲闔關闭问间阅际陶陿隐隶隷隸难雍雕雙需韩頁項顏顛页项顺须预领频题颜额饋馆馈駁驗驳验黑點齊齐𠀧𠁑𠃣𠄩𠄽𠅍𠊛𠎬𠓀𠓑𠓨𠚢𠬃𠬠𠲵𠳒𠳚𠳨𠸗𠸜𠻀𡀯𡑲𡗄𡗅𡗉𡘯𡚢𡤓𡧲𡨸𡨹𡮈𢆥𢖕𢖵𢗖𢪰𢫚𢭑𢭮𢭯𢮿𢯢𢱗𢲧𢴑𢵰𢺹𢻴𣃣𣅶𣆰𣇞𣈜𣋀𣋁𣎃𣎏𣗓𣛠𣞄𣦍𣦎𣳔𣻽𤀓𤉜𤏬𤑟𤵖𤽸𥌀𥏍𥐇𥒥𥙩𥚯𥢅𥧪𥩯𥪝𥱬𥸠𦀴𦄣𦓡𦘧𦣗𦣰𦤾𦩻𧁷𧙷𧡊𧵆𧵑𧼋𧿨𨄴𨉓𨒒𨕭𨖅𨖲𨦥𨨷𨫊𨷑𨷯𩈘𪖫𪮊𪷪𫁧𫜵𫤢𫪏𫾗𬕌𱜢𲇀

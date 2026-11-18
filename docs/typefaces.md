@@ -23,7 +23,12 @@ A face is cut into small WOFF2 files, and a page downloads the files of the char
 - `c0` to `c7`: the 2,048 Han characters the corpus writes most, 256 to a file in that order
   (`data/vocab/typeface-core.txt`). The first file covers 59.6% of the corpus's Han crops and the
   eight together 94.8%.
+- `u0` to `u2`: the Han characters of the interface's own text that the core list lacks
+  (`data/vocab/typeface-interface.txt`), so a page of interface text set in a face downloads a few
+  files.
 - `<hhh>`: the remaining characters of the 256 code points U+hhh00 to U+hhhFF.
+- `bold/`: the `c`, `u`, kana (`030`) and full-width (`0ff`) files at weight 700, from the Noto
+  fonts alone. A character outside them is set in the regular weight.
 - `figures/<hhh>`: the registered variation sequences of those 256 code points, with the characters
   they vary, in the family `Atlas Sans Figures` or `Atlas Serif Figures`. Text with no variation
   selector never downloads one. `figures/<hhh>.json` lists the sequences the file draws, by base
@@ -31,9 +36,11 @@ A face is cut into small WOFF2 files, and a page downloads the files of the char
 
 | Face | Files | Size | Median file | Largest file |
 |---|---|---|---|---|
-| Atlas Sans, characters | 465 | 18.1 MB | 41 KB | 59 KB |
+| Atlas Sans, characters | 468 | 18.1 MB | 41 KB | 59 KB |
+| Atlas Sans, bold | 13 | 0.5 MB | 40 KB | 48 KB |
 | Atlas Sans, sequences | 250 | 2.6 MB | 2 KB | 39 KB |
-| Atlas Serif, characters | 465 | 28.5 MB | 63 KB | 99 KB |
+| Atlas Serif, characters | 468 | 28.5 MB | 63 KB | 99 KB |
+| Atlas Serif, bold | 13 | 0.6 MB | 53 KB | 63 KB |
 | Atlas Serif, sequences | 329 | 7.1 MB | 5 KB | 149 KB |
 
 `index.json` lists each file's characters as ranges, its size and hash, and the sequences a figures
@@ -77,7 +84,7 @@ uv run scripts/build_atlas_fonts.py                 # cache/atlas-fonts/<version
 rclone copy cache/atlas-fonts/<version> r2:glyph-atlas/fonts/<version> --exclude '*.part'
 ```
 
-An upload writes one R2 object per file: 2,095 for a whole build.
+An upload writes one R2 object per file: 2127 for a whole build.
 
 ## Licences
 
