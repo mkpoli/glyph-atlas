@@ -22,7 +22,7 @@ export const holderName = text => (text ?? '').replace(/\s*[(（][^()（）]*[)�
 /** The records a source line links to: its source record (a corpus glyph's record in its dataset, a
  *  crop's or page's rights record), the holder's catalogue record of the book where the record names
  *  one, and, for a page transcribed on みんなで翻刻, its page there. */
-export function sourceLinks(item, corpus = item.origin === 'corpus') {
+export function sourceLinks(item, corpus = item?.origin === 'corpus') {
   const record = corpus
     ? (/^https?:\/\//i.test(item.record_url ?? '') ? { href: item.record_url, label: t('corpus.sourceRecord') } : null)
     : (item.rights_url ? { href: item.rights_url, label: t('character.sourceRights') } : null)
@@ -32,7 +32,7 @@ export function sourceLinks(item, corpus = item.origin === 'corpus') {
 }
 
 /** The page view of the page a local crop was cut from, with the crop marked on it; a corpus glyph has none. */
-export function pageLink(item, corpus = item.origin === 'corpus') {
+export function pageLink(item, corpus = item?.origin === 'corpus') {
   if (corpus || !item.page_id || !item.id) return null
   return { href: localize('/pages/' + encodeURIComponent(item.page_id) + '?crop=' + encodeURIComponent(item.id)),
     label: item.page_number ? t('tile.page', { page: item.page_number }) : t('books.pages.heading'), internal: true }

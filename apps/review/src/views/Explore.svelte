@@ -31,7 +31,7 @@
   import RunTile from '../components/RunTile.svelte'
   import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
-  import { catalogue, character, request, shuffleSeed, number, stored, remember, saveFile } from '../lib/client.js'
+  import { catalogue, character, cropPixels, request, shuffleSeed, number, stored, remember, saveFile } from '../lib/client.js'
   import { paint } from '../lib/collageImage.js'
   import { holderName, licenceName } from '../lib/licence.js'
   import { markForms, unmarkForms } from '../lib/cropForms.js'
@@ -836,34 +836,33 @@
   async function updateItem(id, result) {
     // A skip writes nothing, so the tile stands.
     if (!result) return
-    if (result?.origin === 'corpus') {
-      const normalized = result.event ? { ...result, revision: result.event.revision ?? result.revision, state: result.event.state ?? result.state } : result
-      // A grapheme claim moves the glyph between families, and their tiles count it there.
-      const before = [...(corpus ?? []), ...(sample ?? [])].find(row => row.id === id)
-      if (before && corpusCountsAsked && claimedGrapheme(before) !== claimedGrapheme({ ...before, ...normalized })) { corpusCountsAsked = false; loadCorpusCounts(true) }
-      const replace = row => {
-        if (row.id !== id) return [row]
-        const updated = { ...row, ...normalized }
-        return (flagged && !waiting(normalized.state)) || !fitsGallery(updated) ? [] : [updated]
-      }
-      keepPlace(id, () => { corpus = corpus.flatMap(replace); sample = sample.flatMap(replace) })
-      runCrops({ [id]: normalized })
-      readGroupStats()
-      return
-    }
     try {
       const updated = await character(id)
-      // The tile that was just saved is in one of two lists: the character's gallery, or the
-      // collection's own rows. Updating the wrong one leaves the tile showing its old state.
-      const replace = item => item.id !== id ? [item] : (flagged && !waiting(updated.state)) || !fitsGallery(updated) ? [] : [updated]
-      keepPlace(id, () => { if (picked) local = local.flatMap(replace); else items = items.flatMap(replace) })
+      // A grapheme claim moves the glyph between families, and their tiles count it there.
+      const before = [...(corpus ?? []), ...(sample ?? [])].find(row => row.id === id)
+      if (updated.origin === 'corpus' && before && corpusCountsAsked && claimedGrapheme(before) !== claimedGrapheme({ ...before, ...updated })) { corpusCountsAsked = false; loadCorpusCounts(true) }
+      const replace = item => {
+        if (item.id !== id) return [item]
+        const { issue: _issue, box_pending: _boxPending, written_character: _written, identity_status: _status, identity_basis: _basis, ...rest } = item
+        const next = { ...rest, ...updated }
+        return (flagged && !waiting(updated.state)) || !fitsGallery(next) ? [] : [next]
+      }
+      keepPlace(id, () => {
+        if (updated.origin === 'corpus') {
+          if (Array.isArray(corpus)) corpus = corpus.flatMap(replace)
+          if (Array.isArray(sample)) sample = sample.flatMap(replace)
+        } else if (picked) local = local.flatMap(replace)
+        else items = items.flatMap(replace)
+      })
       runCrops({ [id]: updated })
-      runsChanged()
+      if (updated.origin !== 'corpus') runsChanged()
       readGroupStats()
-      const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
-        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 })
-      if (!closed) data = { ...(data ?? {}), counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
-        reported_count: summary.reported_count, withheld_count: summary.withheld_count }
+      if (updated.origin !== 'corpus') {
+        const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
+          reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 })
+        if (!closed) data = { ...(data ?? {}), counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
+          reported_count: summary.reported_count, withheld_count: summary.withheld_count }
+      }
     } catch (e) { if (!closed) error = e.message }
   }
   // A signed-in reviewer can select many tiles and confirm them all as they are labelled ("Looks right"),
@@ -999,7 +998,7 @@
     await Promise.all(ids.map(async id => {
       const tile = display.find(item => item.id === id) ?? runTiles.flatMap(run => run.crops ?? []).find(item => item.id === id)
       try {
-        const now = tile?.origin === 'corpus' ? { ...tile, ...(await request('/atlas/corpus/character?id=' + encodeURIComponent(id))) } : await character(id)
+        const now = await character(id)
         current[id] = now
         change[id] = (flagged && !waiting(now.state)) || !fitsGallery(now) ? null : now
       } catch { change[id] = null }
@@ -1022,7 +1021,7 @@
       ({ answered, kept: waiting } = await sendBatches(correctionBatches(target, crops, ROUND_MAX), ({ id, crops: part }) =>
         request('/atlas/corrections', { id, character: target,
           crops: part.map(item => ({ id: item.id, revision: item.revision,
-            ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) })))
+            ...cropPixels(item) })) })))
     } catch (e) {
       answered = e.answered ?? []; waiting = e.kept ?? []
       refused = (e.targets ?? []).map(target => target.id)
@@ -1160,7 +1159,7 @@
   function openReported(id) {
     const queue = bulkReport.map(entry => display.find(tile => tile.id === entry.id) ?? { id: entry.id, origin: entry.origin })
     const entry = bulkReport.find(reported => reported.id === id)
-    if (entry) inspect(id, queue, updateItem, entry.origin)
+    if (entry) inspect(id, queue, updateItem)
   }
   function select(value) { split = null; grapheme = value; load() }
   // A tile that counts corpus glyphs, which the collection's own listing leaves out, opens its
@@ -1362,7 +1361,7 @@
 <!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
 <!-- A run's select box, drawn inside its tile (`RunTile`), which ticks its own caption. -->
 {#snippet runMarks(item)}{#if selected.has(item.id) || !runChecked(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}{/snippet}
-{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} title={runTitle(item)} selected={selected.has(item.id)} checked={runChecked(item)} marks={reviewer && selectable(item) ? runMarks : undefined} {...pressing(item, i)} onclick={event => { if (selecting && !selectable(item)) event.preventDefault(); else tileClick(event, item, i, () => showRun(item, event.currentTarget)) }} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem, 'corpus'))} aria-label={t('explore.tile.inspectCorpus', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspect', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{@render tileCaption(item)}</button>{/if}{/snippet}
+{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} title={runTitle(item)} selected={selected.has(item.id)} checked={runChecked(item)} marks={reviewer && selectable(item) ? runMarks : undefined} {...pressing(item, i)} onclick={event => { if (selecting && !selectable(item)) event.preventDefault(); else tileClick(event, item, i, () => showRun(item, event.currentTarget)) }} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspectCorpus', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspect', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{@render tileCaption(item)}</button>{/if}{/snippet}
 <!-- The search term in its scripts' colours, and the code points `readable` adds to it. -->
 {#snippet term()}<ScriptText text={query} />{readable.slice(query.length)}{/snippet}
 
@@ -1485,7 +1484,7 @@
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && display.length}…{/if}</div>
   <div class="collection-bottom">{#if localName()}<span lang={locale()}>{localName()}</span>{:else}<span lang="en">GLYPH ATLAS</span>{/if}{#if bottomChecked != null}<span>{t('explore.bottom.checked', { count: bottomChecked })} <span class="separator">·</span> {t('explore.bottom.flagged', { count: bottomFlagged })}</span>{/if}</div>
   {#if openRun}<RunOccurrence occurrence={openRun} text={openRun.text} count={openRun.n} more={localize(runAddress(openRun.text))} close={closeRun}
-    onupdated={runCropUpdated} inspect={(id, origin) => inspect(id, openRun.crops, updateItem, origin)} />{/if}
+    onupdated={runCropUpdated} inspect={id => inspect(id, openRun.crops, updateItem)} />{/if}
 </section>
 
 <style>

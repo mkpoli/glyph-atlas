@@ -11,11 +11,12 @@ import { drawnForm } from './representation';
 type Json = Record<string, any>;
 export const codePoints = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 
-// The page rectangle a reviewer may redraw a local crop's box in, in page pixels: the context the
-// inspector shows, which lies inside the page. A corpus glyph's box belongs to its source, so it has none.
+// The source pixels a reviewer may redraw a crop's box in, in page/source pixels: the context
+// rectangle around the crop, when a context image and source coordinates are published.
 export function redrawLimits(data: Json): { x: number; y: number; w: number; h: number } | null {
-  const c = data?.context_box, s = data?.source_scale;
-  if (!data?.context || !c || !data.crop_box || !Array.isArray(s) || !(s[0] > 0) || !(s[1] > 0)) return null;
+  const c = data?.context_box, s = data?.source_scale ?? [1, 1];
+  if (data?.context === false || data?.proxyable === false || !c || !data?.crop_box || !data?.context_image) return null;
+  if (!Array.isArray(s) || !(s[0] > 0) || !(s[1] > 0)) return null;
   return { x: Math.floor(c.x / s[0]), y: Math.floor(c.y / s[1]), w: Math.ceil((c.x + c.w) / s[0]) - Math.floor(c.x / s[0]), h: Math.ceil((c.y + c.h) / s[1]) - Math.floor(c.y / s[1]) };
 }
 // A crop's evidence version: its id, its image checksum and its box in whole pixels; a box of anything
@@ -128,7 +129,7 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   if (row.written && row.char) record = writtenRecord(record, row.char, row.head);
   // A redrawn box is the crop's until the next publication cuts it; the image shown is still the old cut.
   if (row.x !== null) Object.assign(record, { box: { x: row.x, y: row.y, w: row.w, h: row.h }, box_pending: true });
-  return { ...record, crop_version: cropVersion(record.id, record), crop_editable: !corpus && Boolean(redrawLimits(record)) };
+  return { ...record, crop_version: cropVersion(record.id, record), crop_editable: Boolean(redrawLimits(record)) };
 }
 
 /** The cut a crop's claims name: its `crops.cut`, or the one the next publish gives it while a redrawn box

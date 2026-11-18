@@ -26,7 +26,7 @@ for (const [index, source] of input.records.entries()) {
   const sent = input.mode === 'round' ? { id: source.id, grapheme: 'U+624B', answers: [answer] }
     : input.mode === 'batch' ? { id: source.id, character: answer.character, crops: [answer] }
     : { ...answer, id: source.id, client_id: 'reviewer-test' };
-  const mode = input.mode === 'round' ? undefined : input.mode === 'batch' ? '@batch' : input.origin === 'corpus' ? '@corpus' : publicId(crop);
+  const mode = input.mode === 'round' ? undefined : input.mode === 'batch' ? '@batch' : publicId(crop);
   const hash = await captureReviews(env, [{ row, change, answer, kept: source.kept ?? null }], sent, mode, 'reviewer-test', 1790000000000 + index, priors);
   const stored = (await readReviewEvidence(env, hash!))[`crop:${crop}`];
   if (stored.publication_snapshot) priors.prior.set(crop, stored.publication_snapshot);

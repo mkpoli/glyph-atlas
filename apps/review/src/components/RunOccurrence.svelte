@@ -17,11 +17,10 @@
   import Glyph from './Glyph.svelte'
   import ContributionTerms from './ContributionTerms.svelte'
   import { sourceLinks } from '../lib/licence.js'
-  import { character, corpusCharacter, request } from '../lib/client.js'
+  import { character, cropPixels, request } from '../lib/client.js'
   import { forgetCrop } from '../lib/cropCache.js'
   import { useInspector } from '../lib/inspector.svelte.js'
   import { isUnassigned, kanaFolded } from '../lib/identity.js'
-  import { cropOrigin } from '../lib/movedCrop.js'
   import { runCharacters } from '../lib/runs.js'
   import { approveCropRequest, approvedCropPatch, canApproveCrop, occurrenceWritten } from '../lib/sequenceReview.js'
   import { t, around } from '../lib/i18n.svelte.js'
@@ -71,7 +70,7 @@
     : crop.state === 'hard' || crop.needs_segmentation ? 'waiting'
     : 'unchecked'
   function stateText(crop) {
-    if (crop.state === 'checked') return crop.origin === 'corpus' ? t('corpus.state.checkedHere') : t('state.checked')
+    if (crop.state === 'checked') return t('state.checked')
     if (crop.state === 'flagged') return ISSUE_TITLES[crop.issue] ? t(ISSUE_TITLES[crop.issue]) : t('state.flagged')
     if (crop.state === 'hard') return t('state.hard')
     if (crop.origin === 'corpus' && crop.needs_segmentation) return t('corpus.state.needsSplitting')
@@ -79,20 +78,19 @@
   }
 
   function submissionFor(crop) {
-    const sig = `${crop.id}:${crop.revision}:${crop.origin === 'corpus' ? crop.source_revision : crop.image_sha256}`
+    const sig = `${crop.id}:${crop.revision}:${Object.values(cropPixels(crop))[0]}`
     if (!submissions.has(sig)) submissions.set(sig, crypto.randomUUID())
     return { sig, id: submissions.get(sig) }
   }
 
   async function approve(crop, index) {
     if (busyId !== null || !canApproveCrop(crop) || crop.state === 'checked') return
-    const isCorpus = crop.origin === 'corpus'
     const rowHadFocus = dialog?.contains(document.activeElement) && document.activeElement?.closest('[data-crop-index]')?.dataset.cropIndex === String(index)
     busyId = crop.id; error = ''
     let sub = null, focusNext = false
     try {
       let target = crop
-      if (!isCorpus && !target.image_sha256) {
+      if (!Object.keys(cropPixels(target)).length) {
         const loaded = await character(target.id)
         const changed = cropLabel(loaded) !== cropLabel(crop) || (crop.revision != null && loaded.revision !== crop.revision)
         if (changed || loaded.state === 'checked') {
@@ -100,19 +98,17 @@
           focusNext = loaded.state === 'checked'
           return
         }
-        target = { ...target, image_sha256: loaded.image_sha256 }
+        target = { ...target, ...cropPixels(loaded) }
       }
       sub = submissionFor(target)
       const { route, body } = approveCropRequest(target, sub.id)
       const result = await request(route, body)
       submissions.delete(sub.sig)
       const patch = approvedCropPatch(target, result)
-      if (!isCorpus) {
-        inspector?.remember(target.id, {
-          choices: { issues: [], correction: null, noneSelected: false, written: null },
-          revision: patch.revision,
-        })
-      }
+      inspector?.remember(target.id, {
+        choices: { issues: [], correction: null, noneSelected: false, written: null },
+        revision: patch.revision,
+      })
       forgetCrop(target.id)
       onupdated?.(target.id, patch)
       focusNext = true
@@ -120,7 +116,7 @@
       if (sub && e?.status >= 400 && e?.status < 500) submissions.delete(sub.sig)
       if (!closed) error = e.message
       if (e?.status === 409) {
-        const fresh = await (isCorpus ? corpusCharacter(crop.id) : character(crop.id)).catch(() => null)
+        const fresh = await character(crop.id).catch(() => null)
         if (fresh) {
           onupdated?.(crop.id, fresh)
           if (fresh.state === 'checked') focusNext = true
@@ -144,7 +140,7 @@
     }
   }
 
-  const open = crop => inspect(crop.id, cropOrigin(crop))
+  const open = crop => inspect(crop.id)
 
   function stepKey(event) {
     if (event.defaultPrevented || busyId !== null || event.metaKey || event.ctrlKey || event.altKey) return
@@ -213,7 +209,7 @@
     <div class="occurrence-context">
       <figure class="occurrence-page"><RunImage crops={occurrence.crops} page={occurrence.page} vertical={occurrence.vertical} context active={activeCrop} oninspect={id => { const crop = occurrence.crops.find(c => c.id === id); if (crop) open(crop) }} /></figure>
       {#if page}<p class="occurrence-where">{page}</p>{/if}
-      <SourceCredit item={lead} {corpus} omit={source?.href} />
+      <SourceCredit item={lead} omit={source?.href} />
       {#if source}<a class="primary occurrence-source" href={source.href} target="_blank" rel="noreferrer">{source.label}</a>{/if}
     </div>
     <div class="occurrence-review">

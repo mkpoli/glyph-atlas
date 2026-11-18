@@ -89,18 +89,14 @@ describe('sequence review helpers', () => {
 
     const corpus = corpusCrop('cor:1')
     expect(approveCropRequest(corpus, 'sub-2')).toEqual({
-      route: '/atlas/corpus/reviews',
-      body: { id: 'sub-2', identity: 'cor:1', revision: 4, source_revision: 'b'.repeat(64), verdict: 'match', issue: null },
+      route: '/atlas/characters/cor%3A1',
+      body: { id: 'sub-2', revision: 4, source_revision: 'b'.repeat(64), verdict: 'match', issue: null },
     })
-    const corpusPatch = approvedCropPatch(corpus, { id: 'cor:1', origin: 'corpus', revision: 5, state: 'checked', event: { revision: 5, state: 'checked' } })
-    expect(corpusPatch).toEqual({
-      id: 'cor:1',
-      origin: 'corpus',
-      revision: 5,
+    expect(approvedCropPatch(corpus, { id: 'sub-2', results: [{ target_id: 'cor:1', revision: 5, state: 'checked' }] })).toEqual({
       state: 'checked',
+      revision: 5,
       issue: null,
     })
-    expect('event' in corpusPatch).toBe(false)
   })
 
   it('merges crop patches without losing run geometry or dating', () => {
@@ -111,15 +107,15 @@ describe('sequence review helpers', () => {
     expect(patched.state).toBe('checked')
   })
 
-  it('resolves inspected crops for changed fields, corpus saves, and local saves', async () => {
+  it('resolves inspected crops for changed fields and saves of either origin', async () => {
     const local = localCrop('loc:1')
     const corpus = corpusCrop('cor:1')
     expect(await resolveInspectedCrop(local, 'loc:1', { style: 'cursive' }, 'changed', async () => {
       throw new Error('should not fetch')
     })).toEqual({ style: 'cursive' })
-    expect(await resolveInspectedCrop(corpus, 'cor:1', { origin: 'corpus', label: 'で', event: { revision: 5, state: 'checked' } }, 'saved', async () => {
-      throw new Error('should not fetch')
-    })).toMatchObject({ origin: 'corpus', label: 'で', revision: 5, state: 'checked' })
+    expect(await resolveInspectedCrop(corpus, 'cor:1', { results: [{ revision: 5, state: 'checked' }] }, 'saved', async id => ({
+      id, origin: 'corpus', label: 'で', revision: 5, state: 'checked',
+    }))).toEqual({ id: 'cor:1', origin: 'corpus', label: 'で', revision: 5, state: 'checked' })
     expect(await resolveInspectedCrop(local, 'loc:1', { results: [{ revision: 3, state: 'checked' }] }, 'saved', async id => ({
       id, label: 'に', written_character: 'に', revision: 3, state: 'checked',
     }))).toEqual({ id: 'loc:1', label: 'に', written_character: 'に', revision: 3, state: 'checked' })

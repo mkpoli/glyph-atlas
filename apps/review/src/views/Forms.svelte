@@ -196,7 +196,7 @@
     if (event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return
     event?.preventDefault(); clearContext()
     const shown = splitK ? groups.flatMap(group => group.items) : glyphs
-    inspector.inspect(id, shown.map(glyph => ({ id: glyph.id, origin: 'corpus' })), () => { edited = true }, 'corpus')
+    inspector.inspect(id, shown, () => { edited = true })
   }
   $effect(() => {
     if (page.state.inspect || !edited) return
@@ -437,7 +437,7 @@
       {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
       {#if dated && tileDate(glyph)}<span class="member-year">{tileDate(glyph)}</span>{/if}
     </button>
-    <a class="member-open" href={cropAddress(glyph.id, 'corpus')} aria-label={t('forms.member.open', { id: glyph.id })} title={t('forms.member.open', { id: glyph.id })} onclick={event => openCrop(glyph.id, event)}>↗</a>
+    <a class="member-open" href={cropAddress(glyph.id)} aria-label={t('forms.member.open', { id: glyph.id })} title={t('forms.member.open', { id: glyph.id })} onclick={event => openCrop(glyph.id, event)}>↗</a>
   </div>
 {/snippet}
 

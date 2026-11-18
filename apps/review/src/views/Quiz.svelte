@@ -17,7 +17,7 @@
   import FormBar from '../components/FormBar.svelte'
   import ScriptText from '../components/ScriptText.svelte'
   import ScriptLine from '../components/ScriptLine.svelte'
-  import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
+  import { catalogue, character, cropPixels, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
   import { keptCrops, keptState, keyOf } from '../lib/outbox.svelte.js'
   import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
@@ -25,7 +25,6 @@
   import { firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
   import { unslug } from '../lib/gallery.js'
-  import { cropOrigin } from '../lib/movedCrop.js'
   import { useSession } from '../lib/session.svelte.js'
   let { initialGrapheme = '', initialProduction = '', inspect } = $props()
   // The browser's reviewer id, which a form marking and its undo name like every other save.
@@ -480,7 +479,7 @@
         gone(batch)
         const now = Object.fromEntries(await Promise.all(batch.ids.map(async id => {
           const i = done.before[id]
-          return [id, { ...i, ...(i.origin === 'corpus' ? await corpusCharacter(id) : await character(id)) }]
+          return [id, { ...i, ...await character(id) }]
         })))
         items = items.map(i => now[i.id] ?? i)
         unmark(batch.ids)
@@ -602,7 +601,7 @@
   }
   // A crop names the pixels it was shown with: a local crop by its page hash, a corpus glyph by its
   // source revision, which covers its box and image.
-  const pixels = i => i.origin === 'corpus' ? { source_revision: i.source_revision } : { image_sha256: i.image_sha256 }
+  const pixels = i => cropPixels(i)
   /** Take a crop out of the round: a review saved elsewhere has decided it. */
   function drop(id) {
     items = items.filter(i => i.id !== id)
@@ -614,7 +613,7 @@
    * and a save decides the crop, which leaves the selection and the problems and shows as saved.
    */
   function inspectChoice(item, opening = null) {
-    inspect(item.id, shown, inspected, item.origin === 'corpus' ? 'corpus' : 'collection', opening)
+    inspect(item.id, shown, inspected, opening)
   }
   async function inspected(id, result, how) {
     const item = items.find(i => i.id === id), round = roundId
@@ -624,12 +623,12 @@
     // A save decides the crop at once: it leaves the selection, the answers and the skips, and shows as saved.
     if (how === 'saved') {
       choices = without(choices, [id]); selected = without(selected, [id]); skipped = without(skipped, [id])
-      markRecorded([item], result?.state === 'flagged' ? 'flagged' : 'assigned')
+      markRecorded([item], (result?.results?.[0]?.state ?? result?.state) === 'flagged' ? 'flagged' : 'assigned')
       // The last crop of the issue step decided here leaves nothing to show there.
       if (step !== 'select' && !queue.length) back()
     }
-    // A corpus glyph's save answers with its record; a crop's is read again, as Explore reads it.
-    const record = item.origin === 'corpus' ? result : await character(id).catch(() => null)
+    // A crop's updated record is read again, as Explore reads it.
+    const record = await character(id).catch(() => null)
     // The round may have moved on meanwhile; the tile it left is no longer on screen.
     if (closed || roundId !== round || !record) return
     items = items.map(i => i.id === id ? { ...i, ...record } : i)
@@ -907,7 +906,7 @@
         <p class="reference-heading">{t('quiz.reference.heading')} <span>{number(references.length)}</span></p>
         <div class="reference-strip">
           {#each references as item (item.id)}
-            <button class="reference-tile" aria-label={t('quiz.reference.inspect', { label: item.label, state: item.referenceState === 'checked' ? t('quiz.reference.confirmed') : t('quiz.reference.seen') })} onclick={() => inspect(item.id, [], null, cropOrigin(item))}>
+            <button class="reference-tile" aria-label={t('quiz.reference.inspect', { label: item.label, state: item.referenceState === 'checked' ? t('quiz.reference.confirmed') : t('quiz.reference.seen') })} onclick={() => inspect(item.id)}>
               <span class="reference-glyph"><Glyph {item} /></span>
               <span class="reference-tag"><span class="status-dot" class:checked={item.referenceState === 'checked'} class:seen={item.referenceState === 'seen'}></span>{item.referenceState === 'checked' ? t('quiz.reference.confirmed') : t('quiz.reference.seen')}</span>
             </button>
@@ -924,7 +923,7 @@
         onskip={() => skip([current.id])} skipped={!!skipped[current.id]}
         targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} label={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} onchoose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
       <!-- The box is redrawn in the inspector, which saves the crop with it. -->
-      {#if currentIssues.includes('crop') && current.origin !== 'corpus'}<div class="crop-change"><button type="button" class="quiet-link adjust-crop" disabled={saving} onclick={() => inspectChoice(current, { issues: currentIssues, character: choices[current.id].character, correction: choices[current.id].correction })}>{t('character.crop.adjust')}</button></div>{/if}
+      {#if currentIssues.includes('crop') && current.crop_editable !== false}<div class="crop-change"><button type="button" class="quiet-link adjust-crop" disabled={saving} onclick={() => inspectChoice(current, { issues: currentIssues, character: choices[current.id].character, correction: choices[current.id].correction })}>{t('character.crop.adjust')}</button></div>{/if}
     </QuizFocus>
   {/if}
 

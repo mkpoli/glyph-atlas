@@ -3,12 +3,12 @@
   import { t } from '../lib/i18n.svelte.js'
   import IssueHelp from './IssueHelp.svelte'
   // `skip`, when given, adds a Skip card: not a problem, and chosen only while the crop is skipped.
-  let { chosen = [], choose, disabled = false, suggested = null, compact = false, skip = null, skipped = false } = $props()
+  let { chosen = [], choose, disabled = false, issuesDisabled = false, suggested = null, compact = false, skip = null, skipped = false } = $props()
 </script>
 <div class="issue-picker" class:compact aria-label={t('issue.picker.label')}>
   {#each issues as issue}
     <div class="issue-card-wrap">
-    <button type="button" class="issue-card" class:chosen={chosen.includes(issue.id)} data-issue={issue.id} disabled={disabled} aria-pressed={chosen.includes(issue.id)} onclick={() => choose(issue.id)}>
+    <button type="button" class="issue-card" class:chosen={chosen.includes(issue.id)} data-issue={issue.id} disabled={disabled || issuesDisabled} aria-pressed={chosen.includes(issue.id)} onclick={() => choose(issue.id)}>
       <span class="issue-example" class:joined={issue.id === 'merged'} class:cropped={issue.id === 'crop'} aria-hidden="true">
         {#if addsIssue(chosen, issue.id)}<b class="issue-adds">+</b>{/if}
         {#if issue.id === 'character'}<span class="example-old">ア</span><svg viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></svg><span>カ</span>

@@ -10,14 +10,16 @@
   // crop as it was cut. `editing` turns the box into one the reader moves and resizes here, and
   // `onedit` hears each new box, in source pixels, `onexit` an Escape. `page` is the link to the whole
   // page the crop was cut from (`pageLink`), offered in the view's corner.
-  let { item, detail = null, corpus = false, cropBox = null, disabled = false, editing = false, page = null,
+  let { item, detail = null, cropBox = null, disabled = false, editing = false, page = null,
     onedit = null, onexit = null, describedby = undefined, onload = () => {}, onerror = () => {} } = $props()
-  // A supplied record names the crop shown: the same crop, revision and image (or corpus source).
-  const matches = (supplied, shown, fromCorpus) => supplied.id === shown.id && supplied.revision === shown.revision
-    && (fromCorpus ? supplied.source_revision === shown.source_revision : supplied.image_sha256 === shown.image_sha256)
+  const isCorpus = $derived((detail ?? item)?.origin === 'corpus')
+  // A supplied record names the crop shown: the same crop, revision and image (or source revision).
+  const matches = (supplied, shown) => supplied.id === shown.id && supplied.revision === shown.revision
+    && (shown.source_revision === undefined || supplied.source_revision === shown.source_revision)
+    && (shown.image_sha256 === undefined || supplied.image_sha256 === shown.image_sha256)
   // A supplied record is in place from the first render, the server's included, so the page around
   // the crop is in the page's HTML and its photo loads with the document.
-  const first = untrack(() => detail && matches(detail, item, corpus) ? detail : null)
+  const first = untrack(() => detail && matches(detail, item) ? detail : null)
   let viewport = $state(null), data = $state(first), loading = $state(!first), detailFailed = $state(false)
   let contextReady = $state(false), contextFailed = $state(false), fullReady = $state(false), fullFailed = $state(false)
   let expandPage = $state(false)
@@ -29,7 +31,7 @@
   let rendered = first
   $effect(() => {
     const { id, revision, image_sha256, source_revision } = item
-    const supplied = detail, fromCorpus = corpus
+    const supplied = detail, fromCorpus = isCorpus
     // The record rendered with is already shown, and its photos may have loaded before hydration.
     if (rendered && supplied === rendered) { rendered = null; return }
     rendered = null
@@ -41,17 +43,16 @@
     pageSize = { width: 0, height: 0 }; zoom = 1; pan = { x: 0, y: 0 }
     pointer = null; dragging = false
     if (supplied) {
-      if (matches(supplied, { id, revision, image_sha256, source_revision }, fromCorpus)) data = supplied
+      if (matches(supplied, { id, revision, image_sha256, source_revision })) data = supplied
       else detailFailed = true
       loading = false
       return () => abort.abort()
     }
-    if (fromCorpus) { loading = false; detailFailed = true; return () => abort.abort() }
     request('/atlas/characters/' + encodeURIComponent(id), undefined, { signal: abort.signal })
       .then(result => {
         if (abort.signal.aborted) return
-        // A context from another revision must never surround the crop being judged.
-        if (result.revision === revision && result.image_sha256 === image_sha256) data = result
+        // A context from another revision or image must never surround the crop being judged.
+        if (matches(result, { id, revision, image_sha256, source_revision })) data = result
         else detailFailed = true
       })
       .catch(() => { if (!abort.signal.aborted) detailFailed = true })
@@ -67,8 +68,8 @@
     observer.observe(viewport)
     return () => observer.disconnect()
   })
-  const contextual = $derived(Boolean((corpus || data?.context) && data?.context_box && data?.crop_box && data?.context_image))
-  const fullPage = $derived(contextual && !corpus && data?.full_page_available !== false && (expandPage || contextFailed) && Boolean(data?.image_sha256))
+  const contextual = $derived(Boolean(data?.context !== false && data?.context_box && data?.crop_box && data?.context_image))
+  const fullPage = $derived(contextual && !isCorpus && data?.full_page_available !== false && (expandPage || contextFailed) && Boolean(data?.image_sha256))
   const ready = $derived(contextual && (fullReady || contextReady))
   // The box shown and outlined, and the one the view is framed on: the cut crop, so a redraw moves
   // the outline and never the page.
@@ -100,8 +101,8 @@
   const rawKnown = $derived(data?.crop_box ?? item.crop_box ?? (item.box ? toSource(item, item.box) : null))
   const known = $derived(rawKnown?.w > 0 && rawKnown?.h > 0 ? rawKnown : null)
   const cut = $derived(known ? cropCut(known, {
-    padded: isPaddedCrop(item, { corpus, data }),
-    contextBox: !corpus || data?.context_basis === 'derived_viewport' ? data?.context_box : null,
+    padded: isPaddedCrop(item, { corpus: isCorpus, data }),
+    contextBox: !isCorpus || data?.context_basis === 'derived_viewport' ? data?.context_box : null,
   }) : null)
   const early = $derived.by(() => {
     if (!known) return ''

@@ -184,34 +184,6 @@ function startMockApi(state) {
         return Response.json({ text: url.searchParams.get('text') ?? 'はの', size: 2, lead: [], inside: [], longer: [], siblings: [], limit: 12 })
       }
 
-      if (path === '/atlas/corpus/character' && req.method === 'GET') {
-        const id = url.searchParams.get('id')
-        const crop = state.corpusCrops[id]
-        return crop ? Response.json(crop) : Response.json({ detail: 'not found' }, { status: 404 })
-      }
-
-      if (path === '/atlas/corpus/reviews' && req.method === 'POST') {
-        const body = await req.json()
-        state.requests.push({ path, body })
-        const crop = state.corpusCrops[body.identity]
-        if (!crop) return Response.json({ detail: 'not found' }, { status: 404 })
-        if (body.revision !== crop.revision) return Response.json({ detail: 'revision mismatch' }, { status: 409 })
-        crop.revision += 1
-        crop.state = body.verdict === 'match' ? 'checked' : 'flagged'
-        crop.issue = body.verdict === 'match' ? null : (body.issue ?? null)
-        const nextChar = body.character ?? body.correction
-        if (nextChar) {
-          crop.written_character = nextChar
-          crop.label = nextChar
-          crop.state = 'checked'
-          crop.issue = null
-        }
-        return Response.json({
-          ...crop,
-          event: { id: state.requests.length, revision: crop.revision, state: crop.state, written_character: crop.written_character },
-        })
-      }
-
       const localSugMatch = path.match(/^\/atlas\/characters\/([^/]+)\/suggestions$/)
       if (localSugMatch && req.method === 'GET') {
         const crop = state.cropById(decodeURIComponent(localSugMatch[1]))
@@ -414,22 +386,21 @@ try {
   await clickEl('.run-occurrence-dialog .occurrence-crop-row:nth-child(1) .crop-approve')
   await browser.waitFor('document.querySelector(".run-occurrence-dialog .occurrence-crop-row:nth-child(1)")?.classList.contains("checked")')
   const corpPost0 = state.requests.at(-1)
-  assert(corpPost0?.path === '/atlas/corpus/reviews' && corpPost0?.body?.identity === 'corpus-run-0' && corpPost0?.body?.verdict === 'match', `expected corpus match POST, got ${JSON.stringify(corpPost0)}`)
+  assert(corpPost0?.path === '/atlas/characters/corpus-run-0' && corpPost0?.body?.verdict === 'match' && corpPost0?.body?.source_revision !== undefined, `expected corpus match POST, got ${JSON.stringify(corpPost0)}`)
 
-  // Fix corpus crop 1 via CorpusDialog
+  // Fix corpus crop 1 in the same CharacterDialog a collection crop opens in
   await clickEl('.run-occurrence-dialog .occurrence-crop-row:nth-child(2) .crop-fix')
-  await browser.waitFor('document.querySelector(".corpus-dialog[open]") !== null')
-  await browser.waitFor('document.querySelector(".corpus-dialog[open] .crop-review") !== null')
-  await clickEl('.corpus-dialog .issue-card[data-issue="character"]')
-  await browser.waitFor('document.querySelector(".corpus-dialog .suggestion-choice button") !== null')
-  await clickEl('.corpus-dialog .suggestion-choice button')
-  await browser.waitFor('document.querySelector(".corpus-dialog .save-character") && !document.querySelector(".corpus-dialog .save-character").disabled')
-  await clickEl('.corpus-dialog .save-character')
+  await browser.waitFor('document.querySelector(".character-dialog[open]:not(.run-occurrence-dialog) .crop-review") !== null')
+  await clickEl('.character-dialog .issue-card[data-issue="character"]')
+  await browser.waitFor('document.querySelector(".character-dialog .suggestion-choice button") !== null')
+  await clickEl('.character-dialog .suggestion-choice button')
+  await browser.waitFor('document.querySelector(".character-dialog .save-character") && !document.querySelector(".character-dialog .save-character").disabled')
+  await clickEl('.character-dialog .save-character')
 
-  await browser.waitFor('document.querySelector(".corpus-dialog[open]") === null')
+  await browser.waitFor('document.querySelector(".character-dialog[open]:not(.run-occurrence-dialog)") === null')
   await browser.waitFor('document.querySelector(".run-occurrence-dialog .occurrence-crop-row:nth-child(2)")?.classList.contains("checked")')
   const corpPost1 = state.requests.at(-1)
-  assert(corpPost1?.path === '/atlas/corpus/reviews' && corpPost1?.body?.identity === 'corpus-run-1', `expected corpus review POST for corpus-run-1, got ${JSON.stringify(corpPost1)}`)
+  assert(corpPost1?.path === '/layers/units/corpus-run-1', `expected character fix POST for corpus-run-1, got ${JSON.stringify(corpPost1)}`)
 
   // Verify phone viewport has no horizontal overflow inside open RunOccurrence.
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })

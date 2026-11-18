@@ -186,7 +186,7 @@
   {#if !loading && !error && total === 0}<p class="run-empty">{t('run.empty')}</p>{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && items.length}…{/if}</div>
   {#if detail}<RunOccurrence occurrence={detail} {text} more={work || form || hand ? localize(runAddress(text)) : null} onmore={() => choose({ work: '', form: '', hand: '' })} previous={previousDetail} next={nextDetail} position={detailPosition} close={closeDetail}
-    onupdated={patchRunCrop} inspect={(id, origin) => inspect(id, detail.crops, cropInspected, origin)} />{/if}
+    onupdated={patchRunCrop} inspect={id => inspect(id, detail.crops, cropInspected)} />{/if}
 </section>
 
 <style>

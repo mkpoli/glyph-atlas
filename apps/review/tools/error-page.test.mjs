@@ -16,7 +16,6 @@ describe('an error', () => {
   it('is told by its status, its route and the connection', () => {
     expect(errorCase({ status: 404 })).toBe('notFound')
     expect(errorCase({ status: 404, routeId: '/[lang=locale]/crop/[id]' })).toBe('crop')
-    expect(errorCase({ status: 404, routeId: '/[lang=locale]/corpus/[id]' })).toBe('crop')
     expect(errorCase({ status: 404, routeId: '/[lang=locale]/character/[code]' })).toBe('character')
     expect(errorCase({ status: 404, routeId: '/[lang=locale]/forms/[[family]]' })).toBe('forms')
     expect(errorCase({ status: 503, code: 'busy' })).toBe('busy')
@@ -34,6 +33,7 @@ describe('a missing address', () => {
     expect(suggestion('/' + encodeURIComponent('か\u3099'))).toEqual({ kind: 'character', path: '/character/U+304B-U+3099', text: 'か\u3099' })
     expect(suggestion('/runs/' + encodeURIComponent('申候'))).toEqual({ kind: 'sequence', path: '/sequence/' + encodeURIComponent('申候'), text: '申候' })
     expect(suggestion('/crops/codh:200005598:x:B0001:C0118')).toEqual({ kind: 'crop', path: '/crop/' + encodeURIComponent('codh:200005598:x:B0001:C0118'), text: 'codh:200005598:x:B0001:C0118' })
+    expect(suggestion('/corpus/codh:200005598:x:B0001:C0118')).toEqual({ kind: 'crop', path: '/crop/' + encodeURIComponent('codh:200005598:x:B0001:C0118'), text: 'codh:200005598:x:B0001:C0118' })
   })
   it('offers nothing for words, broken escapes or the page already tried', () => {
     for (const path of ['/', '/nope', '/about/team', '/%E0%A4%A', '/U+110000']) expect(suggestion(path)).toBe(null)

@@ -35,7 +35,7 @@ export function errorCase({ status, code, message = '', routeId = '', online = t
   if (status === 503 && code === 'busy') return 'busy'
   if (status >= 500) return 'server'
   if (status === 404) {
-    if (/\/(crop|corpus)\/\[id\]$/.test(routeId)) return 'crop'
+    if (/\/crop\/\[id\]$/.test(routeId)) return 'crop'
     if (/\/(character|chronology)\/\[code\]$/.test(routeId)) return 'character'
     if (/\/forms\/\[\[family\]\]$/.test(routeId)) return 'forms'
     return 'notFound'

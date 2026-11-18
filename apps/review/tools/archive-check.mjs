@@ -72,8 +72,8 @@ try {
   const hasUnassigned = await browser.evaluate(`!![...document.querySelectorAll('.glyph-tile.corpus .tile-label')].find(el => el.textContent === 'Unassigned')`)
   assert(hasUnassigned, 'normalized source rows are mislabeled as written characters')
   await browser.evaluate(`[...document.querySelectorAll('.glyph-tile.corpus')].find(el => el.querySelector('.tile-label').textContent === 'Unassigned').click()`)
-  await browser.waitFor(`document.querySelector('.corpus-dialog[open] .unassigned-title')`)
-  assert(await browser.evaluate(`document.querySelector('.corpus-dialog .save-character').disabled`), 'unassigned source label can be confirmed without a choice')
+  await browser.waitFor(`document.querySelector('.character-dialog[open] .unassigned-title')`)
+  assert(await browser.evaluate(`document.querySelector('.character-dialog .save-character').disabled`), 'unassigned source label can be confirmed without a choice')
   await click('[aria-label="Close reviewer"]')
   const group = await browser.evaluate(`document.querySelector('[data-visual-group]')?.dataset.visualGroup ?? null`)
   if (group) {

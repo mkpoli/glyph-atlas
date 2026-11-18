@@ -74,7 +74,7 @@ export function cropSource(record: Json): Source {
 
 /** A crop at one of its evidence versions, by default the one its record has now. A version is pixels and
  *  a box, and the label is the record's now; an earlier cut is cited without it, by its source alone. */
-export function cropEntry(record: Json, origin: 'collection' | 'corpus' = 'collection', version: string | null = record.crop_version ?? null): Entry {
+export function cropEntry(record: Json, version: string | null = record.crop_version ?? null): Entry {
   const id = String(record.id);
   const token = versionToken(id, version);
   const unassigned = record.identity_status === 'unassigned'
@@ -86,7 +86,7 @@ export function cropEntry(record: Json, origin: 'collection' | 'corpus' = 'colle
   const form = label && forms.length && forms.join(' / ') !== label ? forms.join(' / ') : undefined;
   return {
     kind: 'crop', id, label, ...(form ? { form } : {}),
-    path: (origin === 'corpus' ? '/corpus/' : '/crop/') + idPath(id) + (token ? '?v=' + token : ''),
+    path: '/crop/' + idPath(id) + (token ? '?v=' + token : ''),
     ...(token ? { version: version!, token } : {}), source: cropSource(record),
   };
 }

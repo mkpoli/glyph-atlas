@@ -105,3 +105,12 @@ export function withGraphemeClaim(crop, claim, own = null) {
   const saved = { ...crop, grapheme_claim: claim }
   return { ...saved, grapheme: claimedGrapheme(saved) ?? own ?? crop.grapheme }
 }
+
+/** The pixel token a crop is checked against: a corpus glyph by its source revision, a crop by
+ *  its page hash (and with `withImage`, its crop image when no hash was published). */
+export function cropPixels(item, { withImage = false } = {}) {
+  if (!item) return {}
+  if (item.origin === 'corpus') return item.source_revision !== undefined ? { source_revision: item.source_revision } : {}
+  if (item.image_sha256 !== undefined) return { image_sha256: item.image_sha256 }
+  return withImage && item.image !== undefined ? { image: item.image } : {}
+}

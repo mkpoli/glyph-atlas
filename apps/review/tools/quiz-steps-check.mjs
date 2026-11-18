@@ -348,13 +348,13 @@ try {
   })
   await check('corpus reviewer shares the viewport without treating provenance as page pixels', async () => {
     const before = pagePhotoRequests, writes = posted.length
-    await browser.evaluate(`visit('/en/corpus/' + encodeURIComponent('codh:200008316:200008316_00030_2:B0001:C0027'))`)
-    await browser.waitFor('document.querySelector(".corpus-dialog .crop-viewport")?.dataset.ready === "true"')
-    await browser.waitFor('document.querySelector(".corpus-dialog .save-character")?.disabled === false')
-    assert(!await browser.evaluate('!!document.querySelector(".corpus-dialog .inspector-crop, .corpus-dialog .nearby, .corpus-dialog .page-photo")'), 'corpus has duplicate views or wrong page source')
+    await browser.evaluate(`visit('/en/crop/' + encodeURIComponent('codh:200008316:200008316_00030_2:B0001:C0027'))`)
+    await browser.waitFor('document.querySelector(".character-dialog .crop-viewport")?.dataset.ready === "true"')
+    await browser.waitFor('document.querySelector(".character-dialog .save-character")?.disabled === false')
+    assert(!await browser.evaluate('!!document.querySelector(".character-dialog .inspector-crop, .character-dialog .nearby, .character-dialog .page-photo")'), 'corpus has duplicate views or wrong page source')
     assert(pagePhotoRequests === before, 'corpus provenance used as a page image hash')
     await browser.evaluate('document.querySelector(".crop-viewport").scrollIntoView({ block: "center", behavior: "instant" })')
-    const point = await browser.centre('.corpus-dialog .crop-viewport')
+    const point = await browser.centre('.character-dialog .crop-viewport')
     await browser.drag(point, {x: point.x + 25, y:point.y + 20})
     assert(await browser.evaluate('Number(document.querySelector(".crop-viewport").dataset.panX)') === 25, 'corpus context did not pan')
     await click('.reset-crop')
