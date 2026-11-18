@@ -1,6 +1,6 @@
 import { t, withText } from './i18n.svelte.js'
 import { productionLabel } from '../components/ProductionBadge.svelte'
-import { formNames } from './cropForms.js'
+import { formNames, formState } from './cropForms.js'
 import { datingLine } from './dating.js'
 
 /** What a record says about its own reliability, in one badge: withheld, machine, outside the classifier's classes, or confirmed.
@@ -43,9 +43,12 @@ export function cropDetails(item) {
   const work = workTitle(item)
   const page = item.page_number ? t('tile.page', { page: item.page_number }) : null
   // The form the site holds for the crop, when it is other than the label: the shape the letterforms
-  // take, the crop still filed under its label. Competing forms are named together.
+  // take, the crop still filed under its label. Competing forms are named together. A form the reader
+  // could not name is shown as its state: the variant is unknown, or the ink is.
   const names = formNames(item.form)
-  const written = names.length && names.join(' / ') !== item.label ? withText('written.detail', 'form', { form: names.join(' / ') }) : null
+  const held = formState(item.form)
+  const written = held === 'unresolved' ? t('written.unknownVariant') : held === 'unreadable' ? t('written.unreadable')
+    : names.length && names.join(' / ') !== item.label ? withText('written.detail', 'form', { form: names.join(' / ') }) : null
   return [written, productionLabel(item), state, origin,
     [work, page].filter(Boolean).join(' · ') || null, datingLine(item), typeof item.source === 'string' ? item.holder : (item.source?.holder ?? item.holder)]
     .filter(Boolean)

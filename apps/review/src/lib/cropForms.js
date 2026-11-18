@@ -81,9 +81,16 @@ export function formNames(form) {
   return (form?.values ?? []).filter(value => value.text).map(value => value.text)
 }
 
+/** The state a crop's form holds when no shape is named: `unresolved` (the form is unknown) or
+ *  `unreadable` (the ink is). Null when the slot names a form, or holds none. */
+export const formState = form => form?.status === 'disputed' ? null : (form?.values ?? []).find(value => value.state)?.state ?? null
+/** The value the unknown-variant choice claims: a reader looked and cannot name the shape. */
+export const UNRESOLVED = 'unresolved'
+export const isFormState = value => value === UNRESOLVED || value === 'unreadable'
+
 /** The form a crop is shown as now: the form the site holds for it, or the character it is written
- *  as; none while people disagree, so that any form chosen is a claim. */
-export const formOf = crop => crop?.form?.status === 'disputed' ? ''
+ *  as; none while people disagree or while the form is a state, so that any form chosen is a claim. */
+export const formOf = crop => crop?.form?.status === 'disputed' || formState(crop?.form) ? ''
   : formNames(crop?.form)[0] ?? crop?.written_character ?? crop?.label ?? ''
 
 const corpusOf = crop => crop.origin === 'corpus'
@@ -138,9 +145,11 @@ async function writeCharacter(crop, character) {
  * A form that is an encoded member of the crop's own grapheme (仮 and 假, は and 𛂞) is that character,
  * so the crop is reviewed as written with it, and the form is claimed on it. Any other form (a variant,
  * a derived shape, an IDS) is claimed alone, and the crop keeps its character; its own character,
- * chosen, is a confirmation of it. A claim replaces the reader's earlier one on the crop.
+ * chosen, is a confirmation of it. A state (`unresolved`) names no shape and is claimed alone. A claim
+ * replaces the reader's earlier one on the crop.
  */
 export async function setForm(crop, form) {
+  if (isFormState(form)) return { ...await claimForm(crop, form), reviewed: false }
   const written = crop.written_character ?? crop.label
   const { members } = await listForms(written)
   if (form === written || !members.some(member => member.char === form)) return { ...await claimForm(crop, form), reviewed: false }
