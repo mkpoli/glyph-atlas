@@ -20,9 +20,13 @@ export async function standing(names, known = new Map(), of = '') {
   if (!wanted.length) return known
   const chunks = []
   for (let from = 0; from < wanted.length; from += NAMES) chunks.push(wanted.slice(from, from + NAMES))
-  const found = await Promise.all(chunks.map(chunk => readStructures(chunk.join(''), of)))
+  const settled = await Promise.allSettled(chunks.map(chunk => readStructures(chunk.join(''), of)))
+  if (settled.every(answer => answer.status === 'rejected')) throw settled[0].reason
+  // A chunk that failed keeps what was known of its names.
+  const asked = new Set(chunks.filter((_, i) => settled[i].status === 'fulfilled').flat())
+  const found = settled.filter(answer => answer.status === 'fulfilled').map(answer => answer.value)
   return new Map([
-    ...[...known].filter(([char]) => !wanted.includes(char)),
+    ...[...known].filter(([char]) => !asked.has(char)),
     ...found.flatMap(answer => (answer.items ?? []).flatMap(group => group.chars.map(char =>
       [char, { id: group.id, label: group.label, by: group.claimed?.[char] ?? null, others: answer.filed?.[char] ?? [],
         part: (group.folded ?? []).find(part => part.chars.includes(char)) ?? null }]))),
