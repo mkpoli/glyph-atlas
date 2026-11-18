@@ -2,7 +2,7 @@
   import CropContext from './CropContext.svelte'
   import { tileDate } from '../lib/dating.js'
   import ScriptText from './ScriptText.svelte'
-  import { corpusCharacter } from '../lib/client.js'
+  import { character } from '../lib/client.js'
   import { glyphContext } from '../lib/glyphContext.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   import { cropAddress } from '../lib/inspector.svelte.js'
@@ -13,7 +13,7 @@
   // Records already asked for, so passing the pointer back over a glyph shows it without a request.
   const records = new Map()
   const record = id => {
-    if (!records.has(id)) records.set(id, corpusCharacter(id).catch(e => { records.delete(id); throw e }))
+    if (!records.has(id)) records.set(id, character(id).catch(e => { records.delete(id); throw e }))
     return records.get(id)
   }
   const id = $derived(glyphContext.hovered ?? glyphContext.pinned)
@@ -37,11 +37,11 @@
     </header>
     <div class="context-figure">
       {#if data?.image && data.proxyable}
-        {#key data.id + ':' + data.revision}<CropContext item={data} detail={data} corpus disabled={!pinned} />{/key}
+        {#key data.id + ':' + data.revision}<CropContext item={data} detail={data} disabled={!pinned} />{/key}
       {:else if data || failed}<span class="context-missing">{t('character.image.unavailable')}</span>
       {:else}<span class="shimmer"></span>{/if}
     </div>
-    <a class="context-id" href={cropAddress(id, 'corpus')} onclick={event => onopen?.(id, event)}><code>{id}</code><span aria-hidden="true">↗</span><span class="open-label">{t('forms.context.open')}</span></a>
+    <a class="context-id" href={cropAddress(id)} onclick={event => onopen?.(id, event)}><code>{id}</code><span aria-hidden="true">↗</span><span class="open-label">{t('forms.context.open')}</span></a>
   </aside>
 {/if}
 

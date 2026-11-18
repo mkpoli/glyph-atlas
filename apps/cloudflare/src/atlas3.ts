@@ -1,4 +1,5 @@
 import { readRecords, recordKey } from './records';
+import { redrawLimits } from './cropRecords';
 import type { Timing } from './timing';
 
 // Reads of the new storage layout (docs/decisions/0005-storage-rebuild.md): the crop index in the D1
@@ -166,6 +167,7 @@ export async function cropItems(env: Env, ids: number[], { given = new Map(), kn
     // A corpus glyph with no character yet keeps the label its source gave it.
     items.push({ ...record, id: publicId(id), source_id: entry.id, label: row.char ?? (row.kind === 1 ? whole.label ?? '' : ''),
       origin: row.kind === 1 ? 'corpus' : 'local', production: row.production ?? 'unknown',
+      crop_editable: Boolean(redrawLimits(whole)),
       category: name('category', row.category), style: name('style', row.style), state: name('state', row.state),
       revision: row.revision, cut: row.cut, page_id: row.page_key, document: row.document, year: row.year, withheld: row.quiz === 0, flags: row.flags });
   }

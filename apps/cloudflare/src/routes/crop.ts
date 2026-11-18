@@ -3,7 +3,7 @@
 // page it sits on. Crops are named by public id; an old text id or a retired crop's id redirects
 // (`atlas3Crops.ts`).
 import { bundle, publicId, pageOf, slotOf } from '../atlas3';
-import { cropParam, cropQueryParam, movedPathResponse, movedQueryResponse } from '../atlas3Crops';
+import { cropParam, movedPathResponse } from '../atlas3Crops';
 import { catalogueVersion } from '../atlas3Stamps';
 import { cropVotes, restoreVotes } from '../atlas3Votes';
 import { Problem } from '../busy';
@@ -112,7 +112,7 @@ async function cite(env: Env, ctx: ExecutionContext, url: URL, raw: string): Pro
   }
   const name = publicId(crop.row.id);
   const now = new Date(), day: Day = [now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate()];
-  const key = new Request(`${url.origin}/atlas/cite/crop/${name}?v=${token ?? ''}&f=${format}&d=${day.join('-')}&c=${encodeURIComponent(await catalogueVersion(env))}`);
+  const key = new Request(`${url.origin}/atlas/cite/crop/${name}?v=${token ?? ''}&f=${format}&d=${day.join('-')}&c=${encodeURIComponent(await catalogueVersion(env))}&s=2`);
   const cached = await caches.default.match(key);
   if (cached) return new Response(cached.body, { headers: { ...Object.fromEntries(cached.headers), 'cache-control': 'no-cache' } });
   const { record, entry } = crop, document = documentFor(crop);
@@ -125,7 +125,7 @@ async function cite(env: Env, ctx: ExecutionContext, url: URL, raw: string): Pro
     if (old) version = versions.find(v => v.source === old)!.id;
     if (!version) throw new Problem(404, 'This crop has no version by that name.');
   }
-  const cited = cropEntry({ ...record, ...(honkoku ? { honkoku_url: honkoku } : {}) }, crop.row.kind === 1 ? 'corpus' : 'collection', version);
+  const cited = cropEntry({ ...record, ...(honkoku ? { honkoku_url: honkoku } : {}) }, version);
   const body = format === 'bibtex' ? bibtex(cited, url.origin, day) + '\n' : format === 'hayagriva' ? hayagriva(cited, url.origin, day)
     : JSON.stringify([csl(cited, url.origin, day)], null, 2);
   // The edge keeps a copy for the day it is dated; a browser asks again, so a citation is never dated a day late.
@@ -233,13 +233,6 @@ const segment = (raw: string, message: string) => { try { return decodeURICompon
 /** The answer of a crop route, or null for a path that is none of them. */
 export async function cropRoute(env: Env, ctx: ExecutionContext, url: URL): Promise<Response | null> {
   const path = url.pathname, q = url.searchParams;
-  if (path === '/atlas/corpus/character') {
-    const raw = q.get('id') ?? '', param = await cropQueryParam(env, raw, ctx);
-    if (param && 'moved' in param) return movedQueryResponse(url, 'id', param.moved);
-    const found = param && 'id' in param ? await foundCrop(env, param.id) : null;
-    if (!found) throw new Problem(404, ABSENT);
-    return json(await inspected(env, found));
-  }
   const sample = path.match(/^\/layers\/visual-groups\/samples\/([^/]+)\/image$/);
   if (sample) {
     const found = await named(env, ctx, url, sample[1]);

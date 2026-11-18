@@ -197,8 +197,7 @@
   // The work and its holder, as a tile names them; the date is the year beside the score, as on Explore's tiles.
   const sourceLines = item => { const dating = datingLine(item); return cropDetails(item).filter(line => line !== dating).slice(-2) }
   function openCrop(item) {
-    const origin = entry => entry.origin === 'corpus' ? 'corpus' : 'collection'
-    inspect(item.id, shown.map(entry => ({ ...entry, origin: origin(entry) })), null, origin(item))
+    inspect(item.id, shown)
   }
 
   // An image the search box was given opens once the kept model is known to be usable.

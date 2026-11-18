@@ -1,4 +1,4 @@
-import { request, character as readCrop, corpusCharacter } from './client.js'
+import { request, character as readCrop, cropPixels } from './client.js'
 import { character as readCard, ids as readIds } from './layers.js'
 import { drawFigure, figuresOf } from './mjFigures.js'
 import { compatibility } from '../../../cloudflare/src/representation.ts'
@@ -86,9 +86,8 @@ export function formNames(form) {
 export const formOf = crop => crop?.form?.status === 'disputed' ? ''
   : formNames(crop?.form)[0] ?? crop?.written_character ?? crop?.label ?? ''
 
-const corpusOf = crop => crop.origin === 'corpus'
 const reread = async crop => {
-  const record = corpusOf(crop) ? await corpusCharacter(crop.id) : await readCrop(crop.id)
+  const record = await readCrop(crop.id)
   return crop.origin ? { ...record, origin: crop.origin } : record
 }
 
@@ -123,10 +122,9 @@ async function claimForm(crop, form, review = null) {
  *  crop as it now stands and the review's submission id. */
 async function writeCharacter(crop, character) {
   const { id } = submission(['character', crop.id, crop.revision, character])
-  if (corpusOf(crop)) await request('/atlas/corpus/reviews', { id, identity: crop.id, revision: crop.revision,
-    source_revision: crop.source_revision, verdict: 'wrong', issue: 'character', character })
-  else await request('/layers/units/' + encodeURIComponent(crop.id), { id, revision: crop.revision,
-    image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character })
+  const pixels = cropPixels(crop)
+  await request('/atlas/characters/' + encodeURIComponent(crop.id), { id, revision: crop.revision,
+    ...pixels, verdict: 'wrong', issue: 'character', character })
   return { crop: await reread(crop), review: id }
 }
 

@@ -13,7 +13,6 @@
   import { noteArrival, noteNavigation } from '$lib/keptViews.js'
   import { page } from '$app/state'
   import CharacterDialog from '$components/CharacterDialog.svelte'
-  import CorpusDialog from '$components/CorpusDialog.svelte'
   import ExportReviews from '$components/ExportReviews.svelte'
   import CollectionProgress from '$components/CollectionProgress.svelte'
   import DatabaseStatus from '$components/DatabaseStatus.svelte'
@@ -21,7 +20,6 @@
   import SiteSelect from '$components/SiteSelect.svelte'
   import SponsorButton from '$components/SponsorButton.svelte'
   import { createInspector, provideInspector } from '$lib/inspector.svelte.js'
-  import { cropOrigin } from '$lib/movedCrop.js'
   import { prefetchCrop, forgetCrop } from '$lib/cropCache.js'
   import { number } from '$lib/client.js'
   import { createSession, provideSession } from '$lib/session.svelte.js'
@@ -43,7 +41,7 @@
   // A crop page is a crop opened over the collection; a crop the inspector opened takes over from it.
   // Closing it moves to the collection's address in place, and Back opens it again.
   // A shallow Back to the list keeps the crop route mounted, so the address must still be the crop's.
-  const routed = $derived(page.data.record && !page.state.closed && !page.state.inspect && /^\/(crop|corpus)\//.test(path) ? { id: page.params.id, origin: page.route.id?.endsWith('/corpus/[id]') || page.data.record.origin === 'corpus' ? 'corpus' : 'collection' } : null)
+  const routed = $derived(page.data.record && !page.state.closed && !page.state.inspect && /^\/crop\//.test(path) ? { id: page.params.id } : null)
   const shown = $derived(inspector.shown ?? routed)
   const index = $derived(inspector.index)
   const previous = $derived(index > 0 ? () => inspector.step(-1) : null)
@@ -61,7 +59,7 @@
   $effect(() => {
     const queue = inspector.queue, near = [queue[index + 1], queue[index - 1]].filter(Boolean)
     // A moment later, so the crop on show is read first.
-    const timer = setTimeout(() => { for (const item of near) prefetchCrop(item.id, cropOrigin(item)) }, 400)
+    const timer = setTimeout(() => { for (const item of near) prefetchCrop(item.id) }, 400)
     return () => clearTimeout(timer)
   })
   const position = $derived(index >= 0 ? `${number(index + 1)} / ${number(inspector.queue.length)}` : '')
@@ -145,7 +143,7 @@
     · <a href={localize('/design')}>{t('nav.design')}</a>
     · <ChatLinks /></p>
 </footer>
-{#if shown}{#if shown.origin === 'corpus'}<CorpusDialog id={shown.id} {preview} {changed} {reviewed} {skipped} {close} {saved} {previous} {next} {position} {initial} {cited} />{:else}<CharacterDialog id={shown.id} {preview} {changed} {reviewed} {skipped} {close} {saved} opening={inspector.opening} {previous} {next} {position} {initial} {cited} />{/if}{/if}
+{#if shown}<CharacterDialog id={shown.id} {preview} {changed} {reviewed} {skipped} {close} {saved} opening={inspector.opening} {previous} {next} {position} {initial} {cited} />{/if}
 {#if savedNotice}<div class="save-toast" role="status">✓ {savedNotice}</div>{/if}
 <DatabaseStatus />
 {#if exporting}<ExportReviews close={() => { exporting = false; menuButton?.focus() }} />{/if}

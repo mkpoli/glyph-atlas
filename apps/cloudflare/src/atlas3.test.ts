@@ -95,9 +95,38 @@ describe('new-layout listing items', () => {
   it('read a corpus glyph’s record from its pack', async () => {
     const { env, g } = setup();
     const [item] = await cropItems(env, [g]);
-    expect(item).toMatchObject({ id: publicId(g), source_id: 'kmnist:1', origin: 'corpus', image: '/atlas/media/k.webp', label: '所', state: 'pending' });
+    expect(item).toMatchObject({ id: publicId(g), source_id: 'kmnist:1', origin: 'corpus', image: '/atlas/media/k.webp', label: '所', state: 'pending', crop_editable: false });
     expect(item.text).toBeUndefined();
     expect(item.record_place).toBeUndefined();
+  });
+
+  it('computes crop_editable on listing items from redrawLimits before dropping context fields', async () => {
+    const { db, env, page } = setup();
+    const gctx = cropId(page + 1, 1);
+    db.exec(`INSERT INTO crops(id,kind,book,char,production,category,style,state,quiz,year,shuffle,cut,revision,flags) VALUES(${gctx},1,2,1,1,NULL,NULL,0,1,NULL,8,0,0,0)`);
+    const rec = new TextEncoder().encode(JSON.stringify({ id: 'kmnist:ctx', label: '所', image: '/atlas/media/k.webp',
+      proxyable: true, context_image: 'https://example.org/ctx.jpg', context_box: { x: 0, y: 0, w: 100, h: 100 }, crop_box: { x: 10, y: 10, w: 20, h: 20 } }));
+    const pack = new Uint8Array(rec.length); pack.set(rec, 0);
+    // Stub a second slot cleanly using the existing test R2 bucket setup:
+    const bundleBytes = await (await env.MEDIA.get(bundleKey(page + 1, 1)))!.arrayBuffer();
+    const bundle = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(bundleBytes as Uint8Array<ArrayBuffer>)));
+    bundle.crops.push({ slot: 1, id: 'kmnist:ctx', label: '所', record_place: ['packs/ctx.bin', 0, rec.length] });
+    const putBundle = env.MEDIA.get;
+    const extra = new Map<string, Uint8Array>([
+      [bundleKey(page + 1, 1), Bun.gzipSync(JSON.stringify(bundle))],
+      ['packs/ctx.bin', pack],
+    ]);
+    (env.MEDIA as any).get = async (key: string, opts?: any) => {
+      const hit = extra.get(key);
+      if (hit) {
+        const sliced = opts?.range ? hit.slice(opts.range.offset, opts.range.offset + opts.range.length) : hit;
+        return { body: new Response(sliced).body, arrayBuffer: async () => sliced.slice().buffer };
+      }
+      return await putBundle(key, opts);
+    };
+    const [item] = await cropItems(env, [gctx]);
+    expect(item).toMatchObject({ id: publicId(gctx), origin: 'corpus', crop_editable: true });
+    expect(item.context_image).toBeUndefined();
   });
 
   it('read nearby corpus records in one range', async () => {

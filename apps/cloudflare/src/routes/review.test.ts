@@ -8,7 +8,8 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { ownedActors, ownedKeys } from '../auth';
 import { Problem } from '../busy';
 import { body, canonical, literal, text } from '../input';
-import { setForm, type ClaimTools } from './claims';
+import { formOfCrop, setForm, type ClaimTools } from './claims';
+import { foundCrop } from '../cropRecords';
 import { STALE_CODE } from '../atlas3Crops';
 import { catalogueKey, catalogueStamps } from '../atlas3Stamps';
 import { reviewsPage } from './reviews';
@@ -62,7 +63,7 @@ function setup() {
   ids.forEach((id, slot) => db.exec(`INSERT INTO crops(id,kind,book,char,production,category,style,state,quiz,shuffle,cut,revision)
     VALUES(${id},${slot >= 6 ? 1 : 0},1,${chars[slot]},NULL,3,0,0,1,${slot},0,0)`));
   const local = (slot: number) => ({ slot, id: `hk:${page}:${slot}`, label: '', image_sha256: H, image: `/atlas/media/${slot}.webp`,
-    box: { x: 10 * slot, y: 0, w: 10, h: 10 }, context: true, context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 10 * slot, y: 0, w: 10, h: 10 },
+    box: { x: 10 * slot, y: 0, w: 10, h: 10 }, context: true, context_image: '/atlas/media/ctx.webp', context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 10 * slot, y: 0, w: 10, h: 10 },
     source_scale: [1, 1] });
   const records = [6, 7, 8].map(slot => JSON.stringify({ id: `hng:${page}:${slot}`, label: 'は', written_character: 'は', identity_status: 'assigned',
     proxyable: true, source_revision: G, image: `https://example.org/${slot}.jpg`, box: { x: 1, y: 1, w: 5, h: 5 },
@@ -123,7 +124,7 @@ describe('captured review exports', () => {
     expect(before).toMatchObject({ event: { id: expect.stringMatching(/^v3:\d+$/), target_id: `hk:${page}:0` }, expected_revision: 0, current_revision: 1,
       reviewed: { character: { id: `hk:${page}:0`, revision: 0, page_id: `hk:book:${page}` } } });
     const { slot: _slot, ...published } = { slot: 0, id: `hk:${page}:0`, label: '', image_sha256: H, image: '/atlas/media/0.webp',
-      box: { x: 0, y: 0, w: 10, h: 10 }, context: true, context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 0, y: 0, w: 10, h: 10 },
+      box: { x: 0, y: 0, w: 10, h: 10 }, context: true, context_image: '/atlas/media/ctx.webp', context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 0, y: 0, w: 10, h: 10 },
       source_scale: [1, 1] };
     expect(before.publication_snapshot).toEqual({ character: { ...published, page_id: `hk:book:${page}`, revision: 0 } });
     expect(JSON.parse(before.event.evidence).request.revision).toBe(0);
@@ -534,7 +535,7 @@ describe('a round', () => {
     expect((await send(env, `/atlas/characters/${publicId(ids[1])}`, { ...local(ids[1]), id: uuid(2), verdict: 'unsure' })).status).toBe(409);
   });
 
-  it.each(['batch', 'corpus'])('keeps the %s response when a mark forces a retry', async mode => {
+  it.each(['batch', 'single'])('keeps the %s response when a mark forces a retry', async mode => {
     const { db, env, ids } = setup();
     const id = ids[mode === 'batch' ? 0 : 6], batch = env.ATLAS.batch.bind(env.ATLAS);
     let raced = false;
@@ -546,13 +547,13 @@ describe('a round', () => {
       }
       return batch(list);
     };
-    const path = mode === 'batch' ? '/atlas/corrections' : '/atlas/corpus/reviews';
+    const path = mode === 'batch' ? '/atlas/corrections' : `/atlas/characters/${publicId(id)}`;
     const input = mode === 'batch' ? { id: uuid(1), character: 'は', crops: [local(id)] }
-      : { id: uuid(1), identity: publicId(id), revision: 0, source_revision: G, verdict: 'match' };
+      : { id: uuid(1), revision: 0, source_revision: G, verdict: 'match' };
     const saved = await send(env, path, input);
     expect(saved.status).toBe(200);
     if (mode === 'batch') expect(saved.body).toMatchObject({ id: uuid(1), unchanged: [], results: [{ target_id: publicId(id), state: 'checked' }] });
-    else expect(saved.body).toMatchObject({ id: publicId(id), origin: 'corpus', event: { state: 'checked', revision: 2 } });
+    else expect(saved.body).toMatchObject({ id: uuid(1), results: [{ target_id: publicId(id), state: 'checked', revision: 2 }] });
     expect((await send(env, path, input)).body).toEqual(saved.body);
   });
 
@@ -730,7 +731,7 @@ describe('a batch correction', () => {
   it('judges crops a listing just showed by their entries at the edge, without reading their page', async () => {
     const { db, env, ids, page, objects } = setup();
     const entry = (slot: number) => ({ slot, id: `hk:${page}:${slot}`, label: '', image_sha256: H, image: `/atlas/media/${slot}.webp`,
-      box: { x: 10 * slot, y: 0, w: 10, h: 10 }, context: true, context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 10 * slot, y: 0, w: 10, h: 10 },
+      box: { x: 10 * slot, y: 0, w: 10, h: 10 }, context: true, context_image: '/atlas/media/ctx.webp', context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 10 * slot, y: 0, w: 10, h: 10 },
       source_scale: [1, 1] });
     const edge = new Map([0, 4].map(slot => [`${ORIGIN}/_entries/${page}-1/${slot}`, entry(slot)]));
     objects.delete(bundleKey(page, 1));
@@ -803,9 +804,9 @@ describe('a bad crop beside what the crop holds', () => {
 
   it('leaves a corpus glyph named beside a bad crop flagged for its box', async () => {
     const { env, ids, objects } = setup();
-    const saved = await send(env, '/atlas/corpus/reviews', { id: uuid(1), identity: publicId(ids[6]), revision: 0, source_revision: G,
+    const saved = await send(env, `/atlas/characters/${publicId(ids[6])}`, { id: uuid(1), revision: 0, source_revision: G,
       verdict: 'wrong', issue: 'character', character: 'ハ', bad_crop: true });
-    expect(saved.body).toMatchObject({ label: 'ハ', state: 'flagged', event: { state: 'flagged' } });
+    expect(saved.body).toMatchObject({ results: [{ target_id: publicId(ids[6]), state: 'flagged', revision: 1 }] });
     // The training rules read a corpus review from its record's `new`.
     const stored = [...objects.entries()].find(([key]) => key.startsWith('v3/review-evidence/'))![1] as Uint8Array;
     const { reviews } = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(stored as Uint8Array<ArrayBuffer>)));
@@ -844,34 +845,106 @@ describe('a crop\'s issue', () => {
 });
 
 describe('a corpus glyph\'s review', () => {
-  it('keeps a saved form in the review response and its submission retry', async () => {
+  it('keeps a saved form across review writes and submission retries', async () => {
     const { db, env, ids } = setup();
     const tools: ClaimTools = { body, canonical: value => canonical(value), literal, text,
       fail: (status, message, extra) => { throw new Problem(status, message, extra); },
       integer: () => { throw new Error('No pagination in a form write.'); } };
-    // Claims have their own query-plan checks; this suite tracks the review response's reads.
+    // Claims have their own query-plan checks; this suite tracks the review write and persisted form.
     const picked = await setForm({ ...env, ATLAS: d1(db) }, { id: uuid(10), form: '𛂞', crop_version: `${publicId(ids[6])}@${G}@1,1,5,5` },
       publicId(ids[6]), 'u1', tools);
     expect(picked.form?.values[0].text).toBe('𛂞');
-    const input = { id: uuid(11), identity: publicId(ids[6]), revision: 0, source_revision: G, verdict: 'match' };
+    const input = { id: uuid(11), revision: 0, source_revision: G, verdict: 'match' };
     for (let attempt = 0; attempt < 2; attempt++) {
-      const reviewed = await send(env, '/atlas/corpus/reviews', input);
+      const reviewed = await send(env, `/atlas/characters/${publicId(ids[6])}`, input);
       expect(reviewed.status).toBe(200);
-      expect(reviewed.body.form).toEqual(picked.form);
+      expect(reviewed.body).toMatchObject({ id: uuid(11), results: [{ target_id: publicId(ids[6]), state: 'checked', revision: 1 }] });
     }
+    const found = await foundCrop(env, ids[6]);
+    expect(found!.record.crop_version).toBe(`${publicId(ids[6])}@${G}@1,1,5,5`);
+    expect((await formOfCrop(env, ids[6]))).toEqual(picked.form);
   });
 
-  it('answers with the glyph as listings show it, and numbers corpus glyphs in the order the old site wrote their rows', async () => {
+  it('updates state and written identity cleanly, and numbers corpus glyphs in the order the old site wrote their rows', async () => {
     const { db, env, ids } = setup();
     const glyph = (id: number, extra = {}) => ({ id: publicId(id), revision: 0, source_revision: G, ...extra });
-    const reviewed = await send(env, '/atlas/corpus/reviews', { id: uuid(1), identity: publicId(ids[6]), revision: 0, source_revision: G,
+    const reviewed = await send(env, `/atlas/characters/${publicId(ids[6])}`, { id: uuid(1), revision: 0, source_revision: G,
       verdict: 'wrong', issue: 'character', character: 'ハ' });
     expect(reviewed.status).toBe(200);
-    expect(reviewed.body).toMatchObject({ id: publicId(ids[6]), origin: 'corpus', label: 'ハ', state: 'checked', revision: 1,
-      written_character: 'ハ', identity_status: 'assigned', grapheme: 'U+306F', visual_group: null, form: null, event: { revision: 1, state: 'checked' } });
+    expect(reviewed.body).toMatchObject({ id: uuid(1), results: [{ target_id: publicId(ids[6]), revision: 1, state: 'checked' }] });
+    const found = await foundCrop(env, ids[6]);
+    expect(found!.record).toMatchObject({ id: publicId(ids[6]), origin: 'corpus', label: 'ハ', state: 'checked', revision: 1,
+      written_character: 'ハ', identity_status: 'assigned', grapheme: 'U+306F', visual_group: null });
     await send(env, '/atlas/rounds', { id: uuid(2), grapheme: 'U+306F', answers: [glyph(ids[8], { verdict: 'unsure' })],
       seen: [glyph(ids[7])], skipped: [glyph(ids[6], { revision: 1 })] });
     expect(db.query('SELECT crop FROM corpus_rows ORDER BY seq').all().map((r: any) => r.crop)).toEqual([ids[6], ids[8], ids[7]]);
+  });
+
+  it('redraws a corpus glyph with context via /atlas/characters/:id, captures recrop/proposed_box, and undoes cleanly', async () => {
+    const { db, env, objects, page } = setup();
+    const ctxPage = nextPage(), gid = cropId(ctxPage, 0), uid = cropId(ctxPage, 1);
+    const box = { x: 1, y: 1, w: 5, h: 5 }, nextBox = { x: 4, y: 6, w: 12, h: 14 };
+    const ctxRec = JSON.stringify({ id: 'krm:ctx:0', label: 'は', written_character: 'は', identity_status: 'assigned',
+      proxyable: true, source_revision: G, image: 'https://example.org/0.jpg', context_image: 'https://example.org/ctx.jpg',
+      box, crop_box: box, context_box: { x: 0, y: 0, w: 200, h: 200 }, grapheme: 'U+306F' });
+    const unRec = JSON.stringify({ id: 'krm:unassigned:1', label: 'Unassigned', written_character: null, identity_status: 'unassigned',
+      proxyable: true, source_revision: G, image: 'https://example.org/1.jpg', context_image: 'https://example.org/ctx.jpg',
+      box, crop_box: box, context_box: { x: 0, y: 0, w: 200, h: 200 } });
+    const b0 = Buffer.byteLength(ctxRec), b1 = Buffer.byteLength(unRec);
+    objects.set('packs/ctx.bin', new TextEncoder().encode(ctxRec + unRec));
+    objects.set(bundleKey(ctxPage, 1), gzipSync(JSON.stringify({ key: `krm:book:${ctxPage}`, book: 1, rev: 1, page: null,
+      crops: [{ slot: 0, id: 'krm:ctx:0', record_place: ['packs/ctx.bin', 0, b0] },
+        { slot: 1, id: 'krm:unassigned:1', record_place: ['packs/ctx.bin', b0, b1] }] })));
+    db.exec(`INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${ctxPage},'krm:book:${ctxPage}',1,1,2);
+      INSERT INTO crops(id,kind,book,char,production,category,style,state,quiz,shuffle,cut,revision) VALUES
+        (${gid},1,1,1,NULL,3,0,0,1,20,0,0),(${uid},1,1,NULL,NULL,NULL,0,0,1,21,0,0)`);
+
+    // A corpus glyph without source context still cannot be redrawn.
+    const noCtx = cropId(page, 6);
+    expect((await send(env, `/atlas/characters/${publicId(noCtx)}`, { id: uuid(21), revision: 0, source_revision: G, verdict: 'match', box: nextBox })).status).toBe(422);
+
+    // An unassigned corpus glyph rejects match, even with a redrawn box, until a character is named.
+    expect((await send(env, `/atlas/characters/${publicId(uid)}`, { id: uuid(22), revision: 0, source_revision: G, verdict: 'match', box: nextBox })).status).toBe(422);
+    const assigned = await send(env, `/atlas/characters/${publicId(uid)}`, { id: uuid(23), revision: 0, source_revision: G,
+      verdict: 'wrong', issue: 'character', character: 'ハ', box: nextBox });
+    expect(assigned.status).toBe(200);
+    expect(db.query('SELECT x,y,w,h,state FROM reviews WHERE crop=?').get(uid)).toEqual({ ...nextBox, state: 1 });
+
+    // A corpus glyph with context accepts a standalone box redraw on /atlas/characters/:id and records evidence.
+    const redrawn = await send(env, `/atlas/characters/${publicId(gid)}`, { id: uuid(24), revision: 0, source_revision: G,
+      verdict: 'match', box: nextBox });
+    expect(redrawn.status).toBe(200);
+    expect(db.query('SELECT x,y,w,h,state FROM reviews WHERE crop=?').get(gid)).toEqual({ ...nextBox, state: 1 });
+    const stored = [...objects.entries()].filter(([k]) => k.startsWith('v3/review-evidence/')).at(-1)![1] as Uint8Array;
+    const captured = Object.values(JSON.parse(new TextDecoder().decode(Bun.gunzipSync(stored as Uint8Array<ArrayBuffer>))).reviews)[0] as any;
+    expect(JSON.parse(captured.event.evidence).recrop).toEqual({ from: box, to: nextBox, pixels: G });
+    expect(captured.source_update.proposed_box).toEqual(nextBox);
+
+    // A second review (with another box or without a box) preserves the source's published box in
+    // `reviewed.box` and `source_update.box`, while carrying the active proposed box in `proposed_box`.
+    const followBox = { x: 2, y: 2, w: 10, h: 10 };
+    const secondRedraw = await send(env, `/atlas/characters/${publicId(gid)}`, { id: uuid(25), revision: 1, source_revision: G,
+      verdict: 'wrong', issue: 'merged', correction: 'はハ', box: followBox });
+    expect(secondRedraw.status).toBe(200);
+    expect(secondRedraw.body).toMatchObject({ results: [{ target_id: publicId(gid), state: 'flagged', revision: 2 }] });
+    const stored2 = [...objects.entries()].filter(([k]) => k.startsWith('v3/review-evidence/')).at(-1)![1] as Uint8Array;
+    const captured2 = Object.values(JSON.parse(new TextDecoder().decode(Bun.gunzipSync(stored2 as Uint8Array<ArrayBuffer>))).reviews)[0] as any;
+    expect(captured2.reviewed.box).toEqual(box);
+    expect(captured2.reviewed.box_pending).toBeUndefined();
+    expect(captured2.source_update.box).toEqual(box);
+    expect(captured2.source_update.proposed_box).toEqual(followBox);
+
+    // Undoing restores the box to before the latest redraw, and a non-box review keeps that pending box in evidence.
+    expect((await send(env, `/atlas/rounds/${uuid(25)}/undo`, {})).status).toBe(200);
+    expect(db.query('SELECT x,y,w,h,state FROM reviews WHERE crop=?').get(gid)).toEqual({ ...nextBox, state: 1 });
+    const relabel = await send(env, `/atlas/characters/${publicId(gid)}`, { id: uuid(26), revision: 3, source_revision: G,
+      verdict: 'wrong', issue: 'character', character: 'ハ' });
+    expect(relabel.status).toBe(200);
+    const stored3 = [...objects.entries()].filter(([k]) => k.startsWith('v3/review-evidence/')).at(-1)![1] as Uint8Array;
+    const captured3 = Object.values(JSON.parse(new TextDecoder().decode(Bun.gunzipSync(stored3 as Uint8Array<ArrayBuffer>))).reviews)[0] as any;
+    expect(captured3.reviewed.box).toEqual(box);
+    expect(captured3.source_update.box).toEqual(box);
+    expect(captured3.source_update.proposed_box).toEqual(nextBox);
   });
 });
 

@@ -4,15 +4,14 @@
 // the `reviews` overlay, seen marks and skips, and the reviewer's totals.
 import { Problem } from '../busy';
 import { captureReviews, priorBaselines, type ReviewedInput } from '../reviewCapture';
-import { cropEntries, cropItems, publicId } from '../atlas3';
+import { cropEntries, publicId } from '../atlas3';
 import { STALE_CODE, StaleCrop, cropParam, writtenCropField } from '../atlas3Crops';
 import { undoCountQuery } from '../atlas3Stamps';
 import { categoryOf } from '../category';
 import { drawnHeads } from '../forms';
 import { drawnForm } from '../representation';
-import { formOfCrop } from './claims';
 import { inspected } from './crop';
-import { STYLE_KIND, STYLE_TARGET, foundCrop } from '../cropRecords';
+import { STYLE_KIND, STYLE_TARGET, foundCrop, redrawLimits } from '../cropRecords';
 import { body, canonical, compose, graphemeKey, graphemeText, text, unified, writtenCharacter } from '../input';
 import { readRecords, recordKey } from '../records';
 import { addressKey } from '../reverse';
@@ -32,7 +31,6 @@ const issueCode = (issue: string | null | undefined) => issue == null ? null : I
 const issueName = (code: number | null) => code == null ? null : code === 6 ? 'character' : ISSUES[code] ?? null;
 // A crop's state as the old site named it: a mark (seen, hard) is a pending crop that rounds made something of.
 const stateName = (code: number) => code === STATE.checked ? 'checked' : code === STATE.flagged ? 'flagged' : 'pending';
-const codePoints = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 const markable = (code: number) => code === STATE.pending || code === STATE.seen || code === STATE.hard;
 
 // --- The crops a review reads ---
@@ -148,13 +146,6 @@ async function cropNamed(env: Env, value: unknown, name: string): Promise<number
 const blank = (data: Json) => Array.isArray(data.geometry?.flags) && data.geometry.flags.includes('sparse-ink')
   && ['x', 'y', 'w', 'h'].every(k => data.geometry.box?.[k] === data.box?.[k]);
 export const dealable = (origin: string, data: Json) => origin === 'corpus' ? Boolean(data.proxyable && data.written_character) : data.repair?.quiz !== false && !blank(data);
-// The page rectangle a reviewer may redraw a local crop's box in, in page pixels: the context the
-// inspector shows, which lies inside the page. A corpus glyph's box belongs to its source, so it has none.
-export function redrawLimits(data: Json): { x: number; y: number; w: number; h: number } | null {
-  const c = data?.context_box, s = data?.source_scale;
-  if (!data?.context || !c || !data.crop_box || !Array.isArray(s) || !(s[0] > 0) || !(s[1] > 0)) return null;
-  return { x: Math.floor(c.x / s[0]), y: Math.floor(c.y / s[1]), w: Math.ceil((c.x + c.w) / s[0]) - Math.floor(c.x / s[0]), h: Math.ceil((c.y + c.h) / s[1]) - Math.floor(c.y / s[1]) };
-}
 // A redrawn box as the inspector sends it: whole page pixels, at least two each way, inside the page view.
 export function redrawnBox(value: Json, data: Json): { x: number; y: number; w: number; h: number } {
   const limits = redrawLimits(data);
@@ -262,7 +253,7 @@ function validateAnswer(answer: Json, row: Current, round: boolean, corpus = fal
   if (answer.box !== undefined) {
     // A redrawn box is the crop's fix: saved as a match on the pixels it names, or beside a wrong or
     // joined character, never in a round. A line's crop may also be relabelled in the same save.
-    if (round || corpus || (batch && !line)) throw new Problem(422, 'This crop cannot be redrawn here.');
+    if (round || (batch && !line)) throw new Problem(422, 'This crop cannot be redrawn here.');
     const fixed = answer.verdict === 'match' && answer.issue == null && !answer.character && !answer.correction;
     const beside = answer.verdict === 'wrong' && (line ? answer.issue === 'character' && answer.character && !answer.correction : BESIDE_A_BAD_CROP.includes(answer.issue));
     if (!fixed && !beside) throw new Problem(422, 'A redrawn crop is saved as fixed.');
@@ -513,8 +504,8 @@ async function marksOnly(env: Env, changes: CropChange[]): Promise<boolean> {
 
 // --- Submitting ---
 
-/** Save a review: a round (no target), a batch correction (`@batch`), a corpus glyph's review
- *  (`@corpus`) or one crop's review (its id as written in the path). */
+/** Save a review: a round (no target), a batch correction (`@batch`) or one crop's review (its id
+ *  as written in the path). */
 export async function submit(env: Env, request: Request, user: string, target?: string) {
   const sent = await body(request);
   return await save(env, sent, request.headers.get('cf-connecting-ip'), user, target, true);
@@ -523,8 +514,7 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   // The checks below normalise what they read in place; a second attempt starts from what was sent.
   const input = structuredClone(sent);
   const mode = target;
-  const corpus = target === '@corpus', batch = target === '@batch';
-  if (corpus) target = text(input.identity, 512, 'corpus identity', true)!;
+  const batch = target === '@batch';
   if (batch) target = undefined;
   const id = text(input.id, 64, 'submission id', true)!;
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Problem(422, 'Invalid submission id.');
@@ -534,10 +524,8 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   const signature = canonical({ target: batch ? '@batch' : target || null, input: signed });
   const key = user + ':' + id;
   const previous = () => env.ATLAS.prepare('SELECT request,response FROM submissions WHERE key=?').bind(key).first<{ request: string; response: string }>();
-  // A corpus glyph's inspector shows the glyph it gets back, with the form its ledger holds now.
-  const answered = async (stored: Json) => corpus ? await corpusAnswer(env, stored) : stored;
   const before = await previous();
-  if (before) { if (before.request !== signature) throw new Problem(409, 'This submission was already saved with different answers.'); return answered(JSON.parse(before.response)) }
+  if (before) { if (before.request !== signature) throw new Problem(409, 'This submission was already saved with different answers.'); return JSON.parse(before.response) }
   const round = !target && !batch;
   // A round names its grapheme; each crop it answers or saw is one of the grapheme's characters.
   const grapheme = round ? graphemeKey(input.grapheme) : null;
@@ -662,28 +650,12 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     saved = JSON.parse(out[out.length - 1].results[0].response);
   } catch (error) {
     const repeat = await previous();
-    if (repeat?.request === signature) return answered(JSON.parse(repeat.response));
+    if (repeat?.request === signature) return JSON.parse(repeat.response);
     if (conflict(error) && again && await marksOnly(env, changes)) return await save(env, sent, address, user, mode, false);
     if (conflict(error)) throw await conflictProblem(env, changes);
     throw error;
   }
-  return answered(saved);
-}
-// A corpus glyph's review answers with the glyph as listings now show it, its form, and its event.
-async function corpusAnswer(env: Env, stored: Json): Promise<Json> {
-  const saved = stored.results[0];
-  const crop = await writtenCropField(env, saved.target_id);
-  const [current] = crop === null ? [] : [(await reviewCrops(env, [crop])).get(crop)];
-  const [item] = crop === null ? [] : await cropItems(env, [crop]);
-  if (!item || !current || current instanceof Problem) throw new Problem(404, 'This character is not in the published collection.');
-  // A glyph a review named is filed under the named character's family, and leaves its visual group.
-  const named = current.data.identity_basis === 'human_review' ? current.label : null;
-  const head = named ? await env.ATLAS.prepare('SELECT h.text FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head WHERE g.text=?')
-    .bind(named).first<{ text: string | null }>() : null;
-  const formed = { ...item, form: await formOfCrop(env, crop!), issue: current.data.issue, written_character: current.data.written_character,
-    ...(current.data.identity_status ? { identity_status: current.data.identity_status } : {}),
-    ...(named ? { grapheme: codePoints(head?.text ?? named), visual_group: null } : {}) };
-  return { ...formed, origin: 'corpus', event: { id: saved.id, revision: saved.revision, state: saved.state } };
+  return saved;
 }
 
 // --- Undoing ---
@@ -808,7 +780,6 @@ const json = (value: unknown, status = 200) => Response.json(value, { status, he
 /** The review writes, for a signed-in user; null for a path that is none of them. */
 export async function reviewRoute(env: Env, request: Request, path: string, user: string): Promise<Response | null> {
   try {
-    if (path === '/atlas/corpus/reviews') return json(await submit(env, request, user, '@corpus'));
     if (path === '/atlas/rounds') return json(await submit(env, request, user));
     if (path === '/atlas/corrections') {
       // A batch changes many crops at once, so each address is held to a rate.

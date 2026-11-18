@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { cropOrigin, movedQuery, redirectPath } from '../src/lib/movedCrop.js'
+import { movedQuery, redirectPath } from '../src/lib/movedCrop.js'
 import { showing } from '../src/lib/inspectQueue.js'
 
 const record = { id: '3dh00000', source_id: 'hk:1:a' }
@@ -15,23 +15,15 @@ describe('an old crop address', () => {
   })
 })
 
-describe('crop origin routing', () => {
+describe('crop routing', () => {
   const localize = (path, lang) => `/${lang}${path}`
-  it('normalizes item origins cleanly', () => {
-    expect(cropOrigin({ origin: 'corpus' })).toBe('corpus')
-    expect(cropOrigin({ origin: 'local' })).toBe('collection')
-    expect(cropOrigin({})).toBe('collection')
-    expect(cropOrigin(null)).toBe('collection')
-  })
-  it('redirects corpus glyphs opened under /crop/ to /corpus/, keeping citations', () => {
+  it('routes both local and corpus crops canonically under /crop/, keeping moved citations', () => {
     const corpus = { id: '5se0004h', source_id: 'codh:200014685:g', origin: 'corpus' }
-    expect(redirectPath(corpus, 'collection', { lang: 'ja', id: '5se0004h' }, '', localize)).toBe('/ja/corpus/5se0004h')
-    expect(redirectPath(corpus, 'collection', { lang: 'ja', id: '5se0004h' }, '?v=tok1', localize)).toBe('/ja/corpus/5se0004h?v=tok1')
-    expect(redirectPath(corpus, 'collection', { lang: 'ja', id: 'codh:200014685:g' }, '?v=tok1', localize)).toBe('/ja/corpus/5se0004h?v=tok1')
-    expect(redirectPath(corpus, 'corpus', { lang: 'ja', id: '5se0004h' }, '?v=tok1', localize)).toBeNull()
-    expect(redirectPath({ id: '5se0004h' }, 'corpus', { lang: 'ja', id: '5se0004h' }, '', localize)).toBeNull()
-    expect(redirectPath(record, 'collection', { lang: 'en', id: '3dh00000' }, '', localize)).toBeNull()
-    expect(redirectPath(record, 'collection', { lang: 'en', id: 'hk:1:a' }, '?v=abc123', localize)).toBe('/en/crop/3dh00000?v=abc123')
+    expect(redirectPath(corpus, { lang: 'ja', id: '5se0004h' }, '', localize)).toBeNull()
+    expect(redirectPath(corpus, { lang: 'ja', id: '5se0004h' }, '?v=tok1', localize)).toBeNull()
+    expect(redirectPath(corpus, { lang: 'ja', id: 'codh:200014685:g' }, '?v=tok1', localize)).toBe('/ja/crop/5se0004h?v=tok1')
+    expect(redirectPath(record, { lang: 'en', id: '3dh00000' }, '', localize)).toBeNull()
+    expect(redirectPath(record, { lang: 'en', id: 'hk:1:a' }, '?v=abc123', localize)).toBe('/en/crop/3dh00000?v=abc123')
   })
 })
 

@@ -78,22 +78,24 @@ export async function captureReviews(env: Env, inputs: ReviewedInput[], sent: Js
     const round = mode === undefined, batch = mode === '@batch';
     const evidence = { kind: round ? 'visual-quiz' : 'character-review',
       ...(round ? { round: sent.id, grapheme: sent.grapheme, label: row.label, answer: translated }
-        : batch ? { batch: sent.id, answer: translated } : { request: { ...sent, ...answer, id: sent.id, revision: row.logicalRevision,
-          ...(mode === '@corpus' ? { identity: row.sourceId } : {}) } }),
+        : batch ? { batch: sent.id, answer: translated } : { request: { ...sent, ...answer, id: sent.id, revision: row.logicalRevision } }),
       verdict: answer.verdict, issue: answer.issue ?? null, note: answer.note ?? '', ...(kept ? { kept_issue: kept } : {}),
       suggested_character: change.named ? codePoints(change.named) : null,
       suggested_text: change.text ?? null, snapshot,
       correction: { unicode: change.label ? codePoints(change.label) : null, box: answer.box ?? character.box ?? null },
-      ...(answer.box ? { recrop: { from: character.box, to: answer.box, pixels: character.image_sha256 ?? null } } : {}) };
+      ...(answer.box ? { recrop: { from: character.box, to: answer.box, pixels: character.image_sha256 ?? character.source_revision ?? null } } : {}) };
     const event = { target_type: 'unit', target_id: row.sourceId, field: 'review',
       old: row.state === 1 ? 'reviewed' : row.state === 2 ? 'disputed' : 'machine',
       new: change.state === 1 ? 'reviewed' : 'disputed', role: 'reviewer', actor: user,
       evidence: JSON.stringify(evidence), at: new Date(at).toISOString() };
     if (row.kind === 1) {
+      const sourceBox = row.cutBox ?? null;
+      const proposedBox = answer.box ?? (character.box_pending ? character.box : null);
+      const { box_pending: _pending, ...reviewedCharacter } = character;
       records[`crop:${row.id}`] = { origin: 'corpus', event: { ...event, new: { verdict: answer.verdict,
         issue: answer.issue ?? null, ...(kept ? { kept_issue: kept } : {}), character: change.named ?? null, correction: change.text ?? null, note: answer.note ?? '' } },
-        reviewed: character, source_update: { identity: row.sourceId, source_revision: character.source_revision,
-          source: character.source, box: character.box,
+        reviewed: { ...reviewedCharacter, box: sourceBox }, source_update: { identity: row.sourceId, source_revision: character.source_revision,
+          source: character.source, box: sourceBox, ...(proposedBox ? { proposed_box: proposedBox } : {}),
           original_character: character.source_code_point ? literal(character.source_code_point) : character.source_label,
           proposed_character: change.named ?? null, issue: answer.issue ?? null, applied_upstream: false } };
     } else {

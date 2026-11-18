@@ -91,7 +91,7 @@
           {#if cell.lit && dealt[cell.slot]}
             {@const d = dealt[cell.slot]}
             {#key d.key}
-              <a class="crop" class:swap={d.swap} href={cropAddress(d.crop.id, d.crop.origin === 'corpus' ? 'corpus' : 'collection')} tabindex="-1"
+              <a class="crop" class:swap={d.swap} href={cropAddress(d.crop.id)} tabindex="-1"
                 style:--dx={d.dx} style:--dy={d.dy} style:--r="{d.r}deg" style:--delay="{d.delay}ms" style={cropTone(d.crop)}><Glyph item={d.crop} alt="" class="cell-glyph" eager /></a>
             {/key}
           {/if}

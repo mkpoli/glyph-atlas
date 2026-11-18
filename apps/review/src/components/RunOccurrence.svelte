@@ -17,10 +17,11 @@
   // The occurrence's みんなで翻刻 page (`honkoku_url`) is the first its crops resolve to.
   const lead = $derived({ ...occurrence.crops[0], honkoku_url: occurrence.honkoku_url })
   const corpus = $derived(lead.origin === 'corpus')
-  const source = $derived.by(() => { const links = sourceLinks(lead, corpus); return corpus ? links.record : links.honkoku })
+  const links = $derived(sourceLinks(lead, corpus))
+  const source = $derived(corpus ? links.record : links.honkoku)
   // The credit names the work, its holder, licence and date; the page is said apart.
   const page = $derived(lead.page_number ? t('tile.page', { page: lead.page_number }) : '')
-  const open = crop => inspect(crop.id, crop.origin === 'corpus' ? 'corpus' : 'collection')
+  const open = crop => inspect(crop.id)
   onMount(() => dialog.showModal())
 </script>
 
@@ -39,7 +40,7 @@
     {/each}
   </ul>
   {#if page}<p class="occurrence-where">{page}</p>{/if}
-  <SourceCredit item={lead} {corpus} omit={source?.href} />
+  <SourceCredit item={lead} omit={source?.href} />
   {#if source}<a class="primary occurrence-source" href={source.href} target="_blank" rel="noreferrer">{source.label}</a>{/if}
 </dialog>
 

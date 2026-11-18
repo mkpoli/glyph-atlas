@@ -57,7 +57,7 @@ describe('a crop’s citation', () => {
     expect(record).toContain('Source: A\\_B \\& 50\\%, p. 100');
   });
   it('is a Hayagriva entry of the site, with the document it was cut from as its original', () => {
-    const glyph = cropEntry({ ...crop, source: { title: '源氏物語 "桐壺"', holder: '国文学研究資料館', shelfmark: '9-1' } }, 'corpus');
+    const glyph = cropEntry({ ...crop, source: { title: '源氏物語 "桐壺"', holder: '国文学研究資料館', shelfmark: '9-1' } });
     expect(hayagriva(glyph, 'https://glyphatlas.org', [2026, 10, 5])).toBe(`glyphatlas-敢-${token}:
   type: "entry"
   title:
@@ -66,7 +66,7 @@ describe('a crop’s citation', () => {
   genre: "Crop"
   serial-number: "ex:1"
   url:
-    value: "https://glyphatlas.org/corpus/ex:1?v=${token}"
+    value: "https://glyphatlas.org/crop/ex:1?v=${token}"
     date: "2026-10-05"
   parent:
     - type: "reference"
@@ -87,13 +87,13 @@ describe('a crop’s citation', () => {
 `);
   });
   it('cites an earlier cut without the label the crop has now', () => {
-    const older = cropEntry(crop, 'collection', `ex:1@${pixels}@1,2,3,4`);
+    const older = cropEntry(crop, `ex:1@${pixels}@1,2,3,4`);
     expect([older.label, older.token, citationKey(older)]).toEqual([null, versionToken('ex:1', `ex:1@${pixels}@1,2,3,4`), `glyphatlas-crop-${older.token}`]);
   });
   it('names a corpus glyph’s holder, shelfmark and transcription, and leaves out an unassigned label', () => {
     const glyph = cropEntry({ id: 'codh:1', label: '〓', identity_status: 'unassigned', licence: 'unknown',
       source: { title: '源氏物語', holder: '国文学研究資料館', shelfmark: '9-1' }, text_attribution: 'CODH 日本古典籍くずし字データセット' }, 'corpus');
-    expect(glyph.path).toBe('/corpus/codh:1');
+    expect(glyph.path).toBe('/crop/codh:1');
     expect(glyph.label).toBeNull();
     const item = csl(glyph, 'https://glyphatlas.org', [2026, 1, 2]);
     expect([item.title, item.archive, item.archive_location, item.license]).toEqual(['codh:1', '国文学研究資料館', '9-1', undefined]);

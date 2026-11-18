@@ -9,7 +9,7 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { votesKey } from '../atlas3Votes';
 import { versionToken } from '../citation';
 import { cropSlotsQuery, formNamesQuery, wordMethodsQuery, wordNamesQuery } from '../cropPanels';
-import { cropVersion, cropVersionNow, recordQuery } from '../cropRecords';
+import { cropVersion, cropVersionNow, recordQuery, redrawLimits } from '../cropRecords';
 import { bookDatesQuery, dateClaimsQuery, lineQuery, listedCropsQuery, samePixels } from './crop';
 import worker from '../index';
 
@@ -141,7 +141,7 @@ function setup() {
   const waits: Promise<unknown>[] = [];
   const ctx = { waitUntil: (p: Promise<unknown>) => waits.push(p), passThroughOnException() {} } as unknown as ExecutionContext;
   const get = async (path: string) => { const response = await worker.fetch(new Request('https://glyphatlas.org' + path), env, ctx); await Promise.all(waits); return response; };
-  return { db, runs, env, get, ids: { a, b, c, d, r, x, glyph }, text, records, pageKey, book };
+  return { db, runs, env, get, objects, ids: { a, b, c, d, r, x, glyph }, text, records, pageKey, book };
 }
 
 describe('a crop\'s record', () => {
@@ -166,7 +166,7 @@ describe('a crop\'s record', () => {
   it('carries the style its row is listed under', async () => {
     const { db, get, ids } = setup();
     db.exec(`INSERT OR IGNORE INTO codes(field,code,key) VALUES('style',90,'regular'); UPDATE crops SET style=90 WHERE id IN (${ids.a},${ids.glyph})`);
-    for (const path of [`/atlas/characters/${publicId(ids.a)}`, `/atlas/corpus/character?id=${publicId(ids.glyph)}`])
+    for (const path of [`/atlas/characters/${publicId(ids.a)}`, `/atlas/characters/${publicId(ids.glyph)}`])
       expect(await (await get(path)).json()).toMatchObject({ style: 'regular', style_basis: 'none' });
   });
 
@@ -211,13 +211,10 @@ describe('a crop\'s record', () => {
   it('reads a corpus glyph\'s published record under its row and its cluster\'s form', async () => {
     const { get, ids, text } = setup();
     const record = await (await get(`/atlas/characters/${publicId(ids.glyph)}`)).json() as any;
-    expect(record).toMatchObject({ id: publicId(ids.glyph), unit_id: text.glyph, state: 'checked', revision: 1,
+    expect(record).toMatchObject({ id: publicId(ids.glyph), unit_id: text.glyph, state: 'checked', revision: 1, origin: 'corpus',
       form_cluster: { id: 'U+7FC1:35ced6e49b' }, form_decision: { form: '𦐈', basis: 'form_cluster' }, written_character: '𦐈', label: '𦐈',
       identity_basis: 'form_cluster', crop_editable: false, crop_version: `${publicId(ids.glyph)}@rev1@1,2,3,4`, dating: {} });
     expect(record.honkoku_url).toBeUndefined();
-    const corpus = await get(`/atlas/corpus/character?id=${publicId(ids.glyph)}`);
-    expect(await corpus.json()).toEqual(record);
-    expect(record.origin).toBe('corpus');
   });
 
   it('always marks corpus glyphs with origin even when a pack omits it', async () => {
@@ -243,14 +240,50 @@ describe('a crop\'s record', () => {
     expect(record.form_cluster).toBeUndefined();
   });
 
+  it('marks a corpus crop with source context editable and surfaces a pending redrawn box', async () => {
+    const { db, get, objects } = setup();
+    const corpusPage = nextPage(), gid = cropId(corpusPage, 0), pub = publicId(gid);
+    const { cropRecord } = await import('../cropRecords');
+    const withCtx = { id: 'hdic:krm:1', unit_id: 'hdic:krm:1', char: '翁', label: '翁', code_point: 'U+7FC1',
+      box: { x: 10, y: 20, w: 30, h: 40 }, crop_box: { x: 10, y: 20, w: 30, h: 40 },
+      context_box: { x: 0, y: 0, w: 200, h: 200 }, context_image: 'https://example.org/iiif/0,0,200,200/full/0/default.jpg',
+      image: 'https://example.org/iiif/10,20,30,40/full/0/default.jpg',
+      source: { corpus: 'hdic-krm', title: 'Test' }, source_revision: 'rev1', proxyable: true, licence: 'CC-BY-SA-4.0' };
+    expect(cropRecord({ id: gid, kind: 1, state: 0, settled: 0, style: 0, own_style: 0, production: null, category: null, issue: null,
+      reviewed: 0, written: 0, char: null, head: null, form: null, written_form: null, form_issue: null, form_char: null,
+      cluster_id: null, cluster_key: null, cluster_label: null, cluster_coherence: null, cluster_shape: null, cluster_size: null,
+      cluster_form: null, cluster_issue: null, cluster_char: null, cluster_decision: null, carried_form: null, carried_issue: null,
+      carried_char: null, x: null, y: null, w: null, h: null, page_key: 'corpus:krm:0' } as any, { ...withCtx, context: false }, 'hdic:krm:1').crop_editable).toBe(false);
+    const packed = new TextEncoder().encode(JSON.stringify(withCtx));
+    objects.set('packs/krm', packed);
+    objects.set(bundleKey(corpusPage, 1), gzipSync(JSON.stringify({ key: 'corpus:krm:0', book: 2, rev: 1, page: null,
+      crops: [{ slot: 0, id: 'hdic:krm:1', label: '翁', record_place: ['packs/krm', 0, packed.length] }] })));
+    db.exec(`INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${corpusPage},'corpus:krm:0',2,1,1);
+      INSERT INTO crops(id,kind,book,char,production,category,style,state,quiz,shuffle,cut,revision) VALUES(${gid},1,2,6,2,NULL,0,1,1,9,0,1);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,x,y,w,h) VALUES(${gid},1,0,0,1,99,1760000000000,0,6,1,12,22,32,42);
+      INSERT INTO reviews(crop,gen,at,state,x,y,w,h) VALUES(${gid},0,1760000000000,1,12,22,32,42)`);
+    const record = await (await get(`/atlas/characters/${pub}`)).json() as any;
+    expect(record).toMatchObject({ id: pub, origin: 'corpus', crop_editable: true, box: { x: 12, y: 22, w: 32, h: 42 },
+      box_pending: true, crop_version: `${pub}@rev1@12,22,32,42` });
+    expect(redrawLimits({ context: true, context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 10, y: 10, w: 20, h: 20 } })).toBeNull();
+    expect(redrawLimits({ proxyable: false, context_image: 'https://example.org/ctx.jpg', context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 10, y: 10, w: 20, h: 20 } })).toBeNull();
+    expect(redrawLimits({ proxyable: true, context_image: 'https://example.org/ctx.jpg', context_box: { x: 0, y: 0, w: 200, h: 200 }, crop_box: { x: 10, y: 10, w: 20, h: 20 } }))
+      .toEqual({ x: 0, y: 0, w: 200, h: 200 });
+    const versions = await (await get(`/atlas/characters/${pub}/versions`)).json() as any;
+    expect(versions.current).toBe(`${pub}@rev1@12,22,32,42`);
+    expect(versions.versions.map((v: any) => v.id)).toEqual([`${pub}@rev1@10,20,30,40`, `${pub}@rev1@12,22,32,42`]);
+    const [cited] = await (await get(`/atlas/cite/crop/${pub}`)).json() as any[];
+    expect(cited.URL).toBe(`https://glyphatlas.org/crop/${pub}?v=${versionToken(pub, `${pub}@rev1@12,22,32,42`)}`);
+  });
+
   it('redirects an old text id and a retired crop to the crop\'s public id, and answers 404 for a candidate or nothing', async () => {
     const { get, ids, text } = setup();
     const moved = await get(`/atlas/characters/${encodeURIComponent(text.a)}`);
     expect([moved.status, moved.headers.get('location')]).toEqual([302, `https://glyphatlas.org/atlas/characters/${publicId(ids.a)}`]);
     expect((await get(`/atlas/characters/${publicId(ids.r)}/versions`)).headers.get('location'))
       .toBe(`https://glyphatlas.org/atlas/characters/${publicId(ids.a)}/versions`);
-    const query = await get(`/atlas/corpus/character?id=${encodeURIComponent(text.glyph)}`);
-    expect(query.headers.get('location')).toBe(`https://glyphatlas.org/atlas/corpus/character?id=${publicId(ids.glyph)}`);
+    const corpusMoved = await get(`/atlas/characters/${encodeURIComponent(text.glyph)}`);
+    expect([corpusMoved.status, corpusMoved.headers.get('location')]).toEqual([302, `https://glyphatlas.org/atlas/characters/${publicId(ids.glyph)}`]);
     for (const id of [publicId(ids.x), 'zzzzzz', 'hk:none', '%E0'])
       expect(await (await get(`/atlas/characters/${id}`)).json()).toEqual({ detail: 'This character is not in the published collection.' });
   });

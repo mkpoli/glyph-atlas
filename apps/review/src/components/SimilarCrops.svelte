@@ -49,7 +49,7 @@
   const at = $derived(Math.min(pageAt, pages - 1))
   const visible = $derived(list.slice(at * per, at * per + per))
   const shown = item => isUnassigned(item) ? t('corpus.unassigned') : item.label ?? ''
-  const href = item => localize((item.origin === 'corpus' ? '/corpus/' : '/crop/') + encodeURIComponent(item.id))
+  const href = item => localize('/crop/' + encodeURIComponent(item.id))
   const empty = $derived(result?.revision === null ? t('similar.notPublished')
     : tab === 'similar' ? t('similar.none') : t('similar.noneFiledDifferently'))
 </script>

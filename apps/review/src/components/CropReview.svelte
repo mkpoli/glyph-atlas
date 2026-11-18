@@ -5,7 +5,7 @@
   import IssuePicker from './IssuePicker.svelte'
   import CharacterSuggestions from './CharacterSuggestions.svelte'
   import { issueForKey, offersSuggestions, SKIP_KEY, NONE_KEY } from '../lib/issues.js'
-  let { issues = [], onissue, suggested = null, disabled = false, onskip, skipped = false,
+  let { issues = [], onissue, suggested = null, disabled = false, issuesDisabled = false, onskip, skipped = false,
     targetId = '', result = null, loading = false, contextResult = null, contextLoading = false,
     label = '', value = null, noneSelected = false, onchoose, element = $bindable(null), forms = null } = $props()
   let root = $state(null)
@@ -21,8 +21,9 @@
     const dialog = [...document.querySelectorAll('dialog[open]')].at(-1)
     if (dialog ? !dialog.contains(root) : root.closest('dialog')) return
     const key = event.key.toLowerCase(), chosen = issueForKey(key)
+    if (key === SKIP_KEY && onskip) { event.preventDefault(); onskip(); return }
+    if (issuesDisabled) return
     if (chosen) { event.preventDefault(); onissue(chosen) }
-    else if (key === SKIP_KEY && onskip) { event.preventDefault(); onskip() }
     else if (key === NONE_KEY && offersSuggestions(issue)) { event.preventDefault(); onchoose(null, true) }
   }
 </script>
@@ -31,7 +32,7 @@
 
 <div class="crop-review" bind:this={root}>
   {@render forms?.()}
-  <IssuePicker chosen={issues} choose={onissue} {suggested} {disabled} skip={onskip} {skipped} />
+  <IssuePicker chosen={issues} choose={onissue} {suggested} {disabled} {issuesDisabled} skip={onskip} {skipped} />
   <CharacterSuggestions {targetId} bind:element {result} {loading} {contextResult} {contextLoading} {issue}
-    {label} {value} {noneSelected} {disabled} choose={onchoose} />
+    {label} {value} {noneSelected} disabled={disabled || issuesDisabled} choose={onchoose} />
 </div>
