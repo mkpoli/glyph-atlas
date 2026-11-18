@@ -26,7 +26,8 @@ A face is cut into small WOFF2 files, and a page downloads the files of the char
 - `<hhh>`: the remaining characters of the 256 code points U+hhh00 to U+hhhFF.
 - `figures/<hhh>`: the registered variation sequences of those 256 code points, with the characters
   they vary, in the family `Atlas Sans Figures` or `Atlas Serif Figures`. Text with no variation
-  selector never downloads one.
+  selector never downloads one. `figures/<hhh>.json` lists the sequences the file draws, by base
+  character, as selectors counted from U+E0100.
 
 | Face | Files | Size | Median file | Largest file |
 |---|---|---|---|---|
@@ -60,6 +61,10 @@ glyph. The Moji_Joho collection's reference font, IPAmj明朝, stays a face of i
 (`MJ Figures`, `apps/review/static/fonts/README.md`): the IPA Font License and the SIL Open Font
 License do not combine in one file.
 
+A sequence is set in the first font that maps it (`apps/review/src/lib/figures.js`): MJ Figures,
+then the figure file of the reader's face, then under Atlas Sans the serif one. A sequence none of
+them maps is drawn as its character.
+
 ## Serving
 
 A build is a folder named by the hash of its sources, the core list and the build's format, and no
@@ -72,7 +77,7 @@ uv run scripts/build_atlas_fonts.py                 # cache/atlas-fonts/<version
 rclone copy cache/atlas-fonts/<version> r2:glyph-atlas/fonts/<version> --exclude '*.part'
 ```
 
-An upload writes one R2 object per file: 1,516 for a whole build.
+An upload writes one R2 object per file: 2,095 for a whole build.
 
 ## Licences
 

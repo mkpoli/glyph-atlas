@@ -17,7 +17,8 @@ others: eight for the 2,048 characters the corpus writes most (data/vocab/typefa
 one per 256 code points. The registered sequences of each 256 code points are a file of their own.
 `index.json` names each file's characters, as ranges, and the sequences it draws by collection;
 `sans.css` and `serif.css` declare the files with those ranges, and `sans-figures.css` and
-`serif-figures.css` the files of the sequences. `NOTICE.txt` carries each source's copyright notice
+`serif-figures.css` the files of the sequences; beside each of those files a JSON of the same name
+lists the sequences it draws, by base character. `NOTICE.txt` carries each source's copyright notice
 beside `OFL.txt`, and each file's name table those of the sources it draws from.
 
 The folder is named by the hash of the sources, the core list and FORMAT, which a change to what
@@ -228,7 +229,7 @@ def plan(face, ivd, only, out):
         for collection in ivd[pair]:
             total[collection] += 1
     entry = {'family': family, 'sources': keys, 'characters': len(drawn), 'sequences': dict(sorted(total.items())), 'files': {}, 'figures': {}}
-    tasks = []
+    tasks, lists = [], {}   # lists: figures file -> {base in hex: its selectors, counted from U+E0100}
     for name in sorted(files):
         if only and name not in only:
             continue
@@ -253,9 +254,13 @@ def plan(face, ivd, only, out):
             for collection in ivd[pair]:
                 by[collection] += 1
         entry['figures'][name] = {'ranges': ranges(bases), 'sequences': dict(sorted(by.items()))}
+        listed = defaultdict(list)
+        for base, selector in pairs:
+            listed[f'{base:X}'].append(selector - SELECTORS[0])
+        lists[name] = dict(listed)
         tasks.append((face, 'figures', name, (out / face / 'figures' / f'{name}.woff2', f'{family} Figures', glyphs,
                                               {base: f'u{base:X}' for base in bases}, uvs)))
-    return entry, tasks
+    return entry, tasks, lists
 
 
 def sheet(family, folder, files, selectors=False):
@@ -287,9 +292,9 @@ def main():
     version = hashlib.sha256(json.dumps([FORMAT, IVD['version'], SCOPE, FACES, {key: SOURCES[key]['sha256'] for key in sorted(SOURCES)},
                                          digest(CORE)], sort_keys=True).encode()).hexdigest()[:12]
     out = args.out / version
-    faces, jobs = {}, []
+    faces, jobs, lists = {}, [], {}
     for face in FACES:
-        faces[face], tasks = plan(face, ivd, only, out)
+        faces[face], tasks, lists[face] = plan(face, ivd, only, out)
         jobs += tasks
     notices = ''.join(f"{SOURCES[key]['name']} ({SOURCES[key]['licence']}, {SOURCES[key]['url']})\n{loaded(key).copyright.strip()}\n\n" for key in SOURCES)
     LOADED.clear()   # each worker opens its own
@@ -309,6 +314,8 @@ def main():
         for face, entry in faces.items():
             (out / f'{face}.css').write_text(sheet(entry['family'], f'{face}/', entry['files']), encoding='utf-8')
             (out / f'{face}-figures.css').write_text(sheet(f"{entry['family']} Figures", f'{face}/figures/', entry['figures'], selectors=True), encoding='utf-8')
+            for name, listed in lists[face].items():
+                (out / face / 'figures' / f'{name}.json').write_text(json.dumps(listed, separators=(',', ':')) + '\n', encoding='utf-8')
         (out / 'index.json').write_text(json.dumps(index, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
         (out / 'NOTICE.txt').write_text('Atlas Sans and Atlas Serif are built from the fonts below and are licensed under the SIL Open Font '
                                         'License, Version 1.1 (OFL.txt); the outlines from Jigmo are under CC0 1.0.\n\n' + notices, encoding='utf-8')
