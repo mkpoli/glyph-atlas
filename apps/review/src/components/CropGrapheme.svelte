@@ -91,7 +91,7 @@
   .grapheme-picker:focus{outline:none}
   .grapheme-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:39px}
   .grapheme-chip{display:inline-flex;align-items:center;padding:4px 10px;font-size:22px;line-height:1.2;
-    font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans",serif}
+    font-family:var(--char-font)}
   .grapheme-chip:not(:disabled):hover{border-color:var(--accent)}
   .grapheme-chip.current{border:2px solid var(--accent);padding:3px 9px;background:var(--accent-light)}
   .grapheme-chip.claimed:not(.current){border-style:dashed;border-color:var(--accent)}

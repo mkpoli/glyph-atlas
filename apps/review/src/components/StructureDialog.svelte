@@ -422,7 +422,7 @@
   @keyframes landed{from{background:var(--accent-light);box-shadow:0 0 0 2px var(--accent)}}
   .token{display:inline-flex;align-items:stretch;border-radius:7px}
   .piece{display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;font-size:22px;line-height:1.2;cursor:grab;user-select:none;-webkit-user-select:none;
-    font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
+    font-family:var(--char-font)}
   .piece[aria-disabled="true"]{cursor:default}
   .piece:not([aria-disabled="true"]):hover{border-color:var(--accent)}
   .piece.current{border-color:var(--line-strong);box-shadow:inset 0 -2px 0 var(--line-strong)}
@@ -434,7 +434,7 @@
   .token.dragging{z-index:2;scale:1.06;filter:drop-shadow(0 8px 14px var(--shadow))}
   .token.saving{opacity:.55}
   .ghost{display:inline-flex;align-items:baseline;padding:4px 10px;border:1px dashed var(--accent);border-radius:7px;font-size:22px;line-height:1.2;color:var(--accent);opacity:.75;
-    font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
+    font-family:var(--char-font)}
   footer{display:flex;flex-direction:column;gap:8px}
   footer :global(.character-search){width:100%;max-width:320px;min-width:0}
   .structure-error,.structure-notice{margin:0;font-size:12px;line-height:1.4;color:var(--wrong)}

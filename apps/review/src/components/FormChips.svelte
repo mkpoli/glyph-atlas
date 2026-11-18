@@ -41,7 +41,7 @@
   .form-group.own .form-group-label{color:var(--ink)}
   .form-group-chips{display:flex;flex-wrap:wrap;gap:6px}
   .form-chip{display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;font-size:22px;line-height:1.2;
-    font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
+    font-family:var(--char-font)}
   .form-chip:not(:disabled):hover{border-color:var(--accent)}
   .form-chip.current{border-color:var(--line-strong)}
   .form-chip.chosen{border:2px solid var(--accent);padding:3px 9px;background:var(--accent-light)}

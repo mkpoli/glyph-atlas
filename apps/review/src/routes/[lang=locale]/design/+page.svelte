@@ -283,7 +283,7 @@
   .demo pre code { font-family: var(--ga-font-mono); }
   .search { flex: 1 1 260px; max-width: 420px; }
   .record { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 24px; align-items: start; padding: 20px; border: 1px solid var(--line); border-radius: var(--ga-radius-lg); background: var(--surface); }
-  .record-crop { display: grid; place-items: center; aspect-ratio: 1; border-radius: var(--ga-radius-md); background: var(--surface-quiet); color: var(--ink); font-family: "Klee One", serif; font-size: 64px; }
+  .record-crop { display: grid; place-items: center; aspect-ratio: 1; border-radius: var(--ga-radius-md); background: var(--surface-quiet); color: var(--ink); font-family:var(--char-font); font-size: 64px; }
   .record-body { display: grid; gap: 8px; }
   .record-line { display: flex; align-items: center; gap: 10px; }
   .record-line h3 { margin: 0; font-size: var(--ga-text-2xl); font-weight: 500; }

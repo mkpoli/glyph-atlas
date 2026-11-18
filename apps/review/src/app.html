@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="%lang%" data-theme="%theme%">
+<html lang="%lang%" data-theme="%theme%" data-typeface="%typeface%">
   <head>
     <meta charset="utf-8" />
     <meta name="color-scheme" content="%color-scheme%" />
@@ -7,6 +7,7 @@
     <meta name="theme-color" content="#121215" media="%theme-color-dark%" data-scheme="dark" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link id="typeface-sheet" rel="stylesheet" href="%typeface-sheet%" />
     %sveltekit.head%
     <!-- The gallery's layout and tile size the reader chose (`lib/collage.js`), set before the first paint. -->
     <script>try{if(JSON.parse(localStorage.getItem('atlas.galleryLayout'))==='grid')document.documentElement.dataset.gallery='grid'}catch{}try{const z=JSON.parse(localStorage.getItem('atlas.tileSize'));if(Number.isInteger(z))document.documentElement.dataset.tileSize=z}catch{}</script>

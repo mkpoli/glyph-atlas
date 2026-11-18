@@ -92,9 +92,10 @@ def css(names: dict[str, str]) -> str:
             "   their private-use code points, in a sans and a serif cut. A page that shows none downloads neither. */\n"
             + "".join(f'@font-face {{\n  font-family: "{FAMILIES[style]}";\n  src: url("/fonts/drawn/{names[style]}") format("woff2");\n'
                       f"  font-display: block;\n  unicode-range: {covered};\n}}\n" for style in drawn_forms.STYLES)
-            # `ScriptText` sets a drawn form in `--drawn-font`: the sans cut, or the serif one where a rule says so.
+            # `ScriptText` sets a drawn form in `--drawn-font`: the cut of the face the reader chose.
             + f':root {{\n  --drawn-sans: "{FAMILIES["sans"]}", sans-serif;\n  --drawn-serif: "{FAMILIES["serif"]}", serif;\n'
-              "  --drawn-font: var(--drawn-sans);\n}\n")
+              "  --drawn-font: var(--drawn-sans);\n}\n"
+              ":root[data-typeface=serif] { --drawn-font: var(--drawn-serif); }\n")
 
 
 def module() -> str:

@@ -1,21 +1,11 @@
-# Reference font
+# Fonts
 
-`KureedoKata-Regular.woff2` is a webfont used for one thing: drawing the character labels of the
-character layer — code points almost no installed font covers, such as 𛄧 U+1B127, 𛄨 U+1B128 and
-𪜈 U+2A708. It is a rendering aid and never evidence: an occurrence is a crop of ink, and no glyph
-from this font is ever shown as one.
+Characters are set in Atlas Sans or Atlas Serif, whichever the reader chose; those two faces are
+built and served apart from this directory (`docs/typefaces.md`). The files here draw what they
+leave out. A font is a rendering aid and never evidence: an occurrence is a crop of ink, and no
+glyph from a font is ever shown as one.
 
-- Family: `Kureedo Kata` (Kureedo カタ), an independent derivative of Klee One by Fontworks Inc.
-- Licence: SIL Open Font License 1.1, copied in `OFL.txt`. The font's own name table carries the
-  copyright notices of both projects and points at <https://github.com/mkpoli/kureedo>.
-- Coverage for this interface, read from the file's `cmap`: kana (U+30A1–U+30FE, U+31F0–U+31FF,
-  combining voiced marks U+3099–U+309C), the two alternate katakana U+1B127–U+1B128, and 𪜈 U+2A708.
-  Code points outside that set fall back to the reader's own fonts, and the interface shows the code
-  point beside a character whose glyph no font on the machine can draw.
-- Not covered: ゟ U+309F and ヿ U+30FF.
-
-`GenZuiSans-Kana.woff2` is the second reference font: a subset of GenZui Sans for the kana that
-installed fonts rarely draw.
+`GenZuiSans-Kana.woff2` is a subset of GenZui Sans for the kana that installed fonts rarely draw.
 
 - Family: `GenZui Sans` (源萃ゴシック), version 0.103, by mkpoli (<https://github.com/mkpoli/GenZui>),
   derived from Noto Sans JP, Noto Sans Hentaigana, GenSeki Hentaigana Gothic and Noto Sans CJK JP.
@@ -54,28 +44,6 @@ installed fonts rarely draw.
   project's own: mkpoli drew them, and `scripts/trace_form.py` traced the pictures.
 - Coverage: the private-use code points of `data/vocab/drawn-forms.yaml`, from U+F0000, and nothing
   else. Each file is named by its content hash, and `src/drawn-forms.css` gives its `unicode-range`.
-
-## Handwriting fallbacks for the review target
-
-The review round's target character is drawn in one hand: Kureedo Kata, then Klee One, then
-LXGW WenKai TC, then LXGW WenKai, then GenZui Sans for the kana they lack.
-
-- `Klee One` comes complete from the `@fontsource/klee-one` package (SIL Open Font License 1.1,
-  © The Klee Project Authors, <https://github.com/fontworks-fonts/Klee>), split by `unicode-range`
-  so a page loads only the files it needs.
-- `fallback/` holds LXGW WenKai TC v1.522 (© The LXGW WenKai Project Authors,
-  <https://github.com/lxgw/LxgwWenkaiTC>) and LXGW WenKai v1.522 (© LXGW,
-  <https://github.com/lxgw/LxgwWenKai>, with glyphs from Klee One © The Klee Project Authors), both
-  under the SIL Open Font License 1.1 as `fallback/wenkai-tc-OFL.txt` and `fallback/wenkai-OFL.txt`.
-  They are cut down to the labels
-  with crops in the corpus that Kureedo Kata and Klee One do not draw, listed with their crop
-  counts in `fallback/characters.tsv`, and split into WOFF2 files of 120 characters, most frequent
-  first, each named by its content hash so a browser can keep it for good. Neither release reserves
-  a font name, so the subsets keep the family names.
-  `scripts/build_fallback_fonts.py` rebuilds them from the release files, which it checks against
-  pinned hashes; run it with `--labels work/corpus-index/chars.parquet` when the corpus grows.
-- Labels no font here draws fall back to the reader's own fonts: 46 characters of CJK Extensions
-  B–E, and 〱 〲 until the Kureedo Kata in this directory is a release that covers them.
 
 ## Interface font for chữ Hán-Nôm
 

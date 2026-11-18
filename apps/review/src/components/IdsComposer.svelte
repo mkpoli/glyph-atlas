@@ -364,7 +364,7 @@
 </div>
 
 <style>
-  .ids-composer{--ids-font:"GenZui Sans","Noto Serif Tangut","Klee One","LXGW WenKai TC",serif;display:flex;flex-direction:column;gap:10px}
+  .ids-composer{--ids-font:var(--char-font);display:flex;flex-direction:column;gap:10px}
   .ids-field,.ids-slot{display:flex;flex-direction:column;gap:4px}
   .ids-title{font-size:11px;color:var(--muted)}
   .ids-field input{font-size:20px;padding:6px 8px;font-family:var(--ids-font)}
