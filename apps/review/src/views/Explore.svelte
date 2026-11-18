@@ -1403,26 +1403,26 @@
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/key}{/if}
     {/snippet}
     {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
-    <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
-                     onform={form => pick({ code_point: codesOf(form), char: form }, true)}
-                     token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
-                     onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
-                     onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
-    <div class="filter-tabs" aria-label={t('explore.filter.label')}>
-      {#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')], ['tangut', () => t('explore.filter.tangut')]] as [value, text]}
-        {@const entry = groupMap.get(value)}
-        {@const tabCount = entry ? (flagged ? entry.need_fixing : entry.total) : null}
-        <button type="button" class:active={filter === value} aria-pressed={filter === value} data-group={value}
-                aria-label={tabCount != null ? `${text()}, ${formatNumber(tabCount)}` : undefined}
-                title={entry ? t('explore.filter.summary', { label: text(), crops: t('explore.meta.crops', { count: entry.total }), reviewed: t('explore.meta.reviewedCrops', { count: entry.reviewed }), fixing: t('explore.bottom.flagged', { count: entry.need_fixing }) }) : undefined}
-                onclick={() => { filter = value; load() }}><span class="filter-label">{text()}</span>{#if tabCount != null}<small class="filter-count" aria-hidden="true">{formatCompactNumber(tabCount)}</small>{/if}</button>
-      {/each}
+    <div class="toolbar-filters">
+      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
+                       onform={form => pick({ code_point: codesOf(form), char: form }, true)}
+                       token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
+                       onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
+                       onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
+      <div class="filter-tabs" aria-label={t('explore.filter.label')}>
+        {#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')], ['tangut', () => t('explore.filter.tangut')]] as [value, text]}
+          {@const entry = groupMap.get(value)}
+          {@const tabCount = entry ? (flagged ? entry.need_fixing : entry.total) : null}
+          <button type="button" class:active={filter === value} aria-pressed={filter === value} data-group={value}
+                  aria-label={tabCount != null ? `${text()}, ${formatNumber(tabCount)}` : undefined}
+                  title={entry ? t('explore.filter.summary', { label: text(), crops: t('explore.meta.crops', { count: entry.total }), reviewed: t('explore.meta.reviewedCrops', { count: entry.reviewed }), fixing: t('explore.bottom.flagged', { count: entry.need_fixing }) }) : undefined}
+                  onclick={() => { filter = value; load() }}><span class="filter-label">{text()}</span>{#if tabCount != null}<small class="filter-count" aria-hidden="true">{formatCompactNumber(tabCount)}</small>{/if}</button>
+        {/each}
+      </div>
+      <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
+      <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else load() }} />
     </div>
-    <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
-    <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else load() }} />
-    <span class="toolbar-space"></span>
-    <!-- The collection and the page: set aside on a wide screen, where they stand apart from what
-         narrows the collection. -->
+    <!-- How the collection is shown, and what to do with the page. -->
     <div class="page-tools">
       <div class="collection-tools">
         <ImageStyleToggle {ink} onchange={onink} />
@@ -1435,8 +1435,10 @@
         {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
         {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
       </div>
-      <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
-      <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
+      <div class="page-actions">
+        <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
+        <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
+      </div>
     </div>
   </div>
   {#if imaging}<ImageSearch given={imaging} onclose={() => imaging = null} {inspect} />{/if}
@@ -1501,24 +1503,53 @@
   .sheet-count{font-variant-numeric:tabular-nums}
   /* While the image is painted the button keeps the focus and takes no second press. */
   .sheet-save[aria-disabled="true"]{cursor:default;opacity:.45}
-  /* What the collection is shown as, and how, stays together as one group wherever the toolbar puts it. */
-  .collection-tools{display:contents}
-  /* Wide screens keep the toolbar's controls on one row: the find box takes the room it needs, the
-     categories follow it, and the tools of the page take the rest, starting where the toolbar meets the
-     budget the find box may take on any width. Below that, the tools begin a row of their own. */
-  .page-tools{display:contents}
-  @media(min-width:1700px){
-    .page-tools{display:flex;flex:1;align-items:center;justify-content:flex-end;gap:28px}
-    .collection-tools{display:flex;align-items:center;gap:14px}
-    .collection-toolbar :global(.character-search){flex:0 0 420px}
+  /* What narrows the collection on one row, how it is shown and what to do with the page on the next;
+     a screen wide enough for both puts them on one. */
+  .explore > .collection-toolbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:12px;padding:16px 0}
+  .toolbar-filters{display:flex;align-items:center;gap:12px 24px;min-width:0}
+  .collection-toolbar .toolbar-filters .filter-tabs{flex-shrink:0}
+  .collection-toolbar .toolbar-filters :global(.character-search){flex:0 1 380px;min-width:240px}
+  .page-tools{display:flex;align-items:center;flex-wrap:wrap;gap:12px 24px}
+  .collection-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}
+  .page-actions{display:flex;align-items:center;gap:24px;margin-left:auto}
+  /* The works filter sits at the end of the filters, so its menu opens leftward from its right edge. */
+  @media(min-width:701px){.toolbar-filters :global(.work-menu){left:auto;right:0}}
+  @media(min-width:2250px){
+    .explore > .collection-toolbar{flex-direction:row;align-items:center;gap:32px}
+    .page-tools{flex:none;flex-wrap:nowrap;margin-left:auto;gap:32px}
+  }
+  /* Where the scripts no longer fit beside the search, the search keeps the row with the works and the
+     scripts take the next. */
+  @media(max-width:1340px){
+    .toolbar-filters{flex-wrap:wrap}
+    .collection-toolbar .toolbar-filters :global(.character-search){flex:1 1 0}
+    .toolbar-filters .filter-tabs{order:1;flex-basis:100%}
   }
   /* The server cannot know the reader's size, so the slider waits for the page to wake rather than show the wrong one. */
   :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
   .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
   .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
-  /* A phone shows the tools as icons; how far the image has come, or that it failed, still shows beside
-     its icon, and the slider gives up the room the icon takes so the tools stay on one row. */
-  @media(max-width:700px){.sheet-save span{margin-left:6px;font-size:11px}.zoom-control input{width:60px}}
+  /* Where the tools no longer fit one row, they flow as one line of controls and the page's actions at
+     its end show as icons; how far the image has come, or that it failed, still shows beside its icon. */
+  @media(max-width:900px){
+    .collection-tools{display:contents}
+    .page-tools{gap:8px 16px}
+    .page-actions{gap:4px}
+    .page-actions .shuffle{font-size:0;gap:0;padding:8px}
+    .page-actions .shuffle svg{width:18px;height:18px}
+    .sheet-save span{margin-left:6px;font-size:11px}
+  }
+  /* A phone puts the search on a row of its own, runs the scripts as one strip to scroll, and narrows the slider. */
+  @media(max-width:700px){
+    .explore > .collection-toolbar{gap:10px;padding:12px 0}
+    .collection-toolbar .toolbar-filters :global(.character-search){flex-basis:100%;min-width:0}
+    .toolbar-filters{gap:10px 12px}
+    .collection-toolbar .toolbar-filters .filter-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-inline:-20px;padding-inline:20px;mask-image:linear-gradient(to right,transparent,#000 20px,#000 calc(100% - 32px),transparent)}
+    .toolbar-filters .filter-tabs::-webkit-scrollbar{display:none}
+    .toolbar-filters :global(.work-control){order:2;border-left:0;padding-left:0}
+    .page-tools{gap:8px 12px}
+    .zoom-control input{width:60px}
+  }
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
   .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
   .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 10px/1 system-ui,sans-serif;color:transparent}
