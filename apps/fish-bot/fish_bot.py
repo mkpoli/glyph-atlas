@@ -77,9 +77,9 @@ CHAT_ROOM_PER_HOUR = 30
 # The command: `!fish` anywhere a word starts, or `/fish` opening the message. A `.fish` file name
 # or a path ending in /fish calls no one.
 COMMAND = r"(?:(?:^|(?<=\s))!|^/)fish"
-# A Han name is written against the words around it, so it calls the bot only as an address: at the
-# end, before a space, punctuation, kana or one of the words that follow a name being called. 大肥鱼头
-# (a fish head), 大肥鱼V4 (DeepSeek news) and 减肥鱼油 call no one.
+# A Han name is written against the words around it (大肥魚餓嗎, 大肥魚喫🍚), so it calls the bot
+# unless the next character makes it something else: a letter or digit (大肥鱼V4, DeepSeek news) or a
+# word that turns the fish into food (大肥鱼头).
 HAN = "\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0003134f"
 # What asks the bot to introduce itself: a call that is the request and nothing else, such as
 # `!fish 自我介紹` or 大肥魚，自我介紹一下. 自我介紹一下，我是新來的 is a newcomer's own introduction.
@@ -87,7 +87,7 @@ INTRO_WORD = r"(?:intro|introduce yourself|自我介[紹绍]|自己紹介|자기
 INTRO = re.compile(r"(?:請|请|please\s+)?" + INTRO_WORD
                    + r"(?:一下|下|吧|呢|嗎|吗|して(?:ください|ね)?|해\s?(?:줘|주세요)|\s+please)?[\s.!?。！？~～]*",
                    re.IGNORECASE)
-AFTER_ADDRESS = "你妳您呀啊哦喔欸誒诶唷呢嗎吗吧來来在醬酱好幫帮"
+NOT_ADDRESS = "头頭尾肉汤湯片油排块塊骨皮刺丸粥鳞鱗鳍鰭腩柳干乾罐"
 # Joining in unasked: research on group-chat agents finds a model alone decides poorly when to
 # speak (Bhagtani et al., arXiv 2603.11409; Nama et al., arXiv 2605.05626), so a cheap gate outside
 # the model picks the moments, after MaiBot's turn trigger (talk_value as a probability, debounced
@@ -1431,7 +1431,7 @@ def _name_pattern(name: str) -> str:
     joined = r"[\s_-]*".join(words)
     if name.isascii():
         return rf"(?<![\w]){joined}(?![\w])"
-    return rf"{joined}(?=$|自我介|自己紹介|[{AFTER_ADDRESS}]|[^A-Za-z0-9{HAN}])"
+    return rf"{joined}(?![A-Za-z0-9{NOT_ADDRESS}])"
 
 
 def _names_of(display_name: str, aliases: Iterable[str]) -> list[str]:
