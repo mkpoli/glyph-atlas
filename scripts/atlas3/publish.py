@@ -1640,7 +1640,8 @@ def main():
                restored=row is None and bool(previous.get("retired")), retired_at=previous.get("revision"))
         if r["id"] in recut and row is not None and row["state"] in MARK_STATES:
             m.unmark(cid)
-        if r["id"] in recut and data.get("box"):
+        # A unit still marked pending carries the redrawn box over its old image: nothing was cut yet.
+        if r["id"] in recut and data.get("box") and not data.get("box_pending"):
             m.settle_redraw(cid, data["box"])
         if with_votes:
             m.vote(cid, given.get("cut", row["cut"] if row else 0), r["visual"], r["context"])
