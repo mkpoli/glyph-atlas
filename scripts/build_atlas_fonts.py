@@ -51,7 +51,7 @@ INTERFACE = ROOT / 'data/vocab/typeface-interface.txt'
 # The licence's text, below the copyright line of the copy that ships with the IDS editor's fonts.
 OFL = ROOT / 'apps/review/static/fonts/OFL-Plangothic.txt'
 UPEM, ASCENT, DESCENT = 1000, 880, -120
-FORMAT = 2
+FORMAT = 3
 
 # Every source, pinned. Noto's Reserved Font Name is `Source`; Plangothic declares none; Jigmo is CC0.
 SOURCES = {
@@ -333,8 +333,12 @@ def main():
     # A trial leaves the folder's index, sheets and notices as a whole build wrote them.
     if not only:
         for face, entry in faces.items():
+            # A browser draws bold text from the bold faces alone and leaves a character they lack to
+            # the next family, so every file with no bold cut is declared at the bold weight as well.
+            plain = {name: file for name, file in entry['files'].items() if name not in entry['bold']}
             (out / f'{face}.css').write_text(sheet(entry['family'], f'{face}/', entry['files'])
-                                             + sheet(entry['family'], f'{face}/bold/', entry['bold'], weight=BOLD['weight']), encoding='utf-8')
+                                             + sheet(entry['family'], f'{face}/bold/', entry['bold'], weight=BOLD['weight'])
+                                             + sheet(entry['family'], f'{face}/', plain, weight=BOLD['weight']), encoding='utf-8')
             (out / f'{face}-figures.css').write_text(sheet(f"{entry['family']} Figures", f'{face}/figures/', entry['figures'], selectors=True), encoding='utf-8')
             for name, listed in lists[face].items():
                 (out / face / 'figures' / f'{name}.json').write_text(json.dumps(listed, separators=(',', ':')) + '\n', encoding='utf-8')

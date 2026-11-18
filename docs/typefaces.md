@@ -28,7 +28,9 @@ A face is cut into small WOFF2 files, and a page downloads the files of the char
   files.
 - `<hhh>`: the remaining characters of the 256 code points U+hhh00 to U+hhhFF.
 - `bold/`: the `c`, `u`, kana (`030`) and full-width (`0ff`) files at weight 700, from the Noto
-  fonts alone. A character outside them is set in the regular weight.
+  fonts alone. A browser draws bold text from the faces declared bold and from no other, so the
+  style sheet declares every file without a bold cut at weight 700 too: a character outside the
+  bold files is drawn in its regular weight.
 - `figures/<hhh>`: the registered variation sequences of those 256 code points, with the characters
   they vary, in the family `Atlas Sans Figures` or `Atlas Serif Figures`. Text with no variation
   selector never downloads one. `figures/<hhh>.json` lists the sequences the file draws, by base
