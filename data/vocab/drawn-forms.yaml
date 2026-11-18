@@ -41,3 +41,11 @@ forms:
       The form: forms clustering 582865e3b2b68c53 of 事, read on https://glyphatlas.org/ja/forms/U+4E8B on
       2026-11-16, cluster U+4E8B:76452db58f (42 glyphs), named as one form by mkpoli on the same day.
       The drawings: supplied by mkpoli on 2026-11-17 as one picture of a serif and a sans figure, traced
+  U+F0002:
+    written_for: U+4E8B
+    script: han
+    name: 事 as a hooked downstroke with a short dash at its left, an upturned bar and a narrow loop on the right, the tail narrowing to a point at the lower left
+    basis: >-
+      The form: a cursive variant of 事, supplied by mkpoli on 2026-11-18 and not yet matched to a
+      cluster in forms clustering 582865e3b2b68c53.
+      The drawings: supplied by mkpoli on 2026-11-18 as one picture of a serif and a sans figure, traced

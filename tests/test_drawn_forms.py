@@ -12,7 +12,7 @@ import pytest
 from glyph_atlas import drawn_forms, form_clusters, forms, refs, representation
 
 ROOT = Path(__file__).resolve().parents[1]
-RU, FANG = "\U000f0000", "\U000f0001"
+RU, FANG, HOOK = "\U000f0000", "\U000f0001", "\U000f0002"
 
 
 def _build():
@@ -25,7 +25,7 @@ def _build():
 def test_the_table_names_each_form_its_grapheme_and_its_drawing():
     table = drawn_forms.table()
     assert (table.namespace, table.version) == ("glyph-atlas", "1")
-    assert [form.code_point for form in drawn_forms.written_for("事")] == ["U+F0000", "U+F0001"]
+    assert [form.code_point for form in drawn_forms.written_for("事")] == ["U+F0000", "U+F0001", "U+F0002"]
     assert drawn_forms.written_for("也") == []
     assert drawn_forms.drawn(RU).written_for == "事" and drawn_forms.drawn("\U000f0100") is None
     for form in table.forms.values():
@@ -47,7 +47,7 @@ def test_a_drawn_form_is_a_private_use_representation_in_the_tables_namespace():
 
 def test_a_drawn_form_is_a_character_of_the_family_it_writes():
     info = refs.grapheme_info("U+4E8B")
-    assert [member["code_point"] for member in info["members"]][-2:] == ["U+F0000", "U+F0001"]
+    assert [member["code_point"] for member in info["members"]][-3:] == ["U+F0000", "U+F0001", "U+F0002"]
     row = refs.character("U+F0000")
     assert (row.char, row.grapheme, str(row.script), row.name) == (RU, "U+4E8B", "han", None)
     assert refs.grapheme_info("U+F0000")["code_point"] == "U+4E8B"
@@ -62,15 +62,15 @@ def test_a_drawn_form_is_filed_as_the_grapheme_it_writes_is():
     assert [schema.category_of(label) for label in (RU, "事", "\U000f0100")] == ["kanji", "kanji", "other"]
     # A kanji with other characters keeps its family in a clustering, its drawn forms among them.
     family = form_clusters.family_of("U+4E8B")
-    assert [member["code_point"] for member in family["members"]][-2:] == ["U+F0000", "U+F0001"] and family["relation"] != "kanji-variants"
+    assert [member["code_point"] for member in family["members"]][-3:] == ["U+F0000", "U+F0001", "U+F0002"] and family["relation"] != "kanji-variants"
 
 
 def test_a_clustering_made_before_the_table_still_offers_the_familys_drawn_forms(monkeypatch):
     monkeypatch.setattr(forms, "family_members", lambda family: ["事", "亊"] if family == "U+4E8B" else ["也"])
-    assert forms.drawn_members("U+4E8B") == [RU, FANG]
+    assert forms.drawn_members("U+4E8B") == [RU, FANG, HOOK]
     assert forms.drawn_members("U+4E5F") == []
     # One made after it publishes them itself.
-    monkeypatch.setattr(forms, "family_members", lambda family: ["事", "亊", RU, FANG])
+    monkeypatch.setattr(forms, "family_members", lambda family: ["事", "亊", RU, FANG, HOOK])
     assert forms.drawn_members("U+4E8B") == []
 
 
