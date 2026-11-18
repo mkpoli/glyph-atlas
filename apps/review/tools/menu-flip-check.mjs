@@ -101,7 +101,7 @@ try {
   assert(top.list.bottom <= top.viewport + 1, `the toolbar's list runs past the window: ${JSON.stringify(top)}`)
 
   // Scrolling moves the box under an open list: the side is chosen again with the room it now has.
-  await browser.setViewport(1280, 360)
+  await browser.setViewport(1280, 320)
   await Bun.sleep(250)
   const tight = await browser.evaluate(geometryOf('.collection-toolbar .character-search'))
   assert(tight.list.bottom <= tight.form.top + 1, `the short window's toolbar list opens below its box: ${JSON.stringify(tight)}`)
