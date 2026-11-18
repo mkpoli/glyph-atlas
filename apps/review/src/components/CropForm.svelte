@@ -104,10 +104,11 @@
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   function choose(char) { onchoose(char === chosen ? null : char) }
-  // The state is already held on the crop: choosing it again would claim nothing new.
+  // A state another reader holds can be chosen too: the claim records that this reader looked and
+  // agrees. Clicking it again drops the unsaved choice.
   function chooseUnknown() {
-    if (disabled || (unknown && chosen == null)) return
-    onchoose(unknown ? null : UNRESOLVED)
+    if (disabled) return
+    onchoose(chosen === UNRESOLVED ? null : UNRESOLVED)
   }
   // The grapheme's forms changed for every crop of its family, so the card is read again after a save.
   async function reload() {
