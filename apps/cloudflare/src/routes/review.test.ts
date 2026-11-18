@@ -913,6 +913,10 @@ describe('a corpus glyph\'s review', () => {
     const named = await send(env, `/atlas/characters/${publicId(fid)}`, { id: uuid(28), revision: 0, source_revision: G, verdict: 'match' });
     expect(named.status).toBe(200);
     expect(named.body).toMatchObject({ results: [{ target_id: publicId(fid), revision: 1, state: 'checked' }] });
+    // The match keeps the character it confirmed, whatever the cluster is decided as later.
+    expect(db.query('SELECT g.text FROM crops c JOIN graphemes g ON g.id=c.char WHERE c.id=?').get(fid)).toEqual({ text: '𛂜' });
+    db.exec(`UPDATE form_clusters SET form='𛂞' WHERE id=9`);
+    expect((await foundCrop(env, fid))!.record).toMatchObject({ written_character: '𛂜', identity_basis: 'human_review' });
     const assigned = await send(env, `/atlas/characters/${publicId(uid)}`, { id: uuid(23), revision: 0, source_revision: G,
       verdict: 'wrong', issue: 'character', character: 'ハ', box: nextBox });
     expect(assigned.status).toBe(200);

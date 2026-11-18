@@ -573,7 +573,11 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     if (glyph && (!current.proxyable || (current.identity_status === 'unassigned' && answer.verdict === 'match')))
       throw new Problem(422, 'Choose a written character or report an issue.');
     if (round && (!row.quiz || !members!.includes(current.label))) throw new Problem(409, 'This round changed. Reload it.');
-    const written = answer.character ? unified(answer.character) : null;
+    // A match on a corpus glyph the forms tool named confirms the character its inspector showed, so the
+    // crop keeps it if the cluster is decided again.
+    const formedMatch = glyph && answer.verdict === 'match' && !answer.character && current.form_decision
+      && current.identity_status === 'assigned' && current.identity_basis !== 'human_review' ? current.written_character : null;
+    const written = answer.character ? unified(answer.character) : formedMatch ? unified(formedMatch) : null;
     // A bad crop reported beside a wrong character leaves the crop reported for its box, even with the
     // character named. A batch names the character only: a crop reported for its box, a blank or a merge
     // stays reported.
