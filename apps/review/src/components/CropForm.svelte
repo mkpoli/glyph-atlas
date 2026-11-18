@@ -1,16 +1,17 @@
 <script>
-  // The crop's form: the forms of its grapheme as chips, its members and then its variants, chosen with
-  // a click or a number key, and a picker that adds another form to them: a form past the bar, a related
-  // or derived character, a character found by search, or a shape written as an ideographic description
-  // sequence. A choice is held until the dialog saves. Every chip toggles: a click chooses it, the crop's
-  // own form too, which confirms that form, and a click on the chosen chip drops the choice.
+  // The crop's form: the forms of its grapheme and related characters as chips — its members, its
+  // variants and its related characters — chosen with a click or a number key, and a picker that
+  // adds another form to them: a derived character, a character found by search, or a shape written
+  // as an ideographic description sequence. A choice is held until the dialog saves. Every chip toggles:
+  // a click chooses it, the crop's own form too, which confirms that form, and a click on the chosen
+  // chip drops the choice.
   // A described form or a registered figure the crop already has can be recorded as written for its
   // grapheme (written_for), so the form joins the grapheme's 字体 on every card and in every picker of
   // the family.
-  // The forms stand under their 構形, on the bar and among the picker's 字体: 説 and 說 under one, 峰
-  // and 峯 under two, a figure of the IVD with its character. A form with no structure, and a grapheme
-  // of another script, stand last without a caption. A form's 構形 is read before the form is shown, so
-  // the chips, and the number keys with them, keep their places.
+  // The forms stand under their 構形, on the bar: 説 and 說 under one, 峰 and 峯 under two, a figure
+  // of the IVD with its character. A form with no structure, and a grapheme of another script, stand
+  // last without a caption. A form's 構形 is read before the form is shown, so the chips, and the
+  // number keys with them, keep their places.
   // A signed-in reader opens the 構形 of the bar's forms to arrange them, where a form, typed, derived
   // or encoded, is filed under another 構形.
   import { untrack } from 'svelte'
@@ -33,14 +34,13 @@
   let arranging = $state(false)
   const written = $derived(crop?.written_character ?? crop?.label ?? '')
   const current = $derived(formOf(crop))
-  const BAR = 10
   // The 構形 each form stands under, by the form's text; a form the site knows no structure of has
   // none. The crop's character is named too, for its regional shapes.
   let structureOf = $state(new Map())
   const HAN = /^\p{Script=Han}$/u
   const stands = (names, known) => standing(names, known, HAN.test(written) ? written : '')
   const composed = (names, known = new Map()) => stands(names, known).catch(() => known)
-  const namesOf = found => [...found.members, ...found.variants].map(form => form.char)
+  const namesOf = found => [...found.members, ...found.variants, ...found.related].map(form => form.char)
   $effect(() => {
     const id = crop?.id, char = written, own = untrack(() => current)
     added = []; picking = false; query = ''; failed = false; composing = false; linking = false; linkError = ''; linkedByMe = false; arranging = false
@@ -51,19 +51,17 @@
       })
   })
   const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], related: [], derived: [], linked: [], grapheme: null })
-  // The grapheme's forms: its members, then its variants.
-  const forms = $derived([...listed.members, ...listed.variants].filter(form => !others || form.char !== current))
-  // The bar: the grapheme's first forms, the crop's own form when it is none of them, and what the
-  // picker added.
+  // The grapheme's forms and related characters: its members, its variants, and its related characters.
+  const forms = $derived([...listed.members, ...listed.variants, ...listed.related].filter(form => !others || form.char !== current))
+  // The bar: the grapheme's forms and related characters, the crop's own form when it is none of them,
+  // and what the picker added.
   const bar = $derived.by(() => {
-    const chips = forms.slice(0, BAR)
+    const chips = [...forms]
     const has = char => chips.some(chip => chip.char === char)
-    if (current && !others && !has(current)) chips.push(forms.find(form => form.char === current) ?? { char: current, script: '', lang: '' })
+    if (current && !others && !has(current)) chips.push({ char: current, script: '', lang: '' })
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
-  // The bar wraps onto further rows; only the forms past the first ten, and not on it, wait in the picker.
-  const rest = $derived(forms.slice(BAR).filter(form => !bar.some(chip => chip.char === form.char)))
   // The 構形 of the crop's own form, which Quick Review's bar leaves off.
   const ownStructure = $derived(structureOf.get(current) ?? null)
   // A list's forms under the 構形 each is built as, a structure where its first form stands; the forms
@@ -94,10 +92,8 @@
   const grapheme = $derived(listed.grapheme?.code_point ?? crop?.grapheme ?? null)
   const canLink = $derived(Boolean(saved && (saved.scheme === 'ids' || saved.scheme === 'ivs') && !linkedHere && !knownForm && !chosen && grapheme && !disabled && !failed))
   const q = $derived(query.trim().toUpperCase())
-  const matches = item => !q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)
+  const matches = item => (!q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)) && !bar.some(chip => chip.char === item.char)
   const sections = $derived([
-    ['forms', t('chips.forms'), rest],
-    ['related', t('chips.related'), listed.related],
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   function choose(char) { onchoose(char === chosen ? null : char) }
@@ -111,7 +107,7 @@
     } catch { /* the save stands; the card reads again next time */ }
   }
   // What the 構形 dialog lays out, and the bar reads again after it closes on a change.
-  const arranged = $derived([...bar, ...rest])
+  const arranged = $derived(bar)
   async function rearranged() {
     const id = crop?.id
     const found = await composed(arranged.map(form => form.char), structureOf)
@@ -179,7 +175,7 @@
     <FormChips groups={barGroups} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
       {#if !others}<CopyValue value={chosen ?? current} />{/if}
     </FormChips>
-    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>{rest.length ? `+${rest.length}` : '+⌕'}</button>
+    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+⌕</button>
   </div>
   {#if others && ownStructure}
     <div class="form-own"><span class="form-own-label">{t('chips.structure')}</span><span lang="zh">{ownStructure.label}</span></div>
@@ -210,17 +206,10 @@
         <div class="form-section">
           <span class="form-section-title">{title}</span>
           <div class="form-options">
-            {#each key === 'forms' ? grouped(items) : [{ id: '', label: '', forms: items }] as group (group.id)}
-              <div class="form-option-group" class:own={group.own} role={group.label ? 'group' : undefined} aria-label={group.label || undefined}>
-                {#if group.label}<span class="form-option-label" lang="zh" aria-hidden="true">{group.label}</span>{/if}
-                <div class="form-option-row">
-                  {#each group.forms as item (item.char)}
-                    <button type="button" class="form-option" {disabled} title={optionTitle(item)} onclick={() => add(item)}>
-                      <FormText text={item.char} script={item.script} lang={item.lang} />{#if item.mj}<small>{item.mj}</small>{:else if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{:else if item.regions}<small>{item.regions}</small>{/if}
-                    </button>
-                  {/each}
-                </div>
-              </div>
+            {#each items as item (item.char)}
+              <button type="button" class="form-option" {disabled} title={optionTitle(item)} onclick={() => add(item)}>
+                <FormText text={item.char} script={item.script} lang={item.lang} />{#if item.mj}<small>{item.mj}</small>{:else if item.encoded !== false && item.code_point}<small>{item.code_point}</small>{:else if item.regions}<small>{item.regions}</small>{/if}
+              </button>
             {/each}
           </div>
         </div>
@@ -251,11 +240,7 @@
   .form-picker :global(.character-search){width:100%;min-width:0}
   .form-section{display:flex;flex-direction:column;gap:6px}
   .form-section-title{font-size:11px;color:var(--muted)}
-  .form-options{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:flex-end}
-  .form-option-group{display:flex;flex-direction:column;gap:3px;min-width:0}
-  .form-option-label{font-size:11px;line-height:1.3;color:var(--muted)}
-  .form-option-group.own .form-option-label{color:var(--ink)}
-  .form-option-row{display:flex;flex-wrap:wrap;gap:6px}
+  .form-options{display:flex;flex-wrap:wrap;gap:6px}
   .form-option{display:inline-flex;flex-direction:column;align-items:center;gap:2px;min-width:44px;padding:5px 9px;font-size:21px;line-height:1.2;
     font-family:var(--char-font)}
   .form-option small{font-family:ui-monospace,monospace;font-size:9px;color:var(--muted)}

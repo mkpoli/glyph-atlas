@@ -67,8 +67,11 @@
   // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫). A name with no structure, and a site that knows
   // none yet, shows no row.
   const HAN = /^\p{Script=Han}$/u
-  const composedOf = $derived([...new Set([...members, ...written, ...described].map(v => v.char)
-    .filter(char => HAN.test(char ?? '') || isDescription(char) || isFigure(char ?? '')))].slice(0, 48))
+  const composable = list => [...new Set(list.map(v => v.char)
+    .filter(char => HAN.test(char ?? '') || isDescription(char) || isFigure(char ?? '')))]
+  const composedOf = $derived(composable([...members, ...written, ...described]).slice(0, 48))
+  // The forms shown when arranging 構形: the grapheme's 字体 and its related characters.
+  const arrangeOf = $derived(composable([...members, ...written, ...described, ...related]))
   // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
   // A signed-in reader opens the 構形 to arrange them, and the row is read again once they have.
   let composed = $state([]), arranging = $state(false), arrangedTimes = $state(0)
@@ -115,7 +118,7 @@
         </div>
       </div>
       {#if arranging}
-        <StructureDialog of={card.char} forms={composedOf.map(char => ({ char }))} read={standing} current={card.char} close={() => arranging = false} changed={() => arrangedTimes++} />
+        <StructureDialog of={card.char} forms={arrangeOf.map(char => ({ char }))} read={standing} current={card.char} close={() => arranging = false} changed={() => arrangedTimes++} />
       {/if}
     {/if}
     <div class="layer-row">
