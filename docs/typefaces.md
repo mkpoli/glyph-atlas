@@ -47,7 +47,7 @@ A face is cut into small WOFF2 files, and a page downloads the files of the char
 
 `index.json` lists each file's characters as ranges, its size and hash, and the sequences a figures
 file draws by collection. `sans.css` and `serif.css` declare a face's files with those ranges
-(18 KB compressed), which is how a browser knows the file a character is in; `sans-figures.css` and
+(13 KB in Brotli), which is how a browser knows the file a character is in; `sans-figures.css` and
 `serif-figures.css` do the same for the sequences.
 
 ## Registered sequences
