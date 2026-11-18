@@ -23,7 +23,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DRAWINGS = ROOT / "data" / "vocab" / "drawn-forms"
 EM, INK_BOX = 1000, 880
 WIDTH_FACTOR = 1.30  # widen the narrow handwritten figures at chip sizes
-OUTSET = 5           # units of ink added at each edge before widening
+OUTSET = 5           # default edge expansion and shared fitting margin, in em units
+# The looped 事 starts with heavier strokes. These signed outsets match the mean effective stroke
+# width (2 × ink area / perimeter) of F0001 and F0002 in the finished font, separately for each cut.
+EDGE_ADJUSTMENTS = {("F0000", "serif"): 1.16, ("F0000", "sans"): -2.32}
 ENLARGED = 4   # the picture is enlarged before its edge is read, so the edge falls between its pixels
 STEP = 6       # units between the outline's points
 SMOOTH = 1.2   # units of smoothing along the outline, which rounds the pixel steps and keeps a corner
@@ -89,11 +92,12 @@ def main() -> int:
     height_scale = (INK_BOX - 2 * OUTSET) / max(figure.shape[0] for figure in cut)
     width_scale = (INK_BOX / WIDTH_FACTOR - 2 * OUTSET) / max(figure.shape[1] for figure in cut)
     scale = min(height_scale, width_scale)
-    radius = round(OUTSET / scale)
-    diameter = 2 * radius + 1
-    brush = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (diameter, diameter))
-    cut = [cv2.dilate(np.pad(figure, radius), brush) for figure in cut]
     for style, figure in zip(args.styles, cut):
+        radius = round(EDGE_ADJUSTMENTS.get((name, style), OUTSET) / scale)
+        diameter = 2 * abs(radius) + 1
+        brush = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (diameter, diameter))
+        adjust = cv2.erode if radius < 0 else cv2.dilate
+        figure = adjust(np.pad(figure, abs(radius)), brush)
         path = outline(figure, scale)
         (DRAWINGS / f"{name}.{style}.svg").write_text(
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {EM} {EM}">\n  <path d="{path}"/>\n</svg>\n', encoding="utf-8")
