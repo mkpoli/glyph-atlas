@@ -70,8 +70,11 @@ class FakeMatrix:
     def typing(self, room_id, user_id, *, timeout_ms=15_000):
         self.typed.append(room_id)
 
+    def canonical_alias(self, room_id):
+        return {"!welcome:example": "#welcome:example"}.get(room_id, "")
+
     def resolve(self, alias):
-        return {"#ja:example": "!ja:example"}[alias]
+        return {"#ja:example": "!ja:example", "#welcome:example": "!welcome:example"}[alias]
 
     def upload(self, data, content_type, filename):
         self.uploads.append((len(data), content_type, filename))
@@ -100,7 +103,8 @@ class FakeDeepSeek:
         self.digests.append((language, room_name, changes, other_rooms))
         return f"digest in {language}"
 
-    def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=()):
+    def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=(), rooms=""):
+        self.rooms = rooms
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
         self.sticker_offers = (tuple(stickers), tuple(recent))
         if self.error is not None:
@@ -611,33 +615,59 @@ def test_reads_a_call_by_a_han_alias_inside_a_sentence():
     assert fish_bot.call_of(event("bigfatfishy"), USER, "Big Fat Fish") is None
 
 
-def test_answers_a_call_as_a_reply_and_introduces_itself_the_first_time(tmp_path):
-    bot, matrix, store = make_bot(tmp_path, act=act("嗨嗨～", "本鯨是大肥魚！"))
+def test_answers_a_call_as_a_reply(tmp_path):
+    bot, matrix, store = make_bot(tmp_path, act=act("嗨嗨～", "本鯨在這裡！"))
     trigger = event("大肥魚，你好呀！", event_id="$call")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    assert bot.deepseek.turns[0][0] == "called-intro"
-    assert [content["body"] for _, content, _ in matrix.sent] == ["嗨嗨～", "本鯨是大肥魚！"]
+    assert bot.deepseek.turns[0][0] == "called"
+    assert [content["body"] for _, content, _ in matrix.sent] == ["嗨嗨～", "本鯨在這裡！"]
     assert matrix.sent[0][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$call"}}
     assert "m.relates_to" not in matrix.sent[1][1]
     assert store.outcome("$call")[0] == "chatted"
-    assert store.introduced(ROOM)
-    again = event("大肥魚，再見", event_id="$again")
-    bot.ingest(ROOM, again, backfilled=False)
-    bot.answer(ROOM, again)
-    assert bot.deepseek.turns[1][0] == "called"
 
 
-def test_says_hello_once_on_the_first_message_in_a_room(tmp_path):
-    bot, matrix, store = make_bot(tmp_path, act=act("大家好，我是大肥魚！"))
-    for number in range(2):
-        message = event(f"hello {number}", event_id=f"$m{number}")
-        bot.ingest(ROOM, message, backfilled=False)
-        bot.notice(ROOM, message)
-    assert [turn[0] for turn in bot.deepseek.turns] == ["intro"]
-    assert len(matrix.sent) == 1
-    assert "m.relates_to" not in matrix.sent[0][1]
-    assert store.introduced(ROOM)
+def test_reads_the_introduction_command():
+    for body in ("!fish 自我介紹", "!fish intro", "大肥魚，自我介紹一下", "大肥魚さん、自己紹介して", "@bigfatfish introduce yourself"):
+        assert fish_bot.call_of(event(body), USER, "大肥魚").mode == "intro", body
+    assert fish_bot.call_of(event("大肥鱼自我介绍一下"), USER, "大肥魚", (), ("大肥鱼",)).mode == "intro"
+    for body in ("大肥魚，介紹一下這個字", "大肥魚 introduction to IDS", "Big Fat Fish, intro to radicals?",
+                 "!fish introspection", "自我介紹一下，我是新來的，大肥魚你好",
+                 "大肥魚 introduce yourself and file an issue"):
+        assert fish_bot.call_of(event(body), USER, "大肥魚", (), ("Big Fat Fish",)).mode == "chat", body
+
+
+def intro_bot(tmp_path):
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20,
+                             intro_rooms=("#welcome:example",))
+    return make_bot(tmp_path, config=config, act=act("我是大肥魚！"))
+
+
+def test_introduces_herself_on_request_in_the_welcome_room(tmp_path):
+    bot, matrix, store = intro_bot(tmp_path)
+    trigger = event("!fish 自我介紹", event_id="$intro")
+    bot.ingest("!welcome:example", trigger, backfilled=False)
+    bot.answer("!welcome:example", trigger)
+    assert bot.deepseek.turns[0][0] == "intro"
+    assert matrix.sent[0][0] == "!welcome:example"
+    assert store.outcome("$intro")[0] == "introduced"
+
+
+def test_points_to_the_welcome_room_from_a_project_room(tmp_path):
+    bot, _matrix, _ = intro_bot(tmp_path)
+    trigger = event("大肥魚 自我介紹", event_id="$intro")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert bot.deepseek.turns[0][0] == "intro-elsewhere"
+    assert bot.deepseek.rooms == "Test room"
+
+
+def test_never_introduces_herself_unasked(tmp_path):
+    bot, matrix, _ = intro_bot(tmp_path)
+    message = event("hello everyone", event_id="$m")
+    bot.ingest(ROOM, message, backfilled=False)
+    bot.notice(ROOM, message)
+    assert bot.deepseek.turns == [] and matrix.sent == []
 
 
 def test_a_chat_that_asks_for_an_issue_reaches_the_issue_desk(tmp_path):
@@ -664,7 +694,6 @@ def test_chat_budget_stops_a_flood_without_answering(tmp_path):
     config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20,
                              max_chats_per_user_per_hour=1)
     bot, matrix, store = make_bot(tmp_path, config=config)
-    store.mark_introduced(ROOM)
     for number in range(2):
         message = event(f"@bigfatfish {number}", event_id=f"$c{number}")
         bot.ingest(ROOM, message, backfilled=False)
@@ -677,9 +706,8 @@ def test_an_issue_asked_in_chat_obeys_the_issue_limits(tmp_path):
     github = FakeGitHub()
     config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20,
                              max_calls_per_user_per_hour=1)
-    bot, _matrix, store = make_bot(tmp_path, decision_value=decision(), github=github, config=config,
+    bot, _matrix, _store = make_bot(tmp_path, decision_value=decision(), github=github, config=config,
                                    act=act("好～", issue=True))
-    store.mark_introduced(ROOM)
     for number in range(2):
         message = event(f"大肥魚 please file this {number}", event_id=f"$i{number}")
         bot.ingest(ROOM, message, backfilled=False)
@@ -736,7 +764,6 @@ def test_uploads_each_sticker_once_and_only_when_its_hash_matches(tmp_path, monk
 def test_sends_the_sticker_the_model_picks_after_its_line(tmp_path):
     bot, matrix, store = make_bot(tmp_path, act=act("好耶", sticker="yay"))
     store.set_sticker("yay", next(s.sha256 for s in fish_bot.STICKERS if s.name == "yay"), "mxc://example/yay", 123)
-    store.mark_introduced(ROOM)
     trigger = event("大肥魚 we shipped it!", event_id="$call")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
@@ -776,7 +803,6 @@ def ambient_bot(tmp_path, monkeypatch, *, chance=1.0, act_value=None, **override
                              ambient_room_cooldown_seconds=900, ambient_per_hour=10, **overrides)
     bot, matrix, store = make_bot(tmp_path, config=config, act=act_value or act("哈哈哈好可愛"))
     bot._random = lambda: chance - 0.01 if chance > 0 else 1.0
-    store.mark_introduced(ROOM)
     return bot, matrix, store, clock
 
 
@@ -923,3 +949,16 @@ def test_an_unknown_room_alias_is_looked_up_once_an_hour(tmp_path):
     bot.digest()
     bot.digest()
     assert lookups == ["#ja:example"]
+
+
+def test_introduces_herself_in_the_welcome_room_even_when_lookup_fails(tmp_path):
+    bot, matrix, _ = intro_bot(tmp_path)
+
+    def broken(alias):
+        raise fish_bot.MatrixError(502, "bad gateway")
+
+    matrix.resolve = broken
+    trigger = event("!fish 自我介紹", event_id="$intro")
+    bot.ingest("!welcome:example", trigger, backfilled=False)
+    bot.answer("!welcome:example", trigger)
+    assert bot.deepseek.turns[0][0] == "intro"
