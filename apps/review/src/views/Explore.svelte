@@ -1511,6 +1511,8 @@
   .explore > .collection-toolbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:12px;padding:16px 0}
   .toolbar-query{display:flex;align-items:center;gap:24px;min-width:0}
   .collection-toolbar .toolbar-query :global(.character-search){flex:1 1 auto;min-width:0;max-width:none}
+  /* The suggestions keep a reading width under a search that spans the row. */
+  .toolbar-query :global(.candidate-list){width:clamp(320px,100%,480px)}
   .toolbar-view{display:flex;align-items:center;flex-wrap:wrap;gap:12px 24px}
   .collection-toolbar .toolbar-view .filter-tabs{flex-shrink:0}
   .view-tools{display:flex;align-items:center;gap:24px;margin-left:auto}
@@ -1524,27 +1526,24 @@
   .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
   /* Where the scripts and the tools no longer share a row, the tools take the next one edge to edge. */
   @media(max-width:1400px){.view-tools{flex-basis:100%;justify-content:space-between}.view-actions{padding-left:0;border-left:0}}
-  /* A narrower screen shows the page's save as an icon; how far the image has come, or that it failed,
+  /* A narrower screen shows the save and the deal as icons; how far the image has come, or that it failed,
      still shows beside it. */
   @media(max-width:900px){
-    .sheet-save{font-size:0;gap:0;padding:8px}
-    .sheet-save svg{width:18px;height:18px}
+    .sheet-save,.toolbar-query > .shuffle{font-size:0;gap:0;padding:8px}
+    .sheet-save svg,.toolbar-query > .shuffle svg{width:18px;height:18px}
     .sheet-save span{margin-left:6px;font-size:11px}
   }
-  /* A phone stacks the search, then the works with the actions, then the scripts as one strip to scroll,
-     then the settings. */
+  /* A phone keeps the order of the controls: the search, the works with the deal at the end of their row,
+     the scripts as one strip to scroll, then the settings and actions, wrapping as the words need. */
   @media(max-width:700px){
-    .explore > .collection-toolbar{flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px 12px;padding:12px 0}
-    .toolbar-query,.toolbar-view,.view-tools,.view-actions{display:contents}
+    .explore > .collection-toolbar{flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px 8px;padding:12px 0}
+    .toolbar-query,.toolbar-view,.view-tools,.view-settings,.view-actions{display:contents}
     .collection-toolbar .toolbar-query :global(.character-search){flex-basis:100%}
-    .toolbar-query :global(.work-control){order:1;margin-right:auto;border-left:0;padding-left:0}
-    .toolbar-query .quiet-link{order:1}
-    .select-toggle{order:2}
-    .sheet-save{order:3}
-    .toolbar-query > .shuffle{order:4}
-    .collection-toolbar .toolbar-view .filter-tabs{order:5;flex-wrap:nowrap;flex-basis:calc(100% + 40px);overflow-x:auto;scrollbar-width:none;margin:-6px -20px;padding:6px 20px;scroll-padding-inline:32px;mask-image:linear-gradient(to right,transparent,#000 20px,#000 calc(100% - 32px),transparent)}
+    .toolbar-query :global(.work-control){border-left:0;padding-left:0}
+    .toolbar-query > .shuffle{margin-left:auto}
+    .collection-toolbar .toolbar-view .filter-tabs{flex-wrap:nowrap;flex-basis:calc(100% + 40px);overflow-x:auto;scrollbar-width:none;margin:-6px -20px;padding:6px 20px;scroll-padding-inline:32px;mask-image:linear-gradient(to right,transparent,#000 20px,#000 calc(100% - 32px),transparent)}
     .toolbar-view .filter-tabs::-webkit-scrollbar{display:none}
-    .view-settings{order:6;flex-basis:100%;gap:8px}
+    .select-toggle{margin-left:auto}
     .zoom-control input{width:48px}
   }
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
