@@ -676,6 +676,7 @@
     openRunId = null; runOpener = null
     await tick()
     if (trigger?.isConnected) trigger.focus()
+    else grid?.querySelector('.glyph-tile')?.focus()
   }
   async function scatter(key) {
     scatteredFor = key; scattered = []; openRunId = null; runOpener = null
@@ -977,11 +978,20 @@
     if (scattered.some(run => run?.crops?.some(crop => now[crop.id])))
       scattered = scattered.map(run => run?.crops ? { ...run, crops: run.crops.map(crop => now[crop.id] ? mergeCropPatch(crop, now[crop.id]) : crop) } : run)
   }
-  function runCropUpdated(id, delta) {
+  async function runCropUpdated(id, delta) {
     const merge = list => list.map(item => item.id === id ? mergeCropPatch(item, delta) : item)
     items = merge(items); local = merge(local); corpus = merge(corpus); sample = merge(sample)
+    if (delta?.state === 'checked') confirmedHere = new Set([...confirmedHere, id])
     runCrops({ [id]: delta })
     readGroupStats()
+    const target = [...items, ...local, ...dealtRuns.flatMap(run => run.crops ?? [])].find(crop => crop.id === id)
+    if (target?.origin !== 'corpus') {
+      runsChanged()
+      const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
+        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 }).catch(() => null)
+      if (summary && !closed) data = { ...(data ?? {}), counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
+        reported_count: summary.reported_count, withheld_count: summary.withheld_count }
+    }
   }
   /** Tiles the site refused, read again so the grid shows what they are now. */
   async function refresh(ids) {

@@ -39,8 +39,8 @@
   let detailIndex = $state(null), opener = null
   const detail = $derived(detailIndex !== null ? items[detailIndex] ?? null : null)
   const previousDetail = $derived(detailIndex !== null && detailIndex > 0 ? () => { detailIndex -= 1 } : null)
-  const nextDetail = $derived(detailIndex !== null && detailIndex + 1 < items.length ? () => { detailIndex += 1 } : null)
-  const detailPosition = $derived(detailIndex !== null ? `${number(detailIndex + 1)} / ${number(items.length)}` : '')
+  const nextDetail = $derived(detailIndex !== null && detailIndex + 1 < shown.length ? () => { detailIndex += 1 } : null)
+  const detailPosition = $derived(detailIndex !== null ? `${number(detailIndex + 1)} / ${number(total ?? items.length)}` : '')
   // The page behind an open modal is inert, so the card takes the focus once the dialog has gone.
   async function closeDetail() {
     const at = detailIndex, card = (at !== null ? grid?.querySelectorAll('.run-open')[at] : null) ?? opener

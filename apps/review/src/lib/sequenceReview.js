@@ -65,10 +65,11 @@ export function approveCropRequest(crop, submissionId) {
 /** Extract the updated fields from a single-crop confirmation response. */
 export function approvedCropPatch(crop, result) {
   if (crop.origin === 'corpus') {
+    const { event, ...rest } = result ?? {}
     return {
-      ...result,
-      revision: result?.event?.revision ?? result?.revision ?? crop.revision + 1,
-      state: result?.event?.state ?? result?.state ?? 'checked',
+      ...rest,
+      revision: event?.revision ?? rest.revision ?? crop.revision + 1,
+      state: event?.state ?? rest.state ?? 'checked',
       issue: null,
     }
   }
@@ -84,9 +85,9 @@ export function approvedCropPatch(crop, result) {
 export async function resolveInspectedCrop(existing, id, result, how, readCharacter) {
   if (!result || !existing) return null
   if (how === 'changed' || result?.origin === 'corpus') {
-    return result.event
-      ? { ...result, revision: result.event.revision ?? result.revision, state: result.event.state ?? result.state }
-      : result
+    if (!result.event) return result
+    const { event, ...rest } = result
+    return { ...rest, revision: event.revision ?? rest.revision, state: event.state ?? rest.state }
   }
   try {
     return await readCharacter(id)

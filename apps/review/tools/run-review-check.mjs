@@ -351,6 +351,14 @@ try {
   )
   console.log('PASS inline approval updates crop state, progress, and advances focus')
 
+  // 2b. Reopen inline-approved local crop via Inspect to ensure remembered decision shape is valid.
+  await clickEl('.run-occurrence-dialog .occurrence-crop-row:nth-child(1) .crop-fix')
+  await browser.waitFor('document.querySelector(".character-dialog[open]:not(.run-occurrence-dialog) .crop-review") !== null')
+  assert(await browser.evaluate('document.querySelector(".character-dialog .inspector-navigation")?.textContent.includes("1 / 2")'), 'Inspect opens on the approved crop at 1 / 2')
+  await clickEl('.character-dialog .close-inspector')
+  await browser.waitFor('document.querySelector(".character-dialog[open]:not(.run-occurrence-dialog)") === null')
+  assert(exceptions.length === 0, `unexpected runtime exceptions after Inspect reopen: ${exceptions.join('; ')}`)
+
   // 3. Fix character 1 via the shared CharacterDialog opened from RunOccurrence.
   await clickEl('.run-occurrence-dialog .occurrence-crop-row:nth-child(2) .crop-fix')
   await browser.waitFor('document.querySelector(".character-dialog[open]:not(.run-occurrence-dialog)") !== null')

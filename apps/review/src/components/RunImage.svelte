@@ -14,6 +14,12 @@
 
   let { crops, page = null, vertical = true, oninspect = null, context = false, fill = null, active = null } = $props()
   let broken = $state(false), uncut = $state(false)
+  $effect(() => {
+    page?.image
+    page?.cut
+    broken = false
+    uncut = false
+  })
   const whole = $derived(page && !broken)
   // The run's region as its own image, where the render's service cuts one; the whole render otherwise.
   const cutShown = $derived(whole && !context && page.cut && !uncut)
@@ -92,5 +98,5 @@
   .run-hit.marked{stroke:var(--accent);stroke-opacity:.55}
   .run-hit.marked.checked{stroke:var(--good);stroke-opacity:.65}
   .run-hit.marked.flagged{stroke:var(--wrong);stroke-opacity:.75}
-  .run-hit.marked:hover,.run-hit.marked:focus-visible,.run-hit.active{stroke:var(--accent);stroke-opacity:1;stroke-width:3px}
+  .run-hit.marked:hover,.run-hit.marked:focus-visible,.run-hit.marked.active,.run-hit.active{stroke:var(--accent);stroke-opacity:1;stroke-width:3px}
 </style>

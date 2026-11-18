@@ -84,11 +84,17 @@
     if (busyId !== null || !canApproveCrop(crop) || crop.state === 'checked') return
     const isCorpus = crop.origin === 'corpus'
     busyId = crop.id; error = ''
-    let sub = null, succeeded = false
+    let sub = null, focusNext = false
     try {
       let target = crop
       if (!isCorpus && !target.image_sha256) {
         const loaded = await character(target.id)
+        const changed = cropLabel(loaded) !== cropLabel(crop) || (crop.revision != null && loaded.revision !== crop.revision)
+        if (changed || loaded.state === 'checked') {
+          onupdated?.(target.id, loaded)
+          focusNext = loaded.state === 'checked'
+          return
+        }
         target = { ...target, ...loaded }
       }
       sub = submissionFor(target)
@@ -97,29 +103,34 @@
       submissions.delete(sub.sig)
       const patch = approvedCropPatch(target, result)
       inspector?.remember(target.id, {
-        choices: { issue: null, correction: null, noneSelected: false, written: null },
+        choices: { issues: [], correction: null, noneSelected: false, written: null },
         revision: patch.revision,
       })
       forgetCrop(target.id)
       onupdated?.(target.id, patch)
-      succeeded = true
+      focusNext = true
     } catch (e) {
       if (sub && e?.status >= 400 && e?.status < 500) submissions.delete(sub.sig)
       if (!closed) error = e.message
       if (e?.status === 409) {
         const fresh = await (isCorpus ? corpusCharacter(crop.id) : character(crop.id)).catch(() => null)
-        if (fresh) onupdated?.(crop.id, fresh)
+        if (fresh) {
+          onupdated?.(crop.id, fresh)
+          if (fresh.state === 'checked') focusNext = true
+        }
       }
     } finally {
       if (!closed) busyId = null
     }
-    if (succeeded && !closed) {
+    if (focusNext && !closed) {
       await tick()
       const nextIndex = occurrence.crops.findIndex((c, idx) => idx > index && c.state !== 'checked')
       const targetIndex = nextIndex >= 0 ? nextIndex : occurrence.crops.findIndex((c, idx) => idx !== index && c.state !== 'checked')
       if (targetIndex >= 0) {
         const selector = canApproveCrop(occurrence.crops[targetIndex]) ? '.crop-approve' : '.crop-fix'
         dialog?.querySelector(`[data-crop-index="${targetIndex}"] ${selector}`)?.focus({ preventScroll: true })
+      } else {
+        dialog?.querySelector(`[data-crop-index="${index}"] .crop-fix`)?.focus({ preventScroll: true })
       }
     }
   }
@@ -232,7 +243,7 @@
             </button>
             <div class="crop-actions">
               {#if canApprove && state !== 'checked'}
-                <button type="button" class="crop-approve" disabled={busyId !== null} aria-label={`${t('run.char.approve')}: ${unassigned ? crop.id : label}`} onclick={() => approve(crop, i)}>
+                <button type="button" class="crop-approve" disabled={busyId !== null} aria-label={`${t('run.char.approve')}: ${label}`} onclick={() => approve(crop, i)}>
                   {isBusy ? t('common.saving') : `✓ ${t('run.char.approve')}`}
                 </button>
               {/if}

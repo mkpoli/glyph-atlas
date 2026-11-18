@@ -92,11 +92,15 @@ describe('sequence review helpers', () => {
       route: '/atlas/corpus/reviews',
       body: { id: 'sub-2', identity: 'cor:1', revision: 4, source_revision: 'b'.repeat(64), verdict: 'match', issue: null },
     })
-    expect(approvedCropPatch(corpus, { id: 'cor:1', origin: 'corpus', revision: 5, state: 'checked', event: { revision: 5, state: 'checked' } })).toMatchObject({
-      state: 'checked',
+    const corpusPatch = approvedCropPatch(corpus, { id: 'cor:1', origin: 'corpus', revision: 5, state: 'checked', event: { revision: 5, state: 'checked' } })
+    expect(corpusPatch).toEqual({
+      id: 'cor:1',
+      origin: 'corpus',
       revision: 5,
+      state: 'checked',
       issue: null,
     })
+    expect('event' in corpusPatch).toBe(false)
   })
 
   it('merges crop patches without losing run geometry or dating', () => {
