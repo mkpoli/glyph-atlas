@@ -551,3 +551,9 @@ def test_finite_refuses_nan_and_infinity():
     assert fish_bot._finite("nan", 0.3) == 0.3
     assert fish_bot._finite("inf", 0.3) == 0.3
     assert fish_bot._finite(None, 0.3) == 0.3
+
+
+def test_config_without_a_bot_table_uses_the_defaults(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[matrix]\nhomeserver = \"http://127.0.0.1:6167\"\n", encoding="utf-8")
+    assert fish_bot.Config.load(path).room_ids == ()

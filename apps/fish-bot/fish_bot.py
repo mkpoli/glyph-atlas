@@ -200,7 +200,7 @@ class Config:
         repo = field(github, "repo", cls.github_repo)
         if not isinstance(repo, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
             raise ValueError("github.repo must look like owner/name")
-        room_ids = field(bot, "rooms", ())
+        room_ids = field(bot, "rooms", [])
         if not isinstance(room_ids, list) or any(not isinstance(item, str) or not item.startswith("!") for item in room_ids):
             raise ValueError("bot.rooms must be a list of room IDs")
         ignored = field(bot, "ignored_senders", list(cls.ignored_senders))
