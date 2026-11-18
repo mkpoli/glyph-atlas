@@ -1551,14 +1551,14 @@
   }
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
   .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
-  .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 10px/1 system-ui,sans-serif;color:transparent}
+  .select-mark{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid currentColor;border-radius:4px;font:600 10px/1 var(--ga-font-ui);color:transparent}
   .select-toggle[aria-pressed="true"] .select-mark{color:inherit}
   /* The box that selects a tile shows on hover or focus, and on every tile in select mode or on a touch screen.
      A class on the gallery says the mode is on: a `:has()` there restyled every tile each time tiles were added.
      It sits off the image, so it never hides a stroke or a 濁点: in the collage at the end of the caption's
      second line, with the source keeping clear of it, and
      in the square grid in the margin above the image. A bare tile has neither place and no box (`lib/collage.js`). */
-  .tile-select{position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:2px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:700 11px/1 system-ui,sans-serif;opacity:0;transition:opacity .12s}
+  .tile-select{position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:2px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:700 11px/1 var(--ga-font-ui);opacity:0;transition:opacity .12s}
   :global(:root:not([data-gallery="grid"])) .tile-select{right:1px;bottom:1px;width:16px;height:16px;font-size:10px}
   :global(:root[data-gallery="grid"]) .tile-select{top:5px;right:6px}
   /* Wherever the box shows, the source keeps clear of it, and a long label gives way before the tick after it. */
