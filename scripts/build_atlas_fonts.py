@@ -17,7 +17,8 @@ others: eight for the 2,048 characters the corpus writes most (data/vocab/typefa
 one per 256 code points. The registered sequences of each 256 code points are a file of their own.
 `index.json` names each file's characters, as ranges, and the sequences it draws by collection;
 `sans.css` and `serif.css` declare the files with those ranges, and `sans-figures.css` and
-`serif-figures.css` the files of the sequences.
+`serif-figures.css` the files of the sequences. `NOTICE.txt` carries each source's copyright notice
+beside `OFL.txt`, and each file's name table those of the sources it draws from.
 
 The folder is named by the hash of the sources, the core list and FORMAT, which a change to what
 this script draws raises, so a file never changes under a name; a rerun writes the files still
@@ -41,6 +42,8 @@ from fontTools.ttLib import TTFont
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / 'cache/fonts'
 CORE = ROOT / 'data/vocab/typeface-core.txt'
+# The licence's text, below the copyright line of the copy that ships with the IDS editor's fonts.
+OFL = ROOT / 'apps/review/static/fonts/OFL-Plangothic.txt'
 UPEM, ASCENT, DESCENT = 1000, 880, -120
 FORMAT = 1
 
@@ -67,9 +70,9 @@ FACES = {
     'serif': {'family': 'Atlas Serif', 'sources': ['noto-serif', 'jigmo', 'jigmo2', 'jigmo3', 'plangothic-p1']},
 }
 # What a face draws: the Han ideographs and what is written beside them. Latin, and the scripts with
-# a face of their own (Tangut, the historic kana), stay with those faces.
-SCOPE = [(0x1100, 0x11FF), (0x2E80, 0x2FDF), (0x2FF0, 0x33FF), (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xA960, 0xA97F),
-         (0xAC00, 0xD7FF), (0xF900, 0xFAFF), (0xFE10, 0xFE1F), (0xFE30, 0xFE4F), (0xFF00, 0xFFEF),
+# a face of their own (Tangut, the historic kana), stay with those faces. So do the conjoining
+# hangul jamo: a font joins them into a syllable with its shaping tables, which these files leave out.
+SCOPE = [(0x2E80, 0x2FDF), (0x2FF0, 0x33FF), (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xAC00, 0xD7A3), (0xF900, 0xFAFF), (0xFE10, 0xFE1F), (0xFE30, 0xFE4F), (0xFF00, 0xFFEF),
          (0x20000, 0x3347F)]
 IVD = {'url': 'https://www.unicode.org/ivd/data/2026-08-03/IVD_Sequences.txt', 'version': '2026-08-03'}
 SELECTORS = (0xE0100, 0xE01EF)
@@ -114,6 +117,7 @@ class Source:
         self.cmap = self.font.getBestCmap()
         self.glyphs = self.font.getGlyphSet(location=SOURCES[key].get('at'))
         self.scale = UPEM / self.font['head'].unitsPerEm
+        self.copyright = self.font['name'].getDebugName(0) or ''
         self.cubic = 'glyf' not in self.font
         # A sequence the font maps: its own glyph, or the base character's where it is the default.
         self.sequences = {}
@@ -174,8 +178,9 @@ def write(task):
         builder.setupHorizontalMetrics({name: (advance, getattr(bounds[name], 'xMin', 0)) for name, advance in advances.items()})
         builder.setupHorizontalHeader(ascent=ASCENT, descent=DESCENT)
         builder.setupNameTable({'familyName': family, 'styleName': 'Regular',
-                                'copyright': 'Outlines: ' + '; '.join(f"{SOURCES[key]['name']}, {SOURCES[key]['licence']}" for key in keys) + '. Notices: docs/typefaces.md.',
-                                'licenseDescription': 'SIL Open Font License 1.1' + ('; the Jigmo outlines are CC0 1.0.' if any(key.startswith('jigmo') for key in keys) else '.'),
+                                'copyright': ' '.join(f"{SOURCES[key]['name']}: {loaded(key).copyright.strip()} ({SOURCES[key]['licence']})." for key in keys),
+                                'licenseDescription': 'This Font Software is licensed under the SIL Open Font License, Version 1.1 (OFL.txt beside these files, and https://openfontlicense.org).'
+                                                      + (' The outlines from Jigmo are dedicated to the public domain under CC0 1.0.' if any(key.startswith('jigmo') for key in keys) else ''),
                                 'licenseInfoURL': 'https://openfontlicense.org'})
         builder.setupOS2(sTypoAscender=ASCENT, sTypoDescender=DESCENT, sTypoLineGap=0, usWinAscent=ASCENT, usWinDescent=-DESCENT)
         builder.setupPost(keepGlyphNames=False)
@@ -275,7 +280,7 @@ def main():
     parser.add_argument('--out', type=Path, default=ROOT / 'cache/atlas-fonts')
     parser.add_argument('--workers', type=int, default=4)
     args = parser.parse_args()
-    only = set(args.only.split(',')) if args.only else None
+    only = {name if name.startswith('c') else name.zfill(3) for name in args.only.split(',')} if args.only else None
     ivd = registered()
     for key in SOURCES:
         source(key)
@@ -286,6 +291,7 @@ def main():
     for face in FACES:
         faces[face], tasks = plan(face, ivd, only, out)
         jobs += tasks
+    notices = ''.join(f"{SOURCES[key]['name']} ({SOURCES[key]['licence']}, {SOURCES[key]['url']})\n{loaded(key).copyright.strip()}\n\n" for key in SOURCES)
     LOADED.clear()   # each worker opens its own
     with multiprocessing.Pool(args.workers) as pool:
         for count, (face, group, name, size) in enumerate(pool.imap_unordered(made, jobs), 1):
@@ -298,11 +304,16 @@ def main():
                                        for collection in {c for cs in ivd.values() for c in cs})),
              'sources': {key: {field: SOURCES[key][field] for field in ('name', 'licence', 'sha256', 'url')} for key in SOURCES},
              'faces': faces}
+    # A trial leaves the folder's index, sheets and notices as a whole build wrote them.
     if not only:
         for face, entry in faces.items():
             (out / f'{face}.css').write_text(sheet(entry['family'], f'{face}/', entry['files']), encoding='utf-8')
             (out / f'{face}-figures.css').write_text(sheet(f"{entry['family']} Figures", f'{face}/figures/', entry['figures'], selectors=True), encoding='utf-8')
-    (out / 'index.json').write_text(json.dumps(index, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
+        (out / 'index.json').write_text(json.dumps(index, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
+        (out / 'NOTICE.txt').write_text('Atlas Sans and Atlas Serif are built from the fonts below and are licensed under the SIL Open Font '
+                                        'License, Version 1.1 (OFL.txt); the outlines from Jigmo are under CC0 1.0.\n\n' + notices, encoding='utf-8')
+        text = OFL.read_text(encoding='utf-8')
+        (out / 'OFL.txt').write_text(text[text.index('This Font Software is licensed'):], encoding='utf-8')
     for face, entry in index['faces'].items():
         print(face, entry['characters'], 'characters', entry['sequences'], f"{entry['bytes'] / 1e6:.1f} MB in {len(entry['files'])} + {len(entry['figures'])} files")
     print(out)
