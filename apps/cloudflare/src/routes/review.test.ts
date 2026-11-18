@@ -882,7 +882,7 @@ describe('a corpus glyph\'s review', () => {
 
   it('redraws a corpus glyph with context via /atlas/characters/:id, captures recrop/proposed_box, and undoes cleanly', async () => {
     const { db, env, objects, page } = setup();
-    const ctxPage = nextPage(), gid = cropId(ctxPage, 0), uid = cropId(ctxPage, 1);
+    const ctxPage = nextPage(), gid = cropId(ctxPage, 0), uid = cropId(ctxPage, 1), fid = cropId(ctxPage, 2);
     const box = { x: 1, y: 1, w: 5, h: 5 }, nextBox = { x: 4, y: 6, w: 12, h: 14 };
     const ctxRec = JSON.stringify({ id: 'krm:ctx:0', label: 'は', written_character: 'は', identity_status: 'assigned',
       proxyable: true, source_revision: G, image: 'https://example.org/0.jpg', context_image: 'https://example.org/ctx.jpg',
@@ -890,14 +890,18 @@ describe('a corpus glyph\'s review', () => {
     const unRec = JSON.stringify({ id: 'krm:unassigned:1', label: 'Unassigned', written_character: null, identity_status: 'unassigned',
       proxyable: true, source_revision: G, image: 'https://example.org/1.jpg', context_image: 'https://example.org/ctx.jpg',
       box, crop_box: box, context_box: { x: 0, y: 0, w: 200, h: 200 } });
-    const b0 = Buffer.byteLength(ctxRec), b1 = Buffer.byteLength(unRec);
-    objects.set('packs/ctx.bin', new TextEncoder().encode(ctxRec + unRec));
+    const fRec = unRec.replace('krm:unassigned:1', 'krm:unassigned:2');
+    const b0 = Buffer.byteLength(ctxRec), b1 = Buffer.byteLength(unRec), b2 = Buffer.byteLength(fRec);
+    objects.set('packs/ctx.bin', new TextEncoder().encode(ctxRec + unRec + fRec));
     objects.set(bundleKey(ctxPage, 1), gzipSync(JSON.stringify({ key: `krm:book:${ctxPage}`, book: 1, rev: 1, page: null,
       crops: [{ slot: 0, id: 'krm:ctx:0', record_place: ['packs/ctx.bin', 0, b0] },
-        { slot: 1, id: 'krm:unassigned:1', record_place: ['packs/ctx.bin', b0, b1] }] })));
-    db.exec(`INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${ctxPage},'krm:book:${ctxPage}',1,1,2);
+        { slot: 1, id: 'krm:unassigned:1', record_place: ['packs/ctx.bin', b0, b1] },
+        { slot: 2, id: 'krm:unassigned:2', record_place: ['packs/ctx.bin', b0 + b1, b2] }] })));
+    db.exec(`INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${ctxPage},'krm:book:${ctxPage}',1,1,3);
       INSERT INTO crops(id,kind,book,char,production,category,style,state,quiz,shuffle,cut,revision) VALUES
-        (${gid},1,1,1,NULL,3,0,0,1,20,0,0),(${uid},1,1,NULL,NULL,NULL,0,0,1,21,0,0)`);
+        (${gid},1,1,1,NULL,3,0,0,1,20,0,0),(${uid},1,1,NULL,NULL,NULL,0,0,1,21,0,0),(${fid},1,1,NULL,NULL,NULL,0,0,1,22,0,0);
+      INSERT INTO form_clusters(id,key,family,label,count,coherence,shape_position,size_position,list,form) VALUES(9,'named','U+306E','の',1,1,1,1,'named','𛂜');
+      UPDATE crops SET cluster=9 WHERE id=${fid}`);
 
     // A corpus glyph without source context still cannot be redrawn.
     const noCtx = cropId(page, 6);
@@ -905,6 +909,10 @@ describe('a corpus glyph\'s review', () => {
 
     // An unassigned corpus glyph rejects match, even with a redrawn box, until a character is named.
     expect((await send(env, `/atlas/characters/${publicId(uid)}`, { id: uuid(22), revision: 0, source_revision: G, verdict: 'match', box: nextBox })).status).toBe(422);
+    // One the forms tool named, through its cluster, is judged as its inspector shows it: a match stands.
+    const named = await send(env, `/atlas/characters/${publicId(fid)}`, { id: uuid(28), revision: 0, source_revision: G, verdict: 'match' });
+    expect(named.status).toBe(200);
+    expect(named.body).toMatchObject({ results: [{ target_id: publicId(fid), revision: 1, state: 'checked' }] });
     const assigned = await send(env, `/atlas/characters/${publicId(uid)}`, { id: uuid(23), revision: 0, source_revision: G,
       verdict: 'wrong', issue: 'character', character: 'ハ', box: nextBox });
     expect(assigned.status).toBe(200);
