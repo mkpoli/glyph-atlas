@@ -1403,7 +1403,8 @@
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/key}{/if}
     {/snippet}
     {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
-    <!-- What to look through: a character, a work, a fresh deal, and the script. -->
+    <!-- What to look through: a character, a work, a fresh deal, and the script. A row too narrow for
+         them all puts the scripts on a line of their own. -->
     <div class="toolbar-query">
       <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form }, true)}
@@ -1412,9 +1413,6 @@
                        onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
       <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
       <WorkFilter {works} value={work} onchange={value => { work = value; if (picked || query) clearQuery(); else load() }} />
-      <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
-      {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
-      {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
       <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
       <div class="filter-tabs" aria-label={t('explore.filter.label')}>
         {#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')], ['tangut', () => t('explore.filter.tangut')]] as [value, text]}
@@ -1437,6 +1435,9 @@
         <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
       </div>
       <div class="view-actions">
+        <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
+        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
+        {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
         {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
         <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
       </div>
@@ -1507,10 +1508,13 @@
   /* A short search, the works and the deal start the first row and the scripts end it; under a hairline the
      second row holds how the gallery is shown at its start and what to do with it at its end. */
   .explore > .collection-toolbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:0;padding:16px 0 0}
-  .toolbar-query{display:flex;align-items:center;gap:16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+  .toolbar-query{display:flex;align-items:center;flex-wrap:wrap;gap:12px 16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
   .collection-toolbar .toolbar-query :global(.character-search){flex:0 0 240px;min-width:0;max-width:none}
-  .toolbar-query :global(.work-control){flex:0 1 auto;border-left:0;padding-left:0}
-  .toolbar-query :global(.work-toggle){max-width:min(260px,100%)}
+  /* A chosen character sits in the box as a chip, so the box widens to keep room for typing beside it. */
+  .collection-toolbar .toolbar-query :global(.character-search:has(.find-token)){flex-basis:320px}
+  .toolbar-query :global(.work-control){flex:0 1 auto;min-width:96px;max-width:260px;border-left:0;padding-left:0}
+  .toolbar-query :global(.work-toggle){max-width:100%}
+  .toolbar-view .quiet-link{white-space:nowrap}
   .collection-toolbar .toolbar-query .filter-tabs{flex-wrap:nowrap;gap:4px;margin-left:auto}
   .toolbar-view{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:12px 0}
   .view-settings,.view-actions{display:flex;align-items:center;gap:12px}
@@ -1519,12 +1523,16 @@
   :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
   .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
   .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
-  /* A narrower screen stacks each script's count under its name, so the scripts keep the first row. */
-  @media(max-width:1150px){
+  /* A narrower screen stacks each script's count under its name and shows the deal as an icon, so the
+     scripts keep the first row. */
+  @media(max-width:1240px){
     .toolbar-query{gap:10px}
-    .collection-toolbar .toolbar-query :global(.character-search){flex:0 1 200px;min-width:150px}
+    .collection-toolbar .toolbar-query :global(.character-search){flex-basis:200px}
+    .toolbar-query > .shuffle{font-size:0;gap:0;padding:8px}
+    .toolbar-query > .shuffle svg{width:18px;height:18px}
     .collection-toolbar .toolbar-query .filter-tabs button{flex-direction:column;align-items:center;gap:2px;padding:4px 9px}
   }
+  @media(max-width:900px){.collection-toolbar .toolbar-query :global(.character-search){flex-basis:170px}}
   /* A phone puts the scripts under the search as a grid of three, each count beside its name; the two
      toggles share a row, the size and the actions take the next, and the deal and the save show as icons;
      how far the image has come, or that it failed, still shows beside its icon. */
@@ -1537,7 +1545,7 @@
     .collection-toolbar .toolbar-query .filter-tabs button{flex-direction:row;justify-content:space-between;align-items:baseline;padding:6px 10px}
     .toolbar-view{gap:10px 8px}
     .view-settings{display:contents}
-    .toolbar-view :global(.ink-toggle),.toolbar-view .layout-toggle{flex:1 1 0}
+    .toolbar-view :global(.ink-toggle),.toolbar-view .layout-toggle{flex:1 1 calc(50% - 4px)}
     .toolbar-view :global(.ink-toggle button),.toolbar-view .layout-toggle button{flex:1}
     .sheet-save span{margin-left:6px;font-size:11px}
     .zoom-control input{width:48px}
