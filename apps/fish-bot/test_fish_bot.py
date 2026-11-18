@@ -37,6 +37,7 @@ class FakeMatrix:
         self._messages = messages or {"chunk": []}
         self.sent = sent if sent is not None else []
         self.events = []
+        self.uploads = []
         self.transactions = []
 
     def whoami(self):
@@ -68,6 +69,10 @@ class FakeMatrix:
     def typing(self, room_id, user_id, *, timeout_ms=15_000):
         return None
 
+    def upload(self, data, content_type, filename):
+        self.uploads.append((len(data), content_type, filename))
+        return f"mxc://example/{filename}"
+
     def joined_rooms(self):
         return set()
 
@@ -86,8 +91,9 @@ class FakeDeepSeek:
         self.calls = []
         self.turns = []
 
-    def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id):
+    def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=()):
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
+        self.sticker_offers = (tuple(stickers), tuple(recent))
         if self.error is not None:
             raise self.error
         return self.act_value
@@ -577,8 +583,8 @@ def test_config_without_a_bot_table_uses_the_defaults(tmp_path):
     assert fish_bot.Config.load(path).room_ids == ()
 
 
-def act(*lines, react_to=None, react="", issue=False):
-    return fish_bot.Act(say=tuple(lines), react_to=react_to, react=react, issue=issue)
+def act(*lines, react_to=None, react="", issue=False, sticker=""):
+    return fish_bot.Act(say=tuple(lines), react_to=react_to, react=react, issue=issue, sticker=sticker)
 
 
 def test_reads_a_call_by_a_han_alias_inside_a_sentence():
@@ -698,3 +704,52 @@ def test_chat_turn_turns_thinking_off_and_names_the_bot_in_the_log():
     payload = json.loads(seen["messages"][1]["content"])
     assert [m["sender"] for m in payload["messages"]] == ["Alice", "大肥魚 (you)"]
     assert payload["task"].startswith("Message 0 talks to you")
+
+
+def test_uploads_each_sticker_once_and_only_when_its_hash_matches(tmp_path, monkeypatch):
+    first, second = fish_bot.STICKERS[:2]
+    monkeypatch.setattr(fish_bot, "STICKERS", (first, second))
+    good = b"good image"
+    first = fish_bot.dataclasses.replace(first, sha256=fish_bot.hashlib.sha256(good).hexdigest())
+    monkeypatch.setattr(fish_bot, "STICKERS", (first, second))
+    bot, matrix, store = make_bot(tmp_path)
+    bot.ensure_stickers(fetch=lambda url: good)
+    assert [name for _, _, name in matrix.uploads] == [f"dafeiyu-{first.name}.png"]
+    assert set(store.stickers()) == {first.name}
+    bot.ensure_stickers(fetch=lambda url: good)
+    assert len(matrix.uploads) == 1
+
+
+def test_sends_the_sticker_the_model_picks_after_its_line(tmp_path):
+    bot, matrix, store = make_bot(tmp_path, act=act("好耶", sticker="yay"))
+    store.set_sticker("yay", next(s.sha256 for s in fish_bot.STICKERS if s.name == "yay"), "mxc://example/yay", 123)
+    store.mark_introduced(ROOM)
+    trigger = event("大肥魚 we shipped it!", event_id="$call")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert matrix.sent[0][1]["body"] == "好耶"
+    assert matrix.events[-1][1] == "m.sticker"
+    assert matrix.events[-1][2]["url"] == "mxc://example/yay"
+    assert bot.deepseek.sticker_offers[0] == ("yay",)
+    trigger = event("大肥魚 again!", event_id="$again")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert bot.deepseek.sticker_offers[1] == ("yay",)
+
+
+def test_parse_act_drops_a_sticker_it_does_not_have():
+    raw = json.dumps({"say": "x", "sticker": "dragon"})
+    assert fish_bot.parse_act(raw, 1, ("yay",)).sticker == ""
+    assert fish_bot.parse_act(json.dumps({"say": "", "sticker": "yay"}), 1, ("yay",)).sticker == "yay"
+
+
+def test_a_cut_download_leaves_the_sticker_out_instead_of_stopping(tmp_path, monkeypatch):
+    def cut(request, timeout):
+        raise fish_bot.http.client.IncompleteRead(b"half")
+
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", cut)
+    with pytest.raises(OSError):
+        fish_bot._download("https://example/x.png")
+    bot, matrix, store = make_bot(tmp_path)
+    bot.ensure_stickers()
+    assert matrix.uploads == [] and store.stickers() == {}
