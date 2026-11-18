@@ -106,3 +106,22 @@ def test_the_fonts_the_stylesheet_and_the_workers_table_are_those_of_the_table()
     assert build.CSS.read_text(encoding="utf-8") == build.css(names)
     # The two cuts differ.
     assert _outlines(build.font("sans")) != _outlines(build.font("serif"))
+
+
+@pytest.mark.parametrize("style", drawn_forms.STYLES)
+def test_looped_shi_matches_its_neighbors_stroke_width(style):
+    from fontTools.pens.areaPen import AreaPen
+    from fontTools.pens.perimeterPen import PerimeterPen
+    from fontTools.pens.recordingPen import replayRecording
+
+    outlines = _outlines(_build().font(style))
+
+    def stroke_width(char):
+        area, perimeter = AreaPen(), PerimeterPen()
+        replayRecording(outlines[ord(char)], area)
+        replayRecording(outlines[ord(char)], perimeter)
+        return 2 * abs(area.value) / perimeter.value
+
+    target = (stroke_width(FANG) + stroke_width(HOOK)) / 2
+    # Allow a font unit for rounding when sampling and compiling the contours.
+    assert stroke_width(RU) == pytest.approx(target, abs=1)

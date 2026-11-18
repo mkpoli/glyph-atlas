@@ -52,8 +52,12 @@ A form of this kind is a **drawn form**: one code point of Supplementary Private
 A drawing is an editorial normalisation of the form, made by hand: it labels a group of crops and is
 never shown as an occurrence. A form supplied before its crops are grouped stays a name without a
 count until a clustering gives it one. The three forms of 事 were drawn by mkpoli and traced from the
-pictures kept beside them. For text sizes, the trace adds five units of ink around each stroke
-and widens the figure by 30%. Both cuts share a scale, with the taller cut filling 880 units of the em. Strokes built from knots, plain traces of a crop and a crop's centre lines
+pictures kept beside them. For text sizes, the trace widens each figure by 30%. The two cuts share a scale
+fitted to an 880-unit box with a five-unit allowance on each edge. F0001 and F0002 use that allowance
+for ink. For the heavier る-shaped F0000, the serif outline expands by 1.16 units and the sans outline
+contracts by 2.32 before widening. These adjustments bring its effective stroke width in each cut to
+the mean of the other two forms. We estimate stroke width as twice the filled area divided by the
+total perimeter of the finished outline, including the inner edges of loops. Strokes built from knots, plain traces of a crop and a crop's centre lines
 drawn again were each tried first and set aside.
 
 ## Limits
