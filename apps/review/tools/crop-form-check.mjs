@@ -183,6 +183,8 @@ try {
   for (const expected of ['所\u{E0102} MJ012120', '所\u{E0103} MJ012119', '⿰戶斤 GHTKPV', '⿰戸斤 J', '数']) {
     assert(titles.includes(expected), `the bar lacks ${expected}: ${JSON.stringify(titles)}`)
   }
+  assert(titles.indexOf('所\u{E0102} MJ012120') < titles.indexOf('⿰戶斤 GHTKPV') && members.every(member => titles.indexOf(member) < titles.indexOf('数')),
+    `the figures do not lead the regional shapes, or 数 does not follow 所's forms: ${JSON.stringify(titles)}`)
   assert(await browser.evaluate('document.querySelector("dialog[open] .form-add").textContent.trim()') === '+⌕', 'the add button still counts forms')
   await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
   await browser.waitFor('!!document.querySelector("dialog[open] .form-picker .character-search input")', 20000)
@@ -253,6 +255,8 @@ try {
   for (const expected of ['瓜', '苽', '\u2F60', '蝸', '鈲', '𤓰']) {
     assert(guaTitles.includes(expected), `瓜 bar lacks ${expected}: ${JSON.stringify(guaTitles)}`)
   }
+  assert(['\u2F60', '蝸', '鈲', '𤓰'].every(related => guaTitles.indexOf(related) > guaTitles.indexOf('苽')),
+    `瓜's related characters do not follow its forms: ${JSON.stringify(guaTitles)}`)
   assert(await browser.evaluate('document.querySelector("dialog[open] .form-add").textContent.trim()') === '+⌕', '瓜 add button hides forms')
   await browser.evaluate('document.querySelector("dialog[open] .form-arrange").click()')
   await browser.waitFor('!!document.querySelector(".structure-dialog[open] .tray")', 20000)

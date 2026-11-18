@@ -83,12 +83,14 @@ try {
     `事's card does not list its drawn forms as members: ${JSON.stringify(card.grapheme.members.map(member => member.code_point))}`)
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
 
-  // The bar holds all three: a drawn form has no 構形, so they stand together after the forms that have one.
+  // The bar holds them all: a drawn form has no 構形, so they stand together after the 事 forms that
+  // have one, and before 事's related characters (仕).
   const chips = '[...document.querySelectorAll("dialog[open] .crop-form .form-chip")]'
   await browser.waitFor(`${chips}.some(c => c.textContent.includes(${JSON.stringify(forms[0])}))`, 30000)
   const bar = await browser.evaluate(`${chips}.map(c => c.querySelector('.script-char')?.textContent ?? '')`)
-  assert(bar[0] === '事' && JSON.stringify(bar.filter(char => forms.includes(char))) === JSON.stringify(forms),
-    `the bar does not offer 事's drawn forms: ${JSON.stringify(bar.map(c => c.codePointAt(0).toString(16)))}`)
+  const at = bar.indexOf(forms[0])
+  assert(bar[0] === '事' && at > 0 && JSON.stringify(bar.slice(at, at + forms.length)) === JSON.stringify(forms) && bar.indexOf('仕') >= at + forms.length,
+    `the bar does not offer 事's drawn forms before its related characters: ${JSON.stringify(bar.map(c => c.codePointAt(0).toString(16)))}`)
   for (const char of forms) {
     const how = await set('dialog[open] .crop-form', char)
     assert(how?.family.includes(DRAWN_FAMILY) && how.drawn && how.script === 'kanji' && how.width > 4,
