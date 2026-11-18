@@ -65,16 +65,23 @@
   // The 構形 of the crop's own form, which Quick Review's bar leaves off.
   const ownStructure = $derived(structureOf.get(current) ?? null)
   // A list's forms under the 構形 each is built as, a structure where its first form stands; the forms
-  // with none stand together after them, uncaptioned.
+  // with none stand together after them, uncaptioned. The grapheme's own forms come first; a related
+  // character joins a 構形 of theirs where it shares one, and otherwise stands after all of them, so
+  // the number keys reach the grapheme's forms before any related character.
+  const relatedChars = $derived(new Set(listed.related.map(form => form.char)))
   const grouped = list => {
-    const groups = new Map(), loose = []
-    for (const form of list) {
+    const groups = new Map(), loose = [], later = new Map(), looseLater = []
+    const place = (form, into, rest) => {
       const structure = structureOf.get(form.char)
-      if (!structure) { loose.push(form); continue }
-      if (!groups.has(structure.id)) groups.set(structure.id, { id: structure.id, label: structure.label, own: structure.id === ownStructure?.id, forms: [] })
-      groups.get(structure.id).forms.push(form)
+      if (!structure) { rest.push(form); return }
+      const home = groups.get(structure.id) ?? into.get(structure.id)
+      if (home) { home.forms.push(form); return }
+      into.set(structure.id, { id: structure.id, label: structure.label, own: structure.id === ownStructure?.id, forms: [form] })
     }
-    return [...groups.values(), ...(loose.length ? [{ id: '', label: '', own: false, forms: loose }] : [])]
+    for (const form of list) if (!relatedChars.has(form.char)) place(form, groups, loose)
+    for (const form of list) if (relatedChars.has(form.char)) place(form, later, looseLater)
+    return [...groups.values(), ...(loose.length ? [{ id: '', label: '', own: false, forms: loose }] : []),
+      ...later.values(), ...(looseLater.length ? [{ id: ' related', label: '', own: false, forms: looseLater }] : [])]
   }
   const me = $derived(signedInUser()?.id ?? null)
   const barGroups = $derived(grouped(bar))
