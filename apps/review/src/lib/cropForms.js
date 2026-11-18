@@ -123,7 +123,7 @@ async function claimForm(crop, form, review = null) {
 async function writeCharacter(crop, character) {
   const { id } = submission(['character', crop.id, crop.revision, character])
   const pixels = cropPixels(crop)
-  await request('/atlas/characters/' + encodeURIComponent(crop.id), { id, revision: crop.revision,
+  await request('/layers/units/' + encodeURIComponent(crop.id), { id, revision: crop.revision,
     ...pixels, verdict: 'wrong', issue: 'character', character })
   return { crop: await reread(crop), review: id }
 }
