@@ -111,6 +111,28 @@ def test_reads_multi_codepoint_emoji_components():
     assert ids_bot.sequences("⿰☺\ufe0f\u3099木") == ["⿰☺\ufe0f\u3099木"]
     assert ids_bot.sequences("⿰👩\u200d👧\u0301木") == ["⿰👩\u200d👧\u0301木"]
     assert ids_bot.sequences("⿰🇯\u200d木") == ["⿰🇯\u200d木"]
+    assert ids_bot.sequences("⿰😀\u200c木") == ["⿰😀\u200c木"]
+    assert ids_bot.sequences("⿰😀\u0e33木") == ["⿰😀\u0e33木"]
+    assert ids_bot.sequences("⿰❤\uff9e木") == ["⿰❤\uff9e木"]
+
+
+def test_reads_an_emoji_newer_than_python_as_a_break():
+    assert ids_bot.sequences("⿰木木\U0001fae9") == ["⿰木木"]
+    assert ids_bot.sequences("\U0001fae9⿰木木") == ["⿰木木"]
+
+
+def test_reads_no_hangul_filler_or_ignorable_as_a_component():
+    for filler in "\u115f\u1160\u3164\uffa0\u034f":
+        assert ids_bot.sequences("⿰木" + filler) == []
+
+
+def test_reads_a_long_run_after_many_operators_quickly():
+    import time
+
+    for run in ("😀" + "\u0301" * 32000, "1" + "\u20e3" * 32000, "木" + "\u302e" * 32000):
+        started = time.monotonic()
+        ids_bot.sequences("⿰" * 150 + run)
+        assert time.monotonic() - started < 0.2
     assert ids_bot.sequences("⿰🏴󠁧󠁢󠁥󠁮󠁧󠁿木") == ["⿰🏴󠁧󠁢󠁥󠁮󠁧󠁿木"]
 
 

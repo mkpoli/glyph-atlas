@@ -57,7 +57,12 @@ CUSTOM_FORMS = (
     ("&", ";", re.compile(r"[A-Za-z][A-Za-z0-9+_-]*")),
     ("#(", ")", re.compile(r"[^\s()\[\]{}#&;]+")),
 )
-DEFAULT_IGNORABLE_MARKS = frozenset("\u034f\u17b4\u17b5")
+# Default ignorables han-compose reads neither as a component nor as a mark: the combining grapheme
+# joiner, the Khmer inherent vowels, the Mongolian selectors and the Hangul fillers.
+IGNORABLE = frozenset("\u034f\u17b4\u17b5\u180b\u180c\u180d\u180e\u180f\u115f\u1160\u3164\uffa0")
+# What stays in a grapheme cluster although its category is no mark: ZWNJ, the halfwidth kana voicing
+# marks (Extend) and the Thai and Lao AM vowels (SpacingMark).
+CLUSTER_EXTRA = frozenset("\u200c\uff9e\uff9f\u0e33\u0eb3")
 # The loose marks of han-compose's data/unicode/properties.json (Unicode 18.0.0) that Python 3.12's
 # Unicode 15.0 database does not know.
 EXTRA_MARK_RANGES = (
@@ -145,7 +150,7 @@ def _in_ranges(point: int, ranges: tuple[tuple[int, int], ...], starts: tuple[in
 def _is_mark(char: str, *, include_tones: bool = False) -> bool:
     """Whether `char` may trail a description as a loose mark (han-compose `is_mark` / `unicodeProperty`)."""
     point = ord(char)
-    if (not include_tones and char in TONES) or char in DEFAULT_IGNORABLE_MARKS or _selector(char) or 0x180B <= point <= 0x180F:
+    if (not include_tones and char in TONES) or char in IGNORABLE or _selector(char):
         return False
     if _in_ranges(point, EXTRA_MARK_RANGES, EXTRA_MARK_ENDS):
         return True
@@ -201,6 +206,7 @@ def _extends(char: str) -> bool:
     point = ord(char)
     return (
         unicodedata.category(char) in ("Mn", "Me", "Mc")
+        or char in CLUSTER_EXTRA
         or _selector(char)
         or 0x1F3FB <= point <= 0x1F3FF
         or 0xE0020 <= point <= 0xE007F
@@ -269,7 +275,7 @@ def _component(char: str) -> bool:
     against the Unicode version this Python knows: an unassigned code point is read as a component the
     Workshop may know by a later version. A character that would break the answer's URL is refused.
     """
-    if char in OPERATORS or char in EMPTY or char in UNSAFE or _selector(char):
+    if char in OPERATORS or char in EMPTY or char in UNSAFE or char in IGNORABLE or _selector(char):
         return False
     category = unicodedata.category(char)
     return not category.startswith("Z") and category not in ("Cc", "Cf", "Cs")
@@ -359,10 +365,13 @@ def description_end(text: str, at: int = 0, longest: int = LONGEST) -> int:
     multi-codepoint Emoji runs, conjoining Hangul jamo clusters, Middle Korean tone marks, and
     trailing loose marks.
     """
-    end, overflow = _end_of(text, at, longest, customs=True)
+    # Nothing past the longest description and the character after it can change the answer, so a long
+    # run of marks or jamo is read once per message rather than once per operator before it.
+    window = text[: at + longest + 1]
+    end, overflow = _end_of(window, at, longest, customs=True)
     if end >= 0 or overflow:
         return end
-    return _end_of(text, at, longest, customs=False)[0]
+    return _end_of(window, at, longest, customs=False)[0]
 
 
 def _edge(char: str) -> bool:
@@ -371,7 +380,7 @@ def _edge(char: str) -> bool:
     category = unicodedata.category(char)
     return (
         category[0] not in ("L", "N", "M")
-        and category != "Cn"
+        and (category != "Cn" or _pictographic(char))
         and not _is_mark(char, include_tones=True)
     )
 
