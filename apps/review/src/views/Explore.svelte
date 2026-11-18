@@ -21,10 +21,12 @@
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
   import NgramGrid from '../components/NgramGrid.svelte'
-  import { NGRAM_KINDS, ngramCounts, runOccurrences } from '../lib/ngrams.js'
+  import { NGRAM_KINDS, ngramCounts, runAddress, runOccurrences } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
+  import { mergeCropPatch } from '../lib/sequenceReview.js'
   import { collage, collageStyle, tileAspect, LAYOUT_KEY, storedLayout, ZOOMS, ZOOM, BARE, ZOOM_KEY, storedZoom } from '../lib/collage.js'
   import RunCandidate from '../components/RunCandidate.svelte'
+  import RunOccurrence from '../components/RunOccurrence.svelte'
   import RunStrip from '../components/RunStrip.svelte'
   import RunTile from '../components/RunTile.svelte'
   import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
@@ -662,8 +664,22 @@
   let scattered = $state([]), scatteredFor = null
   const dealtRuns = $derived(bare ? slots.flatMap((slot, k) => scattered[k] === null ? [] : [{ ...scattered[k], ...slot }]) : [])
   const runTiles = $derived(unreviewed(dealtRuns))
+  let openRunId = $state(null), runOpener = null
+  const openRun = $derived(openRunId ? dealtRuns.find(run => run.id === openRunId && run.crops?.length) ?? null : null)
+  function showRun(item, trigger) {
+    if (!item.crops?.length) return
+    runOpener = trigger
+    openRunId = item.id
+  }
+  async function closeRun() {
+    const trigger = runOpener
+    openRunId = null; runOpener = null
+    await tick()
+    if (trigger?.isConnected) trigger.focus()
+    else grid?.querySelector('.glyph-tile')?.focus()
+  }
   async function scatter(key) {
-    scatteredFor = key; scattered = []
+    scatteredFor = key; scattered = []; openRunId = null; runOpener = null
     // The places are numbered by slot, so a new deal's runs must not inherit the old ones' selection.
     if ([...selected].some(id => id.startsWith('run:'))) selected = new Set([...selected].filter(id => !id.startsWith('run:')))
     const random = seeded(key ^ 0x5bd1e995)
@@ -844,7 +860,7 @@
       if (updated.origin !== 'corpus') {
         const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
           reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 })
-        if (!closed) data = { ...data, counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
+        if (!closed) data = { ...(data ?? {}), counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
           reported_count: summary.reported_count, withheld_count: summary.withheld_count }
       }
     } catch (e) { if (!closed) error = e.message }
@@ -959,7 +975,22 @@
    *  run's own read gives; they stay in the run whatever the gallery shows, as it is still where they were written. */
   function runCrops(now) {
     if (scattered.some(run => run?.crops?.some(crop => now[crop.id])))
-      scattered = scattered.map(run => run?.crops ? { ...run, crops: run.crops.map(crop => now[crop.id] ? { ...crop, ...now[crop.id] } : crop) } : run)
+      scattered = scattered.map(run => run?.crops ? { ...run, crops: run.crops.map(crop => now[crop.id] ? mergeCropPatch(crop, now[crop.id]) : crop) } : run)
+  }
+  async function runCropUpdated(id, delta) {
+    const merge = list => list.map(item => item.id === id ? mergeCropPatch(item, delta) : item)
+    items = merge(items); local = merge(local); corpus = merge(corpus); sample = merge(sample)
+    if (delta?.state === 'checked') confirmedHere = new Set([...confirmedHere, id])
+    runCrops({ [id]: delta })
+    readGroupStats()
+    const target = [...items, ...local, ...dealtRuns.flatMap(run => run.crops ?? [])].find(crop => crop.id === id)
+    if (target?.origin !== 'corpus') {
+      runsChanged()
+      const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
+        reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 }).catch(() => null)
+      if (summary && !closed) data = { ...(data ?? {}), counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
+        reported_count: summary.reported_count, withheld_count: summary.withheld_count }
+    }
   }
   /** Tiles the site refused, read again so the grid shows what they are now. */
   async function refresh(ids) {
@@ -1330,7 +1361,7 @@
 <!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
 <!-- A run's select box, drawn inside its tile (`RunTile`), which ticks its own caption. -->
 {#snippet runMarks(item)}{#if selected.has(item.id) || !runChecked(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}{/snippet}
-{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} title={runTitle(item)} selected={selected.has(item.id)} checked={runChecked(item)} marks={reviewer && selectable(item) ? runMarks : undefined} {...pressing(item, i)} onclick={event => { if (selecting && !selectable(item)) event.preventDefault(); else tileClick(event, item, i, () => {}) }} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspectCorpus', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspect', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{@render tileCaption(item)}</button>{/if}{/snippet}
+{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} title={runTitle(item)} selected={selected.has(item.id)} checked={runChecked(item)} marks={reviewer && selectable(item) ? runMarks : undefined} {...pressing(item, i)} onclick={event => { if (selecting && !selectable(item)) event.preventDefault(); else tileClick(event, item, i, () => showRun(item, event.currentTarget)) }} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspectCorpus', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspect', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{@render tileCaption(item)}</button>{/if}{/snippet}
 <!-- The search term in its scripts' colours, and the code points `readable` adds to it. -->
 {#snippet term()}<ScriptText text={query} />{readable.slice(query.length)}{/snippet}
 
@@ -1452,6 +1483,8 @@
     ondismiss={() => { bulkDone = null; bulkError = ''; bulkReport = [] }} />{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && display.length}…{/if}</div>
   <div class="collection-bottom">{#if localName()}<span lang={locale()}>{localName()}</span>{:else}<span lang="en">GLYPH ATLAS</span>{/if}{#if bottomChecked != null}<span>{t('explore.bottom.checked', { count: bottomChecked })} <span class="separator">·</span> {t('explore.bottom.flagged', { count: bottomFlagged })}</span>{/if}</div>
+  {#if openRun}<RunOccurrence occurrence={openRun} text={openRun.text} count={openRun.n} more={localize(runAddress(openRun.text))} close={closeRun}
+    onupdated={runCropUpdated} inspect={id => inspect(id, openRun.crops, updateItem)} />{/if}
 </section>
 
 <style>
