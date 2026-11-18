@@ -1403,7 +1403,7 @@
                     onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/key}{/if}
     {/snippet}
     {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
-    <!-- What to find: the search, the work it comes from, and a fresh deal. -->
+    <!-- What to look through: a character, a work, a fresh deal, and the script. -->
     <div class="toolbar-query">
       <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form }, true)}
@@ -1416,9 +1416,6 @@
       {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
       {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
       <button class="shuffle" onclick={shuffle} disabled={loading} aria-label={t('explore.shuffle.aria')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.3 5-5M14 8c1.5-1.4 2.6-2 4-2h3M17 2l4 4-4 4"/></svg>{t('explore.shuffle')}</button>
-    </div>
-    <!-- Which script, and how the gallery below is shown. -->
-    <div class="toolbar-view">
       <div class="filter-tabs" aria-label={t('explore.filter.label')}>
         {#each [['all', () => t('explore.filter.all')], ['kana', () => t('explore.filter.kana')], ['kanji', () => t('explore.filter.kanji')], ['hangul', () => t('explore.filter.hangul')], ['gugyeol', () => t('explore.filter.gugyeol')], ['tangut', () => t('explore.filter.tangut')]] as [value, text]}
           {@const entry = groupMap.get(value)}
@@ -1429,18 +1426,19 @@
                   onclick={() => { filter = value; load() }}><span class="filter-label">{text()}</span>{#if tabCount != null}<small class="filter-count" aria-hidden="true">{formatCompactNumber(tabCount)}</small>{/if}</button>
         {/each}
       </div>
-      <div class="view-tools">
-        <div class="view-settings">
-          <ImageStyleToggle {ink} onchange={onink} />
-          <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
-            {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
-          </div>
-          <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
+    </div>
+    <!-- How the gallery below is shown, and what to do with it. -->
+    <div class="toolbar-view">
+      <div class="view-settings">
+        <ImageStyleToggle {ink} onchange={onink} />
+        <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
+          {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
         </div>
-        <div class="view-actions">
-          {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
-          <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
-        </div>
+        <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
+      </div>
+      <div class="view-actions">
+        {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
+        <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
       </div>
     </div>
   </div>
@@ -1506,44 +1504,42 @@
   .sheet-count{font-variant-numeric:tabular-nums}
   /* While the image is painted the button keeps the focus and takes no second press. */
   .sheet-save[aria-disabled="true"]{cursor:default;opacity:.45}
-  /* The first row finds: the search takes the room the work filter and the deal leave it. The second
-     sits on the gallery: its scripts at the start, how it is shown and what to do with it at the end. */
-  .explore > .collection-toolbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:12px;padding:16px 0}
-  .toolbar-query{display:flex;align-items:center;gap:24px;min-width:0}
-  .collection-toolbar .toolbar-query :global(.character-search){flex:1 1 auto;min-width:0;max-width:none}
-  /* The suggestions keep a reading width under a search that spans the row. */
-  .toolbar-query :global(.candidate-list){width:clamp(320px,100%,480px)}
-  .toolbar-view{display:flex;align-items:center;flex-wrap:wrap;gap:12px 24px}
-  .collection-toolbar .toolbar-view .filter-tabs{flex-shrink:0}
-  .view-tools{display:flex;align-items:center;gap:24px;margin-left:auto}
-  .view-settings{display:flex;align-items:center;gap:12px}
-  .view-actions{display:flex;align-items:center;gap:16px;padding-left:24px;border-left:1px solid var(--line)}
-  /* The works filter stands near the end of the row, so its menu opens leftward from its right edge. */
-  @media(width > 700px){.toolbar-query :global(.work-menu){left:auto;right:0}}
+  /* A short search, the works and the deal start the first row and the scripts end it; under a hairline the
+     second row holds how the gallery is shown at its start and what to do with it at its end. */
+  .explore > .collection-toolbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:0;padding:16px 0 0}
+  .toolbar-query{display:flex;align-items:center;gap:16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+  .collection-toolbar .toolbar-query :global(.character-search){flex:0 0 240px;min-width:0;max-width:none}
+  .toolbar-query :global(.work-control){flex:0 1 auto;border-left:0;padding-left:0}
+  .toolbar-query :global(.work-toggle){max-width:min(260px,100%)}
+  .collection-toolbar .toolbar-query .filter-tabs{flex-wrap:nowrap;gap:4px;margin-left:auto}
+  .toolbar-view{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:12px 0}
+  .view-settings,.view-actions{display:flex;align-items:center;gap:12px}
+  .view-actions{margin-left:auto}
   /* The server cannot know the reader's size, so the slider waits for the page to wake rather than show the wrong one. */
   :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
   .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
   .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
-  /* Where the scripts and the tools no longer share a row, the tools take the next one edge to edge. */
-  @media(max-width:1400px){.view-tools{flex-basis:100%;justify-content:space-between}.view-actions{padding-left:0;border-left:0}}
-  /* A narrower screen shows the save and the deal as icons; how far the image has come, or that it failed,
-     still shows beside it. */
-  @media(max-width:900px){
-    .sheet-save,.toolbar-query > .shuffle{font-size:0;gap:0;padding:8px}
-    .sheet-save svg,.toolbar-query > .shuffle svg{width:18px;height:18px}
-    .sheet-save span{margin-left:6px;font-size:11px}
+  /* A narrower screen stacks each script's count under its name, so the scripts keep the first row. */
+  @media(max-width:1150px){
+    .toolbar-query{gap:10px}
+    .collection-toolbar .toolbar-query :global(.character-search){flex:0 1 200px;min-width:150px}
+    .collection-toolbar .toolbar-query .filter-tabs button{flex-direction:column;align-items:center;gap:2px;padding:4px 9px}
   }
-  /* A phone keeps the order of the controls: the search, the works with the deal at the end of their row,
-     the scripts as one strip to scroll, then the settings and actions, wrapping as the words need. */
+  /* A phone puts the scripts under the search as a grid of three, each count beside its name; the two
+     toggles share a row, the size and the actions take the next, and the deal and the save show as icons;
+     how far the image has come, or that it failed, still shows beside its icon. */
   @media(max-width:700px){
-    .explore > .collection-toolbar{flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px 8px;padding:12px 0}
-    .toolbar-query,.toolbar-view,.view-tools,.view-settings,.view-actions{display:contents}
-    .collection-toolbar .toolbar-query :global(.character-search){flex-basis:100%}
-    .toolbar-query :global(.work-control){border-left:0;padding-left:0}
+    .explore > .collection-toolbar{padding-top:12px}
+    .toolbar-query{flex-wrap:wrap;gap:8px}
+    .collection-toolbar .toolbar-query :global(.character-search){flex:1 1 0}
     .toolbar-query > .shuffle{margin-left:auto}
-    .collection-toolbar .toolbar-view .filter-tabs{flex-wrap:nowrap;flex-basis:calc(100% + 40px);overflow-x:auto;scrollbar-width:none;margin:-6px -20px;padding:6px 20px;scroll-padding-inline:32px;mask-image:linear-gradient(to right,transparent,#000 20px,#000 calc(100% - 32px),transparent)}
-    .toolbar-view .filter-tabs::-webkit-scrollbar{display:none}
-    .select-toggle{margin-left:auto}
+    .collection-toolbar .toolbar-query .filter-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px 4px;flex-basis:100%;margin-left:0}
+    .collection-toolbar .toolbar-query .filter-tabs button{flex-direction:row;justify-content:space-between;align-items:baseline;padding:6px 10px}
+    .toolbar-view{gap:10px 8px}
+    .view-settings{display:contents}
+    .toolbar-view :global(.ink-toggle),.toolbar-view .layout-toggle{flex:1 1 0}
+    .toolbar-view :global(.ink-toggle button),.toolbar-view .layout-toggle button{flex:1}
+    .sheet-save span{margin-left:6px;font-size:11px}
     .zoom-control input{width:48px}
   }
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
