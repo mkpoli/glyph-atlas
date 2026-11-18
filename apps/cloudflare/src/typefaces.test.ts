@@ -8,7 +8,7 @@ const version = TYPEFACE_VERSION;
 const stored = new Map([[`fonts/${version}/sans/04e.woff2`, new Uint8Array([0x77, 0x4f, 0x46, 0x32])],
   [`fonts/${version}/serif/figures/200.woff2`, new Uint8Array([0x77, 0x4f])], [`fonts/${version}/serif/c0.woff2`, new Uint8Array([0x77])],
   [`fonts/${version}/index.json`, new TextEncoder().encode('{}')], [`fonts/${version}/serif.css`, new TextEncoder().encode('@font-face{}')],
-  [`fonts/${version}/sans-figures.css`, new TextEncoder().encode('@font-face{}')]]);
+  [`fonts/${version}/sans-figures.css`, new TextEncoder().encode('@font-face{}')], [`fonts/${version}/OFL.txt`, new TextEncoder().encode('SIL')]]);
 const env = { MEDIA: { async get(key: string) {
   const bytes = stored.get(key);
   return bytes ? { body: new Response(bytes).body!, size: bytes.length, httpEtag: '"e"' } : null;
@@ -26,6 +26,7 @@ describe('typefaceFile', () => {
     expect((await typefaceFile(env, `${version}/index.json`))!.headers.get('content-type')).toBe('application/json');
     expect((await typefaceFile(env, `${version}/serif.css`))!.headers.get('content-type')).toBe('text/css; charset=utf-8');
     expect((await typefaceFile(env, `${version}/sans-figures.css`))!.status).toBe(200);
+    expect((await typefaceFile(env, `${version}/OFL.txt`))!.headers.get('content-type')).toBe('text/plain; charset=utf-8');
   });
   it('answers a file the version lacks as missing, and nothing for a path naming no file or another version', async () => {
     const missing = (await typefaceFile(env, `${version}/sans/04f.woff2`))!;

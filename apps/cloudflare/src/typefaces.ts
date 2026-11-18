@@ -7,8 +7,8 @@
 import { StorageUnavailable } from './busy';
 import { TYPEFACE_VERSIONS } from './typefaceVersions';
 
-const TYPES: Record<string, string> = { woff2: 'font/woff2', css: 'text/css; charset=utf-8', json: 'application/json' };
-const FILE = /^(?:sans|serif)\/(?:figures\/)?[0-9a-f]{3}\.woff2$|^(?:sans|serif)\/c[0-9]\.woff2$|^(?:sans|serif)(?:-figures)?\.css$|^index\.json$/;
+const TYPES: Record<string, string> = { woff2: 'font/woff2', css: 'text/css; charset=utf-8', json: 'application/json', txt: 'text/plain; charset=utf-8' };
+const FILE = /^(?:sans|serif)\/(?:figures\/)?[0-9a-f]{3}\.woff2$|^(?:sans|serif)\/c[0-9]\.woff2$|^(?:sans|serif)(?:-figures)?\.css$|^index\.json$|^(?:NOTICE|OFL)\.txt$/;
 
 /** A file of a served version, a 404 when the version lacks it, or null when the path names none. R2
  *  failing is StorageUnavailable. */

@@ -1,16 +1,20 @@
 # Typefaces
 
 The site sets characters in one of two faces, Atlas Sans and Atlas Serif. Each draws every Han
-ideograph of Unicode 18 (the 98,701 of `data/vocab/characters.tsv`, through Extension J), the radicals, strokes, kana, hangul and CJK
-punctuation, in one design per range:
+ideograph of Unicode 18 (the 98,701 of `data/vocab/characters.tsv`, through Extension J), the
+radicals, strokes, kana, hangul syllables and CJK punctuation, in one design per range:
 
 | Face | Sources, in the order a character is looked up |
 |---|---|
 | Atlas Sans | Noto Sans CJK JP 2.004 at weight 400, Plangothic P1 and P2 V2.9.5795 |
-| Atlas Serif | Noto Serif CJK JP 2.003 at weight 400, Jigmo, Jigmo2 and Jigmo3 20250912, Plangothic P1 for 𫠞 U+2B81E alone |
+| Atlas Serif | Noto Serif CJK JP 2.003 at weight 400, Jigmo, Jigmo2 and Jigmo3 20250912 |
+
+The serif sources lack one ideograph, 𫠞 U+2B81E, which Atlas Serif takes from Plangothic P1. The
+files hold outlines and no shaping tables, so the conjoining hangul jamo are left to a font that
+joins them.
 
 `scripts/build_atlas_fonts.py` builds both and pins every source by SHA-256. Each face holds
-116,144 characters.
+115,787 characters.
 
 ## Files
 
@@ -26,9 +30,9 @@ A face is cut into small WOFF2 files, and a page downloads the files of the char
 
 | Face | Files | Size | Median file | Largest file |
 |---|---|---|---|---|
-| Atlas Sans, characters | 467 | 18.0 MB | 41 KB | 59 KB |
-| Atlas Sans, sequences | 250 | 2.5 MB | 2 KB | 38 KB |
-| Atlas Serif, characters | 467 | 28.4 MB | 63 KB | 99 KB |
+| Atlas Sans, characters | 465 | 18.1 MB | 41 KB | 59 KB |
+| Atlas Sans, sequences | 250 | 2.6 MB | 2 KB | 39 KB |
+| Atlas Serif, characters | 465 | 28.5 MB | 63 KB | 99 KB |
 | Atlas Serif, sequences | 329 | 7.1 MB | 5 KB | 149 KB |
 
 `index.json` lists each file's characters as ranges, its size and hash, and the sequences a figures
@@ -68,15 +72,16 @@ uv run scripts/build_atlas_fonts.py                 # cache/atlas-fonts/<version
 rclone copy cache/atlas-fonts/<version> r2:glyph-atlas/fonts/<version> --exclude '*.part'
 ```
 
-An upload writes one R2 object per file: 1,518 for a whole build.
+An upload writes one R2 object per file: 1516 for a whole build.
 
 ## Licences
 
-- Noto Sans CJK JP (© 2014-2021 Adobe) and Noto Serif CJK JP (© 2017-2024 Adobe): SIL Open Font License 1.1, with the
-  Reserved Font Name `Source`, which neither family name uses.
+- Noto Sans CJK JP (© 2014-2021 Adobe) and Noto Serif CJK JP (© 2017-2024 Adobe): SIL Open Font
+  License 1.1, with the Reserved Font Name `Source`, which neither family name uses.
 - Plangothic P1 and P2: Copyright (c) 2024 Fitzgerald P. Köeingsegg, SIL Open Font License 1.1, no
   Reserved Font Name declared.
 - Jigmo, Jigmo2 and Jigmo3: Koichi Kamichi, from the GlyphWiki contributors' glyphs, CC0 1.0.
 
-Atlas Sans and Atlas Serif are distributed under the SIL Open Font License 1.1; each file's name
-table repeats its sources.
+Atlas Sans and Atlas Serif are distributed under the SIL Open Font License 1.1. A build carries
+the licence as `OFL.txt` and every source's copyright notice as `NOTICE.txt`, and each file's name
+table has the notices of the sources it draws from.
