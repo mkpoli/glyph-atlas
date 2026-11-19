@@ -85,6 +85,12 @@ describe('search indexing', () => {
     expect(body).not.toContain('hreflang="lzh"')
     expect(body).not.toContain('/review</loc>')
   })
+  it('keeps crawlers out of run pages in every language', async () => {
+    const body = await robots({ url: new URL('https://atlas.test/robots.txt') }).text()
+    expect(body).toContain('Disallow: /sequence/\n')
+    expect(body).toContain('Disallow: /*/sequence/\n')
+    expect(body).not.toContain('character')
+  })
   it('keeps crop images crawlable while excluding the account API', async () => {
     const body = await robots({ url: new URL('https://atlas.test/robots.txt') }).text()
     expect(body).toContain('Allow: /atlas/media/')
