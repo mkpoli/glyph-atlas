@@ -191,6 +191,14 @@ def wrangler(*args, capture=False):
     return subprocess.run([BUNX, "wrangler", *args], cwd=CF, capture_output=capture, text=True, check=False)
 
 
+def pending_boxes(crops, chunk=500):
+    """The boxes reviewers redrew on the site that still wait for a cut, by crop: `reviews.x..h` on D1."""
+    crops = sorted(c for c in crops if c is not None)
+    return {r["crop"]: {k: r[k] for k in "xywh"} for i in range(0, len(crops), chunk)
+            for r in query("glyph-atlas-v3", "SELECT crop, x, y, w, h FROM reviews WHERE x IS NOT NULL AND crop IN ("
+                           + ",".join(map(str, crops[i:i + chunk])) + ")")} if crops else {}
+
+
 def query(database, sql):
     for _ in range(5):
         out = wrangler("d1", "execute", database, "--remote", "--json", "--command", sql, capture=True)
@@ -1418,6 +1426,13 @@ def main():
             if (data.get("box") and published.get("box") and data["box"] != published["box"]) or \
                     (data.get("image_sha256") and published.get("image_sha256") and data["image_sha256"] != published["image_sha256"]):
                 recut.add(r["id"])
+    # A box a reviewer redrew on the site waits in `reviews` for its cut; a re-cut to exactly that box is the
+    # reviewer's, whatever it covers (as `box_pending` says in a catalogue taken from the site).
+    drawn = pending_boxes([m.known(i) for i in recut])
+
+    def redrawn(rid, data):
+        box = data.get("box")
+        return bool(data.get("box_pending")) or (box is not None and drawn.get(m.known(rid)) == {k: int(box[k]) for k in "xywh"})
     refused = []
     for r in units:
         data = json.loads(r["data"])
@@ -1438,9 +1453,9 @@ def main():
                 refused.append(f"{r['id']}: retired without its revision recorded, so it cannot be put back safely")
             elif m.page_key(cid // PAGE) != page_key:
                 refused.append(f"{r['id']}: page {m.page_key(cid // PAGE)} -> {page_key}")
-            elif r["id"] in recut and data.get("box") and not data.get("box_pending"):
+            elif r["id"] in recut and data.get("box") and not redrawn(r["id"], data):
                 # Against every other crop's published box, re-cut ones too, so two crops cannot trade glyphs.
-                # A box a reviewer redrew on the site (`box_pending`) is the crop's own, whatever it covers.
+                # A box a reviewer redrew on the site is the crop's own, whatever it covers.
                 for e in bundle_of(cid // PAGE)["crops"]:
                     if e["id"] != r["id"] and not e.get("retired") and e["id"] not in retiring \
                             and iou(data["box"], e.get("box")) >= 0.5:

@@ -642,6 +642,24 @@ def test_a_re_cut_to_a_redrawn_box_leaves_it_pending_no_longer(layout, monkeypat
         assert boxes == {a2: [None] * 4, a1: [3, 3, 5, 5]}
 
 
+def test_a_re_cut_over_a_neighbour_stands_only_as_a_reviewer_drew_it(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a2 = ids(root)["ex:a2"]
+    # a2 re-cut onto a1's glyph: a box no reviewer drew there would let two crops trade a glyph.
+    over = {"x": 0, "y": 1, "w": 10, "h": 10}
+    with pytest.raises(SystemExit, match="need the slot matcher"):
+        run(publish, monkeypatch, catalogue(tmp_path / "a.sqlite", [unit("ex:a2", "hl:p1", over, "い", revision=3)]))
+    # The same box, redrawn by a reviewer on the site, is the crop's own.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("INSERT INTO reviews(crop, gen, at, char, state, x, y, w, h) SELECT id, 0, 0, char, 1, 0, 1, 10, 10 "
+                   "FROM crops WHERE id=?", (a2,))
+        db.commit()
+    before = crops(remote)[a2]["cut"]
+    run(publish, monkeypatch, catalogue(tmp_path / "b.sqlite", [unit("ex:a2", "hl:p1", over, "い", revision=3)]))
+    assert crops(remote)[a2]["cut"] == before + 1
+    assert remote.query("glyph-atlas-v3", f"SELECT x FROM reviews WHERE crop={a2}") == [{"x": None}]
+
+
 def test_a_publication_that_does_not_speak_for_a_crop_leaves_the_stores_revision_alone(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     a2 = ids(root)["ex:a2"]
