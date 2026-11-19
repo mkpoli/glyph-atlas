@@ -10,5 +10,5 @@
 <Seo title={`${data.text} · ${t('nav.explore')}`} index={false} />
 
 {#key [data.text, data.work, data.form, data.hand, data.sort].join('|')}
-  <RunView text={data.text} work={data.work} form={data.form} hand={data.hand} sort={data.sort} first={data.first} related={data.related} inspect={inspector.inspect.bind(inspector)} />
+  <RunView text={data.text} work={data.work} form={data.form} hand={data.hand} sort={data.sort} inspect={inspector.inspect.bind(inspector)} />
 {/key}

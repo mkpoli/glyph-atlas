@@ -19,7 +19,7 @@
   import HandFilter from './HandFilter.svelte'
   import FormFilter from './FormFilter.svelte'
   import WorkFilter from './WorkFilter.svelte'
-  import { RUN_FIRST, runAddress, runOccurrences } from '../lib/ngrams.js'
+  import { RUN_FIRST, runAddress, runOccurrences, runRelated } from '../lib/ngrams.js'
   import { tileDate } from '../lib/dating.js'
   import { characterAddress, collectionAddress } from '../lib/gallery.js'
   import { runText } from '../lib/runs.js'
@@ -28,13 +28,14 @@
   import { sourceTitle } from '../lib/seo.js'
   import { t, localize } from '../lib/i18n.svelte.js'
 
-  let { text, work: given = '', form: written = '', hand: handed = '', sort: ordered = '', first = null, related = null, inspect } = $props()
-  const opened = untrack(() => first)
+  let { text, work: given = '', form: written = '', hand: handed = '', sort: ordered = '', inspect } = $props()
   let work = $state(untrack(() => given)), form = $state(untrack(() => written)), hand = $state(untrack(() => handed)), sort = $state(untrack(() => ordered))
-  let hands = $state(opened?.hands ?? null), works = $state(opened?.works ?? []), forms = $state(opened?.forms ?? null)
-  let items = $state(opened?.items ?? []), total = $state(opened?.total ?? null), more = $state(opened?.more ?? false)
-  let offset = $state(opened?.next_offset ?? 0), vertical = $state(opened?.vertical ?? true), size = $state(opened?.size ?? 2)
-  let loading = $state(!opened), error = $state(''), ended = $state(false), requestId = 0
+  let hands = $state(null), works = $state([]), forms = $state(null)
+  let items = $state([]), total = $state(null), more = $state(false)
+  let offset = $state(0), vertical = $state(true), size = $state(2)
+  let loading = $state(true), error = $state(''), ended = $state(false), requestId = 0
+  // The runs near this one; a reading that fails leaves their links out.
+  let related = $state(null)
   // The occurrence open in its dialog, and the card it was opened from, which takes the focus back.
   let detailIndex = $state(null), opener = null
   const detail = $derived(detailIndex !== null ? items[detailIndex] ?? null : null)
@@ -76,7 +77,12 @@
     } catch (e) { if (id === requestId) error = e.message }
     finally { if (id === requestId) loading = false }
   }
-  $effect(() => { if (!opened) untrack(() => load()) })
+  $effect(() => {
+    const leaving = new AbortController()
+    untrack(() => load())
+    runRelated(untrack(() => text), { signal: leaving.signal }).then(found => { related = found }).catch(() => {})
+    return () => leaving.abort()
+  })
   // A choice reloads the page from its start and is kept in the address, so a copy of it shows the same.
   function choose(change) {
     work = change.work ?? work; form = change.form ?? form; hand = change.hand ?? hand; sort = change.sort ?? sort; detailIndex = null
