@@ -78,10 +78,10 @@
     finally { if (id === requestId) loading = false }
   }
   $effect(() => {
-    let current = true
+    const leaving = new AbortController()
     untrack(() => load())
-    runRelated(untrack(() => text)).then(found => { if (current) related = found }).catch(() => {})
-    return () => { current = false }
+    runRelated(untrack(() => text), { signal: leaving.signal }).then(found => { related = found }).catch(() => {})
+    return () => leaving.abort()
   })
   // A choice reloads the page from its start and is kept in the address, so a copy of it shows the same.
   function choose(change) {
