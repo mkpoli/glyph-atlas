@@ -270,8 +270,9 @@ every hour, so a new public room needs no restart; a room is covered once it is 
 `@bigfatfish:glyphatlas.org`, shown as 大肥魚, is the community's chat character: a whale girl in a
 maid dress, after the fan nickname 大肥鱼 for DeepSeek's whale. She joins up to 200 rooms in the
 server's public directory, keeps their readable text in a local SQLite log, and answers anyone who
-calls her by name (大肥魚, 大肥鱼, Big Fat Fish), by mention, or with `!fish`. The first time
-someone writes in a room after she arrives, she introduces herself there once.
+calls her by name (大肥魚, 大肥鱼, Big Fat Fish), by mention, or with `!fish`. She introduces herself
+only when asked (`!fish 自我介紹`, or 「大肥魚，自我介紹一下」), and only in the rooms listed in
+`bot.intro_rooms` (歡迎 · Welcome and 談話 · Chatting); elsewhere she points to them.
 
 She also reads along. When a room goes quiet after a few messages, she takes a look now and then
 (the `[chat]` table sets how often) and may add a line, an emoji or a sticker, or stay silent. She

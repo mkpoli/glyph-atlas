@@ -19,6 +19,8 @@ user_id = "@bigfatfish:glyphatlas.org"
 display_name = "大肥魚"
 # Names that call the bot besides its mention and `!fish`.
 aliases = ["大肥魚", "大肥鱼", "Big Fat Fish"]
+# Rooms where `!fish 自我介紹` gets an introduction; elsewhere it points here.
+intro_rooms = ["#welcome:glyphatlas.org", "#chatting:glyphatlas.org"]
 # Empty means every room in the server's public directory. A list limits the bot to those rooms.
 rooms = []
 # The homeserver's bridge and bot accounts, which never call the bot.

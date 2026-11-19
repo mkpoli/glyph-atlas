@@ -2,7 +2,7 @@
 
 The bot is the Matrix account @bigfatfish:glyphatlas.org. It follows the homeserver's sync stream,
 keeps the public rooms' text in a local SQLite log, and talks like a member of the community: it
-answers whoever calls it by name or mention, introduces itself the first time it speaks in a room,
+answers whoever calls it by name or mention, introduces itself when asked in the rooms meant for it,
 and, when someone asks, files the discussion as an issue in mkpoli/glyph-atlas. A filed issue
 carries the room, the date and the participants, so a maintainer can find the conversation again.
 
@@ -69,7 +69,7 @@ PENDING_SECONDS = 86_400
 CHAT_TEMPERATURE = 1.3
 CHAT_CONTEXT = 40
 MAX_BUBBLES = 3
-# A call older than this gets no chat answer and no introduction: the moment has passed.
+# A call older than this gets no chat answer: the moment has passed.
 CHAT_WINDOW_SECONDS = 600
 DEFAULT_ALIASES = ("大肥魚", "大肥鱼", "Big Fat Fish")
 # Chat turns answered in one room in an hour, whoever calls.
@@ -77,11 +77,17 @@ CHAT_ROOM_PER_HOUR = 30
 # The command: `!fish` anywhere a word starts, or `/fish` opening the message. A `.fish` file name
 # or a path ending in /fish calls no one.
 COMMAND = r"(?:(?:^|(?<=\s))!|^/)fish"
-# A Han name is written against the words around it, so it calls the bot only as an address: at the
-# end, before a space, punctuation, kana or one of the words that follow a name being called. 大肥鱼头
-# (a fish head), 大肥鱼V4 (DeepSeek news) and 减肥鱼油 call no one.
+# A Han name is written against the words around it (大肥魚餓嗎, 大肥魚喫🍚), so it calls the bot
+# unless the next character makes it something else: a letter or digit (大肥鱼V4, DeepSeek news) or a
+# word that turns the fish into food (大肥鱼头).
 HAN = "\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0003134f"
-AFTER_ADDRESS = "你妳您呀啊哦喔欸誒诶唷呢嗎吗吧來来在醬酱好幫帮"
+# What asks the bot to introduce itself: a call that is the request and nothing else, such as
+# `!fish 自我介紹` or 大肥魚，自我介紹一下. 自我介紹一下，我是新來的 is a newcomer's own introduction.
+INTRO_WORD = r"(?:intro|introduce yourself|自我介[紹绍]|自己紹介|자기\s?소개)"
+INTRO = re.compile(r"(?:請|请|please\s+)?" + INTRO_WORD
+                   + r"(?:一下|下|吧|呢|嗎|吗|して(?:ください|ね)?|해\s?(?:줘|주세요)|\s+please)?[\s.!?。！？~～]*",
+                   re.IGNORECASE)
+NOT_ADDRESS = "头頭尾肉汤湯片油排块塊骨皮刺丸粥鳞鱗鳍鰭腩柳干乾罐"
 # Joining in unasked: research on group-chat agents finds a model alone decides poorly when to
 # speak (Bhagtani et al., arXiv 2603.11409; Nama et al., arXiv 2605.05626), so a cheap gate outside
 # the model picks the moments, after MaiBot's turn trigger (talk_value as a probability, debounced
@@ -173,6 +179,7 @@ class Config:
     user_id: str = "@bigfatfish:glyphatlas.org"
     display_name: str = "大肥魚"
     aliases: tuple[str, ...] = DEFAULT_ALIASES
+    intro_rooms: tuple[str, ...] = ()
     room_ids: tuple[str, ...] = ()
     ignored_senders: tuple[str, ...] = (
         "@idsbot:glyphatlas.org",
@@ -268,6 +275,10 @@ class Config:
         display_name = str(field(bot, "display_name", cls.display_name))
         if not display_name.strip():
             raise ValueError("bot.display_name must not be empty")
+        intro_rooms = field(bot, "intro_rooms", [])
+        if not isinstance(intro_rooms, list) or any(
+                not isinstance(item, str) or not item.startswith(("#", "!")) for item in intro_rooms):
+            raise ValueError("bot.intro_rooms must be a list of room aliases or IDs")
         aliases = field(bot, "aliases", list(cls.aliases))
         if not isinstance(aliases, list) or any(not isinstance(item, str) or not item.strip() for item in aliases):
             raise ValueError("bot.aliases must be a list of names")
@@ -282,6 +293,7 @@ class Config:
             user_id=user_id,
             display_name=display_name,
             aliases=tuple(item.strip() for item in aliases),
+            intro_rooms=tuple(intro_rooms),
             room_ids=tuple(room_ids),
             ignored_senders=tuple(ignored),
             max_rooms=max(1, min(1000, int(field(limits, "max_rooms", cls.max_rooms)))),
@@ -536,6 +548,15 @@ class Matrix:
         topic = answer.get("topic")
         return topic if isinstance(topic, str) else ""
 
+    def canonical_alias(self, room_id: str) -> str:
+        try:
+            answer = self.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room_id, safe='')}"
+                                      "/state/m.room.canonical_alias")
+        except MatrixError:
+            return ""
+        alias = answer.get("alias")
+        return alias if isinstance(alias, str) else ""
+
     def member_name(self, room_id: str, user_id: str) -> str:
         path = (f"/_matrix/client/v3/rooms/{urllib.parse.quote(room_id, safe='')}"
                 f"/state/m.room.member/{urllib.parse.quote(user_id, safe='')}")
@@ -649,10 +670,7 @@ class Store:
                 event_id TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS intros (
-                room_id TEXT PRIMARY KEY,
-                introduced_at INTEGER NOT NULL
-            );
+            DROP TABLE IF EXISTS intros;
             CREATE TABLE IF NOT EXISTS digests (
                 day TEXT NOT NULL,
                 room_id TEXT NOT NULL,
@@ -805,9 +823,6 @@ class Store:
         self.db.execute("DELETE FROM pending WHERE room_id=?", (room_id,))
         self.db.commit()
 
-    def introduced(self, room_id: str) -> bool:
-        return self.db.execute("SELECT 1 FROM intros WHERE room_id=?", (room_id,)).fetchone() is not None
-
     def stickers(self) -> dict[str, tuple[str, int]]:
         """The uploaded stickers whose image still matches the table: name to (mxc, size)."""
         wanted = {sticker.name: sticker.sha256 for sticker in STICKERS}
@@ -844,10 +859,6 @@ class Store:
                 continue
             rooms.setdefault(str(row["room_id"]), []).append(row)
         return rooms
-
-    def mark_introduced(self, room_id: str) -> None:
-        self.db.execute("INSERT OR IGNORE INTO intros(room_id, introduced_at) VALUES(?,?)", (room_id, now_ms()))
-        self.db.commit()
 
 
 def _decision_from_dict(data: dict[str, Any]) -> Decision:
@@ -1005,16 +1016,16 @@ Set "issue" to true only when someone explicitly asks you to file, open or track
 
 CHAT_TASKS = {
     "called": "Message {trigger} talks to you. Answer that person as yourself; `say` must not be empty.",
-    "intro": ("You are speaking in this room for the first time. Say hi and introduce yourself in two or "
-              "three short lines in the room's language: who you are, that anyone can talk to you by "
-              "calling you 大肥魚, and that you can file an issue for the maintainers when asked."),
+    "intro": ("Message {trigger} asks you to introduce yourself. Do it in two or three short lines in that "
+              "message's language: who you are, that anyone can talk to you by calling you 大肥魚, and "
+              "that you can file an issue for the maintainers when asked. `say` must not be empty."),
+    "intro-elsewhere": ("Message {trigger} asks you to introduce yourself, but you do that only in {rooms}. "
+                        "Say so in one short, friendly line in that message's language, without "
+                        "introducing yourself here. `say` must not be empty."),
     "ambient": ("Nobody called you; you are reading along. Most of the time stay quiet: empty `say`, no "
                 "react, no sticker. Join only when you have something fun, kind or helpful to add to the "
                 "last few messages: a short playful remark, a cute sticker, or an emoji on a message you "
                 "like. A reaction or a sticker usually beats words. Never bring up issues here."),
-    "called-intro": ("Message {trigger} talks to you, and it is your first time speaking in this room. "
-                     "Answer that person, and introduce yourself in a line or two: who you are, and that "
-                     "anyone can talk to you by calling you 大肥魚. `say` must not be empty."),
 }
 
 
@@ -1049,7 +1060,7 @@ def format_digest(room_name: str, room_lines: list[sqlite3.Row], changes: list[d
 
 def format_chat(room_name: str, room_topic: str, events: list[sqlite3.Row], names: dict[str, str],
                 *, task: str, trigger: int | None, bot_user_id: str,
-                stickers: Iterable[str] = (), recent: Iterable[str] = ()) -> str:
+                stickers: Iterable[str] = (), recent: Iterable[str] = (), rooms: str = "") -> str:
     """A chat turn's user message as JSON: the room, its newest lines numbered, and the task."""
     messages = []
     total = 0
@@ -1069,7 +1080,7 @@ def format_chat(room_name: str, room_topic: str, events: list[sqlite3.Row], name
         "messages": messages,
         "stickers": {sticker.name: sticker.meaning for sticker in STICKERS if sticker.name in set(stickers)},
         "recent_stickers": list(recent),
-        "task": CHAT_TASKS[task].replace("{trigger}", str(trigger)),
+        "task": CHAT_TASKS[task].replace("{trigger}", str(trigger)).replace("{rooms}", rooms),
     }
     return json.dumps(payload, ensure_ascii=False)
 
@@ -1173,11 +1184,11 @@ class DeepSeek:
 
     def act(self, room_name: str, room_topic: str, events: list[sqlite3.Row], names: dict[str, str],
             *, task: str, trigger: int | None, bot_user_id: str,
-            stickers: Iterable[str] = (), recent: Iterable[str] = ()) -> Act:
+            stickers: Iterable[str] = (), recent: Iterable[str] = (), rooms: str = "") -> Act:
         """One chat turn in 大肥魚's voice."""
         stickers = tuple(stickers)
         user = format_chat(room_name, room_topic, events, names, task=task, trigger=trigger,
-                           bot_user_id=bot_user_id, stickers=stickers, recent=recent)
+                           bot_user_id=bot_user_id, stickers=stickers, recent=recent, rooms=rooms)
         body = {
             "model": self.model,
             "messages": [{"role": "system", "content": PERSONA_PROMPT},
@@ -1420,7 +1431,7 @@ def _name_pattern(name: str) -> str:
     joined = r"[\s_-]*".join(words)
     if name.isascii():
         return rf"(?<![\w]){joined}(?![\w])"
-    return rf"{joined}(?![A-Za-z0-9]|(?![{AFTER_ADDRESS}])[{HAN}])"
+    return rf"{joined}(?![A-Za-z0-9{NOT_ADDRESS}])"
 
 
 def _names_of(display_name: str, aliases: Iterable[str]) -> list[str]:
@@ -1457,6 +1468,7 @@ def _prompt(body: str, user_id: str, display_name: str, aliases: Iterable[str] =
     for name in _names_of(display_name, aliases):
         text = re.sub(_name_pattern(name), " ", text, flags=re.IGNORECASE)
     text = re.sub(COMMAND + r"\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"^[\s,，、:：]*(?:さん|ちゃん|さま|様|님|씨|醬|酱)", " ", text)
     text = re.sub(r"^\s*(?:review|issue|file)\b", " ", text, flags=re.IGNORECASE)
     text = " ".join(text.split()).strip(" ,:;!?-，、：；！？")
     return text[:MAX_PROMPT]
@@ -1491,7 +1503,11 @@ def call_of(event: dict[str, Any], user_id: str, display_name: str,
         return None
     if not _mentions_me(body, content, user_id, display_name, aliases):
         return None
-    return Call(mode=_mode(body), prompt=_prompt(body, user_id, display_name, aliases))
+    mode = _mode(body)
+    prompt = _prompt(body, user_id, display_name, aliases)
+    if mode == "chat" and INTRO.fullmatch(prompt):
+        mode = "intro"
+    return Call(mode=mode, prompt=prompt)
 
 
 def issue_body(decision: Decision, room_id: str, room_name: str, events: list[sqlite3.Row],
@@ -1551,13 +1567,13 @@ class Bot:
         self._chats: list[float] = []
         self._user_chats: dict[str, list[float]] = {}
         self._room_chats: dict[str, list[float]] = {}
-        self._intro_tried: dict[str, float] = {}
         self._recent_stickers: dict[str, list[str]] = {}
         self._ambient: dict[str, dict[str, Any]] = {}
         self._spoke_at: dict[str, float] = {}
         self._ambient_turns: list[float] = []
         self._random = random.random
-        self._digest_rooms: dict[str, str] = {}
+        self._aliases: dict[str, str] = {}
+        self._alias_failed: dict[str, float] = {}
         self._digest_tried: dict[str, float] = {}
         self._clock = lambda: datetime.datetime.now(JST)
         self._joined_at = 0.0
@@ -1709,7 +1725,7 @@ class Bot:
             return
         sender = event.get("sender")
         sender = sender if isinstance(sender, str) else ""
-        if call.mode == "chat":
+        if call.mode in ("chat", "intro"):
             if isinstance(ts, int) and now_ms() - ts > CHAT_WINDOW_SECONDS * 1000:
                 self.store.mark_handled(event_id, "stale")
                 return
@@ -1719,7 +1735,10 @@ class Bot:
                 return
             self.store.mark_handled(event_id, "started")
             try:
-                self.chat(room_id, event_id, call, sender)
+                if call.mode == "intro":
+                    self.introduce(room_id, event_id)
+                else:
+                    self.chat(room_id, event_id, call, sender)
             except Exception as error:
                 log.exception("chatting in %s", room_id)
                 self.store.mark_handled(event_id, f"failed: {type(error).__name__}")
@@ -1750,8 +1769,7 @@ class Bot:
             self._tell(room_id, event_id, "I couldn't read that discussion just now. Try calling me again in a minute.")
 
     def notice(self, room_id: str, event: dict[str, Any]) -> None:
-        """A person's message that does not call the bot: the first one in a room since the bot came
-        is its moment to say hello; after that, a quiet moment may be one to join in."""
+        """A person's message that does not call the bot: a quiet moment after it may be one to join in."""
         event_id = event.get("event_id")
         if not isinstance(event_id, str):
             return
@@ -1764,23 +1782,11 @@ class Bot:
         ts = event.get("origin_server_ts")
         if isinstance(ts, int) and now_ms() - ts > CHAT_WINDOW_SECONDS * 1000:
             return
-        if self.store.introduced(room_id):
-            batch = self._ambient.setdefault(room_id, {"count": 0, "lively": False})
-            batch["count"] += 1
-            batch["lively"] = batch["lively"] or bool(LIVELY.search(body))
-            batch["event_id"] = event_id
-            batch["due"] = time.monotonic() + self.config.ambient_quiet_seconds
-            return
-        tried = self._intro_tried.get(room_id)
-        if tried is not None and time.monotonic() - tried < CHAT_WINDOW_SECONDS:
-            return
-        if not self._chat_budget(""):
-            return
-        self._intro_tried[room_id] = time.monotonic()
-        try:
-            self.turn(room_id, event_id, task="intro")
-        except Exception:
-            log.exception("introducing myself in %s", room_id)
+        batch = self._ambient.setdefault(room_id, {"count": 0, "lively": False})
+        batch["count"] += 1
+        batch["lively"] = batch["lively"] or bool(LIVELY.search(body))
+        batch["event_id"] = event_id
+        batch["due"] = time.monotonic() + self.config.ambient_quiet_seconds
 
     def _sync_wait_ms(self) -> int:
         if not self._ambient:
@@ -1821,7 +1827,7 @@ class Bot:
             return
         day = moment.strftime("%Y-%m-%d")
         for target, language in self.config.digest_rooms:
-            room_id = self._digest_room(target)
+            room_id = self._room_of(target)
             if room_id is None or self.store.digested(day, room_id):
                 continue
             tried = self._digest_tried.get(room_id)
@@ -1853,26 +1859,43 @@ class Bot:
                          "fish-d-" + hashlib.sha256(f"{day}{room_id}".encode()).hexdigest()[:40])
         self.store.mark_digested(day, room_id)
 
-    def _digest_room(self, target: str) -> str | None:
+    def _room_of(self, target: str) -> str | None:
+        """A room ID, or the room an alias names, looked up once and again an hour after a failure."""
         if target.startswith("!"):
             return target
-        if target not in self._digest_rooms:
-            failed = self._digest_tried.get(target)
+        if target not in self._aliases:
+            failed = self._alias_failed.get(target)
             if failed is not None and time.monotonic() - failed < 3600:
                 return None
             try:
-                self._digest_rooms[target] = self.matrix.resolve(target)
+                self._aliases[target] = self.matrix.resolve(target)
             except MatrixError as error:
-                self._digest_tried[target] = time.monotonic()
+                self._alias_failed[target] = time.monotonic()
                 log.warning("resolving %s: %s", target, error)
                 return None
-        return self._digest_rooms[target]
+        return self._aliases[target]
+
+    def introduce(self, room_id: str, event_id: str) -> None:
+        """Introduce herself when asked, in the rooms meant for it; elsewhere point to them."""
+        targets = self.config.intro_rooms
+        here = room_id in targets or self.matrix.canonical_alias(room_id) in targets
+        if not here:
+            here = room_id in {self._room_of(target) for target in targets if target.startswith("#")}
+        if here:
+            self.turn(room_id, event_id, task="intro", reply_to=event_id)
+        else:
+            names = []
+            for target in targets:
+                resolved = self._room_of(target)
+                names.append((self._room(resolved)[0] if resolved else "") or target)
+            self.turn(room_id, event_id, task="intro-elsewhere", reply_to=event_id,
+                      rooms="、".join(names) or "the welcome room")
+        self.store.mark_handled(event_id, "introduced")
 
     def chat(self, room_id: str, event_id: str, call: Call, sender: str = "") -> None:
         """Answer a call as 大肥魚, and hand the discussion to the issue desk when that was the ask,
         within the desk's own limits."""
-        task = "called" if self.store.introduced(room_id) else "called-intro"
-        act = self.turn(room_id, event_id, task=task, reply_to=event_id)
+        act = self.turn(room_id, event_id, task="called", reply_to=event_id)
         self.store.mark_handled(event_id, "chatted")
         if act is None or not act.issue:
             return
@@ -1886,7 +1909,8 @@ class Bot:
         self._last_answer[room_id] = time.monotonic()
         self._answer(room_id, event_id, Call(mode="auto", prompt=call.prompt))
 
-    def turn(self, room_id: str, event_id: str, *, task: str, reply_to: str | None = None) -> Act | None:
+    def turn(self, room_id: str, event_id: str, *, task: str, reply_to: str | None = None,
+             rooms: str = "") -> Act | None:
         """Read the room, ask the model for one turn, and post what it says. Only a turn that owes
         an answer shows typing; an unasked one is mostly silent."""
         if task != "ambient":
@@ -1901,15 +1925,13 @@ class Bot:
         names = self._names(room_id, [str(row["sender"]) for row in events])
         act = self.deepseek.act(room_name, room_topic, events, names, task=task, trigger=trigger,
                                 bot_user_id=self.user_id, stickers=self.store.stickers(),
-                                recent=self._recent_stickers.get(room_id, []))
+                                recent=self._recent_stickers.get(room_id, []), rooms=rooms)
         if task == "ambient":
             act = dataclasses.replace(act, issue=False)
         self.perform(room_id, event_id, act, events, reply_to=reply_to)
         if act.say or act.react or act.sticker:
             self._spoke_at[room_id] = time.monotonic()
             self._ambient.pop(room_id, None)
-        if task in ("intro", "called-intro") and (act.say or task != "intro"):
-            self.store.mark_introduced(room_id)
         return act
 
     def perform(self, room_id: str, event_id: str, act: Act, events: list[sqlite3.Row],
