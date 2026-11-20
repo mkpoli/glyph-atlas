@@ -27,6 +27,9 @@ format:
   pages: "{book}_source.csv with columns Image, Manifest URI, Canvas URI, Image Info"
   crops: "characters/U+XXXX/U+XXXX_{image}_X{x}_Y{y}.jpg, the 親字 as folder"
   notes: "{book}_note.txt, the 凡例 and the book's credit"
+# The facsimile's pages are plain JPEGs with no IIIF service, flat reproductions of a print of 1873.
+hosted_pages:
+  - codh-tensho:TE00039
 books:
   - id: TE00039
     title: 說文解字十五卷 坿 通檢十四卷 末一卷

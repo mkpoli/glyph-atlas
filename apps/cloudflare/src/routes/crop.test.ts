@@ -10,7 +10,7 @@ import { votesKey } from '../atlas3Votes';
 import { versionToken } from '../citation';
 import { cropSlotsQuery, formNamesQuery, wordMethodsQuery, wordNamesQuery } from '../cropPanels';
 import { cropVersion, cropVersionNow, recordQuery, redrawLimits } from '../cropRecords';
-import { bookDatesQuery, dateClaimsQuery, lineQuery, listedCropsQuery, samePixels } from './crop';
+import { bookDatesQuery, dateClaimsQuery, lineQuery, listedCropsQuery, pageView, samePixels } from './crop';
 import worker from '../index';
 
 // The Workers cache.
@@ -369,6 +369,17 @@ describe('a source page', () => {
     expect(view).toMatchObject({ id: pageKey, document_id: book, document_title: 'Book', seq: 4, previous: `${book}:3`, next: null, drawable: false,
       image_url: 'https://x.org/iiif/p/full/!3000,3000/0/default.jpg' });
     expect(view.crops).toBeUndefined();
+  });
+  it('shows a page no service serves from the site\'s own copy, when its record names one', () => {
+    const facts = { id: 'codh-tensho:TE00039:p017', document: 'codh-tensho:TE00039', title: '說文解字', page_number: 17, width: 4110, height: 3440,
+      service: null, crops: [] };
+    const photo = `/atlas/media/${'a'.repeat(64)}.webp`;
+    const view = pageView({ ...facts, photo }, []);
+    expect([view.image_url, view.service, view.photo]).toEqual([photo, null, undefined]);
+    expect(pageView(facts, []).image_url).toBeNull();
+    // A service is asked first, and a photo that is not one of the site's images is not shown.
+    expect(pageView({ ...facts, photo, service: 'https://x.org/iiif/p' }, []).image_url).toBe('https://x.org/iiif/p/full/!3000,3000/0/default.jpg');
+    expect(pageView({ ...facts, photo: 'https://elsewhere.example/p.jpg' }, []).image_url).toBeNull();
   });
   it('says where the page can be opened at its source, and when its book was made', async () => {
     const { get, pageKey, book } = setup();

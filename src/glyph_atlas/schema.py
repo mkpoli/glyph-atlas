@@ -97,6 +97,11 @@ class Source(BaseModel):
     version: str | None = None
     doi: str | None = None
     released: date | None = None
+    hosted_pages: list[str] = Field(
+        default_factory=list,
+        description="ids of this source's documents whose page images the site serves from its own copy, "
+        "because no IIIF service serves them (docs/licensing.md, Hosted page photographs)",
+    )
 
 
 #: A node of `data/vocab/production.yaml`, written as its path, e.g. `printed/type/metal/copper`.

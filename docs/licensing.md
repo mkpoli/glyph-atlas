@@ -140,6 +140,27 @@ article states no licence or photographer credit, so their records say `unknown`
 drawings are excluded: they set the characters in type over a white field, so they are not images of
 the coins' ink.
 
+### Hosted page photographs
+
+The page view shows a page's photograph from its holder's IIIF image service. A page whose image no
+service serves (a plain file on the holder's site) is shown as its boxes alone, unless its document
+is listed under `hosted_pages` in its source record (`data/sources/<id>.yaml`): then the publication
+packs a copy of the whole page image, a WebP of at most 3,000 pixels a side, and the site serves it
+with the page's credit. A document is listed only when all of these hold:
+
+- its pages are flat reproductions of a public-domain work, so the rule above applies to the whole
+  page as it does to a crop;
+- its image licence is one the site serves crops under, which the export checks again;
+- the holder's terms were read and do not forbid a copy, or the holder states none; and
+- the listing was decided for that document. An entry is a decision of the project's owner, never a
+  default: the scans of 俄藏黑水城文獻 supplied by a reader are not listed.
+
+Withdrawing a document (`data/vocab/withdrawn.yaml`) takes its page photographs off the site with
+its crops, and so does taking it off the list: a page that stops naming a photograph, or has no crop
+left, gives it up at the next publication. Listed so far: `codh-tensho:TE00039`, the 東方學デジタル圖書館 facsimile of the 陳昌治
+edition of 説文解字 (同治十二年, 1873), whose pages state no terms
+(http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/html/top.html, read 2026-11-20).
+
 A compilation may be protected under Articles 12 and 12-2. CC BY-SA 4.0 claims nothing over material
 that needs no permission (its section 2(a)(2)). The dataset states its own rights as applying to the
 annotations and the compilation. Contributors agree to CC BY-SA 4.0 for their annotations; a

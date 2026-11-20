@@ -113,3 +113,11 @@ def test_a_context_reaches_five_characters_along_the_column_and_three_across():
     assert 500 - left >= 3 * 40 and right - 540 >= 3 * 40
     # Near the edge of the page the reach stops at the page.
     assert atlas.crop_bounds(page, (0, 0, 40, 40), context=True)[:2] == (0, 0)
+
+
+def test_a_whole_page_is_kept_at_its_size_and_at_the_quality_asked(media):
+    cache, source = media
+    plain, lighter = cache.local(source, edge=3000), cache.local(source, edge=3000, quality=80)
+    assert plain != lighter
+    with Image.open(cache.materialize(key(lighter))) as picture:
+        assert (picture.format, picture.size) == ("WEBP", (600, 800))

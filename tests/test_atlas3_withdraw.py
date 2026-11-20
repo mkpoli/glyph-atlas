@@ -203,3 +203,67 @@ def test_a_withdrawal_stopped_after_the_deletion_finishes_when_run_again(layout,
         run(publish, monkeypatch, path)
     assert entry_of(root, "ex:a1")["withdrawn"] is True and "withdrawn" not in entry_of(root, "ex:a2")
     assert sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT revision FROM crops WHERE id=?", (a2,)).fetchone() == (4,)
+
+
+def photographed(root, publish, remote, monkeypatch, path, photos):
+    """Publish the facts `photos` ({page key: photo URL or None}) of book:a, with every image mapped."""
+    db = sqlite3.connect(catalogue(path, []))
+    db.execute("CREATE TABLE pages(id, document, data)")
+    db.executemany("INSERT INTO pages VALUES(?, 'book:a', ?)",
+                   [(key, json.dumps({"page_number": n, **({"photo": url} if url else {})})) for n, (key, url) in enumerate(photos.items())])
+    db.commit()
+    db.close()
+    run(publish, monkeypatch, path)
+
+
+def facts_of(root, key):
+    pid, rev = sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT id, rev FROM pages WHERE key=?", (key,)).fetchone()
+    return json.loads(gzip.decompress((root / "out" / "pages" / f"{pid}-{rev}.json.gz").read_bytes()))["page"]
+
+
+def mapped(root, prefix):
+    return set(json.loads(gzip.decompress((root / "out" / "media" / f"{prefix}.json.gz").read_bytes()))["keys"])
+
+
+@pytest.fixture
+def photos(layout):  # noqa: F811
+    _root, publish, remote = layout
+    publish.media_map.merge([(key, PACK, 10 * n, 10, "image/webp") for n, key in enumerate(("fo1", "fo2", "fo3", "fox"))])
+    publish.media_map.send(remote.upload)
+    return layout
+
+
+def test_a_page_whose_crops_are_all_withdrawn_gives_up_its_hosted_photograph(photos, withdraw, monkeypatch, tmp_path):
+    root, publish, remote = photos
+    photographed(root, publish, remote, monkeypatch, tmp_path / "c.sqlite", {"hl:p1": "/atlas/media/fo1.webp", "hl:p2": "/atlas/media/fo2.webp"})
+    assert facts_of(root, "hl:p1")["photo"] == "/atlas/media/fo1.webp" and mapped(root, "fo1") == {""}
+    run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "w.sqlite"))
+    assert "photo" not in facts_of(root, "hl:p1") and "photo" not in facts_of(root, "hl:p2")
+    assert mapped(root, "fo1") == mapped(root, "fo2") == set()
+    # An image no withdrawn page names stays.
+    assert mapped(root, "fox") == {""}
+
+
+def test_a_photograph_a_page_stops_naming_leaves_the_map_unless_another_page_shows_it(photos, monkeypatch, tmp_path):
+    root, publish, remote = photos
+    photographed(root, publish, remote, monkeypatch, tmp_path / "a.sqlite", {"hl:p1": "/atlas/media/fo1.webp", "hl:p2": "/atlas/media/fo1.webp"})
+    # One page takes another photograph: the first is still the other page's.
+    photographed(root, publish, remote, monkeypatch, tmp_path / "b.sqlite", {"hl:p1": "/atlas/media/fo3.webp", "hl:p2": "/atlas/media/fo1.webp"})
+    assert mapped(root, "fo1") == mapped(root, "fo3") == {""}
+    # The other page names none: nothing shows the first any more.
+    photographed(root, publish, remote, monkeypatch, tmp_path / "c.sqlite", {"hl:p1": "/atlas/media/fo3.webp", "hl:p2": None})
+    assert "photo" not in facts_of(root, "hl:p2")
+    assert mapped(root, "fo1") == set() and mapped(root, "fo3") == {""}
+
+
+def test_a_page_with_no_live_crop_left_gives_up_its_photograph(photos, monkeypatch, tmp_path):
+    root, publish, remote = photos
+    photographed(root, publish, remote, monkeypatch, tmp_path / "a.sqlite", {"hl:p2": "/atlas/media/fo2.webp"})
+    gone = unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う")
+    db = sqlite3.connect(tmp_path / "retired.sqlite")
+    db.execute(f"CREATE TABLE units({','.join(UNITS)})")
+    db.execute(f"INSERT INTO units VALUES({','.join('?' * len(UNITS))})", (gone[0], "retired", *gone[2:]))
+    db.commit()
+    db.close()
+    run(publish, monkeypatch, tmp_path / "retired.sqlite")
+    assert "photo" not in facts_of(root, "hl:p2") and mapped(root, "fo2") == set()
