@@ -12,7 +12,7 @@ python scripts/build_hentaigana_table.py     # data/vocab/hentaigana.tsv   (287 
 python scripts/build_mj_table.py             # data/vocab/mj-hentaigana.tsv (299 rows, 286 with a code point)
 python scripts/build_kanji_equivalents.py    # data/vocab/kanji-equivalents.tsv (2,026 rows)
 python scripts/build_mj_kanji_table.py       # data/vocab/mj-kanji.tsv (58,862 rows, 58,859 with a code point)
-python scripts/build_kanji_variants.py       # data/vocab/kanji-variants.tsv (164,934 rows; needs mj-kanji.tsv)
+python scripts/build_kanji_variants.py       # data/vocab/kanji-variants.tsv (176,296 rows; needs mj-kanji.tsv)
 python scripts/build_han_components.py       # data/vocab/han-ids.tsv (97,680 rows), han-component-forms.tsv (567 rows), han-component-ucv.tsv (613 rows)
 ```
 

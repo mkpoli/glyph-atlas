@@ -78,7 +78,7 @@ through みんなで翻刻.
   column adapts KanjiVG and is shared alike under CC BY-SA 3.0 with the 3.0 notice kept, so the file is
   released under CC BY-SA 3.0. Its two webfont subsets, Plangothic and Noto Sans CJK JP, are under the
   SIL Open Font License 1.1 (`apps/review/static/fonts/README.md`).
-- 異体字 relations (`data/vocab/kanji-variants.tsv`): Unihan and UnicodeData (Unicode License v3),
+- 異体字 relations (`data/vocab/kanji-variants.tsv`): Unihan, UnicodeData and SealSources (Unicode License v3),
   Wikidata P5475 (CC0), yitizi (CC0), OpenCC (Apache-2.0), MJ縮退マップ (CC BY-SA 2.1 JP), HNG
   (CC BY-SA 4.0) and cjkvi-variants. A variant relation between two characters is a fact without
   creative expression, so a relation table that states no licence (cjkvi-variants) is used as public
