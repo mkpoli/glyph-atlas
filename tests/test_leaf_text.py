@@ -60,11 +60,29 @@ def test_a_column_of_gloss_alone_is_put_in_where_the_gap_is_double() -> None:
     assert leaf_text.complete(found[:3], 10) is None
 
 
-def test_the_gutter_is_the_widest_gap_in_the_middle_of_the_frame() -> None:
+def test_a_photographed_opening_divides_at_its_widest_middle_gap() -> None:
     left = [100.0 + k * PITCH for k in range(10)]
     right = [1100.0 + k * PITCH for k in range(10)]
-    assert leaf_text.gutter(left + right, 2000) == (left[-1] + right[0]) / 2
-    assert leaf_text.gutter(left[:2], 2000) is None
+    assert leaf_text.gutter(left + right, 2000, 10) == (left[-1] + right[0]) / 2
+    assert leaf_text.gutter(left[:1], 2000, 10) is None
+
+
+def test_a_flat_scan_divides_in_the_middle_of_its_twenty_columns() -> None:
+    columns = [100.0 + k * PITCH for k in range(20)]
+    del columns[6]  # a column of gloss alone leaves a double gap that is not the gutter
+    assert leaf_text.gutter(columns, 2000, 10) == 100.0 + 9.5 * PITCH
+
+
+def test_a_flat_scan_gives_its_columns_from_the_middle_outward() -> None:
+    columns = [100.0 + k * PITCH for k in range(20)]
+    del columns[6]
+    middle, pitch = leaf_text.flat([30.0, *columns], 10, 1840)  # with a stray note in the margin
+    assert abs(middle - (100 + 9.5 * PITCH)) < 3 and abs(pitch - PITCH) < 0.5
+    right = leaf_text.ruled(100 + 9.5 * PITCH, PITCH, 10, right=True)
+    left = leaf_text.ruled(100 + 9.5 * PITCH, PITCH, 10, right=False)
+    assert [round(x) for x in right] == [100 + k * PITCH for k in range(19, 9, -1)]
+    assert [round(x) for x in left] == [100 + k * PITCH for k in range(9, -1, -1)]
+    assert leaf_text.flat(columns[:8], 10, 1840) is None
 
 
 def test_every_headword_is_placed_on_its_box() -> None:

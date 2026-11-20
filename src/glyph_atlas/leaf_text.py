@@ -47,6 +47,8 @@ BIG = (1.35, 3.0)
 #: A box at least `WIDE` median sides wide is dropped when less than `THIN` of its ink outlasts erosion.
 WIDE = 1.1
 THIN = 0.005
+#: A found column stands on a flat scan's comb within this share of the pitch.
+COMB = 0.2
 #: Headword boxes whose centres lie within this share of the median box side are one column.
 SAME_COLUMN = 0.8
 #: A candidate's centre lies within this share of the column pitch of the column's axis, and it is
@@ -149,14 +151,62 @@ def axes(heads: Sequence[Box], unit: float) -> list[float]:
     return [float(np.median(g)) for g in groups if len(g) >= 2]
 
 
-def gutter(columns: Sequence[float], width: int) -> float | None:
-    """The x between an opening's two half-leaves: the middle of the widest gap between columns
-    in the middle of the frame. None when the frame shows no such gap."""
-    gaps = [(columns[i + 1] - columns[i], i) for i in range(len(columns) - 1) if 0.3 * width < columns[i] < 0.7 * width]
+def gutter(columns: Sequence[float], width: int, count: int) -> float | None:
+    """The x between an opening's two half-leaves of `count` columns each.
+
+    A flat scan shows the two half-leaves side by side with no more than a column's pitch between
+    them: when the columns found span twice `count` less one pitch, the opening divides in the
+    middle of that span. A photograph of an open book shows the binding between them: otherwise the
+    opening divides in the widest gap between columns in the middle of the frame. None when the
+    frame shows neither.
+    """
+    found = sorted(columns)
+    if len(found) < 2:
+        return None
+    pitch = float(np.median(np.diff(found)))
+    span = found[-1] - found[0]
+    if round(span / pitch) == 2 * count - 1:
+        return found[0] + span / 2
+    gaps = [(found[i + 1] - found[i], i) for i in range(len(found) - 1) if 0.3 * width < found[i] < 0.7 * width]
     if not gaps:
         return None
     _, i = max(gaps)
-    return (columns[i] + columns[i + 1]) / 2
+    return (found[i] + found[i + 1]) / 2
+
+
+def flat(columns: Sequence[float], count: int, width: int) -> tuple[float, float] | None:
+    """A flat scan's middle and column pitch, from the columns found on the whole opening.
+
+    Two half-leaves side by side are twice `count` evenly spaced columns. Every pitch near the
+    median gap and every placing of a found column on one of those is tried, and the comb that most
+    found columns stand on is taken; among equals, the one they stand on most closely, then the one
+    whose middle is nearest the frame's, since a column missed at one edge leaves the comb free to slide. None when fewer than `count` columns
+    stand on it.
+    """
+    found = np.asarray(sorted(columns), dtype=float)
+    if len(found) < count:
+        return None
+    typical = float(np.median(np.diff(found)))
+    best: tuple[tuple[int, float, float], float, float] | None = None
+    for pitch in np.arange(0.85 * typical, 1.15 * typical, 0.5):
+        for x in found:
+            for index in range(2 * count):
+                start = x - index * pitch
+                k = np.rint((found - start) / pitch)
+                off = np.abs(start + k * pitch - found) / pitch
+                standing = (k >= 0) & (k < 2 * count) & (off < COMB)
+                middle = start + (count - 0.5) * pitch
+                key = (int(standing.sum()), -round(float(off[standing].sum()), 1), -abs(middle - width / 2))
+                if best is None or key > best[0]:
+                    best = (key, middle, float(pitch))
+    if best is None or best[0][0] < count:
+        return None
+    return best[1], best[2]
+
+
+def ruled(middle: float, pitch: float, count: int, right: bool) -> list[float]:
+    """A half-leaf's column axes, column 1 first, on a flat scan: evenly spaced from the opening's middle outward."""
+    return [middle + (count - line + 0.5) * pitch if right else middle - (line - 0.5) * pitch for line in range(1, count + 1)]
 
 
 def complete(columns: Sequence[float], count: int) -> list[float] | None:
@@ -344,16 +394,19 @@ def align(heads: Sequence[Head], found: Sequence[Box], x: float, pitch: float, h
 
 
 def place(boxes: Sequence[Box], columns: Mapping[int, Sequence[Head]], count: int,
-          reads: Callable[[str, Box], bool | None] | None = None) -> dict[int, tuple[list[Placed], float]] | None:
+          reads: Callable[[str, Box], bool | None] | None = None,
+          lines: Sequence[float] | None = None) -> dict[int, tuple[list[Placed], float]] | None:
     """The headwords of one half-leaf, by column number (1 the rightmost), from the boxes detected on it.
 
-    Each column gives its cells and its mean gap error in rows. None when the half-leaf's `count`
-    columns are not found or nothing fits.
+    Each column gives its cells and its mean gap error in rows. `lines` are the column axes where
+    they are known (`ruled`); otherwise they are found among the boxes. None when the half-leaf's
+    `count` columns are not found or nothing fits.
     """
     unit = side(boxes)
     heads = big(boxes, unit)
-    lines = complete(axes(heads, unit), count)
     if lines is None:
+        lines = complete(axes(heads, unit), count)
+    if lines is None or not heads:
         return None
     pitch = float(np.median(np.abs(np.diff(lines))))
     height = float(np.median([b.h for b in heads]))

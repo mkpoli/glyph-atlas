@@ -200,6 +200,8 @@ def main() -> int:
     parser.add_argument("--images", type=Path, required=True)
     parser.add_argument("--volumes", help="comma-separated volume numbers")
     parser.add_argument("--openings", help="comma-separated image numbers within the volumes")
+    parser.add_argument("--enlarge", type=int, help="enlarge the openings this many times instead of the copy's own setting")
+    parser.add_argument("--scale", type=float, help="the size the detector sees the enlarged opening at, instead of the copy's")
     parser.add_argument("--fit", type=float, default=0.45, help="the most a kept column's gaps may be off, in gloss rows")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
@@ -227,7 +229,8 @@ def main() -> int:
 
     documents, pages, lines, units, report = [], [], [], [], {}
     totals = defaultdict(int)
-    enlarge = int(copy["enlarge"])
+    enlarge = args.enlarge or int(copy["enlarge"])
+    scale = args.scale or float(copy["scale"])
     prefix = f"{CORPUS}-{copy['id']}"
     for volume in copy["volumes"]:
         number = volume["volume"]
@@ -248,9 +251,11 @@ def main() -> int:
             # The detector and the readers see the opening enlarged; a kept box is written at the image's own size.
             if enlarge != 1:
                 image = image.resize((image.width * enlarge, image.height * enlarge), Image.Resampling.LANCZOS)
-            boxes = [box for box, _ in detector.boxes_at(image, float(copy["scale"]))]
+            boxes = [box for box, _ in detector.boxes_at(image, scale)]
             unit = leaf_text.side(boxes)
-            middle = leaf_text.gutter(leaf_text.axes(leaf_text.big(boxes, unit), unit), image.width) if boxes else None
+            found = leaf_text.axes(leaf_text.big(boxes, unit), unit) if boxes else []
+            even = leaf_text.flat(found, COLUMNS, image.width) if copy["image_kind"] == "flat-reproduction" else None
+            middle = even[0] if even else leaf_text.gutter(found, image.width, COLUMNS) if found else None
             kept_here = 0
             report[page.id] = {}
             for name, key in sides.items():
@@ -267,7 +272,8 @@ def main() -> int:
                 half = [b for b in boxes if (b.x + b.w / 2 > middle) == (name == "right")]
                 half = leaf_text.bold(image, half, unit)
                 reads, top = reader_of(image, half, unit)
-                placed = leaf_text.place(half, columns, COLUMNS, reads)
+                axes = leaf_text.ruled(middle, even[1], COLUMNS, name == "right") if even else None
+                placed = leaf_text.place(half, columns, COLUMNS, reads, axes)
                 if placed is None:
                     report[page.id][label] = {"skipped": "columns not found", "headwords": count}
                     continue
