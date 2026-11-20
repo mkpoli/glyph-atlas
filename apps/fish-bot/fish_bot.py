@@ -58,8 +58,9 @@ MAX_TITLE = 120
 MAX_BODY = 8000
 MAX_REPLY = 3000
 # Discord refuses a message over 2,000 characters (its API answers 50035 BASE_TYPE_MAX_LENGTH, seen
-# from mautrix-discord on 2026-11-20), so every text she sends goes out in parts no longer than this.
-MAX_MESSAGE = 1900
+# from mautrix-discord on 2026-11-20), so every text she sends goes out in parts no longer than this,
+# with room for the bridge escaping Markdown characters.
+MAX_MESSAGE = 1800
 MAX_PROMPT = 800
 MAX_CONTEXT_CHARS = 40_000
 # A room may be called once a minute; an issue may be filed once every ten minutes, at most five a
@@ -291,7 +292,8 @@ def split_message(text: str, limit: int = MAX_MESSAGE) -> list[str]:
                     parts.append(small)
         return parts
 
-    return [part.strip() for part in pieces(text.strip(), ("\n\n", "\n", "。", ". ", "！", "？", "! ", "? ")) if part.strip()]
+    return [part.rstrip().lstrip("\n") for part in pieces(text.strip(), ("\n\n", "\n", "。", ". ", "！", "？", "! ", "? "))
+            if part.strip()]
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -3213,12 +3215,20 @@ class Bot:
         self.store.mark_digested(day, room_id)
 
     def _post(self, room_id: str, text: str, key: str, *, reply_to: str | None = None) -> None:
-        """Send a text in parts Discord accepts, the first as the reply when there is one."""
+        """Send a text in parts Discord accepts, the first as the reply when there is one. Only a
+        failure of the first part raises: once the text has started, a retry would post it twice,
+        so a later part that fails is logged and the rest is dropped."""
         for number, part in enumerate(split_message(text)):
             content: dict[str, Any] = {"msgtype": "m.text", "body": part}
             if number == 0 and reply_to:
                 content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
-            self.matrix.send(room_id, content, f"{key}-{number}")
+            try:
+                self.matrix.send(room_id, content, f"{key}-{number}")
+            except MatrixError as error:
+                if number == 0:
+                    raise
+                log.warning("part %s of a message in %s: %s", number + 1, room_id, error)
+                return
 
     def _room_of(self, target: str) -> str | None:
         """A room ID, or the room an alias names, looked up once and again an hour after a failure."""

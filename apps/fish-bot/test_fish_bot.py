@@ -1760,9 +1760,10 @@ def test_long_text_is_split_where_it_reads_naturally():
     paragraphs = ["甲" * 1200, "乙" * 1200, "丙" * 300]
     parts = fish_bot.split_message("\n\n".join(paragraphs))
     assert parts == ["甲" * 1200, "乙" * 1200 + "\n\n" + "丙" * 300]
+    assert fish_bot.split_message("a" * 1795 + "\n\n    code") == ["a" * 1795, "    code"]
     sentences = fish_bot.split_message("。".join(["字" * 700] * 5))
     assert all(len(part) <= fish_bot.MAX_MESSAGE for part in sentences) and all(part.endswith("。") for part in sentences[:-1])
-    assert [len(part) for part in fish_bot.split_message("x" * 4000)] == [1900, 1900, 200]
+    assert [len(part) for part in fish_bot.split_message("x" * 4000)] == [1800, 1800, 400]
     assert fish_bot.split_message("short") == ["short"]
 
 
@@ -1770,7 +1771,25 @@ def test_a_long_digest_goes_out_in_parts_discord_accepts(tmp_path):
     bot, matrix, _ = make_bot(tmp_path)
     bot._post(ROOM, "\n\n".join(["段" * 1500] * 3), "fish-d-test", reply_to="$ask")
     bodies = [content["body"] for _, content, _ in matrix.sent]
-    assert len(bodies) == 3 and all(len(body) <= 1900 for body in bodies)
+    assert len(bodies) == 3 and all(len(body) <= fish_bot.MAX_MESSAGE for body in bodies)
     assert matrix.sent[0][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$ask"}}
     assert "m.relates_to" not in matrix.sent[1][1]
     assert len({transaction for _, _, transaction in matrix.sent}) == 3
+
+
+def test_a_digest_that_fails_after_its_first_part_is_not_posted_again(tmp_path):
+    bot, matrix, _ = make_bot(tmp_path)
+    sent = []
+
+    def send(room_id, content, transaction_id, event_type="m.room.message"):
+        if transaction_id.endswith("-1"):
+            raise fish_bot.MatrixError(502, "bad gateway")
+        sent.append(transaction_id)
+        return "$x"
+
+    matrix.send = send
+    bot._post(ROOM, "\n\n".join(["段" * 1500] * 2), "fish-d-test")
+    assert sent == ["fish-d-test-0"]
+    with pytest.raises(fish_bot.MatrixError):
+        matrix.send = lambda *args, **kwargs: (_ for _ in ()).throw(fish_bot.MatrixError(502, "down"))
+        bot._post(ROOM, "short", "fish-d-other")
