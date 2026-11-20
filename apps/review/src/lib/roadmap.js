@@ -97,7 +97,8 @@ export const STAGES = [
       { edition: '歸雲別集本 清道光十三年（1833）寶善堂', holder: '清華大學圖書館', href: commons('CADAL01024820 歸雲別集·古俗字略.djvu'), status: 'planned' }] },
     { title: '合併字學篇韻便覽', by: '徐孝輯、張元善校刊', editions: [
       { edition: '版本未詳', holder: PKU, href: commons('CADAL02046203 合併字學篇韻便覽（一）.djvu'), status: 'planned' },
-      { edition: '合併字學集韻 明萬曆三十四年（1606）永城張元善校刊本', holder: NCL, href: commons('NCL-01151 01 合併字學集韻.pdf'), status: 'planned' }] },
+      { edition: '合併字學集韻 明萬曆三十四年（1606）永城張元善校刊本', holder: NCL, href: commons('NCL-01151 01 合併字學集韻.pdf'), status: 'planned' },
+      { edition: '合併字學集韻 明刻本（館藏著錄作明嘉靖間）', holder: NLC, href: commons('NLC892-CBM0512-368901 合併字學集韻 十卷 一卷聲領率譜一卷 第1冊.pdf'), status: 'planned' }] },
     { title: '字彙', by: '梅膺祚', editions: [
       { edition: '明萬曆四十三年（1615）刊本', holder: HYL, href: harvard(3964984), status: 'planned' },
       { edition: '明萬曆四十三年（1615）江東梅氏原刊本', holder: NCL, href: commons('NCL-01037 1 字彙.pdf'), status: 'planned' },
