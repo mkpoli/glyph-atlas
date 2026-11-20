@@ -69,20 +69,20 @@ FIELDS = ("seq", "image", "canvas", "column", "x", "y", "w", "h", "parent", "par
 
 
 class Book:
-    """The files of the book, from its directory or its zip."""
+    """The files of a book of the dataset, from its directory or its zip."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, book: str = BOOK) -> None:
         self.archive = zipfile.ZipFile(path) if path.is_file() else None
-        self.root = path
+        self.root, self.id = path, book
 
     def read(self, member: str) -> bytes:
         if self.archive is not None:
-            return self.archive.read(f"{BOOK}/{member}")
-        folder = self.root if (self.root / f"{BOOK}_coordinate.csv").is_file() else self.root / BOOK
+            return self.archive.read(f"{self.id}/{member}")
+        folder = self.root if (self.root / f"{self.id}_coordinate.csv").is_file() else self.root / self.id
         return (folder / member).read_bytes()
 
     def table(self, name: str) -> list[dict[str, str]]:
-        text = self.read(f"{BOOK}_{name}.csv").decode("utf-8-sig")
+        text = self.read(f"{self.id}_{name}.csv").decode("utf-8-sig")
         return list(csv.DictReader(io.StringIO(text)))
 
 
@@ -92,36 +92,48 @@ def member_of(row: dict[str, str]) -> str:
             f"_X{int(row['X']):04d}_Y{int(row['Y']):04d}.jpg")
 
 
-def crops_in_order(book: Book) -> list[dict]:
-    """The crops in the order of the book, each with its page, box and file checksum.
+def facsimile_page(canvas: str) -> int:
+    """The number of a page of the 東方學デジタル圖書館 facsimile, from its image URL."""
+    number = re.search(r"A028(\d+)\.jpg$", canvas)
+    if number is None:
+        raise SystemExit(f"{canvas}: not a page of the facsimile")
+    return int(number.group(1))
 
-    A row with no width or height (one in the release) takes them from its crop file.
+
+def crops_in_order(book: Book, *, number=facsimile_page, pitch: int = COLUMN) -> list[dict]:
+    """The crops by page, by column from the right and down each column, each with its page, box and
+    file checksum.
+
+    `number` gives the number of a page from its canvas URI. Two boxes whose centres are closer than
+    `pitch` pixels are in one column. A row with no width or height (one in the release) takes them
+    from its crop file, and a row the table states twice is read once.
     """
     from PIL import Image
 
     canvases = {row["Image"]: row["Canvas URI"] for row in book.table("source")}
     pages: dict[int, list[dict]] = defaultdict(list)
+    seen: set[tuple[str, ...]] = set()
     for row in book.table("coordinate"):
+        if tuple(row.values()) in seen:
+            continue
+        seen.add(tuple(row.values()))
         data = book.read(member_of(row))
         if row["Width"] and row["Height"]:
             width, height = int(row["Width"]), int(row["Height"])
         else:
             width, height = Image.open(io.BytesIO(data)).size
         canvas = canvases[row["Image"]]
-        number = re.search(r"A028(\d+)\.jpg$", canvas)
-        if number is None:
-            raise SystemExit(f"{canvas}: not a page of the facsimile")
-        pages[int(number.group(1))].append({
+        pages[number(canvas)].append({
             "image": row["Image"], "canvas": canvas, "x": int(row["X"]), "y": int(row["Y"]), "w": width, "h": height,
             "parent": row["Unicode"].removeprefix("U+"), "sha256": hashlib.sha256(data).hexdigest(),
         })
     ordered: list[dict] = []
-    for number in sorted(pages):
+    for page in sorted(pages):
         columns: list[list[dict]] = []
         last = None
-        for crop in sorted(pages[number], key=lambda crop: -(crop["x"] + crop["w"] / 2)):
+        for crop in sorted(pages[page], key=lambda crop: -(crop["x"] + crop["w"] / 2)):
             centre = crop["x"] + crop["w"] / 2
-            if last is not None and last - centre < COLUMN:
+            if last is not None and last - centre < pitch:
                 columns[-1].append(crop)
             else:
                 columns.append([crop])
@@ -133,13 +145,19 @@ def crops_in_order(book: Book) -> list[dict]:
     return ordered
 
 
-def seal_characters(path: Path) -> list[dict]:
-    """The seal characters of the 陳昌治 edition in its order: code point, place, transcription."""
+def seal_fields(path: Path) -> dict[str, dict[str, str]]:
+    """The fields of every seal character of `SealSources.txt`, by its code point."""
     fields: dict[str, dict[str, str]] = defaultdict(dict)
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("U+"):
             point, name, value = line.split("\t")
             fields[point][name] = value.strip()
+    return fields
+
+
+def seal_characters(path: Path) -> list[dict]:
+    """The seal characters of the 陳昌治 edition in its order: code point, place, transcription."""
+    fields = seal_fields(path)
     held = [{"code_point": point, "ccz": int(values["kSEAL_CCZSrc"].removeprefix("C-")),
              "equivalent": values["kSEAL_MCJK"]}
             for point, values in fields.items() if "kSEAL_CCZSrc" in values]
@@ -294,8 +312,7 @@ def write_pages(crops: list[dict], folder: Path, target: Path) -> None:
         name = canvas.rsplit("/", 1)[-1]
         data = (folder / name).read_bytes()
         width, height = Image.open(io.BytesIO(data)).size
-        number = int(re.search(r"A028(\d+)\.jpg$", name).group(1))
-        rows.append([number, canvas, name, hashlib.sha256(data).hexdigest(), len(data), width, height])
+        rows.append([facsimile_page(canvas), canvas, name, hashlib.sha256(data).hexdigest(), len(data), width, height])
     # Written only once every image has been read, so a missing one leaves the table as it was.
     with target.open("w", encoding="utf-8", newline="") as handle:
         handle.write("\n".join(header) + "\n")

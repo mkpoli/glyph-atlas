@@ -1,26 +1,37 @@
-"""Import the small seal forms of 説文解字 from CODH's 篆書字体データセット.
+"""Import seal forms marked by CODH's 篆書字体データセット.
 
-Book TE00039 of the dataset marks the seal forms of the 陳昌治 edition (同治十二年刊) on the pages of
-the 東方學デジタル圖書館 facsimile, each box filed under a Han 親字. `data/tensho/TE00039/characters.tsv`
-(`scripts/build_tensho_shuowen.py`) places each box on the small seal character of Unicode 18.0 it
-holds, so a box comes with its seal code point.
+The dataset cuts the seal forms of twelve titles and files each under a Han 親字. A book of it is one
+document here, and `data/tensho/<book>/characters.tsv` says what each of its boxes is placed on:
 
-The book is one document. A page is a page of the facsimile, an opening of the book. A line is one
-column of a page that holds a marked form; its text is those forms, since the entries below them are
-not transcribed. A unit is one marked form, with no position in its line: the entries stand between
-the forms, so two of them are not neighbours in the text and form no run of crops. Its code point
-is the seal character's and its source string CODH's 親字; `upstream` keeps the 親字 again, the Han
-character Unicode gives as its equivalent (`kSEAL_MCJK`), its place in the edition
-(`kSEAL_CCZSrc`), CODH's own crop and box, and the evidence that placed it. The placing is by rule,
-so a unit is `machine` until a reviewer confirms it. A box the table places on no seal character is
-left out and counted.
+- a small seal character of Unicode 18.0. For TE00039, the 陳昌治 edition of 説文解字 (同治十二年刊),
+  `scripts/build_tensho_shuowen.py` matches the order of the book with the order of the edition's
+  characters in Unicode. For the other books `scripts/build_tensho_equivalents.py` takes the one seal
+  character whose equivalent (`kSEAL_MCJK`) is the 親字, where the title files no other crop under
+  that 親字. The unit's code point is the seal character's
+  and its source string the 親字. The placing is by rule, so the unit is `machine` until a reviewer
+  confirms it.
+- the 親字 itself (`placed` is `parent`), where no seal character answers it, more than one does, or the
+  title prints several forms under it.
+  The unit is a Han character in seal style, on CODH's own reading.
+- nothing (`placed` is empty). The box is left out and counted.
 
-CODH drew its boxes on page images larger than the ones the library serves. The source record gives
-the width of CODH's image (`codh_page_width`), and a box is brought to the page by the ratio of the
-two widths.
+A box is also left out, and counted apart, when the holder has replaced the image of its page since
+CODH cut it: the book's `replaced_pages` in the source record names those pages, and such a page is
+not imported.
 
-The library's pages are read from a directory and must be the files `pages.tsv` pins by checksum;
-they are registered in the image cache under their URLs.
+A page is a page of the holder's reproduction, an opening of the book. `pages.tsv` names it in one of
+two ways. Where the holder serves it through IIIF the table gives its canvas, image service and size
+as the holder's manifest states them, and the import reaches for no image. Where it is a plain file (TE00039, on the 東方學デジタル圖書館
+facsimile) the table pins the file by checksum; the files are read from a directory and registered in
+the image cache under their URLs. CODH drew the boxes of that book on images larger than the library
+serves: the source record gives the width of CODH's image (`codh_page_width`), and a box is brought to
+the page by the ratio of the two widths.
+
+A line is one column of a page that holds a marked form; its text is those forms, since the rest of
+the column is not transcribed. A unit is one marked form, with no position in its line: other
+writing stands between the forms, so two of them are not neighbours in the text and form no run of
+crops. `upstream` keeps the 親字, CODH's own crop and box, what placed the unit, and for a seal
+character its equivalent and, in 説文解字, its place in the edition (`kSEAL_CCZSrc`).
 """
 
 from __future__ import annotations
@@ -29,13 +40,14 @@ import csv
 import hashlib
 import json
 import os
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from .. import images, registry, tables
+from .. import images, page_sources, registry, tables
 from ..schema import (
     Box,
     Classification,
@@ -53,11 +65,13 @@ from ..schema import (
 
 SOURCE_ID = "codh-tensho"
 UNICODE_ID = "unicode-ucd"
-BOOK = "TE00039"
 DEFAULT_SOURCE = registry.SOURCES / f"{SOURCE_ID}.yaml"
 DEFAULT_DATA = registry.ROOT / "data" / "tensho"
 COMMAND = "atlas import tensho"
 SEAL = range(0x3D000, 0x3FC40)
+#: The value of `placed` on a box that stays on its 親字; any other value names the evidence for a seal
+#: character.
+PARENT = "parent"
 
 
 class TenshoSourceError(RuntimeError):
@@ -78,72 +92,90 @@ def crop_name(row: dict[str, str]) -> str:
 
 
 def collect(
-    scans: Path,
+    books: Sequence[str],
     out: Path = Path("work/tensho"),
     *,
-    book: str = BOOK,
+    scans: Path | None = None,
     data: Path | None = None,
     source: Path | None = None,
     cache: Path | None = None,
     command: str | None = None,
 ) -> dict[str, Any]:
-    """Check the page images against their pins and write the dataset's four tables."""
-    data, source = data or DEFAULT_DATA, source or DEFAULT_SOURCE
-    config = yaml.safe_load(Path(source).read_text(encoding="utf-8"))
+    """Write the four tables of `books`. `scans` holds the page images of a book whose pages are files."""
+    data, source = Path(data or DEFAULT_DATA), Path(source or DEFAULT_SOURCE)
+    config = yaml.safe_load(source.read_text(encoding="utf-8"))
     if not isinstance(config, dict) or config.get("id") != SOURCE_ID:
         raise TenshoSourceError(f"{source}: not the {SOURCE_ID} source record")
-    entry = next((held for held in config.get("books") or [] if held.get("id") == book), None)
-    if entry is None:
-        raise TenshoSourceError(f"{source}: no book {book}")
-    rows = read_tsv(Path(data) / book / "characters.tsv")
-    if len(rows) != int(entry["crops"]):
-        raise TenshoSourceError(f"{data}: {len(rows)} rows for the {entry['crops']} crops of {book}")
+    if not books or len(set(books)) != len(books):
+        raise TenshoSourceError("name each book to import once")
 
-    document = _document(config, entry)
-    pages, scale = _pages(document, Path(scans), read_tsv(Path(data) / book / "pages.tsv"), entry, cache)
-    lines, units, left_out = [], [], 0
-    columns: dict[tuple[str, int], list[dict[str, str]]] = {}
-    for row in rows:
-        if not row["placed"]:
-            left_out += 1
-            continue
-        if len(row["char"]) != 1 or ord(row["char"]) not in SEAL:
-            raise TenshoSourceError(f"row {row['seq']}: {row['char']!r} is not a small seal character")
-        if row["code_point"] != f"U+{ord(row['char']):04X}":
-            raise TenshoSourceError(f"row {row['seq']}: {row['code_point']} is not the code point of its character")
-        if row["canvas"] not in pages:
-            raise TenshoSourceError(f"row {row['seq']}: its page {row['canvas']} is not in pages.tsv")
-        columns.setdefault((row["canvas"], int(row["column"])), []).append(row)
-    for (canvas, column), held in columns.items():
-        page = pages[canvas]
-        boxes = [_box(row, scale[canvas], page) for row in held]
-        left, top = min(box.x for box in boxes), min(box.y for box in boxes)
-        line = Line(
-            id=f"{page.id}:c{column:02d}",
-            page_id=page.id,
-            seq=len(lines),
-            box=Box(x=left, y=top, w=max(box.x + box.w for box in boxes) - left,
-                    h=max(box.y + box.h for box in boxes) - top),
-            vertical=True,
-            role=LineRole.MAIN,
-            text_raw="".join(row["char"] for row in held),
-            text="".join(row["char"] for row in held),
-            match_method="rule-lines",
-            meta={"column": column, "text_scope": "marked seal forms; the entries below them are not transcribed"},
-        )
-        lines.append(line)
-        units += [_unit(document, page, line, row, box) for row, box in zip(held, boxes, strict=True)]
+    documents: list[Document] = []
+    pages: list[Page] = []
+    lines: list[Line] = []
+    units: list[Unit] = []
+    left_out = replaced = 0
+    for book in books:
+        entry = next((held for held in config.get("books") or [] if held.get("id") == book), None)
+        if entry is None:
+            raise TenshoSourceError(f"{source}: no book {book}")
+        rows = read_tsv(data / book / "characters.tsv")
+        if len(rows) != int(entry["crops"]):
+            raise TenshoSourceError(f"{data}: {len(rows)} rows for the {entry['crops']} crops of {book}")
+        document = _document(config, entry)
+        listed = read_tsv(data / book / "pages.tsv")
+        gone = {int(number) for number in entry.get("replaced_pages") or []}
+        if not gone <= {int(row["page"]) for row in listed}:
+            raise TenshoSourceError(f"{source}: {book} names a replaced page that pages.tsv does not hold")
+        other = {row["canvas"] for row in listed if int(row["page"]) in gone}
+        held, scale = _pages(document, [row for row in listed if row["canvas"] not in other], entry, scans, cache)
+        columns: dict[tuple[str, int], list[dict[str, str]]] = {}
+        first = len(lines)
+        for row in rows:
+            if row["canvas"] in other:
+                replaced += 1
+                continue
+            if not row["placed"]:
+                left_out += 1
+                continue
+            _check(row)
+            if row["canvas"] not in held:
+                raise TenshoSourceError(f"row {row['seq']}: its page {row['canvas']} is not in pages.tsv")
+            columns.setdefault((row["canvas"], int(row["column"])), []).append(row)
+        for (canvas, column), marked in columns.items():
+            page = held[canvas]
+            boxes = [_box(row, scale[canvas], page) for row in marked]
+            left, top = min(box.x for box in boxes), min(box.y for box in boxes)
+            text = "".join(row["char"] or row["parent"] for row in marked)
+            line = Line(
+                id=f"{page.id}:c{column:02d}",
+                page_id=page.id,
+                seq=len(lines) - first,
+                box=Box(x=left, y=top, w=max(box.x + box.w for box in boxes) - left,
+                        h=max(box.y + box.h for box in boxes) - top),
+                vertical=True,
+                role=LineRole.MAIN,
+                text_raw=text,
+                text=text,
+                match_method="rule-lines",
+                meta={"column": column, "text_scope": entry["text_scope"]},
+            )
+            lines.append(line)
+            units += [_unit(document, page, line, row, box) for row, box in zip(marked, boxes, strict=True)]
+        documents.append(document)
+        pages += held.values()
 
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    written = (("documents", [document], Document), ("pages", list(pages.values()), Page),
-               ("lines", lines, Line), ("units", units, Unit))
+    written = (("documents", documents, Document), ("pages", pages, Page), ("lines", lines, Line),
+               ("units", units, Unit))
     for name, records, model in written:
         staging = out / f".{name}.parquet"
         tables.write(staging, records, model)
         os.replace(staging, out / f"{name}.parquet")
-    summary = {"source": SOURCE_ID, "documents": [document.id], "pages": len(pages), "lines": len(lines),
-               "units": len(units), "left_out": left_out}
+    seal = sum(unit.script is Script.SEAL for unit in units)
+    summary = {"source": SOURCE_ID, "documents": [document.id for document in documents], "pages": len(pages),
+               "lines": len(lines), "units": len(units), "seal": seal, "han": len(units) - seal,
+               "left_out": left_out, "replaced": replaced}
     manifest = {
         "schema_version": tables.SCHEMA_VERSION,
         "tables": {name: len(records) for name, records, _ in written},
@@ -156,32 +188,55 @@ def collect(
     return summary
 
 
-def _pages(document: Document, scans: Path, rows: list[dict[str, str]], book: dict[str, Any],
+def _check(row: dict[str, str]) -> None:
+    """Refuse a row whose characters are not what its `placed` says."""
+    if row["placed"] == PARENT:
+        if row["char"] or row["code_point"]:
+            raise TenshoSourceError(f"row {row['seq']}: on its 親字 and on {row['code_point']} at once")
+        if len(row["parent"]) != 1 or row["parent_code_point"] != f"U+{ord(row['parent']):04X}":
+            raise TenshoSourceError(f"row {row['seq']}: {row['parent_code_point']} is not the code point of its 親字")
+        return
+    if len(row["char"]) != 1 or ord(row["char"]) not in SEAL:
+        raise TenshoSourceError(f"row {row['seq']}: {row['char']!r} is not a small seal character")
+    if row["code_point"] != f"U+{ord(row['char']):04X}":
+        raise TenshoSourceError(f"row {row['seq']}: {row['code_point']} is not the code point of its character")
+
+
+def _pages(document: Document, rows: list[dict[str, str]], book: dict[str, Any], scans: Path | None,
            cache: Path | None) -> tuple[dict[str, Page], dict[str, float]]:
-    """The pages by their URL, and for each the size of its image over the size of CODH's."""
+    """The pages by their canvas, and for each the size of its image over the size of CODH's."""
     pages: dict[str, Page] = {}
     scale: dict[str, float] = {}
     for row in rows:
-        file = scans / row["file"]
-        if not file.is_file():
-            raise TenshoSourceError(f"{file}: the image of page {row['page']} is not there")
-        if hashlib.sha256(file.read_bytes()).hexdigest() != row["sha256"]:
-            raise TenshoSourceError(f"{file}: not the image that pages.tsv pins")
-        held = images.register(file, row["canvas"], root=cache)
-        if (held.width, held.height) != (int(row["width"]), int(row["height"])):
-            raise TenshoSourceError(f"{file}: {held.width} x {held.height}, pinned {row['width']} x {row['height']}")
-        pages[row["canvas"]] = Page(
-            id=f"{document.id}:p{int(row['page']):04d}",
-            document_id=document.id,
-            seq=int(row["page"]) - 1,    # the page number shown is the facsimile's own image number
-            image=held.url,
-            width=held.width,
-            height=held.height,
-            sha256=held.sha256,
-            meta={"file": row["file"], "facsimile_page": int(row["page"])},
-        )
-        scale[row["canvas"]] = held.width / int(book["codh_page_width"])
+        number = int(row["page"])
+        identity = {"id": f"{document.id}:p{number:04d}", "document_id": document.id,
+                    "seq": number - 1}    # the page number shown is the reproduction's own image number
+        if "image" in row:
+            if images.service_of(row["image"]) is None:
+                raise TenshoSourceError(f"page {number}: {row['image']} is no image service")
+            page = Page(**identity, image=row["image"], width=int(row["width"]), height=int(row["height"]),
+                        canvas=row["canvas"])
+        else:
+            page = _scanned(identity, row, scans, cache)
+        pages[row["canvas"]] = page
+        scale[row["canvas"]] = page.width / int(book["codh_page_width"]) if "codh_page_width" in book else 1.0
     return pages, scale
+
+
+def _scanned(identity: dict[str, Any], row: dict[str, str], scans: Path | None, cache: Path | None) -> Page:
+    """A page whose image is a file of `scans`, the one the table pins."""
+    if scans is None:
+        raise TenshoSourceError(f"{identity['document_id']}: its pages are files; name their directory")
+    file = Path(scans) / row["file"]
+    if not file.is_file():
+        raise TenshoSourceError(f"{file}: the image of page {row['page']} is not there")
+    if hashlib.sha256(file.read_bytes()).hexdigest() != row["sha256"]:
+        raise TenshoSourceError(f"{file}: not the image that pages.tsv pins")
+    held = images.register(file, row["canvas"], root=cache)
+    if (held.width, held.height) != (int(row["width"]), int(row["height"])):
+        raise TenshoSourceError(f"{file}: {held.width} x {held.height}, pinned {row['width']} x {row['height']}")
+    return Page(**identity, image=held.url, width=held.width, height=held.height, sha256=held.sha256,
+                meta={"file": row["file"], "facsimile_page": int(row["page"])})
 
 
 def _box(row: dict[str, str], scale: float, page: Page) -> Box:
@@ -195,6 +250,8 @@ def _box(row: dict[str, str], scale: float, page: Page) -> Box:
 
 
 def _unit(document: Document, page: Page, line: Line, row: dict[str, str], box: Box) -> Unit:
+    on_parent = row["placed"] == PARENT
+    placing = {name: row[name] for name in ("equivalent", "ccz") if row[name]}
     return Unit(
         id=f"{document.id}:{int(row['seq']):05d}",
         document_id=document.id,
@@ -203,18 +260,18 @@ def _unit(document: Document, page: Page, line: Line, row: dict[str, str], box: 
         seq=None,
         box=box,
         text_source=row["parent"],
-        unicode=row["code_point"],
+        unicode=row["parent_code_point"] if on_parent else row["code_point"],
         classification=Classification.IDENTIFIED,
-        script=Script.SEAL,
+        script=Script.HAN if on_parent else Script.SEAL,
         style="seal",
         method="import",
-        review=ReviewState.MACHINE,
+        # The 親字 is CODH's reading of the form; a seal character is this import's inference from it.
+        review=ReviewState.TRANSCRIBER if on_parent else ReviewState.MACHINE,
         upstream={
             "source": SOURCE_ID,
             "ref": crop_name(row),
             "parent": row["parent"],
-            "equivalent": row["equivalent"],
-            "ccz": row["ccz"],
+            **placing,
             "placed": row["placed"],
             "box": f"{row['x']},{row['y']},{row['w']},{row['h']}",
         },
@@ -229,16 +286,18 @@ def _checked(config: dict[str, Any]) -> date | None:
 
 
 def _document(config: dict[str, Any], book: dict[str, Any]) -> Document:
-    # The page images are the library's, which states no terms for them; the document validator
-    # records the flat reproduction of an 1873 print as public domain and keeps `unknown` as the
-    # holder's terms. The boxes and 親字 are CODH's, under the dataset's licence; the seal code points
-    # and their equivalents are Unicode's.
+    # The page images are the holder's. `image_licence` is what the holder states for them; a holder
+    # that states nothing leaves `unknown`, which the document validator turns into public domain for
+    # the flat reproduction of a print older than 1900, keeping `unknown` as the holder's terms. The
+    # boxes and 親字 are CODH's, under the dataset's licence; the seal code points and their
+    # equivalents are Unicode's.
     rights = Rights(
-        licence=Licence.UNKNOWN,
+        licence=Licence(book.get("image_licence", Licence.UNKNOWN.value)),
         holder=book.get("holder"),
         # The dataset asks a derived release to name each book's image provider and holder; this
         # line reaches the release's ATTRIBUTION.md.
-        attribution=f"{config['attribution']}; 『{book['work']}』 {book['provider']}（{book['holder']}） {book['url']}",
+        attribution=(f"{config['attribution']}; 『{book['work']}』 {book['provider']}（{book['holder']}） "
+                     + " ".join(book.get("provider_urls") or [book["url"]])),
         evidence=book["url"],
         checked=_checked(config),
     )
@@ -254,19 +313,21 @@ def _document(config: dict[str, Any], book: dict[str, Any]) -> Document:
     return Document(
         id=f"{SOURCE_ID}:{book['id']}",
         title=book["title"],
-        source_refs={SOURCE_ID: book["id"], UNICODE_ID: "SealSources.txt 18.0.0"},
+        source_refs={SOURCE_ID: book["id"], UNICODE_ID: "SealSources.txt 18.0.0",
+                     **({page_sources.MANIFEST_REF: book["manifest"]} if book.get("manifest") else {})},
         holder=book.get("holder"),
-        production="printed/woodblock",
-        origin="china",
+        production=book["production"],
+        origin=book["origin"],
         style="mixed",
         genre=["dictionary"],
         dating=[Dating(literal=book["edition"], start=int(book["year"]), end=int(book["year"]), kind="publication",
-                       evidence=book["url"])],
+                       evidence=book.get("manifest") or book["url"])],
         image_rights=rights,
         text_rights=text_rights,
         meta={
             "work_title": book.get("work"),
             "author": book.get("author"),
+            **({"publisher": book["publisher"]} if book.get("publisher") else {}),
             "edition": book.get("edition"),
             "provider": book.get("provider"),
             "facsimile": book.get("url"),
