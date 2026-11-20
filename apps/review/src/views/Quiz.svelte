@@ -21,6 +21,7 @@
   import { cropDetails } from '../lib/cropDetails.js'
   import { keptCrops, keptState, keyOf } from '../lib/outbox.svelte.js'
   import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
+  import { isDescription } from '../lib/ids.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint, toggleIssue, issueFields } from '../lib/issues.js'
   import { firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
@@ -378,9 +379,9 @@
   // A marking and its undo hold the round as a save does: nothing moves to another round meanwhile.
   let formError = $state(''), formDone = $state(null)
   const CORRECTION_BATCH = 144
-  async function assignForm(form, chosen, claims = {}) {
+  async function assignForm(form, chosen, claims = {}, relabel = false) {
     if (!chosen.length) return
-    const named = members.includes(form)
+    const named = relabel || members.includes(form)
     const characterOf = i => named ? form : i.written_character || i.label
     const crops = chosen.filter(i => !((i.written_character || i.label) === characterOf(i) && i.state === 'checked'))
     // One run of batches for each character the crops are corrected to.
@@ -455,12 +456,14 @@
     if (waited.length && !formError) formError = t('client.pausedKept')
     return failure
   }
-  /** Mark the selection as `form`: a form of the round's grapheme by correction alone, any other
-   *  claimed on each crop first. */
+  /** Mark the selection as `form`: a character by correction alone, a description claimed on each
+   *  crop first. */
   async function markSelection(form) {
     if (saving || loading || step !== 'select') return
     const chosen = openSelection.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
     if (members.includes(form)) return assignForm(form, chosen)
+    // A character found by search is what the crops are written as, as in the collection view's bar.
+    if (!isDescription(form)) return assignForm(form, chosen, {}, true)
     const failure = await markClaimed(form, chosen)
     if (failure) formError = failure.status === 429 ? t('bulk.tooMany') : failure.status === 409 ? t('bulk.changed') : failure.message
   }
