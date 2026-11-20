@@ -1899,3 +1899,50 @@ def test_memory_tries_again_without_pictures_the_model_refuses(monkeypatch):
     monkeypatch.setattr(model, "_post", post)
     memory = model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER, images=[(0, "data:image/png;base64,AA")])
     assert memory.summary == "Talked." and isinstance(sent[1], str)
+
+
+def test_memory_sends_pictures_only_for_messages_that_fit(tmp_path):
+    matrix = FakeMatrix()
+    matrix.pictures = {f"mxc://example/p{n}": PNG for n in range(40)}
+    bot, _, _ = make_bot(tmp_path, matrix=matrix)
+    bot.active_rooms = {ROOM}
+    start = fish_bot.now_ms() - 30 * HOUR
+    for n in range(40):
+        say(bot, "長" * 1500, event_id=f"$long{n}", ts=start + n * 1000)
+        if n >= 36:
+            bot.ingest(ROOM, picture(f"$p{n}", url=f"mxc://example/p{n}", ts=start + n * 1000 + 1), backfilled=True)
+    bot.consolidate()
+    assert bot.deepseek.memories, "the stretch was summarized"
+    assert bot.deepseek.memory_images == [], "its pictures sit past the part of the stretch that fits"
+
+
+def test_memory_fetches_only_a_few_unseen_pictures(tmp_path):
+    matrix = FakeMatrix()
+    calls = []
+    matrix.thumbnail = lambda mxc, size=1024, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(504, "slow"))
+    bot, _, store = make_bot(tmp_path, matrix=matrix)
+    start = fish_bot.now_ms() - 30 * HOUR
+    for n in range(30):
+        bot.ingest(ROOM, picture(f"$b{n}", url=f"mxc://example/b{n}", ts=start + n), backfilled=True)
+    rows = store.context(ROOM, fish_bot.now_ms(), 40)
+    assert bot.pictures(rows, 4, lines=len(rows), fetches=fish_bot.IMAGES_MEMORY_FETCHES) == []
+    assert len(calls) == fish_bot.IMAGES_MEMORY_FETCHES
+    bot.pictures(rows, 4, lines=len(rows), fetches=fish_bot.IMAGES_MEMORY_FETCHES)
+    assert len(calls) == 2 * fish_bot.IMAGES_MEMORY_FETCHES, "known failures are skipped, so the next six are new"
+
+
+def test_a_refused_picture_leaves_memory_both_text_tries(monkeypatch):
+    model = fish_bot.DeepSeek("key")
+    sent = []
+
+    def post(body, url=None, **_):
+        sent.append("list" if isinstance(body["messages"][1]["content"], list) else "str")
+        if sent[-1] == "list":
+            raise fish_bot.DeepSeekError("DeepSeek answered 400: invalid image")
+        if sent.count("str") == 1:
+            return answer("not json")
+        return answer('{"summary": "Talked.", "facts": []}')
+
+    monkeypatch.setattr(model, "_post", post)
+    memory = model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER, images=[(0, "data:image/png;base64,AA")])
+    assert sent == ["list", "str", "str"] and memory.summary == "Talked."

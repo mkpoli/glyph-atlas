@@ -190,6 +190,9 @@ IMAGES_CALLED = 4
 IMAGES_AMBIENT = 2
 # Pictures a stretch of chat sends to memory, the newest ones people posted in it.
 IMAGES_MEMORY = 4
+# Fetches a memory call may make for pictures not cached yet, so a stalled media server holds up the
+# chat for at most this many thumbnail timeouts.
+IMAGES_MEMORY_FETCHES = 6
 IMAGE_LINES = 12
 IMAGE_SIZE = 1024
 MAX_IMAGE_BYTES = 1_500_000
@@ -1635,6 +1638,16 @@ Return only a json object of this shape:
 - importance 1 to 5: 1 trivia, 3 useful, 5 central to the person or the project."""
 
 
+def memory_fit(rows: list[sqlite3.Row]) -> int:
+    """How many of a stretch's messages, from the first, fit in one memory call."""
+    budget = MAX_CONTEXT_CHARS
+    for index, row in enumerate(rows):
+        budget -= len(str(row["body"])[:1_500]) + 40
+        if budget < 0:
+            return index
+    return len(rows)
+
+
 def format_memory(room_name: str, rows: list[sqlite3.Row], names: dict[str, str],
                   known: list[sqlite3.Row], *, bot_user_id: str,
                   pictures: dict[int, int] | None = None) -> tuple[str, dict[str, str]]:
@@ -1655,13 +1668,9 @@ def format_memory(room_name: str, rows: list[sqlite3.Row], names: dict[str, str]
         taken.add(key.casefold())
         keys[user] = key
     messages = []
-    budget = MAX_CONTEXT_CHARS
-    for index, row in enumerate(rows):
+    for index, row in enumerate(rows[:memory_fit(rows)]):
         sender = str(row["sender"])
         body = str(row["body"])[:1_500]
-        budget -= len(body) + 40
-        if budget < 0:
-            break
         message = {"time": stamp(int(row["ts"])), "from": "大肥魚" if sender == bot_user_id else keys[sender],
                    "body": body}
         if index in pictures:
@@ -1996,12 +2005,13 @@ class DeepSeek:
                     raise TypeError("the answer has no message content")
                 return parse_act(content, len(events), stickers)
             except (TypeError, ValueError, DeepSeekError) as error:
-                failures += 1
                 last = error
                 log.warning("chat answer unusable: %s", error)
-                if images:
+                if not images:
+                    failures += 1
+                else:
                     # A picture the model refuses, or a body too large with them, must not cost the
-                    # answer: the second try goes without pictures.
+                    # answer: the turn goes on without pictures, with both of its tries left.
                     images = []
                     body["messages"][1] = {"role": "user", "content": format_chat(
                         room_name, room_topic, events, names, task=task, trigger=trigger, bot_user_id=bot_user_id,
@@ -2051,7 +2061,8 @@ class DeepSeek:
             "max_tokens": 2000,
         }
         last: Exception | None = None
-        for _ in range(2):
+        failures = 0
+        while failures < 2:
             try:
                 answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="memory")
                 choices = answer.get("choices") or []
@@ -2062,8 +2073,11 @@ class DeepSeek:
             except (TypeError, ValueError, DeepSeekError) as error:
                 last = error
                 log.warning("memory answer unusable: %s", error)
-                if images:
-                    # Pictures the model refuses must not cost the episode: try once more without them.
+                if not images:
+                    failures += 1
+                else:
+                    # Pictures the model refuses must not cost the episode: go on without them, with
+                    # both tries left.
                     images = []
                     body["messages"][1] = {"role": "user", "content": format_memory(
                         room_name, rows, names, known, bot_user_id=bot_user_id)[0]}
@@ -2914,6 +2928,7 @@ class Bot:
         self._reported_day = ""
         self._reply_senders: dict[str, str] = {}
         self._images: dict[str, str] = {}
+        self._broken_images: dict[str, bool] = {}
         self._memory_failures: dict[str, tuple[str, int, float]] = {}
         self._heard_at = 0.0
         self._clock = lambda: datetime.datetime.now(JST)
@@ -3253,7 +3268,8 @@ class Bot:
         try:
             memory = self.deepseek.remember(self._room(room_id)[0] or room_id, segment, names, known,
                                             bot_user_id=self.user_id, left_out=self._left_out(),
-                                            images=self.pictures(segment, IMAGES_MEMORY, lines=len(segment)))
+                                            images=self.pictures(segment[:memory_fit(segment)], IMAGES_MEMORY,
+                                                                 lines=len(segment), fetches=IMAGES_MEMORY_FETCHES))
         except DeepSeekError as error:
             first = str(segment[0]["event_id"])
             previous = self._memory_failures.get(room_id)
@@ -3467,23 +3483,31 @@ class Bot:
             self._ambient.pop(room_id, None)
         return act
 
-    def pictures(self, events: list[sqlite3.Row], count: int, *, lines: int = IMAGE_LINES) -> list[tuple[int, str]]:
+    def pictures(self, events: list[sqlite3.Row], count: int, *, lines: int = IMAGE_LINES,
+                 fetches: int = IMAGE_LINES) -> list[tuple[int, str]]:
         """The newest pictures people posted among the last lines, as data URLs the model can read,
-        oldest first; one that cannot be fetched or read is left out."""
+        oldest first, fetching at most `fetches` pictures not seen before. One that cannot be
+        fetched or read is left out, and remembered as such apart from the pictures kept."""
         found: list[tuple[int, str]] = []
         for index in range(len(events) - 1, max(-1, len(events) - 1 - lines), -1):
             row = events[index]
             media = _media(row)
-            if not media or row["sender"] == self.user_id:
+            if not media or row["sender"] == self.user_id or media in self._broken_images:
                 continue
             url = self._images.get(media)
             if url is None:
+                if fetches <= 0:
+                    continue
+                fetches -= 1
                 url = self._picture_url(media)
+                if not url:
+                    self._broken_images[media] = True
+                    while len(self._broken_images) > 1024:
+                        self._broken_images.pop(next(iter(self._broken_images)))
+                    continue
                 self._images[media] = url
                 while sum(len(cached) for cached in self._images.values()) > IMAGE_CACHE_BYTES or len(self._images) > 256:
                     self._images.pop(next(iter(self._images)))
-            if not url:
-                continue
             found.append((index, url))
             if len(found) == count:
                 break
