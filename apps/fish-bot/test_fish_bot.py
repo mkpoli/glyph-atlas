@@ -1514,7 +1514,8 @@ def test_room_tools_are_local_and_free(tmp_path):
     lookup.here = ROOM
     assert "rooms" in [tool["function"]["name"] for tool in lookup.specs()]
     assert lookup.run("room_info", {})["first_to_join"][0]["name"] == "ops"
-    assert len(lookup.run("rooms", {})["rooms"]) == 3
+    listed = lookup.run("rooms", {})["rooms"]
+    assert len(listed) == 3 and listed[0]["members"] == 3, "counted as room_info counts, without bots"
     assert lookup.run("members", {"room": "中文", "query": "mk"})["total"] == 1
 
 
@@ -1533,3 +1534,14 @@ def test_the_chat_prompt_carries_the_room_facts():
     payload = json.loads(fish_bot.format_chat("中文", "", [message_row("hi")], {}, task="called", trigger=0,
                                               bot_user_id=USER, room_facts={"members": 3}))
     assert payload["room"] == {"name": "中文", "topic": "", "members": 3}
+
+
+def test_a_long_member_list_fits_and_says_how_many_are_left_out():
+    matrix = FakeMatrix()
+    rooms = community(matrix)
+    matrix.room_state = [*ROOM_STATE, *(member(f"@discord_{n}:example", f"使用者{n:03d}長長的名字") for n in range(400)),
+                         {"type": "m.room.member", "state_key": ["odd"], "content": {"membership": "join"}}]
+    found = rooms.members(ROOM)
+    assert len(json.dumps(found, ensure_ascii=False)) <= fish_bot.MAX_TOOL_RESULT
+    assert found["total"] == 403 and "more" in found["left_out"]
+    assert rooms.summary(ROOM)["members"] == 403

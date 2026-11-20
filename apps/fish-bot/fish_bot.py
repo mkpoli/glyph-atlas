@@ -2148,7 +2148,8 @@ class Community:
 
     def _bridges(self, state: list[dict[str, Any]]) -> list[str]:
         bridges = []
-        joined = {event.get("state_key") for event in state if event.get("type") == "m.room.member"
+        joined = {event["state_key"] for event in state if event.get("type") == "m.room.member"
+                  and isinstance(event.get("state_key"), str)
                   and isinstance(event.get("content"), dict) and event["content"].get("membership") == "join"}
         for event in state:
             content = event.get("content") if isinstance(event.get("content"), dict) else {}
@@ -2178,6 +2179,10 @@ class Community:
                 facts["topic"] = str(event["content"].get("topic") or "")[:500]
             if event.get("type") == "m.room.create":
                 facts["created_by"] = str(event.get("sender") or "")
+            if (event.get("type") == "m.room.history_visibility" and isinstance(event.get("content"), dict)
+                    and event["content"].get("history_visibility") in ("joined", "invited")):
+                facts["history_note"] = ("This room hides history from before the bot joined, so the first "
+                                         "joins below may start late.")
         first: list[dict[str, str]] = []
         seen: set[str] = set()
         for event in self.matrix.first_memberships(room_id):
@@ -2197,17 +2202,34 @@ class Community:
         return facts
 
     def members(self, room_id: str, query: str = "") -> dict[str, Any]:
+        """The people in a room, as many as fit in a tool result, with how many were left out."""
         wanted = query.casefold()
         members = [member for member in self._members(self._room_state(room_id))
                    if not wanted or wanted in member["name"].casefold() or wanted in member["id"].casefold()]
-        return {"members": [{key: member[key] for key in ("name", "platform")} for member in members[:200]],
-                "total": len(members), "coverage": MEMBER_COVERAGE}
+        shown: list[dict[str, str]] = []
+        size = len(MEMBER_COVERAGE) + 200
+        for member in members:
+            entry = {"name": member["name"][:60], "platform": member["platform"]}
+            size += len(json.dumps(entry, ensure_ascii=False)) + 2
+            if size > MAX_TOOL_RESULT:
+                break
+            shown.append(entry)
+        result: dict[str, Any] = {"members": shown, "total": len(members), "coverage": MEMBER_COVERAGE}
+        if len(shown) < len(members):
+            result["left_out"] = f"{len(members) - len(shown)} more; ask with a query to find someone"
+        return result
 
     def list_rooms(self) -> dict[str, Any]:
-        return {"rooms": [{"name": str(room.get("name") or ""), "alias": str(room.get("canonical_alias") or ""),
-                           "members": room.get("num_joined_members"), "topic": str(room.get("topic") or "")[:160]}
-                          for room in self.directory()],
-                "coverage": MEMBER_COVERAGE}
+        """The public rooms, each counted the way room_info counts it: people, not bots."""
+        rooms = []
+        for room in self.directory():
+            try:
+                people: Any = self.summary(room["room_id"])["members"]
+            except MatrixError:
+                people = None
+            rooms.append({"name": str(room.get("name") or ""), "alias": str(room.get("canonical_alias") or ""),
+                          "members": people, "topic": str(room.get("topic") or "")[:160]})
+        return {"rooms": rooms, "coverage": MEMBER_COVERAGE}
 
 
 class Lookup:
