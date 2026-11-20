@@ -1847,3 +1847,16 @@ def test_the_usage_command_prints_the_week(tmp_path, capsys):
     store.close()
     fish_bot.main(["--usage", "--db", str(tmp_path / "chat.sqlite3")])
     assert "memory 1; 2,300 tokens; $0.0005" in capsys.readouterr().out
+
+
+def test_a_failed_count_never_costs_the_answer(monkeypatch):
+    model = fish_bot.DeepSeek("key")
+
+    def broken_meter(kind, **tally):
+        raise sqlite3.OperationalError("database is locked")
+
+    model.meter = broken_meter
+    monkeypatch.setattr(model, "_send", lambda body, url=None, **_: {
+        "choices": [{"message": {"content": '{"say": "still here"}'}}], "usage": {"prompt_tokens": "odd"}})
+    act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
+    assert act.say == ("still here",)

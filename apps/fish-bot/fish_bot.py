@@ -1838,23 +1838,31 @@ class DeepSeek:
 
     def _post(self, body: dict[str, Any], url: str | None = None, *,
               timeout: float | None = None, kind: str = "chat") -> dict[str, Any]:
-        """One request, counted by kind with its tokens and cost when a meter is attached."""
+        """One request, counted by kind with its tokens and cost when a meter is attached. Counting
+        is best effort: a call already paid for is never lost to a failed count."""
         try:
             answer = self._send(body, url, timeout=timeout)
         except DeepSeekError:
-            if self.meter is not None:
-                self.meter(kind, failed=True)
+            self._count(kind, failed=True)
             raise
-        if self.meter is not None:
-            if url is None:
-                usage = answer.get("usage") if isinstance(answer, dict) else None
-                usage = usage if isinstance(usage, dict) else {}
-                self.meter(kind, tokens_in=int(usage.get("prompt_tokens") or 0),
-                           tokens_out=int(usage.get("completion_tokens") or 0),
-                           cost=model_cost(usage, datetime.datetime.now(datetime.UTC)))
-            else:
-                self.meter(kind, cost=PRICE_TOOL)
+        if url is None:
+            usage = answer.get("usage") if isinstance(answer, dict) else None
+            usage = usage if isinstance(usage, dict) else {}
+            tokens_in, tokens_out = usage.get("prompt_tokens"), usage.get("completion_tokens")
+            self._count(kind, tokens_in=tokens_in if isinstance(tokens_in, int) else 0,
+                        tokens_out=tokens_out if isinstance(tokens_out, int) else 0,
+                        cost=model_cost(usage, datetime.datetime.now(datetime.UTC)))
+        else:
+            self._count(kind, cost=PRICE_TOOL)
         return answer
+
+    def _count(self, kind: str, **tally: Any) -> None:
+        if self.meter is None:
+            return
+        try:
+            self.meter(kind, **tally)
+        except Exception:
+            log.exception("counting a %s call", kind)
 
     def _send(self, body: dict[str, Any], url: str | None = None, *,
               timeout: float | None = None) -> dict[str, Any]:
@@ -1877,7 +1885,7 @@ class DeepSeek:
             except OSError:
                 pass
             raise DeepSeekError(f"DeepSeek answered {error.code}: {payload or error.reason}") from None
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as error:
             raise DeepSeekError(f"DeepSeek could not be reached: {getattr(error, 'reason', error)}") from None
         except ValueError as error:
             raise DeepSeekError(f"DeepSeek answered with JSON that could not be read: {error}") from None
