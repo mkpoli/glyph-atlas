@@ -77,7 +77,7 @@ describe('search indexing', () => {
   })
   it('lists public landing pages and form families in each language', async () => {
     const paths = await pagePaths(() => {})
-    expect(paths).toEqual(['/', '/contact', '/privacy', '/ranking', '/forms/U+304B'])
+    expect(paths).toEqual(['/', '/contact', '/privacy', '/ranking', '/roadmap', '/forms/U+304B'])
     const body = await urlset('https://atlas.test', paths, LOCALES.map(locale => locale.tag)).text()
     for (const tag of LOCALES.map(locale => locale.tag)) {
       for (const path of paths) expect(body).toContain(`<loc>https://atlas.test${localize(path, tag)}</loc>`)
