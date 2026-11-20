@@ -62,9 +62,10 @@ class MediaCache:
         finally:
             temp.unlink(missing_ok=True)
 
-    def local(self, path, box=None, *, context=False, edge=None, exact=False, write=True):
+    def local(self, path, box=None, *, context=False, edge=None, exact=False, quality=None, write=True):
         """The display crop's URL, its key naming the source file, its stamp and the box; with `write`
-        false its descriptor is not written, so the key can be counted without rendering."""
+        false its descriptor is not written, so the key can be counted without rendering. `quality` is
+        the WebP quality of an image that is not cut at the usual one."""
         path = Path(path)
         stat = path.stat()
         path = _resolved(str(path), stat.st_dev, stat.st_ino)
@@ -80,6 +81,8 @@ class MediaCache:
                 if exact:
                     # A requested region is cut as given, without the display margin.
                     spec["exact"] = True
+                if quality is not None:
+                    spec["quality"] = quality
                 return self._register(spec, write)
         raise ValueError("display crop outside registered image roots")
 
@@ -128,7 +131,7 @@ class MediaCache:
             bounds = (edge, edge) if edge else (960, 1280) if spec["context"] else (240, 280)
             picture.thumbnail(bounds, Image.Resampling.LANCZOS)
             buffer = io.BytesIO()
-            picture.save(buffer, format="WEBP", quality=90, method=4)
+            picture.save(buffer, format="WEBP", quality=spec.get("quality", 90), method=4)
             self._write(output, buffer.getvalue())
             return output
 
