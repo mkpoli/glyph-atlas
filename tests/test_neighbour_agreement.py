@@ -25,7 +25,20 @@ def test_streaks_leave_out_the_page_and_stop_at_another_label():
     labels = ["禁", "制", "禁", "禁", "制"]
     found, floor = streaks(labels, [1, 1, 2, 3, 4], vectors, k=3)
     assert found.tolist() == [2, 0, 0, 1, 0]
-    assert floor[0] > 0.99 and floor[1] == 0
+    # Row 0 counts rows 2 and 3; its floor is the similarity of row 3, the further of the two.
+    assert abs(floor[0] - vectors[0] @ vectors[3]) < 1e-3 and floor[0] < vectors[0] @ vectors[2] - 2e-3 and floor[1] == 0
+
+
+def test_a_crop_without_a_page_meets_every_crop_and_one_short_of_neighbours_stops_there():
+    vectors = _unit([1, 0], [1, 0.01], [1, 0.05])
+    found, _ = streaks(["禁", "禁", "禁"], [None, 1, 1], vectors, k=5)
+    assert found.tolist() == [2, 1, 1]  # row 0 has no page to leave out; rows 1 and 2 leave each other out
+
+
+def test_streaks_of_some_rows_come_in_their_order():
+    vectors = _unit([1, 0], [1, 0.05], [1, 0.1], [0, 1])
+    found, _ = streaks(["禁", "禁", "禁", "制"], [1, 2, 3, 4], vectors, k=2, rows=[3, 0], asked={0: "制"})
+    assert found.tolist() == [0, 0]
 
 
 def test_a_row_is_judged_under_the_label_asked_and_stays_a_neighbour_under_its_own():
@@ -51,7 +64,7 @@ def test_a_review_counts_for_the_label_it_was_given_on(tmp_path):
         (11, 1, na.WRONG, 0, 2),                 # filed 禁 when indexed, corrected to 制
         (12, 1, na.WRONG, 0, 1),                 # the index already holds the correction
         (13, 1, na.WRONG, 2, 1),                 # a bad crop of 禁
-        (14, 1, na.WRONG, 0, 2), (14, 2, na.MATCH, None, 2),  # the last verdict counts
+        (14, 2, na.MATCH, None, 2), (14, 1, na.WRONG, 0, 2),  # the last verdict by time counts
         (99, 1, na.MATCH, None, 1),              # not in the index
     ])
     crops = [10, 11, 12, 13, 14, None]
@@ -63,7 +76,7 @@ def test_a_review_counts_for_the_label_it_was_given_on(tmp_path):
 
 def test_the_measurement_counts_each_kind_reaching_each_streak():
     verdicts = {0: ("confirmed", "禁"), 1: ("confirmed", "禁"), 2: ("character", "禁"), 3: ("crop", "禁")}
-    result = evaluate(["a", "b", "c", "d"], verdicts, np.array([20, 7, 1, 20]), k=20)
+    result = evaluate(["a", "b", "c", "d"], verdicts, {0: 20, 1: 7, 2: 1, 3: 20}, k=20)
     assert result["judged"] == {"confirmed": 2, "character": 1, "crop": 1}
     assert result["bars"][0] == {"streak": 1, "character": 1, "confirmed": 2, "crop": 1}
     assert result["bars"][-1] == {"streak": 20, "character": 0, "confirmed": 1, "crop": 1}

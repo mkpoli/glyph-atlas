@@ -5,7 +5,8 @@ penultimate features. A crop filed under the right character sits among other cr
 `streak` is how many of its `K` nearest crops, nearest first, agree with its label before the first
 that does not (`consensus_relabel.agree`: one character, one kana, variants of one character, a
 kana and the kanji it is written with). Crops of the crop's own page are left out, as the detector
-and the Ainu records cut one glyph twice. A crop with a full streak is `agreed`.
+and the Ainu records cut one glyph twice; a page is the site's, which for corpus glyphs that come
+without a page scan is a run of up to 256 glyphs. A crop with a full streak is `agreed`.
 
 The streak is a bar on the label, and says nothing about a crop with a short one: a rare
 character, an unusual hand and a wrong label all break it early. The distance to the nearest crop of
@@ -59,19 +60,22 @@ def streak(label: str | None, neighbours: Iterable[str | None]) -> int:
     return count
 
 
-def streaks(labels: Sequence[str | None], pages: Sequence[int | None], vectors: np.ndarray, *,
-            k: int = K, asked: dict[int, str] | None = None, block: int = 65536) -> tuple[np.ndarray, np.ndarray]:
-    """Every crop's streak over its `k` nearest crops of other pages, and the similarity of the
-    last neighbour counted (0 for a streak of none). A row in `asked` is judged under that label
-    in place of its own, and stays under its own as a neighbour of other crops."""
+def streaks(labels: Sequence[str | None], pages: Sequence[int | None], vectors: np.ndarray, *, k: int = K,
+            rows: Sequence[int] | None = None, asked: dict[int, str] | None = None,
+            block: int = 65536) -> tuple[np.ndarray, np.ndarray]:
+    """The streak of each of `rows` (every crop by default) over its `k` nearest crops of other
+    pages, and the similarity of the last neighbour counted (0 for a streak of none), in the order
+    of `rows`. A row in `asked` is judged under that label in place of its own; its neighbours
+    carry their own. A crop with no page is judged against every other crop."""
+    rows = range(len(labels)) if rows is None else rows
     asked = asked or {}
-    found = np.zeros(len(labels), dtype=np.int16)
-    floor = np.zeros(len(labels), dtype=np.float32)
+    found = np.zeros(len(rows), dtype=np.int16)
+    floor = np.zeros(len(rows), dtype=np.float32)
     agreed: dict[tuple[str, str], bool] = {}
-    for start in range(0, len(labels), block):
-        rows = range(start, min(start + block, len(labels)))
-        indices, scores = nearest(vectors, rows, pages, k=k, fetch=FETCH)
-        for offset, row in enumerate(rows):
+    for start in range(0, len(rows), block):
+        part = rows[start:start + block]
+        indices, scores = nearest(vectors, part, pages, k=k, fetch=FETCH)
+        for offset, row in enumerate(part):
             label = asked.get(row, labels[row])
             count = 0
             for index in indices[offset]:
@@ -84,8 +88,8 @@ def streaks(labels: Sequence[str | None], pages: Sequence[int | None], vectors: 
                 if not agreed[pair]:
                     break
                 count += 1
-            found[row] = count
-            floor[row] = scores[offset, count - 1] if count else 0.0
+            found[start + offset] = count
+            floor[start + offset] = scores[offset, count - 1] if count else 0.0
     return found, floor
 
 
@@ -135,9 +139,10 @@ def reviewed(crops: Sequence[int | None], was: Sequence[str | None], labels: Seq
     return found
 
 
-def evaluate(ids: Sequence[str], verdicts: dict[int, tuple[str, str]], found: np.ndarray, *, k: int = K) -> dict:
+def evaluate(ids: Sequence[str], verdicts: dict[int, tuple[str, str]], found: dict[int, int], *, k: int = K) -> dict:
     """For each least streak, how many confirmed crops and how many of each kind of wrong crop reach
-    it, and the wrong crops that are agreed."""
+    it, and the wrong crops that are agreed. `found` is each reviewed row's streak under the label
+    its review was given on."""
     judged = Counter(kind for kind, _ in verdicts.values())
     bars = []
     for least in sorted({1, 5, 10, 15, k}):
@@ -168,8 +173,8 @@ def run(similar: Path, *, mirror: Path, atlas: Path | None = None, k: int = K) -
         for n, label in current(crops, atlas).items():
             labels[n] = label
         verdicts = reviewed(crops, was, labels, atlas)
-    found, floor = streaks(labels, pages, np.load(similar / "vectors.npy", mmap_mode="r"), k=k,
-                           asked={n: label for n, (_, label) in verdicts.items()})
+    vectors = np.load(similar / "vectors.npy", mmap_mode="r")
+    found, floor = streaks(labels, pages, vectors, k=k)
     pq.write_table(pa.table({"id": ids, "label": labels, "streak": pa.array(found, pa.int16()),
                              "floor": pa.array(floor, pa.float32())}), similar / FILE, compression="zstd")
     by_source: dict[str, Counter] = {}
@@ -181,5 +186,7 @@ def run(similar: Path, *, mirror: Path, atlas: Path | None = None, k: int = K) -
     result = {"method": METHOD, "k": k, "crops": len(ids), "agreed": int((found >= k).sum()),
               "none": int((found == 0).sum()), "by_source": {name: dict(tally) for name, tally in sorted(by_source.items())}}
     if atlas is not None:
-        result["measured"] = evaluate(ids, verdicts, found, k=k)
+        judged = sorted(verdicts)
+        under, _ = streaks(labels, pages, vectors, k=k, rows=judged, asked={n: verdicts[n][1] for n in judged})
+        result["measured"] = evaluate(ids, verdicts, dict(zip(judged, under.tolist(), strict=True)), k=k)
     return result

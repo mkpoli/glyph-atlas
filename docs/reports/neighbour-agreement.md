@@ -12,13 +12,15 @@ the bar was measured against on 2026-11-20. Nothing was loaded to the site.
   22,439 `codh-omt:`). It predates most of the collection: of the 641,153 collected crops now
   pending on the site it holds 151,588.
 - The local copy of the site's database (`work/atlas-v3/out/atlas.sqlite`, read 2026-11-20) for each
-  crop's label today (36,099 labels in the index changed since it was built) and for the reviews:
-  1,022 confirmations and 669 wrong reports.
+  crop's label as that copy holds it (36,099 labels in the index changed since it was built) and
+  for the reviews: 1,022 confirmations and 669 wrong reports, the last of 2026-10-19. Reviews given
+  on the site since then are not in the copy.
 - The migration mirror (`work/atlas-v3/out/mirror.sqlite`) for each crop's page.
 
 ## The rule
 
-A crop's 20 nearest crops by cosine, leaving out crops of its own page. A neighbour agrees when it
+A crop's 20 nearest crops by cosine, leaving out crops of its own page (for `hi:` and `codh-omt:`
+glyphs, which have no page scan, a run of up to 256 glyphs). A neighbour agrees when it
 is the same character, the same kana in another script, a variant of it, or a kanji written for
 that kana (`consensus_relabel.agree`). The streak is the number of neighbours that agree before the
 first that does not.
@@ -53,23 +55,30 @@ passes, and no error rate of the agreed crops as a whole.
   neighbours carry the transcription's character too, so they agree. The streak confirms the 字種
   and never the 字体.
 - **A short streak.** A streak of none holds 107 of the 108 wrong-character crops and 61 of the
-  393 confirmed ones, and 59,436 crops of the index (12%). It is no mark of an error: rare
+  393 confirmed ones, and 59,347 crops of the index (12%). It is no mark of an error: rare
   characters and unusual hands break a streak as early as a wrong label does.
 - **The nearest crop of the label alone.** The similarity to the nearest crop of the same label
-  does not separate the two: at the value half the confirmed crops clear (0.959), 29 of 392 wrong
-  crops clear it too, and raising it does not lower their share.
+  does not separate the two. In the same first run (360 confirmed crops, 392 wrong of every
+  kind), 29 wrong crops cleared the value half the confirmed crops clear (0.959), and raising it
+  did not lower their share.
+- **Voiced kana across scripts.** `agree` takes ナ and な as one kana and ぐ and グ as two, so a
+  streak breaks where hiragana and katakana crops of a voiced kana mix.
+- **Labels a model set.** Where a label came from a relabel pass that read the crop with the
+  classifier, the neighbours are not independent of it: they are the same classifier's features.
+  The reviews above are people's, so the table is not affected; the coverage below is.
 
 ## Coverage
 
 | | crops in the index | agreed | no streak |
 | --- | ---: | ---: | ---: |
-| all | 503,013 | 330,818 (66%) | 59,436 |
-| `ar:` | 58,549 | 21,408 | 16,614 |
-| `hk:` | 47,168 | 22,303 | 10,166 |
+| all | 503,013 | 330,854 (66%) | 59,347 |
+| `ar:` | 58,549 | 21,443 | 16,529 |
+| `hk:` | 47,168 | 22,304 | 10,162 |
 | `ex:` | 51,144 | 46,243 | 264 |
 | `hmj:` | 1,883 | 1,161 | 168 |
 | `hi:` | 321,830 | 219,508 | 32,021 |
 | `codh-omt:` | 22,439 | 20,195 | 203 |
 
 Of the 151,588 pending collected crops in the index, 87,028 (57%) are agreed, 39,362 have a
-partial streak and 25,198 none.
+partial streak and 25,198 none. 2,872 crops of the index are not in the mirror (1,707 `hk:`, 1,146
+`ex:`, 19 `hi:`): they keep the index's label and are judged against every other crop.
