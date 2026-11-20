@@ -117,6 +117,10 @@ MEMORY_GAP_SECONDS = 6 * 3600
 MEMORY_QUIET_SECONDS = 1800
 MEMORY_INTERVAL_SECONDS = 20
 MEMORY_RETRY_SECONDS = 600
+MEMORY_TRIES = 3
+# A memory call waits until the chat has been still this long, so it rarely delays an answer.
+MEMORY_IDLE_SECONDS = 10
+MEMORY_TIMEOUT = 60.0
 MEMORY_FACTS = 12
 MEMORY_PER_SUBJECT = 3
 MEMORY_EPISODES = 3
@@ -774,17 +778,27 @@ class Store:
                 created_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS episodes_room_end ON episodes(room_id, end_ts);
+            CREATE TABLE IF NOT EXISTS episode_events (
+                event_id TEXT PRIMARY KEY,
+                episode_id INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS episode_events_episode ON episode_events(episode_id);
             CREATE TABLE IF NOT EXISTS facts (
                 id INTEGER PRIMARY KEY,
                 subject TEXT NOT NULL,
                 text TEXT NOT NULL,
                 importance INTEGER NOT NULL,
-                episode_id INTEGER NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 recalled_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS facts_subject ON facts(subject);
+            CREATE TABLE IF NOT EXISTS fact_sources (
+                fact_id INTEGER NOT NULL,
+                episode_id INTEGER NOT NULL,
+                PRIMARY KEY (fact_id, episode_id)
+            );
+            CREATE INDEX IF NOT EXISTS fact_sources_episode ON fact_sources(episode_id);
             CREATE VIRTUAL TABLE IF NOT EXISTS memory_terms USING fts5(kind UNINDEXED, ref UNINDEXED, terms);
             CREATE TABLE IF NOT EXISTS remembered (
                 room_id TEXT PRIMARY KEY,
@@ -792,7 +806,8 @@ class Store:
             );
             CREATE TABLE IF NOT EXISTS forgotten (
                 user_id TEXT PRIMARY KEY,
-                at INTEGER NOT NULL
+                at INTEGER NOT NULL,
+                until INTEGER
             );
         """)
         self.db.commit()
@@ -809,10 +824,14 @@ class Store:
         if memory_before_ts is not None:
             self.db.execute("DELETE FROM episodes WHERE end_ts < ?", (memory_before_ts,))
             self.db.execute("DELETE FROM facts WHERE MAX(updated_at, recalled_at) < ?", (memory_before_ts,))
-            self._drop_orphan_terms()
+            self._drop_orphans()
         self.db.commit()
 
-    def _drop_orphan_terms(self) -> None:
+    def _drop_orphans(self) -> None:
+        """Drop the links and search terms of episodes and facts that are gone."""
+        self.db.execute("DELETE FROM episode_events WHERE episode_id NOT IN (SELECT id FROM episodes)")
+        self.db.execute("DELETE FROM fact_sources WHERE episode_id NOT IN (SELECT id FROM episodes) "
+                        "OR fact_id NOT IN (SELECT id FROM facts)")
         self.db.execute("DELETE FROM memory_terms WHERE kind='episode' AND ref NOT IN (SELECT id FROM episodes)")
         self.db.execute("DELETE FROM memory_terms WHERE kind='fact' AND ref NOT IN (SELECT id FROM facts)")
 
@@ -843,22 +862,21 @@ class Store:
         return cursor.rowcount == 1
 
     def delete_event(self, event_id: str) -> None:
-        """Drop a message, and the episode that summarized it with the facts drawn from that episode."""
-        row = self.db.execute("SELECT room_id, ts FROM events WHERE event_id=?", (event_id,)).fetchone()
-        if row is not None:
-            episodes = [int(item["id"]) for item in self.db.execute(
-                "SELECT id FROM episodes WHERE room_id=? AND start_ts<=? AND end_ts>=?",
-                (row["room_id"], row["ts"], row["ts"]))]
-            self._delete_episodes(episodes)
+        """Drop a message, and the episode that summarized it with every fact that episode wrote or
+        changed."""
+        episodes = [int(row["episode_id"]) for row in self.db.execute(
+            "SELECT episode_id FROM episode_events WHERE event_id=?", (event_id,))]
+        self._delete_episodes(episodes)
         self.db.execute("DELETE FROM events WHERE event_id=?", (event_id,))
         self.db.commit()
 
     def _delete_episodes(self, episodes: list[int]) -> None:
         for episode in episodes:
-            self.db.execute("DELETE FROM facts WHERE episode_id=?", (episode,))
+            self.db.execute("DELETE FROM facts WHERE id IN (SELECT fact_id FROM fact_sources WHERE episode_id=?)",
+                            (episode,))
             self.db.execute("DELETE FROM episodes WHERE id=?", (episode,))
         if episodes:
-            self._drop_orphan_terms()
+            self._drop_orphans()
 
     def event_count(self, room_id: str) -> int:
         row = self.db.execute("SELECT COUNT(*) AS n FROM events WHERE room_id=?", (room_id,)).fetchone()
@@ -999,7 +1017,8 @@ class Store:
         return str(row["display_name"]) if row else None
 
     def forgotten(self) -> set[str]:
-        return {str(row["user_id"]) for row in self.db.execute("SELECT user_id FROM forgotten")}
+        """The people who asked to be forgotten and have not asked to be remembered since."""
+        return {str(row["user_id"]) for row in self.db.execute("SELECT user_id FROM forgotten WHERE until IS NULL")}
 
     def forget_person(self, user_id: str) -> None:
         """Delete what is remembered about someone and every episode they took part in, and keep no
@@ -1008,29 +1027,48 @@ class Store:
         episodes = [int(row["id"]) for row in self.db.execute(
             "SELECT episodes.id FROM episodes, json_each(episodes.people) WHERE json_each.value=?", (user_id,))]
         self._delete_episodes(episodes)
-        self._drop_orphan_terms()
-        self.db.execute("INSERT OR IGNORE INTO forgotten(user_id, at) VALUES(?,?)", (user_id, now_ms()))
+        self._drop_orphans()
+        self.db.execute("INSERT INTO forgotten(user_id, at, until) VALUES(?,?,NULL) "
+                        "ON CONFLICT(user_id) DO UPDATE SET at=excluded.at, until=NULL", (user_id, now_ms()))
         self.db.commit()
 
     def remember_person(self, user_id: str) -> None:
-        self.db.execute("DELETE FROM forgotten WHERE user_id=?", (user_id,))
+        """Keep notes about someone again, from now on: what they said before stays forgotten."""
+        self.db.execute("UPDATE forgotten SET until=? WHERE user_id=? AND until IS NULL", (now_ms(), user_id))
         self.db.commit()
 
-    def unremembered(self, exclude: Iterable[str] = ()) -> dict[str, list[sqlite3.Row]]:
+    def unremembered(self, exclude: Iterable[str] = (), bot_user_id: str = "") -> dict[str, list[sqlite3.Row]]:
         """Each room's text after the last summarized episode, oldest first, up to one batch and one
-        more, leaving out the senders not to be remembered."""
+        more. It leaves out the excluded senders, the lines of people who asked to be forgotten
+        (everything they wrote before asking them to be remembered again), and the bot's own lines
+        answering such a line. A batch left with nothing moves the room's mark past it."""
         left_out = sorted(set(exclude))
         marks = ",".join("?" * len(left_out)) or "NULL"
+        unseen = ("NOT EXISTS (SELECT 1 FROM forgotten f WHERE f.user_id=e.sender "
+                  "AND (f.until IS NULL OR e.ts < f.until))")
         rooms: dict[str, list[sqlite3.Row]] = {}
         for room in self.db.execute("SELECT DISTINCT room_id FROM events"):
             room_id = str(room["room_id"])
             mark = self.db.execute("SELECT through_ts FROM remembered WHERE room_id=?", (room_id,)).fetchone()
-            rows = self.db.execute(
-                f"SELECT event_id, sender, ts, body FROM events WHERE room_id=? AND ts>? AND body<>'' "
-                f"AND sender NOT IN ({marks}) ORDER BY ts LIMIT ?",
+            fetched = self.db.execute(
+                f"SELECT event_id, sender, ts, body FROM events e WHERE room_id=? AND ts>? AND body<>'' "
+                f"AND sender NOT IN ({marks}) AND {unseen} ORDER BY ts LIMIT ?",
                 (room_id, int(mark["through_ts"]) if mark else 0, *left_out, MEMORY_BATCH + 1)).fetchall()
+            rows = []
+            for row in fetched:
+                if row["sender"] == bot_user_id:
+                    before = self.db.execute(
+                        "SELECT sender, ts FROM events e WHERE room_id=? AND ts<? AND sender<>? "
+                        "ORDER BY ts DESC LIMIT 1", (room_id, row["ts"], bot_user_id)).fetchone()
+                    if before is not None and self.db.execute(
+                            f"SELECT 1 FROM (SELECT ? AS sender, ? AS ts) e WHERE NOT {unseen}",
+                            (before["sender"], before["ts"])).fetchone():
+                        continue
+                rows.append(row)
             if rows:
                 rooms[room_id] = rows
+            elif fetched:
+                self.mark_remembered(room_id, int(fetched[-1]["ts"]))
         return rooms
 
     def mark_remembered(self, room_id: str, through_ts: int) -> None:
@@ -1051,23 +1089,27 @@ class Store:
                 "INSERT INTO episodes(room_id, start_ts, end_ts, people, summary, created_at) VALUES(?,?,?,?,?,?)",
                 (room_id, start, end, json.dumps(sorted(set(people))), memory.summary, at))
             episode = int(cursor.lastrowid or 0)
+            self.db.executemany("INSERT OR REPLACE INTO episode_events(event_id, episode_id) VALUES(?,?)",
+                                [(str(row["event_id"]), episode) for row in rows])
             self.db.execute("INSERT INTO memory_terms(kind, ref, terms) VALUES('episode',?,?)",
                             (episode, " ".join(memory_terms(memory.summary + " " + " ".join(memory.keywords), 256))))
             for edit in memory.edits:
                 if edit.op == "delete":
                     self.db.execute("DELETE FROM facts WHERE id=?", (edit.fact,))
+                    self.db.execute("DELETE FROM fact_sources WHERE fact_id=?", (edit.fact,))
                     self.db.execute("DELETE FROM memory_terms WHERE kind='fact' AND ref=?", (edit.fact,))
                     continue
                 if edit.op == "update":
-                    self.db.execute("UPDATE facts SET text=?, importance=?, episode_id=?, updated_at=? WHERE id=?",
-                                    (edit.text, edit.importance, episode, end, edit.fact))
+                    self.db.execute("UPDATE facts SET text=?, importance=?, updated_at=? WHERE id=?",
+                                    (edit.text, edit.importance, end, edit.fact))
                     self.db.execute("DELETE FROM memory_terms WHERE kind='fact' AND ref=?", (edit.fact,))
                     fact = edit.fact
                 else:
                     cursor = self.db.execute(
-                        "INSERT INTO facts(subject, text, importance, episode_id, created_at, updated_at, recalled_at) "
-                        "VALUES(?,?,?,?,?,?,?)", (edit.subject, edit.text, edit.importance, episode, end, end, end))
+                        "INSERT INTO facts(subject, text, importance, created_at, updated_at, recalled_at) "
+                        "VALUES(?,?,?,?,?,?)", (edit.subject, edit.text, edit.importance, end, end, end))
                     fact = int(cursor.lastrowid or 0)
+                self.db.execute("INSERT OR IGNORE INTO fact_sources(fact_id, episode_id) VALUES(?,?)", (fact, episode))
                 self.db.execute("INSERT INTO memory_terms(kind, ref, terms) VALUES('fact',?,?)",
                                 (fact, " ".join(memory_terms(edit.text, 128))))
             self.db.execute(
@@ -1097,11 +1139,12 @@ class Store:
         return rows
 
     def recall(self, subjects: Iterable[str], terms: list[str], *, room_id: str, before_ts: int,
-               facts: int = MEMORY_FACTS, episodes: int = MEMORY_EPISODES) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
+               rooms: Iterable[str], facts: int = MEMORY_FACTS,
+               episodes: int = MEMORY_EPISODES) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
         """The facts and earlier episodes most worth bringing to a turn, by relevance, recency and
         importance with equal weight. Facts about the people talking count as half relevant, at most
         a few each, and the newest episodes are always candidates so "what happened lately" has an
-        answer. Episodes the turn can already read are left out."""
+        answer. Episodes the turn can already read, and those of rooms no longer read, are left out."""
         now = now_ms()
         wanted = set(subjects)
         fact_hits = self._matches("fact", terms, 50)
@@ -1130,15 +1173,17 @@ class Store:
             self.db.execute(f"UPDATE facts SET recalled_at=? WHERE id IN ({','.join('?' * len(chosen))})",
                             (now, *(int(row["id"]) for row in chosen)))
             self.db.commit()
+        open_rooms = sorted(set(rooms))
+        within = f"room_id IN ({','.join('?' * len(open_rooms)) or 'NULL'})"
         episode_hits = self._matches("episode", terms, 30)
         recent = [int(row["id"]) for row in self.db.execute(
-            "SELECT id FROM episodes ORDER BY end_ts DESC LIMIT 3")]
+            f"SELECT id FROM episodes WHERE {within} ORDER BY end_ts DESC LIMIT 3", open_rooms)]
         here = self.db.execute("SELECT id FROM episodes WHERE room_id=? AND end_ts<? ORDER BY end_ts DESC LIMIT 1",
                                (room_id, before_ts)).fetchone()
         ids = {*episode_hits, *recent, *([int(here["id"])] if here else [])}
         rows = self.db.execute(
-            f"SELECT * FROM episodes WHERE id IN ({','.join('?' * len(ids)) or 'NULL'}) "
-            "AND NOT (room_id=? AND end_ts>=?)", (*ids, room_id, before_ts)).fetchall()
+            f"SELECT * FROM episodes WHERE id IN ({','.join('?' * len(ids)) or 'NULL'}) AND {within} "
+            "AND NOT (room_id=? AND end_ts>=?)", (*ids, *open_rooms, room_id, before_ts)).fetchall()
         top = max(episode_hits.values(), default=0.0) or 1.0
         ranked = sorted(rows, key=lambda row: -(
             episode_hits.get(int(row["id"]), 0.0) / top + recency(int(row["end_ts"]))
@@ -1515,7 +1560,7 @@ class DeepSeek:
         self.repo = repo
         self.timeout = timeout
 
-    def _post(self, body: dict[str, Any]) -> dict[str, Any]:
+    def _post(self, body: dict[str, Any], *, timeout: float | None = None) -> dict[str, Any]:
         request = urllib.request.Request(
             self.url,
             data=json.dumps(body).encode(),
@@ -1526,7 +1571,7 @@ class DeepSeek:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
                 return json.loads(response.read())
         except urllib.error.HTTPError as error:
             payload = ""
@@ -1621,7 +1666,7 @@ class DeepSeek:
         last: Exception | None = None
         for _ in range(2):
             try:
-                answer = self._post(body)
+                answer = self._post(body, timeout=MEMORY_TIMEOUT)
                 choices = answer.get("choices") or []
                 content = choices[0].get("message", {}).get("content") if choices else None
                 if not isinstance(content, str) or not content.strip():
@@ -1927,9 +1972,9 @@ def call_of(event: dict[str, Any], user_id: str, display_name: str,
     prompt = _prompt(body, user_id, display_name, aliases)
     if mode == "chat" and INTRO.fullmatch(prompt):
         mode = "intro"
-    elif mode == "chat" and FORGET.fullmatch(prompt):
+    elif mode == "chat" and FORGET.fullmatch(prompt) and not re.search(r"[?？]", body):
         mode = "forget"
-    elif mode == "chat" and REMEMBER.fullmatch(prompt):
+    elif mode == "chat" and REMEMBER.fullmatch(prompt) and not re.search(r"[?？]", body):
         mode = "remember"
     return Call(mode=mode, prompt=prompt)
 
@@ -2000,6 +2045,8 @@ class Bot:
         self._alias_failed: dict[str, float] = {}
         self._digest_tried: dict[str, float] = {}
         self._memory_due = 0.0
+        self._memory_failures: dict[str, tuple[str, int, float]] = {}
+        self._heard_at = 0.0
         self._clock = lambda: datetime.datetime.now(JST)
         self._joined_at = 0.0
         self._pruned_at = 0.0
@@ -2097,6 +2144,7 @@ class Bot:
                         continue
                     self.ingest(room_id, event, backfilled=not live)
                     if live:
+                        self._heard_at = time.monotonic()
                         self.answer(room_id, event)
                         self.notice(room_id, event)
                 except Exception:
@@ -2148,11 +2196,17 @@ class Bot:
         if call is None:
             return
         ts = event.get("origin_server_ts")
+        sender = event.get("sender")
+        sender = sender if isinstance(sender, str) else ""
+        if call.mode in ("forget", "remember") and sender:
+            # The request takes effect however late or busy; only the answer is subject to limits.
+            if call.mode == "forget":
+                self.store.forget_person(sender)
+            else:
+                self.store.remember_person(sender)
         if isinstance(ts, int) and now_ms() - ts > self.config.call_window_seconds * 1000:
             self.store.mark_handled(event_id, "stale")
             return
-        sender = event.get("sender")
-        sender = sender if isinstance(sender, str) else ""
         if call.mode in ("chat", "intro", "forget", "remember"):
             if isinstance(ts, int) and now_ms() - ts > CHAT_WINDOW_SECONDS * 1000:
                 self.store.mark_handled(event_id, "stale")
@@ -2261,14 +2315,17 @@ class Bot:
 
     def consolidate(self) -> None:
         """Summarize one finished stretch of one room into an episode and its facts, oldest first,
-        one at a time so a backlog never holds up the chat."""
-        if not self.config.memory_enabled or time.monotonic() < self._memory_due:
+        one at a time and only while the chat is still. A stretch that fails backs its room off, and
+        one that fails MEMORY_TRIES times is skipped."""
+        now_mono = time.monotonic()
+        if (not self.config.memory_enabled or now_mono < self._memory_due
+                or now_mono - self._heard_at < MEMORY_IDLE_SECONDS):
             return
-        left_out = self._left_out()
         now = now_ms()
         due = []
-        for room_id, rows in self.store.unremembered(left_out).items():
-            if room_id not in self.active_rooms:
+        for room_id, rows in self.store.unremembered(self.config.ignored_senders, self.user_id).items():
+            failed = self._memory_failures.get(room_id)
+            if room_id not in self.active_rooms or (failed is not None and now_mono < failed[2]):
                 continue
             segment = [rows[0]]
             for row in rows[1:MEMORY_BATCH]:
@@ -2282,17 +2339,31 @@ class Bot:
         if not due:
             return
         _, room_id, segment = min(due, key=lambda item: item[0])
-        self._memory_due = time.monotonic() + MEMORY_INTERVAL_SECONDS
+        self._memory_due = now_mono + MEMORY_INTERVAL_SECONDS
         people = [str(row["sender"]) for row in segment if row["sender"] != self.user_id]
-        if not any(row["sender"] != self.user_id for row in segment):
+        if not people:
             self.store.mark_remembered(room_id, int(segment[-1]["ts"]))
             return
         names = self._names(room_id, people)
         known = self.store.known_facts(people, memory_terms(" ".join(str(row["body"]) for row in segment), 128))
         names.update({str(fact["subject"]): self.store.any_display_name(str(fact["subject"])) or _localpart(str(fact["subject"]))
                       for fact in known if str(fact["subject"]).startswith("@") and str(fact["subject"]) not in names})
-        memory = self.deepseek.remember(self._room(room_id)[0] or room_id, segment, names, known,
-                                        bot_user_id=self.user_id, left_out=left_out)
+        try:
+            memory = self.deepseek.remember(self._room(room_id)[0] or room_id, segment, names, known,
+                                            bot_user_id=self.user_id, left_out=self._left_out())
+        except DeepSeekError as error:
+            first = str(segment[0]["event_id"])
+            previous = self._memory_failures.get(room_id)
+            tries = previous[1] + 1 if previous is not None and previous[0] == first else 1
+            if tries >= MEMORY_TRIES:
+                log.warning("giving up on %s messages of %s: %s", len(segment), room_id, error)
+                self._memory_failures.pop(room_id, None)
+                self.store.mark_remembered(room_id, int(segment[-1]["ts"]))
+            else:
+                log.warning("remembering %s: %s", room_id, error)
+                self._memory_failures[room_id] = (first, tries, now_mono + MEMORY_RETRY_SECONDS)
+            return
+        self._memory_failures.pop(room_id, None)
         if not memory.summary:
             self.store.mark_remembered(room_id, int(segment[-1]["ts"]))
             return
@@ -2308,7 +2379,8 @@ class Bot:
         subjects = [sender for sender in dict.fromkeys(speakers) if sender != self.user_id and sender not in left_out]
         terms = memory_terms(" ".join(str(row["body"]) for row in events[-8:]))
         before = int(events[0]["ts"]) if events else now_ms()
-        facts, episodes = self.store.recall(subjects[:20], terms, room_id=room_id, before_ts=before)
+        facts, episodes = self.store.recall(subjects[:20], terms, room_id=room_id, before_ts=before,
+                                            rooms=self.active_rooms)
 
         def label(subject: str) -> str:
             if subject == "self":
@@ -2400,11 +2472,7 @@ class Bot:
         self.store.mark_handled(event_id, "introduced")
 
     def forget(self, room_id: str, event_id: str, sender: str, *, keep: bool) -> None:
-        """Forget someone who asks, and keep no notes on them until they ask to be remembered."""
-        if keep:
-            self.store.remember_person(sender)
-        else:
-            self.store.forget_person(sender)
+        """Tell someone who asked to be forgotten, or remembered again, that it is done."""
         self.turn(room_id, event_id, task="remember-me" if keep else "forgot", reply_to=event_id)
         self.store.mark_handled(event_id, "remembered" if keep else "forgot")
 

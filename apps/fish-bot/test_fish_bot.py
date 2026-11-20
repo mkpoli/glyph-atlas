@@ -1028,8 +1028,10 @@ def test_memory_leaves_bridges_and_forgotten_people_out(tmp_path):
     for number in range(200):
         say(bot, "⿰木木", sender="@idsbot:glyphatlas.org", event_id=f"$ids{number}", ts=start + 1001 + number * 4)
     store.forget_person("@quiet:example")
+    store.remember_person("@quiet:example")
+    say(bot, "大肥魚 hi", sender=USER, event_id="$echo", ts=start + 2500)
     bot.consolidate()
-    assert bot.deepseek.memories[0][0] == ["$a", "$d", "$e"]
+    assert bot.deepseek.memories[0][0] == ["$a", "$d", "$e"], "nothing from the forgotten time, nor her answer to it"
 
 
 def test_fact_edits_reach_only_known_facts_and_present_people():
@@ -1050,8 +1052,8 @@ def test_fact_edits_reach_only_known_facts_and_present_people():
     assert fish_bot.parse_memory('{"summary": "", "facts": [{"op": "add", "about": "self", "text": "x"}]}', keys, []).edits == ()
 
 
-def save(store, room, *, ts, summary, facts=(), people=("@reader:example",)):
-    rows = [{"ts": ts, "sender": people[0], "event_id": "$x", "body": ""}]
+def save(store, room, *, ts, summary, facts=(), people=("@reader:example",), event_ids=None):
+    rows = [{"ts": ts, "sender": people[0], "event_id": event_id, "body": ""} for event_id in event_ids or [f"$x{ts}"]]
     edits = tuple(fish_bot.Edit(op="add", subject=subject, text=text, importance=4) for subject, text in facts)
     return store.save_memory(room, rows, people, fish_bot.Memory(summary=summary, keywords=(), edits=edits))
 
@@ -1135,3 +1137,103 @@ def test_config_reads_the_memory_table(tmp_path):
     path.write_text("[memory]\nenabled = false\ndays = 90\n", encoding="utf-8")
     config = fish_bot.Config.load(path)
     assert (config.memory_enabled, config.memory_days) == (False, 90)
+
+
+def test_a_stretch_that_keeps_failing_backs_off_and_is_skipped(tmp_path, monkeypatch):
+    bot, _, store = memory_bot(tmp_path)
+    old = fish_bot.now_ms() - 30 * HOUR
+    for number in range(3):
+        say(bot, f"bad {number}", event_id=f"$p{number}", ts=old + number)
+        say(bot, f"good {number}", event_id=f"$g{number}", ts=old + 3600_000 + number, room="!other:example")
+    calls = []
+
+    def remember(room_name, rows, names, known, *, bot_user_id, left_out=()):
+        calls.append(rows[0]["event_id"])
+        if rows[0]["event_id"] == "$p0":
+            raise fish_bot.DeepSeekError("400 Content Exists Risk")
+        return fish_bot.Memory(summary="fine", keywords=(), edits=())
+
+    monkeypatch.setattr(bot.deepseek, "remember", remember)
+    bot.consolidate()
+    bot._memory_due = 0
+    bot.consolidate()
+    assert calls == ["$p0", "$g0"], "the other room goes on while the failing one waits"
+    for _ in range(fish_bot.MEMORY_TRIES - 1):
+        bot._memory_failures[ROOM] = (*bot._memory_failures[ROOM][:2], 0.0)
+        bot._memory_due = 0
+        bot.consolidate()
+    assert calls.count("$p0") == fish_bot.MEMORY_TRIES and ROOM not in store.unremembered()
+
+
+def test_a_note_goes_with_every_talk_it_came_from(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    first = save(store, ROOM, ts=now - 2 * HOUR, summary="Bob said he reads Tangut.", people=("@bob:example",),
+                 facts=[("community", "Someone here reads Tangut.")], event_ids=["$bob"])
+    fact = store.db.execute("SELECT id FROM facts").fetchone()["id"]
+    rows = [{"ts": now - HOUR, "sender": "@carol:example", "event_id": "$carol", "body": ""}]
+    store.save_memory(ROOM, rows, ["@carol:example"], fish_bot.Memory(summary="Carol too.", keywords=(), edits=(
+        fish_bot.Edit(op="update", fact=fact, text="Bob and Carol read Tangut."),)))
+    assert first
+    store.forget_person("@bob:example")
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
+    assert [row["summary"] for row in store.db.execute("SELECT summary FROM episodes")] == ["Carol too."]
+
+
+def test_a_redaction_after_the_log_is_pruned_still_reaches_memory(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    old = fish_bot.now_ms() - 200 * 24 * HOUR
+    save(store, ROOM, ts=old, summary="Long ago.", facts=[("@reader:example", "Alice wrote it.")], event_ids=["$old"])
+    store.prune(fish_bot.now_ms() - 180 * 24 * HOUR, fish_bot.now_ms() - 365 * 24 * HOUR)
+    bot.redact({"type": "m.room.redaction", "redacts": "$old"})
+    assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
+
+
+def test_a_redaction_outside_an_episode_leaves_it(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    start = fish_bot.now_ms() - 2 * HOUR
+    say(bot, "one", event_id="$1", ts=start)
+    say(bot, "relay", sender="@telegrambot:glyphatlas.org", event_id="$relay", ts=start + 1)
+    say(bot, "two", event_id="$2", ts=start + 2)
+    say(bot, "three", event_id="$3", ts=start + 3)
+    bot.consolidate()
+    bot.redact({"type": "m.room.redaction", "redacts": "$relay"})
+    assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 1
+
+
+def test_forget_me_takes_effect_over_the_chat_budget(tmp_path):
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20, max_chats_per_hour=1)
+    bot, matrix, store = make_bot(tmp_path, config=config)
+    save(store, ROOM, ts=fish_bot.now_ms() - HOUR, summary="Alice talked.", facts=[("@reader:example", "Alice likes rice.")])
+    bot._chats = [fish_bot.time.monotonic()]
+    trigger = event("!fish forget me", event_id="$forget")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert matrix.sent == [] and store.forgotten() == {"@reader:example"}
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
+
+
+def test_a_room_no_longer_read_is_not_recalled(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    save(store, "!gone:example", ts=fish_bot.now_ms() - HOUR, summary="西夏文 in a closed room.")
+    rows = [message_row("西夏文")]
+    assert bot.recall(ROOM, rows, {}) == {}
+
+
+def test_a_question_about_being_remembered_is_a_chat():
+    assert fish_bot.call_of(event("大肥魚 remember me?"), USER, "大肥魚").mode == "chat"
+    assert fish_bot.call_of(event("大肥魚，記住我"), USER, "大肥魚").mode == "remember"
+
+
+def test_memory_waits_for_the_chat_to_go_still(tmp_path):
+    bot, _, _ = memory_bot(tmp_path)
+    start = fish_bot.now_ms() - 30 * HOUR
+    for number in range(3):
+        say(bot, f"line {number}", event_id=f"$s{number}", ts=start + number)
+    bot._heard_at = fish_bot.time.monotonic()
+    bot.consolidate()
+    assert bot.deepseek.memories == []
+    bot._heard_at = 0.0
+    bot.consolidate()
+    assert len(bot.deepseek.memories) == 1

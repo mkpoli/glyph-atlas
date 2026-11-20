@@ -288,9 +288,12 @@ community and herself: it adds, updates or deletes a note against the ones it al
 brings in the notes about the people talking and the notes and earlier episodes, from any room, that
 share words with the last few lines, ranked by relevance, recency and importance. Episodes and notes
 outlive the 180-day log, up to `[memory] days` (365) after they last came up. `!fish forget me`
-deletes everything remembered about the sender and every episode they took part in, and keeps no
-new notes about them; `!fish remember me` lifts that. A redacted message takes its episode and that
-episode's notes with it. Bridges and bots are never remembered.
+deletes everything remembered about the sender, every episode they took part in and every note those
+episodes wrote, and keeps what they say out of memory, even when she is busy; `!fish remember me`
+starts new notes, and what they said in between stays forgotten. A redacted message takes its
+episode and that episode's notes with it. Bridges and bots are never remembered, and rooms that
+leave the public directory are no longer recalled. Memory calls wait for the chat to be still for a
+few seconds, and a stretch the model fails on three times is skipped.
 
 The design follows Mem0's fact edits (Chhikara et al., [arXiv 2504.19413](https://arxiv.org/abs/2504.19413),
 2025; a vendor paper whose full-context baseline still scores highest) and Generative Agents' recall
