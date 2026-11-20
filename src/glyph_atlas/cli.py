@@ -1171,17 +1171,20 @@ def import_tangut_tongyin(
 
 @import_app.command("tensho")
 def import_tensho(
-    archive: Annotated[Path, typer.Argument(help="TE00039.zip of the 篆書字体データセット")],
+    scans: Annotated[Path, typer.Argument(help="directory of the facsimile's page images, A0280016.jpg onwards")],
     out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/tensho"),
+    cache: Annotated[Path | None, typer.Option(help="image cache directory")] = None,
 ) -> None:
-    """Import the small seal forms of 説文解字 (陳昌治 edition) from CODH's 篆書字体データセット."""
+    """Import the small seal forms of 説文解字 (陳昌治 edition) marked by CODH's 篆書字体データセット."""
     from .importers import tensho
 
     try:
-        summary = tensho.collect(archive, out)
+        summary = tensho.collect(scans, out, cache=cache)
     except tensho.TenshoSourceError as error:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(1) from error
+    typer.echo(f"pages         {summary['pages']:>10}")
+    typer.echo(f"lines         {summary['lines']:>10}")
     typer.echo(f"units         {summary['units']:>10}")
     typer.echo(f"not placed    {summary['left_out']:>10}")
     typer.echo(f"-> {out}")
