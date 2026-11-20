@@ -343,8 +343,8 @@ lively moment for reading along.
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
 2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
 checks each against the hash in `STICKERS` and uploads it to the homeserver once; a sticker whose
-image no longer matches is left out. Discord and Telegram show them; the QQ bridge relays only
-messages, so QQ does not.
+image no longer matches is left out. Discord, Telegram and QQ show them; the QQ bridge sends a
+sticker as an image.
 
 When a person asks her to file something, she hands the discussion to the issue desk: it reads the
 latest messages, checks the open issues for duplicates, and files in `mkpoli/glyph-atlas` only when
@@ -393,6 +393,14 @@ Fill them:
   **Metadata: read-only**. No other repository or permission is needed: the same token reads the
   public repositories for lookups. Without this file the bot still chats and looks up the web, but it
   neither files nor reads GitHub.
+
+On Discord she has a bot of her own, the private Discord application 大肥魚 (ID 1573231606041411648)
+with the Server Members and Message Content intents, added to the Glyph Atlas server. Her Matrix
+account is logged in to mautrix-discord with that bot's token (`login-token bot <token>` sent from
+her account in a direct chat with `@discordbot`), so her messages and reactions reach Discord as that
+bot. The bridge drops reactions from Matrix accounts without a Discord login, and the relay webhook
+it uses for them cannot react. The token lives only in the bridge's database; to replace it, reset it
+on the application's Bot page and send the command again.
 
 Check the homeserver, the model key and GitHub read access before enabling the unit:
 
