@@ -65,6 +65,11 @@ repos = [
 enabled = true
 days = 365
 
+[lookup]
+# Web search, page reading and GitHub reads in answers to a call, at most this many an hour.
+enabled = true
+per_hour = 120
+
 [limits]
 context_messages = 120
 backfill_messages = 200

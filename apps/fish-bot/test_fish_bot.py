@@ -111,9 +111,10 @@ class FakeDeepSeek:
         return self.memory_value
 
     def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=(),
-            rooms="", memory=None):
+            rooms="", memory=None, lookup=None, on_step=None):
         self.rooms = rooms
         self.memory = memory
+        self.lookup = lookup
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
         self.sticker_offers = (tuple(stickers), tuple(recent))
         if self.error is not None:
@@ -1237,3 +1238,197 @@ def test_memory_waits_for_the_chat_to_go_still(tmp_path):
     bot._heard_at = 0.0
     bot.consolidate()
     assert len(bot.deepseek.memories) == 1
+class FakeWeb:
+    def __init__(self):
+        self.queries = []
+
+    def search(self, query, count=5):
+        self.queries.append(query)
+        return [{"title": "Tangut", "url": "https://example.org/tangut", "date": "2026-11-01", "summary": "A script."}]
+
+    def fetch(self, url):
+        return {"title": "Page", "content": "x" * 20_000}
+
+
+class SearchingGitHub(FakeGitHub):
+    def __init__(self):
+        super().__init__()
+        self.searches = []
+
+    def search(self, kind, query, scope):
+        self.searches.append((kind, query, scope))
+        return [{"repo": "mkpoli/han-compose", "path": "js/src/tree.js"}]
+
+
+def answer(content=None, calls=None):
+    message = {"role": "assistant", "content": content if content is not None else " "}
+    if calls:
+        message["tool_calls"] = [{"id": f"call_{number}", "type": "function",
+                                  "function": {"name": name, "arguments": json.dumps(arguments)}}
+                                 for number, (name, arguments) in enumerate(calls)]
+    return {"choices": [{"message": message}]}
+
+
+def scripted(monkeypatch, answers):
+    model = fish_bot.DeepSeek("key")
+    bodies = []
+
+    def post(body, url=None):
+        bodies.append(json.loads(json.dumps(body)))
+        return answers.pop(0)
+
+    monkeypatch.setattr(model, "_post", post)
+    return model, bodies
+
+
+def test_a_called_turn_looks_something_up_before_it_answers(tmp_path, monkeypatch):
+    web = FakeWeb()
+    lookup = fish_bot.Lookup(web, None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    model, bodies = scripted(monkeypatch, [answer(calls=[("web_search", {"query": "Tangut script"})]),
+                                           answer('{"say": "It is a script."}')])
+    steps = []
+    act = model.act("Room", "", [message_row("what is Tangut?")], {}, task="called", trigger=0,
+                    bot_user_id=USER, lookup=lookup, on_step=lambda: steps.append(1))
+    assert act.say == ("It is a script.",) and steps == [1] and web.queries == ["Tangut script"]
+    assert [tool["function"]["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "characters", "recall"]
+    assert [message["role"] for message in bodies[1]["messages"][-2:]] == ["tool", "system"]
+    assert json.loads(bodies[1]["messages"][-2]["content"])["results"][0]["url"] == "https://example.org/tangut"
+    assert bodies[1]["response_format"] == {"type": "json_object"}
+
+
+def test_lookups_stop_after_a_few_rounds(tmp_path, monkeypatch):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    loops = [answer(calls=[("web_search", {"query": "again"})]) for _ in range(fish_bot.LOOKUP_ROUNDS)]
+    model, bodies = scripted(monkeypatch, [*loops, answer('{"say": "ok"}')])
+    act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER, lookup=lookup)
+    assert act.say == ("ok",)
+    assert bodies[-1]["tool_choice"] == "none" and "tool_choice" not in bodies[-2]
+
+
+def test_a_lookup_refuses_bad_arguments_and_keeps_to_its_budget(tmp_path):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", per_hour=2)
+    assert "error" in lookup.run("read_page", '{"url": "file:///etc/passwd"}')
+    assert "error" in lookup.run("web_search", "not json")
+    assert "error" in lookup.run("github_read", '{"repo": "mkpoli/glyph-atlas"}')
+    assert "budget" in lookup.run("web_search", '{"query": "x"}')["error"]
+    page = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "other.sqlite3"), owner="mkpoli").run(
+        "read_page", '{"url": "https://example.org"}')
+    assert page["cut"] and len(page["text"]) < fish_bot.MAX_TOOL_RESULT
+
+
+def test_github_search_covers_the_owner_unless_a_repo_is_named(tmp_path):
+    github = SearchingGitHub()
+    lookup = fish_bot.Lookup(FakeWeb(), github, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    assert [tool["function"]["name"] for tool in lookup.specs()][-3:] == ["github_search", "github_read", "github_item"]
+    lookup.run("github_search", {"kind": "code", "query": "descriptionEnd"})
+    lookup.run("github_search", {"kind": "issues", "query": "sticker", "repo": "mkpoli/glyph-atlas"})
+    assert github.searches == [("code", "descriptionEnd", "user:mkpoli"), ("issues", "sticker", "repo:mkpoli/glyph-atlas")]
+
+
+def test_github_reads_a_file_and_lists_a_directory(monkeypatch):
+    github = fish_bot.GitHub("token", "mkpoli/glyph-atlas")
+    paths = []
+    replies = {
+        "/repos/mkpoli/han-compose/contents/js/src/tree.js?ref=main": {
+            "type": "file", "encoding": "base64", "content": "ZXhwb3J0IGZ1bmN0aW9u\n", "size": 15, "html_url": "https://github.com/x"},
+        "/repos/mkpoli/han-compose/contents/": [{"name": "js", "type": "dir", "size": 0}],
+    }
+
+    def call(method, path, body=None, accept="", timeout=None):
+        paths.append(path)
+        return replies[path]
+
+    monkeypatch.setattr(github, "_call", call)
+    assert github.read("mkpoli/han-compose", "/js/src/tree.js", "main")["text"] == "export function"
+    assert github.read("mkpoli/han-compose")["entries"] == [{"name": "js", "type": "dir", "size": 0}]
+
+
+def test_only_an_answer_to_a_call_may_look_things_up(tmp_path, monkeypatch):
+    bot, _, _ = make_bot(tmp_path)
+    trigger = event("大肥魚，IDS工房是什麼？", event_id="$call")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert bot.deepseek.lookup is bot.lookup is not None
+    monkeypatch.setattr(bot, "_random", lambda: 0.0)
+    bot.turn(ROOM, "$call", task="ambient")
+    assert bot.deepseek.lookup is None
+
+
+def test_the_recall_tool_searches_every_room(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    store.set_room("!other:example", "開發 · Dev", "")
+    save(store, "!other:example", ts=fish_bot.now_ms() - 24 * HOUR, summary="IDS工房上線了。",
+         facts=[("community", "IDS工房 is an open-source editor.")])
+    found = fish_bot.Lookup(FakeWeb(), None, store, owner="mkpoli",
+                            rooms=lambda: {"!other:example"}).run("recall", {"query": "IDS工房"})
+    assert found["earlier"][0]["room"] == "開發 · Dev"
+    assert found["notes"][0]["about"] == "the community"
+    closed = fish_bot.Lookup(FakeWeb(), None, store, owner="mkpoli").run("recall", {"query": "IDS工房"})
+    assert closed["earlier"] == []
+
+
+def test_config_reads_the_lookup_table(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[lookup]\nenabled = false\nper_hour = 30\n", encoding="utf-8")
+    config = fish_bot.Config.load(path)
+    assert (config.lookup_enabled, config.lookup_per_hour) == (False, 30)
+
+
+def test_characters_are_described_from_the_database_with_derived_names():
+    described = fish_bot.describe_characters("𗼇字\U0003FFFD")
+    assert described[0] == {"char": "𗼇", "code_point": "U+17F07", "name": "TANGUT IDEOGRAPH-17F07"}
+    assert described[1]["name"] == "CJK UNIFIED IDEOGRAPH-5B57"
+    assert described[2]["name"].startswith("unassigned")
+
+
+def test_the_characters_tool_costs_no_budget(tmp_path):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", per_hour=0)
+    assert lookup.run("characters", {"text": "字"})["characters"][0]["code_point"] == "U+5B57"
+    assert "budget" in lookup.run("web_search", {"query": "x"})["error"]
+
+
+def test_no_recall_tool_while_memory_is_off(tmp_path):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", memory=False)
+    assert "recall" not in [tool["function"]["name"] for tool in lookup.specs()]
+    assert "error" in lookup.run("recall", {"query": "x"})
+
+
+def test_github_reads_stay_inside_the_named_repository(tmp_path):
+    github = SearchingGitHub()
+    lookup = fish_bot.Lookup(FakeWeb(), github, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    for repo in ("../..", "mkpoli/..", "./x"):
+        assert "error" in lookup.run("github_item", {"repo": repo, "number": 1}), repo
+    with pytest.raises(ValueError):
+        fish_bot.GitHub("token", "mkpoli/glyph-atlas").read("mkpoli/glyph-atlas", "../../../../user/repos")
+
+
+def test_characters_keep_whitespace():
+    lookup_text = fish_bot.describe_characters("　 a ")
+    assert [item["code_point"] for item in lookup_text] == ["U+3000", "U+0020", "U+0061", "U+00A0"]
+
+
+def test_github_item_shows_the_newest_comments(monkeypatch):
+    github = fish_bot.GitHub("token", "mkpoli/glyph-atlas")
+    pages = {page: [{"user": {"login": "x"}, "body": f"c{n}"} for n in range(page * 5 - 4, min(page * 5, 102) + 1)]
+             for page in range(1, 22)}
+
+    def call(method, path, body=None, accept="", timeout=None):
+        if path.endswith("/issues/7"):
+            return {"title": "t", "comments": 102}
+        if "/comments" in path:
+            return pages[int(path.rsplit("page=", 1)[1])]
+        raise AssertionError(path)
+
+    monkeypatch.setattr(github, "_call", call)
+    assert [comment["body"] for comment in github.item("mkpoli/glyph-atlas", 7)["comments"]] == [
+        "c98", "c99", "c100", "c101", "c102"]
+
+
+def test_a_turn_stops_looking_things_up_when_time_runs_out(tmp_path, monkeypatch):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    model, bodies = scripted(monkeypatch, [answer(calls=[("web_search", {"query": "slow"})]), answer('{"say": "ok"}')])
+    clock = iter([0.0, 1000.0, 1000.0, 1000.0])
+    monkeypatch.setattr(fish_bot.time, "monotonic", lambda: next(clock))
+    act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER, lookup=lookup)
+    assert act.say == ("ok",) and lookup.deepseek.queries == []
+    assert bodies[-1]["tool_choice"] == "none"
