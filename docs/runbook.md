@@ -154,6 +154,22 @@ uv run scripts/cut_hdic_headwords.py ktb work/hdic-ktb --clone cache/hdic --repo
 uv run scripts/cut_hdic_headwords.py tsj work/hdic-tsj --clone cache/hdic --report work/hdic-tsj.report.json
 ```
 
+Headwords of the 澤存堂本 廣韻 are cut from images of its openings and labelled from nk2028's tables
+(`data/sources/guangyun-zecuntang.yaml`), which give every headword's leaf, column and place in the
+column. One run cuts one copy of the printing: nk2028's photographs, or 東京大學東洋文化研究所's scan
+on Wikimedia Commons, whose PDF files go in one folder under their Commons names.
+`glyph_atlas.leaf_text` says how a headword is placed and the script when it is kept:
+
+```sh
+git clone https://github.com/nk2028/tshet-uinh-data cache/tshet-uinh-data
+git -C cache/tshet-uinh-data checkout 21585e22c8a730ca2fd175112f4d18e16d5ce578
+git clone --filter=blob:none --no-checkout https://github.com/nk2028/tshet-uinh-images cache/tshet-uinh-images
+git -C cache/tshet-uinh-images sparse-checkout set --no-cone '/廣韻/澤存堂本/volume*/p*.jpg'
+git -C cache/tshet-uinh-images checkout 54ebf944fb7cb73eaafe563a68fc77f2d6740b24
+uv run scripts/cut_guangyun_headwords.py photographs work/guangyun-photographs --table cache/tshet-uinh-data --images cache/tshet-uinh-images --report work/guangyun-photographs.report.json
+uv run scripts/cut_guangyun_headwords.py ioc work/guangyun-ioc --table cache/tshet-uinh-data --images cache/commons/guangyun-ioc --report work/guangyun-ioc.report.json
+```
+
 ## 3. Images
 
 ```sh
