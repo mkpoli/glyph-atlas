@@ -26,6 +26,7 @@ because a scan of a public-domain page may carry no copyright of its own.
 | 国立国会図書館, インターネット公開（保護期間満了） | free use, no application | https://www.ndl.go.jp/jp/use/reproduction/index.html |
 | 国文学研究資料館 (国書データベース) | per item: PDM, CC BY, CC BY-SA, CC BY-NC, CC BY-NC-SA, CC BY-ND, CC BY-NC-ND, RightsStatements labels, all rights reserved | https://kokusho.nijl.ac.jp/page/terms.html |
 | CODH 日本古典籍データセット | CC BY-SA 4.0 | http://codh.rois.ac.jp/pmjt/ |
+| CODH 篆書字体データセット | per book: CC BY-SA 4.0, or CC BY-NC-SA 4.0 for 選集漢印分韻 and 朝陽閣字鑑 (TE00040–TE00058); a derived dataset ships the list of image providers and holders | https://codh.rois.ac.jp/tensho/ |
 | 東京大学史料編纂所 くずし字データセット | CC BY 4.0 | https://lab.hi.u-tokyo.ac.jp/datasets/kuzushiji |
 | 漢字字体規範史データセット（HNG）基本データセット | CC BY-SA 4.0, or GPL-2.0-or-later at the user's choice; the atlas takes CC BY-SA 4.0 | https://github.com/chise/hng-basic-data/blob/e2174a30844b8100c34af1c0dbe1e301f186883e/README.md |
 | 京都大学貴重資料デジタルアーカイブ | free reuse with credit, change notice and link; some holdings need approval; a bulk crop package is to be confirmed with the library | https://rmda.kulib.kyoto-u.ac.jp/reuse |

@@ -1,0 +1,47 @@
+# 篆書字体データセット: seal forms cut from twelve dictionaries and seal collections, each filed under a
+# Han 親字. Book TE00039 is the 陳昌治 edition of 説文解字, the edition Unicode 18.0 cites for its small
+# seal characters as kSEAL_CCZSrc; `data/tensho/TE00039/characters.tsv` places its crops on them.
+
+id: codh-tensho
+name: 篆書字体データセット
+publisher: 情報・システム研究機構 データサイエンス共同利用基盤施設 人文学オープンデータ共同利用センター (ROIS-DS CODH), 一般財団法人 人文情報学研究所
+kind: character-dataset
+url: https://codh.rois.ac.jp/tensho/
+doi: 10.20676/00000390
+version: "2.0"
+released: 2022-08-11
+licence: CC-BY-SA-4.0
+licence_evidence: https://codh.rois.ac.jp/tensho/book/TE00039/
+attribution: 『篆書字体データセット』（国文学研究資料館が複数の機関から収集／CODH・DHII加工）doi:10.20676/00000390
+checked: "2026-11-20"
+counts:
+  characters: 181084
+  code_points: 13213
+  titles: 12
+access:
+  book_zip: https://codh.rois.ac.jp/tensho/dataset/v2/{book}.zip
+  book_list: https://codh.rois.ac.jp/tensho/book/
+  providers: https://codh.rois.ac.jp/tensho/provider.ja.txt
+format:
+  coordinates: "{book}_coordinate.csv with columns Unicode, Image, X, Y, Block ID, Char ID, Width, Height, Overlap"
+  pages: "{book}_source.csv with columns Image, Manifest URI, Canvas URI, Image Info"
+  crops: "characters/U+XXXX/U+XXXX_{image}_X{x}_Y{y}.jpg, the 親字 as folder"
+  notes: "{book}_note.txt, the 凡例 and the book's credit"
+books:
+  - id: TE00039
+    title: 說文解字十五卷 坿 通檢十四卷 末一卷
+    work: 説文解字
+    author: 漢 許愼撰; 宋 徐鉉等奉敕校定; 通檢 淸 黎永椿撰
+    edition: 同治十二年番禺陳昌治校刊本
+    year: 1873
+    holder: 京都大学人文科学研究所
+    provider: 東方學デジタル圖書館
+    url: http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/html/A028menu.html
+    zip_sha256: d6226629d7b46613a0838a1c4b9866767433012bb01080d16d2e915c851e0ede
+    crops: 10403
+notes:
+  - Books TE00040 to TE00058 (選集漢印分韻, 朝陽閣字鑑) are CC BY-NC-SA 4.0 and are not imported; the others are CC BY-SA 4.0.
+  - 派生した新たなデータセットやソフトウェアを公開する場合は、「原本画像公開元・所蔵者一覧ファイル」を配布物に含めてください (the dataset's page). A release that holds these crops ships `access.providers`.
+  - The 親字 follows the form the book prints, mostly the character whose components answer the seal form's, sometimes the later form of the character (凡例 2 and 3). It is kept on each unit as CODH's reading beside the seal character.
+  - "For TE00039 CODH cut the head of each entry and the 篆文 and 或体 below it, and left out the 古文 and 籀文 except those the book calls 篆文 (凡例 3). The coordinates are pixels of CODH's page images; the facsimile the 東方學デジタル圖書館 serves is 0.5815 of that size (measured on A0280017.jpg, 2026-11-20)."
+  - The first release is of 2021-03-31; version 2 of 2022-05-10 added this book, and 176 characters were corrected on 2022-08-11.
