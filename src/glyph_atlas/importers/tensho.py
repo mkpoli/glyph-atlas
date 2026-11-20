@@ -6,10 +6,12 @@ document here, and `data/tensho/<book>/characters.tsv` says what each of its box
 - a small seal character of Unicode 18.0. For TE00039, the 陳昌治 edition of 説文解字 (同治十二年刊),
   `scripts/build_tensho_shuowen.py` matches the order of the book with the order of the edition's
   characters in Unicode. For the other books `scripts/build_tensho_equivalents.py` takes the one seal
-  character whose equivalent (`kSEAL_MCJK`) is the 親字. The unit's code point is the seal character's
+  character whose equivalent (`kSEAL_MCJK`) is the 親字, where the title files no other crop under
+  that 親字. The unit's code point is the seal character's
   and its source string the 親字. The placing is by rule, so the unit is `machine` until a reviewer
   confirms it.
-- the 親字 itself (`placed` is `parent`), where no seal character answers it or more than one does.
+- the 親字 itself (`placed` is `parent`), where no seal character answers it, more than one does, or the
+  title prints several forms under it.
   The unit is a Han character in seal style, on CODH's own reading.
 - nothing (`placed` is empty). The box is left out and counted.
 

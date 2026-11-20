@@ -1,26 +1,29 @@
-"""Place the crops of a book of CODH's 篆書字体データセット by the Han character each is filed under.
+"""Place the crops of a title of CODH's 篆書字体データセット by the Han character each is filed under.
 
-A book of the dataset other than 説文解字 gives no order to match against Unicode's small seal
+A title of the dataset other than 説文解字 gives no order to match against Unicode's small seal
 characters, so its crops are placed by their 親字 alone. `SealSources.txt` of Unicode 18.0 gives
 every small seal character the Han character that transcribes its structure (`kSEAL_MCJK`). The
 `placed` column says what a crop was put on:
 
-- `equivalent`: exactly one seal character has the 親字 as its `kSEAL_MCJK`, and the crop takes it. A
-  親字 CODH gives as a compatibility ideograph is read as the unified ideograph it is canonically
-  equivalent to (器 U+FA38 as U+5668);
-- `parent`: no seal character has it, or more than one, and the crop stays on the 親字;
+- `equivalent`: exactly one seal character has the 親字 as its `kSEAL_MCJK` and the crop is the only
+  one the title files under that 親字, so the crop takes the seal character. A 親字 CODH gives as a
+  compatibility ideograph is read as the unified ideograph it is canonically equivalent to (器
+  U+FA38 as U+5668);
+- `parent`: no seal character has the 親字, or more than one, or the title files several crops under
+  it, and the crop stays on the 親字;
 - empty: the 親字 is 〓, a character CODH found no code point for, and the crop has no character.
 
-The rule reads no ink. A book that prints several forms under one 親字 has them all on the one seal
-character, whichever of them is the small seal form.
+The rule reads no ink. A title that prints several forms under one 親字 does not say which is the
+small seal form, so none of them takes the seal character. The volumes of a title are given
+together, a 親字 being counted over all of them.
 
 The crops are numbered by page, by column from the right and down each column. The pages are those
 of the holder's IIIF manifest, which gives each its image service and size.
 
-    uv run scripts/build_tensho_equivalents.py <book zip> --seal-sources cache/ucd/SealSources.txt
+    uv run scripts/build_tensho_equivalents.py <book zip>... --seal-sources cache/ucd/SealSources.txt
 
-It writes `data/tensho/<book>/characters.tsv` and `pages.tsv`. The zip must be the one the source
-record pins. The manifest is the one the source record names, read from the manifest cache or
+It writes `data/tensho/<book>/characters.tsv` and `pages.tsv` for each. A zip must be the one the
+source record pins. The manifest is the one the source record names, read from the manifest cache or
 downloaded into it once.
 """
 
@@ -74,12 +77,14 @@ def equivalents(path: Path) -> dict[str, list[str]]:
 
 
 def place(crops: list[dict], seals: dict[str, list[str]]) -> None:
-    """Give each crop the seal character its 親字 alone answers, or leave it on the 親字."""
+    """Give a crop the one seal character of a 親字 it alone is filed under, or leave it on the 親字."""
+    filed = Counter(unified(crop["parent"]) for crop in crops if crop["parent"] != GETA)
     for crop in crops:
-        found = seals.get(unified(crop["parent"]), [])
         if crop["parent"] == GETA:
             crop["placed"] = ""
-        elif len(found) == 1:
+            continue
+        found = seals.get(unified(crop["parent"]), [])
+        if len(found) == 1 and filed[unified(crop["parent"])] == 1:
             crop.update(placed="equivalent", seal=found[0], equivalent=unified(crop["parent"]))
         else:
             crop["placed"] = "parent"
@@ -101,7 +106,8 @@ def write(crops: list[dict], target: Path, book: str, title: str, release: str) 
     target.parent.mkdir(parents=True, exist_ok=True)
     header = (
         f"# The seal forms of {title} cut by CODH, 篆書字体データセット book {book} ({release}), each on the",
-        "# small seal character of Unicode 18.0 its 親字 alone answers, or on the 親字. Written by",
+        "# small seal character of Unicode 18.0 its 親字 alone answers where the title files no other crop under",
+        "# that 親字, or on the 親字. Written by",
         "# scripts/build_tensho_equivalents.py. seq numbers the crops by page, by column from the right and",
         "# down each column; image, x, y, w, h and parent (the 親字) are CODH's, the box in pixels of the page",
         "# image; column counts the page's columns of crops from the right; canvas is the page's canvas as the",
@@ -140,23 +146,16 @@ def write_pages(crops: list[dict], pages: dict[int, dict], target: Path, book: s
             writer.writerow([canvas_number(canvas), canvas, page["image"], page["width"], page["height"]])
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("book", type=Path, help="the zip of the book, named after it (TE00024.zip)")
-    parser.add_argument("--seal-sources", type=Path, required=True, help="SealSources.txt of Unicode 18.0.0")
-    parser.add_argument("--release", default="v2.0", help="the dataset release the book is from")
-    parser.add_argument("--out", type=Path, default=DATA, help="the directory of the books' tables")
-    args = parser.parse_args(argv)
-
-    name = args.book.stem
-    record = yaml.safe_load(SOURCE.read_text(encoding="utf-8"))
+def read(path: Path, record: dict) -> tuple[dict, list[dict], dict[int, dict]]:
+    """A book's entry of the source record, its crops in order and the pages of its manifest."""
+    name = path.stem
     entry = next((held for held in record["books"] if held["id"] == name), None)
     if entry is None:
         raise SystemExit(f"{SOURCE}: no book {name}")
-    if hashlib.sha256(args.book.read_bytes()).hexdigest() != entry["zip_sha256"]:
-        raise SystemExit(f"{args.book}: not the zip the source record pins")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != entry["zip_sha256"]:
+        raise SystemExit(f"{path}: not the zip the source record pins")
 
-    book = Book(args.book, name)
+    book = Book(path, name)
     url = entry["manifest"]
     # CODH names the library's host with `www.`, the library's own manifest without.
     if {row["Manifest URI"].replace("//www.", "//") for row in book.table("source")} != {url}:
@@ -169,15 +168,30 @@ def main(argv: list[str] | None = None) -> int:
         crop["canvas"] = page["canvas"]
         if crop["x"] + crop["w"] > page["width"] or crop["y"] + crop["h"] > page["height"]:
             raise SystemExit(f"{crop['image']}: a box lies off its page of {page['width']} x {page['height']}")
-    place(crops, equivalents(args.seal_sources))
-    write(crops, args.out / name / "characters.tsv", name, f"{entry['title']} ({entry['edition']})", args.release)
-    write_pages(crops, pages, args.out / name / "pages.tsv", name, url)
-    counts = Counter(crop["placed"] for crop in crops)
-    print(f"crops            {len(crops):>6}", file=sys.stderr)
-    for evidence in ("equivalent", "parent", ""):
-        print(f"{evidence or 'no character':<16} {counts[evidence]:>6}", file=sys.stderr)
-    print(f"pages            {len({crop['canvas'] for crop in crops}):>6}", file=sys.stderr)
-    print(f"-> {args.out / name}", file=sys.stderr)
+    return entry, crops, pages
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("books", type=Path, nargs="+",
+                        help="the zips of every volume of one title, each named after its book (TE00024.zip)")
+    parser.add_argument("--seal-sources", type=Path, required=True, help="SealSources.txt of Unicode 18.0.0")
+    parser.add_argument("--release", default="v2.0", help="the dataset release the books are from")
+    parser.add_argument("--out", type=Path, default=DATA, help="the directory of the books' tables")
+    args = parser.parse_args(argv)
+
+    record = yaml.safe_load(SOURCE.read_text(encoding="utf-8"))
+    volumes = [(path.stem, *read(path, record)) for path in args.books]
+    place([crop for _, _, crops, _ in volumes for crop in crops], equivalents(args.seal_sources))
+    for name, entry, crops, pages in volumes:
+        write(crops, args.out / name / "characters.tsv", name, f"{entry['title']} ({entry['edition']})", args.release)
+        write_pages(crops, pages, args.out / name / "pages.tsv", name, entry["manifest"])
+        counts = Counter(crop["placed"] for crop in crops)
+        print(f"crops            {len(crops):>6}", file=sys.stderr)
+        for evidence in ("equivalent", "parent", ""):
+            print(f"{evidence or 'no character':<16} {counts[evidence]:>6}", file=sys.stderr)
+        print(f"pages            {len({crop['canvas'] for crop in crops}):>6}", file=sys.stderr)
+        print(f"-> {args.out / name}", file=sys.stderr)
     return 0
 
 

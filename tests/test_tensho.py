@@ -294,15 +294,18 @@ def test_only_the_parent_of_one_seal_character_places_a_form(tmp_path):
     sources = tmp_path / "SealSources.txt"
     sources.write_text(
         "# SealSources\nU+3D000\tkSEAL_MCJK\t4E00\nU+3D000\tkSEAL_CCZSrc\tC-00001\n"
-        "U+3D010\tkSEAL_MCJK\t4E0A\nU+3D011\tkSEAL_MCJK\t4E0A\nU+3D65F\tkSEAL_MCJK\t5668\n", encoding="utf-8")
-    crops = [{"parent": parent} for parent in ("4E00", "4E0A", "8331", "3013", "FA38")]
+        "U+3D010\tkSEAL_MCJK\t4E0A\nU+3D011\tkSEAL_MCJK\t4E0A\nU+3D65F\tkSEAL_MCJK\t5668\n"
+        "U+3D020\tkSEAL_MCJK\t4E01\n", encoding="utf-8")
+    crops = [{"parent": parent} for parent in ("4E00", "4E0A", "8331", "3013", "FA38", "4E01", "4E01")]
 
     build_tensho_equivalents.place(crops, build_tensho_equivalents.equivalents(sources))
 
     assert [(crop["placed"], crop.get("seal")) for crop in crops] == [
-        ("equivalent", "U+3D000"), ("parent", None), ("parent", None), ("", None), ("equivalent", "U+3D65F")]
+        ("equivalent", "U+3D000"), ("parent", None), ("parent", None), ("", None), ("equivalent", "U+3D65F"),
+        # Two forms filed under one 親字: neither is known to be the small seal form.
+        ("parent", None), ("parent", None)]
     # 器 as a compatibility ideograph is read as the unified ideograph it is equivalent to.
-    assert crops[-1]["equivalent"] == "5668"
+    assert crops[4]["equivalent"] == "5668"
 
 
 @pytest.mark.parametrize(("book", "crops"), VOLUMES.items())
@@ -323,8 +326,6 @@ def test_the_tables_of_a_volume_keep_every_crop_on_a_page_of_the_library(book, c
             assert row["equivalent"] == unicodedata.normalize("NFC", row["parent"])
         else:
             assert not row["char"] and (row["placed"] == "parent") == (row["parent"] != "〓")
-            # No form stays on a compatibility ideograph, which is no character of its own.
-            assert row["parent"] == unicodedata.normalize("NFC", row["parent"])
     assert all(page["image"].startswith("https://dl.ndl.go.jp/api/iiif/") for page in pages.values())
 
 
