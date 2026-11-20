@@ -308,6 +308,8 @@ class Script(StrEnum):
     holds. `hangul` is the Korean alphabet, its jamo and its precomposed syllables alike. `gugyeol`
     is a 구결자, which Unicode leaves unencoded and the character layer holds at its code point in
     the Hanyang private-use convention. `tangut` is the script of the Western Xia, Unicode's Tangut.
+    `seal` is small seal (小篆), Unicode's Seal: a seal character is a character of its own, apart from
+    the Han character it became.
     """
 
     HIRAGANA = "hiragana"
@@ -317,6 +319,7 @@ class Script(StrEnum):
     HANGUL = "hangul"
     GUGYEOL = "gugyeol"
     TANGUT = "tangut"
+    SEAL = "seal"
     SYMBOL = "symbol"
     LATIN = "latin"
     UNKNOWN = "unknown"
