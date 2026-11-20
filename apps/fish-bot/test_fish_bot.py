@@ -1955,3 +1955,7 @@ def test_a_message_that_is_all_quote_is_kept_and_a_reply_fallback_is_not(tmp_pat
     bot.ingest(ROOM, event("> <@alice:example> hello\n\nworld", event_id="$reply"), backfilled=False)
     bodies = {row["event_id"]: row["body"] for row in store.context(ROOM, fish_bot.now_ms() + 1000, 5)}
     assert bodies["$quote"].startswith("> 자음") and bodies["$reply"] == "world"
+
+
+def test_line_endings_are_normalised_outside_replies():
+    assert fish_bot._clean_body("a\r\nb\r\n\r\n\r\n\r\nc") == "a\nb\n\nc"

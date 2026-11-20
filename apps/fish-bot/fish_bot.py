@@ -2722,7 +2722,7 @@ def _unquoted(body: str) -> str:
     A message that is all quote (a Markdown blockquote) is kept whole."""
     lines = body.splitlines()
     if not lines or not REPLY_FALLBACK.match(lines[0].lstrip()):
-        return body.strip()
+        return "\n".join(lines).strip()
     while lines and lines[0].lstrip().startswith(">"):
         lines.pop(0)
     return "\n".join(lines).strip()
