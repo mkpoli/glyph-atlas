@@ -54,7 +54,7 @@
   const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], related: [], derived: [], linked: [], grapheme: null, alike: [] })
   // The grapheme's forms and related characters: its members, its variants, and its related characters,
   // each once: a description of one of them is that character.
-  const forms = $derived(withoutDescribed([...listed.members, ...listed.variants, ...listed.related], structureOf, written, [current, chosen])
+  const forms = $derived(withoutDescribed([...listed.members, ...listed.variants, ...listed.related], structureOf, written, [current])
     .filter(form => !others || form.char !== current))
   // The bar: the grapheme's forms and related characters, the crop's own form when it is none of them
   // (a form drawn as the bare character keeps its regions), and what the picker added.

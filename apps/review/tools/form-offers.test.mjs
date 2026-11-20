@@ -36,8 +36,9 @@ describe('form offers', () => {
   // 臭's bar and the 構形 /layers/structures gives its forms.
   const chou = [{ char: '臭' }, { char: '臭\u{E0103}', mj: 'MJ030291' }, { char: '⿱自犬', regions: 'GHTKPV' }, { char: '臰' },
     { char: '⿱自大', regions: 'J' }, { char: '𦤀' }]
-  const chouStructures = new Map([['臭', { label: '⿱自犬' }], ['臭\u{E0103}', { label: '⿱自犬' }], ['⿱自犬', { label: '⿱自犬' }],
-    ['臰', { label: '⿱自死' }], ['⿱自大', { label: '⿱自大' }], ['𦤀', { label: '⿱自大' }]])
+  const chouStructures = new Map([['臭', { id: 'st:2428', label: '⿱自犬' }], ['臭\u{E0103}', { id: 'st:2428', label: '⿱自犬' }],
+    ['⿱自犬', { id: 'st:2428', label: '⿱自犬' }], ['臰', { id: 'st:b1', label: '⿱自死' }], ['⿱自大', { id: 'st:5fca', label: '⿱自大' }],
+    ['𦤀', { id: 'st:5fca', label: '⿱自大' }]])
   const chars = forms => forms.map(form => form.char)
 
   it('offers an encoded character in place of its description', () => {
@@ -49,12 +50,20 @@ describe('form offers', () => {
     expect(chars(withoutDescribed(chou.filter(form => form.char !== '𦤀'), chouStructures, '臭'))).toContain('⿱自犬')
   })
 
-  it("keeps the crop's own form and the chosen one", () => {
+  it("keeps the crop's own form", () => {
     expect(chars(withoutDescribed(chou, chouStructures, '臭', ['⿱自大']))).toContain('⿱自大')
   })
 
   it('reads a folded 構形 as the one the character is built as', () => {
-    const structures = new Map([['說', { label: '⿰言兑', part: { label: '⿰言兌' } }]])
+    const structures = new Map([['說', { id: 'st:a', label: '⿰言兑', part: { id: 'st:b', label: '⿰言兌' } }],
+      ['⿰言兌', { id: 'st:a', label: '⿰言兑', part: { id: 'st:b', label: '⿰言兌' } }], ['⿰言兑', { id: 'st:a', label: '⿰言兑' }]])
     expect(chars(withoutDescribed([{ char: '說' }, { char: '⿰言兌' }, { char: '⿰言兑' }], structures, '説'))).toEqual(['說', '⿰言兑'])
+  })
+
+  it("leaves a description a reader filed elsewhere, and a character filed under the crop's 構形", () => {
+    const filed = new Map([...chouStructures, ['⿱自大', { id: 'st:2428', label: '⿱自犬' }]])
+    expect(chars(withoutDescribed(chou, filed, '臭'))).toContain('⿱自大')
+    const moved = new Map([...chouStructures, ['𦤀', { id: 'st:2428', label: '⿱自犬' }]])
+    expect(chars(withoutDescribed(chou, moved, '臭'))).toEqual(chars(chou))
   })
 })

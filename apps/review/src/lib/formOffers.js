@@ -32,12 +32,17 @@ export function sortForms(char, figures, shapes) {
 }
 
 /** The forms of `forms` the bar offers. A description of another encoded character the bar offers
- *  is that character (⿱自大 is 𦤀), so the bar offers the character alone. `structureOf` gives each
- *  form's 構形; `of` is the crop's character, whose regional shapes describe it more finely than its
- *  one chip draws it; `keep` names the forms offered whatever they describe (the crop's own and the
- *  chosen one). */
+ *  is that character (⿱自大 is 𦤀), so the bar offers the character alone: the description is that
+ *  character's 構形 and stands under it. `structureOf` gives each form's 構形, read as the one it is
+ *  built as where a reader folded it into another. `of` is the crop's character: its regional shapes
+ *  describe it more finely than its one chip draws it, and a character filed under its 構形 stands
+ *  for none of them. `keep` names the forms offered whatever they describe. */
 export function withoutDescribed(forms, structureOf, of, keep = []) {
-  const described = new Set(forms.filter(form => form.char !== of && !isDescription(form.char) && !isFigure(form.char))
-    .map(form => structureOf.get(form.char)).filter(Boolean).map(structure => (structure.part ?? structure).label))
-  return forms.filter(form => !isDescription(form.char) || !described.has(form.char) || keep.includes(form.char))
+  const own = form => { const structure = structureOf.get(form); return structure && (structure.part ?? structure) }
+  const ofId = structureOf.get(of)?.id
+  const described = new Map(forms.filter(form => form.char !== of && !isDescription(form.char) && !isFigure(form.char))
+    .filter(form => structureOf.get(form.char) && structureOf.get(form.char).id !== ofId)
+    .map(form => [own(form.char).label, own(form.char).id]))
+  return forms.filter(form => !isDescription(form.char) || keep.includes(form.char)
+    || !described.has(form.char) || described.get(form.char) !== own(form.char)?.id)
 }
