@@ -68,7 +68,7 @@ export const STAGES = [
       { edition: '裴務齊正字本（王二）', holder: '故宮博物院', status: 'planned' },
       { edition: '宋濂跋本（王三）', holder: '故宮博物院', status: 'planned' }] },
     { title: '廣韻', by: '陳彭年、丘雍等', editions: [
-      { edition: '清康熙四十三年（1704）序張氏澤存堂刊本', holder: '東京大學東洋文化研究所', href: commons('IOC.UTokyo-000145 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷首.pdf'), status: 'planned' },
+      { edition: '清康熙四十三年（1704）序張氏澤存堂刊本', holder: '東京大學東洋文化研究所', href: commons('IOC.UTokyo-000145 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷首.pdf'), status: 'underway' },
       { edition: '大宋重修廣韻 宋刊本', holder: NDL, href: ndl(2545272), status: 'planned' },
       { edition: '鉅宋廣韻 宋乾道五年（1169）建寧府黃三八郎刻本（中華再造善本影印）', holder: '上海圖書館', href: commons('ZHSY000074 鉅宋廣韻五卷 (宋)陳彭年等 撰 宋乾道五年建寧府黃三八郎刻本.pdf'), status: 'planned' }] },
     { title: '集韻', by: '丁度等', editions: [
