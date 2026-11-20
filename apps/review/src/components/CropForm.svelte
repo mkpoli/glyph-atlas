@@ -28,7 +28,7 @@
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
   // its own form would mark nothing.
   let { crop, chosen = null, onchoose, disabled = false, others = false } = $props()
-  let offered = $state({ char: null, members: [], variants: [], related: [], derived: [], linked: [], grapheme: null }), added = $state([])
+  let offered = $state({ char: null, members: [], variants: [], related: [], derived: [], linked: [], grapheme: null, alike: [] }), added = $state([])
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   let composing = $state(false), linking = $state(false), linkError = $state(''), linkedByMe = $state(false)
   let arranging = $state(false)
@@ -44,21 +44,21 @@
   $effect(() => {
     const id = crop?.id, char = written, own = untrack(() => current)
     added = []; picking = false; query = ''; failed = false; composing = false; linking = false; linkError = ''; linkedByMe = false; arranging = false
-    listForms(char).then(found => [found, false], () => [{ members: [{ char }], variants: [], related: [], derived: [], linked: [], grapheme: null }, true])
+    listForms(char).then(found => [found, false], () => [{ members: [{ char }], variants: [], related: [], derived: [], linked: [], grapheme: null, alike: [] }, true])
       .then(async ([found, unread]) => {
         const read = await composed([own, ...namesOf(found)])
         if (id === crop?.id && char === written) { structureOf = read; offered = { char, ...found }; failed = unread }
       })
   })
-  const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], related: [], derived: [], linked: [], grapheme: null })
+  const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], related: [], derived: [], linked: [], grapheme: null, alike: [] })
   // The grapheme's forms and related characters: its members, its variants, and its related characters.
   const forms = $derived([...listed.members, ...listed.variants, ...listed.related].filter(form => !others || form.char !== current))
-  // The bar: the grapheme's forms and related characters, the crop's own form when it is none of them,
-  // and what the picker added.
+  // The bar: the grapheme's forms and related characters, the crop's own form when it is none of them
+  // (a form drawn as the bare character keeps its regions), and what the picker added.
   const bar = $derived.by(() => {
     const chips = [...forms]
     const has = char => chips.some(chip => chip.char === char)
-    if (current && !others && !has(current)) chips.push({ char: current, script: '', lang: '' })
+    if (current && !others && !has(current)) chips.push(listed.alike.find(form => form.char === current) ?? { char: current, script: '', lang: '' })
     for (const form of added) if (!has(form.char)) chips.push(form)
     return chips
   })
@@ -95,7 +95,8 @@
   const saved = $derived(crop?.form?.status === 'disputed' ? null : (crop?.form?.values ?? []).find(value => value.form) ?? null)
   const linkedChars = $derived(new Set((listed.linked ?? []).map(item => item.char)))
   const linkedHere = $derived(Boolean(saved && linkedChars.has(saved.text)))
-  const knownForm = $derived(Boolean(saved && [...listed.members, ...listed.variants].some(item => item.char === saved.text && !item.mj && !linkedChars.has(item.char))))
+  // A form drawn as the bare character is known too: it needs no link to be found.
+  const knownForm = $derived(Boolean(saved && [...listed.members, ...listed.variants, ...listed.alike].some(item => item.char === saved.text && !item.mj && !linkedChars.has(item.char))))
   const grapheme = $derived(listed.grapheme?.code_point ?? crop?.grapheme ?? null)
   const canLink = $derived(Boolean(saved && (saved.scheme === 'ids' || saved.scheme === 'ivs') && !linkedHere && !knownForm && !chosen && grapheme && !disabled && !failed))
   const q = $derived(query.trim().toUpperCase())
