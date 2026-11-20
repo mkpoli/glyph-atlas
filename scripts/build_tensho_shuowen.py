@@ -32,9 +32,12 @@ A fourth kind of evidence places the crops that stand at such gaps:
 A crop none of these reaches keeps an empty `placed` and no seal character. The edition's 古文 and
 籀文 are seal characters of Unicode that CODH did not cut, so the seal sequence is the longer one.
 
-    uv run scripts/build_tensho_shuowen.py <TE00039 directory or zip> --seal-sources cache/ucd/SealSources.txt
+    uv run scripts/build_tensho_shuowen.py <TE00039 directory or zip> --seal-sources cache/ucd/SealSources.txt \\
+        --pages <directory of the facsimile's page images>
 
-It writes `data/tensho/TE00039/characters.tsv` and reaches no network.
+It writes `data/tensho/TE00039/characters.tsv` and, with `--pages`, `pages.tsv`, which pins by
+checksum the page image of the 東方學デジタル圖書館 facsimile each crop was cut from. It reaches no
+network.
 """
 
 from __future__ import annotations
@@ -60,7 +63,8 @@ UNRELATED = frozenset(("spoofing", "non-cognate", "borrowed", "substitute"))
 #: Two boxes whose centres are closer than this are in one column: within a column of the book the
 #: centres spread over 63 pixels at most, and two columns are never nearer than 119.
 COLUMN = 90
-FIELDS = ("seq", "image", "canvas", "x", "y", "w", "h", "parent", "parent_code_point", "char", "code_point",
+PAGE_FIELDS = ("page", "canvas", "file", "sha256", "bytes", "width", "height")
+FIELDS = ("seq", "image", "canvas", "column", "x", "y", "w", "h", "parent", "parent_code_point", "char", "code_point",
           "ccz", "equivalent", "placed", "sha256")
 
 
@@ -122,7 +126,9 @@ def crops_in_order(book: Book) -> list[dict]:
             else:
                 columns.append([crop])
             last = centre
-        for column in columns:
+        for at, column in enumerate(columns, start=1):
+            for crop in column:
+                crop["column"] = at
             ordered += sorted(column, key=lambda crop: crop["y"])
     return ordered
 
@@ -251,6 +257,7 @@ def write(crops: list[dict], target: Path, release: str) -> None:
         f"# The seal forms of 説文解字 (陳昌治 edition) cut by CODH, 篆書字体データセット book {BOOK} ({release}),",
         "# each on the small seal character of Unicode 18.0 it shows. Written by scripts/build_tensho_shuowen.py.",
         "# seq is the crop's place in the order of the book; image, x, y, w, h and parent (the 親字) are CODH's,",
+        "# the box in pixels of CODH's page image; column counts the page's columns of crops from the right;",
         "# canvas the page of the 東方學デジタル圖書館 facsimile; char, code_point and equivalent (kSEAL_MCJK)",
         "# are from SealSources.txt of Unicode 18.0.0; ccz is the crop's place in the edition, the character's",
         "# kSEAL_CCZSrc except on a repeat, whose place Unicode numbers no character at; placed is the evidence:",
@@ -264,12 +271,34 @@ def write(crops: list[dict], target: Path, release: str) -> None:
             seal = crop.get("seal")
             point = int(seal["code_point"].removeprefix("U+"), 16) if seal else None
             writer.writerow([
-                seq, crop["image"], crop["canvas"], crop["x"], crop["y"], crop["w"], crop["h"],
+                seq, crop["image"], crop["canvas"], crop["column"], crop["x"], crop["y"], crop["w"], crop["h"],
                 chr(int(crop["parent"], 16)), f"U+{crop['parent']}",
                 chr(point) if point else "", seal["code_point"] if seal else "",
                 f"C-{crop.get('place', seal['ccz']):05d}" if seal else "",
                 chr(int(seal["equivalent"], 16)) if seal else "", crop.get("placed", ""), crop["sha256"],
             ])
+
+
+def write_pages(crops: list[dict], folder: Path, target: Path) -> None:
+    """Pin the page image of every page that holds a crop: its file, checksum and size."""
+    from PIL import Image
+
+    canvases = sorted({crop["canvas"] for crop in crops}, key=lambda canvas: canvas.rsplit("/", 1)[-1])
+    header = (
+        f"# The pages of the 東方學デジタル圖書館 facsimile that hold a crop of book {BOOK}, in the order of the",
+        "# book. page is the number in the file name; sha256, bytes, width and height are those of the image",
+        "# the library served when the table was built. Written by scripts/build_tensho_shuowen.py.",
+    )
+    with target.open("w", encoding="utf-8", newline="") as handle:
+        handle.write("\n".join(header) + "\n")
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(PAGE_FIELDS)
+        for canvas in canvases:
+            name = canvas.rsplit("/", 1)[-1]
+            data = (folder / name).read_bytes()
+            width, height = Image.open(io.BytesIO(data)).size
+            number = int(re.search(r"A028(\d+)\.jpg$", name).group(1))
+            writer.writerow([number, canvas, name, hashlib.sha256(data).hexdigest(), len(data), width, height])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -278,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seal-sources", type=Path, required=True, help="SealSources.txt of Unicode 18.0.0")
     parser.add_argument("--variants", type=Path, default=VARIANTS)
     parser.add_argument("--release", default="v2.0", help="the dataset release the book is from")
+    parser.add_argument("--pages", type=Path, help="directory of the facsimile's page images, to write pages.tsv")
     parser.add_argument("--out", type=Path, default=OUT)
     args = parser.parse_args(argv)
 
@@ -291,6 +321,8 @@ def main(argv: list[str] | None = None) -> int:
     if twice:
         raise SystemExit(f"seal characters placed on two crops: {', '.join(twice[:10])}")
     write(crops, args.out, args.release)
+    if args.pages:
+        write_pages(crops, args.pages, args.out.with_name("pages.tsv"))
     counts = Counter(crop.get("placed", "") for crop in crops)
     print(f"crops            {len(crops):>6}", file=sys.stderr)
     for evidence in ("label", "variant", "order", "repeat", ""):
