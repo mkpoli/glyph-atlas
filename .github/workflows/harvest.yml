@@ -94,7 +94,7 @@ jobs:
           path: |
             work/honkoku-collection
             work/wikisource-collection
-          key: harvest-store-${{ github.run_id }}
+          key: harvest-store-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: harvest-store-
 
       - name: Restore the collection store
@@ -149,7 +149,7 @@ jobs:
           path: |
             work/honkoku-collection
             work/wikisource-collection
-          key: harvest-store-${{ github.run_id }}
+          key: harvest-store-${{ github.run_id }}-${{ github.run_attempt }}
 
       # The body carries log text from third-party hosts, so it is passed as an
       # environment variable and printed with printf. Expanding `${{ }}` inside
