@@ -338,7 +338,7 @@ She sees pictures. The log keeps the link of each image and sticker people post,
 the newest few among its last lines (four when called, two when reading along) to the model as the
 homeserver's 1,024-pixel thumbnails; deepseek-flash reads JPEG, PNG, GIF and WebP at up to 1,024
 tokens an image (https://api-docs.deepseek.com/guides/vision). A posted picture also counts as a
-lively moment for reading along.
+lively moment for reading along, and memory sees up to four pictures of each stretch it summarizes.
 
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
 2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
