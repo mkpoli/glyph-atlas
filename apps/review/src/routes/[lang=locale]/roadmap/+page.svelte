@@ -1,7 +1,7 @@
 <script>
   import Seo from '$components/Seo.svelte'
   import { t, localize } from '$lib/i18n.svelte.js'
-  import { STAGES, tally } from '$lib/roadmap.js'
+  import { HOLDER_LANG, STAGES, tally } from '$lib/roadmap.js'
   const count = tally()
   const STATUSES = ['published', 'underway', 'planned']
   // A published copy opens its books on this site; any other opens the holder's scan.
@@ -34,7 +34,7 @@
                   {#if row === 0}<th scope="rowgroup" rowspan={Math.max(1, work.editions.length)} {lang}><span class="work-title">{work.title}</span>{#if work.by}<small>{work.by}</small>{/if}</th>{/if}
                   {#if edition}
                     <td class="edition" {lang}>{#if address(edition)}<a href={address(edition)} rel={edition.book ? undefined : 'noopener'} target={edition.book ? undefined : '_blank'}>{edition.edition}{#if !edition.book}<span aria-hidden="true"> ↗</span>{/if}</a>{:else}{edition.edition}{/if}</td>
-                    <td class="holder">{edition.holder}</td>
+                    <td class="holder" lang={HOLDER_LANG[edition.holder] ?? 'zh-Hant'}>{edition.holder}</td>
                     <td><span class="status" data-status={edition.status}>{t(`roadmap.status.${edition.status}`)}</span></td>
                   {:else}
                     <td class="open" colspan="2">{t('roadmap.edition.open')}</td>

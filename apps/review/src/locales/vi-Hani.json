@@ -1298,5 +1298,19 @@
   "contact.form.sending": "當𠳚…",
   "contact.form.sent": "㐌𠳚。感恩伴。",
   "contact.form.busy": "𣎏過𡗉信哏特𠳚共𣅶。唉𫁧𠬠丿耒試吏。",
-  "contact.form.failed": "空𠳚特信哏。唉試吏𢖕或𠳚書𦤾{email}。"
+  "contact.form.failed": "空𠳚特信哏。唉試吏𢖕或𠳚書𦤾{email}。",
+  "roadmap.title": "計畫收拾",
+  "roadmap.work": "𠸜冊",
+  "roadmap.edition": "本",
+  "roadmap.holder": "坭留𡨹",
+  "roadmap.status": "進度",
+  "roadmap.status.published": "㐌公布",
+  "roadmap.status.underway": "當實現",
+  "roadmap.status.planned": "預見",
+  "roadmap.edition.open": "𣗓𫾗本",
+  "roadmap.stage.dictionaries": "字書，韻書吧冊訓詁",
+  "roadmap.stage.collections": "文集",
+  "roadmap.stage.miscellanies": "雜著",
+  "roadmap.stage.technical": "冊技術吧科學",
+  "roadmap.stage.gazetteers": "地方誌"
 }

@@ -1313,14 +1313,14 @@
   "roadmap.work": "書名",
   "roadmap.edition": "版本",
   "roadmap.holder": "所蔵",
-  "roadmap.status": "状況",
+  "roadmap.status": "進捗",
   "roadmap.status.published": "公開済み",
   "roadmap.status.underway": "作業中",
   "roadmap.status.planned": "予定",
-  "roadmap.edition.open": "版本未選定",
+  "roadmap.edition.open": "版本未定",
   "roadmap.stage.dictionaries": "字書・韻書・訓詁書",
   "roadmap.stage.collections": "文集",
-  "roadmap.stage.miscellanies": "筆記",
+  "roadmap.stage.miscellanies": "雑著",
   "roadmap.stage.technical": "技術書・科学書",
   "roadmap.stage.gazetteers": "地方志"
 }
