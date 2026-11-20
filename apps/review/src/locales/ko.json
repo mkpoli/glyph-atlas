@@ -119,6 +119,8 @@
   "chips.relation.shuowen": "설문 예정",
   "chips.relation.reduction": "축퇴",
   "chips.relation.compatibility": "호환 한자",
+  "chips.relation.smallSeal": "소전",
+  "chips.relation.sealEquivalent": "대응 한자",
   "chips.relation.borrowed": "통가",
   "chips.relation.substitute": "대용",
   "chips.relation.nonCognate": "별자",

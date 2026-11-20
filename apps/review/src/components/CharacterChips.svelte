@@ -20,7 +20,7 @@
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
   import { familyCodeSet } from '../lib/forms.js'
-  import { cardTiers } from '../lib/cardTiers.js'
+  import { cardTiers, inferred, isSeal } from '../lib/cardTiers.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const { members, variants, grapheme, writers, sharedWriters, writes, selfGrapheme, shared, written, related, described } = $derived(cardTiers(card))
   // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
@@ -41,17 +41,22 @@
     borrowed: () => t('chips.relation.borrowed'), substitute: () => t('chips.relation.substitute'),
     'non-cognate': () => t('chips.relation.nonCognate'), spoofing: () => t('chips.relation.spoofing'),
   }
-  const relationName = relation => RELATION_NAMES[relation]?.() ?? relation
+  // A small seal pair reads from the card's side: the seal character on a Han card, and on a seal
+  // card the Han character Unicode gives as its modern equivalent.
+  const relationName = (relation, v) => relation === 'small-seal'
+    ? t(isSeal(v?.char) ? 'chips.relation.smallSeal' : 'chips.relation.sealEquivalent')
+    : RELATION_NAMES[relation]?.() ?? relation
   // A pair's relations, each once, with the sources that state it.
   const relationsOf = v => {
     const by = new Map()
     for (const r of v.relations) by.set(r.relation, new Set([...(by.get(r.relation) ?? []), r.source]))
-    return [...by].map(([relation, sources]) => ({ relation, name: relationName(relation), sources: [...sources] }))
+    return [...by].map(([relation, sources]) => ({ relation, name: relationName(relation, v), sources: [...sources] }))
   }
   const relationTitle = v => [`${v.char} ${v.code_point}`, ...(sharedWriters.has(v.code_point) ? [shareLabel(v)] : []),
-    ...relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`)].join('\n')
+    ...relationsOf(v).map(r => `${r.name}: ${r.sources.join(', ')}`),
+    ...(inferred(v) ? [t('chips.derived'), ...v.relations.map(r => r.detail)] : [])].join('\n')
   // A chip names one relation, the most specific a pair has; its title lists them all with their sources.
-  const RELATION_RANK = ['simplified', 'shinjitai', 'regional', 'shuowen', 'reduction', 'compatibility', 'z',
+  const RELATION_RANK = ['simplified', 'shinjitai', 'regional', 'shuowen', 'reduction', 'compatibility', 'small-seal', 'z',
     'variant', 'equivalent', 'specialized-semantic', 'overlap', 'semantic', 'borrowed', 'substitute', 'non-cognate', 'spoofing']
   const rank = relation => (RELATION_RANK.indexOf(relation) + RELATION_RANK.length + 1) % (RELATION_RANK.length + 1)
   const mainRelation = v => relationsOf(v).sort((a, b) => rank(a.relation) - rank(b.relation))[0]?.name ?? ''
@@ -166,7 +171,7 @@
         <span class="layer-label">{t('chips.related')}</span>
         <div class="variant-chips">
           {#each related as v (v.code_point)}
-            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{mainRelation(v)}{#if crops(v)}{' · '}{formatNumber(crops(v))}{/if}</small></a>
+            <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if inferred(v)}<sup class="derived-mark" aria-hidden="true">*</sup>{/if}{#if named(v)}<small class="code">{v.code_point}</small>{/if}<small>{mainRelation(v)}{#if crops(v)}{' · '}{formatNumber(crops(v))}{/if}</small></a>
           {/each}
         </div>
       </div>

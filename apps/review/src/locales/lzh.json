@@ -88,6 +88,8 @@
   "chips.relation.shuowen": "說文",
   "chips.relation.reduction": "縮",
   "chips.relation.compatibility": "兼容",
+  "chips.relation.smallSeal": "篆",
+  "chips.relation.sealEquivalent": "楷",
   "chips.relation.borrowed": "通假",
   "chips.relation.substitute": "代",
   "chips.relation.nonCognate": "別字",

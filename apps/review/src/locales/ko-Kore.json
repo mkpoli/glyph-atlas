@@ -102,6 +102,8 @@
   "chips.relation.shuowen": "說文 隸定",
   "chips.relation.reduction": "縮退",
   "chips.relation.compatibility": "互換 漢字",
+  "chips.relation.smallSeal": "小篆",
+  "chips.relation.sealEquivalent": "對應 漢字",
   "chips.relation.borrowed": "通假",
   "chips.relation.substitute": "代用",
   "chips.relation.nonCognate": "別字",

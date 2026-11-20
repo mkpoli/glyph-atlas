@@ -4,6 +4,14 @@ import { compatibility } from '../../../cloudflare/src/representation.ts'
 // (docs/decisions/0013-finer-forms.md). A card lists one only while crops are filed under it.
 const form = v => !compatibility(v?.char ?? '') || (v.count ?? 0) + (v.corpus_count ?? 0) > 0
 
+/** Whether a character is a small seal character (Unicode's Seal block). */
+export const isSeal = char => /^[\u{3D000}-\u{3FC3F}]$/u.test(char ?? '')
+
+// Sources whose edges no source states: each joins two stated edges.
+const INFERRED = new Set(['seal-chain'])
+/** Whether every relation of a pair is inferred, so its chip carries the derived mark. */
+export const inferred = v => (v?.relations?.length ?? 0) > 0 && v.relations.every(r => INFERRED.has(r.source))
+
 /** A character card's 異体字 graph in three levels: the 字種 (the grapheme, and any other grapheme this
  *  form also writes, 后: 後), its 字体 (the grapheme's own forms, then the 異体字 outside it, the ones a
  *  gallery widens to first, then the described forms reviewers said are written for it), and the

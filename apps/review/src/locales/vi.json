@@ -104,6 +104,8 @@
   "chips.relation.shuowen": "Lệ định Thuyết văn",
   "chips.relation.reduction": "Rút gọn",
   "chips.relation.compatibility": "Chữ tương thích",
+  "chips.relation.smallSeal": "Tiểu triện",
+  "chips.relation.sealEquivalent": "Chữ Hán tương ứng",
   "chips.relation.borrowed": "Thông giả",
   "chips.relation.substitute": "Thay thế",
   "chips.relation.nonCognate": "Khác gốc",
