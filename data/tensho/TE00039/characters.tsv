@@ -896,7 +896,7 @@ seq	image	canvas	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equivalent
 888	TE00039_0053_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280075.jpg	2178	802	90	183	名	U+540D	𽎳	U+3D3B3	C-00929	名	label	0a700fb069c0d36b59b0e375cea2ef3cb73fba376c67e6fe67ce7a9b60e0f152
 889	TE00039_0053_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280075.jpg	1659	814	120	155	吾	U+543E	𽎴	U+3D3B4	C-00930	吾	label	e5028293ad8fc9206efebec39e70fb247ce8bf77e5e3d599b910f1b03d0cc2f9
 890	TE00039_0053_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280075.jpg	1495	803	125	195	哲	U+54F2	𽎵	U+3D3B5	C-00931	哲	label	96d502e2e651bb799fa2e3e4a59914c4a5d9ca6647adbe83f840b95fc261ee84
-891	TE00039_0053_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280075.jpg	1521	1834	104	195	悊	U+608A	𽎶	U+3D3B6	C-00933	嚞	order	f1222f88da980c69c7d995ed9c6a9bd8a707d889f62f9516920f83f7d97edec0
+891	TE00039_0053_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280075.jpg	1521	1834	104	195	悊	U+608A						f1222f88da980c69c7d995ed9c6a9bd8a707d889f62f9516920f83f7d97edec0
 892	TE00039_0053_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280075.jpg	1177	814	111	186	君	U+541B	𽎷	U+3D3B7	C-00934	君	label	e149276ce826fa5e09874f74e16cb136b18cf3ad17373cddddfdb11dbd4a2a7a
 893	TE00039_0053_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280075.jpg	1010	807	135	205	命	U+547D	𽎹	U+3D3B9	C-00936	命	label	266f058583cebeb7b45bc39142f33cd97b51b531164da065f71bc3513d62f770
 894	TE00039_0053_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280075.jpg	860	808	117	198	咨	U+54A8	𽎺	U+3D3BA	C-00937	咨	label	e100f9b9f73b8f4a5831076436a08456087702f722cc38caa928526a228af814
@@ -2904,7 +2904,7 @@ seq	image	canvas	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equivalent
 2896	TE00039_0172_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280201.jpg	2308	767	112	179	𦚙	U+26699	𽱚	U+3DC5A	C-03114	𡌵	variant	08f8b661ab1df32b40e94146a82fdec7f1694889d2d6c9c8af2f6111907f7151
 2897	TE00039_0172_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280201.jpg	2291	2527	124	197	胏	U+80CF	𽱛	U+3DC5B	C-03115	胏	label	b793ae8901acf56d1b9dc5e023c659ee90bacee7cd237c6fe3971dd5dfe47e37
 2898	TE00039_0172_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280201.jpg	1872	777	135	196	䐄	U+4404	𽱜	U+3DC5C	C-03116	䐄	label	4dfe14a4170d218c330d769a4d1ce9c7166f86cea8e521b3584a3610f741071d
-2899	TE00039_0172_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280201.jpg	1714	771	132	201	肰	U+80B0	𽱟	U+3DC5F	C-03119	肰	label	aeec2d13f37260f75cc2f82a3feec716530a12322d3553fa7dc1b24d9b1925a6
+2899	TE00039_0172_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280201.jpg	1714	771	132	201	肰	U+80B0	𽱝	U+3DC5D	C-03117	肰	label	aeec2d13f37260f75cc2f82a3feec716530a12322d3553fa7dc1b24d9b1925a6
 2900	TE00039_0172_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280201.jpg	1394	776	136	195	䐜	U+441C	𽱠	U+3DC60	C-03120	䐜	label	338e220ca8fb262d49fe16e383a126d0965d71584fadfbeb8fd77cf41b0e9dce
 2901	TE00039_0172_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280201.jpg	1230	775	129	199	䏙	U+43D9	𽱡	U+3DC61	C-03121	䏙	label	d4df1931bfcb3b41591136a02133314d95560881c4484b1bbfd11b2e2e211200
 2902	TE00039_0172_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280201.jpg	1079	782	123	191	膠	U+81A0	𽱢	U+3DC62	C-03122	膠	label	072d41f0053e4d2086b7f05ce9e60df4bbc70d73d7eb11d52f161ccfb8892e31
@@ -4540,7 +4540,7 @@ seq	image	canvas	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equivalent
 4532	TE00039_0272_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280308.jpg	718	795	115	197	倝	U+501D	𾍔	U+3E354	C-04873	倝	label	f9de4d3a30bbcfbe875392352fc469db198c7f246a202e9598ada0d5474cca5e
 4533	TE00039_0272_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280308.jpg	557	799	125	202	𠐱	U+20431	𾍕	U+3E355	C-04874	𠐱	label	f55e8428d0f8d13d27f2aece6ea3927889c75f1f34a4b6385a81454537252dcd
 4534	TE00039_0272_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280308.jpg	385	792	127	201	朝	U+671D	𾍖	U+3E356	C-04875	𦩻	variant	978f99ef911b167fed0a08b96ddb65c1925fc4b1be21754fa17faee24c88b618
-4535	TE00039_0273_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280309.jpg	3395	792	130	192	㫃	U+3AC3	𾍘	U+3E358	C-04877	㫃	label	7f2489bbc98fc607bd6675d6e12405fee138721a9028af8dceade4d75fce2d90
+4535	TE00039_0273_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280309.jpg	3395	792	130	192	㫃	U+3AC3	𾍗	U+3E357	C-04876	㫃	label	7f2489bbc98fc607bd6675d6e12405fee138721a9028af8dceade4d75fce2d90
 4536	TE00039_0273_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280309.jpg	2913	781	142	204	旐	U+65D0	𾍙	U+3E359	C-04878	旐	label	812833bca7555b959617308a4819ec65d219ea81915f89d844d212c635add414
 4537	TE00039_0273_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280309.jpg	2602	781	136	205	旗	U+65D7	𾍚	U+3E35A	C-04879	旗	label	62745f1246033b7c8bb342bc4e5dbc008fe56b3d8bf039ccd82c0e48ecf058bc
 4538	TE00039_0273_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280309.jpg	2289	782	136	200	旆	U+65C6	𾍛	U+3E35B	C-04880	旆	label	722a2fe7d771c6571098f9030aed8d46174ebaf5ae6d6126e43f96f200a120ab
@@ -5806,7 +5806,7 @@ seq	image	canvas	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equivalent
 5798	TE00039_0356_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280393.jpg	3095	818	126	192	𧡩	U+27869	𾢹	U+3E8B9	C-06230	𧡩	label	e41c19ad4e9853b161917b9c0ec0e22edbe64f2d39af416f4fa11acaf4b09991
 5799	TE00039_0356_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280393.jpg	2939	817	130	192	覝	U+899D	𾢺	U+3E8BA	C-06231	𧡠	variant	b95189df957997b40274e51c085630259544ab2c71e27ce770b18a285a7ada68
 5800	TE00039_0356_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280393.jpg	2785	806	122	196	䚋	U+468B	𾢼	U+3E8BC	C-06232	䚋	label	44f5e0aa4dd33ef9879699ed43169502ffd62b410685e048a6b17d1d89c96383
-5801	TE00039_0356_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280393.jpg	2624	800	127	202	觀	U+89C0	𾢾	U+3E8BE	C-06234	觀	label	b734ec3f1055ff674436cc4288157a8b442cdea0e39d2ccfd567f260d7e90913
+5801	TE00039_0356_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280393.jpg	2624	800	127	202	觀	U+89C0	𾢽	U+3E8BD	C-06233	觀	label	b734ec3f1055ff674436cc4288157a8b442cdea0e39d2ccfd567f260d7e90913
 5802	TE00039_0356_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280393.jpg	2472	808	118	190	䙷	U+4677	𾢿	U+3E8BF	C-06235	䙷	label	301bd1298a38aef65f21f58751a1b3713c2cf9dc732e536e47e5a2ae7fa7643d
 5803	TE00039_0356_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280393.jpg	2153	805	105	199	覽	U+89BD	𾣀	U+3E8C0	C-06236	覽	label	0ada07f9f50629161c5ac3598a979cc0ece969288a7c34e7544b0cfbfca8ee2a
 5804	TE00039_0356_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280393.jpg	1853	814	133	203	䚅	U+4685	𾣁	U+3E8C1	C-06237	䚅	label	ffd72ef7b9977bed0da7ede2ccf2713a93e8c94e4e2a7d3c12334a223f5fc571
@@ -6446,7 +6446,7 @@ seq	image	canvas	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equivalent
 6438	TE00039_0389_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280432.jpg	3095	814	110	205	豦	U+8C66	𾭰	U+3EB70	C-06907	豦	label	4bb6ba05df3808c1079c29c84265b9e98a28fa8df88a12cc94398602cfcfe8c8
 6439	TE00039_0389_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280432.jpg	2620	826	110	197	豙	U+8C59	𾭱	U+3EB71	C-06908	𧱏	variant	75bfe8ec5f2e6803859c03b5de41c440b6df5933bb7d32fee99772acc70bfb0c
 6440	TE00039_0389_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280432.jpg	2454	843	136	186	豩	U+8C69	𾭲	U+3EB72	C-06909	豩	label	5c19064da8076e27a8d9b913f88832fa854f0602dbccb55133ae91eb5f34ef00
-6441	TE00039_0389_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280432.jpg	2145	833	111	197	㣇	U+38C7	𾭵	U+3EB75	C-06912	㣇	label	fb1cc4d6291c5928b5971f58b34a2a9549fff1fc142727803e0b58b9798de443
+6441	TE00039_0389_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280432.jpg	2145	833	111	197	㣇	U+38C7	𾭳	U+3EB73	C-06910	㣇	label	fb1cc4d6291c5928b5971f58b34a2a9549fff1fc142727803e0b58b9798de443
 6442	TE00039_0389_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280432.jpg	1662	790	106	204	𢑢	U+22462	𾭶	U+3EB76	C-06913	𢑢	label	b0ee509aaf4b340b7358ac329107d2246ef2ed49cfd3430557b8734a0535e425
 6443	TE00039_0389_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280432.jpg	1494	793	125	202	𩫚	U+29ADA	𾭸	U+3EB78	C-06914	𩫚	label	165ed77bd6f69557b80dbf6e3ee49bbdf65617a9f96da790defb1870f794d296
 6444	TE00039_0389_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280432.jpg	1165	796	121	205	彙	U+5F59	𾭺	U+3EB7A	C-06916	𢑷	variant	1ff30dcd307a6e0f23c0b2a96511e3211128a78ea2461c86be99abdc2dd2cba9
@@ -8790,7 +8790,7 @@ seq	image	canvas	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equivalent
 8782	TE00039_0528_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280585.jpg	2761	1048	127	199	姤	U+59E4	𿕊	U+3F54A	C-09366	姤	label	91f21e2232f13071a198b4c78a5eebb45fa937de09aaf21770e9ab67b64153de
 8783	TE00039_0528_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280585.jpg	2436	836	126	194	毋	U+6BCB	𿕋	U+3F54B	C-09367	毋	label	9b962a61f8ff0a8cb37a3e0d7f4b2ba3eb6e86a31a02b7cbe3ed5d13332ea6cb
 8784	TE00039_0528_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280585.jpg	2284	838	120	195	毐	U+6BD0	𿕌	U+3F54C	C-09368	毐	label	dbe995b7f3cd2b89eb5d6077a740b16c74afaa8b58985352a38901d07e0718df
-8785	TE00039_0528_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280585.jpg	1714	832	115	168	民	U+6C11	𿕎	U+3F54E	C-09370	民	label	d44b1726486907d673510cbe335842fc1264e2634ba5e8f79a88ebd715412c84
+8785	TE00039_0528_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280585.jpg	1714	832	115	168	民	U+6C11	𿕍	U+3F54D	C-09369	民	label	d44b1726486907d673510cbe335842fc1264e2634ba5e8f79a88ebd715412c84
 8786	TE00039_0528_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280585.jpg	1387	828	136	179	氓	U+6C13	𿕐	U+3F550	C-09371	氓	label	da2d0a2993377b737edea65ea27e9fb6fb007a762ead30f84dc5fcc4855f57fb
 8787	TE00039_0528_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280585.jpg	1096	820	74	190	丿	U+4E3F	𿕑	U+3F551	C-09372	丿	label	92304bc3902d62155c5e68853a93c98d0c50a7160828d1db79d0918a6ea28efa
 8788	TE00039_0528_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280585.jpg	778	823	67	186	乂	U+4E42	𿕒	U+3F552	C-09373	乂	label	935fa7e38d8274bf687a3f787354f83cafd8d80e554e4d7c2358dd916ca94577
@@ -9452,7 +9452,7 @@ seq	image	canvas	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equivalent
 9444	TE00039_0567_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280624.jpg	3563	812	125	197	蠢	U+8822	𿠕	U+3F815	C-10066	𧅪	variant	1ecd69d51af15285fa4bc42367bec75d453f78a0eee13fb683c348499ad8439e
 9445	TE00039_0567_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280624.jpg	3080	817	130	187	蟲	U+87F2	𿠘	U+3F818	C-10068	蟲	label	01664f5bd0e9e0b19a123a5f33e75591f5f829c0564f55acfd557eed357eb667
 9446	TE00039_0567_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280624.jpg	2773	805	125	204	𧔨	U+27528	𿠙	U+3F819	C-10069	𧔨	label	c812bd164995512e34f222734045e7363444d8add14fa29847a25422a9b1bdaa
-9447	TE00039_0567_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280624.jpg	2600	1838	128	198	蝥	U+8765	𿠚	U+3F81A	C-10071	蛑	order	c7298ee74efadad11cb6d535379c88b2e6583eb419fde28deccaebf3ff60e874
+9447	TE00039_0567_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280624.jpg	2600	1838	128	198	蝥	U+8765						c7298ee74efadad11cb6d535379c88b2e6583eb419fde28deccaebf3ff60e874
 9448	TE00039_0567_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280624.jpg	2287	816	128	195	𧖕	U+27595	𿠛	U+3F81B	C-10072	𧖕	label	6b67873bb1d17b5ccfb08a30a47ce24d33716dcbcd144024abe1f22abe403a4a
 9449	TE00039_0567_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280624.jpg	2274	2159	138	184	蚍	U+868D	𿠜	U+3F81C	C-10073	蚍	label	854ed897c3138b06295bc8f9886e0eefd617cbf0708b51dac8b8e39b4c0dec3d
 9450	TE00039_0567_1	http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280624.jpg	2130	818	127	188	𧖔	U+27594	𿠝	U+3F81D	C-10074	𧖔	label	7dae744bfc42319938e483cb9ab51b9ddf58d57dbb2bf0a767883c382a80150f

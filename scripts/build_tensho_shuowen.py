@@ -15,7 +15,11 @@ matched, and a crop is placed by one of three kinds of evidence, written to the 
 - `variant`: between two such crops, its 親字 and the `kSEAL_MCJK` are joined by a row of
   `data/vocab/kanji-variants.tsv` (CODH files 㫄 under 旁);
 - `order`: the crops left between two placed ones are exactly as many as the seal characters between
-  them, and take them in order.
+  them, the edition's numbering runs through them without a gap, and they take them in order.
+
+Where an entry's 古文 has the same `kSEAL_MCJK` as its head, or the variant graph joins the 親字 to
+both, the crop takes the earlier seal character: the head of an entry stands before its other forms,
+and CODH cut the head.
 
 The edition prints some characters in two places (吹 under 口 and again under 欠). Unicode encodes
 such a character once and leaves the second place out of `kSEAL_CCZSrc`, a gap in its numbering.
@@ -40,6 +44,7 @@ import csv
 import difflib
 import hashlib
 import io
+import itertools
 import re
 import sys
 import zipfile
@@ -52,9 +57,9 @@ OUT = ROOT / "data" / "tensho" / BOOK / "characters.tsv"
 VARIANTS = ROOT / "data" / "vocab" / "kanji-variants.tsv"
 #: Relations of the variant graph that do not say two characters are one character in two shapes.
 UNRELATED = frozenset(("spoofing", "non-cognate", "borrowed", "substitute"))
-#: Head characters of one column stand within this many pixels of each other, measured at the box
-#: centre; the columns of the edition are about 160 pixels apart.
-COLUMN = 70
+#: Two boxes whose centres are closer than this are in one column: within a column of the book the
+#: centres spread over 63 pixels at most, and two columns are never nearer than 119.
+COLUMN = 90
 FIELDS = ("seq", "image", "canvas", "x", "y", "w", "h", "parent", "parent_code_point", "char", "code_point",
           "ccz", "equivalent", "placed", "sha256")
 
@@ -108,14 +113,16 @@ def crops_in_order(book: Book) -> list[dict]:
         })
     ordered: list[dict] = []
     for number in sorted(pages):
-        columns: list[tuple[float, list[dict]]] = []
+        columns: list[list[dict]] = []
+        last = None
         for crop in sorted(pages[number], key=lambda crop: -(crop["x"] + crop["w"] / 2)):
             centre = crop["x"] + crop["w"] / 2
-            if columns and abs(columns[-1][0] - centre) < COLUMN:
-                columns[-1][1].append(crop)
+            if last is not None and last - centre < COLUMN:
+                columns[-1].append(crop)
             else:
-                columns.append((centre, [crop]))
-        for _, column in columns:
+                columns.append([crop])
+            last = centre
+        for column in columns:
             ordered += sorted(column, key=lambda crop: crop["y"])
     return ordered
 
@@ -174,7 +181,9 @@ def place(crops: list[dict], seals: list[dict], pairs: set[tuple[str, str]]) -> 
 
     def between(first: tuple[int, int], last: tuple[int, int]) -> None:
         (i1, j1), (i2, j2) = first, last
-        if i2 - i1 == j2 - j1:
+        if i1 == 0 or j1 == 0 or i2 == len(crops) or j2 == len(seals):
+            return  # no placed crop on one side
+        if i2 - i1 == j2 - j1 and seals[j2]["ccz"] - seals[j1 - 1]["ccz"] == j2 - j1 + 1:
             for offset in range(i2 - i1):
                 take(crops[i1 + offset], seals[j1 + offset], "order")
 
@@ -191,6 +200,20 @@ def place(crops: list[dict], seals: list[dict], pairs: set[tuple[str, str]]) -> 
             take(crops[i1 + i], seals[j1 + j], "variant")
             at = (i1 + i + 1, j1 + j + 1)
         between(at, (i2, j2))
+    _prefer_heads(crops, seals, pairs)
+
+
+def _prefer_heads(crops: list[dict], seals: list[dict], pairs: set[tuple[str, str]]) -> None:
+    """Move a crop to the earliest free seal character its 親字 answers, after the crop before it."""
+    index = {seal["code_point"]: at for at, seal in enumerate(seals)}
+    for before, crop in itertools.pairwise(crops):
+        if crop.get("placed") not in ("label", "variant") or "seal" not in before:
+            continue
+        for at in range(index[before["seal"]["code_point"]] + 1, index[crop["seal"]["code_point"]]):
+            equivalent = seals[at]["equivalent"]
+            if equivalent == crop["parent"] or (crop["placed"] == "variant" and (crop["parent"], equivalent) in pairs):
+                crop["seal"] = seals[at]
+                break
 
 
 def place_repeats(crops: list[dict], seals: list[dict], pairs: set[tuple[str, str]]) -> None:

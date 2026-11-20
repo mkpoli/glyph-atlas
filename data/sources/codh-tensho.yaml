@@ -41,7 +41,7 @@ books:
     crops: 10403
 notes:
   - Books TE00040 to TE00058 (選集漢印分韻, 朝陽閣字鑑) are CC BY-NC-SA 4.0 and are not imported; the others are CC BY-SA 4.0.
-  - 派生した新たなデータセットやソフトウェアを公開する場合は、「原本画像公開元・所蔵者一覧ファイル」を配布物に含めてください (the dataset's page). A release that holds these crops ships `access.providers`.
+  - 派生した新たなデータセットやソフトウェアを公開する場合は、「原本画像公開元・所蔵者一覧ファイル」を配布物に含めてください (the dataset's page). Each imported book's line of that list (title, provider, holder, URL) is in its document's image attribution, which a release prints in ATTRIBUTION.md; the whole list is at `access.providers`.
   - The 親字 follows the form the book prints, mostly the character whose components answer the seal form's, sometimes the later form of the character (凡例 2 and 3). It is kept on each unit as CODH's reading beside the seal character.
   - "For TE00039 CODH cut the head of each entry and the 篆文 and 或体 below it, and left out the 古文 and 籀文 except those the book calls 篆文 (凡例 3). The coordinates are pixels of CODH's page images; the facsimile the 東方學デジタル圖書館 serves is 0.5815 of that size (measured on A0280017.jpg, 2026-11-20)."
   - The first release is of 2021-03-31; version 2 of 2022-05-10 added this book, and 176 characters were corrected on 2022-08-11.
