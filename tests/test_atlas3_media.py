@@ -21,17 +21,21 @@ def module():
     return importlib.import_module("media_map")
 
 
-def test_the_map_grows_by_new_keys_and_refuses_a_key_moved(layout):  # noqa: F811
+def test_the_map_grows_by_new_keys_and_a_mapped_key_keeps_its_place(layout):  # noqa: F811
     root, _publish, _remote = layout
     media_map = module()
     other = "abc" + "2" * 61
     assert media_map.merge([(KEY, A, 10, 5, "image/webp"), (other, B, 0, 7, "image/png")]) == (2, 1)
     assert shard(root) == {"objects": [A, B], "keys": {"1" * 61: [0, 10, 5], "2" * 61: [1, 0, 7, "image/png"]}}
     assert media_map.merge([(KEY, A, 10, 5, "image/webp")]) == (0, 0)
-    with pytest.raises(SystemExit):
-        media_map.merge([("abd" + "0" * 61, C, 0, 1, None), (KEY, A, 11, 5, None)])
-    # The refused run wrote nothing, not even the other shard's new key.
-    assert not (root / "out" / "media" / "abd.json.gz").exists()
+    # A page exported again carries the same image in a new pack: the map keeps the place it serves.
+    fresh = "abd" + "0" * 61
+    _grown, new, placed = media_map.grow([(fresh, C, 0, 1, None), (KEY, C, 11, 5, None)])
+    assert new == [(fresh, C, 0, 1, None)]
+    assert placed == {fresh: [C, 0, 1], KEY: [A, 10, 5]}
+    assert media_map.merge([(fresh, C, 0, 1, None), (KEY, C, 11, 5, None)]) == (1, 1)
+    assert shard(root)["keys"]["1" * 61] == [0, 10, 5]
+    assert C not in shard(root)["objects"]
 
 
 def test_a_shard_left_unsent_goes_with_the_next_send(layout):  # noqa: F811
@@ -61,6 +65,23 @@ def test_a_publish_maps_its_catalogues_images_before_its_bundles(layout, monkeyp
     assert remote.prefixes[0] == "v3/media/" and remote.uploaded[0] == "abc.json.gz"
     assert "v3/pages/" in remote.prefixes[1:]
     assert shard(root)["keys"]["1" * 61] == [0, 0, 9]
+
+
+def test_a_page_exported_again_names_its_images_where_the_map_serves_them(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, _remote = layout
+    image = "exnew"  # the key `unit` names ex:new's image by
+    publish.media_map.merge([(image, A, 10, 9, "image/webp")])
+    path = catalogue(tmp_path / "c.sqlite", [unit("ex:new", "hl:p3", {"x": 0, "y": 0, "w": 10, "h": 10})])
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE media(key, object, offset, size, content_type)")
+    db.execute("INSERT INTO media VALUES(?, ?, 0, 9, 'image/webp')", (image, N))
+    db.commit()
+    run(publish, monkeypatch, path)
+    assert shard(root, "exn") == {"objects": [A], "keys": {"ew": [0, 10, 9]}}
+    # The run's own copy of the one page it wrote.
+    [page] = (root / "out" / "publish").glob("*/pages/*.json.gz")
+    bundle = json.loads(gzip.decompress(page.read_bytes()))
+    assert [c.get("image_place") for c in bundle["crops"]] == [[A, 10, 9]]
 
 
 def test_a_list_naming_a_shard_never_written_stops_the_send(layout):  # noqa: F811

@@ -1367,9 +1367,9 @@ def main():
                      f"{unaddressed[0][0]} in {unaddressed[0][1]}; name the packs by their content first (address_packs.py)")
     media, fresh_media = {}, []
     if "media" in tables:
-        media = {r["key"]: [r["object"], r["offset"], r["size"]] for r in src.execute("SELECT key, object, offset, size FROM media")}
-        # Checked against the map now, merged into the local shards once the run is pending (`deliver`).
-        fresh_media = media_map.grow(src.execute("SELECT key, object, offset, size, content_type FROM media"))[1]
+        # Checked against the map now, merged into the local shards once the run is pending (`deliver`). An
+        # image the map already holds is served from its place there, so its crop names that place.
+        _grown, fresh_media, media = media_map.grow(src.execute("SELECT key, object, offset, size, content_type FROM media"))
 
     def place(data, field):
         key = (data.get(field) or "").rsplit("/", 1)[-1].split(".")[0]
