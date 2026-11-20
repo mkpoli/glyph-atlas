@@ -289,7 +289,9 @@
             ? issue : 'character',
           character: written, ...beside }
       : { revision: data.revision, ...pixels,
-          ...value, issue: resolvedIssue, ...beside }
+          ...value, issue: resolvedIssue, ...beside,
+          // A corpus glyph's match names the character shown, which the review keeps.
+          ...(value.verdict === 'match' && data.origin === 'corpus' && data.written_character ? { shown: data.written_character } : {}) }
     const signature = JSON.stringify(payload)
     if (!submission || submission.signature !== signature) submission = { signature, id: crypto.randomUUID() }
     try {
