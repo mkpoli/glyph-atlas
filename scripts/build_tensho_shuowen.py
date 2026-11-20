@@ -289,16 +289,19 @@ def write_pages(crops: list[dict], folder: Path, target: Path) -> None:
         "# book. page is the number in the file name; sha256, bytes, width and height are those of the image",
         "# the library served when the table was built. Written by scripts/build_tensho_shuowen.py.",
     )
+    rows = []
+    for canvas in canvases:
+        name = canvas.rsplit("/", 1)[-1]
+        data = (folder / name).read_bytes()
+        width, height = Image.open(io.BytesIO(data)).size
+        number = int(re.search(r"A028(\d+)\.jpg$", name).group(1))
+        rows.append([number, canvas, name, hashlib.sha256(data).hexdigest(), len(data), width, height])
+    # Written only once every image has been read, so a missing one leaves the table as it was.
     with target.open("w", encoding="utf-8", newline="") as handle:
         handle.write("\n".join(header) + "\n")
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(PAGE_FIELDS)
-        for canvas in canvases:
-            name = canvas.rsplit("/", 1)[-1]
-            data = (folder / name).read_bytes()
-            width, height = Image.open(io.BytesIO(data)).size
-            number = int(re.search(r"A028(\d+)\.jpg$", name).group(1))
-            writer.writerow([number, canvas, name, hashlib.sha256(data).hexdigest(), len(data), width, height])
+        writer.writerows(rows)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -320,9 +323,9 @@ def main(argv: list[str] | None = None) -> int:
     twice = [point for point, count in taken.items() if count > 1]
     if twice:
         raise SystemExit(f"seal characters placed on two crops: {', '.join(twice[:10])}")
-    write(crops, args.out, args.release)
     if args.pages:
         write_pages(crops, args.pages, args.out.with_name("pages.tsv"))
+    write(crops, args.out, args.release)
     counts = Counter(crop.get("placed", "") for crop in crops)
     print(f"crops            {len(crops):>6}", file=sys.stderr)
     for evidence in ("label", "variant", "order", "repeat", ""):

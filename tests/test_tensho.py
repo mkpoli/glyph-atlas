@@ -61,6 +61,7 @@ def test_collect_puts_each_placed_form_on_its_page(fixture, tmp_path):
     assert (summary["pages"], summary["lines"], summary["units"], summary["left_out"]) == (1, 1, 2, 1)
     page = next(iter(tables.read(tmp_path / "out" / "pages.parquet", Page)))
     assert (page.id, page.image, page.width, page.height) == ("codh-tensho:TE00039:p0017", CANVAS, 400, 300)
+    assert page.seq == 16
     line = next(iter(tables.read(tmp_path / "out" / "lines.parquet", Line)))
     assert (line.id, line.text, line.vertical) == ("codh-tensho:TE00039:p0017:c01", "\U0003D005\U0003D006", True)
     assert line.box.model_dump() == {"x": 350, "y": 50, "w": 21, "h": 130}
@@ -153,3 +154,16 @@ def test_the_command_reports_what_it_wrote(fixture, tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "units" in result.output and "2" in result.output
+
+
+def test_a_box_over_the_edge_is_cut_back_to_the_page(fixture, tmp_path):
+    scans, data, source = fixture
+    held = data / "TE00039" / "characters.tsv"
+    held.write_text(held.read_text(encoding="utf-8").replace("\t700\t100\t41\t61\t", "\t-10\t-4\t41\t61\t"),
+                    encoding="utf-8")
+
+    tensho.collect(scans, tmp_path / "out", data=data, source=source, cache=tmp_path / "cache")
+
+    first = next(iter(tables.read(tmp_path / "out" / "units.parquet", Unit)))
+    assert first.box.model_dump() == {"x": 0, "y": 0, "w": 16, "h": 28}
+    assert tables.Dataset(tmp_path / "out").validate() == []

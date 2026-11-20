@@ -161,7 +161,7 @@ def _pages(document: Document, scans: Path, rows: list[dict[str, str]], book: di
     """The pages by their URL, and for each the size of its image over the size of CODH's."""
     pages: dict[str, Page] = {}
     scale: dict[str, float] = {}
-    for seq, row in enumerate(rows):
+    for row in rows:
         file = scans / row["file"]
         if not file.is_file():
             raise TenshoSourceError(f"{file}: the image of page {row['page']} is not there")
@@ -173,7 +173,7 @@ def _pages(document: Document, scans: Path, rows: list[dict[str, str]], book: di
         pages[row["canvas"]] = Page(
             id=f"{document.id}:p{int(row['page']):04d}",
             document_id=document.id,
-            seq=seq,
+            seq=int(row["page"]) - 1,    # the page number shown is the facsimile's own image number
             image=held.url,
             width=held.width,
             height=held.height,
@@ -186,7 +186,7 @@ def _pages(document: Document, scans: Path, rows: list[dict[str, str]], book: di
 
 def _box(row: dict[str, str], scale: float, page: Page) -> Box:
     """CODH's box in the pixels of the page image, kept inside the page."""
-    left, top = round(int(row["x"]) * scale), round(int(row["y"]) * scale)
+    left, top = max(0, round(int(row["x"]) * scale)), max(0, round(int(row["y"]) * scale))
     right = min(page.width, round((int(row["x"]) + int(row["w"])) * scale))
     bottom = min(page.height, round((int(row["y"]) + int(row["h"])) * scale))
     if right <= left or bottom <= top:
