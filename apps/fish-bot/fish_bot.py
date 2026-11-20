@@ -999,6 +999,9 @@ class Store:
             # A live sync after a backfill is the same event with a better provenance: it may be a
             # call that arrived while the bot was reading older history.
             self.db.execute("UPDATE events SET backfilled=0 WHERE event_id=?", (event_id,))
+        if cursor.rowcount == 0 and media:
+            # A picture logged before links were kept gets its link when the room is read again.
+            self.db.execute("UPDATE events SET media=? WHERE event_id=? AND media=''", (media, event_id))
         self.db.commit()
         return cursor.rowcount == 1
 

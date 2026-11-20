@@ -1793,3 +1793,12 @@ def test_a_digest_that_fails_after_its_first_part_is_not_posted_again(tmp_path):
     with pytest.raises(fish_bot.MatrixError):
         matrix.send = lambda *args, **kwargs: (_ for _ in ()).throw(fish_bot.MatrixError(502, "down"))
         bot._post(ROOM, "short", "fish-d-other")
+
+
+def test_a_picture_logged_without_its_link_gets_it_when_read_again(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    store.add_event("$old", ROOM, "@reader:example", fish_bot.now_ms(), "[image] photo.png", "m.image", backfilled=True)
+    bot.ingest(ROOM, picture("$old", url="mxc://example/old"), backfilled=True)
+    assert store.context(ROOM, fish_bot.now_ms() + 1000, 5)[0]["media"] == "mxc://example/old"
+    bot.ingest(ROOM, picture("$old", url="mxc://example/other"), backfilled=True)
+    assert store.context(ROOM, fish_bot.now_ms() + 1000, 5)[0]["media"] == "mxc://example/old"
