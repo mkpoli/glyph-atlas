@@ -1173,13 +1173,12 @@ def import_tangut_tongyin(
 def import_tensho(
     archive: Annotated[Path, typer.Argument(help="TE00039.zip of the 篆書字体データセット")],
     out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/tensho"),
-    crops: Annotated[Path | None, typer.Option(help="directory the crops are extracted below")] = None,
 ) -> None:
     """Import the small seal forms of 説文解字 (陳昌治 edition) from CODH's 篆書字体データセット."""
     from .importers import tensho
 
     try:
-        summary = tensho.collect(archive, out, crops=crops)
+        summary = tensho.collect(archive, out)
     except tensho.TenshoSourceError as error:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(1) from error

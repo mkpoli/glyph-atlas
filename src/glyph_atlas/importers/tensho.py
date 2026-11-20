@@ -8,7 +8,8 @@ shows, so a crop comes with its seal code point.
 The book is one document. Every placed crop is a unit with no page and no box, placed by rule and
 so `machine` until a reviewer confirms it: its image is the
 file CODH cut, which is larger than the same box on the facsimile the 東方學デジタル圖書館 serves. The
-unit's character is the seal character; `upstream` keeps CODH's 親字, the Han character Unicode
+unit's code point is the seal character's and its source string CODH's 親字; `upstream` keeps the
+親字 again, the Han character Unicode
 gives as its equivalent (`kSEAL_MCJK`), its place in the edition (`kSEAL_CCZSrc`), the page of the
 facsimile and the box on CODH's page image, and the evidence that placed it. A crop the table places
 on no seal character is left out and counted.
@@ -88,13 +89,18 @@ def collect(
 
     document = _document(config, entry)
     units, left_out = [], 0
+    rows = read_tsv(Path(data) / book / "characters.tsv")
+    if len(rows) != int(entry["crops"]):
+        raise TenshoSourceError(f"{data}: {len(rows)} rows for the {entry['crops']} crops of {book}")
     with zipfile.ZipFile(archive) as held:
-        for row in read_tsv(Path(data) / book / "characters.tsv"):
+        for row in rows:
             if not row["placed"]:
                 left_out += 1
                 continue
             if len(row["char"]) != 1 or ord(row["char"]) not in SEAL:
                 raise TenshoSourceError(f"row {row['seq']}: {row['char']!r} is not a small seal character")
+            if row["code_point"] != f"U+{ord(row['char']):04X}":
+                raise TenshoSourceError(f"row {row['seq']}: {row['code_point']} is not the code point of its character")
             member = member_of(book, row)
             try:
                 content = held.read(member)
@@ -103,7 +109,7 @@ def collect(
             if hashlib.sha256(content).hexdigest() != row["sha256"]:
                 raise TenshoSourceError(f"{member}: not the crop that the table pins")
             target = Path(crops) / member
-            if not target.is_file() or target.stat().st_size != len(content):
+            if not target.is_file() or target.read_bytes() != content:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 staging = target.with_name(f".{target.name}")
                 staging.write_bytes(content)
@@ -145,7 +151,7 @@ def _unit(document: Document, archive: str, member: str, row: dict[str, str]) ->
         page_id=None,
         crop=f"{archive}!{member}",
         crop_sha256=row["sha256"],
-        text_source=row["char"],
+        text_source=row["parent"],
         unicode=row["code_point"],
         classification=Classification.IDENTIFIED,
         script=Script.SEAL,
@@ -178,7 +184,9 @@ def _document(config: dict[str, Any], book: dict[str, Any]) -> Document:
     rights = Rights(
         licence=Licence(config["licence"]),
         holder=book.get("holder"),
-        attribution=f"{config['attribution']}; {book['holder']}所蔵, {book['provider']}",
+        # The dataset asks a derived release to name each book's image provider and holder; this
+        # line reaches the release's ATTRIBUTION.md.
+        attribution=f"{config['attribution']}; 『{book['work']}』 {book['provider']}（{book['holder']}） {book['url']}",
         evidence=config.get("licence_evidence") or config["url"],
         checked=_checked(config),
     )
@@ -194,7 +202,7 @@ def _document(config: dict[str, Any], book: dict[str, Any]) -> Document:
     return Document(
         id=f"{SOURCE_ID}:{book['id']}",
         title=book["title"],
-        source_refs={SOURCE_ID: book["id"]},
+        source_refs={SOURCE_ID: book["id"], UNICODE_ID: "SealSources.txt 18.0.0"},
         holder=book.get("holder"),
         production="printed/woodblock",
         origin="china",

@@ -49,6 +49,7 @@ def fixture(tmp_path):
                          digests[2]])
     record = yaml.safe_load(tensho.DEFAULT_SOURCE.read_text(encoding="utf-8"))
     record["books"][0]["zip_sha256"] = hashlib.sha256(archive.read_bytes()).hexdigest()
+    record["books"][0]["crops"] = 3
     source = tmp_path / "codh-tensho.yaml"
     source.write_text(yaml.safe_dump(record, allow_unicode=True), encoding="utf-8")
     return archive, data, source
@@ -68,9 +69,11 @@ def test_collect_writes_a_unit_for_each_placed_crop(fixture, tmp_path):
     assert (document.dating[0].start, document.dating[0].kind) == (1873, "publication")
     assert document.image_rights.licence is Licence.CC_BY_SA_4
     assert "doi:10.20676/00000390" in document.image_rights.attribution
+    assert "東方學デジタル圖書館（京都大学人文科学研究所）" in document.image_rights.attribution
+    assert set(document.source_refs) == {"codh-tensho", "unicode-ucd"}
     units = list(tables.read(tmp_path / "out" / "units.parquet", Unit))
     first = units[0]
-    assert (first.id, first.unicode, first.text_source) == ("codh-tensho:TE00039:00005", "U+3D005", "\U0003D005")
+    assert (first.id, first.unicode, first.text_source) == ("codh-tensho:TE00039:00005", "U+3D005", "吏")
     assert (first.script, first.style, first.page_id, first.box) == (Script.SEAL, "seal", None, None)
     assert first.crop == "TE00039.zip!TE00039/characters/U+540F/U+540F_TE00039_0001_1_X3435_Y0806.jpg"
     assert (first.upstream["parent"], first.upstream["equivalent"], first.upstream["ccz"]) == ("吏", "叓", "C-00006")
@@ -106,6 +109,26 @@ def test_collect_refuses_a_crop_the_table_does_not_pin(fixture, tmp_path):
         tensho.collect(archive, tmp_path / "out", data=data, source=source, crops=tmp_path / "crops")
 
 
+def test_collect_replaces_a_stale_crop_file(fixture, tmp_path):
+    held = tmp_path / "crops" / "TE00039/characters/U+540F/U+540F_TE00039_0001_1_X3435_Y0806.jpg"
+    collect(fixture, tmp_path)
+    held.write_bytes(bytes(len(held.read_bytes())))
+
+    collect(fixture, tmp_path)
+
+    unit = next(iter(tables.read(tmp_path / "out" / "units.parquet", Unit)))
+    assert hashlib.sha256(held.read_bytes()).hexdigest() == unit.crop_sha256
+
+
+def test_collect_refuses_a_code_point_that_is_not_the_character(fixture, tmp_path):
+    archive, data, source = fixture
+    table = data / "TE00039" / "characters.tsv"
+    table.write_text(table.read_text(encoding="utf-8").replace("U+3D005", "U+0041"), encoding="utf-8")
+
+    with pytest.raises(tensho.TenshoSourceError, match="not the code point"):
+        tensho.collect(archive, tmp_path / "out", data=data, source=source, crops=tmp_path / "crops")
+
+
 def test_the_table_places_each_seal_character_once_and_again_only_on_a_repeat():
     rows = tensho.read_tsv(tensho.DEFAULT_DATA / "TE00039" / "characters.tsv")
     placed = [row for row in rows if row["placed"]]
@@ -123,9 +146,16 @@ def test_the_command_reports_what_it_wrote(fixture, tmp_path, monkeypatch):
     archive, data, source = fixture
     monkeypatch.setattr(tensho, "DEFAULT_DATA", data)
     monkeypatch.setattr(tensho, "DEFAULT_SOURCE", source)
+    monkeypatch.setattr(tensho, "DEFAULT_CROPS", tmp_path / "crops")
 
-    result = CliRunner().invoke(app, ["import", "tensho", str(archive), "--out", str(tmp_path / "out"),
-                                      "--crops", str(tmp_path / "crops")])
+    result = CliRunner().invoke(app, ["import", "tensho", str(archive), "--out", str(tmp_path / "out")])
 
     assert result.exit_code == 0, result.output
     assert "units" in result.output and "2" in result.output
+
+
+def test_a_crop_takes_the_head_of_an_entry_over_its_other_forms():
+    rows = {row["seq"]: row for row in tensho.read_tsv(tensho.DEFAULT_DATA / "TE00039" / "characters.tsv")}
+
+    assert (rows["8785"]["parent"], rows["8785"]["code_point"]) == ("民", "U+3F54D")
+    assert (rows["9"]["parent"], rows["9"]["code_point"], rows["9"]["placed"]) == ("旁", "U+3D00B", "variant")
