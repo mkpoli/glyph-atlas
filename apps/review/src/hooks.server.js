@@ -48,7 +48,7 @@ async function api(event) {
 }
 
 /** The files served beside the pages, which have no language. */
-const UNLOCALIZED = /^\/(robots\.txt|\.well-known\/matrix\/(server|client)|sitemap\.xml|sitemaps\/pages\.xml|sitemaps\/characters\/[^/]+\.xml)$/
+const UNLOCALIZED = /^\/(robots\.txt|\.well-known\/matrix\/(server|client)|sitemap\.xml|sitemaps\/(pages|characters)\/[^/]+\.xml)$/
 
 /** The language a reader wants: the one they chose, else the first their browser asks for that exists. */
 function preferred(event) {
