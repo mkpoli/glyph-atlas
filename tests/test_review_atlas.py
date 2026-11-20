@@ -130,14 +130,15 @@ def test_catalogue_files_labels_under_graphemes_and_filters_by_one(dataset):
 
 def test_character_group_follows_the_script_of_the_first_character():
     groups = {char: atlas_module.character_group(Unit(id=char, text_source=char))
-              for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', '𗀀', '𘬀', 'A')}
+              for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', '𗀀', '𘬀', '\U0003D000', 'A')}
     assert groups == {'あ': 'kana', 'ア': 'kana', '𛀁': 'kana', '仮': 'kanji', 'ㅿ': 'hangul', 'ᄫ': 'hangul',
                       '한': 'hangul', '㉠': 'hangul', '': 'gugyeol', '𗀀': 'tangut', '𘬀': 'other',
-                      'A': 'other'}
+                      '\U0003D000': 'seal', 'A': 'other'}
 
 
 def test_an_unread_unit_is_grouped_by_the_script_it_was_filed_under():
     assert atlas_module.character_group(Unit(id='box', script='tangut')) == 'tangut'
+    assert atlas_module.character_group(Unit(id='box', script='seal')) == 'seal'
     assert atlas_module.character_group(Unit(id='box', script='han')) == 'kanji'
     assert atlas_module.character_group(Unit(id='box')) == 'other'
 
@@ -2122,8 +2123,8 @@ def test_group_stats_count_each_script_group_and_review_state(dataset):
     client = TestClient(create_app(dataset))
     body = client.get('/atlas/groups/stats').json()
     by_group = {entry['group']: entry for entry in body['groups']}
-    assert list(by_group) == ['all', 'kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other']
-    total = sum(by_group[g]['total'] for g in ('kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'))
+    assert list(by_group) == ['all', 'kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal', 'other']
+    total = sum(by_group[g]['total'] for g in ('kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal', 'other'))
     assert by_group['all']['total'] == total > 0
     assert by_group['all']['reviewed'] == by_group['all']['checked'] + by_group['all']['need_fixing']
     item = client.get('/atlas?limit=1').json()['items'][0]

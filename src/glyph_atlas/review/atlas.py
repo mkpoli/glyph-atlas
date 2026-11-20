@@ -184,7 +184,7 @@ def review_priority(unit: Unit) -> int:
 
 #: The gallery group of a unit no one has read yet, by the script it was filed under.
 SCRIPT_GROUPS = {Script.HIRAGANA: "kana", Script.HENTAIGANA: "kana", Script.KATAKANA: "kana", Script.HAN: "kanji",
-                 Script.HANGUL: "hangul", Script.GUGYEOL: "gugyeol", Script.TANGUT: "tangut"}
+                 Script.HANGUL: "hangul", Script.GUGYEOL: "gugyeol", Script.TANGUT: "tangut", Script.SEAL: "seal"}
 
 
 def unread(unit: Unit) -> bool:
@@ -209,6 +209,9 @@ def character_group(unit: Unit) -> str:
     # Python names no Tangut ideograph, so the Tangut blocks decide (Khitan lies between them).
     if char and (ord(char) == 0x16FE0 or 0x17000 <= ord(char) <= 0x18AFF or 0x18D00 <= ord(char) <= 0x18DFF):
         return "tangut"
+    # Small seal is one block, which Python may not name either.
+    if char and 0x3D000 <= ord(char) <= 0x3FC3F:
+        return "seal"
     return "kanji" if name.startswith("CJK") else "other"
 
 
@@ -981,7 +984,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
     def catalogue(
         character: str | None = None,
         q: str | None = None,
-        group: Literal["all", "kana", "kanji", "hangul", "gugyeol", "tangut"] = "all",
+        group: Literal["all", "kana", "kanji", "hangul", "gugyeol", "tangut", "seal"] = "all",
         state: Literal["all", "pending", "seen", "checked", "flagged", "hard", "skipped", "attention"] = "all",
         reviewer: str | None = Query(default=None, max_length=128),
         purpose: Literal["browse", "review"] = "browse",
@@ -1086,11 +1089,11 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
 
     @api.get("/atlas/groups/stats")
     def group_stats() -> dict:
-        """Crop counts per script group (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `other`)."""
+        """Crop counts per script group (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `seal`, `other`)."""
         generation = (file_stamp(store.path), file_stamp(Path(str(store.path) + "-wal")),
                       file_stamp(production_metadata.OVERRIDES))
         units, all_states, *_ = catalogue_snapshot(generation)
-        order = ("all", "kana", "kanji", "hangul", "gugyeol", "tangut", "other")
+        order = ("all", "kana", "kanji", "hangul", "gugyeol", "tangut", "seal", "other")
         empty_scope = lambda: {"total": 0, "pending": 0, "seen": 0, "checked": 0, "flagged": 0, "hard": 0, "withheld": 0}
         buckets = {name: empty_scope() for name in order}
         for u, _ in units:

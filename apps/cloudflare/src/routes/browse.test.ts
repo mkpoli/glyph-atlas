@@ -197,6 +197,8 @@ describe('the homepage gallery', () => {
     sampled(objects, c, records, pub);
     expect((await gallery(env, ctx, new URLSearchParams({ group: 'hangul' }))).items.map((i: any) => i.source_id)).toEqual(['codh:7']);
     expect((await gallery(env, ctx, new URLSearchParams({ group: 'gugyeol' }))).items).toEqual([]);
+    // The publication's index names no pool for small seal.
+    expect((await gallery(env, ctx, new URLSearchParams({ group: 'seal' }))).items).toEqual([]);
     expect((await gallery(env, ctx, new URLSearchParams({ group: 'kanji', limit: '3' }))).items.map((i: any) => i.source_id)).toEqual(['codh:8']);
     db.exec(`UPDATE crops SET char=1 WHERE id=${cropId(c, 8)}`);
     expect((await gallery(env, ctx, new URLSearchParams({ group: 'kanji' }))).items).toEqual([]);

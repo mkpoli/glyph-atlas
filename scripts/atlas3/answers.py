@@ -125,7 +125,7 @@ DECADE = "CASE WHEN year IS NULL THEN NULL WHEN year < 0 THEN (year - 9) / 10 * 
 SHUFFLE_RANGE = 2**31
 SAMPLE_RANGE = SHUFFLE_RANGE // 64
 SAMPLE_SHARDS = 128
-WHOLE = ("hangul", "gugyeol", "tangut")
+WHOLE = ("hangul", "gugyeol", "tangut", "seal")
 # A WHOLE group's pool keeps this many glyphs of each character. With the ko.wikisource scans a
 # Hangul pool of every glyph would hold 467,627, 23,815 of them 이; at 32 it holds 32,810, about the
 # size of the 1-in-64 sample, and still holds each of its 2,247 characters.

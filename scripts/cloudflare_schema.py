@@ -62,6 +62,8 @@ GUGYEOL = ((0xF67E, 0xF77C),)
 # Tangut has a Unicode script property of its own (Scripts.txt), which `categoryOf` tests; no row
 # written before it was a category held a Tangut label, so no migration names it.
 TANGUT = ((0x16FE0, 0x16FE0), (0x17000, 0x18AFF), (0x18D00, 0x18D20), (0x18D80, 0x18DF2))
+# Small seal is the Seal block of Unicode 18.0, one range.
+SEAL = ((0x3D000, 0x3FC3F),)
 
 
 # A published corpus row, in the order `corpus_upsert` takes it.
@@ -144,6 +146,8 @@ def category_of(label: str | None) -> str:
         return "hangul"
     if any(a <= point <= b for a, b in TANGUT):
         return "tangut"
+    if any(a <= point <= b for a, b in SEAL):
+        return "seal"
     return "gugyeol" if any(a <= point <= b for a, b in GUGYEOL) else "other"
 
 

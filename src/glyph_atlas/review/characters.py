@@ -209,7 +209,7 @@ def kind_of(character: Character) -> str:
     if character.ligature:
         return "ligature"
     script = str(character.script)
-    return script if script in ("han", "hangul", "gugyeol", "tangut") else "kana"
+    return script if script in ("han", "hangul", "gugyeol", "tangut", "seal") else "kana"
 
 
 def _row(character: Character, counts: dict[str, int], *, reason: str | None = None) -> dict[str, Any]:

@@ -37,7 +37,7 @@
   let figured = $state({})
   $effect(() => { for (const part of parts) if (part.figure && !figured[part.text]) figureFamilies(part.text).then(families => { figured[part.text] = families }, () => {}) })
   const face = name => name ? `"${name}"` : null
-  const language = key => lang || (key === 'hangul' || key === 'gugyeol' ? 'ko' : key === 'tangut' ? 'txg' : 'ja')
+  const language = key => lang || (key === 'hangul' || key === 'gugyeol' ? 'ko' : key === 'tangut' ? 'txg' : key === 'seal' ? 'lzh' : 'ja')
 </script>
 
 <span class="script-text" role="img" aria-label={description}>{#each parts as part, index (index)}{#if drawings[index]}<span class="script-char ids-drawing" data-script={part.key} lang={language(part.key)} title={titled ? `${part.said} · ${part.label}` : undefined} aria-hidden="true" style:--drawing={`url("${drawings[index]}")`}><span class="ids-copy">{part.text}</span></span>{:else}<span class="script-char" class:ids-text={part.described} class:figure={figured[part.text]} style:--figure-sans={face(figured[part.text]?.sans)} style:--figure-serif={face(figured[part.text]?.serif)} style:font-family={part.drawn ? DRAWN_FONT : null} data-script={part.key} lang={language(part.key)} title={titled ? `${part.said} · ${part.label}` : undefined} aria-hidden="true">{part.text}</span>{/if}{/each}</span>
