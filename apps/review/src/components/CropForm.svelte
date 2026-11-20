@@ -23,6 +23,7 @@
   import StructureDialog from './StructureDialog.svelte'
   import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
   import { standing } from '../lib/structures.js'
+  import { withoutDescribed } from '../lib/formOffers.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
@@ -51,8 +52,10 @@
       })
   })
   const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], related: [], derived: [], linked: [], grapheme: null, alike: [] })
-  // The grapheme's forms and related characters: its members, its variants, and its related characters.
-  const forms = $derived([...listed.members, ...listed.variants, ...listed.related].filter(form => !others || form.char !== current))
+  // The grapheme's forms and related characters: its members, its variants, and its related characters,
+  // each once: a description of one of them is that character.
+  const forms = $derived(withoutDescribed([...listed.members, ...listed.variants, ...listed.related], structureOf, written, [current, chosen])
+    .filter(form => !others || form.char !== current))
   // The bar: the grapheme's forms and related characters, the crop's own form when it is none of them
   // (a form drawn as the bare character keeps its regions), and what the picker added.
   const bar = $derived.by(() => {

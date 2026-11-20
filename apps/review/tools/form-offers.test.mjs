@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { notoDraws, sortForms } from '../src/lib/formOffers.js'
+import { notoDraws, sortForms, withoutDescribed } from '../src/lib/formOffers.js'
 
 // 邦's five Moji_Joho figures as the MJ figure list gives them; MJ026242 is the default.
 const bangFigures = [['\u{E0103}', 'MJ026242', true], ['\u{E0104}', 'MJ026246', false], ['\u{E0105}', 'MJ026244', false]]
@@ -31,5 +31,30 @@ describe('form offers', () => {
   it('knows the ranges both faces take from Noto CJK JP', () => {
     expect(['㐀', '䶵', '一', '鿯'].map(notoDraws)).toEqual([true, true, true, true])
     expect(['䶶', '鿰', '𠀀', '邦\u{E0103}'].map(notoDraws)).toEqual([false, false, false, false])
+  })
+
+  // 臭's bar and the 構形 /layers/structures gives its forms.
+  const chou = [{ char: '臭' }, { char: '臭\u{E0103}', mj: 'MJ030291' }, { char: '⿱自犬', regions: 'GHTKPV' }, { char: '臰' },
+    { char: '⿱自大', regions: 'J' }, { char: '𦤀' }]
+  const chouStructures = new Map([['臭', { label: '⿱自犬' }], ['臭\u{E0103}', { label: '⿱自犬' }], ['⿱自犬', { label: '⿱自犬' }],
+    ['臰', { label: '⿱自死' }], ['⿱自大', { label: '⿱自大' }], ['𦤀', { label: '⿱自大' }]])
+  const chars = forms => forms.map(form => form.char)
+
+  it('offers an encoded character in place of its description', () => {
+    expect(chars(withoutDescribed(chou, chouStructures, '臭'))).toEqual(['臭', '臭\u{E0103}', '⿱自犬', '臰', '𦤀'])
+  })
+
+  it("keeps the shapes of the crop's character, which its chip draws one way", () => {
+    // 臭 is filed under ⿱自犬 but drawn as ⿱自大; nor does its figure stand for a description.
+    expect(chars(withoutDescribed(chou.filter(form => form.char !== '𦤀'), chouStructures, '臭'))).toContain('⿱自犬')
+  })
+
+  it("keeps the crop's own form and the chosen one", () => {
+    expect(chars(withoutDescribed(chou, chouStructures, '臭', ['⿱自大']))).toContain('⿱自大')
+  })
+
+  it('reads a folded 構形 as the one the character is built as', () => {
+    const structures = new Map([['說', { label: '⿰言兑', part: { label: '⿰言兌' } }]])
+    expect(chars(withoutDescribed([{ char: '說' }, { char: '⿰言兌' }, { char: '⿰言兑' }], structures, '説'))).toEqual(['說', '⿰言兑'])
   })
 })
