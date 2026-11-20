@@ -1668,3 +1668,36 @@ def test_only_a_real_new_picture_counts_for_reading_along():
 def test_a_picture_link_cannot_climb_out_of_the_media_api():
     with pytest.raises(fish_bot.MatrixError):
         fish_bot.Matrix("http://127.0.0.1:1", "token").thumbnail("mxc://../config")
+
+
+def reply(body, target, *, event_id="$reply", sender="@discord_1:example"):
+    return event(body, event_id=event_id, sender=sender, **{"m.relates_to": {"m.in_reply_to": {"event_id": target}}})
+
+
+def test_a_reply_to_her_message_is_a_call(tmp_path):
+    bot, matrix, store = make_bot(tmp_path, act=act("不客氣～"))
+    bot.ingest(ROOM, event("오늘의 소식", sender=USER, event_id="$digest"), backfilled=False)
+    thanks = reply("고마워요 딥식이!", "$digest")
+    bot.ingest(ROOM, thanks, backfilled=False)
+    bot.answer(ROOM, thanks)
+    assert bot.deepseek.turns[0][0] == "called" and matrix.sent[0][1]["body"] == "不客氣～"
+    assert store.outcome("$reply")[0] == "chatted"
+
+
+def test_a_reply_to_someone_else_is_not_a_call(tmp_path):
+    bot, matrix, _ = make_bot(tmp_path)
+    bot.ingest(ROOM, event("hello", sender="@other:example", event_id="$other"), backfilled=False)
+    answer_to_other = reply("thanks!", "$other")
+    bot.answer(ROOM, answer_to_other)
+    assert bot.deepseek.turns == [] and matrix.sent == []
+
+
+def test_a_reply_to_her_message_outside_the_log_is_checked_with_the_homeserver(tmp_path):
+    matrix = FakeMatrix()
+    asked = []
+    matrix.event = lambda room_id, event_id: asked.append(event_id) or {"sender": USER}
+    bot, _, _ = make_bot(tmp_path, matrix=matrix)
+    late = reply("還記得這條嗎", "$old")
+    bot.ingest(ROOM, late, backfilled=False)
+    bot.answer(ROOM, late)
+    assert asked == ["$old"] and bot.deepseek.turns[0][0] == "called"
