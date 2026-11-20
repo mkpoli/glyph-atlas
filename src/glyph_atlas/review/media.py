@@ -62,10 +62,11 @@ class MediaCache:
         finally:
             temp.unlink(missing_ok=True)
 
-    def local(self, path, box=None, *, context=False, edge=None, exact=False, quality=None, write=True):
+    def local(self, path, box=None, *, context=False, edge=None, exact=False, quality=None, scope=None, write=True):
         """The display crop's URL, its key naming the source file, its stamp and the box; with `write`
         false its descriptor is not written, so the key can be counted without rendering. `quality` is
-        the WebP quality of an image that is not cut at the usual one."""
+        the WebP quality of an image that is not cut at the usual one. `scope` names what the image is
+        kept for, so that two holders of one file have an image each and either can give its own up."""
         path = Path(path)
         stat = path.stat()
         path = _resolved(str(path), stat.st_dev, stat.st_ino)
@@ -83,6 +84,8 @@ class MediaCache:
                     spec["exact"] = True
                 if quality is not None:
                     spec["quality"] = quality
+                if scope is not None:
+                    spec["scope"] = scope
                 return self._register(spec, write)
         raise ValueError("display crop outside registered image roots")
 

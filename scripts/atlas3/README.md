@@ -62,8 +62,8 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   prints how many published pages it rewrites for their neighbours. Links a catalogue carries are dropped.
 - A page's `photo` is its hosted photograph, an image of the catalogue's `media` like a crop's
   (`export_cloudflare.PagePhotos`), which the page view shows where no IIIF service serves the page. A page
-  whose crops are all withdrawn loses the fact, and the image leaves the key map unless another page of
-  the book shows it.
+  with no live crop left, retired or withdrawn, loses the fact; an image a page stops naming leaves the
+  key map unless another page of the book shows it.
 - Review-owned columns (`char`, `state`, `style`, `quiz`, `kind`, `flags`) change only when the
   catalogue's revision is at least the published one, and in D1 only while the crop's revision is
   unchanged; the result is read back. A corpus glyph's come only from its review overlay

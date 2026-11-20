@@ -156,7 +156,8 @@ with the page's credit. A document is listed only when all of these hold:
   default: the scans of 俄藏黑水城文獻 supplied by a reader are not listed.
 
 Withdrawing a document (`data/vocab/withdrawn.yaml`) takes its page photographs off the site with
-its crops. Listed so far: `codh-tensho:TE00039`, the 東方學デジタル圖書館 facsimile of the 陳昌治
+its crops, and so does taking it off the list: a page that stops naming a photograph, or has no crop
+left, gives it up at the next publication. Listed so far: `codh-tensho:TE00039`, the 東方學デジタル圖書館 facsimile of the 陳昌治
 edition of 説文解字 (同治十二年, 1873), whose pages state no terms
 (http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/html/top.html, read 2026-11-20).
 

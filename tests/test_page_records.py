@@ -114,6 +114,9 @@ def test_a_page_of_a_hosted_document_is_packed_whole_and_named_in_its_record(scr
         assert (picture.format, picture.size) == ("WEBP", (239, 200))
     # The same page asked again is the same image, so a second export packs nothing new.
     assert photo(scan, book()) == url
+    # Another document photographed from the same file has a photograph of its own.
+    other = export.PagePhotos(MediaCache(), Packed(), hosted={"twin"})(scan.model_copy(update={"document_id": "twin"}), book())
+    assert other and other != url
     db = sqlite3.connect(":memory:")
     db.executescript(SCHEMA)
     export.page_rows(db, ["a"], {"a": unit("a", "doc:0")}, {"doc:0": scan}, {"doc": book()}, photo)

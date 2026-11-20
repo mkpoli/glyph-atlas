@@ -256,7 +256,9 @@ class PagePhotos:
         path = page_file(page)
         if path is None:
             return None
-        url = self.media.local(path, edge=PAGE_PHOTO_EDGE, quality=PAGE_PHOTO_QUALITY)
+        # The key names the document, so withdrawing one document never takes the photograph of another
+        # that was photographed from the same file.
+        url = self.media.local(path, edge=PAGE_PHOTO_EDGE, quality=PAGE_PHOTO_QUALITY, scope=page.document_id)
         key = url.rsplit("/", 1)[-1].removesuffix(".webp")
         self.packs.add(key, self.media.materialize(key))
         return url
