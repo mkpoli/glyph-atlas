@@ -1700,4 +1700,18 @@ def test_a_reply_to_her_message_outside_the_log_is_checked_with_the_homeserver(t
     late = reply("還記得這條嗎", "$old")
     bot.ingest(ROOM, late, backfilled=False)
     bot.answer(ROOM, late)
+    bot.notice(ROOM, late)
+    bot.answer(ROOM, reply("還有這條", "$old", event_id="$again"))
     assert asked == ["$old"] and bot.deepseek.turns[0][0] == "called"
+    bot.answer(ROOM, reply("relay", "$other-old", sender="@discordbot:glyphatlas.org"))
+    assert asked == ["$old"], "no lookup for a bot's reply"
+
+
+def test_the_first_message_of_a_thread_on_her_post_is_not_a_reply_to_her(tmp_path):
+    bot, matrix, _ = make_bot(tmp_path)
+    bot.ingest(ROOM, event("今日のまとめ", sender=USER, event_id="$digest"), backfilled=False)
+    threaded = event("@alice what do you think?", event_id="$t", **{"m.relates_to": {
+        "rel_type": "m.thread", "event_id": "$digest", "is_falling_back": True,
+        "m.in_reply_to": {"event_id": "$digest"}}})
+    bot.answer(ROOM, threaded)
+    assert bot.deepseek.turns == [] and matrix.sent == []

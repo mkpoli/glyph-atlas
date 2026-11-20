@@ -718,7 +718,7 @@ class Matrix:
 
     def event(self, room_id: str, event_id: str) -> dict[str, Any]:
         return self.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room_id, safe='')}"
-                                f"/event/{urllib.parse.quote(event_id, safe='')}")
+                                f"/event/{urllib.parse.quote(event_id, safe='')}", timeout=10)
 
     def member_name(self, room_id: str, user_id: str) -> str:
         path = (f"/_matrix/client/v3/rooms/{urllib.parse.quote(room_id, safe='')}"
@@ -2592,9 +2592,12 @@ def _picture(event: dict[str, Any], user_id: str, ignored: Iterable[str] = ()) -
 
 
 def reply_target(event: dict[str, Any]) -> str | None:
-    """The event a message replies to, if it is a reply."""
+    """The event a message replies to, if it is a reply. The first message of a thread carries a
+    reply to the thread's root only as a fallback for clients without threads, which is no reply."""
     content = event.get("content")
     relates = content.get("m.relates_to") if isinstance(content, dict) else None
+    if isinstance(relates, dict) and relates.get("rel_type") == "m.thread" and relates.get("is_falling_back"):
+        return None
     reply = relates.get("m.in_reply_to") if isinstance(relates, dict) else None
     target = reply.get("event_id") if isinstance(reply, dict) else None
     return target if isinstance(target, str) else None
@@ -2693,6 +2696,7 @@ class Bot:
         self._alias_failed: dict[str, float] = {}
         self._digest_tried: dict[str, float] = {}
         self._memory_due = 0.0
+        self._reply_senders: dict[str, str] = {}
         self._images: dict[str, str] = {}
         self._memory_failures: dict[str, tuple[str, int, float]] = {}
         self._heard_at = 0.0
@@ -2907,18 +2911,21 @@ class Bot:
             self._tell(room_id, event_id, "I couldn't read that discussion just now. Try calling me again in a minute.")
 
     def _replies_to_me(self, room_id: str, event: dict[str, Any]) -> bool:
-        """Whether a message replies to one of the bot's own, by the log or else by asking the
-        homeserver once."""
+        """Whether a person's message replies to one of the bot's own, by the log or else by asking
+        the homeserver once per replied-to event."""
         target = reply_target(event)
-        if target is None:
+        if target is None or human_message(event, self.user_id, self.config.ignored_senders) is None:
             return False
-        sender = self.store.sender_of(target)
+        sender = self.store.sender_of(target) or self._reply_senders.get(target)
         if sender is None:
             try:
                 sender = str(self.matrix.event(room_id, target).get("sender") or "")
             except MatrixError as error:
                 log.info("reading %s: %s", target, error)
-                return False
+                sender = ""
+            self._reply_senders[target] = sender
+            while len(self._reply_senders) > 512:
+                self._reply_senders.pop(next(iter(self._reply_senders)))
         return sender == self.user_id
 
     def notice(self, room_id: str, event: dict[str, Any]) -> None:
