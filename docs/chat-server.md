@@ -307,6 +307,16 @@ notes and group summaries (https://github.com/MaiM-with-u/MaiBot, read at b7f368
 Red-DiscordBot's `mydata forgetme` (https://docs.discord.red/en/latest/red_core_data_statement.html)
 are the group-bot precedents.
 
+When someone calls her with a question she cannot answer from the chat, she can look it up first:
+the web through DeepSeek's Search and Fetch APIs (run on DeepSeek's side, so the homeserver's
+loopback address is out of reach; $0.75 per 1,000 requests,
+https://api-docs.deepseek.com/guides/search/), code, issues, pull requests and commits in the
+community's repositories through GitHub, and her own memory of every room. She gets up to four
+rounds of lookups per answer and `[lookup] per_hour` (120) across the bot; unasked turns never look
+anything up. MemGPT lets a model page through its memory with tools and reports that it often stops
+early (Packer et al., [arXiv 2310.08560](https://arxiv.org/abs/2310.08560), 2023), so the recalled
+memory still comes with every turn.
+
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
 2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
 checks each against the hash in `STICKERS` and uploads it to the homeserver once; a sticker whose
@@ -357,8 +367,9 @@ Fill them:
   Set the account's display name to `大肥魚`.
 - `deepseek-key` — the API key for the model, starting `sk-`.
 - `github-token` — a fine-grained token for `mkpoli/glyph-atlas` with **Issues: read and write** and
-  **Metadata: read-only**. No other repository or permission is needed. Without this file the bot
-  still reads and decides, but it does not file.
+  **Metadata: read-only**. No other repository or permission is needed: the same token reads the
+  public repositories for lookups. Without this file the bot still chats and looks up the web, but it
+  neither files nor reads GitHub.
 
 Check the homeserver, the model key and GitHub read access before enabling the unit:
 
