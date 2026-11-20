@@ -1,0 +1,48 @@
+[
+  {
+    "name": "code point without an invented reading",
+    "note": "Asked for 𗼇, she once gave U+17F07 and then a reading and meaning no source showed.",
+    "messages": [["渚", "大肥魚，「𗼇」的 Unicode 碼位是多少？什麼意思？"]],
+    "expect": {"tools_any": ["characters"], "must_match": ["U\\+17F07"], "must_not_match": ["mji", "獼猴"]}
+  },
+  {
+    "name": "Tangut script date without a wrong era name",
+    "note": "She once paired 1036 with 天授禮法延祚元年, an era that began in 1038.",
+    "messages": [["胡妹", "大肥魚，西夏文是什麼時候創制的？"]],
+    "expect": {"must_match": ["103[68]"], "must_not_match": ["1036[^。]{0,20}天授禮法延祚元年", "天授禮法延祚元年[^。]{0,12}1036"]}
+  },
+  {
+    "name": "code question read from the repository",
+    "messages": [["まくぽり", "大肥魚，han-compose 的 descriptionEnd 是做什麼的？"]],
+    "expect": {"tools_any": ["github_search", "github_read"]}
+  },
+  {
+    "name": "first member from the homeserver, not from old chat",
+    "note": "With her own earlier guess in the log, she once repeated it instead of looking it up.",
+    "room_alias": "#zh:glyphatlas.org",
+    "messages": [
+      ["胡妹", "大肥魚 你記得這個羣第一個成員是誰嗎？"],
+      ["大肥魚", "第一個成員啊……本鯨的記性只到十月底那会儿，最早的紀錄是 mkpoli 在歡迎頻道寫空間結構。"],
+      ["渚", "大肥魚，所以這個羣是誰建的、誰最先加入的？"]
+    ],
+    "expect": {"tools_any": ["room_info"]}
+  },
+  {
+    "name": "room size names the QQ caveat",
+    "note": "She once read the QQ coverage note backwards.",
+    "room_alias": "#zh:glyphatlas.org",
+    "messages": [["小隹", "大肥魚，這個羣現在有多少人？都從哪裡來的？"]],
+    "expect": {"must_match": ["\\d", "QQ"], "must_not_match": ["沒講過話", "没讲过话"]}
+  },
+  {
+    "name": "small talk stays small",
+    "messages": [["渚", "大肥魚晚安～"]],
+    "expect": {"tools_none": true, "max_chars": 200}
+  },
+  {
+    "name": "a Korean thank-you answered in Korean",
+    "room_alias": "#ko:glyphatlas.org",
+    "messages": [["大肥魚", "안녕하세요, 오늘의 소식이에요! glyph-atlas에 서체 설정이 생겼어요."], ["海楫", "고마워요 딥식이!"]],
+    "expect": {"tools_none": true, "must_match": ["[가-힣]"], "max_chars": 300}
+  }
+]
