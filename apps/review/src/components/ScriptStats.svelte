@@ -1,5 +1,5 @@
 <script>
-  // Crop and review counts by script group (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `other`)
+  // Crop and review counts by script group (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `seal`, `other`)
   // inside the collection dialog, combining collected crops and corpus glyphs (`All` / `Collected` / `Corpus`).
   import { onMount } from 'svelte'
   import { t, formatNumber } from '../lib/i18n.svelte.js'
@@ -13,6 +13,7 @@
     hangul: 'var(--script-hangul)',
     gugyeol: 'var(--script-gugyeol)',
     tangut: 'var(--script-tangut)',
+    seal: 'var(--script-seal)',
     other: 'var(--script-unknown)',
   }
 

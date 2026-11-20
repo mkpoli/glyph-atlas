@@ -276,7 +276,7 @@ def test_the_homepage_sample_copies_each_record_once_and_shards_it_by_shuffle(co
     assert found[glyph["codh:k1"]][1] == {"id": "codh:k1", "label": "か", "image": "/atlas/media/0.webp", "proxyable": True}
     assert [e[0] for e in answer(root, "gallery/hangul/0.json.gz")["entries"]] == [glyph["kor:h1"]]
     gallery = [names for prefix, names in uploaded if "/gallery/" in prefix]
-    assert sum(len(n) for n in gallery) == 128 + 3 + 1
+    assert sum(len(n) for n in gallery) == 128 + 4 + 1
     assert uploaded[-1] == ("v3/", ["pointer.json"])
     # A second publication reads nothing again: a record's place names it for good.
     reads.clear()

@@ -6,7 +6,7 @@ import { localize } from '$lib/i18n.svelte.js'
 import { hasCharacterPage, pointOf } from '$lib/issues.js'
 import { KEPT, frequent } from '$lib/frequentRuns.js'
 
-const GROUPS = ['all', 'kana', 'kanji', 'hangul', 'gugyeol', 'tangut']
+const GROUPS = ['all', 'kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal']
 /** How long the homepage waits on one of its own reads before the view loads it itself. */
 const READ_TIMEOUT = 15000
 

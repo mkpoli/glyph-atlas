@@ -12,7 +12,7 @@ const assigned = { ...unresolved, written_character: '假', identity_status: 'as
 assert.equal(isUnassigned(assigned), false)
 assert.equal(writtenLabel(assigned), '假')
 assert.equal(matchesVisualGroup(assigned, 'unassigned'), false)
-for (const [text, key] of [['ム', 'katakana'], ['厶', 'kanji'], ['あ', 'hiragana'], ['𛀂', 'hiragana'], ['𪜈', 'katakana'], ['𛄧', 'katakana'], ['𛄣', 'hiragana'], ['↔', 'symbol'], ['が', 'hiragana'], ['假ム', 'mixed'], ['ー', 'katakana'], ['カー', 'katakana'], ['한', 'hangul'], ['\uF67E', 'gugyeol'], ['A', 'latin'], ['é', 'latin']]) {
+for (const [text, key] of [['ム', 'katakana'], ['厶', 'kanji'], ['あ', 'hiragana'], ['𛀂', 'hiragana'], ['𪜈', 'katakana'], ['𛄧', 'katakana'], ['𛄣', 'hiragana'], ['↔', 'symbol'], ['が', 'hiragana'], ['假ム', 'mixed'], ['ー', 'katakana'], ['カー', 'katakana'], ['한', 'hangul'], ['\uF67E', 'gugyeol'], ['\u{3D000}', 'seal'], ['A', 'latin'], ['é', 'latin']]) {
   assert.equal(scriptInfo(text).key, key, text)
 }
 assert.deepEqual(scriptInfo('𪜈', 'katakana'), { key: 'katakana', label: 'Katakana' })

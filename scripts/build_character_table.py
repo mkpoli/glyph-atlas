@@ -39,7 +39,7 @@ Sources, all from one Unicode release:
 
 Which code points are included: every character of every kana block that Unicode assigns, the CJK
 Unified Ideographs and their extensions, the Hangul jamo and syllable blocks, the 구결자 of
-`gugyeol.tsv`, the Tangut ideographs, and always the code points `graphemes.yaml` names, so a grapheme is never a dangling reference. Kana and Hangul outside
+`gugyeol.tsv`, the Tangut ideographs, the small seal characters, and always the code points `graphemes.yaml` names, so a grapheme is never a dangling reference. Kana and Hangul outside
 those blocks, which is to say the letters on the Enclosed CJK Letters and Months chart (㋕, ㉠ and
 the like) and the halfwidth jamo, are not text characters and are left out.
 
@@ -120,6 +120,9 @@ BLOCKS = (
     # hold the parts dictionaries analyse a character into, which no text writes on their own.
     "Tangut",
     "Tangut Supplement",
+    # Small seal (小篆), the head characters of the 說文解字, which Unicode 18.0 encodes apart from
+    # the Han characters they became.
+    "Seal",
 )
 
 #: The name Unicode gives the ideographs of a CJK block, as a format over the hex code point.
@@ -135,6 +138,11 @@ CJK_NAME_BLOCKS = frozenset(name for name in BLOCKS if name.startswith("CJK Unif
 #: The Tangut ideographs are named after their code point the same way, under their own prefix.
 TANGUT_NAME = "TANGUT IDEOGRAPH-{point}"
 TANGUT_NAME_BLOCKS = frozenset(("Tangut", "Tangut Supplement"))
+
+#: The small seal characters likewise. `UnicodeData.txt` calls the range `Seal Character`; the
+#: derived name, as `DerivedAge.txt` and `Scripts.txt` write it, is `SMALL SEAL CHARACTER-`.
+SEAL_NAME = "SMALL SEAL CHARACTER-{point}"
+SEAL_NAME_BLOCK = "Seal"
 
 #: The constants of the Hangul syllable name derivation in chapter 3.12 of the Unicode Standard: the
 #: first syllable, the first leading consonant, vowel and trailing consonant (one before the first,
@@ -743,6 +751,8 @@ def _stated_characters(
             return CJK_NAME.format(point=f"{point:04X}")
         if block in TANGUT_NAME_BLOCKS and value_of(ranges, point) is not None:
             return TANGUT_NAME.format(point=f"{point:04X}")
+        if block == SEAL_NAME_BLOCK and value_of(ranges, point) is not None:
+            return SEAL_NAME.format(point=f"{point:04X}")
         if block == HANGUL_SYLLABLES_BLOCK and value_of(ranges, point) is not None:
             return hangul_syllable_name(point, jamo)
         return None

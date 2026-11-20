@@ -105,7 +105,7 @@ export async function dateStats(env: Env, ctx: ExecutionContext, url: URL): Prom
 
 // ---- Crop counts by script group.
 
-const SCRIPT_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'] as const;
+const SCRIPT_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal', 'other'] as const;
 type ScriptGroup = typeof SCRIPT_GROUPS[number];
 const GROUP_ORDER = ['all', ...SCRIPT_GROUPS] as const;
 type GroupKey = typeof GROUP_ORDER[number];
@@ -125,7 +125,7 @@ function summarizeScope(s: ScopeCounts) {
 }
 
 // Collected crops (`facets.json.gz` + `tally`) and corpus glyphs (`corpus.json.gz` + `unread.json.gz` + `tally`)
-// grouped by script (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `other`) with review state counts.
+// grouped by script (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `seal`, `other`) with review state counts.
 export async function groupStats(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
   const [{ pub, through_gen }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]);
   const version = catalogueKey(stamps);
@@ -235,7 +235,9 @@ export async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL
 // holds few glyphs of have pools of their own (WHOLE_GROUPS), up to 32 glyphs of each character, so
 // their seed's point falls anywhere in the shuffle range. A glyph a review has relabelled shows its
 // row's values, and leaves a group it no longer belongs to.
-const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol', 'tangut'];
+const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol', 'tangut', 'seal'];
+// A publication made before a group had a pool of its own names none for it.
+const NO_POOL = { range: 2 ** 31, shards: 1, glyphs: 0, categories: {} };
 export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParams, timing = new Timing()): Promise<Json> {
   const group = q.get('group') && q.get('group') !== 'all' ? q.get('group')! : null;
   if (group && !GALLERY_GROUPS.includes(group)) throw new Problem(400, 'Invalid group.');
@@ -249,7 +251,7 @@ export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParam
   timing.step('stamps');
   const kept = keptKey ? await caches.default.match(keptKey) : undefined;
   if (kept) { timing.step('sample-hit'); return await kept.json(); }
-  const name = group && WHOLE_GROUPS.includes(group) ? group : 'sample', pool = (await galleryIndex(env, pub))[name];
+  const name = group && WHOLE_GROUPS.includes(group) ? group : 'sample', pool = (await galleryIndex(env, pub))[name] ?? NO_POOL;
   const start = seed % pool.range, first = Math.floor(start * pool.shards / pool.range);
   const wanted = (entry: SampleEntry) => name !== 'sample' || !group || entry[2] === group;
   // From the seed's point up through the shards and round to it again: the glyphs of the seed's own
