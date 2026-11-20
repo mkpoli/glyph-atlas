@@ -1290,7 +1290,7 @@ def test_a_called_turn_looks_something_up_before_it_answers(tmp_path, monkeypatc
     act = model.act("Room", "", [message_row("what is Tangut?")], {}, task="called", trigger=0,
                     bot_user_id=USER, lookup=lookup, on_step=lambda: steps.append(1))
     assert act.say == ("It is a script.",) and steps == [1] and web.queries == ["Tangut script"]
-    assert [tool["function"]["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "recall"]
+    assert [tool["function"]["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "recall", "characters"]
     assert [message["role"] for message in bodies[1]["messages"][-2:]] == ["tool", "system"]
     assert json.loads(bodies[1]["messages"][-2]["content"])["results"][0]["url"] == "https://example.org/tangut"
     assert bodies[1]["response_format"] == {"type": "json_object"}
@@ -1306,7 +1306,7 @@ def test_lookups_stop_after_a_few_rounds(tmp_path, monkeypatch):
 
 
 def test_a_lookup_refuses_bad_arguments_and_keeps_to_its_budget(tmp_path):
-    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", per_hour=3)
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", per_hour=2)
     assert "error" in lookup.run("read_page", '{"url": "file:///etc/passwd"}')
     assert "error" in lookup.run("web_search", "not json")
     assert "error" in lookup.run("github_read", '{"repo": "mkpoli/glyph-atlas"}')
@@ -1372,3 +1372,16 @@ def test_config_reads_the_lookup_table(tmp_path):
     path.write_text("[lookup]\nenabled = false\nper_hour = 30\n", encoding="utf-8")
     config = fish_bot.Config.load(path)
     assert (config.lookup_enabled, config.lookup_per_hour) == (False, 30)
+
+
+def test_characters_are_described_from_the_database_with_derived_names():
+    described = fish_bot.describe_characters("𗼇字\U0003FFFD")
+    assert described[0] == {"char": "𗼇", "code_point": "U+17F07", "name": "TANGUT IDEOGRAPH-17F07"}
+    assert described[1]["name"] == "CJK UNIFIED IDEOGRAPH-5B57"
+    assert described[2]["name"].startswith("unassigned")
+
+
+def test_the_characters_tool_costs_no_budget(tmp_path):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", per_hour=0)
+    assert lookup.run("characters", {"text": "字"})["characters"][0]["code_point"] == "U+5B57"
+    assert "budget" in lookup.run("web_search", {"query": "x"})["error"]
