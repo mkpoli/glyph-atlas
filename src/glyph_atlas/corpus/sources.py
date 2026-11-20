@@ -140,6 +140,8 @@ ID_FAMILIES = {
     "hdic-krm": "hdic-krm",
     "hdic-ktb": "hdic-ktb",
     "hdic-tsj": "hdic-tsj",
+    "guangyun-photographs": "guangyun-photographs",
+    "guangyun-ioc": "guangyun-ioc",
     "nogeoldae-eonhae": "nogeoldae-eonhae",
     "wikisource-ko-glyphs": "wikisource-ko-glyphs",
 }
@@ -208,6 +210,16 @@ KNOWN: tuple[dict[str, Any], ...] = (
         "name": "hdic-tsj",
         "note": "天治本新撰字鏡 headwords on the NDL 六合館 edition (1916), labelled from HDIC's TSJ database "
                 "(scripts/cut_hdic_headwords.py).",
+    },
+    {
+        "name": "guangyun-photographs",
+        "note": "澤存堂本廣韻 headwords on nk2028's photographs of the printing, labelled from nk2028's 廣韻 tables "
+                "(scripts/cut_guangyun_headwords.py). The photographs name no holder, so nothing of it is published.",
+    },
+    {
+        "name": "guangyun-ioc",
+        "note": "澤存堂本廣韻 headwords on 東京大學東洋文化研究所's scanned copy (倉石文庫), labelled from nk2028's 廣韻 "
+                "tables (scripts/cut_guangyun_headwords.py).",
     },
     {
         "name": "nogeoldae-eonhae",

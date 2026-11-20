@@ -1,0 +1,77 @@
+id: guangyun-zecuntang
+name: 廣韻（澤存堂本）字頭表（nk2028 tshet-uinh-data）
+publisher: nk2028
+kind: transcription-corpus
+url: https://github.com/nk2028/tshet-uinh-data
+revision: 21585e22c8a730ca2fd175112f4d18e16d5ce578
+licence: CC0-1.0
+licence_evidence: https://github.com/nk2028/tshet-uinh-data/blob/21585e22c8a730ca2fd175112f4d18e16d5ce578/LICENSE
+attribution: "nk2028『tshet-uinh-data』韻書/廣韻.csv, src/字序表.csv (CC0 1.0)"
+access:
+  repository: https://github.com/nk2028/tshet-uinh-data
+format:
+  entries: "韻書/廣韻.csv: one row per headword of the 澤存堂本, corrected against 廣韻校本 and others; 小韻號, 小韻字號, 韻目原貌, 音韻地位, 反切, 直音, 字頭, 字頭說明, 釋義, 釋義參照"
+  order: "src/字序表.csv: 原書小韻號, 小韻字號, 字 and each entry's id in other tables; sbgy_id places it on the printed leaf"
+  sbgy_id: "w + volume (1 digit) + leaf (2) + side (a recto, b verso) + column (2, counted from the right) + position in the column (2), e.g. w107b0601; the ids are those of cjkvi-dict sbgy.xml"
+  headwords: "字頭 may carry collation marks: ［X］ a character to supply, ｛X｝ one to delete, A〈B〉 a printed A corrected to B"
+title: 廣韻（澤存堂本）
+register: kanbun
+copies:
+  # Each copy of the printing the headwords are cut from. `offset`: an opening's number less the
+  # leaf whose verso it shows on the right (leaf = number - offset).
+  - id: photographs
+    title: 廣韻 五卷（張氏澤存堂刊本）
+    kind: directory
+    repository: https://github.com/nk2028/tshet-uinh-images
+    revision: 54ebf944fb7cb73eaafe563a68fc77f2d6740b24
+    path: 廣韻/澤存堂本
+    holder: null
+    attribution: "nk2028『tshet-uinh-images』廣韻/澤存堂本; its README names 韻典網 as the source and no holding library"
+    licence: unknown
+    image_kind: object-photograph
+    enlarge: 1
+    scale: 0.8
+    fit: 0.45
+    volumes:
+      - {volume: "1", label: 上平聲卷第一, files: volume1, offset: 9}
+      - {volume: "2", label: 下平聲卷第二, files: volume2, offset: 3}
+      - {volume: "3", label: 上聲卷第三, files: volume3, offset: 3}
+      - {volume: "4", label: 去聲卷第四, files: volume4, offset: 4}
+      - {volume: "5", label: 入聲卷第五, files: volume5, offset: 3}
+  - id: ioc
+    title: 廣韻 五卷 康熙四十三年序張氏澤存堂刊本（倉石文庫）
+    kind: commons-pdf
+    repository: https://commons.wikimedia.org/wiki/Category:廣韻
+    holder: 東京大學東洋文化研究所
+    shelfmark: 倉石文庫 10505
+    attribution: 東京大学東洋文化研究所所蔵漢籍善本全文影像資料庫（Wikimedia Commons IOC.UTokyo-000146 to 000150）
+    licence: PD
+    licence_evidence: https://commons.wikimedia.org/wiki/File:IOC.UTokyo-000146_廣韻五卷康熙四十三年序張氏澤存堂刊本_卷一.pdf
+    image_kind: flat-reproduction
+    enlarge: 2
+    scale: 0.8
+    # A bitonal scan with a reader's notes in the margins: only columns a reader anchors, fitting closely.
+    fit: 0.3
+    anchored: true
+    dating:
+      - literal: 康熙四十三年（1704）序
+        start: 1704
+        end: 1704
+        kind: publication
+        evidence: https://commons.wikimedia.org/wiki/File:IOC.UTokyo-000145_廣韻五卷康熙四十三年序張氏澤存堂刊本_卷首.pdf
+    volumes:
+      - {volume: "1", label: 上平聲卷第一, files: "IOC.UTokyo-000146 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷一.pdf", offset: -4}
+      - {volume: "2", label: 下平聲卷第二, files: "IOC.UTokyo-000147 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷二.pdf", offset: 3}
+      - {volume: "3", label: 上聲卷第三, files: "IOC.UTokyo-000148 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷三.pdf", offset: 4}
+      - {volume: "5", label: 入聲卷第五, files: "IOC.UTokyo-000150 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷五.pdf", offset: 2}
+dating:
+  - literal: 大中祥符元年（1008）
+    start: 1008
+    end: 1008
+    kind: composition
+    evidence: https://github.com/nk2028/tshet-uinh-data/blob/21585e22c8a730ca2fd175112f4d18e16d5ce578/README.md
+notes:
+  - The photographs are 2592 px openings, one leaf's verso on the right and the next leaf's recto on the left. Which library's copy they show is stated nowhere in the repository, so the image licence is unknown and the crops cut from them stay out of every publication until the holder is known.
+  - The photographs carry only the work's date: nothing states which impression of the 澤存堂 printing that copy is.
+  - The photographs' volume offsets were found by fitting (2026-11-20), each confirmed by the readers on six openings of its volume.
+  - The 東文研 copy is a bitonal scan at 1415 px an opening, with a reader's handwritten notes; Commons marks the files public domain. The offsets of volumes 1, 2, 3 and 5 were found on one or two openings each (2026-11-20). Volume 4 (IOC.UTokyo-000149) is not placed: no gutter was found on the two openings tried.

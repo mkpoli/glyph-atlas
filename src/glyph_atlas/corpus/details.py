@@ -52,6 +52,8 @@ UNIT_ID_PREFIXES = {
     "ks:": "wikisource-ko-glyphs",
     "ktb:": "hdic-ktb",
     "tsj:": "hdic-tsj",
+    "gy-photographs:": "guangyun-photographs",
+    "gy-ioc:": "guangyun-ioc",
 }
 
 #: Tables whose content a resolved detail depends on. A change to any of them, or to

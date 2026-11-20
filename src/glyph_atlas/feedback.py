@@ -152,6 +152,8 @@ def source_corpus_of(unit_id: str | None) -> str | None:
         "ks:": "wikisource-ko-glyphs",
         "ktb:": "hdic-ktb",
         "tsj:": "hdic-tsj",
+        "gy-photographs:": "guangyun-photographs",
+        "gy-ioc:": "guangyun-ioc",
     }.get(unit_id.split(":", 1)[0] + ":")
 
 
