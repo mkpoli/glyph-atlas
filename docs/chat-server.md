@@ -282,6 +282,28 @@ Every evening from 21:00 JST she posts a digest in each language room listed in 
 that room's language: what the repositories in `[digest] repos` merged and released in the last day,
 and a line for each other room's discussion, with no one named. A quiet day gets no digest.
 
+She remembers. Once a stretch of a room has ended (a pause of six hours, or half an hour of quiet),
+the model summarizes it into an episode and edits a set of short notes about the people in it, the
+community and herself: it adds, updates or deletes a note against the ones it already holds. A turn
+brings in the notes about the people talking and the notes and earlier episodes, from any room, that
+share words with the last few lines, ranked by relevance, recency and importance. Episodes and notes
+outlive the 180-day log, up to `[memory] days` (365) after they last came up. `!fish forget me`
+deletes everything remembered about the sender and every episode they took part in, and keeps no
+new notes about them; `!fish remember me` lifts that. A redacted message takes its episode and that
+episode's notes with it. Bridges and bots are never remembered.
+
+The design follows Mem0's fact edits (Chhikara et al., [arXiv 2504.19413](https://arxiv.org/abs/2504.19413),
+2025; a vendor paper whose full-context baseline still scores highest) and Generative Agents' recall
+score (Park et al., [arXiv 2304.03442](https://arxiv.org/abs/2304.03442), 2023; relevance there comes
+from embeddings, here from SQLite FTS5 over words and CJK character pairs). LoCoMo found extracted
+facts retrieve better than raw turns or session summaries (Maharana et al.,
+[arXiv 2402.17753](https://arxiv.org/abs/2402.17753), 2024; synthetic two-person dialogues), and
+LongMemEval found BM25 a little behind dense retrieval (Wu et al.,
+[arXiv 2410.10813](https://arxiv.org/abs/2410.10813), 2024; single-user sessions). MaiBot's person
+notes and group summaries (https://github.com/MaiM-with-u/MaiBot, read at b7f3682, 2026-11-19) and
+Red-DiscordBot's `mydata forgetme` (https://docs.discord.red/en/latest/red_core_data_statement.html)
+are the group-bot precedents.
+
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
 2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
 checks each against the hash in `STICKERS` and uploads it to the homeserver once; a sticker whose

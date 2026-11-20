@@ -98,13 +98,22 @@ class FakeDeepSeek:
         self.calls = []
         self.turns = []
         self.digests = []
+        self.memories = []
+        self.memory_value = fish_bot.Memory(summary="They talked about 西夏文.", keywords=("Tangut",), edits=())
+        self.memory = None
 
     def digest(self, language, room_name, room_lines, changes, other_rooms):
         self.digests.append((language, room_name, changes, other_rooms))
         return f"digest in {language}"
 
-    def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=(), rooms=""):
+    def remember(self, room_name, rows, names, known, *, bot_user_id, left_out=()):
+        self.memories.append(([row["event_id"] for row in rows], [int(fact["id"]) for fact in known], set(left_out)))
+        return self.memory_value
+
+    def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=(),
+            rooms="", memory=None):
         self.rooms = rooms
+        self.memory = memory
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
         self.sticker_offers = (tuple(stickers), tuple(recent))
         if self.error is not None:
@@ -964,3 +973,165 @@ def test_introduces_herself_in_the_welcome_room_even_when_lookup_fails(tmp_path)
     bot.ingest("!welcome:example", trigger, backfilled=False)
     bot.answer("!welcome:example", trigger)
     assert bot.deepseek.turns[0][0] == "intro"
+
+
+HOUR = 3_600_000
+
+
+def memory_bot(tmp_path):
+    bot, matrix, store = make_bot(tmp_path)
+    bot.active_rooms = {ROOM, "!other:example"}
+    return bot, matrix, store
+
+
+def say(bot, body, *, sender="@reader:example", event_id, ts, room=ROOM):
+    bot.ingest(room, event(body, sender=sender, event_id=event_id, ts=ts), backfilled=True)
+
+
+def test_memory_terms_pair_spaceless_scripts_and_keep_words():
+    assert fish_bot.memory_terms("西夏文 Tangut IDS") == ["西夏", "夏文", "tangut", "ids"]
+    assert fish_bot.memory_terms("字 a 한국어") == ["字", "한국", "국어"]
+
+
+def test_remembers_a_finished_stretch_and_moves_on(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    start = fish_bot.now_ms() - 10 * HOUR
+    for number in range(4):
+        say(bot, f"西夏文 {number}", event_id=f"$a{number}", ts=start + number * 60_000)
+    say(bot, "a new day", event_id="$late", ts=start + 9 * HOUR)
+    bot.consolidate()
+    assert bot.deepseek.memories[0][0] == ["$a0", "$a1", "$a2", "$a3"]
+    episode = store.db.execute("SELECT * FROM episodes").fetchone()
+    assert episode["summary"] == "They talked about 西夏文." and json.loads(episode["people"]) == ["@reader:example"]
+    bot._memory_due = 0
+    bot.consolidate()
+    assert len(bot.deepseek.memories) == 1, "the open stretch waits until the room goes quiet"
+
+
+def test_a_stretch_with_nothing_to_keep_leaves_no_episode(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    bot.deepseek.memory_value = fish_bot.Memory(summary="", keywords=(), edits=())
+    say(bot, "hi", event_id="$hi", ts=fish_bot.now_ms() - 30 * HOUR)
+    bot.consolidate()
+    assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
+    assert store.unremembered() == {}
+
+
+def test_memory_leaves_bridges_and_forgotten_people_out(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    start = fish_bot.now_ms() - 2 * HOUR
+    say(bot, "hello", event_id="$a", ts=start)
+    say(bot, "relayed", sender="@idsbot:glyphatlas.org", event_id="$b", ts=start + 1000)
+    say(bot, "secret", sender="@quiet:example", event_id="$c", ts=start + 2000)
+    say(bot, "see you", event_id="$d", ts=start + 3000)
+    say(bot, "bye", event_id="$e", ts=start + 4000)
+    for number in range(200):
+        say(bot, "⿰木木", sender="@idsbot:glyphatlas.org", event_id=f"$ids{number}", ts=start + 1001 + number * 4)
+    store.forget_person("@quiet:example")
+    bot.consolidate()
+    assert bot.deepseek.memories[0][0] == ["$a", "$d", "$e"]
+
+
+def test_fact_edits_reach_only_known_facts_and_present_people():
+    keys = {"Alice": "@reader:example"}
+    raw = json.dumps({"summary": "s", "keywords": ["k"], "facts": [
+        {"op": "add", "about": "Alice", "text": "Alice studies Tangut.", "importance": 9},
+        {"op": "add", "about": "Mallory", "text": "Nobody."},
+        {"op": "add", "about": "self", "text": "大肥魚 promised a sticker."},
+        {"op": "update", "id": 3, "text": "Updated."},
+        {"op": "update", "id": 99, "text": "Unknown."},
+        {"op": "delete", "id": 3},
+    ]})
+    memory = fish_bot.parse_memory(raw, keys, [3])
+    assert [(edit.op, edit.subject, edit.fact, edit.importance) for edit in memory.edits] == [
+        ("add", "@reader:example", None, 5), ("add", "self", None, 3), ("update", "", 3, 3)]
+    blocked = fish_bot.parse_memory(raw, keys, [3], left_out={"@reader:example"})
+    assert all(edit.subject != "@reader:example" for edit in blocked.edits)
+    assert fish_bot.parse_memory('{"summary": "", "facts": [{"op": "add", "about": "self", "text": "x"}]}', keys, []).edits == ()
+
+
+def save(store, room, *, ts, summary, facts=(), people=("@reader:example",)):
+    rows = [{"ts": ts, "sender": people[0], "event_id": "$x", "body": ""}]
+    edits = tuple(fish_bot.Edit(op="add", subject=subject, text=text, importance=4) for subject, text in facts)
+    return store.save_memory(room, rows, people, fish_bot.Memory(summary=summary, keywords=(), edits=edits))
+
+
+def test_a_turn_recalls_the_speakers_and_a_related_talk_elsewhere(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    old = fish_bot.now_ms() - 48 * HOUR
+    save(store, "!other:example", ts=old, summary="Bob showed a 西夏文 dictionary.",
+         facts=[("@reader:example", "Alice writes traditional Chinese."), ("@bob:example", "Bob collects rubbings.")],
+         people=("@bob:example",))
+    save(store, "!other:example", ts=old - HOUR, summary="Talk about soup recipes.")
+    trigger = event("大肥魚，西夏文怎麼讀？", event_id="$call")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    memory = bot.deepseek.memory
+    assert [note["note"] for note in memory["notes"]] == ["Alice writes traditional Chinese."]
+    assert memory["earlier"][-1]["summary"] == "Bob showed a 西夏文 dictionary."
+
+
+def test_forget_me_deletes_their_notes_and_talks_and_says_so(tmp_path):
+    bot, matrix, store = memory_bot(tmp_path)
+    save(store, ROOM, ts=fish_bot.now_ms() - 48 * HOUR, summary="Alice and Bob talked.",
+         facts=[("@reader:example", "Alice likes rice."), ("community", "The atlas has a review page.")])
+    assert fish_bot.call_of(event("!fish forget me"), USER, "大肥魚").mode == "forget"
+    assert fish_bot.call_of(event("大肥魚，忘記我吧"), USER, "大肥魚").mode == "forget"
+    assert fish_bot.call_of(event("大肥魚 forget me not is a flower"), USER, "大肥魚").mode == "chat"
+    trigger = event("!fish forget me", event_id="$forget")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert bot.deepseek.turns[-1][0] == "forgot" and matrix.sent
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
+    assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
+    assert store.forgotten() == {"@reader:example"}
+    back = event("!fish remember me", event_id="$back")
+    bot.ingest(ROOM, back, backfilled=False)
+    bot.answer(ROOM, back)
+    assert bot.deepseek.turns[-1][0] == "remember-me" and store.forgotten() == set()
+
+
+def test_a_redacted_message_takes_its_episode_and_facts_along(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    start = fish_bot.now_ms() - 2 * HOUR
+    for number in range(3):
+        say(bot, f"line {number}", event_id=f"$r{number}", ts=start + number * 1000)
+    bot.deepseek.memory_value = fish_bot.Memory(summary="s", keywords=(), edits=(
+        fish_bot.Edit(op="add", subject="@reader:example", text="A fact."),))
+    bot.consolidate()
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 1
+    bot.redact({"type": "m.room.redaction", "redacts": "$r1"})
+    assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
+    assert store.db.execute("SELECT COUNT(*) FROM memory_terms").fetchone()[0] == 0
+
+
+def test_memory_outlives_the_log_but_not_its_own_horizon(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    save(store, ROOM, ts=now - 400 * 24 * HOUR, summary="Long ago.")
+    save(store, ROOM, ts=now - 200 * 24 * HOUR, summary="Last spring.")
+    store.prune(now - 180 * 24 * HOUR, now - 365 * 24 * HOUR)
+    assert [row["summary"] for row in store.db.execute("SELECT summary FROM episodes")] == ["Last spring."]
+
+
+def test_memory_prompt_formats_people_under_keys_and_lists_known_facts(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    save(store, ROOM, ts=fish_bot.now_ms(), summary="s", facts=[("@bob:example", "Bob collects rubbings.")])
+    known = store.known_facts(["@bob:example"], [])
+    rows = [message_row("hi", sender="@reader:example"), message_row("yo", sender=USER),
+            message_row("hey", sender="@alice2:example")]
+    names = {"@reader:example": "Alice", "@alice2:example": "alice"}
+    user, keys = fish_bot.format_memory("Room", rows, names, known, bot_user_id=USER)
+    payload = json.loads(user)
+    assert payload["people"] == ["Alice", "alice (2)", "bob"]
+    assert [message["from"] for message in payload["messages"]] == ["Alice", "大肥魚", "alice (2)"]
+    assert payload["known"][0]["about"] == "bob"
+    assert keys == {"Alice": "@reader:example", "alice (2)": "@alice2:example", "bob": "@bob:example"}
+
+
+def test_config_reads_the_memory_table(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[memory]\nenabled = false\ndays = 90\n", encoding="utf-8")
+    config = fish_bot.Config.load(path)
+    assert (config.memory_enabled, config.memory_days) == (False, 90)

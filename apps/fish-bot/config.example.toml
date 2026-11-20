@@ -59,6 +59,12 @@ repos = [
 "#ko:glyphatlas.org" = "Korean"
 "#vi:glyphatlas.org" = "Vietnamese"
 
+[memory]
+# Episodes and notes about people, the community and the bot, kept this many days after they last
+# came up. `!fish forget me` deletes a person's.
+enabled = true
+days = 365
+
 [limits]
 context_messages = 120
 backfill_messages = 200
