@@ -311,7 +311,7 @@ When someone calls her with a question she cannot answer from the chat, she can 
 the web through DeepSeek's Search and Fetch APIs (run on DeepSeek's side, so the homeserver's
 loopback address is out of reach; $0.75 per 1,000 requests,
 https://api-docs.deepseek.com/guides/search/), code, issues, pull requests and commits in the
-community's repositories through GitHub, and her own memory of every room. She gets up to four
+community's repositories through GitHub, and her own memory of the rooms she reads. She gets up to four
 rounds of lookups per answer and `[lookup] per_hour` (120) across the bot; unasked turns never look
 anything up. MemGPT lets a model page through its memory with tools and reports that it often stops
 early (Packer et al., [arXiv 2310.08560](https://arxiv.org/abs/2310.08560), 2023), so the recalled

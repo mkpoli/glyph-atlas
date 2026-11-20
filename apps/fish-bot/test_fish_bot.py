@@ -1290,7 +1290,7 @@ def test_a_called_turn_looks_something_up_before_it_answers(tmp_path, monkeypatc
     act = model.act("Room", "", [message_row("what is Tangut?")], {}, task="called", trigger=0,
                     bot_user_id=USER, lookup=lookup, on_step=lambda: steps.append(1))
     assert act.say == ("It is a script.",) and steps == [1] and web.queries == ["Tangut script"]
-    assert [tool["function"]["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "recall", "characters"]
+    assert [tool["function"]["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "characters", "recall"]
     assert [message["role"] for message in bodies[1]["messages"][-2:]] == ["tool", "system"]
     assert json.loads(bodies[1]["messages"][-2]["content"])["results"][0]["url"] == "https://example.org/tangut"
     assert bodies[1]["response_format"] == {"type": "json_object"}
@@ -1334,7 +1334,7 @@ def test_github_reads_a_file_and_lists_a_directory(monkeypatch):
         "/repos/mkpoli/han-compose/contents/": [{"name": "js", "type": "dir", "size": 0}],
     }
 
-    def call(method, path, body=None, accept=""):
+    def call(method, path, body=None, accept="", timeout=None):
         paths.append(path)
         return replies[path]
 
@@ -1385,3 +1385,50 @@ def test_the_characters_tool_costs_no_budget(tmp_path):
     lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", per_hour=0)
     assert lookup.run("characters", {"text": "字"})["characters"][0]["code_point"] == "U+5B57"
     assert "budget" in lookup.run("web_search", {"query": "x"})["error"]
+
+
+def test_no_recall_tool_while_memory_is_off(tmp_path):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", memory=False)
+    assert "recall" not in [tool["function"]["name"] for tool in lookup.specs()]
+    assert "error" in lookup.run("recall", {"query": "x"})
+
+
+def test_github_reads_stay_inside_the_named_repository(tmp_path):
+    github = SearchingGitHub()
+    lookup = fish_bot.Lookup(FakeWeb(), github, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    for repo in ("../..", "mkpoli/..", "./x"):
+        assert "error" in lookup.run("github_item", {"repo": repo, "number": 1}), repo
+    with pytest.raises(ValueError):
+        fish_bot.GitHub("token", "mkpoli/glyph-atlas").read("mkpoli/glyph-atlas", "../../../../user/repos")
+
+
+def test_characters_keep_whitespace():
+    lookup_text = fish_bot.describe_characters("　 a ")
+    assert [item["code_point"] for item in lookup_text] == ["U+3000", "U+0020", "U+0061", "U+00A0"]
+
+
+def test_github_item_shows_the_newest_comments(monkeypatch):
+    github = fish_bot.GitHub("token", "mkpoli/glyph-atlas")
+    pages = {page: [{"user": {"login": "x"}, "body": f"c{n}"} for n in range(page * 5 - 4, min(page * 5, 102) + 1)]
+             for page in range(1, 22)}
+
+    def call(method, path, body=None, accept="", timeout=None):
+        if path.endswith("/issues/7"):
+            return {"title": "t", "comments": 102}
+        if "/comments" in path:
+            return pages[int(path.rsplit("page=", 1)[1])]
+        raise AssertionError(path)
+
+    monkeypatch.setattr(github, "_call", call)
+    assert [comment["body"] for comment in github.item("mkpoli/glyph-atlas", 7)["comments"]] == [
+        "c98", "c99", "c100", "c101", "c102"]
+
+
+def test_a_turn_stops_looking_things_up_when_time_runs_out(tmp_path, monkeypatch):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    model, bodies = scripted(monkeypatch, [answer(calls=[("web_search", {"query": "slow"})]), answer('{"say": "ok"}')])
+    clock = iter([0.0, 1000.0, 1000.0, 1000.0])
+    monkeypatch.setattr(fish_bot.time, "monotonic", lambda: next(clock))
+    act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER, lookup=lookup)
+    assert act.say == ("ok",) and lookup.deepseek.queries == []
+    assert bodies[-1]["tool_choice"] == "none"

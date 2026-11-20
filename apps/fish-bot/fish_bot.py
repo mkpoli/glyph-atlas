@@ -151,8 +151,12 @@ LOOKUP_REMINDER = ('Now answer the chat as 大肥魚, in one or two short lines 
                    'you answer, from what you found. Return only the json object: {"say": "...", "react": null, '
                    '"sticker": null, "issue": false}')
 LOOKUP_CALLS = 4
+# The bot answers one thing at a time, so a turn stops looking things up after this long, and each
+# lookup gives up sooner than a chat call.
+LOOKUP_DEADLINE_SECONDS = 60
+LOOKUP_TIMEOUT = 20.0
 MAX_TOOL_RESULT = 8_000
-REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+REPO = re.compile(r"(?!\.{1,2}/)[A-Za-z0-9_.-]+/(?!\.{1,2}$)[A-Za-z0-9_.-]+")
 # Python's character database leaves out the names Unicode derives from the code point in these
 # blocks (The Unicode Standard, section 4.8, Name), so they are built here.
 DERIVED_NAMES = ((0x17000, 0x187FF, "TANGUT IDEOGRAPH"), (0x18D00, 0x18D7F, "TANGUT IDEOGRAPH"),
@@ -1174,7 +1178,7 @@ class Store:
         alone."""
         open_rooms = sorted(set(rooms))
         fact_hits = self._matches("fact", terms, facts)
-        episode_hits = self._matches("episode", terms, episodes * 4)
+        episode_hits = self._matches("episode", terms, 500)
         fact_rows = {int(row["id"]): row for row in self.db.execute(
             f"SELECT * FROM facts WHERE id IN ({','.join('?' * len(fact_hits)) or 'NULL'})", tuple(fact_hits))}
         episode_rows = {int(row["id"]): row for row in self.db.execute(
@@ -1672,7 +1676,7 @@ class DeepSeek:
             memory: dict[str, Any] | None = None, lookup: Lookup | None = None,
             on_step: Any = None) -> Act:
         """One chat turn in 大肥魚's voice. With tools, the model may look things up for a few rounds
-        before it answers; `on_step` runs before each round of lookups."""
+        and about a minute before it answers; `on_step` runs before each lookup."""
         stickers = tuple(stickers)
         user = format_chat(room_name, room_topic, events, names, task=task, trigger=trigger,
                            bot_user_id=bot_user_id, stickers=stickers, recent=recent, rooms=rooms,
@@ -1690,6 +1694,7 @@ class DeepSeek:
             body["tools"] = lookup.specs()
         last: Exception | None = None
         rounds = failures = 0
+        deadline = time.monotonic() + LOOKUP_DEADLINE_SECONDS
         while failures < 2:
             try:
                 answer = self._post(body)
@@ -1700,17 +1705,20 @@ class DeepSeek:
                 calls = [call for call in message.get("tool_calls") or [] if isinstance(call, dict)][:LOOKUP_CALLS]
                 if lookup is not None and calls and rounds < LOOKUP_ROUNDS:
                     rounds += 1
-                    if on_step is not None:
-                        on_step()
                     body["messages"].append({"role": "assistant", "content": message.get("content") or "",
                                              "tool_calls": calls})
                     for call in calls:
                         function = call.get("function") if isinstance(call.get("function"), dict) else {}
-                        result = lookup.run(str(function.get("name")), function.get("arguments"))
+                        if time.monotonic() > deadline:
+                            result = {"error": "out of time; answer with what you have"}
+                        else:
+                            if on_step is not None:
+                                on_step()
+                            result = lookup.run(str(function.get("name")), function.get("arguments"))
                         body["messages"].append({"role": "tool", "tool_call_id": str(call.get("id")),
                                                  "content": json.dumps(result, ensure_ascii=False)[:MAX_TOOL_RESULT]})
                     body["messages"].append({"role": "system", "content": LOOKUP_REMINDER})
-                    if rounds == LOOKUP_ROUNDS:
+                    if rounds == LOOKUP_ROUNDS or time.monotonic() > deadline:
                         body["tool_choice"] = "none"
                     continue
                 content = message.get("content")
@@ -1729,7 +1737,7 @@ class DeepSeek:
 
     def search(self, query: str, count: int = 5) -> list[dict[str, Any]]:
         """Web results for a query from DeepSeek's Search API, each with a summary meant for a model."""
-        answer = self._post({"query": query[:128], "count": count}, self._tool_url("search"))
+        answer = self._post({"query": query[:128], "count": count}, self._tool_url("search"), timeout=LOOKUP_TIMEOUT)
         results = answer.get("results") if isinstance(answer, dict) else None
         if not isinstance(results, list):
             raise DeepSeekError("the search answer has no results")
@@ -1739,7 +1747,7 @@ class DeepSeek:
 
     def fetch(self, url: str) -> dict[str, Any]:
         """A web page as Markdown from DeepSeek's Fetch API."""
-        answer = self._post({"url": url}, self._tool_url("fetch"))
+        answer = self._post({"url": url}, self._tool_url("fetch"), timeout=LOOKUP_TIMEOUT)
         if not isinstance(answer, dict) or not isinstance(answer.get("content"), str):
             raise DeepSeekError("the fetch answer has no content")
         return {"title": str(answer.get("title") or "")[:200], "content": answer["content"]}
@@ -1831,7 +1839,7 @@ class GitHub:
         self._issues_at = 0.0
 
     def _call(self, method: str, path: str, body: dict[str, Any] | None = None,
-              accept: str = "application/vnd.github+json") -> Any:
+              accept: str = "application/vnd.github+json", timeout: float | None = None) -> Any:
         data = None if body is None else json.dumps(body).encode()
         request = urllib.request.Request(
             GITHUB_API + path,
@@ -1846,7 +1854,7 @@ class GitHub:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
                 return json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as error:
             payload = ""
@@ -1923,11 +1931,15 @@ class GitHub:
                                  "url": release.get("html_url")})
         return {"repo": repo, "merged": merged, "released": released}
 
+    def _get(self, path: str, accept: str = "application/vnd.github+json") -> Any:
+        """A read for a lookup, which gives up sooner than the issue desk's calls."""
+        return self._call("GET", path, accept=accept, timeout=LOOKUP_TIMEOUT)
+
     def search(self, kind: str, query: str, scope: str) -> list[dict[str, Any]]:
         """Code, issues, pull requests or commits matching a query within a repository or an owner's."""
         q = f"{query[:200]} {scope}"
         if kind == "code":
-            answer = self._call("GET", "/search/code?" + urllib.parse.urlencode({"q": q, "per_page": 8}),
+            answer = self._get("/search/code?" + urllib.parse.urlencode({"q": q, "per_page": 8}),
                                 accept="application/vnd.github.text-match+json")
             return [{"repo": str((item.get("repository") or {}).get("full_name") or ""), "path": str(item.get("path") or ""),
                      "url": str(item.get("html_url") or ""),
@@ -1936,14 +1948,14 @@ class GitHub:
                     for item in _items(answer)]
         if kind in ("issues", "pulls"):
             q += " is:issue" if kind == "issues" else " is:pr"
-            answer = self._call("GET", "/search/issues?" + urllib.parse.urlencode({"q": q, "per_page": 8}))
+            answer = self._get("/search/issues?" + urllib.parse.urlencode({"q": q, "per_page": 8}))
             return [{"repo": "/".join(str(item.get("repository_url") or "").split("/")[-2:]),
                      "number": item.get("number"), "title": str(item.get("title") or "")[:200],
                      "state": str(item.get("state") or ""), "updated": str(item.get("updated_at") or "")[:10],
                      "url": str(item.get("html_url") or "")}
                     for item in _items(answer)]
         if kind == "commits":
-            answer = self._call("GET", "/search/commits?" + urllib.parse.urlencode({"q": q, "per_page": 8, "sort": "committer-date"}))
+            answer = self._get("/search/commits?" + urllib.parse.urlencode({"q": q, "per_page": 8, "sort": "committer-date"}))
             return [{"repo": str((item.get("repository") or {}).get("full_name") or ""), "sha": str(item.get("sha") or "")[:10],
                      "message": str((item.get("commit") or {}).get("message") or "").split("\n")[0][:200],
                      "date": str(((item.get("commit") or {}).get("committer") or {}).get("date") or "")[:10],
@@ -1953,9 +1965,12 @@ class GitHub:
 
     def read(self, repo: str, path: str = "", ref: str = "") -> dict[str, Any]:
         """A file's text, or a directory's entries, in a repository."""
-        quoted = "/".join(urllib.parse.quote(part) for part in path.strip("/").split("/") if part)
+        parts = [part for part in path.strip("/").split("/") if part]
+        if any(part in (".", "..") for part in parts):
+            raise ValueError("path must not contain . or .. segments")
+        quoted = "/".join(urllib.parse.quote(part) for part in parts)
         query = "?" + urllib.parse.urlencode({"ref": ref}) if ref else ""
-        answer = self._call("GET", f"/repos/{repo}/contents/{quoted}{query}")
+        answer = self._get(f"/repos/{repo}/contents/{quoted}{query}")
         if isinstance(answer, list):
             return {"repo": repo, "path": path, "entries": [
                 {"name": str(item.get("name") or ""), "type": str(item.get("type") or ""), "size": item.get("size")}
@@ -1971,7 +1986,7 @@ class GitHub:
 
     def item(self, repo: str, number: int) -> dict[str, Any]:
         """An issue or pull request with its latest comments."""
-        issue = self._call("GET", f"/repos/{repo}/issues/{number}")
+        issue = self._get(f"/repos/{repo}/issues/{number}")
         if not isinstance(issue, dict):
             raise GitHubError("GitHub returned no issue")
         result: dict[str, Any] = {
@@ -1981,14 +1996,19 @@ class GitHub:
             "body": str(issue.get("body") or "")[:3000], "pull_request": issue.get("pull_request") is not None,
         }
         if result["pull_request"]:
-            pull = self._call("GET", f"/repos/{repo}/pulls/{number}")
+            pull = self._get(f"/repos/{repo}/pulls/{number}")
             if isinstance(pull, dict):
                 result["merged"] = bool(pull.get("merged"))
-        comments = self._call("GET", f"/repos/{repo}/issues/{number}/comments?per_page=100")
-        if isinstance(comments, list):
-            result["comments"] = [{"author": str((comment.get("user") or {}).get("login") or ""),
-                                   "body": str(comment.get("body") or "")[:600]}
-                                  for comment in comments[-5:] if isinstance(comment, dict)]
+        count = issue.get("comments")
+        last = max(1, math.ceil(count / 5)) if isinstance(count, int) and count > 0 else 0
+        comments: list[Any] = []
+        for page in (last - 1, last) if last else ():
+            if page >= 1:
+                answer = self._get(f"/repos/{repo}/issues/{number}/comments?per_page=5&page={page}")
+                comments += answer if isinstance(answer, list) else []
+        result["comments"] = [{"author": str((comment.get("user") or {}).get("login") or ""),
+                               "body": str(comment.get("body") or "")[:600]}
+                              for comment in comments[-5:] if isinstance(comment, dict)]
         return result
 
     def check(self) -> None:
@@ -2024,8 +2044,9 @@ class Lookup:
     through GitHub, and the bot's own memory, within an hourly budget."""
 
     def __init__(self, deepseek: DeepSeek, github: GitHub | None, store: Store, *, owner: str,
-                 rooms: Any = frozenset, per_hour: int = 120):
+                 rooms: Any = frozenset, per_hour: int = 120, memory: bool = True):
         self.deepseek = deepseek
+        self.memory = memory
         self.rooms = rooms
         self.github = github
         self.store = store
@@ -2040,11 +2061,12 @@ class Lookup:
                   {"query": {"type": "string", "description": "the search query, in any language; site: and lang: work"}},
                   ["query"]),
             _tool("read_page", "Read a web page as text.", {"url": {"type": "string"}}, ["url"]),
-            _tool("recall", "Search your own memory of earlier conversations in every room.",
-                  {"query": {"type": "string"}}, ["query"]),
             _tool("characters", "The code point and Unicode name of each character in a short text.",
                   {"text": {"type": "string"}}, ["text"]),
         ]
+        if self.memory:
+            tools.append(_tool("recall", "Search your own memory of earlier conversations in the rooms you read.",
+                               {"query": {"type": "string"}}, ["query"]))
         if self.github is not None:
             tools += [
                 _tool("github_search", f"Search code, issues, pull requests or commits in a repository, or across {self.owner}'s repositories when repo is empty.",
@@ -2080,11 +2102,11 @@ class Lookup:
         return result
 
     def _run(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        def text(key: str, *, limit: int = 256, required: bool = True) -> str:
+        def text(key: str, *, limit: int = 256, required: bool = True, strip: bool = True) -> str:
             value = args.get(key, "")
-            if not isinstance(value, str) or (required and not value.strip()) or len(value) > limit:
+            if not isinstance(value, str) or (required and not (value.strip() if strip else value)) or len(value) > limit:
                 raise ValueError(f"{key} must be a string of at most {limit} characters")
-            return value.strip()
+            return value.strip() if strip else value
 
         def repo() -> str:
             value = text("repo", limit=140)
@@ -2093,7 +2115,7 @@ class Lookup:
             return value
 
         if name == "characters":
-            return {"characters": describe_characters(text("text", limit=200))}
+            return {"characters": describe_characters(text("text", limit=200, strip=False))}
         if name == "web_search":
             return {"results": self.deepseek.search(text("query"))}
         if name == "read_page":
@@ -2103,7 +2125,7 @@ class Lookup:
             page = self.deepseek.fetch(url)
             return {"url": url, "title": page["title"], "text": page["content"][:MAX_TOOL_RESULT - 500],
                     "cut": len(page["content"]) > MAX_TOOL_RESULT - 500}
-        if name == "recall":
+        if name == "recall" and self.memory:
             return self.recall(text("query"))
         if self.github is None:
             raise ValueError(f"no tool named {name}")
@@ -2114,10 +2136,11 @@ class Lookup:
         if name == "github_read":
             return self.github.read(repo(), text("path", limit=500, required=False), text("ref", limit=200, required=False))
         if name == "github_item":
+            target = repo()
             number = args.get("number")
             if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
                 raise ValueError("number must be a positive integer")
-            return self.github.item(repo(), number)
+            return self.github.item(target, number)
         raise ValueError(f"no tool named {name}")
 
     def recall(self, query: str) -> dict[str, Any]:
@@ -2334,7 +2357,8 @@ class Bot:
         self.state = state or State()
         self.user_id = config.user_id
         self.lookup = (Lookup(deepseek, github, store, owner=config.github_repo.split("/")[0],
-                              rooms=lambda: self.active_rooms, per_hour=config.lookup_per_hour)
+                              rooms=lambda: self.active_rooms, per_hour=config.lookup_per_hour,
+                              memory=config.memory_enabled)
                        if config.lookup_enabled else None)
         self._last_answer: dict[str, float] = {}
         self._calls: list[float] = []
