@@ -57,6 +57,9 @@ ALLOWED_LABELS = ("bug", "enhancement", "documentation", "question")
 MAX_TITLE = 120
 MAX_BODY = 8000
 MAX_REPLY = 3000
+# Discord refuses a message over 2,000 characters (its API answers 50035 BASE_TYPE_MAX_LENGTH, seen
+# from mautrix-discord on 2026-11-20), so every text she sends goes out in parts no longer than this.
+MAX_MESSAGE = 1900
 MAX_PROMPT = 800
 MAX_CONTEXT_CHARS = 40_000
 # A room may be called once a minute; an issue may be filed once every ten minutes, at most five a
@@ -264,6 +267,31 @@ def memory_terms(text: str, limit: int = 64) -> list[str]:
 def _match(terms: Iterable[str]) -> str:
     """An FTS5 query that matches any of the terms."""
     return " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
+
+
+def split_message(text: str, limit: int = MAX_MESSAGE) -> list[str]:
+    """A text cut into parts of at most `limit` characters: between paragraphs where possible, then
+    between lines, then after a sentence, and only as a last resort in the middle."""
+    def pieces(chunk: str, separators: tuple[str, ...]) -> list[str]:
+        if len(chunk) <= limit:
+            return [chunk]
+        if not separators:
+            return [chunk[index:index + limit] for index in range(0, len(chunk), limit)]
+        separator, rest = separators[0], separators[1:]
+        if separator not in chunk:
+            return pieces(chunk, rest)
+        units = chunk.split(separator)
+        joined = [unit + (separator if index < len(units) - 1 else "") for index, unit in enumerate(units)]
+        parts: list[str] = []
+        for unit in joined:
+            for small in pieces(unit, rest):
+                if parts and len(parts[-1]) + len(small) <= limit:
+                    parts[-1] += small
+                else:
+                    parts.append(small)
+        return parts
+
+    return [part.strip() for part in pieces(text.strip(), ("\n\n", "\n", "。", ". ", "！", "？", "! ", "? ")) if part.strip()]
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -3181,9 +3209,16 @@ class Bot:
             return
         room_name, _ = self._room(room_id)
         digest = self.deepseek.digest(language, room_name, room_lines, changes, others)
-        self.matrix.send(room_id, {"msgtype": "m.text", "body": digest},
-                         "fish-d-" + hashlib.sha256(f"{day}{room_id}".encode()).hexdigest()[:40])
+        self._post(room_id, digest, "fish-d-" + hashlib.sha256(f"{day}{room_id}".encode()).hexdigest()[:36])
         self.store.mark_digested(day, room_id)
+
+    def _post(self, room_id: str, text: str, key: str, *, reply_to: str | None = None) -> None:
+        """Send a text in parts Discord accepts, the first as the reply when there is one."""
+        for number, part in enumerate(split_message(text)):
+            content: dict[str, Any] = {"msgtype": "m.text", "body": part}
+            if number == 0 and reply_to:
+                content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
+            self.matrix.send(room_id, content, f"{key}-{number}")
 
     def _room_of(self, target: str) -> str | None:
         """A room ID, or the room an alias names, looked up once and again an hour after a failure."""
@@ -3214,12 +3249,10 @@ class Bot:
                 self.store.mark_handled(reply_to, "chatted")
             return ""
         text = self.deepseek.recap(language, material, [str(row["text"]) for row in notes], request)
-        content: dict[str, Any] = {"msgtype": "m.text", "body": text}
         if reply_to:
-            content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
             self.store.mark_handled(reply_to, "recapped")
-        key = hashlib.sha256(f"{room_id}{reply_to or now_ms()}".encode()).hexdigest()[:40]
-        self.matrix.send(room_id, content, f"fish-c-{key}")
+        key = hashlib.sha256(f"{room_id}{reply_to or now_ms()}".encode()).hexdigest()[:36]
+        self._post(room_id, text, f"fish-c-{key}", reply_to=reply_to)
         return text
 
     def introduce(self, room_id: str, event_id: str) -> None:
@@ -3344,7 +3377,8 @@ class Bot:
                 self.matrix.send(room_id, content, f"fish-r-{key}", "m.reaction")
             except MatrixError as error:
                 log.warning("reaction in %s: %s", room_id, error)
-        for number, line in enumerate(act.say):
+        lines = [part for line in act.say for part in split_message(line)]
+        for number, line in enumerate(lines):
             content: dict[str, Any] = {"msgtype": "m.text", "body": line}
             if number == 0 and reply_to:
                 content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
@@ -3541,9 +3575,8 @@ class Bot:
         if not text.strip():
             return
         transaction = "fish-" + hashlib.sha256(event_id.encode()).hexdigest()[:48]
-        content = {"msgtype": "m.text", "body": text[:MAX_REPLY]}
         try:
-            self.matrix.send(room_id, content, transaction)
+            self._post(room_id, text[:MAX_REPLY], transaction)
         except MatrixError as error:
             log.warning("reply in %s: %s", room_id, error)
 

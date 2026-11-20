@@ -1754,3 +1754,23 @@ def test_the_catch_up_prompt_carries_the_episodes_and_request():
     payload = json.loads(fish_bot.format_recap([{"room": "中文", "date": "2026-11-01", "summary": "s"}], ["n"], "!fish recap"))
     assert payload == {"request": "!fish recap", "episodes": [{"room": "中文", "date": "2026-11-01", "summary": "s"}],
                        "notes": ["n"]}
+
+
+def test_long_text_is_split_where_it_reads_naturally():
+    paragraphs = ["甲" * 1200, "乙" * 1200, "丙" * 300]
+    parts = fish_bot.split_message("\n\n".join(paragraphs))
+    assert parts == ["甲" * 1200, "乙" * 1200 + "\n\n" + "丙" * 300]
+    sentences = fish_bot.split_message("。".join(["字" * 700] * 5))
+    assert all(len(part) <= fish_bot.MAX_MESSAGE for part in sentences) and all(part.endswith("。") for part in sentences[:-1])
+    assert [len(part) for part in fish_bot.split_message("x" * 4000)] == [1900, 1900, 200]
+    assert fish_bot.split_message("short") == ["short"]
+
+
+def test_a_long_digest_goes_out_in_parts_discord_accepts(tmp_path):
+    bot, matrix, _ = make_bot(tmp_path)
+    bot._post(ROOM, "\n\n".join(["段" * 1500] * 3), "fish-d-test", reply_to="$ask")
+    bodies = [content["body"] for _, content, _ in matrix.sent]
+    assert len(bodies) == 3 and all(len(body) <= 1900 for body in bodies)
+    assert matrix.sent[0][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$ask"}}
+    assert "m.relates_to" not in matrix.sent[1][1]
+    assert len({transaction for _, _, transaction in matrix.sent}) == 3
