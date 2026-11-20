@@ -2712,9 +2712,17 @@ def _download(url: str, limit: int = 2_000_000) -> bytes:
         raise OSError(str(getattr(error, "reason", error))) from None
 
 
+# A reply fallback opens with the quoted sender, as the Matrix spec writes it: `> <@user:server> …`,
+# or `> * <@user:server> …` for an emote. A message that is itself a quote does not.
+REPLY_FALLBACK = re.compile(r"> (?:\* )?<[@!#][^\s>]+>")
+
+
 def _unquoted(body: str) -> str:
-    """The part of a message below Matrix's quoted reply fallback, the `> …` lines it starts with."""
+    """The part of a message below Matrix's quoted reply fallback, the `> …` lines it starts with.
+    A message that is all quote (a Markdown blockquote) is kept whole."""
     lines = body.splitlines()
+    if not lines or not REPLY_FALLBACK.match(lines[0].lstrip()):
+        return "\n".join(lines).strip()
     while lines and lines[0].lstrip().startswith(">"):
         lines.pop(0)
     return "\n".join(lines).strip()

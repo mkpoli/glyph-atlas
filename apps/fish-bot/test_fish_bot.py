@@ -1946,3 +1946,16 @@ def test_a_refused_picture_leaves_memory_both_text_tries(monkeypatch):
     monkeypatch.setattr(model, "_post", post)
     memory = model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER, images=[(0, "data:image/png;base64,AA")])
     assert sent == ["list", "str", "str"] and memory.summary == "Talked."
+
+
+def test_a_message_that_is_all_quote_is_kept_and_a_reply_fallback_is_not(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    table = "> 자음\n> \n> ㄱ  1획\n> ㅋ  2획  *ㄱ에 1획을 더한 글자\n"
+    bot.ingest(ROOM, event(table, event_id="$quote"), backfilled=False)
+    bot.ingest(ROOM, event("> <@alice:example> hello\n\nworld", event_id="$reply"), backfilled=False)
+    bodies = {row["event_id"]: row["body"] for row in store.context(ROOM, fish_bot.now_ms() + 1000, 5)}
+    assert bodies["$quote"].startswith("> 자음") and bodies["$reply"] == "world"
+
+
+def test_line_endings_are_normalised_outside_replies():
+    assert fish_bot._clean_body("a\r\nb\r\n\r\n\r\n\r\nc") == "a\nb\n\nc"
