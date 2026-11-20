@@ -233,6 +233,8 @@ export function judgeBatch(batch: { character: string | null; line: boolean }, a
   }
   return { chosen, refused, unchanged };
 }
+// One written character as a review names it, or false for anything `writtenCharacter` refuses.
+const single = (value: string) => { try { writtenCharacter(value); return true } catch { return false } };
 function validateAnswer(answer: Json, row: Current, round: boolean, corpus = false, batch = false, line = false) {
   const current = row.data;
   if (!standing(row, answer.revision)) throw new Problem(409, 'This character changed. Reload it.');
@@ -250,6 +252,10 @@ function validateAnswer(answer: Json, row: Current, round: boolean, corpus = fal
   if (answer.correction && answer.issue !== 'merged') throw new Problem(422, 'Typed characters belong to a joined-character issue.');
   text(answer.note, 2000, 'note');
   if (answer.character) writtenCharacter(answer.character);
+  // The character a corpus glyph's inspector showed: a match from a view the forms tool has since changed is stale.
+  text(answer.shown, 32, 'shown');
+  if (corpus && answer.verdict === 'match' && answer.shown != null && answer.shown !== current.written_character)
+    throw new Problem(409, 'This character changed. Reload it.');
   if (answer.verdict === 'wrong' && answer.character && unified(answer.character) === current.written_character)
     throw new Problem(422, 'Choose a different character or a different issue.');
   if (answer.box !== undefined) {
@@ -573,7 +579,11 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     if (glyph && (!current.proxyable || (current.identity_status === 'unassigned' && answer.verdict === 'match')))
       throw new Problem(422, 'Choose a written character or report an issue.');
     if (round && (!row.quiz || !members!.includes(current.label))) throw new Problem(409, 'This round changed. Reload it.');
-    const written = answer.character ? unified(answer.character) : null;
+    // A match on a corpus glyph the forms tool named confirms the character its inspector showed (`shown`),
+    // so the crop keeps it if the cluster is decided again. A view from before a re-decision was refused above.
+    const formedMatch = glyph && answer.verdict === 'match' && !answer.character && answer.shown && current.form_decision
+      && current.identity_status === 'assigned' && current.identity_basis !== 'human_review' && single(answer.shown) ? answer.shown : null;
+    const written = answer.character ? unified(answer.character) : formedMatch ? unified(formedMatch) : null;
     // A bad crop reported beside a wrong character leaves the crop reported for its box, even with the
     // character named. A batch names the character only: a crop reported for its box, a blank or a merge
     // stays reported.

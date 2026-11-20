@@ -2,6 +2,7 @@
   import '../app.css'
   import '../layers.css'
   import '../tangut-font.css'
+  import '../seal-font.css'
   import '../drawn-forms.css'
   import '../script-colors.css'
   import ChatLinks from '../components/ChatLinks.svelte'
@@ -143,6 +144,7 @@
     · {around('footer.code', 'license')[0]}<a href="https://github.com/mkpoli/glyph-atlas/blob/main/LICENSE" rel="noopener" target="_blank"><LinkMark name="code" />MIT</a>{around('footer.code', 'license')[1]}
     · <a href="https://github.com/mkpoli/glyph-atlas" rel="noopener" target="_blank"><LinkMark name="github" />GitHub</a>
     · <a href={localize('/privacy')}><LinkMark name="privacy" />{t('footer.privacy')}</a>
+    · <a href={localize('/roadmap')}>{t('roadmap.title')}</a>
     · <a href={localize('/design')}>{t('nav.design')}</a>
     · <ChatLinks /></p>
 </footer>

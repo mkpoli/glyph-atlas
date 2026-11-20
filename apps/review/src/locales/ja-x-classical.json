@@ -1305,5 +1305,19 @@
   "sponsor.companyHint": "mkpoli@mkpo.liニ報ゼヨ。",
   "sponsor.supporters": "此頃の賛助者",
   "sponsor.anonymous": "某",
-  "sponsor.thanks": "Glyph Atlasヲ使ヒ給ヒテ難有シ💗"
+  "sponsor.thanks": "Glyph Atlasヲ使ヒ給ヒテ難有シ💗",
+  "roadmap.title": "收錄計畫",
+  "roadmap.work": "書名",
+  "roadmap.edition": "版本",
+  "roadmap.holder": "所藏者",
+  "roadmap.status": "進捗",
+  "roadmap.status.published": "公開濟",
+  "roadmap.status.underway": "作業中",
+  "roadmap.status.planned": "收錄豫定",
+  "roadmap.edition.open": "版本未定",
+  "roadmap.stage.dictionaries": "字書・韻書及ビ訓詁書",
+  "roadmap.stage.collections": "文集",
+  "roadmap.stage.miscellanies": "雜著",
+  "roadmap.stage.technical": "技術及ビ科學ノ書",
+  "roadmap.stage.gazetteers": "地方志"
 }

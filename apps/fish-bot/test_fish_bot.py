@@ -83,6 +83,26 @@ class FakeMatrix:
     def joined_rooms(self):
         return set()
 
+    room_state = ()
+    room_directory = ()
+    memberships = ()
+
+    def state(self, room_id):
+        return list(self.room_state)
+
+    def directory(self):
+        return list(self.room_directory)
+
+    def first_memberships(self, room_id, limit=100):
+        return list(self.memberships)
+
+    pictures: dict = {}  # noqa: RUF012 - a fake; tests replace it per instance
+
+    def thumbnail(self, mxc, size=1024, limit=4_000_000):
+        if mxc not in self.pictures:
+            raise fish_bot.MatrixError(404, "not found")
+        return self.pictures[mxc]
+
     def public_rooms(self):
         return []
 
@@ -98,13 +118,29 @@ class FakeDeepSeek:
         self.calls = []
         self.turns = []
         self.digests = []
+        self.memories = []
+        self.memory_value = fish_bot.Memory(summary="They talked about 西夏文.", keywords=("Tangut",), edits=())
+        self.memory = None
+
+    def recap(self, language, episodes, notes, request=""):
+        self.recaps = getattr(self, "recaps", []) + [(language, episodes, notes, request)]
+        return "Welcome! Here is what we talked about."
 
     def digest(self, language, room_name, room_lines, changes, other_rooms):
         self.digests.append((language, room_name, changes, other_rooms))
         return f"digest in {language}"
 
-    def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=(), rooms=""):
+    def remember(self, room_name, rows, names, known, *, bot_user_id, left_out=()):
+        self.memories.append(([row["event_id"] for row in rows], [int(fact["id"]) for fact in known], set(left_out)))
+        return self.memory_value
+
+    def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=(),
+            rooms="", memory=None, lookup=None, on_step=None, room_facts=None, images=()):
         self.rooms = rooms
+        self.room_facts = room_facts
+        self.images = list(images)
+        self.memory = memory
+        self.lookup = lookup
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
         self.sticker_offers = (tuple(stickers), tuple(recent))
         if self.error is not None:
@@ -964,3 +1000,796 @@ def test_introduces_herself_in_the_welcome_room_even_when_lookup_fails(tmp_path)
     bot.ingest("!welcome:example", trigger, backfilled=False)
     bot.answer("!welcome:example", trigger)
     assert bot.deepseek.turns[0][0] == "intro"
+
+
+HOUR = 3_600_000
+
+
+def memory_bot(tmp_path):
+    bot, matrix, store = make_bot(tmp_path)
+    bot.active_rooms = {ROOM, "!other:example"}
+    return bot, matrix, store
+
+
+def say(bot, body, *, sender="@reader:example", event_id, ts, room=ROOM):
+    bot.ingest(room, event(body, sender=sender, event_id=event_id, ts=ts), backfilled=True)
+
+
+def test_memory_terms_pair_spaceless_scripts_and_keep_words():
+    assert fish_bot.memory_terms("西夏文 Tangut IDS") == ["西夏", "夏文", "tangut", "ids"]
+    assert fish_bot.memory_terms("字 a 한국어") == ["字", "한국", "국어"]
+
+
+def test_remembers_a_finished_stretch_and_moves_on(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    start = fish_bot.now_ms() - 10 * HOUR
+    for number in range(4):
+        say(bot, f"西夏文 {number}", event_id=f"$a{number}", ts=start + number * 60_000)
+    say(bot, "a new day", event_id="$late", ts=start + 9 * HOUR)
+    bot.consolidate()
+    assert bot.deepseek.memories[0][0] == ["$a0", "$a1", "$a2", "$a3"]
+    episode = store.db.execute("SELECT * FROM episodes").fetchone()
+    assert episode["summary"] == "They talked about 西夏文." and json.loads(episode["people"]) == ["@reader:example"]
+    bot._memory_due = 0
+    bot.consolidate()
+    assert len(bot.deepseek.memories) == 1, "the open stretch waits until the room goes quiet"
+
+
+def test_a_stretch_with_nothing_to_keep_leaves_no_episode(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    bot.deepseek.memory_value = fish_bot.Memory(summary="", keywords=(), edits=())
+    say(bot, "hi", event_id="$hi", ts=fish_bot.now_ms() - 30 * HOUR)
+    bot.consolidate()
+    assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
+    assert store.unremembered() == {}
+
+
+def test_memory_leaves_bridges_and_forgotten_people_out(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    start = fish_bot.now_ms() - 2 * HOUR
+    say(bot, "hello", event_id="$a", ts=start)
+    say(bot, "relayed", sender="@idsbot:glyphatlas.org", event_id="$b", ts=start + 1000)
+    say(bot, "secret", sender="@quiet:example", event_id="$c", ts=start + 2000)
+    say(bot, "see you", event_id="$d", ts=start + 3000)
+    say(bot, "bye", event_id="$e", ts=start + 4000)
+    for number in range(200):
+        say(bot, "⿰木木", sender="@idsbot:glyphatlas.org", event_id=f"$ids{number}", ts=start + 1001 + number * 4)
+    store.forget_person("@quiet:example")
+    store.remember_person("@quiet:example")
+    say(bot, "大肥魚 hi", sender=USER, event_id="$echo", ts=start + 2500)
+    bot.consolidate()
+    assert bot.deepseek.memories[0][0] == ["$a", "$d", "$e"], "nothing from the forgotten time, nor her answer to it"
+
+
+def test_fact_edits_reach_only_known_facts_and_present_people():
+    keys = {"Alice": "@reader:example"}
+    raw = json.dumps({"summary": "s", "keywords": ["k"], "facts": [
+        {"op": "add", "about": "Alice", "text": "Alice studies Tangut.", "importance": 9},
+        {"op": "add", "about": "Mallory", "text": "Nobody."},
+        {"op": "add", "about": "self", "text": "大肥魚 promised a sticker."},
+        {"op": "update", "id": 3, "text": "Updated."},
+        {"op": "update", "id": 99, "text": "Unknown."},
+        {"op": "delete", "id": 3},
+    ]})
+    memory = fish_bot.parse_memory(raw, keys, [3])
+    assert [(edit.op, edit.subject, edit.fact, edit.importance) for edit in memory.edits] == [
+        ("add", "@reader:example", None, 5), ("add", "self", None, 3), ("update", "", 3, 3)]
+    blocked = fish_bot.parse_memory(raw, keys, [3], left_out={"@reader:example"})
+    assert all(edit.subject != "@reader:example" for edit in blocked.edits)
+    assert fish_bot.parse_memory('{"summary": "", "facts": [{"op": "add", "about": "self", "text": "x"}]}', keys, []).edits == ()
+
+
+def save(store, room, *, ts, summary, facts=(), people=("@reader:example",), event_ids=None):
+    rows = [{"ts": ts, "sender": people[0], "event_id": event_id, "body": ""} for event_id in event_ids or [f"$x{ts}"]]
+    edits = tuple(fish_bot.Edit(op="add", subject=subject, text=text, importance=4) for subject, text in facts)
+    return store.save_memory(room, rows, people, fish_bot.Memory(summary=summary, keywords=(), edits=edits))
+
+
+def test_a_turn_recalls_the_speakers_and_a_related_talk_elsewhere(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    old = fish_bot.now_ms() - 48 * HOUR
+    save(store, "!other:example", ts=old, summary="Bob showed a 西夏文 dictionary.",
+         facts=[("@reader:example", "Alice writes traditional Chinese."), ("@bob:example", "Bob collects rubbings.")],
+         people=("@bob:example",))
+    save(store, "!other:example", ts=old - HOUR, summary="Talk about soup recipes.")
+    trigger = event("大肥魚，西夏文怎麼讀？", event_id="$call")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    memory = bot.deepseek.memory
+    assert [note["note"] for note in memory["notes"]] == ["Alice writes traditional Chinese."]
+    assert memory["earlier"][-1]["summary"] == "Bob showed a 西夏文 dictionary."
+
+
+def test_forget_me_deletes_their_notes_and_talks_and_says_so(tmp_path):
+    bot, matrix, store = memory_bot(tmp_path)
+    save(store, ROOM, ts=fish_bot.now_ms() - 48 * HOUR, summary="Alice and Bob talked.",
+         facts=[("@reader:example", "Alice likes rice."), ("community", "The atlas has a review page.")])
+    assert fish_bot.call_of(event("!fish forget me"), USER, "大肥魚").mode == "forget"
+    assert fish_bot.call_of(event("大肥魚，忘記我吧"), USER, "大肥魚").mode == "forget"
+    assert fish_bot.call_of(event("大肥魚 forget me not is a flower"), USER, "大肥魚").mode == "chat"
+    trigger = event("!fish forget me", event_id="$forget")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert bot.deepseek.turns[-1][0] == "forgot" and matrix.sent
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
+    assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
+    assert store.forgotten() == {"@reader:example"}
+    back = event("!fish remember me", event_id="$back")
+    bot.ingest(ROOM, back, backfilled=False)
+    bot.answer(ROOM, back)
+    assert bot.deepseek.turns[-1][0] == "remember-me" and store.forgotten() == set()
+
+
+def test_a_redacted_message_takes_its_episode_and_facts_along(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    start = fish_bot.now_ms() - 2 * HOUR
+    for number in range(3):
+        say(bot, f"line {number}", event_id=f"$r{number}", ts=start + number * 1000)
+    bot.deepseek.memory_value = fish_bot.Memory(summary="s", keywords=(), edits=(
+        fish_bot.Edit(op="add", subject="@reader:example", text="A fact."),))
+    bot.consolidate()
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 1
+    bot.redact({"type": "m.room.redaction", "redacts": "$r1"})
+    assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
+    assert store.db.execute("SELECT COUNT(*) FROM memory_terms").fetchone()[0] == 0
+
+
+def test_memory_outlives_the_log_but_not_its_own_horizon(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    save(store, ROOM, ts=now - 400 * 24 * HOUR, summary="Long ago.")
+    save(store, ROOM, ts=now - 200 * 24 * HOUR, summary="Last spring.")
+    store.prune(now - 180 * 24 * HOUR, now - 365 * 24 * HOUR)
+    assert [row["summary"] for row in store.db.execute("SELECT summary FROM episodes")] == ["Last spring."]
+
+
+def test_memory_prompt_formats_people_under_keys_and_lists_known_facts(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    save(store, ROOM, ts=fish_bot.now_ms(), summary="s", facts=[("@bob:example", "Bob collects rubbings.")])
+    known = store.known_facts(["@bob:example"], [])
+    rows = [message_row("hi", sender="@reader:example"), message_row("yo", sender=USER),
+            message_row("hey", sender="@alice2:example")]
+    names = {"@reader:example": "Alice", "@alice2:example": "alice"}
+    user, keys = fish_bot.format_memory("Room", rows, names, known, bot_user_id=USER)
+    payload = json.loads(user)
+    assert payload["people"] == ["Alice", "alice (2)", "bob"]
+    assert [message["from"] for message in payload["messages"]] == ["Alice", "大肥魚", "alice (2)"]
+    assert payload["known"][0]["about"] == "bob"
+    assert keys == {"Alice": "@reader:example", "alice (2)": "@alice2:example", "bob": "@bob:example"}
+
+
+def test_config_reads_the_memory_table(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[memory]\nenabled = false\ndays = 90\n", encoding="utf-8")
+    config = fish_bot.Config.load(path)
+    assert (config.memory_enabled, config.memory_days) == (False, 90)
+
+
+def test_a_stretch_that_keeps_failing_backs_off_and_is_skipped(tmp_path, monkeypatch):
+    bot, _, store = memory_bot(tmp_path)
+    old = fish_bot.now_ms() - 30 * HOUR
+    for number in range(3):
+        say(bot, f"bad {number}", event_id=f"$p{number}", ts=old + number)
+        say(bot, f"good {number}", event_id=f"$g{number}", ts=old + 3600_000 + number, room="!other:example")
+    calls = []
+
+    def remember(room_name, rows, names, known, *, bot_user_id, left_out=()):
+        calls.append(rows[0]["event_id"])
+        if rows[0]["event_id"] == "$p0":
+            raise fish_bot.DeepSeekError("400 Content Exists Risk")
+        return fish_bot.Memory(summary="fine", keywords=(), edits=())
+
+    monkeypatch.setattr(bot.deepseek, "remember", remember)
+    bot.consolidate()
+    bot._memory_due = 0
+    bot.consolidate()
+    assert calls == ["$p0", "$g0"], "the other room goes on while the failing one waits"
+    for _ in range(fish_bot.MEMORY_TRIES - 1):
+        bot._memory_failures[ROOM] = (*bot._memory_failures[ROOM][:2], 0.0)
+        bot._memory_due = 0
+        bot.consolidate()
+    assert calls.count("$p0") == fish_bot.MEMORY_TRIES and ROOM not in store.unremembered()
+
+
+def test_a_note_goes_with_every_talk_it_came_from(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    first = save(store, ROOM, ts=now - 2 * HOUR, summary="Bob said he reads Tangut.", people=("@bob:example",),
+                 facts=[("community", "Someone here reads Tangut.")], event_ids=["$bob"])
+    fact = store.db.execute("SELECT id FROM facts").fetchone()["id"]
+    rows = [{"ts": now - HOUR, "sender": "@carol:example", "event_id": "$carol", "body": ""}]
+    store.save_memory(ROOM, rows, ["@carol:example"], fish_bot.Memory(summary="Carol too.", keywords=(), edits=(
+        fish_bot.Edit(op="update", fact=fact, text="Bob and Carol read Tangut."),)))
+    assert first
+    store.forget_person("@bob:example")
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
+    assert [row["summary"] for row in store.db.execute("SELECT summary FROM episodes")] == ["Carol too."]
+
+
+def test_a_redaction_after_the_log_is_pruned_still_reaches_memory(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    old = fish_bot.now_ms() - 200 * 24 * HOUR
+    save(store, ROOM, ts=old, summary="Long ago.", facts=[("@reader:example", "Alice wrote it.")], event_ids=["$old"])
+    store.prune(fish_bot.now_ms() - 180 * 24 * HOUR, fish_bot.now_ms() - 365 * 24 * HOUR)
+    bot.redact({"type": "m.room.redaction", "redacts": "$old"})
+    assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
+
+
+def test_a_redaction_outside_an_episode_leaves_it(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    start = fish_bot.now_ms() - 2 * HOUR
+    say(bot, "one", event_id="$1", ts=start)
+    say(bot, "relay", sender="@telegrambot:glyphatlas.org", event_id="$relay", ts=start + 1)
+    say(bot, "two", event_id="$2", ts=start + 2)
+    say(bot, "three", event_id="$3", ts=start + 3)
+    bot.consolidate()
+    bot.redact({"type": "m.room.redaction", "redacts": "$relay"})
+    assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 1
+
+
+def test_forget_me_takes_effect_over_the_chat_budget(tmp_path):
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20, max_chats_per_hour=1)
+    bot, matrix, store = make_bot(tmp_path, config=config)
+    save(store, ROOM, ts=fish_bot.now_ms() - HOUR, summary="Alice talked.", facts=[("@reader:example", "Alice likes rice.")])
+    bot._chats = [fish_bot.time.monotonic()]
+    trigger = event("!fish forget me", event_id="$forget")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert matrix.sent == [] and store.forgotten() == {"@reader:example"}
+    assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
+
+
+def test_a_room_no_longer_read_is_not_recalled(tmp_path):
+    bot, _, store = memory_bot(tmp_path)
+    save(store, "!gone:example", ts=fish_bot.now_ms() - HOUR, summary="西夏文 in a closed room.")
+    rows = [message_row("西夏文")]
+    assert bot.recall(ROOM, rows, {}) == {}
+
+
+def test_a_question_about_being_remembered_is_a_chat():
+    assert fish_bot.call_of(event("大肥魚 remember me?"), USER, "大肥魚").mode == "chat"
+    assert fish_bot.call_of(event("大肥魚，記住我"), USER, "大肥魚").mode == "remember"
+
+
+def test_memory_waits_for_the_chat_to_go_still(tmp_path):
+    bot, _, _ = memory_bot(tmp_path)
+    start = fish_bot.now_ms() - 30 * HOUR
+    for number in range(3):
+        say(bot, f"line {number}", event_id=f"$s{number}", ts=start + number)
+    bot._heard_at = fish_bot.time.monotonic()
+    bot.consolidate()
+    assert bot.deepseek.memories == []
+    bot._heard_at = 0.0
+    bot.consolidate()
+    assert len(bot.deepseek.memories) == 1
+class FakeWeb:
+    def __init__(self):
+        self.queries = []
+
+    def search(self, query, count=5):
+        self.queries.append(query)
+        return [{"title": "Tangut", "url": "https://example.org/tangut", "date": "2026-11-01", "summary": "A script."}]
+
+    def fetch(self, url):
+        return {"title": "Page", "content": "x" * 20_000}
+
+
+class SearchingGitHub(FakeGitHub):
+    def __init__(self):
+        super().__init__()
+        self.searches = []
+
+    def search(self, kind, query, scope):
+        self.searches.append((kind, query, scope))
+        return [{"repo": "mkpoli/han-compose", "path": "js/src/tree.js"}]
+
+
+def answer(content=None, calls=None):
+    message = {"role": "assistant", "content": content if content is not None else " "}
+    if calls:
+        message["tool_calls"] = [{"id": f"call_{number}", "type": "function",
+                                  "function": {"name": name, "arguments": json.dumps(arguments)}}
+                                 for number, (name, arguments) in enumerate(calls)]
+    return {"choices": [{"message": message}]}
+
+
+def scripted(monkeypatch, answers):
+    model = fish_bot.DeepSeek("key")
+    bodies = []
+
+    def post(body, url=None):
+        bodies.append(json.loads(json.dumps(body)))
+        return answers.pop(0)
+
+    monkeypatch.setattr(model, "_post", post)
+    return model, bodies
+
+
+def test_a_called_turn_looks_something_up_before_it_answers(tmp_path, monkeypatch):
+    web = FakeWeb()
+    lookup = fish_bot.Lookup(web, None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    model, bodies = scripted(monkeypatch, [answer(calls=[("web_search", {"query": "Tangut script"})]),
+                                           answer('{"say": "It is a script."}')])
+    steps = []
+    act = model.act("Room", "", [message_row("what is Tangut?")], {}, task="called", trigger=0,
+                    bot_user_id=USER, lookup=lookup, on_step=lambda: steps.append(1))
+    assert act.say == ("It is a script.",) and steps == [1] and web.queries == ["Tangut script"]
+    assert [tool["function"]["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "characters", "recall"]
+    assert [message["role"] for message in bodies[1]["messages"][-2:]] == ["tool", "system"]
+    assert json.loads(bodies[1]["messages"][-2]["content"])["results"][0]["url"] == "https://example.org/tangut"
+    assert bodies[1]["response_format"] == {"type": "json_object"}
+
+
+def test_lookups_stop_after_a_few_rounds(tmp_path, monkeypatch):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    loops = [answer(calls=[("web_search", {"query": "again"})]) for _ in range(fish_bot.LOOKUP_ROUNDS)]
+    model, bodies = scripted(monkeypatch, [*loops, answer('{"say": "ok"}')])
+    act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER, lookup=lookup)
+    assert act.say == ("ok",)
+    assert bodies[-1]["tool_choice"] == "none" and "tool_choice" not in bodies[-2]
+
+
+def test_a_lookup_refuses_bad_arguments_and_keeps_to_its_budget(tmp_path):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", per_hour=2)
+    assert "error" in lookup.run("read_page", '{"url": "file:///etc/passwd"}')
+    assert "error" in lookup.run("web_search", "not json")
+    assert "error" in lookup.run("github_read", '{"repo": "mkpoli/glyph-atlas"}')
+    assert "budget" in lookup.run("web_search", '{"query": "x"}')["error"]
+    page = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "other.sqlite3"), owner="mkpoli").run(
+        "read_page", '{"url": "https://example.org"}')
+    assert page["cut"] and len(page["text"]) < fish_bot.MAX_TOOL_RESULT
+
+
+def test_github_search_covers_the_owner_unless_a_repo_is_named(tmp_path):
+    github = SearchingGitHub()
+    lookup = fish_bot.Lookup(FakeWeb(), github, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    assert [tool["function"]["name"] for tool in lookup.specs()][-3:] == ["github_search", "github_read", "github_item"]
+    lookup.run("github_search", {"kind": "code", "query": "descriptionEnd"})
+    lookup.run("github_search", {"kind": "issues", "query": "sticker", "repo": "mkpoli/glyph-atlas"})
+    assert github.searches == [("code", "descriptionEnd", "user:mkpoli"), ("issues", "sticker", "repo:mkpoli/glyph-atlas")]
+
+
+def test_github_reads_a_file_and_lists_a_directory(monkeypatch):
+    github = fish_bot.GitHub("token", "mkpoli/glyph-atlas")
+    paths = []
+    replies = {
+        "/repos/mkpoli/han-compose/contents/js/src/tree.js?ref=main": {
+            "type": "file", "encoding": "base64", "content": "ZXhwb3J0IGZ1bmN0aW9u\n", "size": 15, "html_url": "https://github.com/x"},
+        "/repos/mkpoli/han-compose/contents/": [{"name": "js", "type": "dir", "size": 0}],
+    }
+
+    def call(method, path, body=None, accept="", timeout=None):
+        paths.append(path)
+        return replies[path]
+
+    monkeypatch.setattr(github, "_call", call)
+    assert github.read("mkpoli/han-compose", "/js/src/tree.js", "main")["text"] == "export function"
+    assert github.read("mkpoli/han-compose")["entries"] == [{"name": "js", "type": "dir", "size": 0}]
+
+
+def test_only_an_answer_to_a_call_may_look_things_up(tmp_path, monkeypatch):
+    bot, _, _ = make_bot(tmp_path)
+    trigger = event("大肥魚，IDS工房是什麼？", event_id="$call")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert bot.deepseek.lookup is bot.lookup is not None
+    monkeypatch.setattr(bot, "_random", lambda: 0.0)
+    bot.turn(ROOM, "$call", task="ambient")
+    assert bot.deepseek.lookup is None
+
+
+def test_the_recall_tool_searches_every_room(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    store.set_room("!other:example", "開發 · Dev", "")
+    save(store, "!other:example", ts=fish_bot.now_ms() - 24 * HOUR, summary="IDS工房上線了。",
+         facts=[("community", "IDS工房 is an open-source editor.")])
+    found = fish_bot.Lookup(FakeWeb(), None, store, owner="mkpoli",
+                            rooms=lambda: {"!other:example"}).run("recall", {"query": "IDS工房"})
+    assert found["earlier"][0]["room"] == "開發 · Dev"
+    assert found["notes"][0]["about"] == "the community"
+    closed = fish_bot.Lookup(FakeWeb(), None, store, owner="mkpoli").run("recall", {"query": "IDS工房"})
+    assert closed["earlier"] == []
+
+
+def test_config_reads_the_lookup_table(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[lookup]\nenabled = false\nper_hour = 30\n", encoding="utf-8")
+    config = fish_bot.Config.load(path)
+    assert (config.lookup_enabled, config.lookup_per_hour) == (False, 30)
+
+
+def test_characters_are_described_from_the_database_with_derived_names():
+    described = fish_bot.describe_characters("𗼇字\U0003FFFD")
+    assert described[0] == {"char": "𗼇", "code_point": "U+17F07", "name": "TANGUT IDEOGRAPH-17F07"}
+    assert described[1]["name"] == "CJK UNIFIED IDEOGRAPH-5B57"
+    assert described[2]["name"].startswith("unassigned")
+
+
+def test_the_characters_tool_costs_no_budget(tmp_path):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", per_hour=0)
+    assert lookup.run("characters", {"text": "字"})["characters"][0]["code_point"] == "U+5B57"
+    assert "budget" in lookup.run("web_search", {"query": "x"})["error"]
+
+
+def test_no_recall_tool_while_memory_is_off(tmp_path):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", memory=False)
+    assert "recall" not in [tool["function"]["name"] for tool in lookup.specs()]
+    assert "error" in lookup.run("recall", {"query": "x"})
+
+
+def test_github_reads_stay_inside_the_named_repository(tmp_path):
+    github = SearchingGitHub()
+    lookup = fish_bot.Lookup(FakeWeb(), github, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    for repo in ("../..", "mkpoli/..", "./x"):
+        assert "error" in lookup.run("github_item", {"repo": repo, "number": 1}), repo
+    with pytest.raises(ValueError):
+        fish_bot.GitHub("token", "mkpoli/glyph-atlas").read("mkpoli/glyph-atlas", "../../../../user/repos")
+
+
+def test_characters_keep_whitespace():
+    lookup_text = fish_bot.describe_characters("　 a ")
+    assert [item["code_point"] for item in lookup_text] == ["U+3000", "U+0020", "U+0061", "U+00A0"]
+
+
+def test_github_item_shows_the_newest_comments(monkeypatch):
+    github = fish_bot.GitHub("token", "mkpoli/glyph-atlas")
+    pages = {page: [{"user": {"login": "x"}, "body": f"c{n}"} for n in range(page * 5 - 4, min(page * 5, 102) + 1)]
+             for page in range(1, 22)}
+
+    def call(method, path, body=None, accept="", timeout=None):
+        if path.endswith("/issues/7"):
+            return {"title": "t", "comments": 102}
+        if "/comments" in path:
+            return pages[int(path.rsplit("page=", 1)[1])]
+        raise AssertionError(path)
+
+    monkeypatch.setattr(github, "_call", call)
+    assert [comment["body"] for comment in github.item("mkpoli/glyph-atlas", 7)["comments"]] == [
+        "c98", "c99", "c100", "c101", "c102"]
+
+
+def test_a_turn_stops_looking_things_up_when_time_runs_out(tmp_path, monkeypatch):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    model, bodies = scripted(monkeypatch, [answer(calls=[("web_search", {"query": "slow"})]), answer('{"say": "ok"}')])
+    clock = iter([0.0, 1000.0, 1000.0, 1000.0])
+    monkeypatch.setattr(fish_bot.time, "monotonic", lambda: next(clock))
+    act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER, lookup=lookup)
+    assert act.say == ("ok",) and lookup.deepseek.queries == []
+    assert bodies[-1]["tool_choice"] == "none"
+
+
+def member(user, name, *, ts=1_792_852_938_000, membership="join"):
+    return {"type": "m.room.member", "state_key": user, "origin_server_ts": ts,
+            "content": {"membership": membership, "displayname": name}}
+
+
+ROOM_STATE = [
+    {"type": "m.room.create", "sender": "@ops:example", "state_key": "", "origin_server_ts": 1_792_852_938_380, "content": {}},
+    {"type": "m.room.canonical_alias", "state_key": "", "content": {"alias": "#zh:example"}},
+    {"type": "m.room.topic", "state_key": "", "content": {"topic": "中文"}},
+    {"type": "m.bridge", "state_key": "discord", "content": {
+        "protocol": {"displayname": "Discord"},
+        "channel": {"displayname": "#中文", "external_url": "https://discord.com/channels/1/2"}}},
+    member("@mkpoli:example", "mkpoli"), member("@qq_ab:example", "胡妹"), member("@discord_1:example", "まくぽり"),
+    member("@qqbot:example", "QQ"), member("@bigfatfish:example", "大肥魚"), member("@left:example", "x", membership="leave"),
+]
+
+
+def community(matrix=None):
+    matrix = matrix or FakeMatrix()
+    matrix.room_state = ROOM_STATE
+    matrix.room_directory = [{"room_id": ROOM, "name": "中文", "canonical_alias": "#zh:example", "num_joined_members": 6},
+                             {"room_id": "!dev:example", "name": "開發 · Dev", "canonical_alias": "#dev:example"},
+                             {"room_id": "!devops:example", "name": "開發 · Ops", "canonical_alias": "#ops:example"}]
+    matrix.memberships = [member("@ops:example", "ops", ts=1), member("@telegrambot:glyphatlas.org", "bot", ts=2),
+                          member("@mkpoli:example", "mkpoli", ts=3, membership="invite"),
+                          member("@mkpoli:example", "mkpoli", ts=4), member("@mkpoli:example", "mkpoli", ts=5)]
+    return fish_bot.Community(matrix, {"@qqbot:example", "@bigfatfish:example", "@telegrambot:glyphatlas.org"},
+                              rooms=lambda: {ROOM, "!dev:example", "!devops:example"})
+
+
+def test_a_room_summary_counts_people_by_platform_and_names_its_bridges():
+    facts = community().summary(ROOM)
+    assert facts["members"] == 3 and facts["by_platform"] == {"Matrix": 1, "QQ": 1, "Discord": 1}
+    assert facts["alias"] == "#zh:example" and facts["created"] == fish_bot.local_day(1_792_852_938_380)
+    assert facts["bridged_to"] == ["Discord #中文 (https://discord.com/channels/1/2)", "QQ group"]
+
+
+def test_room_info_lists_who_joined_first_without_bots_or_repeats():
+    info = community().info(ROOM)
+    assert info["created_by"] == "@ops:example" and info["room"] == "中文"
+    assert [person["name"] for person in info["first_to_join"]] == ["ops", "mkpoli"]
+    assert "QQ group members who never spoke are missing" in info["coverage"]
+
+
+def test_rooms_are_found_by_alias_name_part_or_here():
+    rooms = community()
+    assert rooms.find("", ROOM) == ROOM and rooms.find("this group", ROOM) == ROOM
+    assert rooms.find("#dev:example", ROOM) == "!dev:example"
+    assert rooms.find("dev", ROOM) == "!dev:example"
+    with pytest.raises(ValueError):
+        rooms.find("開發", ROOM)
+    with pytest.raises(ValueError):
+        rooms.find("!private:example", ROOM)
+
+
+def test_members_are_filtered_by_name():
+    found = community().members(ROOM, "胡")
+    assert found["members"] == [{"name": "胡妹", "platform": "QQ"}] and found["total"] == 1
+
+
+def test_room_tools_are_local_and_free(tmp_path):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli",
+                             per_hour=0, community=community())
+    lookup.here = ROOM
+    assert "rooms" in [tool["function"]["name"] for tool in lookup.specs()]
+    assert lookup.run("room_info", {})["first_to_join"][0]["name"] == "ops"
+    listed = lookup.run("rooms", {})["rooms"]
+    assert len(listed) == 3 and listed[0]["members"] == 3, "counted as room_info counts, without bots"
+    assert lookup.run("members", {"room": "中文", "query": "mk"})["total"] == 1
+
+
+def test_every_turn_knows_its_room(tmp_path):
+    matrix = FakeMatrix()
+    community(matrix)
+    bot, _, _ = make_bot(tmp_path, matrix=matrix)
+    trigger = event("大肥魚 這個羣多少人？", event_id="$call")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert bot.deepseek.room_facts["alias"] == "#zh:example"
+    assert bot.lookup.here == ROOM
+
+
+def test_the_chat_prompt_carries_the_room_facts():
+    payload = json.loads(fish_bot.format_chat("中文", "", [message_row("hi")], {}, task="called", trigger=0,
+                                              bot_user_id=USER, room_facts={"members": 3}))
+    assert payload["room"] == {"name": "中文", "topic": "", "members": 3}
+
+
+def test_a_long_member_list_fits_and_says_how_many_are_left_out():
+    matrix = FakeMatrix()
+    rooms = community(matrix)
+    matrix.room_state = [*ROOM_STATE, *(member(f"@discord_{n}:example", f"使用者{n:03d}長長的名字") for n in range(400)),
+                         {"type": "m.room.member", "state_key": ["odd"], "content": {"membership": "join"}}]
+    found = rooms.members(ROOM)
+    assert len(json.dumps(found, ensure_ascii=False)) <= fish_bot.MAX_TOOL_RESULT
+    assert found["total"] == 403 and "more" in found["left_out"]
+    assert rooms.summary(ROOM)["members"] == 403
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+
+
+def picture(event_id, *, sender="@reader:example", url="mxc://example/abc", sticker=False, ts=None):
+    if sticker:
+        return {"type": "m.sticker", "sender": sender, "event_id": event_id, "room_id": ROOM,
+                "origin_server_ts": ts or fish_bot.now_ms(), "content": {"body": "cute", "url": url}}
+    return event("photo.png", sender=sender, event_id=event_id, ts=ts, msgtype="m.image", url=url)
+
+
+def test_keeps_the_link_to_a_picture_or_sticker(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.ingest(ROOM, picture("$p"), backfilled=False)
+    bot.ingest(ROOM, picture("$s", url="mxc://example/st", sticker=True), backfilled=False)
+    rows = store.context(ROOM, fish_bot.now_ms() + 1000, 10)
+    assert [(row["body"], row["media"]) for row in rows] == [
+        ("[image] photo.png", "mxc://example/abc"), ("[sticker] cute", "mxc://example/st")]
+
+
+def test_an_old_log_gains_the_media_column(tmp_path):
+    path = tmp_path / "chat.sqlite3"
+    connection = sqlite3.connect(path)
+    connection.execute("CREATE TABLE events (event_id TEXT PRIMARY KEY, room_id TEXT NOT NULL, sender TEXT NOT NULL, "
+                       "ts INTEGER NOT NULL, body TEXT NOT NULL, msgtype TEXT NOT NULL DEFAULT '', "
+                       "backfilled INTEGER NOT NULL DEFAULT 0)")
+    connection.execute("INSERT INTO events VALUES('$old', ?, '@a:example', 1, 'hi', 'm.text', 0)", (ROOM,))
+    connection.commit()
+    connection.close()
+    store = fish_bot.Store(path)
+    assert store.context(ROOM, 10, 5)[0]["media"] == ""
+
+
+def test_a_turn_sees_the_newest_pictures_people_posted(tmp_path):
+    matrix = FakeMatrix()
+    matrix.pictures = {"mxc://example/1": PNG, "mxc://example/2": b"GIF89a....", "mxc://example/own": PNG,
+                       "mxc://example/odd": b"not an image"}
+    bot, _, _ = make_bot(tmp_path, matrix=matrix)
+    start = fish_bot.now_ms() - 60_000
+    bot.ingest(ROOM, picture("$1", url="mxc://example/1", ts=start), backfilled=False)
+    bot.ingest(ROOM, picture("$own", sender=USER, url="mxc://example/own", ts=start + 1), backfilled=False)
+    bot.ingest(ROOM, picture("$odd", url="mxc://example/odd", ts=start + 2), backfilled=False)
+    bot.ingest(ROOM, picture("$gone", url="mxc://example/gone", ts=start + 3), backfilled=False)
+    bot.ingest(ROOM, picture("$2", url="mxc://example/2", sticker=True, ts=start + 4), backfilled=False)
+    trigger = event("大肥魚，這是你嗎？", event_id="$call", ts=start + 5)
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    images = bot.deepseek.images
+    assert [index for index, _ in images] == [0, 4]
+    assert images[0][1].startswith("data:image/png;base64,") and images[1][1].startswith("data:image/gif;base64,")
+
+
+def test_the_model_gets_pictures_after_the_json(monkeypatch):
+    model, bodies = scripted(monkeypatch, [answer('{"say": "是我！"}')])
+    rows = [message_row("[image] me.png")]
+    model.act("Room", "", rows, {}, task="called", trigger=0, bot_user_id=USER, images=[(0, "data:image/png;base64,AA")])
+    content = bodies[0]["messages"][1]["content"]
+    assert json.loads(content[0]["text"])["messages"][0]["image"] == "attached below"
+    assert content[1] == {"type": "text", "text": "The picture in message 0:"}
+    assert content[2] == {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}}
+
+
+def test_a_posted_picture_counts_as_something_to_look_at(tmp_path, monkeypatch):
+    bot, _, _ = make_bot(tmp_path)
+    bot.notice(ROOM, picture("$p"))
+    assert bot._ambient[ROOM]["lively"] and bot._ambient[ROOM]["count"] == 1
+
+
+def test_a_refused_picture_costs_the_picture_not_the_answer(monkeypatch):
+    model = fish_bot.DeepSeek("key")
+    bodies = []
+
+    def post(body, url=None, **_):
+        bodies.append(json.loads(json.dumps(body)))
+        if isinstance(body["messages"][1]["content"], list):
+            raise fish_bot.DeepSeekError("DeepSeek answered 400: invalid image")
+        return answer('{"say": "看不到圖，但我在！"}')
+
+    monkeypatch.setattr(model, "_post", post)
+    act = model.act("Room", "", [message_row("[image] x.png")], {}, task="called", trigger=0, bot_user_id=USER,
+                    images=[(0, "data:image/png;base64,AA")])
+    assert act.say == ("看不到圖，但我在！",) and isinstance(bodies[1]["messages"][1]["content"], str)
+
+
+def test_a_picture_that_fails_is_fetched_once(tmp_path):
+    matrix = FakeMatrix()
+    calls = []
+    matrix.thumbnail = lambda mxc, size=1024, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(404, "gone"))
+    bot, _, store = make_bot(tmp_path, matrix=matrix)
+    bot.ingest(ROOM, picture("$gone", url="mxc://example/gone"), backfilled=False)
+    rows = store.context(ROOM, fish_bot.now_ms() + 1000, 10)
+    assert bot.pictures(rows, 4) == [] and bot.pictures(rows, 4) == []
+    assert calls == ["mxc://example/gone"]
+
+
+def test_her_own_sticker_is_not_a_picture_she_cannot_see(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.ingest(ROOM, picture("$mine", sender=USER, url="mxc://example/mine", sticker=True), backfilled=False)
+    rows = store.context(ROOM, fish_bot.now_ms() + 1000, 10)
+    payload = json.loads(fish_bot.format_chat("Room", "", rows, {}, task="ambient", trigger=None, bot_user_id=USER))
+    assert "image" not in payload["messages"][0]
+
+
+def test_only_a_real_new_picture_counts_for_reading_along():
+    edited = picture("$e")
+    edited["content"]["m.relates_to"] = {"rel_type": "m.replace", "event_id": "$x"}
+    empty = {"type": "m.sticker", "sender": "@reader:example", "event_id": "$s", "content": {}}
+    linkless = event("photo.png", event_id="$l", msgtype="m.image")
+    assert [fish_bot._picture(item, USER) for item in (edited, empty, linkless, picture("$ok"))] == [None, None, None, "!"]
+
+
+def test_a_picture_link_cannot_climb_out_of_the_media_api():
+    with pytest.raises(fish_bot.MatrixError):
+        fish_bot.Matrix("http://127.0.0.1:1", "token").thumbnail("mxc://../config")
+
+
+def reply(body, target, *, event_id="$reply", sender="@discord_1:example"):
+    return event(body, event_id=event_id, sender=sender, **{"m.relates_to": {"m.in_reply_to": {"event_id": target}}})
+
+
+def test_a_reply_to_her_message_is_a_call(tmp_path):
+    bot, matrix, store = make_bot(tmp_path, act=act("不客氣～"))
+    bot.ingest(ROOM, event("오늘의 소식", sender=USER, event_id="$digest"), backfilled=False)
+    thanks = reply("고마워요 딥식이!", "$digest")
+    bot.ingest(ROOM, thanks, backfilled=False)
+    bot.answer(ROOM, thanks)
+    assert bot.deepseek.turns[0][0] == "called" and matrix.sent[0][1]["body"] == "不客氣～"
+    assert store.outcome("$reply")[0] == "chatted"
+
+
+def test_a_reply_to_someone_else_is_not_a_call(tmp_path):
+    bot, matrix, _ = make_bot(tmp_path)
+    bot.ingest(ROOM, event("hello", sender="@other:example", event_id="$other"), backfilled=False)
+    answer_to_other = reply("thanks!", "$other")
+    bot.answer(ROOM, answer_to_other)
+    assert bot.deepseek.turns == [] and matrix.sent == []
+
+
+def test_a_reply_to_her_message_outside_the_log_is_checked_with_the_homeserver(tmp_path):
+    matrix = FakeMatrix()
+    asked = []
+    matrix.event = lambda room_id, event_id: asked.append(event_id) or {"sender": USER}
+    bot, _, _ = make_bot(tmp_path, matrix=matrix)
+    late = reply("還記得這條嗎", "$old")
+    bot.ingest(ROOM, late, backfilled=False)
+    bot.answer(ROOM, late)
+    bot.notice(ROOM, late)
+    bot.answer(ROOM, reply("還有這條", "$old", event_id="$again"))
+    assert asked == ["$old"] and bot.deepseek.turns[0][0] == "called"
+    bot.answer(ROOM, reply("relay", "$other-old", sender="@discordbot:glyphatlas.org"))
+    assert asked == ["$old"], "no lookup for a bot's reply"
+
+
+def test_the_first_message_of_a_thread_on_her_post_is_not_a_reply_to_her(tmp_path):
+    bot, matrix, _ = make_bot(tmp_path)
+    bot.ingest(ROOM, event("今日のまとめ", sender=USER, event_id="$digest"), backfilled=False)
+    threaded = event("@alice what do you think?", event_id="$t", **{"m.relates_to": {
+        "rel_type": "m.thread", "event_id": "$digest", "is_falling_back": True,
+        "m.in_reply_to": {"event_id": "$digest"}}})
+    bot.answer(ROOM, threaded)
+    assert bot.deepseek.turns == [] and matrix.sent == []
+
+
+
+
+def test_reads_the_catch_up_command():
+    for body in ("!fish recap", "大肥魚 前情提要", "大肥鱼，之前都聊了些什么？", "大肥魚，我錯過了什麼？",
+                 "大肥魚さん、これまでの話", "@bigfatfish catch me up please", "大肥魚 지금까지 요약해 줘"):
+        assert fish_bot.call_of(event(body), USER, "大肥魚", (), ("大肥鱼",)).mode == "recap", body
+    for body in ("大肥魚，總結一下", "大肥魚さん、まとめて", "大肥魚 요약해 줘", "大肥魚，總結一下這個 PR",
+                 "大肥魚 recap of the meeting tomorrow?"):
+        assert fish_bot.call_of(event(body), USER, "大肥魚").mode == "chat", body
+
+
+def test_a_catch_up_covers_every_room_still_read(tmp_path):
+    bot, matrix, store = memory_bot(tmp_path)
+    store.set_room("!other:example", "開發 · Dev", "")
+    save(store, "!other:example", ts=fish_bot.now_ms() - 48 * HOUR, summary="IDS工房上線了。",
+         facts=[("community", "IDS工房 is an open-source editor.")])
+    save(store, ROOM, ts=fish_bot.now_ms() - 24 * HOUR, summary="Talked about 西夏文.")
+    save(store, "!gone:example", ts=fish_bot.now_ms() - HOUR, summary="A closed room.")
+    trigger = event("!fish recap", event_id="$recap")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    _, episodes, notes, request = bot.deepseek.recaps[0]
+    assert [episode["summary"] for episode in episodes] == ["IDS工房上線了。", "Talked about 西夏文."]
+    assert episodes[0]["room"] == "開發 · Dev" and notes == ["IDS工房 is an open-source editor."]
+    assert request == "!fish recap"
+    assert matrix.sent[-1][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$recap"}}
+    assert store.outcome("$recap")[0] == "recapped"
+
+
+def test_the_catch_up_prompt_carries_the_episodes_and_request():
+    payload = json.loads(fish_bot.format_recap([{"room": "中文", "date": "2026-11-01", "summary": "s"}], ["n"], "!fish recap"))
+    assert payload == {"request": "!fish recap", "episodes": [{"room": "中文", "date": "2026-11-01", "summary": "s"}],
+                       "notes": ["n"]}
+
+
+def test_long_text_is_split_where_it_reads_naturally():
+    paragraphs = ["甲" * 1200, "乙" * 1200, "丙" * 300]
+    parts = fish_bot.split_message("\n\n".join(paragraphs))
+    assert parts == ["甲" * 1200, "乙" * 1200 + "\n\n" + "丙" * 300]
+    assert fish_bot.split_message("a" * 1795 + "\n\n    code") == ["a" * 1795, "    code"]
+    sentences = fish_bot.split_message("。".join(["字" * 700] * 5))
+    assert all(len(part) <= fish_bot.MAX_MESSAGE for part in sentences) and all(part.endswith("。") for part in sentences[:-1])
+    assert [len(part) for part in fish_bot.split_message("x" * 4000)] == [1800, 1800, 400]
+    assert fish_bot.split_message("short") == ["short"]
+
+
+def test_a_long_digest_goes_out_in_parts_discord_accepts(tmp_path):
+    bot, matrix, _ = make_bot(tmp_path)
+    bot._post(ROOM, "\n\n".join(["段" * 1500] * 3), "fish-d-test", reply_to="$ask")
+    bodies = [content["body"] for _, content, _ in matrix.sent]
+    assert len(bodies) == 3 and all(len(body) <= fish_bot.MAX_MESSAGE for body in bodies)
+    assert matrix.sent[0][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$ask"}}
+    assert "m.relates_to" not in matrix.sent[1][1]
+    assert len({transaction for _, _, transaction in matrix.sent}) == 3
+
+
+def test_a_digest_that_fails_after_its_first_part_is_not_posted_again(tmp_path):
+    bot, matrix, _ = make_bot(tmp_path)
+    sent = []
+
+    def send(room_id, content, transaction_id, event_type="m.room.message"):
+        if transaction_id.endswith("-1"):
+            raise fish_bot.MatrixError(502, "bad gateway")
+        sent.append(transaction_id)
+        return "$x"
+
+    matrix.send = send
+    bot._post(ROOM, "\n\n".join(["段" * 1500] * 2), "fish-d-test")
+    assert sent == ["fish-d-test-0"]
+    with pytest.raises(fish_bot.MatrixError):
+        matrix.send = lambda *args, **kwargs: (_ for _ in ()).throw(fish_bot.MatrixError(502, "down"))
+        bot._post(ROOM, "short", "fish-d-other")
