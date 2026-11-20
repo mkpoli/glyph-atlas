@@ -130,7 +130,8 @@ class FakeDeepSeek:
         self.digests.append((language, room_name, changes, other_rooms))
         return f"digest in {language}"
 
-    def remember(self, room_name, rows, names, known, *, bot_user_id, left_out=()):
+    def remember(self, room_name, rows, names, known, *, bot_user_id, left_out=(), images=()):
+        self.memory_images = list(images)
         self.memories.append(([row["event_id"] for row in rows], [int(fact["id"]) for fact in known], set(left_out)))
         return self.memory_value
 
@@ -1174,7 +1175,7 @@ def test_a_stretch_that_keeps_failing_backs_off_and_is_skipped(tmp_path, monkeyp
         say(bot, f"good {number}", event_id=f"$g{number}", ts=old + 3600_000 + number, room="!other:example")
     calls = []
 
-    def remember(room_name, rows, names, known, *, bot_user_id, left_out=()):
+    def remember(room_name, rows, names, known, *, bot_user_id, left_out=(), images=()):
         calls.append(rows[0]["event_id"])
         if rows[0]["event_id"] == "$p0":
             raise fish_bot.DeepSeekError("400 Content Exists Risk")
@@ -1860,3 +1861,41 @@ def test_a_failed_count_never_costs_the_answer(monkeypatch):
         "choices": [{"message": {"content": '{"say": "still here"}'}}], "usage": {"prompt_tokens": "odd"}})
     act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
     assert act.say == ("still here",)
+
+
+def test_memory_sees_the_pictures_of_a_stretch(tmp_path):
+    matrix = FakeMatrix()
+    matrix.pictures = {"mxc://example/scan": PNG}
+    bot, _, _ = make_bot(tmp_path, matrix=matrix)
+    bot.active_rooms = {ROOM}
+    start = fish_bot.now_ms() - 2 * HOUR
+    say(bot, "look at this scan", event_id="$t", ts=start)
+    bot.ingest(ROOM, picture("$scan", url="mxc://example/scan", ts=start + 1000), backfilled=True)
+    say(bot, "the left part is 糸", event_id="$u", ts=start + 2000)
+    bot.consolidate()
+    assert [index for index, _ in bot.deepseek.memory_images] == [1]
+
+
+def test_the_memory_prompt_numbers_its_pictures(monkeypatch):
+    model, bodies = scripted(monkeypatch, [answer('{"summary": "A scan of 絲.", "facts": []}')])
+    rows = [message_row("look"), message_row("[image] scan.png")]
+    memory = model.remember("Room", rows, {}, [], bot_user_id=USER, images=[(1, "data:image/png;base64,AA")])
+    content = bodies[0]["messages"][1]["content"]
+    assert json.loads(content[0]["text"])["messages"][1]["picture"] == 1
+    assert content[1] == {"type": "text", "text": "Picture 1:"} and content[2]["type"] == "image_url"
+    assert memory.summary == "A scan of 絲."
+
+
+def test_memory_tries_again_without_pictures_the_model_refuses(monkeypatch):
+    model = fish_bot.DeepSeek("key")
+    sent = []
+
+    def post(body, url=None, **_):
+        sent.append(body["messages"][1]["content"])
+        if isinstance(body["messages"][1]["content"], list):
+            raise fish_bot.DeepSeekError("DeepSeek answered 400: invalid image")
+        return answer('{"summary": "Talked.", "facts": []}')
+
+    monkeypatch.setattr(model, "_post", post)
+    memory = model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER, images=[(0, "data:image/png;base64,AA")])
+    assert memory.summary == "Talked." and isinstance(sent[1], str)
