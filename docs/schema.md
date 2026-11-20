@@ -50,7 +50,8 @@ left as it was, since retirement says nothing about whether its labels were wron
 ### sources
 
 One row per upstream, from `data/sources/*.yaml`: `id`, `name`, `publisher`, `kind`, `url`, `licence`,
-`attribution`, `version`, `doi`, `released`.
+`attribution`, `version`, `doi`, `released`, and `hosted_pages`: the ids of its documents whose page
+images the site serves from its own copy (docs/licensing.md, Hosted page photographs).
 
 ### documents
 

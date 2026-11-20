@@ -13,3 +13,10 @@ def test_every_source_declares_a_licence_and_attribution():
         else:
             assert source.licence not in (Licence.RESTRICTED, Licence.UNKNOWN)
         assert source.attribution
+
+
+def test_only_the_documents_a_source_names_have_their_pages_hosted():
+    hosted = registry.hosted_documents()
+    assert "codh-tensho:TE00039" in hosted
+    # The Tangut plates are scans of a printed edition whose hosting nobody has decided.
+    assert not any(document.startswith("ecang-heishuicheng:") for document in hosted)
