@@ -22,8 +22,8 @@ paired headword.
 The detector alone does not tell a headword from its gloss by size: it joins two gloss characters
 standing side by side into one box as wide as a headword, and misses some headwords. The text
 decides where a headword is; the detector only sharpens the cell. A joined pair of gloss
-characters is told from a headword by its strokes, which are too thin to outlast a one-pixel
-erosion (`bold`).
+characters is told from a headword by its strokes, which are too thin to outlast an erosion of
+a pixel or two (`bold`).
 
 The detector finds these headwords best on a page reduced until they are about 50 px a side
 (`Detector.boxes_at(image, 0.8)` on an opening photographed at 2592 px): at full size it boxed half of
@@ -47,6 +47,7 @@ BIG = (1.35, 3.0)
 #: A box at least `WIDE` median sides wide is dropped when less than `THIN` of its ink outlasts erosion.
 WIDE = 1.1
 THIN = 0.005
+STROKE = 30
 #: A found column stands on a flat scan's comb within this share of the pitch.
 COMB = 0.2
 #: Headword boxes whose centres lie within this share of the median box side are one column.
@@ -119,20 +120,25 @@ def big(boxes: Sequence[Box], unit: float) -> list[Box]:
     return [b for b in boxes if BIG[0] * unit <= max(b.w, b.h) <= BIG[1] * unit and 0.5 <= b.w / b.h <= 2]
 
 
-def stroke(crop: Image.Image) -> float:
-    """How much of a crop's ink outlasts a one-pixel erosion: near 0 for small thin writing."""
+def stroke(crop: Image.Image, reach: int = 1) -> float:
+    """How much of a crop's ink outlasts an erosion of `reach` pixels: near 0 for small thin writing."""
     grey = ImageOps.autocontrast(crop.convert("L"))
     pixels = np.asarray(grey, dtype=float)
     threshold = (pixels.min() + pixels.mean()) / 2
     ink = int((pixels < threshold).sum())
-    kept = int((np.asarray(grey.filter(ImageFilter.MaxFilter(3)), dtype=float) < threshold).sum())
+    kept = int((np.asarray(grey.filter(ImageFilter.MaxFilter(2 * reach + 1)), dtype=float) < threshold).sum())
     return kept / max(1, ink)
 
 
 def bold(image: Image.Image, boxes: Sequence[Box], unit: float) -> list[Box]:
-    """The boxes without those as wide as a headword whose writing is thin: gloss characters the detector joined."""
+    """The boxes without those as wide as a headword whose writing is thin: gloss characters the detector joined.
+
+    The erosion reaches one pixel for every `STROKE` pixels of the page's median box side, so that
+    a page seen larger is judged by the same strokes.
+    """
+    reach = max(1, round(unit / STROKE))
     return [b for b in boxes
-            if b.w < WIDE * unit or stroke(image.crop((b.x, b.y, b.x + b.w, b.y + b.h))) >= THIN]
+            if b.w < WIDE * unit or stroke(image.crop((b.x, b.y, b.x + b.w, b.y + b.h)), reach) >= THIN]
 
 
 def axes(heads: Sequence[Box], unit: float) -> list[float]:

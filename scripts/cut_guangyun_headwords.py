@@ -15,7 +15,8 @@ the columns, positions and gloss lengths the tables give. The atlas classifier a
 it has no class for, NDLkotenOCR judge a headword on its box; their verdicts steer the pairing.
 
 A headword is kept when a detected box stands at its place, the reader does not refuse it, its
-column's gaps fit the text within `--fit` rows, and its half-leaf is borne out: at least `CONFIRM`
+column's gaps fit the text within the copy's `fit` rows (and, for a copy marked `anchored`, a
+headword of the column was read where it stands), and its half-leaf is borne out: at least `CONFIRM`
 of its headwords judged, and `AGREED` of those read. The label always comes from the table.
 
 `OUTPUT` becomes a dataset: one document per volume, a page per opening with a kept headword, a
@@ -202,7 +203,7 @@ def main() -> int:
     parser.add_argument("--openings", help="comma-separated image numbers within the volumes")
     parser.add_argument("--enlarge", type=int, help="enlarge the openings this many times instead of the copy's own setting")
     parser.add_argument("--scale", type=float, help="the size the detector sees the enlarged opening at, instead of the copy's")
-    parser.add_argument("--fit", type=float, default=0.45, help="the most a kept column's gaps may be off, in gloss rows")
+    parser.add_argument("--fit", type=float, help="the most a kept column's gaps may be off, in gloss rows, instead of the copy's")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
 
@@ -231,6 +232,8 @@ def main() -> int:
     totals = defaultdict(int)
     enlarge = args.enlarge or int(copy["enlarge"])
     scale = args.scale or float(copy["scale"])
+    fit = args.fit or float(copy["fit"])
+    anchored = bool(copy.get("anchored"))
     prefix = f"{CORPUS}-{copy['id']}"
     for volume in copy["volumes"]:
         number = volume["volume"]
@@ -284,10 +287,12 @@ def main() -> int:
                 counts = {"headwords": count, "detected": len(verdicts), "judged": len(judged), "read": sum(judged), "kept": 0}
                 if borne:
                     for column, (cells, error) in sorted(placed.items()):
+                        if anchored and not any(verdicts.get((column, k)) for k in range(len(cells))):
+                            continue  # no headword of the column was read where it stands
                         ids = [(sbgy, row) for _, sbgy, _, row in sorted(entries[key][column], key=lambda r: r[0])]
                         for k, cell in enumerate(cells):
                             verdict = verdicts.get((column, k))
-                            if not cell.detected or verdict is False or error >= args.fit:
+                            if not cell.detected or verdict is False or error >= fit:
                                 continue
                             sbgy, row = ids[k]
                             line_id = f"gy-{copy['id']}:{sbgy}"

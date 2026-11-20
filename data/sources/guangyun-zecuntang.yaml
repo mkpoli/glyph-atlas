@@ -31,6 +31,7 @@ copies:
     image_kind: object-photograph
     enlarge: 1
     scale: 0.8
+    fit: 0.45
     volumes:
       - {volume: "1", label: 上平聲卷第一, files: volume1, offset: 9}
       - {volume: "2", label: 下平聲卷第二, files: volume2, offset: 3}
@@ -49,6 +50,9 @@ copies:
     image_kind: flat-reproduction
     enlarge: 2
     scale: 0.8
+    # A bitonal scan with a reader's notes in the margins: only columns a reader anchors, fitting closely.
+    fit: 0.3
+    anchored: true
     volumes:
       - {volume: "1", label: 上平聲卷第一, files: "IOC.UTokyo-000146 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷一.pdf", offset: -4}
       - {volume: "2", label: 下平聲卷第二, files: "IOC.UTokyo-000147 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷二.pdf", offset: 3}
