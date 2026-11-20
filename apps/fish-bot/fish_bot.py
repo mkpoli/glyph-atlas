@@ -161,6 +161,16 @@ TERM = re.compile(rf"[{SPACELESS}]+|[^\W_{SPACELESS}]+")
 # often stops paging early (Packer et al., arXiv 2310.08560), so a turn also gets the recalled memory
 # up front.
 LOOKUP_ROUNDS = 4
+# What the model and its tools cost, to count each day's spend: deepseek-flash per million tokens,
+# off-peak; peak hours (01:00-04:00 and 06:00-10:00 UTC on weekdays) cost double. Chinese public
+# holidays are off-peak too, which this ignores, so a holiday is counted high. Search and Fetch cost
+# $0.75 per 1,000 successful requests. Source: https://api-docs.deepseek.com/quick_start/pricing
+# (read 2026-11-20).
+PRICE_CACHE_HIT = 0.003
+PRICE_CACHE_MISS = 0.15
+PRICE_OUTPUT = 0.6
+PRICE_TOOL = 0.00075
+PEAK_HOURS = ((1, 4), (6, 10))
 # What the homeserver knows about a room and its people, read again after this long. Bridged people
 # carry their network in their Matrix ID; the QQ bridge makes a QQ member's account the first time
 # they speak, since QQ's bot API cannot list a group, so QQ counts only people who have spoken.
@@ -294,6 +304,36 @@ def split_message(text: str, limit: int = MAX_MESSAGE) -> list[str]:
 
     return [part.rstrip().lstrip("\n") for part in pieces(text.strip(), ("\n\n", "\n", "。", ". ", "！", "？", "! ", "? "))
             if part.strip()]
+
+
+def model_cost(usage: Any, at: datetime.datetime) -> float:
+    """The dollar cost of one model call from its usage block, at the time it was made."""
+    if not isinstance(usage, dict):
+        return 0.0
+    hit = usage.get("prompt_cache_hit_tokens")
+    miss = usage.get("prompt_cache_miss_tokens")
+    prompt = usage.get("prompt_tokens")
+    output = usage.get("completion_tokens")
+    hit = hit if isinstance(hit, int) else 0
+    miss = miss if isinstance(miss, int) else max(0, (prompt if isinstance(prompt, int) else 0) - hit)
+    output = output if isinstance(output, int) else 0
+    utc = at.astimezone(datetime.UTC)
+    peak = utc.weekday() < 5 and any(start <= utc.hour < end for start, end in PEAK_HOURS)
+    return (hit * PRICE_CACHE_HIT + miss * PRICE_CACHE_MISS + output * PRICE_OUTPUT) / 1_000_000 * (2 if peak else 1)
+
+
+def usage_report(rows: Iterable[sqlite3.Row]) -> str:
+    """Each day's calls, failures, tokens and estimated dollars, one line per day."""
+    days: dict[str, list[sqlite3.Row]] = {}
+    for row in rows:
+        days.setdefault(str(row["day"]), []).append(row)
+    lines = []
+    for day, kinds in days.items():
+        parts = [f"{row['kind']} {row['calls']}" + (f" ({row['failures']} failed)" if row["failures"] else "")
+                 for row in kinds]
+        tokens = sum(int(row["tokens_in"]) + int(row["tokens_out"]) for row in kinds)
+        lines.append(f"{day}: {', '.join(parts)}; {tokens:,} tokens; ${sum(float(row['cost']) for row in kinds):.4f}")
+    return "\n".join(lines) or "no calls recorded"
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -901,6 +941,16 @@ class Store:
                 posted_at INTEGER NOT NULL,
                 PRIMARY KEY (day, room_id)
             );
+            CREATE TABLE IF NOT EXISTS usage (
+                day TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                calls INTEGER NOT NULL DEFAULT 0,
+                failures INTEGER NOT NULL DEFAULT 0,
+                tokens_in INTEGER NOT NULL DEFAULT 0,
+                tokens_out INTEGER NOT NULL DEFAULT 0,
+                cost REAL NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, kind)
+            );
             CREATE TABLE IF NOT EXISTS stickers (
                 name TEXT PRIMARY KEY,
                 sha256 TEXT NOT NULL,
@@ -1004,6 +1054,20 @@ class Store:
             self.db.execute("UPDATE events SET media=? WHERE event_id=? AND media=''", (media, event_id))
         self.db.commit()
         return cursor.rowcount == 1
+
+    def count_usage(self, kind: str, *, failed: bool = False, tokens_in: int = 0, tokens_out: int = 0,
+                    cost: float = 0.0) -> None:
+        """Add one model or tool call to the day's tally (JST days, as the digest)."""
+        self.db.execute(
+            "INSERT INTO usage(day, kind, calls, failures, tokens_in, tokens_out, cost) VALUES(?,?,1,?,?,?,?) "
+            "ON CONFLICT(day, kind) DO UPDATE SET calls=calls+1, failures=failures+excluded.failures, "
+            "tokens_in=tokens_in+excluded.tokens_in, tokens_out=tokens_out+excluded.tokens_out, cost=cost+excluded.cost",
+            (local_day(now_ms()), kind, 1 if failed else 0, tokens_in, tokens_out, cost))
+        self.db.commit()
+
+    def usage(self, days: int = 7) -> list[sqlite3.Row]:
+        start = local_day(now_ms() - (days - 1) * 86_400_000)
+        return self.db.execute("SELECT * FROM usage WHERE day>=? ORDER BY day, kind", (start,)).fetchall()
 
     def sender_of(self, event_id: str) -> str | None:
         row = self.db.execute("SELECT sender FROM events WHERE event_id=?", (event_id,)).fetchone()
@@ -1770,8 +1834,29 @@ class DeepSeek:
         self.url = url
         self.repo = repo
         self.timeout = timeout
+        self.meter: Any = None
 
     def _post(self, body: dict[str, Any], url: str | None = None, *,
+              timeout: float | None = None, kind: str = "chat") -> dict[str, Any]:
+        """One request, counted by kind with its tokens and cost when a meter is attached."""
+        try:
+            answer = self._send(body, url, timeout=timeout)
+        except DeepSeekError:
+            if self.meter is not None:
+                self.meter(kind, failed=True)
+            raise
+        if self.meter is not None:
+            if url is None:
+                usage = answer.get("usage") if isinstance(answer, dict) else None
+                usage = usage if isinstance(usage, dict) else {}
+                self.meter(kind, tokens_in=int(usage.get("prompt_tokens") or 0),
+                           tokens_out=int(usage.get("completion_tokens") or 0),
+                           cost=model_cost(usage, datetime.datetime.now(datetime.UTC)))
+            else:
+                self.meter(kind, cost=PRICE_TOOL)
+        return answer
+
+    def _send(self, body: dict[str, Any], url: str | None = None, *,
               timeout: float | None = None) -> dict[str, Any]:
         request = urllib.request.Request(
             url or self.url,
@@ -1812,7 +1897,7 @@ class DeepSeek:
         previous = None
         for attempt in range(2):
             try:
-                answer = self._post(body)
+                answer = self._post(body, kind="issue")
                 choices = answer.get("choices") or []
                 content = choices[0].get("message", {}).get("content") if choices else None
                 if not isinstance(content, str):
@@ -1866,7 +1951,7 @@ class DeepSeek:
         deadline = time.monotonic() + LOOKUP_DEADLINE_SECONDS
         while failures < 2:
             try:
-                answer = self._post(body)
+                answer = self._post(body, kind="chat")
                 choices = answer.get("choices") or []
                 message = choices[0].get("message") if choices else None
                 if not isinstance(message, dict):
@@ -1913,7 +1998,7 @@ class DeepSeek:
 
     def search(self, query: str, count: int = 5) -> list[dict[str, Any]]:
         """Web results for a query from DeepSeek's Search API, each with a summary meant for a model."""
-        answer = self._post({"query": query[:128], "count": count}, self._tool_url("search"), timeout=LOOKUP_TIMEOUT)
+        answer = self._post({"query": query[:128], "count": count}, self._tool_url("search"), timeout=LOOKUP_TIMEOUT, kind="search")
         results = answer.get("results") if isinstance(answer, dict) else None
         if not isinstance(results, list):
             raise DeepSeekError("the search answer has no results")
@@ -1923,7 +2008,7 @@ class DeepSeek:
 
     def fetch(self, url: str) -> dict[str, Any]:
         """A web page as Markdown from DeepSeek's Fetch API."""
-        answer = self._post({"url": url}, self._tool_url("fetch"), timeout=LOOKUP_TIMEOUT)
+        answer = self._post({"url": url}, self._tool_url("fetch"), timeout=LOOKUP_TIMEOUT, kind="fetch")
         if not isinstance(answer, dict) or not isinstance(answer.get("content"), str):
             raise DeepSeekError("the fetch answer has no content")
         return {"title": str(answer.get("title") or "")[:200], "content": answer["content"]}
@@ -1943,7 +2028,7 @@ class DeepSeek:
         last: Exception | None = None
         for _ in range(2):
             try:
-                answer = self._post(body, timeout=MEMORY_TIMEOUT)
+                answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="memory")
                 choices = answer.get("choices") or []
                 content = choices[0].get("message", {}).get("content") if choices else None
                 if not isinstance(content, str) or not content.strip():
@@ -1970,7 +2055,7 @@ class DeepSeek:
         last: Exception | None = None
         for _ in range(2):
             try:
-                answer = self._post(body)
+                answer = self._post(body, kind="digest")
                 choices = answer.get("choices") or []
                 content = choices[0].get("message", {}).get("content") if choices else None
                 text = _json_object(content).get("text") if isinstance(content, str) else None
@@ -1997,7 +2082,7 @@ class DeepSeek:
         last: Exception | None = None
         for _ in range(2):
             try:
-                answer = self._post(body)
+                answer = self._post(body, kind="recap")
                 choices = answer.get("choices") or []
                 content = choices[0].get("message", {}).get("content") if choices else None
                 text = _json_object(content).get("text") if isinstance(content, str) else None
@@ -2771,6 +2856,7 @@ class Bot:
         self.store = store
         self.matrix = matrix
         self.deepseek = deepseek
+        self.deepseek.meter = store.count_usage
         self.github = github
         self.state = state or State()
         self.user_id = config.user_id
@@ -2795,6 +2881,7 @@ class Bot:
         self._alias_failed: dict[str, float] = {}
         self._digest_tried: dict[str, float] = {}
         self._memory_due = 0.0
+        self._reported_day = ""
         self._reply_senders: dict[str, str] = {}
         self._images: dict[str, str] = {}
         self._memory_failures: dict[str, tuple[str, int, float]] = {}
@@ -3064,6 +3151,11 @@ class Bot:
             self.digest()
         except Exception:
             log.exception("posting the digest")
+        day = self._clock().strftime("%Y-%m-%d")
+        if day != self._reported_day:
+            if self._reported_day:
+                log.info("usage: %s", usage_report(row for row in self.store.usage(2) if row["day"] == self._reported_day))
+            self._reported_day = day
         now = time.monotonic()
         for room_id in [room for room, batch in self._ambient.items() if batch["due"] <= now]:
             batch = self._ambient.pop(room_id)
@@ -3691,8 +3783,16 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--once", action="store_true", help="read one sync batch and exit")
     parser.add_argument("--recap", metavar="ROOM", help="post a catch-up on everything discussed to ROOM (an alias or ID) and exit")
     parser.add_argument("--language", default="English", help="the catch-up's language, with --recap")
+    parser.add_argument("--usage", action="store_true", help="print the last week's model and tool calls, failures and cost, and exit")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
+    if args.usage:
+        store = Store(args.db)
+        try:
+            print(usage_report(store.usage(7)))
+        finally:
+            store.close()
+        return
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     try:

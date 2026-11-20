@@ -408,6 +408,13 @@ systemctl enable --now fish-bot
 journalctl -u fish-bot -f
 ```
 
+Every model, search and fetch call is counted per day (JST) with its tokens, failures and an
+estimated cost from DeepSeek's price table, logged once a day and printed for the last week by
+
+```sh
+runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --db /var/lib/fish-bot/chat.sqlite3 --usage
+```
+
 The database is `/var/lib/fish-bot/chat.sqlite3`; text older than 180 days is deleted. The bot reads
 the public directory again every hour, so a new room needs no restart. A room that leaves the public
 directory is no longer read, though the account remains joined. The database uses WAL: copy it with
