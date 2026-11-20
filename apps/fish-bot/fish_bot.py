@@ -716,6 +716,10 @@ class Matrix:
         alias = answer.get("alias")
         return alias if isinstance(alias, str) else ""
 
+    def event(self, room_id: str, event_id: str) -> dict[str, Any]:
+        return self.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room_id, safe='')}"
+                                f"/event/{urllib.parse.quote(event_id, safe='')}", timeout=10)
+
     def member_name(self, room_id: str, user_id: str) -> str:
         path = (f"/_matrix/client/v3/rooms/{urllib.parse.quote(room_id, safe='')}"
                 f"/state/m.room.member/{urllib.parse.quote(user_id, safe='')}")
@@ -955,6 +959,10 @@ class Store:
             self.db.execute("UPDATE events SET backfilled=0 WHERE event_id=?", (event_id,))
         self.db.commit()
         return cursor.rowcount == 1
+
+    def sender_of(self, event_id: str) -> str | None:
+        row = self.db.execute("SELECT sender FROM events WHERE event_id=?", (event_id,)).fetchone()
+        return str(row["sender"]) if row else None
 
     def delete_event(self, event_id: str) -> None:
         """Drop a message, and the episode that summarized it with every fact that episode wrote or
@@ -2583,14 +2591,27 @@ def _picture(event: dict[str, Any], user_id: str, ignored: Iterable[str] = ()) -
     return None
 
 
+def reply_target(event: dict[str, Any]) -> str | None:
+    """The event a message replies to, if it is a reply. The first message of a thread carries a
+    reply to the thread's root only as a fallback for clients without threads, which is no reply."""
+    content = event.get("content")
+    relates = content.get("m.relates_to") if isinstance(content, dict) else None
+    if isinstance(relates, dict) and relates.get("rel_type") == "m.thread" and relates.get("is_falling_back"):
+        return None
+    reply = relates.get("m.in_reply_to") if isinstance(relates, dict) else None
+    target = reply.get("event_id") if isinstance(reply, dict) else None
+    return target if isinstance(target, str) else None
+
+
 def call_of(event: dict[str, Any], user_id: str, display_name: str,
-            ignored: Iterable[str] = (), aliases: Iterable[str] = ()) -> Call | None:
-    """The call in a message, or None when the message is not addressed to the bot."""
+            ignored: Iterable[str] = (), aliases: Iterable[str] = (), *, replies_to_me: bool = False) -> Call | None:
+    """The call in a message, or None when the message is not addressed to the bot. A reply to one
+    of the bot's own messages is addressed to it, as Discord and Telegram replies carry no mention."""
     body = human_message(event, user_id, ignored)
     content = event.get("content")
     if body is None or not isinstance(content, dict):
         return None
-    if not _mentions_me(body, content, user_id, display_name, aliases):
+    if not replies_to_me and not _mentions_me(body, content, user_id, display_name, aliases):
         return None
     mode = _mode(body)
     prompt = _prompt(body, user_id, display_name, aliases)
@@ -2675,6 +2696,7 @@ class Bot:
         self._alias_failed: dict[str, float] = {}
         self._digest_tried: dict[str, float] = {}
         self._memory_due = 0.0
+        self._reply_senders: dict[str, str] = {}
         self._images: dict[str, str] = {}
         self._memory_failures: dict[str, tuple[str, int, float]] = {}
         self._heard_at = 0.0
@@ -2828,7 +2850,7 @@ class Bot:
         if not isinstance(event_id, str) or self.store.handled(event_id):
             return
         call = call_of(event, self.user_id, self.config.display_name, self.config.ignored_senders,
-                       self.config.aliases)
+                       self.config.aliases, replies_to_me=self._replies_to_me(room_id, event))
         if call is None:
             return
         ts = event.get("origin_server_ts")
@@ -2888,6 +2910,24 @@ class Bot:
             self.store.mark_handled(event_id, f"failed: {type(error).__name__}")
             self._tell(room_id, event_id, "I couldn't read that discussion just now. Try calling me again in a minute.")
 
+    def _replies_to_me(self, room_id: str, event: dict[str, Any]) -> bool:
+        """Whether a person's message replies to one of the bot's own, by the log or else by asking
+        the homeserver once per replied-to event."""
+        target = reply_target(event)
+        if target is None or human_message(event, self.user_id, self.config.ignored_senders) is None:
+            return False
+        sender = self.store.sender_of(target) or self._reply_senders.get(target)
+        if sender is None:
+            try:
+                sender = str(self.matrix.event(room_id, target).get("sender") or "")
+            except MatrixError as error:
+                log.info("reading %s: %s", target, error)
+                sender = ""
+            self._reply_senders[target] = sender
+            while len(self._reply_senders) > 512:
+                self._reply_senders.pop(next(iter(self._reply_senders)))
+        return sender == self.user_id
+
     def notice(self, room_id: str, event: dict[str, Any]) -> None:
         """A person's message that does not call the bot: a quiet moment after it may be one to join in."""
         event_id = event.get("event_id")
@@ -2899,7 +2939,7 @@ class Bot:
         if body is None:
             return
         if call_of(event, self.user_id, self.config.display_name, self.config.ignored_senders,
-                   self.config.aliases) is not None:
+                   self.config.aliases, replies_to_me=self._replies_to_me(room_id, event)) is not None:
             return
         ts = event.get("origin_server_ts")
         if isinstance(ts, int) and now_ms() - ts > CHAT_WINDOW_SECONDS * 1000:
