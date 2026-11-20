@@ -256,7 +256,7 @@ def test_model_prompt_carries_the_repository_without_formatting_its_json():
     model = fish_bot.DeepSeek("key", repo="owner/repo")
     sent = []
 
-    def post(body):
+    def post(body, **_):
         sent.append(body)
         return {"choices": [{"message": {"content": json.dumps({
             "open": False, "reply": "No.", "confidence": 0.1, "title": "", "body": "", "labels": [],
@@ -769,7 +769,7 @@ def test_chat_turn_turns_thinking_off_and_names_the_bot_in_the_log():
     model = fish_bot.DeepSeek("key")
     seen = {}
 
-    def post(body):
+    def post(body, **_):
         seen.update(body)
         return {"choices": [{"message": {"content": json.dumps({"say": "hi", "react": None, "issue": False})}}]}
 
@@ -1299,7 +1299,7 @@ def scripted(monkeypatch, answers):
     model = fish_bot.DeepSeek("key")
     bodies = []
 
-    def post(body, url=None):
+    def post(body, url=None, **_):
         bodies.append(json.loads(json.dumps(body)))
         return answers.pop(0)
 
@@ -1802,3 +1802,61 @@ def test_a_picture_logged_without_its_link_gets_it_when_read_again(tmp_path):
     assert store.context(ROOM, fish_bot.now_ms() + 1000, 5)[0]["media"] == "mxc://example/old"
     bot.ingest(ROOM, picture("$old", url="mxc://example/other"), backfilled=True)
     assert store.context(ROOM, fish_bot.now_ms() + 1000, 5)[0]["media"] == "mxc://example/old"
+
+
+def test_model_cost_follows_the_price_table_and_peak_hours():
+    usage = {"prompt_tokens": 3_000_000, "prompt_cache_hit_tokens": 1_000_000, "prompt_cache_miss_tokens": 2_000_000,
+             "completion_tokens": 1_000_000}
+    off_peak = fish_bot.datetime.datetime(2026, 11, 21, 2, tzinfo=fish_bot.datetime.UTC)
+    peak = fish_bot.datetime.datetime(2026, 11, 20, 2, tzinfo=fish_bot.datetime.UTC)
+    assert round(fish_bot.model_cost(usage, off_peak), 6) == round(0.003 + 0.30 + 0.6, 6)
+    assert round(fish_bot.model_cost(usage, peak), 6) == round(2 * (0.003 + 0.30 + 0.6), 6)
+    assert fish_bot.model_cost(None, peak) == 0.0
+
+
+def test_every_call_is_counted_with_its_tokens_failures_and_cost(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    model = fish_bot.DeepSeek("key")
+    model.meter = store.count_usage
+    answers = [{"choices": [{"message": {"content": '{"say": "hi"}'}}],
+                "usage": {"prompt_tokens": 100, "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 100,
+                          "completion_tokens": 10}},
+               {"results": []}]
+
+    def send(body, url=None, **_):
+        if not answers:
+            raise fish_bot.DeepSeekError("DeepSeek answered 503")
+        return answers.pop(0)
+
+    monkeypatch.setattr(model, "_send", send)
+    model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
+    model.search("tangut")
+    with pytest.raises(fish_bot.DeepSeekError):
+        model.fetch("https://example.org")
+    rows = {row["kind"]: row for row in store.usage(1)}
+    assert (rows["chat"]["calls"], rows["chat"]["tokens_in"], rows["chat"]["tokens_out"]) == (1, 100, 10)
+    assert rows["chat"]["cost"] > 0 and rows["search"]["cost"] == fish_bot.PRICE_TOOL
+    assert (rows["fetch"]["calls"], rows["fetch"]["failures"], rows["fetch"]["cost"]) == (1, 1, 0)
+    report = fish_bot.usage_report(store.usage(1))
+    assert "chat 1" in report and "fetch 1 (1 failed)" in report and "110 tokens" in report
+
+
+def test_the_usage_command_prints_the_week(tmp_path, capsys):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    store.count_usage("memory", tokens_in=2000, tokens_out=300, cost=0.0005)
+    store.close()
+    fish_bot.main(["--usage", "--db", str(tmp_path / "chat.sqlite3")])
+    assert "memory 1; 2,300 tokens; $0.0005" in capsys.readouterr().out
+
+
+def test_a_failed_count_never_costs_the_answer(monkeypatch):
+    model = fish_bot.DeepSeek("key")
+
+    def broken_meter(kind, **tally):
+        raise sqlite3.OperationalError("database is locked")
+
+    model.meter = broken_meter
+    monkeypatch.setattr(model, "_send", lambda body, url=None, **_: {
+        "choices": [{"message": {"content": '{"say": "still here"}'}}], "usage": {"prompt_tokens": "odd"}})
+    act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
+    assert act.say == ("still here",)
