@@ -203,3 +203,25 @@ def test_a_withdrawal_stopped_after_the_deletion_finishes_when_run_again(layout,
         run(publish, monkeypatch, path)
     assert entry_of(root, "ex:a1")["withdrawn"] is True and "withdrawn" not in entry_of(root, "ex:a2")
     assert sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT revision FROM crops WHERE id=?", (a2,)).fetchone() == (4,)
+
+
+def test_a_page_whose_crops_are_all_withdrawn_gives_up_its_hosted_photograph(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    photos = {"hl:p1": "/atlas/media/fo1.webp", "hl:p2": "/atlas/media/fo2.webp"}
+    path = catalogue(tmp_path / "c.sqlite", [])
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE pages(id, document, data)")
+    db.executemany("INSERT INTO pages VALUES(?, 'book:a', ?)", [(key, json.dumps({"photo": url})) for key, url in photos.items()])
+    db.commit()
+    publish.media_map.merge([("fo1", PACK, 0, 10, "image/webp"), ("fo2", PACK, 10, 10, "image/webp"),
+                             ("fox", PACK, 20, 10, "image/webp")])
+    publish.media_map.send(remote.upload)
+    run(publish, monkeypatch, path)
+    run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "w.sqlite"))
+    for pid, rev in sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT id, rev FROM pages WHERE key IN ('hl:p1', 'hl:p2')"):
+        facts = json.loads(gzip.decompress((root / "out" / "pages" / f"{pid}-{rev}.json.gz").read_bytes()))["page"]
+        assert "photo" not in facts
+    mapped = lambda prefix: set(json.loads(gzip.decompress((root / "out" / "media" / f"{prefix}.json.gz").read_bytes()))["keys"])
+    assert mapped("fo1") == mapped("fo2") == set()
+    # An image no withdrawn page names stays.
+    assert mapped("fox") == {""}

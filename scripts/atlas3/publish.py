@@ -161,6 +161,11 @@ def image_keys(entry):
             if (key := (e.get(field) or "").rsplit("/", 1)[-1].removesuffix(".webp"))}
 
 
+def photo_key(facts):
+    """The image key of the hosted photograph a page's facts name, or None."""
+    return (facts or {}).get("photo", "").rsplit("/", 1)[-1].removesuffix(".webp") or None
+
+
 def lit(v):
     if v is None:
         return "NULL"
@@ -2047,7 +2052,8 @@ def main():
                     page_facts[pid] = {**record, **dict(zip(LINKS, links[key], strict=True))}
                     m.touched_pages.setdefault(pid, {})
                     relinked += bool(moved and held is not None)
-    files, unmapped = [], set()
+    # A page whose crops are all withdrawn gives up its hosted photograph with their images.
+    files, unmapped, photos_leaving = [], set(), defaultdict(set)
     for pid, entries in m.touched_pages.items():
         p = m.atlas.execute("SELECT * FROM pages WHERE id=?", (pid,)).fetchone()
         previous = bundle_of(pid)
@@ -2076,7 +2082,11 @@ def main():
         if not touched:
             continue
         rev = p["rev"] + 1
-        body = {"key": p["key"], "book": p["book"], "rev": rev, "page": page_facts.get(pid, previous.get("page")),
+        shown = page_facts.get(pid, previous.get("page"))
+        if photo_key(shown) and all(e.get("withdrawn") for e in merged.values()):
+            photos_leaving[p["book"]].add((pid, photo_key(shown)))
+            shown = {k: v for k, v in shown.items() if k != "photo"}
+        body = {"key": p["key"], "book": p["book"], "rev": rev, "page": shown,
                 "crops": sorted(merged.values(), key=lambda e: e["slot"])}
         path = run / "pages" / f"{pid}-{rev}.json.gz"
         path.write_bytes(gzip.compress(json.dumps(body, ensure_ascii=False).encode()))
@@ -2085,6 +2095,12 @@ def main():
         # The revision moves in the same part as the page's rows, so a reader sees the old page or the new.
         m.page_sql[pid].append(f"UPDATE pages SET rev={rev}, next_slot=max(next_slot,{next_slot}) WHERE id={pid};")
         m.atlas.execute("UPDATE pages SET rev=?, next_slot=max(next_slot,?) WHERE id=?", (rev, next_slot, pid))
+    for book, leaving in photos_leaving.items():
+        gone = {pid for pid, _ in leaving}
+        # A photograph another page of the book still shows stays mapped.
+        kept = {photo_key(published_facts(row["id"])) for row in m.atlas.execute("SELECT id FROM pages WHERE book=?", (book,)).fetchall()
+                if row["id"] not in gone}
+        unmapped |= {key for _, key in leaving} - kept
     stray = [pid for pid, statements in m.page_sql.items() if statements and pid not in {int(f.name.split("-")[0]) for f in files}]
     if stray:
         sys.exit(f"pages {stray[:5]} have row changes but no new bundle; nothing published")
