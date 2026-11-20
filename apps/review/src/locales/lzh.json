@@ -1305,5 +1305,19 @@
   "sponsor.companyHint": "請致函mkpoli@mkpo.li。",
   "sponsor.supporters": "近來贊助者",
   "sponsor.anonymous": "無名氏",
-  "sponsor.thanks": "承蒙惠用Glyph Atlas，不勝感謝💗"
+  "sponsor.thanks": "承蒙惠用Glyph Atlas，不勝感謝💗",
+  "roadmap.title": "擬收書目",
+  "roadmap.work": "書名",
+  "roadmap.edition": "版本",
+  "roadmap.holder": "藏所",
+  "roadmap.status": "進度",
+  "roadmap.status.published": "已布",
+  "roadmap.status.underway": "方輯",
+  "roadmap.status.planned": "擬收",
+  "roadmap.edition.open": "版本未定",
+  "roadmap.stage.dictionaries": "字書、韻書、訓詁之書",
+  "roadmap.stage.collections": "文集",
+  "roadmap.stage.miscellanies": "雜著",
+  "roadmap.stage.technical": "技藝格致之書",
+  "roadmap.stage.gazetteers": "方志"
 }

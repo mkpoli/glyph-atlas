@@ -1360,5 +1360,19 @@
   "contact.form.sending": "Sending…",
   "contact.form.sent": "Sent. Thank you.",
   "contact.form.busy": "Too many messages at once. Wait a minute and try again.",
-  "contact.form.failed": "The message could not be sent. Try again later, or write to {email}."
+  "contact.form.failed": "The message could not be sent. Try again later, or write to {email}.",
+  "roadmap.title": "Roadmap",
+  "roadmap.work": "Work",
+  "roadmap.edition": "Edition",
+  "roadmap.holder": "Held by",
+  "roadmap.status": "Status",
+  "roadmap.status.published": "Published",
+  "roadmap.status.underway": "Under way",
+  "roadmap.status.planned": "Planned",
+  "roadmap.edition.open": "Edition not chosen",
+  "roadmap.stage.dictionaries": "Dictionaries, rhyme books and glossaries",
+  "roadmap.stage.collections": "Collected works",
+  "roadmap.stage.miscellanies": "Miscellanies",
+  "roadmap.stage.technical": "Technical and scientific works",
+  "roadmap.stage.gazetteers": "Local gazetteers"
 }

@@ -32,7 +32,7 @@ ${paths.map(entry).join('\n')}
 
 /** Public landing pages and each character's forms; /forms itself redirects to a family. */
 export async function pagePaths(fetch) {
-  const paths = ['/', '/contact', '/privacy', '/ranking']
+  const paths = ['/', '/contact', '/privacy', '/ranking', '/roadmap']
   paths.push(...((await familyCodes(fetch)) ?? []).map(code => '/forms/' + code))
   return paths
 }
