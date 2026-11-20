@@ -92,6 +92,7 @@ def test_every_headword_is_placed_on_its_box() -> None:
         assert [cell.head for cell in cells] == TEXT[line]
         assert all(cell.detected for cell in cells)
         assert [cell.box.y for cell in cells] == [STARTS[line] + int(t) for t in leaf_text.tops(TEXT[line], HEAD, ROW)]
+        assert {cell.box.x + cell.box.w // 2 for cell in cells} == {1000 - (line - 1) * PITCH}
         assert error < 0.1
 
 
@@ -112,7 +113,40 @@ def test_a_refusing_reader_moves_a_pairing_off_a_box() -> None:
     refused = found[1]
     cells, _ = leaf_text.align(heads, found, 1000.0, PITCH, 60.0, sizes, float(TOP),
                                reads=lambda char, box: False if box == refused else None)
-    assert all(cell.box != refused for cell in cells if cell.detected)
+    assert [cell.detected for cell in cells] == [True, False, True, True, True]
+    assert [cell.box for cell in cells if cell.detected] == [found[0], found[2], found[3], found[4]]
+
+
+def test_a_reader_settles_which_of_two_headwords_a_lone_box_is() -> None:
+    heads = [Head("甲", 4), Head("乙", 4)]
+    box = Box(x=970, y=TOP, w=60, h=60)
+    sizes = leaf_text.Fit(float(HEAD), float(ROW), {1: float(TOP)}, 0.0)
+    cells, error = leaf_text.align(heads, [box], 1000.0, PITCH, 60.0, sizes, float(TOP), reads=lambda char, _: char == "乙")
+    assert [cell.detected for cell in cells] == [False, True] and cells[1].box == box
+    assert error == float("inf") and cells[1].error == float("inf")
+
+
+def test_a_lone_headword_a_reader_refuses_goes_without_its_box() -> None:
+    box = Box(x=970, y=TOP, w=60, h=60)
+    sizes = leaf_text.Fit(float(HEAD), float(ROW), {1: float(TOP)}, 0.0)
+    cells, _ = leaf_text.align([Head("甲", 4)], [box], 1000.0, PITCH, 60.0, sizes, float(TOP), reads=lambda *_: False)
+    assert [cell.detected for cell in cells] == [False]
+
+
+def test_a_cell_carries_the_error_of_its_own_gaps() -> None:
+    heads = TEXT[2]
+    found = leaf_text.candidates(column(1000, heads, TOP), 1000.0, PITCH, 60.0)
+    found[-1] = Box(x=found[-1].x, y=found[-1].y + ROW, w=60, h=60)  # the last headword a row low
+    sizes = leaf_text.Fit(float(HEAD), float(ROW), {1: float(TOP)}, 0.0)
+    cells, mean = leaf_text.align(heads, found, 1000.0, PITCH, 60.0, sizes, float(TOP))
+    assert [round(cell.error, 2) for cell in cells] == [0.0, 0.0, 0.0, 1.0, 1.0]
+    assert round(mean, 2) == 0.25
+
+
+def test_two_columns_of_gloss_side_by_side_are_both_put_in() -> None:
+    found = [float(1000 - k * PITCH) for k in range(9, -1, -1) if k not in (4, 5)]
+    whole = leaf_text.complete(found, 10)
+    assert whole is not None and [round(x) for x in whole] == [1000 - k * PITCH for k in range(10)]
 
 
 def test_thin_writing_as_wide_as_a_headword_is_dropped() -> None:

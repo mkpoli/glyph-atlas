@@ -61,23 +61,28 @@ SEEN = 0.55
 FULL = 0.8
 #: A detected box is taken for a headword when its height is within these shares of the median headword's.
 HEADWORD_HEIGHT = (0.72, 1.5)
-#: A box votes for an offset within this share of `head`.
+#: A box votes for an offset within this share of `head`; `TIE` votes are taken off for a spread of
+#: one `head` among the agreeing boxes, which only orders sizes that gather the same votes.
 VOTE = 0.18
-#: `align`'s costs, in gloss rows: a headword left without a box, the most a gap may be off, how many
-#: headwords in a row may go without a box, and the weight and cap of the voted offset.
+TIE = 0.5
+#: `align`'s costs, in gloss rows: a headword left without a box (`MISSED`), a headword a reader reads
+#: on its box (`READ`, taken off) or refuses there (`REFUSED`), the most a gap may be off
+#: (`GAP_LIMIT`), how many headwords in a row may go without a box (`SKIP`), and the weight and cap of
+#: the voted offset on where the pairing starts (`START`, `START_CAP`).
 MISSED = 1.2
-#: How many voted offsets of a column `chain` chooses among, what a row off the text's flow costs in
-#: votes, how many rows are counted, and how far below the page's first box a column's rows begin.
-PEAKS = 5
-FLOW = 1.0
-FLOW_CAP = 3.0
-FLOW_BIAS = -0.5
 READ = 0.8
 REFUSED = 1.5
 GAP_LIMIT = 2.5
 SKIP = 3
 START = 0.3
 START_CAP = 1.0
+#: How many voted offsets of a column `chain` chooses among (`PEAKS`), what a row off the text's flow
+#: costs in votes (`FLOW`), how many rows are counted (`FLOW_CAP`), and where a column's first row
+#: stands against the page's highest boxes, in rows (`FLOW_BIAS`: half a row above them).
+PEAKS = 5
+FLOW = 1.0
+FLOW_CAP = 3.0
+FLOW_BIAS = -0.5
 #: The sizes `fit` tries: `head` as shares of the median headword height, `row` as shares of `head`.
 HEADS = np.arange(0.85, 1.25, 0.025)
 ROWS = np.arange(0.42, 0.60, 0.01)
@@ -103,11 +108,16 @@ class Fit:
 
 @dataclass(frozen=True)
 class Placed:
-    """A headword's cell on the page. `detected` when it is a box the detector drew, else the predicted cell."""
+    """A headword's cell on the page. `detected` when it is a box the detector drew, else the predicted cell.
+
+    `error` is how far the cell's gaps to its paired neighbours in the column are off the text's, in
+    gloss rows: the larger of the two, infinite for a cell with no paired neighbour or no box.
+    """
 
     head: Head
     box: Box
     detected: bool
+    error: float = float("inf")
 
 
 def side(boxes: Sequence[Box]) -> float:
@@ -133,8 +143,9 @@ def stroke(crop: Image.Image, reach: int = 1) -> float:
 def bold(image: Image.Image, boxes: Sequence[Box], unit: float) -> list[Box]:
     """The boxes without those as wide as a headword whose writing is thin: gloss characters the detector joined.
 
-    The erosion reaches one pixel for every `STROKE` pixels of the page's median box side, so that
-    a page seen larger is judged by the same strokes.
+    The erosion reaches one pixel for every `STROKE` pixels of the page's median box side, rounded,
+    so that a page seen larger is judged by much the same strokes; the rounding makes the test
+    stricter just above a step (a side of 45 px erodes by two pixels, one of 44 by one).
     """
     reach = max(1, round(unit / STROKE))
     return [b for b in boxes
@@ -211,28 +222,28 @@ def flat(columns: Sequence[float], count: int, width: int) -> tuple[float, float
 
 
 def ruled(middle: float, pitch: float, count: int, right: bool) -> list[float]:
-    """A half-leaf's column axes, column 1 first, on a flat scan: evenly spaced from the opening's middle outward."""
+    """A half-leaf's column axes on a flat scan, column 1 (its rightmost) first: evenly spaced, the
+    right half-leaf's ending at the opening's middle and the left one's beginning there."""
     return [middle + (count - line + 0.5) * pitch if right else middle - (line - 0.5) * pitch for line in range(1, count + 1)]
 
 
 def complete(columns: Sequence[float], count: int) -> list[float] | None:
     """A half-leaf's `count` column axes, right to left, from those found (left to right).
 
-    A column whose entries are all gloss holds no headword and leaves a gap two pitches wide; an
-    axis is put in the middle of the widest such gap until there are `count`. None when the axes
-    found cannot be made into `count`.
+    A column whose entries are all gloss holds no headword and leaves a gap of two pitches, two such
+    columns one of three: every gap is filled with as many evenly spaced axes as pitches it spans
+    less one. None when that does not make `count`.
     """
     found = sorted(columns)
     if len(found) < 2 or len(found) > count:
         return None
     pitch = float(np.median(np.diff(found)))
-    while len(found) < count:
-        gaps = np.diff(found)
-        i = int(np.argmax(gaps))
-        if gaps[i] < 1.5 * pitch:
-            return None
-        found.insert(i + 1, (found[i] + found[i + 1]) / 2)
-    return found[::-1]
+    whole = [found[0]]
+    for left, right in pairwise(found):
+        missing = round((right - left) / pitch) - 1
+        whole += [left + (k + 1) * (right - left) / (missing + 1) for k in range(missing)]
+        whole.append(right)
+    return whole[::-1] if len(whole) == count else None
 
 
 def candidates(boxes: Sequence[Box], x: float, pitch: float, height: float) -> list[Box]:
@@ -254,7 +265,7 @@ def fit(columns: Mapping[int, Sequence[Head]], found: Mapping[int, Sequence[Box]
     Every `head` in `HEADS` times the median headword height and every `row` in `ROWS` times `head`
     is tried. In each column every pairing of a box with a headword proposes an offset, and the
     column scores the weight of the boxes that agree on one; a box of headword height weighs 1, a
-    shorter one 0.3. None when no column has both headwords and boxes.
+    shorter one 0.3. Sizes with the same votes are ordered by how closely the boxes agree. None when no column has both headwords and boxes.
     """
     best: Fit | None = None
     for head in HEADS * height:
@@ -273,8 +284,10 @@ def fit(columns: Mapping[int, Sequence[Head]], found: Mapping[int, Sequence[Box]
                 near = np.abs(proposals[:, None] - proposals[None, :]) < VOTE * head
                 votes = near @ weight
                 top = int(np.argmax(votes))
-                score += float(votes[top])
                 offsets[line] = float(np.median(proposals[near[top]]))
+                # Among sizes that gather the same votes, the one the boxes stand on most closely.
+                spread = float(np.abs(proposals[near[top]] - offsets[line]).mean()) / head
+                score += float(votes[top]) - TIE * spread
             if offsets and (best is None or score > best.score):
                 best = Fit(float(head), row, offsets, score)
     return best
@@ -306,7 +319,8 @@ def chain(columns: Mapping[int, Sequence[Head]], voted: Mapping[int, Sequence[tu
 
     The gloss of a column's last headword fills what is left of the column and continues at the top
     of the next, so the next column's first headword stands that many rows below `top`; a column
-    with no headword is all gloss. The offsets chosen are those that gather most votes less
+    with no headword is all gloss, and one with headwords but no box to vote breaks the run, so
+    nothing is asked of the column after it. A column's first row stands `FLOW_BIAS` rows from `top`. The offsets chosen are those that gather most votes less
     `FLOW` votes for each row a column starts away from where the text puts it (at most `FLOW_CAP`
     rows are counted, so a miscounted gloss does not rule a well-voted offset out).
     """
@@ -320,13 +334,15 @@ def chain(columns: Mapping[int, Sequence[Head]], voted: Mapping[int, Sequence[tu
                 scores.append((votes, -1))
                 continue
             before = lines[at - 1]
+            # A column between with headwords of its own, but no box to vote, breaks the run of the text.
+            runs_on = not any(columns.get(between) for between in range(before + 1, line))
             options = []
             for index, (earlier, _) in enumerate(voted[before]):
                 last = earlier + tops(columns[before], sizes.head, sizes.row)[-1]
                 rows = math.ceil(columns[before][-1].gloss / 2)
                 fits = max(0, math.floor((bottom - (last + sizes.head)) / sizes.row + 0.25))
                 left = max(0.0, rows - fits - (line - before - 1) * capacity)
-                off = abs((offset - (top + left * sizes.row)) / sizes.row - FLOW_BIAS)
+                off = abs((offset - (top + left * sizes.row)) / sizes.row - FLOW_BIAS) if runs_on else 0.0
                 options.append((best[before][index][0] + votes - FLOW * min(FLOW_CAP, off), index))
             scores.append(max(options))
         best[line] = scores
@@ -348,8 +364,8 @@ def align(heads: Sequence[Head], found: Sequence[Box], x: float, pitch: float, h
     the pairing starts. `reads(char, box)` is a reader's verdict on a headword in a box: True takes
     `READ` rows off the pairing's cost, False adds `REFUSED`, None (the reader does not know the
     character) leaves it. A headword without a box takes the predicted cell, measured from the nearest
-    paired one. Returns the cells and the mean gap error in rows over the paired headwords (inf when
-    fewer than two are paired).
+    paired one. Returns the cells, each with its own gap error, and the mean gap error in rows over
+    the paired headwords (inf when fewer than two are paired).
     """
     boxes = [b for b in found if HEADWORD_HEIGHT[0] * height <= b.h <= HEADWORD_HEIGHT[1] * height]
     predicted = tops(heads, sizes.head, sizes.row)
@@ -381,17 +397,21 @@ def align(heads: Sequence[Head], found: Sequence[Box], x: float, pitch: float, h
     if n and m:
         ends = cost + MISSED * (n - 1 - np.arange(n))[:, None]
         k, j = (int(v) for v in np.unravel_index(int(np.argmin(ends)), ends.shape))
+        if ends[k, j] >= MISSED * n:
+            k = -1  # leaving every headword without a box costs less than any pairing
         while k >= 0:
             pairs[k] = j
             k, j = (int(v) for v in back[k, j])
     errors = []
-    ordered = sorted(pairs)
-    for p, k in pairwise(ordered):
-        errors.append(abs((boxes[pairs[k]].y - boxes[pairs[p]].y) - (predicted[k] - predicted[p])) / sizes.row / (k - p))
+    own: dict[int, float] = {}
+    for p, k in pairwise(sorted(pairs)):
+        error = abs((boxes[pairs[k]].y - boxes[pairs[p]].y) - (predicted[k] - predicted[p])) / sizes.row / (k - p)
+        errors.append(error)
+        own[p], own[k] = max(own.get(p, 0.0), error), max(own.get(k, 0.0), error)
     placed = []
     for k, head in enumerate(heads):
         if k in pairs:
-            placed.append(Placed(head, boxes[pairs[k]], True))
+            placed.append(Placed(head, boxes[pairs[k]], True, own.get(k, float("inf"))))
             continue
         anchor = min(pairs, key=lambda q: abs(q - k)) if pairs else None
         y = offset + predicted[k] if anchor is None else boxes[pairs[anchor]].y + predicted[k] - predicted[anchor]
@@ -406,7 +426,7 @@ def place(boxes: Sequence[Box], columns: Mapping[int, Sequence[Head]], count: in
 
     Each column gives its cells and its mean gap error in rows. `lines` are the column axes where
     they are known (`ruled`); otherwise they are found among the boxes. None when the half-leaf's
-    `count` columns are not found or nothing fits.
+    `count` columns are not found or no size fits; empty when no column has a box to vote.
     """
     unit = side(boxes)
     heads = big(boxes, unit)

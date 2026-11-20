@@ -53,17 +53,18 @@ copies:
     # A bitonal scan with a reader's notes in the margins: only columns a reader anchors, fitting closely.
     fit: 0.3
     anchored: true
+    dating:
+      - literal: 康熙四十三年（1704）序
+        start: 1704
+        end: 1704
+        kind: publication
+        evidence: https://commons.wikimedia.org/wiki/File:IOC.UTokyo-000145_廣韻五卷康熙四十三年序張氏澤存堂刊本_卷首.pdf
     volumes:
       - {volume: "1", label: 上平聲卷第一, files: "IOC.UTokyo-000146 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷一.pdf", offset: -4}
       - {volume: "2", label: 下平聲卷第二, files: "IOC.UTokyo-000147 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷二.pdf", offset: 3}
       - {volume: "3", label: 上聲卷第三, files: "IOC.UTokyo-000148 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷三.pdf", offset: 4}
       - {volume: "5", label: 入聲卷第五, files: "IOC.UTokyo-000150 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷五.pdf", offset: 2}
 dating:
-  - literal: 康熙四十三年（1704）序
-    start: 1704
-    end: 1704
-    kind: publication
-    evidence: https://commons.wikimedia.org/wiki/File:IOC.UTokyo-000145_廣韻五卷康熙四十三年序張氏澤存堂刊本_卷首.pdf
   - literal: 大中祥符元年（1008）
     start: 1008
     end: 1008
@@ -71,5 +72,6 @@ dating:
     evidence: https://github.com/nk2028/tshet-uinh-data/blob/21585e22c8a730ca2fd175112f4d18e16d5ce578/README.md
 notes:
   - The photographs are 2592 px openings, one leaf's verso on the right and the next leaf's recto on the left. Which library's copy they show is stated nowhere in the repository, so the image licence is unknown and the crops cut from them stay out of every publication until the holder is known.
+  - The photographs carry only the work's date: nothing states which impression of the 澤存堂 printing that copy is.
   - The photographs' volume offsets were found by fitting (2026-11-20), each confirmed by the readers on six openings of its volume.
   - The 東文研 copy is a bitonal scan at 1415 px an opening, with a reader's handwritten notes; Commons marks the files public domain. The offsets of volumes 1, 2, 3 and 5 were found on one or two openings each (2026-11-20). Volume 4 (IOC.UTokyo-000149) is not placed: no gutter was found on the two openings tried.

@@ -11,13 +11,16 @@ the table's repository at the commit that file pins; `--images` is the copy's im
 its repository at the pinned commit, or the folder holding its PDF files as Wikimedia Commons names
 them. Each opening is enlarged as the copy asks, run through the character detector at the copy's
 scale, split at its gutter, and each half-leaf's headwords placed by `glyph_atlas.leaf_text.place` from
-the columns, positions and gloss lengths the tables give. The atlas classifier and, for characters
-it has no class for, NDLkotenOCR judge a headword on its box; their verdicts steer the pairing.
+the columns, positions and gloss lengths the tables give. The atlas classifier judges a headword
+on its box; where it does not read the headword there, NDLkotenOCR is asked, and its reading stands
+if it is the headword. Their verdicts steer the pairing.
 
-A headword is kept when a detected box stands at its place, the reader does not refuse it, its
-column's gaps fit the text within the copy's `fit` rows (and, for a copy marked `anchored`, a
-headword of the column was read where it stands), and its half-leaf is borne out: at least `CONFIRM`
-of its headwords judged, and `AGREED` of those read. The label always comes from the table.
+A headword is kept when a detected box stands at its place and a reader reads it there, or no
+reader judges it and its gaps to its paired neighbours fit the text within the copy's `fit` rows
+(for a copy marked `anchored`, only in a column where a headword was read), and its half-leaf is
+borne out: at least `CONFIRM`
+of its headwords judged, and `AGREED` of those read. The label always comes from the table: the character as printed, with the editors'
+correction kept beside it, and an IDS for a headword Unicode lacks.
 
 `OUTPUT` becomes a dataset: one document per volume, a page per opening with a kept headword, a
 line and a unit per headword, their boxes on the opening's image at its own size. `--volumes` and
@@ -26,10 +29,8 @@ line and a unit per headword, their boxes on the opening's image at its own size
 from __future__ import annotations
 
 import argparse
-import csv
 import io
 import json
-import re
 import sys
 from collections import defaultdict
 from collections.abc import Iterator
@@ -39,7 +40,7 @@ from urllib.parse import quote
 import yaml
 from PIL import Image
 
-from glyph_atlas import align, images, leaf_text, refs, tables
+from glyph_atlas import align, guangyun, images, leaf_text, refs, tables
 from glyph_atlas.classify import Classifier
 from glyph_atlas.detect import Detector
 from glyph_atlas.glossary import Glyph, agrees
@@ -68,34 +69,8 @@ COLUMNS = 10
 #: A half-leaf is borne out when the readers judge at least this many of its headwords and read this share of them.
 CONFIRM = 3
 AGREED = 0.6
-_PLACE = re.compile(r"^w(?P<volume>\d)(?P<leaf>\d\d)(?P<side>[ab])(?P<column>\d\d)(?P<position>\d\d)")
-_MARKS = re.compile(r"[〈〉［］｛｝（）〖〗｟｠〘〙]")
 SEGMENTATION = ("columns found from the detector's headword-sized boxes; each column's headwords paired in order with "
                 "its boxes by the gaps their gloss lengths predict, steered by the classifier and NDLkotenOCR")
-
-
-def read_entries(table: Path) -> dict[tuple[str, int, str], dict[int, list[tuple[int, str, leaf_text.Head, dict[str, str]]]]]:
-    """Every headword by half-leaf and column: its position, its id, its character with its gloss length, and its row."""
-    gloss: dict[tuple[str, str], tuple[int, dict[str, str]]] = {}
-    heads_seen: set[str] = set()
-    with (table / "韻書" / "廣韻.csv").open(encoding="utf-8-sig", newline="") as handle:
-        for row in csv.DictReader(handle):
-            length = len(_MARKS.sub("", row["釋義"]))
-            if row["小韻號"] not in heads_seen:
-                # The first headword of a 小韻 also carries the ○ before it, its 反切, 切 and the count.
-                heads_seen.add(row["小韻號"])
-                length += len(_MARKS.sub("", row["反切"])) + 2
-            gloss[(row["小韻號"].rstrip("abc"), row["小韻字號"])] = (length, row)
-    found: dict[tuple[str, int, str], dict[int, list]] = defaultdict(lambda: defaultdict(list))
-    with (table / "src" / "字序表.csv").open(encoding="utf-8-sig", newline="") as handle:
-        for row in csv.DictReader(handle):
-            place = _PLACE.match(row["sbgy_id"])
-            if not place or len(row["字"]) != 1:
-                continue
-            length, entry = gloss.get((row["原書小韻號"], row["小韻字號"]), (0, {}))
-            found[(place["volume"], int(place["leaf"]), place["side"])][int(place["column"])].append(
-                (int(place["position"]), row["sbgy_id"], leaf_text.Head(row["字"], length), entry))
-    return found
 
 
 def readers(classifier: Classifier, second: Recognizer):
@@ -116,8 +91,8 @@ def readers(classifier: Classifier, second: Recognizer):
 
         def reads(char: str, box: Box) -> bool | None:
             key = (box.x, box.y, box.w, box.h)
-            if key not in top:
-                return None
+            if key not in top or len(char) != 1:
+                return None  # a box too small to judge, or a headword Unicode lacks
             said = agrees(Glyph(char), top[key], codes)
             if said:
                 return True
@@ -137,6 +112,13 @@ def readers(classifier: Classifier, second: Recognizer):
     return of
 
 
+def shrunk(box: Box, times: int) -> Box:
+    """A box of the enlarged opening on the opening at its own size: the smallest box of whole pixels that holds it."""
+    left, top = box.x // times, box.y // times
+    right, bottom = -(-(box.x + box.w) // times), -(-(box.y + box.h) // times)
+    return Box(x=left, y=top, w=right - left, h=bottom - top)
+
+
 def document_of(source: dict, copy: dict, volume: dict) -> Document:
     return Document(
         id=f"{CORPUS}-{copy['id']}:{volume['volume']}",
@@ -150,7 +132,7 @@ def document_of(source: dict, copy: dict, volume: dict) -> Document:
         text_register=Register(source["register"]),
         image_kind=copy["image_kind"],
         dating=[Dating(literal=str(d["literal"]), start=d["start"], end=d["end"], kind=d["kind"], evidence=d["evidence"])
-                for d in source["dating"]],
+                for d in [*copy.get("dating", []), *source["dating"]]],
         image_rights=Rights(licence=Licence(copy["licence"]), holder=copy["holder"], attribution=copy["attribution"],
                             evidence=copy.get("licence_evidence", copy["repository"])),
         text_rights=Rights(licence=Licence(source["licence"]), holder=source["publisher"],
@@ -167,7 +149,7 @@ def openings(copy: dict, volume: dict, root: Path) -> Iterator[tuple[int, str, I
     `#page=<number>`.
     """
     if copy["kind"] == "directory":
-        for path in sorted((root / copy["path"] / volume["files"]).glob("p*.jpg")):
+        for path in sorted((root / copy["path"] / volume["files"]).glob("p*.jpg"), key=lambda path: int(path.stem[1:])):
             relative = path.relative_to(root).as_posix()
             url = f"{copy['repository'].replace('github.com', 'raw.githubusercontent.com')}/{copy['revision']}/{quote(relative)}"
             if images.path_for(url) is None:
@@ -216,7 +198,7 @@ def main() -> int:
         found = clone_revision(clone)
         if found != pinned:
             raise SystemExit(f"{clone} is at {found}; {SOURCE}.yaml pins {pinned}")
-    entries = read_entries(args.table)
+    entries = guangyun.read_entries(args.table)
     wanted = set(args.volumes.split(",")) if args.volumes else None
     only = {int(n) for n in args.openings.split(",")} if args.openings else None
 
@@ -230,9 +212,9 @@ def main() -> int:
 
     documents, pages, lines, units, report = [], [], [], [], {}
     totals = defaultdict(int)
-    enlarge = args.enlarge or int(copy["enlarge"])
-    scale = args.scale or float(copy["scale"])
-    fit = args.fit or float(copy["fit"])
+    enlarge = int(copy["enlarge"]) if args.enlarge is None else args.enlarge
+    scale = float(copy["scale"]) if args.scale is None else args.scale
+    fit = float(copy["fit"]) if args.fit is None else args.fit
     anchored = bool(copy.get("anchored"))
     prefix = f"{CORPUS}-{copy['id']}"
     for volume in copy["volumes"]:
@@ -262,8 +244,7 @@ def main() -> int:
             kept_here = 0
             report[page.id] = {}
             for name, key in sides.items():
-                columns = {column: [head for _, _, head, _ in sorted(rows, key=lambda r: r[0])]
-                           for column, rows in (entries.get(key) or {}).items()}
+                columns = {column: [entry.head for entry in rows] for column, rows in (entries.get(key) or {}).items()}
                 count = sum(len(heads) for heads in columns.values())
                 if not count:
                     continue
@@ -286,29 +267,33 @@ def main() -> int:
                 borne = len(judged) >= CONFIRM and sum(judged) / len(judged) >= AGREED
                 counts = {"headwords": count, "detected": len(verdicts), "judged": len(judged), "read": sum(judged), "kept": 0}
                 if borne:
-                    for column, (cells, error) in sorted(placed.items()):
+                    for column, (cells, _) in sorted(placed.items()):
                         if anchored and not any(verdicts.get((column, k)) for k in range(len(cells))):
                             continue  # no headword of the column was read where it stands
-                        ids = [(sbgy, row) for _, sbgy, _, row in sorted(entries[key][column], key=lambda r: r[0])]
-                        for k, cell in enumerate(cells):
+                        for entry, (k, cell) in zip(entries[key][column], enumerate(cells), strict=True):
                             verdict = verdicts.get((column, k))
-                            if not cell.detected or verdict is False or error >= fit:
+                            # A headword no reader read is kept on its own gaps to its neighbours.
+                            if not cell.detected or verdict is False or (not verdict and cell.error >= fit):
                                 continue
-                            sbgy, row = ids[k]
-                            line_id = f"gy-{copy['id']}:{sbgy}"
-                            box = Box(x=cell.box.x // enlarge, y=cell.box.y // enlarge, w=cell.box.w // enlarge, h=cell.box.h // enlarge)
-                            lines.append(Line(id=line_id, page_id=page.id, seq=len(lines), vertical=True, box=box,
+                            line_id = f"gy-{copy['id']}:{entry.entry_id}"
+                            box = shrunk(cell.box, enlarge)
+                            row = entry.row
+                            lines.append(Line(id=line_id, page_id=page.id, seq=kept_here + counts["kept"], vertical=True, box=box,
                                               text_raw=cell.head.char, text=cell.head.char, match_method="leaf-text",
-                                              meta={"source": SOURCE, "entry_id": sbgy, "copy": copy["id"], "volume": number,
+                                              meta={"source": SOURCE, "entry_id": entry.entry_id, "copy": copy["id"], "volume": number,
                                                     "小韻號": row.get("小韻號", ""), "反切": row.get("反切", ""),
                                                     "音韻地位": row.get("音韻地位", "")}))
+                            meta = {"segmentation": SEGMENTATION, "read": verdict, "gap_error": round(min(cell.error, 99.0), 3),
+                                    "classifier_top5": top.get((cell.box.x, cell.box.y, cell.box.w, cell.box.h))}
+                            if entry.corrected:
+                                meta["standard_form"] = entry.corrected
                             units.append(Unit(
                                 id=f"{line_id}:0", document_id=document.id, page_id=page.id, line_id=line_id, seq=0,
-                                box=box, text_source=cell.head.char, unicode=cell.head.char,
-                                classification=Classification.IDENTIFIED, script=Script.HAN, method="detect-align",
-                                review=ReviewState.MACHINE, upstream={"source": SOURCE, "entry_id": sbgy, "copy": copy["id"]},
-                                meta={"segmentation": SEGMENTATION, "read": verdict, "column_fit": round(error, 3),
-                                      "classifier_top5": top.get((cell.box.x, cell.box.y, cell.box.w, cell.box.h))}))
+                                box=box, text_source=cell.head.char,
+                                unicode=f"U+{ord(cell.head.char):04X}" if entry.encoded else None,
+                                classification=Classification.IDENTIFIED if entry.encoded else Classification.UNIDENTIFIED,
+                                script=Script.HAN, method="detect-align", review=ReviewState.MACHINE,
+                                upstream={"source": SOURCE, "entry_id": entry.entry_id, "copy": copy["id"]}, meta=meta))
                             counts["kept"] += 1
                 else:
                     counts["skipped"] = "not borne out by the readers"
