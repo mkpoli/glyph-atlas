@@ -1620,3 +1620,51 @@ def test_a_posted_picture_counts_as_something_to_look_at(tmp_path, monkeypatch):
     bot, _, _ = make_bot(tmp_path)
     bot.notice(ROOM, picture("$p"))
     assert bot._ambient[ROOM]["lively"] and bot._ambient[ROOM]["count"] == 1
+
+
+def test_a_refused_picture_costs_the_picture_not_the_answer(monkeypatch):
+    model = fish_bot.DeepSeek("key")
+    bodies = []
+
+    def post(body, url=None, **_):
+        bodies.append(json.loads(json.dumps(body)))
+        if isinstance(body["messages"][1]["content"], list):
+            raise fish_bot.DeepSeekError("DeepSeek answered 400: invalid image")
+        return answer('{"say": "看不到圖，但我在！"}')
+
+    monkeypatch.setattr(model, "_post", post)
+    act = model.act("Room", "", [message_row("[image] x.png")], {}, task="called", trigger=0, bot_user_id=USER,
+                    images=[(0, "data:image/png;base64,AA")])
+    assert act.say == ("看不到圖，但我在！",) and isinstance(bodies[1]["messages"][1]["content"], str)
+
+
+def test_a_picture_that_fails_is_fetched_once(tmp_path):
+    matrix = FakeMatrix()
+    calls = []
+    matrix.thumbnail = lambda mxc, size=1024, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(404, "gone"))
+    bot, _, store = make_bot(tmp_path, matrix=matrix)
+    bot.ingest(ROOM, picture("$gone", url="mxc://example/gone"), backfilled=False)
+    rows = store.context(ROOM, fish_bot.now_ms() + 1000, 10)
+    assert bot.pictures(rows, 4) == [] and bot.pictures(rows, 4) == []
+    assert calls == ["mxc://example/gone"]
+
+
+def test_her_own_sticker_is_not_a_picture_she_cannot_see(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.ingest(ROOM, picture("$mine", sender=USER, url="mxc://example/mine", sticker=True), backfilled=False)
+    rows = store.context(ROOM, fish_bot.now_ms() + 1000, 10)
+    payload = json.loads(fish_bot.format_chat("Room", "", rows, {}, task="ambient", trigger=None, bot_user_id=USER))
+    assert "image" not in payload["messages"][0]
+
+
+def test_only_a_real_new_picture_counts_for_reading_along():
+    edited = picture("$e")
+    edited["content"]["m.relates_to"] = {"rel_type": "m.replace", "event_id": "$x"}
+    empty = {"type": "m.sticker", "sender": "@reader:example", "event_id": "$s", "content": {}}
+    linkless = event("photo.png", event_id="$l", msgtype="m.image")
+    assert [fish_bot._picture(item, USER) for item in (edited, empty, linkless, picture("$ok"))] == [None, None, None, "!"]
+
+
+def test_a_picture_link_cannot_climb_out_of_the_media_api():
+    with pytest.raises(fish_bot.MatrixError):
+        fish_bot.Matrix("http://127.0.0.1:1", "token").thumbnail("mxc://../config")

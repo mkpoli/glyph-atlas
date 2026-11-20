@@ -164,7 +164,10 @@ IMAGES_CALLED = 4
 IMAGES_AMBIENT = 2
 IMAGE_LINES = 12
 IMAGE_SIZE = 1024
-MAX_IMAGE_BYTES = 4_000_000
+MAX_IMAGE_BYTES = 1_500_000
+IMAGE_TIMEOUT = 15.0
+# Pictures kept in memory, by total size of their data URLs.
+IMAGE_CACHE_BYTES = 24_000_000
 IMAGE_TYPES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"GIF8": "image/gif", b"RIFF": "image/webp"}
 # After reading code or a page the model tends to answer in prose, which JSON mode blanks out, so
 # each round of results ends with the answer's shape again.
@@ -745,13 +748,13 @@ class Matrix:
     def thumbnail(self, mxc: str, size: int = IMAGE_SIZE, limit: int = MAX_IMAGE_BYTES) -> bytes:
         """An image at most `size` pixels a side, through the homeserver's authenticated media API."""
         match = re.fullmatch(r"mxc://([A-Za-z0-9.:-]+)/([A-Za-z0-9_-]+)", mxc)
-        if not match:
+        if not match or match.group(1).strip(".") == "":
             raise MatrixError(None, "not an mxc URI")
         url = (f"{self.homeserver}/_matrix/client/v1/media/thumbnail/{match.group(1)}/{match.group(2)}?"
                + urllib.parse.urlencode({"width": size, "height": size, "method": "scale", "animated": "false"}))
         request = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.token}", "User-Agent": USER_AGENT})
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urllib.request.urlopen(request, timeout=IMAGE_TIMEOUT) as response:
                 data = response.read(limit + 1)
         except urllib.error.HTTPError as error:
             raise MatrixError(error.code, f"thumbnail refused: {error.reason}") from None
@@ -1636,7 +1639,7 @@ def format_chat(room_name: str, room_topic: str, events: list[sqlite3.Row], name
         message = {"i": index, "time": stamp(int(row["ts"])), "sender": label, "body": body}
         if index in shown:
             message["image"] = "attached below"
-        elif _media(row):
+        elif _media(row) and sender != bot_user_id:
             message["image"] = "not shown"
         messages.append(message)
     messages.reverse()
@@ -1817,6 +1820,13 @@ class DeepSeek:
                 failures += 1
                 last = error
                 log.warning("chat answer unusable: %s", error)
+                if images:
+                    # A picture the model refuses, or a body too large with them, must not cost the
+                    # answer: the second try goes without pictures.
+                    images = []
+                    body["messages"][1] = {"role": "user", "content": format_chat(
+                        room_name, room_topic, events, names, task=task, trigger=trigger, bot_user_id=bot_user_id,
+                        stickers=stickers, recent=recent, rooms=rooms, memory=memory, room_facts=room_facts)}
         raise DeepSeekError(str(last or "no answer"))
 
     def _tool_url(self, name: str) -> str:
@@ -2562,6 +2572,12 @@ def _picture(event: dict[str, Any], user_id: str, ignored: Iterable[str] = ()) -
     content = event.get("content")
     if not isinstance(sender, str) or sender == user_id or _is_bot(sender, ignored) or not isinstance(content, dict):
         return None
+    relates = content.get("m.relates_to")
+    if content.get("m.new_content") or (isinstance(relates, dict) and relates.get("rel_type") == "m.replace"):
+        return None
+    url = content.get("url")
+    if not isinstance(content.get("body"), str) or not isinstance(url, str) or not url.startswith("mxc://"):
+        return None
     if event.get("type") == "m.sticker" or (event.get("type") == "m.room.message" and content.get("msgtype") == "m.image"):
         return "!"
     return None
@@ -3163,22 +3179,29 @@ class Bot:
                 continue
             url = self._images.get(media)
             if url is None:
-                try:
-                    data = self.matrix.thumbnail(media)
-                except MatrixError as error:
-                    log.info("picture %s: %s", media, error)
-                    continue
-                kind = next((kind for magic, kind in IMAGE_TYPES.items() if data.startswith(magic)), None)
-                if kind is None or (kind == "image/webp" and data[8:12] != b"WEBP"):
-                    continue
-                url = f"data:{kind};base64,{base64.b64encode(data).decode()}"
+                url = self._picture_url(media)
                 self._images[media] = url
-                while len(self._images) > 64:
+                while sum(len(cached) for cached in self._images.values()) > IMAGE_CACHE_BYTES or len(self._images) > 256:
                     self._images.pop(next(iter(self._images)))
+            if not url:
+                continue
             found.append((index, url))
             if len(found) == count:
                 break
         return found[::-1]
+
+    def _picture_url(self, media: str) -> str:
+        """A picture as a data URL, or empty when it cannot be fetched or read, which is remembered
+        too so the next turn does not fetch it again."""
+        try:
+            data = self.matrix.thumbnail(media)
+        except MatrixError as error:
+            log.info("picture %s: %s", media, error)
+            return ""
+        kind = next((kind for magic, kind in IMAGE_TYPES.items() if data.startswith(magic)), None)
+        if kind is None or (kind == "image/webp" and data[8:12] != b"WEBP"):
+            return ""
+        return f"data:{kind};base64,{base64.b64encode(data).decode()}"
 
     def perform(self, room_id: str, event_id: str, act: Act, events: list[sqlite3.Row],
                 *, reply_to: str | None = None) -> None:
