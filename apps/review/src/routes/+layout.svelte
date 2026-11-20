@@ -2,6 +2,7 @@
   import '../app.css'
   import '../layers.css'
   import '../tangut-font.css'
+  import '../seal-font.css'
   import '../drawn-forms.css'
   import '../script-colors.css'
   import ChatLinks from '../components/ChatLinks.svelte'
