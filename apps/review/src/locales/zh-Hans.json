@@ -1311,5 +1311,19 @@
   "contact.form.sending": "发送中…",
   "contact.form.sent": "已发送，谢谢。",
   "contact.form.busy": "短时间内留言过多，请等一分钟再试。",
-  "contact.form.failed": "留言发送失败。请稍后再试，或致信{email}。"
+  "contact.form.failed": "留言发送失败。请稍后再试，或致信{email}。",
+  "roadmap.title": "收录计划",
+  "roadmap.work": "书名",
+  "roadmap.edition": "版本",
+  "roadmap.holder": "藏所",
+  "roadmap.status": "进度",
+  "roadmap.status.published": "已发布",
+  "roadmap.status.underway": "进行中",
+  "roadmap.status.planned": "拟收录",
+  "roadmap.edition.open": "版本待定",
+  "roadmap.stage.dictionaries": "字书、韵书与训诂书",
+  "roadmap.stage.collections": "文集",
+  "roadmap.stage.miscellanies": "杂著",
+  "roadmap.stage.technical": "科技典籍",
+  "roadmap.stage.gazetteers": "地方志"
 }

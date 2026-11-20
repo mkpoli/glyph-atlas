@@ -1311,5 +1311,19 @@
   "contact.form.sending": "傳送中…",
   "contact.form.sent": "已傳送，謝謝。",
   "contact.form.busy": "短時間內留言過多，請等一分鐘再試。",
-  "contact.form.failed": "留言傳送失敗。請稍後再試，或來信{email}。"
+  "contact.form.failed": "留言傳送失敗。請稍後再試，或來信{email}。",
+  "roadmap.title": "收錄計畫",
+  "roadmap.work": "書名",
+  "roadmap.edition": "版本",
+  "roadmap.holder": "藏所",
+  "roadmap.status": "進度",
+  "roadmap.status.published": "已發布",
+  "roadmap.status.underway": "進行中",
+  "roadmap.status.planned": "擬收錄",
+  "roadmap.edition.open": "版本待定",
+  "roadmap.stage.dictionaries": "字書、韻書與訓詁書",
+  "roadmap.stage.collections": "文集",
+  "roadmap.stage.miscellanies": "雜著",
+  "roadmap.stage.technical": "科技典籍",
+  "roadmap.stage.gazetteers": "地方志"
 }

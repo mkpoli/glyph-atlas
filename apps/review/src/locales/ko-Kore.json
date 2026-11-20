@@ -1286,5 +1286,19 @@
   "sponsor.companyHint": "mkpoli@mkpo.li로 연락해 주세요.",
   "sponsor.supporters": "最近 後援者",
   "sponsor.anonymous": "匿名",
-  "sponsor.thanks": "Glyph Atlas를 이용해 주셔서 고마워요 💗"
+  "sponsor.thanks": "Glyph Atlas를 이용해 주셔서 고마워요 💗",
+  "roadmap.title": "收錄 計劃",
+  "roadmap.work": "書名",
+  "roadmap.edition": "版本",
+  "roadmap.holder": "所藏處",
+  "roadmap.status": "進行 狀況",
+  "roadmap.status.published": "公開됨",
+  "roadmap.status.underway": "進行 中",
+  "roadmap.status.planned": "收錄 豫定",
+  "roadmap.edition.open": "版本 未定",
+  "roadmap.stage.dictionaries": "字書·韻書·訓詁書",
+  "roadmap.stage.collections": "文集",
+  "roadmap.stage.miscellanies": "雜著",
+  "roadmap.stage.technical": "技術·科學 文獻",
+  "roadmap.stage.gazetteers": "地方志"
 }

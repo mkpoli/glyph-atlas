@@ -1297,5 +1297,19 @@
   "contact.form.sending": "Đang gửi…",
   "contact.form.sent": "Đã gửi. Cảm ơn bạn.",
   "contact.form.busy": "Có quá nhiều tin nhắn được gửi cùng lúc. Hãy đợi một phút rồi thử lại.",
-  "contact.form.failed": "Không gửi được tin nhắn. Hãy thử lại sau hoặc gửi thư đến {email}."
+  "contact.form.failed": "Không gửi được tin nhắn. Hãy thử lại sau hoặc gửi thư đến {email}.",
+  "roadmap.title": "Kế hoạch thu thập",
+  "roadmap.work": "Tên sách",
+  "roadmap.edition": "Bản in",
+  "roadmap.holder": "Nơi lưu giữ",
+  "roadmap.status": "Tiến độ",
+  "roadmap.status.published": "Đã công bố",
+  "roadmap.status.underway": "Đang thực hiện",
+  "roadmap.status.planned": "Dự kiến",
+  "roadmap.edition.open": "Chưa chọn bản in",
+  "roadmap.stage.dictionaries": "Tự thư, vận thư và sách huấn hỗ",
+  "roadmap.stage.collections": "Văn tập",
+  "roadmap.stage.miscellanies": "Tạp trứ",
+  "roadmap.stage.technical": "Sách kỹ thuật và khoa học",
+  "roadmap.stage.gazetteers": "Địa phương chí"
 }
