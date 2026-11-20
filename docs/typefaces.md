@@ -92,7 +92,7 @@ An upload writes one R2 object per file: 2127 for a whole build.
 
 The Atlas faces hold no small seal character. Sealie 1.2.0 draws the Small Seal block
 (U+3D000–U+3FC3F) as a build of its own, stored and served the same way under its own version
-(`SEAL_FONT_VERSION`): `seal/s.woff2` for the script legend's sample and `seal/000.woff2` onwards, 64
+(`SEAL_FONT_VERSIONS`, newest first): `seal/s.woff2` for the script legend's sample and `seal/000.woff2` onwards, 64
 characters to a file, with the licence as `OFL.txt`. `apps/review/src/seal-font.css` declares the
 files and is part of the app's style sheet; `apps/review/static/fonts/README.md` records the source.
 

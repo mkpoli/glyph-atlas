@@ -199,9 +199,10 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
    since few installed fonts draw them, with its typographic ascent and descent so a line holding one
    is no taller than its neighbours. It is added to the page's stack, to the stacks of the labels that
    set their own and show interface text, and to the language menu's entry on every page. It draws only
-   the Nôm characters it holds; every other character falls through to the fonts after it. */
+   the Nôm characters it holds; every other character falls through to the fonts after it. Its range
+   takes in the small seal block, so Sealie stands before it and a seal character does not fetch it. */
 @font-face{font-family:"Plangothic vi-Hani";src:url("/fonts/Plangothic-vi-Hani.woff2") format("woff2");font-display:swap;unicode-range:U+20000-3FFFF;ascent-override:88%;descent-override:12%;line-gap-override:0%}
-:root:lang(vi-Hani),.language-options [lang=vi-Hani]{font-family:Inter,"Helvetica Neue",Arial,"Noto Sans","Plangothic vi-Hani","GenZui Sans","Noto Serif Tangut", "Sealie",sans-serif}
+:root:lang(vi-Hani),.language-options [lang=vi-Hani]{font-family:Inter,"Helvetica Neue",Arial,"Noto Sans","Sealie","Plangothic vi-Hani","GenZui Sans","Noto Serif Tangut",sans-serif}
 :root[data-typeface=serif]:lang(vi-Hani),:root[data-typeface=serif] .language-options [lang=vi-Hani]{font-family:var(--ga-font-ui)}
 :root:lang(vi-Hani) :is(.overline,.tile-footer,.collection-bottom,.tile-id,.quiz-tile-tools kbd,.review-actions kbd,.review-form kbd,.form-choice small,.form-choice kbd,.chip-identity,.layer-code,.candidate-code,.candidate-name,.glyph-codepoint){font-family:ui-monospace,SFMono-Regular,Consolas,monospace,"Plangothic vi-Hani"}
 /* The wide tracking suits a wordmark of three to five Han characters; a Latin-script name keeps its own. */
