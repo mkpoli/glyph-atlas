@@ -22,6 +22,8 @@ const NLC = '中國國家圖書館'
 const HYL = 'Harvard-Yenching Library'
 const PKU = '北京大學圖書館'
 const ZHSY = '國家圖書館出版社（中華再造善本）'
+const BL = 'British Library'
+const BNF = 'Bibliothèque nationale de France'
 const IOM = 'Institute of Oriental Manuscripts, Russian Academy of Sciences'
 
 /** @typedef {{ edition: string, holder: string, href?: string, book?: string, status: 'published' | 'underway' | 'planned' }} Edition */
@@ -57,7 +59,16 @@ export const STAGES = [
       { edition: '清初毛氏汲古閣影宋抄本（中華再造善本影印）', holder: ZHSY, href: commons('ZHSY100362 類篇 宋司馬光等撰 清初毛氏汲古閣影宋抄本.pdf'), status: 'planned' },
       { edition: '清康熙四十五年（1706）揚州詩局刻本', holder: '天津圖書館', href: commons('NLC892-GBZX0301012293-286461 類篇四十五卷 十卷 第1冊.pdf'), status: 'planned' },
       { edition: '清光緒二年（1876）歸安姚覲元川東官舍刻本', holder: NLC, href: archive('nlc-892-312002104694-328181'), status: 'planned' }] },
+    { title: '切韻', by: '陸法言', editions: [
+      { edition: 'S.2071（切三）', holder: BL, status: 'planned' },
+      { edition: 'S.2055（切二）', holder: BL, status: 'planned' },
+      { edition: 'P.2017', holder: BNF, href: 'https://gallica.bnf.fr/ark:/12148/btv1b8300638b', status: 'planned' }] },
+    { title: '刊謬補缺切韻', by: '王仁昫', editions: [
+      { edition: 'P.2011（王一）', holder: BNF, status: 'planned' },
+      { edition: '裴務齊正字本（王二）', holder: '故宮博物院', status: 'planned' },
+      { edition: '宋濂跋本（王三）', holder: '故宮博物院', status: 'planned' }] },
     { title: '廣韻', by: '陳彭年、丘雍等', editions: [
+      { edition: '清康熙四十三年（1704）序張氏澤存堂刊本', holder: '東京大學東洋文化研究所', href: commons('IOC.UTokyo-000145 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷首.pdf'), status: 'planned' },
       { edition: '大宋重修廣韻 宋刊本', holder: NDL, href: ndl(2545272), status: 'planned' },
       { edition: '鉅宋廣韻 宋乾道五年（1169）建寧府黃三八郎刻本（中華再造善本影印）', holder: '上海圖書館', href: commons('ZHSY000074 鉅宋廣韻五卷 (宋)陳彭年等 撰 宋乾道五年建寧府黃三八郎刻本.pdf'), status: 'planned' }] },
     { title: '集韻', by: '丁度等', editions: [
@@ -110,6 +121,8 @@ export const STAGES = [
     { title: '古文四聲韻', by: '夏竦', editions: [] },
     { title: '六書故', by: '戴侗', editions: [] },
     { title: '洪武正韻', by: '樂韶鳳等', editions: [] },
+    { title: '中原音韻', by: '周德清', editions: [] },
+    { title: '蒙古字韻', editions: [] },
     { title: '字彙補', by: '吳任臣', editions: [] },
     { title: '康熙字典', by: '張玉書等', editions: [] },
   ] },
@@ -120,7 +133,7 @@ export const STAGES = [
 ]
 
 /** The language a holder's name is written in, where it is not Chinese. */
-export const HOLDER_LANG = { [NDL]: 'ja', [NAJ]: 'ja', '京都大学附属図書館': 'ja', [HYL]: 'en', [IOM]: 'en' }
+export const HOLDER_LANG = { [NDL]: 'ja', [NAJ]: 'ja', '京都大学附属図書館': 'ja', [HYL]: 'en', [IOM]: 'en', [BL]: 'en', [BNF]: 'fr', '東京大學東洋文化研究所': 'ja' }
 
 /** How many rows stand at each status; a work with no edition chosen is one planned row. */
 export function tally(stages = STAGES) {
