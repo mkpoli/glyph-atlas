@@ -43,41 +43,43 @@ def read_shard(prefix):
 
 
 def grow(rows):
-    """The local shards that (key, object, offset, size, content_type) rows add keys to, as merged, and
-    the rows whose keys are new. A key already mapped elsewhere, or a new key in a pack not named by its
-    content, stops the run before any shard is written: a key names one image."""
+    """The local shards that (key, object, offset, size, content_type) rows add keys to, as merged, the
+    rows whose keys are new, and where each key's image is served from, as {key: [object, offset, size]}.
+    A key names one image, so a key already mapped keeps its place, and a copy of its image in another
+    pack (a page exported again) is left unused. A new key in a pack not named by its content stops the
+    run before any shard is written."""
     by_prefix = defaultdict(list)
     for row in rows:
         by_prefix[row[0][:3]].append(tuple(row))
-    grown, fresh = {}, []
+    grown, fresh, placed = {}, [], {}
     for prefix, members in sorted(by_prefix.items()):
         shard = read_shard(prefix)
         objects = {name: i for i, name in enumerate(shard["objects"])}
         grew = False
         for key, obj, offset, size, content_type in members:
-            if key[3:] not in shard["keys"] and not addressed(obj):
+            old = shard["keys"].get(key[3:])
+            if old is not None:
+                placed[key] = [shard["objects"][old[0]], old[1], old[2]]
+                continue
+            if not addressed(obj):
                 sys.exit(f"image {key} is new and sits in {obj}, a numbered pack the bucket may hold with other bytes; "
                          "name the catalogue's packs by their content first (address_packs.py); nothing written")
             if obj not in objects:
                 objects[obj] = len(shard["objects"])
                 shard["objects"].append(obj)
-            place = [objects[obj], offset, size] + ([] if content_type in (None, WEBP) else [content_type])
-            old = shard["keys"].get(key[3:])
-            if old is None:
-                shard["keys"][key[3:]] = place
-                grew = True
-                fresh.append((key, obj, offset, size, content_type))
-            elif [shard["objects"][old[0]], *old[1:]] != [obj, offset, size, *place[3:]]:
-                sys.exit(f"image {key} is mapped to {shard['objects'][old[0]]} {old[1:]} and now to {obj} {offset} {size}; nothing written")
+            shard["keys"][key[3:]] = [objects[obj], offset, size] + ([] if content_type in (None, WEBP) else [content_type])
+            grew = True
+            fresh.append((key, obj, offset, size, content_type))
+            placed[key] = [obj, offset, size]
         if grew:
             grown[prefix] = shard
-    return grown, fresh
+    return grown, fresh, placed
 
 
 def merge(rows, save=True):
     """Merge (key, object, offset, size, content_type) rows into the local shards and return the number
     of new keys and of shards they fall in."""
-    grown, fresh = grow(rows)
+    grown, fresh, _placed = grow(rows)
     if save and grown:
         write(grown)
     return len(fresh), len(grown)
