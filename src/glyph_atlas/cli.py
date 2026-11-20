@@ -1169,6 +1169,25 @@ def import_tangut_tongyin(
     typer.echo(f"-> {out}")
 
 
+@import_app.command("tensho")
+def import_tensho(
+    archive: Annotated[Path, typer.Argument(help="TE00039.zip of the 篆書字体データセット")],
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/tensho"),
+    crops: Annotated[Path | None, typer.Option(help="directory the crops are extracted below")] = None,
+) -> None:
+    """Import the small seal forms of 説文解字 (陳昌治 edition) from CODH's 篆書字体データセット."""
+    from .importers import tensho
+
+    try:
+        summary = tensho.collect(archive, out, crops=crops)
+    except tensho.TenshoSourceError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1) from error
+    typer.echo(f"units         {summary['units']:>10}")
+    typer.echo(f"not placed    {summary['left_out']:>10}")
+    typer.echo(f"-> {out}")
+
+
 @audit_app.command("sample")
 def audit_sample(
     directory: Annotated[Path, typer.Argument(help="dataset directory holding the run's units")],
