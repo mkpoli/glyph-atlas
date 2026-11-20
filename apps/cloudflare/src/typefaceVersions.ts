@@ -2,3 +2,6 @@
 // (`scripts/build_atlas_fonts.py`) is uploaded to R2 under its own version and named here.
 export const TYPEFACE_VERSIONS = ['bcc12fd5af37', 'c8fbfd1f6e9b'] as const;
 export const TYPEFACE_VERSION = TYPEFACE_VERSIONS[0];
+// The build of Sealie, the small seal label font (`scripts/build_seal_font.py`), stored and served the same way.
+export const SEAL_FONT_VERSION = 'a742de4b189c';
+export const FONT_VERSIONS: readonly string[] = [...TYPEFACE_VERSIONS, SEAL_FONT_VERSION];

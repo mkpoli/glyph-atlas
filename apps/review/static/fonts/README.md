@@ -37,6 +37,24 @@ glyph from a font is ever shown as one.
   added (U+187F8–U+187FF, U+18D09–U+18D20) fall back to the reader's own fonts. The component blocks
   are left out: no label is a component.
 
+Sealie draws the small seal characters. Its files are served from R2 beside the Atlas faces
+(`docs/typefaces.md`), not from this directory.
+
+- Family: `Sealie`, version 1.2.0 Regular (<https://github.com/iebb/sealie>), under the SIL Open Font
+  License 1.1 with no Reserved Font Name; the build carries the release's `LICENSE-OFL.txt` as `OFL.txt`.
+  Its licence header calls it "Panorama Gothic Seal Draft … Generated glyph drawings" and its name
+  table "simplified geometric SVG source": the glyphs are generated drawings of the seal forms, not
+  tracings of a print of 説文解字.
+- Source: the release asset `Sealie-Regular.ttf`, SHA-256
+  `5d949eaffa8e9b30f5a0264593cf7de22217b1cb0178bbea6ad7dfca946bc212`, which is the hash the release's
+  `font-hashes.json` gives. `scripts/build_seal_font.py` fetches it, checks the hash, and writes the
+  build, `src/seal-font.css` and the build's name in `apps/cloudflare/src/typefaceVersions.ts`.
+- Files: the script legend's sample U+3DD16, the seal form of 篆, alone (2.5 KB), then the other
+  characters in code point order, 64 to a file (44 to 111 KB each, 178 files and 12.2 MB in all). A page
+  downloads only the files for the seal characters it shows.
+- Coverage, read from the font's cmap: the 11,328 characters U+3D000–U+3FC3F, the whole Small Seal
+  block of Unicode 18.0, none with an empty outline.
+
 `drawn/` draws the drawn forms (docs/decisions/0014-drawn-forms.md).
 
 - Families: `Glyph Atlas Drawn Forms` (sans) and `Glyph Atlas Drawn Forms Serif`, built by

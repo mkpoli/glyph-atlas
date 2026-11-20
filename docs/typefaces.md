@@ -88,6 +88,21 @@ rclone copy cache/atlas-fonts/<version> r2:glyph-atlas/fonts/<version> --exclude
 
 An upload writes one R2 object per file: 2127 for a whole build.
 
+## Small seal
+
+The Atlas faces hold no small seal character. Sealie 1.2.0 draws the Small Seal block
+(U+3D000–U+3FC3F) as a build of its own, stored and served the same way under its own version
+(`SEAL_FONT_VERSION`): `seal/s.woff2` for the script legend's sample and `seal/000.woff2` onwards, 64
+characters to a file, with the licence as `OFL.txt`. `apps/review/src/seal-font.css` declares the
+files and is part of the app's style sheet; `apps/review/static/fonts/README.md` records the source.
+
+```sh
+uv run scripts/build_seal_font.py                   # cache/seal-font/<version>/
+rclone copy cache/seal-font/<version> r2:glyph-atlas/fonts/<version>
+```
+
+An upload writes 179 R2 objects.
+
 ## Licences
 
 - Noto Sans CJK JP (© 2014-2021 Adobe) and Noto Serif CJK JP (© 2017-2024 Adobe): SIL Open Font
