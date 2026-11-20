@@ -30,6 +30,8 @@ ignored_senders = [
   "@telegrambot:glyphatlas.org",
   "@heisenbridge:glyphatlas.org",
   "@qqbot:glyphatlas.org",
+  "@telegram_8954644733:glyphatlas.org",
+  "@irc_libera_chanserv:glyphatlas.org",
 ]
 
 [chat]

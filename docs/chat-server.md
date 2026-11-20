@@ -317,6 +317,12 @@ anything up. MemGPT lets a model page through its memory with tools and reports 
 early (Packer et al., [arXiv 2310.08560](https://arxiv.org/abs/2310.08560), 2023), so the recalled
 memory still comes with every turn.
 
+She knows the rooms. Every turn carries the room's alias, creation date, how many people are in it
+on each platform, and the Discord, Telegram, QQ and IRC groups it is bridged to; in an answer she can
+list the public rooms, read a room's creator and first joins, and list its members, all from the
+homeserver. QQ members appear only once they have spoken, because QQ's bot API cannot list a group,
+so the QQ group has more people than she sees.
+
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
 2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
 checks each against the hash in `STICKERS` and uploads it to the homeserver once; a sticker whose

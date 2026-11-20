@@ -83,6 +83,19 @@ class FakeMatrix:
     def joined_rooms(self):
         return set()
 
+    room_state = ()
+    room_directory = ()
+    memberships = ()
+
+    def state(self, room_id):
+        return list(self.room_state)
+
+    def directory(self):
+        return list(self.room_directory)
+
+    def first_memberships(self, room_id, limit=100):
+        return list(self.memberships)
+
     def public_rooms(self):
         return []
 
@@ -111,8 +124,9 @@ class FakeDeepSeek:
         return self.memory_value
 
     def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=(),
-            rooms="", memory=None, lookup=None, on_step=None):
+            rooms="", memory=None, lookup=None, on_step=None, room_facts=None):
         self.rooms = rooms
+        self.room_facts = room_facts
         self.memory = memory
         self.lookup = lookup
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
@@ -1432,3 +1446,90 @@ def test_a_turn_stops_looking_things_up_when_time_runs_out(tmp_path, monkeypatch
     act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER, lookup=lookup)
     assert act.say == ("ok",) and lookup.deepseek.queries == []
     assert bodies[-1]["tool_choice"] == "none"
+
+
+def member(user, name, *, ts=1_792_852_938_000, membership="join"):
+    return {"type": "m.room.member", "state_key": user, "origin_server_ts": ts,
+            "content": {"membership": membership, "displayname": name}}
+
+
+ROOM_STATE = [
+    {"type": "m.room.create", "sender": "@ops:example", "state_key": "", "origin_server_ts": 1_792_852_938_380, "content": {}},
+    {"type": "m.room.canonical_alias", "state_key": "", "content": {"alias": "#zh:example"}},
+    {"type": "m.room.topic", "state_key": "", "content": {"topic": "中文"}},
+    {"type": "m.bridge", "state_key": "discord", "content": {
+        "protocol": {"displayname": "Discord"},
+        "channel": {"displayname": "#中文", "external_url": "https://discord.com/channels/1/2"}}},
+    member("@mkpoli:example", "mkpoli"), member("@qq_ab:example", "胡妹"), member("@discord_1:example", "まくぽり"),
+    member("@qqbot:example", "QQ"), member("@bigfatfish:example", "大肥魚"), member("@left:example", "x", membership="leave"),
+]
+
+
+def community(matrix=None):
+    matrix = matrix or FakeMatrix()
+    matrix.room_state = ROOM_STATE
+    matrix.room_directory = [{"room_id": ROOM, "name": "中文", "canonical_alias": "#zh:example", "num_joined_members": 6},
+                             {"room_id": "!dev:example", "name": "開發 · Dev", "canonical_alias": "#dev:example"},
+                             {"room_id": "!devops:example", "name": "開發 · Ops", "canonical_alias": "#ops:example"}]
+    matrix.memberships = [member("@ops:example", "ops", ts=1), member("@telegrambot:glyphatlas.org", "bot", ts=2),
+                          member("@mkpoli:example", "mkpoli", ts=3, membership="invite"),
+                          member("@mkpoli:example", "mkpoli", ts=4), member("@mkpoli:example", "mkpoli", ts=5)]
+    return fish_bot.Community(matrix, {"@qqbot:example", "@bigfatfish:example", "@telegrambot:glyphatlas.org"},
+                              rooms=lambda: {ROOM, "!dev:example", "!devops:example"})
+
+
+def test_a_room_summary_counts_people_by_platform_and_names_its_bridges():
+    facts = community().summary(ROOM)
+    assert facts["members"] == 3 and facts["by_platform"] == {"Matrix": 1, "QQ": 1, "Discord": 1}
+    assert facts["alias"] == "#zh:example" and facts["created"] == fish_bot.local_day(1_792_852_938_380)
+    assert facts["bridged_to"] == ["Discord #中文 (https://discord.com/channels/1/2)", "QQ group"]
+
+
+def test_room_info_lists_who_joined_first_without_bots_or_repeats():
+    info = community().info(ROOM)
+    assert info["created_by"] == "@ops:example" and info["room"] == "中文"
+    assert [person["name"] for person in info["first_to_join"]] == ["ops", "mkpoli"]
+    assert "QQ group members who never spoke are missing" in info["coverage"]
+
+
+def test_rooms_are_found_by_alias_name_part_or_here():
+    rooms = community()
+    assert rooms.find("", ROOM) == ROOM and rooms.find("this group", ROOM) == ROOM
+    assert rooms.find("#dev:example", ROOM) == "!dev:example"
+    assert rooms.find("dev", ROOM) == "!dev:example"
+    with pytest.raises(ValueError):
+        rooms.find("開發", ROOM)
+    with pytest.raises(ValueError):
+        rooms.find("!private:example", ROOM)
+
+
+def test_members_are_filtered_by_name():
+    found = community().members(ROOM, "胡")
+    assert found["members"] == [{"name": "胡妹", "platform": "QQ"}] and found["total"] == 1
+
+
+def test_room_tools_are_local_and_free(tmp_path):
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli",
+                             per_hour=0, community=community())
+    lookup.here = ROOM
+    assert "rooms" in [tool["function"]["name"] for tool in lookup.specs()]
+    assert lookup.run("room_info", {})["first_to_join"][0]["name"] == "ops"
+    assert len(lookup.run("rooms", {})["rooms"]) == 3
+    assert lookup.run("members", {"room": "中文", "query": "mk"})["total"] == 1
+
+
+def test_every_turn_knows_its_room(tmp_path):
+    matrix = FakeMatrix()
+    community(matrix)
+    bot, _, _ = make_bot(tmp_path, matrix=matrix)
+    trigger = event("大肥魚 這個羣多少人？", event_id="$call")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert bot.deepseek.room_facts["alias"] == "#zh:example"
+    assert bot.lookup.here == ROOM
+
+
+def test_the_chat_prompt_carries_the_room_facts():
+    payload = json.loads(fish_bot.format_chat("中文", "", [message_row("hi")], {}, task="called", trigger=0,
+                                              bot_user_id=USER, room_facts={"members": 3}))
+    assert payload["room"] == {"name": "中文", "topic": "", "members": 3}
