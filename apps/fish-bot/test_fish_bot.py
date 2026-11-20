@@ -96,6 +96,13 @@ class FakeMatrix:
     def first_memberships(self, room_id, limit=100):
         return list(self.memberships)
 
+    pictures: dict = {}  # noqa: RUF012 - a fake; tests replace it per instance
+
+    def thumbnail(self, mxc, size=1024, limit=4_000_000):
+        if mxc not in self.pictures:
+            raise fish_bot.MatrixError(404, "not found")
+        return self.pictures[mxc]
+
     def public_rooms(self):
         return []
 
@@ -124,9 +131,10 @@ class FakeDeepSeek:
         return self.memory_value
 
     def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=(),
-            rooms="", memory=None, lookup=None, on_step=None, room_facts=None):
+            rooms="", memory=None, lookup=None, on_step=None, room_facts=None, images=()):
         self.rooms = rooms
         self.room_facts = room_facts
+        self.images = list(images)
         self.memory = memory
         self.lookup = lookup
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
@@ -1545,3 +1553,70 @@ def test_a_long_member_list_fits_and_says_how_many_are_left_out():
     assert len(json.dumps(found, ensure_ascii=False)) <= fish_bot.MAX_TOOL_RESULT
     assert found["total"] == 403 and "more" in found["left_out"]
     assert rooms.summary(ROOM)["members"] == 403
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+
+
+def picture(event_id, *, sender="@reader:example", url="mxc://example/abc", sticker=False, ts=None):
+    if sticker:
+        return {"type": "m.sticker", "sender": sender, "event_id": event_id, "room_id": ROOM,
+                "origin_server_ts": ts or fish_bot.now_ms(), "content": {"body": "cute", "url": url}}
+    return event("photo.png", sender=sender, event_id=event_id, ts=ts, msgtype="m.image", url=url)
+
+
+def test_keeps_the_link_to_a_picture_or_sticker(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.ingest(ROOM, picture("$p"), backfilled=False)
+    bot.ingest(ROOM, picture("$s", url="mxc://example/st", sticker=True), backfilled=False)
+    rows = store.context(ROOM, fish_bot.now_ms() + 1000, 10)
+    assert [(row["body"], row["media"]) for row in rows] == [
+        ("[image] photo.png", "mxc://example/abc"), ("[sticker] cute", "mxc://example/st")]
+
+
+def test_an_old_log_gains_the_media_column(tmp_path):
+    path = tmp_path / "chat.sqlite3"
+    connection = sqlite3.connect(path)
+    connection.execute("CREATE TABLE events (event_id TEXT PRIMARY KEY, room_id TEXT NOT NULL, sender TEXT NOT NULL, "
+                       "ts INTEGER NOT NULL, body TEXT NOT NULL, msgtype TEXT NOT NULL DEFAULT '', "
+                       "backfilled INTEGER NOT NULL DEFAULT 0)")
+    connection.execute("INSERT INTO events VALUES('$old', ?, '@a:example', 1, 'hi', 'm.text', 0)", (ROOM,))
+    connection.commit()
+    connection.close()
+    store = fish_bot.Store(path)
+    assert store.context(ROOM, 10, 5)[0]["media"] == ""
+
+
+def test_a_turn_sees_the_newest_pictures_people_posted(tmp_path):
+    matrix = FakeMatrix()
+    matrix.pictures = {"mxc://example/1": PNG, "mxc://example/2": b"GIF89a....", "mxc://example/own": PNG,
+                       "mxc://example/odd": b"not an image"}
+    bot, _, _ = make_bot(tmp_path, matrix=matrix)
+    start = fish_bot.now_ms() - 60_000
+    bot.ingest(ROOM, picture("$1", url="mxc://example/1", ts=start), backfilled=False)
+    bot.ingest(ROOM, picture("$own", sender=USER, url="mxc://example/own", ts=start + 1), backfilled=False)
+    bot.ingest(ROOM, picture("$odd", url="mxc://example/odd", ts=start + 2), backfilled=False)
+    bot.ingest(ROOM, picture("$gone", url="mxc://example/gone", ts=start + 3), backfilled=False)
+    bot.ingest(ROOM, picture("$2", url="mxc://example/2", sticker=True, ts=start + 4), backfilled=False)
+    trigger = event("大肥魚，這是你嗎？", event_id="$call", ts=start + 5)
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    images = bot.deepseek.images
+    assert [index for index, _ in images] == [0, 4]
+    assert images[0][1].startswith("data:image/png;base64,") and images[1][1].startswith("data:image/gif;base64,")
+
+
+def test_the_model_gets_pictures_after_the_json(monkeypatch):
+    model, bodies = scripted(monkeypatch, [answer('{"say": "是我！"}')])
+    rows = [message_row("[image] me.png")]
+    model.act("Room", "", rows, {}, task="called", trigger=0, bot_user_id=USER, images=[(0, "data:image/png;base64,AA")])
+    content = bodies[0]["messages"][1]["content"]
+    assert json.loads(content[0]["text"])["messages"][0]["image"] == "attached below"
+    assert content[1] == {"type": "text", "text": "The picture in message 0:"}
+    assert content[2] == {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}}
+
+
+def test_a_posted_picture_counts_as_something_to_look_at(tmp_path, monkeypatch):
+    bot, _, _ = make_bot(tmp_path)
+    bot.notice(ROOM, picture("$p"))
+    assert bot._ambient[ROOM]["lively"] and bot._ambient[ROOM]["count"] == 1

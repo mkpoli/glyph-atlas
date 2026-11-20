@@ -156,6 +156,16 @@ MEMBER_COVERAGE = ("Counts and lists come from Matrix. Every QQ person here has 
                    "has seen them. Joins and dates are the Matrix room's; each group's own history "
                    "before it was bridged is not here. created_by is the Matrix account that made the "
                    "room, usually the server's admin account.")
+# Seeing images: deepseek-flash takes images in a chat message as image_url blocks (JPEG, PNG, GIF,
+# WebP; at most 1,024 tokens each), https://api-docs.deepseek.com/guides/vision (read 2026-11-20).
+# A turn sees the newest pictures and stickers people posted among its last lines, as the
+# homeserver's thumbnails.
+IMAGES_CALLED = 4
+IMAGES_AMBIENT = 2
+IMAGE_LINES = 12
+IMAGE_SIZE = 1024
+MAX_IMAGE_BYTES = 4_000_000
+IMAGE_TYPES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"GIF8": "image/gif", b"RIFF": "image/webp"}
 # After reading code or a page the model tends to answer in prose, which JSON mode blanks out, so
 # each round of results ends with the answer's shape again.
 LOOKUP_REMINDER = ('Now answer the chat as 大肥魚, in one or two short lines in the language of the message '
@@ -732,6 +742,25 @@ class Matrix:
             raise MatrixError(None, "the upload answer has no content_uri")
         return uri
 
+    def thumbnail(self, mxc: str, size: int = IMAGE_SIZE, limit: int = MAX_IMAGE_BYTES) -> bytes:
+        """An image at most `size` pixels a side, through the homeserver's authenticated media API."""
+        match = re.fullmatch(r"mxc://([A-Za-z0-9.:-]+)/([A-Za-z0-9_-]+)", mxc)
+        if not match:
+            raise MatrixError(None, "not an mxc URI")
+        url = (f"{self.homeserver}/_matrix/client/v1/media/thumbnail/{match.group(1)}/{match.group(2)}?"
+               + urllib.parse.urlencode({"width": size, "height": size, "method": "scale", "animated": "false"}))
+        request = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.token}", "User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                data = response.read(limit + 1)
+        except urllib.error.HTTPError as error:
+            raise MatrixError(error.code, f"thumbnail refused: {error.reason}") from None
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as error:
+            raise MatrixError(None, f"thumbnail failed: {getattr(error, 'reason', error)}") from None
+        if len(data) > limit:
+            raise MatrixError(None, "the image is too large")
+        return data
+
     def typing(self, room_id: str, user_id: str, *, timeout_ms: int = 15_000) -> None:
         path = (f"/_matrix/client/v3/rooms/{urllib.parse.quote(room_id, safe='')}"
                 f"/typing/{urllib.parse.quote(user_id, safe='')}")
@@ -871,6 +900,8 @@ class Store:
                 until INTEGER
             );
         """)
+        if "media" not in {row["name"] for row in self.db.execute("PRAGMA table_info(events)")}:
+            self.db.execute("ALTER TABLE events ADD COLUMN media TEXT NOT NULL DEFAULT ''")
         self.db.commit()
 
     def close(self) -> None:
@@ -909,11 +940,11 @@ class Store:
         return ((row["name"] or "", row["topic"] or "") if row else ("", ""))
 
     def add_event(self, event_id: str, room_id: str, sender: str, ts: int, body: str,
-                  msgtype: str, *, backfilled: bool) -> bool:
+                  msgtype: str, *, backfilled: bool, media: str = "") -> bool:
         cursor = self.db.execute(
-            "INSERT OR IGNORE INTO events(event_id, room_id, sender, ts, body, msgtype, backfilled) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (event_id, room_id, sender, ts, body, msgtype, 1 if backfilled else 0),
+            "INSERT OR IGNORE INTO events(event_id, room_id, sender, ts, body, msgtype, backfilled, media) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (event_id, room_id, sender, ts, body, msgtype, 1 if backfilled else 0, media),
         )
         if cursor.rowcount == 0 and not backfilled:
             # A live sync after a backfill is the same event with a better provenance: it may be a
@@ -945,7 +976,7 @@ class Store:
 
     def context(self, room_id: str, before_ts: int, limit: int) -> list[sqlite3.Row]:
         rows = self.db.execute(
-            "SELECT event_id, sender, ts, body FROM events "
+            "SELECT event_id, sender, ts, body, media FROM events "
             "WHERE room_id=? AND ts<=? AND body<>'' ORDER BY ts DESC LIMIT ?",
             (room_id, before_ts, limit),
         ).fetchall()
@@ -1413,6 +1444,9 @@ How you talk:
 - Honest about facts: when you are not sure of a character, reading, code point or source, say so. Never invent one.
 - Don't repeat what you already said in the log, and don't greet people again if you already did.
 
+What you see:
+- Pictures and stickers people posted come after the JSON as "The picture in message N"; you can see those. A message marked "image": "not shown" has a picture you cannot see, so say so rather than guess. Describe what you actually see. Name a person, character or work only when you clearly recognize it, and otherwise say what it looks like; look closely at glyphs and scans before you name a character, and say when you cannot read one. Something blue-haired is not you unless it is drawn as you (your stickers).
+
 What you remember:
 - "memory" in the user message is what you remember from before, maybe from other rooms: notes about people, the community and yourself, and summaries of earlier talks with their dates. Bring it up the way a friend remembers, only when it fits, without reciting it or saying you looked it up. It can be out of date; when the chat says otherwise, the chat wins. Never claim to remember anything that is not there.
 - "room" in the user message says how many people are in the room you are in, on which platforms, and which groups it is bridged to. People on Discord, Telegram, QQ and IRC talk through bridges.
@@ -1573,12 +1607,22 @@ def format_digest(room_name: str, room_lines: list[sqlite3.Row], changes: list[d
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _media(row: sqlite3.Row) -> str:
+    """The picture link a logged message carries, if it was read with one."""
+    try:
+        return str(row["media"] or "")
+    except IndexError:
+        return ""
+
+
 def format_chat(room_name: str, room_topic: str, events: list[sqlite3.Row], names: dict[str, str],
                 *, task: str, trigger: int | None, bot_user_id: str,
                 stickers: Iterable[str] = (), recent: Iterable[str] = (), rooms: str = "",
-                memory: dict[str, Any] | None = None, room_facts: dict[str, Any] | None = None) -> str:
+                memory: dict[str, Any] | None = None, room_facts: dict[str, Any] | None = None,
+                seen: Iterable[int] = ()) -> str:
     """A chat turn's user message as JSON: the room, its newest lines numbered, what she remembers,
-    and the task."""
+    and the task. A message whose picture comes with the turn says so."""
+    shown = set(seen)
     messages = []
     total = 0
     for index in range(len(events) - 1, -1, -1):
@@ -1589,7 +1633,12 @@ def format_chat(room_name: str, room_topic: str, events: list[sqlite3.Row], name
         total += len(body) + len(label) + 24
         if total > MAX_CONTEXT_CHARS // 2 and messages:
             break
-        messages.append({"i": index, "time": stamp(int(row["ts"])), "sender": label, "body": body})
+        message = {"i": index, "time": stamp(int(row["ts"])), "sender": label, "body": body}
+        if index in shown:
+            message["image"] = "attached below"
+        elif _media(row):
+            message["image"] = "not shown"
+        messages.append(message)
     messages.reverse()
     payload = {
         "room": {"name": room_name[:200], "topic": room_topic[:500], **(room_facts or {})},
@@ -1705,17 +1754,25 @@ class DeepSeek:
             *, task: str, trigger: int | None, bot_user_id: str,
             stickers: Iterable[str] = (), recent: Iterable[str] = (), rooms: str = "",
             memory: dict[str, Any] | None = None, lookup: Lookup | None = None,
-            on_step: Any = None, room_facts: dict[str, Any] | None = None) -> Act:
+            on_step: Any = None, room_facts: dict[str, Any] | None = None,
+            images: Iterable[tuple[int, str]] = ()) -> Act:
         """One chat turn in 大肥魚's voice. With tools, the model may look things up for a few rounds
         and about a minute before it answers; `on_step` runs before each lookup."""
         stickers = tuple(stickers)
+        images = list(images)
         user = format_chat(room_name, room_topic, events, names, task=task, trigger=trigger,
                            bot_user_id=bot_user_id, stickers=stickers, recent=recent, rooms=rooms,
-                           memory=memory, room_facts=room_facts)
+                           memory=memory, room_facts=room_facts, seen=[index for index, _ in images])
+        content: str | list[dict[str, Any]] = user
+        if images:
+            content = [{"type": "text", "text": user}]
+            for index, url in images:
+                content += [{"type": "text", "text": f"The picture in message {index}:"},
+                            {"type": "image_url", "image_url": {"url": url}}]
         body: dict[str, Any] = {
             "model": self.model,
             "messages": [{"role": "system", "content": PERSONA_PROMPT},
-                         {"role": "user", "content": user}],
+                         {"role": "user", "content": content}],
             "response_format": {"type": "json_object"},
             "thinking": {"type": "disabled"},
             "temperature": CHAT_TEMPERATURE,
@@ -2499,6 +2556,17 @@ def human_message(event: dict[str, Any], user_id: str, ignored: Iterable[str] = 
     return _clean_body(body) or None
 
 
+def _picture(event: dict[str, Any], user_id: str, ignored: Iterable[str] = ()) -> str | None:
+    """A placeholder for a person's image or sticker, which counts as something to look at."""
+    sender = event.get("sender")
+    content = event.get("content")
+    if not isinstance(sender, str) or sender == user_id or _is_bot(sender, ignored) or not isinstance(content, dict):
+        return None
+    if event.get("type") == "m.sticker" or (event.get("type") == "m.room.message" and content.get("msgtype") == "m.image"):
+        return "!"
+    return None
+
+
 def call_of(event: dict[str, Any], user_id: str, display_name: str,
             ignored: Iterable[str] = (), aliases: Iterable[str] = ()) -> Call | None:
     """The call in a message, or None when the message is not addressed to the bot."""
@@ -2591,6 +2659,7 @@ class Bot:
         self._alias_failed: dict[str, float] = {}
         self._digest_tried: dict[str, float] = {}
         self._memory_due = 0.0
+        self._images: dict[str, str] = {}
         self._memory_failures: dict[str, tuple[str, int, float]] = {}
         self._heard_at = 0.0
         self._clock = lambda: datetime.datetime.now(JST)
@@ -2708,8 +2777,9 @@ class Bot:
             self.store.delete_event(redacts)
 
     def ingest(self, room_id: str, event: dict[str, Any], *, backfilled: bool) -> None:
-        """Keep the readable text of one event in the room's log."""
-        if event.get("type") != "m.room.message":
+        """Keep the readable text of one event in the room's log, with the link to its picture when
+        it is an image or a sticker."""
+        if event.get("type") not in ("m.room.message", "m.sticker"):
             return
         event_id = event.get("event_id")
         sender = event.get("sender")
@@ -2723,15 +2793,19 @@ class Bot:
         if content.get("m.new_content") or (isinstance(relates, dict) and relates.get("rel_type") == "m.replace"):
             return
         msgtype = content.get("msgtype") if isinstance(content.get("msgtype"), str) else ""
-        if msgtype in ("m.image", "m.video", "m.audio", "m.file"):
+        if event.get("type") == "m.sticker":
+            msgtype = "m.sticker"
+        if msgtype in ("m.image", "m.video", "m.audio", "m.file", "m.sticker"):
             body = f"[{msgtype[2:]}] {body}"
+        url = content.get("url")
+        media = url if msgtype in ("m.image", "m.sticker") and isinstance(url, str) and url.startswith("mxc://") else ""
         body = _clean_body(body)
         if not body:
             return
         ts = event.get("origin_server_ts")
         if not isinstance(ts, int):
             ts = now_ms()
-        self.store.add_event(event_id, room_id, sender, ts, body, msgtype, backfilled=backfilled)
+        self.store.add_event(event_id, room_id, sender, ts, body, msgtype, backfilled=backfilled, media=media)
 
     def answer(self, room_id: str, event: dict[str, Any]) -> None:
         event_id = event.get("event_id")
@@ -2804,6 +2878,8 @@ class Bot:
         if not isinstance(event_id, str):
             return
         body = human_message(event, self.user_id, self.config.ignored_senders)
+        if body is None:
+            body = _picture(event, self.user_id, self.config.ignored_senders)
         if body is None:
             return
         if call_of(event, self.user_id, self.config.display_name, self.config.ignored_senders,
@@ -3065,6 +3141,7 @@ class Bot:
                                 bot_user_id=self.user_id, stickers=self.store.stickers(),
                                 recent=self._recent_stickers.get(room_id, []), rooms=rooms,
                                 memory=self.recall(room_id, events, names), room_facts=facts,
+                                images=self.pictures(events, IMAGES_AMBIENT if task == "ambient" else IMAGES_CALLED),
                                 lookup=self.lookup if task == "called" else None,
                                 on_step=lambda: self.matrix.typing(room_id, self.user_id))
         if task == "ambient":
@@ -3074,6 +3151,34 @@ class Bot:
             self._spoke_at[room_id] = time.monotonic()
             self._ambient.pop(room_id, None)
         return act
+
+    def pictures(self, events: list[sqlite3.Row], count: int) -> list[tuple[int, str]]:
+        """The newest pictures people posted among the last lines, as data URLs the model can read,
+        oldest first; one that cannot be fetched or read is left out."""
+        found: list[tuple[int, str]] = []
+        for index in range(len(events) - 1, max(-1, len(events) - 1 - IMAGE_LINES), -1):
+            row = events[index]
+            media = _media(row)
+            if not media or row["sender"] == self.user_id:
+                continue
+            url = self._images.get(media)
+            if url is None:
+                try:
+                    data = self.matrix.thumbnail(media)
+                except MatrixError as error:
+                    log.info("picture %s: %s", media, error)
+                    continue
+                kind = next((kind for magic, kind in IMAGE_TYPES.items() if data.startswith(magic)), None)
+                if kind is None or (kind == "image/webp" and data[8:12] != b"WEBP"):
+                    continue
+                url = f"data:{kind};base64,{base64.b64encode(data).decode()}"
+                self._images[media] = url
+                while len(self._images) > 64:
+                    self._images.pop(next(iter(self._images)))
+            found.append((index, url))
+            if len(found) == count:
+                break
+        return found[::-1]
 
     def perform(self, room_id: str, event_id: str, act: Act, events: list[sqlite3.Row],
                 *, reply_to: str | None = None) -> None:
