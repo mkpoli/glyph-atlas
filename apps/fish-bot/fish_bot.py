@@ -92,6 +92,15 @@ INTRO = re.compile(r"(?:請|请|please\s+)?" + INTRO_WORD
                    + r"(?:一下|下|吧|呢|嗎|吗|して(?:ください|ね)?|해\s?(?:줘|주세요)|\s+please)?[\s.!?。！？~～]*",
                    re.IGNORECASE)
 NOT_ADDRESS = "头頭尾肉汤湯片油排块塊骨皮刺丸粥鳞鱗鳍鰭腩柳干乾罐"
+# What asks for a catch-up on everything discussed so far: again a call that is the request alone.
+RECAP_WORD = (r"(?:recap|catch\s+me\s+up|what\s+did\s+i\s+miss|總結|总结|回顧|回顾|前情提要|"
+              r"之前(?:都)?(?:聊|說|说)了(?:些)?什麼|之前(?:都)?(?:聊|說|说)了(?:些)?什么|まとめ|요약)")
+RECAP = re.compile(r"(?:請|请|please\s+)?" + RECAP_WORD
+                   + r"(?:一下|下|吧|呢|嗎|吗|し?て(?:ください|ね)?|해\s?(?:줘|주세요)|\s+please)?[\s.!?。！？~～]*",
+                   re.IGNORECASE)
+# A catch-up reads at most this many episodes, the newest, from every room still read.
+RECAP_EPISODES = 150
+MAX_RECAP = 6000
 # Joining in unasked: research on group-chat agents finds a model alone decides poorly when to
 # speak (Bhagtani et al., arXiv 2603.11409; Nama et al., arXiv 2605.05626), so a cheap gate outside
 # the model picks the moments, after MaiBot's turn trigger (talk_value as a probability, debounced
@@ -1241,6 +1250,18 @@ class Store:
             "ORDER BY importance DESC, updated_at DESC LIMIT ?", (*wanted, *ids, limit)).fetchall()
         return rows
 
+    def recap_material(self, rooms: Iterable[str], limit: int = RECAP_EPISODES) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
+        """The newest episodes of the rooms still read, oldest first, and the community's notes by
+        importance."""
+        open_rooms = sorted(set(rooms))
+        within = ",".join("?" * len(open_rooms)) or "NULL"
+        episodes = self.db.execute(
+            f"SELECT * FROM episodes WHERE room_id IN ({within}) ORDER BY end_ts DESC LIMIT ?",
+            (*open_rooms, limit)).fetchall()
+        notes = self.db.execute(
+            "SELECT * FROM facts WHERE subject='community' ORDER BY importance DESC, updated_at DESC LIMIT 40").fetchall()
+        return list(reversed(episodes)), notes
+
     def search_memory(self, terms: list[str], *, rooms: Iterable[str], facts: int = 10,
                       episodes: int = 5) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
         """The notes, and the episodes of the rooms still read, that best match a query, by bm25
@@ -1589,6 +1610,19 @@ def parse_memory(raw: str, keys: dict[str, str], known: Iterable[int], *, left_o
     return Memory(summary=summary.strip()[:MAX_SUMMARY], keywords=keywords, edits=tuple(edits))
 
 
+RECAP_TASK = """Write a catch-up for someone new to the community, as 大肥魚, from the user message: summaries of earlier conversations in every room ("episodes", oldest first, with room and date) and lasting notes about the community ("notes").
+- Write in {language}.
+- Open with one friendly line, then the main threads: what the community is building, the subjects people keep coming back to, decisions and recent news, each in one or two plain sentences, grouped by theme rather than by date, and naming the room where it happened when that helps someone find it.
+- Name people only for their public work on a project; quote no one and leave out personal matters.
+- Use only what the episodes and notes say; when they disagree, the newer wins. Plain text, short paragraphs or lines, no markdown headings; at most about 2,500 characters. End with one line on where to ask questions.
+Return only json: {{"text": "the catch-up"}}"""
+
+
+def format_recap(episodes: list[dict[str, str]], notes: list[str], request: str) -> str:
+    """The catch-up's user message: what was discussed, oldest first, and the request it answers."""
+    return json.dumps({"request": request[:500], "episodes": episodes, "notes": notes}, ensure_ascii=False)
+
+
 DIGEST_TASK = """Write today's community digest for the room in the user message, in {language}, as 大肥魚.
 - First, what changed in our projects since yesterday: the merged pull requests and releases in "changes", grouped by project, each in plain words a non-programmer follows. Name the significant ones; fold small fixes into a few words. Keep a PR number where it helps; no URLs except at most one per project.
 - Then, briefly, what the other rooms talked about ("other_rooms"), one short line per lively room, in {language}. Mention no one by name and quote nothing private.
@@ -1911,6 +1945,33 @@ class DeepSeek:
                 last = error
                 log.warning("digest answer unusable: %s", error)
         raise DeepSeekError(str(last or "no digest"))
+
+    def recap(self, language: str, episodes: list[dict[str, str]], notes: list[str], request: str = "") -> str:
+        """A catch-up on everything remembered, for a newcomer."""
+        body = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": PERSONA_PROMPT},
+                         {"role": "system", "content": RECAP_TASK.format(language=language)},
+                         {"role": "user", "content": format_recap(episodes, notes, request)}],
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "disabled"},
+            "temperature": DIGEST_TEMPERATURE,
+            "max_tokens": 4000,
+        }
+        last: Exception | None = None
+        for _ in range(2):
+            try:
+                answer = self._post(body)
+                choices = answer.get("choices") or []
+                content = choices[0].get("message", {}).get("content") if choices else None
+                text = _json_object(content).get("text") if isinstance(content, str) else None
+                if not isinstance(text, str) or not text.strip():
+                    raise TypeError("the catch-up has no text")
+                return text.strip()[:MAX_RECAP]
+            except (TypeError, ValueError, DeepSeekError) as error:
+                last = error
+                log.warning("catch-up answer unusable: %s", error)
+        raise DeepSeekError(str(last or "no catch-up"))
 
     def check(self) -> None:
         url = self.url.replace("/chat/completions", "/models")
@@ -2617,6 +2678,8 @@ def call_of(event: dict[str, Any], user_id: str, display_name: str,
     prompt = _prompt(body, user_id, display_name, aliases)
     if mode == "chat" and INTRO.fullmatch(prompt):
         mode = "intro"
+    elif mode == "chat" and RECAP.fullmatch(prompt):
+        mode = "recap"
     elif mode == "chat" and FORGET.fullmatch(prompt) and not re.search(r"[?？]", body):
         mode = "forget"
     elif mode == "chat" and REMEMBER.fullmatch(prompt) and not re.search(r"[?？]", body):
@@ -2865,7 +2928,7 @@ class Bot:
         if isinstance(ts, int) and now_ms() - ts > self.config.call_window_seconds * 1000:
             self.store.mark_handled(event_id, "stale")
             return
-        if call.mode in ("chat", "intro", "forget", "remember"):
+        if call.mode in ("chat", "intro", "forget", "remember", "recap"):
             if isinstance(ts, int) and now_ms() - ts > CHAT_WINDOW_SECONDS * 1000:
                 self.store.mark_handled(event_id, "stale")
                 return
@@ -2877,6 +2940,8 @@ class Bot:
             try:
                 if call.mode == "intro":
                     self.introduce(room_id, event_id)
+                elif call.mode == "recap":
+                    self.post_recap(room_id, reply_to=event_id, request=str(event["content"].get("body") or ""))
                 elif call.mode in ("forget", "remember"):
                     self.forget(room_id, event_id, sender, keep=call.mode == "remember")
                 else:
@@ -3131,6 +3196,27 @@ class Bot:
                 log.warning("resolving %s: %s", target, error)
                 return None
         return self._aliases[target]
+
+    def post_recap(self, room_id: str, *, reply_to: str | None = None, request: str = "",
+                   language: str = "the language of the request, or the room's language when there is none") -> str:
+        """Post a catch-up on everything she remembers from every room; with a request, as a reply in
+        its language."""
+        episodes, notes = self.store.recap_material(self.active_rooms)
+        material = [{"room": self._room(str(row["room_id"]))[0] or "a room", "date": local_day(int(row["end_ts"])),
+                     "summary": str(row["summary"])} for row in episodes]
+        if not material:
+            if reply_to:
+                self.turn(room_id, reply_to, task="called", reply_to=reply_to)
+                self.store.mark_handled(reply_to, "chatted")
+            return ""
+        text = self.deepseek.recap(language, material, [str(row["text"]) for row in notes], request)
+        content: dict[str, Any] = {"msgtype": "m.text", "body": text}
+        if reply_to:
+            content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
+            self.store.mark_handled(reply_to, "recapped")
+        key = hashlib.sha256(f"{room_id}{reply_to or now_ms()}".encode()).hexdigest()[:40]
+        self.matrix.send(room_id, content, f"fish-c-{key}")
+        return text
 
     def introduce(self, room_id: str, event_id: str) -> None:
         """Introduce herself when asked, in the rooms meant for it; elsewhere point to them."""
@@ -3553,6 +3639,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dry-run", action="store_true", help="decide and answer, but file nothing")
     parser.add_argument("--check", action="store_true", help="check the homeserver, model and GitHub")
     parser.add_argument("--once", action="store_true", help="read one sync batch and exit")
+    parser.add_argument("--recap", metavar="ROOM", help="post a catch-up on everything discussed to ROOM (an alias or ID) and exit")
+    parser.add_argument("--language", default="English", help="the catch-up's language, with --recap")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
@@ -3586,6 +3674,15 @@ def main(argv: list[str] | None = None) -> None:
         github = GitHub(_secret(config.github_token_file), config.github_repo)
     bot = Bot(config, store, matrix, deepseek, github, State(args.state))
     try:
+        if args.recap:
+            if matrix.whoami() != config.user_id:
+                raise SystemExit("the token belongs to another account")
+            bot.join_rooms()
+            room_id = bot._room_of(args.recap)
+            if room_id is None or room_id not in bot.active_rooms:
+                raise SystemExit(f"{args.recap} is not a public room the bot reads")
+            print(bot.post_recap(room_id, language=args.language))
+            return
         if args.once:
             whoami = matrix.whoami()
             if whoami != config.user_id:

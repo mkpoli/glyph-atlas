@@ -122,6 +122,10 @@ class FakeDeepSeek:
         self.memory_value = fish_bot.Memory(summary="They talked about 西夏文.", keywords=("Tangut",), edits=())
         self.memory = None
 
+    def recap(self, language, episodes, notes, request=""):
+        self.recaps = getattr(self, "recaps", []) + [(language, episodes, notes, request)]
+        return "Welcome! Here is what we talked about."
+
     def digest(self, language, room_name, room_lines, changes, other_rooms):
         self.digests.append((language, room_name, changes, other_rooms))
         return f"digest in {language}"
@@ -1715,3 +1719,37 @@ def test_the_first_message_of_a_thread_on_her_post_is_not_a_reply_to_her(tmp_pat
         "m.in_reply_to": {"event_id": "$digest"}}})
     bot.answer(ROOM, threaded)
     assert bot.deepseek.turns == [] and matrix.sent == []
+
+
+
+
+def test_reads_the_catch_up_command():
+    for body in ("!fish recap", "大肥魚，總結一下", "大肥魚 前情提要", "大肥鱼，之前都聊了些什么？", "大肥魚さん、まとめて",
+                 "@bigfatfish catch me up please"):
+        assert fish_bot.call_of(event(body), USER, "大肥魚", (), ("大肥鱼",)).mode == "recap", body
+    for body in ("大肥魚，總結一下這個 PR", "大肥魚 recap of the meeting tomorrow?"):
+        assert fish_bot.call_of(event(body), USER, "大肥魚").mode == "chat", body
+
+
+def test_a_catch_up_covers_every_room_still_read(tmp_path):
+    bot, matrix, store = memory_bot(tmp_path)
+    store.set_room("!other:example", "開發 · Dev", "")
+    save(store, "!other:example", ts=fish_bot.now_ms() - 48 * HOUR, summary="IDS工房上線了。",
+         facts=[("community", "IDS工房 is an open-source editor.")])
+    save(store, ROOM, ts=fish_bot.now_ms() - 24 * HOUR, summary="Talked about 西夏文.")
+    save(store, "!gone:example", ts=fish_bot.now_ms() - HOUR, summary="A closed room.")
+    trigger = event("!fish recap", event_id="$recap")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    _, episodes, notes, request = bot.deepseek.recaps[0]
+    assert [episode["summary"] for episode in episodes] == ["IDS工房上線了。", "Talked about 西夏文."]
+    assert episodes[0]["room"] == "開發 · Dev" and notes == ["IDS工房 is an open-source editor."]
+    assert request == "!fish recap"
+    assert matrix.sent[-1][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$recap"}}
+    assert store.outcome("$recap")[0] == "recapped"
+
+
+def test_the_catch_up_prompt_carries_the_episodes_and_request():
+    payload = json.loads(fish_bot.format_recap([{"room": "中文", "date": "2026-11-01", "summary": "s"}], ["n"], "!fish recap"))
+    assert payload == {"request": "!fish recap", "episodes": [{"room": "中文", "date": "2026-11-01", "summary": "s"}],
+                       "notes": ["n"]}

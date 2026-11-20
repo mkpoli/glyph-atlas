@@ -324,6 +324,16 @@ list the public rooms, read a room's creator and first joins, and list its membe
 homeserver. QQ members appear only once they have spoken, because QQ's bot API cannot list a group,
 so the QQ group has more people than she sees.
 
+She catches newcomers up. `!fish recap` (or 「大肥魚，總結一下」, 「前情提要」, 「まとめて」, 「요약해 줘」)
+answers with a brief of everything she remembers from every room she reads: what the community is
+building, the subjects that keep coming back, decisions and recent news, in the language of the
+request. The same brief can be posted once from the server, for example to the welcome room:
+
+```sh
+runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --config /etc/fish-bot/config.toml \
+  --recap '#welcome:glyphatlas.org' --language 'Traditional Chinese, then English'
+```
+
 She sees pictures. The log keeps the link of each image and sticker people post, and a turn sends
 the newest few among its last lines (four when called, two when reading along) to the model as the
 homeserver's 1,024-pixel thumbnails; deepseek-flash reads JPEG, PNG, GIF and WebP at up to 1,024
