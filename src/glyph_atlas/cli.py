@@ -1171,22 +1171,28 @@ def import_tangut_tongyin(
 
 @import_app.command("tensho")
 def import_tensho(
-    scans: Annotated[Path, typer.Argument(help="directory of the facsimile's page images, A0280016.jpg onwards")],
+    books: Annotated[list[str], typer.Argument(help="books of the dataset, such as TE00039 or TE00024")],
+    scans: Annotated[
+        Path | None, typer.Option(help="directory of the page images of a book whose pages are files (TE00039)")
+    ] = None,
     out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/tensho"),
     cache: Annotated[Path | None, typer.Option(help="image cache directory")] = None,
 ) -> None:
-    """Import the small seal forms of 説文解字 (陳昌治 edition) marked by CODH's 篆書字体データセット."""
+    """Import the seal forms of books of CODH's 篆書字体データセット, each box on its page."""
     from .importers import tensho
 
     try:
-        summary = tensho.collect(scans, out, cache=cache)
+        summary = tensho.collect(books, out, scans=scans, cache=cache)
     except tensho.TenshoSourceError as error:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(1) from error
     typer.echo(f"pages         {summary['pages']:>10}")
     typer.echo(f"lines         {summary['lines']:>10}")
     typer.echo(f"units         {summary['units']:>10}")
+    typer.echo(f"  seal        {summary['seal']:>10}")
+    typer.echo(f"  on the 親字 {summary['han']:>10}")
     typer.echo(f"not placed    {summary['left_out']:>10}")
+    typer.echo(f"page replaced {summary['replaced']:>10}")
     typer.echo(f"-> {out}")
 
 
