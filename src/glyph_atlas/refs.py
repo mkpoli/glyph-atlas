@@ -263,10 +263,48 @@ def variant_edges() -> tuple[dict[str, Any], ...]:
     return tuple(edges)
 
 
+#: The source id of the edges `seal_chain_edges` infers, and its citation.
+SEAL_CHAIN = "seal-chain"
+SEAL_CHAIN_CITATION = (
+    "Inferred, stated by no source: a small seal character joined to the character whose 說文解字 隸定字 "
+    "(OpenCC SealVariants) is the seal character's modern CJK equivalent (Unicode SealSources.txt "
+    "kSEAL_MCJK); Glyph Atlas, CC BY-SA 4.0 (LICENSE-DATA)"
+)
+
+
+@cache
+def seal_chain_edges() -> tuple[dict[str, Any], ...]:
+    """A small seal character joined to the character written today, through its 隸定字.
+
+    Unicode gives 𽀅 the equivalent 叓 (`small-seal`), and OpenCC gives 叓 as the 說文 隸定字 of 吏
+    (`shuowen`): the two rows together make 𽀅 the seal character of 吏, which neither source says.
+    Each such pair is an edge of the `small-seal` relation under the source `SEAL_CHAIN`, its detail
+    the two rows it rests on. No edge is made where a source already states the pair.
+    """
+    rows = variant_edges()
+    seals: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if row["relation"] == "small-seal":
+            seals.setdefault(row["a"], []).append(row)
+    stated = {(row["a"], row["b"]) for row in rows if row["relation"] == "small-seal"}
+    found = []
+    for row in rows:
+        if row["relation"] != "shuowen":
+            continue
+        for seal in seals.get(row["b"], ()):
+            if (row["a"], seal["b"]) not in stated:
+                found.append({
+                    "a": row["a"], "b": seal["b"], "relation": "small-seal", "source": SEAL_CHAIN,
+                    "detail": f"{row['a']}→{row['b']} {row['detail']} ({row['source']}) + {seal['detail']} ({seal['source']})",
+                    "written": False, "widens": False,
+                })
+    return tuple(sorted(found, key=lambda edge: (edge["a"], edge["b"])))
+
+
 @cache
 def _edges_by_char() -> dict[str, tuple[dict[str, Any], ...]]:
     found: dict[str, list[dict[str, Any]]] = {}
-    for edge in variant_edges():
+    for edge in (*variant_edges(), *seal_chain_edges()):
         found.setdefault(edge["a"], []).append(edge)
         if edge["b"] != edge["a"]:
             found.setdefault(edge["b"], []).append(edge)
@@ -274,7 +312,7 @@ def _edges_by_char() -> dict[str, tuple[dict[str, Any], ...]]:
 
 
 def variant_edges_of(char: str) -> tuple[dict[str, Any], ...]:
-    """The edges of the 異体字 graph with `char` at either end."""
+    """The edges of the 異体字 graph with `char` at either end, the inferred seal edges after them."""
     return _edges_by_char().get(char, ())
 
 
@@ -297,8 +335,9 @@ def _source_citations(name: str) -> dict[str, str]:
 
 @cache
 def variant_sources() -> dict[str, str]:
-    """The citation of each source of the 異体字 graph, as the table's header states it."""
-    return _source_citations(VARIANTS_TSV)
+    """The citation of each source of the 異体字 graph, as the table's header states it, and of the
+    inferred seal edges."""
+    return {**_source_citations(VARIANTS_TSV), SEAL_CHAIN: SEAL_CHAIN_CITATION}
 
 
 @cache
