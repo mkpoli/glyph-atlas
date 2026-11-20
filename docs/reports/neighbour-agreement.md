@@ -41,9 +41,9 @@ crops that pass are crops of the right character cut badly (界, 家, 界, 附, 
 its neighbour: the bar is on the label, and a reviewer passing agreed crops still has to look at
 the cut.
 
-Reviewed crops are not a sample of the collection. Reviewers were dealt uncertain crops first, so
-nearly half of the reviewed crops are wrong where a few in a hundred of the collection are. The
-table gives how often each kind passes, and no error rate of the agreed crops as a whole.
+Reviewed crops are not a sample of the collection: reviewers were dealt uncertain crops first, and
+nearly half of the reviewed crops in the index are wrong. The table gives how often each kind
+passes, and no error rate of the agreed crops as a whole.
 
 ## What a streak does not see
 
