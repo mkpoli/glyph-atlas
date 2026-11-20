@@ -69,8 +69,9 @@ def derived_rows() -> tuple[tuple[str, str], ...]:
 
 
 def edge_rows() -> list[tuple]:
-    """`character_variants`: each edge of the graph, its flags as integers."""
-    return [tuple(int(edge[c]) if c in ("written", "widens") else edge[c] for c in COLUMNS) for edge in refs.variant_edges()]
+    """`character_variants`: each edge of the graph and each inferred seal edge, its flags as integers."""
+    return [tuple(int(edge[c]) if c in ("written", "widens") else edge[c] for c in COLUMNS)
+            for edge in (*refs.variant_edges(), *refs.seal_chain_edges())]
 
 
 def substitution_rows() -> list[tuple[str, str, int, str]]:

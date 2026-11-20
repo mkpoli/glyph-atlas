@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { cardTargets, cardTiers } from '../src/lib/cardTiers.js'
+import { cardTargets, cardTiers, inferred, isSeal } from '../src/lib/cardTiers.js'
 
 // The card the site serves for 說 (U+8AAA), cut to what the target list reads.
 const card = {
@@ -50,5 +50,27 @@ describe("a character card's 字体", () => {
     const tiers = cardTiers({ char: '練', code_point: 'U+7DF4', variants: {
       items: [{ char: '\uf996', code_point: 'U+F996' }, { char: '练', code_point: 'U+7EC3' }], related: [{ char: '\ufa57', code_point: 'U+FA57' }] } })
     expect([chars(tiers.written), chars(tiers.related)]).toEqual([['练'], []])
+  })
+})
+
+describe('a small seal pair', () => {
+  // 吏's card: 叓 by sources, and the seal character through 叓, which no source states.
+  const li = { char: '吏', code_point: 'U+540F', variants: { items: [], related: [
+    { char: '叓', code_point: 'U+53D3', written: true, relations: [{ relation: 'shuowen', source: 'opencc', detail: 'SealVariants' }] },
+    { char: '\u{3D005}', code_point: 'U+3D005', written: false, relations: [{ relation: 'small-seal', source: 'seal-chain', detail: '吏→叓 SealVariants (opencc) + \u{3D005}→叓 kSEAL_MCJK (unicode-ucd)' }] },
+  ] } }
+  it('is a related character and never a form of the Han character', () => {
+    const { written, related } = cardTiers(li)
+    expect(written.map(v => v.char)).toEqual(['叓'])
+    expect(related.map(v => v.code_point)).toEqual(['U+3D005'])
+    expect(cardTargets(li).map(target => target.code_point)).not.toContain('U+3D005')
+  })
+  it('is marked inferred only when no source states it', () => {
+    expect(li.variants.related.map(inferred)).toEqual([false, true])
+    expect(inferred({ relations: [{ source: 'seal-chain' }, { source: 'unicode-ucd' }] })).toBe(false)
+    expect(inferred({ relations: [] })).toBe(false)
+  })
+  it('is told from a Han character by its block', () => {
+    expect(['\u{3D000}', '\u{3FC3F}', '叓', '\u{3FC40}', undefined].map(isSeal)).toEqual([true, true, false, false, false])
   })
 })

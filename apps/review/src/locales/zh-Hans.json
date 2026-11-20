@@ -107,6 +107,8 @@
   "chips.relation.shuowen": "说文隶定",
   "chips.relation.reduction": "缩退",
   "chips.relation.compatibility": "兼容汉字",
+  "chips.relation.smallSeal": "小篆",
+  "chips.relation.sealEquivalent": "对应汉字",
   "chips.relation.borrowed": "通假",
   "chips.relation.substitute": "代用",
   "chips.relation.nonCognate": "别字",

@@ -109,6 +109,8 @@
   "chips.relation.shuowen": "Shuowen form",
   "chips.relation.reduction": "Folded form",
   "chips.relation.compatibility": "Compatibility form",
+  "chips.relation.smallSeal": "Small seal",
+  "chips.relation.sealEquivalent": "Modern equivalent",
   "chips.relation.borrowed": "Borrowed",
   "chips.relation.substitute": "Substitute",
   "chips.relation.nonCognate": "Not cognate",
