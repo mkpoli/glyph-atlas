@@ -1724,10 +1724,11 @@ def test_the_first_message_of_a_thread_on_her_post_is_not_a_reply_to_her(tmp_pat
 
 
 def test_reads_the_catch_up_command():
-    for body in ("!fish recap", "大肥魚，總結一下", "大肥魚 前情提要", "大肥鱼，之前都聊了些什么？", "大肥魚さん、まとめて",
-                 "@bigfatfish catch me up please"):
+    for body in ("!fish recap", "大肥魚 前情提要", "大肥鱼，之前都聊了些什么？", "大肥魚，我錯過了什麼？",
+                 "大肥魚さん、これまでの話", "@bigfatfish catch me up please", "大肥魚 지금까지 요약해 줘"):
         assert fish_bot.call_of(event(body), USER, "大肥魚", (), ("大肥鱼",)).mode == "recap", body
-    for body in ("大肥魚，總結一下這個 PR", "大肥魚 recap of the meeting tomorrow?"):
+    for body in ("大肥魚，總結一下", "大肥魚さん、まとめて", "大肥魚 요약해 줘", "大肥魚，總結一下這個 PR",
+                 "大肥魚 recap of the meeting tomorrow?"):
         assert fish_bot.call_of(event(body), USER, "大肥魚").mode == "chat", body
 
 

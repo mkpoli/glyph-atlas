@@ -92,9 +92,12 @@ INTRO = re.compile(r"(?:請|请|please\s+)?" + INTRO_WORD
                    + r"(?:一下|下|吧|呢|嗎|吗|して(?:ください|ね)?|해\s?(?:줘|주세요)|\s+please)?[\s.!?。！？~～]*",
                    re.IGNORECASE)
 NOT_ADDRESS = "头頭尾肉汤湯片油排块塊骨皮刺丸粥鳞鱗鳍鰭腩柳干乾罐"
-# What asks for a catch-up on everything discussed so far: again a call that is the request alone.
-RECAP_WORD = (r"(?:recap|catch\s+me\s+up|what\s+did\s+i\s+miss|總結|总结|回顧|回顾|前情提要|"
-              r"之前(?:都)?(?:聊|說|说)了(?:些)?什麼|之前(?:都)?(?:聊|說|说)了(?:些)?什么|まとめ|요약)")
+# What asks for a catch-up on everything discussed so far: again a call that is the request alone,
+# and only in words that mean "fill me in". 總結一下, まとめて and 요약해 줘 usually ask for the talk
+# just now, which an ordinary chat turn answers from the room's last lines.
+RECAP_WORD = (r"(?:recap|catch\s+me\s+up|what\s+did\s+i\s+miss|what\s+have\s+i\s+missed|前情提要|"
+              r"之前(?:都)?(?:聊|說|说|討論|讨论)了(?:些)?什[麼么]|(?:我)?錯過了(?:些)?什麼|(?:我)?错过了(?:些)?什么|"
+              r"これまでの(?:話|まとめ)|今までの話|지금까지\s?(?:요약|무슨\s?얘기))")
 RECAP = re.compile(r"(?:請|请|please\s+)?" + RECAP_WORD
                    + r"(?:一下|下|吧|呢|嗎|吗|し?て(?:ください|ね)?|해\s?(?:줘|주세요)|\s+please)?[\s.!?。！？~～]*",
                    re.IGNORECASE)
@@ -2941,7 +2944,8 @@ class Bot:
                 if call.mode == "intro":
                     self.introduce(room_id, event_id)
                 elif call.mode == "recap":
-                    self.post_recap(room_id, reply_to=event_id, request=str(event["content"].get("body") or ""))
+                    self.post_recap(room_id, reply_to=event_id,
+                                    request=human_message(event, self.user_id, self.config.ignored_senders) or "")
                 elif call.mode in ("forget", "remember"):
                     self.forget(room_id, event_id, sender, keep=call.mode == "remember")
                 else:
@@ -3675,13 +3679,19 @@ def main(argv: list[str] | None = None) -> None:
     bot = Bot(config, store, matrix, deepseek, github, State(args.state))
     try:
         if args.recap:
-            if matrix.whoami() != config.user_id:
-                raise SystemExit("the token belongs to another account")
-            bot.join_rooms()
-            room_id = bot._room_of(args.recap)
-            if room_id is None or room_id not in bot.active_rooms:
-                raise SystemExit(f"{args.recap} is not a public room the bot reads")
-            print(bot.post_recap(room_id, language=args.language))
+            try:
+                if matrix.whoami() != config.user_id:
+                    raise SystemExit("the token belongs to another account")
+                bot.active_rooms = set(config.room_ids) or set(matrix.public_rooms())
+                room_id = bot._room_of(args.recap)
+                if room_id is None or room_id not in bot.active_rooms:
+                    raise SystemExit(f"{args.recap} is not a public room the bot reads")
+                text = bot.post_recap(room_id, language=args.language)
+            except (MatrixError, DeepSeekError) as error:
+                raise SystemExit(str(error)) from None
+            if not text:
+                raise SystemExit("nothing is remembered yet, so nothing was posted")
+            print(text)
             return
         if args.once:
             whoami = matrix.whoami()
