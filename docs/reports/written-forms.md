@@ -64,11 +64,12 @@ A book's mean score for a label is kept. In the 古活字 print (`codh-omt:`) th
   several near 0. On sight the second row is not one shape across sources (of the five 國 crops on
   row `01639b`, one is 囯 and four are 國), so the rows as imported do not serve as a test of form.
 
-## A second reader: han2ids as a closed choice
+## han2ids as a closed choice
 
-han2ids (v0.5, trained on rendered Mincho and Song faces only) reads almost no real crop when it
-decodes freely: 0 of 383 HI Lab crops and 2 of 148 HNG crops gave the label's description
-(2026-11-20). Asked instead which of two given descriptions a crop fits, it does much better. The
+han2ids (v0.5) is trained on rendered Mincho and Song faces only and does not read handwriting:
+decoding freely, 0 of 383 HI Lab crops and 2 of 148 HNG crops gave the label's description
+(2026-11-20). What follows is a narrower test, which of two given descriptions a crop fits, and
+it does not change that. The
 choice is the log-likelihood of the variant's description less the label's, each less its
 likelihood on a blank image, on the crop fitted to its ink with an 8% margin.
 
@@ -82,8 +83,9 @@ against the lowest, written as the label):
 | 余 / 餘 | ⿱𠆢⿱一朩 / ⿰飠余 | 17 of 18 | 0 of 18 | 0.99 |
 | 与 / 與 | ⿹{22}一 / ⿳⿴𦥑{23}一八 | 6 of 6 | 5 of 18 | 0.96 |
 
-These crops are the extremes of the ranking above, so the figures say the two readers agree on
-plain cases and nothing about the middle. han2ids shares no training with the classifier.
+These crops are the extremes of the ranking above: the ones most plainly and squarely written,
+which is where a model trained on type has the best chance. The figures say the two agree on such
+crops and nothing about ordinary handwriting or the middle of a ranking.
 
 Over every HI Lab crop of six pairs (1,969 crops), read on sheets of its highest and lowest 18:
 
@@ -95,6 +97,7 @@ Over every HI Lab crop of six pairs (1,969 crops), read on sheets of its highest
   either.
 - **時 → 时, 両 → 兩, 数 → 數**: no reading by eye settles what its order follows.
 
-Where the two forms are built differently (a frame around 或 against 玉, 食 on the left) the
-closed choice ranks them well and independently; its sign cannot be trusted. Nothing of this is in
-the command: it would bring han2ids and its checkpoint into the pass.
+Where the two forms are built differently (a frame around 或 against 玉, 食 on the left) and the
+crop is written squarely, the choice ranks them; its sign cannot be trusted, and on 万 it is plainly
+wrong. It is no reader of handwritten crops and is not part of the command. Using it here waits on
+han2ids being trained on real crops.
