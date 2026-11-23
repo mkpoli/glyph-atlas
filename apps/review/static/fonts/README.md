@@ -44,13 +44,13 @@ glyph from a font is ever shown as one.
 Sealie draws the small seal characters. Its files are served from R2 beside the Atlas faces
 (`docs/typefaces.md`), not from this directory.
 
-- Family: `Sealie`, version 1.2.0 Medium (<https://github.com/iebb/sealie>), under the SIL Open Font
+- Family: `Sealie`, version 1.3.1 Medium (<https://github.com/iebb/sealie>), under the SIL Open Font
   License 1.1 with no Reserved Font Name; the build carries the release's `LICENSE-OFL.txt` as `OFL.txt`.
   Its licence header calls it "Panorama Gothic Seal Draft … Generated glyph drawings" and its name
   table "simplified geometric SVG source": the glyphs are generated drawings of the seal forms, not
   tracings of a print of 説文解字.
 - Source: the release asset `Sealie-Medium.ttf`, SHA-256
-  `de671c1d7f4f2c8079525da07771b2f1d8d69c4bb1db3dc589904afb4599db71`, which is the hash the release's
+  `69fd3621e8fa5d54e159f134fc05201bc74e905211395923ce28866340642b5f`, which is the hash the release's
   `font-hashes.json` gives. `scripts/build_seal_font.py` fetches it, checks the hash, and writes the
   build, `src/seal-font.css` and the build's name in `apps/cloudflare/src/typefaceVersions.ts`.
 - Outlines: Sealie's forms fill about half the width and three quarters of the height of their square,
@@ -58,7 +58,7 @@ Sealie draws the small seal characters. Its files are served from R2 beside the 
   outline 1.3 times about the middle of its square and centres it in the ideographic em box (0.12 em
   below the baseline to 0.88 em above); the advance is unchanged. The licence allows modified versions.
 - Files: the script legend's sample U+3DD16, the seal form of 篆, alone (2.7 KB), then the other
-  characters in code point order, 64 to a file (55 to 137 KB each, 178 files and 14.6 MB in all). A page
+  characters in code point order, 64 to a file (39 to 99 KB each, 178 files and 11.0 MB in all). A page
   downloads only the files for the seal characters it shows.
 - Coverage, read from the font's cmap: the 11,328 characters U+3D000–U+3FC3F, the whole Small Seal
   block of Unicode 18.0, none with an empty outline.
