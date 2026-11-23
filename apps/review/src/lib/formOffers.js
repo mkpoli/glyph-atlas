@@ -3,9 +3,8 @@
 // Noto Serif CJK JP (docs/typefaces.md), so for those two forms draw what the character's own chip
 // already shows: the IVD figure a font gives the character alone (邦 U+90A6 U+E0103, MJ026242), and
 // the regional description that holds in Japan (邦's ⿰丰阝 of GHTJKV). Those are set apart as
-// `alike`. A Japanese shape with a 構形 of its own (臭 as ⿱自大) is still offered, since filing a
-// crop under it files it under that 構形. Any other character is drawn from Plangothic or Jigmo,
-// whose glyphs follow no one region, and keeps every form.
+// `alike`. Any other character is drawn from Plangothic or Jigmo, whose glyphs follow no one region,
+// and keeps every form.
 
 /** Whether both site faces draw `char` from Noto CJK JP. */
 export const notoDraws = char => {
@@ -19,7 +18,7 @@ export const notoDraws = char => {
  *  they draw as the bare character. */
 export function sortForms(char, figures, shapes) {
   if (!notoDraws(char)) return { figures, shapes, alike: { figures: [], shapes: [] } }
-  const same = shape => shape.regions.includes('J') && !('structure' in shape)
+  const same = shape => shape.regions.includes('J')
   return {
     figures: figures.filter(figure => !figure.default),
     shapes: shapes.filter(shape => !same(shape)),

@@ -6,8 +6,7 @@ const bangFigures = [['\u{E0103}', 'MJ026242', true], ['\u{E0104}', 'MJ026246', 
   .map(([selector, mj, isDefault]) => ({ char: '邦' + selector, mj, default: isDefault }))
 // Shapes as /layers/ids gives them.
 const bangShapes = [{ text: '⿰丰阝', regions: 'GHTJKV' }, { text: '⿰⿻㇒𰀁阝', regions: 'P' }]
-const chouShapes = [{ text: '⿱自犬', regions: 'GHTKPV' },
-  { text: '⿱自大', regions: 'J', structure: { id: 'st:5fcac5f552d1d61f5dff5e5c1acc1a86', label: '⿱自大' } }]
+const chouShapes = [{ text: '⿱自犬', regions: 'GHTKPV' }, { text: '⿱自大', regions: 'J' }]
 
 describe('form offers', () => {
   it('sets apart the default figure and the Japanese shape of a character Noto CJK JP draws', () => {
@@ -18,8 +17,10 @@ describe('form offers', () => {
     expect(sorted.alike.shapes.map(shape => shape.text)).toEqual(['⿰丰阝'])
   })
 
-  it('offers a Japanese shape with a 構形 of its own', () => {
-    expect(sortForms('臭', [], chouShapes).shapes).toEqual(chouShapes)
+  it('sets apart 臭\'s Japanese shape ⿱自大, a spelling of 臭\'s own 構形', () => {
+    const sorted = sortForms('臭', [], chouShapes)
+    expect(sorted.shapes.map(shape => shape.text)).toEqual(['⿱自犬'])
+    expect(sorted.alike.shapes.map(shape => shape.text)).toEqual(['⿱自大'])
   })
 
   it('offers every form of a character drawn from another font', () => {

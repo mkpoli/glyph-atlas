@@ -341,7 +341,7 @@ describe("the IDS editor's structure", () => {
       .run((await formNamed('磆'))!, third, third, JSON.stringify([{ object: third }]), JSON.stringify([{ asserted_by: 'ann', standing: true }, { asserted_by: 'bob', standing: true }]), at);
     expect((await structuresOf(newEnv, ctx, 'https://new.test', '滑磆') as any).filed).toEqual({ '磆': [{ id: other, label: '一', by: ['reader'], head: 'st:00000000000000000000000000000001' }] });
     atlasDb.run("DELETE FROM current_claims WHERE predicate IN ('has_structure','folds_into')");
-    // A regional shape is no key of the shards: named with its character, it has the structure the character's shard gives it.
+    // A regional shape is no key of the shards: named with its character, it has that character's structure.
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '⿰氵⿵冖月⿰氵骨')).toEqual({ items: [
       { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['⿰氵⿵冖月'] }] });
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '⿰氵⿵冖月⿰氵骨', '滑')).toEqual({ items: [
