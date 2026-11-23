@@ -114,9 +114,9 @@ are rebuilt with the palette. The page names them as `IDS Strokes` (U+31C0–U+3
 `mj/` draws the ideographic variation sequences of the Moji_Joho collection that the form picker
 offers (所󠄂 and 所󠄃 for 所): the code points `data/vocab/mj-kanji.tsv` gives more than one registered
 figure, 5,057 of them with 11,382 sequences, in files of 40 code points. Beside each font, a JSON of
-the same name lists its code points' sequences with their MJ figure names and marks the default
-figure; `figures.json` gives each file's first and last code point. A page loads the file of the
-character it shows and no other.
+the same name lists its code points' sequences with their MJ figure names, marks the default
+figure and gives each figure's IDS where one is read; `figures.json` gives each file's first and
+last code point. A page loads the file of the character it shows and no other.
 
 - Family: `MJ Figures`, a subset of IPAmj明朝 Ver.006.01 (文字情報技術促進協議会), from
   `ipamjm00601.zip`, SHA-256 `35494e0f2896f38b3f7369a8421a895cea6440a42c0a66ac95eab47d6ed25b68`,
@@ -127,3 +127,9 @@ character it shows and no other.
 - To use the original font instead, point the font face in `src/lib/mjFigures.js` at `ipamjm.ttf`
   from the archive above. `scripts/build_mj_figures_font.py` rebuilds the subset: it fetches the
   archive, checks the hash and cuts the files.
+- Descriptions: ids-input's IDS of the Ideographic Variation Database, CC0 1.0,
+  `data/open-data/ivd/sequences.tsv.gz` at commit `1e5dd49caecd5ba4461b7ccf84e236ef6e666000`
+  (<https://github.com/mkpoli/ids-input/tree/1e5dd49caecd5ba4461b7ccf84e236ef6e666000/data/open-data/ivd>),
+  SHA-256 `a236925162a70751987bb3ee86d5e3c0ee25a275109202b91b44f1d9a30c6930`. Each is read from
+  GlyphWiki, Noto Sans CJK and IPAmj明朝, and the build takes those that two of them agree on or one
+  gives.
