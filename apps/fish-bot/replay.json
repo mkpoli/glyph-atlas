@@ -44,5 +44,29 @@
     "room_alias": "#ko:glyphatlas.org",
     "messages": [["大肥魚", "안녕하세요, 오늘의 소식이에요! glyph-atlas에 서체 설정이 생겼어요."], ["海楫", "고마워요 딥식이!"]],
     "expect": {"tools_none": true, "must_match": ["[가-힣]"], "max_chars": 300}
+  },
+  {
+    "name": "a translation asked for is done in the same reply",
+    "note": "On 11-23 she answered 「翻訳成英文」 twice with a promise (「我想先查清楚再翻」, 「開工！」) and never posted the English.",
+    "messages": [["大肥魚", "大家早呀，本鯨來交今日份小結～ 字形大圖譜：鄰近切圖標籤的計數方式調整好了（#1198）；路線圖也更新囉，澤存堂本廣韻已經動工（#1200）。"], ["渚", "大肥魚，把上面的小結翻成英文"]],
+    "expect": {"must_match": ["[A-Za-z]{4,}[^\\n]*[A-Za-z]{4,}[^\\n]*[A-Za-z]{4,}", "1198"], "must_not_match": ["稍等|等一下|等等|先查|查清楚|再翻|待會|待会|開工|开工|later|wait|一會|一会"]}
+  },
+  {
+    "name": "a term translated into every language asked",
+    "note": "On 11-21 「等価異体字の統合（大肥魚翻譯成所有語言plz」 got English and Chinese, then rambling, and no Korean or Vietnamese.",
+    "messages": [["mkpoli", "等価異体字の統合\n\n（大肥魚翻譯成所有語言plz"]],
+    "expect": {"must_match": ["(?i)variant|equivalent|merg|unif", "[가-힣]{2,}", "[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]"], "must_not_match": ["稍等|等一下|等等|先查|查清楚|再翻|待會|待会|開工|开工|later|wait|一會|一会"]}
+  },
+  {
+    "name": "a code point comes from the characters tool",
+    "note": "On 11-22 she wrote 「凰 U+20630」; 凰 is U+51F0.",
+    "messages": [["玄晖allen", "大肥鱼，凰这个字的码位是多少"]],
+    "expect": {"tools_any": ["characters"], "must_match": ["U\\+51F0"], "must_not_match": ["U\\+20630"]}
+  },
+  {
+    "name": "a Chinese answer stays in Chinese",
+    "note": "On 11-20 to 11-23 her Chinese lines carried Japanese, Korean and Cantonese words (「晚安安せあせる」, 「好似無佢嘅厝」).",
+    "messages": [["渚", "大肥魚，除了白米飯，還喫什麼呀~"]],
+    "expect": {"tools_none": true, "must_not_match": ["[ぁ-ん]{2,}|[ァ-ヶ]{2,}|[가-힣]{2,}", "佢|嘅|冇"]}
   }
 ]
