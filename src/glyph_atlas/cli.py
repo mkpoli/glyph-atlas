@@ -748,12 +748,13 @@ def review_written_forms(
     similar: Annotated[Path, typer.Option(help="similar-crop index revision (`atlas similar index`)")] = Path("work/similar/current"),
     mirror: Annotated[Path, typer.Option(help="v3 migration mirror mapping source ids to crops")] = Path("work/atlas-v3/out/mirror.sqlite"),
     atlas: Annotated[Path, typer.Option(help="local copy of the site's database, for each crop's book and character")] = Path("work/atlas-v3/out/atlas.sqlite"),
-    out: Annotated[Path | None, typer.Option(help="report of every pair and its books")] = None,
+    pages: Annotated[Path, typer.Option(help="page bundles of the local copy of the site")] = Path("work/atlas-v3/out/pages"),
+    out: Annotated[Path | None, typer.Option(help="report of every pair")] = None,
 ) -> None:
-    """Rank crops filed under a character by how much they look written as its variant."""
+    """Find crops filed under a character that are written as its variant."""
     from .review import written_forms
 
-    result = written_forms.run(similar.resolve(), mirror=mirror, atlas=atlas)
+    result = written_forms.run(similar.resolve(), mirror=mirror, atlas=atlas, pages=pages)
     if out:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n")
