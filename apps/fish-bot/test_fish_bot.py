@@ -1852,7 +1852,7 @@ def test_every_call_is_counted_with_its_tokens_failures_and_cost(tmp_path, monke
     rows = {row["kind"]: row for row in store.usage(1)}
     assert (rows["chat"]["calls"], rows["chat"]["tokens_in"], rows["chat"]["tokens_out"]) == (1, 100, 30)
     assert rows["chat"]["cost"] > 0 and rows["search"]["cost"] > 0
-    assert (rows["grounding"]["calls"], rows["grounding"]["cost"]) == (1, fish_bot.PRICE_SEARCH_QUERY)
+    assert "grounding" not in rows
     assert (rows["fetch"]["calls"], rows["fetch"]["failures"], rows["fetch"]["cost"]) == (1, 1, 0)
     report = fish_bot.usage_report(store.usage(1))
     assert "chat 1" in report and "fetch 1 (1 failed)" in report and "210 tokens" in report
@@ -2086,3 +2086,18 @@ def test_a_message_that_is_all_quote_is_kept_and_a_reply_fallback_is_not(tmp_pat
 
 def test_line_endings_are_normalised_outside_replies():
     assert fish_bot._clean_body("a\r\nb\r\n\r\n\r\n\r\nc") == "a\nb\n\nc"
+
+
+def test_each_search_query_is_counted(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    model = fish_bot.Gemini("key")
+    model.meter = store.count_usage
+    found = {"id": "v1_g", "status": "completed", "steps": [
+        {"type": "google_search_call", "arguments": {"queries": ["tangut", "西夏文"]}},
+        {"type": "google_search_call", "arguments": {"queries": ["tangut script"]}},
+        {"type": "model_output", "content": [{"type": "text", "text": "Tangut is a script.", "annotations": [
+            {"type": "url_citation", "title": "Tangut", "url": "https://example.org/tangut"}]}]}]}
+    monkeypatch.setattr(model, "_send", lambda body, **_: found)
+    model.search("tangut")
+    row = {row["kind"]: row for row in store.usage(1)}["grounding"]
+    assert round(row["cost"], 6) == round(3 * fish_bot.PRICE_SEARCH_QUERY, 6)

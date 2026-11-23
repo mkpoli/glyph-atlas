@@ -1894,6 +1894,17 @@ def _interaction_calls(answer: dict[str, Any]) -> list[dict[str, Any]]:
             if isinstance(step, dict) and step.get("type") == "function_call"]
 
 
+def _search_queries(answer: dict[str, Any]) -> int:
+    """How many Google Search queries an interaction ran, each billed on its own."""
+    count = 0
+    for step in answer.get("steps") or []:
+        if isinstance(step, dict) and step.get("type") == "google_search_call":
+            arguments = step.get("arguments")
+            queries = arguments.get("queries") if isinstance(arguments, dict) else None
+            count += len(queries) if isinstance(queries, list) and queries else 1
+    return count
+
+
 def _interaction_citations(answer: dict[str, Any]) -> list[tuple[str, str]]:
     """Unique (title, url) citations returned in a grounded Gemini interaction."""
     seen: set[str] = set()
@@ -2163,7 +2174,9 @@ class Gemini:
         answer = self._post(body, timeout=LOOKUP_TIMEOUT, kind="search")
         text = _interaction_text(answer).strip()
         citations = [(title, _resolve_grounding_url(url)) for title, url in _interaction_citations(answer)[:count]]
-        self._count("grounding", cost=PRICE_SEARCH_QUERY)
+        queries = _search_queries(answer)
+        if queries:
+            self._count("grounding", cost=queries * PRICE_SEARCH_QUERY)
         if not citations:
             # A summary without sources is the model's own words, not a search result.
             raise GeminiError("the search found no sources")
