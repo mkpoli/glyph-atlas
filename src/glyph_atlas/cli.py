@@ -760,6 +760,23 @@ def review_written_forms(
     typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
 
 
+@review_app.command("written-form-sheets")
+def review_written_form_sheets(
+    out: Annotated[Path, typer.Option(help="HTML page to write")],
+    similar: Annotated[Path, typer.Option(help="similar-crop index revision holding written-forms.parquet")] = Path("work/similar/current"),
+    mirror: Annotated[Path, typer.Option(help="v3 migration mirror mapping source ids to crops")] = Path("work/atlas-v3/out/mirror.sqlite"),
+    atlas: Annotated[Path, typer.Option(help="local copy of the site's database, for book titles")] = Path("work/atlas-v3/out/atlas.sqlite"),
+    pages: Annotated[Path, typer.Option(help="page bundles of the local copy of the site")] = Path("work/atlas-v3/out/pages"),
+    media: Annotated[Path, typer.Option(help="cache of display crops fetched from the site")] = Path("work/similar/media"),
+    base: Annotated[str, typer.Option(help="site that serves the display crops the cache lacks")] = "https://glyphatlas.org",
+) -> None:
+    """Draw the written-forms ranking as rows of crops, one row for each book."""
+    from .review import written_form_sheets
+
+    typer.echo(json.dumps(written_form_sheets.run(similar.resolve(), out, mirror=mirror, atlas=atlas, pages=pages,
+                                                  media=media, base=base)))
+
+
 @review_app.command("lookalikes")
 def review_lookalikes(
     split: Annotated[Path, typer.Argument(help="held-out classifier split")] = Path("work/classifier-combined/test.parquet"),

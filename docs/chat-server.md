@@ -340,9 +340,9 @@ runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --config /etc/fish-bot/
 
 She sees pictures. The log keeps the link of each image and sticker people post, and a turn sends
 the newest few among its last lines (four when called, two when reading along) to the model as the
-homeserver's 1,024-pixel thumbnails; `gemini-4-hydrogen` reads PNG, JPEG and WebP inline and no GIF, so an animated sticker is
-marked as not shown
-(https://ai.google.dev/gemini-api/docs/image-understanding). A posted picture also counts as a
+homeserver's thumbnails, 640 pixels wide, or 320 when a long screenshot passes 3 MB at 640.
+`gemini-4-hydrogen` reads PNG, JPEG and WebP inline and no GIF, so a GIF goes as a PNG of its first
+frame (https://ai.google.dev/gemini-api/docs/image-understanding). A posted picture also counts as a
 lively moment for reading along, and memory sees up to four pictures of each stretch it summarizes.
 
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),

@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import contextlib
+import io
 import json
 import sqlite3
+import urllib.parse
+import zlib
 
 import fish_bot
 import pytest
@@ -98,7 +103,7 @@ class FakeMatrix:
 
     pictures: dict = {}  # noqa: RUF012 - a fake; tests replace it per instance
 
-    def thumbnail(self, mxc, size=1024, limit=4_000_000):
+    def thumbnail(self, mxc, limit=4_000_000):
         if mxc not in self.pictures:
             raise fish_bot.MatrixError(404, "not found")
         return self.pictures[mxc]
@@ -1624,7 +1629,8 @@ def test_an_old_log_gains_the_media_column(tmp_path):
 def test_a_turn_sees_the_newest_pictures_people_posted(tmp_path):
     matrix = FakeMatrix()
     matrix.pictures = {"mxc://example/1": PNG, "mxc://example/2": b"RIFF....WEBPVP8 ", "mxc://example/own": PNG,
-                       "mxc://example/odd": b"not an image", "mxc://example/gif": b"GIF89a...."}
+                       "mxc://example/odd": b"not an image", "mxc://example/gif": b"GIF89a....",
+                       "mxc://example/moving": STRIPED_GIF}
     bot, _, _ = make_bot(tmp_path, matrix=matrix)
     start = fish_bot.now_ms() - 60_000
     bot.ingest(ROOM, picture("$1", url="mxc://example/1", ts=start), backfilled=False)
@@ -1633,12 +1639,68 @@ def test_a_turn_sees_the_newest_pictures_people_posted(tmp_path):
     bot.ingest(ROOM, picture("$gone", url="mxc://example/gone", ts=start + 3), backfilled=False)
     bot.ingest(ROOM, picture("$2", url="mxc://example/2", sticker=True, ts=start + 4), backfilled=False)
     bot.ingest(ROOM, picture("$gif", url="mxc://example/gif", sticker=True, ts=start + 5), backfilled=False)
-    trigger = event("大肥魚，這是你嗎？", event_id="$call", ts=start + 6)
+    bot.ingest(ROOM, picture("$moving", url="mxc://example/moving", sticker=True, ts=start + 6), backfilled=False)
+    trigger = event("大肥魚，這是你嗎？", event_id="$call", ts=start + 7)
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
     images = bot.gemini.images
-    assert [index for index, _ in images] == [0, 4]
+    assert [index for index, _ in images] == [0, 4, 6]
     assert images[0][1].startswith("data:image/png;base64,") and images[1][1].startswith("data:image/webp;base64,")
+    assert images[2][1].startswith("data:image/png;base64,")
+
+
+# 5x17, interlaced, four colours, the last transparent; its pixels are (x + y) % 4.
+STRIPED_GIF = base64.b64decode("R0lGODlhBQARAIEAAAAAAP8AAAD/AAAA/yH5BAEAAAMALAAAAAAFABEAQAgmAAEEEDAAgECCBgcWPLhQIQCEAyEKkCjRYYCCCi1iJKiRYUeFAQEAOw==")
+
+
+def test_a_gif_becomes_a_png_of_its_first_frame():
+    png = fish_bot.gif_still(STRIPED_GIF)
+    chunks, at = {}, 8
+    while at < len(png):
+        size = int.from_bytes(png[at:at + 4], "big")
+        chunks[png[at + 4:at + 8]] = png[at + 8:at + 8 + size]
+        at += size + 12
+    assert STRIPED_GIF[33 + 9] & 0x40  # interlaced
+    assert chunks[b"IHDR"][:10] == (5).to_bytes(4, "big") + (17).to_bytes(4, "big") + bytes((8, 3))
+    assert chunks[b"PLTE"][:12] == bytes((0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255))
+    assert chunks[b"tRNS"] == b"\xff\xff\xff\x00"
+    raw = zlib.decompress(chunks[b"IDAT"])
+    assert [list(raw[row * 6 + 1:row * 6 + 6]) for row in range(17)] == [[(x + y) % 4 for x in range(5)] for y in range(17)]
+    with pytest.raises(ValueError):
+        fish_bot.gif_still(STRIPED_GIF[:40])
+    cut_short = "47494638396101000100800000000000ffffff2c00000000010001000002012c003b"
+    with pytest.raises(ValueError, match="cut short"):
+        fish_bot.gif_still(bytes.fromhex(cut_short))
+    huge = STRIPED_GIF[:38] + b"\xff\xff\xff\xff" + STRIPED_GIF[42:]
+    with pytest.raises(ValueError, match="too large"):
+        fish_bot.gif_still(huge)
+
+
+def _png_pixels(png):
+    chunks, at = {}, 8
+    while at < len(png):
+        size = int.from_bytes(png[at:at + 4], "big")
+        chunks[png[at + 4:at + 8]] = png[at + 8:at + 8 + size]
+        at += size + 12
+    width = int.from_bytes(chunks[b"IHDR"][:4], "big")
+    raw = zlib.decompress(chunks[b"IDAT"])
+    return [list(raw[row * (width + 1) + 1:(row + 1) * (width + 1)]) for row in range(len(raw) // (width + 1))], chunks
+
+
+def test_a_gif_still_keeps_the_screen_and_stays_a_valid_png():
+    # A white pixel at x = 1 on a 2x1 screen whose background is colour 0.
+    rows, _ = _png_pixels(fish_bot.gif_still(bytes.fromhex(
+        "47494638396102000100800000000000ffffff2c01000000010001000002024c01003b")))
+    assert rows == [[0, 1]]
+    # Index 2 with a two-colour table: the palette grows so the PNG stays valid.
+    rows, chunks = _png_pixels(fish_bot.gif_still(bytes.fromhex(
+        "47494638396101000100800000000000ffffff2c00000000010001000002025401003b")))
+    assert rows == [[2]] and len(chunks[b"PLTE"]) == 9
+    # Transparency set for a plain-text block, then an opaque control block: the image is opaque.
+    _, chunks = _png_pixels(fish_bot.gif_still(bytes.fromhex(
+        "47494638396101000100800000000000ffffff21f904010000000021010c00000000010001000101010001580021f9"
+        "0400000000002c00000000010001000002024401003b")))
+    assert b"tRNS" not in chunks
 
 
 def test_the_model_gets_pictures_after_the_json(monkeypatch):
@@ -1676,7 +1738,7 @@ def test_a_refused_picture_costs_the_picture_not_the_answer(monkeypatch):
 def test_a_picture_that_fails_is_fetched_once(tmp_path):
     matrix = FakeMatrix()
     calls = []
-    matrix.thumbnail = lambda mxc, size=1024, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(404, "gone"))
+    matrix.thumbnail = lambda mxc, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(404, "gone"))
     bot, _, store = make_bot(tmp_path, matrix=matrix)
     bot.ingest(ROOM, picture("$gone", url="mxc://example/gone"), backfilled=False)
     rows = store.context(ROOM, fish_bot.now_ms() + 1000, 10)
@@ -1703,6 +1765,25 @@ def test_only_a_real_new_picture_counts_for_reading_along():
 def test_a_picture_link_cannot_climb_out_of_the_media_api():
     with pytest.raises(fish_bot.MatrixError):
         fish_bot.Matrix("http://127.0.0.1:1", "token").thumbnail("mxc://../config")
+
+
+def test_a_picture_too_large_in_the_bigger_box_comes_from_the_smaller(monkeypatch):
+    sizes = {"640": 5000, "320": 800}
+    asked = []
+
+    def urlopen(request, timeout=30):
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query)
+        asked.append((query["width"][0], query["height"][0]))
+        body = b"x" * sizes[query["width"][0]]
+        return contextlib.nullcontext(io.BytesIO(body))
+
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", urlopen)
+    matrix = fish_bot.Matrix("http://127.0.0.1:1", "token")
+    assert len(matrix.thumbnail("mxc://example/shot", limit=1000)) == 800
+    assert asked == [("640", "480"), ("320", "240")]
+    sizes["320"] = 2000
+    with pytest.raises(fish_bot.MatrixError, match="too large"):
+        matrix.thumbnail("mxc://example/shot", limit=1000)
 
 
 def reply(body, target, *, event_id="$reply", sender="@discord_1:example"):
@@ -2065,7 +2146,7 @@ def test_memory_sends_pictures_only_for_messages_that_fit(tmp_path):
 def test_memory_fetches_only_a_few_unseen_pictures(tmp_path):
     matrix = FakeMatrix()
     calls = []
-    matrix.thumbnail = lambda mxc, size=1024, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(504, "slow"))
+    matrix.thumbnail = lambda mxc, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(504, "slow"))
     bot, _, store = make_bot(tmp_path, matrix=matrix)
     start = fish_bot.now_ms() - 30 * HOUR
     for n in range(30):

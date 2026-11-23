@@ -23,6 +23,9 @@ CANVAS = "http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/L/A0280017.jpg"
 NDL_CANVAS = "https://dl.ndl.go.jp/api/iiif/1181893/canvas/3"
 NDL_SERVICE = "https://dl.ndl.go.jp/api/iiif/1181893/R0000003"
 VOLUMES = {"TE00026": 3561, "TE00025": 4018, "TE00024": 3795}
+#: The books whose pages a holder serves through IIIF, each with its crops and its image services.
+SERVED = {**{book: (crops, "https://dl.ndl.go.jp/api/iiif/") for book, crops in VOLUMES.items()},
+          "TE00003": (6195, "https://kokusho.nijl.ac.jp/api/iiif/100250413/")}
 
 
 def table(path: Path, fields: list[str], rows: list[list]) -> None:
@@ -308,8 +311,8 @@ def test_only_the_parent_of_one_seal_character_places_a_form(tmp_path):
     assert crops[4]["equivalent"] == "5668"
 
 
-@pytest.mark.parametrize(("book", "crops"), VOLUMES.items())
-def test_the_tables_of_a_volume_keep_every_crop_on_a_page_of_the_library(book, crops):
+@pytest.mark.parametrize(("book", "crops", "service"), [(book, *held) for book, held in SERVED.items()])
+def test_the_tables_of_a_volume_keep_every_crop_on_a_page_of_the_library(book, crops, service):
     folder = tensho.DEFAULT_DATA / book
     rows = tensho.read_tsv(folder / "characters.tsv")
     pages = {row["canvas"]: row for row in tensho.read_tsv(folder / "pages.tsv")}
@@ -326,12 +329,12 @@ def test_the_tables_of_a_volume_keep_every_crop_on_a_page_of_the_library(book, c
             assert row["equivalent"] == unicodedata.normalize("NFC", row["parent"])
         else:
             assert not row["char"] and (row["placed"] == "parent") == (row["parent"] != "〓")
-    assert all(page["image"].startswith("https://dl.ndl.go.jp/api/iiif/") for page in pages.values())
+    assert all(page["image"].startswith(service) for page in pages.values())
 
 
 def test_one_seal_character_never_answers_two_parents():
     held: dict[str, set[str]] = {}
-    for book in VOLUMES:
+    for book in SERVED:
         for row in tensho.read_tsv(tensho.DEFAULT_DATA / book / "characters.tsv"):
             if row["placed"] == "equivalent":
                 held.setdefault(row["code_point"], set()).add(row["parent"])
@@ -342,4 +345,38 @@ def test_one_seal_character_never_answers_two_parents():
 def test_pages_a_library_serves_are_not_hosted():
     hosted = registry.hosted_documents()
 
-    assert not any(f"codh-tensho:{book}" in hosted for book in VOLUMES)
+    assert not any(f"codh-tensho:{book}" in hosted for book in SERVED)
+
+
+def test_a_page_is_numbered_by_its_place_in_the_manifest():
+    """国書データベース counts its canvases from zero and CODH's table from one: the place decides."""
+    canvas = lambda number: {"@id": f"https://x.org/canvas/{number}", "images": [{"resource": {
+        "width": 10, "height": 20, "service": {"@id": f"https://x.org/iiif/{number}/"}}}]}
+    pages = build_tensho_equivalents.manifest_pages({"sequences": [{"canvases": [canvas(0), canvas(1)]}]})
+
+    assert {number: page["canvas"] for number, page in pages.items()} == {
+        1: "https://x.org/canvas/0", 2: "https://x.org/canvas/1"}
+    assert pages[1] == {"canvas": "https://x.org/canvas/0", "image": "https://x.org/iiif/0", "width": 10, "height": 20}
+
+
+def test_a_crops_page_is_found_by_its_image_service():
+    pages = {7: {"canvas": "https://x.org/canvas/6", "image": "https://x.org/iiif/6"},
+             8: {"canvas": "https://x.org/canvas/7", "image": "https://x.org/iiif/7"}}
+    row = lambda canvas, image: {"Image": "TE_1", "Canvas URI": canvas, "Image Info": f"{image}/info.json"}
+
+    # CODH's canvas 7 is the manifest's canvas 6, the seventh frame; its host may carry `www.`.
+    assert build_tensho_equivalents.frames_of(
+        [row("https://x.org/canvas/7", "https://www.x.org/iiif/6")], pages) == {"https://x.org/canvas/7": 7}
+    with pytest.raises(SystemExit, match="no image of the manifest"):
+        build_tensho_equivalents.frames_of([row("https://x.org/canvas/9", "https://x.org/iiif/9")], pages)
+    with pytest.raises(SystemExit, match="two images"):
+        build_tensho_equivalents.frames_of(
+            [row("https://x.org/canvas/7", "https://x.org/iiif/6"), row("https://x.org/canvas/7", "https://x.org/iiif/7")], pages)
+
+
+def test_a_page_named_as_replaced_is_a_frame_of_its_volume():
+    """`replaced_pages` counts frames: コマ41 of 巻3 is the canvas the library names 41."""
+    pages = {int(row["page"]): row for row in tensho.read_tsv(tensho.DEFAULT_DATA / "TE00024" / "pages.tsv")}
+    assert pages[41]["canvas"].endswith("/canvas/41")
+    first = tensho.read_tsv(tensho.DEFAULT_DATA / "TE00003" / "pages.tsv")[0]
+    assert (first["page"], first["canvas"].rsplit("/", 1)[-1]) == ("6", "5")
