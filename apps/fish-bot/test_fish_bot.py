@@ -854,8 +854,27 @@ def test_a_cut_download_leaves_the_sticker_out_instead_of_stopping(tmp_path, mon
     with pytest.raises(OSError):
         fish_bot._download("https://example/x.png")
     bot, matrix, store = make_bot(tmp_path)
-    bot.ensure_stickers()
+    bot.ensure_stickers(stickers_dir=tmp_path)
     assert matrix.uploads == [] and store.stickers() == {}
+
+
+def test_bundled_stickers_match_their_hashes_and_upload(tmp_path):
+    bundled = [sticker for sticker in fish_bot.STICKERS if not sticker.media]
+    assert len(bundled) == 16
+    assert len({sticker.name for sticker in fish_bot.STICKERS}) == 32
+    for sticker in bundled:
+        path = sticker.path()
+        assert path is not None and path.is_file()
+        data = path.read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n"
+        width = int.from_bytes(data[16:20], "big")
+        height = int.from_bytes(data[20:24], "big")
+        assert (width, height) == (fish_bot.STICKER_SIZE, fish_bot.STICKER_SIZE)
+        assert fish_bot.hashlib.sha256(data).hexdigest() == sticker.sha256
+    bot, matrix, store = make_bot(tmp_path)
+    bot.ensure_stickers(fetch=lambda url: (_ for _ in ()).throw(OSError("offline")))
+    assert set(store.stickers()) == {sticker.name for sticker in bundled}
+    assert len(matrix.uploads) == len(bundled)
 
 
 def reading_bot(tmp_path, monkeypatch, *, act_value=None, **overrides):

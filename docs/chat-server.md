@@ -382,10 +382,12 @@ frame (https://ai.google.dev/gemini-api/docs/image-understanding). A posted pict
 lively moment for reading along, and memory sees up to four pictures of each stretch it summarizes.
 
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
-2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
-checks each against the hash in `STICKERS` and uploads it to the homeserver once; a sticker whose
-image no longer matches is left out. Discord, Telegram and QQ show them; the QQ bridge sends a
-sticker as an image. After she sends one in a room, she is offered none there for 15 minutes.
+2026-11-17, offered with "欢迎大家取用！") and the 16 bundled images in `apps/fish-bot/stickers/`. On
+start the bot fetches the 16 images from that post and reads the bundled ones from
+`/opt/fish-bot/stickers/`, checks each against the hash in `STICKERS` and uploads it to the
+homeserver once; a sticker whose image no longer matches is left out. Discord, Telegram and QQ show
+them; the QQ bridge sends a sticker as an image. After she sends one in a room, she is offered none
+there for 15 minutes.
 
 When a person asks her to file something, she hands the discussion to the issue desk: it reads the
 latest messages, checks the open issues for duplicates, and files in `mkpoli/glyph-atlas` only when
@@ -400,20 +402,23 @@ and directories:
 ```sh
 useradd --system --user-group --home /var/lib/fish-bot --shell /usr/sbin/nologin fish-bot
 install -d -o fish-bot -g fish-bot /var/lib/fish-bot
-install -d -o root -g fish-bot /opt/fish-bot
+install -d -o root -g fish-bot /opt/fish-bot /opt/fish-bot/stickers
 install -d -m 750 -o root -g fish-bot /etc/fish-bot
 ```
 
-Copy the program, the example configuration and the unit in, then give them to the service's group:
+Copy the program, the stickers, the example configuration and the unit in, then give them to the
+service's group:
 
 ```sh
-scp apps/fish-bot/fish_bot.py apps/fish-bot/config.example.toml apps/fish-bot/fish-bot.service \
-  root@glyphatlas-matrix:/tmp/
+scp -r apps/fish-bot/fish_bot.py apps/fish-bot/stickers apps/fish-bot/config.example.toml \
+  apps/fish-bot/fish-bot.service root@glyphatlas-matrix:/tmp/
 ssh root@glyphatlas-matrix '
   install -o root -g fish-bot -m 640 /tmp/fish_bot.py /opt/fish-bot/fish_bot.py
+  install -d -o root -g fish-bot /opt/fish-bot/stickers
+  install -o root -g fish-bot -m 640 /tmp/stickers/*.png /opt/fish-bot/stickers/
   install -o root -g fish-bot -m 640 /tmp/config.example.toml /etc/fish-bot/config.toml
   install -o root -g root -m 644 /tmp/fish-bot.service /etc/systemd/system/fish-bot.service
-  rm /tmp/fish_bot.py /tmp/config.example.toml /tmp/fish-bot.service'
+  rm -rf /tmp/fish_bot.py /tmp/stickers /tmp/config.example.toml /tmp/fish-bot.service'
 ```
 
 Create the three secret files, owned by `root:fish-bot` and readable only by that group:
