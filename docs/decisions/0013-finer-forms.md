@@ -26,8 +26,8 @@ A 字体 is named at one of three levels, the broadest that tells it apart:
 
 A description names a part by its registered figure where the part's shape is what differs. The IVD
 registers 遇 with one dot or with the 禺 whose left stroke rises above its bar, never both, so the
-form with both is `⿺辶󠄂禺󠄁`: 辶 `U+8FB6 U+E0102` (Moji_Joho, MJ030302) and 禺 `U+79BA U+E0101`
-(Adobe-Japan1, CID+13571). The IDS editor offers a chosen part's figures.
+form with both is `⿺辶󠄁禺󠄁`: 辶 `U+8FB6 U+E0101` (Adobe-Japan1, CID+15403) and 禺 `U+79BA U+E0101`
+(Adobe-Japan1, CID+13571). The IDS editor offers the figures the composer draws of a chosen part.
 
 A CJK compatibility ideograph is a code point that stands for a unified ideograph, and normalisation
 writes the unified ideograph in its place. It is no form, and is written as what it stands for:

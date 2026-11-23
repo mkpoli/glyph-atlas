@@ -1,11 +1,12 @@
 // The composer in the browser: han-compose's export (manifest, layout and the drawing data of each
 // key) loaded as a sequence needs it, and the sequence drawn from it as an SVG path. A file is
 // fetched once a page; a gzipped one (the site stores them so) is unpacked with DecompressionStream.
-import { APPROXIMATE, Composer, EMPTY, LookupError, keyOf, parseTree } from './compose.js'
+import { APPROXIMATE, Composer, EMPTY, LookupError, keyOf, parseTree, variantBase } from './compose.js'
 import { ASCENT } from './geometry.js'
 import { drawnBox, svgPath } from './geometry.js'
 import { readLayout } from './layout.js'
 import { hexOf } from './sha256.js'
+import { variantFile } from './variants.js'
 
 export { LookupError } from './compose.js'
 
@@ -33,14 +34,17 @@ const recordHash = key => hexOf(key)
 const hostsHash = (key, place) => hexOf(`${place}\t${key}`)
 const recordFile = key => shard('g', recordHash(key))
 const hostsFile = (key, place) => shard('p', hostsHash(key, place))
+// A file of the variation sequences' export is kept apart from the export's own by this prefix.
+const VARIANT = 'variants/'
 const recordOf = (file, key) => file[recordHash(key)] ?? null
 
 /**
  * A source of the export's files. `read(name)` answers a file's bytes (an ArrayBuffer) by its name
  * in the export (`manifest.json`, `layout.json`, `g/07a.json`), or null where there is no such file;
- * `fromUrl` builds one over HTTP.
+ * `fromUrl` builds one over HTTP. `variants(name)` answers a file of the export holding the variation
+ * sequences (`variants.js`) likewise; without it no sequence is drawn.
  */
-export function createSource(read, { concurrency = 6 } = {}) {
+export function createSource(read, { concurrency = 6, variants = null } = {}) {
   let ready = null
   // At most `concurrency` files are asked for at once; the rest wait their turn.
   let active = 0
@@ -48,7 +52,8 @@ export function createSource(read, { concurrency = 6 } = {}) {
   const limited = name => new Promise((resolve, reject) => {
     const run = () => {
       active++
-      read(name).then(resolve, reject).finally(() => { active--; waiting.shift()?.() })
+      const asked = name.startsWith(VARIANT) ? variants(name.slice(VARIANT.length)) : read(name)
+      asked.then(resolve, reject).finally(() => { active--; waiting.shift()?.() })
     }
     if (active < concurrency) run()
     else waiting.push(run)
@@ -94,6 +99,11 @@ export function createSource(read, { concurrency = 6 } = {}) {
           }
           return lists.get(id)
         },
+        // The record of a variation sequence, read for a key that is one.
+        variant: key => {
+          const f = variants && variantBase(key) ? file(VARIANT + variantFile(key)) : null
+          return f && Object.hasOwn(f, key) ? f[key] : null
+        },
         places: key => {
           const f = file(recordFile(key))
           return f ? recordOf(f, key)?.P ?? [] : []
@@ -104,15 +114,19 @@ export function createSource(read, { concurrency = 6 } = {}) {
   return source
 }
 
-/** A source over HTTP: `base` is the folder holding the export, `suffix` what each name carries there (`.gz`). */
-export function fromUrl(base, { suffix = '', fetch: get = globalThis.fetch } = {}) {
-  const root = base.endsWith('/') ? base : `${base}/`
-  return createSource(async name => {
-    const response = await get(`${root}${name}${suffix}`)
-    if (response.status === 404 && name !== 'manifest.json') return null
-    if (!response.ok) throw new Error(`${name}: ${response.status}`)
-    return await response.arrayBuffer()
-  })
+/** A source over HTTP: `base` is the folder holding the export, `suffix` what each name carries
+ *  there (`.gz`), `variants` the folder of the export holding the variation sequences. */
+export function fromUrl(base, { suffix = '', fetch: get = globalThis.fetch, variants = '' } = {}) {
+  const over = (folder, end = '') => {
+    const root = folder.endsWith('/') ? folder : `${folder}/`
+    return async name => {
+      const response = await get(`${root}${name}${end}`)
+      if (response.status === 404 && name !== 'manifest.json') return null
+      if (!response.ok) throw new Error(`${name}: ${response.status}`)
+      return await response.arrayBuffer()
+    }
+  }
+  return createSource(over(base, suffix), { variants: variants ? over(variants) : null })
 }
 
 const ROUNDS = 16

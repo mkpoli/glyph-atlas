@@ -10,7 +10,7 @@
   // put on a slot splits it, the slot's part first (⿰ on 失 gives ⿰失⬚); put on an operator, it takes
   // that operator's place and keeps its parts. × takes one level away, keeping its first filled part.
   // A component found, typed into the part field or offered by the variant table replaces the chosen
-  // part, as does one of the part's registered figures (辶 with one dot, U+8FB6 U+E0102), and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
+  // part, as does one of the part's registered figures (辶 with one dot, U+8FB6 U+E0101), and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
   // The part picker under the tree has three tabs: a component found by name or reading, the parts
   // palette (IdsParts), and the parts of any character or description typed (IdsFrom).
   // Every change can be undone, a hundred steps back.
@@ -24,7 +24,7 @@
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
   import { lookupChar } from '../lib/decompose.js'
   import { ids } from '../lib/layers.js'
-  import { figuresFor } from '../lib/figures.js'
+  import { figuresFor } from '../lib/partFigures.js'
   import { t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
 
@@ -281,6 +281,10 @@
   </svg>
 {/snippet}
 
+{#snippet named(key, part)}
+  {@const [before, after] = t(key, { part: '\u0000' }).split('\u0000')}{before}<FigureText text={part} />{after}
+{/snippet}
+
 {#snippet box(part, path, parent)}
   {@const selected = samePath(chosen, path)}
   {#if isNode(part)}
@@ -343,7 +347,7 @@
   {:else if pending}<p class="ids-pending" role="status">{pending}</p>{/if}
   {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length || figured.length)}
     <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: picked })}>
-      <span class="ids-title">{t('form.ids.swaps', { part: picked })}</span>
+      <span class="ids-title">{@render named('form.ids.swaps', picked)}</span>
       <div class="ids-options">
         {#each figured as figure (figure.char)}
           <button type="button" class="ids-swap ids-figure" {disabled} title={[point(figure.char), figure.mj].filter(Boolean).join(' · ')} aria-label={[figure.char, point(figure.char), figure.mj].filter(Boolean).join(' ')}
@@ -359,7 +363,7 @@
     </div>
   {/if}
   <div class="ids-search">
-    <span class="ids-title">{chosen && picked !== null ? t('form.ids.replace', { part: write(picked) }) : t('form.ids.insert')}</span>
+    <span class="ids-title">{#if chosen && typeof picked === 'string'}{@render named('form.ids.replace', picked)}{:else}{chosen && picked !== null ? t('form.ids.replace', { part: write(picked) }) : t('form.ids.insert')}{/if}</span>
     <div class="ids-pick-tabs" role="tablist" aria-label={t('form.ids.pick.label')}>
       {#each PICKERS as tab, index (tab)}
         <button type="button" role="tab" id={`${uid}-pick-${tab}`} aria-controls={opened.has(tab) ? `${uid}-pick-${tab}-panel` : undefined} bind:this={pickButtons[index]}
