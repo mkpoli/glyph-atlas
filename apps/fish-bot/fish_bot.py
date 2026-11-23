@@ -86,15 +86,15 @@ CHAT_CONTEXT = 40
 MAX_BUBBLES = 3
 # A call older than this gets no chat answer: the moment has passed.
 CHAT_WINDOW_SECONDS = 600
-DEFAULT_ALIASES = ("大肥魚", "大肥鱼", "Big Fat Fish")
+DEFAULT_ALIASES = ("大肥魚", "大肥鱼", "肥魚", "肥鱼", "Big Fat Fish")
 # Chat turns answered in one room in an hour, whoever calls.
 CHAT_ROOM_PER_HOUR = 30
 # The command: `!fish` anywhere a word starts, or `/fish` opening the message. A `.fish` file name
 # or a path ending in /fish calls no one.
 COMMAND = r"(?:(?:^|(?<=\s))!|^/)fish"
 # A Han name is written against the words around it (大肥魚餓嗎, 大肥魚喫🍚), so it calls the bot
-# unless the next character makes it something else: a letter or digit (大肥鱼V4, DeepSeek news) or a
-# word that turns the fish into food (大肥鱼头).
+# unless a neighbour makes it something else: a letter or digit after it (大肥鱼V4, DeepSeek news), a
+# word after it that turns the fish into food (大肥鱼头), or 減 before it (减肥鱼油, slimming fish oil).
 HAN = "\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0003134f"
 # What asks the bot to introduce itself: a call that is the request and nothing else, such as
 # `!fish 自我介紹` or 大肥魚，自我介紹一下. 自我介紹一下，我是新來的 is a newcomer's own introduction.
@@ -103,6 +103,7 @@ INTRO = re.compile(r"(?:請|请|please\s+)?" + INTRO_WORD
                    + r"(?:一下|下|吧|呢|嗎|吗|して(?:ください|ね)?|해\s?(?:줘|주세요)|\s+please)?[\s.!?。！？~～]*",
                    re.IGNORECASE)
 NOT_ADDRESS = "头頭尾肉汤湯片油排块塊骨皮刺丸粥鳞鱗鳍鰭腩柳干乾罐"
+NOT_BEFORE = "减減"
 # What asks for a catch-up on everything discussed so far: again a call that is the request alone,
 # and only in words that mean "fill me in". 總結一下, まとめて and 요약해 줘 usually ask for the talk
 # just now, which an ordinary chat turn answers from the room's last lines.
@@ -2910,7 +2911,7 @@ def _name_pattern(name: str) -> str:
     joined = r"[\s_-]*".join(words)
     if name.isascii():
         return rf"(?<![\w]){joined}(?![\w])"
-    return rf"{joined}(?![A-Za-z0-9{NOT_ADDRESS}])"
+    return rf"(?<![{NOT_BEFORE}]){joined}(?![A-Za-z0-9{NOT_ADDRESS}])"
 
 
 def _names_of(display_name: str, aliases: Iterable[str]) -> list[str]:
