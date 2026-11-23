@@ -9,7 +9,7 @@ import yaml
 from PIL import Image
 from typer.testing import CliRunner
 
-from glyph_atlas import ngrams, registry, tables
+from glyph_atlas import date_claims, ngrams, registry, tables
 from glyph_atlas.cli import app
 from glyph_atlas.importers import tensho
 from glyph_atlas.schema import Document, Licence, Line, Page, ReviewState, Script, Unit
@@ -380,3 +380,29 @@ def test_a_page_named_as_replaced_is_a_frame_of_its_volume():
     assert pages[41]["canvas"].endswith("/canvas/41")
     first = tensho.read_tsv(tensho.DEFAULT_DATA / "TE00003" / "pages.tsv")[0]
     assert (first["page"], first["canvas"].rsplit("/", 1)[-1]) == ("6", "5")
+
+
+def test_a_book_whose_printing_no_source_dates_states_no_date():
+    config = yaml.safe_load(tensho.DEFAULT_SOURCE.read_text(encoding="utf-8"))
+    books = {book["id"]: tensho._document(config, book) for book in config["books"]}
+
+    assert {book: [(found.kind, found.start) for found in held.dating] for book, held in books.items()} == {
+        "TE00039": [("publication", 1873)], "TE00026": [("publication", 1924)], "TE00025": [("publication", 1924)],
+        "TE00024": [("publication", 1924)], "TE00003": []}
+    # Undated, the reproduction of a pre-modern print keeps its public-domain mark beside the holder's terms.
+    assert (books["TE00003"].image_rights.licence, books["TE00003"].image_rights.holder_terms) == (
+        Licence.PUBLIC_DOMAIN, Licence.RS_NOC_CR)
+
+
+def test_the_dates_of_the_dataset_are_claims_of_its_own_source():
+    config = yaml.safe_load(tensho.DEFAULT_SOURCE.read_text(encoding="utf-8"))
+    held = {book["id"]: tensho._document(config, book).model_dump(mode="json") for book in config["books"]}
+    stated = {book: list(date_claims.importer_statements(row, date_claims.CORPORA["codh-tensho"]))
+              for book, row in held.items()}
+
+    assert {book: [(found.kind, found.scope) for found in rows] for book, rows in stated.items()} == {
+        "TE00039": [("printed", "witness")], "TE00026": [("printed", "witness")], "TE00025": [("printed", "witness")],
+        "TE00024": [("printed", "witness")], "TE00003": []}
+    # 国書データベース dates the preface of 聯珠篆文; its entry is read for that book alone.
+    assert {book: date_claims.bid_of(row) for book, row in held.items() if date_claims.bid_of(row)} == {
+        "TE00003": "100250413"}
