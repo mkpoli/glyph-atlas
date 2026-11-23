@@ -151,7 +151,8 @@ def test_a_card_is_one_object_with_its_edges_and_the_layout_numbers_its_characte
     assert bucket.objects["v3/reference/list/graphemes/0.json.gz"]["total"] == 2
     structure = structures.for_character("好")
     assert structure.label == "⿰女子"
-    assert bucket.objects[f"v3/reference/ids/{shard('好', 2)}.json.gz"] == {
+    held = bucket.objects[f"v3/reference/ids/{shard('好', 2)}.json.gz"]
+    assert {char: row for char, row in held.items() if char not in structures.seal_equivalents()} == {
         "好": [["⿰女子"], None, [structure.id, structure.label]]}
     assert bucket.objects["v3/reference/structure.json.gz"] == {
         "scheme": structures.SCHEME, "version": structures.VERSION, "policy": structures.POLICY}
@@ -462,7 +463,8 @@ def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(
     others = {k: v for k, v in bucket.manifest().items() if not k.startswith(("ids/", "structure.json.gz"))}
     held = sorted(k for k in bucket.manifest() if k.startswith("ids/"))
     assert others and held
-    # The descriptions again with 峰 for 好: 好's shard leaves R2, 峰's comes, and nothing else changes.
+    # The descriptions again with 峰 for 好: 好 leaves its shard, which the seal characters keep, 峰's
+    # comes, and nothing else changes.
     sources(root, cards=[card("あ", occurrences=9)], han_ids=[("峰", '["⿰山夆"]', None), ("⿰月兊", '["⿰月兊"]', None),
                                                               ("〾⿰山夆", '["〾⿰山夆"]', None), ("一", "[]", None),
                                                               ("臭", '["⿱自犬"]', '[{"text":"⿱自犬","regions":"GHTKPV"},{"text":"⿱自大","regions":"J"}]')])
@@ -477,13 +479,15 @@ def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(
     assert bucket.puts == puts  # a dry run sends nothing
     report = (root / "out" / "reference-ids-report.txt").read_text()
     assert "characters with a structure: 3" in report and "descriptions with a structure: 1" in report
-    assert "objects to delete: 1" in report and "char " not in report
+    assert "objects to delete: 0" in report and "char " not in report
     load(remote, monkeypatch, "--only", "ids", "--send", bucket=bucket)
     structure, described, one = structures.for_character("峰"), structures.for_character("脫"), structures.for_character("一")
     smell = structures.for_character("臭")
     shards = sorted(k for k in bucket.manifest() if k.startswith("ids/"))
-    assert shards != held
     rows = {char: row for name in shards for char, row in bucket.objects[f"v3/reference/{name}"].items()}
+    # A small seal character has its Han equivalent's structure (𾲟 is 臭's seal form).
+    seals = {char: rows.pop(char) for char in structures.seal_equivalents()}
+    assert seals["𾲟"] == [[], None, [smell.id, smell.label]]
     # A description the site names something by is a key of its own; one that names no structure has none.
     # A character with no description to edit keeps its structure, and its regional shapes are as written.
     assert rows == {"峰": [["⿰山夆"], None, [structure.id, structure.label]], "一": [[], None, [one.id, one.label]],

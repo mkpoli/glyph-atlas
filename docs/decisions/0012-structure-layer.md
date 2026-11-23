@@ -73,6 +73,11 @@ text, so the policy is unchanged; `⿱自大` keeps its id, and no character has
 the 異体字 graph, which the policy does not pin; a test lists them, so a rebuilt graph that changes
 one is met with a decision.
 
+A small seal character (Unicode's Seal block) has the structure of its Han equivalent, the
+`kSEAL_MCJK` of SealSources.txt. The value transcribes the seal form's own composition (𽀅 has 叓,
+where 吏 is written today), so a seal form stands with the 楷書 forms built as it: 𾲟 has 臭's
+`⿱自犬`, and 𽌇 has 萅's `⿱艸旾`, apart from 春 `⿱𡗗日`. 書体 parts no structure.
+
 The rules are wider than Unicode's unification. The IRG lists 艸 and 艹, 火 and 灬, 网 and 罒 as not
 unifiable for encoding, and they are one component here; so are the simplified radicals 讠, 钅, 纟
 and 饣 with 言, 金, 糸 and 食 (說, 説 and 说 are one structure). Characters the IRG lists as
@@ -101,7 +106,8 @@ encoded apart share a structure when only a unified component separates them (�
   it is inside the characters built from it (切, 坞). Its ids are new ones under the same policy.
   A written `⿰亻？` is 亻 beside a part no character names: it has a structure of its own and is
   not 𠇇's, since `？` stands for any such part.
-- A character the source does not describe has no structure: 々, 〻, 〇, and every script but Han.
+- A character the source does not describe has no structure: 々, 〻, 〇, and every script but Han
+  and small seal.
 
 ## Cases and sources
 

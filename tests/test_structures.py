@@ -201,6 +201,14 @@ def test_the_characters_encoded_twice_are_these():
         "眔": "𥄳", "稽": "𥡴", "篹": "𥲻", "簆": "𥲃", "逸": "𨓜", "隆": "𨺓", "類": "𩔖"}
 
 
+def test_a_seal_character_has_its_han_equivalents_structure():
+    # SealSources.txt gives 𾲟 臭 and 𽌇 萅: the seal form of 春 is built as 萅.
+    assert structures.for_character("𾲟") == structures.for_character("臭")
+    assert structures.for_character("𽌇") == structures.for_character("萅") != structures.for_character("春")
+    assert len(structures.seal_equivalents()) == 11328
+    assert all(structures.for_character(seal) for seal in structures.seal_equivalents())
+
+
 def test_the_policy_names_the_tables_it_reads():
     for name, digest in structures.TABLES.items():
         assert hashlib.sha256((ROOT / "data/vocab" / name).read_bytes()).hexdigest()[:16] == digest, name
