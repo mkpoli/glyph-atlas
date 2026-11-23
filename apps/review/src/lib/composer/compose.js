@@ -31,11 +31,6 @@ export const variantBase = key => {
   const [base, selector, ...rest] = key
   return isSelector(selector) && !rest.length ? base : null
 }
-/** How far a cut may be from a variation sequence's glyph, as a share of how far it is from its base's
- *  (han-compose's `VARIANT_LIKENESS`). */
-const VARIANT_LIKENESS = 0.7
-/** How many of a base's cuts are read to find one of a sequence's shape. */
-const VARIANT_TRIED = 12
 
 /** `⿰亻⿱亠女` as ['⿰', '亻', ['⿱', '亠', '女']], each operator taking `arity(op)` operands. */
 export function parseTree(sequence, arity) {
@@ -109,25 +104,6 @@ export class Composer {
     if (!own?.G) return null
     const { s: _sequence, e: _described, a: _forms, ...record } = this.data.rec(base) ?? {}
     return { ...record, o: own.G.p.length, ...own }
-  }
-  /** A base character's host entries that may draw it as its variation sequence `key` does, told by
-   *  what an entry says without its outlines: its contour count, where the two shapes differ in it. */
-  variantEntries(key, base, list) {
-    const own = this.glyph(key), plain = this.glyph(base)
-    if (!own || !plain) return []
-    return own.contours.length === plain.contours.length ? list : list.filter(h => this.cutOf(h)?.count === own.contours.length)
-  }
-  /** Of entries in order of preference, those that draw `key`'s shape. A designer draws one shape of a
-   *  part in some hosts and another in others, and an entry names the part, not the shape, so a cut is
-   *  taken only where its ink, filling the same square, is clearly closer to the sequence's glyph than
-   *  to the base's. Reading a cut can load its host, so only the first `VARIANT_TRIED` are read. */
-  variantCuts(key, base, ranked) {
-    const ours = square(this.glyph(key), 64), theirs = square(this.glyph(base), 64)
-    const apart = (mask, other) => mask.reduce((n, ink, i) => n + (ink ^ other[i]), 0)
-    return ranked.slice(0, VARIANT_TRIED).filter(([, , h]) => {
-      const mask = square(this.pieceOf(h), 64)
-      return apart(mask, ours) <= VARIANT_LIKENESS * apart(mask, theirs)
-    })
   }
   excluded = ch => this.exclude.has(ch)
   slot = (op, i) => this.SLOTS[op] ? this.SLOTS[op][i] : `${op}${i}`
@@ -250,7 +226,7 @@ export class Composer {
    *  a piece, which the composer weighs before finding it cannot cut them. */
   hostsOf(written, place, uncut = false) {
     if (written.includes(EMPTY)) return []
-    // A variation sequence has no list of its own: `ranked` reads its base's.
+    // A cut names the part, not which of its shapes the host draws, so a variation sequence takes none.
     if (this.variantRecord(written)) return []
     const list = this.data.hosts(written, place)
     return uncut ? list : list.filter(h => this.cutOf(h))
@@ -405,24 +381,18 @@ export class Composer {
     }
     for (const written of this.alternatives(node, place)) {
       const kin = C.KIN_PLACES[place]
-      const base = this.variantRecord(written) ? variantBase(written) : null, named = base ?? written
-      let candidates = this.hostsOf(named, place, true).map(h => [h, false])
-      if (kin) candidates = candidates.concat(upTo(this.hostsOf(named, kin, true), C.KIN_HOSTS).map(h => [h, true]))
-      if (base) {
-        const may = new Set(this.variantEntries(written, base, candidates.map(([h]) => h)))
-        candidates = candidates.filter(([h]) => may.has(h))
-      }
+      let candidates = this.hostsOf(written, place, true).map(h => [h, false])
+      if (kin) candidates = candidates.concat(upTo(this.hostsOf(written, kin, true), C.KIN_HOSTS).map(h => [h, true]))
       let found = weighed(candidates, written)
       const facing = C.FACING_PLACES[place]
       if (facing && found.length && !found.some(r => r[2].v === 1)) {
-        found = found.concat(weighed(this.hostsOf(named, facing, true).filter(h => h.v === 1).slice(0, C.KIN_HOSTS).map(h => [h, true]), written, true))
+        found = found.concat(weighed(this.hostsOf(written, facing, true).filter(h => h.v === 1).slice(0, C.KIN_HOSTS).map(h => [h, true]), written, true))
         const local = found.filter(r => r[2].v === 1 && r[2].j === 1)
         if (local.length) found = local
       }
       if (op in this.ENCLOSE && typeof node === 'string' && this.own(node) && found.length && !found.some(r => r[2].v === 1)) return []
-      found.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]))
-      if (base) found = this.variantCuts(written, base, found)
       if (found.length) {
+        found.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]))
         return this.nativeShapes(found.map(r => [r[1], this.chosen(r[2])]))
       }
     }
@@ -465,7 +435,8 @@ export class Composer {
     for (let i = 0; i < children.length; i++) {
       const child = children[i]
       let box = boxes[i]
-      let part = this.host(op, i, child, [...children.slice(0, i), ...children.slice(i + 1)], box, region === null)
+      // Inside a variation sequence, which is drawn from its glyph, a part is set into the opening.
+      let part = i === 1 && op in this.ENCLOSE && this.variantRecord(keyOf(children[0])) ? null : this.host(op, i, child, [...children.slice(0, i), ...children.slice(i + 1)], box, region === null)
       if (part && op in this.ENCLOSE && i === 0 && typeof child === 'string' && this.own(child)
         && stretchOf(part.piece.box, box) > C.ENCLOSING_STRETCH) part = null
       if (!part) {
