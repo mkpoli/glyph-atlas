@@ -25,8 +25,10 @@ the report names each pair's tables:
 Cursive is out of reach: 懐 and 懷 are one shape there, and the ranking of cursive crops follows
 how fully the character is written out.
 
-`run` writes `<similar>/written-forms.parquet`, one row per scored crop: `id`, `label`, `other`
-(the variant it was scored against), `book`, `score`. Nothing is relabelled.
+`run` writes `<similar>/written-forms.parquet`, one row per scored crop and pair: `id`, `label`,
+`other` (the variant it was scored against), `book`, `score`. A character with two variants in the
+index (余 with 餘 and 予) gives its crops a row for each. A crop the site does not hold, or holds
+under no character, is left out. Nothing is relabelled.
 """
 from __future__ import annotations
 
@@ -123,13 +125,11 @@ def run(similar: Path, *, mirror: Path, atlas: Path) -> dict:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    table = pq.read_table(similar / "units.parquet", columns=["id", "label"]).to_pydict()
-    ids = table["id"]
+    ids = pq.read_table(similar / "units.parquet", columns=["id"]).column("id").to_pylist()
     books, current = _books(ids, mirror, atlas)
     rows: dict[str, list[int]] = defaultdict(list)
-    for n, label in enumerate(table["label"]):
-        label = current.get(n) or (unicodedata.normalize("NFC", label) if label else None)
-        if label and books[n] is not None:
+    for n, label in current.items():
+        if books[n] is not None:
             rows[label].append(n)
     vectors = np.load(similar / "vectors.npy", mmap_mode="r")
     out: dict[str, list] = {"id": [], "label": [], "other": [], "book": [], "score": []}
@@ -162,4 +162,6 @@ def run(similar: Path, *, mirror: Path, atlas: Path) -> dict:
     pq.write_table(pa.table(out, schema=pa.schema([("id", pa.string()), ("label", pa.string()), ("other", pa.string()),
                                                     ("book", pa.int64()), ("score", pa.float32())])),
                    similar / FILE, compression="zstd")
-    return {"method": METHOD, "pairs": len(report), "scored": len(out["id"]), "items": report}
+    return {"method": METHOD, "index": len(ids), "held": len(current), "pairs": len(report),
+            "in_pairs": len({n for first, second in stated for n in rows[first] + rows[second]}),
+            "scores": len(out["id"]), "scored": len(set(out["id"])), "items": report}

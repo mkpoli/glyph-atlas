@@ -37,3 +37,17 @@ def test_a_book_is_scored_without_its_own_crops():
     books = [n % 2 for n in range(20)] + [9] * 8 + [0, 0, 1, 1]
     found = scores(vectors, own, books)
     assert np.isnan(found[20:28]).all() and not np.isnan(found[:20]).any() and not np.isnan(found[28:]).any()
+
+
+def test_a_books_own_crops_do_not_move_its_means():
+    # Book 1 files crops of the second shape under the first character. Scored with its own crops
+    # in the means they would pull the first mean towards themselves and score below zero.
+    rng = np.random.default_rng(2)
+    vectors = np.concatenate([_crops([1, 0], 10, rng), _crops([0, 1], 30, rng), _crops([0, 1], 10, rng)])
+    own = [True] * 40 + [False] * 10
+    books = [0] * 10 + [1] * 30 + [2] * 10
+    found = scores(vectors, own, books)
+    assert (found[10:40] > 0.5).all()
+    whole = vectors[:40].mean(0), vectors[40:].mean(0)
+    naive = vectors[10:40] @ (whole[1] - whole[0]) - (whole[0] + whole[1]) @ (whole[1] - whole[0]) / 2
+    assert (found[10:40] > naive + 0.3).all()
