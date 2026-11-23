@@ -597,8 +597,22 @@ def releases_base(atlas, overlay):
     return released
 
 
+def book_titles(src, tables):
+    """The title the catalogue gives each document, which the site lists its books by: the corpus export's
+    for a corpus document, the page records' for a document whose crops are cut from its pages."""
+    found = {}
+    if "pages" in tables:
+        for r in src.execute("SELECT document, data FROM pages ORDER BY id"):
+            if title := json.loads(r["data"]).get("title"):
+                found.setdefault(r["document"], title)
+    if "corpus_documents" in tables:
+        found.update(src.execute("SELECT document, title FROM corpus_documents WHERE title IS NOT NULL"))
+    return found
+
+
 class Mirror:
     def __init__(self):
+        self.titled = {}  # the titles the catalogue gives its documents
         self.ids = sqlite3.connect(OUT / "mirror.sqlite")
         self.ids.executescript("""
           CREATE TABLE IF NOT EXISTS book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
@@ -649,10 +663,11 @@ class Mirror:
             self.emit("codes", ("field", "code", "key"), (field, code, key))
         return code
 
-    def book(self, key, title=None):
-        """A book's id, the book added where the site lacks it. `title` is the one the catalogue gives
-        the book: a new book takes it, and a book the site holds with no title takes it once."""
+    def book(self, key):
+        """A book's id, the book added where the site lacks it. A new book takes the title the catalogue
+        gives it (`titled`), and a book the site holds with no title takes it once."""
         key = key or "unknown"
+        title = self.titled.get(key)
         row = self.ids.execute("SELECT id FROM books WHERE key=?", (key,)).fetchone()
         if row:
             bid = row[0]
@@ -1355,6 +1370,7 @@ def main():
     # nothing else, so nothing reaches D1 before its count is checked.
     if "book_styles" in tables and tables - {"book_styles"}:
         sys.exit(f"a book_styles catalogue holds book_styles alone, not {sorted(tables - {'book_styles'})}; nothing published")
+    m.titled = book_titles(src, tables)
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
     # D1 apart from catalogues). A book with neither keeps its crops' years.
     years = dict(m.ids.execute("SELECT key, year FROM book_years"))
@@ -1673,8 +1689,6 @@ def main():
         n += 1
 
     if "corpus_units" in tables:
-        # The titles the corpus export gives its documents, which the site lists its books by.
-        titled = dict(src.execute("SELECT document, title FROM corpus_documents WHERE title IS NOT NULL")) if "corpus_documents" in tables else {}
         for r in src.execute("SELECT * FROM corpus_units ORDER BY id"):
             source = r["id"].split("|")[0].split(":")[0]
             cid = m.known(r["id"])
@@ -1691,7 +1705,7 @@ def main():
             # An upstream glyph speaks for the review columns only through its review overlay.
             char = m.grapheme((o["character"] if o else None) or r["character"])
             filed = o["family"] if o and with_family else r["family"]
-            given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source, titled.get(r["document"])), "char": char,
+            given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source), "char": char,
                      "family": m.grapheme(filed),
                      "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
                      "style": m.code("style", (o["style"] if o else None) or r["style"] or "unassessed"),
