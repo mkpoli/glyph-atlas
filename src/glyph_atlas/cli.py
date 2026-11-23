@@ -743,6 +743,23 @@ def review_neighbour_agreement(
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 
+@review_app.command("written-forms")
+def review_written_forms(
+    similar: Annotated[Path, typer.Option(help="similar-crop index revision (`atlas similar index`)")] = Path("work/similar/current"),
+    mirror: Annotated[Path, typer.Option(help="v3 migration mirror mapping source ids to crops")] = Path("work/atlas-v3/out/mirror.sqlite"),
+    atlas: Annotated[Path, typer.Option(help="local copy of the site's database, for each crop's book and character")] = Path("work/atlas-v3/out/atlas.sqlite"),
+    out: Annotated[Path | None, typer.Option(help="report of every pair and its books")] = None,
+) -> None:
+    """Rank crops filed under a character by how much they look written as its variant."""
+    from .review import written_forms
+
+    result = written_forms.run(similar.resolve(), mirror=mirror, atlas=atlas)
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n")
+    typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
+
+
 @review_app.command("lookalikes")
 def review_lookalikes(
     split: Annotated[Path, typer.Argument(help="held-out classifier split")] = Path("work/classifier-combined/test.parquet"),
