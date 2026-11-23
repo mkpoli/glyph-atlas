@@ -301,21 +301,27 @@ def _own(char: str) -> Structure | None:
 
 @cache
 def seal_equivalents() -> dict[str, str]:
-    """Each small seal character's Han equivalent, as Unicode's SealSources.txt gives it (kSEAL_MCJK,
-    the `small-seal` rows of the 異体字 graph from unicode-ucd). The value follows the seal form's
-    own composition: 𽀅 has 叓 where 吏 is written today, and 𾲟 has 臭."""
-    found = {}
+    """The Han character each small seal character takes its structure from: its kSEAL_MCJK in
+    Unicode's SealSources.txt (the `small-seal` rows of the 異体字 graph from unicode-ucd), where no
+    other seal character has the same one.
+
+    The file calls the value the modern CJK equivalent and says nothing of structure. It follows the
+    seal form's composition in most cases (𽀅 has 叓, where 吏 is written today) and not in all: 書 is
+    聿 over 者 in seal (說文 从聿者聲). So the structure is a proposal, which a reader's claim
+    overrides. Where several seal characters share a value (折, 殺, 民), they are drawn apart and the
+    value cannot say which is built as it, so none takes it."""
+    seals: dict[str, set[str]] = {}
     for row in refs.variant_edges():
         if row["relation"] == "small-seal" and row["source"] == SEAL_SOURCE:
             seal, han = (row["a"], row["b"]) if ord(row["a"][0]) in SEAL else (row["b"], row["a"])
-            found[seal] = han
-    return found
+            seals.setdefault(han, set()).add(seal)
+    return {seal: han for han, found in seals.items() if len(found) == 1 for seal in found}
 
 
 def for_character(char: str) -> Structure | None:
     """The structure of a character: its own (`_own`), or that of the character it joins as one
-    character encoded twice (`_joined`: 𦤀 has 臭's ⿱自犬). A small seal character has its Han
-    equivalent's (`seal_equivalents`); 書体 never parts two forms of one composition."""
+    character encoded twice (`_joined`: 𦤀 has 臭's ⿱自犬). A small seal character has that of
+    its Han equivalent, as a proposal (`seal_equivalents`)."""
     char = unicodedata.normalize("NFC", char)
     if han := seal_equivalents().get(char):
         return for_character(han)

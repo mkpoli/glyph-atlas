@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sqlite3
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -205,10 +206,21 @@ def test_a_seal_character_has_its_han_equivalents_structure():
     # SealSources.txt gives 𾲟 臭 and 𽌇 萅: the seal form of 春 is built as 萅.
     assert structures.for_character("𾲟") == structures.for_character("臭")
     assert structures.for_character("𽌇") == structures.for_character("萅") != structures.for_character("春")
-    # Each seal character has one equivalent: as many as the rows Unicode states.
+    # Unicode states one equivalent for each seal character. One that several share names none of them.
     stated = [row for row in refs.variant_edges() if row["relation"] == "small-seal" and row["source"] == "unicode-ucd"]
-    assert len(structures.seal_equivalents()) == len(stated) == 11328
+    assert len(stated) == len({row["b"] for row in stated}) == 11328
+    shared = [han for han, count in Counter(row["a"] for row in stated).items() if count > 1]
+    assert len(shared) == 94 and "折" in shared
+    assert not set(shared) & set(structures.seal_equivalents().values())
+    assert structures.for_character("𽋎") is None and structures.for_character("𽋏") is None
     assert all(structures.for_character(seal) for seal in structures.seal_equivalents())
+
+
+def test_a_shape_names_the_character_that_encodes_it_again():
+    assert refs.ids_of("稽")["shapes"] == [{"text": "⿰禾⿱尤旨", "regions": "GHTJPV"},
+                                          {"text": "⿰禾⿱尤㫖", "regions": "K", "chars": ["𥡴"]}]
+    # 𤴁, which is 疉 encoded again, has regional shapes of its own, and 疉 is none of them.
+    assert all("chars" not in shape for shape in refs.ids_of("𤴁")["shapes"])
 
 
 def test_the_policy_names_the_tables_it_reads():
