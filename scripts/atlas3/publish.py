@@ -598,15 +598,17 @@ def releases_base(atlas, overlay):
 
 
 def book_titles(src, tables):
-    """The title the catalogue gives each document, which the site lists its books by: the corpus export's
-    for a corpus document, the page records' for a document whose crops are cut from its pages."""
+    """The title the catalogue gives each document, which the site lists its books by: the page records'
+    for a document that has any, else the corpus export's, in the order of `books.py`'s `titles`."""
     found = {}
+    if "corpus_documents" in tables:
+        found.update(src.execute("SELECT document, title FROM corpus_documents WHERE title <> ''"))
     if "pages" in tables:
+        stated = {}
         for r in src.execute("SELECT document, data FROM pages ORDER BY id"):
             if title := json.loads(r["data"]).get("title"):
-                found.setdefault(r["document"], title)
-    if "corpus_documents" in tables:
-        found.update(src.execute("SELECT document, title FROM corpus_documents WHERE title IS NOT NULL"))
+                stated.setdefault(r["document"], title)
+        found.update(stated)
     return found
 
 
