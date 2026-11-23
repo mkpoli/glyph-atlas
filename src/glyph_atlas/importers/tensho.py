@@ -298,8 +298,10 @@ def _document(config: dict[str, Any], book: dict[str, Any]) -> Document:
         # line reaches the release's ATTRIBUTION.md.
         attribution=(f"{config['attribution']}; 『{book['work']}』 {book['provider']}（{book['holder']}） "
                      + " ".join(book.get("provider_urls") or [book["url"]])),
-        evidence=book["url"],
-        checked=_checked(config),
+        # A book names the page that states its holder's terms and the day it was read, where that is
+        # not the book's own record and the day the dataset was read.
+        evidence=book.get("rights_evidence") or book["url"],
+        checked=_checked(book) or _checked(config),
     )
     table = next((entry for entry in registry.load() if entry.id == UNICODE_ID), None)
     if table is None:

@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
-import re
 import sys
 import unicodedata
 from collections import Counter, defaultdict
@@ -49,7 +48,8 @@ DATA = ROOT / "data" / "tensho"
 #: CODH's mark for a 親字 with no code point (凡例 2).
 GETA = "3013"
 #: Two boxes whose centres are closer than this are in one column: in the three volumes of 新撰篆書字典
-#: two neighbours in a column are 86 pixels apart at most, and two columns are never nearer than 140.
+#: two neighbours in a column are 86 pixels apart at most, and two columns are never nearer than 140; in
+#: 聯珠篆文 no two centres lie between 40 and 140 pixels apart.
 COLUMN = 120
 PAGE_FIELDS = ("page", "canvas", "image", "width", "height")
 
@@ -57,14 +57,6 @@ PAGE_FIELDS = ("page", "canvas", "image", "width", "height")
 def unified(parent: str) -> str:
     """A 親字 as the ideograph it is canonically equivalent to, as a hex code point."""
     return f"{ord(unicodedata.normalize('NFC', chr(int(parent, 16)))):04X}"
-
-
-def canvas_number(canvas: str) -> int:
-    """The number of a canvas of a IIIF manifest, from its URI."""
-    number = re.search(r"/canvas/(\d+)$", canvas)
-    if number is None:
-        raise SystemExit(f"{canvas}: not a numbered canvas")
-    return int(number.group(1))
 
 
 def equivalents(path: Path) -> dict[str, list[str]]:
@@ -91,11 +83,12 @@ def place(crops: list[dict], seals: dict[str, list[str]]) -> None:
 
 
 def manifest_pages(manifest: dict) -> dict[int, dict]:
-    """The id, image service and size of every canvas of a Presentation 2 manifest, by canvas number."""
+    """The id, image service and size of every canvas of a Presentation 2 manifest, by its place in the
+    manifest counted from one, the holder's frame number."""
     pages: dict[int, dict] = {}
-    for canvas in manifest["sequences"][0]["canvases"]:
+    for number, canvas in enumerate(manifest["sequences"][0]["canvases"], start=1):
         resource = canvas["images"][0]["resource"]
-        pages[canvas_number(canvas["@id"])] = {
+        pages[number] = {
             "canvas": canvas["@id"], "image": resource["service"]["@id"].rstrip("/"),
             "width": int(resource["width"]), "height": int(resource["height"]),
         }
@@ -131,19 +124,36 @@ def write(crops: list[dict], target: Path, book: str, title: str, release: str) 
 
 def write_pages(crops: list[dict], pages: dict[int, dict], target: Path, book: str, manifest: str) -> None:
     header = (
-        f"# The pages that hold a crop of book {book}, in the order of the book. page is the number of the",
-        f"# canvas in {manifest};",
+        f"# The pages that hold a crop of book {book}, in the order of the book. page is the place of the",
+        f"# canvas in {manifest}, counted from one;",
         "# canvas is its id, image its Image API service and width and height its size, as the manifest states",
         "# them. Written by scripts/build_tensho_equivalents.py.",
     )
-    canvases = sorted({crop["canvas"] for crop in crops}, key=canvas_number)
+    frames = {page["canvas"]: number for number, page in pages.items()}
+    canvases = sorted({crop["canvas"] for crop in crops}, key=frames.__getitem__)
     with target.open("w", encoding="utf-8", newline="") as handle:
         handle.write("\n".join(header) + "\n")
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(PAGE_FIELDS)
         for canvas in canvases:
-            page = pages[canvas_number(canvas)]
-            writer.writerow([canvas_number(canvas), canvas, page["image"], page["width"], page["height"]])
+            page = pages[frames[canvas]]
+            writer.writerow([frames[canvas], canvas, page["image"], page["width"], page["height"]])
+
+
+def frames_of(source: list[dict], pages: dict[int, dict]) -> dict[str, int]:
+    """The frame of each canvas CODH's source table names, found by the image service of its row."""
+    services: dict[str, int] = {}
+    for number, page in pages.items():
+        if services.setdefault(page["image"], number) != number:
+            raise SystemExit(f"{page['image']}: the image of two canvases of the manifest")
+    frames: dict[str, int] = {}
+    for row in source:
+        service = row["Image Info"].replace("//www.", "//").removesuffix("/info.json")
+        if service not in services:
+            raise SystemExit(f"{row['Image']}: {service} is no image of the manifest")
+        if frames.setdefault(row["Canvas URI"], services[service]) != services[service]:
+            raise SystemExit(f"{row['Canvas URI']}: named for two images")
+    return frames
 
 
 def read(path: Path, record: dict) -> tuple[dict, list[dict], dict[int, dict]]:
@@ -162,9 +172,12 @@ def read(path: Path, record: dict) -> tuple[dict, list[dict], dict[int, dict]]:
         raise SystemExit(f"{name}: its pages are not all of {url}")
     pages = manifest_pages(fetch_manifest(url))
 
-    crops = crops_in_order(book, number=canvas_number, pitch=COLUMN)
+    # A page is found by its image service: a holder may number its canvases otherwise than CODH's table
+    # does (国書データベース counts them from zero, the table from one).
+    frame = frames_of(book.table("source"), pages)
+    crops = crops_in_order(book, number=frame.__getitem__, pitch=COLUMN)
     for crop in crops:
-        page = pages[canvas_number(crop["canvas"])]
+        page = pages[frame[crop["canvas"]]]
         crop["canvas"] = page["canvas"]
         if crop["x"] + crop["w"] > page["width"] or crop["y"] + crop["h"] > page["height"]:
             raise SystemExit(f"{crop['image']}: a box lies off its page of {page['width']} x {page['height']}")

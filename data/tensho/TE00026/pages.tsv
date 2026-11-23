@@ -1,5 +1,5 @@
-# The pages that hold a crop of book TE00026, in the order of the book. page is the number of the
-# canvas in https://dl.ndl.go.jp/api/iiif/1181876/manifest.json;
+# The pages that hold a crop of book TE00026, in the order of the book. page is the place of the
+# canvas in https://dl.ndl.go.jp/api/iiif/1181876/manifest.json, counted from one;
 # canvas is its id, image its Image API service and width and height its size, as the manifest states
 # them. Written by scripts/build_tensho_equivalents.py.
 page	canvas	image	width	height
