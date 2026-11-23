@@ -894,7 +894,7 @@ def test_a_corpus_book_takes_the_title_its_catalogue_gives(layout, monkeypatch, 
     db.execute("INSERT INTO corpus_documents VALUES('gy:1', 0, '廣韻 卷一')")
     db.commit()
     run(publish, monkeypatch, path)
-    titles = lambda: dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, title FROM books"))  # noqa: E731
+    titles = lambda: dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, title FROM books"))
     assert titles()["gy:1"] == "廣韻 卷一"
     # A book the site holds with no title takes the catalogue's on the next publish; one it has keeps its own.
     for held in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
