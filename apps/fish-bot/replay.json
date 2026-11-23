@@ -71,7 +71,7 @@
     "task": "follow",
     "room": "curiosities",
     "messages": [["まくぽり", "大肥魚: hey fish! can you now give a better overview of everything said before here concisely?"], ["大肥魚", "Sure! On Nov 16 people talked about adding Tangut texts to tangut.mkpo.li, and on Nov 21 porges asked for IDS ideas for a glyph."], ["まくぽり", "I mean the whole server!"]],
-    "expect": {"must_match": ["\\S"], "must_not_match": ["[\\u4e00-\\u9fff]{6,}"]}
+    "expect": {"recap": true}
   },
   {
     "name": "a follow-up question keeps its subject",
@@ -90,5 +90,12 @@
     "task": "follow",
     "messages": [["渚", "大肥魚，你喫飯了嗎"], ["大肥魚", "喫了三碗白飯！"], ["介之", "《海篇》的金部第一頁你們看過嗎"], ["宝鈅", "看過，內閣文庫藏本有"]],
     "expect": {"quiet": true}
+  },
+  {
+    "name": "one room's overview is an ordinary answer",
+    "note": "The catch-up covers every room, so a question about this one must not set it off.",
+    "room": "curiosities",
+    "messages": [["porges", "Any IDS ideas for this glyph, like ⿵冂⿱亠乂?"], ["橘", "maybe 𮌇, a variant of 肉"], ["まくぽり", "大肥魚: can you sum up what was said in this room so far?"]],
+    "expect": {"recap": false, "must_match": ["肉|𮌇"]}
   }
 ]
