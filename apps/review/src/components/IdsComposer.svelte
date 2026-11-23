@@ -75,7 +75,7 @@
   let figures = $state({})
   const figuring = new Set()
   function readFigures(c) {
-    if (!c || figuring.has(c)) return
+    if (!isComponent(c) || figuring.has(c)) return
     figuring.add(c)
     figuresFor(c).then(found => { figures = { ...figures, [c]: found } }, () => figuring.delete(c))
   }
