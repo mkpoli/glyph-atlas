@@ -367,7 +367,7 @@ describe('a source page', () => {
       [publicId(ids.b), '二', 'flagged']]);
     expect(view.units[2]).toMatchObject({ issue: 'crop', box: { x: 40, y: 10, w: 20, h: 30 }, line_id: `${book}:4:L1`, code_point: null });
     expect(view).toMatchObject({ id: pageKey, document_id: book, document_title: 'Book', seq: 4, previous: `${book}:3`, next: null, drawable: false,
-      image_url: 'https://x.org/iiif/p/full/!3000,3000/0/default.jpg' });
+      image_url: 'https://x.org/iiif/p/full/400,/0/default.jpg' });
     expect(view.crops).toBeUndefined();
   });
   it('shows a page no service serves from the site\'s own copy, when its record names one', () => {
@@ -378,7 +378,10 @@ describe('a source page', () => {
     expect([view.image_url, view.service, view.photo]).toEqual([photo, null, undefined]);
     expect(pageView(facts, []).image_url).toBeNull();
     // A service is asked first, and a photo that is not one of the site's images is not shown.
-    expect(pageView({ ...facts, photo, service: 'https://x.org/iiif/p' }, []).image_url).toBe('https://x.org/iiif/p/full/!3000,3000/0/default.jpg');
+    expect(pageView({ ...facts, photo, service: 'https://x.org/iiif/p' }, []).image_url).toBe('https://x.org/iiif/p/full/3000,/0/default.jpg');
+    // The longer side alone is named, never beyond the image's own size; without a size, a box to fit.
+    expect(pageView({ ...facts, width: 1200, height: 2000, service: 'https://x.org/iiif/p' }, []).image_url).toBe('https://x.org/iiif/p/full/,2000/0/default.jpg');
+    expect(pageView({ ...facts, width: null, height: null, service: 'https://x.org/iiif/p' }, []).image_url).toBe('https://x.org/iiif/p/full/!3000,3000/0/default.jpg');
     expect(pageView({ ...facts, photo: 'https://elsewhere.example/p.jpg' }, []).image_url).toBeNull();
   });
   it('says where the page can be opened at its source, and when its book was made', async () => {
