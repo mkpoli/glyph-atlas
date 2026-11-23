@@ -46,8 +46,8 @@ ambient_per_hour = 12
 
 [digest]
 # From this hour (JST) each day, one digest per room below, written wholly in the language named
-# here (name the script too where it matters): what the repositories
-# merged and released in the last day, and what the other rooms talked about. A quiet day gets none.
+# there (with its script where that matters): what the repositories merged and released in the
+# last day, and what the other rooms talked about. A quiet day gets none.
 hour = 21
 repos = [
   "mkpoli/glyph-atlas", "mkpoli/han-compose", "mkpoli/ids-input", "mkpoli/unencoded-db",
