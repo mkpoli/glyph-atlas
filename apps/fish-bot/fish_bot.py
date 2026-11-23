@@ -199,7 +199,7 @@ IMAGES_AMBIENT = 2
 # Pictures a stretch of chat sends to memory, the newest ones people posted in it.
 IMAGES_MEMORY = 4
 # Fetches a memory call may make for pictures not cached yet, so a stalled media server holds up the
-# chat for at most this many thumbnail timeouts.
+# chat for at most this many fetches, each one or two thumbnail timeouts.
 IMAGES_MEMORY_FETCHES = 6
 IMAGE_LINES = 12
 # continuwuity 26.9.1 scales a thumbnail only into fixed boxes: a request within 640x480 comes back

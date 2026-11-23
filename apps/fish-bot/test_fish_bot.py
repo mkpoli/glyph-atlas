@@ -1679,7 +1679,7 @@ def test_a_refused_picture_costs_the_picture_not_the_answer(monkeypatch):
 def test_a_picture_that_fails_is_fetched_once(tmp_path):
     matrix = FakeMatrix()
     calls = []
-    matrix.thumbnail = lambda mxc, size=1024, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(404, "gone"))
+    matrix.thumbnail = lambda mxc, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(404, "gone"))
     bot, _, store = make_bot(tmp_path, matrix=matrix)
     bot.ingest(ROOM, picture("$gone", url="mxc://example/gone"), backfilled=False)
     rows = store.context(ROOM, fish_bot.now_ms() + 1000, 10)
@@ -2087,7 +2087,7 @@ def test_memory_sends_pictures_only_for_messages_that_fit(tmp_path):
 def test_memory_fetches_only_a_few_unseen_pictures(tmp_path):
     matrix = FakeMatrix()
     calls = []
-    matrix.thumbnail = lambda mxc, size=1024, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(504, "slow"))
+    matrix.thumbnail = lambda mxc, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(504, "slow"))
     bot, _, store = make_bot(tmp_path, matrix=matrix)
     start = fish_bot.now_ms() - 30 * HOUR
     for n in range(30):
