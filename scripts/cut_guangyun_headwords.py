@@ -326,7 +326,7 @@ def main() -> int:
                                 upstream={"source": SOURCE, "entry_id": entry.entry_id, "copy": copy["id"]}, meta=meta))
                             counts["kept"] += 1
                 report[page.id][f"{key[1]}{key[2]}"] = counts
-                kept_here += counts["kept"]
+                kept_here += counts.get("kept", 0)
             if kept_here:
                 pages.append(page)
                 kept_in_volume += kept_here
