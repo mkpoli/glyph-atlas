@@ -9,7 +9,8 @@
   import FormText from './FormText.svelte'
   import OriginText from './OriginText.svelte'
   import StructureDialog from './StructureDialog.svelte'
-  import { countsLabel, structures as readStructures } from '../lib/layers.js'
+  import { countsLabel, ids as readIds, structures as readStructures } from '../lib/layers.js'
+  import { sortForms } from '../lib/formOffers.js'
   import { isDescription } from '../lib/ids.js'
   import { isFigure } from '../lib/mjFigures.js'
   import { standing } from '../lib/structures.js'
@@ -74,7 +75,19 @@
   const HAN = /^\p{Script=Han}$/u
   const composable = list => [...new Set(list.map(v => v.char)
     .filter(char => HAN.test(char ?? '') || isSeal(char) || isDescription(char) || isFigure(char ?? '')))]
-  const composedOf = $derived(composable([...members, ...written, ...described, ...related.filter(v => isSeal(v.char) && !inferred(v))]).slice(0, 48))
+  // A character drawn as the card's own (𦤀, 臭 encoded again as its J shape) is left off this row; its
+  // 字体 chip names it by its code point.
+  let twins = $state.raw([])
+  $effect(() => {
+    const char = card?.char
+    twins = []
+    if (!HAN.test(char ?? '')) return
+    let live = true
+    readIds(char).then(found => { if (live) twins = sortForms(char, [], found.shapes ?? []).alike.chars }, () => {})
+    return () => { live = false }
+  })
+  const composedOf = $derived(composable([...members, ...written, ...described, ...related.filter(v => isSeal(v.char) && !inferred(v))])
+    .filter(char => !twins.includes(char)).slice(0, 48))
   // The forms shown when arranging 構形: the grapheme's 字体 and its related characters.
   const arrangeOf = $derived(composable([...members, ...written, ...described, ...related]))
   // The last answer stays until the next one arrives, so the rows below do not jump while it loads.

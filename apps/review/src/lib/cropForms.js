@@ -53,17 +53,18 @@ export function listForms(char) {
     const described = HAN.test(char) ? readIds(char).then(found => found.shapes ?? [], () => { partial = true; return [] }) : Promise.resolve([])
     const loaded = Promise.all([card, registered, described]).then(([card, allFigures, allShapes]) => {
       const offered = v => !compatibility(v.char) || v.char === char
-      const members = (card?.grapheme?.members ?? [{ char }]).filter(offered).map(entry)
       const { figures, shapes: regional, alike } = sortForms(char, allFigures, allShapes)
+      // A character drawn as the bare character (𦤀, 臭 encoded again as its J shape) is set apart.
+      const twins = new Set(alike.chars)
+      const twin = v => twins.has(v.char)
+      const family = (card?.grapheme?.members ?? [{ char }]).filter(offered)
+      const members = family.filter(v => !twin(v)).map(entry)
       const figureEntry = figure => ({ ...entry(figure), mj: figure.mj })
       const shapeEntry = ({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) })
       const shapes = regional.map(shapeEntry)
       const found = card?.variants ?? {}
       const writers = new Set((found.writers ?? []).map(v => v.char)), writes = new Set((found.writes ?? []).map(v => v.char))
       // The card's order: a form that writes this grapheme first (後: 后), then the others.
-      // A character drawn as the bare character (𦤀, 臭 encoded again as its J shape) is set apart.
-      const twins = new Set(alike.chars)
-      const twin = v => twins.has(v.char)
       const forms = [...found.items ?? [], ...(found.related ?? []).filter(v => v.written || writers.has(v.char))].filter(v => !writes.has(v.char) && offered(v) && !twin(v))
         .sort((a, b) => writers.has(b.char) - writers.has(a.char))
       const linked = (found.forms ?? []).map(linkedEntry)
@@ -76,7 +77,8 @@ export function listForms(char) {
       return { members, variants: fresh(variants), related: fresh(related), derived: fresh(derived),
         linked: linked.filter(item => !memberChars.has(item.char)), grapheme: card?.grapheme ?? null,
         alike: [...alike.figures.map(figureEntry), ...alike.shapes.map(shapeEntry),
-          ...[...found.items ?? [], ...found.related ?? []].filter(twin).map(entry)] }
+          ...[...family, ...found.items ?? [], ...found.related ?? []].filter(twin)
+            .filter((v, i, all) => all.findIndex(other => other.char === v.char) === i).map(entry)] }
     })
     // A failed read is asked again next time rather than kept.
     cards.set(char, loaded.then(found => (partial && cards.delete(char), found), error => { cards.delete(char); throw error }))
