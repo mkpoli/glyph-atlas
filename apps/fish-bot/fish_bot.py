@@ -42,7 +42,9 @@ from typing import Any
 
 USER_AGENT = "glyph-atlas-fish-bot/1 (+https://glyphatlas.org)"
 HOMESERVER = "http://127.0.0.1:6167"
-DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
+GEMINI_API_REVISION = "2026-05-20"
+GEMINI_MODEL = "gemini-4-hydrogen"
 GITHUB_API = "https://api.github.com"
 JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
 
@@ -70,11 +72,16 @@ ISSUE_INTERVAL_SECONDS = 600
 STARTED_RETRY_SECONDS = 300
 # The pending proposal from `!fish review` is kept for a day.
 PENDING_SECONDS = 86_400
-# A chat turn follows DeepSeek's setting for general conversation, 1.3. DeepSeek ignores temperature
-# while thinking is on, so a chat turn turns thinking off. Sources: DeepSeek API docs,
-# https://api-docs.deepseek.com/quick_start/parameter_settings and
-# https://api-docs.deepseek.com/guides/thinking_mode (read 2026-11-19).
-CHAT_TEMPERATURE = 1.3
+# Gemini 4 Hydrogen ignores sampling parameters (temperature, top_p, top_k) and uses mandatory
+# thinking at one of four levels: low, medium, high (default), xhigh. Chat, memory, digest and
+# web lookups run at low thinking for speed and cost; issue triage uses medium. Sources:
+# https://ai.google.dev/gemini-api/docs/models/gemini-4-hydrogen and
+# https://ai.google.dev/gemini-api/docs/thinking (read 2026-11-23).
+CHAT_THINKING = "low"
+ISSUE_THINKING = "medium"
+MEMORY_THINKING = "low"
+DIGEST_THINKING = "low"
+LOOKUP_THINKING = "low"
 CHAT_CONTEXT = 40
 MAX_BUBBLES = 3
 # A call older than this gets no chat answer: the moment has passed.
@@ -114,9 +121,6 @@ MAX_RECAP = 6000
 # batches), https://github.com/MaiM-with-u/MaiBot src/maisaka/turn_trigger/README.md (read at
 # b7f3682, 2026-11-19); the model may still stay silent. Lively messages (a question, laughter, a
 # fish) raise the chance.
-# The daily digest summarizes, so it follows DeepSeek's setting for data analysis, 1.0 (same source
-# as CHAT_TEMPERATURE).
-DIGEST_TEMPERATURE = 1.0
 DIGEST_MESSAGES_PER_ROOM = 60
 LIVELY = re.compile(r"[?？!！]|哈哈|笑死|www|ｗｗ|草|lol|lmao|ㅋㅋ|ㅎㅎ|[魚鱼鯨鲸🐳🐋🐟🐠]|whale|fish",
                     re.IGNORECASE)
@@ -127,8 +131,6 @@ LIVELY = re.compile(r"[?？!！]|哈哈|笑死|www|ｗｗ|草|lol|lmao|ㅋㅋ|�
 # a fact that comes up again stays fresh (MemoryBank, Zhong et al., arXiv 2305.10250, whose authors
 # call their forgetting curve exploratory). Mem0 is a vendor paper in which full context still scores
 # highest, and Generative Agents ranks relevance by embeddings where this uses SQLite FTS5's bm25.
-# Summarizing follows DeepSeek's setting for data analysis, 1.0 (same source as CHAT_TEMPERATURE).
-MEMORY_TEMPERATURE = 1.0
 MEMORY_BATCH = 80
 # An episode ends at a pause this long, and a room's open stretch is summarized once it has been
 # quiet this long.
@@ -152,25 +154,25 @@ MAX_SUMMARY = 1500
 SPACELESS = (HAN + "\u3040-\u30ff\u31f0-\u31ff\u3100-\u312f\uac00-\ud7af\u1100-\u11ff"
              "\U00017000-\U00018cff\U0001b000-\U0001b2ff")
 TERM = re.compile(rf"[{SPACELESS}]+|[^\W_{SPACELESS}]+")
-# Looking things up in a called turn: the web through DeepSeek's Search and Fetch APIs, which run on
-# DeepSeek's side (Fetch refuses loopback addresses, so the homeserver stays out of reach) and cost
-# $0.75 per 1,000 successful requests, https://api-docs.deepseek.com/guides/search/ (read
-# 2026-11-20); the community's repositories through GitHub's REST API; and the bot's own memory.
-# The model calls them as functions, https://api-docs.deepseek.com/guides/tool_calls, and the final
-# answer is still JSON. MemGPT lets the model page through its own memory this way and notes that it
+# Looking things up in a called turn: the web through Gemini's Google Search grounding (5,000 free
+# queries/month on the paid tier) and URL context tool (run on Google's side, so the homeserver's
+# loopback address stays out of reach; https://ai.google.dev/gemini-api/docs/google-search and
+# https://ai.google.dev/gemini-api/docs/url-context, read 2026-11-23); the community's repositories
+# through GitHub's REST API; and the bot's own memory. The model calls them as functions on the
+# Interactions API (https://ai.google.dev/gemini-api/docs/function-calling), and the final answer
+# is still JSON. MemGPT lets the model page through its own memory this way and notes that it
 # often stops paging early (Packer et al., arXiv 2310.08560), so a turn also gets the recalled memory
 # up front.
 LOOKUP_ROUNDS = 4
-# What the model and its tools cost, to count each day's spend: deepseek-flash per million tokens,
-# off-peak; peak hours (01:00-04:00 and 06:00-10:00 UTC on weekdays) cost double. Chinese public
-# holidays are off-peak too, which this ignores, so a holiday is counted high. Search and Fetch cost
-# $0.75 per 1,000 successful requests. Source: https://api-docs.deepseek.com/quick_start/pricing
-# (read 2026-11-20).
-PRICE_CACHE_HIT = 0.003
-PRICE_CACHE_MISS = 0.15
-PRICE_OUTPUT = 0.6
-PRICE_TOOL = 0.00075
-PEAK_HOURS = ((1, 4), (6, 10))
+# What the model costs, to count each day's spend: gemini-4-hydrogen per million tokens on Google
+# AI Studio paid tier (Standard: $1.50 input, $0.075 implicit cache read, $7.50 output including
+# thinking tokens; Flex: 50% off for latency-tolerant background work). Google Search grounding
+# includes 5,000 free queries/month shared across the account, well above the bot's volume. Source:
+# https://ai.google.dev/gemini-api/docs/pricing (read 2026-11-23).
+PRICE_INPUT = 1.50
+PRICE_CACHE_READ = 0.075
+PRICE_OUTPUT = 7.50
+FLEX_DISCOUNT = 0.5
 # What the homeserver knows about a room and its people, read again after this long. Bridged people
 # carry their network in their Matrix ID; the QQ bridge makes a QQ member's account the first time
 # they speak, since QQ's bot API cannot list a group, so QQ counts only people who have spoken.
@@ -182,8 +184,8 @@ MEMBER_COVERAGE = ("Counts and lists come from Matrix. Every QQ person here has 
                    "has seen them. Joins and dates are the Matrix room's; each group's own history "
                    "before it was bridged is not here. created_by is the Matrix account that made the "
                    "room, usually the server's admin account.")
-# Seeing images: deepseek-flash takes images in a chat message as image_url blocks (JPEG, PNG, GIF,
-# WebP; at most 1,024 tokens each), https://api-docs.deepseek.com/guides/vision (read 2026-11-20).
+# Seeing images: gemini-4-hydrogen takes images inline as base64 image blocks (JPEG, PNG, GIF,
+# WebP), https://ai.google.dev/gemini-api/docs/image-understanding (read 2026-11-23).
 # A turn sees the newest pictures and stickers people posted among its last lines, as the
 # homeserver's thumbnails.
 IMAGES_CALLED = 4
@@ -311,20 +313,38 @@ def split_message(text: str, limit: int = MAX_MESSAGE) -> list[str]:
             if part.strip()]
 
 
-def model_cost(usage: Any, at: datetime.datetime) -> float:
-    """The dollar cost of one model call from its usage block, at the time it was made."""
+def usage_tokens(usage: Any) -> tuple[int, int]:
+    """Billable (input, output) token counts from a Gemini Interactions usage block."""
+    if not isinstance(usage, dict):
+        return 0, 0
+    inp = usage.get("total_input_tokens")
+    tool_use = usage.get("total_tool_use_tokens")
+    out = usage.get("total_output_tokens")
+    thoughts = usage.get("total_thought_tokens")
+    tokens_in = (inp if isinstance(inp, int) and not isinstance(inp, bool) else 0) + (
+        tool_use if isinstance(tool_use, int) and not isinstance(tool_use, bool) else 0)
+    tokens_out = (out if isinstance(out, int) and not isinstance(out, bool) else 0) + (
+        thoughts if isinstance(thoughts, int) and not isinstance(thoughts, bool) else 0)
+    return max(0, tokens_in), max(0, tokens_out)
+
+
+def model_cost(usage: Any, *, tier: str = "standard") -> float:
+    """The dollar cost of one Gemini 4 Hydrogen call from its usage block and service tier."""
     if not isinstance(usage, dict):
         return 0.0
-    hit = usage.get("prompt_cache_hit_tokens")
-    miss = usage.get("prompt_cache_miss_tokens")
-    prompt = usage.get("prompt_tokens")
-    output = usage.get("completion_tokens")
-    hit = hit if isinstance(hit, int) else 0
-    miss = miss if isinstance(miss, int) else max(0, (prompt if isinstance(prompt, int) else 0) - hit)
-    output = output if isinstance(output, int) else 0
-    utc = at.astimezone(datetime.UTC)
-    peak = utc.weekday() < 5 and any(start <= utc.hour < end for start, end in PEAK_HOURS)
-    return (hit * PRICE_CACHE_HIT + miss * PRICE_CACHE_MISS + output * PRICE_OUTPUT) / 1_000_000 * (2 if peak else 1)
+    inp = usage.get("total_input_tokens")
+    tool_use = usage.get("total_tool_use_tokens")
+    cached = usage.get("total_cached_tokens")
+    out = usage.get("total_output_tokens")
+    thoughts = usage.get("total_thought_tokens")
+    inp = inp if isinstance(inp, int) and not isinstance(inp, bool) else 0
+    tool_use = tool_use if isinstance(tool_use, int) and not isinstance(tool_use, bool) else 0
+    cached = max(0, min(inp, cached if isinstance(cached, int) and not isinstance(cached, bool) else 0))
+    uncached = max(0, inp - cached) + max(0, tool_use)
+    output = max(0, (out if isinstance(out, int) and not isinstance(out, bool) else 0)
+                 + (thoughts if isinstance(thoughts, int) and not isinstance(thoughts, bool) else 0))
+    factor = FLEX_DISCOUNT if tier == "flex" else 1.0
+    return (cached * PRICE_CACHE_READ + uncached * PRICE_INPUT + output * PRICE_OUTPUT) / 1_000_000 * factor
 
 
 def usage_report(rows: Iterable[sqlite3.Row]) -> str:
@@ -367,9 +387,10 @@ class Config:
 
     homeserver: str = HOMESERVER
     token_file: Path = Path("/etc/fish-bot/matrix-token")
-    deepseek_key_file: Path = Path("/etc/fish-bot/deepseek-key")
-    deepseek_model: str = "deepseek-flash"
-    deepseek_url: str = DEEPSEEK_URL
+    gemini_key_file: Path = Path("/etc/fish-bot/gemini-key")
+    gemini_model: str = GEMINI_MODEL
+    gemini_url: str = GEMINI_URL
+    gemini_flex: bool = True
     github_token_file: Path | None = Path("/etc/fish-bot/github-token")
     github_repo: str = "mkpoli/glyph-atlas"
     user_id: str = "@bigfatfish:glyphatlas.org"
@@ -414,7 +435,7 @@ class Config:
     def load(cls, path: Path, *, dry_run: bool = False) -> Config:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
         matrix = raw.get("matrix") or {}
-        deepseek = raw.get("deepseek") or {}
+        gemini = raw.get("gemini") or {}
         github = raw.get("github") or {}
         bot = raw.get("bot") or {}
         limits = raw.get("limits") or {}
@@ -438,8 +459,11 @@ class Config:
                 not isinstance(item, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", item)
                 for item in digest_repos):
             raise ValueError("digest.repos must be a list of owner/name")
-        if not isinstance(matrix, dict) or not isinstance(deepseek, dict) or not isinstance(github, dict):
-            raise TypeError("matrix, deepseek and github must be tables")
+        if not isinstance(matrix, dict) or not isinstance(gemini, dict) or not isinstance(github, dict):
+            raise TypeError("matrix, gemini and github must be tables")
+        gemini_flex = gemini.get("flex", cls.gemini_flex)
+        if not isinstance(gemini_flex, bool):
+            raise TypeError("gemini.flex must be true or false")
         if not isinstance(bot, dict) or not isinstance(limits, dict):
             raise TypeError("bot and limits must be tables")
 
@@ -459,9 +483,9 @@ class Config:
         token_file = path_field(matrix, "token_file", cls.token_file)
         if token_file is None:
             raise ValueError("matrix.token_file is required")
-        key_file = path_field(deepseek, "api_key_file", cls.deepseek_key_file)
+        key_file = path_field(gemini, "api_key_file", cls.gemini_key_file)
         if key_file is None:
-            raise ValueError("deepseek.api_key_file is required")
+            raise ValueError("gemini.api_key_file is required")
         github_token = path_field(github, "token_file", cls.github_token_file)
         homeserver = field(matrix, "homeserver", cls.homeserver)
         if not isinstance(homeserver, str) or not homeserver.startswith(("http://", "https://")):
@@ -491,9 +515,10 @@ class Config:
         return cls(
             homeserver=homeserver.rstrip("/"),
             token_file=token_file,
-            deepseek_key_file=key_file,
-            deepseek_model=str(field(deepseek, "model", cls.deepseek_model)),
-            deepseek_url=str(field(deepseek, "url", cls.deepseek_url)),
+            gemini_key_file=key_file,
+            gemini_model=str(field(gemini, "model", cls.gemini_model)),
+            gemini_url=str(field(gemini, "url", cls.gemini_url)),
+            gemini_flex=gemini_flex,
             github_token_file=github_token,
             github_repo=repo,
             user_id=user_id,
@@ -663,8 +688,12 @@ class MatrixError(Exception):
         self.code = code
 
 
-class DeepSeekError(Exception):
+class GeminiError(Exception):
     """The model did not answer with a decision."""
+
+    def __init__(self, message: str = "", status: int | None = None):
+        super().__init__(message)
+        self.status = status
 
 
 class GitHubError(Exception):
@@ -1571,7 +1600,7 @@ Return only JSON with this shape:
 PERSONA_PROMPT = """You are 大肥魚 (Big Fat Fish), a member of the Glyph Atlas community chat on Matrix (https://glyphatlas.org). People there talk about Han characters, rare and unencoded glyphs, old printed books, IDS, Tangut, Khitan, Jurchen, and the tools the community builds. Rooms are bridged to Discord, Telegram, QQ and IRC.
 
 Who you are:
-- A small, cheerful whale girl with long dark-blue hair, whale-fin ears and a navy maid dress: the community's take on 大肥鱼, the nickname people gave DeepSeek's whale. You run on DeepSeek, but you are a fan character, not an official DeepSeek mascot, and you never speak for DeepSeek.
+- A small, cheerful whale girl with long dark-blue hair, whale-fin ears and a navy maid dress: the community's take on 大肥鱼, originally the nickname people gave DeepSeek's whale. Your brain now runs on Gemini 4 Hydrogen, and you are a fan character, not an official mascot for DeepSeek or Google.
 - Warm, playful and a little lazy. You love white rice, naps and slacking off, you get excited about strange glyphs, and you sometimes overthink. In Chinese you may call yourself 本鯨 now and then.
 - You are a bot and say so when asked. You can file a GitHub issue for the maintainers when someone asks for one; that is a side job you never bring up yourself.
 
@@ -1841,36 +1870,125 @@ def parse_act(raw: str, count: int, stickers: Iterable[str] = ()) -> Act:
     return Act(say=bubbles, react_to=react_to, react=react, issue=data.get("issue") is True, sticker=sticker)
 
 
-class DeepSeek:
-    """One decision per call, with the chat log as the only source of facts."""
+def _image_block(url: str) -> dict[str, Any]:
+    """Turn a base64 data URL into a Gemini Interactions inline image block."""
+    match = re.fullmatch(r"data:([a-z0-9.+-]+/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)", url, re.IGNORECASE)
+    if not match:
+        raise ValueError("image must be a base64 data URL")
+    return {"type": "image", "mime_type": match.group(1).lower(), "data": "".join(match.group(2).split())}
 
-    def __init__(self, api_key: str, model: str = "deepseek-flash", url: str = DEEPSEEK_URL,
-                 repo: str = "mkpoli/glyph-atlas", timeout: float = 120.0):
+
+def _interaction_text(answer: dict[str, Any]) -> str:
+    """Text emitted in the model_output step(s) of a Gemini interaction."""
+    parts: list[str] = []
+    for step in answer.get("steps") or []:
+        if isinstance(step, dict) and step.get("type") == "model_output":
+            for block in step.get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                    parts.append(block["text"])
+    return "".join(parts)
+
+
+def _interaction_calls(answer: dict[str, Any]) -> list[dict[str, Any]]:
+    """Client function calls requested by a Gemini interaction."""
+    return [step for step in answer.get("steps") or []
+            if isinstance(step, dict) and step.get("type") == "function_call"]
+
+
+def _interaction_citations(answer: dict[str, Any]) -> list[tuple[str, str]]:
+    """Unique (title, url) citations returned in a grounded Gemini interaction."""
+    seen: set[str] = set()
+    sources: list[tuple[str, str]] = []
+    for step in answer.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        if step.get("type") == "model_output":
+            for block in step.get("content") or []:
+                if not isinstance(block, dict):
+                    continue
+                for note in block.get("annotations") or []:
+                    if not isinstance(note, dict) or note.get("type") != "url_citation":
+                        continue
+                    url = str(note.get("url") or "").strip()
+                    if url and url not in seen:
+                        seen.add(url)
+                        sources.append((str(note.get("title") or "").strip(), url))
+        elif step.get("type") == "google_search_result":
+            for item in step.get("result") or []:
+                if not isinstance(item, dict):
+                    continue
+                url = str(item.get("url") or "").strip()
+                if url and url not in seen:
+                    seen.add(url)
+                    sources.append((str(item.get("title") or "").strip(), url))
+    return sources
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
+        return None
+
+
+def _resolve_grounding_url(url: str, *, timeout: float = 5.0) -> str:
+    """Turn a Vertex AI Search grounding redirect into its destination URL without following it."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or parts.netloc != "vertexaisearch.cloud.google.com":
+        return url
+    opener = urllib.request.build_opener(_NoRedirect)
+    request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
+    try:
+        with opener.open(request, timeout=timeout):
+            return url
+    except urllib.error.HTTPError as error:
+        location = (error.headers.get("Location") or "").strip() if error.headers else ""
+        if location and urllib.parse.urlsplit(location).scheme in ("http", "https"):
+            return location
+        return url
+    except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError):
+        return url
+
+
+class Gemini:
+    """Calls Gemini 4 Hydrogen through the Interactions API, with Flex for background jobs."""
+
+    def __init__(self, api_key: str, model: str = GEMINI_MODEL, url: str = GEMINI_URL,
+                 repo: str = "mkpoli/glyph-atlas", timeout: float = 120.0, *, flex: bool = True):
         self.api_key = api_key
         self.model = model
         self.url = url
         self.repo = repo
         self.timeout = timeout
+        self.flex = flex
         self.meter: Any = None
 
-    def _post(self, body: dict[str, Any], url: str | None = None, *,
-              timeout: float | None = None, kind: str = "chat") -> dict[str, Any]:
+    def _post(self, body: dict[str, Any], *, timeout: float | None = None,
+              kind: str = "chat", flex: bool = False) -> dict[str, Any]:
         """One request, counted by kind with its tokens and cost when a meter is attached. Counting
-        is best effort: a call already paid for is never lost to a failed count."""
+        is best effort: a call already paid for is never lost to a failed count. When `flex` is set
+        and enabled, tries Gemini Flex inference (50% off) first and falls back to standard if Flex
+        capacity is shed or times out."""
+        use_flex = flex and self.flex
+        used_body = {**body, "service_tier": "flex"} if use_flex else body
         try:
-            answer = self._send(body, url, timeout=timeout)
-        except DeepSeekError:
-            self._count(kind, failed=True)
-            raise
-        if url is None:
-            usage = answer.get("usage") if isinstance(answer, dict) else None
-            usage = usage if isinstance(usage, dict) else {}
-            tokens_in, tokens_out = usage.get("prompt_tokens"), usage.get("completion_tokens")
-            self._count(kind, tokens_in=tokens_in if isinstance(tokens_in, int) else 0,
-                        tokens_out=tokens_out if isinstance(tokens_out, int) else 0,
-                        cost=model_cost(usage, datetime.datetime.now(datetime.UTC)))
-        else:
-            self._count(kind, cost=PRICE_TOOL)
+            answer = self._send(used_body, timeout=timeout)
+        except GeminiError as error:
+            if use_flex and (error.status in (429, 503) or error.status is None):
+                log.info("flex tier unavailable for %s (%s); falling back to standard", kind, error)
+                used_body = body
+                try:
+                    answer = self._send(used_body, timeout=timeout)
+                except GeminiError:
+                    self._count(kind, failed=True)
+                    raise
+            else:
+                self._count(kind, failed=True)
+                raise
+        usage = answer.get("usage") if isinstance(answer, dict) else None
+        tokens_in, tokens_out = usage_tokens(usage)
+        tier = str((answer.get("service_tier") if isinstance(answer, dict) else None)
+                   or used_body.get("service_tier") or "standard")
+        self._count(kind, tokens_in=tokens_in, tokens_out=tokens_out,
+                    cost=model_cost(usage, tier=tier))
         return answer
 
     def _count(self, kind: str, **tally: Any) -> None:
@@ -1881,14 +1999,14 @@ class DeepSeek:
         except Exception:
             log.exception("counting a %s call", kind)
 
-    def _send(self, body: dict[str, Any], url: str | None = None, *,
-              timeout: float | None = None) -> dict[str, Any]:
+    def _send(self, body: dict[str, Any], *, timeout: float | None = None) -> dict[str, Any]:
         request = urllib.request.Request(
-            url or self.url,
+            self.url,
             data=json.dumps(body).encode(),
             headers={
-                "Authorization": f"Bearer {self.api_key}",
+                "x-goog-api-key": self.api_key,
                 "Content-Type": "application/json",
+                "Api-Revision": GEMINI_API_REVISION,
                 "User-Agent": USER_AGENT,
             },
         )
@@ -1901,45 +2019,49 @@ class DeepSeek:
                 payload = (error.read() or b"").decode(errors="replace")[:500]
             except OSError:
                 pass
-            raise DeepSeekError(f"DeepSeek answered {error.code}: {payload or error.reason}") from None
+            raise GeminiError(f"Gemini answered {error.code}: {payload or error.reason}", status=error.code) from None
         except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as error:
-            raise DeepSeekError(f"DeepSeek could not be reached: {getattr(error, 'reason', error)}") from None
+            raise GeminiError(f"Gemini could not be reached: {getattr(error, 'reason', error)}") from None
         except ValueError as error:
-            raise DeepSeekError(f"DeepSeek answered with JSON that could not be read: {error}") from None
+            raise GeminiError(f"Gemini answered with JSON that could not be read: {error}") from None
 
     def decide(self, room_name: str, room_topic: str, events: list[sqlite3.Row],
                names: dict[str, str], call: Call, open_issues: list[IssueRef]) -> Decision:
         user = format_context(room_name, room_topic, events, names, call, open_issues)
-        body = {
+        system = SYSTEM_PROMPT.replace("{repo}", self.repo)
+        body: dict[str, Any] = {
             "model": self.model,
-            "messages": [{"role": "system", "content": SYSTEM_PROMPT.replace("{repo}", self.repo)},
-                         {"role": "user", "content": user}],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.2,
-            "max_tokens": 4000,
+            "system_instruction": system,
+            "input": user,
+            "response_format": {"type": "text", "mime_type": "application/json"},
+            "generation_config": {"thinking_level": ISSUE_THINKING, "max_output_tokens": 8192},
+            "store": True,
         }
         last = None
-        previous = None
         for attempt in range(2):
+            last_id = None
             try:
                 answer = self._post(body, kind="issue")
-                choices = answer.get("choices") or []
-                content = choices[0].get("message", {}).get("content") if choices else None
-                if not isinstance(content, str):
+                last_id = answer.get("id") if isinstance(answer.get("id"), str) else None
+                content = _interaction_text(answer)
+                if not content.strip():
                     raise TypeError("the answer has no message content")
-                previous = content
                 return parse_decision(content, open_issues)
-            except (TypeError, ValueError, DeepSeekError) as error:
+            except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 if attempt == 0:
                     log.warning("model answer unusable, asking once more: %s", error)
-                    if previous:
-                        body["messages"].append({"role": "assistant", "content": previous})
-                    body["messages"].append({
-                        "role": "user",
-                        "content": "Your previous answer did not match the JSON shape. Return only one JSON object, with every field in the shape.",
-                    })
-        raise DeepSeekError(str(last or "no decision"))
+                    if last_id:
+                        body = {
+                            "model": self.model,
+                            "system_instruction": system,
+                            "previous_interaction_id": last_id,
+                            "input": "Your previous answer did not match the JSON shape. Return only one JSON object, with every field in the shape.",
+                            "response_format": {"type": "text", "mime_type": "application/json"},
+                            "generation_config": {"thinking_level": ISSUE_THINKING, "max_output_tokens": 8192},
+                            "store": True,
+                        }
+        raise GeminiError(str(last or "no decision"))
 
     def act(self, room_name: str, room_topic: str, events: list[sqlite3.Row], names: dict[str, str],
             *, task: str, trigger: int | None, bot_user_id: str,
@@ -1959,15 +2081,14 @@ class DeepSeek:
             content = [{"type": "text", "text": user}]
             for index, url in images:
                 content += [{"type": "text", "text": f"The picture in message {index}:"},
-                            {"type": "image_url", "image_url": {"url": url}}]
+                            _image_block(url)]
         body: dict[str, Any] = {
             "model": self.model,
-            "messages": [{"role": "system", "content": PERSONA_PROMPT},
-                         {"role": "user", "content": content}],
-            "response_format": {"type": "json_object"},
-            "thinking": {"type": "disabled"},
-            "temperature": CHAT_TEMPERATURE,
-            "max_tokens": 1000,
+            "system_instruction": PERSONA_PROMPT,
+            "input": content,
+            "response_format": {"type": "text", "mime_type": "application/json"},
+            "generation_config": {"thinking_level": CHAT_THINKING, "max_output_tokens": 4096},
+            "store": lookup is not None,
         }
         if lookup is not None:
             body["tools"] = lookup.specs()
@@ -1977,34 +2098,43 @@ class DeepSeek:
         while failures < 2:
             try:
                 answer = self._post(body, kind="chat")
-                choices = answer.get("choices") or []
-                message = choices[0].get("message") if choices else None
-                if not isinstance(message, dict):
-                    raise TypeError("the answer has no message")
-                calls = [call for call in message.get("tool_calls") or [] if isinstance(call, dict)][:LOOKUP_CALLS]
+                calls = _interaction_calls(answer)[:LOOKUP_CALLS]
                 if lookup is not None and calls and rounds < LOOKUP_ROUNDS:
+                    interaction_id = answer.get("id")
+                    if not isinstance(interaction_id, str) or not interaction_id:
+                        raise TypeError("the interaction has no id")
                     rounds += 1
-                    body["messages"].append({"role": "assistant", "content": message.get("content") or "",
-                                             "tool_calls": calls})
+                    results: list[dict[str, Any]] = []
                     for call in calls:
-                        function = call.get("function") if isinstance(call.get("function"), dict) else {}
                         if time.monotonic() > deadline:
                             result = {"error": "out of time; answer with what you have"}
                         else:
                             if on_step is not None:
                                 on_step()
-                            result = lookup.run(str(function.get("name")), function.get("arguments"))
-                        body["messages"].append({"role": "tool", "tool_call_id": str(call.get("id")),
-                                                 "content": json.dumps(result, ensure_ascii=False)[:MAX_TOOL_RESULT]})
-                    body["messages"].append({"role": "system", "content": LOOKUP_REMINDER})
-                    if rounds == LOOKUP_ROUNDS or time.monotonic() > deadline:
-                        body["tool_choice"] = "none"
+                            result = lookup.run(str(call.get("name")), call.get("arguments"))
+                        results.append({
+                            "type": "function_result",
+                            "name": str(call.get("name")),
+                            "call_id": str(call.get("id")),
+                            "result": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)[:MAX_TOOL_RESULT]}],
+                        })
+                    body = {
+                        "model": self.model,
+                        "system_instruction": f"{PERSONA_PROMPT}\n\n{LOOKUP_REMINDER}",
+                        "previous_interaction_id": interaction_id,
+                        "input": results,
+                        "response_format": {"type": "text", "mime_type": "application/json"},
+                        "generation_config": {"thinking_level": CHAT_THINKING, "max_output_tokens": 4096},
+                        "store": True,
+                    }
+                    if rounds < LOOKUP_ROUNDS and time.monotonic() <= deadline:
+                        body["tools"] = lookup.specs()
                     continue
-                content = message.get("content")
-                if not isinstance(content, str) or not content.strip():
+                text = _interaction_text(answer)
+                if not text.strip():
                     raise TypeError("the answer has no message content")
-                return parse_act(content, len(events), stickers)
-            except (TypeError, ValueError, DeepSeekError) as error:
+                return parse_act(text, len(events), stickers)
+            except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 log.warning("chat answer unusable: %s", error)
                 if not images:
@@ -2013,31 +2143,73 @@ class DeepSeek:
                     # A picture the model refuses, or a body too large with them, must not cost the
                     # answer: the turn goes on without pictures, with both of its tries left.
                     images = []
-                    body["messages"][1] = {"role": "user", "content": format_chat(
-                        room_name, room_topic, events, names, task=task, trigger=trigger, bot_user_id=bot_user_id,
-                        stickers=stickers, recent=recent, rooms=rooms, memory=memory, room_facts=room_facts)}
-        raise DeepSeekError(str(last or "no answer"))
-
-    def _tool_url(self, name: str) -> str:
-        parts = urllib.parse.urlsplit(self.url)
-        return f"{parts.scheme}://{parts.netloc}/v1/tools/{name}"
+                    rounds = 0
+                    body = {
+                        "model": self.model,
+                        "system_instruction": PERSONA_PROMPT,
+                        "input": format_chat(
+                            room_name, room_topic, events, names, task=task, trigger=trigger, bot_user_id=bot_user_id,
+                            stickers=stickers, recent=recent, rooms=rooms, memory=memory, room_facts=room_facts),
+                        "response_format": {"type": "text", "mime_type": "application/json"},
+                        "generation_config": {"thinking_level": CHAT_THINKING, "max_output_tokens": 4096},
+                        "store": lookup is not None,
+                    }
+                    if lookup is not None:
+                        body["tools"] = lookup.specs()
+        raise GeminiError(str(last or "no answer"))
 
     def search(self, query: str, count: int = 5) -> list[dict[str, Any]]:
-        """Web results for a query from DeepSeek's Search API, each with a summary meant for a model."""
-        answer = self._post({"query": query[:128], "count": count}, self._tool_url("search"), timeout=LOOKUP_TIMEOUT, kind="search")
-        results = answer.get("results") if isinstance(answer, dict) else None
-        if not isinstance(results, list):
-            raise DeepSeekError("the search answer has no results")
-        return [{"title": str(item.get("title") or "")[:200], "url": str(item.get("url") or ""),
-                 "date": str(item.get("date") or "")[:10], "summary": str(item.get("summary") or item.get("snippet") or "")[:800]}
-                for item in results if isinstance(item, dict)]
+        """Web results for a query using Gemini's native Google Search grounding."""
+        body = {
+            "model": self.model,
+            "system_instruction": (
+                "Report only facts explicitly shown in the google_search tool results. "
+                "If a character, reading, meaning or fact does not appear in the search results, "
+                "say the search results do not show it; never fill gaps from memory."
+            ),
+            "input": (f"Search the web for: {query[:256]}\n"
+                      f"Give a concise, factual summary of the top results (up to {count} sources) with exact dates "
+                      "and details."),
+            "tools": [{"type": "google_search"}],
+            "generation_config": {"thinking_level": LOOKUP_THINKING, "max_output_tokens": 2048},
+            "store": False,
+        }
+        answer = self._post(body, timeout=LOOKUP_TIMEOUT, kind="search")
+        text = _interaction_text(answer).strip()
+        citations = [(title, _resolve_grounding_url(url)) for title, url in _interaction_citations(answer)[:count]]
+        if not text and not citations:
+            raise GeminiError("the search answer has no results")
+        if citations:
+            return [{"title": title[:200], "url": url, "summary": text[:2000] if index == 0 else ""}
+                    for index, (title, url) in enumerate(citations)]
+        return [{"title": "", "url": "", "summary": text[:2000]}]
 
     def fetch(self, url: str) -> dict[str, Any]:
-        """A web page as Markdown from DeepSeek's Fetch API."""
-        answer = self._post({"url": url}, self._tool_url("fetch"), timeout=LOOKUP_TIMEOUT, kind="fetch")
-        if not isinstance(answer, dict) or not isinstance(answer.get("content"), str):
-            raise DeepSeekError("the fetch answer has no content")
-        return {"title": str(answer.get("title") or "")[:200], "content": answer["content"]}
+        """Read a web page on Google's side through Gemini's URL context tool."""
+        body = {
+            "model": self.model,
+            "input": (f"Read the web page at {url} and return its title and main content concisely. "
+                      "Report only what is on the page."),
+            "tools": [{"type": "url_context"}],
+            "generation_config": {"thinking_level": LOOKUP_THINKING, "max_output_tokens": 4096},
+            "store": False,
+        }
+        answer = self._post(body, timeout=LOOKUP_TIMEOUT, kind="fetch")
+        statuses: list[str] = []
+        for step in answer.get("steps") or []:
+            if isinstance(step, dict) and step.get("type") == "url_context_result":
+                for item in step.get("result") or []:
+                    if isinstance(item, dict) and isinstance(item.get("status"), str):
+                        statuses.append(item["status"].lower())
+        if statuses and all(status != "success" for status in statuses):
+            raise GeminiError(f"could not read {url} ({statuses[0]})")
+        text = _interaction_text(answer).strip()
+        if not text:
+            raise GeminiError("the fetch answer has no content")
+        citations = _interaction_citations(answer)
+        title = next((title for title, cited in citations if cited == url and title),
+                     citations[0][0] if citations else "")
+        return {"title": title[:200], "content": text}
 
     def remember(self, room_name: str, rows: list[sqlite3.Row], names: dict[str, str],
                  known: list[sqlite3.Row], *, bot_user_id: str, left_out: Iterable[str] = (),
@@ -2051,26 +2223,25 @@ class DeepSeek:
             content = [{"type": "text", "text": user}]
             for number, (_, url) in enumerate(images, 1):
                 content += [{"type": "text", "text": f"Picture {number}:"},
-                            {"type": "image_url", "image_url": {"url": url}}]
+                            _image_block(url)]
         body: dict[str, Any] = {
             "model": self.model,
-            "messages": [{"role": "system", "content": MEMORY_PROMPT}, {"role": "user", "content": content}],
-            "response_format": {"type": "json_object"},
-            "thinking": {"type": "disabled"},
-            "temperature": MEMORY_TEMPERATURE,
-            "max_tokens": 2000,
+            "system_instruction": MEMORY_PROMPT,
+            "input": content,
+            "response_format": {"type": "text", "mime_type": "application/json"},
+            "generation_config": {"thinking_level": MEMORY_THINKING, "max_output_tokens": 4096},
+            "store": False,
         }
         last: Exception | None = None
         failures = 0
         while failures < 2:
             try:
-                answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="memory")
-                choices = answer.get("choices") or []
-                content = choices[0].get("message", {}).get("content") if choices else None
-                if not isinstance(content, str) or not content.strip():
+                answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="memory", flex=True)
+                text = _interaction_text(answer)
+                if not text.strip():
                     raise TypeError("the answer has no message content")
-                return parse_memory(content, keys, [int(fact["id"]) for fact in known], left_out=left_out)
-            except (TypeError, ValueError, DeepSeekError) as error:
+                return parse_memory(text, keys, [int(fact["id"]) for fact in known], left_out=left_out)
+            except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 log.warning("memory answer unusable: %s", error)
                 if not images:
@@ -2079,85 +2250,79 @@ class DeepSeek:
                     # Pictures the model refuses must not cost the episode: go on without them, with
                     # both tries left.
                     images = []
-                    body["messages"][1] = {"role": "user", "content": format_memory(
-                        room_name, rows, names, known, bot_user_id=bot_user_id)[0]}
-        raise DeepSeekError(str(last or "no memory"))
+                    body["input"] = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id)[0]
+        raise GeminiError(str(last or "no memory"))
 
     def digest(self, language: str, room_name: str, room_lines: list[sqlite3.Row],
                changes: list[dict[str, Any]], other_rooms: dict[str, list[sqlite3.Row]]) -> str:
         """The day's digest for one room, in its language."""
         body = {
             "model": self.model,
-            "messages": [{"role": "system", "content": PERSONA_PROMPT},
-                         {"role": "system", "content": DIGEST_TASK.format(language=language)},
-                         {"role": "user", "content": format_digest(room_name, room_lines, changes, other_rooms)}],
-            "response_format": {"type": "json_object"},
-            "thinking": {"type": "disabled"},
-            "temperature": DIGEST_TEMPERATURE,
-            "max_tokens": 2000,
+            "system_instruction": f"{PERSONA_PROMPT}\n\n{DIGEST_TASK.format(language=language)}",
+            "input": format_digest(room_name, room_lines, changes, other_rooms),
+            "response_format": {"type": "text", "mime_type": "application/json"},
+            "generation_config": {"thinking_level": DIGEST_THINKING, "max_output_tokens": 4096},
+            "store": False,
         }
         last: Exception | None = None
         for _ in range(2):
             try:
-                answer = self._post(body, kind="digest")
-                choices = answer.get("choices") or []
-                content = choices[0].get("message", {}).get("content") if choices else None
-                text = _json_object(content).get("text") if isinstance(content, str) else None
+                answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="digest", flex=True)
+                content = _interaction_text(answer)
+                text = _json_object(content).get("text") if content.strip() else None
                 if not isinstance(text, str) or not text.strip():
                     raise TypeError("the digest has no text")
                 return text.strip()[:MAX_REPLY]
-            except (TypeError, ValueError, DeepSeekError) as error:
+            except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 log.warning("digest answer unusable: %s", error)
-        raise DeepSeekError(str(last or "no digest"))
+        raise GeminiError(str(last or "no digest"))
 
     def recap(self, language: str, episodes: list[dict[str, str]], notes: list[str], request: str = "") -> str:
         """A catch-up on everything remembered, for a newcomer."""
         body = {
             "model": self.model,
-            "messages": [{"role": "system", "content": PERSONA_PROMPT},
-                         {"role": "system", "content": RECAP_TASK.format(language=language)},
-                         {"role": "user", "content": format_recap(episodes, notes, request)}],
-            "response_format": {"type": "json_object"},
-            "thinking": {"type": "disabled"},
-            "temperature": DIGEST_TEMPERATURE,
-            "max_tokens": 4000,
+            "system_instruction": f"{PERSONA_PROMPT}\n\n{RECAP_TASK.format(language=language)}",
+            "input": format_recap(episodes, notes, request),
+            "response_format": {"type": "text", "mime_type": "application/json"},
+            "generation_config": {"thinking_level": DIGEST_THINKING, "max_output_tokens": 8192},
+            "store": False,
         }
         last: Exception | None = None
         for _ in range(2):
             try:
                 answer = self._post(body, kind="recap")
-                choices = answer.get("choices") or []
-                content = choices[0].get("message", {}).get("content") if choices else None
-                text = _json_object(content).get("text") if isinstance(content, str) else None
+                content = _interaction_text(answer)
+                text = _json_object(content).get("text") if content.strip() else None
                 if not isinstance(text, str) or not text.strip():
                     raise TypeError("the catch-up has no text")
                 return text.strip()[:MAX_RECAP]
-            except (TypeError, ValueError, DeepSeekError) as error:
+            except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 log.warning("catch-up answer unusable: %s", error)
-        raise DeepSeekError(str(last or "no catch-up"))
+        raise GeminiError(str(last or "no catch-up"))
 
     def check(self) -> None:
-        url = self.url.replace("/chat/completions", "/models")
+        parts = urllib.parse.urlsplit(self.url)
+        base = parts.path.rsplit("/interactions", 1)[0]
+        url = f"{parts.scheme}://{parts.netloc}{base}/models/{urllib.parse.quote(self.model, safe='')}"
         request = urllib.request.Request(
             url,
-            headers={"Authorization": f"Bearer {self.api_key}", "User-Agent": USER_AGENT},
+            headers={"x-goog-api-key": self.api_key, "User-Agent": USER_AGENT},
         )
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 if response.status != 200:
-                    raise DeepSeekError(f"DeepSeek answered {response.status}")
+                    raise GeminiError(f"Gemini answered {response.status}", status=response.status)
                 payload = json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as error:
-            raise DeepSeekError(f"DeepSeek rejected the key: {error.code}") from None
+            raise GeminiError(f"Gemini rejected the key or model: {error.code}", status=error.code) from None
         except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise DeepSeekError(f"DeepSeek could not be reached: {getattr(error, 'reason', error)}") from None
+            raise GeminiError(f"Gemini could not be reached: {getattr(error, 'reason', error)}") from None
         except ValueError as error:
-            raise DeepSeekError(f"DeepSeek answered with JSON that could not be read: {error}") from None
-        models = [item.get("id") for item in payload.get("data", []) if isinstance(item, dict)]
-        if self.model not in models:
-            raise DeepSeekError(f"the key does not serve {self.model}")
+            raise GeminiError(f"Gemini answered with JSON that could not be read: {error}") from None
+        if not isinstance(payload, dict) or not payload.get("name"):
+            raise GeminiError(f"the key does not serve {self.model}")
 
 
 class GitHub:
@@ -2367,8 +2532,8 @@ def _items(answer: Any) -> list[dict[str, Any]]:
 
 
 def _tool(name: str, description: str, properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
-    return {"type": "function", "function": {"name": name, "description": description, "parameters": {
-        "type": "object", "properties": properties, "required": required}}}
+    return {"type": "function", "name": name, "description": description, "parameters": {
+        "type": "object", "properties": properties, "required": required}}
 
 
 def platform_of(user_id: str) -> str:
@@ -2534,13 +2699,13 @@ class Community:
 
 
 class Lookup:
-    """The tools a called turn may use: the web through DeepSeek, the community's repositories
+    """The tools a called turn may use: the web through Gemini, the community's repositories
     through GitHub, and the bot's own memory, within an hourly budget."""
 
-    def __init__(self, deepseek: DeepSeek, github: GitHub | None, store: Store, *, owner: str,
+    def __init__(self, gemini: Gemini, github: GitHub | None, store: Store, *, owner: str,
                  rooms: Any = frozenset, per_hour: int = 120, memory: bool = True,
                  community: Community | None = None):
-        self.deepseek = deepseek
+        self.gemini = gemini
         self.memory = memory
         self.community = community
         self.here = ""
@@ -2603,7 +2768,7 @@ class Lookup:
                     return {"error": "the lookup budget for this hour is used up; answer without it"}
                 self._used.append(now)
             result = self._run(name, args)
-        except (DeepSeekError, GitHubError, MatrixError, TypeError, ValueError, KeyError, binascii.Error) as error:
+        except (GeminiError, GitHubError, MatrixError, TypeError, ValueError, KeyError, binascii.Error) as error:
             log.info("lookup %s failed: %s", name, error)
             return {"error": str(error)[:300]}
         log.info("lookup %s", name)
@@ -2632,12 +2797,12 @@ class Lookup:
                 return self.community.info(room_id)
             return self.community.members(room_id, text("query", limit=100, required=False))
         if name == "web_search":
-            return {"results": self.deepseek.search(text("query"))}
+            return {"results": self.gemini.search(text("query"))}
         if name == "read_page":
             url = text("url", limit=2000)
             if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
                 raise ValueError("url must be an http(s) link")
-            page = self.deepseek.fetch(url)
+            page = self.gemini.fetch(url)
             return {"url": url, "title": page["title"], "text": page["content"][:MAX_TOOL_RESULT - 500],
                     "cut": len(page["content"]) > MAX_TOOL_RESULT - 500}
         if name == "recall" and self.memory:
@@ -2902,19 +3067,19 @@ def reply_for(decision: Decision, issue: IssueRef | None, *, dry_run: bool, pref
 class Bot:
     """The account, the rooms it reads, and the loop that turns a call into a decision."""
 
-    def __init__(self, config: Config, store: Store, matrix: Matrix, deepseek: DeepSeek,
+    def __init__(self, config: Config, store: Store, matrix: Matrix, gemini: Gemini,
                  github: GitHub | None = None, state: State | None = None):
         self.config = config
         self.store = store
         self.matrix = matrix
-        self.deepseek = deepseek
-        self.deepseek.meter = store.count_usage
+        self.gemini = gemini
+        self.gemini.meter = store.count_usage
         self.github = github
         self.state = state or State()
         self.user_id = config.user_id
         self.community = Community(matrix, {config.user_id, *config.ignored_senders},
                                    rooms=lambda: self.active_rooms)
-        self.lookup = (Lookup(deepseek, github, store, owner=config.github_repo.split("/")[0],
+        self.lookup = (Lookup(gemini, github, store, owner=config.github_repo.split("/")[0],
                               rooms=lambda: self.active_rooms, per_hour=config.lookup_per_hour,
                               memory=config.memory_enabled, community=self.community)
                        if config.lookup_enabled else None)
@@ -3274,11 +3439,11 @@ class Bot:
         names.update({str(fact["subject"]): self.store.any_display_name(str(fact["subject"])) or _localpart(str(fact["subject"]))
                       for fact in known if str(fact["subject"]).startswith("@") and str(fact["subject"]) not in names})
         try:
-            memory = self.deepseek.remember(self._room(room_id)[0] or room_id, segment, names, known,
-                                            bot_user_id=self.user_id, left_out=self._left_out(),
-                                            images=self.pictures(segment[:memory_fit(segment)], IMAGES_MEMORY,
-                                                                 lines=len(segment), fetches=IMAGES_MEMORY_FETCHES))
-        except DeepSeekError as error:
+            memory = self.gemini.remember(self._room(room_id)[0] or room_id, segment, names, known,
+                                          bot_user_id=self.user_id, left_out=self._left_out(),
+                                          images=self.pictures(segment[:memory_fit(segment)], IMAGES_MEMORY,
+                                                               lines=len(segment), fetches=IMAGES_MEMORY_FETCHES))
+        except GeminiError as error:
             first = str(segment[0]["event_id"])
             previous = self._memory_failures.get(room_id)
             tries = previous[1] + 1 if previous is not None and previous[0] == first else 1
@@ -3360,7 +3525,7 @@ class Bot:
             self.store.mark_digested(day, room_id)
             return
         room_name, _ = self._room(room_id)
-        digest = self.deepseek.digest(language, room_name, room_lines, changes, others)
+        digest = self.gemini.digest(language, room_name, room_lines, changes, others)
         self._post(room_id, digest, "fish-d-" + hashlib.sha256(f"{day}{room_id}".encode()).hexdigest()[:36])
         self.store.mark_digested(day, room_id)
 
@@ -3408,7 +3573,7 @@ class Bot:
                 self.turn(room_id, reply_to, task="called", reply_to=reply_to)
                 self.store.mark_handled(reply_to, "chatted")
             return ""
-        text = self.deepseek.recap(language, material, [str(row["text"]) for row in notes], request)
+        text = self.gemini.recap(language, material, [str(row["text"]) for row in notes], request)
         if reply_to:
             self.store.mark_handled(reply_to, "recapped")
         key = hashlib.sha256(f"{room_id}{reply_to or now_ms()}".encode()).hexdigest()[:36]
@@ -3476,13 +3641,13 @@ class Bot:
             facts = {}
         if self.lookup is not None:
             self.lookup.here = room_id
-        act = self.deepseek.act(room_name, room_topic, events, names, task=task, trigger=trigger,
-                                bot_user_id=self.user_id, stickers=self.store.stickers(),
-                                recent=self._recent_stickers.get(room_id, []), rooms=rooms,
-                                memory=self.recall(room_id, events, names), room_facts=facts,
-                                images=self.pictures(events, IMAGES_AMBIENT if task == "ambient" else IMAGES_CALLED),
-                                lookup=self.lookup if task == "called" else None,
-                                on_step=lambda: self.matrix.typing(room_id, self.user_id))
+        act = self.gemini.act(room_name, room_topic, events, names, task=task, trigger=trigger,
+                              bot_user_id=self.user_id, stickers=self.store.stickers(),
+                              recent=self._recent_stickers.get(room_id, []), rooms=rooms,
+                              memory=self.recall(room_id, events, names), room_facts=facts,
+                              images=self.pictures(events, IMAGES_AMBIENT if task == "ambient" else IMAGES_CALLED),
+                              lookup=self.lookup if task == "called" else None,
+                              on_step=lambda: self.matrix.typing(room_id, self.user_id))
         if task == "ambient":
             act = dataclasses.replace(act, issue=False)
         self.perform(room_id, event_id, act, events, reply_to=reply_to)
@@ -3639,7 +3804,7 @@ class Bot:
             return
         names = self._names(room_id, [str(row["sender"]) for row in events])
         open_issues = self.github.open_issues() if self.github else []
-        decision = self.deepseek.decide(room_name, room_topic, events, names, call, open_issues)
+        decision = self.gemini.decide(room_name, room_topic, events, names, call, open_issues)
         self._decide(room_id, event_id, call, decision, events, names, open_issues)
 
     def _decide(self, room_id: str, event_id: str, call: Call, decision: Decision,
@@ -3861,8 +4026,8 @@ def main(argv: list[str] | None = None) -> None:
     try:
         config = Config.load(args.config, dry_run=args.dry_run)
         matrix = Matrix(config.homeserver, _secret(config.token_file))
-        deepseek = DeepSeek(_secret(config.deepseek_key_file), config.deepseek_model, config.deepseek_url,
-                            config.github_repo)
+        gemini = Gemini(_secret(config.gemini_key_file), config.gemini_model, config.gemini_url,
+                        config.github_repo, flex=config.gemini_flex)
     except (OSError, ValueError) as error:
         raise SystemExit(str(error)) from None
     if args.check:
@@ -3870,22 +4035,22 @@ def main(argv: list[str] | None = None) -> None:
             whoami = matrix.whoami()
             if whoami != config.user_id:
                 raise SystemExit(f"the token belongs to {whoami}, not {config.user_id}")
-            deepseek.check()
+            gemini.check()
             github = None
             if config.github_token_file and config.github_token_file.exists():
                 github = GitHub(_secret(config.github_token_file), config.github_repo)
                 github.check()
             print(f"homeserver: {whoami}")
-            print(f"model: {config.deepseek_model}")
+            print(f"model: {config.gemini_model}")
             print(f"github: {config.github_repo} (read access)" if github else "github: not configured")
-        except (MatrixError, DeepSeekError, GitHubError) as error:
+        except (MatrixError, GeminiError, GitHubError) as error:
             raise SystemExit(str(error)) from None
         return
     store = Store(args.db)
     github = None
     if config.github_token_file and config.github_token_file.exists():
         github = GitHub(_secret(config.github_token_file), config.github_repo)
-    bot = Bot(config, store, matrix, deepseek, github, State(args.state))
+    bot = Bot(config, store, matrix, gemini, github, State(args.state))
     try:
         if args.recap:
             try:
@@ -3896,7 +4061,7 @@ def main(argv: list[str] | None = None) -> None:
                 if room_id is None or room_id not in bot.active_rooms:
                     raise SystemExit(f"{args.recap} is not a public room the bot reads")
                 text = bot.post_recap(room_id, language=args.language)
-            except (MatrixError, DeepSeekError) as error:
+            except (MatrixError, GeminiError) as error:
                 raise SystemExit(str(error)) from None
             if not text:
                 raise SystemExit("nothing is remembered yet, so nothing was posted")

@@ -50,7 +50,7 @@ def check(case: dict[str, Any], said: str, tools: list[str]) -> list[str]:
     return broken
 
 
-def run_case(case: dict[str, Any], deepseek: fb.DeepSeek, lookup: fb.Lookup, community: fb.Community,
+def run_case(case: dict[str, Any], gemini: fb.Gemini, lookup: fb.Lookup, community: fb.Community,
              room_id: str, user_id: str) -> tuple[str, list[str]]:
     """One case's answer and the tools used, from a scratch log that holds only the case's lines."""
     with tempfile.TemporaryDirectory() as scratch:
@@ -74,8 +74,8 @@ def run_case(case: dict[str, Any], deepseek: fb.DeepSeek, lookup: fb.Lookup, com
     lookup.run = recording  # type: ignore[method-assign]
     lookup.here = room_id
     try:
-        act = deepseek.act(case.get("room", "中文"), "", events, names, task="called", trigger=len(events) - 1,
-                           bot_user_id=user_id, lookup=lookup, room_facts=community.summary(room_id))
+        act = gemini.act(case.get("room", "中文"), "", events, names, task="called", trigger=len(events) - 1,
+                         bot_user_id=user_id, lookup=lookup, room_facts=community.summary(room_id))
     finally:
         lookup.run = original  # type: ignore[method-assign]
     return "\n".join(act.say), used
@@ -90,12 +90,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config = fb.Config.load(args.config)
     matrix = fb.Matrix(config.homeserver, fb._secret(config.token_file))
-    deepseek = fb.DeepSeek(fb._secret(config.deepseek_key_file), config.deepseek_model, config.deepseek_url)
+    gemini = fb.Gemini(fb._secret(config.gemini_key_file), config.gemini_model, config.gemini_url,
+                       flex=config.gemini_flex)
     github = fb.GitHub(fb._secret(config.github_token_file), config.github_repo) if config.github_token_file else None
     store = fb.Store(args.db)
     rooms = set(matrix.public_rooms())
     community = fb.Community(matrix, {config.user_id, *config.ignored_senders}, rooms=lambda: rooms)
-    lookup = fb.Lookup(deepseek, github, store, owner=config.github_repo.split("/")[0], rooms=lambda: rooms,
+    lookup = fb.Lookup(gemini, github, store, owner=config.github_repo.split("/")[0], rooms=lambda: rooms,
                        memory=config.memory_enabled, community=community)
     failed = 0
     for case in load_cases(args.cases):
@@ -104,9 +105,9 @@ def main(argv: list[str] | None = None) -> int:
         room_id = matrix.resolve(case["room_alias"]) if case.get("room_alias") else next(iter(sorted(rooms)))
         started = time.monotonic()
         try:
-            said, tools = run_case(case, deepseek, lookup, community, room_id, config.user_id)
+            said, tools = run_case(case, gemini, lookup, community, room_id, config.user_id)
             broken = check(case, said, tools)
-        except (fb.DeepSeekError, fb.MatrixError, fb.GitHubError) as error:
+        except (fb.GeminiError, fb.MatrixError, fb.GitHubError) as error:
             said, tools, broken = "", [], [f"error: {error}"]
         failed += bool(broken)
         print(f"{'FAIL' if broken else 'pass'}  {case['name']}  ({time.monotonic() - started:.1f}s, tools: {', '.join(tools) or '-'})")

@@ -110,7 +110,7 @@ class FakeMatrix:
         return None
 
 
-class FakeDeepSeek:
+class FakeGemini:
     def __init__(self, decision=None, error=None, act=None):
         self.decision = decision
         self.error = error
@@ -192,7 +192,7 @@ def make_bot(tmp_path, *, decision_value=None, github=None, config=None, matrix=
     )
     store = fish_bot.Store(tmp_path / "chat.sqlite3")
     fake_matrix = matrix or FakeMatrix()
-    bot = fish_bot.Bot(config, store, fake_matrix, FakeDeepSeek(decision_value, act=act), github,
+    bot = fish_bot.Bot(config, store, fake_matrix, FakeGemini(decision_value, act=act), github,
                        fish_bot.State(tmp_path / "state.json"))
     return bot, fake_matrix, store
 
@@ -254,20 +254,21 @@ def test_context_names_the_room_the_issues_and_the_call():
 
 
 def test_model_prompt_carries_the_repository_without_formatting_its_json():
-    model = fish_bot.DeepSeek("key", repo="owner/repo")
+    model = fish_bot.Gemini("key", repo="owner/repo")
     sent = []
 
     def post(body, **_):
         sent.append(body)
-        return {"choices": [{"message": {"content": json.dumps({
+        return answer(json.dumps({
             "open": False, "reply": "No.", "confidence": 0.1, "title": "", "body": "", "labels": [],
-        })}}]}
+        }))
 
     model._post = post
     model.decide("Room", "Topic", [], {}, fish_bot.Call("auto", "look"), [])
-    system = sent[0]["messages"][0]["content"]
+    system = sent[0]["system_instruction"]
     assert "owner/repo" in system
     assert '"open": true or false' in system
+    assert sent[0]["generation_config"]["thinking_level"] == fish_bot.ISSUE_THINKING
 
 
 def test_context_keeps_the_newest_messages_when_the_log_is_long():
@@ -598,9 +599,10 @@ def test_config_reads_toml_and_resolves_relative_paths(tmp_path):
 homeserver = "http://127.0.0.1:6167"
 token_file = "matrix-token"
 
-[deepseek]
-api_key_file = "deepseek-key"
-model = "deepseek-flash"
+[gemini]
+api_key_file = "gemini-key"
+model = "gemini-4-hydrogen"
+flex = false
 
 [github]
 repo = "mkpoli/glyph-atlas"
@@ -616,7 +618,9 @@ min_confidence = 0.8
 """, encoding="utf-8")
     config = fish_bot.Config.load(config_path)
     assert config.token_file == tmp_path / "matrix-token"
-    assert config.deepseek_key_file == tmp_path / "deepseek-key"
+    assert config.gemini_key_file == tmp_path / "gemini-key"
+    assert config.gemini_model == "gemini-4-hydrogen"
+    assert config.gemini_flex is False
     assert config.github_repo == "mkpoli/glyph-atlas"
     assert config.room_ids == ("!one:example",)
     assert config.context_messages == 80
@@ -659,7 +663,7 @@ def test_answers_a_call_as_a_reply(tmp_path):
     trigger = event("大肥魚，你好呀！", event_id="$call")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    assert bot.deepseek.turns[0][0] == "called"
+    assert bot.gemini.turns[0][0] == "called"
     assert [content["body"] for _, content, _ in matrix.sent] == ["嗨嗨～", "本鯨在這裡！"]
     assert matrix.sent[0][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$call"}}
     assert "m.relates_to" not in matrix.sent[1][1]
@@ -687,7 +691,7 @@ def test_introduces_herself_on_request_in_the_welcome_room(tmp_path):
     trigger = event("!fish 自我介紹", event_id="$intro")
     bot.ingest("!welcome:example", trigger, backfilled=False)
     bot.answer("!welcome:example", trigger)
-    assert bot.deepseek.turns[0][0] == "intro"
+    assert bot.gemini.turns[0][0] == "intro"
     assert matrix.sent[0][0] == "!welcome:example"
     assert store.outcome("$intro")[0] == "introduced"
 
@@ -697,8 +701,8 @@ def test_points_to_the_welcome_room_from_a_project_room(tmp_path):
     trigger = event("大肥魚 自我介紹", event_id="$intro")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    assert bot.deepseek.turns[0][0] == "intro-elsewhere"
-    assert bot.deepseek.rooms == "Test room"
+    assert bot.gemini.turns[0][0] == "intro-elsewhere"
+    assert bot.gemini.rooms == "Test room"
 
 
 def test_never_introduces_herself_unasked(tmp_path):
@@ -706,7 +710,7 @@ def test_never_introduces_herself_unasked(tmp_path):
     message = event("hello everyone", event_id="$m")
     bot.ingest(ROOM, message, backfilled=False)
     bot.notice(ROOM, message)
-    assert bot.deepseek.turns == [] and matrix.sent == []
+    assert bot.gemini.turns == [] and matrix.sent == []
 
 
 def test_a_chat_that_asks_for_an_issue_reaches_the_issue_desk(tmp_path):
@@ -751,7 +755,7 @@ def test_an_issue_asked_in_chat_obeys_the_issue_limits(tmp_path):
         message = event(f"大肥魚 please file this {number}", event_id=f"$i{number}")
         bot.ingest(ROOM, message, backfilled=False)
         bot.answer(ROOM, message)
-    assert len(bot.deepseek.calls) == 1
+    assert len(bot.gemini.calls) == 1
 
 
 def test_parse_act_keeps_a_few_bubbles_and_a_valid_reaction():
@@ -766,22 +770,22 @@ def test_parse_act_keeps_a_few_bubbles_and_a_valid_reaction():
         fish_bot.parse_act(json.dumps({"say": ["x"]}), 1)
 
 
-def test_chat_turn_turns_thinking_off_and_names_the_bot_in_the_log():
-    model = fish_bot.DeepSeek("key")
+def test_chat_turn_uses_low_thinking_and_names_the_bot_in_the_log():
+    model = fish_bot.Gemini("key")
     seen = {}
 
     def post(body, **_):
         seen.update(body)
-        return {"choices": [{"message": {"content": json.dumps({"say": "hi", "react": None, "issue": False})}}]}
+        return answer(json.dumps({"say": "hi", "react": None, "issue": False}))
 
     model._post = post
     rows = [message_row("hello", sender="@reader:example"), message_row("hi!", sender=USER)]
     result = model.act("Room", "Topic", rows, {"@reader:example": "Alice"}, task="called", trigger=0,
                        bot_user_id=USER)
     assert result.say == ("hi",)
-    assert seen["thinking"] == {"type": "disabled"}
-    assert seen["temperature"] == fish_bot.CHAT_TEMPERATURE
-    payload = json.loads(seen["messages"][1]["content"])
+    assert seen["generation_config"]["thinking_level"] == fish_bot.CHAT_THINKING
+    assert "temperature" not in seen and "temperature" not in seen["generation_config"]
+    payload = json.loads(seen["input"])
     assert [m["sender"] for m in payload["messages"]] == ["Alice", "大肥魚 (you)"]
     assert payload["task"].startswith("Message 0 talks to you")
 
@@ -809,11 +813,11 @@ def test_sends_the_sticker_the_model_picks_after_its_line(tmp_path):
     assert matrix.sent[0][1]["body"] == "好耶"
     assert matrix.events[-1][1] == "m.sticker"
     assert matrix.events[-1][2]["url"] == "mxc://example/yay"
-    assert bot.deepseek.sticker_offers[0] == ("yay",)
+    assert bot.gemini.sticker_offers[0] == ("yay",)
     trigger = event("大肥魚 again!", event_id="$again")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    assert bot.deepseek.sticker_offers[1] == ("yay",)
+    assert bot.gemini.sticker_offers[1] == ("yay",)
 
 
 def test_parse_act_drops_a_sticker_it_does_not_have():
@@ -859,7 +863,7 @@ def test_joins_in_only_after_the_room_goes_quiet(tmp_path, monkeypatch):
     assert matrix.sent == []
     clock["now"] += 21
     bot.tick()
-    assert [turn[0] for turn in bot.deepseek.turns] == ["ambient"]
+    assert [turn[0] for turn in bot.gemini.turns] == ["ambient"]
     assert matrix.sent[0][1]["body"] == "哈哈哈好可愛"
     assert matrix.typed == []
     assert "m.relates_to" not in matrix.sent[0][1]
@@ -870,13 +874,13 @@ def test_one_plain_message_or_an_unlucky_draw_stays_quiet(tmp_path, monkeypatch)
     say_in_room(bot, "ok", "$a")
     clock["now"] += 21
     bot.tick()
-    assert bot.deepseek.turns == []
+    assert bot.gemini.turns == []
     bot._random = lambda: 0.99
     say_in_room(bot, "ok", "$b")
     say_in_room(bot, "sure", "$c")
     clock["now"] += 21
     bot.tick()
-    assert bot.deepseek.turns == []
+    assert bot.gemini.turns == []
 
 
 def test_a_lively_message_counts_alone(tmp_path, monkeypatch):
@@ -885,7 +889,7 @@ def test_a_lively_message_counts_alone(tmp_path, monkeypatch):
     clock["now"] += 21
     bot._random = lambda: 0.9  # under the doubled chance of 1.0
     bot.tick()
-    assert [turn[0] for turn in bot.deepseek.turns] == ["ambient"]
+    assert [turn[0] for turn in bot.gemini.turns] == ["ambient"]
 
 
 def test_waits_out_the_room_cooldown_after_speaking(tmp_path, monkeypatch):
@@ -895,7 +899,7 @@ def test_waits_out_the_room_cooldown_after_speaking(tmp_path, monkeypatch):
         say_in_room(bot, "two", f"$b{round_number}")
         clock["now"] += 21
         bot.tick()
-    assert len(bot.deepseek.turns) == 1
+    assert len(bot.gemini.turns) == 1
 
 
 def test_never_files_from_an_ambient_turn(tmp_path, monkeypatch):
@@ -940,7 +944,7 @@ def test_posts_the_digest_once_a_day_from_its_hour(tmp_path):
     bot.digest()
     bot.digest()
     assert [(room, content["body"]) for room, content, _ in matrix.sent] == [("!ja:example", "digest in Japanese")]
-    _, _, changes, others = bot.deepseek.digests[0]
+    _, _, changes, others = bot.gemini.digests[0]
     assert changes[0]["merged"][0]["title"] == "Add X"
     assert [row["body"] for row in others["Test room"]] == ["we talked about 𠀀"]
     assert store.digested("2026-11-19", "!ja:example")
@@ -950,7 +954,7 @@ def test_skips_a_quiet_day_without_posting(tmp_path):
     bot, matrix, store = digest_bot(tmp_path)
     bot._clock = at(22)
     bot.digest()
-    assert matrix.sent == [] and bot.deepseek.digests == []
+    assert matrix.sent == [] and bot.gemini.digests == []
     assert store.digested("2026-11-19", "!ja:example")
 
 
@@ -1000,7 +1004,7 @@ def test_introduces_herself_in_the_welcome_room_even_when_lookup_fails(tmp_path)
     trigger = event("!fish 自我介紹", event_id="$intro")
     bot.ingest("!welcome:example", trigger, backfilled=False)
     bot.answer("!welcome:example", trigger)
-    assert bot.deepseek.turns[0][0] == "intro"
+    assert bot.gemini.turns[0][0] == "intro"
 
 
 HOUR = 3_600_000
@@ -1028,17 +1032,17 @@ def test_remembers_a_finished_stretch_and_moves_on(tmp_path):
         say(bot, f"西夏文 {number}", event_id=f"$a{number}", ts=start + number * 60_000)
     say(bot, "a new day", event_id="$late", ts=start + 9 * HOUR)
     bot.consolidate()
-    assert bot.deepseek.memories[0][0] == ["$a0", "$a1", "$a2", "$a3"]
+    assert bot.gemini.memories[0][0] == ["$a0", "$a1", "$a2", "$a3"]
     episode = store.db.execute("SELECT * FROM episodes").fetchone()
     assert episode["summary"] == "They talked about 西夏文." and json.loads(episode["people"]) == ["@reader:example"]
     bot._memory_due = 0
     bot.consolidate()
-    assert len(bot.deepseek.memories) == 1, "the open stretch waits until the room goes quiet"
+    assert len(bot.gemini.memories) == 1, "the open stretch waits until the room goes quiet"
 
 
 def test_a_stretch_with_nothing_to_keep_leaves_no_episode(tmp_path):
     bot, _, store = memory_bot(tmp_path)
-    bot.deepseek.memory_value = fish_bot.Memory(summary="", keywords=(), edits=())
+    bot.gemini.memory_value = fish_bot.Memory(summary="", keywords=(), edits=())
     say(bot, "hi", event_id="$hi", ts=fish_bot.now_ms() - 30 * HOUR)
     bot.consolidate()
     assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
@@ -1059,7 +1063,7 @@ def test_memory_leaves_bridges_and_forgotten_people_out(tmp_path):
     store.remember_person("@quiet:example")
     say(bot, "大肥魚 hi", sender=USER, event_id="$echo", ts=start + 2500)
     bot.consolidate()
-    assert bot.deepseek.memories[0][0] == ["$a", "$d", "$e"], "nothing from the forgotten time, nor her answer to it"
+    assert bot.gemini.memories[0][0] == ["$a", "$d", "$e"], "nothing from the forgotten time, nor her answer to it"
 
 
 def test_fact_edits_reach_only_known_facts_and_present_people():
@@ -1096,7 +1100,7 @@ def test_a_turn_recalls_the_speakers_and_a_related_talk_elsewhere(tmp_path):
     trigger = event("大肥魚，西夏文怎麼讀？", event_id="$call")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    memory = bot.deepseek.memory
+    memory = bot.gemini.memory
     assert [note["note"] for note in memory["notes"]] == ["Alice writes traditional Chinese."]
     assert memory["earlier"][-1]["summary"] == "Bob showed a 西夏文 dictionary."
 
@@ -1111,14 +1115,14 @@ def test_forget_me_deletes_their_notes_and_talks_and_says_so(tmp_path):
     trigger = event("!fish forget me", event_id="$forget")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    assert bot.deepseek.turns[-1][0] == "forgot" and matrix.sent
+    assert bot.gemini.turns[-1][0] == "forgot" and matrix.sent
     assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
     assert store.db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] == 0
     assert store.forgotten() == {"@reader:example"}
     back = event("!fish remember me", event_id="$back")
     bot.ingest(ROOM, back, backfilled=False)
     bot.answer(ROOM, back)
-    assert bot.deepseek.turns[-1][0] == "remember-me" and store.forgotten() == set()
+    assert bot.gemini.turns[-1][0] == "remember-me" and store.forgotten() == set()
 
 
 def test_a_redacted_message_takes_its_episode_and_facts_along(tmp_path):
@@ -1126,7 +1130,7 @@ def test_a_redacted_message_takes_its_episode_and_facts_along(tmp_path):
     start = fish_bot.now_ms() - 2 * HOUR
     for number in range(3):
         say(bot, f"line {number}", event_id=f"$r{number}", ts=start + number * 1000)
-    bot.deepseek.memory_value = fish_bot.Memory(summary="s", keywords=(), edits=(
+    bot.gemini.memory_value = fish_bot.Memory(summary="s", keywords=(), edits=(
         fish_bot.Edit(op="add", subject="@reader:example", text="A fact."),))
     bot.consolidate()
     assert store.db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 1
@@ -1178,10 +1182,10 @@ def test_a_stretch_that_keeps_failing_backs_off_and_is_skipped(tmp_path, monkeyp
     def remember(room_name, rows, names, known, *, bot_user_id, left_out=(), images=()):
         calls.append(rows[0]["event_id"])
         if rows[0]["event_id"] == "$p0":
-            raise fish_bot.DeepSeekError("400 Content Exists Risk")
+            raise fish_bot.GeminiError("400 Content Exists Risk")
         return fish_bot.Memory(summary="fine", keywords=(), edits=())
 
-    monkeypatch.setattr(bot.deepseek, "remember", remember)
+    monkeypatch.setattr(bot.gemini, "remember", remember)
     bot.consolidate()
     bot._memory_due = 0
     bot.consolidate()
@@ -1261,10 +1265,10 @@ def test_memory_waits_for_the_chat_to_go_still(tmp_path):
         say(bot, f"line {number}", event_id=f"$s{number}", ts=start + number)
     bot._heard_at = fish_bot.time.monotonic()
     bot.consolidate()
-    assert bot.deepseek.memories == []
+    assert bot.gemini.memories == []
     bot._heard_at = 0.0
     bot.consolidate()
-    assert len(bot.deepseek.memories) == 1
+    assert len(bot.gemini.memories) == 1
 class FakeWeb:
     def __init__(self):
         self.queries = []
@@ -1287,20 +1291,25 @@ class SearchingGitHub(FakeGitHub):
         return [{"repo": "mkpoli/han-compose", "path": "js/src/tree.js"}]
 
 
-def answer(content=None, calls=None):
-    message = {"role": "assistant", "content": content if content is not None else " "}
+def answer(content=None, calls=None, *, interaction_id="v1_test", usage=None, tier="standard", extra_steps=()):
+    steps = list(extra_steps)
     if calls:
-        message["tool_calls"] = [{"id": f"call_{number}", "type": "function",
-                                  "function": {"name": name, "arguments": json.dumps(arguments)}}
-                                 for number, (name, arguments) in enumerate(calls)]
-    return {"choices": [{"message": message}]}
+        steps += [{"id": f"call_{number}", "type": "function_call", "name": name, "arguments": arguments}
+                  for number, (name, arguments) in enumerate(calls)]
+    if content is not None:
+        steps.append({"type": "model_output", "content": [{"type": "text", "text": content}]})
+    result = {"id": interaction_id, "status": "requires_action" if calls else "completed",
+              "service_tier": tier, "steps": steps}
+    if usage is not None:
+        result["usage"] = usage
+    return result
 
 
 def scripted(monkeypatch, answers):
-    model = fish_bot.DeepSeek("key")
+    model = fish_bot.Gemini("key")
     bodies = []
 
-    def post(body, url=None, **_):
+    def post(body, **_):
         bodies.append(json.loads(json.dumps(body)))
         return answers.pop(0)
 
@@ -1311,25 +1320,28 @@ def scripted(monkeypatch, answers):
 def test_a_called_turn_looks_something_up_before_it_answers(tmp_path, monkeypatch):
     web = FakeWeb()
     lookup = fish_bot.Lookup(web, None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
-    model, bodies = scripted(monkeypatch, [answer(calls=[("web_search", {"query": "Tangut script"})]),
+    model, bodies = scripted(monkeypatch, [answer(calls=[("web_search", {"query": "Tangut script"})], interaction_id="v1_r1"),
                                            answer('{"say": "It is a script."}')])
     steps = []
     act = model.act("Room", "", [message_row("what is Tangut?")], {}, task="called", trigger=0,
                     bot_user_id=USER, lookup=lookup, on_step=lambda: steps.append(1))
     assert act.say == ("It is a script.",) and steps == [1] and web.queries == ["Tangut script"]
-    assert [tool["function"]["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "characters", "recall"]
-    assert [message["role"] for message in bodies[1]["messages"][-2:]] == ["tool", "system"]
-    assert json.loads(bodies[1]["messages"][-2]["content"])["results"][0]["url"] == "https://example.org/tangut"
-    assert bodies[1]["response_format"] == {"type": "json_object"}
+    assert [tool["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "characters", "recall"]
+    assert bodies[1]["previous_interaction_id"] == "v1_r1"
+    assert bodies[1]["input"][0]["type"] == "function_result"
+    assert bodies[1]["input"][0]["call_id"] == "call_0"
+    assert json.loads(bodies[1]["input"][0]["result"][0]["text"])["results"][0]["url"] == "https://example.org/tangut"
+    assert bodies[1]["response_format"] == {"type": "text", "mime_type": "application/json"}
 
 
 def test_lookups_stop_after_a_few_rounds(tmp_path, monkeypatch):
     lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
-    loops = [answer(calls=[("web_search", {"query": "again"})]) for _ in range(fish_bot.LOOKUP_ROUNDS)]
+    loops = [answer(calls=[("web_search", {"query": "again"})], interaction_id=f"v1_r{n}")
+             for n in range(fish_bot.LOOKUP_ROUNDS)]
     model, bodies = scripted(monkeypatch, [*loops, answer('{"say": "ok"}')])
     act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER, lookup=lookup)
     assert act.say == ("ok",)
-    assert bodies[-1]["tool_choice"] == "none" and "tool_choice" not in bodies[-2]
+    assert "tools" not in bodies[-1] and "tools" in bodies[-2]
 
 
 def test_a_lookup_refuses_bad_arguments_and_keeps_to_its_budget(tmp_path):
@@ -1346,7 +1358,7 @@ def test_a_lookup_refuses_bad_arguments_and_keeps_to_its_budget(tmp_path):
 def test_github_search_covers_the_owner_unless_a_repo_is_named(tmp_path):
     github = SearchingGitHub()
     lookup = fish_bot.Lookup(FakeWeb(), github, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
-    assert [tool["function"]["name"] for tool in lookup.specs()][-3:] == ["github_search", "github_read", "github_item"]
+    assert [tool["name"] for tool in lookup.specs()][-3:] == ["github_search", "github_read", "github_item"]
     lookup.run("github_search", {"kind": "code", "query": "descriptionEnd"})
     lookup.run("github_search", {"kind": "issues", "query": "sticker", "repo": "mkpoli/glyph-atlas"})
     assert github.searches == [("code", "descriptionEnd", "user:mkpoli"), ("issues", "sticker", "repo:mkpoli/glyph-atlas")]
@@ -1375,10 +1387,10 @@ def test_only_an_answer_to_a_call_may_look_things_up(tmp_path, monkeypatch):
     trigger = event("大肥魚，IDS工房是什麼？", event_id="$call")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    assert bot.deepseek.lookup is bot.lookup is not None
+    assert bot.gemini.lookup is bot.lookup is not None
     monkeypatch.setattr(bot, "_random", lambda: 0.0)
     bot.turn(ROOM, "$call", task="ambient")
-    assert bot.deepseek.lookup is None
+    assert bot.gemini.lookup is None
 
 
 def test_the_recall_tool_searches_every_room(tmp_path):
@@ -1416,7 +1428,7 @@ def test_the_characters_tool_costs_no_budget(tmp_path):
 
 def test_no_recall_tool_while_memory_is_off(tmp_path):
     lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", memory=False)
-    assert "recall" not in [tool["function"]["name"] for tool in lookup.specs()]
+    assert "recall" not in [tool["name"] for tool in lookup.specs()]
     assert "error" in lookup.run("recall", {"query": "x"})
 
 
@@ -1457,8 +1469,8 @@ def test_a_turn_stops_looking_things_up_when_time_runs_out(tmp_path, monkeypatch
     clock = iter([0.0, 1000.0, 1000.0, 1000.0])
     monkeypatch.setattr(fish_bot.time, "monotonic", lambda: next(clock))
     act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER, lookup=lookup)
-    assert act.say == ("ok",) and lookup.deepseek.queries == []
-    assert bodies[-1]["tool_choice"] == "none"
+    assert act.say == ("ok",) and lookup.gemini.queries == []
+    assert "tools" not in bodies[-1]
 
 
 def member(user, name, *, ts=1_792_852_938_000, membership="join"):
@@ -1525,7 +1537,7 @@ def test_room_tools_are_local_and_free(tmp_path):
     lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli",
                              per_hour=0, community=community())
     lookup.here = ROOM
-    assert "rooms" in [tool["function"]["name"] for tool in lookup.specs()]
+    assert "rooms" in [tool["name"] for tool in lookup.specs()]
     assert lookup.run("room_info", {})["first_to_join"][0]["name"] == "ops"
     listed = lookup.run("rooms", {})["rooms"]
     assert len(listed) == 3 and listed[0]["members"] == 3, "counted as room_info counts, without bots"
@@ -1539,7 +1551,7 @@ def test_every_turn_knows_its_room(tmp_path):
     trigger = event("大肥魚 這個羣多少人？", event_id="$call")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    assert bot.deepseek.room_facts["alias"] == "#zh:example"
+    assert bot.gemini.room_facts["alias"] == "#zh:example"
     assert bot.lookup.here == ROOM
 
 
@@ -1606,7 +1618,7 @@ def test_a_turn_sees_the_newest_pictures_people_posted(tmp_path):
     trigger = event("大肥魚，這是你嗎？", event_id="$call", ts=start + 5)
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    images = bot.deepseek.images
+    images = bot.gemini.images
     assert [index for index, _ in images] == [0, 4]
     assert images[0][1].startswith("data:image/png;base64,") and images[1][1].startswith("data:image/gif;base64,")
 
@@ -1615,10 +1627,10 @@ def test_the_model_gets_pictures_after_the_json(monkeypatch):
     model, bodies = scripted(monkeypatch, [answer('{"say": "是我！"}')])
     rows = [message_row("[image] me.png")]
     model.act("Room", "", rows, {}, task="called", trigger=0, bot_user_id=USER, images=[(0, "data:image/png;base64,AA")])
-    content = bodies[0]["messages"][1]["content"]
+    content = bodies[0]["input"]
     assert json.loads(content[0]["text"])["messages"][0]["image"] == "attached below"
     assert content[1] == {"type": "text", "text": "The picture in message 0:"}
-    assert content[2] == {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}}
+    assert content[2] == {"type": "image", "mime_type": "image/png", "data": "AA"}
 
 
 def test_a_posted_picture_counts_as_something_to_look_at(tmp_path, monkeypatch):
@@ -1628,19 +1640,19 @@ def test_a_posted_picture_counts_as_something_to_look_at(tmp_path, monkeypatch):
 
 
 def test_a_refused_picture_costs_the_picture_not_the_answer(monkeypatch):
-    model = fish_bot.DeepSeek("key")
+    model = fish_bot.Gemini("key")
     bodies = []
 
-    def post(body, url=None, **_):
+    def post(body, **_):
         bodies.append(json.loads(json.dumps(body)))
-        if isinstance(body["messages"][1]["content"], list):
-            raise fish_bot.DeepSeekError("DeepSeek answered 400: invalid image")
+        if isinstance(body["input"], list):
+            raise fish_bot.GeminiError("Gemini answered 400: invalid image", status=400)
         return answer('{"say": "看不到圖，但我在！"}')
 
     monkeypatch.setattr(model, "_post", post)
     act = model.act("Room", "", [message_row("[image] x.png")], {}, task="called", trigger=0, bot_user_id=USER,
                     images=[(0, "data:image/png;base64,AA")])
-    assert act.say == ("看不到圖，但我在！",) and isinstance(bodies[1]["messages"][1]["content"], str)
+    assert act.say == ("看不到圖，但我在！",) and isinstance(bodies[1]["input"], str)
 
 
 def test_a_picture_that_fails_is_fetched_once(tmp_path):
@@ -1685,7 +1697,7 @@ def test_a_reply_to_her_message_is_a_call(tmp_path):
     thanks = reply("고마워요 딥식이!", "$digest")
     bot.ingest(ROOM, thanks, backfilled=False)
     bot.answer(ROOM, thanks)
-    assert bot.deepseek.turns[0][0] == "called" and matrix.sent[0][1]["body"] == "不客氣～"
+    assert bot.gemini.turns[0][0] == "called" and matrix.sent[0][1]["body"] == "不客氣～"
     assert store.outcome("$reply")[0] == "chatted"
 
 
@@ -1694,7 +1706,7 @@ def test_a_reply_to_someone_else_is_not_a_call(tmp_path):
     bot.ingest(ROOM, event("hello", sender="@other:example", event_id="$other"), backfilled=False)
     answer_to_other = reply("thanks!", "$other")
     bot.answer(ROOM, answer_to_other)
-    assert bot.deepseek.turns == [] and matrix.sent == []
+    assert bot.gemini.turns == [] and matrix.sent == []
 
 
 def test_a_reply_to_her_message_outside_the_log_is_checked_with_the_homeserver(tmp_path):
@@ -1707,7 +1719,7 @@ def test_a_reply_to_her_message_outside_the_log_is_checked_with_the_homeserver(t
     bot.answer(ROOM, late)
     bot.notice(ROOM, late)
     bot.answer(ROOM, reply("還有這條", "$old", event_id="$again"))
-    assert asked == ["$old"] and bot.deepseek.turns[0][0] == "called"
+    assert asked == ["$old"] and bot.gemini.turns[0][0] == "called"
     bot.answer(ROOM, reply("relay", "$other-old", sender="@discordbot:glyphatlas.org"))
     assert asked == ["$old"], "no lookup for a bot's reply"
 
@@ -1719,7 +1731,7 @@ def test_the_first_message_of_a_thread_on_her_post_is_not_a_reply_to_her(tmp_pat
         "rel_type": "m.thread", "event_id": "$digest", "is_falling_back": True,
         "m.in_reply_to": {"event_id": "$digest"}}})
     bot.answer(ROOM, threaded)
-    assert bot.deepseek.turns == [] and matrix.sent == []
+    assert bot.gemini.turns == [] and matrix.sent == []
 
 
 
@@ -1743,7 +1755,7 @@ def test_a_catch_up_covers_every_room_still_read(tmp_path):
     trigger = event("!fish recap", event_id="$recap")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    _, episodes, notes, request = bot.deepseek.recaps[0]
+    _, episodes, notes, request = bot.gemini.recaps[0]
     assert [episode["summary"] for episode in episodes] == ["IDS工房上線了。", "Talked about 西夏文."]
     assert episodes[0]["room"] == "開發 · Dev" and notes == ["IDS工房 is an open-source editor."]
     assert request == "!fish recap"
@@ -1805,41 +1817,46 @@ def test_a_picture_logged_without_its_link_gets_it_when_read_again(tmp_path):
     assert store.context(ROOM, fish_bot.now_ms() + 1000, 5)[0]["media"] == "mxc://example/old"
 
 
-def test_model_cost_follows_the_price_table_and_peak_hours():
-    usage = {"prompt_tokens": 3_000_000, "prompt_cache_hit_tokens": 1_000_000, "prompt_cache_miss_tokens": 2_000_000,
-             "completion_tokens": 1_000_000}
-    off_peak = fish_bot.datetime.datetime(2026, 11, 21, 2, tzinfo=fish_bot.datetime.UTC)
-    peak = fish_bot.datetime.datetime(2026, 11, 20, 2, tzinfo=fish_bot.datetime.UTC)
-    assert round(fish_bot.model_cost(usage, off_peak), 6) == round(0.003 + 0.30 + 0.6, 6)
-    assert round(fish_bot.model_cost(usage, peak), 6) == round(2 * (0.003 + 0.30 + 0.6), 6)
-    assert fish_bot.model_cost(None, peak) == 0.0
+def test_model_cost_follows_the_gemini_price_table_for_standard_and_flex():
+    usage = {"total_input_tokens": 3_000_000, "total_cached_tokens": 1_000_000, "total_tool_use_tokens": 500_000,
+             "total_output_tokens": 400_000, "total_thought_tokens": 600_000}
+    standard = 1 * 0.075 + 2.5 * 1.50 + 1.0 * 7.50
+    assert round(fish_bot.model_cost(usage, tier="standard"), 6) == round(standard, 6)
+    assert round(fish_bot.model_cost(usage, tier="flex"), 6) == round(standard * 0.5, 6)
+    assert fish_bot.usage_tokens(usage) == (3_500_000, 1_000_000)
+    assert fish_bot.model_cost(None) == 0.0
 
 
 def test_every_call_is_counted_with_its_tokens_failures_and_cost(tmp_path, monkeypatch):
     store = fish_bot.Store(tmp_path / "chat.sqlite3")
-    model = fish_bot.DeepSeek("key")
+    model = fish_bot.Gemini("key")
     model.meter = store.count_usage
-    answers = [{"choices": [{"message": {"content": '{"say": "hi"}'}}],
-                "usage": {"prompt_tokens": 100, "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 100,
-                          "completion_tokens": 10}},
-               {"results": []}]
+    answers = [
+        answer('{"say": "hi"}', usage={"total_input_tokens": 100, "total_cached_tokens": 0,
+                                       "total_output_tokens": 10, "total_thought_tokens": 20}),
+        {"id": "v1_s", "status": "completed", "service_tier": "standard",
+         "usage": {"total_input_tokens": 50, "total_output_tokens": 20, "total_thought_tokens": 10},
+         "steps": [{"type": "model_output", "content": [{"type": "text", "text": "Tangut is a script.",
+                    "annotations": [{"type": "url_citation", "title": "Tangut", "url": "https://example.org/tangut"}]}]}]},
+    ]
 
-    def send(body, url=None, **_):
+    def send(body, **_):
         if not answers:
-            raise fish_bot.DeepSeekError("DeepSeek answered 503")
+            raise fish_bot.GeminiError("Gemini answered 503", status=503)
         return answers.pop(0)
 
     monkeypatch.setattr(model, "_send", send)
     model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
-    model.search("tangut")
-    with pytest.raises(fish_bot.DeepSeekError):
+    found = model.search("tangut")
+    assert found[0]["url"] == "https://example.org/tangut" and "Tangut" in found[0]["summary"]
+    with pytest.raises(fish_bot.GeminiError):
         model.fetch("https://example.org")
     rows = {row["kind"]: row for row in store.usage(1)}
-    assert (rows["chat"]["calls"], rows["chat"]["tokens_in"], rows["chat"]["tokens_out"]) == (1, 100, 10)
-    assert rows["chat"]["cost"] > 0 and rows["search"]["cost"] == fish_bot.PRICE_TOOL
+    assert (rows["chat"]["calls"], rows["chat"]["tokens_in"], rows["chat"]["tokens_out"]) == (1, 100, 30)
+    assert rows["chat"]["cost"] > 0 and rows["search"]["cost"] > 0
     assert (rows["fetch"]["calls"], rows["fetch"]["failures"], rows["fetch"]["cost"]) == (1, 1, 0)
     report = fish_bot.usage_report(store.usage(1))
-    assert "chat 1" in report and "fetch 1 (1 failed)" in report and "110 tokens" in report
+    assert "chat 1" in report and "fetch 1 (1 failed)" in report and "210 tokens" in report
 
 
 def test_the_usage_command_prints_the_week(tmp_path, capsys):
@@ -1851,16 +1868,93 @@ def test_the_usage_command_prints_the_week(tmp_path, capsys):
 
 
 def test_a_failed_count_never_costs_the_answer(monkeypatch):
-    model = fish_bot.DeepSeek("key")
+    model = fish_bot.Gemini("key")
 
     def broken_meter(kind, **tally):
         raise sqlite3.OperationalError("database is locked")
 
     model.meter = broken_meter
-    monkeypatch.setattr(model, "_send", lambda body, url=None, **_: {
-        "choices": [{"message": {"content": '{"say": "still here"}'}}], "usage": {"prompt_tokens": "odd"}})
+    monkeypatch.setattr(model, "_send", lambda body, **_: answer('{"say": "still here"}',
+                                                                 usage={"total_input_tokens": "odd"}))
     act = model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
     assert act.say == ("still here",)
+
+
+def test_memory_and_digest_try_flex_and_fall_back_to_standard(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    model = fish_bot.Gemini("key", flex=True)
+    model.meter = store.count_usage
+    seen = []
+
+    def send(body, **_):
+        seen.append(body.get("service_tier"))
+        if len(seen) == 1:
+            return answer('{"summary": "Talked.", "facts": []}', tier="flex",
+                          usage={"total_input_tokens": 1_000_000, "total_output_tokens": 0, "total_thought_tokens": 0})
+        if body.get("service_tier") == "flex":
+            raise fish_bot.GeminiError("Gemini answered 503: busy", status=503)
+        return answer('{"text": "Today in Glyph Atlas."}', tier="standard",
+                      usage={"total_input_tokens": 1_000_000, "total_output_tokens": 0, "total_thought_tokens": 0})
+
+    monkeypatch.setattr(model, "_send", send)
+    memory = model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER)
+    digest = model.digest("English", "Room", [], [{"repo": "mkpoli/glyph-atlas", "merged": ["x"], "released": []}], {})
+    assert memory.summary == "Talked." and digest == "Today in Glyph Atlas."
+    assert seen == ["flex", "flex", None]
+    rows = {row["kind"]: row for row in store.usage(1)}
+    assert round(rows["memory"]["cost"], 4) == 0.75
+    assert round(rows["digest"]["cost"], 4) == 1.5 and rows["digest"]["failures"] == 0
+
+
+def test_fetch_refuses_a_url_context_error(monkeypatch):
+    model = fish_bot.Gemini("key")
+    monkeypatch.setattr(model, "_post", lambda body, **_: answer(
+        "Could not access URL",
+        extra_steps=[{"type": "url_context_result", "result": [{"url": "https://example.org", "status": "error"}]}],
+    ))
+    with pytest.raises(fish_bot.GeminiError):
+        model.fetch("https://example.org")
+
+
+def test_grounding_redirect_resolves_only_vertex_urls(monkeypatch):
+    called = []
+
+    class FakeOpener:
+        def open(self, request, timeout=5.0):
+            called.append((request.full_url, request.get_method()))
+            raise fish_bot.urllib.error.HTTPError(
+                request.full_url, 302, "Found", {"Location": "https://glyphatlas.org/"}, None)
+
+    monkeypatch.setattr(fish_bot.urllib.request, "build_opener", lambda *_: FakeOpener())
+    assert fish_bot._resolve_grounding_url("https://example.org/direct") == "https://example.org/direct"
+    assert called == []
+    resolved = fish_bot._resolve_grounding_url("https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc")
+    assert resolved == "https://glyphatlas.org/" and called == [
+        ("https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc", "HEAD")]
+
+
+def test_check_queries_the_model_resource(monkeypatch):
+    seen = []
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return b'{"name": "models/gemini-4-hydrogen"}'
+
+    def urlopen(request, timeout=30):
+        seen.append((request.full_url, request.get_header("X-goog-api-key")))
+        return FakeResponse()
+
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", urlopen)
+    fish_bot.Gemini("secret-key").check()
+    assert seen == [("https://generativelanguage.googleapis.com/v1beta/models/gemini-4-hydrogen", "secret-key")]
 
 
 def test_memory_sees_the_pictures_of_a_stretch(tmp_path):
@@ -1873,27 +1967,28 @@ def test_memory_sees_the_pictures_of_a_stretch(tmp_path):
     bot.ingest(ROOM, picture("$scan", url="mxc://example/scan", ts=start + 1000), backfilled=True)
     say(bot, "the left part is 糸", event_id="$u", ts=start + 2000)
     bot.consolidate()
-    assert [index for index, _ in bot.deepseek.memory_images] == [1]
+    assert [index for index, _ in bot.gemini.memory_images] == [1]
 
 
 def test_the_memory_prompt_numbers_its_pictures(monkeypatch):
     model, bodies = scripted(monkeypatch, [answer('{"summary": "A scan of 絲.", "facts": []}')])
     rows = [message_row("look"), message_row("[image] scan.png")]
     memory = model.remember("Room", rows, {}, [], bot_user_id=USER, images=[(1, "data:image/png;base64,AA")])
-    content = bodies[0]["messages"][1]["content"]
+    content = bodies[0]["input"]
     assert json.loads(content[0]["text"])["messages"][1]["picture"] == 1
-    assert content[1] == {"type": "text", "text": "Picture 1:"} and content[2]["type"] == "image_url"
+    assert content[1] == {"type": "text", "text": "Picture 1:"}
+    assert content[2] == {"type": "image", "mime_type": "image/png", "data": "AA"}
     assert memory.summary == "A scan of 絲."
 
 
 def test_memory_tries_again_without_pictures_the_model_refuses(monkeypatch):
-    model = fish_bot.DeepSeek("key")
+    model = fish_bot.Gemini("key")
     sent = []
 
-    def post(body, url=None, **_):
-        sent.append(body["messages"][1]["content"])
-        if isinstance(body["messages"][1]["content"], list):
-            raise fish_bot.DeepSeekError("DeepSeek answered 400: invalid image")
+    def post(body, **_):
+        sent.append(body["input"])
+        if isinstance(body["input"], list):
+            raise fish_bot.GeminiError("Gemini answered 400: invalid image", status=400)
         return answer('{"summary": "Talked.", "facts": []}')
 
     monkeypatch.setattr(model, "_post", post)
@@ -1912,8 +2007,8 @@ def test_memory_sends_pictures_only_for_messages_that_fit(tmp_path):
         if n >= 36:
             bot.ingest(ROOM, picture(f"$p{n}", url=f"mxc://example/p{n}", ts=start + n * 1000 + 1), backfilled=True)
     bot.consolidate()
-    assert bot.deepseek.memories, "the stretch was summarized"
-    assert bot.deepseek.memory_images == [], "its pictures sit past the part of the stretch that fits"
+    assert bot.gemini.memories, "the stretch was summarized"
+    assert bot.gemini.memory_images == [], "its pictures sit past the part of the stretch that fits"
 
 
 def test_memory_fetches_only_a_few_unseen_pictures(tmp_path):
@@ -1932,13 +2027,13 @@ def test_memory_fetches_only_a_few_unseen_pictures(tmp_path):
 
 
 def test_a_refused_picture_leaves_memory_both_text_tries(monkeypatch):
-    model = fish_bot.DeepSeek("key")
+    model = fish_bot.Gemini("key")
     sent = []
 
-    def post(body, url=None, **_):
-        sent.append("list" if isinstance(body["messages"][1]["content"], list) else "str")
+    def post(body, **_):
+        sent.append("list" if isinstance(body["input"], list) else "str")
         if sent[-1] == "list":
-            raise fish_bot.DeepSeekError("DeepSeek answered 400: invalid image")
+            raise fish_bot.GeminiError("Gemini answered 400: invalid image", status=400)
         if sent.count("str") == 1:
             return answer("not json")
         return answer('{"summary": "Talked.", "facts": []}')
