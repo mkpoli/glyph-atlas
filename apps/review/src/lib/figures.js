@@ -49,3 +49,23 @@ export async function figureFamilies(text) {
   const drawn = inSerif ? FAMILIES.serif : null
   return { sans: inSans ? FAMILIES.sans : drawn, serif: drawn }
 }
+
+/** The sequences on `char` among those `registered` (`figuresOf`) and those the figure `lists` name
+ *  under its code point, once each in selector order, as `{ char, mj }` with the MJ figure or null. */
+export function mergeFigures(char, registered, lists) {
+  const code = char.codePointAt(0), found = new Map(registered.map(figure => [figure.char, figure.mj ?? null]))
+  for (const list of lists) for (const index of list[hex(code)] ?? []) {
+    const text = char + String.fromCodePoint(FIRST + index)
+    if (!found.has(text)) found.set(text, null)
+  }
+  return [...found].map(([text, mj]) => ({ char: text, mj })).sort((a, b) => a.char.codePointAt(char.length) - b.char.codePointAt(char.length))
+}
+
+/** Every registered figure of the character `char` a font here draws; rejects when a list could not
+ *  be read, and the next call asks again. */
+export async function figuresFor(char) {
+  if ([...char].length !== 1) return []
+  const code = char.codePointAt(0)
+  const [registered, sans, serif] = await Promise.all([figuresOf(char), listed('sans', code), listed('serif', code)])
+  return mergeFigures(char, registered, [sans, serif])
+}

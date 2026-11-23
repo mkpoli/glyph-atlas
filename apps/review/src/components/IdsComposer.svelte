@@ -10,7 +10,7 @@
   // put on a slot splits it, the slot's part first (⿰ on 失 gives ⿰失⬚); put on an operator, it takes
   // that operator's place and keeps its parts. × takes one level away, keeping its first filled part.
   // A component found, typed into the part field or offered by the variant table replaces the chosen
-  // part, and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
+  // part, as does one of the part's registered figures (辶 with one dot, U+8FB6 U+E0102), and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
   // The part picker under the tree has three tabs: a component found by name or reading, the parts
   // palette (IdsParts), and the parts of any character or description typed (IdsFrom).
   // Every change can be undone, a hundred steps back.
@@ -19,10 +19,12 @@
   import IdsPreview from './IdsPreview.svelte'
   import IdsFrom from './IdsFrom.svelte'
   import IdsParts from './IdsParts.svelte'
+  import FigureText from './FigureText.svelte'
   import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
   import { lookupChar } from '../lib/decompose.js'
   import { ids } from '../lib/layers.js'
+  import { figuresFor } from '../lib/figures.js'
   import { t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
 
@@ -69,6 +71,14 @@
     return asked
   }
   const sequencesOf = c => known[c]?.sequences ?? []
+  // The registered figures of each component met, asked with its descriptions; a failed read is asked again.
+  let figures = $state({})
+  const figuring = new Set()
+  function readFigures(c) {
+    if (!c || figuring.has(c)) return
+    figuring.add(c)
+    figuresFor(c).then(found => { figures = { ...figures, [c]: found } }, () => figuring.delete(c))
+  }
 
   // Each crop starts again: from a description the reader had typed into the search, or else from
   // the character's own. What is typed into the search afterwards leaves the draft alone.
@@ -114,7 +124,7 @@
     if (!typing) draft = write(next)
     const part = select ? partAt(next, select) : undefined
     piece = text(part)
-    if (typeof part === 'string') read(lookupChar(part))
+    if (typeof part === 'string') { read(lookupChar(part)); readFigures(lookupChar(part)) }
   }
   // One step back or forward: the state left is kept on the other side.
   function step(from, to) {
@@ -177,12 +187,19 @@
   function take(written) { const found = parse(written, { open: true }); if (!disabled && !found.problem && found.tree !== null) place(found.tree) }
   // The descriptions a component can be split into, those the editor can read.
   const splits = $derived(typeof picked === 'string' ? sequencesOf(lookupChar(picked)).filter(sequence => !parse(sequence, { open: true }).problem) : [])
+  // The picked part as its other figures, the bare character among them once it carries a selector.
+  const figured = $derived.by(() => {
+    if (typeof picked !== 'string') return []
+    const base = lookupChar(picked), found = figures[base] ?? []
+    return [...(picked !== base && found.length ? [{ char: base, mj: null }] : []), ...found.filter(figure => figure.char !== picked)]
+  })
+  const point = text => [...text].map(c => `U+${c.codePointAt(0).toString(16).toUpperCase()}`).join(' ')
   function choose(path) {
     chosen = samePath(chosen, path) ? null : path
     note = ''
     const part = chosen ? partAt(tree, chosen) : undefined
     piece = text(part)
-    if (typeof part === 'string') read(lookupChar(part))
+    if (typeof part === 'string') { read(lookupChar(part)); readFigures(lookupChar(part)) }
   }
   function remove(path) { if (!disabled && isNode(partAt(tree, path))) change(unwrap(tree, path), path) }
   function empty(path) { if (!disabled && path && partAt(tree, path) !== null) change(clear(tree, path), path) }
@@ -287,7 +304,7 @@
     <button type="button" class="ids-part" class:empty={part === null} class:chosen={selected} aria-pressed={selected}
       data-path={pathKey(path)} {disabled} title={part === null ? label : t('form.ids.choose', { part })}
       aria-label={parent ? t('form.ids.part', { part: label, n: parent.n, name: name(parent.op) }) : label}
-      onclick={() => choose(path)}>{part ?? EMPTY}</button>
+      onclick={() => choose(path)}>{#if part === null}{EMPTY}{:else}<FigureText text={part} />{/if}</button>
   {/if}
 {/snippet}
 
@@ -324,10 +341,14 @@
   </div>
   {#if problem}<p class="ids-problem" role="status">{problem}</p>
   {:else if pending}<p class="ids-pending" role="status">{pending}</p>{/if}
-  {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length)}
+  {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length || figured.length)}
     <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: picked })}>
       <span class="ids-title">{t('form.ids.swaps', { part: picked })}</span>
       <div class="ids-options">
+        {#each figured as figure (figure.char)}
+          <button type="button" class="ids-swap ids-figure" {disabled} title={[point(figure.char), figure.mj].filter(Boolean).join(' · ')} aria-label={[figure.char, point(figure.char), figure.mj].filter(Boolean).join(' ')}
+            onclick={() => place(figure.char)}><FigureText text={figure.char} /></button>
+        {/each}
         {#each swaps[lookupChar(picked)] ?? [] as item (item.char)}
           <button type="button" class="ids-swap" {disabled} title={`${picked} → ${item.char} · ${item.count}`} onclick={() => swap(item)}>{item.char}</button>
         {/each}
