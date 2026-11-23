@@ -26,10 +26,10 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
   the shard of the reading (SUMMARY_DIGITS). A kana search reads the one shard for the kanji it lists.
 - `ids/<shard>.json.gz`: each character's ideographic descriptions, regional shapes and 構形
   (`glyph_atlas.structures`: its id and label, or null), by the character itself, in the shard of the
-  character (IDS_DIGITS). A regional shape is a spelling of its character's 構形. A small seal
-  character has no description and its Han equivalent's 構形. A description the site names a
-  character or a form by (`export_character_variants.py --described`) is a key of its own, with its
-  構形.
+  character (IDS_DIGITS). A regional shape is a spelling of its character's 構形, and names in
+  `chars` the characters that encode it again (臭's ⿱自大 is 𦤀). A small seal character has no
+  description and its Han equivalent's 構形. A description the site names a character or a form by
+  (`export_character_variants.py --described`) is a key of its own, with its 構形.
 - `structure.json.gz`: the scheme, source version and policy the shards' structures were read under,
   which a `structures` row records.
 - `names.json.gz`: every card's name and how often it occurs, for a search by name or code point.
@@ -113,7 +113,7 @@ SCHEMA = CF / "migrations-atlas" / "0004_reference.sql"
 PREFIX = "v3/reference/"
 MANIFEST = "manifest.json.gz"
 LIST_PAGE = 500
-# 4,096 summary shards keep one near 41 KB of JSON; the IDS, 1 MB in all, takes 256.
+# 4,096 summary shards keep one near 41 KB of JSON; the IDS, 1.6 MB in all with the seal characters, takes 256.
 SUMMARY_DIGITS, IDS_DIGITS = 3, 2
 # Rows per group of statements; a group is never split across parts.
 GROUP = 500
@@ -581,12 +581,18 @@ def put_ids(objects, notes):
             # A reading that does not settle names no structure; the load goes on without it.
             structure = None
             notes["characters whose structure does not settle"] += 1
-        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None,
+        shaped = structure_layer.encoded_shapes(char, json.loads(shapes)) if shapes else None
+        structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), shaped,
                                                      [structure.id, structure.label] if structure else None]
         notes["descriptions with a structure" if is_sequence(char) else "characters with a structure"] += structure is not None
     # A small seal character has no description and the structure of its Han equivalent.
     for seal in structure_layer.seal_equivalents():
-        if structure := structure_layer.for_character(seal):
+        try:
+            structure = structure_layer.for_character(seal)
+        except ValueError:
+            notes["seal characters whose structure does not settle"] += 1
+            continue
+        if structure:
             structures[shard(seal, IDS_DIGITS)][seal] = [[], None, [structure.id, structure.label]]
             notes["seal characters with a structure"] += 1
     for key, chars in structures.items():

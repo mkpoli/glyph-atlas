@@ -37,6 +37,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from functools import cache
+from typing import Any
 
 from . import han_component_variants, han_components, refs
 from .representation import Representation, described, is_sequence
@@ -390,6 +391,27 @@ def _joined() -> dict[str, str]:
         groups.setdefault(find(char), []).append(char)
     return {char: min([c for c in group if c in shaped] or group, key=ord)
             for group in groups.values() if len(group) > 1 for char in group}
+
+
+def encoded_shapes(char: str, shapes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`shapes`, `char`'s regional shapes (`refs.regional_shapes`), each with `chars`, the characters
+    that encode it again, where some do: those that join `char` (`_joined`) and whose own structure the
+    shape writes. 臭's J shape ⿱自大 is 𦤀."""
+    char = unicodedata.normalize("NFC", char)
+    head = _joined().get(char)
+    twins = [other for other, joined in _joined().items() if head and joined == head and other != char]
+    if not twins:
+        return shapes
+    labels = {twin: own.label for twin in twins if (own := _own(twin))}
+    found = []
+    for shape in shapes:
+        try:
+            label = text(canonical(han_component_variants.parse(SELECTORS.sub("", shape["text"]))))
+        except ValueError:
+            label = None
+        chars = [twin for twin, own in labels.items() if own == label]
+        found.append({**shape, "chars": chars} if chars else shape)
+    return found
 
 
 def for_ids(sequence: str) -> Structure:

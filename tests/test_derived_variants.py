@@ -83,9 +83,9 @@ def test_a_part_names_no_description_of_its_own():
 
 
 def test_a_regional_shape_is_a_spelling_of_its_characters_structure():
-    """臭's J shape ⿱自大 stands under 臭's ⿱自犬, though written alone it is 𦤀's structure."""
+    """臭's J shape ⿱自大 stands under 臭's ⿱自犬, and names 𦤀, which encodes it again."""
     found = refs.ids_of("臭")
-    assert found["shapes"] == [{"text": "⿱自犬", "regions": "GHTKPV"}, {"text": "⿱自大", "regions": "J"}]
+    assert found["shapes"] == [{"text": "⿱自犬", "regions": "GHTKPV"}, {"text": "⿱自大", "regions": "J", "chars": ["𦤀"]}]
     assert found["structure"]["label"] == "⿱自犬"
 
 

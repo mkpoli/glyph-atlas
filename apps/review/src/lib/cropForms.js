@@ -61,18 +61,22 @@ export function listForms(char) {
       const found = card?.variants ?? {}
       const writers = new Set((found.writers ?? []).map(v => v.char)), writes = new Set((found.writes ?? []).map(v => v.char))
       // The card's order: a form that writes this grapheme first (後: 后), then the others.
-      const forms = [...found.items ?? [], ...(found.related ?? []).filter(v => v.written || writers.has(v.char))].filter(v => !writes.has(v.char) && offered(v))
+      // A character drawn as the bare character (𦤀, 臭 encoded again as its J shape) is set apart.
+      const twins = new Set(alike.chars)
+      const twin = v => twins.has(v.char)
+      const forms = [...found.items ?? [], ...(found.related ?? []).filter(v => v.written || writers.has(v.char))].filter(v => !writes.has(v.char) && offered(v) && !twin(v))
         .sort((a, b) => writers.has(b.char) - writers.has(a.char))
       const linked = (found.forms ?? []).map(linkedEntry)
       const variants = [...figures.map(figureEntry), ...shapes, ...forms.map(entry), ...linked]
-      const related = [...found.items ?? [], ...found.related ?? []].filter(v => !forms.includes(v) && offered(v)).map(entry)
+      const related = [...found.items ?? [], ...found.related ?? []].filter(v => !forms.includes(v) && offered(v) && !twin(v)).map(entry)
       const derived = (found.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))
       const fresh = list => list.filter(item => !seen.has(item.char) && seen.add(item.char))
       const memberChars = new Set(members.map(m => m.char))
       return { members, variants: fresh(variants), related: fresh(related), derived: fresh(derived),
         linked: linked.filter(item => !memberChars.has(item.char)), grapheme: card?.grapheme ?? null,
-        alike: [...alike.figures.map(figureEntry), ...alike.shapes.map(shapeEntry)] }
+        alike: [...alike.figures.map(figureEntry), ...alike.shapes.map(shapeEntry),
+          ...[...found.items ?? [], ...found.related ?? []].filter(twin).map(entry)] }
     })
     // A failed read is asked again next time rather than kept.
     cards.set(char, loaded.then(found => (partial && cards.delete(char), found), error => { cards.delete(char); throw error }))

@@ -11,7 +11,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from glyph_atlas import han_component_variants, han_components, representation, structures
+from glyph_atlas import han_component_variants, han_components, refs, representation, structures
 from glyph_atlas.cli import app
 from glyph_atlas.review import crop_forms, ledger
 from glyph_atlas.review.ledger import Claim
@@ -205,7 +205,9 @@ def test_a_seal_character_has_its_han_equivalents_structure():
     # SealSources.txt gives 𾲟 臭 and 𽌇 萅: the seal form of 春 is built as 萅.
     assert structures.for_character("𾲟") == structures.for_character("臭")
     assert structures.for_character("𽌇") == structures.for_character("萅") != structures.for_character("春")
-    assert len(structures.seal_equivalents()) == 11328
+    # Each seal character has one equivalent: as many as the rows Unicode states.
+    stated = [row for row in refs.variant_edges() if row["relation"] == "small-seal" and row["source"] == "unicode-ucd"]
+    assert len(structures.seal_equivalents()) == len(stated) == 11328
     assert all(structures.for_character(seal) for seal in structures.seal_equivalents())
 
 

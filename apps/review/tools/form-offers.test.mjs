@@ -10,20 +10,33 @@ const chouFigures = [{ char: '臭\u{E0102}', mj: 'MJ021299', default: true, ids:
   { char: '臭\u{E0103}', mj: 'MJ030291', default: false, ids: '⿱自犬' }]
 // Shapes as /layers/ids gives them.
 const bangShapes = [{ text: '⿰丰阝', regions: 'GHTJKV' }, { text: '⿰⿻㇒𰀁阝', regions: 'P' }]
-const chouShapes = [{ text: '⿱自犬', regions: 'GHTKPV' }, { text: '⿱自大', regions: 'J' }]
+// 𦤀 encodes 臭's J shape again.
+const chouShapes = [{ text: '⿱自犬', regions: 'GHTKPV' }, { text: '⿱自大', regions: 'J', chars: ['𦤀'] }]
 
 describe('form offers', () => {
   it("offers a figure in place of the regional shape that is its description", () => {
     const sorted = sortForms('臭', chouFigures, chouShapes)
     expect(sorted.figures.map(figure => figure.mj)).toEqual(['MJ030291'])
-    expect(sorted.alike.shapes.map(shape => shape.text)).toEqual(['⿱自犬'])
+    expect(sorted.alike.shapes.map(shape => shape.text)).toContain('⿱自犬')
   })
 
-  it('keeps a shape with a 構形 of its own, and one only a set-aside figure describes', () => {
-    // ⿱自大 (J) files under 𦤀's 構形; the default MJ021299 it matches is set aside.
-    expect(sortForms('臭', chouFigures, chouShapes).shapes.map(shape => shape.text)).toEqual(['⿱自大'])
+  it('sets apart 臭\'s J shape and 𦤀, which encodes it again: both draw as 臭', () => {
+    const sorted = sortForms('臭', chouFigures, chouShapes)
+    expect(sorted.shapes).toEqual([])
+    expect(sorted.alike.shapes.map(shape => shape.text)).toEqual(['⿱自犬', '⿱自大'])
+    expect(sorted.alike.chars).toEqual(['𦤀'])
+  })
+
+  it('keeps a shape only a set-aside figure describes', () => {
     const shapes = [{ text: '⿱自大', regions: 'TV' }]
     expect(sortForms('臭', chouFigures, shapes).shapes).toEqual(shapes)
+  })
+
+  it('offers the character a shape is in place of a shape outside J', () => {
+    // 稽's K shape ⿰禾⿱尤㫖 is 𥡴, which the bar offers; 𥡴 is not drawn as 稽, so it stays.
+    const sorted = sortForms('稽', [], [{ text: '⿰禾⿱尤旨', regions: 'GHTJPV' }, { text: '⿰禾⿱尤㫖', regions: 'K', chars: ['𥡴'] }])
+    expect(sorted.shapes).toEqual([])
+    expect(sorted.alike.chars).toEqual([])
   })
 
   it('offers a figure in place of its description for a character another font draws', () => {
@@ -44,7 +57,7 @@ describe('form offers', () => {
   })
 
   it('sets apart 臭\'s Japanese shape ⿱自大, a spelling of 臭\'s own 構形', () => {
-    const sorted = sortForms('臭', [], chouShapes)
+    const sorted = sortForms('臭', [], [{ text: '⿱自犬', regions: 'GHTKPV' }, { text: '⿱自大', regions: 'J' }])
     expect(sorted.shapes.map(shape => shape.text)).toEqual(['⿱自犬'])
     expect(sorted.alike.shapes.map(shape => shape.text)).toEqual(['⿱自大'])
   })

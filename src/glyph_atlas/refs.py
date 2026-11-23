@@ -472,7 +472,7 @@ def ids_of(char: str) -> dict[str, Any]:
     structure = structures.for_character(char)
     parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
                     if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})
-    return {"char": char, "sequences": sequences, "shapes": regional_shapes(char),
+    return {"char": char, "sequences": sequences, "shapes": structures.encoded_shapes(char, regional_shapes(char)),
             "structure": {"id": structure.id, "label": structure.label} if structure else None,
             "substitutes": {part: found for part in parts if (found := substitutes(part))}}
 

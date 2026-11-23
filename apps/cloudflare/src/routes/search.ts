@@ -189,7 +189,8 @@ export async function idsOf(env: Env, ctx: ExecutionContext, origin: string, cha
   if (cached) return await cached.json();
   const described = await characterIds(env, char, ctx);
   const sequences: string[] = described?.sequences ?? [];
-  const shapes: { text: string; regions: string }[] = described?.shapes ?? [];
+  // A shape another character encodes again names it in `chars` (臭's ⿱自大 is 𦤀).
+  const shapes: { text: string; regions: string; chars?: string[] }[] = described?.shapes ?? [];
   const parts = [...new Set(sequences.flatMap(text => [...text].filter(c => !IDS_OPERATOR.test(c))))].slice(0, STRUCTURE_PARTS);
   const rows = parts.length ? (await env.ATLAS.prepare(substitutesQuery(parts.length)).bind(...parts, ...parts)
     .all<{ a: string; b: string; count: number }>()).results : [];

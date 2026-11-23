@@ -69,12 +69,12 @@
   const glyphCount = v => crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : undefined
   const shareLabel = v => writers.has(v.code_point) ? t('chips.alsoOther') : t('chips.alsoWritten', { char: card.char })
   // The 構形 of the grapheme's 字体, each with the characters and described forms that share it (峰 and
-  // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫), and the small seal characters built as one (𾲟
-  // with 臭). A name with no structure, and a site that knows none yet, shows no row.
+  // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫), and the small seal characters Unicode gives
+  // as its own (𾲟 with 臭). A name with no structure, and a site that knows none yet, shows no row.
   const HAN = /^\p{Script=Han}$/u
   const composable = list => [...new Set(list.map(v => v.char)
     .filter(char => HAN.test(char ?? '') || isSeal(char) || isDescription(char) || isFigure(char ?? '')))]
-  const composedOf = $derived(composable([...members, ...written, ...described, ...related.filter(v => isSeal(v.char))]).slice(0, 48))
+  const composedOf = $derived(composable([...members, ...written, ...described, ...related.filter(v => isSeal(v.char) && !inferred(v))]).slice(0, 48))
   // The forms shown when arranging 構形: the grapheme's 字体 and its related characters.
   const arrangeOf = $derived(composable([...members, ...written, ...described, ...related]))
   // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
